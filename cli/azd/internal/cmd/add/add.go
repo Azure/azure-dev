@@ -293,6 +293,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
+	var followUpMessage string
 	if provisionOption == provision {
 		a.azd.SetArgs([]string{followUpCmd})
 		err = a.azd.ExecuteContext(ctx)
@@ -300,21 +301,25 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 
-		return &actions.ActionResult{
-			Message: &actions.ResultMessage{
-				FollowUp: "Run '" +
+		followUpMessage = "Run '" +
 					color.BlueString(fmt.Sprintf("azd show %s", resourceToAdd.Name)) +
-					"' to show details about the newly provisioned resource.",
-			},
-		}, nil
+			"' to show details about the newly provisioned resource."
+	} else {
+		followUpMessage = fmt.Sprintf(
+			"Run '%s' to %s these changes anytime later.",
+			color.BlueString("azd %s", followUpCmd),
+			verb)
+	}
+
+	if strings.EqualFold(selected.Namespace, "key-vault") {
+		followUpMessage += fmt.Sprintf(
+			"\nRun '%s' to add a secret to the key vault.",
+			color.BlueString("azd env set-secret"))
 	}
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			FollowUp: fmt.Sprintf(
-				"Run '%s' to %s these changes anytime later.",
-				color.BlueString("azd %s", followUpCmd),
-				verb),
+			FollowUp: followUpMessage,
 		},
 	}, err
 }

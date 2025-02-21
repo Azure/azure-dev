@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strings"
 
+	"maps"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -156,6 +158,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
+	// First encode and add the main resource
 	resourceNode, err := yamlnode.Encode(resourceToAdd)
 	if err != nil {
 		panic(fmt.Sprintf("encoding yaml node: %v", err))
@@ -166,6 +169,36 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("setting resource: %w", err)
 	}
 
+	// Resolve and add any dependent resources
+	allResources := make(map[string]*project.ResourceConfig)
+	maps.Copy(allResources, prjConfig.Resources)
+	allResources[resourceToAdd.Name] = resourceToAdd
+	allResourcesWithDeps := project.WithResolvedDependencies(allResources)
+	requiredByMessages := make([]string, 0)
+
+	for name, res := range allResourcesWithDeps {
+		// Skip if it's the main resource we already added or if it already exists in project config
+		if name == resourceToAdd.Name || prjConfig.Resources[name] != nil {
+			continue
+		}
+
+		depNode, err := yamlnode.Encode(res)
+		if err != nil {
+			panic(fmt.Sprintf("encoding dependent resource yaml node: %v", err))
+		}
+
+		err = yamlnode.Set(&doc, fmt.Sprintf("resources?.%s", name), depNode)
+		if err != nil {
+			return nil, fmt.Errorf("setting dependent resource: %w", err)
+		}
+
+		requiredByMessages = append(requiredByMessages,
+			fmt.Sprintf("(%s is required by %s)",
+				color.BlueString(name),
+				color.BlueString(resourceToAdd.Name)))
+	}
+
+	dependentResources := project.GetRequiredDependencies(resourceToAdd)
 	for _, svc := range usedBy {
 		err = yamlnode.Append(&doc, fmt.Sprintf("resources.%s.uses[]?", svc), &yaml.Node{
 			Kind:  yaml.ScalarNode,
@@ -173,6 +206,17 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		})
 		if err != nil {
 			return nil, fmt.Errorf("appending resource: %w", err)
+		}
+
+		// Implicitly add dependent resources to 'uses'
+		for _, dep := range dependentResources {
+			err = yamlnode.Append(&doc, fmt.Sprintf("resources.%s.uses[]?", svc), &yaml.Node{
+				Kind:  yaml.ScalarNode,
+				Value: dep.Name,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("appending dependent resource %s: %w", dep.Name, err)
+			}
 		}
 	}
 
@@ -193,6 +237,12 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		log.Printf("add-diff: preview failed: %v", diffErr)
 	} else {
 		a.console.Message(ctx, diffString)
+		if len(requiredByMessages) > 0 {
+			for _, msg := range requiredByMessages {
+				a.console.Message(ctx, msg)
+			}
+			a.console.Message(ctx, "")
+		}
 	}
 
 	confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
@@ -302,7 +352,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		followUpMessage = "Run '" +
-					color.BlueString(fmt.Sprintf("azd show %s", resourceToAdd.Name)) +
+			color.BlueString(fmt.Sprintf("azd show %s", resourceToAdd.Name)) +
 			"' to show details about the newly provisioned resource."
 	} else {
 		followUpMessage = fmt.Sprintf(

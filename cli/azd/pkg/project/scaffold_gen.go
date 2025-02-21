@@ -135,7 +135,9 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	// backends -> frontends
 	backendMapping := map[string]string{}
 
-	for _, res := range projectConfig.Resources {
+	resourcesWithDeps := WithResolvedDependencies(projectConfig.Resources)
+	resourcesWithDeps = projectConfig.Resources
+	for _, res := range resourcesWithDeps {
 		switch res.Type {
 		case ResourceTypeDbRedis:
 			infraSpec.DbRedis = &scaffold.DatabaseRedis{}
@@ -388,4 +390,42 @@ func genBicepParamsFromEnvSubst(
 	}
 
 	return result
+}
+
+// GetRequiredDependencies returns the required dependent resources for a given resource type.
+// For example, Key Vault is considered a dependency of MongoDB and Redis since we store their
+// access keys and connection strings in the project KV.
+func GetRequiredDependencies(resource *ResourceConfig) []*ResourceConfig {
+	switch resource.Type {
+	case ResourceTypeDbMongo, ResourceTypeDbRedis:
+		return []*ResourceConfig{{Name: "key-vault", Type: ResourceTypeKeyVault}}
+	default:
+		return nil
+	}
+}
+
+// WithResolvedDependencies returns a map of resource configs with all dependencies resolved.
+func WithResolvedDependencies(resources map[string]*ResourceConfig) map[string]*ResourceConfig {
+	allResources := make(map[string]*ResourceConfig)
+	seen := make(map[ResourceType]struct{})
+
+	// Add all existing resources to result
+	for name, res := range resources {
+		allResources[name] = res
+		seen[res.Type] = struct{}{}
+	}
+
+	// Then add dependent resources if they don't already exist
+	for _, res := range resources {
+		deps := GetRequiredDependencies(res)
+		for _, dep := range deps {
+			// Only add if we haven't seen this resource type yet
+			if _, exists := seen[dep.Type]; !exists {
+				allResources[dep.Name] = dep
+				seen[dep.Type] = struct{}{}
+			}
+		}
+	}
+
+	return allResources
 }

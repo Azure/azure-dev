@@ -30,8 +30,7 @@ import (
 )
 
 const (
-	registryCacheFilePath = "registry.cache"
-	extensionRegistryUrl  = "https://aka.ms/azd/extensions/registry"
+	extensionRegistryUrl = "https://aka.ms/azd/extensions/registry"
 )
 
 var (
@@ -54,6 +53,7 @@ type extensionFilterPredicate func(extension *ExtensionMetadata) bool
 type Manager struct {
 	sourceManager *SourceManager
 	sources       []Source
+	installed     map[string]*Extension
 
 	configManager config.UserConfigManager
 	userConfig    config.Config
@@ -87,16 +87,22 @@ func NewManager(
 func (m *Manager) ListInstalled() (map[string]*Extension, error) {
 	var extensions map[string]*Extension
 
+	if m.installed != nil {
+		return m.installed, nil
+	}
+
 	ok, err := m.userConfig.GetSection(installedConfigKey, &extensions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extensions section: %w", err)
 	}
 
 	if !ok || extensions == nil {
-		return map[string]*Extension{}, nil
+		extensions = map[string]*Extension{}
 	}
 
-	return extensions, nil
+	m.installed = extensions
+
+	return m.installed, nil
 }
 
 type GetInstalledOptions struct {
@@ -335,11 +341,6 @@ func (m *Manager) Install(ctx context.Context, id string, versionConstraint stri
 			return nil, fmt.Errorf("checksum validation failed: %w", err)
 		}
 
-		userHomeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get user's home directory: %w", err)
-		}
-
 		userConfigDir, err := config.GetUserConfigDir()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get user config directory: %w", err)
@@ -378,7 +379,7 @@ func (m *Manager) Install(ctx context.Context, id string, versionConstraint stri
 
 		targetPath := filepath.Join(targetDir, entryPoint)
 
-		relativeExtensionPath, err = filepath.Rel(userHomeDir, targetPath)
+		relativeExtensionPath, err = filepath.Rel(userConfigDir, targetPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get relative path: %w", err)
 		}

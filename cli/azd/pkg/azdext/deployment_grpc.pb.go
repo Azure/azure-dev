@@ -32,6 +32,7 @@ const (
 type DeploymentServiceClient interface {
 	// Gets the current environment.
 	GetDeployment(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*GetDeploymentResponse, error)
+	// GetDeploymentContext retrieves the current deployment context.
 	GetDeploymentContext(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*GetDeploymentContextResponse, error)
 }
 
@@ -69,6 +70,7 @@ func (c *deploymentServiceClient) GetDeploymentContext(ctx context.Context, in *
 type DeploymentServiceServer interface {
 	// Gets the current environment.
 	GetDeployment(context.Context, *EmptyRequest) (*GetDeploymentResponse, error)
+	// GetDeploymentContext retrieves the current deployment context.
 	GetDeploymentContext(context.Context, *EmptyRequest) (*GetDeploymentContextResponse, error)
 	mustEmbedUnimplementedDeploymentServiceServer()
 }

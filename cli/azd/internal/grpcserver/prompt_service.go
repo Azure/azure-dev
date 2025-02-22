@@ -96,11 +96,11 @@ func (s *promptService) PromptSubscription(
 	}
 
 	subscription := &azdext.Subscription{
-		Id:                 selectedSubscription.Id,
-		Name:               selectedSubscription.Name,
-		TenantId:           selectedSubscription.TenantId,
-		UserAccessTenantId: selectedSubscription.UserAccessTenantId,
-		IsDefault:          selectedSubscription.IsDefault,
+		Id:           selectedSubscription.Id,
+		Name:         selectedSubscription.Name,
+		TenantId:     selectedSubscription.TenantId,
+		UserTenantId: selectedSubscription.UserAccessTenantId,
+		IsDefault:    selectedSubscription.IsDefault,
 	}
 
 	return &azdext.PromptSubscriptionResponse{

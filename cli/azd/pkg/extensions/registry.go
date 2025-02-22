@@ -17,6 +17,13 @@ type Registry struct {
 	Extensions []*ExtensionMetadata `json:"extensions"`
 }
 
+type CapabilityType string
+
+const (
+	CustomCommandCapability   CapabilityType = "custom-commands"
+	LifecycleEventsCapability CapabilityType = "lifecycle-events"
+)
+
 // Extension represents an extension in the registry
 type ExtensionMetadata struct {
 	// Id is a unique identifier for the extension
@@ -35,6 +42,8 @@ type ExtensionMetadata struct {
 	Tags []string `json:"tags,omitempty"`
 	// Platforms is a map of platform specific metadata required for extensions
 	Platforms map[string]map[string]any `json:"platforms,omitempty"`
+	// Capabilities is a list of capabilities that the extension provides
+	Capabilities []CapabilityType `json:"capabilities,omitempty"`
 }
 
 // ExtensionDependency represents a dependency of an extension

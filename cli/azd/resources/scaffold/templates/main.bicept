@@ -9,12 +9,33 @@ param environmentName string
 @minLength(1)
 @description('Primary location for all resources')
 param location string
-{{range .Parameters}}
+
+{{- if .AiFoundryProject }}
+{{- range .AiFoundryProject.Models }}
+{{ if gt (len .Location.Allowed) 0 }}
+@allowed([
+{{- range $i, $location := .Location.Allowed }}
+  '{{ $location }}'
+{{- end }}
+])
+{{- end }}
+@metadata({azd: {
+  type: 'location'
+  usageName: '{{ .Sku.UsageName }}'
+{{- if .Location.Default }}
+  default: '{{.Location.Default}}'
+{{- end }}  
+  }
+})
+param {{bicepName .Name}}{{bicepName .Version}}Location string
+{{- end }}
+{{- end }}
+{{ range .Parameters}}
 {{- if .Secret}}
 @secure()
-{{- end}}
+{{- end }}
 param {{.Name}} {{.Type}}
-{{- end}}
+{{- end }}
 
 @description('Id of the user or app to assign application roles')
 param principalId string
@@ -48,7 +69,23 @@ module resources 'resources.bicep' = {
   }
 }
 
+{{- if .AiFoundryProject }}
+
+module aiModelsDeploy 'ai-models.bicep' = {
+  scope: rg
+  name: '{{.AiFoundryProject.Name}}'
+  params: {
+{{- range .AiFoundryProject.Models }}
+    {{bicepName .Name}}{{bicepName .Version}}Location:  {{bicepName .Name}}{{bicepName .Version}}Location
+{{- end }}    
+    tags: tags
+    location: location
+  }
+}
+{{- end}}
+
 {{- if .Services}}
+
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output AZURE_KEY_VAULT_ENDPOINT string = resources.outputs.AZURE_KEY_VAULT_ENDPOINT
 output AZURE_KEY_VAULT_NAME string = resources.outputs.AZURE_KEY_VAULT_NAME

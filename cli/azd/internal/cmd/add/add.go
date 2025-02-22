@@ -52,6 +52,7 @@ type AddAction struct {
 	armClientOptions *arm.ClientOptions
 	prompter         prompt.Prompter
 	console          input.Console
+	accountManager   account.Manager
 }
 
 var composeFeature = alpha.MustFeatureKey("compose")
@@ -119,7 +120,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	if _, exists := prjConfig.Resources[resourceToAdd.Name]; exists {
+	if r, exists := prjConfig.Resources[resourceToAdd.Name]; exists && r.Type != project.ResourceTypeAiModel {
 		log.Panicf("unhandled validation: resource with name %s already exists", resourceToAdd.Name)
 	}
 
@@ -367,6 +368,7 @@ func NewAddAction(
 	rm infra.ResourceManager,
 	armClientOptions *arm.ClientOptions,
 	azd workflow.AzdCommandRunner,
+	accountManager account.Manager,
 	console input.Console) actions.Action {
 	return &AddAction{
 		azdCtx:           azdCtx,
@@ -380,5 +382,6 @@ func NewAddAction(
 		armClientOptions: armClientOptions,
 		creds:            creds,
 		azd:              azd,
+		accountManager:   accountManager,
 	}
 }

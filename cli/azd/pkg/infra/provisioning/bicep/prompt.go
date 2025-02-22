@@ -75,6 +75,51 @@ func autoGenerate(parameter string, azdMetadata azure.AzdMetadata) (string, erro
 	return genValue, nil
 }
 
+// func (a *BicepProvider) quotaForLocation(ctx context.Context, subId, location string) (ModelResponse, error) {
+// 	cred, err := a.creds.CredentialForSubscription(ctx, a.env.GetSubscriptionId())
+// 	if err != nil {
+// 		return ModelResponse{}, fmt.Errorf("getting credentials: %w", err)
+// 	}
+// 	pipeline, err := armruntime.NewPipeline(
+// 		"cognitive-list", "1.0.0", cred, runtime.PipelineOptions{}, a.armClientOptions)
+// 	if err != nil {
+// 		return ModelResponse{}, fmt.Errorf("failed creating HTTP pipeline: %w", err)
+// 	}
+
+// 	locationRequest := fmt.Sprintf(
+// 		//nolint:lll
+// 		"https://management.azure.com/subscriptions/%s/providers/Microsoft.CognitiveServices/locations/%s/usages?api-version=2024-10-01",
+// 		subId,
+// 		location,
+// 	)
+// 	req, err := runtime.NewRequest(ctx, http.MethodGet, locationRequest)
+// 	if err != nil {
+// 		return ModelResponse{}, fmt.Errorf("creating request: %w", err)
+// 	}
+
+// 	resp, err := pipeline.Do(req)
+// 	if err != nil {
+// 		return ModelResponse{}, fmt.Errorf("making request: %w", err)
+// 	}
+
+// 	if resp.StatusCode != http.StatusOK {
+// 		return ModelResponse{}, runtime.NewResponseError(resp)
+// 	}
+
+// 	body, err := runtime.Payload(resp)
+// 	if err != nil {
+// 		return ModelResponse{}, fmt.Errorf("reading response: %w", err)
+// 	}
+
+// 	// TODO: Need to handle nextLink; either switching to Azure SDK for go and a pager, or manually using the nextLink
+// 	var response ModelResponse
+// 	err = json.Unmarshal(body, &response)
+// 	if err != nil {
+// 		return ModelResponse{}, fmt.Errorf("decoding response: %w", err)
+// 	}
+// 	return response, nil
+// }
+
 func (p *BicepProvider) promptForParameter(
 	ctx context.Context,
 	key string,
@@ -96,8 +141,27 @@ func (p *BicepProvider) promptForParameter(
 		azdMetadata.Type != nil &&
 		*azdMetadata.Type == azure.AzdMetadataTypeLocation {
 
+		// location can be combined with allowedValues and with usageName metadata
+		// allowedValues == nil => all locations are allowed
+		// allowedValues != nil => only the locations in the allowedValues are allowed
+		// usageName != nil => the usageName is validated for quota for each allowed location (this is for Ai models),
+		//                     reducing the allowed locations to only those that have quota available
+		// usageName == nil => No quota validation is done
+		// NOTE:
+		//    Checking quota for all locations is not currently supported (combining allowedValues==nil and usageName!= nil)
+		var allowedLocations []string
+		if param.AllowedValues != nil {
+			allowedLocations = make([]string, 0, len(*param.AllowedValues))
+			for i, option := range *param.AllowedValues {
+				allowedLocations[i] = option.(string)
+			}
+			if azdMetadata.UsageName != nil {
+			}
+
+		}
+
 		location, err := p.prompters.PromptLocation(ctx, p.env.GetSubscriptionId(), msg, func(loc account.Location) bool {
-			return locationParameterFilterImpl(param, loc)
+			return locationParameterFilterImpl(allowedLocations, loc)
 		}, defaultPromptValue(param))
 		if err != nil {
 			return nil, err

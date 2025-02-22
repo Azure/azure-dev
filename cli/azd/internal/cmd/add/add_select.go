@@ -31,10 +31,33 @@ func (a *AddAction) selectMenu() []Menu {
 	return []Menu{
 		{Namespace: "db", Label: "Database", SelectResource: selectDatabase},
 		{Namespace: "host", Label: "Host service"},
-		{Namespace: "ai.openai", Label: "Azure OpenAI", SelectResource: a.selectOpenAi},
+		{Namespace: "ai", Label: "AI Models", SelectResource: a.selectAiType},
 		{Namespace: "messaging", Label: "Messaging", SelectResource: selectMessaging},
 		{Namespace: "storage", Label: "Storage account", SelectResource: selectStorage},
 	}
+}
+
+func (a *AddAction) selectAiType(
+	console input.Console, ctx context.Context, p PromptOptions) (*project.ResourceConfig, error) {
+	openAiOption := "Azure OpenAI models"
+	otherAiModels := "Other AI models"
+	options := []string{
+		openAiOption,
+		otherAiModels,
+	}
+	aiOptionIndex, err := console.Select(ctx, input.ConsoleOptions{
+		Message:      "Which type of AI model?",
+		DefaultValue: openAiOption,
+		Options:      options,
+	})
+	if err != nil {
+		return nil, err
+	}
+	selectedOption := options[aiOptionIndex]
+	if selectedOption == openAiOption {
+		return a.selectOpenAi(console, ctx, p)
+	}
+	return a.selectAiModel(console, ctx, p)
 }
 
 func selectDatabase(

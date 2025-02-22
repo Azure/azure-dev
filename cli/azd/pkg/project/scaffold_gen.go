@@ -208,6 +208,40 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			infraSpec.StorageAccount = &scaffold.StorageAccount{
 				Containers: props.Containers,
 			}
+		case ResourceTypeAiModel:
+			props, castOk := res.Props.(AiFoundryModelProps)
+			if !castOk {
+				return nil, fmt.Errorf("parsing resource %s of type %s", res.Name, res.Type)
+			}
+			foundryName := res.Name
+			var foundryModels []scaffold.AiFoundryModel
+			foundrySpec := scaffold.AiFoundrySpec{
+				Name: foundryName,
+			}
+			for _, model := range props.Models {
+				var location *scaffold.AiFoundryLocationModel
+				if model.Location != nil {
+					location = &scaffold.AiFoundryLocationModel{
+						Default: model.Location.Default,
+						Allowed: model.Location.Allowed,
+					}
+				}
+				foundryModels = append(foundryModels, scaffold.AiFoundryModel{
+					AIModelModel: scaffold.AIModelModel{
+						Name:    model.Name,
+						Version: model.Version,
+					},
+					Location: location,
+					Format:   model.Format,
+					Sku: scaffold.AiFoundryModelSku{
+						Name:      model.Sku.Name,
+						UsageName: model.Sku.UsageName,
+						Capacity:  model.Sku.Capacity,
+					},
+				})
+			}
+			foundrySpec.Models = foundryModels
+			infraSpec.AiFoundryProject = &foundrySpec
 		}
 	}
 

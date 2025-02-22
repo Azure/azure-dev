@@ -1,0 +1,229 @@
+{{define "ai-models.bicep" -}}
+{{- if .AiFoundryProject }}
+{{- range .AiFoundryProject.Models }}
+param {{bicepName .Name}}{{bicepName .Version}}Location string
+{{- end }}
+{{- end }}
+
+@description('Tags that will be applied to all resources')
+param tags object = {}
+
+@description('Main location for the resources')
+param location string
+
+var abbrs = loadJsonContent('./abbreviations.json')
+var resourceToken = uniqueString(subscription().id, resourceGroup().id, location)
+
+resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
+  name: '${abbrs.insightsComponents}hubd-applicationInsightsName${resourceToken}'
+  location: location
+  tags: tags
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    DisableIpMasking: false
+    DisableLocalAuth: false
+    Flow_Type: 'Bluefield'
+    ForceCustomerStorageForProfiler: false
+    ImmediatePurgeDataOn30Days: true
+    IngestionMode: 'ApplicationInsights'
+    publicNetworkAccessForIngestion: 'Enabled'
+    publicNetworkAccessForQuery: 'Disabled'
+    Request_Source: 'rest'
+  }
+}
+
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+  name: '${abbrs.containerRegistryRegistries}hubdcontainerregistryname${resourceToken}'
+  location: location
+  tags: tags
+  sku: {
+    name: 'Premium'
+  }
+  properties: {
+    adminUserEnabled: false
+    dataEndpointEnabled: false
+    networkRuleBypassOptions: 'AzureServices'
+    networkRuleSet: {
+      defaultAction: 'Deny'
+    }
+    policies: {
+      quarantinePolicy: {
+        status: 'enabled'
+      }
+      trustPolicy: {
+        status: 'disabled'
+        type: 'Notary'
+      }
+    }
+    publicNetworkAccess: 'Disabled'
+    zoneRedundancy: 'Disabled'
+  }
+}
+
+resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+  name: '${abbrs.keyVaultVaults}hub${resourceToken}'
+  location: location
+  tags: tags
+  properties: {
+    createMode: 'default'
+    enabledForDeployment: false
+    enabledForDiskEncryption: false
+    enabledForTemplateDeployment: false
+    enableSoftDelete: true
+    enableRbacAuthorization: true
+    enablePurgeProtection: true
+    networkAcls: {
+      bypass: 'AzureServices'
+      defaultAction: 'Deny'
+    }
+    sku: {
+      family: 'A'
+      name: 'standard'
+    }
+    softDeleteRetentionInDays: 7
+    tenantId: subscription().tenantId
+  }
+}
+
+resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  name: '${abbrs.storageStorageAccounts}${resourceToken}'
+  location: location
+  tags: tags
+  kind: 'StorageV2'
+  sku: { name: 'Standard_LRS' }
+  properties: {
+    accessTier: 'Hot'
+    allowBlobPublicAccess: false
+    allowCrossTenantReplication: false
+    allowSharedKeyAccess: false
+    encryption: {
+      keySource: 'Microsoft.Storage'
+      requireInfrastructureEncryption: false
+      services: {
+        blob: {
+          enabled: true
+          keyType: 'Account'
+        }
+        file: {
+          enabled: true
+          keyType: 'Account'
+        }
+        queue: {
+          enabled: true
+          keyType: 'Service'
+        }
+        table: {
+          enabled: true
+          keyType: 'Service'
+        }
+      }
+    }
+    isHnsEnabled: false
+    isNfsV3Enabled: false
+    keyPolicy: {
+      keyExpirationPeriodInDays: 7
+    }
+    largeFileSharesState: 'Disabled'
+    minimumTlsVersion: 'TLS1_2'
+    networkAcls: {
+      bypass: 'AzureServices'
+      defaultAction: 'Deny'
+    }
+    supportsHttpsTrafficOnly: true
+  }
+}
+
+{{- if .AiFoundryProject }}
+{{- range .AiFoundryProject.Models }}
+resource {{bicepName .Name}}{{bicepName .Version}}Deploy 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
+  name: '{{bicepName .Name}}{{bicepName .Version}}${resourceToken}'
+  location: {{bicepName .Name}}{{bicepName .Version}}Location
+  tags: tags
+  sku: {
+    name: 'S0'
+  }
+  kind: 'AIServices'
+  properties: {
+    apiProperties: {
+      statisticsEnabled: false
+    }
+  }
+  
+  resource deployment 'deployments' = {
+    name: '{{bicepName .Name}}{{bicepName .Version}}deployment'
+    properties: {
+      model: {
+        name: '{{ .Name }}'
+        format: '{{ .Format }}'
+        version: '{{ .Version }}'
+      }
+    }
+    sku: {
+      name: '{{ .Sku.Name }}'
+      capacity: {{ .Sku.Capacity }}
+    }
+  }
+}
+{{- end }}
+{{- end }}
+
+resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
+  name: 'thefoundryhub${resourceToken}'
+  location: location
+  tags: tags
+  kind: 'Hub'
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    friendlyName: 'displayName'
+    storageAccount: storage.id
+    keyVault: keyVault.id
+    applicationInsights: applicationInsights.id
+    containerRegistry: containerRegistry.id
+  }
+
+{{- if .AiFoundryProject }}
+{{- range .AiFoundryProject.Models }}
+  resource {{bicepName .Name}}{{bicepName .Version}}connection 'connections' = {
+    name: '{{bicepName .Name}}{{bicepName .Version}}-connection'
+    properties: {
+      category: 'AIServices'
+      target: {{bicepName .Name}}{{bicepName .Version}}Deploy.properties.endpoint
+      authType: 'ApiKey'
+      isSharedToAll: true
+      credentials: {
+        key: {{bicepName .Name}}{{bicepName .Version}}Deploy.listKeys().key1
+      }
+      metadata: {
+        ApiType: 'Azure'
+        ResourceId: {{bicepName .Name}}{{bicepName .Version}}Deploy.id
+      }
+    }
+  }
+{{- end }}
+{{- end }}
+}
+
+resource project 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
+  name: 'thefoundryproject${resourceToken}'
+  location: location
+  tags: tags
+  sku: {
+    name: 'Basic'
+    tier: 'Basic'
+  }
+  kind: 'Project'
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    friendlyName: 'ghvicname'
+    hbiWorkspace: false
+    v1LegacyMode: false
+    publicNetworkAccess: 'Enabled'
+    hubResourceId: hub.id
+  }
+}
+{{ end}}

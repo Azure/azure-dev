@@ -147,3 +147,4 @@ overrides:
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"
+  - "internal/cmd/add/add_configure_locations.go"

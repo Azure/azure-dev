@@ -26,6 +26,9 @@ type InfraSpec struct {
 
 	// ai models
 	AIModels []AIModel
+
+	// ai foundry models
+	AiFoundryProject *AiFoundrySpec
 }
 
 type Parameter struct {
@@ -51,6 +54,30 @@ type DatabaseRedis struct {
 type AIModel struct {
 	Name  string
 	Model AIModelModel
+}
+
+// AIModel represents a deployed, ready to use AI model.
+type AiFoundrySpec struct {
+	Name   string
+	Models []AiFoundryModel
+}
+
+type AiFoundryModel struct {
+	AIModelModel
+	Location *AiFoundryLocationModel `yaml:"location,omitempty"`
+	Format   string                  `yaml:"format,omitempty"`
+	Sku      AiFoundryModelSku       `yaml:"sku,omitempty"`
+}
+
+type AiFoundryModelSku struct {
+	Name      string `yaml:"name,omitempty"`
+	UsageName string `yaml:"usageName,omitempty"`
+	Capacity  int    `yaml:"capacity,omitempty"`
+}
+
+type AiFoundryLocationModel struct {
+	Default *string
+	Allowed []string
 }
 
 // AIModelModel represents a model that backs the AIModel.

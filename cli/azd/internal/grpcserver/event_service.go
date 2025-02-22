@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package grpcserver
 
 import (
@@ -12,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"google.golang.org/grpc"
 )
@@ -22,24 +26,23 @@ type eventService struct {
 	extensionManager *extensions.Manager
 	projectConfig    *project.ProjectConfig
 	env              *environment.Environment
+	console          input.Console
 
-	projectEvents map[string]chan *azdext.ProjectHandlerStatus
-	serviceEvents map[string]chan *azdext.ServiceHandlerStatus
-	projectMutex  sync.Mutex
-	serviceMutex  sync.Mutex
+	projectEvents sync.Map // key: string, value: chan *azdext.ProjectHandlerStatus
+	serviceEvents sync.Map // key: string, value: chan *azdext.ServiceHandlerStatus
 }
 
 func NewEventService(
 	extensionManager *extensions.Manager,
 	projectConfig *project.ProjectConfig,
 	env *environment.Environment,
+	console input.Console,
 ) azdext.EventServiceServer {
 	return &eventService{
 		extensionManager: extensionManager,
 		projectConfig:    projectConfig,
 		env:              env,
-		projectEvents:    make(map[string]chan *azdext.ProjectHandlerStatus),
-		serviceEvents:    make(map[string]chan *azdext.ServiceHandlerStatus),
+		console:          console,
 	}
 }
 
@@ -75,7 +78,6 @@ func (s *eventService) EventStream(stream grpc.BidiStreamingServer[azdext.EventM
 				log.Println("Stream closed by server")
 				return nil
 			}
-
 			if err != nil {
 				return err
 			}
@@ -93,188 +95,204 @@ func (s *eventService) EventStream(stream grpc.BidiStreamingServer[azdext.EventM
 				}
 			case *azdext.EventMessage_ProjectHandlerStatus:
 				statusMsg := msg.GetProjectHandlerStatus()
-				s.handleProjectHandlerStatus(extension, statusMsg)
+				s.handleProjectHandlerStatus(statusMsg)
 			case *azdext.EventMessage_ServiceHandlerStatus:
 				statusMsg := msg.GetServiceHandlerStatus()
-				s.handleServiceHandlerStatus(extension, statusMsg)
+				s.handleServiceHandlerStatus(statusMsg)
 			}
 		}
 	}
 }
 
-// handleSubscribeProjectEvent processes subscribe events.
+// ----- Project Event Handlers -----
+
 func (s *eventService) handleSubscribeProjectEvent(
 	extension *extensions.Extension,
 	subscribeMsg *azdext.SubscribeProjectEvent,
 	stream grpc.BidiStreamingServer[azdext.EventMessage, azdext.EventMessage],
 ) error {
-	for _, eventName := range subscribeMsg.EventNames {
+	for i := 0; i < len(subscribeMsg.EventNames); i++ {
+		eventName := subscribeMsg.EventNames[i]
+
 		// Create a channel for this event.
-		s.projectMutex.Lock()
-		s.projectEvents[eventName] = make(chan *azdext.ProjectHandlerStatus, 1)
-		s.projectMutex.Unlock()
+		s.projectEvents.Store(eventName, make(chan *azdext.ProjectHandlerStatus, 1))
 
 		evt := ext.Event(eventName)
-		err := s.projectConfig.AddHandler(
-			evt,
-			func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
-				// Send invoke message to the extension.
-				err := stream.Send(&azdext.EventMessage{
-					MessageType: &azdext.EventMessage_InvokeProjectHandler{
-						InvokeProjectHandler: &azdext.InvokeProjectHandler{
-							EventName: eventName,
-							Project:   s.createProjectConfig(args.Project),
-						},
-					},
-				})
-				if err != nil {
-					return fmt.Errorf("failed to send invoke project event message: %w", err)
-				}
-
-				// Wait for a status message using select to honor context cancellation.
-				s.projectMutex.Lock()
-				ch, ok := s.projectEvents[eventName]
-				s.projectMutex.Unlock()
-				if !ok {
-					return fmt.Errorf("no status channel for event: %s", eventName)
-				}
-
-				var projectHandlerResponse *azdext.ProjectHandlerStatus
-				select {
-				case projectHandlerResponse = <-ch:
-					// Received status from channel.
-				case <-ctx.Done():
-					return ctx.Err()
-				}
-
-				// Clean up the channel.
-				s.projectMutex.Lock()
-				delete(s.projectEvents, eventName)
-				s.projectMutex.Unlock()
-
-				if projectHandlerResponse.Status == "failed" {
-					return fmt.Errorf(
-						"extension %s project hook %s failed: %s",
-						extension.Id,
-						eventName,
-						projectHandlerResponse.Message,
-					)
-				}
-				return nil
-			})
-		if err != nil {
+		handler := s.createProjectEventHandler(stream, extension, eventName)
+		if err := s.projectConfig.AddHandler(evt, handler); err != nil {
 			return fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 		}
+	}
+	return nil
+}
+
+func (s *eventService) createProjectEventHandler(
+	stream grpc.BidiStreamingServer[azdext.EventMessage, azdext.EventMessage],
+	extension *extensions.Extension,
+	eventName string,
+) ext.EventHandlerFn[project.ProjectLifecycleEventArgs] {
+	return func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
+		previewTitle := fmt.Sprintf("%s (%s)", extension.DisplayName, eventName)
+		defer s.syncExtensionOutput(ctx, extension, previewTitle)()
+
+		// Send the invoke message.
+		if err := s.sendProjectInvokeMessage(stream, eventName, args.Project); err != nil {
+			return err
+		}
+
+		// Wait for status response.
+		return s.waitForProjectStatus(ctx, eventName, extension)
+	}
+}
+
+func (s *eventService) sendProjectInvokeMessage(
+	stream grpc.BidiStreamingServer[azdext.EventMessage, azdext.EventMessage],
+	eventName string,
+	proj *project.ProjectConfig,
+) error {
+	return stream.Send(&azdext.EventMessage{
+		MessageType: &azdext.EventMessage_InvokeProjectHandler{
+			InvokeProjectHandler: &azdext.InvokeProjectHandler{
+				EventName: eventName,
+				Project:   s.createProjectConfig(proj),
+			},
+		},
+	})
+}
+
+func (s *eventService) waitForProjectStatus(ctx context.Context, eventName string, extension *extensions.Extension) error {
+	val, ok := s.projectEvents.Load(eventName)
+	if !ok {
+		return fmt.Errorf("no status channel for event: %s", eventName)
+	}
+	ch := val.(chan *azdext.ProjectHandlerStatus)
+
+	var status *azdext.ProjectHandlerStatus
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case status = <-ch:
+		// Clean up after receiving status.
+		s.projectEvents.Delete(eventName)
+	}
+
+	if status.Status == "failed" {
+		return fmt.Errorf("extension %s project hook %s failed: %s", extension.Id, eventName, status.Message)
 	}
 
 	return nil
 }
 
-// handleSubscribeServiceEvent processes subscribe service events.
+// ----- Service Event Handlers -----
+
 func (s *eventService) handleSubscribeServiceEvent(
 	extension *extensions.Extension,
 	subscribeMsg *azdext.SubscribeServiceEvent,
 	stream grpc.BidiStreamingServer[azdext.EventMessage, azdext.EventMessage],
 ) error {
-	for _, eventName := range subscribeMsg.EventNames {
-		// Create a channel for this event.
-		s.serviceMutex.Lock()
-		s.serviceEvents[eventName] = make(chan *azdext.ServiceHandlerStatus, 1)
-		s.serviceMutex.Unlock()
-
+	for i := 0; i < len(subscribeMsg.EventNames); i++ {
+		eventName := subscribeMsg.EventNames[i]
 		evt := ext.Event(eventName)
-
-		for _, serviceConfig := range s.projectConfig.Services {
-			// Extension can register filters by service language and/or host
+		for serviceName, serviceConfig := range s.projectConfig.Services {
 			if subscribeMsg.Language != "" && string(serviceConfig.Language) != subscribeMsg.Language {
 				continue
 			}
-
 			if subscribeMsg.Host != "" && string(serviceConfig.Host) != subscribeMsg.Host {
 				continue
 			}
 
-			err := serviceConfig.AddHandler(evt, func(ctx context.Context, args project.ServiceLifecycleEventArgs) error {
-				// Send invoke message for service event handler.
-				err := stream.Send(&azdext.EventMessage{
-					MessageType: &azdext.EventMessage_InvokeServiceHandler{
-						InvokeServiceHandler: &azdext.InvokeServiceHandler{
-							EventName: eventName,
-							Project:   s.createProjectConfig(args.Project),
-							Service:   s.createServiceConfig(args.Service),
-						},
-					},
-				})
-				if err != nil {
-					return err
-				}
+			// Create a channel for this event.
+			// fullEventName is used to uniquely identify the event for a specific service.
+			fullEventName := fmt.Sprintf("%s.%s", serviceName, eventName)
+			s.serviceEvents.Store(fullEventName, make(chan *azdext.ServiceHandlerStatus, 1))
 
-				// Wait for a status message using select to honor context cancellation.
-				s.serviceMutex.Lock()
-				ch, ok := s.serviceEvents[eventName]
-				s.serviceMutex.Unlock()
-				if !ok {
-					return fmt.Errorf("no status channel for event: %s", eventName)
-				}
-
-				var serviceHandlerResponse *azdext.ServiceHandlerStatus
-				select {
-				case serviceHandlerResponse = <-ch:
-					// Received status.
-				case <-ctx.Done():
-					return ctx.Err()
-				}
-
-				// Clean up the channel.
-				s.serviceMutex.Lock()
-				delete(s.serviceEvents, eventName)
-				s.serviceMutex.Unlock()
-
-				if serviceHandlerResponse.Status == "failed" {
-					return fmt.Errorf(
-						"extension %s service hook %s failed: %s",
-						extension.Id,
-						eventName,
-						serviceHandlerResponse.Message,
-					)
-				}
-
-				return nil
-			})
-
-			if err != nil {
+			handler := s.createServiceEventHandler(stream, serviceConfig, extension, eventName)
+			if err := serviceConfig.AddHandler(evt, handler); err != nil {
 				return fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 			}
 		}
 	}
-
 	return nil
 }
 
-// handleStatusMessage processes status messages and dispatches them to the appropriate channel.
-func (s *eventService) handleProjectHandlerStatus(
-	_ *extensions.Extension,
-	statusMessage *azdext.ProjectHandlerStatus,
-) {
-	s.projectMutex.Lock()
-	ch, ok := s.projectEvents[statusMessage.EventName]
-	s.projectMutex.Unlock()
+func (s *eventService) createServiceEventHandler(
+	stream grpc.BidiStreamingServer[azdext.EventMessage, azdext.EventMessage],
+	serviceConfig *project.ServiceConfig,
+	extension *extensions.Extension,
+	eventName string,
+) ext.EventHandlerFn[project.ServiceLifecycleEventArgs] {
+	fullEventName := fmt.Sprintf("%s.%s", serviceConfig.Name, eventName)
 
-	if ok {
+	return func(ctx context.Context, args project.ServiceLifecycleEventArgs) error {
+		previewTitle := fmt.Sprintf("%s (%s.%s)", extension.DisplayName, args.Service.Name, eventName)
+		defer s.syncExtensionOutput(ctx, extension, previewTitle)()
+
+		// Send the invoke message.
+		if err := s.sendServiceInvokeMessage(stream, eventName, args.Project, args.Service); err != nil {
+			return err
+		}
+
+		// Wait for status response.
+		return s.waitForServiceStatus(ctx, fullEventName, extension)
+	}
+}
+
+func (s *eventService) sendServiceInvokeMessage(
+	stream grpc.BidiStreamingServer[azdext.EventMessage, azdext.EventMessage],
+	eventName string,
+	proj *project.ProjectConfig,
+	svc *project.ServiceConfig,
+) error {
+	return stream.Send(&azdext.EventMessage{
+		MessageType: &azdext.EventMessage_InvokeServiceHandler{
+			InvokeServiceHandler: &azdext.InvokeServiceHandler{
+				EventName: eventName,
+				Project:   s.createProjectConfig(proj),
+				Service:   s.createServiceConfig(svc),
+			},
+		},
+	})
+}
+
+func (s *eventService) waitForServiceStatus(
+	ctx context.Context,
+	fullEventName string,
+	extension *extensions.Extension,
+) error {
+	val, ok := s.serviceEvents.Load(fullEventName)
+	if !ok {
+		return fmt.Errorf("no status channel for event: %s", fullEventName)
+	}
+	ch := val.(chan *azdext.ServiceHandlerStatus)
+
+	var status *azdext.ServiceHandlerStatus
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case status = <-ch:
+		// Clean up after receiving status.
+		s.serviceEvents.Delete(fullEventName)
+	}
+	if status.Status == "failed" {
+		return fmt.Errorf("extension %s service hook %s failed: %s", extension.Id, fullEventName, status.Message)
+	}
+	return nil
+}
+
+// ----- Dispatch Handlers -----
+
+func (s *eventService) handleProjectHandlerStatus(statusMessage *azdext.ProjectHandlerStatus) {
+	if val, ok := s.projectEvents.Load(statusMessage.EventName); ok {
+		ch := val.(chan *azdext.ProjectHandlerStatus)
 		ch <- statusMessage
 	}
 }
 
-// handleStatusMessage processes status messages and dispatches them to the appropriate channel.
-func (s *eventService) handleServiceHandlerStatus(
-	_ *extensions.Extension,
-	statusMessage *azdext.ServiceHandlerStatus,
-) {
-	s.serviceMutex.Lock()
-	ch, ok := s.serviceEvents[statusMessage.EventName]
-	s.serviceMutex.Unlock()
+func (s *eventService) handleServiceHandlerStatus(statusMessage *azdext.ServiceHandlerStatus) {
+	fullEventName := fmt.Sprintf("%s.%s", statusMessage.ServiceName, statusMessage.EventName)
 
-	if ok {
+	if val, ok := s.serviceEvents.Load(fullEventName); ok {
+		ch := val.(chan *azdext.ServiceHandlerStatus)
 		ch <- statusMessage
 	}
 }
@@ -339,5 +357,31 @@ func (s *eventService) createServiceConfig(svc *project.ServiceConfig) *azdext.S
 		Language:          string(svc.Language),
 		OutputPath:        svc.OutputPath,
 		Image:             image,
+	}
+}
+
+// syncExtensionOutput displays the extension output in the preview experience.
+// defer the returned function to stop the previewer when the function exits.
+func (s *eventService) syncExtensionOutput(
+	ctx context.Context,
+	extension *extensions.Extension,
+	previewTitle string,
+) func() {
+	// Display the extension output in the preview experience
+	previewOptions := &input.ShowPreviewerOptions{
+		Prefix:       "  ",
+		Title:        previewTitle,
+		MaxLineCount: 8,
+	}
+	// This gets the multi-writer used by the extension and adds the preview writer to it.
+	// Any output from stdout on the extension will be shown in the preview window.
+	extOut := extension.StdOut()
+	previewWriter := s.console.ShowPreviewer(ctx, previewOptions)
+	extOut.AddWriter(previewWriter)
+
+	// Stop the previewer when the function exits.
+	return func() {
+		s.console.StopPreviewer(ctx, false)
+		extOut.RemoveWriter(previewWriter)
 	}
 }

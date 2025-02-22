@@ -8,7 +8,6 @@ import (
 	"os"
 
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.foundry/internal/cmd"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 )
 
@@ -16,11 +15,6 @@ func init() {
 	forceColorVal, has := os.LookupEnv("FORCE_COLOR")
 	if has && forceColorVal == "1" {
 		color.NoColor = false
-	}
-
-	if err := azdext.SetupDailyLogger(); err != nil {
-		color.Red("Error setting up daily logger: %w", err)
-		os.Exit(1)
 	}
 }
 

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cmd
 
 import (
@@ -31,8 +34,11 @@ func newListenCommand() *cobra.Command {
 			err = eventManager.AddProjectEventHandler(
 				"preprovision",
 				func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					fmt.Printf("Received preprovision event for project '%s' in extension", args.Project.Name)
-					time.Sleep(5 * time.Second)
+					for i := 1; i <= 20; i++ {
+						fmt.Printf("%d. Doing important work in extension...\n", i)
+						time.Sleep(250 * time.Millisecond)
+					}
+
 					return nil
 				},
 			)
@@ -43,8 +49,11 @@ func newListenCommand() *cobra.Command {
 			err = eventManager.AddServiceEventHandler(
 				"prepackage",
 				func(ctx context.Context, args *azdext.ServiceEventArgs) error {
-					fmt.Printf("Received prepackage event for service '%s' in extension", args.Service.Name)
-					time.Sleep(5 * time.Second)
+					for i := 1; i <= 20; i++ {
+						fmt.Printf("%d. Doing important work in extension...\n", i)
+						time.Sleep(250 * time.Millisecond)
+					}
+
 					return nil
 				},
 				nil,

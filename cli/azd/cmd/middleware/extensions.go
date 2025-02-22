@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package middleware
 
 import (
@@ -66,7 +69,11 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 		return nil, err
 	}
 
-	defer grpcServer.Stop()
+	defer func() {
+		if err := grpcServer.Stop(); err != nil {
+			log.Printf("failed to stop gRPC server: %s\n", err.Error())
+		}
+	}()
 
 	forceColor := !color.NoColor
 
@@ -89,9 +96,9 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 			options := &extensions.InvokeOptions{
 				Args:   []string{"listen"},
 				Env:    allEnv,
-				StdIn:  m.console.Handles().Stdin,
-				StdOut: m.console.Handles().Stdout,
-				StdErr: m.console.Handles().Stderr,
+				StdIn:  extension.StdIn(),
+				StdOut: extension.StdOut(),
+				StdErr: extension.StdErr(),
 			}
 
 			if _, err := m.extensionRunner.Invoke(ctx, extension, options); err != nil {

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azdext
 
 import (
@@ -152,6 +155,33 @@ func (em *EventManager) RemoveServiceEventHandler(eventName string) {
 	delete(em.serviceEvents, eventName)
 }
 
+// New helper to send project handler status.
+func (em *EventManager) sendProjectHandlerStatus(eventName, status, message string) error {
+	return em.stream.Send(&EventMessage{
+		MessageType: &EventMessage_ProjectHandlerStatus{
+			ProjectHandlerStatus: &ProjectHandlerStatus{
+				EventName: eventName,
+				Status:    status,
+				Message:   message,
+			},
+		},
+	})
+}
+
+// New helper to send service handler status.
+func (em *EventManager) sendServiceHandlerStatus(eventName, serviceName, status, message string) error {
+	return em.stream.Send(&EventMessage{
+		MessageType: &EventMessage_ServiceHandlerStatus{
+			ServiceHandlerStatus: &ServiceHandlerStatus{
+				EventName:   eventName,
+				ServiceName: serviceName,
+				Status:      status,
+				Message:     message,
+			},
+		},
+	})
+}
+
 func (em *EventManager) invokeProjectHandler(ctx context.Context, invokeMsg *InvokeProjectHandler) error {
 	handler, exists := em.projectEvents[invokeMsg.EventName]
 	if !exists {
@@ -165,22 +195,16 @@ func (em *EventManager) invokeProjectHandler(ctx context.Context, invokeMsg *Inv
 	status := "completed"
 	message := ""
 
+	// Call the project event handler.
 	err := handler(ctx, args)
 	if err != nil {
 		status = "failed"
 		message = err.Error()
+		log.Printf("invokeProjectHandler error for event %s: %v", invokeMsg.EventName, err)
 	}
 
-	// Send completion status
-	return em.stream.Send(&EventMessage{
-		MessageType: &EventMessage_ProjectHandlerStatus{
-			ProjectHandlerStatus: &ProjectHandlerStatus{
-				EventName: invokeMsg.EventName,
-				Status:    status,
-				Message:   message,
-			},
-		},
-	})
+	// Use helper to send completion status.
+	return em.sendProjectHandlerStatus(invokeMsg.EventName, status, message)
 }
 
 func (em *EventManager) invokeServiceHandler(ctx context.Context, invokeMsg *InvokeServiceHandler) error {
@@ -197,20 +221,14 @@ func (em *EventManager) invokeServiceHandler(ctx context.Context, invokeMsg *Inv
 	status := "completed"
 	message := ""
 
+	// Call the service event handler.
 	err := handler(ctx, args)
 	if err != nil {
 		status = "failed"
 		message = err.Error()
+		log.Printf("invokeServiceHandler error for event %s: %v", invokeMsg.EventName, err)
 	}
 
-	// Send completion status
-	return em.stream.Send(&EventMessage{
-		MessageType: &EventMessage_ServiceHandlerStatus{
-			ServiceHandlerStatus: &ServiceHandlerStatus{
-				EventName: invokeMsg.EventName,
-				Status:    status,
-				Message:   message,
-			},
-		},
-	})
+	// Use helper to send completion status.
+	return em.sendServiceHandlerStatus(invokeMsg.EventName, invokeMsg.Service.Name, status, message)
 }

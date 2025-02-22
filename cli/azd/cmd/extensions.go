@@ -23,21 +23,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// BindExtensions binds the extensions to the root command
-func bindExtensions(
-	serviceLocator ioc.ServiceLocator,
-	root *actions.ActionDescriptor,
-	extensions map[string]*extensions.Extension,
-) error {
-	for _, extension := range extensions {
-		if err := bindExtension(serviceLocator, root, extension); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 // bindExtension binds the extension to the root command
 func bindExtension(
 	serviceLocator ioc.ServiceLocator,

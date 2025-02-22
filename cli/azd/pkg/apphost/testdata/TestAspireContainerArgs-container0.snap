@@ -30,6 +30,7 @@ properties:
         args:
           - arg1
           - https://project.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}
+        command: [entrypoint.sh]
         env:
           - name: AZURE_CLIENT_ID
             value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}

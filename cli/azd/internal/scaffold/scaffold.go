@@ -212,12 +212,21 @@ func executeToFS(targetFS *memfs.FS, tmpl *template.Template, name string, path 
 }
 
 func preExecExpand(spec *InfraSpec) {
-	// postgres requires specific password seeding parameters
+	// postgres and mysql requires specific password seeding parameters
 	if spec.DbPostgres != nil {
 		spec.Parameters = append(spec.Parameters,
 			Parameter{
-				Name:   "databasePassword",
-				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} databasePassword)",
+				Name:   "postgresDatabasePassword",
+				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} postgres-password)",
+				Type:   "string",
+				Secret: true,
+			})
+	}
+	if spec.DbMySql != nil {
+		spec.Parameters = append(spec.Parameters,
+			Parameter{
+				Name:   "mysqlDatabasePassword",
+				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} mysql-password)",
 				Type:   "string",
 				Secret: true,
 			})

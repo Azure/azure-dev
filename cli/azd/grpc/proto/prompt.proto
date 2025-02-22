@@ -7,13 +7,28 @@ option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/gen;azdext";
 import "models.proto";
 
 service PromptService {
+  // PromptSubscription prompts the user to select a subscription.
   rpc PromptSubscription (PromptSubscriptionRequest) returns (PromptSubscriptionResponse);
+
+  // PromptLocation prompts the user to select a location.
   rpc PromptLocation (PromptLocationRequest) returns (PromptLocationResponse);
+
+  // PromptResourceGroup prompts the user to select a resource group.
   rpc PromptResourceGroup (PromptResourceGroupRequest) returns (PromptResourceGroupResponse);
+
+  // Confirm prompts the user to confirm an action.
   rpc Confirm(ConfirmRequest) returns (ConfirmResponse);
+
+  // Prompt prompts the user for text input.
   rpc Prompt(PromptRequest) returns (PromptResponse);
+
+  // Select prompts the user to select an option from a list.
   rpc Select(SelectRequest) returns (SelectResponse);
+
+  // PromptSubscriptionResource prompts the user to select a resource from a subscription.
   rpc PromptSubscriptionResource(PromptSubscriptionResourceRequest) returns (PromptSubscriptionResourceResponse);
+
+  // PromptResourceGroupResource prompts the user to select a resource from a resource group.
   rpc PromptResourceGroupResource(PromptResourceGroupResourceRequest) returns (PromptResourceGroupResourceResponse);
 }
 

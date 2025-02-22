@@ -144,6 +144,11 @@ overrides:
   - filename: pkg/apphost/generate.go
     words:
       - alue
+  - filename: docs/extension-framework.md
+    words:
+      - getenv
+      - errorf
+      - println
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

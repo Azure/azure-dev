@@ -104,6 +104,9 @@ output AZURE_RESOURCE_REDIS_ID string = resources.outputs.AZURE_RESOURCE_REDIS_I
 {{- if .DbPostgres}}
 output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID
 {{- end}}
+{{- if .DbMySql}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbMySql.DatabaseName}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbMySql.DatabaseName}}_ID
+{{- end}}
 {{- if .StorageAccount }}
 output AZURE_RESOURCE_STORAGE_ID string = resources.outputs.AZURE_RESOURCE_STORAGE_ID
 {{- end}}

@@ -366,6 +366,7 @@
                         "description": "The type of resource to be created. (Example: db.postgres)",
                         "enum": [
                             "db.postgres",
+                            "db.mysql",
                             "db.redis",
                             "db.mongo",
                             "ai.openai.model",
@@ -388,6 +389,7 @@
                     { "if": { "properties": { "type": { "const": "host.containerapp" }}}, "then": { "$ref": "#/definitions/containerAppResource" } },
                     { "if": { "properties": { "type": { "const": "ai.openai.model" }}}, "then": { "$ref": "#/definitions/aiModelResource" } },
                     { "if": { "properties": { "type": { "const": "db.postgres"  }}}, "then": { "$ref": "#/definitions/resource"} },
+                    { "if": { "properties": { "type": { "const": "db.mysql"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "db.redis"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "messaging.eventhubs" }}}, "then": { "$ref": "#/definitions/eventHubsResource" } },
@@ -1231,6 +1233,7 @@
                     "enum": [
                         "db.postgres",
                         "db.redis",
+                        "db.mysql",
                         "db.mongo",
                         "host.containerapp",
                         "ai.openai.model"

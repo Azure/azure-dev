@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
@@ -77,35 +78,51 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 
 	forceColor := !color.NoColor
 
+	var wg sync.WaitGroup
+
 	for _, extension := range extensionList {
 		jwtToken, err := grpcserver.GenerateExtensionToken(extension, serverInfo)
 		if err != nil {
 			return nil, err
 		}
 
+		wg.Add(1)
 		go func(extension *extensions.Extension, jwtToken string) {
-			allEnv := []string{
-				fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
-				fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
-			}
+			defer wg.Done()
 
-			if forceColor {
-				allEnv = append(allEnv, "FORCE_COLOR=1")
-			}
+			// Invoke the extension in a separate goroutine so that we can proceed to waiting for readiness.
+			go func() {
+				allEnv := []string{
+					fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
+					fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
+				}
 
-			options := &extensions.InvokeOptions{
-				Args:   []string{"listen"},
-				Env:    allEnv,
-				StdIn:  extension.StdIn(),
-				StdOut: extension.StdOut(),
-				StdErr: extension.StdErr(),
-			}
+				if forceColor {
+					allEnv = append(allEnv, "FORCE_COLOR=1")
+				}
 
-			if _, err := m.extensionRunner.Invoke(ctx, extension, options); err != nil {
-				log.Printf("extension '%s' returned unexpected error: %s\n", extension.Id, err.Error())
+				options := &extensions.InvokeOptions{
+					Args:   []string{"listen"},
+					Env:    allEnv,
+					StdIn:  extension.StdIn(),
+					StdOut: extension.StdOut(),
+					StdErr: extension.StdErr(),
+				}
+
+				if _, err := m.extensionRunner.Invoke(ctx, extension, options); err != nil {
+					extension.Fail(err)
+				}
+			}()
+
+			// Wait for the extension to signal readiness or failure.
+			if err := extension.WaitUntilReady(ctx); err != nil {
+				log.Printf("extension '%s' failed to become ready: %s\n", extension.Id, err.Error())
 			}
 		}(extension, jwtToken)
 	}
+
+	// Wait for all extensions to reach a terminal state (ready or failed)
+	wg.Wait()
 
 	return next(ctx)
 }

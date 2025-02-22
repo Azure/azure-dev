@@ -42,69 +42,82 @@ func NewEventManager(azdClient *AzdClient) *EventManager {
 	}
 }
 
-func (em *EventManager) Receive(ctx context.Context) <-chan error {
-	errChan := make(chan error, 1)
-
-	eventStream, err := em.azdClient.Events().EventStream(ctx)
-	if err != nil {
-		errChan <- err
-		return errChan
+func (em *EventManager) Close() error {
+	if em.stream != nil {
+		return em.stream.CloseSend()
 	}
 
-	em.stream = eventStream
-
-	go func() {
-		defer close(errChan)
-
-		for {
-			select {
-			case <-ctx.Done():
-				log.Println("Context cancelled by caller, exiting receiveEvents")
-				errChan <- nil
-				return
-			default:
-				msg, err := em.stream.Recv()
-				if err != nil {
-					if errors.Is(err, io.EOF) {
-						log.Println("Stream closed by server (EOF), treating as expected")
-						errChan <- nil
-						return
-					}
-
-					if st, ok := status.FromError(err); ok {
-						if st.Code() == codes.Unavailable {
-							log.Println("Stream closed by server (unavailable), treating as expected")
-							errChan <- nil
-							return
-						}
-					}
-
-					errChan <- err
-					return
-				}
-
-				switch msg.MessageType.(type) {
-				case *EventMessage_InvokeProjectHandler:
-					invokeMsg := msg.GetInvokeProjectHandler()
-					if err := em.invokeProjectHandler(ctx, invokeMsg); err != nil {
-						log.Printf("invokeProjectHandler error for event %s: %v", invokeMsg.EventName, err)
-					}
-				case *EventMessage_InvokeServiceHandler:
-					invokeMsg := msg.GetInvokeServiceHandler()
-					if err := em.invokeServiceHandler(ctx, invokeMsg); err != nil {
-						log.Printf("invokeServiceHandler error for event %s: %v", invokeMsg.EventName, err)
-					}
-				default:
-					log.Printf("receiveEvents: unhandled message type %T", msg.MessageType)
-				}
-			}
-		}
-	}()
-
-	return errChan
+	return nil
 }
 
-func (em *EventManager) AddProjectEventHandler(eventName string, handler ProjectEventHandler) error {
+func (em *EventManager) init(ctx context.Context) error {
+	if em.stream == nil {
+		eventStream, err := em.azdClient.Events().EventStream(ctx)
+		if err != nil {
+			return err
+		}
+
+		em.stream = eventStream
+	}
+
+	return nil
+}
+
+func (em *EventManager) Receive(ctx context.Context) error {
+	if err := em.init(ctx); err != nil {
+		return err
+	}
+
+	if err := em.sendReadyEvent(); err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("Context cancelled by caller, exiting receiveEvents")
+			return nil
+		default:
+			msg, err := em.stream.Recv()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					log.Println("Stream closed by server (EOF), treating as expected")
+					return nil
+				}
+
+				if st, ok := status.FromError(err); ok {
+					if st.Code() == codes.Unavailable {
+						log.Println("Stream closed by server (unavailable), treating as expected")
+						return nil
+					}
+				}
+
+				return err
+			}
+
+			switch msg.MessageType.(type) {
+			case *EventMessage_InvokeProjectHandler:
+				invokeMsg := msg.GetInvokeProjectHandler()
+				if err := em.invokeProjectHandler(ctx, invokeMsg); err != nil {
+					log.Printf("invokeProjectHandler error for event %s: %v", invokeMsg.EventName, err)
+				}
+			case *EventMessage_InvokeServiceHandler:
+				invokeMsg := msg.GetInvokeServiceHandler()
+				if err := em.invokeServiceHandler(ctx, invokeMsg); err != nil {
+					log.Printf("invokeServiceHandler error for event %s: %v", invokeMsg.EventName, err)
+				}
+			default:
+				log.Printf("receiveEvents: unhandled message type %T", msg.MessageType)
+			}
+		}
+	}
+}
+
+func (em *EventManager) AddProjectEventHandler(ctx context.Context, eventName string, handler ProjectEventHandler) error {
+	if err := em.init(ctx); err != nil {
+		return err
+	}
+
 	err := em.stream.Send(&EventMessage{
 		MessageType: &EventMessage_SubscribeProjectEvent{
 			SubscribeProjectEvent: &SubscribeProjectEvent{
@@ -124,10 +137,15 @@ type ServerEventOptions struct {
 }
 
 func (em *EventManager) AddServiceEventHandler(
+	ctx context.Context,
 	eventName string,
 	handler ServiceEventHandler,
 	options *ServerEventOptions,
 ) error {
+	if err := em.init(ctx); err != nil {
+		return err
+	}
+
 	if options == nil {
 		options = &ServerEventOptions{}
 	}
@@ -153,6 +171,16 @@ func (em *EventManager) RemoveProjectEventHandler(eventName string) {
 
 func (em *EventManager) RemoveServiceEventHandler(eventName string) {
 	delete(em.serviceEvents, eventName)
+}
+
+func (em EventManager) sendReadyEvent() error {
+	return em.stream.Send(&EventMessage{
+		MessageType: &EventMessage_ExtensionReadyEvent{
+			ExtensionReadyEvent: &ExtensionReadyEvent{
+				Status: "ready",
+			},
+		},
+	})
 }
 
 // New helper to send project handler status.

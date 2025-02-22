@@ -5,7 +5,9 @@ package extensions
 
 import (
 	"bytes"
+	"context"
 	"io"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
@@ -25,8 +27,44 @@ type Extension struct {
 	stdin  *bytes.Buffer
 	stdout *output.DynamicMultiWriter
 	stderr *output.DynamicMultiWriter
+
+	readySignal chan error // consolidated channel, buffered with capacity 1
+	readyOnce   sync.Once  // ensures signal is sent only once
 }
 
+// init initializes the extension's buffers and signals.
+func (e *Extension) init() {
+	e.stdin = &bytes.Buffer{}
+	e.stdout = output.NewDynamicMultiWriter()
+	e.stderr = output.NewDynamicMultiWriter()
+	e.readySignal = make(chan error, 1)
+}
+
+// Initialize signals that the extension is ready.
+func (e *Extension) Initialize() {
+	e.readyOnce.Do(func() {
+		e.readySignal <- nil
+	})
+}
+
+// Fail signals that the extension has encountered an error.
+func (e *Extension) Fail(err error) {
+	e.readyOnce.Do(func() {
+		e.readySignal <- err
+	})
+}
+
+// WaitUntilReady blocks until the extension signals readiness or failure.
+func (e *Extension) WaitUntilReady(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-e.readySignal:
+		return err
+	}
+}
+
+// HasCapability checks if the extension has the specified capabilities.
 func (e *Extension) HasCapability(capability ...CapabilityType) bool {
 	for _, cap := range capability {
 		found := false
@@ -43,26 +81,17 @@ func (e *Extension) HasCapability(capability ...CapabilityType) bool {
 	return true
 }
 
+// StdIn returns the standard input buffer for the extension.
 func (e *Extension) StdIn() io.Reader {
-	if e.stdin == nil {
-		e.stdin = &bytes.Buffer{}
-	}
-
 	return e.stdin
 }
 
+// StdOut returns the standard output writer for the extension.
 func (e *Extension) StdOut() *output.DynamicMultiWriter {
-	if e.stdout == nil {
-		e.stdout = output.NewDynamicMultiWriter()
-	}
-
 	return e.stdout
 }
 
+// StdErr returns the standard error writer for the extension.
 func (e *Extension) StdErr() *output.DynamicMultiWriter {
-	if e.stderr == nil {
-		e.stderr = output.NewDynamicMultiWriter()
-	}
-
 	return e.stderr
 }

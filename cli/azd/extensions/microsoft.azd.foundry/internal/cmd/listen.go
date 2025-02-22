@@ -28,10 +28,11 @@ func newListenCommand() *cobra.Command {
 			defer azdClient.Close()
 
 			eventManager := azdext.NewEventManager(azdClient)
-			receiveChan := eventManager.Receive(ctx)
+			defer eventManager.Close()
 
 			// Register the event handler(s) (synchronously).
 			err = eventManager.AddProjectEventHandler(
+				ctx,
 				"preprovision",
 				func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					for i := 1; i <= 20; i++ {
@@ -47,6 +48,7 @@ func newListenCommand() *cobra.Command {
 			}
 
 			err = eventManager.AddServiceEventHandler(
+				ctx,
 				"prepackage",
 				func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 					for i := 1; i <= 20; i++ {
@@ -63,10 +65,11 @@ func newListenCommand() *cobra.Command {
 				return fmt.Errorf("failed to add predeploy event handler: %w", err)
 			}
 
-			// Block until the Receive function returns, meaning the stream has ended.
-			err = <-receiveChan
+			if err := eventManager.Receive(ctx); err != nil {
+				return fmt.Errorf("failed to receive events: %w", err)
+			}
 
-			return err
+			return nil
 		},
 	}
 }

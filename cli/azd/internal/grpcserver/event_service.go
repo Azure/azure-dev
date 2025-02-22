@@ -16,17 +16,25 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"google.golang.org/grpc"
 )
+
+// noEnvResolver is a resolver that always returns an empty string.
+// This is used when an environment is not available to resolve environment variables referenced in project config.
+var noEnvResolver = func(name string) string {
+	return ""
+}
 
 // eventService implements azdext.EventServiceServer.
 type eventService struct {
 	azdext.UnimplementedEventServiceServer
 	extensionManager *extensions.Manager
-	projectConfig    *project.ProjectConfig
-	env              *environment.Environment
 	console          input.Console
+
+	lazyProject *lazy.Lazy[*project.ProjectConfig]
+	lazyEnv     *lazy.Lazy[*environment.Environment]
 
 	projectEvents sync.Map // key: string, value: chan *azdext.ProjectHandlerStatus
 	serviceEvents sync.Map // key: string, value: chan *azdext.ServiceHandlerStatus
@@ -34,14 +42,14 @@ type eventService struct {
 
 func NewEventService(
 	extensionManager *extensions.Manager,
-	projectConfig *project.ProjectConfig,
-	env *environment.Environment,
+	lazyProject *lazy.Lazy[*project.ProjectConfig],
+	lazyEnv *lazy.Lazy[*environment.Environment],
 	console input.Console,
 ) azdext.EventServiceServer {
 	return &eventService{
 		extensionManager: extensionManager,
-		projectConfig:    projectConfig,
-		env:              env,
+		lazyProject:      lazyProject,
+		lazyEnv:          lazyEnv,
 		console:          console,
 	}
 }
@@ -111,6 +119,11 @@ func (s *eventService) handleSubscribeProjectEvent(
 	subscribeMsg *azdext.SubscribeProjectEvent,
 	stream grpc.BidiStreamingServer[azdext.EventMessage, azdext.EventMessage],
 ) error {
+	projectConfig, err := s.lazyProject.GetValue()
+	if err != nil {
+		return err
+	}
+
 	for i := 0; i < len(subscribeMsg.EventNames); i++ {
 		eventName := subscribeMsg.EventNames[i]
 
@@ -119,7 +132,7 @@ func (s *eventService) handleSubscribeProjectEvent(
 
 		evt := ext.Event(eventName)
 		handler := s.createProjectEventHandler(stream, extension, eventName)
-		if err := s.projectConfig.AddHandler(evt, handler); err != nil {
+		if err := projectConfig.AddHandler(evt, handler); err != nil {
 			return fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 		}
 	}
@@ -190,10 +203,15 @@ func (s *eventService) handleSubscribeServiceEvent(
 	subscribeMsg *azdext.SubscribeServiceEvent,
 	stream grpc.BidiStreamingServer[azdext.EventMessage, azdext.EventMessage],
 ) error {
+	projectConfig, err := s.lazyProject.GetValue()
+	if err != nil {
+		return err
+	}
+
 	for i := 0; i < len(subscribeMsg.EventNames); i++ {
 		eventName := subscribeMsg.EventNames[i]
 		evt := ext.Event(eventName)
-		for serviceName, serviceConfig := range s.projectConfig.Services {
+		for serviceName, serviceConfig := range projectConfig.Services {
 			if subscribeMsg.Language != "" && string(serviceConfig.Language) != subscribeMsg.Language {
 				continue
 			}
@@ -299,7 +317,14 @@ func (s *eventService) handleServiceHandlerStatus(statusMessage *azdext.ServiceH
 
 // createProjectConfig converts a project.ProjectConfig into the azdext.ProjectConfig wire format.
 func (s *eventService) createProjectConfig(proj *project.ProjectConfig) *azdext.ProjectConfig {
-	resourceGroupName, err := proj.ResourceGroupName.Envsubst(s.env.Getenv)
+	resolver := noEnvResolver
+
+	env, err := s.lazyEnv.GetValue()
+	if err == nil && env != nil {
+		resolver = env.Getenv
+	}
+
+	resourceGroupName, err := proj.ResourceGroupName.Envsubst(resolver)
 	if err != nil {
 		log.Printf("failed to envsubst resource group name: %v", err)
 	}
@@ -332,17 +357,24 @@ func (s *eventService) createProjectConfig(proj *project.ProjectConfig) *azdext.
 
 // createServiceConfig converts a project.ServiceConfig into the azdext.ServiceConfig wire format.
 func (s *eventService) createServiceConfig(svc *project.ServiceConfig) *azdext.ServiceConfig {
-	resourceGroupName, err := svc.ResourceGroupName.Envsubst(s.env.Getenv)
+	resolver := noEnvResolver
+
+	env, err := s.lazyEnv.GetValue()
+	if err == nil && env != nil {
+		resolver = env.Getenv
+	}
+
+	resourceGroupName, err := svc.ResourceGroupName.Envsubst(resolver)
 	if err != nil {
 		log.Printf("failed to envsubst resource group name: %v", err)
 	}
 
-	resourceName, err := svc.ResourceName.Envsubst(s.env.Getenv)
+	resourceName, err := svc.ResourceName.Envsubst(resolver)
 	if err != nil {
 		log.Printf("failed to envsubst resource name: %v", err)
 	}
 
-	image, err := svc.Image.Envsubst(s.env.Getenv)
+	image, err := svc.Image.Envsubst(resolver)
 	if err != nil {
 		log.Printf("failed to envsubst image: %v", err)
 	}

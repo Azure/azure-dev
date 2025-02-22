@@ -7,8 +7,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 
+	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -75,50 +78,62 @@ func autoGenerate(parameter string, azdMetadata azure.AzdMetadata) (string, erro
 	return genValue, nil
 }
 
-// func (a *BicepProvider) quotaForLocation(ctx context.Context, subId, location string) (ModelResponse, error) {
-// 	cred, err := a.creds.CredentialForSubscription(ctx, a.env.GetSubscriptionId())
-// 	if err != nil {
-// 		return ModelResponse{}, fmt.Errorf("getting credentials: %w", err)
-// 	}
-// 	pipeline, err := armruntime.NewPipeline(
-// 		"cognitive-list", "1.0.0", cred, runtime.PipelineOptions{}, a.armClientOptions)
-// 	if err != nil {
-// 		return ModelResponse{}, fmt.Errorf("failed creating HTTP pipeline: %w", err)
-// 	}
+type quotaResponse struct {
+	Name         quotaName `json:"name"`
+	CurrentValue int       `json:"currentValue"`
+	Limit        int       `json:"limit"`
+	Unit         string    `json:"unit"`
+}
 
-// 	locationRequest := fmt.Sprintf(
-// 		//nolint:lll
-// 		"https://management.azure.com/subscriptions/%s/providers/Microsoft.CognitiveServices/locations/%s/usages?api-version=2024-10-01",
-// 		subId,
-// 		location,
-// 	)
-// 	req, err := runtime.NewRequest(ctx, http.MethodGet, locationRequest)
-// 	if err != nil {
-// 		return ModelResponse{}, fmt.Errorf("creating request: %w", err)
-// 	}
+type quotaName struct {
+	Value          string `json:"value"`
+	LocalizedValue string `json:"localizedValue"`
+}
 
-// 	resp, err := pipeline.Do(req)
-// 	if err != nil {
-// 		return ModelResponse{}, fmt.Errorf("making request: %w", err)
-// 	}
+func (a *BicepProvider) quotaForLocation(ctx context.Context, subId, location string) (quotaResponse, error) {
+	cred, err := a.creds.CredentialForSubscription(ctx, a.env.GetSubscriptionId())
+	if err != nil {
+		return quotaResponse{}, fmt.Errorf("getting credentials: %w", err)
+	}
+	pipeline, err := armruntime.NewPipeline(
+		"cognitive-list", "1.0.0", cred, runtime.PipelineOptions{}, a.armClientOptions)
+	if err != nil {
+		return quotaResponse{}, fmt.Errorf("failed creating HTTP pipeline: %w", err)
+	}
 
-// 	if resp.StatusCode != http.StatusOK {
-// 		return ModelResponse{}, runtime.NewResponseError(resp)
-// 	}
+	locationRequest := fmt.Sprintf(
+		//nolint:lll
+		"https://management.azure.com/subscriptions/%s/providers/Microsoft.CognitiveServices/locations/%s/usages?api-version=2024-10-01",
+		subId,
+		location,
+	)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, locationRequest)
+	if err != nil {
+		return quotaResponse{}, fmt.Errorf("creating request: %w", err)
+	}
 
-// 	body, err := runtime.Payload(resp)
-// 	if err != nil {
-// 		return ModelResponse{}, fmt.Errorf("reading response: %w", err)
-// 	}
+	resp, err := pipeline.Do(req)
+	if err != nil {
+		return quotaResponse{}, fmt.Errorf("making request: %w", err)
+	}
 
-// 	// TODO: Need to handle nextLink; either switching to Azure SDK for go and a pager, or manually using the nextLink
-// 	var response ModelResponse
-// 	err = json.Unmarshal(body, &response)
-// 	if err != nil {
-// 		return ModelResponse{}, fmt.Errorf("decoding response: %w", err)
-// 	}
-// 	return response, nil
-// }
+	if resp.StatusCode != http.StatusOK {
+		return quotaResponse{}, runtime.NewResponseError(resp)
+	}
+
+	body, err := runtime.Payload(resp)
+	if err != nil {
+		return quotaResponse{}, fmt.Errorf("reading response: %w", err)
+	}
+
+	// TODO: Need to handle nextLink; either switching to Azure SDK for go and a pager, or manually using the nextLink
+	var response quotaResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return quotaResponse{}, fmt.Errorf("decoding response: %w", err)
+	}
+	return response, nil
+}
 
 func (p *BicepProvider) promptForParameter(
 	ctx context.Context,

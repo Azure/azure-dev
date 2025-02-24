@@ -12,19 +12,9 @@ param location string
 
 {{- if .AiFoundryProject }}
 {{- range .AiFoundryProject.Models }}
-{{ if gt (len .Location.Allowed) 0 }}
-@allowed([
-{{- range $i, $location := .Location.Allowed }}
-  '{{ $location }}'
-{{- end }}
-])
-{{- end }}
 @metadata({azd: {
   type: 'location'
   usageName: '{{ .Sku.UsageName }}'
-{{- if .Location.Default }}
-  default: '{{.Location.Default}}'
-{{- end }}  
   }
 })
 param {{bicepName .Name}}{{bicepName .Version}}Location string
@@ -66,6 +56,9 @@ module resources 'resources.bicep' = {
 {{- range .Parameters}}
     {{.Name}}: {{.Name}}
 {{- end }}
+{{- if .AiFoundryProject }}
+    aiFoundryProjectConnectionString: '${split(aiModelsDeploy.outputs.projectDiscoveryUrl, '/')[2]};${subscription().subscriptionId};${rg.name};${aiModelsDeploy.outputs.projectName}'
+{{- end}}
   }
 }
 
@@ -80,6 +73,7 @@ module aiModelsDeploy 'ai-models.bicep' = {
 {{- end }}    
     tags: tags
     location: location
+    envName: environmentName
   }
 }
 {{- end}}
@@ -115,5 +109,8 @@ output AZURE_RESOURCE_EVENT_HUBS_ID string = resources.outputs.AZURE_RESOURCE_EV
 {{- end}}
 {{- if .ServiceBus}}
 output AZURE_RESOURCE_SERVICE_BUS_ID string = resources.outputs.AZURE_RESOURCE_SERVICE_BUS_ID
+{{- end}}
+{{- if .AiFoundryProject }}
+output AZURE_AIPROJECT_CONNECTION_STRING string = '${split(aiModelsDeploy.outputs.projectDiscoveryUrl, '/')[2]};${subscription().subscriptionId};${rg.name};${aiModelsDeploy.outputs.projectName}'
 {{- end}}
 {{ end}}

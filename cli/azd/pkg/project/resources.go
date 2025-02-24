@@ -220,11 +220,10 @@ type StorageProps struct {
 }
 
 type AiServicesModel struct {
-	Name     string             `yaml:"name,omitempty"`
-	Version  string             `yaml:"version,omitempty"`
-	Location *LocationConfig    `yaml:"location,omitempty"`
-	Format   string             `yaml:"format,omitempty"`
-	Sku      AiServicesModelSku `yaml:"sku,omitempty"`
+	Name    string             `yaml:"name,omitempty"`
+	Version string             `yaml:"version,omitempty"`
+	Format  string             `yaml:"format,omitempty"`
+	Sku     AiServicesModelSku `yaml:"sku,omitempty"`
 }
 
 type AiServicesModelSku struct {
@@ -235,9 +234,4 @@ type AiServicesModelSku struct {
 
 type AiFoundryModelProps struct {
 	Models []AiServicesModel `yaml:"models,omitempty"`
-}
-
-type LocationConfig struct {
-	Default *string  `yaml:"default,omitempty"`
-	Allowed []string `yaml:"allowed,omitempty"`
 }

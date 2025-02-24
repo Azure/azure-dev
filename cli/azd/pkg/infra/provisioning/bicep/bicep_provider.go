@@ -77,6 +77,7 @@ type BicepProvider struct {
 	portalUrlBase           string
 	creds                   account.SubscriptionCredentialProvider
 	armClientOptions        *arm.ClientOptions
+	subscriptionManager     *account.SubscriptionsManager
 }
 
 // Name gets the name of the infra provider
@@ -2141,20 +2142,22 @@ func NewBicepProvider(
 	cloud *cloud.Cloud,
 	creds account.SubscriptionCredentialProvider,
 	armClientOptions *arm.ClientOptions,
+	subscriptionManager *account.SubscriptionsManager,
 ) provisioning.Provider {
 	return &BicepProvider{
-		envManager:        envManager,
-		env:               env,
-		console:           console,
-		azapi:             azapi,
-		bicepCli:          bicepCli,
-		resourceService:   resourceService,
-		deploymentManager: deploymentManager,
-		prompters:         prompters,
-		curPrincipal:      curPrincipal,
-		keyvaultService:   keyvaultService,
-		portalUrlBase:     cloud.PortalUrlBase,
-		creds:             creds,
-		armClientOptions:  armClientOptions,
+		envManager:          envManager,
+		env:                 env,
+		console:             console,
+		azapi:               azapi,
+		bicepCli:            bicepCli,
+		resourceService:     resourceService,
+		deploymentManager:   deploymentManager,
+		prompters:           prompters,
+		curPrincipal:        curPrincipal,
+		keyvaultService:     keyvaultService,
+		portalUrlBase:       cloud.PortalUrlBase,
+		creds:               creds,
+		armClientOptions:    armClientOptions,
+		subscriptionManager: subscriptionManager,
 	}
 }

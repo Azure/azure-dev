@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
+	"sync"
 
 	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -79,6 +81,11 @@ func autoGenerate(parameter string, azdMetadata azure.AzdMetadata) (string, erro
 }
 
 type quotaResponse struct {
+	Value    []quota `json:"value"`
+	NextLink *string `json:"nextLink"`
+}
+
+type quota struct {
 	Name         quotaName `json:"name"`
 	CurrentValue int       `json:"currentValue"`
 	Limit        int       `json:"limit"`
@@ -135,6 +142,42 @@ func (a *BicepProvider) quotaForLocation(ctx context.Context, subId, location st
 	return response, nil
 }
 
+func (a *BicepProvider) locationsWithQuotaFor(
+	ctx context.Context, subId string, locations []string, quotaFor string) ([]string, error) {
+	var sharedResults sync.Map
+	var wg sync.WaitGroup
+	for _, location := range locations {
+		wg.Add(1)
+		go func(location string) {
+			defer wg.Done()
+			results, err := a.quotaForLocation(ctx, subId, location)
+			if err != nil {
+				return
+			}
+			sharedResults.Store(location, results)
+		}(location)
+	}
+	wg.Wait()
+	var results []string
+	sharedResults.Range(func(key, value any) bool {
+		quotaResponse := value.(quotaResponse)
+		hasS0SkuQuota := slices.ContainsFunc(quotaResponse.Value, func(q quota) bool {
+			return q.Name.Value == "OpenAI.S0.AccountCount" && q.CurrentValue < q.Limit
+		})
+		hasQuotaForModel := slices.ContainsFunc(quotaResponse.Value, func(q quota) bool {
+			return q.Name.Value == quotaFor && q.CurrentValue < q.Limit
+		})
+		if hasQuotaForModel && hasS0SkuQuota {
+			results = append(results, key.(string))
+		}
+		return true
+	})
+	if len(results) == 0 {
+		return nil, fmt.Errorf("no locations with quota for model '%s'", quotaFor)
+	}
+	return results, nil
+}
+
 func (p *BicepProvider) promptForParameter(
 	ctx context.Context,
 	key string,
@@ -162,17 +205,25 @@ func (p *BicepProvider) promptForParameter(
 		// usageName != nil => the usageName is validated for quota for each allowed location (this is for Ai models),
 		//                     reducing the allowed locations to only those that have quota available
 		// usageName == nil => No quota validation is done
-		// NOTE:
-		//    Checking quota for all locations is not currently supported (combining allowedValues==nil and usageName!= nil)
 		var allowedLocations []string
-		if param.AllowedValues != nil {
-			allowedLocations = make([]string, 0, len(*param.AllowedValues))
-			for i, option := range *param.AllowedValues {
-				allowedLocations[i] = option.(string)
+		if azdMetadata.UsageName != nil {
+			if param.AllowedValues != nil {
+				allowedLocations = make([]string, len(*param.AllowedValues))
+				for i, option := range *param.AllowedValues {
+					allowedLocations[i] = option.(string)
+				}
+			} else {
+				allLocations, err := p.subscriptionManager.ListLocations(ctx, p.env.GetSubscriptionId())
+				if err != nil {
+					return nil, fmt.Errorf("listing locations: %w", err)
+				}
+				allowedLocations = make([]string, len(allLocations))
+				for i, location := range allLocations {
+					allowedLocations[i] = location.Name
+				}
 			}
-			if azdMetadata.UsageName != nil {
-			}
-
+			allowedLocations, _ = p.locationsWithQuotaFor(
+				ctx, p.env.GetSubscriptionId(), allowedLocations, *azdMetadata.UsageName)
 		}
 
 		location, err := p.prompters.PromptLocation(ctx, p.env.GetSubscriptionId(), msg, func(loc account.Location) bool {

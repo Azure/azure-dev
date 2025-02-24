@@ -14,6 +14,9 @@ param location string
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = uniqueString(subscription().id, resourceGroup().id, location)
 
+@description('The name of the environment')
+param envName string
+
 resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
   name: '${abbrs.insightsComponents}hubd-applicationInsightsName${resourceToken}'
   location: location
@@ -169,7 +172,7 @@ resource {{bicepName .Name}}{{bicepName .Version}}Deploy 'Microsoft.CognitiveSer
 {{- end }}
 
 resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
-  name: 'thefoundryhub${resourceToken}'
+  name: take('${envName}${resourceToken}',32)
   location: location
   tags: tags
   kind: 'Hub'
@@ -177,7 +180,7 @@ resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
     type: 'SystemAssigned'
   }
   properties: {
-    friendlyName: 'displayName'
+    friendlyName: envName
     storageAccount: storage.id
     keyVault: keyVault.id
     applicationInsights: applicationInsights.id
@@ -226,4 +229,9 @@ resource project 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
     hubResourceId: hub.id
   }
 }
+
+output projectDiscoveryUrl string = project.properties.discoveryUrl
+output projectId string = project.id
+output projectName string = project.name
+
 {{ end}}

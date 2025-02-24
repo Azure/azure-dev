@@ -156,6 +156,10 @@ func (rm *AzureResourceManager) FindResourceGroupForEnvironment(
 	if err != nil && !errors.As(err, &notFoundError) {
 		return "", fmt.Errorf("getting resource group for environment: %s: %w", envName, err)
 	}
+	// remove any managedBy resource groups
+	rgs = slices.DeleteFunc(rgs, func(r *azapi.Resource) bool {
+		return r.ManagedBy != nil
+	})
 
 	if len(rgs) == 0 {
 		// We didn't find any Resource Groups for the environment, now let's try to find Resource Groups with the

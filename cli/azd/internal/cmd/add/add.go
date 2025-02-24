@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -66,6 +67,12 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	prjConfig, err := project.Load(ctx, a.azdCtx.ProjectPath())
+	if err != nil {
+		return nil, err
+	}
+
+	// Having a subscription is required for any azd compose (add)
+	err = provisioning.EnsureSubscription(ctx, a.envManager, a.env, a.prompter)
 	if err != nil {
 		return nil, err
 	}

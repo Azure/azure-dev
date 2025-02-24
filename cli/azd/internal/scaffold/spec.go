@@ -68,20 +68,14 @@ type AiFoundrySpec struct {
 
 type AiFoundryModel struct {
 	AIModelModel
-	Location *AiFoundryLocationModel `yaml:"location,omitempty"`
-	Format   string                  `yaml:"format,omitempty"`
-	Sku      AiFoundryModelSku       `yaml:"sku,omitempty"`
+	Format string            `yaml:"format,omitempty"`
+	Sku    AiFoundryModelSku `yaml:"sku,omitempty"`
 }
 
 type AiFoundryModelSku struct {
 	Name      string `yaml:"name,omitempty"`
 	UsageName string `yaml:"usageName,omitempty"`
 	Capacity  int    `yaml:"capacity,omitempty"`
-}
-
-type AiFoundryLocationModel struct {
-	Default *string
-	Allowed []string
 }
 
 // AIModelModel represents a model that backs the AIModel.
@@ -131,6 +125,8 @@ type ServiceSpec struct {
 	// Messaging services
 	ServiceBus *ServiceBus
 	EventHubs  *EventHubs
+
+	HasAiFoundryProject bool
 }
 
 type Frontend struct {

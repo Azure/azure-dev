@@ -54,13 +54,13 @@ func (a *AddAction) selectOpenAi(
 			fmt.Sprintf("Fetching available models in %s...", a.env.GetLocation()),
 			input.Step)
 
-		response, err := a.supportedModelsInLocation(ctx, a.env.GetSubscriptionId(), a.env.GetLocation())
+		supportedModels, err := a.supportedModelsInLocation(ctx, a.env.GetSubscriptionId(), a.env.GetLocation())
 		if err != nil {
 			return nil, err
 		}
 		console.StopSpinner(ctx, "", input.Step)
 
-		for _, model := range response.Value {
+		for _, model := range supportedModels {
 			if model.Kind == "OpenAI" && slices.ContainsFunc(model.Model.Skus, func(sku ModelSku) bool {
 				return sku.Name == "Standard"
 			}) {
@@ -141,15 +141,15 @@ func (a *AddAction) selectOpenAi(
 	return resourceToAdd, nil
 }
 
-func (a *AddAction) supportedModelsInLocation(ctx context.Context, subId, location string) (ModelResponse, error) {
+func (a *AddAction) supportedModelsInLocation(ctx context.Context, subId, location string) ([]ModelList, error) {
 	cred, err := a.creds.CredentialForSubscription(ctx, a.env.GetSubscriptionId())
 	if err != nil {
-		return ModelResponse{}, fmt.Errorf("getting credentials: %w", err)
+		return nil, fmt.Errorf("getting credentials: %w", err)
 	}
 	pipeline, err := armruntime.NewPipeline(
 		"cognitive-list", "1.0.0", cred, runtime.PipelineOptions{}, a.armClientOptions)
 	if err != nil {
-		return ModelResponse{}, fmt.Errorf("failed creating HTTP pipeline: %w", err)
+		return nil, fmt.Errorf("failed creating HTTP pipeline: %w", err)
 	}
 
 	locationRequest := fmt.Sprintf(
@@ -160,30 +160,30 @@ func (a *AddAction) supportedModelsInLocation(ctx context.Context, subId, locati
 	)
 	req, err := runtime.NewRequest(ctx, http.MethodGet, locationRequest)
 	if err != nil {
-		return ModelResponse{}, fmt.Errorf("creating request: %w", err)
+		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
 	resp, err := pipeline.Do(req)
 	if err != nil {
-		return ModelResponse{}, fmt.Errorf("making request: %w", err)
+		return nil, fmt.Errorf("making request: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return ModelResponse{}, runtime.NewResponseError(resp)
+		return nil, runtime.NewResponseError(resp)
 	}
 
 	body, err := runtime.Payload(resp)
 	if err != nil {
-		return ModelResponse{}, fmt.Errorf("reading response: %w", err)
+		return nil, fmt.Errorf("reading response: %w", err)
 	}
 
 	// TODO: Need to handle nextLink; either switching to Azure SDK for go and a pager, or manually using the nextLink
 	var response ModelResponse
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		return ModelResponse{}, fmt.Errorf("decoding response: %w", err)
+		return nil, fmt.Errorf("decoding response: %w", err)
 	}
-	return response, nil
+	return response.Value, nil
 }
 
 type ModelResponse struct {
@@ -279,11 +279,7 @@ func (a *AddAction) selectAiModel(
 	aiProject.Models = append(aiProject.Models, project.AiServicesModel{
 		Name:    modelNameSelection,
 		Version: modelVersionSelection,
-		Location: &project.LocationConfig{
-			Default: &modelDefinition.Locations[0],
-			Allowed: modelDefinition.Locations,
-		},
-		Format: modelDefinition.Model.Format,
+		Format:  modelDefinition.Model.Format,
 		Sku: project.AiServicesModelSku{
 			Name:      skuSelection.Name,
 			UsageName: skuSelection.UsageName,
@@ -363,7 +359,24 @@ func (a *AddAction) aiDeploymentCatalog(
 			if err != nil {
 				return
 			}
-			sharedResults.Store(location, results)
+			var filterSkusWithZeroCapacity []ModelList
+			for _, model := range results {
+				if len(model.Model.Skus) == 0 {
+					continue
+				}
+				var skus []ModelSku
+				for _, sku := range model.Model.Skus {
+					if sku.Capacity.Default > 0 {
+						skus = append(skus, sku)
+					}
+				}
+				if len(skus) == 0 {
+					continue
+				}
+				model.Model.Skus = skus
+				filterSkusWithZeroCapacity = append(filterSkusWithZeroCapacity, model)
+			}
+			sharedResults.Store(location, filterSkusWithZeroCapacity)
 		}(location.Name)
 	}
 	wg.Wait()
@@ -372,9 +385,9 @@ func (a *AddAction) aiDeploymentCatalog(
 	sharedResults.Range(func(key, value any) bool {
 		// cast should be safe as the call to sharedResults.Store() use a string key
 		locationNameKey := key.(string)
-		models := value.(ModelResponse).Value
+		models := value.([]ModelList)
 		for _, model := range models {
-			if model.Kind == "OpenAI" || len(model.Model.Skus) == 0 {
+			if model.Kind == "OpenAI" {
 				// skip OpenAI models and models with no skus
 				continue
 			}

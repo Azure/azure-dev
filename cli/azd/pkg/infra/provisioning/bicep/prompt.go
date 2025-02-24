@@ -222,8 +222,12 @@ func (p *BicepProvider) promptForParameter(
 					allowedLocations[i] = location.Name
 				}
 			}
-			allowedLocations, _ = p.locationsWithQuotaFor(
+			withQuotaLocations, err := p.locationsWithQuotaFor(
 				ctx, p.env.GetSubscriptionId(), allowedLocations, *azdMetadata.UsageName)
+			if err != nil {
+				return nil, fmt.Errorf("getting locations with quota: %w", err)
+			}
+			allowedLocations = withQuotaLocations
 		}
 
 		location, err := p.prompters.PromptLocation(ctx, p.env.GetSubscriptionId(), msg, func(loc account.Location) bool {

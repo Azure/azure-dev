@@ -398,7 +398,7 @@ func genBicepParamsFromEnvSubst(
 // access keys and connection strings in the project key vault.
 func GetRequiredDependencies(resource *ResourceConfig) []*ResourceConfig {
 	switch resource.Type {
-	case ResourceTypeDbMongo, ResourceTypeDbRedis:
+	case ResourceTypeDbMongo, ResourceTypeDbMySql, ResourceTypeDbPostgres, ResourceTypeDbRedis:
 		return []*ResourceConfig{{Name: "key-vault", Type: ResourceTypeKeyVault}}
 	default:
 		return nil

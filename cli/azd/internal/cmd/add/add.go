@@ -295,7 +295,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	var followUpMessage string
-	addedKeyVault := slices.ContainsFunc(dependentResourcesToAdd, func(resource *project.ResourceConfig) bool {
+	addedKeyVault := strings.EqualFold(resourceToAdd.Name, "key-vault") || slices.ContainsFunc(dependentResourcesToAdd, func(resource *project.ResourceConfig) bool {
 		return strings.EqualFold(resource.Name, "key-vault")
 	})
 	keyVaultFollowUpMessage := fmt.Sprintf("\nRun '%s' to add a secret to the key vault.", color.BlueString("azd env set-secret <name>"))

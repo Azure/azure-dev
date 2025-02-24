@@ -79,17 +79,24 @@ type ResourceConfig struct {
 	// Type of resource
 	Type ResourceType `yaml:"type"`
 	// The name of the resource
-	Name string `yaml:"-"`
+	Name string `yaml:"name,omitempty"`
 	// The properties for the resource
 	RawProps map[string]yaml.Node `yaml:",inline"`
 	Props    interface{}          `yaml:"-"`
 	// Relationships to other resources
 	Uses []string `yaml:"uses,omitempty"`
+
+	// IncludeName indicates whether the `name` field should be included upon serialization.
+	IncludeName bool `yaml:"-"`
 }
 
 func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 	type rawResourceConfig ResourceConfig
 	raw := rawResourceConfig(*r)
+
+	if !raw.IncludeName {
+		raw.Name = ""
+	}
 
 	var marshalRawProps = func(in interface{}) error {
 		marshaled, err := yaml.Marshal(in)

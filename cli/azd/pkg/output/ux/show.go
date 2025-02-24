@@ -144,3 +144,21 @@ func environments(environments []*ShowEnvironment) string {
 func (s *Show) MarshalJSON() ([]byte, error) {
 	return nil, fmt.Errorf("not implemented")
 }
+
+type ShowResource struct {
+	Name        string
+	TypeDisplay string
+	Variables   map[string]string
+}
+
+func (s *ShowResource) ToString(currentIndentation string) string {
+	return fmt.Sprintf(
+		"%s\n"+
+			"  Variables:\n"+
+			color.HiBlueString(formatEnv("    ", s.Variables)),
+		color.HiMagentaString("%s (%s)", s.Name, s.TypeDisplay))
+}
+
+func (s *ShowResource) MarshalJSON() ([]byte, error) {
+	return nil, fmt.Errorf("not implemented")
+}

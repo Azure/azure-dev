@@ -52,8 +52,8 @@ type ListOptions struct {
 
 // FilterOptions is used to filter extensions by version and source
 type FilterOptions struct {
-	// VersionConstraint is used to specify the version of the extension to install
-	VersionConstraint string
+	// Version is used to specify the version of the extension to install
+	Version string
 	// Source is used to specify the source of the extension to install
 	Source string
 }
@@ -158,7 +158,11 @@ func (m *Manager) GetInstalled(options LookupOptions) (*Extension, error) {
 }
 
 // GetFromRegistry retrieves an extension from the registry by name
-func (m *Manager) GetFromRegistry(ctx context.Context, extensionId string, options *FilterOptions) (*ExtensionMetadata, error) {
+func (m *Manager) GetFromRegistry(
+	ctx context.Context,
+	extensionId string,
+	options *FilterOptions,
+) (*ExtensionMetadata, error) {
 	if options == nil {
 		options = &FilterOptions{}
 	}
@@ -305,12 +309,12 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 
 	sort.Sort(semver.Collection(availableVersions))
 
-	if options.VersionConstraint == "" || options.VersionConstraint == "latest" {
+	if options.Version == "" || options.Version == "latest" {
 		latestVersion := availableVersions[len(availableVersions)-1]
 		selectedVersion = availableVersionMap[latestVersion]
 	} else {
 		// Find the best match for the version constraint
-		constraint, err := semver.NewConstraint(options.VersionConstraint)
+		constraint, err := semver.NewConstraint(options.Version)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse version constraint: %w", err)
 		}
@@ -326,7 +330,7 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 		if bestMatch == nil {
 			return nil, fmt.Errorf(
 				"no matching version found for extension: %s and constraint: %s",
-				id, options.VersionConstraint,
+				id, options.Version,
 			)
 		}
 
@@ -347,8 +351,8 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 	if len(selectedVersion.Dependencies) > 0 {
 		for _, dependency := range selectedVersion.Dependencies {
 			dependencyInstallOptions := &FilterOptions{
-				VersionConstraint: dependency.Version,
-				Source:            options.Source,
+				Version: dependency.Version,
+				Source:  options.Source,
 			}
 			if _, err := m.Install(ctx, dependency.Id, dependencyInstallOptions); err != nil {
 				if !errors.Is(err, ErrExtensionInstalled) {

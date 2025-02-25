@@ -455,8 +455,8 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		}
 
 		filterOptions := &extensions.FilterOptions{
-			Source:            a.flags.source,
-			VersionConstraint: a.flags.version,
+			Source:  a.flags.source,
+			Version: a.flags.version,
 		}
 		extensionVersion, err := a.extensionManager.Install(ctx, extensionId, filterOptions)
 		if err != nil {
@@ -666,8 +666,8 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 		}
 
 		filterOptions := &extensions.FilterOptions{
-			Source:            a.flags.source,
-			VersionConstraint: a.flags.version,
+			Source:  a.flags.source,
+			Version: a.flags.version,
 		}
 		extension, err := a.extensionManager.GetFromRegistry(ctx, extensionId, filterOptions)
 		if err != nil {

@@ -501,7 +501,7 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 			}
 
 			filterOptions := &extensions.FilterOptions{
-				VersionConstraint: installConstraint,
+				Version: installConstraint,
 			}
 			extensionVersion, err := i.extensionsManager.Install(ctx, extensionId, filterOptions)
 			if err != nil {

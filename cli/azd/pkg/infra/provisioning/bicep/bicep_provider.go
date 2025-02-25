@@ -142,7 +142,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 			if locationParam.AllowedValues == nil {
 				return true
 			}
-			allowedLocations := make([]string, 0, len(*locationParam.AllowedValues))
+			allowedLocations := make([]string, len(*locationParam.AllowedValues))
 			for i, allowedLocation := range *locationParam.AllowedValues {
 				allowedLocations[i] = allowedLocation.(string)
 			}

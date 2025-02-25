@@ -1329,28 +1329,30 @@
         },
         "cosmosDbResource": {
             "type": "object",
-            "description": "A deployed, ready-to-use Azure Cosmos DB for NoSQL.",
+            "description": "A deployed, ready-to-use Azure Cosmos DB for NoSQL database.",
             "additionalProperties": false,
             "properties": {
                 "type": true,
                 "uses": true,
                 "containers": {
                     "type": "array",
-                    "title": "Azure Cosmos DB Containers",
-                    "description": "A list of containers in the Azure CosmosDB.",
+                    "title": "Containers",
+                    "description": "Containers to be created to store data. Each container stores a collection of items.",
                     "items": {
                         "type": "object",
                         "additionalProperties": false,
                         "properties": {
                             "name": {
                                 "type": "string",
-                                "title": "Container to create in the Azure Cosmos DB",
-                                "description": "The name of the container."
+                                "title": "Container name.",
+                                "description": "Required. The name of the container."
                             },
                             "partitionKeys": {
                                 "type": "array",
-                                "title": "Partition key paths of the container",
-                                "description": "A list of partition key paths for the container.",
+                                "title": "Partition keys.",
+                                "description": "Required. The partition key(s) used to distribute data across partitions. The ordering of keys matters. By default, a single partition key '/id' is naturally a great choice for most applications.",
+                                "minLength": 1,
+                                "maxLength": 3,
                                 "items": {
                                     "type": "string"
                                 }

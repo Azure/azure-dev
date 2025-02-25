@@ -268,10 +268,20 @@ func init() {
 		{{- color "reset"}}{{"\n"}}
 	  {{- end}}
 	{{- else }}
-	  {{- if or (and .Help (not .ShowHelp)) .Suggest }}{{color "cyan"}}[
+	  {{- if or (and .Help (not .ShowHelp)) .Suggest }}{{color "blue"}}[
 		{{- if and .Help (not .ShowHelp)}}{{ print .Config.HelpInput }} for help {{- if and .Suggest}}, {{end}}{{end -}}
-		{{- if and .Suggest }}{{color "cyan"}}{{ print .Config.SuggestInput }} for suggestions{{end -}}
+		{{- if and .Suggest }}{{color "blue"}}{{ print .Config.SuggestInput }} for suggestions{{end -}}
 	  ]{{color "reset"}} {{end}}
 	  {{- if .Default}}{{color "black+h"}}({{.Default}}) {{color "reset"}}{{end}}
 	{{- end}}`
+
+	// Replace cyan with blue in other other templates
+	otherTemplates := []*string{
+		&survey.ConfirmQuestionTemplate,
+		&survey.SelectQuestionTemplate,
+		&survey.MultiSelectQuestionTemplate,
+	}
+	for _, template := range otherTemplates {
+		*template = strings.ReplaceAll(*template, `"cyan"`, `"blue"`)
+	}
 }

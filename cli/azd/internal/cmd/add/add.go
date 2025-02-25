@@ -169,6 +169,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	// Dependent resources (both existing and to be added)
 	dependentResources := project.GetRequiredDependencies(resourceToAdd)
+	// New dependent resources to be added
 	dependentResourcesToAdd := make([]*project.ResourceConfig, 0)
 	for _, dep := range dependentResources {
 		if prjConfig.Resources[dep.Name] == nil {
@@ -177,6 +178,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	requiredByMessages := make([]string, 0)
+	// Encode and add new dependent resources that aren't already in azure.yaml
 	for _, depToAdd := range dependentResourcesToAdd {
 		depNode, err := yamlnode.Encode(depToAdd)
 		if err != nil {
@@ -209,7 +211,6 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			if slices.Contains(prjConfig.Resources[svc].Uses, dep.Name) {
 				continue
 			}
-
 			err = yamlnode.Append(&doc, fmt.Sprintf("resources.%s.uses[]?", svc), &yaml.Node{
 				Kind:  yaml.ScalarNode,
 				Value: dep.Name,
@@ -295,13 +296,18 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	var followUpMessage string
-	addedKeyVault := strings.EqualFold(resourceToAdd.Name, "key-vault") || slices.ContainsFunc(dependentResourcesToAdd, func(resource *project.ResourceConfig) bool {
-		return strings.EqualFold(resource.Name, "key-vault")
-	})
-	keyVaultFollowUpMessage := fmt.Sprintf("\nRun '%s' to add a secret to the key vault.", color.BlueString("azd env set-secret <name>"))
+	addedKeyVault := strings.EqualFold(resourceToAdd.Name, "key-vault") ||
+		slices.ContainsFunc(dependentResourcesToAdd, func(resource *project.ResourceConfig) bool {
+			return strings.EqualFold(resource.Name, "key-vault")
+		})
+	keyVaultFollowUpMessage := fmt.Sprintf(
+		"\nRun '%s' to add a secret to the key vault.",
+		color.BlueString("azd env set-secret <name>"))
 
 	if _, err := pathHasInfraModule(infraRoot, prjConfig.Infra.Module); err == nil {
-		followUpMessage = fmt.Sprintf("Run '%s' to re-synthesize the infrastructure, then run '%s' to provision these changes anytime later.",
+		followUpMessage = fmt.Sprintf(
+			"Run '%s' to re-synthesize the infrastructure, "+
+				"then run '%s' to provision these changes anytime later.",
 			color.BlueString("azd infra synth"),
 			color.BlueString("azd provision"))
 		if addedKeyVault {

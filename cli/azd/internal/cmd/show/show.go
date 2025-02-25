@@ -424,7 +424,7 @@ func showModelDeployment(
 	if account.Properties.Endpoint != nil {
 		console.Message(ctx, color.HiMagentaString("%s (Azure AI Services Model Deployment)", id.Name))
 		console.Message(ctx, "  Endpoint:")
-		console.Message(ctx, color.HiBlueString(fmt.Sprintf("    AZURE_OPENAI_ENDPOINT=%s", *account.Properties.Endpoint)))
+		console.Message(ctx, output.WithHighLightFormat(fmt.Sprintf("    AZURE_OPENAI_ENDPOINT=%s", *account.Properties.Endpoint)))
 		console.Message(ctx, "  Access:")
 		console.Message(ctx, "    Keyless (Microsoft Entra ID)")
 		//nolint:lll

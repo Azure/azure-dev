@@ -29,7 +29,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/azure/azure-dev/cli/azd/pkg/yamlnode"
 	"github.com/braydonk/yaml"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -186,7 +185,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("re-parsing yaml: %w", err)
 	}
 
-	a.console.Message(ctx, fmt.Sprintf("\nPreviewing changes to %s:\n", color.BlueString("azure.yaml")))
+	a.console.Message(ctx, fmt.Sprintf("\nPreviewing changes to %s:\n", output.WithHighLightFormat("azure.yaml")))
 	diffString, diffErr := DiffBlocks(prjConfig.Resources, newCfg.Resources)
 	if diffErr != nil {
 		a.console.Message(ctx, "Preview unavailable. Pass --debug for more details.\n")
@@ -247,8 +246,8 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if _, err := pathHasInfraModule(infraRoot, prjConfig.Infra.Module); err == nil {
 		return &actions.ActionResult{
 			Message: &actions.ResultMessage{
-				FollowUp: "Run '" + color.BlueString("azd infra synth") + "' to re-synthesize the infrastructure, " +
-					"then run '" + color.BlueString("azd provision") + "' to provision these changes anytime later.",
+				FollowUp: "Run '" + output.WithHighLightFormat("azd infra synth") + "' to re-synthesize the infrastructure, " +
+					"then run '" + output.WithHighLightFormat("azd provision") + "' to provision these changes anytime later.",
 			},
 		}, err
 	}
@@ -303,7 +302,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return &actions.ActionResult{
 			Message: &actions.ResultMessage{
 				FollowUp: "Run '" +
-					color.BlueString(fmt.Sprintf("azd show %s", resourceToAdd.Name)) +
+					output.WithHighLightFormat(fmt.Sprintf("azd show %s", resourceToAdd.Name)) +
 					"' to show details about the newly provisioned resource.",
 			},
 		}, nil
@@ -313,7 +312,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		Message: &actions.ResultMessage{
 			FollowUp: fmt.Sprintf(
 				"Run '%s' to %s these changes anytime later.",
-				color.BlueString("azd %s", followUpCmd),
+				output.WithHighLightFormat("azd %s", followUpCmd),
 				verb),
 		},
 	}, err

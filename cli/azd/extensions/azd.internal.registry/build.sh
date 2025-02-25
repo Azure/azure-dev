@@ -51,11 +51,11 @@ BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # List of OS and architecture combinations
 PLATFORMS=(
     "windows/amd64"
-    # "windows/arm64"
-    # "darwin/amd64"
-    # "darwin/arm64"
-    # "linux/amd64"
-    # "linux/arm64"
+    "windows/arm64"
+    "darwin/amd64"
+    "darwin/arm64"
+    "linux/amd64"
+    "linux/arm64"
 )
 
 APP_PATH="github.com/azure/azure-dev/cli/azd/extensions/$APP_NAME/internal/cmd"

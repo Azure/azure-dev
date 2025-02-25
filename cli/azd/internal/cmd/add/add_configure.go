@@ -14,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/fatih/color"
 )
 
 // DbMap is a map of supported database dependencies.
@@ -192,7 +191,7 @@ func fillUses(
 			labels = formatted
 		}
 		uses, err := console.MultiSelect(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("Select the resources that %s uses", color.BlueString(r.Name)),
+			Message: fmt.Sprintf("Select the resources that %s uses", output.WithHighLightFormat(r.Name)),
 			Options: labels,
 		})
 		if err != nil {

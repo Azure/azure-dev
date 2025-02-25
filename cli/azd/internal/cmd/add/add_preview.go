@@ -124,7 +124,7 @@ func (a *AddAction) previewProvision(
 	}
 
 	a.console.Message(ctx, fmt.Sprintf("\n%s\n", output.WithBold("Previewing Azure resource changes")))
-	a.console.Message(ctx, "Environment: "+color.BlueString(a.env.Name()))
+	a.console.Message(ctx, "Environment: "+output.WithHighLightFormat(a.env.Name()))
 
 	if environmentDetails.Subscription != "" {
 		a.console.MessageUxItem(ctx, &environmentDetails)

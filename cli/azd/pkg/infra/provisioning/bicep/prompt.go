@@ -206,13 +206,14 @@ func (p *BicepProvider) promptForParameter(
 		//                     reducing the allowed locations to only those that have quota available
 		// usageName == nil => No quota validation is done
 		var allowedLocations []string
+		if param.AllowedValues != nil {
+			allowedLocations = make([]string, len(*param.AllowedValues))
+			for i, option := range *param.AllowedValues {
+				allowedLocations[i] = option.(string)
+			}
+		}
 		if azdMetadata.UsageName != nil {
-			if param.AllowedValues != nil {
-				allowedLocations = make([]string, len(*param.AllowedValues))
-				for i, option := range *param.AllowedValues {
-					allowedLocations[i] = option.(string)
-				}
-			} else {
+			if allowedLocations == nil {
 				allLocations, err := p.subscriptionManager.ListLocations(ctx, p.env.GetSubscriptionId())
 				if err != nil {
 					return nil, fmt.Errorf("listing locations: %w", err)

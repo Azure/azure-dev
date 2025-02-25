@@ -258,14 +258,7 @@ func (a *AddAction) selectAiModel(
 	if err != nil {
 		return nil, err
 	}
-	// Not getting default version from the API...  might need to alpha sort to show latest as default
-	// var defVersion *string
-	// for _, v := range k.Versions {
-	// 	if v.Model.IsDefaultVersion {
-	// 		defVersion = &v.Model.Version
-	// 		break
-	// 	}
-	// }
+
 	modelVersionSelection, modelDefinition, err := selectFromMap(
 		ctx, console, "Which model version do you want to use?", k.Versions, nil /*defVersion*/)
 	if err != nil {

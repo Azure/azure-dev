@@ -39,8 +39,8 @@ func (a *AddAction) selectMenu() []Menu {
 
 func (a *AddAction) selectAiType(
 	console input.Console, ctx context.Context, p PromptOptions) (*project.ResourceConfig, error) {
-	openAiOption := "Azure OpenAI models"
-	otherAiModels := "Other AI models"
+	openAiOption := "Azure OpenAI model"
+	otherAiModels := "Azure AI services model"
 	options := []string{
 		openAiOption,
 		otherAiModels,

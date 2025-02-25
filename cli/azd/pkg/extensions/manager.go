@@ -42,14 +42,34 @@ var (
 	FeatureExtensions = alpha.MustFeatureKey("extensions")
 )
 
+// ListOptions is used to filter extensions by source and tags
 type ListOptions struct {
+	// Source is used to specify the source of the extension to install
 	Source string
-	Tags   []string
+	// Tags is used to specify the tags of the extension to install
+	Tags []string
+}
+
+// FilterOptions is used to filter extensions by version and source
+type FilterOptions struct {
+	// VersionConstraint is used to specify the version of the extension to install
+	VersionConstraint string
+	// Source is used to specify the source of the extension to install
+	Source string
+}
+
+// LookupOptions is used to lookup extensions by id or namespace
+type LookupOptions struct {
+	// Id is used to specify the id of the extension to install
+	Id string
+	// Namespace is used to specify the namespace of the extension to install
+	Namespace string
 }
 
 type sourceFilterPredicate func(config *SourceConfig) bool
 type extensionFilterPredicate func(extension *ExtensionMetadata) bool
 
+// Manager is responsible for managing extensions
 type Manager struct {
 	sourceManager *SourceManager
 	sources       []Source
@@ -110,13 +130,8 @@ func (m *Manager) ListInstalled() (map[string]*Extension, error) {
 	return m.installed, nil
 }
 
-type GetInstalledOptions struct {
-	Id        string
-	Namespace string
-}
-
 // GetInstalled retrieves an installed extension by name
-func (m *Manager) GetInstalled(options GetInstalledOptions) (*Extension, error) {
+func (m *Manager) GetInstalled(options LookupOptions) (*Extension, error) {
 	extensions, err := m.ListInstalled()
 	if err != nil {
 		return nil, err
@@ -143,8 +158,20 @@ func (m *Manager) GetInstalled(options GetInstalledOptions) (*Extension, error) 
 }
 
 // GetFromRegistry retrieves an extension from the registry by name
-func (m *Manager) GetFromRegistry(ctx context.Context, name string) (*ExtensionMetadata, error) {
-	sources, err := m.getSources(ctx, nil)
+func (m *Manager) GetFromRegistry(ctx context.Context, extensionId string, options *FilterOptions) (*ExtensionMetadata, error) {
+	if options == nil {
+		options = &FilterOptions{}
+	}
+
+	filterPredicate := func(config *SourceConfig) bool {
+		if options.Source == "" {
+			return true
+		}
+
+		return strings.EqualFold(config.Name, options.Source)
+	}
+
+	sources, err := m.getSources(ctx, filterPredicate)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting extension sources: %w", err)
 	}
@@ -153,11 +180,11 @@ func (m *Manager) GetFromRegistry(ctx context.Context, name string) (*ExtensionM
 	var sourceErr error
 
 	for _, source := range sources {
-		template, err := source.GetExtension(ctx, name)
+		extension, err := source.GetExtension(ctx, extensionId)
 		if err != nil {
 			sourceErr = err
-		} else if template != nil {
-			match = template
+		} else if extension != nil {
+			match = extension
 			break
 		}
 	}
@@ -167,10 +194,10 @@ func (m *Manager) GetFromRegistry(ctx context.Context, name string) (*ExtensionM
 	}
 
 	if sourceErr != nil {
-		return nil, fmt.Errorf("failed getting template: %w", sourceErr)
+		return nil, fmt.Errorf("failed getting extension: %w", sourceErr)
 	}
 
-	return nil, fmt.Errorf("%s %w", name, ErrRegistryExtensionNotFound)
+	return nil, fmt.Errorf("%s %w", extensionId, ErrRegistryExtensionNotFound)
 }
 
 func (m *Manager) ListFromRegistry(ctx context.Context, options *ListOptions) ([]*ExtensionMetadata, error) {
@@ -189,7 +216,7 @@ func (m *Manager) ListFromRegistry(ctx context.Context, options *ListOptions) ([
 
 	var extensionFilterPredicate extensionFilterPredicate
 	if len(options.Tags) > 0 {
-		// Find templates that match all the incoming tags
+		// Find extensions that match all the incoming tags
 		extensionFilterPredicate = func(extension *ExtensionMetadata) bool {
 			match := false
 			for _, optionTag := range options.Tags {
@@ -215,12 +242,12 @@ func (m *Manager) ListFromRegistry(ctx context.Context, options *ListOptions) ([
 		filteredExtensions := []*ExtensionMetadata{}
 		sourceExtensions, err := source.ListExtensions(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("unable to list templates: %w", err)
+			return nil, fmt.Errorf("unable to list extension: %w", err)
 		}
 
-		for _, template := range sourceExtensions {
-			if extensionFilterPredicate == nil || extensionFilterPredicate(template) {
-				filteredExtensions = append(filteredExtensions, template)
+		for _, extension := range sourceExtensions {
+			if extensionFilterPredicate == nil || extensionFilterPredicate(extension) {
+				filteredExtensions = append(filteredExtensions, extension)
 			}
 		}
 
@@ -242,14 +269,18 @@ func (m *Manager) ListFromRegistry(ctx context.Context, options *ListOptions) ([
 // Install an extension by name and optional version
 // If no version is provided, the latest version is installed
 // Latest version is determined by the last element in the Versions slice
-func (m *Manager) Install(ctx context.Context, id string, versionConstraint string) (*ExtensionVersion, error) {
-	installed, err := m.GetInstalled(GetInstalledOptions{Id: id})
+func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions) (*ExtensionVersion, error) {
+	if options == nil {
+		options = &FilterOptions{}
+	}
+
+	installed, err := m.GetInstalled(LookupOptions{Id: id})
 	if err == nil && installed != nil {
 		return nil, fmt.Errorf("%s %w", id, ErrExtensionInstalled)
 	}
 
 	// Step 1: Find the extension by name
-	extension, err := m.GetFromRegistry(ctx, id)
+	extension, err := m.GetFromRegistry(ctx, id, options)
 	if err != nil {
 		return nil, err
 	}
@@ -274,12 +305,12 @@ func (m *Manager) Install(ctx context.Context, id string, versionConstraint stri
 
 	sort.Sort(semver.Collection(availableVersions))
 
-	if versionConstraint == "" || versionConstraint == "latest" {
+	if options.VersionConstraint == "" || options.VersionConstraint == "latest" {
 		latestVersion := availableVersions[len(availableVersions)-1]
 		selectedVersion = availableVersionMap[latestVersion]
 	} else {
 		// Find the best match for the version constraint
-		constraint, err := semver.NewConstraint(versionConstraint)
+		constraint, err := semver.NewConstraint(options.VersionConstraint)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse version constraint: %w", err)
 		}
@@ -293,7 +324,10 @@ func (m *Manager) Install(ctx context.Context, id string, versionConstraint stri
 		}
 
 		if bestMatch == nil {
-			return nil, fmt.Errorf("no matching version found for extension: %s and constraint: %s", id, versionConstraint)
+			return nil, fmt.Errorf(
+				"no matching version found for extension: %s and constraint: %s",
+				id, options.VersionConstraint,
+			)
 		}
 
 		selectedVersion = availableVersionMap[bestMatch]
@@ -312,7 +346,11 @@ func (m *Manager) Install(ctx context.Context, id string, versionConstraint stri
 	// Install dependencies
 	if len(selectedVersion.Dependencies) > 0 {
 		for _, dependency := range selectedVersion.Dependencies {
-			if _, err := m.Install(ctx, dependency.Id, dependency.Version); err != nil {
+			dependencyInstallOptions := &FilterOptions{
+				VersionConstraint: dependency.Version,
+				Source:            options.Source,
+			}
+			if _, err := m.Install(ctx, dependency.Id, dependencyInstallOptions); err != nil {
 				if !errors.Is(err, ErrExtensionInstalled) {
 					return nil, fmt.Errorf("failed to install dependency: %w", err)
 				}
@@ -423,7 +461,7 @@ func (m *Manager) Install(ctx context.Context, id string, versionConstraint stri
 // Uninstall an extension by name
 func (m *Manager) Uninstall(id string) error {
 	// Get the installed extension
-	extension, err := m.GetInstalled(GetInstalledOptions{Id: id})
+	extension, err := m.GetInstalled(LookupOptions{Id: id})
 	if err != nil {
 		return fmt.Errorf("failed to get installed extension: %w", err)
 	}
@@ -469,12 +507,16 @@ func (m *Manager) Uninstall(id string) error {
 // Upgrade upgrades the extension to the specified version
 // This is a convenience method that uninstalls the existing extension and installs the new version
 // If the version is not specified, the latest version is installed
-func (m *Manager) Upgrade(ctx context.Context, name string, version string) (*ExtensionVersion, error) {
-	if err := m.Uninstall(name); err != nil {
+func (m *Manager) Upgrade(ctx context.Context, extensionId string, options *FilterOptions) (*ExtensionVersion, error) {
+	if options == nil {
+		options = &FilterOptions{}
+	}
+
+	if err := m.Uninstall(extensionId); err != nil {
 		return nil, fmt.Errorf("failed to uninstall extension: %w", err)
 	}
 
-	extensionVersion, err := m.Install(ctx, name, version)
+	extensionVersion, err := m.Install(ctx, extensionId, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to install extension: %w", err)
 	}
@@ -556,12 +598,12 @@ func (tm *Manager) getSources(ctx context.Context, filter sourceFilterPredicate)
 
 	configs, err := tm.sourceManager.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed parsing template sources: %w", err)
+		return nil, fmt.Errorf("failed parsing extension sources: %w", err)
 	}
 
 	sources, err := tm.createSourcesFromConfig(ctx, configs, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed initializing template sources: %w", err)
+		return nil, fmt.Errorf("failed initializing extension sources: %w", err)
 	}
 
 	tm.sources = sources

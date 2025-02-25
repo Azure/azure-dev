@@ -42,6 +42,7 @@ OUTPUT_DIR="$SCRIPT_DIR/bin"
 
 # Create output and target directories if they don't exist
 mkdir -p "$OUTPUT_DIR"
+mkdir -p "$HOME/.azd/extensions/$APP_NAME"  # new: create destination directory
 
 # Get Git commit hash and build date
 COMMIT=$(git rev-parse HEAD)
@@ -50,11 +51,11 @@ BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # List of OS and architecture combinations
 PLATFORMS=(
     "windows/amd64"
-    "windows/arm64"
-    "darwin/amd64"
-    "darwin/arm64"
-    "linux/amd64"
-    "linux/arm64"
+    # "windows/arm64"
+    # "darwin/amd64"
+    # "darwin/arm64"
+    # "linux/amd64"
+    # "linux/arm64"
 )
 
 APP_PATH="github.com/azure/azure-dev/cli/azd/extensions/$APP_NAME/internal/cmd"
@@ -79,6 +80,9 @@ for PLATFORM in "${PLATFORMS[@]}"; do
         echo "An error occurred while building for $OS/$ARCH"
         exit 1
     fi
+
+    # new: copy built binary to extensions folder
+    cp "$OUTPUT_NAME" "$HOME/.azd/extensions/$APP_NAME"
 done
 
 echo "Build completed successfully!"

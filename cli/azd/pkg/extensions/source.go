@@ -13,10 +13,10 @@ import (
 type Source interface {
 	// Name returns the name of the source.
 	Name() string
-	// ListTemplates returns a list of AZD compatible templates.
+	// ListExtensions returns a list of AZD compatible templates.
 	ListExtensions(ctx context.Context) ([]*ExtensionMetadata, error)
-	// GetTemplate returns a template by path.
-	GetExtension(ctx context.Context, name string) (*ExtensionMetadata, error)
+	// GetExtension returns a template by path.
+	GetExtension(ctx context.Context, extensionId string) (*ExtensionMetadata, error)
 }
 
 type registrySource struct {

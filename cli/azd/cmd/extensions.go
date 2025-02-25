@@ -54,7 +54,7 @@ func bindExtension(
 // invokeExtensionHelp invokes the help for the extension
 func invokeExtensionHelp(console input.Console, commandRunner exec.CommandRunner, extensionManager *extensions.Manager) {
 	extensionNamespace := os.Args[1]
-	extension, err := extensionManager.GetInstalled(extensions.GetInstalledOptions{
+	extension, err := extensionManager.GetInstalled(extensions.LookupOptions{
 		Namespace: extensionNamespace,
 	})
 	if err != nil {
@@ -114,7 +114,7 @@ func newExtensionAction(
 func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	extensionNamespace := a.cmd.Use
 
-	extension, err := a.extensionManager.GetInstalled(extensions.GetInstalledOptions{
+	extension, err := a.extensionManager.GetInstalled(extensions.LookupOptions{
 		Namespace: extensionNamespace,
 	})
 	if err != nil {

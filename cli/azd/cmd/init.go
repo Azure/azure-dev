@@ -500,7 +500,10 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 				installConstraint = *versionConstraint
 			}
 
-			extensionVersion, err := i.extensionsManager.Install(ctx, extensionId, installConstraint)
+			filterOptions := &extensions.FilterOptions{
+				VersionConstraint: installConstraint,
+			}
+			extensionVersion, err := i.extensionsManager.Install(ctx, extensionId, filterOptions)
 			if err != nil {
 				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return fmt.Errorf("installing extension %s: %w", extensionId, err)

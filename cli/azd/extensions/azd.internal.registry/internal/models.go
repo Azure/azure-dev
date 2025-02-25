@@ -13,6 +13,7 @@ type ExtensionSchema struct {
 	Namespace    string                           `yaml:"namespace"    json:"namespace,omitempty"`
 	EntryPoint   string                           `yaml:"entryPoint"   json:"entryPoint,omitempty"`
 	Version      string                           `yaml:"version"      json:"version"`
+	Capabilities []extensions.CapabilityType      `yaml:"capabilities" json:"capabilities"`
 	DisplayName  string                           `yaml:"displayName"  json:"displayName"`
 	Description  string                           `yaml:"description"  json:"description"`
 	Usage        string                           `yaml:"usage"        json:"usage"`

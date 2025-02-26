@@ -19,6 +19,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // noEnvResolver is a resolver that always returns an empty string.
@@ -68,11 +70,11 @@ func (s *eventService) EventStream(stream grpc.BidiStreamingServer[azdext.EventM
 
 	extension, err := s.extensionManager.GetInstalled(options)
 	if err != nil {
-		return fmt.Errorf("failed to get extension: %w", err)
+		return status.Errorf(codes.FailedPrecondition, "failed to get extension: %s", err.Error())
 	}
 
 	if !extension.HasCapability(extensions.LifecycleEventsCapability) {
-		return fmt.Errorf("extension does not support lifecycle events")
+		return status.Errorf(codes.PermissionDenied, "extension does not support lifecycle events")
 	}
 
 	for {

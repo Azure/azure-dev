@@ -209,7 +209,8 @@ func NewRootCmd(
 				RootLevelHelp: actions.CmdGroupConfig,
 			},
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
 		Add("build", &actions.ActionDescriptorOptions{
@@ -219,7 +220,8 @@ func NewRootCmd(
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
 		Add("provision", &actions.ActionDescriptorOptions{
@@ -242,6 +244,13 @@ func NewRootCmd(
 				return false
 			}
 			return true
+		}).
+		UseMiddlewareWhen("extensions", middleware.NewExtensionsMiddleware, func(descriptor *actions.ActionDescriptor) bool {
+			if onPreview, _ := descriptor.Options.Command.Flags().GetBool("preview"); onPreview {
+				log.Println("Skipping provision hooks due to preview flag.")
+				return false
+			}
+			return true
 		})
 
 	root.
@@ -259,7 +268,8 @@ func NewRootCmd(
 				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
 		Add("deploy", &actions.ActionDescriptorOptions{
@@ -276,7 +286,8 @@ func NewRootCmd(
 				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
 		Add("up", &actions.ActionDescriptorOptions{
@@ -292,7 +303,8 @@ func NewRootCmd(
 				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.Add("monitor", &actions.ActionDescriptorOptions{
 		Command:        newMonitorCmd(),
@@ -322,7 +334,8 @@ func NewRootCmd(
 				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 	root.
 		Add("add", &actions.ActionDescriptorOptions{
 			Command:        add.NewAddCmd(),
@@ -342,8 +355,7 @@ func NewRootCmd(
 		UseMiddleware("ux", middleware.NewUxMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
-		}).
-		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
+		})
 
 	// Register common dependencies for the IoC rootContainer
 	if rootContainer == nil {

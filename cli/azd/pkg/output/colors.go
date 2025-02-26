@@ -11,12 +11,12 @@ import (
 
 // withLinkFormat creates string with hyperlink-looking color
 func WithLinkFormat(link string, a ...interface{}) string {
-	return color.CyanString(link, a...)
+	return color.HiCyanString(link, a...)
 }
 
 // withHighLightFormat creates string with highlight-looking color
 func WithHighLightFormat(text string, a ...interface{}) string {
-	return color.BlueString(text, a...)
+	return color.HiBlueString(text, a...)
 }
 
 func WithErrorFormat(text string, a ...interface{}) string {

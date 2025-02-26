@@ -342,7 +342,8 @@ func NewRootCmd(
 		UseMiddleware("ux", middleware.NewUxMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
-		})
+		}).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	// Register common dependencies for the IoC rootContainer
 	if rootContainer == nil {
@@ -354,15 +355,22 @@ func NewRootCmd(
 	// Conditionally register the 'extension' commands if the feature is enabled
 	err := rootContainer.Invoke(func(alphaFeatureManager *alpha.FeatureManager, extensionManager *extensions.Manager) error {
 		if alphaFeatureManager.IsEnabled(extensions.FeatureExtensions) {
+			// Enables the "extension (ext)" command group.
 			extensionActions(root)
 
+			// Enables custom extension commands
 			installedExtensions, err := extensionManager.ListInstalled()
 			if err != nil {
 				return fmt.Errorf("Failed to get installed extensions: %w", err)
 			}
 
-			if err := bindExtensions(rootContainer, root, installedExtensions); err != nil {
-				return fmt.Errorf("Failed to bind extensions: %w", err)
+			// Bind custom extension commands for extensions that expose the capability
+			for _, ext := range installedExtensions {
+				if ext.HasCapability(extensions.CustomCommandCapability) {
+					if err := bindExtension(rootContainer, root, ext); err != nil {
+						return fmt.Errorf("Failed to bind extension commands: %w", err)
+					}
+				}
 			}
 		}
 

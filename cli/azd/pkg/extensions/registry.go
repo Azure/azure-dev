@@ -17,6 +17,15 @@ type Registry struct {
 	Extensions []*ExtensionMetadata `json:"extensions"`
 }
 
+type CapabilityType string
+
+const (
+	// Custom commands expose new command groups & comments to AZD
+	CustomCommandCapability CapabilityType = "custom-commands"
+	// Lifecycle events enable extensions to subscribe to AZD project & service lifecycle events
+	LifecycleEventsCapability CapabilityType = "lifecycle-events"
+)
+
 // Extension represents an extension in the registry
 type ExtensionMetadata struct {
 	// Id is a unique identifier for the extension
@@ -47,6 +56,8 @@ type ExtensionDependency struct {
 
 // ExtensionVersion represents a version of an extension
 type ExtensionVersion struct {
+	// Capabilities is a list of capabilities that the extension provides
+	Capabilities []CapabilityType `json:"capabilities,omitempty"`
 	// Version is the version of the extension
 	Version string `json:"version"`
 	// Usage is show how to use the extension

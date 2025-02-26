@@ -1,9 +1,13 @@
+# yaml-language-server: $schema=../extension.schema.json
 id: microsoft.azd.demo
 namespace: demo
 displayName: Demo Extension
 description: This extension provides examples of the AZD extension framework.
 usage: azd demo <command> [options]
 version: 0.0.2
+capabilities:
+  - custom-commands
+  - lifecycle-events
 examples:
   - name: context
     description: Displays the current `azd` project & environment context.

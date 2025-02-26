@@ -14,7 +14,9 @@ const (
 	LowercaseLetters = "abcdefghijklmnopqrstuvwxyz"
 	UppercaseLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	Digits           = "0123456789"
-	Symbols          = "~!@#$%^&*()_+`-={}|[]\\:\"<>?,./"
+	// - exclude special chars which could interfere with command line arguments, URL (rfc3986 gen-delims),
+	// or connection strings, e.g. =,$,...
+	Symbols          = "-_.{}~()*+!" // exclude &<>=;,`'^%$#@/:[]
 	LettersAndDigits = LowercaseLetters + UppercaseLetters + Digits
 )
 

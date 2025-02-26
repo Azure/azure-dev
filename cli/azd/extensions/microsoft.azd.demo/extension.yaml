@@ -4,7 +4,7 @@ namespace: demo
 displayName: Demo Extension
 description: This extension provides examples of the AZD extension framework.
 usage: azd demo <command> [options]
-version: 0.0.2
+version: 0.1.0
 capabilities:
   - custom-commands
   - lifecycle-events

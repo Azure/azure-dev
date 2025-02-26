@@ -246,8 +246,10 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if _, err := pathHasInfraModule(infraRoot, prjConfig.Infra.Module); err == nil {
 		return &actions.ActionResult{
 			Message: &actions.ResultMessage{
-				FollowUp: "Run '" + output.WithHighLightFormat("azd infra synth") + "' to re-synthesize the infrastructure, " +
-					"then run '" + output.WithHighLightFormat("azd provision") + "' to provision these changes anytime later.",
+				FollowUp: "Run '" + output.WithHighLightFormat("azd infra synth") +
+					"' to re-synthesize the infrastructure, " +
+					"then run '" + output.WithHighLightFormat("azd provision") +
+					"' to provision these changes anytime later.",
 			},
 		}, err
 	}

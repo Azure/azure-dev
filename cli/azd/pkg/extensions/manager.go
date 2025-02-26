@@ -439,14 +439,15 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 	}
 
 	extensions[id] = &Extension{
-		Id:          id,
-		Namespace:   extension.Namespace,
-		DisplayName: extension.DisplayName,
-		Description: extension.Description,
-		Version:     selectedVersion.Version,
-		Usage:       selectedVersion.Usage,
-		Path:        relativeExtensionPath,
-		Source:      extension.Source,
+		Id:           id,
+		Capabilities: selectedVersion.Capabilities,
+		Namespace:    extension.Namespace,
+		DisplayName:  extension.DisplayName,
+		Description:  extension.Description,
+		Version:      selectedVersion.Version,
+		Usage:        selectedVersion.Usage,
+		Path:         relativeExtensionPath,
+		Source:       extension.Source,
 	}
 
 	if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {

@@ -52,12 +52,14 @@ func (d *detectConfirmAppHost) Confirm(ctx context.Context) error {
 			return err
 		}
 
+		defaultConfirmation := "Confirm and continue initializing my app"
 		continueOption, err := d.console.Select(ctx, input.ConsoleOptions{
 			Message: "Select an option",
 			Options: []string{
-				"Confirm and continue initializing my app",
+				defaultConfirmation,
 				"Cancel and exit",
 			},
+			DefaultValue: defaultConfirmation,
 		})
 		if err != nil {
 			return err

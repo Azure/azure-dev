@@ -191,21 +191,6 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("appending resource: %w", err)
 		}
-
-		// Add dependent resources to 'uses'
-		for _, dep := range dependentResources {
-			// Skip if already in 'uses'
-			if slices.Contains(prjConfig.Resources[svc].Uses, dep.Name) {
-				continue
-			}
-			err = yamlnode.Append(&doc, fmt.Sprintf("resources.%s.uses[]?", svc), &yaml.Node{
-				Kind:  yaml.ScalarNode,
-				Value: dep.Name,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("appending dependent resource %s: %w", dep.Name, err)
-			}
-		}
 	}
 
 	new, err := yaml.Marshal(&doc)

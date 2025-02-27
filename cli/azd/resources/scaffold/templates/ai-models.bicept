@@ -17,123 +17,59 @@ var resourceToken = uniqueString(subscription().id, resourceGroup().id, location
 @description('The name of the environment')
 param envName string
 
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
-  name: '${abbrs.insightsComponents}hubd-applicationInsightsName${resourceToken}'
-  location: location
-  tags: tags
-  kind: 'web'
-  properties: {
-    Application_Type: 'web'
-    DisableIpMasking: false
-    DisableLocalAuth: false
-    Flow_Type: 'Bluefield'
-    ForceCustomerStorageForProfiler: false
-    ImmediatePurgeDataOn30Days: true
-    IngestionMode: 'ApplicationInsights'
-    publicNetworkAccessForIngestion: 'Enabled'
-    publicNetworkAccessForQuery: 'Disabled'
-    Request_Source: 'rest'
+module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
+  name: 'keyvaultForHub'
+  params: {
+    name: '${abbrs.keyVaultVaults}hub${resourceToken}'
+    location: location
+    tags: tags
+    enableRbacAuthorization: false
   }
 }
 
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
-  name: '${abbrs.containerRegistryRegistries}hubdcontainerregistryname${resourceToken}'
-  location: location
-  tags: tags
-  sku: {
-    name: 'Premium'
-  }
-  properties: {
-    adminUserEnabled: false
-    dataEndpointEnabled: false
-    networkRuleBypassOptions: 'AzureServices'
-    networkRuleSet: {
-      defaultAction: 'Deny'
-    }
-    policies: {
-      quarantinePolicy: {
-        status: 'enabled'
-      }
-      trustPolicy: {
-        status: 'disabled'
-        type: 'Notary'
-      }
-    }
-    publicNetworkAccess: 'Disabled'
-    zoneRedundancy: 'Disabled'
-  }
-}
-
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
-  name: '${abbrs.keyVaultVaults}hub${resourceToken}'
-  location: location
-  tags: tags
-  properties: {
-    createMode: 'default'
-    enabledForDeployment: false
-    enabledForDiskEncryption: false
-    enabledForTemplateDeployment: false
-    enableSoftDelete: true
-    enableRbacAuthorization: true
-    enablePurgeProtection: true
-    networkAcls: {
-      bypass: 'AzureServices'
-      defaultAction: 'Deny'
-    }
-    sku: {
-      family: 'A'
-      name: 'standard'
-    }
-    softDeleteRetentionInDays: 7
-    tenantId: subscription().tenantId
-  }
-}
-
-resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: '${abbrs.storageStorageAccounts}${resourceToken}'
-  location: location
-  tags: tags
-  kind: 'StorageV2'
-  sku: { name: 'Standard_LRS' }
-  properties: {
-    accessTier: 'Hot'
-    allowBlobPublicAccess: false
-    allowCrossTenantReplication: false
-    allowSharedKeyAccess: false
-    encryption: {
-      keySource: 'Microsoft.Storage'
-      requireInfrastructureEncryption: false
-      services: {
-        blob: {
-          enabled: true
-          keyType: 'Account'
-        }
-        file: {
-          enabled: true
-          keyType: 'Account'
-        }
-        queue: {
-          enabled: true
-          keyType: 'Service'
-        }
-        table: {
-          enabled: true
-          keyType: 'Service'
-        }
-      }
-    }
-    isHnsEnabled: false
-    isNfsV3Enabled: false
-    keyPolicy: {
-      keyExpirationPeriodInDays: 7
-    }
+module storage 'br/public:avm/res/storage/storage-account:0.17.2' = {
+  name: 'storageAccountForHub'
+  params: {
+    tags: tags
+    name: '${abbrs.storageStorageAccounts}${resourceToken}'
+    allowSharedKeyAccess: true
+    allowBlobPublicAccess: true
+    allowCrossTenantReplication: true
     largeFileSharesState: 'Disabled'
-    minimumTlsVersion: 'TLS1_2'
+    publicNetworkAccess: 'Enabled'
+    location: location
+    blobServices: {
+      containers: [
+        {
+          name: 'default'
+        }
+      ]
+    }
+    fileServices: {
+      shares: [
+        {
+          name: 'default'
+        }
+      ]
+    }
+    queueServices: {
+      queues: [
+        {
+          name: 'default'
+        }
+      ]
+    }
+    tableServices: {
+      tables: [
+        {
+          name: 'default'
+        }
+      ]
+    }
     networkAcls: {
       bypass: 'AzureServices'
-      defaultAction: 'Deny'
+      defaultAction: 'Allow'
     }
-    supportsHttpsTrafficOnly: true
   }
 }
 
@@ -154,7 +90,7 @@ resource {{bicepName .Name}}{{bicepName .Version}}Deploy 'Microsoft.CognitiveSer
   }
   
   resource deployment 'deployments' = {
-    name: '{{bicepName .Name}}{{bicepName .Version}}deployment'
+    name: '{{ .Name }}'
     properties: {
       model: {
         name: '{{ .Name }}'
@@ -181,10 +117,14 @@ resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
   }
   properties: {
     friendlyName: envName
-    storageAccount: storage.id
-    keyVault: keyVault.id
-    applicationInsights: applicationInsights.id
-    containerRegistry: containerRegistry.id
+    storageAccount: storage.outputs.resourceId
+    keyVault: keyVault.outputs.resourceId
+    hbiWorkspace: false
+    managedNetwork: {
+      isolationMode: 'Disabled'
+    }
+    v1LegacyMode: false
+    publicNetworkAccess: 'Enabled'
   }
 
 {{- if .AiFoundryProject }}
@@ -210,7 +150,7 @@ resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
 }
 
 resource project 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
-  name: 'thefoundryproject${resourceToken}'
+  name: '${envName}'
   location: location
   tags: tags
   sku: {
@@ -222,11 +162,31 @@ resource project 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
     type: 'SystemAssigned'
   }
   properties: {
-    friendlyName: 'ghvicname'
+    friendlyName: '${envName}Proj'
     hbiWorkspace: false
     v1LegacyMode: false
     publicNetworkAccess: 'Enabled'
     hubResourceId: hub.id
+  }
+}
+
+resource mlServiceRoleDataScientist 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(subscription().id, resourceGroup().id, project.id, 'mlServiceRoleDataScientist', 'f6c7c914-8db3-469d-8ca1-694a8f32e121')
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f6c7c914-8db3-469d-8ca1-694a8f32e121')
+    principalId: project.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource mlServiceRoleSecretsReader 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(subscription().id, resourceGroup().id, project.id, 'mlServiceRoleSecretsReader','ea01e6af-a1c1-4350-9563-ad00f8c72ec5')
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ea01e6af-a1c1-4350-9563-ad00f8c72ec5') 
+    principalId: project.identity.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 

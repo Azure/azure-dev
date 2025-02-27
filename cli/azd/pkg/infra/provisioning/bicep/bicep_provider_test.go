@@ -401,8 +401,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 			cloud.AzurePublic(),
 		),
 		cloud.AzurePublic(),
-		mockContext.SubscriptionCredentialProvider,
-		mockContext.ArmClientOptions,
+		nil,
 		nil,
 	)
 
@@ -990,8 +989,7 @@ func TestUserDefinedTypes(t *testing.T) {
 			cloud.AzurePublic(),
 		),
 		cloud.AzurePublic(),
-		mockContext.SubscriptionCredentialProvider,
-		mockContext.ArmClientOptions,
+		nil,
 		nil,
 	)
 	bicepProvider, gooCast := provider.(*BicepProvider)

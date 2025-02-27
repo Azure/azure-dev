@@ -7,14 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 
-	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -80,68 +79,6 @@ func autoGenerate(parameter string, azdMetadata azure.AzdMetadata) (string, erro
 	return genValue, nil
 }
 
-type quotaResponse struct {
-	Value    []quota `json:"value"`
-	NextLink *string `json:"nextLink"`
-}
-
-type quota struct {
-	Name         quotaName `json:"name"`
-	CurrentValue int       `json:"currentValue"`
-	Limit        int       `json:"limit"`
-	Unit         string    `json:"unit"`
-}
-
-type quotaName struct {
-	Value          string `json:"value"`
-	LocalizedValue string `json:"localizedValue"`
-}
-
-func (a *BicepProvider) quotaForLocation(ctx context.Context, subId, location string) (quotaResponse, error) {
-	cred, err := a.creds.CredentialForSubscription(ctx, a.env.GetSubscriptionId())
-	if err != nil {
-		return quotaResponse{}, fmt.Errorf("getting credentials: %w", err)
-	}
-	pipeline, err := armruntime.NewPipeline(
-		"cognitive-list", "1.0.0", cred, runtime.PipelineOptions{}, a.armClientOptions)
-	if err != nil {
-		return quotaResponse{}, fmt.Errorf("failed creating HTTP pipeline: %w", err)
-	}
-
-	locationRequest := fmt.Sprintf(
-		//nolint:lll
-		"https://management.azure.com/subscriptions/%s/providers/Microsoft.CognitiveServices/locations/%s/usages?api-version=2024-10-01",
-		subId,
-		location,
-	)
-	req, err := runtime.NewRequest(ctx, http.MethodGet, locationRequest)
-	if err != nil {
-		return quotaResponse{}, fmt.Errorf("creating request: %w", err)
-	}
-
-	resp, err := pipeline.Do(req)
-	if err != nil {
-		return quotaResponse{}, fmt.Errorf("making request: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return quotaResponse{}, runtime.NewResponseError(resp)
-	}
-
-	body, err := runtime.Payload(resp)
-	if err != nil {
-		return quotaResponse{}, fmt.Errorf("reading response: %w", err)
-	}
-
-	// TODO: Need to handle nextLink; either switching to Azure SDK for go and a pager, or manually using the nextLink
-	var response quotaResponse
-	err = json.Unmarshal(body, &response)
-	if err != nil {
-		return quotaResponse{}, fmt.Errorf("decoding response: %w", err)
-	}
-	return response, nil
-}
-
 func (a *BicepProvider) locationsWithQuotaFor(
 	ctx context.Context, subId string, locations []string, quotaFor string) ([]string, error) {
 	var sharedResults sync.Map
@@ -150,7 +87,7 @@ func (a *BicepProvider) locationsWithQuotaFor(
 		wg.Add(1)
 		go func(location string) {
 			defer wg.Done()
-			results, err := a.quotaForLocation(ctx, subId, location)
+			results, err := a.azureClient.GetAiUsages(ctx, subId, location)
 			if err != nil {
 				return
 			}
@@ -159,13 +96,36 @@ func (a *BicepProvider) locationsWithQuotaFor(
 	}
 	wg.Wait()
 	var results []string
+	skuUsageName := quotaFor
+	var skuCapacity float64
+	skuCapacity = 1
+	if strings.Contains(skuUsageName, ",") {
+		parts := strings.Split(skuUsageName, ",")
+		skuUsageName = parts[0]
+		cap, err := strconv.ParseFloat(parts[1], 64)
+		if err != nil {
+			return nil, fmt.Errorf("parsing quota '%s': %w", quotaFor, err)
+		}
+		skuCapacity = cap
+	}
+	var maxAvailableCap float64
+	maxAvailableCapLocation := ""
 	sharedResults.Range(func(key, value any) bool {
-		quotaResponse := value.(quotaResponse)
-		hasS0SkuQuota := slices.ContainsFunc(quotaResponse.Value, func(q quota) bool {
-			return q.Name.Value == "OpenAI.S0.AccountCount" && q.CurrentValue < q.Limit
+		usages := value.([]*armcognitiveservices.Usage)
+		hasS0SkuQuota := slices.ContainsFunc(usages, func(q *armcognitiveservices.Usage) bool {
+			return *q.Name.Value == "OpenAI.S0.AccountCount" && *q.CurrentValue < *q.Limit
 		})
-		hasQuotaForModel := slices.ContainsFunc(quotaResponse.Value, func(q quota) bool {
-			return q.Name.Value == quotaFor && q.CurrentValue < q.Limit
+		hasQuotaForModel := slices.ContainsFunc(usages, func(q *armcognitiveservices.Usage) bool {
+			hasQuota := *q.Name.Value == skuUsageName
+			if !hasQuota {
+				return false
+			}
+			remaining := *q.Limit - *q.CurrentValue
+			if remaining > maxAvailableCap {
+				maxAvailableCap = remaining
+				maxAvailableCapLocation = key.(string)
+			}
+			return *q.Name.Value == skuUsageName && remaining >= skuCapacity
 		})
 		if hasQuotaForModel && hasS0SkuQuota {
 			results = append(results, key.(string))
@@ -173,7 +133,10 @@ func (a *BicepProvider) locationsWithQuotaFor(
 		return true
 	})
 	if len(results) == 0 {
-		return nil, fmt.Errorf("no locations with quota for model '%s'", quotaFor)
+		return nil, fmt.Errorf(
+			"no locations with quota for model '%s' and capacity '%.0f'. "+
+				"Maximum available capacity of %.0f was found in '%s'",
+			skuUsageName, skuCapacity, maxAvailableCap, maxAvailableCapLocation)
 	}
 	return results, nil
 }

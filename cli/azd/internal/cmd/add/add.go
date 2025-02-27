@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -54,6 +55,7 @@ type AddAction struct {
 	prompter         prompt.Prompter
 	console          input.Console
 	accountManager   account.Manager
+	azureClient      *azapi.AzureClient
 }
 
 var composeFeature = alpha.MustFeatureKey("compose")
@@ -376,7 +378,8 @@ func NewAddAction(
 	armClientOptions *arm.ClientOptions,
 	azd workflow.AzdCommandRunner,
 	accountManager account.Manager,
-	console input.Console) actions.Action {
+	console input.Console,
+	azureClient *azapi.AzureClient) actions.Action {
 	return &AddAction{
 		azdCtx:           azdCtx,
 		console:          console,
@@ -390,5 +393,6 @@ func NewAddAction(
 		creds:            creds,
 		azd:              azd,
 		accountManager:   accountManager,
+		azureClient:      azureClient,
 	}
 }

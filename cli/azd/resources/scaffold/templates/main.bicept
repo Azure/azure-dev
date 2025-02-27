@@ -14,7 +14,7 @@ param location string
 {{- range .AiFoundryProject.Models }}
 @metadata({azd: {
   type: 'location'
-  usageName: '{{ .Sku.UsageName }}'
+  usageName: '{{ .Sku.UsageName }},{{ .Sku.Capacity }}'
   }
 })
 param {{bicepName .Name}}{{bicepName .Version}}Location string

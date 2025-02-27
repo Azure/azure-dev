@@ -5,18 +5,15 @@ package add
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
-	"net/http"
 	"slices"
 	"strings"
 	"sync"
 
-	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -142,48 +139,40 @@ func (a *AddAction) selectOpenAi(
 }
 
 func (a *AddAction) supportedModelsInLocation(ctx context.Context, subId, location string) ([]ModelList, error) {
-	cred, err := a.creds.CredentialForSubscription(ctx, a.env.GetSubscriptionId())
+	models, err := a.azureClient.GetAiModels(ctx, subId, location)
 	if err != nil {
-		return nil, fmt.Errorf("getting credentials: %w", err)
+		return nil, fmt.Errorf("getting models: %w", err)
 	}
-	pipeline, err := armruntime.NewPipeline(
-		"cognitive-list", "1.0.0", cred, runtime.PipelineOptions{}, a.armClientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("failed creating HTTP pipeline: %w", err)
+	var modelList []ModelList
+	for _, model := range models {
+		var skus []ModelSku
+		for _, sku := range model.Model.SKUs {
+			skus = append(skus, ModelSku{
+				Name:      *sku.Name,
+				UsageName: *sku.UsageName,
+				Capacity: ModelSkuCapacity{
+					Maximum: convert.ToValueWithDefault(sku.Capacity.Maximum, 0),
+					Minimum: convert.ToValueWithDefault(sku.Capacity.Minimum, 0),
+					Step:    convert.ToValueWithDefault(sku.Capacity.Step, 0),
+					Default: convert.ToValueWithDefault(sku.Capacity.Default, 0),
+				},
+			})
+		}
+		modelList = append(modelList, ModelList{
+			Kind: *model.Kind,
+			Model: Model{
+				Name:    *model.Model.Name,
+				Skus:    skus,
+				Version: *model.Model.Version,
+				SystemData: ModelSystemData{
+					CreatedAt: model.Model.SystemData.CreatedAt.String(),
+				},
+				Format:           *model.Model.Format,
+				IsDefaultVersion: *model.Model.IsDefaultVersion,
+			},
+		})
 	}
-
-	locationRequest := fmt.Sprintf(
-		//nolint:lll
-		"https://management.azure.com/subscriptions/%s/providers/Microsoft.CognitiveServices/locations/%s/models?api-version=2024-10-01",
-		subId,
-		location,
-	)
-	req, err := runtime.NewRequest(ctx, http.MethodGet, locationRequest)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-
-	resp, err := pipeline.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("making request: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, runtime.NewResponseError(resp)
-	}
-
-	body, err := runtime.Payload(resp)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
-	}
-
-	// TODO: Need to handle nextLink; either switching to Azure SDK for go and a pager, or manually using the nextLink
-	var response ModelResponse
-	err = json.Unmarshal(body, &response)
-	if err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
-	}
-	return response.Value, nil
+	return modelList, nil
 }
 
 type ModelResponse struct {
@@ -212,11 +201,10 @@ type ModelSku struct {
 }
 
 type ModelSkuCapacity struct {
-	AllowedValues []int `json:"allowedValues"`
-	Maximum       int   `json:"maximum"`
-	Minimum       int   `json:"minimum"`
-	Step          int   `json:"step"`
-	Default       int   `json:"default"`
+	Maximum int32 `json:"maximum"`
+	Minimum int32 `json:"minimum"`
+	Step    int32 `json:"step"`
+	Default int32 `json:"default"`
 }
 
 type ModelSystemData struct {

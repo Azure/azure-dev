@@ -229,7 +229,7 @@ type AiServicesModel struct {
 type AiServicesModelSku struct {
 	Name      string `yaml:"name,omitempty"`
 	UsageName string `yaml:"usageName,omitempty"`
-	Capacity  int    `yaml:"capacity,omitempty"`
+	Capacity  int32  `yaml:"capacity,omitempty"`
 }
 
 type AiFoundryModelProps struct {

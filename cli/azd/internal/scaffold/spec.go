@@ -75,7 +75,7 @@ type AiFoundryModel struct {
 type AiFoundryModelSku struct {
 	Name      string `yaml:"name,omitempty"`
 	UsageName string `yaml:"usageName,omitempty"`
-	Capacity  int    `yaml:"capacity,omitempty"`
+	Capacity  int32  `yaml:"capacity,omitempty"`
 }
 
 // AIModelModel represents a model that backs the AIModel.

@@ -75,9 +75,8 @@ type BicepProvider struct {
 	compileBicepMemoryCache *compileBicepResult
 	keyvaultService         keyvault.KeyVaultService
 	portalUrlBase           string
-	creds                   account.SubscriptionCredentialProvider
-	armClientOptions        *arm.ClientOptions
 	subscriptionManager     *account.SubscriptionsManager
+	azureClient             *azapi.AzureClient
 }
 
 // Name gets the name of the infra provider
@@ -2140,9 +2139,8 @@ func NewBicepProvider(
 	curPrincipal provisioning.CurrentPrincipalIdProvider,
 	keyvaultService keyvault.KeyVaultService,
 	cloud *cloud.Cloud,
-	creds account.SubscriptionCredentialProvider,
-	armClientOptions *arm.ClientOptions,
 	subscriptionManager *account.SubscriptionsManager,
+	azureClient *azapi.AzureClient,
 ) provisioning.Provider {
 	return &BicepProvider{
 		envManager:          envManager,
@@ -2156,8 +2154,7 @@ func NewBicepProvider(
 		curPrincipal:        curPrincipal,
 		keyvaultService:     keyvaultService,
 		portalUrlBase:       cloud.PortalUrlBase,
-		creds:               creds,
-		armClientOptions:    armClientOptions,
 		subscriptionManager: subscriptionManager,
+		azureClient:         azureClient,
 	}
 }

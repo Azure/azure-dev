@@ -57,7 +57,7 @@ output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = resources.outputs.AZ
 {{- if .KeyVault}}
 output AZURE_KEY_VAULT_ENDPOINT string = resources.outputs.AZURE_KEY_VAULT_ENDPOINT
 output AZURE_KEY_VAULT_NAME string = resources.outputs.AZURE_KEY_VAULT_NAME
-output AZURE_RESOURCE_KEY_VAULT_ID string = resources.outputs.AZURE_RESOURCE_KEY_VAULT_ID
+output AZURE_RESOURCE_VAULT_ID string = resources.outputs.AZURE_RESOURCE_VAULT_ID
 {{- end}}
 {{- if  .AIModels}}
 {{- range .AIModels}}

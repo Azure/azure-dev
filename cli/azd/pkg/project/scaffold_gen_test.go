@@ -75,92 +75,65 @@ func Test_genBicepParamsFromEnvSubst(t *testing.T) {
 	}
 }
 
-func Test_WithResolvedDependencies(t *testing.T) {
+func Test_DependentResourcesOf(t *testing.T) {
 	tests := []struct {
-		name      string
-		resources map[string]*ResourceConfig
-		want      map[string]*ResourceConfig
+		name     string
+		resource *ResourceConfig
+		want     []*ResourceConfig
 	}{
 		{
-			name:      "empty resources",
-			resources: map[string]*ResourceConfig{},
-			want:      map[string]*ResourceConfig{},
+			name:     "host is standalone",
+			resource: &ResourceConfig{Name: "app", Type: ResourceTypeHostContainerApp},
+			want:     nil,
 		},
 		{
-			name: "resource with no dependencies",
-			resources: map[string]*ResourceConfig{
-				"app": {Name: "app", Type: ResourceTypeHostContainerApp},
-			},
-			want: map[string]*ResourceConfig{
-				"app": {Name: "app", Type: ResourceTypeHostContainerApp},
-			},
+			name:     "keyvault is standalone",
+			resource: &ResourceConfig{Name: "app", Type: ResourceTypeKeyVault},
+			want:     nil,
 		},
 		{
-			name: "mongodb requires keyvault",
-			resources: map[string]*ResourceConfig{
-				"mongodb": {Name: "mongodb", Type: ResourceTypeDbMongo},
-			},
-			want: map[string]*ResourceConfig{
-				"mongodb":   {Name: "mongodb", Type: ResourceTypeDbMongo},
-				"key-vault": {Name: "key-vault", Type: ResourceTypeKeyVault},
-			},
+			name:     "mongodb requires keyvault",
+			resource: &ResourceConfig{Name: "mongodb", Type: ResourceTypeDbMongo},
+			want:     []*ResourceConfig{{Name: "vault", Type: ResourceTypeKeyVault}},
 		},
 		{
-			name: "redis requires keyvault",
-			resources: map[string]*ResourceConfig{
-				"redis": {Name: "redis", Type: ResourceTypeDbRedis},
-			},
-			want: map[string]*ResourceConfig{
-				"redis":     {Name: "redis", Type: ResourceTypeDbRedis},
-				"key-vault": {Name: "key-vault", Type: ResourceTypeKeyVault},
-			},
+			name:     "mysql requires keyvault",
+			resource: &ResourceConfig{Name: "mysql", Type: ResourceTypeDbMySql},
+			want:     []*ResourceConfig{{Name: "vault", Type: ResourceTypeKeyVault}},
 		},
 		{
-			name: "multiple resources sharing keyvault dependency",
-			resources: map[string]*ResourceConfig{
-				"mongodb": {Name: "mongodb", Type: ResourceTypeDbMongo},
-				"redis":   {Name: "redis", Type: ResourceTypeDbRedis},
-			},
-			want: map[string]*ResourceConfig{
-				"mongodb":   {Name: "mongodb", Type: ResourceTypeDbMongo},
-				"redis":     {Name: "redis", Type: ResourceTypeDbRedis},
-				"key-vault": {Name: "key-vault", Type: ResourceTypeKeyVault},
-			},
+			name:     "postgres requires keyvault",
+			resource: &ResourceConfig{Name: "postgres", Type: ResourceTypeDbPostgres},
+			want:     []*ResourceConfig{{Name: "vault", Type: ResourceTypeKeyVault}},
 		},
 		{
-			name: "dependency already present",
-			resources: map[string]*ResourceConfig{
-				"mongodb":   {Name: "mongodb", Type: ResourceTypeDbMongo},
-				"key-vault": {Name: "key-vault", Type: ResourceTypeKeyVault},
-			},
-			want: map[string]*ResourceConfig{
-				"mongodb":   {Name: "mongodb", Type: ResourceTypeDbMongo},
-				"key-vault": {Name: "key-vault", Type: ResourceTypeKeyVault},
-			},
+			name:     "redis requires keyvault",
+			resource: &ResourceConfig{Name: "redis", Type: ResourceTypeDbRedis},
+			want:     []*ResourceConfig{{Name: "vault", Type: ResourceTypeKeyVault}},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := WithResolvedDependencies(tt.resources)
+			got := DependentResourcesOf(tt.resource)
 
 			// Check if got and want have same length
-			if len(got) != len(tt.want) {
-				t.Errorf("WithResolvedDependencies() got %v resources, want %v", len(got), len(tt.want))
+			if (got == nil && tt.want != nil) || (got != nil && tt.want == nil) || (got != nil && len(got) != len(tt.want)) {
+				t.Errorf("DependentResourcesOf() got %v resources, want %v", len(got), len(tt.want))
+			}
+
+			// If both are nil, test passes
+			if got == nil && tt.want == nil {
+				return
 			}
 
 			// Check if all resources in want exist in got with same properties
-			for name, wantRes := range tt.want {
-				gotRes, exists := got[name]
-				if !exists {
-					t.Errorf("WithResolvedDependencies() missing resource %v", name)
-					continue
+			for i, wantRes := range tt.want {
+				if got[i].Name != wantRes.Name {
+					t.Errorf("DependentResourcesOf() resource at index %d got name %v, want %v", i, got[i].Name, wantRes.Name)
 				}
-				if gotRes.Name != wantRes.Name {
-					t.Errorf("WithResolvedDependencies() resource %v got name %v, want %v", name, gotRes.Name, wantRes.Name)
-				}
-				if gotRes.Type != wantRes.Type {
-					t.Errorf("WithResolvedDependencies() resource %v got type %v, want %v", name, gotRes.Type, wantRes.Type)
+				if got[i].Type != wantRes.Type {
+					t.Errorf("DependentResourcesOf() resource at index %d got type %v, want %v", i, got[i].Type, wantRes.Type)
 				}
 			}
 		})

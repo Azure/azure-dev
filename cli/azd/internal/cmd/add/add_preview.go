@@ -108,8 +108,7 @@ func Metadata(r *project.ResourceConfig) resourceMeta {
 func (a *AddAction) previewProvision(
 	ctx context.Context,
 	prjConfig *project.ProjectConfig,
-	resourceToAdd *project.ResourceConfig,
-	depsToAdd []*project.ResourceConfig,
+	resourcesToAdd []*project.ResourceConfig,
 	usedBy []string,
 ) error {
 	a.console.ShowSpinner(ctx, "Previewing changes....", input.Step)
@@ -138,11 +137,8 @@ func (a *AddAction) previewProvision(
 	previewWriter := previewWriter{w: a.console.GetWriter()}
 	w := tabwriter.NewWriter(&previewWriter, 0, 0, 5, ' ', 0)
 
-	allResourcesToAdd := []*project.ResourceConfig{resourceToAdd}
-	allResourcesToAdd = append(allResourcesToAdd, depsToAdd...)
-
 	fmt.Fprintln(w, "b  Name\tResource type")
-	for _, res := range allResourcesToAdd {
+	for _, res := range resourcesToAdd {
 		meta := Metadata(res)
 		fmt.Fprintf(w, "+  %s\t%s\n", res.Name, meta.AzureResourceType)
 	}
@@ -150,7 +146,7 @@ func (a *AddAction) previewProvision(
 	w.Flush()
 	a.console.Message(ctx, fmt.Sprintf("\n%s\n", output.WithBold("Environment variables")))
 
-	for _, res := range allResourcesToAdd {
+	for _, res := range resourcesToAdd {
 		if strings.HasPrefix(string(res.Type), "host.") {
 			for _, use := range res.Uses {
 				if usingRes, ok := prjConfig.Resources[use]; ok {

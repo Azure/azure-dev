@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -135,10 +136,19 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	// backends -> frontends
 	backendMapping := map[string]string{}
 
-	// To handle cases where some resources like AKV aren't defined in azure.yml but another resource like MongoDB
-	// requires it, we need a complete list of required resources with all dependencies resolved.
-	resourcesWithDeps := WithResolvedDependencies(projectConfig.Resources)
-	for _, res := range resourcesWithDeps {
+	// Create a "virtual" copy since we're adding any implicitly dependent resources that are unrepresented by the current user-provided schema
+	resources := maps.Clone(projectConfig.Resources)
+	// Add any implicit dependencies
+	for _, res := range resources {
+		dependencies := DependentResourcesOf(res)
+		for _, dep := range dependencies {
+			if _, exists := resources[dep.Name]; !exists {
+				resources[dep.Name] = dep
+			}
+		}
+	}
+
+	for _, res := range resources {
 		switch res.Type {
 		case ResourceTypeDbRedis:
 			infraSpec.DbRedis = &scaffold.DatabaseRedis{}
@@ -393,39 +403,14 @@ func genBicepParamsFromEnvSubst(
 	return result
 }
 
-// GetRequiredDependencies returns the required dependent resources for a given resource type.
-// For example, Key Vault is considered a dependency of MongoDB and Redis since we store their
-// access keys and connection strings in the project key vault.
-func GetRequiredDependencies(resource *ResourceConfig) []*ResourceConfig {
+// DependentResourcesOf returns implicit resource dependencies for a given resource type.
+// These dependencies (like Key Vault to store connection strings, passwords for databases)
+// are automatically added to the project configuration. Returns an empty slice if none exist.
+func DependentResourcesOf(resource *ResourceConfig) []*ResourceConfig {
 	switch resource.Type {
 	case ResourceTypeDbMongo, ResourceTypeDbMySql, ResourceTypeDbPostgres, ResourceTypeDbRedis:
-		return []*ResourceConfig{{Name: "key-vault", Type: ResourceTypeKeyVault}}
+		return []*ResourceConfig{{Name: "vault", Type: ResourceTypeKeyVault}}
 	default:
 		return nil
 	}
-}
-
-// WithResolvedDependencies returns a map of resource configs with all dependencies resolved.
-func WithResolvedDependencies(resources map[string]*ResourceConfig) map[string]*ResourceConfig {
-	allResources := make(map[string]*ResourceConfig)
-	seen := make(map[ResourceType]struct{})
-
-	// Add all existing resources to result
-	for name, res := range resources {
-		allResources[name] = res
-		seen[res.Type] = struct{}{}
-	}
-
-	// Then add dependent resources if they don't already exist
-	for _, res := range resources {
-		deps := GetRequiredDependencies(res)
-		for _, dep := range deps {
-			if _, exists := seen[dep.Type]; !exists {
-				allResources[dep.Name] = dep
-				seen[dep.Type] = struct{}{}
-			}
-		}
-	}
-
-	return allResources
 }

@@ -156,44 +156,31 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	// First encode and add the main resource
-	resourceNode, err := yamlnode.Encode(resourceToAdd)
-	if err != nil {
-		panic(fmt.Sprintf("encoding yaml node: %v", err))
-	}
-
-	err = yamlnode.Set(&doc, fmt.Sprintf("resources?.%s", resourceToAdd.Name), resourceNode)
-	if err != nil {
-		return nil, fmt.Errorf("setting resource: %w", err)
-	}
-
-	// Dependent resources (both existing and to be added)
-	dependentResources := project.GetRequiredDependencies(resourceToAdd)
-	// New dependent resources to be added
-	dependentResourcesToAdd := make([]*project.ResourceConfig, 0)
+	resourcesToAdd := []*project.ResourceConfig{resourceToAdd}
+	dependentResources := project.DependentResourcesOf(resourceToAdd)
+	requiredByMessages := make([]string, 0)
+	// Find any dependent resources that are not already in the project
 	for _, dep := range dependentResources {
 		if prjConfig.Resources[dep.Name] == nil {
-			dependentResourcesToAdd = append(dependentResourcesToAdd, dep)
+			resourcesToAdd = append(resourcesToAdd, dep)
+			requiredByMessages = append(requiredByMessages,
+				fmt.Sprintf("(%s is required by %s)",
+					color.BlueString(dep.Name),
+					color.BlueString(resourceToAdd.Name)))
 		}
 	}
 
-	requiredByMessages := make([]string, 0)
-	// Encode and add new dependent resources that aren't already in azure.yaml
-	for _, depToAdd := range dependentResourcesToAdd {
-		depNode, err := yamlnode.Encode(depToAdd)
+	// Add resource and any non-existing dependent resources
+	for _, resource := range resourcesToAdd {
+		resourceNode, err := yamlnode.Encode(resource)
 		if err != nil {
-			panic(fmt.Sprintf("encoding dependent resource yaml node: %v", err))
+			panic(fmt.Sprintf("encoding resource yaml node: %v", err))
 		}
 
-		err = yamlnode.Set(&doc, fmt.Sprintf("resources?.%s", depToAdd.Name), depNode)
+		err = yamlnode.Set(&doc, fmt.Sprintf("resources?.%s", resource.Name), resourceNode)
 		if err != nil {
-			return nil, fmt.Errorf("setting dependent resource: %w", err)
+			return nil, fmt.Errorf("setting resource: %w", err)
 		}
-
-		requiredByMessages = append(requiredByMessages,
-			fmt.Sprintf("(%s is required by %s)",
-				color.BlueString(depToAdd.Name),
-				color.BlueString(resourceToAdd.Name)))
 	}
 
 	for _, svc := range usedBy {
@@ -296,10 +283,9 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	var followUpMessage string
-	addedKeyVault := strings.EqualFold(resourceToAdd.Name, "key-vault") ||
-		slices.ContainsFunc(dependentResourcesToAdd, func(resource *project.ResourceConfig) bool {
-			return strings.EqualFold(resource.Name, "key-vault")
-		})
+	addedKeyVault := slices.ContainsFunc(resourcesToAdd, func(resource *project.ResourceConfig) bool {
+		return strings.EqualFold(resource.Name, "vault")
+	})
 	keyVaultFollowUpMessage := fmt.Sprintf(
 		"\nRun '%s' to add a secret to the key vault.",
 		color.BlueString("azd env set-secret <name>"))
@@ -340,7 +326,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if provisionOption == provisionPreview {
-		err = a.previewProvision(ctx, prjConfig, resourceToAdd, dependentResourcesToAdd, usedBy)
+		err = a.previewProvision(ctx, prjConfig, resourcesToAdd, usedBy)
 		if err != nil {
 			return nil, err
 		}

@@ -90,12 +90,10 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
       }
     ]
     {{- end}}
-    {{- if .KeyVault}}
     secretsExportConfiguration: {
       keyVaultResourceId: keyVault.outputs.resourceId
       primaryWriteConnectionStringSecretName: 'mongodb-url'
     }
-    {{- end}}
     capabilitiesToAdd: [ 'EnableServerless' ]
   }
 }
@@ -379,7 +377,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     scaleMaxReplicas: 10
     secrets: {
       secureList:  union([
-        {{- if and $infra.KeyVault .DbCosmosMongo}}
+        {{- if .DbCosmosMongo}}
         {
           name: 'mongodb-url'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
@@ -406,7 +404,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           value: 'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
         }
         {{- end}}
-        {{- if and $infra.KeyVault .DbRedis}}
+        {{- if .DbRedis}}
         {
           name: 'redis-pass'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
@@ -441,7 +439,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             name: 'AZURE_CLIENT_ID'
             value: {{bicepName .Name}}Identity.outputs.clientId
           }
-          {{- if and $infra.KeyVault .DbCosmosMongo}}
+          {{- if .DbCosmosMongo}}
           {
             name: 'MONGODB_URL'
             secretRef: 'mongodb-url'
@@ -512,7 +510,6 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             name: 'REDIS_ENDPOINT'
             value: '${redis.outputs.hostName}:${string(redis.outputs.sslPort)}'
           }
-          {{- if $infra.KeyVault}}
           {
             name: 'REDIS_URL'
             secretRef: 'redis-url'
@@ -521,7 +518,6 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             name: 'REDIS_PASSWORD'
             secretRef: 'redis-pass'
           }
-          {{- end}}
           {{- end}}
           {{- if .EventHubs}}
           {
@@ -553,7 +549,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: storageAccount.outputs.serviceEndpoints.blob
           }
           {{- end}}
-          {{- if or .KeyVault $infra.KeyVault}}
+          {{- if $infra.KeyVault}}
           {
             name: 'AZURE_KEY_VAULT_NAME'
             value: keyVault.outputs.name
@@ -617,13 +613,11 @@ module redis 'br/public:avm/res/cache/redis:0.9.0' = {
     // Non-required parameters
     location: location
     skuName: 'Basic'
-    {{- if .KeyVault}}
     secretsExportConfiguration: {
       keyVaultResourceId: keyVault.outputs.resourceId
       primaryAccessKeyName: 'redis-password'
       primaryConnectionStringName: 'redis-url'
     }
-    {{- end}}
   }
 }
 {{- end}}
@@ -680,7 +674,7 @@ output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = {{bicepName .Name}}.
 {{- if .KeyVault}}
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
-output AZURE_RESOURCE_KEY_VAULT_ID string = keyVault.outputs.resourceId
+output AZURE_RESOURCE_VAULT_ID string = keyVault.outputs.resourceId
 {{- end}}
 {{- if  .AIModels}}
 {{- range .AIModels}}

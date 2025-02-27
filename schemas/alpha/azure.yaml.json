@@ -374,7 +374,7 @@
                             "messaging.eventhubs",
                             "messaging.servicebus",
                             "storage",
-                            "key-vault"
+                            "keyvault"
                         ]
                     },
                     "uses": {
@@ -396,7 +396,7 @@
                     { "if": { "properties": { "type": { "const": "messaging.eventhubs" }}}, "then": { "$ref": "#/definitions/eventHubsResource" } },
                     { "if": { "properties": { "type": { "const": "messaging.servicebus" }}}, "then": { "$ref": "#/definitions/serviceBusResource" } },
                     { "if": { "properties": { "type": { "const": "storage"  }}}, "then": { "$ref": "#/definitions/storageAccountResource"} },
-                    { "if": { "properties": { "type": { "const": "key-vault" }}}, "then": { "$ref": "#/definitions/resource"} }
+                    { "if": { "properties": { "type": { "const": "keyvault" }}}, "then": { "$ref": "#/definitions/resource"} }
                 ]
             }
         },
@@ -1239,7 +1239,7 @@
                         "db.mongo",
                         "host.containerapp",
                         "ai.openai.model",
-                        "key-vault"
+                        "keyvault"
                     ]
                 },
                 "uses": {

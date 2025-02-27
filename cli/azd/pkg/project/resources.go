@@ -36,7 +36,7 @@ const (
 	ResourceTypeMessagingEventHubs  ResourceType = "messaging.eventhubs"
 	ResourceTypeMessagingServiceBus ResourceType = "messaging.servicebus"
 	ResourceTypeStorage             ResourceType = "storage"
-	ResourceTypeKeyVault            ResourceType = "key-vault"
+	ResourceTypeKeyVault            ResourceType = "keyvault"
 )
 
 func (r ResourceType) String() string {

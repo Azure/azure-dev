@@ -34,7 +34,7 @@ func (a *AddAction) selectMenu() []Menu {
 		{Namespace: "ai.openai", Label: "Azure OpenAI", SelectResource: a.selectOpenAi},
 		{Namespace: "messaging", Label: "Messaging", SelectResource: selectMessaging},
 		{Namespace: "storage", Label: "Storage account", SelectResource: selectStorage},
-		{Namespace: "key-vault", Label: "Key Vault", SelectResource: selectKeyVault},
+		{Namespace: "keyvault", Label: "Key Vault", SelectResource: selectKeyVault},
 	}
 }
 

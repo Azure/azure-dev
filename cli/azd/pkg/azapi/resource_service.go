@@ -16,10 +16,11 @@ import (
 )
 
 type Resource struct {
-	Id       string `json:"id"`
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Location string `json:"location"`
+	Id        string  `json:"id"`
+	Name      string  `json:"name"`
+	Type      string  `json:"type"`
+	Location  string  `json:"location"`
+	ManagedBy *string `json:"managedBy,omitempty"`
 }
 
 type ResourceGroup struct {
@@ -171,10 +172,11 @@ func (rs *ResourceService) ListResourceGroup(
 
 		for _, group := range page.ResourceGroupListResult.Value {
 			groups = append(groups, &Resource{
-				Id:       *group.ID,
-				Name:     *group.Name,
-				Type:     *group.Type,
-				Location: *group.Location,
+				Id:        *group.ID,
+				Name:      *group.Name,
+				Type:      *group.Type,
+				Location:  *group.Location,
+				ManagedBy: group.ManagedBy,
 			})
 		}
 	}

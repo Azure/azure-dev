@@ -6,6 +6,7 @@ package internal
 import (
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 	"unicode"
@@ -36,7 +37,7 @@ type InputConfig struct {
 func NewInput() *Input {
 	return &Input{
 		cursor:  NewCursor(os.Stdout),
-		SigChan: make(chan os.Signal),
+		SigChan: make(chan os.Signal, 1),
 	}
 }
 
@@ -59,25 +60,19 @@ func (i *Input) ReadInput(config *InputConfig) (<-chan InputEventArgs, func(), e
 		}
 	}
 
-	sigChan := make(chan os.Signal, 1)
-
 	done := func() {
-		signal.Stop(sigChan)
-		close(sigChan)
+		sync.OnceFunc(func() {
+			signal.Stop(i.SigChan)
 
-		if err := keyboard.Close(); err != nil {
-			panic(err)
-		}
+			if err := keyboard.Close(); err != nil {
+				panic(err)
+			}
+
+		})()
 	}
 
 	// Register for SIGINT (Ctrl+C) signal
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		_, ok := <-sigChan
-		if ok {
-			i.SigChan <- os.Interrupt
-		}
-	}()
+	signal.Notify(i.SigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	i.cursor.ShowCursor()
 	i.value = []rune(config.InitialValue)
@@ -86,31 +81,37 @@ func (i *Input) ReadInput(config *InputConfig) (<-chan InputEventArgs, func(), e
 		defer keyboard.Close()
 
 		for {
-			eventArgs := InputEventArgs{}
-			char, key, err := keyboard.GetKey()
-			if err != nil {
-				break
+			select {
+			case <-i.SigChan:
+				done()
+				return
+			default:
+				eventArgs := InputEventArgs{}
+				char, key, err := keyboard.GetKey()
+				if err != nil {
+					break
+				}
+
+				eventArgs.Char = char
+				eventArgs.Key = key
+
+				if len(i.value) > 0 && (key == keyboard.KeyBackspace || key == keyboard.KeyBackspace2) {
+					i.value = i.value[:len(i.value)-1]
+				} else if !config.IgnoreHintKeys && char == '?' {
+					eventArgs.Hint = true
+				} else if !config.IgnoreHintKeys && key == keyboard.KeyEsc {
+					eventArgs.Hint = false
+				} else if key == keyboard.KeySpace {
+					i.value = append(i.value, ' ')
+				} else if unicode.IsPrint(char) {
+					i.value = append(i.value, char)
+				} else if key == keyboard.KeyCtrlC || key == keyboard.KeyCtrlX {
+					i.SigChan <- os.Interrupt
+				}
+
+				eventArgs.Value = string(i.value)
+				inputChan <- eventArgs
 			}
-
-			eventArgs.Char = char
-			eventArgs.Key = key
-
-			if len(i.value) > 0 && (key == keyboard.KeyBackspace || key == keyboard.KeyBackspace2) {
-				i.value = i.value[:len(i.value)-1]
-			} else if !config.IgnoreHintKeys && char == '?' {
-				eventArgs.Hint = true
-			} else if !config.IgnoreHintKeys && key == keyboard.KeyEsc {
-				eventArgs.Hint = false
-			} else if key == keyboard.KeySpace {
-				i.value = append(i.value, ' ')
-			} else if unicode.IsPrint(char) {
-				i.value = append(i.value, char)
-			} else if key == keyboard.KeyCtrlC {
-				i.SigChan <- os.Interrupt
-			}
-
-			eventArgs.Value = string(i.value)
-			inputChan <- eventArgs
 		}
 	}()
 

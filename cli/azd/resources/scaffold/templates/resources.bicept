@@ -90,12 +90,10 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
       }
     ]
     {{- end}}
-    {{- if .Services}}
     secretsExportConfiguration: {
       keyVaultResourceId: keyVault.outputs.resourceId
       primaryWriteConnectionStringSecretName: 'mongodb-url'
     }
-    {{- end}}
     capabilitiesToAdd: [ 'EnableServerless' ]
   }
 }
@@ -315,6 +313,7 @@ module serviceBusNamespace 'br/public:avm/res/service-bus/namespace:0.11.2' = {
 }
 {{- end}}
 
+{{- $infra := . -}}
 {{- range .Services}}
 
 module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
@@ -508,12 +507,12 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: string(redis.outputs.sslPort)
           }
           {
-            name: 'REDIS_URL'
-            secretRef: 'redis-url'
-          }
-          {
             name: 'REDIS_ENDPOINT'
             value: '${redis.outputs.hostName}:${string(redis.outputs.sslPort)}'
+          }
+          {
+            name: 'REDIS_URL'
+            secretRef: 'redis-url'
           }
           {
             name: 'REDIS_PASSWORD'
@@ -548,6 +547,16 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'AZURE_STORAGE_BLOB_ENDPOINT'
             value: storageAccount.outputs.serviceEndpoints.blob
+          }
+          {{- end}}
+          {{- if $infra.KeyVault}}
+          {
+            name: 'AZURE_KEY_VAULT_NAME'
+            value: keyVault.outputs.name
+          }
+          {
+            name: 'AZURE_KEY_VAULT_ENDPOINT'
+            value: keyVault.outputs.uri
           }
           {{- end}}
           {{- if .AIModels}}
@@ -604,20 +613,18 @@ module redis 'br/public:avm/res/cache/redis:0.9.0' = {
     // Non-required parameters
     location: location
     skuName: 'Basic'
-    {{- if .Services}}
     secretsExportConfiguration: {
       keyVaultResourceId: keyVault.outputs.resourceId
       primaryAccessKeyName: 'redis-password'
       primaryConnectionStringName: 'redis-url'
     }
-    {{- end}}
   }
 }
 {{- end}}
 
-{{- if .Services}}
+{{- if .KeyVault}}
 // Create a keyvault to store secrets
-module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
+module keyVault 'br/public:avm/res/key-vault/vault:0.12.0' = {
   name: 'keyvault'
   params: {
     name: '${abbrs.keyVaultVaults}${resourceToken}'
@@ -660,11 +667,14 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
 
 {{- if .Services}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
-output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
-output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 {{- range .Services}}
 output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = {{bicepName .Name}}.outputs.resourceId
 {{- end}}
+{{- end}}
+{{- if .KeyVault}}
+output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
+output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
+output AZURE_RESOURCE_VAULT_ID string = keyVault.outputs.resourceId
 {{- end}}
 {{- if  .AIModels}}
 {{- range .AIModels}}

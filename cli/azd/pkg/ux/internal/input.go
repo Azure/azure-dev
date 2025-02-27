@@ -105,7 +105,7 @@ func (i *Input) ReadInput(config *InputConfig) (<-chan InputEventArgs, func(), e
 				i.value = append(i.value, ' ')
 			} else if unicode.IsPrint(char) {
 				i.value = append(i.value, char)
-			} else if key == keyboard.KeyCtrlC || key == keyboard.KeyCtrlX {
+			} else if key == keyboard.KeyCtrlC {
 				i.SigChan <- os.Interrupt
 			}
 

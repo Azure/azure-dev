@@ -58,6 +58,16 @@ func Configure(
 		return r, nil
 	case project.ResourceTypeStorage:
 		return fillStorageDetails(ctx, r, console, p)
+	case project.ResourceTypeKeyVault:
+		if _, exists := p.PrjConfig.Resources["vault"]; exists {
+			return nil, fmt.Errorf(
+				"you already have a project key vault named 'vault'. " +
+					"To add a secret to it, run 'azd env set-secret <name>'",
+			)
+		}
+
+		r.Name = "vault"
+		return r, nil
 	default:
 		return r, nil
 	}

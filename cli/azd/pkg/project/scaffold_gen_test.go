@@ -130,10 +130,12 @@ func Test_DependentResourcesOf(t *testing.T) {
 			// Check if all resources in want exist in got with same properties
 			for i, wantRes := range tt.want {
 				if got[i].Name != wantRes.Name {
-					t.Errorf("DependentResourcesOf() resource at index %d got name %v, want %v", i, got[i].Name, wantRes.Name)
+					t.Errorf("DependentResourcesOf() resource at index %d got name %v, want %v",
+						i, got[i].Name, wantRes.Name)
 				}
 				if got[i].Type != wantRes.Type {
-					t.Errorf("DependentResourcesOf() resource at index %d got type %v, want %v", i, got[i].Type, wantRes.Type)
+					t.Errorf("DependentResourcesOf() resource at index %d got type %v, want %v",
+						i, got[i].Type, wantRes.Type)
 				}
 			}
 		})

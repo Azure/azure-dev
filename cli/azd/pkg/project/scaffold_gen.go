@@ -136,7 +136,8 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	// backends -> frontends
 	backendMapping := map[string]string{}
 
-	// Create a "virtual" copy since we're adding any implicitly dependent resources that are unrepresented by the current user-provided schema
+	// Create a "virtual" copy since we're adding any implicitly dependent resources
+	// that are unrepresented by the current user-provided schema
 	resources := maps.Clone(projectConfig.Resources)
 	// Add any implicit dependencies
 	for _, res := range resources {

@@ -36,13 +36,21 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type PromptServiceClient interface {
+	// PromptSubscription prompts the user to select a subscription.
 	PromptSubscription(ctx context.Context, in *PromptSubscriptionRequest, opts ...grpc.CallOption) (*PromptSubscriptionResponse, error)
+	// PromptLocation prompts the user to select a location.
 	PromptLocation(ctx context.Context, in *PromptLocationRequest, opts ...grpc.CallOption) (*PromptLocationResponse, error)
+	// PromptResourceGroup prompts the user to select a resource group.
 	PromptResourceGroup(ctx context.Context, in *PromptResourceGroupRequest, opts ...grpc.CallOption) (*PromptResourceGroupResponse, error)
+	// Confirm prompts the user to confirm an action.
 	Confirm(ctx context.Context, in *ConfirmRequest, opts ...grpc.CallOption) (*ConfirmResponse, error)
+	// Prompt prompts the user for text input.
 	Prompt(ctx context.Context, in *PromptRequest, opts ...grpc.CallOption) (*PromptResponse, error)
+	// Select prompts the user to select an option from a list.
 	Select(ctx context.Context, in *SelectRequest, opts ...grpc.CallOption) (*SelectResponse, error)
+	// PromptSubscriptionResource prompts the user to select a resource from a subscription.
 	PromptSubscriptionResource(ctx context.Context, in *PromptSubscriptionResourceRequest, opts ...grpc.CallOption) (*PromptSubscriptionResourceResponse, error)
+	// PromptResourceGroupResource prompts the user to select a resource from a resource group.
 	PromptResourceGroupResource(ctx context.Context, in *PromptResourceGroupResourceRequest, opts ...grpc.CallOption) (*PromptResourceGroupResourceResponse, error)
 }
 
@@ -138,13 +146,21 @@ func (c *promptServiceClient) PromptResourceGroupResource(ctx context.Context, i
 // All implementations must embed UnimplementedPromptServiceServer
 // for forward compatibility.
 type PromptServiceServer interface {
+	// PromptSubscription prompts the user to select a subscription.
 	PromptSubscription(context.Context, *PromptSubscriptionRequest) (*PromptSubscriptionResponse, error)
+	// PromptLocation prompts the user to select a location.
 	PromptLocation(context.Context, *PromptLocationRequest) (*PromptLocationResponse, error)
+	// PromptResourceGroup prompts the user to select a resource group.
 	PromptResourceGroup(context.Context, *PromptResourceGroupRequest) (*PromptResourceGroupResponse, error)
+	// Confirm prompts the user to confirm an action.
 	Confirm(context.Context, *ConfirmRequest) (*ConfirmResponse, error)
+	// Prompt prompts the user for text input.
 	Prompt(context.Context, *PromptRequest) (*PromptResponse, error)
+	// Select prompts the user to select an option from a list.
 	Select(context.Context, *SelectRequest) (*SelectResponse, error)
+	// PromptSubscriptionResource prompts the user to select a resource from a subscription.
 	PromptSubscriptionResource(context.Context, *PromptSubscriptionResourceRequest) (*PromptSubscriptionResourceResponse, error)
+	// PromptResourceGroupResource prompts the user to select a resource from a resource group.
 	PromptResourceGroupResource(context.Context, *PromptResourceGroupResourceRequest) (*PromptResourceGroupResourceResponse, error)
 	mustEmbedUnimplementedPromptServiceServer()
 }

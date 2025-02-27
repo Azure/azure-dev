@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package cmd
+package show
 
 import (
 	"context"
@@ -20,6 +20,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -38,6 +39,8 @@ import (
 	"github.com/spf13/pflag"
 )
 
+var composeFeature = alpha.MustFeatureKey("compose")
+
 type showFlags struct {
 	global      *internal.GlobalCommandOptions
 	showSecrets bool
@@ -55,14 +58,14 @@ func (s *showFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 	s.global = global
 }
 
-func newShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *showFlags {
+func NewShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *showFlags {
 	flags := &showFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
 }
 
-func newShowCmd() *cobra.Command {
+func NewShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Short: "Display information about your app and its resources.",
 	}
@@ -90,7 +93,7 @@ type showAction struct {
 	portalUrlBase        string
 }
 
-func newShowAction(
+func NewShowAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
@@ -269,7 +272,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		AppName:         s.projectConfig.Name,
 		Services:        uxServices,
 		Environments:    uxEnvironments,
-		AzurePortalLink: azurePortalLink(s.portalUrlBase, subId, rgName),
+		AzurePortalLink: cmd.AzurePortalLink(s.portalUrlBase, subId, rgName),
 	})
 
 	return nil, nil

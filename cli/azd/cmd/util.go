@@ -26,17 +26,6 @@ type CmdAnnotations map[string]string
 
 type Asker func(p survey.Prompt, response interface{}) error
 
-func azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName string) string {
-	if subscriptionId == "" || resourceGroupName == "" {
-		return ""
-	}
-	return output.WithLinkFormat(fmt.Sprintf(
-		"%s/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-		portalUrlBase,
-		subscriptionId,
-		resourceGroupName))
-}
-
 func serviceNameWarningCheck(console input.Console, serviceNameFlag string, commandName string) {
 	if serviceNameFlag == "" {
 		return

@@ -255,6 +255,7 @@ func addOrUpdateExtension(
 		if v.Version == version {
 			ext.Versions[i] = extensions.ExtensionVersion{
 				Version:      version,
+				Capabilities: schema.Capabilities,
 				EntryPoint:   schema.EntryPoint,
 				Usage:        schema.Usage,
 				Examples:     schema.Examples,
@@ -269,6 +270,7 @@ func addOrUpdateExtension(
 	// If the version does not exist, add it as a new entry
 	ext.Versions = append(ext.Versions, extensions.ExtensionVersion{
 		Version:      version,
+		Capabilities: schema.Capabilities,
 		EntryPoint:   schema.EntryPoint,
 		Usage:        schema.Usage,
 		Examples:     schema.Examples,

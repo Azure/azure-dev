@@ -40,6 +40,11 @@
             },
             {
                 "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.initFromPom",
+                "title": "%azure-dev.commands.cli.initFromPom.title%"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.cli.provision",
                 "title": "%azure-dev.commands.cli.provision.title%"
             },
@@ -192,7 +197,7 @@
             "azure-dev.explorer.submenu": [
                 {
                     "when": "resourceFilename =~ /pom.xml/i",
-                    "command": "azure-dev.commands.cli.init",
+                    "command": "azure-dev.commands.cli.initFromPom",
                     "group": "10provision@10"
                 },
                 {

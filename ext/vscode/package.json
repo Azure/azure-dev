@@ -171,6 +171,10 @@
         "menus": {
             "commandPalette": [
                 {
+                    "command": "azure-dev.commands.cli.initFromPom",
+                    "when": "false"
+                },
+                {
                     "command": "azure-dev.commands.getDotEnvFilePath",
                     "when": "false"
                 },

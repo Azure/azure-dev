@@ -328,10 +328,6 @@ func (p *Select) renderValidation(printer Printer) {
 func (p *Select) renderMessage(printer Printer) {
 	printer.Fprintf(color.CyanString("? "))
 
-	if p.currentIndex == nil && p.options.SelectedIndex != nil {
-		p.currentIndex = p.options.SelectedIndex
-	}
-
 	// Message
 	printer.Fprintf(BoldString("%s: ", p.options.Message))
 
@@ -372,7 +368,10 @@ func (p *Select) renderMessage(printer Printer) {
 
 // Render renders the Select component.
 func (p *Select) Render(printer Printer) error {
-	indent := "  "
+	if p.currentIndex == nil && p.options.SelectedIndex != nil {
+		p.currentIndex = p.options.SelectedIndex
+	}
+
 	p.renderMessage(printer)
 
 	if p.complete || p.cancelled {
@@ -380,7 +379,7 @@ func (p *Select) Render(printer Printer) error {
 	}
 
 	p.applyFilter()
-	p.renderOptions(printer, indent)
+	p.renderOptions(printer, "  ")
 	p.renderValidation(printer)
 	p.renderFooter(printer)
 

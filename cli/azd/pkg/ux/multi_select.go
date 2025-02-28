@@ -446,7 +446,6 @@ func (p *MultiSelect) Render(printer Printer) error {
 		p.currentIndex = Ptr(0)
 	}
 
-	indent := "  "
 	p.renderMessage(printer)
 
 	if p.complete || p.cancelled {
@@ -454,7 +453,7 @@ func (p *MultiSelect) Render(printer Printer) error {
 	}
 
 	p.applyFilter()
-	p.renderOptions(printer, indent)
+	p.renderOptions(printer, "  ")
 
 	p.validate()
 	p.renderValidation(printer)

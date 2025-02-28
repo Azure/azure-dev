@@ -310,14 +310,14 @@ func (p *Select) renderValidation(printer Printer) {
 
 	// Validation error
 	if !p.showHelp && p.hasValidationError {
-		printer.Fprintln(color.YellowString(p.validationMessage))
+		printer.Fprintln(color.YellowString("  %s", p.validationMessage))
 	}
 
 	// Hint
 	if p.showHelp && p.options.HelpMessage != "" {
 		printer.Fprintln()
 		printer.Fprintf(
-			color.HiMagentaString("%s %s\n",
+			color.HiMagentaString("  %s %s\n",
 				BoldString("Hint:"),
 				p.options.HelpMessage,
 			),
@@ -339,11 +339,7 @@ func (p *Select) renderMessage(printer Printer) {
 	// Selected Value
 	if !p.cancelled && p.selectedChoice != nil {
 		rawValue := p.selectedChoice.Label
-		if p.complete {
-			printer.Fprintf(color.CyanString(rawValue))
-		} else {
-			printer.Fprintf(rawValue)
-		}
+		printer.Fprintf(color.CyanString(rawValue))
 	}
 
 	printer.Fprintln()
@@ -370,6 +366,7 @@ func (p *Select) renderMessage(printer Printer) {
 func (p *Select) Render(printer Printer) error {
 	if p.currentIndex == nil && p.options.SelectedIndex != nil {
 		p.currentIndex = p.options.SelectedIndex
+		p.selectedChoice = p.choices[*p.currentIndex]
 	}
 
 	p.renderMessage(printer)

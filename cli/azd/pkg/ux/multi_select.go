@@ -267,7 +267,7 @@ func (p *MultiSelect) applyFilter() {
 		}
 	}
 
-	if len(p.filteredChoices) > 0 {
+	if *p.currentIndex > len(p.filteredChoices)-1 {
 		p.currentIndex = Ptr(0)
 	}
 }
@@ -413,11 +413,7 @@ func (p *MultiSelect) renderMessage(printer Printer) {
 		}
 
 		rawValue := strings.Join(selectionValues, ", ")
-		if p.complete {
-			printer.Fprintf(color.CyanString(rawValue))
-		} else {
-			printer.Fprintf(rawValue)
-		}
+		printer.Fprintf(color.CyanString(rawValue))
 	}
 
 	printer.Fprintln()

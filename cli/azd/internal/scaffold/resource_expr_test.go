@@ -54,6 +54,30 @@ func TestExpressionParsing(t *testing.T) {
 			}},
 		},
 		{
+			name:  "func",
+			input: "${func .id spec.name name}",
+			expected: []expression{{
+				Kind: FuncExpr,
+				Data: FuncExprData{
+					FuncName: "func",
+					Args: []*expression{
+						{
+							Kind: PropertyExpr,
+							Data: PropertyExprData{PropertyPath: "id"},
+						},
+						{
+							Kind: SpecExpr,
+							Data: SpecExprData{PropertyPath: "name"},
+						},
+						{
+							Kind: VarExpr,
+							Data: VarExprData{Name: "name"},
+						},
+					},
+				},
+			}},
+		},
+		{
 			name:  "complex nested expression",
 			input: "postgresql://${.properties.user}:${vault.}@${.properties.host}:${DB_PORT}/${spec.name}",
 			expected: []expression{
@@ -100,7 +124,20 @@ func TestExpressionParsing(t *testing.T) {
 
 			for i, exp := range tt.expected {
 				assert.Equal(t, exp.Kind, expressions[i].Kind)
-				assert.Equal(t, exp.Data, expressions[i].Data)
+
+				if exp.Kind == FuncExpr {
+					expectedFunc := exp.Data.(FuncExprData)
+					actualFunc := expressions[i].Data.(FuncExprData)
+					assert.Equal(t, expectedFunc.FuncName, actualFunc.FuncName)
+					assert.Equal(t, len(expectedFunc.Args), len(actualFunc.Args))
+
+					for j, arg := range expectedFunc.Args {
+						assert.Equal(t, arg.Kind, actualFunc.Args[j].Kind)
+						assert.Equal(t, arg.Data, actualFunc.Args[j].Data)
+					}
+				} else {
+					assert.Equal(t, exp.Data, expressions[i].Data)
+				}
 			}
 		})
 	}

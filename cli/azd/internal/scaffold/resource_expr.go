@@ -6,6 +6,7 @@ package scaffold
 import (
 	"bytes"
 	"fmt"
+	"slices"
 )
 
 type Kind uint32
@@ -15,6 +16,8 @@ const (
 	SpecExpr
 	VaultExpr
 	VarExpr
+	LiteralExpr
+	FuncExpr
 )
 
 const (
@@ -43,6 +46,19 @@ type VarExprData struct {
 	Name string
 }
 
+// New struct for function expression data
+type FuncExprData struct {
+	// The name of the function
+	FuncName string
+	// The arguments to the function
+	Args []*expression
+}
+
+type LiteralExprData struct {
+	// The literal value
+	Value string
+}
+
 type expression struct {
 	// The kind of expression.
 	Kind Kind
@@ -50,20 +66,31 @@ type expression struct {
 	// The data associated with the kind of expression.
 	Data any
 
+	// The finalized value of the expression.
+	Value string
+
 	// The template that this expression is a part of.
+	// Can be nil if the expression is not part of a template, and if so Value is the final value.
 	t *tmpl
+
 	// The start and end positions of the expression in the template.
 	start int
 	end   int
 }
 
 func (e *expression) Replace(val string) {
-	e.t.Replace(e, val)
+	if e.t == nil {
+		e.Value = val
+	} else {
+		e.t.Replace(e, val)
+	}
 }
 
 const (
 	DotChar      byte = '.'
 	DoubleQuotes byte = '"'
+	SingleQuotes byte = '\''
+	Space        byte = ' '
 )
 
 // parser for a dot-like expression.
@@ -110,6 +137,28 @@ func (p *parser) until(b byte) byte {
 	return c
 }
 
+func (p *parser) untilOneOf(b ...byte) byte {
+	p.seen.Reset()
+
+	c := p.peek()
+	for {
+		if c == 0 || slices.Contains(b, c) {
+			break
+		}
+
+		p.seen.WriteByte(c)
+		c = p.next()
+	}
+
+	return c
+}
+
+func (p *parser) skipWhitespace() {
+	for p.peek() == Space {
+		p.next()
+	}
+}
+
 func (p *parser) parseExpression() (*expression, error) {
 	seen := bytes.Buffer{}
 	var expr *expression
@@ -148,16 +197,66 @@ func (p *parser) parseExpression() (*expression, error) {
 			default:
 				return nil, fmt.Errorf("unknown expression: %s", seen.String())
 			}
-			// parse qualifier
+		case DoubleQuotes, SingleQuotes:
+			quote := c
+			p.next() // skip the '"' character
+			expr = &expression{Kind: LiteralExpr}
+			p.until(quote)
+			if p.peek() != quote {
+				return nil, fmt.Errorf("missing quotes")
+			}
+			literal := p.seen.String()
+			expr.Data = LiteralExprData{
+				Value: literal,
+			}
+			p.until(p.terminal)
+			return expr, nil
 		case 0, p.terminal: // we're done
 			expr = &expression{Kind: VarExpr}
 			expr.Data = VarExprData{
 				Name: seen.String(),
 			}
 			return expr, nil
-		}
+		case Space:
+			p.next()
+			expr = &expression{Kind: FuncExpr}
+			funcName := seen.String()
+			p.skipWhitespace()
 
-		seen.WriteByte(byte(c))
+			// Parse all arguments until terminal
+			var args []*expression
+			for p.peek() != 0 && p.peek() != p.terminal {
+				wordStart := p.cursor
+				origTerminal := p.terminal
+
+				// lookahead for the next token
+				p.untilOneOf(Space, p.terminal)
+				terminal := p.peek()
+
+				p.cursor = wordStart
+				p.terminal = terminal
+
+				expr, err := p.parseExpression()
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse function argument: %w", err)
+				}
+
+				p.terminal = origTerminal
+				if expr != nil {
+					args = append(args, expr)
+				}
+
+				p.skipWhitespace()
+			}
+
+			expr.Data = FuncExprData{
+				FuncName: funcName,
+				Args:     args,
+			}
+			return expr, nil
+		default:
+			seen.WriteByte(byte(c))
+		}
 	}
 
 	return nil, nil
@@ -209,6 +308,7 @@ func parseExpressions(s *string) ([]expression, error) {
 				expr.start = i - 1                // start of '${'
 				expr.end = (i + 1) + p.cursor + 1 // end of '}'
 				expr.t = t
+
 				t.expressions = append(t.expressions, *expr)
 			}
 		}

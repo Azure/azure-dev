@@ -91,7 +91,7 @@ var Resources = []ResourceMeta{
 		ApiVersion:   "2024-01-01",
 		Variables: map[string]string{
 			"AZURE_EVENT_HUBS_NAME": "${.name}",
-			"AZURE_EVENT_HUBS_HOST": "${.name}.servicebus.windows.net",
+			"AZURE_EVENT_HUBS_HOST": "${host .properties.serviceBusEndpoint}",
 		},
 	},
 	{
@@ -107,7 +107,7 @@ var Resources = []ResourceMeta{
 		ApiVersion:   "2022-10-01-preview",
 		Variables: map[string]string{
 			"AZURE_SERVICE_BUS_NAME": "${.name}",
-			"AZURE_SERVICE_BUS_HOST": "${.name}.servicebus.windows.net",
+			"AZURE_SERVICE_BUS_HOST": "${host .properties.serviceBusEndpoint}",
 		},
 	},
 	{

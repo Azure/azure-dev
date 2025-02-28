@@ -74,7 +74,7 @@ func (s *showResource) showResourceGeneric(
 		resourceNode = node
 	}
 
-	context := scaffold.EvalCtx{
+	context := scaffold.EvalEnv{
 		ResourceSpec: resourceNode,
 		ArmResource:  spec,
 		VaultSecret:  resolveSecret,

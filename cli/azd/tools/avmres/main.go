@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -18,7 +19,7 @@ import (
 var (
 	token      = flag.String("token", "", "GitHub token")
 	avmModule  = flag.String("module", "", "AVM module")
-	bicepFile  = flag.String("bicep-file", "../../resources/scaffold/templates/resources.bicept", "Bicep file")
+	bicepDir   = flag.String("bicep-dir", "../../resources/scaffold", "Bicep dir")
 	emitSource = flag.Bool("emit-source", false, "Emit the fetched source documents to disk.")
 )
 
@@ -28,17 +29,28 @@ func run() error {
 	var avmModules []string
 
 	if avmModule == nil || *avmModule == "" {
-		bytes, err := os.ReadFile(*bicepFile)
-		if err != nil {
-			return fmt.Errorf("reading bicep file: %w", err)
-		}
-
-		matches := bicepAvmModuleRegex.FindAllStringSubmatch(string(bytes), -1)
-		for _, match := range matches {
-			if len(match) > 1 {
-				avmModules = append(avmModules, match[1])
+		filepath.WalkDir(*bicepDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
 			}
-		}
+			if d.IsDir() {
+				return nil
+			}
+
+			bytes, err := os.ReadFile(filepath.Join(*bicepDir, path))
+			if err != nil {
+				return fmt.Errorf("reading bicep file: %w", err)
+			}
+
+			matches := bicepAvmModuleRegex.FindAllStringSubmatch(string(bytes), -1)
+			for _, match := range matches {
+				if len(match) > 1 {
+					avmModules = append(avmModules, match[1])
+				}
+			}
+
+			return nil
+		})
 	} else {
 		avmModules = append(avmModules, *avmModule)
 	}

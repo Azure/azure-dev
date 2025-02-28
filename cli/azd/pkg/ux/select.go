@@ -28,7 +28,7 @@ type SelectOptions struct {
 	// The message to display before the prompt
 	Message string
 	// The available options to display
-	Allowed []string
+	Choices []*SelectChoice
 	// The optional message to display when the user types ? (default: "")
 	HelpMessage string
 	// The optional hint text that display after the message (default: "[Type ? for hint]")
@@ -39,6 +39,16 @@ type SelectOptions struct {
 	DisplayNumbers *bool
 	// Whether or not to disable filtering (default: true)
 	EnableFiltering *bool
+}
+
+type SelectChoice struct {
+	Value string
+	Label string
+}
+
+type indexedSelectChoice struct {
+	Index int
+	*SelectChoice
 }
 
 var DefaultSelectOptions SelectOptions = SelectOptions{
@@ -57,21 +67,17 @@ type Select struct {
 	canvas Canvas
 
 	options            *SelectOptions
-	selectedIndex      *int
+	currentIndex       *int
 	showHelp           bool
 	complete           bool
 	filter             string
-	choices            []*selectChoice
-	filteredChoices    []*selectChoice
+	choices            []*indexedSelectChoice
+	filteredChoices    []*indexedSelectChoice
+	selectedChoice     *indexedSelectChoice
 	hasValidationError bool
 	validationMessage  string
 	cancelled          bool
 	cursorPosition     *CursorPosition
-}
-
-type selectChoice struct {
-	Index int
-	Value string
 }
 
 // NewSelect creates a new Select instance.
@@ -85,11 +91,11 @@ func NewSelect(options *SelectOptions) *Select {
 		panic(err)
 	}
 
-	selectOptions := make([]*selectChoice, len(mergedOptions.Allowed))
-	for index, value := range mergedOptions.Allowed {
-		selectOptions[index] = &selectChoice{
-			Index: index,
-			Value: value,
+	selectOptions := make([]*indexedSelectChoice, len(mergedOptions.Choices))
+	for index, value := range mergedOptions.Choices {
+		selectOptions[index] = &indexedSelectChoice{
+			Index:        index,
+			SelectChoice: value,
 		}
 	}
 
@@ -156,13 +162,17 @@ func (p *Select) Ask() (*int, error) {
 			}
 
 			optionCount := len(p.filteredChoices)
-			if msg.Key == keyboard.KeyArrowUp {
-				p.selectedIndex = Ptr(((*p.selectedIndex - 1 + optionCount) % optionCount))
-			} else if msg.Key == keyboard.KeyArrowDown {
-				p.selectedIndex = Ptr(((*p.selectedIndex + 1) % optionCount))
+			if optionCount > 0 {
+				if msg.Key == keyboard.KeyArrowUp {
+					p.currentIndex = Ptr(((*p.currentIndex - 1 + optionCount) % optionCount))
+				} else if msg.Key == keyboard.KeyArrowDown {
+					p.currentIndex = Ptr(((*p.currentIndex + 1) % optionCount))
+				}
+
+				p.selectedChoice = p.filteredChoices[*p.currentIndex]
 			}
 
-			if msg.Key == keyboard.KeyEnter && p.selectedIndex != nil {
+			if msg.Key == keyboard.KeyEnter && p.currentIndex != nil {
 				p.complete = true
 			}
 
@@ -173,7 +183,7 @@ func (p *Select) Ask() (*int, error) {
 
 			if p.complete {
 				done()
-				return &p.filteredChoices[*p.selectedIndex].Index, nil
+				return &p.selectedChoice.Index, nil
 			}
 		}
 	}
@@ -189,7 +199,7 @@ func (p *Select) applyFilter() {
 		return
 	}
 
-	p.filteredChoices = []*selectChoice{}
+	p.filteredChoices = []*indexedSelectChoice{}
 	for _, option := range p.choices {
 		// Attempt to parse the filter as an index
 		if p.options.DisplayNumbers != nil && *p.options.DisplayNumbers {
@@ -207,8 +217,8 @@ func (p *Select) applyFilter() {
 		}
 	}
 
-	if *p.selectedIndex > len(p.filteredChoices)-1 {
-		p.selectedIndex = Ptr(0)
+	if *p.currentIndex > len(p.filteredChoices)-1 {
+		p.currentIndex = Ptr(0)
 	}
 }
 
@@ -220,7 +230,7 @@ func (p *Select) renderOptions(printer Printer, indent string) {
 
 	totalOptionsCount := len(p.choices)
 	filteredOptionsCount := len(p.filteredChoices)
-	selected := *p.selectedIndex
+	selected := *p.currentIndex
 
 	start := selected - p.options.DisplayCount/2
 	end := start + p.options.DisplayCount
@@ -237,7 +247,7 @@ func (p *Select) renderOptions(printer Printer, indent string) {
 		if start >= 9 {
 			printer.Fprintf("%s  ...\n", indent)
 		} else {
-			printer.Fprintf("%s   ...\n", indent)
+			printer.Fprintf("%s  ...\n", indent)
 		}
 	}
 
@@ -245,7 +255,7 @@ func (p *Select) renderOptions(printer Printer, indent string) {
 	underline := color.New(color.Underline).SprintfFunc()
 
 	for index, option := range p.filteredChoices[start:end] {
-		displayValue := option.Value
+		displayValue := option.Label
 
 		// Underline the matching portion of the string
 		if p.filter != "" {
@@ -260,23 +270,30 @@ func (p *Select) renderOptions(printer Printer, indent string) {
 		}
 
 		// Show item digit prefixes
+		digitPrefix := ""
 		if *p.options.DisplayNumbers {
-			digitPrefix := fmt.Sprintf("%*d.", digitWidth, option.Index+1) // Padded digit prefix
-			displayValue = fmt.Sprintf("%s %s", digitPrefix, displayValue)
+			digitPrefix = fmt.Sprintf("%*d. ", digitWidth, option.Index+1) // Padded digit prefix
 		}
 
 		if start+index == selected {
-			printer.Fprintf("%s%s\n", indent, color.CyanString("> %s", displayValue))
+			prefix := ">"
+			printer.Fprintf("%s%s %s%s\n",
+				indent,
+				color.CyanString(prefix),
+				color.CyanString(digitPrefix),
+				color.CyanString(displayValue),
+			)
 		} else {
-			printer.Fprintf("%s  %s\n", indent, displayValue)
+			prefix := " "
+			printer.Fprintf("%s%s %s%s\n", indent, prefix, digitPrefix, displayValue)
 		}
 	}
 
 	if end < filteredOptionsCount {
 		if end >= 10 {
-			printer.Fprintf("%s  ...\n", indent)
+			printer.Fprintf("%s ...\n", indent)
 		} else {
-			printer.Fprintf("%s   ...\n", indent)
+			printer.Fprintf("%s  ...\n", indent)
 		}
 	}
 }
@@ -286,7 +303,7 @@ func (p *Select) renderValidation(printer Printer) {
 	p.validationMessage = ""
 
 	if len(p.filteredChoices) == 0 {
-		p.selectedIndex = nil
+		p.currentIndex = nil
 		p.hasValidationError = true
 		p.validationMessage = "No options found matching the filter"
 	}
@@ -308,47 +325,11 @@ func (p *Select) renderValidation(printer Printer) {
 	}
 }
 
-func (p *Select) renderMessage1(printer Printer) {
-	if p.selectedIndex == nil && p.options.SelectedIndex != nil {
-		p.selectedIndex = p.options.SelectedIndex
-	}
-
+func (p *Select) renderMessage(printer Printer) {
 	printer.Fprintf(color.CyanString("? "))
 
-	// Message
-	printer.Fprintf(BoldString("%s: ", p.options.Message))
-
-	// Hint
-	if !p.cancelled && !p.complete && p.options.Hint != "" {
-		printer.Fprintf("%s ", color.CyanString(p.options.Hint))
-	}
-
-	// Filter
-	if !p.cancelled && !p.complete && p.filter != "" {
-		printer.Fprintf(p.filter)
-	}
-
-	p.cursorPosition = Ptr(printer.CursorPosition())
-
-	// Cancelled
-	if p.cancelled {
-		printer.Fprintf(color.RedString("(Cancelled)"))
-	}
-
-	// Selected Value
-	if !p.cancelled && p.complete {
-		rawValue := p.filteredChoices[*p.selectedIndex].Value
-		printer.Fprintf(color.CyanString(rawValue))
-	}
-
-	printer.Fprintln()
-}
-
-func (p *Select) renderMessage2(printer Printer) {
-	printer.Fprintf(color.CyanString("? "))
-
-	if p.selectedIndex == nil && p.options.SelectedIndex != nil {
-		p.selectedIndex = p.options.SelectedIndex
+	if p.currentIndex == nil && p.options.SelectedIndex != nil {
+		p.currentIndex = p.options.SelectedIndex
 	}
 
 	// Message
@@ -360,9 +341,13 @@ func (p *Select) renderMessage2(printer Printer) {
 	}
 
 	// Selected Value
-	if !p.cancelled && p.complete {
-		rawValue := p.filteredChoices[*p.selectedIndex].Value
-		printer.Fprintf(color.CyanString(rawValue))
+	if !p.cancelled && p.selectedChoice != nil {
+		rawValue := p.selectedChoice.Label
+		if p.complete {
+			printer.Fprintf(color.CyanString(rawValue))
+		} else {
+			printer.Fprintf(rawValue)
+		}
 	}
 
 	printer.Fprintln()
@@ -387,15 +372,8 @@ func (p *Select) renderMessage2(printer Printer) {
 
 // Render renders the Select component.
 func (p *Select) Render(printer Printer) error {
-	v2 := true
-	indent := ""
-
-	if v2 {
-		p.renderMessage2(printer)
-		indent = "  "
-	} else {
-		p.renderMessage1(printer)
-	}
+	indent := "  "
+	p.renderMessage(printer)
 
 	if p.complete || p.cancelled {
 		return nil
@@ -404,10 +382,7 @@ func (p *Select) Render(printer Printer) error {
 	p.applyFilter()
 	p.renderOptions(printer, indent)
 	p.renderValidation(printer)
-
-	if v2 {
-		p.renderFooter(printer)
-	}
+	p.renderFooter(printer)
 
 	if p.cursorPosition != nil {
 		printer.SetCursorPosition(*p.cursorPosition)

@@ -27,7 +27,7 @@ type MultiSelectOptions struct {
 	// The message to display before the prompt
 	Message string
 	// The available options to display
-	Allowed []*MultiSelectChoice
+	Choices []*MultiSelectChoice
 	// The optional message to display when the user types ? (default: "")
 	HelpMessage string
 	// The maximum number of options to display at one time (default: 6)
@@ -47,8 +47,8 @@ var DefaultMultiSelectOptions MultiSelectOptions = MultiSelectOptions{
 }
 
 type MultiSelectChoice struct {
-	Key      string
 	Value    string
+	Label    string
 	Selected bool
 }
 
@@ -89,8 +89,8 @@ func NewMultiSelect(options *MultiSelectOptions) *MultiSelect {
 		panic(err)
 	}
 
-	selectOptions := make([]*indexedMultiSelectChoice, len(mergedOptions.Allowed))
-	for index, value := range mergedOptions.Allowed {
+	selectOptions := make([]*indexedMultiSelectChoice, len(mergedOptions.Choices))
+	for index, value := range mergedOptions.Choices {
 		selectOptions[index] = &indexedMultiSelectChoice{
 			// Index is the original index from the allowed choices
 			Index:             index,
@@ -100,9 +100,9 @@ func NewMultiSelect(options *MultiSelectOptions) *MultiSelect {
 
 	// Define default selected indexes
 	initialSelectedChoices := map[string]*indexedMultiSelectChoice{}
-	for index, choice := range mergedOptions.Allowed {
+	for index, choice := range mergedOptions.Choices {
 		if choice.Selected {
-			initialSelectedChoices[choice.Key] = &indexedMultiSelectChoice{
+			initialSelectedChoices[choice.Value] = &indexedMultiSelectChoice{
 				Index:             index,
 				MultiSelectChoice: choice,
 			}
@@ -176,10 +176,22 @@ func (p *MultiSelect) Ask() ([]*MultiSelectChoice, error) {
 					choice.Selected = !choice.Selected
 
 					if choice.Selected {
-						p.selectedChoices[choice.Key] = choice
+						p.selectedChoices[choice.Value] = choice
 					} else {
-						delete(p.selectedChoices, choice.Key)
+						delete(p.selectedChoices, choice.Value)
 					}
+				}
+			}
+
+			if msg.Key == keyboard.KeyArrowRight {
+				for _, choice := range p.choices {
+					choice.Selected = true
+					p.selectedChoices[choice.Value] = choice
+				}
+			} else if msg.Key == keyboard.KeyArrowLeft {
+				for _, choice := range p.choices {
+					choice.Selected = false
+					delete(p.selectedChoices, choice.Value)
 				}
 			}
 
@@ -250,7 +262,7 @@ func (p *MultiSelect) applyFilter() {
 			}
 		}
 
-		if strings.Contains(strings.ToLower(option.Value), strings.ToLower(p.filter)) {
+		if strings.Contains(strings.ToLower(option.Label), strings.ToLower(p.filter)) {
 			p.filteredChoices = append(p.filteredChoices, option)
 		}
 	}
@@ -293,7 +305,7 @@ func (p *MultiSelect) renderOptions(printer Printer, indent string) {
 	underline := color.New(color.Underline).SprintfFunc()
 
 	for index, option := range p.filteredChoices[start:end] {
-		displayValue := option.Value
+		displayValue := option.Label
 
 		// Underline the matching portion of the string
 		if p.filter != "" {
@@ -397,11 +409,15 @@ func (p *MultiSelect) renderMessage(printer Printer) {
 		selectedChoices := p.sortSelectedChoices()
 		selectionValues := make([]string, len(selectedChoices))
 		for index, choice := range selectedChoices {
-			selectionValues[index] = choice.Value
+			selectionValues[index] = choice.Label
 		}
 
 		rawValue := strings.Join(selectionValues, ", ")
-		printer.Fprintf(color.CyanString(rawValue))
+		if p.complete {
+			printer.Fprintf(color.CyanString(rawValue))
+		} else {
+			printer.Fprintf(rawValue)
+		}
 	}
 
 	printer.Fprintln()
@@ -442,9 +458,7 @@ func (p *MultiSelect) Render(printer Printer) error {
 
 	p.validate()
 	p.renderValidation(printer)
-
 	p.renderHint(printer)
-
 	p.renderFooter(printer)
 
 	if p.cursorPosition != nil {
@@ -460,7 +474,7 @@ func (p *MultiSelect) renderFooter(printer Printer) {
 	}
 
 	printer.Fprintln()
-	printer.Fprintln(color.HiBlackString("───────────────────────────────────"))
-	printer.Fprintln(color.HiBlackString("Use ↑/↓ to move, <space> to select"))
-	printer.Fprintln(color.HiBlackString("Use <enter> to submit, <?> for help"))
+	printer.Fprintln(color.HiBlackString("───────────────────────────────────────"))
+	printer.Fprintln(color.HiBlackString("Use arrows to move, use space to select"))
+	printer.Fprintln(color.HiBlackString("Use enter to submit, type ? for help"))
 }

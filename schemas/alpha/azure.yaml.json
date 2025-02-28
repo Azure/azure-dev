@@ -137,7 +137,8 @@
                             "python",
                             "js",
                             "ts",
-                            "java"
+                            "java",
+                            "docker"
                         ]
                     },
                     "module": {
@@ -374,7 +375,8 @@
                             "host.containerapp",
                             "messaging.eventhubs",
                             "messaging.servicebus",
-                            "storage"
+                            "storage",
+                            "keyvault"
                         ]
                     },
                     "uses": {
@@ -396,7 +398,8 @@
                     { "if": { "properties": { "type": { "const": "db.cosmos" }}}, "then": { "$ref": "#/definitions/cosmosDbResource"} },
                     { "if": { "properties": { "type": { "const": "messaging.eventhubs" }}}, "then": { "$ref": "#/definitions/eventHubsResource" } },
                     { "if": { "properties": { "type": { "const": "messaging.servicebus" }}}, "then": { "$ref": "#/definitions/serviceBusResource" } },
-                    { "if": { "properties": { "type": { "const": "storage"  }}}, "then": { "$ref": "#/definitions/storageAccountResource"} }
+                    { "if": { "properties": { "type": { "const": "storage"  }}}, "then": { "$ref": "#/definitions/storageAccountResource"} },
+                    { "if": { "properties": { "type": { "const": "keyvault" }}}, "then": { "$ref": "#/definitions/resource"} }
                 ]
             }
         },
@@ -1239,7 +1242,8 @@
                         "db.mongo",
                         "db.cosmos",
                         "host.containerapp",
-                        "ai.openai.model"
+                        "ai.openai.model",
+                        "keyvault"
                     ]
                 },
                 "uses": {

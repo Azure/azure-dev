@@ -29,7 +29,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/azure/azure-dev/cli/azd/pkg/yamlnode"
 	"github.com/braydonk/yaml"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -156,14 +155,31 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	resourceNode, err := yamlnode.Encode(resourceToAdd)
-	if err != nil {
-		panic(fmt.Sprintf("encoding yaml node: %v", err))
+	resourcesToAdd := []*project.ResourceConfig{resourceToAdd}
+	dependentResources := project.DependentResourcesOf(resourceToAdd)
+	requiredByMessages := make([]string, 0)
+	// Find any dependent resources that are not already in the project
+	for _, dep := range dependentResources {
+		if prjConfig.Resources[dep.Name] == nil {
+			resourcesToAdd = append(resourcesToAdd, dep)
+			requiredByMessages = append(requiredByMessages,
+				fmt.Sprintf("(%s is required by %s)",
+					output.WithHighLightFormat(dep.Name),
+					output.WithHighLightFormat(resourceToAdd.Name)))
+		}
 	}
 
-	err = yamlnode.Set(&doc, fmt.Sprintf("resources?.%s", resourceToAdd.Name), resourceNode)
-	if err != nil {
-		return nil, fmt.Errorf("setting resource: %w", err)
+	// Add resource and any non-existing dependent resources
+	for _, resource := range resourcesToAdd {
+		resourceNode, err := yamlnode.Encode(resource)
+		if err != nil {
+			panic(fmt.Sprintf("encoding resource yaml node: %v", err))
+		}
+
+		err = yamlnode.Set(&doc, fmt.Sprintf("resources?.%s", resource.Name), resourceNode)
+		if err != nil {
+			return nil, fmt.Errorf("setting resource: %w", err)
+		}
 	}
 
 	for _, svc := range usedBy {
@@ -186,13 +202,19 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("re-parsing yaml: %w", err)
 	}
 
-	a.console.Message(ctx, fmt.Sprintf("\nPreviewing changes to %s:\n", color.BlueString("azure.yaml")))
+	a.console.Message(ctx, fmt.Sprintf("\nPreviewing changes to %s:\n", output.WithHighLightFormat("azure.yaml")))
 	diffString, diffErr := DiffBlocks(prjConfig.Resources, newCfg.Resources)
 	if diffErr != nil {
 		a.console.Message(ctx, "Preview unavailable. Pass --debug for more details.\n")
 		log.Printf("add-diff: preview failed: %v", diffErr)
 	} else {
 		a.console.Message(ctx, diffString)
+		if len(requiredByMessages) > 0 {
+			for _, msg := range requiredByMessages {
+				a.console.Message(ctx, msg)
+			}
+			a.console.Message(ctx, "")
+		}
 	}
 
 	confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
@@ -244,11 +266,26 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		infraRoot = filepath.Join(prjConfig.Path, infraRoot)
 	}
 
+	var followUpMessage string
+	addedKeyVault := slices.ContainsFunc(resourcesToAdd, func(resource *project.ResourceConfig) bool {
+		return strings.EqualFold(resource.Name, "vault")
+	})
+	keyVaultFollowUpMessage := fmt.Sprintf(
+		"\nRun '%s' to add a secret to the key vault.",
+		output.WithHighLightFormat("azd env set-secret <name>"))
+
 	if _, err := pathHasInfraModule(infraRoot, prjConfig.Infra.Module); err == nil {
+		followUpMessage = fmt.Sprintf(
+			"Run '%s' to re-synthesize the infrastructure, "+
+				"then run '%s' to provision these changes anytime later.",
+			output.WithHighLightFormat("azd infra synth"),
+			output.WithHighLightFormat("azd provision"))
+		if addedKeyVault {
+			followUpMessage += keyVaultFollowUpMessage
+		}
 		return &actions.ActionResult{
 			Message: &actions.ResultMessage{
-				FollowUp: "Run '" + color.BlueString("azd infra synth") + "' to re-synthesize the infrastructure, " +
-					"then run '" + color.BlueString("azd provision") + "' to provision these changes anytime later.",
+				FollowUp: followUpMessage,
 			},
 		}, err
 	}
@@ -273,7 +310,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if provisionOption == provisionPreview {
-		err = a.previewProvision(ctx, prjConfig, resourceToAdd, usedBy)
+		err = a.previewProvision(ctx, prjConfig, resourcesToAdd, usedBy)
 		if err != nil {
 			return nil, err
 		}
@@ -300,21 +337,23 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 
-		return &actions.ActionResult{
-			Message: &actions.ResultMessage{
-				FollowUp: "Run '" +
-					color.BlueString(fmt.Sprintf("azd show %s", resourceToAdd.Name)) +
-					"' to show details about the newly provisioned resource.",
-			},
-		}, nil
+		followUpMessage = "Run '" +
+			output.WithHighLightFormat("azd show %s", resourceToAdd.Name) +
+			"' to show details about the newly provisioned resource."
+	} else {
+		followUpMessage = fmt.Sprintf(
+			"Run '%s' to %s these changes anytime later.",
+			output.WithHighLightFormat("azd %s", followUpCmd),
+			verb)
+	}
+
+	if addedKeyVault {
+		followUpMessage += keyVaultFollowUpMessage
 	}
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			FollowUp: fmt.Sprintf(
-				"Run '%s' to %s these changes anytime later.",
-				color.BlueString("azd %s", followUpCmd),
-				verb),
+			FollowUp: followUpMessage,
 		},
 	}, err
 }

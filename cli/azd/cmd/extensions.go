@@ -12,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -21,21 +22,6 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
-
-// bindExtensions binds the extensions to the root command
-func bindExtensions(
-	serviceLocator ioc.ServiceLocator,
-	root *actions.ActionDescriptor,
-	extensions map[string]*extensions.Extension,
-) error {
-	for _, extension := range extensions {
-		if err := bindExtension(serviceLocator, root, extension); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
 
 // bindExtension binds the extension to the root command
 func bindExtension(
@@ -68,14 +54,14 @@ func bindExtension(
 // invokeExtensionHelp invokes the help for the extension
 func invokeExtensionHelp(console input.Console, commandRunner exec.CommandRunner, extensionManager *extensions.Manager) {
 	extensionNamespace := os.Args[1]
-	extension, err := extensionManager.GetInstalled(extensions.GetInstalledOptions{
+	extension, err := extensionManager.GetInstalled(extensions.LookupOptions{
 		Namespace: extensionNamespace,
 	})
 	if err != nil {
 		fmt.Println("Failed running help")
 	}
 
-	homeDir, err := os.UserHomeDir()
+	homeDir, err := config.GetUserConfigDir()
 	if err != nil {
 		fmt.Println("Failed running help")
 	}
@@ -96,7 +82,7 @@ func invokeExtensionHelp(console input.Console, commandRunner exec.CommandRunner
 
 type extensionAction struct {
 	console          input.Console
-	commandRunner    exec.CommandRunner
+	extensionRunner  *extensions.Runner
 	lazyEnv          *lazy.Lazy[*environment.Environment]
 	extensionManager *extensions.Manager
 	azdServer        *grpcserver.Server
@@ -106,6 +92,7 @@ type extensionAction struct {
 
 func newExtensionAction(
 	console input.Console,
+	extensionRunner *extensions.Runner,
 	commandRunner exec.CommandRunner,
 	lazyEnv *lazy.Lazy[*environment.Environment],
 	extensionManager *extensions.Manager,
@@ -115,7 +102,7 @@ func newExtensionAction(
 ) actions.Action {
 	return &extensionAction{
 		console:          console,
-		commandRunner:    commandRunner,
+		extensionRunner:  extensionRunner,
 		lazyEnv:          lazyEnv,
 		extensionManager: extensionManager,
 		azdServer:        azdServer,
@@ -127,7 +114,7 @@ func newExtensionAction(
 func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	extensionNamespace := a.cmd.Use
 
-	extension, err := a.extensionManager.GetInstalled(extensions.GetInstalledOptions{
+	extension, err := a.extensionManager.GetInstalled(extensions.LookupOptions{
 		Namespace: extensionNamespace,
 	})
 	if err != nil {
@@ -147,44 +134,32 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		allEnv = append(allEnv, env.Environ()...)
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user home directory: %w", err)
-	}
-
-	extensionPath := filepath.Join(homeDir, extension.Path)
-
-	_, err = os.Stat(extensionPath)
-	if err != nil {
-		return nil, fmt.Errorf("extension path was not found: %s: %w", extensionPath, err)
-	}
-
 	serverInfo, err := a.azdServer.Start()
 	if err != nil {
 		return nil, fmt.Errorf("failed to start gRPC server: %w", err)
 	}
 
+	jwtToken, err := grpcserver.GenerateExtensionToken(extension, serverInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate extension token")
+	}
+
 	allEnv = append(allEnv,
 		fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
-		fmt.Sprintf("AZD_ACCESS_TOKEN=%s", serverInfo.AccessToken),
+		fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
 	)
 
-	runArgs := exec.
-		NewRunArgs(extensionPath, a.args...).
-		WithCwd(cwd).
-		WithEnv(allEnv).
-		WithStdIn(a.console.Handles().Stdin).
-		WithStdOut(a.console.Handles().Stdout).
-		WithStdErr(a.console.Handles().Stderr)
+	options := &extensions.InvokeOptions{
+		Args:   a.args,
+		Env:    allEnv,
+		StdIn:  a.console.Handles().Stdin,
+		StdOut: a.console.Handles().Stdout,
+		StdErr: a.console.Handles().Stderr,
+	}
 
-	_, err = a.commandRunner.Run(ctx, runArgs)
+	_, err = a.extensionRunner.Invoke(ctx, extension, options)
 	if err != nil {
-		log.Printf("Failed to run extension %s: %v\n", extensionNamespace, err)
+		log.Printf("Failed to invoke extension %s: %v\n", extensionNamespace, err)
 	}
 
 	if err = a.azdServer.Stop(); err != nil {

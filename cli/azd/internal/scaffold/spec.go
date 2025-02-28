@@ -19,6 +19,9 @@ type InfraSpec struct {
 	DbCosmos      *DatabaseCosmos
 	DbRedis       *DatabaseRedis
 
+	// Key vault
+	KeyVault *KeyVault
+
 	// Messaging services
 	ServiceBus *ServiceBus
 	EventHubs  *EventHubs
@@ -85,6 +88,9 @@ type EventHubs struct {
 	Hubs []string
 }
 
+type KeyVault struct {
+}
+
 type StorageAccount struct {
 	Containers []string
 }
@@ -100,6 +106,9 @@ type ServiceSpec struct {
 
 	// Back-end properties
 	Backend *Backend
+
+	// Key vault
+	KeyVault *KeyVaultReference
 
 	// Connection to a database
 	DbPostgres    *DatabaseReference
@@ -139,6 +148,9 @@ type AIModelReference struct {
 }
 
 type StorageReference struct {
+}
+
+type KeyVaultReference struct {
 }
 
 func containerAppExistsParameter(serviceName string) Parameter {

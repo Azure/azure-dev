@@ -16,7 +16,7 @@ func WithLinkFormat(link string, a ...interface{}) string {
 
 // withHighLightFormat creates string with highlight-looking color
 func WithHighLightFormat(text string, a ...interface{}) string {
-	return color.CyanString(text, a...)
+	return color.HiBlueString(text, a...)
 }
 
 func WithErrorFormat(text string, a ...interface{}) string {

@@ -4,6 +4,7 @@
 package ux
 
 import (
+	"context"
 	"io"
 	"os"
 
@@ -120,7 +121,7 @@ func (p *Prompt) WithCanvas(canvas Canvas) Visual {
 }
 
 // Ask prompts the user for input.
-func (p *Prompt) Ask() (string, error) {
+func (p *Prompt) Ask(ctx context.Context) (string, error) {
 	if p.canvas == nil {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
@@ -133,47 +134,46 @@ func (p *Prompt) Ask() (string, error) {
 		InitialValue:   p.options.DefaultValue,
 		IgnoreHintKeys: p.options.IgnoreHintKeys,
 	}
-	input, done, err := p.input.ReadInput(inputOptions)
+
+	err := p.input.ReadInput(ctx, inputOptions, func(args *internal.KeyPressEventArgs) (bool, error) {
+		if args.Cancelled {
+			p.cancelled = true
+
+			if err := p.canvas.Update(); err != nil {
+				return false, err
+			}
+
+			return false, nil
+		}
+
+		p.showHelp = args.Hint
+		p.value = args.Value
+		p.validate()
+
+		if args.Key == keyboard.KeyEnter {
+			p.submitted = true
+
+			if !p.hasValidationError {
+				p.complete = true
+			}
+		}
+
+		if err := p.canvas.Update(); err != nil {
+			return false, err
+		}
+
+		if p.complete {
+			return false, nil
+		}
+
+		return true, nil
+	})
+
 	if err != nil {
 		return "", err
 	}
 
-	for {
-		select {
-		case <-p.input.SigChan:
-			p.cancelled = true
-			done()
-			if err := p.canvas.Update(); err != nil {
-				return "", err
-			}
-
-			return "", ErrCancelled
-
-		case msg := <-input:
-			p.showHelp = msg.Hint
-			p.value = msg.Value
-
-			p.validate()
-
-			if msg.Key == keyboard.KeyEnter {
-				p.submitted = true
-
-				if !p.hasValidationError {
-					p.complete = true
-				}
-			}
-
-			if err := p.canvas.Update(); err != nil {
-				done()
-				return "", err
-			}
-
-			if p.complete {
-				done()
-				return p.value, nil
-			}
-		}
-	}
+	return p.value, nil
 }
 
 // Render renders the prompt.

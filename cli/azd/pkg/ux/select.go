@@ -4,8 +4,10 @@
 package ux
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -125,7 +127,7 @@ func (p *Select) WithCanvas(canvas Canvas) Visual {
 }
 
 // Ask prompts the user to select an option from a list.
-func (p *Select) Ask() (*int, error) {
+func (p *Select) Ask(ctx context.Context) (*int, error) {
 	if p.canvas == nil {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
@@ -134,59 +136,56 @@ func (p *Select) Ask() (*int, error) {
 		return nil, err
 	}
 
-	input, done, err := p.input.ReadInput(nil)
-	if err != nil {
-		return nil, err
-	}
-
 	if !*p.options.EnableFiltering {
 		p.cursor.HideCursor()
 	}
 
-	for {
-		select {
-		case <-p.input.SigChan:
-			p.cancelled = true
-			done()
-			if err := p.canvas.Update(); err != nil {
-				return nil, err
-			}
-
-			return nil, ErrCancelled
-
-		case msg := <-input:
-			p.showHelp = msg.Hint
-
-			if *p.options.EnableFiltering {
-				p.filter = msg.Value
-			}
-
-			optionCount := len(p.filteredChoices)
-			if optionCount > 0 {
-				if msg.Key == keyboard.KeyArrowUp {
-					p.currentIndex = Ptr(((*p.currentIndex - 1 + optionCount) % optionCount))
-				} else if msg.Key == keyboard.KeyArrowDown {
-					p.currentIndex = Ptr(((*p.currentIndex + 1) % optionCount))
-				}
-
-				p.selectedChoice = p.filteredChoices[*p.currentIndex]
-			}
-
-			if msg.Key == keyboard.KeyEnter && p.currentIndex != nil {
-				p.complete = true
-			}
-
-			if err := p.canvas.Update(); err != nil {
-				done()
-				return nil, err
-			}
-
-			if p.complete {
-				done()
-				return &p.selectedChoice.Index, nil
-			}
+	done := func() {
+		if err := p.canvas.Update(); err != nil {
+			log.Printf("Error updating canvas: %s\n", err.Error())
 		}
 	}
+
+	err := p.input.ReadInput(ctx, nil, func(args *internal.KeyPressEventArgs) (bool, error) {
+		defer done()
+
+		if args.Cancelled {
+			p.cancelled = true
+			return false, nil
+		}
+
+		p.showHelp = args.Hint
+
+		if *p.options.EnableFiltering {
+			p.filter = args.Value
+		}
+
+		optionCount := len(p.filteredChoices)
+		if optionCount > 0 {
+			if args.Key == keyboard.KeyArrowUp {
+				p.currentIndex = Ptr(((*p.currentIndex - 1 + optionCount) % optionCount))
+			} else if args.Key == keyboard.KeyArrowDown {
+				p.currentIndex = Ptr(((*p.currentIndex + 1) % optionCount))
+			}
+
+			p.selectedChoice = p.filteredChoices[*p.currentIndex]
+		}
+
+		if args.Key == keyboard.KeyEnter && p.currentIndex != nil {
+			p.complete = true
+		}
+
+		if p.complete {
+			return false, nil
+		}
+
+		return true, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &p.selectedChoice.Index, nil
 }
 
 func (p *Select) applyFilter() {

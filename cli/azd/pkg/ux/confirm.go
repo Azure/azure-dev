@@ -4,8 +4,10 @@
 package ux
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"slices"
 	"strings"
@@ -107,7 +109,7 @@ func (p *Confirm) WithCanvas(canvas Canvas) Visual {
 }
 
 // Ask prompts the user to confirm a message.
-func (p *Confirm) Ask() (*bool, error) {
+func (p *Confirm) Ask(ctx context.Context) (*bool, error) {
 	if p.canvas == nil {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
@@ -120,64 +122,62 @@ func (p *Confirm) Ask() (*bool, error) {
 		InitialValue:   p.displayValue,
 		IgnoreHintKeys: true,
 	}
-	input, done, err := p.input.ReadInput(inputConfig)
+
+	done := func() {
+		if err := p.canvas.Update(); err != nil {
+			log.Printf("Error updating canvas: %s\n", err.Error())
+		}
+	}
+
+	err := p.input.ReadInput(ctx, inputConfig, func(args *internal.KeyPressEventArgs) (bool, error) {
+		defer done()
+
+		if args.Cancelled {
+			p.cancelled = true
+			return false, nil
+		}
+
+		p.showHelp = args.Hint
+
+		if args.Key == keyboard.KeyEnter {
+			p.submitted = true
+
+			if !p.hasValidationError {
+				p.complete = true
+			}
+		} else {
+			p.hasValidationError = false
+			if args.Value == "" && p.options.DefaultValue != nil {
+				p.value = p.options.DefaultValue
+				p.displayValue = getBooleanString(*p.value)
+			} else {
+				value, err := parseBooleanString(string(args.Char))
+				if err != nil {
+					p.hasValidationError = true
+					p.value = nil
+					p.displayValue = args.Value
+				} else {
+					p.value = value
+					p.displayValue = getBooleanString(*value)
+				}
+			}
+		}
+
+		if !p.hasValidationError {
+			p.input.ResetValue()
+		}
+
+		if p.complete {
+			return false, nil
+		}
+
+		return true, nil
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	for {
-		select {
-		case <-p.input.SigChan:
-			p.cancelled = true
-			done()
-			if err := p.canvas.Update(); err != nil {
-				return nil, err
-			}
-
-			return nil, ErrCancelled
-
-		case msg := <-input:
-			p.showHelp = msg.Hint
-
-			if msg.Key == keyboard.KeyEnter {
-				p.submitted = true
-
-				if !p.hasValidationError {
-					p.complete = true
-				}
-			} else {
-				p.hasValidationError = false
-				if msg.Value == "" && p.options.DefaultValue != nil {
-					p.value = p.options.DefaultValue
-					p.displayValue = getBooleanString(*p.value)
-				} else {
-					value, err := parseBooleanString(string(msg.Char))
-					if err != nil {
-						p.hasValidationError = true
-						p.value = nil
-						p.displayValue = msg.Value
-					} else {
-						p.value = value
-						p.displayValue = getBooleanString(*value)
-					}
-				}
-			}
-
-			if !p.hasValidationError {
-				p.input.ResetValue()
-			}
-
-			if err := p.canvas.Update(); err != nil {
-				done()
-				return nil, err
-			}
-
-			if p.complete {
-				done()
-				return p.value, nil
-			}
-		}
-	}
+	return p.value, nil
 }
 
 // Render renders the Confirm component.

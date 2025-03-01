@@ -4,17 +4,17 @@
 package ux
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"os"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
 	"github.com/fatih/color"
 )
 
-var ErrCancelled = errors.New("cancelled by user")
+var ErrCancelled = internal.ErrCancelled
 
 func init() {
 	forceColorVal, has := os.LookupEnv("FORCE_COLOR")

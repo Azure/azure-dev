@@ -57,7 +57,7 @@ module resources 'resources.bicep' = {
     {{.Name}}: {{.Name}}
 {{- end }}
 {{- if .AiFoundryProject }}
-    aiFoundryProjectConnectionString: '${split(aiModelsDeploy.outputs.projectDiscoveryUrl, '/')[2]};${subscription().subscriptionId};${rg.name};${aiModelsDeploy.outputs.projectName}'
+    aiFoundryProjectConnectionString: aiModelsDeploy.outputs.aiFoundryProjectConnectionString
 {{- end}}
   }
 }
@@ -111,6 +111,7 @@ output AZURE_RESOURCE_EVENT_HUBS_ID string = resources.outputs.AZURE_RESOURCE_EV
 output AZURE_RESOURCE_SERVICE_BUS_ID string = resources.outputs.AZURE_RESOURCE_SERVICE_BUS_ID
 {{- end}}
 {{- if .AiFoundryProject }}
-output AZURE_AIPROJECT_CONNECTION_STRING string = '${split(aiModelsDeploy.outputs.projectDiscoveryUrl, '/')[2]};${subscription().subscriptionId};${rg.name};${aiModelsDeploy.outputs.projectName}'
+output AZURE_AIPROJECT_CONNECTION_STRING string = aiModelsDeploy.outputs.aiFoundryProjectConnectionString
+output AZURE_RESOURCE_AI_PROJECT_ID string = aiModelsDeploy.outputs.projectId
 {{- end}}
 {{ end}}

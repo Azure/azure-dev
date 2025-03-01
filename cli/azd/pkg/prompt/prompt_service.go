@@ -770,17 +770,19 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 
 		hasCustomDisplay := options.DisplayResource != nil
 
-		var choices []string
+		var choices []*ux.SelectChoice
 
 		if allowNewResource {
-			choices = make([]string, len(resources)+1)
-			choices[0] = mergedSelectorOptions.NewResourceMessage
+			choices = make([]*ux.SelectChoice, len(resources)+1)
+			choices[0] = &ux.SelectChoice{
+				Label: mergedSelectorOptions.NewResourceMessage,
+			}
 
 			if defaultIndex != nil {
 				*defaultIndex++
 			}
 		} else {
-			choices = make([]string, len(resources))
+			choices = make([]*ux.SelectChoice, len(resources))
 		}
 
 		for i, resource := range resources {
@@ -797,10 +799,15 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 				displayValue = fmt.Sprintf("%v", resource)
 			}
 
+			choice := &ux.SelectChoice{
+				Value: displayValue,
+				Label: displayValue,
+			}
+
 			if allowNewResource {
-				choices[i+1] = displayValue
+				choices[i+1] = choice
 			} else {
-				choices[i] = displayValue
+				choices[i] = choice
 			}
 		}
 
@@ -812,7 +819,7 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 			Hint:            mergedSelectorOptions.Hint,
 			EnableFiltering: mergedSelectorOptions.EnableFiltering,
 			Writer:          mergedSelectorOptions.Writer,
-			Allowed:         choices,
+			Choices:         choices,
 			SelectedIndex:   defaultIndex,
 		})
 

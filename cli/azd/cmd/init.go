@@ -24,11 +24,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	outputux "github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -141,6 +142,62 @@ func newInitAction(
 }
 
 func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	promptOptions := &ux.PromptOptions{
+		Message:           "This captures a single line of input",
+		HelpMessage:       "This is a help message",
+		Required:          true,
+		RequiredMessage:   "This is a required message",
+		ValidationMessage: "This is a validation message",
+		PlaceHolder:       "This is a placeholder",
+	}
+	standardPrompt := ux.NewPrompt(promptOptions)
+	_, err := standardPrompt.Ask()
+
+	confirmOptions := &ux.ConfirmOptions{
+		Message:      "This is a confirm message",
+		HelpMessage:  "This is a help message",
+		DefaultValue: ux.Ptr(true),
+		PlaceHolder:  "This is a placeholder",
+	}
+	confirmPrompt := ux.NewConfirm(confirmOptions)
+	_, err = confirmPrompt.Ask()
+
+	singleChoices := []*ux.SelectChoice{}
+	for i := 1; i <= 10; i++ {
+		singleChoices = append(singleChoices, &ux.SelectChoice{
+			Value: fmt.Sprintf("options-%d", i),
+			Label: fmt.Sprintf("Option %d", i),
+		})
+	}
+
+	singleSelectOptions := &ux.SelectOptions{
+		Message:     "Select an single option",
+		Choices:     singleChoices,
+		HelpMessage: "Help message",
+	}
+
+	singleSelect := ux.NewSelect(singleSelectOptions)
+	_, err = singleSelect.Ask()
+
+	multiChoices := []*ux.MultiSelectChoice{}
+	for i := 1; i <= 10; i++ {
+		multiChoices = append(multiChoices, &ux.MultiSelectChoice{
+			Value: fmt.Sprintf("options-%d", i),
+			Label: fmt.Sprintf("Option %d", i),
+		})
+	}
+
+	multiChoices[0].Selected = true
+
+	options := &ux.MultiSelectOptions{
+		Message:     "Select one or more options",
+		Choices:     multiChoices,
+		HelpMessage: "Help message",
+	}
+
+	multiSelect := ux.NewMultiSelect(options)
+	_, err = multiSelect.Ask()
+
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("getting cwd: %w", err)
@@ -161,7 +218,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	// Command title
-	i.console.MessageUxItem(ctx, &ux.MessageTitle{
+	i.console.MessageUxItem(ctx, &outputux.MessageTitle{
 		Title: "Initializing an app to run on Azure (azd init)",
 	})
 

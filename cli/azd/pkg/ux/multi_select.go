@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -18,21 +19,17 @@ import (
 )
 
 // SelectOptions represents the options for the Select component.
-type SelectOptions struct {
+type MultiSelectOptions struct {
 	// The writer to use for output (default: os.Stdout)
 	Writer io.Writer
 	// The reader to use for input (default: os.Stdin)
 	Reader io.Reader
-	// The default value to use for the prompt (default: nil)
-	SelectedIndex *int
 	// The message to display before the prompt
 	Message string
 	// The available options to display
-	Choices []*SelectChoice
+	Choices []*MultiSelectChoice
 	// The optional message to display when the user types ? (default: "")
 	HelpMessage string
-	// The optional hint text that display after the message (default: "[Type ? for hint]")
-	Hint string
 	// The maximum number of options to display at one time (default: 6)
 	DisplayCount int
 	// Whether or not to display the number prefix before each option (default: false)
@@ -41,91 +38,95 @@ type SelectOptions struct {
 	EnableFiltering *bool
 }
 
-type SelectChoice struct {
-	Value string
-	Label string
-}
-
-type indexedSelectChoice struct {
-	Index int
-	*SelectChoice
-}
-
-var DefaultSelectOptions SelectOptions = SelectOptions{
+var DefaultMultiSelectOptions MultiSelectOptions = MultiSelectOptions{
 	Writer:          os.Stdout,
 	Reader:          os.Stdin,
-	SelectedIndex:   Ptr(0),
 	DisplayCount:    6,
 	EnableFiltering: Ptr(true),
 	DisplayNumbers:  Ptr(false),
 }
 
+type MultiSelectChoice struct {
+	Value    string
+	Label    string
+	Selected bool
+}
+
+type indexedMultiSelectChoice struct {
+	Index int
+	*MultiSelectChoice
+}
+
 // Select is a component for prompting the user to select an option from a list.
-type Select struct {
+type MultiSelect struct {
 	input  *internal.Input
 	cursor internal.Cursor
 	canvas Canvas
 
-	options            *SelectOptions
-	currentIndex       *int
+	options            *MultiSelectOptions
+	currentIndex       *int // The highlighted row index
 	showHelp           bool
 	complete           bool
 	filter             string
-	choices            []*indexedSelectChoice
-	filteredChoices    []*indexedSelectChoice
-	selectedChoice     *indexedSelectChoice
+	choices            []*indexedMultiSelectChoice
+	filteredChoices    []*indexedMultiSelectChoice
+	selectedChoices    map[string]*indexedMultiSelectChoice
 	hasValidationError bool
 	validationMessage  string
 	cancelled          bool
 	cursorPosition     *CursorPosition
+	submitted          bool
 }
 
 // NewSelect creates a new Select instance.
-func NewSelect(options *SelectOptions) *Select {
-	mergedOptions := SelectOptions{}
+func NewMultiSelect(options *MultiSelectOptions) *MultiSelect {
+	mergedOptions := MultiSelectOptions{}
 	if err := mergo.Merge(&mergedOptions, options, mergo.WithoutDereference); err != nil {
 		panic(err)
 	}
 
-	if err := mergo.Merge(&mergedOptions, DefaultSelectOptions, mergo.WithoutDereference); err != nil {
+	if err := mergo.Merge(&mergedOptions, DefaultMultiSelectOptions, mergo.WithoutDereference); err != nil {
 		panic(err)
 	}
 
-	selectOptions := make([]*indexedSelectChoice, len(mergedOptions.Choices))
+	selectOptions := make([]*indexedMultiSelectChoice, len(mergedOptions.Choices))
 	for index, value := range mergedOptions.Choices {
-		selectOptions[index] = &indexedSelectChoice{
-			Index:        index,
-			SelectChoice: value,
+		selectOptions[index] = &indexedMultiSelectChoice{
+			// Index is the original index from the allowed choices
+			Index:             index,
+			MultiSelectChoice: value,
 		}
 	}
 
-	// Define default hint message
-	if mergedOptions.Hint == "" {
-		hintParts := []string{"Use arrows to move"}
-		if *mergedOptions.EnableFiltering {
-			hintParts = append(hintParts, "type to filter")
+	// Define default selected indexes
+	initialSelectedChoices := map[string]*indexedMultiSelectChoice{}
+	for index, choice := range mergedOptions.Choices {
+		if choice.Selected {
+			initialSelectedChoices[choice.Value] = &indexedMultiSelectChoice{
+				Index:             index,
+				MultiSelectChoice: choice,
+			}
 		}
-
-		mergedOptions.Hint = fmt.Sprintf("[%s]", strings.Join(hintParts, ", "))
 	}
 
-	return &Select{
+	return &MultiSelect{
 		input:           internal.NewInput(),
 		cursor:          internal.NewCursor(mergedOptions.Writer),
 		options:         &mergedOptions,
 		filteredChoices: selectOptions,
 		choices:         selectOptions,
+		selectedChoices: initialSelectedChoices,
 	}
 }
 
 // WithCanvas sets the canvas for the select component.
-func (p *Select) WithCanvas(canvas Canvas) Visual {
+func (p *MultiSelect) WithCanvas(canvas Canvas) Visual {
 	p.canvas = canvas
 	return p
 }
 
 // Ask prompts the user to select an option from a list.
-func (p *Select) Ask() (*int, error) {
+func (p *MultiSelect) Ask() ([]*MultiSelectChoice, error) {
 	if p.canvas == nil {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
@@ -147,18 +148,21 @@ func (p *Select) Ask() (*int, error) {
 		select {
 		case <-p.input.SigChan:
 			p.cancelled = true
-			done()
 			if err := p.canvas.Update(); err != nil {
 				return nil, err
 			}
 
 			return nil, ErrCancelled
-
 		case msg := <-input:
 			p.showHelp = msg.Hint
 
 			if *p.options.EnableFiltering {
-				p.filter = msg.Value
+				p.filter = strings.TrimSpace(msg.Value)
+			}
+
+			// Ensure currentIndex is initialized if there are any choices.
+			if p.currentIndex == nil && len(p.filteredChoices) > 0 {
+				p.currentIndex = Ptr(0)
 			}
 
 			optionCount := len(p.filteredChoices)
@@ -167,13 +171,37 @@ func (p *Select) Ask() (*int, error) {
 					p.currentIndex = Ptr(((*p.currentIndex - 1 + optionCount) % optionCount))
 				} else if msg.Key == keyboard.KeyArrowDown {
 					p.currentIndex = Ptr(((*p.currentIndex + 1) % optionCount))
-				}
+				} else if msg.Key == keyboard.KeySpace {
+					choice := p.filteredChoices[*p.currentIndex]
+					choice.Selected = !choice.Selected
 
-				p.selectedChoice = p.filteredChoices[*p.currentIndex]
+					if choice.Selected {
+						p.selectedChoices[choice.Value] = choice
+					} else {
+						delete(p.selectedChoices, choice.Value)
+					}
+				}
 			}
 
-			if msg.Key == keyboard.KeyEnter && p.currentIndex != nil {
-				p.complete = true
+			if msg.Key == keyboard.KeyArrowRight {
+				for _, choice := range p.choices {
+					choice.Selected = true
+					p.selectedChoices[choice.Value] = choice
+				}
+			} else if msg.Key == keyboard.KeyArrowLeft {
+				for _, choice := range p.choices {
+					choice.Selected = false
+					delete(p.selectedChoices, choice.Value)
+				}
+			}
+
+			if msg.Key == keyboard.KeyEnter {
+				p.submitted = true
+				p.validate()
+
+				if !p.hasValidationError {
+					p.complete = true
+				}
 			}
 
 			if err := p.canvas.Update(); err != nil {
@@ -183,13 +211,35 @@ func (p *Select) Ask() (*int, error) {
 
 			if p.complete {
 				done()
-				return &p.selectedChoice.Index, nil
+
+				return p.sortSelectedChoices(), nil
 			}
 		}
 	}
 }
 
-func (p *Select) applyFilter() {
+func (p *MultiSelect) sortSelectedChoices() []*MultiSelectChoice {
+	intSelected := []*indexedMultiSelectChoice{}
+	// Convert map of selected to slice
+	for _, choice := range p.selectedChoices {
+		intSelected = append(intSelected, choice)
+	}
+
+	// Sort the slice
+	slices.SortFunc(intSelected, func(a, b *indexedMultiSelectChoice) int {
+		return a.Index - b.Index
+	})
+
+	// Convert slice of selected to slice of MultiSelectChoice
+	finalSelected := []*MultiSelectChoice{}
+	for _, choice := range intSelected {
+		finalSelected = append(finalSelected, choice.MultiSelectChoice)
+	}
+
+	return finalSelected
+}
+
+func (p *MultiSelect) applyFilter() {
 	// Filter options
 	if p.filter == "" {
 		p.filteredChoices = p.choices
@@ -199,20 +249,20 @@ func (p *Select) applyFilter() {
 		return
 	}
 
-	p.filteredChoices = []*indexedSelectChoice{}
-	for _, option := range p.choices {
+	p.filteredChoices = []*indexedMultiSelectChoice{}
+	for index, option := range p.choices {
 		// Attempt to parse the filter as an index
 		if p.options.DisplayNumbers != nil && *p.options.DisplayNumbers {
-			index, err := strconv.Atoi(p.filter)
+			parsedIndex, err := strconv.Atoi(p.filter)
 			if err == nil {
-				if index == option.Index+1 {
+				if parsedIndex == index+1 {
 					p.filteredChoices = append(p.filteredChoices, option)
 					continue
 				}
 			}
 		}
 
-		if strings.Contains(strings.ToLower(option.Value), strings.ToLower(p.filter)) {
+		if strings.Contains(strings.ToLower(option.Label), strings.ToLower(p.filter)) {
 			p.filteredChoices = append(p.filteredChoices, option)
 		}
 	}
@@ -222,7 +272,7 @@ func (p *Select) applyFilter() {
 	}
 }
 
-func (p *Select) renderOptions(printer Printer, indent string) {
+func (p *MultiSelect) renderOptions(printer Printer, indent string) {
 	// Options
 	if p.cancelled || p.complete {
 		return
@@ -269,23 +319,34 @@ func (p *Select) renderOptions(printer Printer, indent string) {
 			}
 		}
 
+		// Show checkbox
+		checkbox := " "
+		if option.Selected {
+			checkbox = color.GreenString("✔")
+		}
+
 		// Show item digit prefixes
 		digitPrefix := ""
 		if *p.options.DisplayNumbers {
 			digitPrefix = fmt.Sprintf("%*d. ", digitWidth, option.Index+1) // Padded digit prefix
 		}
 
+		prefix := " "
+
 		if start+index == selected {
-			prefix := ">"
-			printer.Fprintf("%s%s %s%s\n",
+			prefix = ">"
+
+			printer.Fprintf("%s%s %s%s%s %s%s\n",
 				indent,
 				color.CyanString(prefix),
+				color.CyanString("["),
+				color.CyanString(checkbox),
+				color.CyanString("]"),
 				color.CyanString(digitPrefix),
 				color.CyanString(displayValue),
 			)
 		} else {
-			prefix := " "
-			printer.Fprintf("%s%s %s%s\n", indent, prefix, digitPrefix, displayValue)
+			printer.Fprintf("%s%s [%s] %s%s\n", indent, prefix, checkbox, digitPrefix, displayValue)
 		}
 	}
 
@@ -298,21 +359,20 @@ func (p *Select) renderOptions(printer Printer, indent string) {
 	}
 }
 
-func (p *Select) renderValidation(printer Printer) {
+func (p *MultiSelect) validate() {
 	p.hasValidationError = false
 	p.validationMessage = ""
 
 	if len(p.filteredChoices) == 0 {
-		p.currentIndex = nil
 		p.hasValidationError = true
 		p.validationMessage = "No options found matching the filter"
+	} else if p.submitted && len(p.selectedChoices) == 0 {
+		p.hasValidationError = true
+		p.validationMessage = "At least one option must be selected"
 	}
+}
 
-	// Validation error
-	if !p.showHelp && p.hasValidationError {
-		printer.Fprintln(color.YellowString("  %s", p.validationMessage))
-	}
-
+func (p *MultiSelect) renderHint(printer Printer) {
 	// Hint
 	if p.showHelp && p.options.HelpMessage != "" {
 		printer.Fprintln()
@@ -325,7 +385,15 @@ func (p *Select) renderValidation(printer Printer) {
 	}
 }
 
-func (p *Select) renderMessage(printer Printer) {
+func (p *MultiSelect) renderValidation(printer Printer) {
+	// Validation error
+	if !p.showHelp && p.hasValidationError {
+		printer.Fprintln()
+		printer.Fprintln(color.YellowString("  %s", p.validationMessage))
+	}
+}
+
+func (p *MultiSelect) renderMessage(printer Printer) {
 	printer.Fprintf(color.CyanString("? "))
 
 	// Message
@@ -336,9 +404,15 @@ func (p *Select) renderMessage(printer Printer) {
 		printer.Fprintf(color.RedString("(Cancelled)"))
 	}
 
-	// Selected Value
-	if !p.cancelled && p.selectedChoice != nil {
-		rawValue := p.selectedChoice.Label
+	// Selected Value(s)
+	if !p.cancelled {
+		selectedChoices := p.sortSelectedChoices()
+		selectionValues := make([]string, len(selectedChoices))
+		for index, choice := range selectedChoices {
+			selectionValues[index] = choice.Label
+		}
+
+		rawValue := strings.Join(selectionValues, ", ")
 		printer.Fprintf(color.CyanString(rawValue))
 	}
 
@@ -363,10 +437,9 @@ func (p *Select) renderMessage(printer Printer) {
 }
 
 // Render renders the Select component.
-func (p *Select) Render(printer Printer) error {
-	if p.currentIndex == nil && p.options.SelectedIndex != nil {
-		p.currentIndex = p.options.SelectedIndex
-		p.selectedChoice = p.choices[*p.currentIndex]
+func (p *MultiSelect) Render(printer Printer) error {
+	if p.currentIndex == nil {
+		p.currentIndex = Ptr(0)
 	}
 
 	p.renderMessage(printer)
@@ -377,7 +450,10 @@ func (p *Select) Render(printer Printer) error {
 
 	p.applyFilter()
 	p.renderOptions(printer, "  ")
+
+	p.validate()
 	p.renderValidation(printer)
+	p.renderHint(printer)
 	p.renderFooter(printer)
 
 	if p.cursorPosition != nil {
@@ -387,12 +463,13 @@ func (p *Select) Render(printer Printer) error {
 	return nil
 }
 
-func (p *Select) renderFooter(printer Printer) {
+func (p *MultiSelect) renderFooter(printer Printer) {
 	if p.cancelled || p.complete {
 		return
 	}
 
 	printer.Fprintln()
-	printer.Fprintln(color.HiBlackString("───────────────────────────────────"))
-	printer.Fprintln(color.HiBlackString("Use arrows to move, type ? for hint"))
+	printer.Fprintln(color.HiBlackString("───────────────────────────────────────"))
+	printer.Fprintln(color.HiBlackString("Use arrows to move, use space to select"))
+	printer.Fprintln(color.HiBlackString("Use enter to submit, type ? for help"))
 }

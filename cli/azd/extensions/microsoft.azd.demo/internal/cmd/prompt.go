@@ -104,15 +104,18 @@ func newPromptCommand() *cobra.Command {
 					}
 				}
 
-				providerOptions := []string{}
+				providerOptions := []*azdext.SelectChoice{}
 				for _, provider := range providerList {
-					providerOptions = append(providerOptions, *provider.Namespace)
+					providerOptions = append(providerOptions, &azdext.SelectChoice{
+						Label: *provider.Namespace,
+						Value: *provider.ID,
+					})
 				}
 
 				providerSelectResponse, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 					Options: &azdext.SelectOptions{
 						Message: "Select a resource provider",
-						Allowed: providerOptions,
+						Choices: providerOptions,
 					},
 				})
 				if err != nil {
@@ -135,9 +138,12 @@ func newPromptCommand() *cobra.Command {
 					return err
 				}
 
-				resourceTypeOptions := []string{}
+				resourceTypeOptions := []*azdext.SelectChoice{}
 				for _, resourceType := range resourceTypesResponse.Value {
-					resourceTypeOptions = append(resourceTypeOptions, *resourceType.ResourceType)
+					resourceTypeOptions = append(resourceTypeOptions, &azdext.SelectChoice{
+						Label: *resourceType.ResourceType,
+						Value: *resourceType.ResourceType,
+					})
 				}
 
 				resourceTypes := []*armresources.ProviderResourceType{}
@@ -146,7 +152,7 @@ func newPromptCommand() *cobra.Command {
 					Select(ctx, &azdext.SelectRequest{
 						Options: &azdext.SelectOptions{
 							Message: fmt.Sprintf("Select a %s resource type", *selectedProvider.Namespace),
-							Allowed: resourceTypeOptions,
+							Choices: resourceTypeOptions,
 						},
 					})
 				if err != nil {

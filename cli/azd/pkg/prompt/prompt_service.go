@@ -394,7 +394,7 @@ func (ps *promptService) PromptResourceGroup(
 				Message: "Enter the name for the resource group",
 			})
 
-			resourceGroupName, err := namePrompt.Ask()
+			resourceGroupName, err := namePrompt.Ask(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -823,7 +823,7 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 			SelectedIndex:   defaultIndex,
 		})
 
-		userSelectedIndex, err := resourceSelector.Ask()
+		userSelectedIndex, err := resourceSelector.Ask(ctx)
 		if err != nil {
 			return nil, err
 		}

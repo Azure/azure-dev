@@ -4,8 +4,10 @@
 package ux
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"slices"
 	"strconv"
@@ -126,7 +128,7 @@ func (p *MultiSelect) WithCanvas(canvas Canvas) Visual {
 }
 
 // Ask prompts the user to select an option from a list.
-func (p *MultiSelect) Ask() ([]*MultiSelectChoice, error) {
+func (p *MultiSelect) Ask(ctx context.Context) ([]*MultiSelectChoice, error) {
 	if p.canvas == nil {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
@@ -135,87 +137,86 @@ func (p *MultiSelect) Ask() ([]*MultiSelectChoice, error) {
 		return nil, err
 	}
 
-	input, done, err := p.input.ReadInput(nil)
-	if err != nil {
-		return nil, err
-	}
-
 	if !*p.options.EnableFiltering {
 		p.cursor.HideCursor()
 	}
 
-	for {
-		select {
-		case <-p.input.SigChan:
+	done := func() {
+		log.Println("Updating canvas")
+		if err := p.canvas.Update(); err != nil {
+			log.Printf("Error updating canvas: %s\n", err.Error())
+		}
+	}
+
+	err := p.input.ReadInput(ctx, nil, func(args *internal.KeyPressEventArgs) (bool, error) {
+		defer done()
+
+		if args.Cancelled {
 			p.cancelled = true
-			if err := p.canvas.Update(); err != nil {
-				return nil, err
-			}
+			return false, nil
+		}
 
-			return nil, ErrCancelled
-		case msg := <-input:
-			p.showHelp = msg.Hint
+		p.showHelp = args.Hint
 
-			if *p.options.EnableFiltering {
-				p.filter = strings.TrimSpace(msg.Value)
-			}
+		if *p.options.EnableFiltering {
+			p.filter = strings.TrimSpace(args.Value)
+		}
 
-			// Ensure currentIndex is initialized if there are any choices.
-			if p.currentIndex == nil && len(p.filteredChoices) > 0 {
-				p.currentIndex = Ptr(0)
-			}
+		// Ensure currentIndex is initialized if there are any choices.
+		if p.currentIndex == nil && len(p.filteredChoices) > 0 {
+			p.currentIndex = Ptr(0)
+		}
 
-			optionCount := len(p.filteredChoices)
-			if optionCount > 0 {
-				if msg.Key == keyboard.KeyArrowUp {
-					p.currentIndex = Ptr(((*p.currentIndex - 1 + optionCount) % optionCount))
-				} else if msg.Key == keyboard.KeyArrowDown {
-					p.currentIndex = Ptr(((*p.currentIndex + 1) % optionCount))
-				} else if msg.Key == keyboard.KeySpace {
-					choice := p.filteredChoices[*p.currentIndex]
-					choice.Selected = !choice.Selected
+		optionCount := len(p.filteredChoices)
+		if optionCount > 0 {
+			if args.Key == keyboard.KeyArrowUp {
+				p.currentIndex = Ptr(((*p.currentIndex - 1 + optionCount) % optionCount))
+			} else if args.Key == keyboard.KeyArrowDown {
+				p.currentIndex = Ptr(((*p.currentIndex + 1) % optionCount))
+			} else if args.Key == keyboard.KeySpace {
+				choice := p.filteredChoices[*p.currentIndex]
+				choice.Selected = !choice.Selected
 
-					if choice.Selected {
-						p.selectedChoices[choice.Value] = choice
-					} else {
-						delete(p.selectedChoices, choice.Value)
-					}
-				}
-			}
-
-			if msg.Key == keyboard.KeyArrowRight {
-				for _, choice := range p.choices {
-					choice.Selected = true
+				if choice.Selected {
 					p.selectedChoices[choice.Value] = choice
-				}
-			} else if msg.Key == keyboard.KeyArrowLeft {
-				for _, choice := range p.choices {
-					choice.Selected = false
+				} else {
 					delete(p.selectedChoices, choice.Value)
 				}
 			}
+		}
 
-			if msg.Key == keyboard.KeyEnter {
-				p.submitted = true
-				p.validate()
-
-				if !p.hasValidationError {
-					p.complete = true
-				}
+		if args.Key == keyboard.KeyArrowRight {
+			for _, choice := range p.choices {
+				choice.Selected = true
+				p.selectedChoices[choice.Value] = choice
 			}
-
-			if err := p.canvas.Update(); err != nil {
-				done()
-				return nil, err
-			}
-
-			if p.complete {
-				done()
-
-				return p.sortSelectedChoices(), nil
+		} else if args.Key == keyboard.KeyArrowLeft {
+			for _, choice := range p.choices {
+				choice.Selected = false
+				delete(p.selectedChoices, choice.Value)
 			}
 		}
+
+		if args.Key == keyboard.KeyEnter {
+			p.submitted = true
+			p.validate()
+
+			if !p.hasValidationError {
+				p.complete = true
+			}
+		}
+
+		if p.complete {
+			return false, nil
+		}
+
+		return true, nil
+	})
+	if err != nil {
+		return nil, err
 	}
+
+	return p.sortSelectedChoices(), nil
 }
 
 func (p *MultiSelect) sortSelectedChoices() []*MultiSelectChoice {

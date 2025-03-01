@@ -22,6 +22,7 @@ func AllResourceTypes() []ResourceType {
 		ResourceTypeMessagingEventHubs,
 		ResourceTypeMessagingServiceBus,
 		ResourceTypeStorage,
+		ResourceTypeKeyVault,
 	}
 }
 
@@ -36,6 +37,7 @@ const (
 	ResourceTypeMessagingServiceBus ResourceType = "messaging.servicebus"
 	ResourceTypeStorage             ResourceType = "storage"
 	ResourceTypeAiProject           ResourceType = "ai.project"
+	ResourceTypeKeyVault            ResourceType = "keyvault"
 )
 
 func (r ResourceType) String() string {
@@ -60,6 +62,8 @@ func (r ResourceType) String() string {
 		return "Storage Account"
 	case ResourceTypeAiProject:
 		return "AI Foundry"
+	case ResourceTypeKeyVault:
+		return "Key Vault"
 	}
 
 	return ""

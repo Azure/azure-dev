@@ -89,7 +89,7 @@ func DiffBlocks(old map[string]*project.ResourceConfig, new map[string]*project.
 		sb.WriteString("\n")
 	}
 
-	return sb.String(), nil
+	return strings.TrimSuffix(sb.String(), "\n"), nil
 }
 
 func formatLine(op dmp.Operation, text string, indent int) string {

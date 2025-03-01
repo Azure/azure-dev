@@ -34,6 +34,7 @@ func (a *AddAction) selectMenu() []Menu {
 		{Namespace: "ai", Label: "AI Models", SelectResource: a.selectAiType},
 		{Namespace: "messaging", Label: "Messaging", SelectResource: selectMessaging},
 		{Namespace: "storage", Label: "Storage account", SelectResource: selectStorage},
+		{Namespace: "keyvault", Label: "Key Vault", SelectResource: selectKeyVault},
 	}
 }
 
@@ -117,5 +118,11 @@ func selectStorage(
 	r := &project.ResourceConfig{}
 	r.Type = project.ResourceTypeStorage
 	r.Props = project.StorageProps{}
+	return r, nil
+}
+
+func selectKeyVault(console input.Console, ctx context.Context, p PromptOptions) (*project.ResourceConfig, error) {
+	r := &project.ResourceConfig{}
+	r.Type = project.ResourceTypeKeyVault
 	return r, nil
 }

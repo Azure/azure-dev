@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -135,7 +136,20 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	// backends -> frontends
 	backendMapping := map[string]string{}
 
-	for _, res := range projectConfig.Resources {
+	// Create a "virtual" copy since we're adding any implicitly dependent resources
+	// that are unrepresented by the current user-provided schema
+	resources := maps.Clone(projectConfig.Resources)
+	// Add any implicit dependencies
+	for _, res := range resources {
+		dependencies := DependentResourcesOf(res)
+		for _, dep := range dependencies {
+			if _, exists := resources[dep.Name]; !exists {
+				resources[dep.Name] = dep
+			}
+		}
+	}
+
+	for _, res := range resources {
 		switch res.Type {
 		case ResourceTypeDbRedis:
 			infraSpec.DbRedis = &scaffold.DatabaseRedis{}
@@ -236,6 +250,8 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			}
 			foundrySpec.Models = foundryModels
 			infraSpec.AiFoundryProject = &foundrySpec
+		case ResourceTypeKeyVault:
+			infraSpec.KeyVault = &scaffold.KeyVault{}
 		}
 	}
 
@@ -337,6 +353,8 @@ func mapHostUses(
 			svcSpec.StorageAccount = &scaffold.StorageReference{}
 		case ResourceTypeAiProject:
 			svcSpec.HasAiFoundryProject = &scaffold.AiFoundrySpec{}
+		case ResourceTypeKeyVault:
+			svcSpec.KeyVault = &scaffold.KeyVaultReference{}
 		}
 	}
 
@@ -411,4 +429,16 @@ func genBicepParamsFromEnvSubst(
 	}
 
 	return result
+}
+
+// DependentResourcesOf returns implicit resource dependencies for a given resource type.
+// These dependencies (like Key Vault to store connection strings, passwords for databases)
+// are automatically added to the project configuration. Returns an empty slice if none exist.
+func DependentResourcesOf(resource *ResourceConfig) []*ResourceConfig {
+	switch resource.Type {
+	case ResourceTypeDbMongo, ResourceTypeDbMySql, ResourceTypeDbPostgres, ResourceTypeDbRedis:
+		return []*ResourceConfig{{Name: "vault", Type: ResourceTypeKeyVault}}
+	default:
+		return nil
+	}
 }

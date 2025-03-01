@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/fatih/color"
 )
 
 type EnvironmentDetails struct {
@@ -19,11 +18,11 @@ type EnvironmentDetails struct {
 func (t *EnvironmentDetails) ToString(currentIndentation string) string {
 	var location string
 	if t.Location != "" {
-		location = fmt.Sprintf("\nLocation: %s", color.BlueString(t.Location))
+		location = fmt.Sprintf("\nLocation: %s", output.WithHighLightFormat(t.Location))
 	}
 	return fmt.Sprintf(
 		"Subscription: %s%s\n",
-		color.BlueString(t.Subscription),
+		output.WithHighLightFormat(t.Subscription),
 		location,
 	)
 }

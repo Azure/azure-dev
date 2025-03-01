@@ -221,7 +221,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		tracing.SetUsageAttributes(fields.InitMethod.String("app"))
 
 		header = "Your app is ready for the cloud!"
-		followUp = "You can provision and deploy your app to Azure by running the " + color.BlueString("azd up") +
+		followUp = "You can provision and deploy your app to Azure by running the " + output.WithHighLightFormat("azd up") +
 			" command in this directory. For more information on configuring your app, see " +
 			output.WithHighLightFormat("./next-steps.md")
 		entries, err := os.ReadDir(azdCtx.ProjectDirectory())
@@ -234,7 +234,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				Err: errors.New("no files found in the current directory"),
 				Suggestion: "Ensure you're in the directory where your app code is located and try again." +
 					" If you do not have code and would like to start with an app template, run '" +
-					color.BlueString("azd init") + "' and select the option to " +
+					output.WithHighLightFormat("azd init") + "' and select the option to " +
 					color.MagentaString("Use a template") + ".",
 			}
 		}
@@ -300,7 +300,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				return nil, fmt.Errorf("saving project config: %w", err)
 			}
 
-			followUp = "Run " + color.BlueString("azd add") + " to add new Azure components to your project."
+			followUp = "Run " + output.WithHighLightFormat("azd add") + " to add new Azure components to your project."
 		}
 
 		header = "Generated azure.yaml project file."

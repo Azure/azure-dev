@@ -35,7 +35,7 @@ const (
 	ResourceTypeMessagingEventHubs  ResourceType = "messaging.eventhubs"
 	ResourceTypeMessagingServiceBus ResourceType = "messaging.servicebus"
 	ResourceTypeStorage             ResourceType = "storage"
-	ResourceTypeAiModel             ResourceType = "ai.foundry"
+	ResourceTypeAiProject           ResourceType = "ai.project"
 )
 
 func (r ResourceType) String() string {
@@ -58,7 +58,7 @@ func (r ResourceType) String() string {
 		return "Service Bus"
 	case ResourceTypeStorage:
 		return "Storage Account"
-	case ResourceTypeAiModel:
+	case ResourceTypeAiProject:
 		return "AI Foundry"
 	}
 
@@ -109,7 +109,7 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		errMarshal = marshalRawProps(raw.Props.(ServiceBusProps))
 	case ResourceTypeStorage:
 		errMarshal = marshalRawProps(raw.Props.(StorageProps))
-	case ResourceTypeAiModel:
+	case ResourceTypeAiProject:
 		errMarshal = marshalRawProps(raw.Props.(AiFoundryModelProps))
 	}
 
@@ -172,7 +172,7 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = sp
-	case ResourceTypeAiModel:
+	case ResourceTypeAiProject:
 		amp := AiFoundryModelProps{}
 		if err := unmarshalProps(&amp); err != nil {
 			return err

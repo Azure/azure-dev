@@ -149,11 +149,6 @@ func ExecInfraFs(
 		return nil, fmt.Errorf("scaffolding main.parameters.json: %w", err)
 	}
 
-	err = executeToFS(fs, t, "resources.bicep", "resources.bicep", spec)
-	if err != nil {
-		return nil, fmt.Errorf("scaffolding resources.bicep: %w", err)
-	}
-
 	if spec.AiFoundryProject != nil {
 		err = executeToFS(fs, t, "ai-models.bicep", "ai-models.bicep", spec)
 		if err != nil {

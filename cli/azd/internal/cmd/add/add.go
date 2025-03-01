@@ -129,7 +129,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	if r, exists := prjConfig.Resources[resourceToAdd.Name]; exists && r.Type != project.ResourceTypeAiModel {
+	if r, exists := prjConfig.Resources[resourceToAdd.Name]; exists && r.Type != project.ResourceTypeAiProject {
 		log.Panicf("unhandled validation: resource with name %s already exists", resourceToAdd.Name)
 	}
 

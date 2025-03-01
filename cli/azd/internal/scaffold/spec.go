@@ -126,7 +126,7 @@ type ServiceSpec struct {
 	ServiceBus *ServiceBus
 	EventHubs  *EventHubs
 
-	HasAiFoundryProject bool
+	HasAiFoundryProject *AiFoundrySpec
 }
 
 type Frontend struct {

@@ -216,12 +216,12 @@ func (a *AddAction) selectAiModel(
 	ctx context.Context,
 	p PromptOptions) (*project.ResourceConfig, error) {
 	r := &project.ResourceConfig{}
-	r.Type = project.ResourceTypeAiModel
+	r.Type = project.ResourceTypeAiProject
 
 	// check if there are models in the project already
 	aiProject := project.AiFoundryModelProps{}
 	for _, resource := range p.PrjConfig.Resources {
-		if resource.Type == project.ResourceTypeAiModel {
+		if resource.Type == project.ResourceTypeAiProject {
 			em, castOk := resource.Props.(project.AiFoundryModelProps)
 			if !castOk {
 				return nil, fmt.Errorf("invalid resource properties")

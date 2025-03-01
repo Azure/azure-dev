@@ -211,11 +211,10 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			infraSpec.StorageAccount = &scaffold.StorageAccount{
 				Containers: props.Containers,
 			}
-		case ResourceTypeAiModel:
-			props, castOk := res.Props.(AiFoundryModelProps)
-			if !castOk {
-				return nil, fmt.Errorf("parsing resource %s of type %s", res.Name, res.Type)
-			}
+		case ResourceTypeAiProject:
+			// It's okay to forcefully panic here. The only way we would land here is that the marshal/unmarshal
+			// in resources.go was not done right.
+			props := res.Props.(AiFoundryModelProps)
 			foundryName := res.Name
 			var foundryModels []scaffold.AiFoundryModel
 			foundrySpec := scaffold.AiFoundrySpec{
@@ -336,8 +335,8 @@ func mapHostUses(
 			svcSpec.ServiceBus = &scaffold.ServiceBus{}
 		case ResourceTypeStorage:
 			svcSpec.StorageAccount = &scaffold.StorageReference{}
-		case ResourceTypeAiModel:
-			svcSpec.HasAiFoundryProject = true
+		case ResourceTypeAiProject:
+			svcSpec.HasAiFoundryProject = &scaffold.AiFoundrySpec{}
 		}
 	}
 

@@ -58,8 +58,8 @@ func Configure(
 		return r, nil
 	case project.ResourceTypeStorage:
 		return fillStorageDetails(ctx, r, console, p)
-	case project.ResourceTypeAiModel:
-		return fillAiFoundryName(ctx, r, console, p)
+	case project.ResourceTypeAiProject:
+		return fillAiProjectName(ctx, r, console, p)
 	default:
 		return r, nil
 	}
@@ -144,7 +144,7 @@ func fillOpenAiModelName(
 	return r, nil
 }
 
-func fillAiFoundryName(
+func fillAiProjectName(
 	_ context.Context,
 	r *project.ResourceConfig,
 	_ input.Console,
@@ -154,7 +154,7 @@ func fillAiFoundryName(
 	}
 
 	// provide a default suggestion using the underlying model name
-	defaultName := "ai-models"
+	defaultName := "ai-project"
 	i := 1
 	for {
 		if _, exists := pOptions.PrjConfig.Resources[defaultName]; exists {

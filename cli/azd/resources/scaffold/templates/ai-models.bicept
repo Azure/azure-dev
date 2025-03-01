@@ -193,6 +193,6 @@ resource mlServiceRoleSecretsReader 'Microsoft.Authorization/roleAssignments@202
 output projectDiscoveryUrl string = project.properties.discoveryUrl
 output projectId string = project.id
 output projectName string = project.name
-output aiFoundryProjectConnectionString string = '${split(aiModelsDeploy.outputs.projectDiscoveryUrl, '/')[2]};${subscription().subscriptionId};${resourceGroup().name};${aiModelsDeploy.outputs.projectName}'
+output aiFoundryProjectConnectionString string = '${split(project.properties.discoveryUrl, '/')[2]};${subscription().subscriptionId};${resourceGroup().name};${project.name}'
 
 {{ end}}

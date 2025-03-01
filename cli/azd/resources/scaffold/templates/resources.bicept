@@ -12,6 +12,10 @@ param tags object = {}
 param {{.Name}} {{.Type}}
 {{- end}}
 
+{{- if .AiFoundryProject }}
+param aiFoundryProjectConnectionString string
+{{- end}}
+
 @description('Id of the user or app to assign application roles')
 param principalId string
 
@@ -565,6 +569,12 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: account.outputs.endpoint
           }
           {{- end}}
+          {{- if .HasAiFoundryProject }}
+          {
+            name: 'AZURE_AIPROJECT_CONNECTION_STRING'
+            value: aiFoundryProjectConnectionString
+          }
+          {{- end}}
           {{- if .Frontend}}
           {{- range $i, $e := .Frontend.Backends}}
           {
@@ -577,6 +587,12 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'PORT'
             value: '{{ .Port }}'
+          }
+          {{- end}}
+          {{- range $key, $value := .Env}}
+          {
+            name: '{{ $key }}'
+            value: {{ $value }}
           }
           {{- end}}
         ],
@@ -602,6 +618,18 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     tags: union(tags, { 'azd-service-name': '{{.Name}}' })
   }
 }
+{{- if .HasAiFoundryProject}}
+
+resource {{bicepName .Name}}backendRoleAzureAIDeveloperRG 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(subscription().id, resourceGroup().id, {{bicepName .Name}}Identity.name, '64702f94-c441-49e6-a78b-ef80e0188fee')
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '64702f94-c441-49e6-a78b-ef80e0188fee') 
+    principalId: {{bicepName .Name}}Identity.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+{{- end }}
 {{- end}}
 
 {{- if .DbRedis}}

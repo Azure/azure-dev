@@ -79,3 +79,77 @@ func (cli *AzureClient) createDeletedCognitiveAccountClient(
 
 	return client, nil
 }
+
+func (cli *AzureClient) GetAiModels(
+	ctx context.Context,
+	subscriptionId string,
+	location string) ([]*armcognitiveservices.Model, error) {
+	client, err := cli.createModelsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	modelsPager := client.NewListPager(location, nil)
+	var models []*armcognitiveservices.Model
+	for modelsPager.More() {
+		page, err := modelsPager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		models = append(models, page.Value...)
+	}
+
+	return models, nil
+}
+
+func (cli *AzureClient) createModelsClient(
+	ctx context.Context, subscriptionId string) (*armcognitiveservices.ModelsClient, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := armcognitiveservices.NewModelsClient(subscriptionId, credential, cli.armClientOptions)
+	if err != nil {
+		return nil, fmt.Errorf("creating Resource client: %w", err)
+	}
+
+	return client, nil
+}
+
+func (cli *AzureClient) GetAiUsages(
+	ctx context.Context,
+	subscriptionId string,
+	location string) ([]*armcognitiveservices.Usage, error) {
+	client, err := cli.createUsagesClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	modelsPager := client.NewListPager(location, nil)
+	var models []*armcognitiveservices.Usage
+	for modelsPager.More() {
+		page, err := modelsPager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		models = append(models, page.Value...)
+	}
+
+	return models, nil
+}
+
+func (cli *AzureClient) createUsagesClient(
+	ctx context.Context, subscriptionId string) (*armcognitiveservices.UsagesClient, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := armcognitiveservices.NewUsagesClient(subscriptionId, credential, cli.armClientOptions)
+	if err != nil {
+		return nil, fmt.Errorf("creating Resource client: %w", err)
+	}
+
+	return client, nil
+}

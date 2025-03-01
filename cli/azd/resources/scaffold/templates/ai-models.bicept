@@ -150,7 +150,7 @@ resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
 }
 
 resource project 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
-  name: '${envName}'
+  name: envName
   location: location
   tags: tags
   sku: {

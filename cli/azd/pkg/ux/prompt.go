@@ -6,6 +6,7 @@ package ux
 import (
 	"context"
 	"io"
+	"log"
 	"os"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
@@ -126,23 +127,26 @@ func (p *Prompt) Ask(ctx context.Context) (string, error) {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
 
-	if err := p.canvas.Run(); err != nil {
-		return "", err
-	}
-
 	inputOptions := &internal.InputConfig{
 		InitialValue:   p.options.DefaultValue,
 		IgnoreHintKeys: p.options.IgnoreHintKeys,
 	}
 
+	if err := p.canvas.Run(); err != nil {
+		return "", err
+	}
+
+	done := func() {
+		if err := p.canvas.Update(); err != nil {
+			log.Printf("Error updating canvas: %s\n", err.Error())
+		}
+	}
+
 	err := p.input.ReadInput(ctx, inputOptions, func(args *internal.KeyPressEventArgs) (bool, error) {
+		defer done()
+
 		if args.Cancelled {
 			p.cancelled = true
-
-			if err := p.canvas.Update(); err != nil {
-				return false, err
-			}
-
 			return false, nil
 		}
 
@@ -156,10 +160,6 @@ func (p *Prompt) Ask(ctx context.Context) (string, error) {
 			if !p.hasValidationError {
 				p.complete = true
 			}
-		}
-
-		if err := p.canvas.Update(); err != nil {
-			return false, err
 		}
 
 		if p.complete {

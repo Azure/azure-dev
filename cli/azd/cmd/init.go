@@ -151,7 +151,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		PlaceHolder:       "This is a placeholder",
 	}
 	standardPrompt := ux.NewPrompt(promptOptions)
-	_, err := standardPrompt.Ask()
+	_, err := standardPrompt.Ask(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("prompting for input: %w", err)
+	}
 
 	confirmOptions := &ux.ConfirmOptions{
 		Message:      "This is a confirm message",
@@ -160,7 +163,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		PlaceHolder:  "This is a placeholder",
 	}
 	confirmPrompt := ux.NewConfirm(confirmOptions)
-	_, err = confirmPrompt.Ask()
+	_, err = confirmPrompt.Ask(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("prompting for confirm: %w", err)
+	}
 
 	singleChoices := []*ux.SelectChoice{}
 	for i := 1; i <= 10; i++ {
@@ -177,7 +183,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	singleSelect := ux.NewSelect(singleSelectOptions)
-	_, err = singleSelect.Ask()
+	_, err = singleSelect.Ask(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("prompting for select: %w", err)
+	}
 
 	multiChoices := []*ux.MultiSelectChoice{}
 	for i := 1; i <= 10; i++ {
@@ -196,7 +205,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	multiSelect := ux.NewMultiSelect(options)
-	_, err = multiSelect.Ask()
+	_, err = multiSelect.Ask(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("prompting for multi select: %w", err)
+	}
 
 	wd, err := os.Getwd()
 	if err != nil {

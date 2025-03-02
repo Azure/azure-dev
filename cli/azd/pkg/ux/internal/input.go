@@ -66,9 +66,16 @@ func (i *Input) ReadInput(ctx context.Context, config *InputConfig, handler KeyP
 	i.cursor.ShowCursor()
 	i.value = []rune(config.InitialValue)
 
+	// Channel to receive errors from the keyboard input
 	errChan := make(chan error, 1)
+
+	// Channel to receive OS signals (e.g., Ctrl+C)
 	signalChan := make(chan os.Signal, 1)
+
+	// Channel to receive active key press events
 	inputChan := make(chan *KeyPressEventArgs)
+
+	// Signals that we should continue listening for key presses.
 	receiveChan := make(chan struct{})
 
 	// Register for SIGINT (Ctrl+C) signal
@@ -81,7 +88,7 @@ func (i *Input) ReadInput(ctx context.Context, config *InputConfig, handler KeyP
 	tries := 0
 
 	for {
-		if !keyboard.IsStarted(200 * time.Millisecond) {
+		if !keyboard.IsStarted(100 * time.Millisecond) {
 			if err := keyboard.Open(); err != nil {
 				tries++
 				continue
@@ -131,10 +138,10 @@ func (i *Input) ReadInput(ctx context.Context, config *InputConfig, handler KeyP
 				} else if key == keyboard.KeyCtrlC || key == keyboard.KeyCtrlX || key == keyboard.KeyEsc {
 					eventArgs.Cancelled = true
 					cancel()
+					break
 				}
 
 				eventArgs.Value = string(i.value)
-
 				inputChan <- &eventArgs
 			}
 		}

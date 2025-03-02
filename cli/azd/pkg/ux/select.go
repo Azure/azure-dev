@@ -132,12 +132,12 @@ func (p *Select) Ask(ctx context.Context) (*int, error) {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
 
-	if err := p.canvas.Run(); err != nil {
-		return nil, err
-	}
-
 	if !*p.options.EnableFiltering {
 		p.cursor.HideCursor()
+	}
+
+	if err := p.canvas.Run(); err != nil {
+		return nil, err
 	}
 
 	done := func() {

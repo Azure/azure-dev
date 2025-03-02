@@ -114,13 +114,13 @@ func (p *Confirm) Ask(ctx context.Context) (*bool, error) {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
 
-	if err := p.canvas.Run(); err != nil {
-		return nil, err
-	}
-
 	inputConfig := &internal.InputConfig{
 		InitialValue:   p.displayValue,
 		IgnoreHintKeys: true,
+	}
+
+	if err := p.canvas.Run(); err != nil {
+		return nil, err
 	}
 
 	done := func() {

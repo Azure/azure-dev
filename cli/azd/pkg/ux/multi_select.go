@@ -133,16 +133,15 @@ func (p *MultiSelect) Ask(ctx context.Context) ([]*MultiSelectChoice, error) {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
 
-	if err := p.canvas.Run(); err != nil {
-		return nil, err
-	}
-
 	if !*p.options.EnableFiltering {
 		p.cursor.HideCursor()
 	}
 
+	if err := p.canvas.Run(); err != nil {
+		return nil, err
+	}
+
 	done := func() {
-		log.Println("Updating canvas")
 		if err := p.canvas.Update(); err != nil {
 			log.Printf("Error updating canvas: %s\n", err.Error())
 		}

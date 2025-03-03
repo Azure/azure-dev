@@ -26,18 +26,18 @@ type powershellScript struct {
 	envVars       []string
 }
 
-func checkPath(options tools.ExecOptions) (err error) {
+func checkInstalled(options tools.ExecOptions) (err error) {
 	return tools.ToolInPath(options.UserPwsh)
 }
 
 // Executes the specified powershell script
 // When interactive is true will attach to stdin, stdout & stderr
 func (bs *powershellScript) Execute(ctx context.Context, path string, options tools.ExecOptions) (exec.RunResult, error) {
-	if err := checkPath(options); err != nil {
+	if err := checkInstalled(options); err != nil {
 		return exec.RunResult{}, &internal.ErrorWithSuggestion{
 			Err: err,
-			Suggestion: "PowerShell is not installed or not in the path. " +
-				"To install PowerShell, visit https://learn.microsoft.com/powershell/scripting/install/installing-powershell",
+			Suggestion: "PowerShell is not installed or not in the path. To install PowerShell, " +
+				"visit https://learn.microsoft.com/powershell/scripting/install/installing-powershell",
 		}
 	}
 

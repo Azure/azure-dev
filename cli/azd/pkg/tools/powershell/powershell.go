@@ -6,6 +6,7 @@ package powershell
 import (
 	"context"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -25,9 +26,20 @@ type powershellScript struct {
 	envVars       []string
 }
 
+func checkPath(options tools.ExecOptions) (err error) {
+	return tools.ToolInPath(options.UserPwsh)
+}
+
 // Executes the specified powershell script
 // When interactive is true will attach to stdin, stdout & stderr
 func (bs *powershellScript) Execute(ctx context.Context, path string, options tools.ExecOptions) (exec.RunResult, error) {
+	if err := checkPath(options); err != nil {
+		return exec.RunResult{}, &internal.ErrorWithSuggestion{
+			Err:        err,
+			Suggestion: "PowerShell is not installed or not in the path. To install PowerShell, visit https://learn.microsoft.com/powershell/scripting/install/installing-powershell",
+		}
+	}
+
 	runArgs := exec.NewRunArgs(options.UserPwsh, path).
 		WithCwd(bs.cwd).
 		WithEnv(bs.envVars).

@@ -272,6 +272,20 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 	willCreateNewSecret := setSecretStrategies[selectedStrategyIndex] == createNewStrategy
 
+	createSuccessResult := func(secretName, kvSecretName, kvName string) *actions.ActionResult {
+		return &actions.ActionResult{
+			Message: &actions.ResultMessage{
+				Header: fmt.Sprintf("The key %s was saved in the environment as a reference to the"+
+					" Key Vault secret %s from the Key Vault %s",
+					output.WithBackticks(secretName),
+					output.WithBackticks(kvSecretName),
+					output.WithBackticks(kvName)),
+				FollowUp: fmt.Sprintf("Learn how to use Key Vault secrets with azd and more: %s",
+					output.WithLinkFormat("https://aka.ms/azd-env-set-secret")),
+			},
+		}
+	}
+
 	subscriptionNote := "\nYou can set the Key Vault secret from any Azure subscription where you have access to."
 	e.console.Message(ctx, subscriptionNote)
 
@@ -403,13 +417,36 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 	var kvSecretName string
 	if willCreateNewSecret {
+		kvSecretName, err = e.createNewKeyVaultSecret(ctx, subId, secretName, kvAccount.Name)
+	} else {
+		kvSecretName, err = e.selectKeyVaultSecret(ctx, subId, kvAccount.Name)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// akvs -> Azure Key Vault Secret (akvs://<subId>/<keyvault-name>/<secret-name>)
+	envValue := keyvault.NewAzureKeyVaultSecret(subId, kvAccount.Name, kvSecretName)
+	e.env.DotenvSet(secretName, envValue)
+	if err := e.envManager.Save(ctx, e.env); err != nil {
+		return nil, fmt.Errorf("saving environment: %w", err)
+	}
+
+	return createSuccessResult(secretName, kvSecretName, kvAccount.Name), nil
+}
+
+// createNewKeyVaultSecret creates a new secret in an Azure Key Vault and returns the name of the created secret.
+func (e *envSetSecretAction) createNewKeyVaultSecret(ctx context.Context, secretName, subId, kvName string) (string, error) {
+	var kvSecretName string
+	var err error
+
 		for {
 			kvSecretName, err = e.console.Prompt(ctx, input.ConsoleOptions{
 				Message:      "Enter a name for the Key Vault secret",
 				DefaultValue: strings.ReplaceAll(secretName, "_", "-") + "-kv-secret",
 			})
 			if err != nil {
-				return nil, fmt.Errorf("prompting for Key Vault secret name: %w", err)
+			return "", fmt.Errorf("prompting for Key Vault secret name: %w", err)
 			}
 			if keyvault.IsValidSecretName(kvSecretName) {
 				break
@@ -423,14 +460,15 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 			IsPassword: true,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("prompting for secret value: %w", err)
+		return "", fmt.Errorf("prompting for secret value: %w", err)
 		}
+
 		// Creating a secret in a new account too soon can fail due to rbac role assignment not being ready
 		err = retry.Do(
 			ctx,
 			retry.WithMaxRetries(3, retry.NewConstant(5*time.Second)),
 			func(ctx context.Context) error {
-				err = e.kvService.CreateKeyVaultSecret(ctx, subId, kvAccount.Name, kvSecretName, kvSecretValue)
+			err = e.kvService.CreateKeyVaultSecret(ctx, subId, kvName, kvSecretName, kvSecretValue)
 				if err != nil {
 					return retry.RetryableError(fmt.Errorf("creating Key Vault secret: %w", err))
 				}
@@ -438,16 +476,25 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 			},
 		)
 		if err != nil {
-			return nil, fmt.Errorf("setting Key Vault secret: %w", err)
+		return "", fmt.Errorf("setting Key Vault secret: %w", err)
 		}
-	} else {
-		secretsInKv, err := e.kvService.ListKeyVaultSecrets(ctx, subId, kvAccount.Name)
+
+	return kvSecretName, nil
+}
+
+// selectKeyVaultSecret presents a selection list of secrets from the specified Key Vault and
+// returns the selected secret name.
+func (e *envSetSecretAction) selectKeyVaultSecret(ctx context.Context, subId string, kvName string) (string, error) {
+	listWithoutNumbers := !e.console.IsSpinnerInteractive()
+
+	secretsInKv, err := e.kvService.ListKeyVaultSecrets(ctx, subId, kvName)
 		if err != nil {
-			return nil, fmt.Errorf("listing Key Vault secrets: %w", err)
+		return "", fmt.Errorf("listing Key Vault secrets: %w", err)
 		}
 		if len(secretsInKv) == 0 {
-			return nil, fmt.Errorf("no Key Vault secrets were found in the selected Key Vault")
+		return "", fmt.Errorf("no Key Vault secrets were found in the selected Key Vault")
 		}
+
 		options := make([]string, len(secretsInKv))
 		for i, secret := range secretsInKv {
 			if listWithoutNumbers {
@@ -456,35 +503,17 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 				options[i] = fmt.Sprintf("%2d. %s", i+1, secret)
 			}
 		}
+
 		secretSelectionIndex, err := e.console.Select(ctx, input.ConsoleOptions{
 			Message:      "Select the Key Vault secret",
 			Options:      options,
 			DefaultValue: options[0],
 		})
 		if err != nil {
-			return nil, fmt.Errorf("selecting Key Vault secret: %w", err)
+		return "", fmt.Errorf("selecting Key Vault secret: %w", err)
 		}
-		kvSecretName = secretsInKv[secretSelectionIndex]
-	}
 
-	// akvs -> Azure Key Vault Secret (akvs://<subId>/<keyvault-name>/<secret-name>)
-	envValue := keyvault.NewAzureKeyVaultSecret(subId, kvAccount.Name, kvSecretName)
-	e.env.DotenvSet(secretName, envValue)
-	if err := e.envManager.Save(ctx, e.env); err != nil {
-		return nil, fmt.Errorf("saving environment: %w", err)
-	}
-
-	return &actions.ActionResult{
-		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("The key %s was saved in the environment as a reference to the"+
-				" Key Vault secret %s from the Key Vault %s",
-				output.WithBackticks(secretName),
-				output.WithBackticks(kvSecretName),
-				output.WithBackticks(kvAccount.Name)),
-			FollowUp: fmt.Sprintf("Learn how to use Key Vault secrets with azd and more: %s",
-				output.WithLinkFormat("https://aka.ms/azd-env-set-secret")),
-		},
-	}, nil
+	return secretsInKv[secretSelectionIndex], nil
 }
 
 func newEnvSetSecretAction(

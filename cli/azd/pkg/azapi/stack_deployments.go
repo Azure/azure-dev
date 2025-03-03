@@ -768,17 +768,9 @@ func (d *StackDeployments) ValidatePreflightToResourceGroup(
 	ctxWithResp := runtime.WithCaptureResponse(ctx, &rawResponse)
 
 	poller, err := client.BeginValidateStackAtResourceGroup(ctxWithResp, resourceGroup, deploymentName, stack, nil)
-	if err != nil {
-		return validatePreflightError(rawResponse, err, "resource group")
-	}
-
-	_, err = poller.PollUntilDone(ctx, nil)
-	if err != nil {
-		deploymentError := createDeploymentError(err)
-		return fmt.Errorf(
-			"validating preflight to resource group:\n\nDeployment Error Details:\n%w",
-			deploymentError,
-		)
+	_, validateError := poller.PollUntilDone(ctx, nil)
+	if validateError != nil || err != nil {
+		return validatePreflightError(rawResponse, validateError, err, "resource group")
 	}
 
 	return nil
@@ -851,17 +843,9 @@ func (d *StackDeployments) ValidatePreflightToSubscription(
 	ctxWithResp := runtime.WithCaptureResponse(ctx, &rawResponse)
 
 	poller, err := client.BeginValidateStackAtSubscription(ctxWithResp, deploymentName, stack, nil)
-	if err != nil {
-		return validatePreflightError(rawResponse, err, "subscription")
-	}
-
-	_, err = poller.PollUntilDone(ctx, nil)
-	if err != nil {
-		deploymentError := createDeploymentError(err)
-		return fmt.Errorf(
-			"validating preflight to subscription:\n\nDeployment Error Details:\n%w",
-			deploymentError,
-		)
+	_, validateError := poller.PollUntilDone(ctx, nil)
+	if validateError != nil || err != nil {
+		return validatePreflightError(rawResponse, validateError, err, "subscription")
 	}
 
 	return nil

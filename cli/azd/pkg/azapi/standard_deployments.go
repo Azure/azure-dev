@@ -710,7 +710,7 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 	var rawResponse *http.Response
 	ctxWithResp := runtime.WithCaptureResponse(ctx, &rawResponse)
 
-	_, err = deploymentClient.BeginValidateAtSubscriptionScope(
+	validateResult, err := deploymentClient.BeginValidateAtSubscriptionScope(
 		ctxWithResp, deploymentName,
 		armresources.Deployment{
 			Properties: &armresources.DeploymentProperties{
@@ -721,8 +721,10 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 			Location: to.Ptr(location),
 			Tags:     tags,
 		}, nil)
-	if err != nil {
-		return validatePreflightError(rawResponse, err, "subscription")
+	_, validateError := validateResult.PollUntilDone(ctx, nil)
+
+	if validateError != nil || err != nil {
+		return validatePreflightError(rawResponse, validateError, err, "subscription")
 	}
 
 	return nil
@@ -741,10 +743,11 @@ type PreflightErrorResponse struct {
 
 func validatePreflightError(
 	rawResponse *http.Response,
+	validateError error,
 	err error,
 	typeMessage string,
 ) error {
-	if rawResponse == nil || rawResponse.StatusCode != 400 {
+	if validateError != nil || (rawResponse == nil || rawResponse.StatusCode != 400) {
 		return fmt.Errorf(
 			"validating preflight to %s:\n\nPreflight Error Details:\n%w",
 			typeMessage,
@@ -779,7 +782,7 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 	var rawResponse *http.Response
 	ctxWithResp := runtime.WithCaptureResponse(ctx, &rawResponse)
 
-	_, err = deploymentClient.BeginValidate(ctxWithResp, resourceGroup, deploymentName,
+	validateResult, err := deploymentClient.BeginValidate(ctxWithResp, resourceGroup, deploymentName,
 		armresources.Deployment{
 			Properties: &armresources.DeploymentProperties{
 				Template:   armTemplate,
@@ -788,8 +791,10 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 			},
 			Tags: tags,
 		}, nil)
-	if err != nil {
-		return validatePreflightError(rawResponse, err, "resource group")
+	_, validateError := validateResult.PollUntilDone(ctx, nil)
+
+	if validateError != nil || err != nil {
+		return validatePreflightError(rawResponse, validateError, err, "resource group")
 	}
 
 	return nil

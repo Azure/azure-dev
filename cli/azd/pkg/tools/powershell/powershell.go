@@ -35,8 +35,9 @@ func checkPath(options tools.ExecOptions) (err error) {
 func (bs *powershellScript) Execute(ctx context.Context, path string, options tools.ExecOptions) (exec.RunResult, error) {
 	if err := checkPath(options); err != nil {
 		return exec.RunResult{}, &internal.ErrorWithSuggestion{
-			Err:        err,
-			Suggestion: "PowerShell is not installed or not in the path. To install PowerShell, visit https://learn.microsoft.com/powershell/scripting/install/installing-powershell",
+			Err: err,
+			Suggestion: "PowerShell is not installed or not in the path. " +
+				"To install PowerShell, visit https://learn.microsoft.com/powershell/scripting/install/installing-powershell",
 		}
 	}
 

@@ -13,11 +13,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
 
 	"dario.cat/mergo"
 	"github.com/eiannone/keyboard"
-	"github.com/fatih/color"
 )
 
 // SelectOptions represents the options for the Select component.
@@ -302,7 +302,6 @@ func (p *MultiSelect) renderOptions(printer Printer, indent string) {
 	}
 
 	digitWidth := len(fmt.Sprintf("%d", totalOptionsCount)) // Calculate the width of the digit prefix
-	underline := color.New(color.Underline).SprintfFunc()
 
 	for index, option := range p.filteredChoices[start:end] {
 		displayValue := option.Label
@@ -312,9 +311,9 @@ func (p *MultiSelect) renderOptions(printer Printer, indent string) {
 			matchIndex := strings.Index(strings.ToLower(displayValue), strings.ToLower(p.filter))
 			if matchIndex > -1 {
 				displayValue = fmt.Sprintf("%s%s%s",
-					displayValue[:matchIndex],                                    // Start of the string
-					underline(displayValue[matchIndex:matchIndex+len(p.filter)]), // Highlighted filter
-					displayValue[matchIndex+len(p.filter):],                      // End of the string
+					displayValue[:matchIndex], // Start of the string
+					output.WithUnderline(displayValue[matchIndex:matchIndex+len(p.filter)]), // Highlighted filter
+					displayValue[matchIndex+len(p.filter):],                                 // End of the string
 				)
 			}
 		}
@@ -322,7 +321,7 @@ func (p *MultiSelect) renderOptions(printer Printer, indent string) {
 		// Show checkbox
 		checkbox := " "
 		if option.Selected {
-			checkbox = color.GreenString("✔")
+			checkbox = output.WithSuccessFormat("✔")
 		}
 
 		// Show item digit prefixes
@@ -338,12 +337,12 @@ func (p *MultiSelect) renderOptions(printer Printer, indent string) {
 
 			printer.Fprintf("%s%s %s%s%s %s%s\n",
 				indent,
-				color.CyanString(prefix),
-				color.CyanString("["),
-				color.CyanString(checkbox),
-				color.CyanString("]"),
-				color.CyanString(digitPrefix),
-				color.CyanString(displayValue),
+				output.WithHighLightFormat(prefix),
+				output.WithHighLightFormat("["),
+				output.WithHighLightFormat(checkbox),
+				output.WithHighLightFormat("]"),
+				output.WithHighLightFormat(digitPrefix),
+				output.WithHighLightFormat(displayValue),
 			)
 		} else {
 			printer.Fprintf("%s%s [%s] %s%s\n", indent, prefix, checkbox, digitPrefix, displayValue)
@@ -377,10 +376,9 @@ func (p *MultiSelect) renderHint(printer Printer) {
 	if p.showHelp && p.options.HelpMessage != "" {
 		printer.Fprintln()
 		printer.Fprintf(
-			color.HiMagentaString("  %s %s\n",
-				BoldString("Hint:"),
-				p.options.HelpMessage,
-			),
+			"%s %s\n",
+			output.WithHintFormat(BoldString("  Hint:")),
+			output.WithHintFormat(p.options.HelpMessage),
 		)
 	}
 }
@@ -389,19 +387,19 @@ func (p *MultiSelect) renderValidation(printer Printer) {
 	// Validation error
 	if !p.showHelp && p.hasValidationError {
 		printer.Fprintln()
-		printer.Fprintln(color.YellowString("  %s", p.validationMessage))
+		printer.Fprintln(output.WithWarningFormat("  %s", p.validationMessage))
 	}
 }
 
 func (p *MultiSelect) renderMessage(printer Printer) {
-	printer.Fprintf(color.CyanString("? "))
+	printer.Fprintf(output.WithHighLightFormat("? "))
 
 	// Message
 	printer.Fprintf(BoldString("%s: ", p.options.Message))
 
 	// Cancelled
 	if p.cancelled {
-		printer.Fprintf(color.RedString("(Cancelled)"))
+		printer.Fprintf(output.WithErrorFormat("(Cancelled)"))
 	}
 
 	// Selected Value(s)
@@ -413,7 +411,7 @@ func (p *MultiSelect) renderMessage(printer Printer) {
 		}
 
 		rawValue := strings.Join(selectionValues, ", ")
-		printer.Fprintf(color.CyanString(rawValue))
+		printer.Fprintf(output.WithHighLightFormat(rawValue))
 	}
 
 	printer.Fprintln()
@@ -425,7 +423,7 @@ func (p *MultiSelect) renderMessage(printer Printer) {
 
 		if p.filter == "" {
 			p.cursorPosition = Ptr(printer.CursorPosition())
-			printer.Fprintf(color.HiBlackString("Type to filter list"))
+			printer.Fprintf(output.WithGrayFormat("Type to filter list"))
 		} else {
 			printer.Fprintf(p.filter)
 			p.cursorPosition = Ptr(printer.CursorPosition())
@@ -469,7 +467,7 @@ func (p *MultiSelect) renderFooter(printer Printer) {
 	}
 
 	printer.Fprintln()
-	printer.Fprintln(color.HiBlackString("───────────────────────────────────────"))
-	printer.Fprintln(color.HiBlackString("Use arrows to move, use space to select"))
-	printer.Fprintln(color.HiBlackString("Use enter to submit, type ? for help"))
+	printer.Fprintln(output.WithGrayFormat("───────────────────────────────────────"))
+	printer.Fprintln(output.WithGrayFormat("Use arrows to move, use space to select"))
+	printer.Fprintln(output.WithGrayFormat("Use enter to submit, type ? for help"))
 }

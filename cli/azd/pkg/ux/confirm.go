@@ -12,11 +12,11 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
 
 	"dario.cat/mergo"
 	"github.com/eiannone/keyboard"
-	"github.com/fatih/color"
 )
 
 // ConfirmOptions represents the options for the Confirm component.
@@ -182,14 +182,14 @@ func (p *Confirm) Ask(ctx context.Context) (*bool, error) {
 
 // Render renders the Confirm component.
 func (p *Confirm) Render(printer Printer) error {
-	printer.Fprintf(color.CyanString("? "))
+	printer.Fprintf(output.WithHighLightFormat("? "))
 
 	// Message
 	printer.Fprintf(BoldString("%s: ", p.options.Message))
 
 	// Hint
 	if !p.cancelled && !p.complete && p.options.Hint != "" {
-		printer.Fprintf("%s ", color.CyanString(p.options.Hint))
+		printer.Fprintf("%s ", output.WithHighLightFormat(p.options.Hint))
 	}
 
 	// Value
@@ -197,11 +197,11 @@ func (p *Confirm) Render(printer Printer) error {
 	valueOutput := rawStringValue
 
 	if p.complete || p.value == p.options.DefaultValue {
-		valueOutput = color.CyanString(rawStringValue)
+		valueOutput = output.WithHighLightFormat(rawStringValue)
 	}
 
 	if p.cancelled {
-		valueOutput = color.RedString("(Cancelled)")
+		valueOutput = output.WithErrorFormat("(Cancelled)")
 	}
 
 	printer.Fprintf(valueOutput)
@@ -215,17 +215,16 @@ func (p *Confirm) Render(printer Printer) error {
 
 	// Validation error
 	if !p.showHelp && p.hasValidationError {
-		printer.Fprintln(color.YellowString("Enter a valid value"))
+		printer.Fprintln(output.WithWarningFormat("Enter a valid value"))
 	}
 
 	// Hint
 	if p.showHelp && p.options.HelpMessage != "" {
 		printer.Fprintln()
 		printer.Fprintf(
-			color.HiMagentaString("%s %s\n",
-				BoldString("Hint:"),
-				p.options.HelpMessage,
-			),
+			"%s %s\n",
+			output.WithHintFormat(BoldString("Hint:")),
+			output.WithHintFormat(p.options.HelpMessage),
 		)
 	}
 

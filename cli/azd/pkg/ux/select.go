@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
 
 	"dario.cat/mergo"
@@ -278,9 +279,9 @@ func (p *Select) renderOptions(printer Printer, indent string) {
 			prefix := ">"
 			printer.Fprintf("%s%s %s%s\n",
 				indent,
-				color.CyanString(prefix),
-				color.CyanString(digitPrefix),
-				color.CyanString(displayValue),
+				output.WithHighLightFormat(prefix),
+				output.WithHighLightFormat(digitPrefix),
+				output.WithHighLightFormat(displayValue),
 			)
 		} else {
 			prefix := " "
@@ -309,36 +310,35 @@ func (p *Select) renderValidation(printer Printer) {
 
 	// Validation error
 	if !p.showHelp && p.hasValidationError {
-		printer.Fprintln(color.YellowString("  %s", p.validationMessage))
+		printer.Fprintln(output.WithWarningFormat("  %s", p.validationMessage))
 	}
 
 	// Hint
 	if p.showHelp && p.options.HelpMessage != "" {
 		printer.Fprintln()
 		printer.Fprintf(
-			color.HiMagentaString("  %s %s\n",
-				BoldString("Hint:"),
-				p.options.HelpMessage,
-			),
+			"%s %s\n",
+			output.WithHintFormat(BoldString("  Hint:")),
+			output.WithHintFormat(p.options.HelpMessage),
 		)
 	}
 }
 
 func (p *Select) renderMessage(printer Printer) {
-	printer.Fprintf(color.CyanString("? "))
+	printer.Fprintf(output.WithHighLightFormat("? "))
 
 	// Message
 	printer.Fprintf(BoldString("%s: ", p.options.Message))
 
 	// Cancelled
 	if p.cancelled {
-		printer.Fprintf(color.RedString("(Cancelled)"))
+		printer.Fprintf(output.WithErrorFormat("(Cancelled)"))
 	}
 
 	// Selected Value
 	if !p.cancelled && p.selectedChoice != nil {
 		rawValue := p.selectedChoice.Label
-		printer.Fprintf(color.CyanString(rawValue))
+		printer.Fprintf(output.WithHighLightFormat(rawValue))
 	}
 
 	printer.Fprintln()
@@ -350,7 +350,7 @@ func (p *Select) renderMessage(printer Printer) {
 
 		if p.filter == "" {
 			p.cursorPosition = Ptr(printer.CursorPosition())
-			printer.Fprintf(color.HiBlackString("Type to filter list"))
+			printer.Fprintf(output.WithGrayFormat("Type to filter list"))
 		} else {
 			printer.Fprintf(p.filter)
 			p.cursorPosition = Ptr(printer.CursorPosition())
@@ -392,6 +392,6 @@ func (p *Select) renderFooter(printer Printer) {
 	}
 
 	printer.Fprintln()
-	printer.Fprintln(color.HiBlackString("───────────────────────────────────"))
-	printer.Fprintln(color.HiBlackString("Use arrows to move, type ? for hint"))
+	printer.Fprintln(output.WithGrayFormat("───────────────────────────────────"))
+	printer.Fprintln(output.WithGrayFormat("Use arrows to move, type ? for hint"))
 }

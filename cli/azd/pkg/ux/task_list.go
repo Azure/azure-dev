@@ -16,7 +16,7 @@ import (
 
 	"dario.cat/mergo"
 	"github.com/azure/azure-dev/cli/azd/pkg/common"
-	"github.com/fatih/color"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // TaskListOptions represents the options for the TaskList component.
@@ -36,12 +36,12 @@ var DefaultTaskListOptions TaskListOptions = TaskListOptions{
 	Writer:             os.Stdout,
 	MaxConcurrentAsync: 5,
 
-	SuccessStyle: color.GreenString("(✔) Done "),
-	ErrorStyle:   color.RedString("(x) Error "),
-	WarningStyle: color.YellowString("(!) Warning "),
-	RunningStyle: color.CyanString("(-) Running "),
-	SkippedStyle: color.HiBlackString("(-) Skipped "),
-	PendingStyle: color.HiBlackString("(o) Pending "),
+	SuccessStyle: output.WithSuccessFormat("(✔) Done "),
+	ErrorStyle:   output.WithErrorFormat("(x) Error "),
+	WarningStyle: output.WithWarningFormat("(!) Warning "),
+	RunningStyle: output.WithHighLightFormat("(-) Running "),
+	SkippedStyle: output.WithGrayFormat("(-) Skipped "),
+	PendingStyle: output.WithGrayFormat("(o) Pending "),
 }
 
 // TaskList is a component for managing a list of tasks.
@@ -222,7 +222,7 @@ func (t *TaskList) Render(printer Printer) error {
 		var elapsedText string
 		if task.startTime != nil {
 			elapsed := endTime.Sub(*task.startTime)
-			elapsedText = color.HiBlackString("(%s)", durationAsText(elapsed))
+			elapsedText = output.WithGrayFormat("(%s)", durationAsText(elapsed))
 		}
 
 		var errorDescription string
@@ -242,33 +242,33 @@ func (t *TaskList) Render(printer Printer) error {
 
 		switch task.State {
 		case Pending:
-			printer.Fprintf("%s %s\n", color.HiBlackString(t.options.PendingStyle), task.Title)
+			printer.Fprintf("%s %s\n", output.WithGrayFormat(t.options.PendingStyle), task.Title)
 		case Running:
-			printer.Fprintf("%s %s%s %s\n", color.CyanString(t.options.RunningStyle), task.Title, progressText, elapsedText)
+			printer.Fprintf("%s %s%s %s\n", output.WithHighLightFormat(t.options.RunningStyle), task.Title, progressText, elapsedText)
 		case Warning:
 			printer.Fprintf(
 				"%s %s %s %s\n",
-				color.YellowString(t.options.WarningStyle),
+				output.WithWarningFormat(t.options.WarningStyle),
 				task.Title,
 				elapsedText,
-				color.RedString("(%s)", errorDescription),
+				output.WithErrorFormat("(%s)", errorDescription),
 			)
 		case Error:
 			printer.Fprintf(
 				"%s %s %s %s\n",
-				color.RedString(t.options.ErrorStyle),
+				output.WithErrorFormat(t.options.ErrorStyle),
 				task.Title,
 				elapsedText,
-				color.RedString("(%s)", errorDescription),
+				output.WithErrorFormat("(%s)", errorDescription),
 			)
 		case Success:
-			printer.Fprintf("%s %s  %s\n", color.GreenString(t.options.SuccessStyle), task.Title, elapsedText)
+			printer.Fprintf("%s %s  %s\n", output.WithSuccessFormat(t.options.SuccessStyle), task.Title, elapsedText)
 		case Skipped:
 			printer.Fprintf(
 				"%s %s %s\n",
-				color.HiBlackString(t.options.SkippedStyle),
+				output.WithGrayFormat(t.options.SkippedStyle),
 				task.Title,
-				color.RedString("(%s)", errorDescription),
+				output.WithErrorFormat("(%s)", errorDescription),
 			)
 		}
 	}

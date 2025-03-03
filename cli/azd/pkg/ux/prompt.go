@@ -9,11 +9,11 @@ import (
 	"log"
 	"os"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
 
 	"dario.cat/mergo"
 	"github.com/eiannone/keyboard"
-	"github.com/fatih/color"
 )
 
 // PromptOptions represents the options for the Prompt component.
@@ -182,26 +182,26 @@ func (p *Prompt) Render(printer Printer) error {
 		return nil
 	}
 
-	printer.Fprintf(color.CyanString("? "))
+	printer.Fprintf(output.WithHighLightFormat("? "))
 
 	// Message
 	printer.Fprintf(BoldString("%s: ", p.options.Message))
 
 	// Cancelled
 	if p.cancelled {
-		printer.Fprintln(color.HiRedString("(Cancelled)"))
+		printer.Fprintln(output.WithErrorFormat("(Cancelled)"))
 		return nil
 	}
 
 	// Hint (Only show when a help message has been defined)
 	if !p.complete && p.options.Hint != "" && p.options.HelpMessage != "" {
-		printer.Fprintf("%s ", color.CyanString(p.options.Hint))
+		printer.Fprintf("%s ", output.WithHighLightFormat(p.options.Hint))
 	}
 
 	// Placeholder
 	if p.value == "" && p.options.PlaceHolder != "" {
 		p.cursorPosition = Ptr(printer.CursorPosition())
-		printer.Fprintf(color.HiBlackString(p.options.PlaceHolder))
+		printer.Fprintf(output.WithGrayFormat(p.options.PlaceHolder))
 	}
 
 	// Value
@@ -209,7 +209,7 @@ func (p *Prompt) Render(printer Printer) error {
 		valueOutput := p.value
 
 		if p.complete || p.value == p.options.DefaultValue {
-			valueOutput = color.CyanString(p.value)
+			valueOutput = output.WithHighLightFormat(p.value)
 		}
 
 		printer.Fprintf(valueOutput)
@@ -225,17 +225,16 @@ func (p *Prompt) Render(printer Printer) error {
 	// Validation error
 	if !p.showHelp && p.submitted && p.hasValidationError {
 		printer.Fprintln()
-		printer.Fprintln(color.YellowString(p.validationMessage))
+		printer.Fprintln(output.WithWarningFormat(p.validationMessage))
 	}
 
 	// Hint
 	if p.showHelp && p.options.HelpMessage != "" {
 		printer.Fprintln()
 		printer.Fprintf(
-			color.HiMagentaString("%s %s\n",
-				BoldString("Hint:"),
-				p.options.HelpMessage,
-			),
+			"%s %s\n",
+			output.WithHintFormat(BoldString("Hint:")),
+			output.WithHintFormat(p.options.HelpMessage),
 		)
 	}
 

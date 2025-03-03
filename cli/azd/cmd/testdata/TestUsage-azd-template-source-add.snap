@@ -11,6 +11,7 @@ Usage
 Flags
     -l, --location string 	: Location of the template source. Required when using type flag.
     -n, --name string     	: Display name of the template source.
+    -o, --output string   	: The output format (the supported formats are none).
     -t, --type string     	: Kind of the template source. Supported types are 'file', 'url' and 'gh'.
 
 Global Flags

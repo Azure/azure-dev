@@ -31,7 +31,7 @@ func newContextCommand() *cobra.Command {
 
 			hasEnv := false
 
-			getConfigResponse, err := azdClient.UserConfig().Get(ctx, &azdext.GetRequest{
+			getConfigResponse, err := azdClient.UserConfig().Get(ctx, &azdext.GetUserConfigRequest{
 				Path: "",
 			})
 			if err == nil {

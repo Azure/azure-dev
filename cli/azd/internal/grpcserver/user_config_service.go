@@ -33,7 +33,10 @@ func NewUserConfigService(userConfigManager config.UserConfigManager) (azdext.Us
 	}, nil
 }
 
-func (s *userConfigService) Get(ctx context.Context, req *azdext.GetRequest) (*azdext.GetResponse, error) {
+func (s *userConfigService) Get(
+	ctx context.Context,
+	req *azdext.GetUserConfigRequest,
+) (*azdext.GetUserConfigResponse, error) {
 	value, exists := s.config.Get(req.Path)
 
 	var valueBytes []byte
@@ -46,16 +49,19 @@ func (s *userConfigService) Get(ctx context.Context, req *azdext.GetRequest) (*a
 		valueBytes = bytes
 	}
 
-	return &azdext.GetResponse{
+	return &azdext.GetUserConfigResponse{
 		Value: valueBytes,
 		Found: exists,
 	}, nil
 }
 
-func (s *userConfigService) GetString(ctx context.Context, req *azdext.GetStringRequest) (*azdext.GetStringResponse, error) {
+func (s *userConfigService) GetString(
+	ctx context.Context,
+	req *azdext.GetUserConfigStringRequest,
+) (*azdext.GetUserConfigStringResponse, error) {
 	value, exists := s.config.GetString(req.Path)
 
-	return &azdext.GetStringResponse{
+	return &azdext.GetUserConfigStringResponse{
 		Value: value,
 		Found: exists,
 	}, nil
@@ -63,8 +69,8 @@ func (s *userConfigService) GetString(ctx context.Context, req *azdext.GetString
 
 func (s *userConfigService) GetSection(
 	ctx context.Context,
-	req *azdext.GetSectionRequest,
-) (*azdext.GetSectionResponse, error) {
+	req *azdext.GetUserConfigSectionRequest,
+) (*azdext.GetUserConfigSectionResponse, error) {
 	var section map[string]any
 
 	exists, err := s.config.GetSection(req.Path, &section)
@@ -82,13 +88,13 @@ func (s *userConfigService) GetSection(
 		valueBytes = bytes
 	}
 
-	return &azdext.GetSectionResponse{
+	return &azdext.GetUserConfigSectionResponse{
 		Section: valueBytes,
 		Found:   exists,
 	}, nil
 }
 
-func (s *userConfigService) Set(ctx context.Context, req *azdext.SetRequest) (*azdext.SetResponse, error) {
+func (s *userConfigService) Set(ctx context.Context, req *azdext.SetUserConfigRequest) (*azdext.EmptyResponse, error) {
 	var value any
 	if err := json.Unmarshal(req.Value, &value); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal value: %w", err)
@@ -102,10 +108,10 @@ func (s *userConfigService) Set(ctx context.Context, req *azdext.SetRequest) (*a
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 
-	return &azdext.SetResponse{}, nil
+	return &azdext.EmptyResponse{}, nil
 }
 
-func (s *userConfigService) Unset(ctx context.Context, req *azdext.UnsetRequest) (*azdext.UnsetResponse, error) {
+func (s *userConfigService) Unset(ctx context.Context, req *azdext.UnsetUserConfigRequest) (*azdext.EmptyResponse, error) {
 	if err := s.config.Unset(req.Path); err != nil {
 		return nil, fmt.Errorf("failed to unset value: %w", err)
 	}
@@ -114,5 +120,5 @@ func (s *userConfigService) Unset(ctx context.Context, req *azdext.UnsetRequest)
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 
-	return &azdext.UnsetResponse{}, nil
+	return &azdext.EmptyResponse{}, nil
 }

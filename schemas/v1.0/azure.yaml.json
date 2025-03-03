@@ -108,7 +108,8 @@
                             "python",
                             "js",
                             "ts",
-                            "java"
+                            "java",
+                            "docker"
                         ]
                     },
                     "module": {

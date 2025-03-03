@@ -115,9 +115,9 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 		}
 
 		opts = append(opts, survey.WithIcons(func(icons *survey.IconSet) {
-			// use bold blue question mark for all questions
-			icons.Question.Format = "blue+b"
-			icons.SelectFocus.Format = "blue+b"
+			// use bright, bold, blue question mark for all questions
+			icons.Question.Format = "blue+hb"
+			icons.SelectFocus.Format = "blue+hb"
 
 			icons.Help.Format = "black+h"
 			icons.Help.Text = "Hint:"
@@ -247,10 +247,10 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 }
 
 func init() {
-	// blue for everything
+	// bright blue for everything
 
 	// Customize the input question template:
-	//   - Use blue instead of cyan for answers: {{- color "blue"}}{{.Answer}}
+	//   - Use bright blue instead of cyan for answers: {{- color "blue+h"}}{{.Answer}}
 	//   - Use gray instead of cyan for default value: {{color "black+h"}}({{.Default}})
 	//nolint:lll
 	survey.InputQuestionTemplate = `
@@ -258,7 +258,7 @@ func init() {
 	{{- color .Config.Icons.Question.Format }}{{ .Config.Icons.Question.Text }} {{color "reset"}}
 	{{- color "default+hb"}}{{ .Message }} {{color "reset"}}
 	{{- if .ShowAnswer}}
-	  {{- color "blue"}}{{.Answer}}{{color "reset"}}{{"\n"}}
+	  {{- color "blue+h"}}{{.Answer}}{{color "reset"}}{{"\n"}}
 	{{- else if .PageEntries -}}
 	  {{- .Answer}} [Use arrows to move, enter to select, type to continue]
 	  {{- "\n"}}
@@ -268,10 +268,20 @@ func init() {
 		{{- color "reset"}}{{"\n"}}
 	  {{- end}}
 	{{- else }}
-	  {{- if or (and .Help (not .ShowHelp)) .Suggest }}{{color "cyan"}}[
+	  {{- if or (and .Help (not .ShowHelp)) .Suggest }}{{color "blue+h"}}[
 		{{- if and .Help (not .ShowHelp)}}{{ print .Config.HelpInput }} for help {{- if and .Suggest}}, {{end}}{{end -}}
-		{{- if and .Suggest }}{{color "cyan"}}{{ print .Config.SuggestInput }} for suggestions{{end -}}
+		{{- if and .Suggest }}{{color "blue+h"}}{{ print .Config.SuggestInput }} for suggestions{{end -}}
 	  ]{{color "reset"}} {{end}}
 	  {{- if .Default}}{{color "black+h"}}({{.Default}}) {{color "reset"}}{{end}}
 	{{- end}}`
+
+	// Replace cyan with blue in other other templates
+	otherTemplates := []*string{
+		&survey.ConfirmQuestionTemplate,
+		&survey.SelectQuestionTemplate,
+		&survey.MultiSelectQuestionTemplate,
+	}
+	for _, template := range otherTemplates {
+		*template = strings.ReplaceAll(*template, `"cyan"`, `"blue+h"`)
+	}
 }

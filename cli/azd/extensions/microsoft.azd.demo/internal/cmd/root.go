@@ -21,6 +21,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 	rootCmd.PersistentFlags().Bool("debug", false, "Enable debug mode")
 
+	rootCmd.AddCommand(newListenCommand())
 	rootCmd.AddCommand(newContextCommand())
 	rootCmd.AddCommand(newPromptCommand())
 	rootCmd.AddCommand(newVersionCommand())

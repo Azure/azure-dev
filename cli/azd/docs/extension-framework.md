@@ -1,8 +1,8 @@
 # Extension Framework
 
-> **NOTE:** The `azd` extension framework is currently experimental.
-
-> Enable extensions by running:  
+> **NOTE:** The `azd` extension framework is experimental.
+>
+> To enable extensions, run:  
 > `azd config set alpha.extensions on`
 
 Table of Contents
@@ -20,8 +20,25 @@ The following lists the current capabilities of `azd extensions`.
 
 #### Extension Commands
 
-Extensions can register commands under a namespace or command group within `azd`.  
+> Extensions must declare the `custom-commands` capability in their `extension.yaml` file.
+
+Extensions can register commands under a namespace or command group within `azd`.
 For example, installing the AI extension adds a new `ai` command group.
+
+#### Lifecycle Hooks
+
+> Extensions must declare the `lifecycle-events` capability in their `extension.yaml` file.
+
+Extensions can subscribe to project and service lifecycle events (both pre and post events) for:
+
+- build
+- restore
+- package
+- provision
+- deploy
+
+Your extension _**must**_ include a `listen` command to subscribe to these events.
+`azd` will automatically invoke your extension during supported commands to establish bi-directional communication.
 
 ##### Install extensions
 
@@ -45,7 +62,6 @@ azd ai <command> [flags]
 
 Future ideas include:
 
-- Opt-in execution of extensions during project/service lifecycle events.
 - Registration of pluggable providers for:
   - Language support (e.g., Go)
   - New Azure service targets (e.g., VMs, ACI)
@@ -57,12 +73,12 @@ Future ideas include:
 
 ### Extension Sources
 
-Extension sources are file or URL based manifests that provide a registry of available `azd` extensions.
-Users can add custom extension source that connect to private, local or public registries.
+Extension sources are file- or URL-based manifests that provide a registry of available `azd` extensions.
+Users can add custom extension sources that connect to private, local, or public registries.
 
 Extension registries must adhere to the [official extension registry schema](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/registry.schema.json).
 
-The official `azd` extension registry is available is available in the [`azd` github repo](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/registry.json).
+The official `azd` extension registry is available in the [`azd` github repo](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/registry.json).
 
 #### `azd extension source list`
 
@@ -97,6 +113,7 @@ Lists matching extensions from one or more extension sources
 Installs one or more extensions from any configured extension source.
 
 - `-v, --version` Specifies the version constraint to apply when installing extensions. Supports any semver constraint notation.
+- `-s, --source` Specifies the extension source used for installations.
 
 #### `azd extension uninstall <extension-names> [flags]`
 
@@ -109,11 +126,43 @@ Uninstalls one or more previously installed extensions.
 Upgrades one or more extensions to the latest versions.
 
 - `--all` Upgrades all previously installed extensions when specified.
-- `--version` Upgrades a specified extension using a semver version constraint, if provided.
+- `-v, --version` Upgrades a specified extension using a semver version constraint, if provided.
+- `-s, --source` Specifies the extension source used for installations.
 
 ## Developing Extensions
 
 `azd` extensions can be developed using any programming language. It is recommended that initial extensions leverage Go for best support.
+
+### Extension Manifest
+
+Each extension must declare an `extension.yaml` file that describe the metadata for the extension and the capabilities that it supports. This metadata is used within the extension registry to provide details to developers when searching for and installing extensions.
+
+A [JSON schema](../extensions/registry.schema.json) is available to support authoring extension manifests.
+
+#### Example
+
+The following is an example of an [extension manifest](../extensions/microsoft.azd.demo/extension.yaml).
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/registry.schema.json
+
+id: microsoft.azd.demo
+namespace: demo
+displayName: Demo Extension
+description: This extension provides examples of the AZD extension framework.
+usage: azd demo <command> [options]
+version: 0.1.0
+capabilities:
+  - custom-commands
+  - lifecycle-events
+examples:
+  - name: context
+    description: Displays the current `azd` project & environment context.
+    usage: azd demo context
+  - name: prompt
+    description: Display prompt capabilities.
+    usage: azd demo prompt
+```
 
 ### Invoking Extension Commands
 
@@ -122,7 +171,7 @@ When `azd` invokes an extension command, the following steps occur:
 1. `azd` starts a gRPC server on a random port.
 2. `azd` invokes your command, passing all arguments and flags:
     - An environment variable named `AZD_SERVER` is set with the server address and random port (e.g., `localhost:12345`).
-    - An `azd` access token environment variable `AZD_ACCESS_TOKEN` is set with a randomly generated 128-bit token good for the lifetime of the command.
+    - An `azd` access token environment variable `AZD_ACCESS_TOKEN` is set which is a JWT token signed with a randomly generated key good for the lifetime of the command. The token includes claims that identify each unique extensions and its supported capabilities.
     - Additional environment variables from the current `azd` environment are also set.
 3. The extension command can communicate with `azd` through [extension framework gRPC services](#grpc-services).
 4. `azd` waits for the extension command to complete:
@@ -130,7 +179,7 @@ When `azd` invokes an extension command, the following steps occur:
 
 To enable interaction with `azd` from within the extension, the extension must leverage a gRPC client and connect to the server using the address specified in the `AZD_SERVER` environment variable.
 
-The gRPC client must also include an `authorization` parameter with the value from `AZD_ACCESS_TOKEN`; otherwise, requests will fail due to invalid authorization.
+The gRPC client must also include an `authorization` parameter with the value from `AZD_ACCESS_TOKEN`; otherwise, requests will fail due to invalid authorization. Extensions must declare their supported capabilities within the extension registry otherwise certain service operations may fail with a permission denied error.
 
 #### Go
 
@@ -164,7 +213,7 @@ func WithAccessToken(ctx context.Context, params ...string) context.Context {
 ctx := azdext.WithAccessToken(cmd.Context())
 
 // Create a new AZD client
-// The constructor function automatically constructs the address 
+// The constructor function automatically constructs the address
 // from the `AZD_SERVER` environment variable but can be overridden if required.
 azdClient, err := azdext.NewAzdClient()
 if err != nil {
@@ -183,6 +232,78 @@ if err != nil {
 fmt.Println(getProjectResponse.Project.Name)
 ```
 
+### How to subscribe to lifecycle events
+
+The following is an example of subscribing to project & service lifecycle events within an `azd` template.
+
+In this example the extension is leveraging the `azdext.EventManager` struct. This struct makes it easier to subscribe and consume the gRPC bi-directional event stream between `azd` and the extension.
+
+Other languages will need to manually handle the different message types invoked by the service.
+
+```go
+// Create a new context that includes the AZD access token.
+ctx := azdext.WithAccessToken(cmd.Context())
+
+// Create a new AZD client.
+azdClient, err := azdext.NewAzdClient()
+if err != nil {
+    return fmt.Errorf("failed to create azd client: %w", err)
+}
+defer azdClient.Close()
+
+eventManager := azdext.NewEventManager(azdClient)
+defer eventManager.Close()
+
+// Subscribe to a project event
+err = eventManager.AddProjectEventHandler(
+    ctx,
+    "preprovision",
+    func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+        // This is your event handler code
+    for i := 1; i <= 20; i++ {
+            fmt.Printf("%d. Doing important work in extension...\n", i)
+            time.Sleep(250 * time.Millisecond)
+        }
+
+        return nil
+    },
+)
+if err != nil {
+    return fmt.Errorf("failed to add preprovision project event handler: %w", err)
+}
+
+// Subscribe to a service event
+err = eventManager.AddServiceEventHandler(
+    ctx,
+    "prepackage",
+    func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+        // This is your event handler
+        for i := 1; i <= 20; i++ {
+            fmt.Printf("%d. Doing important work in extension...\n", i)
+            time.Sleep(250 * time.Millisecond)
+        }
+
+        return nil
+    },
+    // Optionally filter your subscription by service host and/or language
+    &azdext.ServerEventOptions{
+        Host: "containerapp",
+        Language: "python",
+    },
+)
+
+if err != nil {
+    return fmt.Errorf("failed to add prepackage event handler: %w", err)
+}
+
+// Start listening for events
+// This is a blocking call and will not return until the server connection is closed.
+if err := eventManager.Receive(ctx); err != nil {
+    return fmt.Errorf("failed to receive events: %w", err)
+}
+
+```
+
 ## Developer Artifacts
 
 `azd` leverages gRPC for the communication protocol between Core `azd` and extensions. gRPC client & server components are automatically generated from profile files.
@@ -191,7 +312,7 @@ fmt.Println(getProjectResponse.Project.Name)
 - Generated files @ [pkg/azdext](../pkg/azdext)
 - Make file @ [Makefile](../Makefile)
 
-To re-generate gRPC clients run `make proto`
+To re-generate gRPC clients run `make proto` from the `~/cli/azd` folder of the repo.
 
 ## gRPC Services
 
@@ -204,6 +325,7 @@ The following are a list of available gRPC services for extension developer to i
 - [User Config Service](#user-config-service)
 - [Deployment Service](#deployment-service)
 - [Prompt Service](#prompt-service)
+- [Event Service](#event-service)
 
 ### Project Service
 
@@ -389,7 +511,7 @@ Retrieves a section of the user configuration by path.
 Sets a user configuration value.
 
 - **Request:** *SetRequest*
-  - `path` (string)  
+  - `path` (string)
   - `value` (bytes)
 - **Response:** *SetResponse*
   - Contains:
@@ -549,4 +671,70 @@ Prompts the user to select a resource from a resource group.
 - **Response:** *PromptResourceGroupResourceResponse*
   - Contains **ResourceExtended**
 
-````
+### Event Service
+
+This service defines methods for event subscription, invocation, and status updates.  
+Clients can subscribe to events and receive notifications via a bidirectional stream.
+
+#### EventStream
+
+- Establishes a bidirectional stream that enables clients to:
+  - Subscribe to project and service events.
+  - Invoke event handlers.
+  - Send status updates regarding event processing.
+
+*See [event.proto](../grpc/proto/event.proto) for more details.*
+
+#### Message Types
+
+- **EventMessage**
+  Encapsulates a single event payload among several possible types.
+
+  Contains:
+  - Uses a oneof field to encapsulate different event types.
+- **ExtensionReadyEvent**
+  Signals that an extension is ready, including any status updates.
+
+  Contains:
+  - `status`: Indicates the readiness state of the extension.
+  - `message`: Provides additional details.
+- **SubscribeProjectEvent**
+  Allows clients to subscribe to events specific to project lifecycle changes.
+
+  Contains:
+  - `event_names`: A list of event names to subscribe to for project events.
+- **SubscribeServiceEvent**
+  Allows clients to subscribe to service-specific events along with context details.
+
+  Contains:
+  - `event_names`: A list of event names to subscribe to for service events.
+  - `language`: The language of the service.
+  - `host`: The host identifier.
+- **InvokeProjectHandler**
+  Instructs the invocation of a project event handler with configuration details.
+
+  Contains:
+  - `event_name`: The name of the event being invoked.
+  - `project`: The project configuration.
+- **InvokeServiceHandler**
+  Instructs the invocation of a service event handler including associated configurations.
+
+  Contains:
+  - `event_name`: The name of the event being invoked.
+  - `project`: The project configuration.
+  - `service`: The specific service configuration.
+- **ProjectHandlerStatus**
+  Provides status updates for project events.
+
+  Contains:
+  - `event_name`: The event name for which this status update applies.
+  - `status`: Status such as "running", "completed", or "failed".
+  - `message`: Optional additional details.
+- **ServiceHandlerStatus**
+  Provides status updates for service events.
+
+  Contains:
+  - `event_name`: The event name for which this status update applies.
+  - `service_name`: The name of the service.
+  - `status`: Status such as "running", "completed", or "failed".
+  - `message`: Optional additional details.

@@ -163,7 +163,7 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 	require.Greater(t, len(extensions), 0)
 
 	// Install the first extension
-	extensionVersion, err := manager.Install(*mockContext.Context, extensions[0].Id, "")
+	extensionVersion, err := manager.Install(*mockContext.Context, extensions[0].Id, nil)
 	require.NoError(t, err)
 	require.NotNil(t, extensionVersion)
 
@@ -263,7 +263,10 @@ func Test_Install_With_SemverConstraints(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.Constraint, func(t *testing.T) {
-			extensionVersion, err := manager.Install(*mockContext.Context, "test.extension", tc.Constraint)
+			filterOptions := &FilterOptions{
+				Version: tc.Constraint,
+			}
+			extensionVersion, err := manager.Install(*mockContext.Context, "test.extension", filterOptions)
 			if tc.Expected == "" {
 				require.Error(t, err)
 			} else {

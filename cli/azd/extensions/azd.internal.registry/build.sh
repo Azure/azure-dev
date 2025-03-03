@@ -42,6 +42,7 @@ OUTPUT_DIR="$SCRIPT_DIR/bin"
 
 # Create output and target directories if they don't exist
 mkdir -p "$OUTPUT_DIR"
+mkdir -p "$HOME/.azd/extensions/$APP_NAME"  # new: create destination directory
 
 # Get Git commit hash and build date
 COMMIT=$(git rev-parse HEAD)
@@ -79,6 +80,9 @@ for PLATFORM in "${PLATFORMS[@]}"; do
         echo "An error occurred while building for $OS/$ARCH"
         exit 1
     fi
+
+    # new: copy built binary to extensions folder
+    cp "$OUTPUT_NAME" "$HOME/.azd/extensions/$APP_NAME"
 done
 
 echo "Build completed successfully!"

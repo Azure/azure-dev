@@ -14,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/fatih/color"
 )
 
 // DbMap is a map of supported database dependencies.
@@ -58,6 +57,16 @@ func Configure(
 		return r, nil
 	case project.ResourceTypeStorage:
 		return fillStorageDetails(ctx, r, console, p)
+	case project.ResourceTypeKeyVault:
+		if _, exists := p.PrjConfig.Resources["vault"]; exists {
+			return nil, fmt.Errorf(
+				"you already have a project key vault named 'vault'. " +
+					"To add a secret to it, run 'azd env set-secret <name>'",
+			)
+		}
+
+		r.Name = "vault"
+		return r, nil
 	default:
 		return r, nil
 	}
@@ -182,7 +191,7 @@ func fillUses(
 			labels = formatted
 		}
 		uses, err := console.MultiSelect(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("Select the resources that %s uses", color.BlueString(r.Name)),
+			Message: fmt.Sprintf("Select the resources that %s uses", output.WithHighLightFormat(r.Name)),
 			Options: labels,
 		})
 		if err != nil {

@@ -1,9 +1,11 @@
 id: azd.internal.registry
 namespace: registry
 displayName: Extension Registry Generator
-description: This extension provides examples of the AZD extension framework.
+description: Ability to build, package and publish AZD extensions and registries.
 usage: azd registry package [options]
-version: 0.0.3
+version: 0.0.5
+capabilities:
+  - custom-commands
 examples:
   - name: package
     description: Packages an AZD extension for publishing to a registry.

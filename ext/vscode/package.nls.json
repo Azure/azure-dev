@@ -2,6 +2,7 @@
     "azure-dev.commands_category": "Azure Developer CLI (azd)",
 
     "azure-dev.commands.cli.init.title": "Initialize App (init)",
+    "azure-dev.commands.cli.initFromPom.title": "Initialize for Azure (init)",
     "azure-dev.commands.cli.provision.title": "Provision Azure Resources (provision)",
     "azure-dev.commands.cli.deploy.title": "Deploy to Azure (deploy)",
     "azure-dev.commands.cli.restore.title": "Restore App Dependencies (restore)",

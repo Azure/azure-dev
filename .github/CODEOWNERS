@@ -7,6 +7,8 @@
 
 /ext/             @karolz-ms
 
+/ext/vscode/      @bwateratmsft
+
 /generators/repo/ @wbreza @danieljurek
 
 /.github/         @danieljurek

@@ -3,8 +3,6 @@
 
 //go:generate goversioninfo -arm -64
 
-// trivial change to trigger CI build
-
 package main
 
 import (
@@ -383,3 +381,5 @@ func startBackgroundUploadProcess() error {
 	err = cmd.Start()
 	return err
 }
+
+// trivial change to trigger CI build

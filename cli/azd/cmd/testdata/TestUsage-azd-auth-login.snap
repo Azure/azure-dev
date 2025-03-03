@@ -9,9 +9,7 @@ Flags
         --client-certificate string            	: The path to the client certificate for the service principal to authenticate with.
         --client-id string                     	: The client id for the service principal to authenticate with.
         --client-secret string                 	: The client secret for the service principal to authenticate with. Set to the empty string to read the value from the console.
-        --docs                                 	: Opens the documentation for azd auth login in your web browser.
         --federated-credential-provider string 	: The provider to use to acquire a federated token to authenticate with.
-    -h, --help                                 	: Gets help for login.
         --managed-identity                     	: Use a managed identity to authenticate.
         --redirect-port int                    	: Choose the port to be used as part of the redirect URI during interactive login.
         --tenant-id string                     	: The tenant id or domain name to authenticate with.
@@ -20,6 +18,8 @@ Flags
 Global Flags
     -C, --cwd string 	: Sets the current working directory.
         --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd auth login in your web browser.
+    -h, --help       	: Gets help for login.
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.

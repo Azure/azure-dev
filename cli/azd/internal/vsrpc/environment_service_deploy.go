@@ -17,7 +17,7 @@ import (
 //
 // While it is named simply `DeployAsync`, it behaves as if the user had run `azd provision` and `azd deploy`.
 func (s *environmentService) DeployAsync(
-	ctx context.Context, rc RequestContext, name string, observer IObserver[ProgressMessage],
+	ctx context.Context, rc RequestContext, name string, observer *Observer[ProgressMessage],
 ) (*Environment, error) {
 	session, err := s.server.validateSession(rc.Session)
 	if err != nil {

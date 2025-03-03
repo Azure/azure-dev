@@ -1,18 +1,34 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - azcloud
+  - azdext
+  - azurefd
   - backoff
   - Canonicalize
+  - chinacloudapi
   - Codespace
   - Codespaces
   - devcontainers
+  - extendee
+  - eiannone
+  # CDN host name
+  - gfgac2cmf7b8cuay
   - goversioninfo
   - nosec
+  - oneof
+  - idxs
+  # Looks like the protogen has a spelling error for panics
+  - pancis
+  - protobuf
+  - protoc
+  - protoreflect
+  - protoimpl
   - Retryable
   - runcontext
-  - azcloud
-  - usgovcloudapi
-  - chinacloudapi
   - unmarshals
+  - unsetting
+  - usgovcloudapi
+  - jdbc
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -107,12 +123,32 @@ overrides:
   - filename: docs/proxy-configuration.md
     words:
       - Telerik
+  - filename: test/recording/recording.go
+    words:
+      - oidctoken
   - filename: test/functional/testdata/samples/funcapp/getting_started.md
     words:
       - funcignore
   - filename: internal/vsrpc/handler.go
     words:
       - arity
+  - filename: test/internal/tfoidc/main.go
+    words:
+      - tfoidc
+      - OIDCREQUESTURI
+      - oidctoken
+  - filename: CHANGELOG.md
+    words:
+      - GHSA
+      - gjrc
+  - filename: pkg/apphost/generate.go
+    words:
+      - alue
+  - filename: docs/extension-framework.md
+    words:
+      - getenv
+      - errorf
+      - println
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

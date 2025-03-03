@@ -29,9 +29,6 @@ properties:
         value: pubsub:6379
       - name: connectionstrings--requestlog
         value: '{{ .Env.STORAGE_TABLEENDPOINT }}'
-      - name: connectionstrings--cosmos
-        keyVaultUrl: '{{ .Env.SERVICE_BINDING_KVF2EDECB5_ENDPOINT }}secrets/connectionString'
-        identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
   template:
     containers:
       - image: {{ .Image }}
@@ -41,6 +38,8 @@ properties:
             value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
           - name: ASPNETCORE_FORWARDEDHEADERS_ENABLED
             value: "true"
+          - name: GOVERSION
+            value: '{{ parameterWithDefault "goversion" "1.22"}}'
           - name: HTTP_PORTS
             value: '{{ targetPortOrDefault 0 }}'
           - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES
@@ -61,8 +60,6 @@ properties:
             secretRef: connectionstrings--pubsub
           - name: ConnectionStrings__requestlog
             secretRef: connectionstrings--requestlog
-          - name: ConnectionStrings__cosmos
-            secretRef: connectionstrings--cosmos
     scale:
       minReplicas: 1
 tags:

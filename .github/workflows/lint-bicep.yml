@@ -14,6 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Upgrade bicep
+        run: |
+          which bicep
+          sudo curl -o $(which bicep) -L https://github.com/Azure/bicep/releases/download/v0.33.93/bicep-linux-x64
+          sudo chmod +x $(which bicep)
       - name: Lint .bicep files
         run: $ErrorActionPreference='Continue'; eng/scripts/Test-BicepLint.ps1 -Verbose
         shell: pwsh

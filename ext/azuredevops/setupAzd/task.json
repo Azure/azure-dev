@@ -8,8 +8,8 @@
     "category": "Utility",
     "author": "AzureDeveloperCLI",
     "version": {
-        "Major": 0,
-        "Minor": 14,
+        "Major": 1,
+        "Minor": 0,
         "Patch": 0
     },
     "instanceNameFormat": "Installs azd: $(rootFolder)",

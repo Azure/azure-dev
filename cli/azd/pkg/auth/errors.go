@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package auth
 
 import (
@@ -11,6 +14,7 @@ import (
 	"slices"
 
 	msal "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
@@ -27,6 +31,10 @@ type ReLoginRequiredError struct {
 
 	// The scenario in which the login is required
 	scenario string
+
+	errText string
+
+	helpLink string
 }
 
 // newReLoginRequiredError returns an error if the response indicates that the user needs to reauthenticate.
@@ -47,13 +55,21 @@ func newReLoginRequiredError(
 		"interaction_required":
 		err := ReLoginRequiredError{}
 		err.init(response, scopes, cloud)
-		return &err, true
+		suggestion := fmt.Sprintf("Suggestion: %s, run `%s` to acquire a new token.", err.scenario, err.loginCmd)
+		if err.helpLink != "" {
+			suggestion += fmt.Sprintf(" See %s for more info.", err.helpLink)
+		}
+		return &internal.ErrorWithSuggestion{
+			Err:        &err,
+			Suggestion: suggestion,
+		}, true
 	}
 
 	return nil, false
 }
 
 func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string, cloud *cloud.Cloud) {
+	e.errText = response.ErrorDescription
 	e.scenario = "reauthentication required"
 	e.loginCmd = "azd auth login"
 	if !matchesLoginScopes(scopes, cloud) { // if matching default login scopes, no scopes need to be specified
@@ -62,13 +78,21 @@ func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string,
 		}
 	}
 
+	// The refresh token has expired or is invalid due to sign-in frequency checks by Conditional Access.
 	if slices.Contains(response.ErrorCodes, 70043) {
 		e.scenario = "login expired"
+	}
+
+	// In a Codespaces environment, `azd auth login` defaults to device code flow, which can cause issues
+	// getting tokens if the Entra tenant has Conditional Access Policies set.
+	if slices.Contains(response.ErrorCodes, 50005) {
+		e.loginCmd += " --use-device-code=false"
+		e.helpLink = "https://aka.ms/azd/troubleshoot/conditional-access-policy"
 	}
 }
 
 func (e *ReLoginRequiredError) Error() string {
-	return fmt.Sprintf("%s, run `%s` to log in", e.scenario, e.loginCmd)
+	return e.errText
 }
 
 // matchesLoginScopes checks if the elements contained in the slice match the scopes acquired during login.

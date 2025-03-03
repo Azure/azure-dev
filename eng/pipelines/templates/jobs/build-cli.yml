@@ -80,23 +80,33 @@ jobs:
 
       - template: /eng/pipelines/templates/steps/install-docker.yml
 
-      # Live testing uses dotnet 8.0.x in the WebApp project deployment
       - task: UseDotNet@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
         inputs:
-          version: 8.0.x
+          version: 8.x
 
-      - bash: dotnet nuget add source --name dotnet8 https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet8/nuget/v3/index.json
+      - bash: dotnet nuget add source --name dotnet9 https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet9/nuget/v3/index.json
         displayName: Add internal dotnet nuget feed
 
-      - template: /eng/pipelines/templates/steps/azd-login.yml
-        parameters:
-          AzdDirectory: cli/azd
+      - template: /eng/pipelines/templates/steps/configure-oidc-auth.yml
+
+      - pwsh: |
+            ./azd auth login --federated-credential-provider "azure-pipelines"
+            ./azd config set defaults.subscription $(SubscriptionId)
+        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+        workingDirectory: cli/azd
+        env:
+          AZURESUBSCRIPTION_CLIENT_ID: $(AzureSubscriptionClientId)
+          AZURESUBSCRIPTION_TENANT_ID: $(AzureSubscriptionTenantId)
+          AZURESUBSCRIPTION_SERVICE_CONNECTION_ID: $(AzureSubscriptionServiceConnectionId)
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+          AZD_DEBUG_LOGIN_FORCE_SUBSCRIPTION_REFRESH: true
+        displayName: AZD Login
 
       - task: AzureCLI@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
         inputs:
-          azureSubscription: azure-sdk-tests
+          azureSubscription: azd-service-connection
           # keepAzSessionActive is required when the service connection uses Workload Identity Federation authentication scheme
           # and the script will run for more than 10 minutes.
           # the ci-test.ps1 script runs for a long time and the service connection `azure-sdk-tests` use Workload Identity Federation.
@@ -116,16 +126,16 @@ jobs:
           # AZD live test setup variables
           CI: true
           AZD_TEST_CLI_VERSION: $(CLI_VERSION)
-          AZD_TEST_CLIENT_ID: $(arm-client-id)
-          AZD_TEST_TENANT_ID: $(arm-tenant-id)
+          AZD_TEST_CLIENT_ID: $(AzureSubscriptionClientId)
+          AZD_TEST_TENANT_ID: $(AzureSubscriptionTenantId)
           AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
           AZD_TEST_AZURE_LOCATION: eastus2
           AZURE_RECORD_MODE: $(AZURE_RECORD_MODE)
           # AZD Live Test: Terraform authentication via `az`
           ARM_USE_CLI: true
-          ARM_TENANT_ID: $(arm-tenant-id)
           # Code Coverage: Generate junit report to publish results
           GOTESTSUM_JUNITFILE: junitTestReport.xml
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
 
       - task: PublishTestResults@2
         inputs:

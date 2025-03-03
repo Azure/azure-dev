@@ -25,6 +25,10 @@ param secureValue string
 @secure()
 param secureObject object = {}
 
+// tests should not prompt for this parameter
+param nullableParam string?
+output nullableParamOutput string? = nullableParam
+
 var tags = {
   'azd-env-name': environmentName
   DeleteAfter: deleteAfterTime

@@ -43,10 +43,11 @@ Individual components are also available as: `REDIS_HOST`, `REDIS_PASSWORD`, and
 
 ### Configure CI/CD pipeline
 
-1. Create a workflow pipeline file locally. The following starters are available:
-   - [Deploy with GitHub Actions](https://github.com/Azure-Samples/azd-starter-bicep/blob/main/.github/workflows/azure-dev.yml)
-   - [Deploy with Azure Pipelines](https://github.com/Azure-Samples/azd-starter-bicep/blob/main/.azdo/pipelines/azure-dev.yml)
-2. Run `azd pipeline config` to configure the deployment pipeline to connect securely to Azure.
+Run `azd pipeline config` to configure the deployment pipeline to connect securely to Azure. 
+
+- Deploying with `GitHub Actions`: Select `GitHub` when prompted for a provider. If your project lacks the `azure-dev.yml` file, accept the prompt to add it and proceed with pipeline configuration.
+
+- Deploying with `Azure DevOps Pipeline`: Select `Azure DevOps` when prompted for a provider. If your project lacks the `azure-dev.yml` file, accept the prompt to add it and proceed with pipeline configuration.
 
 ## What was added
 

@@ -11,11 +11,9 @@ import (
 )
 
 func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
-	//deprecate:cmd hide infra
 	group := root.Add("infra", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Short:  "Manage your Azure infrastructure.",
-			Hidden: true,
+			Short: "Manage your Azure infrastructure.",
 		},
 	})
 
@@ -27,7 +25,8 @@ func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	group.
 		Add("delete", &actions.ActionDescriptorOptions{
@@ -37,7 +36,8 @@ func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	group.
 		Add("synth", &actions.ActionDescriptorOptions{

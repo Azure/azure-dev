@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -135,7 +136,20 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	// backends -> frontends
 	backendMapping := map[string]string{}
 
-	for _, res := range projectConfig.Resources {
+	// Create a "virtual" copy since we're adding any implicitly dependent resources
+	// that are unrepresented by the current user-provided schema
+	resources := maps.Clone(projectConfig.Resources)
+	// Add any implicit dependencies
+	for _, res := range resources {
+		dependencies := DependentResourcesOf(res)
+		for _, dep := range dependencies {
+			if _, exists := resources[dep.Name]; !exists {
+				resources[dep.Name] = dep
+			}
+		}
+	}
+
+	for _, res := range resources {
 		switch res.Type {
 		case ResourceTypeDbRedis:
 			infraSpec.DbRedis = &scaffold.DatabaseRedis{}
@@ -146,15 +160,19 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 		case ResourceTypeDbPostgres:
 			infraSpec.DbPostgres = &scaffold.DatabasePostgres{
 				DatabaseName: res.Name,
-				DatabaseUser: "pgadmin",
+			}
+		case ResourceTypeDbMySql:
+			infraSpec.DbMySql = &scaffold.DatabaseMysql{
+				DatabaseName: res.Name,
 			}
 		case ResourceTypeHostContainerApp:
 			svcSpec := scaffold.ServiceSpec{
 				Name: res.Name,
 				Port: -1,
+				Env:  map[string]string{},
 			}
 
-			err := mapContainerApp(res, &svcSpec)
+			err := mapContainerApp(res, &svcSpec, &infraSpec)
 			if err != nil {
 				return nil, err
 			}
@@ -165,11 +183,56 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			}
 
 			infraSpec.Services = append(infraSpec.Services, svcSpec)
+		case ResourceTypeOpenAiModel:
+			props := res.Props.(AIModelProps)
+			if len(props.Model.Name) == 0 {
+				return nil, fmt.Errorf("resources.%s.model is required", res.Name)
+			}
+
+			if len(props.Model.Version) == 0 {
+				return nil, fmt.Errorf("resources.%s.version is required", res.Name)
+			}
+
+			infraSpec.AIModels = append(infraSpec.AIModels, scaffold.AIModel{
+				Name: res.Name,
+				Model: scaffold.AIModelModel{
+					Name:    props.Model.Name,
+					Version: props.Model.Version,
+				},
+			})
+		case ResourceTypeMessagingEventHubs:
+			if infraSpec.EventHubs != nil {
+				return nil, fmt.Errorf("only one event hubs resource is currently allowed")
+			}
+			props := res.Props.(EventHubsProps)
+			infraSpec.EventHubs = &scaffold.EventHubs{
+				Hubs: props.Hubs,
+			}
+		case ResourceTypeMessagingServiceBus:
+			if infraSpec.ServiceBus != nil {
+				return nil, fmt.Errorf("only one service bus resource is currently allowed")
+			}
+			props := res.Props.(ServiceBusProps)
+			infraSpec.ServiceBus = &scaffold.ServiceBus{
+				Queues: props.Queues,
+				Topics: props.Topics,
+			}
+		case ResourceTypeStorage:
+			if infraSpec.StorageAccount != nil {
+				return nil, fmt.Errorf("only one storage account resource is currently allowed")
+			}
+			props := res.Props.(StorageProps)
+			infraSpec.StorageAccount = &scaffold.StorageAccount{
+				Containers: props.Containers,
+			}
+		case ResourceTypeKeyVault:
+			infraSpec.KeyVault = &scaffold.KeyVault{}
 		}
 	}
 
 	// create reverse frontends -> backends mapping
-	for _, svc := range infraSpec.Services {
+	for i := range infraSpec.Services {
+		svc := &infraSpec.Services[i]
 		if front, ok := backendMapping[svc.Name]; ok {
 			if svc.Backend == nil {
 				svc.Backend = &scaffold.Backend{}
@@ -186,17 +249,36 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	return &infraSpec, nil
 }
 
-func mapContainerApp(res *ResourceConfig, svcSpec *scaffold.ServiceSpec) error {
+func mapContainerApp(res *ResourceConfig, svcSpec *scaffold.ServiceSpec, infraSpec *scaffold.InfraSpec) error {
 	props := res.Props.(ContainerAppProps)
 	for _, envVar := range props.Env {
+		if len(envVar.Value) == 0 && len(envVar.Secret) == 0 {
+			return fmt.Errorf(
+				"environment variable %s for host %s is invalid: both value and secret are empty",
+				envVar.Name,
+				res.Name)
+		}
+
+		if len(envVar.Value) > 0 && len(envVar.Secret) > 0 {
+			return fmt.Errorf(
+				"environment variable %s for host %s is invalid: both value and secret are set",
+				envVar.Name,
+				res.Name)
+		}
+
 		isSecret := len(envVar.Secret) > 0
 		value := envVar.Value
 		if isSecret {
-			// TODO: handle secrets
-			continue
+			value = envVar.Secret
 		}
 
-		svcSpec.Env[envVar.Name] = value
+		// Notice that we derive isSecret from its usage.
+		// This is generally correct, except for the case where:
+		// - CONNECTION_STRING: ${DB_HOST}:${DB_SECRET}
+		// Here, DB_HOST is not a secret, but DB_SECRET is. And yet, DB_HOST will be marked as a secret.
+		// This is a limitation of the current implementation, but it's safer to mark both as secrets above.
+		evaluatedValue := genBicepParamsFromEnvSubst(value, isSecret, infraSpec)
+		svcSpec.Env[envVar.Name] = evaluatedValue
 	}
 
 	port := props.Port
@@ -224,6 +306,8 @@ func mapHostUses(
 			svcSpec.DbCosmosMongo = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 		case ResourceTypeDbPostgres:
 			svcSpec.DbPostgres = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
+		case ResourceTypeDbMySql:
+			svcSpec.DbMySql = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 		case ResourceTypeDbRedis:
 			svcSpec.DbRedis = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 		case ResourceTypeHostContainerApp:
@@ -234,8 +318,100 @@ func mapHostUses(
 			svcSpec.Frontend.Backends = append(svcSpec.Frontend.Backends,
 				scaffold.ServiceReference{Name: use})
 			backendMapping[use] = res.Name // record the backend -> frontend mapping
+		case ResourceTypeOpenAiModel:
+			svcSpec.AIModels = append(svcSpec.AIModels, scaffold.AIModelReference{Name: use})
+		case ResourceTypeMessagingEventHubs:
+			svcSpec.EventHubs = &scaffold.EventHubs{}
+		case ResourceTypeMessagingServiceBus:
+			svcSpec.ServiceBus = &scaffold.ServiceBus{}
+		case ResourceTypeStorage:
+			svcSpec.StorageAccount = &scaffold.StorageReference{}
+		case ResourceTypeKeyVault:
+			svcSpec.KeyVault = &scaffold.KeyVaultReference{}
 		}
 	}
 
 	return nil
+}
+
+func setParameter(spec *scaffold.InfraSpec, name string, value string, isSecret bool) {
+	for _, parameters := range spec.Parameters {
+		if parameters.Name == name { // handle existing parameter
+			if isSecret && !parameters.Secret {
+				// escalate the parameter to a secret
+				parameters.Secret = true
+			}
+
+			// prevent auto-generated parameters from being overwritten with different values
+			if valStr, ok := parameters.Value.(string); !ok || ok && valStr != value {
+				// if you are a maintainer and run into this error, consider using a different, unique name
+				panic(fmt.Sprintf(
+					"parameter collision: parameter %s already set to %s, cannot set to %s", name, parameters.Value, value))
+			}
+
+			return
+		}
+	}
+
+	spec.Parameters = append(spec.Parameters, scaffold.Parameter{
+		Name:   name,
+		Value:  value,
+		Type:   "string",
+		Secret: isSecret,
+	})
+}
+
+// genBicepParamsFromEnvSubst generates Bicep input parameters from a string containing envsubst expression(s),
+// returning the substituted string that references these parameters.
+//
+// If the string is a literal, it is returned as is.
+// If isSecret is true, the parameter is marked as a secret.
+func genBicepParamsFromEnvSubst(
+	s string,
+	isSecret bool,
+	infraSpec *scaffold.InfraSpec) string {
+	names, locations := parseEnvSubstVariables(s)
+
+	// add all expressions as parameters
+	for i, name := range names {
+		expression := s[locations[i].start : locations[i].stop+1]
+		setParameter(infraSpec, scaffold.BicepName(name), expression, isSecret)
+	}
+
+	var result string
+	if len(names) == 0 {
+		// literal string with no expressions, quote the value as a Bicep string
+		result = "'" + s + "'"
+	} else if len(names) == 1 {
+		// single expression, return the bicep parameter name to reference the expression
+		result = scaffold.BicepName(names[0])
+	} else {
+		// multiple expressions
+		// construct the string with all expressions replaced by parameter references as a Bicep interpolated string
+		previous := 0
+		result = "'"
+		for i, loc := range locations {
+			// replace each expression with references by variable name
+			result += s[previous:loc.start]
+			result += "${"
+			result += scaffold.BicepName(names[i])
+			result += "}"
+			previous = loc.stop + 1
+		}
+		result += "'"
+	}
+
+	return result
+}
+
+// DependentResourcesOf returns implicit resource dependencies for a given resource type.
+// These dependencies (like Key Vault to store connection strings, passwords for databases)
+// are automatically added to the project configuration. Returns an empty slice if none exist.
+func DependentResourcesOf(resource *ResourceConfig) []*ResourceConfig {
+	switch resource.Type {
+	case ResourceTypeDbMongo, ResourceTypeDbMySql, ResourceTypeDbPostgres, ResourceTypeDbRedis:
+		return []*ResourceConfig{{Name: "vault", Type: ResourceTypeKeyVault}}
+	default:
+		return nil
+	}
 }

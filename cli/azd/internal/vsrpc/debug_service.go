@@ -53,7 +53,7 @@ func (s *debugService) TestCancelAsync(ctx context.Context, timeoutMs int) (bool
 // ValueTask<bool> TestIObserverAsync(int, CancellationToken);
 //
 // It emits a sequence of integers to the observer, from 0 to max, and then completes the observer, before returning.
-func (s *debugService) TestIObserverAsync(ctx context.Context, max int, observer IObserver[int]) error {
+func (s *debugService) TestIObserverAsync(ctx context.Context, max int, observer *Observer[int]) error {
 	for i := 0; i < max; i++ {
 		_ = observer.OnNext(ctx, i)
 	}
@@ -107,9 +107,9 @@ func (s *debugService) FetchTokenAsync(ctx context.Context, sessionId Session) (
 // ServeHTTP implements http.Handler.
 func (s *debugService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	serveRpc(w, r, map[string]Handler{
-		"TestCancelAsync":    HandlerFunc1(s.TestCancelAsync),
-		"TestIObserverAsync": HandlerAction2(s.TestIObserverAsync),
-		"TestPanicAsync":     HandlerAction1(s.TestPanicAsync),
-		"FetchTokenAsync":    HandlerFunc1(s.FetchTokenAsync),
+		"TestCancelAsync":    NewHandler(s.TestCancelAsync),
+		"TestIObserverAsync": NewHandler(s.TestIObserverAsync),
+		"TestPanicAsync":     NewHandler(s.TestPanicAsync),
+		"FetchTokenAsync":    NewHandler(s.FetchTokenAsync),
 	})
 }

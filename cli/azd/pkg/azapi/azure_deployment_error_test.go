@@ -12,19 +12,19 @@ import (
 )
 
 func Test_Parse_Azure_ARM_Deploy_Error_01(t *testing.T) {
-	assertOutputsMatch(t, "samples/arm_sample_error_01.json", "samples/arm_sample_error_01.txt")
+	assertOutputsMatch(t, "testdata/arm_sample_error_01.json", "testdata/arm_sample_error_01.txt")
 }
 
 func Test_Parse_Azure_ARM_Deploy_Error_02(t *testing.T) {
-	assertOutputsMatch(t, "samples/arm_sample_error_02.json", "samples/arm_sample_error_02.txt")
+	assertOutputsMatch(t, "testdata/arm_sample_error_02.json", "testdata/arm_sample_error_02.txt")
 }
 
 func Test_Parse_Azure_ARM_Deploy_Error_03(t *testing.T) {
-	assertOutputsMatch(t, "samples/arm_sample_error_03.json", "samples/arm_sample_error_03.txt")
+	assertOutputsMatch(t, "testdata/arm_sample_error_03.json", "testdata/arm_sample_error_03.txt")
 }
 
 func Test_Parse_Azure_ARM_Deploy_Error_04(t *testing.T) {
-	assertOutputsMatch(t, "samples/arm_sample_error_04.json", "samples/arm_sample_error_04.txt")
+	assertOutputsMatch(t, "testdata/arm_sample_error_04.json", "testdata/arm_sample_error_04.txt")
 }
 
 func Test_Not_Json_Error(t *testing.T) {

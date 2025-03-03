@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cmd
 
 import (
@@ -35,7 +38,7 @@ func getResourceGroupFollowUp(
 		projectConfig.ResourceGroupName,
 	)
 	if err == nil {
-		suffix := ":\n" + azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName)
+		suffix := ":\n" + AzurePortalLink(portalUrlBase, subscriptionId, resourceGroupName)
 
 		if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
 			suffix = "."
@@ -53,7 +56,7 @@ func getResourceGroupFollowUp(
 	return followUp
 }
 
-func azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName string) string {
+func AzurePortalLink(portalUrlBase, subscriptionId, resourceGroupName string) string {
 	if subscriptionId == "" || resourceGroupName == "" {
 		return ""
 	}

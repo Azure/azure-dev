@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package devcentersdk
 
 import (
@@ -9,7 +12,7 @@ import (
 
 const (
 	apiVersionName    = "api-version"
-	defaultApiVersion = "2023-04-01"
+	defaultApiVersion = "2024-02-01"
 )
 
 type apiVersionPolicy struct {

@@ -3,6 +3,8 @@
 
 //go:generate goversioninfo -arm -64
 
+// trivial change to trigger CI build
+
 package main
 
 import (

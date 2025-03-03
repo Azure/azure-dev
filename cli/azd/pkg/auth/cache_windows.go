@@ -85,6 +85,7 @@ func (c *encryptedCache) Read(key string) ([]byte, error) {
 		// to the new format.
 
 		encryptedBlob = windows.DataBlob{
+			//nolint:gosec // G115: integer overflow conversion int -> uint32
 			Size: uint32(len(val)),
 			Data: &val[0],
 		}
@@ -100,6 +101,7 @@ func (c *encryptedCache) Read(key string) ([]byte, error) {
 		}
 
 		encryptedBlob = windows.DataBlob{
+			//nolint:gosec // G115: integer overflow conversion int -> uint32
 			Size: uint32(len(data)),
 			Data: &data[0],
 		}

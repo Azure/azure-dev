@@ -312,6 +312,7 @@ func (p *MultiSelect) renderOptions(printer Printer, indent string) {
 			if matchIndex > -1 {
 				displayValue = fmt.Sprintf("%s%s%s",
 					displayValue[:matchIndex], // Start of the string
+					//nolint:govet
 					output.WithUnderline(displayValue[matchIndex:matchIndex+len(p.filter)]), // Highlighted filter
 					displayValue[matchIndex+len(p.filter):],                                 // End of the string
 				)

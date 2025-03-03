@@ -244,7 +244,13 @@ func (t *TaskList) Render(printer Printer) error {
 		case Pending:
 			printer.Fprintf("%s %s\n", output.WithGrayFormat(t.options.PendingStyle), task.Title)
 		case Running:
-			printer.Fprintf("%s %s%s %s\n", output.WithHighLightFormat(t.options.RunningStyle), task.Title, progressText, elapsedText)
+			printer.Fprintf(
+				"%s %s%s %s\n",
+				output.WithHighLightFormat(t.options.RunningStyle),
+				task.Title,
+				progressText,
+				elapsedText,
+			)
 		case Warning:
 			printer.Fprintf(
 				"%s %s %s %s\n",

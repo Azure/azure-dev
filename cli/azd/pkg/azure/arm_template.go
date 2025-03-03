@@ -145,6 +145,7 @@ type AzdMetadata struct {
 	AutoGenerateConfig *AutoGenInput    `json:"config,omitempty"`
 	DefaultValueExpr   *string          `json:"defaultValueExpr,omitempty"`
 	Default            *string          `json:"default,omitempty"`
+	UsageName          *string          `json:"usageName,omitempty"`
 }
 
 // Description returns the value of the "Description" string metadata for this parameter or empty if it can not be found.

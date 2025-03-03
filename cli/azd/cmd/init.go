@@ -24,12 +24,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	outputux "github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -142,25 +141,6 @@ func newInitAction(
 }
 
 func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	choices := []*ux.MultiSelectChoice{}
-	for i := 1; i <= 10; i++ {
-		choices = append(choices, &ux.MultiSelectChoice{
-			Label: fmt.Sprintf("Option %d", i),
-			Value: fmt.Sprintf("option-%d", i),
-		})
-	}
-
-	multiSelectOptions := &ux.MultiSelectOptions{
-		Message:     "Select one or more options",
-		HelpMessage: "This is the help message",
-		Choices:     choices,
-	}
-	multiSelect := ux.NewMultiSelect(multiSelectOptions)
-	_, err := multiSelect.Ask(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("prompting for multi-select: %w", err)
-	}
-
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("getting cwd: %w", err)
@@ -181,7 +161,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	// Command title
-	i.console.MessageUxItem(ctx, &outputux.MessageTitle{
+	i.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Initializing an app to run on Azure (azd init)",
 	})
 

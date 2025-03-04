@@ -770,10 +770,13 @@ func (d *StackDeployments) ValidatePreflightToResourceGroup(
 	var rawResponse *http.Response
 	ctxWithResp := runtime.WithCaptureResponse(ctx, &rawResponse)
 
-	poller, err := client.BeginValidateStackAtResourceGroup(ctxWithResp, resourceGroup, deploymentName, stack, nil)
-	_, validateError := poller.PollUntilDone(ctx, nil)
-	if validateError != nil || err != nil {
-		return validatePreflightError(rawResponse, validateError, err, "resource group")
+	validateResult, err := client.BeginValidateStackAtResourceGroup(ctxWithResp, resourceGroup, deploymentName, stack, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "resource group")
+	}
+	_, err = validateResult.PollUntilDone(ctx, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "resource group")
 	}
 
 	return nil
@@ -845,10 +848,13 @@ func (d *StackDeployments) ValidatePreflightToSubscription(
 	var rawResponse *http.Response
 	ctxWithResp := runtime.WithCaptureResponse(ctx, &rawResponse)
 
-	poller, err := client.BeginValidateStackAtSubscription(ctxWithResp, deploymentName, stack, nil)
-	_, validateError := poller.PollUntilDone(ctx, nil)
-	if validateError != nil || err != nil {
-		return validatePreflightError(rawResponse, validateError, err, "subscription")
+	validateResult, err := client.BeginValidateStackAtSubscription(ctxWithResp, deploymentName, stack, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "subscription")
+	}
+	_, err = validateResult.PollUntilDone(ctx, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "subscription")
 	}
 
 	return nil

@@ -14,7 +14,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -711,7 +711,7 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 	}
 
 	var rawResponse *http.Response
-	ctxWithResp := runtime.WithCaptureResponse(ctx, &rawResponse)
+	ctxWithResp := policy.WithCaptureResponse(ctx, &rawResponse)
 
 	validateResult, err := deploymentClient.BeginValidateAtSubscriptionScope(
 		ctxWithResp, deploymentName,
@@ -724,10 +724,12 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 			Location: to.Ptr(location),
 			Tags:     tags,
 		}, nil)
-	_, validateError := validateResult.PollUntilDone(ctx, nil)
-
-	if validateError != nil || err != nil {
-		return validatePreflightError(rawResponse, validateError, err, "subscription")
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "subscription")
+	}
+	_, err = validateResult.PollUntilDone(ctx, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "subscription")
 	}
 
 	return nil
@@ -746,27 +748,30 @@ type PreflightErrorResponse struct {
 
 func validatePreflightError(
 	rawResponse *http.Response,
-	validateError error,
 	err error,
 	typeMessage string,
 ) error {
-	if validateError != nil || (rawResponse == nil || rawResponse.StatusCode != 400) {
-		return fmt.Errorf(
-			"validating preflight to %s:\n\nPreflight Error Details:\n%w",
-			typeMessage,
-			createDeploymentError(err),
-		)
-	}
+	var respErr *azcore.ResponseError
+	if errors.As(err, &respErr) {
+		err = createDeploymentError(err)
+	} else if err != nil {
+		// Error returned from azure sdk go bug
+		// https://github.com/Azure/azure-sdk-for-go/issues/23350
+		if rawResponse == nil || rawResponse.StatusCode != 400 {
+			defer rawResponse.Body.Close()
+			body, errOnRawResponse := io.ReadAll(rawResponse.Body)
+			if errOnRawResponse != nil {
+				return fmt.Errorf("failed to read response error body from preflight validation api to %s: %w", typeMessage, errOnRawResponse)
+			}
 
-	defer rawResponse.Body.Close()
-	body, errOnRawResponse := io.ReadAll(rawResponse.Body)
-	if errOnRawResponse != nil {
-		return fmt.Errorf("failed to read response error body from preflight validation api to %s: %w", typeMessage, errOnRawResponse)
+			err = NewAzureDeploymentError(string(body))
+		}
 	}
-
-	return fmt.Errorf("validating preflight to %s:\n\nPreflight Error Details:\n%w",
+	return fmt.Errorf(
+		"validating preflight to %s:\n\nPreflight Error Details:\n%w",
 		typeMessage,
-		NewAzureDeploymentError(string(body)))
+		err,
+	)
 }
 
 func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
@@ -783,7 +788,7 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 	}
 
 	var rawResponse *http.Response
-	ctxWithResp := runtime.WithCaptureResponse(ctx, &rawResponse)
+	ctxWithResp := policy.WithCaptureResponse(ctx, &rawResponse)
 
 	validateResult, err := deploymentClient.BeginValidate(ctxWithResp, resourceGroup, deploymentName,
 		armresources.Deployment{
@@ -794,10 +799,12 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 			},
 			Tags: tags,
 		}, nil)
-	_, validateError := validateResult.PollUntilDone(ctx, nil)
-
-	if validateError != nil || err != nil {
-		return validatePreflightError(rawResponse, validateError, err, "resource group")
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "resource group")
+	}
+	_, err = validateResult.PollUntilDone(ctx, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "resource group")
 	}
 
 	return nil

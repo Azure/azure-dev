@@ -735,17 +735,6 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 	return nil
 }
 
-type PreflightErrorResponse struct {
-	Error struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-		Details []struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"details"`
-	} `json:"error"`
-}
-
 func validatePreflightError(
 	rawResponse *http.Response,
 	err error,

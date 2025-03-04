@@ -17,9 +17,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -51,6 +53,8 @@ type AddAction struct {
 	armClientOptions *arm.ClientOptions
 	prompter         prompt.Prompter
 	console          input.Console
+	accountManager   account.Manager
+	azureClient      *azapi.AzureClient
 }
 
 var composeFeature = alpha.MustFeatureKey("compose")
@@ -64,6 +68,12 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	prjConfig, err := project.Load(ctx, a.azdCtx.ProjectPath())
+	if err != nil {
+		return nil, err
+	}
+
+	// Having a subscription is required for any azd compose (add)
+	err = provisioning.EnsureSubscription(ctx, a.envManager, a.env, a.prompter)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +128,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	if _, exists := prjConfig.Resources[resourceToAdd.Name]; exists {
+	if r, exists := prjConfig.Resources[resourceToAdd.Name]; exists && r.Type != project.ResourceTypeAiProject {
 		log.Panicf("unhandled validation: resource with name %s already exists", resourceToAdd.Name)
 	}
 
@@ -406,7 +416,9 @@ func NewAddAction(
 	rm infra.ResourceManager,
 	armClientOptions *arm.ClientOptions,
 	azd workflow.AzdCommandRunner,
-	console input.Console) actions.Action {
+	accountManager account.Manager,
+	console input.Console,
+	azureClient *azapi.AzureClient) actions.Action {
 	return &AddAction{
 		azdCtx:           azdCtx,
 		console:          console,
@@ -419,5 +431,7 @@ func NewAddAction(
 		armClientOptions: armClientOptions,
 		creds:            creds,
 		azd:              azd,
+		accountManager:   accountManager,
+		azureClient:      azureClient,
 	}
 }

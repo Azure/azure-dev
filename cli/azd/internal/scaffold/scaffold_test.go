@@ -83,6 +83,23 @@ func TestExecInfra(t *testing.T) {
 		{
 			"All",
 			InfraSpec{
+				AiFoundryProject: &AiFoundrySpec{
+					Name: "project",
+					Models: []AiFoundryModel{
+						{
+							AIModelModel: AIModelModel{
+								Name:    "model",
+								Version: "1.0",
+							},
+							Format: "OpenAI",
+							Sku: AiFoundryModelSku{
+								Name:      "S0",
+								UsageName: "S0",
+								Capacity:  1,
+							},
+						},
+					},
+				},
 				DbPostgres: &DatabasePostgres{
 					DatabaseName: "appdb",
 				},

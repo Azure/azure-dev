@@ -38,6 +38,7 @@ const (
 	ResourceTypeMessagingEventHubs  ResourceType = "messaging.eventhubs"
 	ResourceTypeMessagingServiceBus ResourceType = "messaging.servicebus"
 	ResourceTypeStorage             ResourceType = "storage"
+	ResourceTypeAiProject           ResourceType = "ai.project"
 	ResourceTypeKeyVault            ResourceType = "keyvault"
 )
 
@@ -63,6 +64,8 @@ func (r ResourceType) String() string {
 		return "Service Bus"
 	case ResourceTypeStorage:
 		return "Storage Account"
+	case ResourceTypeAiProject:
+		return "AI Foundry"
 	case ResourceTypeKeyVault:
 		return "Key Vault"
 	}
@@ -116,6 +119,8 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		errMarshal = marshalRawProps(raw.Props.(ServiceBusProps))
 	case ResourceTypeStorage:
 		errMarshal = marshalRawProps(raw.Props.(StorageProps))
+	case ResourceTypeAiProject:
+		errMarshal = marshalRawProps(raw.Props.(AiFoundryModelProps))
 	}
 
 	if errMarshal != nil {
@@ -183,6 +188,12 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = sp
+	case ResourceTypeAiProject:
+		amp := AiFoundryModelProps{}
+		if err := unmarshalProps(&amp); err != nil {
+			return err
+		}
+		raw.Props = amp
 	}
 
 	*r = ResourceConfig(raw)
@@ -231,4 +242,21 @@ type EventHubsProps struct {
 
 type StorageProps struct {
 	Containers []string `yaml:"containers,omitempty"`
+}
+
+type AiServicesModel struct {
+	Name    string             `yaml:"name,omitempty"`
+	Version string             `yaml:"version,omitempty"`
+	Format  string             `yaml:"format,omitempty"`
+	Sku     AiServicesModelSku `yaml:"sku,omitempty"`
+}
+
+type AiServicesModelSku struct {
+	Name      string `yaml:"name,omitempty"`
+	UsageName string `yaml:"usageName,omitempty"`
+	Capacity  int32  `yaml:"capacity,omitempty"`
+}
+
+type AiFoundryModelProps struct {
+	Models []AiServicesModel `yaml:"models,omitempty"`
 }

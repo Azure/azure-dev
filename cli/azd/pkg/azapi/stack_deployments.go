@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -787,9 +787,9 @@ func (d *StackDeployments) ValidatePreflightToResourceGroup(
 	}
 
 	var rawResponse *http.Response
-	ctxWithResp := runtime.WithCaptureResponse(ctx, &rawResponse)
+	ctx = policy.WithCaptureResponse(ctx, &rawResponse)
 
-	validateResult, err := client.BeginValidateStackAtResourceGroup(ctxWithResp, resourceGroup, deploymentName, stack, nil)
+	validateResult, err := client.BeginValidateStackAtResourceGroup(ctx, resourceGroup, deploymentName, stack, nil)
 	if err != nil {
 		return validatePreflightError(rawResponse, err, "resource group")
 	}
@@ -860,9 +860,9 @@ func (d *StackDeployments) ValidatePreflightToSubscription(
 	}
 
 	var rawResponse *http.Response
-	ctxWithResp := runtime.WithCaptureResponse(ctx, &rawResponse)
+	ctx = policy.WithCaptureResponse(ctx, &rawResponse)
 
-	validateResult, err := client.BeginValidateStackAtSubscription(ctxWithResp, deploymentName, stack, nil)
+	validateResult, err := client.BeginValidateStackAtSubscription(ctx, deploymentName, stack, nil)
 	if err != nil {
 		return validatePreflightError(rawResponse, err, "subscription")
 	}

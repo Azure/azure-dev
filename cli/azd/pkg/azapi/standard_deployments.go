@@ -711,10 +711,10 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 	}
 
 	var rawResponse *http.Response
-	ctxWithResp := policy.WithCaptureResponse(ctx, &rawResponse)
+	ctx = policy.WithCaptureResponse(ctx, &rawResponse)
 
 	validateResult, err := deploymentClient.BeginValidateAtSubscriptionScope(
-		ctxWithResp, deploymentName,
+		ctx, deploymentName,
 		armresources.Deployment{
 			Properties: &armresources.DeploymentProperties{
 				Template:   armTemplate,
@@ -778,9 +778,9 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 	}
 
 	var rawResponse *http.Response
-	ctxWithResp := policy.WithCaptureResponse(ctx, &rawResponse)
+	ctx = policy.WithCaptureResponse(ctx, &rawResponse)
 
-	validateResult, err := deploymentClient.BeginValidate(ctxWithResp, resourceGroup, deploymentName,
+	validateResult, err := deploymentClient.BeginValidate(ctx, resourceGroup, deploymentName,
 		armresources.Deployment{
 			Properties: &armresources.DeploymentProperties{
 				Template:   armTemplate,

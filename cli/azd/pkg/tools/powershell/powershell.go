@@ -5,9 +5,11 @@ package powershell
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -36,8 +38,8 @@ func (bs *powershellScript) Execute(ctx context.Context, path string, options to
 	if err := checkInstalled(options); err != nil {
 		return exec.RunResult{}, &internal.ErrorWithSuggestion{
 			Err: err,
-			Suggestion: "PowerShell is not installed or not in the path. To install PowerShell, " +
-				"visit https://learn.microsoft.com/powershell/scripting/install/installing-powershell",
+			Suggestion: fmt.Sprintf("PowerShell is not installed or not in the path. To install PowerShell 7, visit %s",
+				output.WithLinkFormat("https://learn.microsoft.com/powershell/scripting/install/installing-powershell")),
 		}
 	}
 

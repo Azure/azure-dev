@@ -178,8 +178,23 @@ func (m *manager) LoadOrInitInteractive(ctx context.Context, environmentName str
 			return nil, err
 		}
 
-		if err := m.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
-			return nil, fmt.Errorf("saving default environment: %w", err)
+		m.console.Message(ctx, "")
+		msg := fmt.Sprintf("Would you like to set the new environment '%s' as default environment?", env.Name())
+		shouldSetDefault, promptErr := m.console.Confirm(ctx, input.ConsoleOptions{
+			Message:      msg,
+			DefaultValue: true,
+		})
+		if promptErr != nil {
+			return nil, fmt.Errorf("prompting to set environment '%s' as default environment: %w", env.Name(), promptErr)
+		}
+		if shouldSetDefault {
+			if err := m.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
+				return nil, fmt.Errorf("saving default environment: %w", err)
+			}
+			m.console.Message(ctx,
+				fmt.Sprintf(
+					"The new environment '%s' has been set as the default environment.", env.Name()),
+			)
 		}
 	}
 

@@ -750,7 +750,8 @@ func validatePreflightError(
 			defer rawResponse.Body.Close()
 			body, errOnRawResponse := io.ReadAll(rawResponse.Body)
 			if errOnRawResponse != nil {
-				return fmt.Errorf("failed to read response error body from preflight validation api to %s: %w", typeMessage, errOnRawResponse)
+				return fmt.Errorf("failed to read response error body from preflight validation api to %s: %w",
+					typeMessage, errOnRawResponse)
 			}
 
 			err = NewAzureDeploymentError(string(body))

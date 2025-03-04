@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -300,9 +302,13 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 			}
 			kvName := resId.Name
 			kvSubId := resId.SubscriptionID
-
-			e.console.Message(ctx, fmt.Sprintf("\nExisting project Key Vault found with name %s:\n%s\n",
-				output.WithHighLightFormat(kvName), output.WithGrayFormat(kvId)))
+			if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
+				e.console.Message(ctx, fmt.Sprintf("\nExisting project Key Vault found with name %s.\n",
+					output.WithHighLightFormat(kvName)))
+			} else {
+				e.console.Message(ctx, fmt.Sprintf("\nExisting project Key Vault found with name %s:\n%s\n",
+					output.WithHighLightFormat(kvName), output.WithGrayFormat(kvId)))
+			}
 			subscriptionOptions := []string{"Yes", "No, use a different Key Vault"}
 
 			useProjectKvPrompt, err := e.console.Select(

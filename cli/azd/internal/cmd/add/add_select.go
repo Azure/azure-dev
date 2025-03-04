@@ -31,7 +31,7 @@ func (a *AddAction) selectMenu() []Menu {
 	return []Menu{
 		{Namespace: "db", Label: "Database", SelectResource: selectDatabase},
 		{Namespace: "host", Label: "Host service"},
-		{Namespace: "ai", Label: "AI Models", SelectResource: a.selectAiType},
+		{Namespace: "ai", Label: "AI models", SelectResource: a.selectAiType},
 		{Namespace: "messaging", Label: "Messaging", SelectResource: selectMessaging},
 		{Namespace: "storage", Label: "Storage account", SelectResource: selectStorage},
 		{Namespace: "keyvault", Label: "Key Vault", SelectResource: selectKeyVault},

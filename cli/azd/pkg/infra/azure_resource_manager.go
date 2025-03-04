@@ -156,7 +156,14 @@ func (rm *AzureResourceManager) FindResourceGroupForEnvironment(
 	if err != nil && !errors.As(err, &notFoundError) {
 		return "", fmt.Errorf("getting resource group for environment: %s: %w", envName, err)
 	}
-	// remove any managedBy resource groups
+	// Several Azure resources can create managed resource groups automatically. Here are a few examples:
+	// - Azure Kubernetes Service (AKS)
+	// - Azure Data Factory
+	// - Azure Machine Learning
+	// - Azure Synapse Analytics
+	// Managed resource groups are created with the same tag as the environment name, leading azd to think there are
+	// multiple resource groups for the environment. We need to filter them out.
+	// We do this by checking if the resource group is managed by a resource.
 	rgs = slices.DeleteFunc(rgs, func(r *azapi.Resource) bool {
 		return r.ManagedBy != nil
 	})

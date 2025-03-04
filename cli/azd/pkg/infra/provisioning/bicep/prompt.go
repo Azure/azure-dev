@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"slices"
 	"strconv"
 	"strings"
@@ -79,6 +80,23 @@ func autoGenerate(parameter string, azdMetadata azure.AzdMetadata) (string, erro
 	return genValue, nil
 }
 
+// locationsWithQuotaFor checks which locations have available quota for a specified SKU.
+// It concurrently queries the Azure API for usage data in each location and filters the results
+// based on the specified quota and capacity requirements.
+//
+// Parameters:
+//   - ctx: The context for controlling cancellation and deadlines.
+//   - subId: The subscription ID to query against.
+//   - locations: A list of Azure locations to check for quota availability.
+//   - quotaFor: The SKU name and optional capacity (comma-separated) to check for.
+//
+// Returns:
+//   - A slice of location strings that have the required quota and capacity available.
+//   - An error if any issues occur during the process or if no locations meet the criteria.
+//
+// The function first queries the Azure API for usage data in each location concurrently.
+// It then filters the results based on the specified SKU name and capacity requirements.
+// If no locations meet the criteria, it returns an error with details about the maximum available capacity found.
 func (a *BicepProvider) locationsWithQuotaFor(
 	ctx context.Context, subId string, locations []string, quotaFor string) ([]string, error) {
 	var sharedResults sync.Map
@@ -89,6 +107,8 @@ func (a *BicepProvider) locationsWithQuotaFor(
 			defer wg.Done()
 			results, err := a.azureClient.GetAiUsages(ctx, subId, location)
 			if err != nil {
+				// log the error but don't return it
+				log.Println("error getting usage for location", location, ":", err)
 				return
 			}
 			sharedResults.Store(location, results)

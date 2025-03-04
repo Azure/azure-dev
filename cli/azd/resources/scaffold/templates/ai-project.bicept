@@ -1,4 +1,4 @@
-{{define "ai-models.bicep" -}}
+{{define "ai-project.bicep" -}}
 {{- if .AiFoundryProject }}
 {{- range .AiFoundryProject.Models }}
 param {{bicepName .Name}}{{bicepName .Version}}Location string
@@ -31,7 +31,7 @@ module storage 'br/public:avm/res/storage/storage-account:0.17.2' = {
   name: 'storageAccountForHub'
   params: {
     tags: tags
-    name: '${abbrs.storageStorageAccounts}${resourceToken}'
+    name: '${abbrs.storageStorageAccounts}hub${resourceToken}'
     allowSharedKeyAccess: true
     allowBlobPublicAccess: true
     allowCrossTenantReplication: true

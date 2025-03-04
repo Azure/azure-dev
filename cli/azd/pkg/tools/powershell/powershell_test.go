@@ -40,9 +40,13 @@ func Test_Powershell_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		PowershellScript := NewPowershellScriptWithMockCheckPath(mockContext.CommandRunner, workingDir, env, func(options tools.ExecOptions) error {
-			return nil
-		})
+		PowershellScript := NewPowershellScriptWithMockCheckPath(
+			mockContext.CommandRunner,
+			workingDir,
+			env,
+			func(options tools.ExecOptions) error {
+				return nil
+			})
 		runResult, err := PowershellScript.Execute(
 			*mockContext.Context,
 			scriptPath,
@@ -62,9 +66,13 @@ func Test_Powershell_Execute(t *testing.T) {
 			return exec.NewRunResult(1, "", "error message"), errors.New("error message")
 		})
 
-		PowershellScript := NewPowershellScriptWithMockCheckPath(mockContext.CommandRunner, workingDir, env, func(options tools.ExecOptions) error {
-			return nil
-		})
+		PowershellScript := NewPowershellScriptWithMockCheckPath(
+			mockContext.CommandRunner,
+			workingDir,
+			env,
+			func(options tools.ExecOptions) error {
+				return nil
+			})
 		runResult, err := PowershellScript.Execute(
 			*mockContext.Context,
 			scriptPath,
@@ -107,9 +115,13 @@ func Test_Powershell_Execute(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-			PowershellScript := NewPowershellScriptWithMockCheckPath(mockContext.CommandRunner, workingDir, env, func(options tools.ExecOptions) error {
-				return nil
-			})
+			PowershellScript := NewPowershellScriptWithMockCheckPath(
+				mockContext.CommandRunner,
+				workingDir,
+				env,
+				func(options tools.ExecOptions) error {
+					return nil
+				})
 			runResult, err := PowershellScript.Execute(*mockContext.Context, scriptPath, test.value)
 
 			require.NotNil(t, runResult)

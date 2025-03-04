@@ -225,6 +225,31 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			infraSpec.StorageAccount = &scaffold.StorageAccount{
 				Containers: props.Containers,
 			}
+		case ResourceTypeAiProject:
+			// It's okay to forcefully panic here. The only way we would land here is that the marshal/unmarshal
+			// in resources.go was not done right.
+			props := res.Props.(AiFoundryModelProps)
+			foundryName := res.Name
+			var foundryModels []scaffold.AiFoundryModel
+			foundrySpec := scaffold.AiFoundrySpec{
+				Name: foundryName,
+			}
+			for _, model := range props.Models {
+				foundryModels = append(foundryModels, scaffold.AiFoundryModel{
+					AIModelModel: scaffold.AIModelModel{
+						Name:    model.Name,
+						Version: model.Version,
+					},
+					Format: model.Format,
+					Sku: scaffold.AiFoundryModelSku{
+						Name:      model.Sku.Name,
+						UsageName: model.Sku.UsageName,
+						Capacity:  model.Sku.Capacity,
+					},
+				})
+			}
+			foundrySpec.Models = foundryModels
+			infraSpec.AiFoundryProject = &foundrySpec
 		case ResourceTypeKeyVault:
 			infraSpec.KeyVault = &scaffold.KeyVault{}
 		}
@@ -326,6 +351,8 @@ func mapHostUses(
 			svcSpec.ServiceBus = &scaffold.ServiceBus{}
 		case ResourceTypeStorage:
 			svcSpec.StorageAccount = &scaffold.StorageReference{}
+		case ResourceTypeAiProject:
+			svcSpec.HasAiFoundryProject = &scaffold.AiFoundrySpec{}
 		case ResourceTypeKeyVault:
 			svcSpec.KeyVault = &scaffold.KeyVaultReference{}
 		}

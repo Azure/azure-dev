@@ -61,7 +61,7 @@ func (r ResourceType) String() string {
 	case ResourceTypeStorage:
 		return "Storage Account"
 	case ResourceTypeAiProject:
-		return "AI Foundry"
+		return "AI Project"
 	case ResourceTypeKeyVault:
 		return "Key Vault"
 	}
@@ -237,5 +237,6 @@ type AiServicesModelSku struct {
 }
 
 type AiFoundryModelProps struct {
-	Models []AiServicesModel `yaml:"models,omitempty"`
+	ConnStringFromEnvVar *string           `yaml:"connStringFromEnvVar,omitempty"`
+	Models               []AiServicesModel `yaml:"models,omitempty"`
 }

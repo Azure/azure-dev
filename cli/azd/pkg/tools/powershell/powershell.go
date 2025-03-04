@@ -6,6 +6,7 @@ package powershell
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -29,7 +30,7 @@ type powershellScript struct {
 }
 
 func checkInstalled(options tools.ExecOptions) (err error) {
-	return tools.ToolInPath(options.UserPwsh)
+	return tools.ToolInPath(strings.Split(options.UserPwsh, " ")[0])
 }
 
 // Executes the specified powershell script

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"slices"
 	"strings"
@@ -252,7 +253,7 @@ func (a *AddAction) selectAiModel(
 	if err != nil {
 		return nil, err
 	}
-	skuSelection, err := selectFromSkus(ctx, console, "Select model SKU?", modelDefinition.Model.Skus)
+	skuSelection, err := selectFromSkus(ctx, console, "Select model SKU", modelDefinition.Model.Skus)
 	if err != nil {
 		return nil, err
 	}
@@ -338,6 +339,8 @@ func (a *AddAction) aiDeploymentCatalog(
 			defer wg.Done()
 			results, err := a.supportedModelsInLocation(ctx, subId, location)
 			if err != nil {
+				// log the error and continue. Do not fail the entire operation when pulling location error
+				log.Println("error getting models in location", location, ":", err, "skipping")
 				return
 			}
 			var filterSkusWithZeroCapacity []ModelList
@@ -369,7 +372,7 @@ func (a *AddAction) aiDeploymentCatalog(
 		models := value.([]ModelList)
 		for _, model := range models {
 			if model.Kind == "OpenAI" {
-				// skip OpenAI models and models with no skus
+				// OpenAI kind is part of the `Add OpenAI` where clients connect directly to the service w/o an AIProject
 				continue
 			}
 			nameKey := model.Model.Name

@@ -8,10 +8,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -690,4 +693,109 @@ func convertFromStandardProvisioningState(state armresources.ProvisioningState) 
 	}
 
 	return DeploymentProvisioningState("")
+}
+
+func (ds *StandardDeployments) ValidatePreflightToSubscription(
+	ctx context.Context,
+	subscriptionId string,
+	location string,
+	deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) error {
+	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	var rawResponse *http.Response
+	ctxWithResp := policy.WithCaptureResponse(ctx, &rawResponse)
+
+	validateResult, err := deploymentClient.BeginValidateAtSubscriptionScope(
+		ctxWithResp, deploymentName,
+		armresources.Deployment{
+			Properties: &armresources.DeploymentProperties{
+				Template:   armTemplate,
+				Parameters: parameters,
+				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
+			},
+			Location: to.Ptr(location),
+			Tags:     tags,
+		}, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "subscription")
+	}
+	_, err = validateResult.PollUntilDone(ctx, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "subscription")
+	}
+
+	return nil
+}
+
+func validatePreflightError(
+	rawResponse *http.Response,
+	err error,
+	typeMessage string,
+) error {
+	var respErr *azcore.ResponseError
+	if errors.As(err, &respErr) {
+		err = createDeploymentError(err)
+	} else if err != nil {
+		// Error returned from azure sdk go bug
+		// https://github.com/Azure/azure-sdk-for-go/issues/23350
+		if rawResponse == nil || rawResponse.StatusCode != 400 {
+			defer rawResponse.Body.Close()
+			body, errOnRawResponse := io.ReadAll(rawResponse.Body)
+			if errOnRawResponse != nil {
+				return fmt.Errorf("failed to read response error body from preflight validation api to %s: %w",
+					typeMessage, errOnRawResponse)
+			}
+
+			err = NewAzureDeploymentError(string(body))
+		}
+	}
+	return fmt.Errorf(
+		"validating preflight to %s:\n\nPreflight Error Details:\n%w",
+		typeMessage,
+		err,
+	)
+}
+
+func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
+	ctx context.Context,
+	subscriptionId, resourceGroup, deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) error {
+	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	var rawResponse *http.Response
+	ctxWithResp := policy.WithCaptureResponse(ctx, &rawResponse)
+
+	validateResult, err := deploymentClient.BeginValidate(ctxWithResp, resourceGroup, deploymentName,
+		armresources.Deployment{
+			Properties: &armresources.DeploymentProperties{
+				Template:   armTemplate,
+				Parameters: parameters,
+				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
+			},
+			Tags: tags,
+		}, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "resource group")
+	}
+	_, err = validateResult.PollUntilDone(ctx, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "resource group")
+	}
+
+	return nil
 }

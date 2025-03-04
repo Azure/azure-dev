@@ -3078,14 +3078,14 @@ interactions:
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 605
+        content_length: 604
         uncompressed: false
         body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-l4ec88f-1737083629","name":"azdtest-l4ec88f-1737083629","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-deploy-reason":"down","azd-env-name":"azdtest-l4ec88f"},"properties":{"templateHash":"14737569621737367585","parameters":{},"mode":"Incremental","provisioningState":"Succeeded","timestamp":"2025-01-17T03:39:35.2329494Z","duration":"PT0.9660509S","correlationId":"bb8f6ec88f7ec0b1ec1821926543d4ce","providers":[],"dependencies":[],"outputs":{},"outputResources":[]}}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "605"
+                - "604"
             Content-Type:
                 - application/json; charset=utf-8
             Date:

@@ -303,7 +303,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 			e.console.Message(ctx, fmt.Sprintf("\nExisting project Key Vault found with name %s:\n%s\n",
 				output.WithHighLightFormat(kvName), output.WithGrayFormat(kvId)))
-			subscriptionOptions := []string{"Use project Key Vault", "Use a different Key Vault"}
+			subscriptionOptions := []string{"Yes", "No, use a different Key Vault"}
 
 			useProjectKvPrompt, err := e.console.Select(
 				ctx,
@@ -344,13 +344,14 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 				return createSuccessResult(secretName, kvSecretName, kvAccount.Name), nil
 			}
 		} else if _, hasProjectKv := e.projectConfig.Resources["vault"]; hasProjectKv { // KV defined but not provisioned yet
-			e.console.Message(ctx, fmt.Sprintf("\nAn existing project Key Vault exists but has not been provisioned yet."+
-				" Run '%s' first to use it\n", output.WithHighLightFormat("azd provision")))
+			e.console.Message(ctx,
+				output.WithWarningFormat("\nAn existing project Key Vault is defined but has not been provisioned yet. ")+
+					fmt.Sprintf("Run '%s' first to use it.\n", output.WithHighLightFormat("azd provision")))
 			options := []string{"Use a different key vault", "Cancel"}
 			useProjectKvPrompt, err := e.console.Select(
 				ctx,
 				input.ConsoleOptions{
-					Message:      "How would you like to proceed?",
+					Message:      "How do you want to proceed?",
 					Options:      options,
 					DefaultValue: options[0],
 				})

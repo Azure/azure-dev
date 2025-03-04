@@ -318,9 +318,15 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 		genBicepTemplateContext
 		WithMetadataParameters []autoGenInput
 		MainToResourcesParams  []genInput
+		// when true, azd migrates to AppHost base-compute infrastructure and does not generate resources.bicep with
+		// ManagedIdentity, ACE, ACA, etc.
+		AppHostInfraMigration bool
 	}
 	var parameters []autoGenInput
 	var mapToResourceParams []genInput
+
+	// check if appHost migration is enabled
+	_, migrateToAppHost := os.LookupEnv("AZD_APP_HOST_COMPUTE_MIGRATION")
 
 	// order to be deterministic when writing bicep
 	genParametersKeys := slices.Sorted(maps.Keys(generator.bicepContext.InputParameters))
@@ -363,13 +369,16 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 		genBicepTemplateContext: generator.bicepContext,
 		WithMetadataParameters:  parameters,
 		MainToResourcesParams:   mapToResourceParams,
+		AppHostInfraMigration:   migrateToAppHost,
 	}
 	if err := executeToFS(fs, genTemplates, "main.bicep", name+".bicep", context); err != nil {
 		return nil, fmt.Errorf("generating infra/main.bicep: %w", err)
 	}
 
-	if err := executeToFS(fs, genTemplates, "resources.bicep", "resources.bicep", context); err != nil {
-		return nil, fmt.Errorf("generating infra/resources.bicep: %w", err)
+	if !migrateToAppHost {
+		if err := executeToFS(fs, genTemplates, "resources.bicep", "resources.bicep", context); err != nil {
+			return nil, fmt.Errorf("generating infra/resources.bicep: %w", err)
+		}
 	}
 
 	if err := executeToFS(

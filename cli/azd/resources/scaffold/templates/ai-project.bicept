@@ -1,6 +1,6 @@
 {{define "ai-project.bicep" -}}
-{{- if .AiFoundryProject }}
-{{- range .AiFoundryProject.Models }}
+{{- if .AiProject }}
+{{- range .AiProject.Models }}
 param {{bicepName .Name}}{{bicepName .Version}}Location string
 {{- end }}
 {{- end }}
@@ -73,8 +73,8 @@ module storage 'br/public:avm/res/storage/storage-account:0.17.2' = {
   }
 }
 
-{{- if .AiFoundryProject }}
-{{- range .AiFoundryProject.Models }}
+{{- if .AiProject }}
+{{- range .AiProject.Models }}
 resource {{bicepName .Name}}{{bicepName .Version}}Deploy 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
   name: '{{bicepName .Name}}{{bicepName .Version}}${resourceToken}'
   location: {{bicepName .Name}}{{bicepName .Version}}Location
@@ -127,8 +127,8 @@ resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
     publicNetworkAccess: 'Enabled'
   }
 
-{{- if .AiFoundryProject }}
-{{- range .AiFoundryProject.Models }}
+{{- if .AiProject }}
+{{- range .AiProject.Models }}
   resource {{bicepName .Name}}{{bicepName .Version}}connection 'connections' = {
     name: '{{bicepName .Name}}{{bicepName .Version}}-connection'
     properties: {

@@ -736,4 +736,5 @@ output AZURE_RESOURCE_EVENT_HUBS_ID string = eventHubNamespace.outputs.resourceI
 {{- if .ServiceBus}}
 output AZURE_RESOURCE_SERVICE_BUS_ID string = serviceBusNamespace.outputs.resourceId
 {{- end}}
+output principalId string = principalId
 {{ end}}

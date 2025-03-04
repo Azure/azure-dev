@@ -83,7 +83,7 @@ func TestExecInfra(t *testing.T) {
 		{
 			"All",
 			InfraSpec{
-				AiFoundryProject: &AiFoundrySpec{
+				AiProject: &AiProjectSpec{
 					Name: "project",
 					Models: []AiFoundryModel{
 						{

@@ -75,6 +75,8 @@ type BicepProvider struct {
 	compileBicepMemoryCache *compileBicepResult
 	keyvaultService         keyvault.KeyVaultService
 	portalUrlBase           string
+	subscriptionManager     *account.SubscriptionsManager
+	azureClient             *azapi.AzureClient
 }
 
 // Name gets the name of the infra provider
@@ -136,7 +138,15 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	if isBicepFile(modulePath) {
 		locationParam, locationParamDefined := compileResult.Template.Parameters["location"]
 		var filterLocation = func(loc account.Location) bool {
-			return locationParameterFilterImpl(locationParam, loc)
+			if locationParam.AllowedValues == nil {
+				return true
+			}
+			allowedLocations := make([]string, len(*locationParam.AllowedValues))
+			for i, allowedLocation := range *locationParam.AllowedValues {
+				allowedLocations[i] = allowedLocation.(string)
+			}
+
+			return locationParameterFilterImpl(allowedLocations, loc)
 		}
 		var defaultLocationToSelect *string
 		if locationParamDefined {
@@ -179,15 +189,11 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	return nil
 }
 
-func locationParameterFilterImpl(param azure.ArmTemplateParameterDefinition, location account.Location) bool {
-	if param.AllowedValues == nil {
+func locationParameterFilterImpl(allowedLocations []string, location account.Location) bool {
+	if allowedLocations == nil {
 		return true
 	}
-
-	return slices.IndexFunc(*param.AllowedValues, func(v any) bool {
-		s, ok := v.(string)
-		return ok && location.Name == s
-	}) != -1
+	return slices.Contains(allowedLocations, location.Name)
 }
 
 // defaultPromptValue resolves if there is an intention from a location parameter to use a default location.
@@ -2133,18 +2139,22 @@ func NewBicepProvider(
 	curPrincipal provisioning.CurrentPrincipalIdProvider,
 	keyvaultService keyvault.KeyVaultService,
 	cloud *cloud.Cloud,
+	subscriptionManager *account.SubscriptionsManager,
+	azureClient *azapi.AzureClient,
 ) provisioning.Provider {
 	return &BicepProvider{
-		envManager:        envManager,
-		env:               env,
-		console:           console,
-		azapi:             azapi,
-		bicepCli:          bicepCli,
-		resourceService:   resourceService,
-		deploymentManager: deploymentManager,
-		prompters:         prompters,
-		curPrincipal:      curPrincipal,
-		keyvaultService:   keyvaultService,
-		portalUrlBase:     cloud.PortalUrlBase,
+		envManager:          envManager,
+		env:                 env,
+		console:             console,
+		azapi:               azapi,
+		bicepCli:            bicepCli,
+		resourceService:     resourceService,
+		deploymentManager:   deploymentManager,
+		prompters:           prompters,
+		curPrincipal:        curPrincipal,
+		keyvaultService:     keyvaultService,
+		portalUrlBase:       cloud.PortalUrlBase,
+		subscriptionManager: subscriptionManager,
+		azureClient:         azureClient,
 	}
 }

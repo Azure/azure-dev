@@ -746,7 +746,7 @@ func validatePreflightError(
 	} else if err != nil {
 		// Error returned from azure sdk go bug: we receive a 400 Bad Request from the API, but the client-handling in azure sdk fails internally with a different error 
 		// This special-cased handling and rawResponse capture can be removed once https://github.com/Azure/azure-sdk-for-go/issues/23350 is fixed
-		if rawResponse == nil || rawResponse.StatusCode != 400 {
+		if rawResponse != nil && rawResponse.StatusCode == 400 {
 			defer rawResponse.Body.Close()
 			body, errOnRawResponse := io.ReadAll(rawResponse.Body)
 			if errOnRawResponse != nil {

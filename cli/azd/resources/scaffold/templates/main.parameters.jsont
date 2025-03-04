@@ -14,6 +14,11 @@
         "value": {{formatParam "        " "  " .Value}}
       },
       {{- end}}
+      {{- if .AiProject.ConnStringFromEnvVar }}
+      "{{bicepName .AiProject.Name}}ConnectionString": {
+        "value": "${{`{`}}{{.AiProject.ConnStringFromEnvVar}}{{`}`}}"
+      },
+      {{- end }}      
       "principalId": {
         "value": "${AZURE_PRINCIPAL_ID}"
       }

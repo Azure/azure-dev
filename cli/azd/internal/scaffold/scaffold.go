@@ -75,6 +75,10 @@ func supportingFiles(spec InfraSpec) []string {
 		files = append(files, "/modules/fetch-container-image.bicep")
 	}
 
+	if spec.AiProject != nil {
+		files = append(files, "/modules/role.bicep")
+	}
+
 	return files
 }
 
@@ -149,7 +153,7 @@ func ExecInfraFs(
 		return nil, fmt.Errorf("scaffolding main.parameters.json: %w", err)
 	}
 
-	if spec.AiFoundryProject != nil {
+	if spec.AiProject != nil {
 		err = executeToFS(fs, t, "ai-models.bicep", "ai-models.bicep", spec)
 		if err != nil {
 			return nil, fmt.Errorf("scaffolding ai-foundry-models.bicep: %w", err)

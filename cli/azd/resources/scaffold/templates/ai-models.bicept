@@ -1,10 +1,15 @@
 {{define "ai-models.bicep" -}}
-{{- if .AiFoundryProject }}
-{{- range .AiFoundryProject.Models }}
+{{- if .AiProject }}
+{{- if .AiProject.ConnStringFromEnvVar }}
+@description('Use this parameter to use an existing AI project connection string')
+param {{bicepName .AiProject.Name}}ConnectionString string
+{{- end }}
+{{- range .AiProject.Models }}
 param {{bicepName .Name}}{{bicepName .Version}}Location string
 {{- end }}
 {{- end }}
 
+{{- if .AiProject.Models }}
 @description('Tags that will be applied to all resources')
 param tags object = {}
 
@@ -16,8 +21,14 @@ var resourceToken = uniqueString(subscription().id, resourceGroup().id, location
 
 @description('The name of the environment')
 param envName string
+{{- end }}
 
+{{- if .AiProject.Models }}
+{{- if .AiProject.ConnStringFromEnvVar }}
+module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = if (empty({{bicepName .AiProject.Name}}ConnectionString)){
+{{- else }}
 module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
+{{- end }}
   name: 'keyvaultForHub'
   params: {
     name: '${abbrs.keyVaultVaults}hub${resourceToken}'
@@ -27,7 +38,11 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
   }
 }
 
+{{- if .AiProject.ConnStringFromEnvVar }}
+module storage 'br/public:avm/res/storage/storage-account:0.17.2' = if (empty({{bicepName .AiProject.Name}}ConnectionString)) {
+{{- else }}
 module storage 'br/public:avm/res/storage/storage-account:0.17.2' = {
+{{- end }}
   name: 'storageAccountForHub'
   params: {
     tags: tags
@@ -73,9 +88,12 @@ module storage 'br/public:avm/res/storage/storage-account:0.17.2' = {
   }
 }
 
-{{- if .AiFoundryProject }}
-{{- range .AiFoundryProject.Models }}
+{{- range .AiProject.Models }}
+{{- if $.AiProject.ConnStringFromEnvVar }}
+resource {{bicepName .Name}}{{bicepName .Version}}Deploy 'Microsoft.CognitiveServices/accounts@2023-05-01' = if (empty({{bicepName $.AiProject.Name}}ConnectionString)) {
+{{- else }}
 resource {{bicepName .Name}}{{bicepName .Version}}Deploy 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
+{{- end }}
   name: '{{bicepName .Name}}{{bicepName .Version}}${resourceToken}'
   location: {{bicepName .Name}}{{bicepName .Version}}Location
   tags: tags
@@ -105,9 +123,12 @@ resource {{bicepName .Name}}{{bicepName .Version}}Deploy 'Microsoft.CognitiveSer
   }
 }
 {{- end }}
-{{- end }}
 
+{{- if .AiProject.ConnStringFromEnvVar }}
+resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = if (empty({{bicepName .AiProject.Name}}ConnectionString)) {
+{{- else }}
 resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
+{{- end }}
   name: take('${envName}${resourceToken}',32)
   location: location
   tags: tags
@@ -127,8 +148,7 @@ resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
     publicNetworkAccess: 'Enabled'
   }
 
-{{- if .AiFoundryProject }}
-{{- range .AiFoundryProject.Models }}
+{{- range .AiProject.Models }}
   resource {{bicepName .Name}}{{bicepName .Version}}connection 'connections' = {
     name: '{{bicepName .Name}}{{bicepName .Version}}-connection'
     properties: {
@@ -146,10 +166,13 @@ resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
     }
   }
 {{- end }}
-{{- end }}
 }
 
+{{- if .AiProject.ConnStringFromEnvVar }}
+resource project 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = if (empty({{bicepName .AiProject.Name}}ConnectionString)) {
+{{- else }}
 resource project 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
+{{- end }}
   name: envName
   location: location
   tags: tags
@@ -170,9 +193,12 @@ resource project 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
   }
 }
 
+{{- if .AiProject.ConnStringFromEnvVar }}
+resource mlServiceRoleDataScientist 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = if (empty({{bicepName .AiProject.Name}}ConnectionString)) {
+{{- else }}
 resource mlServiceRoleDataScientist 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+{{- end }}
   name: guid(subscription().id, resourceGroup().id, project.id, 'mlServiceRoleDataScientist', 'f6c7c914-8db3-469d-8ca1-694a8f32e121')
-  scope: resourceGroup()
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f6c7c914-8db3-469d-8ca1-694a8f32e121')
     principalId: project.identity.principalId
@@ -180,19 +206,47 @@ resource mlServiceRoleDataScientist 'Microsoft.Authorization/roleAssignments@202
   }
 }
 
+{{- if .AiProject.ConnStringFromEnvVar }}
+resource mlServiceRoleSecretsReader 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = if (empty({{bicepName .AiProject.Name}}ConnectionString)) {
+{{- else }}
 resource mlServiceRoleSecretsReader 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+{{- end }}
   name: guid(subscription().id, resourceGroup().id, project.id, 'mlServiceRoleSecretsReader','ea01e6af-a1c1-4350-9563-ad00f8c72ec5')
-  scope: resourceGroup()
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ea01e6af-a1c1-4350-9563-ad00f8c72ec5') 
     principalId: project.identity.principalId
     principalType: 'ServicePrincipal'
   }
 }
+{{- end }}
 
-output projectDiscoveryUrl string = project.properties.discoveryUrl
-output projectId string = project.id
-output projectName string = project.name
-output aiFoundryProjectConnectionString string = '${split(project.properties.discoveryUrl, '/')[2]};${subscription().subscriptionId};${resourceGroup().name};${project.name}'
+{{- if and .AiProject.Models .AiProject.ConnStringFromEnvVar }}
+var hostName = empty({{bicepName .AiProject.Name}}ConnectionString) ? split(project.properties.discoveryUrl, '/')[2] : ''
+var projectConnectionString = empty(hostName)
+  ? {{bicepName .AiProject.Name}}ConnectionString
+  : '${hostName};${subscription().subscriptionId};${resourceGroup().name};${project.name}'
+var projectId = empty(hostName)
+  ? {{bicepName .AiProject.Name}}ConnectionString
+  : project.id
+var projectRG = empty(hostName)
+  ? split({{bicepName .AiProject.Name}}ConnectionString, ';')[2]
+  : resourceGroup().name
+{{- end }}
 
+{{- if and (not .AiProject.Models) .AiProject.ConnStringFromEnvVar }}
+var projectConnectionString = {{bicepName .AiProject.Name}}ConnectionString
+var projectId = {{bicepName .AiProject.Name}}ConnectionString
+var projectRG = split({{bicepName .AiProject.Name}}ConnectionString, ';')[2]
+{{- end }}
+
+{{- if and .AiProject.Models (not .AiProject.ConnStringFromEnvVar) }}
+var hostName = split(project.properties.discoveryUrl, '/')[2]
+var projectConnectionString = '${hostName};${subscription().subscriptionId};${resourceGroup().name};${project.name}'
+var projectId = project.id
+var projectRG = resourceGroup().name
+{{- end }}
+
+output projectId string = projectId
+output aiProjectConnectionString string = projectConnectionString
+output aiProjectRG string = projectRG
 {{ end}}

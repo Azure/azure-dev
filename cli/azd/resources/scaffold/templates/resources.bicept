@@ -12,8 +12,8 @@ param tags object = {}
 param {{.Name}} {{.Type}}
 {{- end}}
 
-{{- if .AiFoundryProject }}
-param aiFoundryProjectConnectionString string
+{{- if .AiProject }}
+param aiProjectConnectionString string
 {{- end}}
 
 @description('Id of the user or app to assign application roles')
@@ -569,10 +569,10 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: account.outputs.endpoint
           }
           {{- end}}
-          {{- if .HasAiFoundryProject }}
+          {{- if .AiProject }}
           {
             name: 'AZURE_AIPROJECT_CONNECTION_STRING'
-            value: aiFoundryProjectConnectionString
+            value: aiProjectConnectionString
           }
           {{- end}}
           {{- if .Frontend}}
@@ -618,18 +618,6 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     tags: union(tags, { 'azd-service-name': '{{.Name}}' })
   }
 }
-{{- if .HasAiFoundryProject}}
-
-resource {{bicepName .Name}}backendRoleAzureAIDeveloperRG 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
-  name: guid(subscription().id, resourceGroup().id, {{bicepName .Name}}Identity.name, '64702f94-c441-49e6-a78b-ef80e0188fee')
-  scope: resourceGroup()
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '64702f94-c441-49e6-a78b-ef80e0188fee') 
-    principalId: {{bicepName .Name}}Identity.outputs.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-{{- end }}
 {{- end}}
 
 {{- if .DbRedis}}
@@ -693,10 +681,31 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.12.0' = {
 }
 {{- end}}
 
+{{- if .AiProject }}
+resource aiProjectRG 'Microsoft.Resources/resourceGroups@2021-04-01' existing = {
+  scope: subscription()
+  name: split(aiProjectConnectionString, ';')[2]
+}
+{{- range .Services}}
+{{- if .AiProject}}
+module {{.Name}}backendRoleAzureAIDeveloperRG 'modules/role.bicep' = {
+  name: '{{.Name}}backendRoleAzureAIDeveloperRG'
+  scope: aiProjectRG
+  params: {
+    principalId: {{bicepName .Name}}Identity.outputs.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: '64702f94-c441-49e6-a78b-ef80e0188fee'
+  }
+}
+{{- end }}
+{{- end }}
+{{- end }}
+
 {{- if .Services}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
 {{- range .Services}}
 output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = {{bicepName .Name}}.outputs.resourceId
+output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_IDENTITY_ID string = {{bicepName .Name}}Identity.outputs.principalId
 {{- end}}
 {{- end}}
 {{- if .KeyVault}}

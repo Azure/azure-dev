@@ -10,8 +10,16 @@ param environmentName string
 @description('Primary location for all resources')
 param location string
 
-{{- if .AiFoundryProject }}
-{{- range .AiFoundryProject.Models }}
+{{- if .AiProject }}
+{{- if .AiProject.ConnStringFromEnvVar }}
+@description('Use this parameter to use an existing AI project connection string')
+{{- if .AiProject.Models }}
+param {{bicepName .AiProject.Name}}ConnectionString string = ''
+{{- else }}
+param {{bicepName .AiProject.Name}}ConnectionString string
+{{- end }}
+{{- end }}
+{{- range .AiProject.Models }}
 @metadata({azd: {
   type: 'location'
   usageName: '{{ .Sku.UsageName }},{{ .Sku.Capacity }}'
@@ -56,24 +64,29 @@ module resources 'resources.bicep' = {
 {{- range .Parameters}}
     {{.Name}}: {{.Name}}
 {{- end }}
-{{- if .AiFoundryProject }}
-    aiFoundryProjectConnectionString: aiModelsDeploy.outputs.aiFoundryProjectConnectionString
+{{- if .AiProject }}
+    aiProjectConnectionString: aiModelsDeploy.outputs.aiProjectConnectionString
 {{- end}}
   }
 }
 
-{{- if .AiFoundryProject }}
+{{- if .AiProject }}
 
 module aiModelsDeploy 'ai-models.bicep' = {
   scope: rg
-  name: '{{.AiFoundryProject.Name}}'
+  name: '{{.AiProject.Name}}'
   params: {
-{{- range .AiFoundryProject.Models }}
+{{- range .AiProject.Models }}
     {{bicepName .Name}}{{bicepName .Version}}Location:  {{bicepName .Name}}{{bicepName .Version}}Location
-{{- end }}    
+{{- end }}
+{{- if .AiProject.Models }}
     tags: tags
     location: location
     envName: environmentName
+{{- end }}
+{{- if .AiProject.ConnStringFromEnvVar }}
+    {{bicepName .AiProject.Name}}ConnectionString: {{bicepName .AiProject.Name}}ConnectionString
+{{- end }}
   }
 }
 {{- end}}
@@ -83,6 +96,7 @@ module aiModelsDeploy 'ai-models.bicep' = {
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 {{- range .Services}}
 output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID
+output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_IDENTITY_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_IDENTITY_ID
 {{- end}}
 {{- end}}
 {{- if .KeyVault}}
@@ -113,8 +127,8 @@ output AZURE_RESOURCE_EVENT_HUBS_ID string = resources.outputs.AZURE_RESOURCE_EV
 {{- if .ServiceBus}}
 output AZURE_RESOURCE_SERVICE_BUS_ID string = resources.outputs.AZURE_RESOURCE_SERVICE_BUS_ID
 {{- end}}
-{{- if .AiFoundryProject }}
-output AZURE_AIPROJECT_CONNECTION_STRING string = aiModelsDeploy.outputs.aiFoundryProjectConnectionString
+{{- if .AiProject }}
+output AZURE_AIPROJECT_CONNECTION_STRING string = aiModelsDeploy.outputs.aiProjectConnectionString
 output AZURE_RESOURCE_AI_PROJECT_ID string = aiModelsDeploy.outputs.projectId
 {{- end}}
 {{ end}}

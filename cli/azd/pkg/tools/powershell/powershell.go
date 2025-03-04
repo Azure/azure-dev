@@ -26,9 +26,9 @@ func NewPowershellScript(commandRunner exec.CommandRunner, cwd string, envVars [
 
 // for testing
 func NewPowershellScriptWithMockCheckPath(
-	commandRunner exec.CommandRunner, 
-	cwd string, 
-	envVars []string, 
+	commandRunner exec.CommandRunner,
+	cwd string,
+	envVars []string,
 	mockCheckPath checkInstalled) tools.Script {
 	return &powershellScript{
 		commandRunner:  commandRunner,

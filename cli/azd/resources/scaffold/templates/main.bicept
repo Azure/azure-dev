@@ -72,7 +72,7 @@ module resources 'resources.bicep' = {
 
 {{- if .AiProject }}
 
-module aiModelsDeploy 'ai-models.bicep' = {
+module aiModelsDeploy 'ai-project.bicep' = {
   scope: rg
   name: '{{.AiProject.Name}}'
   params: {

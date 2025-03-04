@@ -290,12 +290,7 @@ func (d *StackDeployments) stackFromArmForResourceGroup(
 	clonedTags := maps.Clone(tags)
 	clonedTags[azure.TagKeyAzdDeploymentTemplateHashName] = &templateHash
 
-	stackParams := map[string]*armdeploymentstacks.DeploymentParameter{}
-	for k, v := range parameters {
-		stackParams[k] = &armdeploymentstacks.DeploymentParameter{
-			Value: v.Value,
-		}
-	}
+	stackParams := convertToStackParams(parameters)
 
 	deploymentStackOptions, err := parseDeploymentStackOptions(options)
 	if err != nil {
@@ -315,6 +310,7 @@ func (d *StackDeployments) stackFromArmForResourceGroup(
 
 	return stack, nil
 }
+
 func (d *StackDeployments) DeployToResourceGroup(
 	ctx context.Context,
 	subscriptionId string,
@@ -747,6 +743,29 @@ func convertFromStacksProvisioningState(
 	return DeploymentProvisioningState("")
 }
 
+// convertToStackParams converts the given ARM parameters to deployment stack parameters
+func convertToStackParams(parameters azure.ArmParameters) map[string]*armdeploymentstacks.DeploymentParameter {
+	stackParams := map[string]*armdeploymentstacks.DeploymentParameter{}
+	for k, v := range parameters {
+		if v.KeyVaultReference != nil {
+			stackParams[k] = &armdeploymentstacks.DeploymentParameter{
+				Reference: &armdeploymentstacks.KeyVaultParameterReference{
+					KeyVault: &armdeploymentstacks.KeyVaultReference{
+						ID: &v.KeyVaultReference.KeyVault.ID,
+					},
+					SecretName:    &v.KeyVaultReference.SecretName,
+					SecretVersion: &v.KeyVaultReference.SecretVersion,
+				},
+			}
+		} else {
+			stackParams[k] = &armdeploymentstacks.DeploymentParameter{
+				Value: v.Value,
+			}
+		}
+	}
+	return stackParams
+}
+
 func (d *StackDeployments) ValidatePreflightToResourceGroup(
 	ctx context.Context,
 	subscriptionId string,
@@ -799,12 +818,7 @@ func (d *StackDeployments) stackFromArmForSubscription(
 	clonedTags := maps.Clone(tags)
 	clonedTags[azure.TagKeyAzdDeploymentTemplateHashName] = &templateHash
 
-	stackParams := map[string]*armdeploymentstacks.DeploymentParameter{}
-	for k, v := range parameters {
-		stackParams[k] = &armdeploymentstacks.DeploymentParameter{
-			Value: v.Value,
-		}
-	}
+	stackParams := convertToStackParams(parameters)
 
 	deploymentStackOptions, err := parseDeploymentStackOptions(options)
 	if err != nil {

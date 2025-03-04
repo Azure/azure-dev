@@ -700,8 +700,8 @@ resource aiProjectRG 'Microsoft.Resources/resourceGroups@2021-04-01' existing = 
 }
 {{- range .Services}}
 {{- if .AiProject}}
-module {{.Name}}backendRoleAzureAIDeveloperRG 'modules/role.bicep' = {
-  name: '{{.Name}}backendRoleAzureAIDeveloperRG'
+module {{bicepName .Name}}backendRoleAzureAIDeveloperRG 'modules/role.bicep' = {
+  name: '{{bicepName .Name}}backendRoleAzureAIDeveloperRG'
   scope: aiProjectRG
   params: {
     principalId: {{bicepName .Name}}Identity.outputs.principalId

@@ -18,8 +18,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
-	"github.com/fatih/color"
 )
 
 var (
@@ -235,7 +235,7 @@ func (ps *promptService) PromptSubscription(
 			return subscriptions, nil
 		},
 		DisplayResource: func(subscription *account.Subscription) (string, error) {
-			return fmt.Sprintf("%s %s", subscription.Name, color.HiBlackString("(%s)", subscription.Id)), nil
+			return fmt.Sprintf("%s %s", subscription.Name, output.WithGrayFormat("(%s)", subscription.Id)), nil
 		},
 		Selected: func(subscription *account.Subscription) bool {
 			return strings.EqualFold(subscription.Id, defaultSubscriptionId)
@@ -311,7 +311,7 @@ func (ps *promptService) PromptLocation(
 			return locations, nil
 		},
 		DisplayResource: func(location *account.Location) (string, error) {
-			return fmt.Sprintf("%s %s", location.RegionalDisplayName, color.HiBlackString("(%s)", location.Name)), nil
+			return fmt.Sprintf("%s %s", location.RegionalDisplayName, output.WithGrayFormat("(%s)", location.Name)), nil
 		},
 		Selected: func(resource *account.Location) bool {
 			return resource.Name == defaultLocation
@@ -383,7 +383,7 @@ func (ps *promptService) PromptResourceGroup(
 			return fmt.Sprintf(
 				"%s %s",
 				resourceGroup.Name,
-				color.HiBlackString("(Location: %s)", resourceGroup.Location),
+				output.WithGrayFormat("(Location: %s)", resourceGroup.Location),
 			), nil
 		},
 		Selected: func(resourceGroup *azapi.ResourceGroup) bool {
@@ -394,7 +394,7 @@ func (ps *promptService) PromptResourceGroup(
 				Message: "Enter the name for the resource group",
 			})
 
-			resourceGroupName, err := namePrompt.Ask()
+			resourceGroupName, err := namePrompt.Ask(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -405,7 +405,7 @@ func (ps *promptService) PromptResourceGroup(
 
 			var resourceGroup *azapi.ResourceGroup
 
-			taskName := fmt.Sprintf("Creating resource group %s", color.CyanString(resourceGroupName))
+			taskName := fmt.Sprintf("Creating resource group %s", output.WithHighLightFormat(resourceGroupName))
 
 			err = ux.NewTaskList(nil).
 				AddTask(ux.TaskOptions{
@@ -553,7 +553,7 @@ func (ps *promptService) PromptSubscriptionResource(
 			return fmt.Sprintf(
 				"%s %s",
 				parsedResource.Name,
-				color.HiBlackString("(%s)", parsedResource.ResourceGroupName),
+				output.WithGrayFormat("(%s)", parsedResource.ResourceGroupName),
 			), nil
 		},
 		Selected:       options.Selected,
@@ -770,17 +770,19 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 
 		hasCustomDisplay := options.DisplayResource != nil
 
-		var choices []string
+		var choices []*ux.SelectChoice
 
 		if allowNewResource {
-			choices = make([]string, len(resources)+1)
-			choices[0] = mergedSelectorOptions.NewResourceMessage
+			choices = make([]*ux.SelectChoice, len(resources)+1)
+			choices[0] = &ux.SelectChoice{
+				Label: mergedSelectorOptions.NewResourceMessage,
+			}
 
 			if defaultIndex != nil {
 				*defaultIndex++
 			}
 		} else {
-			choices = make([]string, len(resources))
+			choices = make([]*ux.SelectChoice, len(resources))
 		}
 
 		for i, resource := range resources {
@@ -797,10 +799,15 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 				displayValue = fmt.Sprintf("%v", resource)
 			}
 
+			choice := &ux.SelectChoice{
+				Value: displayValue,
+				Label: displayValue,
+			}
+
 			if allowNewResource {
-				choices[i+1] = displayValue
+				choices[i+1] = choice
 			} else {
-				choices[i] = displayValue
+				choices[i] = choice
 			}
 		}
 
@@ -812,11 +819,11 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 			Hint:            mergedSelectorOptions.Hint,
 			EnableFiltering: mergedSelectorOptions.EnableFiltering,
 			Writer:          mergedSelectorOptions.Writer,
-			Allowed:         choices,
+			Choices:         choices,
 			SelectedIndex:   defaultIndex,
 		})
 
-		userSelectedIndex, err := resourceSelector.Ask()
+		userSelectedIndex, err := resourceSelector.Ask(ctx)
 		if err != nil {
 			return nil, err
 		}

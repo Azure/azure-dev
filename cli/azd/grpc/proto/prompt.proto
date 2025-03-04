@@ -99,7 +99,7 @@ message PromptResourceGroupResourceResponse {
 message ConfirmOptions {
   optional bool default_value = 1;
   string message = 2;
-  string helpMessage = 3;
+  string help_message = 3;
   string hint = 4;
   string placeholder = 5;
 }
@@ -112,15 +112,20 @@ message PromptOptions {
   string validation_message = 5;
   string required_message = 6;
   bool required = 7;
-  string defaultValue = 8;
+  string default_value = 8;
   bool clear_on_completion = 9;
   bool ignore_hint_keys = 10;
 }
 
+message SelectChoice {
+  string value = 1;
+  string label = 2;
+}
+
 message SelectOptions {
-  optional int32 SelectedIndex = 1;
+  optional int32 selected_index = 1;
   string message = 2;
-  repeated string allowed = 3;
+  repeated SelectChoice choices = 3;
   string help_message = 4;
   string hint = 5;
   int32 display_count = 6;

@@ -44,6 +44,13 @@ func Configure(
 		project.ResourceTypeDbMySql,
 		project.ResourceTypeDbMongo:
 		return fillDatabaseName(ctx, r, console, p)
+	case project.ResourceTypeDbCosmos:
+		r, err := fillDatabaseName(ctx, r, console, p)
+		if err != nil {
+			return nil, err
+		}
+		r.Props = project.CosmosDBProps{}
+		return r, nil
 	case project.ResourceTypeMessagingEventHubs:
 		return fillEventHubs(ctx, r, console, p)
 	case project.ResourceTypeMessagingServiceBus:

@@ -24,7 +24,6 @@ resource rg 'Microsoft.Resources/resourceGroups@2022-09-01' = {
   location: location
   tags: tags
 }
-
 module resources 'resources.bicep' = {
   scope: rg
   name: 'resources'
@@ -64,7 +63,7 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.output
 output SERVICE_CACHE_VOLUME_AZURECONTAINERAPPSAPPHOST8F235654EDCACHEDATA_NAME string = resources.outputs.SERVICE_CACHE_VOLUME_AZURECONTAINERAPPSAPPHOST8F235654EDCACHEDATA_NAME
 output SERVICE_BINDING_KV294FC75C_ENDPOINT string = resources.outputs.SERVICE_BINDING_KV294FC75C_ENDPOINT
 output SERVICE_BINDING_KV294FC75C_NAME string = resources.outputs.SERVICE_BINDING_KV294FC75C_NAME
+output AZURE_VOLUMES_STORAGE_ACCOUNT string = resources.outputs.AZURE_VOLUMES_STORAGE_ACCOUNT
 output STORAGE_BLOBENDPOINT string = storage.outputs.blobEndpoint
 output STORAGE_THISISANOUTPUT string = storage.outputs.thisIsAnOutput
-output AZURE_VOLUMES_STORAGE_ACCOUNT string = resources.outputs.AZURE_VOLUMES_STORAGE_ACCOUNT
 

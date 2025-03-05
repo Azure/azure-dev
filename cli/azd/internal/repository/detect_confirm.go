@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd/add"
@@ -24,7 +26,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/fatih/color"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 func projectDisplayName(p appdetect.Project) string {
@@ -211,6 +212,8 @@ func (d *detectConfirm) render(ctx context.Context) error {
 		switch db {
 		case appdetect.DbPostgres:
 			recommendedServices = append(recommendedServices, "Azure Database for PostgreSQL flexible server")
+		case appdetect.DbMySql:
+			recommendedServices = append(recommendedServices, "Azure Database for MySQL flexible server")
 		case appdetect.DbMongo:
 			recommendedServices = append(recommendedServices, "Azure CosmosDB API for MongoDB")
 		case appdetect.DbRedis:

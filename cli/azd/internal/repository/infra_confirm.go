@@ -47,7 +47,7 @@ func (i *Initializer) infraSpecFromDetect(
 					DatabaseName: dbName,
 				}
 				break dbPrompt
-			case appdetect.DbPostgres:
+			case appdetect.DbPostgres, appdetect.DbMySql:
 				if dbName == "" {
 					i.console.Message(ctx, "Database name is required.")
 					continue
@@ -94,6 +94,10 @@ func (i *Initializer) infraSpecFromDetect(
 			case appdetect.DbPostgres:
 				serviceSpec.DbPostgres = &scaffold.DatabaseReference{
 					DatabaseName: spec.DbPostgres.DatabaseName,
+				}
+			case appdetect.DbMySql:
+				serviceSpec.DbPostgres = &scaffold.DatabaseReference{
+					DatabaseName: spec.DbMySql.DatabaseName,
 				}
 			case appdetect.DbRedis:
 				serviceSpec.DbRedis = &scaffold.DatabaseReference{

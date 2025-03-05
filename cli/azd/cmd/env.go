@@ -506,7 +506,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 	var kvSecretName string
 	if willCreateNewSecret {
-		kvSecretName, err = e.createNewKeyVaultSecret(ctx, subId, secretName, kvAccount.Name)
+		kvSecretName, err = e.createNewKeyVaultSecret(ctx, secretName, subId, kvAccount.Name)
 	} else {
 		kvSecretName, err = e.selectKeyVaultSecret(ctx, subId, kvAccount.Name)
 	}

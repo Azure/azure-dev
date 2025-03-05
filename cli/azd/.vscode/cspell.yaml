@@ -29,6 +29,7 @@ words:
   - unsetting
   - usgovcloudapi
   - jdbc
+  - springframework
 languageSettings:
   - languageId: go
     ignoreRegExpList:

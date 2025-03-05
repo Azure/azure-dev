@@ -418,7 +418,6 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 			}
 
 			_ = c.spinner.Stop()
-			return
 		}()
 	}
 

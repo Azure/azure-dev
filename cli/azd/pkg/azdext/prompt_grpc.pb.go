@@ -28,6 +28,7 @@ const (
 	PromptService_Confirm_FullMethodName                     = "/azdext.PromptService/Confirm"
 	PromptService_Prompt_FullMethodName                      = "/azdext.PromptService/Prompt"
 	PromptService_Select_FullMethodName                      = "/azdext.PromptService/Select"
+	PromptService_MultiSelect_FullMethodName                 = "/azdext.PromptService/MultiSelect"
 	PromptService_PromptSubscriptionResource_FullMethodName  = "/azdext.PromptService/PromptSubscriptionResource"
 	PromptService_PromptResourceGroupResource_FullMethodName = "/azdext.PromptService/PromptResourceGroupResource"
 )
@@ -48,6 +49,8 @@ type PromptServiceClient interface {
 	Prompt(ctx context.Context, in *PromptRequest, opts ...grpc.CallOption) (*PromptResponse, error)
 	// Select prompts the user to select an option from a list.
 	Select(ctx context.Context, in *SelectRequest, opts ...grpc.CallOption) (*SelectResponse, error)
+	// MultiSelect prompts the user to select multiple options from a list.
+	MultiSelect(ctx context.Context, in *MultiSelectRequest, opts ...grpc.CallOption) (*MultiSelectResponse, error)
 	// PromptSubscriptionResource prompts the user to select a resource from a subscription.
 	PromptSubscriptionResource(ctx context.Context, in *PromptSubscriptionResourceRequest, opts ...grpc.CallOption) (*PromptSubscriptionResourceResponse, error)
 	// PromptResourceGroupResource prompts the user to select a resource from a resource group.
@@ -122,6 +125,16 @@ func (c *promptServiceClient) Select(ctx context.Context, in *SelectRequest, opt
 	return out, nil
 }
 
+func (c *promptServiceClient) MultiSelect(ctx context.Context, in *MultiSelectRequest, opts ...grpc.CallOption) (*MultiSelectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MultiSelectResponse)
+	err := c.cc.Invoke(ctx, PromptService_MultiSelect_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *promptServiceClient) PromptSubscriptionResource(ctx context.Context, in *PromptSubscriptionResourceRequest, opts ...grpc.CallOption) (*PromptSubscriptionResourceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PromptSubscriptionResourceResponse)
@@ -158,6 +171,8 @@ type PromptServiceServer interface {
 	Prompt(context.Context, *PromptRequest) (*PromptResponse, error)
 	// Select prompts the user to select an option from a list.
 	Select(context.Context, *SelectRequest) (*SelectResponse, error)
+	// MultiSelect prompts the user to select multiple options from a list.
+	MultiSelect(context.Context, *MultiSelectRequest) (*MultiSelectResponse, error)
 	// PromptSubscriptionResource prompts the user to select a resource from a subscription.
 	PromptSubscriptionResource(context.Context, *PromptSubscriptionResourceRequest) (*PromptSubscriptionResourceResponse, error)
 	// PromptResourceGroupResource prompts the user to select a resource from a resource group.
@@ -189,6 +204,9 @@ func (UnimplementedPromptServiceServer) Prompt(context.Context, *PromptRequest) 
 }
 func (UnimplementedPromptServiceServer) Select(context.Context, *SelectRequest) (*SelectResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Select not implemented")
+}
+func (UnimplementedPromptServiceServer) MultiSelect(context.Context, *MultiSelectRequest) (*MultiSelectResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MultiSelect not implemented")
 }
 func (UnimplementedPromptServiceServer) PromptSubscriptionResource(context.Context, *PromptSubscriptionResourceRequest) (*PromptSubscriptionResourceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PromptSubscriptionResource not implemented")
@@ -325,6 +343,24 @@ func _PromptService_Select_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PromptService_MultiSelect_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MultiSelectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PromptServiceServer).MultiSelect(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PromptService_MultiSelect_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PromptServiceServer).MultiSelect(ctx, req.(*MultiSelectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PromptService_PromptSubscriptionResource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PromptSubscriptionResourceRequest)
 	if err := dec(in); err != nil {
@@ -391,6 +427,10 @@ var PromptService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Select",
 			Handler:    _PromptService_Select_Handler,
+		},
+		{
+			MethodName: "MultiSelect",
+			Handler:    _PromptService_MultiSelect_Handler,
 		},
 		{
 			MethodName: "PromptSubscriptionResource",

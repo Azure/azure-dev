@@ -31,6 +31,25 @@ func newPromptCommand() *cobra.Command {
 
 			defer azdClient.Close()
 
+			_, err = azdClient.Prompt().MultiSelect(ctx, &azdext.MultiSelectRequest{
+				Options: &azdext.MultiSelectOptions{
+					Message: "What are your favorite programming languages?",
+					Choices: []*azdext.MultiSelectChoice{
+						{Label: "Go", Value: "go"},
+						{Label: "Python", Value: "python"},
+						{Label: "JavaScript", Value: "javascript"},
+						{Label: "C#", Value: "csharp"},
+						{Label: "Java", Value: "java"},
+						{Label: "C++", Value: "cpp"},
+						{Label: "Ruby", Value: "ruby"},
+						{Label: "PHP", Value: "php"},
+					},
+				},
+			})
+			if err != nil {
+				return nil
+			}
+
 			confirmResponse, err := azdClient.
 				Prompt().
 				Confirm(ctx, &azdext.ConfirmRequest{

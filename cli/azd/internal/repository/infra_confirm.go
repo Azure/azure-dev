@@ -96,7 +96,7 @@ func (i *Initializer) infraSpecFromDetect(
 					DatabaseName: spec.DbPostgres.DatabaseName,
 				}
 			case appdetect.DbMySql:
-				serviceSpec.DbPostgres = &scaffold.DatabaseReference{
+				serviceSpec.DbMySql = &scaffold.DatabaseReference{
 					DatabaseName: spec.DbMySql.DatabaseName,
 				}
 			case appdetect.DbRedis:

@@ -16,10 +16,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	azcorelog "github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
@@ -39,6 +41,7 @@ import (
 
 func main() {
 	ctx := context.Background()
+	ctx = withInterruptContext(ctx)
 
 	restoreColorMode := colorable.EnableColorsStdout(nil)
 	defer restoreColorMode()
@@ -380,4 +383,25 @@ func startBackgroundUploadProcess() error {
 
 	err = cmd.Start()
 	return err
+}
+
+// withInterruptContext creates a new context that is cancelled when the user
+// sends an interrupt signal (Ctrl+C) or a SIGTERM signal to the process.
+func withInterruptContext(ctx context.Context) context.Context {
+	ctx, cancel := context.WithCancel(ctx)
+
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-signalChan
+		log.Println("received interrupt signal, cancelling context")
+		cancel()
+
+		time.Sleep(1 * time.Second)
+		err := fmt.Errorf("Cancelled by user: %w", ctx.Err())
+		fmt.Println(output.WithErrorFormat("ERROR: %s", err.Error()))
+		os.Exit(1)
+	}()
+
+	return ctx
 }

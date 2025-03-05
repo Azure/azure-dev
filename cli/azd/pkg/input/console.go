@@ -170,6 +170,8 @@ type AskerConsole struct {
 	// holds the last 2 bytes written by message or messageUX. This is used to detect when there is already an empty
 	// line (\n\n)
 	last2Byte [2]byte
+
+	spinnerStopChan chan struct{}
 }
 
 type ConsoleOptions struct {
@@ -406,7 +408,20 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		// While it is indeed safe to call Start regardless of whether the spinner is running,
 		// calling Start may result in an additional line of output being written in non-tty scenarios
 		_ = c.spinner.Start()
+
+		go func() {
+			c.spinnerStopChan = make(chan struct{}, 1)
+
+			select {
+			case <-ctx.Done():
+			case <-c.spinnerStopChan:
+			}
+
+			_ = c.spinner.Stop()
+			return
+		}()
 	}
+
 	c.spinnerLineMu.Unlock()
 }
 
@@ -468,7 +483,7 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 		lastMessage = c.getStopChar(format) + " " + lastMessage
 	}
 
-	_ = c.spinner.Stop()
+	c.spinnerStopChan <- struct{}{}
 	if lastMessage != "" {
 		// Avoid using StopMessage() as it may result in an extra Message line print in non-tty scenarios
 		fmt.Fprintln(c.writer, lastMessage)
@@ -938,19 +953,6 @@ func watchTerminalResize(c *AskerConsole) {
 	}
 }
 
-func watchTerminalInterrupt(c *AskerConsole) {
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt)
-	go func() {
-		<-signalChan
-
-		// unhide the cursor if applicable
-		_ = c.spinner.Stop()
-
-		os.Exit(1)
-	}()
-}
-
 // Writers that back the underlying console.
 type Writers struct {
 	// The writer to write output to.
@@ -1015,7 +1017,6 @@ func NewConsole(
 	if isTerminal {
 		c.consoleWidth = atomic.NewInt32(consoleWidth())
 		watchTerminalResize(c)
-		watchTerminalInterrupt(c)
 	}
 
 	return c

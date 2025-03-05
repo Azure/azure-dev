@@ -33,16 +33,17 @@ func newPromptCommand() *cobra.Command {
 
 			_, err = azdClient.Prompt().MultiSelect(ctx, &azdext.MultiSelectRequest{
 				Options: &azdext.MultiSelectOptions{
-					Message: "What are your favorite programming languages?",
+					Message: "Which Azure services do you use most with AZD?",
 					Choices: []*azdext.MultiSelectChoice{
-						{Label: "Go", Value: "go"},
-						{Label: "Python", Value: "python"},
-						{Label: "JavaScript", Value: "javascript"},
-						{Label: "C#", Value: "csharp"},
-						{Label: "Java", Value: "java"},
-						{Label: "C++", Value: "cpp"},
-						{Label: "Ruby", Value: "ruby"},
-						{Label: "PHP", Value: "php"},
+						{Label: "Container Apps", Value: "container-apps"},
+						{Label: "Functions", Value: "functions"},
+						{Label: "Static Web Apps", Value: "static-web-apps"},
+						{Label: "App Service", Value: "app-service"},
+						{Label: "Cosmos DB", Value: "cosmos-db"},
+						{Label: "SQL Database", Value: "sql-db"},
+						{Label: "Storage", Value: "storage"},
+						{Label: "Key Vault", Value: "key-vault"},
+						{Label: "Kubernetes Service", Value: "kubernetes-service"},
 					},
 				},
 			})

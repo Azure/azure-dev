@@ -77,6 +77,11 @@ func Metadata(r *project.ResourceConfig) resourceMeta {
 		res.UseEnvVars = []string{
 			"AZURE_OPENAI_ENDPOINT",
 		}
+	case project.ResourceTypeDbCosmos:
+		res.AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
+		res.UseEnvVars = []string{
+			"AZURE_COSMOS_ENDPOINT",
+		}
 	case project.ResourceTypeMessagingEventHubs:
 		res.AzureResourceType = "Microsoft.EventHub/namespaces"
 		res.UseEnvVars = []string{

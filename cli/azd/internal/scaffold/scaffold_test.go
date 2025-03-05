@@ -109,6 +109,9 @@ func TestExecInfra(t *testing.T) {
 				DbCosmosMongo: &DatabaseCosmosMongo{
 					DatabaseName: "appdb",
 				},
+				DbCosmos: &DatabaseCosmos{
+					DatabaseName: "cosmos",
+				},
 				DbRedis:        &DatabaseRedis{},
 				ServiceBus:     &ServiceBus{},
 				EventHubs:      &EventHubs{},
@@ -133,6 +136,9 @@ func TestExecInfra(t *testing.T) {
 						},
 						DbPostgres: &DatabaseReference{
 							DatabaseName: "appdb",
+						},
+						DbCosmos: &DatabaseReference{
+							DatabaseName: "cosmos",
 						},
 						DbMySql: &DatabaseReference{
 							DatabaseName: "mysqldb",
@@ -217,6 +223,21 @@ func TestExecInfra(t *testing.T) {
 						Port: 3100,
 						DbRedis: &DatabaseReference{
 							DatabaseName: "redis",
+						},
+					},
+				},
+			},
+		},
+		{
+			"API with Cosmos",
+			InfraSpec{
+				DbCosmos: &DatabaseCosmos{},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						DbCosmos: &DatabaseReference{
+							DatabaseName: "cosmos",
 						},
 					},
 				},

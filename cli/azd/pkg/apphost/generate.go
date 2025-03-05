@@ -188,7 +188,8 @@ func BuildContainers(manifest *Manifest) (map[string]genBuildContainer, error) {
 }
 
 type AppHostOptions struct {
-	AzdOperations bool
+	AzdOperations         bool
+	AppHostInfraMigration bool
 }
 
 type ContainerAppManifestType string
@@ -325,9 +326,6 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 	var parameters []autoGenInput
 	var mapToResourceParams []genInput
 
-	// check if appHost migration is enabled
-	_, migrateToAppHost := os.LookupEnv("AZD_APP_HOST_COMPUTE_MIGRATION")
-
 	// order to be deterministic when writing bicep
 	genParametersKeys := slices.Sorted(maps.Keys(generator.bicepContext.InputParameters))
 	metadataType := azure.AzdMetadataTypeGenerate
@@ -369,13 +367,13 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 		genBicepTemplateContext: generator.bicepContext,
 		WithMetadataParameters:  parameters,
 		MainToResourcesParams:   mapToResourceParams,
-		AppHostInfraMigration:   migrateToAppHost,
+		AppHostInfraMigration:   options.AppHostInfraMigration,
 	}
 	if err := executeToFS(fs, genTemplates, "main.bicep", name+".bicep", context); err != nil {
 		return nil, fmt.Errorf("generating infra/main.bicep: %w", err)
 	}
 
-	if !migrateToAppHost {
+	if !options.AppHostInfraMigration {
 		if err := executeToFS(fs, genTemplates, "resources.bicep", "resources.bicep", context); err != nil {
 			return nil, fmt.Errorf("generating infra/resources.bicep: %w", err)
 		}

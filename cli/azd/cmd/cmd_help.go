@@ -94,17 +94,39 @@ func getCmdHelpDefaultCommands(cmd *cobra.Command) string {
 
 // getCmdHelpDefaultFlags provides the default implementation for displaying the help flags section.
 func getCmdHelpDefaultFlags(cmd *cobra.Command) (result string) {
-	if cmd.HasAvailableLocalFlags() {
-		flags := getFlagsDetails(cmd.LocalFlags())
+	// force the following flags as global flags for display purposes when displaying help.
+	forceGlobalFlagNames := map[string]struct{}{
+		"help": {},
+		"docs": {},
+	}
+
+	forceGlobalFlags := pflag.NewFlagSet("", pflag.ContinueOnError)
+	localFlags := pflag.NewFlagSet("", pflag.ContinueOnError)
+
+	cmd.LocalFlags().VisitAll(func(f *pflag.Flag) {
+		if _, ok := forceGlobalFlagNames[f.Name]; ok {
+			forceGlobalFlags.AddFlag(f)
+		} else {
+			localFlags.AddFlag(f)
+		}
+	})
+
+	if localFlags.HasAvailableFlags() {
+		details := getFlagsDetails(localFlags)
 		result = fmt.Sprintf("%s\n%s\n",
 			output.WithBold("%s", output.WithUnderline("Flags")),
-			flags)
+			details)
 	}
-	if cmd.HasAvailableInheritedFlags() {
-		globalFlags := getFlagsDetails(cmd.InheritedFlags())
+
+	globalFlags := pflag.NewFlagSet("", pflag.ContinueOnError)
+	globalFlags.AddFlagSet(cmd.InheritedFlags())
+	globalFlags.AddFlagSet(forceGlobalFlags)
+
+	if globalFlags.HasAvailableFlags() {
+		details := getFlagsDetails(globalFlags)
 		result += fmt.Sprintf("%s\n%s\n",
 			output.WithBold("%s", output.WithUnderline("Global Flags")),
-			globalFlags)
+			details)
 	}
 	return result
 }

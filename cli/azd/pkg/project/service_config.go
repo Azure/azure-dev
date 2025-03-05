@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package project
 
 import (
@@ -47,6 +50,9 @@ type ServiceConfig struct {
 	DotNetContainerApp *DotNetContainerAppOptions `yaml:"-,omitempty"`
 	// Custom configuration for the service target
 	Config map[string]any `yaml:"config,omitempty"`
+	// Computed lazily by useDotnetPublishForDockerBuild and cached. This is true when the project
+	// is a dotnet project and there is not an explicit Dockerfile in the project directory.
+	useDotNetPublishForDockerBuild *bool
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 }

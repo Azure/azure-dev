@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 // Package repository provides handling of files in the user's code repository.
 package repository
 
@@ -12,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -32,6 +36,7 @@ type Initializer struct {
 	console        input.Console
 	gitCli         *git.Cli
 	dotnetCli      *dotnet.Cli
+	features       *alpha.FeatureManager
 	lazyEnvManager *lazy.Lazy[environment.Manager]
 }
 
@@ -39,6 +44,7 @@ func NewInitializer(
 	console input.Console,
 	gitCli *git.Cli,
 	dotnetCli *dotnet.Cli,
+	features *alpha.FeatureManager,
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 ) *Initializer {
 	return &Initializer{
@@ -46,6 +52,7 @@ func NewInitializer(
 		gitCli:         gitCli,
 		lazyEnvManager: lazyEnvManager,
 		dotnetCli:      dotnetCli,
+		features:       features,
 	}
 }
 

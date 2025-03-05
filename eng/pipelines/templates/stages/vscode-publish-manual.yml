@@ -39,9 +39,10 @@ stages:
 
                 - template: /eng/pipelines/templates/steps/publish-vscode.yml
                   parameters:
-                    PublishLocations: vscode/release/$(VSIX_VERSION);vscode/release/latest
+                    PublishLocations: azd/vscode/release/$(VSIX_VERSION);azd/vscode/release/latest
                     TagRepository: true
                     UpdateShield: true
+                    PublishToMarketplace: true
 
       - deployment: Increment_Version
         condition: >-

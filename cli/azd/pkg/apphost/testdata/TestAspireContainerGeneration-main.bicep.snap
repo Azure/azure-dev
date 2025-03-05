@@ -54,7 +54,17 @@ param noVolume_pas_sw_ord string
 })
 @secure()
 param noVolume_password string
+@metadata({azd: {
+  type: 'needForDeploy'
+  config: {}
+  }
+})
 param param_with_empty_value string = ''
+@metadata({azd: {
+  type: 'needForDeploy'
+  config: {}
+  }
+})
 param param_with_value string = 'default value for param'
 
 var tags = {

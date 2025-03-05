@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package repository
 
 import (
@@ -14,6 +17,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd/add"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -64,12 +68,12 @@ func (d *detectConfirm) Init(projects []appdetect.Project, root string) {
 	d.root = root
 
 	for _, project := range projects {
-		if _, supported := languageMap[project.Language]; supported {
+		if _, supported := add.LanguageMap[project.Language]; supported {
 			d.Services = append(d.Services, project)
 		}
 
 		for _, dbType := range project.DatabaseDeps {
-			if _, supported := dbMap[dbType]; supported {
+			if _, supported := add.DbMap[dbType]; supported {
 				d.Databases[dbType] = EntryKindDetected
 			}
 		}
@@ -194,7 +198,7 @@ func (d *detectConfirm) render(ctx context.Context) error {
 			status = " " + output.WithSuccessFormat("[Added]")
 		}
 
-		d.console.Message(ctx, "  "+color.BlueString(projectDisplayName(svc))+status)
+		d.console.Message(ctx, "  "+output.WithHighLightFormat(projectDisplayName(svc))+status)
 		d.console.Message(ctx, "  "+"Detected in: "+output.WithHighLightFormat(relSafe(d.root, svc.Path)))
 		d.console.Message(ctx, "")
 
@@ -220,7 +224,7 @@ func (d *detectConfirm) render(ctx context.Context) error {
 			status = " " + output.WithSuccessFormat("[Added]")
 		}
 
-		d.console.Message(ctx, "  "+color.BlueString(db.Display())+status)
+		d.console.Message(ctx, "  "+output.WithHighLightFormat(db.Display())+status)
 		d.console.Message(ctx, "")
 	}
 
@@ -310,7 +314,7 @@ func (d *detectConfirm) remove(ctx context.Context) error {
 }
 
 func (d *detectConfirm) add(ctx context.Context) error {
-	languages := slices.SortedFunc(maps.Keys(languageMap),
+	languages := slices.SortedFunc(maps.Keys(add.LanguageMap),
 		func(a, b appdetect.Language) int {
 			return strings.Compare(a.Display(), b.Display())
 		})
@@ -321,7 +325,7 @@ func (d *detectConfirm) add(ctx context.Context) error {
 		})
 
 	// only include databases not already added
-	allDbs := slices.Collect(maps.Keys(dbMap))
+	allDbs := slices.Collect(maps.Keys(add.DbMap))
 	databases := make([]appdetect.DatabaseDep, 0, len(allDbs))
 	for _, db := range allDbs {
 		if _, ok := d.Databases[db]; !ok {

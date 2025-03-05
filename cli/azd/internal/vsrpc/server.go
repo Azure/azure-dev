@@ -57,7 +57,7 @@ func (s *Server) Serve(l net.Listener) error {
 	mux.Handle("/EnvironmentService/v1.0", newEnvironmentService(s))
 
 	// Expose a few special test endpoints that can be used to debug our special RPC behavior around cancellation and
-	// IObservers. This is useful for both developers unit testing in VS Code (where they can set this value in launch.json
+	// observers. This is useful for both developers unit testing in VS Code (where they can set this value in launch.json
 	// as well as tests where we can set this value with t.SetEnv()).
 	if on, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_SERVER_DEBUG_ENDPOINTS")); err == nil && on {
 		mux.Handle("/TestDebugService/v1.0", newDebugService(s))

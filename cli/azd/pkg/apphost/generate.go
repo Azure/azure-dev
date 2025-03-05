@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package apphost
 
 import (
@@ -321,6 +324,7 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 
 	// order to be deterministic when writing bicep
 	genParametersKeys := slices.Sorted(maps.Keys(generator.bicepContext.InputParameters))
+	metadataType := azure.AzdMetadataTypeGenerate
 	for _, key := range genParametersKeys {
 		parameter := generator.bicepContext.InputParameters[key]
 		parameterMetadata := ""
@@ -328,8 +332,11 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 		if parameter.Default != nil {
 			// main.bicep template handles *string for default.Value. If the value is nil, it will be ignored.
 			// if not nil, like empty string or any other string, it is used as `= '<value>'`
-			parameterDefaultValue = parameter.Default.Value
-			if parameter.Default.Generate != nil {
+			if parameter.Default.Value != nil {
+				parameterDefaultValue = parameter.Default.Value
+				metadataType = azure.AzdMetadataTypeNeedForDeploy
+				parameterMetadata = "{}"
+			} else if parameter.Default.Generate != nil { // Note: .Value and .Generate are mutually exclusive
 				pMetadata, err := inputMetadata(*parameter.Default.Generate)
 				if err != nil {
 					return nil, fmt.Errorf("generating input metadata for %s: %w", key, err)
@@ -339,11 +346,15 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 			// Note: azd is not checking or validating that Default.Generate and Default.Value are not both set.
 			// The AppHost prevents this from happening by not allowing both to be set at the same time.
 		}
+		if parameter.scope != nil {
+			metadataType = azure.AzdMetadataTypeResourceGroup
+			parameterMetadata = "{}"
+		}
 		input := genInput{Name: key, Secret: parameter.Secret, Type: parameter.Type, Value: parameterDefaultValue}
 		parameters = append(parameters, autoGenInput{
 			genInput:       input,
 			MetadataConfig: parameterMetadata,
-			MetadataType:   azure.AzdMetadataTypeGenerate})
+			MetadataType:   metadataType})
 		if slices.Contains(generator.bicepContext.mappedParameters, strings.ReplaceAll(key, "-", "_")) {
 			mapToResourceParams = append(mapToResourceParams, input)
 		}
@@ -565,19 +576,45 @@ func (b *infraGenerator) extractOutputs(resource *Resource) error {
 			}
 		}
 	}
-	for _, value := range resource.Env {
-		outputs, err := evaluateForOutputs(value)
+
+	feedFrom := func(from map[string]string, to *genBicepTemplateContext) error {
+		for _, value := range from {
+			outputs, err := evaluateForOutputs(value)
+			if err != nil {
+				return err
+			}
+			for key, output := range outputs {
+				if strings.Contains(output.Value, ".outputs.") {
+					to.OutputParameters[key] = output
+				} else {
+					to.OutputSecretParameters[key] = output
+				}
+			}
+
+		}
+		return nil
+	}
+	err := feedFrom(resource.Env, &b.bicepContext)
+	if err != nil {
+		return err
+	}
+
+	if resource.Deployment != nil {
+		// Taking only the string values from the deployment parameters. There could be other types like int or object there.
+		// Only string type could be referencing outputs.
+		deploymentParams := map[string]string{}
+		for k, v := range resource.Deployment.Params {
+			stringValue, castOk := v.(string)
+			if !castOk {
+				continue
+			}
+			deploymentParams[k] = stringValue
+		}
+
+		err = feedFrom(deploymentParams, &b.bicepContext)
 		if err != nil {
 			return err
 		}
-		for key, output := range outputs {
-			if strings.Contains(output.Value, ".outputs.") {
-				b.bicepContext.OutputParameters[key] = output
-			} else {
-				b.bicepContext.OutputSecretParameters[key] = output
-			}
-		}
-
 	}
 	return nil
 }
@@ -644,7 +681,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			if err := b.addInputParameter(name, comp); err != nil {
 				return fmt.Errorf("adding bicep parameter from resource %s (%s): %w", name, comp.Type, err)
 			}
-		case "azure.bicep.v0":
+		case "azure.bicep.v0", "azure.bicep.v1":
 			if err := b.addBicep(name, comp); err != nil {
 				return fmt.Errorf("adding bicep resource %s: %w", name, err)
 			}
@@ -794,7 +831,18 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 		stringParams["location"] = "location"
 	}
 
-	b.bicepContext.BicepModules[name] = genBicepModules{Path: *comp.Path, Params: stringParams}
+	bicepScope := defaultBicepModuleScope
+	if comp.Scope != nil {
+		if comp.Scope.ResourceGroup == nil {
+			return fmt.Errorf("bicep resource %s has a scope without a resource group", name)
+		}
+		paramValue, _, err := injectValueForBicepParameter(name, "scope", *comp.Scope.ResourceGroup)
+		if err != nil {
+			return err
+		}
+		bicepScope = paramValue
+	}
+	b.bicepContext.BicepModules[name] = genBicepModules{Path: *comp.Path, Params: stringParams, Scope: bicepScope}
 	return nil
 }
 
@@ -813,6 +861,8 @@ const (
 	knownInjectedValueLogAnalytics     string = "resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID"
 	knownInjectedValueContainerEnvName string = "resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME"
 	knownInjectedValueContainerEnvId   string = "resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID"
+
+	defaultBicepModuleScope string = "rg"
 )
 
 // injectValueForBicepParameter checks for aspire-manifest and azd conventions rules for auto injecting values for
@@ -1105,6 +1155,7 @@ func (b *infraGenerator) addDaprStateStoreComponent(name string) {
 var singleQuotedStringRegex = regexp.MustCompile(`'[^']*'`)
 var propertyNameRegex = regexp.MustCompile(`'([^']*)':`)
 var jsonSimpleKeyRegex = regexp.MustCompile(`"([a-zA-Z0-9]*)":`)
+var resourceValueOnlyRefRegex = regexp.MustCompile(`^"{([a-zA-Z0-9\-]+)\.[vV]alue}"$`)
 
 type ingressDetails struct {
 	// aca ingress definition
@@ -1184,6 +1235,7 @@ func (b *infraGenerator) Compile() error {
 			Volumes:         bc.Volumes,
 			DeploySource:    bc.DeploymentSource,
 			BindMounts:      bMounts,
+			Entrypoint:      bc.Entrypoint,
 		}
 
 		if err := b.buildEnvBlock(bc.Env, &projectTemplateCtx); err != nil {
@@ -1251,38 +1303,32 @@ func (b *infraGenerator) Compile() error {
 
 	for moduleName, module := range b.bicepContext.BicepModules {
 		for paramName, paramValue := range module.Params {
-			// bicep uses ' instead of " for strings, so we need to replace all " with '
-			singleQuoted := strings.ReplaceAll(paramValue, "\"", "'")
-
-			var evaluationError error
-			evaluatedString := singleQuotedStringRegex.ReplaceAllStringFunc(singleQuoted, func(s string) string {
-				evaluatedString, err := EvalString(s, func(s string) (string, error) {
-					return b.evalBindingRef(s, inputEmitTypeBicep)
-				})
-				if err != nil {
-					evaluationError = fmt.Errorf("evaluating bicep module %s parameter %s: %w", moduleName, paramName, err)
-				}
-				return evaluatedString
-			})
-			if evaluationError != nil {
-				return evaluationError
+			value, err := b.resolveBicepReference(paramValue)
+			if err != nil {
+				return fmt.Errorf(
+					"resolving bicep module %s, param: %s, reference %s: %w", moduleName, paramName, paramValue, err)
 			}
-
-			// quick check to know if evaluatedString is only holding one only reference. If so, we don't need to use
-			// the form of '%{ref}' and we can directly use ref alone.
-			if isComplexExp, val := isComplexExpression(evaluatedString); !isComplexExp {
-				module.Params[paramName] = val
-				continue
-			}
-
-			// Property names that are valid identifiers should be declared without quotation marks and accessed
-			// using dot notation.
-			evaluatedString = propertyNameRegex.ReplaceAllString(evaluatedString, "${1}:")
-
-			// restore double {{ }} to single { } for bicep output
-			// we used double only during the evaluation to scape single brackets
-			module.Params[paramName] = strings.ReplaceAll(strings.ReplaceAll(evaluatedString, "'{{", "${"), "}}'", "}")
+			module.Params[paramName] = value
 		}
+		if module.Scope != defaultBicepModuleScope {
+			rgScope := "resourceGroup"
+			if matches := resourceValueOnlyRefRegex.FindStringSubmatch(module.Scope); len(matches) == 2 {
+				manifestResourceName := matches[1]
+				// Check if the scope is an input
+				input, hasInput := b.bicepContext.InputParameters[manifestResourceName]
+				if hasInput {
+					input.scope = &rgScope
+					b.bicepContext.InputParameters[manifestResourceName] = input
+				}
+			}
+			scope, err := b.resolveBicepReference(module.Scope)
+			if err != nil {
+				return fmt.Errorf("resolving bicep module %s scope %s: %w", moduleName, module.Scope, err)
+			}
+			scope = fmt.Sprintf("%s(%s)", rgScope, scope)
+			module.Scope = scope
+		}
+		b.bicepContext.BicepModules[moduleName] = module
 	}
 
 	for _, kv := range b.bicepContext.KeyVaults {
@@ -1293,6 +1339,40 @@ func (b *infraGenerator) Compile() error {
 	}
 
 	return nil
+}
+
+// resolve a reference for bicep types. The reference can be from a parameter or from the scope
+func (b *infraGenerator) resolveBicepReference(ref string) (string, error) {
+	// bicep uses ' instead of " for strings, so we need to replace all " with '
+	singleQuoted := strings.ReplaceAll(ref, "\"", "'")
+
+	var evaluationError error
+	evaluatedString := singleQuotedStringRegex.ReplaceAllStringFunc(singleQuoted, func(s string) string {
+		evaluatedString, err := EvalString(s, func(s string) (string, error) {
+			return b.evalBindingRef(s, inputEmitTypeBicep)
+		})
+		if err != nil {
+			evaluationError = err
+		}
+		return evaluatedString
+	})
+	if evaluationError != nil {
+		return "", evaluationError
+	}
+
+	// quick check to know if evaluatedString is only holding one only reference. If so, we don't need to use
+	// the form of '%{ref}' and we can directly use ref alone.
+	if isComplexExp, val := isComplexExpression(evaluatedString); !isComplexExp {
+		return val, nil
+	}
+
+	// Property names that are valid identifiers should be declared without quotation marks and accessed
+	// using dot notation.
+	evaluatedString = propertyNameRegex.ReplaceAllString(evaluatedString, "${1}:")
+
+	// restore double {{ }} to single { } for bicep output
+	// we used double only during the evaluation to scape single brackets
+	return strings.ReplaceAll(strings.ReplaceAll(evaluatedString, "'{{", "${"), "}}'", "}"), nil
 }
 
 // isComplexExpression checks if the evaluatedString is in the form of '{{ expr }}' or if it is a complex expression like
@@ -1528,7 +1608,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 				fmt.Errorf("malformed binding expression, expected "+
 					"bindings.<binding-name>.[scheme|protocol|transport|external|host|targetPort|port|url] but was: %s", v)
 		}
-	case targetType == "azure.bicep.v0":
+	case targetType == "azure.bicep.v0" || targetType == "azure.bicep.v1":
 		if !strings.HasPrefix(prop, "outputs.") && !strings.HasPrefix(prop, "secretOutputs") {
 			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
 		}

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package scaffold
 
 import (
@@ -11,8 +14,26 @@ type InfraSpec struct {
 
 	// Databases to create
 	DbPostgres    *DatabasePostgres
+	DbMySql       *DatabaseMysql
 	DbCosmosMongo *DatabaseCosmosMongo
+	DbCosmos      *DatabaseCosmos
 	DbRedis       *DatabaseRedis
+
+	// Key vault
+	KeyVault *KeyVault
+
+	// Messaging services
+	ServiceBus *ServiceBus
+	EventHubs  *EventHubs
+
+	// Storage account
+	StorageAccount *StorageAccount
+
+	// ai models
+	AIModels []AIModel
+
+	// ai foundry models
+	AiFoundryProject *AiFoundrySpec
 }
 
 type Parameter struct {
@@ -23,7 +44,10 @@ type Parameter struct {
 }
 
 type DatabasePostgres struct {
-	DatabaseUser string
+	DatabaseName string
+}
+
+type DatabaseMysql struct {
 	DatabaseName string
 }
 
@@ -31,12 +55,72 @@ type DatabaseCosmosMongo struct {
 	DatabaseName string
 }
 
+type DatabaseCosmos struct {
+	DatabaseName string
+	Containers   []CosmosSqlDatabaseContainer
+}
+
+type CosmosSqlDatabaseContainer struct {
+	ContainerName     string
+	PartitionKeyPaths []string
+}
+
 type DatabaseRedis struct {
+}
+
+// AIModel represents a deployed, ready to use AI model.
+type AIModel struct {
+	Name  string
+	Model AIModelModel
+}
+
+// AIModel represents a deployed, ready to use AI model.
+type AiFoundrySpec struct {
+	Name   string
+	Models []AiFoundryModel
+}
+
+type AiFoundryModel struct {
+	AIModelModel
+	Format string            `yaml:"format,omitempty"`
+	Sku    AiFoundryModelSku `yaml:"sku,omitempty"`
+}
+
+type AiFoundryModelSku struct {
+	Name      string `yaml:"name,omitempty"`
+	UsageName string `yaml:"usageName,omitempty"`
+	Capacity  int32  `yaml:"capacity,omitempty"`
+}
+
+// AIModelModel represents a model that backs the AIModel.
+type AIModelModel struct {
+	// The name of the underlying model.
+	Name string
+	// The version of the underlying model.
+	Version string
+}
+
+type ServiceBus struct {
+	Queues []string
+	Topics []string
+}
+
+type EventHubs struct {
+	Hubs []string
+}
+
+type KeyVault struct {
+}
+
+type StorageAccount struct {
+	Containers []string
 }
 
 type ServiceSpec struct {
 	Name string
 	Port int
+
+	Env map[string]string
 
 	// Front-end properties.
 	Frontend *Frontend
@@ -44,10 +128,26 @@ type ServiceSpec struct {
 	// Back-end properties
 	Backend *Backend
 
+	// Key vault
+	KeyVault *KeyVaultReference
+
 	// Connection to a database
 	DbPostgres    *DatabaseReference
+	DbMySql       *DatabaseReference
 	DbCosmosMongo *DatabaseReference
+	DbCosmos      *DatabaseReference
 	DbRedis       *DatabaseReference
+
+	StorageAccount *StorageReference
+
+	// AI model connections
+	AIModels []AIModelReference
+
+	// Messaging services
+	ServiceBus *ServiceBus
+	EventHubs  *EventHubs
+
+	HasAiFoundryProject *AiFoundrySpec
 }
 
 type Frontend struct {
@@ -64,6 +164,16 @@ type ServiceReference struct {
 
 type DatabaseReference struct {
 	DatabaseName string
+}
+
+type AIModelReference struct {
+	Name string
+}
+
+type StorageReference struct {
+}
+
+type KeyVaultReference struct {
 }
 
 func containerAppExistsParameter(serviceName string) Parameter {

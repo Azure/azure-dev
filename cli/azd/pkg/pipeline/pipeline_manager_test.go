@@ -533,6 +533,30 @@ func Test_promptForCiFiles(t *testing.T) {
 		assert.NoError(t, err)
 		snapshot.SnapshotT(t, normalizeEOL(content))
 	})
+	t.Run("no files - github selected - Variables and Secrets", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectories[0])
+		err := os.MkdirAll(path, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
+		err = generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:    ciProviderGitHubActions,
+			InfraProvider: infraProviderBicep,
+			RepoRoot:      tempDir,
+			HasAppHost:    true,
+			BranchName:    "main",
+			AuthType:      AuthTypeFederated,
+			Variables:     []string{"VAR_1", "VAR_2"},
+			Secrets:       []string{"SECRET_1", "SECRET_2"},
+		})
+		assert.NoError(t, err)
+		// should've created the pipeline
+		assert.FileExists(t, expectedPath)
+		// open the file and check the content
+		content, err := os.ReadFile(expectedPath)
+		assert.NoError(t, err)
+		snapshot.SnapshotT(t, normalizeEOL(content))
+	})
 	t.Run("no files - azdo selected - App host - fed Cred", func(t *testing.T) {
 		tempDir := t.TempDir()
 		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].PipelineDirectories[0])
@@ -612,6 +636,30 @@ func Test_promptForCiFiles(t *testing.T) {
 			HasAppHost:    false,
 			BranchName:    "main",
 			AuthType:      AuthTypeFederated,
+		})
+		assert.NoError(t, err)
+		// should've created the pipeline
+		assert.FileExists(t, expectedPath)
+		// open the file and check the content
+		content, err := os.ReadFile(expectedPath)
+		assert.NoError(t, err)
+		snapshot.SnapshotT(t, normalizeEOL(content))
+	})
+	t.Run("no files - azdo selected - no app host - variables and secrets", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].PipelineDirectories[0])
+		err := os.MkdirAll(path, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].Files[0])
+		err = generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:    ciProviderAzureDevOps,
+			InfraProvider: infraProviderBicep,
+			RepoRoot:      tempDir,
+			HasAppHost:    false,
+			BranchName:    "main",
+			AuthType:      AuthTypeFederated,
+			Variables:     []string{"VAR_1", "VAR_2"},
+			Secrets:       []string{"SECRET_1", "SECRET_2"},
 		})
 		assert.NoError(t, err)
 		// should've created the pipeline
@@ -773,8 +821,9 @@ func createPipelineManager(
 		mockContext.Console,
 		args,
 		mockContext.Container,
-		project.NewImportManager(nil),
+		project.NewImportManager(project.NewDotNetImporter(nil, nil, nil, nil, mockContext.AlphaFeaturesManager)),
 		&mockUserConfigManager{},
+		nil,
 	)
 }
 

@@ -118,8 +118,8 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}
 
-	var insightsResources []*azapi.Resource
-	var portalResources []*azapi.Resource
+	var insightsResources []*azapi.ResourceExtended
+	var portalResources []*azapi.ResourceExtended
 
 	for _, resourceGroup := range resourceGroups {
 		resources, err := m.resourceService.ListResourceGroupResources(

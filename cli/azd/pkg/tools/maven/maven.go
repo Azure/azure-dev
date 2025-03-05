@@ -1,6 +1,10 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package maven
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -234,6 +238,53 @@ func (cli *Cli) GetProperty(ctx context.Context, propertyPath string, projectPat
 		return "", ErrPropertyNotFound
 	}
 
+	return result, nil
+}
+
+func (cli *Cli) EffectivePom(ctx context.Context, pomPath string) (string, error) {
+	mvnCmd, err := cli.mvnCmd()
+	if err != nil {
+		return "", err
+	}
+	pomDir := filepath.Dir(pomPath)
+	// Link to "-pl" related doc: https://maven.apache.org/ref/3.1.0/maven-embedder/cli.html
+	runArgs := exec.NewRunArgs(mvnCmd, "help:effective-pom", "-f", pomPath, "-pl", filepath.Base(pomPath)).WithCwd(pomDir)
+	result, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return "", fmt.Errorf("mvn help:effective-pom on project '%s' failed: %w", pomPath, err)
+	}
+	return getEffectivePomStringFromConsoleOutput(result.Stdout)
+}
+
+var projectStart = regexp.MustCompile(`^\s*<project `) // the space can not be deleted.
+var projectEnd = regexp.MustCompile(`^\s*</project>\s*$`)
+
+func getEffectivePomStringFromConsoleOutput(consoleOutput string) (string, error) {
+	var builder strings.Builder
+	scanner := bufio.NewScanner(strings.NewReader(consoleOutput))
+	projectStarted := false
+	projectEnded := false
+	for scanner.Scan() {
+		line := scanner.Text()
+		if projectStart.MatchString(line) {
+			projectStarted = true
+		} else if projectEnd.MatchString(line) {
+			projectEnded = true
+		}
+		if projectStarted {
+			builder.WriteString(line)
+		}
+		if projectEnded {
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("failed to scan console output: %w", err)
+	}
+	result := builder.String()
+	if result == "" {
+		return "", fmt.Errorf("failed to get effective pom from console: empty content")
+	}
 	return result, nil
 }
 

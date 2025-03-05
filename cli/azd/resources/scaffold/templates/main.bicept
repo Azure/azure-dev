@@ -9,12 +9,23 @@ param environmentName string
 @minLength(1)
 @description('Primary location for all resources')
 param location string
-{{range .Parameters}}
+
+{{- if .AiFoundryProject }}
+{{- range .AiFoundryProject.Models }}
+@metadata({azd: {
+  type: 'location'
+  usageName: '{{ .Sku.UsageName }},{{ .Sku.Capacity }}'
+  }
+})
+param {{bicepName .Name}}{{bicepName .Version}}Location string
+{{- end }}
+{{- end }}
+{{ range .Parameters}}
 {{- if .Secret}}
 @secure()
-{{- end}}
+{{- end }}
 param {{.Name}} {{.Type}}
-{{- end}}
+{{- end }}
 
 @description('Id of the user or app to assign application roles')
 param principalId string
@@ -45,18 +56,68 @@ module resources 'resources.bicep' = {
 {{- range .Parameters}}
     {{.Name}}: {{.Name}}
 {{- end }}
+{{- if .AiFoundryProject }}
+    aiFoundryProjectConnectionString: aiModelsDeploy.outputs.aiFoundryProjectConnectionString
+{{- end}}
   }
 }
 
+{{- if .AiFoundryProject }}
+
+module aiModelsDeploy 'ai-project.bicep' = {
+  scope: rg
+  name: '{{.AiFoundryProject.Name}}'
+  params: {
+{{- range .AiFoundryProject.Models }}
+    {{bicepName .Name}}{{bicepName .Version}}Location:  {{bicepName .Name}}{{bicepName .Version}}Location
+{{- end }}    
+    tags: tags
+    location: location
+    envName: environmentName
+  }
+}
+{{- end}}
+
 {{- if .Services}}
+
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
+{{- range .Services}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID
+{{- end}}
+{{- end}}
+{{- if .KeyVault}}
 output AZURE_KEY_VAULT_ENDPOINT string = resources.outputs.AZURE_KEY_VAULT_ENDPOINT
 output AZURE_KEY_VAULT_NAME string = resources.outputs.AZURE_KEY_VAULT_NAME
+output AZURE_RESOURCE_VAULT_ID string = resources.outputs.AZURE_RESOURCE_VAULT_ID
+{{- end}}
+{{- if  .AIModels}}
+{{- range .AIModels}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID
+{{- end}}
 {{- end}}
 {{- if .DbRedis}}
-output AZURE_CACHE_REDIS_ID string = resources.outputs.AZURE_CACHE_REDIS_ID
+output AZURE_RESOURCE_REDIS_ID string = resources.outputs.AZURE_RESOURCE_REDIS_ID
 {{- end}}
 {{- if .DbPostgres}}
-output AZURE_POSTGRES_FLEXIBLE_SERVER_ID string = resources.outputs.AZURE_POSTGRES_FLEXIBLE_SERVER_ID
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID
+{{- end}}
+{{- if .DbCosmos }}
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmos.DatabaseName}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmos.DatabaseName}}_ID
+{{- end}}
+{{- if .DbMySql}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbMySql.DatabaseName}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbMySql.DatabaseName}}_ID
+{{- end}}
+{{- if .StorageAccount }}
+output AZURE_RESOURCE_STORAGE_ID string = resources.outputs.AZURE_RESOURCE_STORAGE_ID
+{{- end}}
+{{- if .EventHubs}}
+output AZURE_RESOURCE_EVENT_HUBS_ID string = resources.outputs.AZURE_RESOURCE_EVENT_HUBS_ID
+{{- end}}
+{{- if .ServiceBus}}
+output AZURE_RESOURCE_SERVICE_BUS_ID string = resources.outputs.AZURE_RESOURCE_SERVICE_BUS_ID
+{{- end}}
+{{- if .AiFoundryProject }}
+output AZURE_AIPROJECT_CONNECTION_STRING string = aiModelsDeploy.outputs.aiFoundryProjectConnectionString
+output AZURE_RESOURCE_AI_PROJECT_ID string = aiModelsDeploy.outputs.projectId
 {{- end}}
 {{ end}}

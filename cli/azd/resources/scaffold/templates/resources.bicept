@@ -12,6 +12,10 @@ param tags object = {}
 param {{.Name}} {{.Type}}
 {{- end}}
 
+{{- if .AiFoundryProject }}
+param aiFoundryProjectConnectionString string
+{{- end}}
+
 @description('Id of the user or app to assign application roles')
 param principalId string
 
@@ -38,7 +42,6 @@ module containerRegistry 'br/public:avm/res/container-registry/registry:0.1.1' =
   params: {
     name: '${abbrs.containerRegistryRegistries}${resourceToken}'
     location: location
-    acrAdminUserEnabled: true
     tags: tags
     publicNetworkAccess: 'Enabled'
     roleAssignments:[
@@ -66,9 +69,11 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5
 {{- end}}
 
 {{- if .DbCosmosMongo}}
-module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
-  name: 'cosmos'
+module cosmosMongo 'br/public:avm/res/document-db/database-account:0.8.1' = {
+  name: 'cosmosMongo'
   params: {
+    name: '${abbrs.documentDBMongoDatabaseAccounts}${resourceToken}'
+    location: location
     tags: tags
     locations: [
       {
@@ -77,8 +82,11 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
         locationName: location
       }
     ]
-    name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
-    location: location
+    networkRestrictions: {
+      ipRules: []
+      virtualNetworkRules: []
+      publicNetworkAccess: 'Enabled'
+    }
     {{- if .DbCosmosMongo.DatabaseName}}
     mongodbDatabases: [
       {
@@ -86,28 +94,78 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.4.0' = {
       }
     ]
     {{- end}}
-    secretsKeyVault: {
-      keyVaultName: keyVault.outputs.name
-      primaryWriteConnectionStringSecretName: 'MONGODB-URL'
+    secretsExportConfiguration: {
+      keyVaultResourceId: keyVault.outputs.resourceId
+      primaryWriteConnectionStringSecretName: 'mongodb-url'
     }
     capabilitiesToAdd: [ 'EnableServerless' ]
   }
 }
 {{- end}}
 
-{{- if .DbPostgres}}
-var databaseName = '{{ .DbPostgres.DatabaseName }}'
-var databaseUser = 'psqladmin'
-module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4' = {
-  name: 'postgreServer'
+{{- if .DbCosmos }}
+module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
+  name: 'cosmos'
   params: {
-    // Required parameters
+    name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
+    tags: tags
+    location: location
+    locations: [
+      {
+        failoverPriority: 0
+        isZoneRedundant: false
+        locationName: location
+      }
+    ]
+    networkRestrictions: {
+      ipRules: []
+      virtualNetworkRules: []
+      publicNetworkAccess: 'Enabled'
+    }
+    sqlDatabases: [
+      {
+        name: '{{ .DbCosmos.DatabaseName }}'
+        containers: [
+          {{- range .DbCosmos.Containers}}
+          {
+            name: '{{ .ContainerName }}'
+            paths: [
+              {{- range $path := .PartitionKeyPaths}}
+              '{{ $path }}'
+              {{- end}}
+            ]
+          }
+          {{- end}}
+        ]
+      }
+    ]
+    sqlRoleAssignmentsPrincipalIds: [
+      {{- range .Services}}
+      {{bicepName .Name}}Identity.outputs.principalId
+      {{- end}}
+      principalId
+    ]
+    sqlRoleDefinitions: [
+      {
+        name: 'service-access-cosmos-sql-role'
+      }
+    ]
+    capabilitiesToAdd: [ 'EnableServerless' ]
+  }
+}
+{{- end}}
+
+{{- if .DbPostgres}}
+var postgresDatabaseName = '{{ .DbPostgres.DatabaseName }}'
+var postgresDatabaseUser = 'psqladmin'
+module postgresServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4' = {
+  name: 'postgresServer'
+  params: {
     name: '${abbrs.dBforPostgreSQLServers}${resourceToken}'
     skuName: 'Standard_B1ms'
     tier: 'Burstable'
-    // Non-required parameters
-    administratorLogin: databaseUser
-    administratorLoginPassword: databasePassword
+    administratorLogin: postgresDatabaseUser
+    administratorLoginPassword: postgresDatabasePassword
     geoRedundantBackup: 'Disabled'
     passwordAuth:'Enabled'
     firewallRules: [
@@ -119,7 +177,7 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
     ]
     databases: [
       {
-        name: databaseName
+        name: postgresDatabaseName
       }
     ]
     location: location
@@ -127,6 +185,191 @@ module postgreServer 'br/public:avm/res/db-for-postgre-sql/flexible-server:0.1.4
 }
 {{- end}}
 
+{{- if .DbMySql}}
+var mysqlDatabaseName = '{{ .DbMySql.DatabaseName }}'
+var mysqlDatabaseUser = 'mysqladmin'
+module mysqlServer 'br/public:avm/res/db-for-my-sql/flexible-server:0.6.1' = {
+  name: 'mysqlServer'
+  params: {
+    name: '${abbrs.dBforMySQLServers}${resourceToken}'
+    skuName: 'Standard_B1ms'
+    tier: 'Burstable'
+    administratorLogin: mysqlDatabaseUser
+    administratorLoginPassword: mysqlDatabasePassword
+    geoRedundantBackup: 'Disabled'
+    publicNetworkAccess: 'Enabled'
+    firewallRules: [
+      {
+        name: 'AllowAllIps'
+        startIpAddress: '0.0.0.0'
+        endIpAddress: '255.255.255.255'
+      }
+    ]
+    databases: [
+      {
+        name: mysqlDatabaseName
+      }
+    ]
+    location: location
+    highAvailability: 'Disabled'
+  }
+}
+{{- end}}
+
+{{- if .StorageAccount }}
+var storageAccountName = '${abbrs.storageStorageAccounts}${resourceToken}'
+module storageAccount 'br/public:avm/res/storage/storage-account:0.17.2' = {
+  name: 'storageAccount'
+  params: {
+    name: storageAccountName
+    allowSharedKeyAccess: false
+    publicNetworkAccess: 'Enabled'
+    blobServices: {
+      {{- if .StorageAccount.Containers }}
+      containers: [
+        {{- range $index, $element := .StorageAccount.Containers}}
+        {
+          name: '{{ $element }}'
+        }
+        {{- end}}
+      ]
+      {{- end }}
+    }
+    location: location
+    roleAssignments: [
+      {  
+        principalId: principalId
+        principalType: 'User'
+        roleDefinitionIdOrName: 'Storage Blob Data Contributor'  
+      }
+      {{- range .Services}}
+      {
+        principalId: {{bicepName .Name}}Identity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'Storage Blob Data Contributor'
+      }
+      {{- end}}
+    ]
+    networkAcls: {
+      defaultAction: 'Allow'
+    }
+    tags: tags
+  }
+}
+{{end}}
+
+{{- if .AIModels}}
+var accountName = '${abbrs.cognitiveServicesAccounts}${resourceToken}'
+module account 'br/public:avm/res/cognitive-services/account:0.7.0' = {
+  name: 'accountDeployment'
+  params: {
+    tags: tags
+    kind: 'OpenAI'
+    name: accountName
+    deployments: [
+      {{- range .AIModels}}
+      {
+        name: '{{.Name}}'
+        model: {
+          format: 'OpenAI'
+          name: '{{.Model.Name}}'
+          version: '{{.Model.Version}}'
+        }
+        sku: {
+          capacity: 20
+          name: 'Standard'
+        }
+      }
+      {{- end}}
+    ]
+    location: location
+    customSubDomainName: accountName
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+resource localUserOpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, resourceGroup().id, 'localUser', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  properties: {
+    principalId: principalId
+    principalType: 'User'
+    roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  }
+}
+{{- end}}
+
+{{- if .EventHubs }}
+module eventHubNamespace 'br/public:avm/res/event-hub/namespace:0.8.0' = {
+  name: 'eventHubNamespace'
+  params: {
+    name: '${abbrs.eventHubNamespaces}${resourceToken}'
+    location: location
+    roleAssignments: [
+      {{- range .Services}}
+      {
+        principalId: {{bicepName .Name}}Identity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f526a384-b230-433a-b45c-95f59c4a2dec')
+      }
+      {{- end}}
+      {
+        principalId: principalId
+        principalType: 'User'
+        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f526a384-b230-433a-b45c-95f59c4a2dec')
+      }
+    ]
+    disableLocalAuth: true
+    eventhubs: [
+      {{- range $hub := .EventHubs.Hubs}}
+      {
+        name: '{{ $hub }}'
+      }
+      {{- end}}
+    ]
+  }
+}
+{{- end}}
+
+{{- if .ServiceBus }}
+module serviceBusNamespace 'br/public:avm/res/service-bus/namespace:0.11.2' = {
+  name: 'serviceBusNamespace'
+  params: {
+    name: '${abbrs.serviceBusNamespaces}${resourceToken}'
+    location: location
+    roleAssignments: [
+      {{- range .Services}}
+      {
+        principalId: {{bicepName .Name}}Identity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '090c5cfd-751d-490a-894a-3ce6f1109419')
+      }
+      {{- end}}
+      {
+        principalId: principalId
+        principalType: 'User'
+        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '090c5cfd-751d-490a-894a-3ce6f1109419')
+      }
+    ]
+    disableLocalAuth: true
+    queues: [
+      {{- range $queue := .ServiceBus.Queues}}
+      {
+        name: '{{ $queue }}'
+      }
+      {{- end}}
+    ]
+    topics: [
+      {{- range $topic := .ServiceBus.Topics}}
+      {
+        name: '{{ $topic }}'
+      }
+      {{- end}}
+    ]
+  }
+}
+{{- end}}
+
+{{- $infra := . -}}
 {{- range .Services}}
 
 module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
@@ -136,6 +379,17 @@ module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assi
     location: location
   }
 }
+
+{{- if .AIModels }}
+resource {{bicepName .Name}}OpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, resourceGroup().id, '{{bicepName .Name}}identity', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  properties: {
+    principalId: {{bicepName .Name}}Identity.outputs.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  }
+}
+{{- end}}
 
 module {{bicepName .Name}}FetchLatestImage './modules/fetch-container-image.bicep' = {
   name: '{{bicepName .Name}}-fetch-image'
@@ -170,6 +424,9 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
         'https://{{.Name}}.${containerAppsEnvironment.outputs.defaultDomain}'
         {{- end}}
       ]
+      allowedMethods: [
+        '*'
+      ]
     }
     {{- end}}
     scaleMinReplicas: 1
@@ -180,29 +437,39 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
         {
           name: 'mongodb-url'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/MONGODB-URL'
+          keyVaultUrl: cosmosMongo.outputs.exportedSecrets['mongodb-url'].secretUri
         }
         {{- end}}
         {{- if .DbPostgres}}
         {
-          name: 'db-pass'
-          value: databasePassword
+          name: 'postgres-password'
+          value: postgresDatabasePassword
         }
         {
           name: 'db-url'
-          value: 'postgresql://${databaseUser}:${databasePassword}@${postgreServer.outputs.fqdn}:5432/${databaseName}'
+          value: 'postgresql://${postgresDatabaseUser}:${postgresDatabasePassword}@${postgresServer.outputs.fqdn}:5432/${postgresDatabaseName}'
+        }
+        {{- end}}
+        {{- if .DbMySql}}
+        {
+          name: 'mysql-password'
+          value: mysqlDatabasePassword
+        }
+        {
+          name: 'mysql-url'
+          value: 'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
         }
         {{- end}}
         {{- if .DbRedis}}
         {
           name: 'redis-pass'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-PASSWORD'
+          keyVaultUrl: '${keyVault.outputs.uri}secrets/redis-password'
         }
         {
           name: 'redis-url'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/REDIS-URL'
+          keyVaultUrl: '${keyVault.outputs.uri}secrets/redis-url'
         }
         {{- end}}
       ],
@@ -234,22 +501,28 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             secretRef: 'mongodb-url'
           }
           {{- end}}
+          {{- if .DbCosmos}}
+          {
+            name: 'AZURE_COSMOS_ENDPOINT'
+            value: cosmos.outputs.endpoint
+          }
+          {{- end}}
           {{- if .DbPostgres}}
           {
             name: 'POSTGRES_HOST'
-            value: postgreServer.outputs.fqdn
+            value: postgresServer.outputs.fqdn
           }
           {
             name: 'POSTGRES_USERNAME'
-            value: databaseUser
+            value: postgresDatabaseUser
           }
           {
             name: 'POSTGRES_DATABASE'
-            value: databaseName
+            value: postgresDatabaseName
           }
           {
             name: 'POSTGRES_PASSWORD'
-            secretRef: 'db-pass'
+            secretRef: 'postgres-password'
           }
           {
             name: 'POSTGRES_URL'
@@ -258,6 +531,32 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'POSTGRES_PORT'
             value: '5432'
+          }
+          {{- end}}
+          {{- if .DbMySql}}
+          {
+            name: 'MYSQL_HOST'
+            value: mysqlServer.outputs.fqdn
+          }
+          {
+            name: 'MYSQL_USERNAME'
+            value: mysqlDatabaseUser
+          }
+          {
+            name: 'MYSQL_DATABASE'
+            value: mysqlDatabaseName
+          }
+          {
+            name: 'MYSQL_PASSWORD'
+            secretRef: 'mysql-password'
+          }
+          {
+            name: 'MYSQL_URL'
+            secretRef: 'mysql-url'
+          }
+          {
+            name: 'MYSQL_PORT'
+            value: '3306'
           }
           {{- end}}
           {{- if .DbRedis}}
@@ -270,23 +569,75 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: string(redis.outputs.sslPort)
           }
           {
-            name: 'REDIS_URL'
-            secretRef: 'redis-url'
-          }
-          {
             name: 'REDIS_ENDPOINT'
             value: '${redis.outputs.hostName}:${string(redis.outputs.sslPort)}'
+          }
+          {
+            name: 'REDIS_URL'
+            secretRef: 'redis-url'
           }
           {
             name: 'REDIS_PASSWORD'
             secretRef: 'redis-pass'
           }
           {{- end}}
+          {{- if .EventHubs}}
+          {
+            name: 'AZURE_EVENT_HUBS_NAME'
+            value: eventHubNamespace.outputs.name
+          }
+          {
+            name: 'AZURE_EVENT_HUBS_HOST'
+            value: '${eventHubNamespace.outputs.name}.servicebus.windows.net'
+          }
+          {{- end}}
+          {{- if .ServiceBus}}
+          {
+            name: 'AZURE_SERVICE_BUS_NAME'
+            value: serviceBusNamespace.outputs.name
+          }
+          {
+            name: 'AZURE_SERVICE_BUS_HOST'
+            value: '${serviceBusNamespace.outputs.name}.servicebus.windows.net'
+          }
+          {{- end}}
+          {{- if .StorageAccount}}
+          {
+            name: 'AZURE_STORAGE_ACCOUNT_NAME'
+            value: storageAccount.outputs.name
+          }
+          {
+            name: 'AZURE_STORAGE_BLOB_ENDPOINT'
+            value: storageAccount.outputs.serviceEndpoints.blob
+          }
+          {{- end}}
+          {{- if $infra.KeyVault}}
+          {
+            name: 'AZURE_KEY_VAULT_NAME'
+            value: keyVault.outputs.name
+          }
+          {
+            name: 'AZURE_KEY_VAULT_ENDPOINT'
+            value: keyVault.outputs.uri
+          }
+          {{- end}}
+          {{- if .AIModels}}
+          {
+            name: 'AZURE_OPENAI_ENDPOINT'
+            value: account.outputs.endpoint
+          }
+          {{- end}}
+          {{- if .HasAiFoundryProject }}
+          {
+            name: 'AZURE_AIPROJECT_CONNECTION_STRING'
+            value: aiFoundryProjectConnectionString
+          }
+          {{- end}}
           {{- if .Frontend}}
           {{- range $i, $e := .Frontend.Backends}}
           {
             name: '{{upper .Name}}_BASE_URL'
-            value: 'https://{{.Name}}.internal.${containerAppsEnvironment.outputs.defaultDomain}'
+            value: 'https://{{.Name}}.${containerAppsEnvironment.outputs.defaultDomain}'
           }
           {{- end}}
           {{- end}}
@@ -294,6 +645,12 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'PORT'
             value: '{{ .Port }}'
+          }
+          {{- end}}
+          {{- range $key, $value := .Env}}
+          {
+            name: '{{ $key }}'
+            value: {{ $value }}
           }
           {{- end}}
         ],
@@ -319,10 +676,22 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     tags: union(tags, { 'azd-service-name': '{{.Name}}' })
   }
 }
+{{- if .HasAiFoundryProject}}
+
+resource {{bicepName .Name}}backendRoleAzureAIDeveloperRG 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(subscription().id, resourceGroup().id, {{bicepName .Name}}Identity.name, '64702f94-c441-49e6-a78b-ef80e0188fee')
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '64702f94-c441-49e6-a78b-ef80e0188fee') 
+    principalId: {{bicepName .Name}}Identity.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+{{- end }}
 {{- end}}
 
 {{- if .DbRedis}}
-module redis 'br/public:avm/res/cache/redis:0.3.2' = {
+module redis 'br/public:avm/res/cache/redis:0.9.0' = {
   name: 'redisDeployment'
   params: {
     // Required parameters
@@ -330,23 +699,18 @@ module redis 'br/public:avm/res/cache/redis:0.3.2' = {
     // Non-required parameters
     location: location
     skuName: 'Basic'
-  }
-}
-
-module redisConn './modules/set-redis-conn.bicep' = {
-  name: 'redisConn'
-  params: {
-    name: redis.outputs.name
-    passwordSecretName: 'REDIS-PASSWORD'
-    urlSecretName: 'REDIS-URL'
-    keyVaultName: keyVault.outputs.name
+    secretsExportConfiguration: {
+      keyVaultResourceId: keyVault.outputs.resourceId
+      primaryAccessKeyName: 'redis-password'
+      primaryConnectionStringName: 'redis-url'
+    }
   }
 }
 {{- end}}
 
-{{- if .Services}}
+{{- if .KeyVault}}
 // Create a keyvault to store secrets
-module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
+module keyVault 'br/public:avm/res/key-vault/vault:0.12.0' = {
   name: 'keyvault'
   params: {
     name: '${abbrs.keyVaultVaults}${resourceToken}'
@@ -372,8 +736,14 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
     secrets: [
       {{- if .DbPostgres}}
       {
-        name: 'db-pass'
-        value: databasePassword
+        name: 'postgres-password'
+        value: postgresDatabasePassword
+      }
+      {{- end}}
+      {{- if .DbMySql}}
+      {
+        name: 'mysql-password'
+        value: mysqlDatabasePassword
       }
       {{- end}}
     ]
@@ -383,13 +753,39 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
 
 {{- if .Services}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
+{{- range .Services}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = {{bicepName .Name}}.outputs.resourceId
+{{- end}}
+{{- end}}
+{{- if .KeyVault}}
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.uri
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
+output AZURE_RESOURCE_VAULT_ID string = keyVault.outputs.resourceId
+{{- end}}
+{{- if  .AIModels}}
+{{- range .AIModels}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = '${account.outputs.resourceId}/deployments/{{.Name}}'
+{{- end}}
 {{- end}}
 {{- if .DbRedis}}
-output AZURE_CACHE_REDIS_ID string = redis.outputs.resourceId
+output AZURE_RESOURCE_REDIS_ID string = redis.outputs.resourceId
 {{- end}}
 {{- if .DbPostgres}}
-output AZURE_POSTGRES_FLEXIBLE_SERVER_ID string = postgreServer.outputs.resourceId
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = '${postgresServer.outputs.resourceId}/databases/{{.DbPostgres.DatabaseName}}'
+{{- end}}
+{{- if .DbMySql}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbMySql.DatabaseName}}_ID string = '${mysqlServer.outputs.resourceId}/databases/{{.DbMySql.DatabaseName}}'
+{{- end}}
+{{- if .DbCosmos }}
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmos.DatabaseName}}_ID string = '${cosmos.outputs.resourceId}/sqlDatabases/{{.DbCosmos.DatabaseName}}'
+{{- end}}
+{{- if .StorageAccount }}
+output AZURE_RESOURCE_STORAGE_ID string = storageAccount.outputs.resourceId
+{{- end}}
+{{- if .EventHubs}}
+output AZURE_RESOURCE_EVENT_HUBS_ID string = eventHubNamespace.outputs.resourceId
+{{- end}}
+{{- if .ServiceBus}}
+output AZURE_RESOURCE_SERVICE_BUS_ID string = serviceBusNamespace.outputs.resourceId
 {{- end}}
 {{ end}}

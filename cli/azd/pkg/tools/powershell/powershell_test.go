@@ -1,8 +1,12 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package powershell
 
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -23,10 +27,12 @@ func Test_Powershell_Execute(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
+		// #nosec G101
+		userPwsh := "pwsh -NoProfile"
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return true
+			return strings.Contains(args.Cmd, userPwsh)
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-			require.Equal(t, "pwsh", args.Cmd)
+			require.Equal(t, userPwsh, args.Cmd)
 			require.Equal(t, workingDir, args.Cwd)
 			require.Equal(t, scriptPath, args.Args[0])
 			require.Equal(t, env, args.Env)
@@ -34,11 +40,17 @@ func Test_Powershell_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		PowershellScript := NewPowershellScript(mockContext.CommandRunner, workingDir, env)
+		PowershellScript := NewPowershellScriptWithMockCheckPath(
+			mockContext.CommandRunner,
+			workingDir,
+			env,
+			func(options tools.ExecOptions) error {
+				return nil
+			})
 		runResult, err := PowershellScript.Execute(
 			*mockContext.Context,
 			scriptPath,
-			tools.ExecOptions{Interactive: to.Ptr(true)},
+			tools.ExecOptions{UserPwsh: userPwsh, Interactive: to.Ptr(true)},
 		)
 
 		require.NotNil(t, runResult)
@@ -54,7 +66,13 @@ func Test_Powershell_Execute(t *testing.T) {
 			return exec.NewRunResult(1, "", "error message"), errors.New("error message")
 		})
 
-		PowershellScript := NewPowershellScript(mockContext.CommandRunner, workingDir, env)
+		PowershellScript := NewPowershellScriptWithMockCheckPath(
+			mockContext.CommandRunner,
+			workingDir,
+			env,
+			func(options tools.ExecOptions) error {
+				return nil
+			})
 		runResult, err := PowershellScript.Execute(
 			*mockContext.Context,
 			scriptPath,
@@ -62,6 +80,19 @@ func Test_Powershell_Execute(t *testing.T) {
 		)
 
 		require.Equal(t, 1, runResult.ExitCode)
+		require.Error(t, err)
+	})
+
+	t.Run("NoPowerShellInstalled", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+
+		PowershellScript := NewPowershellScript(mockContext.CommandRunner, workingDir, env)
+		_, err := PowershellScript.Execute(
+			*mockContext.Context,
+			scriptPath,
+			tools.ExecOptions{Interactive: to.Ptr(true)},
+		)
+
 		require.Error(t, err)
 	})
 
@@ -84,7 +115,13 @@ func Test_Powershell_Execute(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-			PowershellScript := NewPowershellScript(mockContext.CommandRunner, workingDir, env)
+			PowershellScript := NewPowershellScriptWithMockCheckPath(
+				mockContext.CommandRunner,
+				workingDir,
+				env,
+				func(options tools.ExecOptions) error {
+					return nil
+				})
 			runResult, err := PowershellScript.Execute(*mockContext.Context, scriptPath, test.value)
 
 			require.NotNil(t, runResult)

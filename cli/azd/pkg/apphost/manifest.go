@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package apphost
 
 import (
@@ -97,6 +100,14 @@ type Resource struct {
 
 	// project.v1 and container.v1 uses deployment when the AppHost owns the ACA bicep definitions.
 	Deployment *DeploymentMetadata `json:"deployment,omitempty"`
+
+	// Present on bicep modules to control the scope of the module.
+	Scope *BicepModuleScope `json:"scope,omitempty"`
+}
+
+// BicepModuleScope is the scope of a bicep module.
+type BicepModuleScope struct {
+	ResourceGroup *string `json:"resourceGroup,omitempty"`
 }
 
 type DeploymentMetadata struct {
@@ -179,6 +190,9 @@ type Input struct {
 	Type    string        `json:"type"`
 	Secret  bool          `json:"secret"`
 	Default *InputDefault `json:"default,omitempty"`
+	// When the input is used to set a bicep module scope, the scope is set here.
+	// This allows generation to add azdMetadata to the bicep parameter.
+	scope *string
 }
 
 type InputDefaultGenerate struct {
@@ -239,7 +253,7 @@ func ManifestFromAppHost(
 
 	for resourceName, res := range manifest.Resources {
 		if res.Path != nil {
-			if res.Type == "azure.bicep.v0" {
+			if res.Type == "azure.bicep.v0" || res.Type == "azure.bicep.v1" {
 				e := manifest.BicepFiles.MkdirAll(resourceName, osutil.PermissionDirectory)
 				if e != nil {
 					return nil, e
@@ -268,9 +282,9 @@ func ManifestFromAppHost(
 		}
 
 		if res.Deployment != nil {
-			if res.Deployment.Type != "azure.bicep.v0" {
+			if res.Deployment.Type != "azure.bicep.v0" && res.Deployment.Type != "azure.bicep.v1" {
 				return nil, fmt.Errorf(
-					"unexpected deployment type %q. Supported types: [azure.bicep.v0]", res.Deployment.Type)
+					"unexpected deployment type %q. Supported types: [azure.bicep.v0, azure.bicep.v1]", res.Deployment.Type)
 			}
 			// use a folder with the name of the resource
 			e := manifest.BicepFiles.MkdirAll(resourceName, osutil.PermissionDirectory)
@@ -295,7 +309,9 @@ func ManifestFromAppHost(
 		}
 		if res.BindMounts != nil {
 			for _, bindMount := range res.BindMounts {
-				bindMount.Source = filepath.Join(manifestDir, bindMount.Source)
+				if !filepath.IsAbs(bindMount.Source) {
+					bindMount.Source = filepath.Join(manifestDir, bindMount.Source)
+				}
 			}
 		}
 		if res.Type == "container.v1" {

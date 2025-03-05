@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package project
 
 import (
@@ -26,8 +29,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
 	"github.com/azure/azure-dev/cli/azd/pkg/kustomize"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -811,6 +814,7 @@ func createAksServiceTarget(
 	helmCli := helm.NewCli(mockContext.CommandRunner)
 	kustomizeCli := kustomize.NewCli(mockContext.CommandRunner)
 	dockerCli := docker.NewCli(mockContext.CommandRunner)
+	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 	kubeLoginCli := kubelogin.NewCli(mockContext.CommandRunner)
 	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
@@ -831,8 +835,8 @@ func createAksServiceTarget(
 		On("GetTargetResource", *mockContext.Context, "SUBSCRIPTION_ID", serviceConfig).
 		Return(targetResource, nil)
 
-	managedClustersService := azcli.NewManagedClustersService(credentialProvider, mockContext.ArmClientOptions)
-	containerRegistryService := azcli.NewContainerRegistryService(
+	managedClustersService := azapi.NewManagedClustersService(credentialProvider, mockContext.ArmClientOptions)
+	containerRegistryService := azapi.NewContainerRegistryService(
 		credentialProvider,
 		dockerCli,
 		mockContext.ArmClientOptions,
@@ -849,6 +853,7 @@ func createAksServiceTarget(
 		containerRegistryService,
 		remoteBuildManager,
 		dockerCli,
+		dotnetCli,
 		mockContext.Console,
 		cloud.AzurePublic(),
 	)
@@ -950,9 +955,9 @@ func (m *MockResourceManager) GetServiceResources(
 	subscriptionId string,
 	resourceGroupName string,
 	serviceConfig *ServiceConfig,
-) ([]*azapi.Resource, error) {
+) ([]*azapi.ResourceExtended, error) {
 	args := m.Called(ctx, subscriptionId, resourceGroupName, serviceConfig)
-	return args.Get(0).([]*azapi.Resource), args.Error(1)
+	return args.Get(0).([]*azapi.ResourceExtended), args.Error(1)
 }
 
 func (m *MockResourceManager) GetServiceResource(
@@ -961,9 +966,9 @@ func (m *MockResourceManager) GetServiceResource(
 	resourceGroupName string,
 	serviceConfig *ServiceConfig,
 	rerunCommand string,
-) (*azapi.Resource, error) {
+) (*azapi.ResourceExtended, error) {
 	args := m.Called(ctx, subscriptionId, resourceGroupName, serviceConfig, rerunCommand)
-	return args.Get(0).(*azapi.Resource), args.Error(1)
+	return args.Get(0).(*azapi.ResourceExtended), args.Error(1)
 }
 
 func (m *MockResourceManager) GetTargetResource(

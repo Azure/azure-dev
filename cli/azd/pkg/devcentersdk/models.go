@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package devcentersdk
 
 import (
@@ -173,14 +176,14 @@ const (
 )
 
 type Environment struct {
-	Name                      string
-	EnvironmentType           string
-	User                      string
-	ProvisioningState         ProvisioningState
-	ResourceGroupId           string
-	CatalogName               string
-	EnvironmentDefinitionName string
-	Parameters                map[string]any
+	Name                      string            `json:"name"`
+	EnvironmentType           string            `json:"environmentType"`
+	User                      string            `json:"user"`
+	ProvisioningState         ProvisioningState `json:"provisioningState"`
+	ResourceGroupId           string            `json:"resourceGroupId"`
+	CatalogName               string            `json:"catalogName"`
+	EnvironmentDefinitionName string            `json:"environmentDefinitionName"`
+	Parameters                map[string]any    `json:"parameters"`
 }
 
 type EnvironmentListResponse struct {
@@ -205,3 +208,23 @@ type OperationStatus struct {
 	StartTime time.Time `json:"startTime"`
 	EndTime   time.Time `json:"endTime"`
 }
+
+type OutputListResponse struct {
+	Outputs map[string]OutputParameter `json:"outputs"`
+}
+
+type OutputParameter struct {
+	Type      OutputParameterType `json:"type"`
+	Value     any                 `json:"value"`
+	Sensitive bool                `json:"sensitive"`
+}
+
+type OutputParameterType string
+
+const (
+	OutputParameterTypeArray   OutputParameterType = "array"
+	OutputParameterTypeBoolean OutputParameterType = "boolean"
+	OutputParameterTypeNumber  OutputParameterType = "number"
+	OutputParameterTypeObject  OutputParameterType = "object"
+	OutputParameterTypeString  OutputParameterType = "string"
+)

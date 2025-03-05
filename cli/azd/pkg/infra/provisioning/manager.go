@@ -332,6 +332,13 @@ func (m *Manager) UpdateEnvironment(
 	return nil
 }
 
+type EnsureSubscriptionAndLocationOptions struct {
+	// LocationFilterPredicate is a function to filter the locations being displayed if prompting the user for the location.
+	LocationFiler prompt.LocationFilterPredicate
+	// SelectDefaultLocation is the default location that azd mark as selected when prompting the user for the location.
+	SelectDefaultLocation *string
+}
+
 // EnsureSubscriptionAndLocation ensures that that that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION)
 // variables are set in the environment, prompting the user for the values if they do not exist.
 // locationFilter, when non-nil, filters the locations being displayed.
@@ -340,7 +347,7 @@ func EnsureSubscriptionAndLocation(
 	envManager environment.Manager,
 	env *environment.Environment,
 	prompter prompt.Prompter,
-	locationFiler prompt.LocationFilterPredicate,
+	options EnsureSubscriptionAndLocationOptions,
 ) error {
 	subId := env.GetSubscriptionId()
 	if subId == "" {
@@ -366,7 +373,8 @@ func EnsureSubscriptionAndLocation(
 			ctx,
 			env.GetSubscriptionId(),
 			"Select an Azure location to use:",
-			locationFiler,
+			options.LocationFiler,
+			options.SelectDefaultLocation,
 		)
 		if err != nil {
 			return err
@@ -376,6 +384,32 @@ func EnsureSubscriptionAndLocation(
 
 	// Same as before, this make sure the location is persisted in the .env file.
 	env.SetLocation(location)
+	return envManager.Save(ctx, env)
+}
+
+func EnsureSubscription(
+	ctx context.Context,
+	envManager environment.Manager,
+	env *environment.Environment,
+	prompter prompt.Prompter,
+) error {
+	subId := env.GetSubscriptionId()
+	if subId == "" {
+		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")
+		if err != nil {
+			return err
+		}
+		subId = subscriptionId
+	}
+	// GetSubscriptionId() can get the value from the .env file or from system environment.
+	// We want to ensure that, if the value came from the system environment, it is persisted in the .env file.
+	// By doing this, we ensure that any command depending on .env values does not need to read system env.
+	// For example, on CI, when running `azd provision`, we want the .env to have the subscription id and location
+	// so that `azd deploy` can just use the values from .env w/o checking os-env again.
+	env.SetSubscriptionId(subId)
+	if err := envManager.Save(ctx, env); err != nil {
+		return err
+	}
 	return envManager.Save(ctx, env)
 }
 

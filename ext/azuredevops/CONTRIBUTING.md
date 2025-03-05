@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-Learn about [Azure devops custom tasks](https://learn.microsoft.com/en-us/azure/devops/extend/develop/add-build-task?view=azure-devops). 
+Learn about [Azure devops custom tasks](https://learn.microsoft.com/azure/devops/extend/develop/add-build-task?view=azure-devops). 
 
 ## Submitting A Change
 
@@ -31,9 +31,17 @@ behalf.
 
 From `setupAzd` folder, run `npm test`
 
+### Testing in Azure Devops using private extension
+
+- Update `publisher` to your test use case and change `galleryFlags` to `private` in `vss-extension.json`.
+- Use a new `id` in `setupAzd/task.json`.
+- Run the `build` steps to produce the `vsix` release artifact.
+- Publish it to the Marketplace in private mode and share it with your test organization. 
+- Go to your test organization and install the shared extension. Then, you could run the private extension for testing. 
+
 ## Release
 
 - Update `setupAzd/task.json` with the `version` number.
 - Update `vss-extension.json` with the `version` to release.
 - Run the `build` steps to produce the `vsix` release artifact.
-- Follow [publish steps](https://learn.microsoft.com/en-us/azure/devops/extend/develop/add-build-task?view=azure-devops#5-publish-your-extension) to update the Marketplace.
+- Follow [publish steps](https://learn.microsoft.com/azure/devops/extend/develop/add-build-task?view=azure-devops#5-publish-your-extension) to update the Marketplace.

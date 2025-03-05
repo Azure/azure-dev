@@ -1,109 +1,43 @@
-import * as task from 'azure-pipelines-task-lib/task';
+import * as task from 'azure-pipelines-task-lib/task'
 import * as cp from 'child_process'
-import path from 'path';
-import * as fs from 'fs'
-import download from 'download';
-import decompress from 'decompress';
 
 export async function runMain(): Promise<void> {
     try {
-        task.setTaskVariable('hasRunMain', 'true');
-        const version = task.getInput('version') || 'latest'
-
-        console.log("using version: " + version)
-
-        // get architecture and os
-        const architecture = process.arch
+        task.setTaskVariable('hasRunMain', 'true')
         const os = process.platform
-
-        // map for different platform and arch
-        const extensionMap = {
-            linux: '.tar.gz',
-            darwin: '.zip',
-            win32: '.zip'
+        const localAppData = process.env.LocalAppData
+        const envPath = process.env.PATH
+        if (os === 'win32' && !localAppData) {
+            task.setResult(task.TaskResult.Failed, 'LocalAppData environment variable is not defined.')
+            return
         }
-
-        const exeMap = {
-            linux: '',
-            darwin: '',
-            win32: '.exe'
+        if (!envPath) {
+            task.setResult(task.TaskResult.Failed, 'PATH environment variable is not defined.')
+            return
         }
+        const version = task.getInput('version') || 'latest'
+        const windowsInstallScript = `powershell -c "$scriptPath = \\"$($env:TEMP)\\install-azd.ps1\\"; Invoke-RestMethod 'https://aka.ms/install-azd.ps1' -OutFile $scriptPath; . $scriptPath -Version '${version}' -Verbose:$true; Remove-Item $scriptPath"`
+        const linuxOrMacOSInstallScript = `curl -fsSL https://aka.ms/install-azd.sh | sudo bash -s -- --version ${version} --verbose`
 
-        const arm64Map = {
-            x64: 'amd64',
-            arm64: 'arm64-beta'
-        }
+        console.log(`Installing azd version ${version} on ${os}.`)
 
-        const platformMap = {
-            linux: 'linux',
-            darwin: 'darwin',
-            win32: 'windows'
-        }
+        if (os === 'win32') {
+            console.log(cp.execSync(windowsInstallScript).toString())
 
-        // get install url
-        const installArray = installUrlForOS(
-            os,
-            architecture,
-            platformMap,
-            arm64Map,
-            extensionMap,
-            exeMap
-        )
-
-        const url = `https://azdrelease.azureedge.net/azd/standalone/release/${version}/${installArray[0]}`
-
-        console.log(`The Azure Developer CLI collects usage data and sends that usage data to Microsoft in order to help us improve your experience.
-You can opt-out of telemetry by setting the AZURE_DEV_COLLECT_TELEMETRY environment variable to 'no' in the shell you use.
-
-Read more about Azure Developer CLI telemetry: https://github.com/Azure/azure-dev#data-collection`)
-
-        console.log(`Installing azd from ${url}`)
-        const buffer = await download(url);
-        const extractedTo = path.join(task.cwd(), 'azd-install');
-        await decompress(buffer, extractedTo);
-
-        let binName
-        if (os !== 'win32') {
-            binName = 'azd';
+            // Add azd to PATH
+            task.setVariable('PATH', `${envPath};${localAppData}\\Programs\\Azure Dev CLI`)
         } else {
-            binName = 'azd.exe';
+            console.log(cp.execSync(linuxOrMacOSInstallScript).toString())
         }
-        const binPath = path.join(extractedTo, binName);
 
-        fs.symlinkSync(
-            path.join(extractedTo, installArray[1]),
-            binPath
-        )
-        task.prependPath(extractedTo)
-        console.log(`azd installed to ${extractedTo}`)
-
-        task.exec(binPath, 'version')
+        // Run `azd version` to make sure if azd installation failed, it returns error on windows
+        if (os === 'win32') {
+            const azdVersion = `"${localAppData}\\Programs\\Azure Dev CLI\\azd.exe" version`
+            cp.execSync(azdVersion)
+        }
     } catch (err: any) {
-        task.setResult(task.TaskResult.Failed, err.message);
+        task.setResult(task.TaskResult.Failed, err.message)
     }
 }
 
-function installUrlForOS(
-    os: string,
-    architecture: string,
-    platformMap: Record<string, string>,
-    archMap: Record<string, string>,
-    extensionMap: Record<string, string>,
-    exeMap: Record<string, string>
-): [string, string] {
-    const platformPart = `${platformMap[os]}`
-    const archPart = `${archMap[architecture]}`
-
-    if (platformPart === `undefined` || archPart === `undefined`) {
-        throw new Error(
-            `Unsupported platform and architecture: ${architecture} ${os}`
-        )
-    }
-
-    const installUrl = `azd-${platformPart}-${archPart}${extensionMap[os]}`
-    const installUrlForRename = `azd-${platformPart}-${archPart}${exeMap[os]}`
-
-    return [installUrl, installUrlForRename]
-}
-
-runMain();
+runMain()

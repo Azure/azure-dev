@@ -752,7 +752,7 @@ func validatePreflightError(
 			defer rawResponse.Body.Close()
 			body, errOnRawResponse := io.ReadAll(rawResponse.Body)
 			if errOnRawResponse != nil {
-				return fmt.Errorf("failed to read response error body from preflight validation api to %s: %w",
+				return fmt.Errorf("failed to read response error body from validation api to %s: %w",
 					typeMessage, errOnRawResponse)
 			}
 
@@ -760,7 +760,7 @@ func validatePreflightError(
 		}
 	}
 	return fmt.Errorf(
-		"validating preflight to %s:\n\nPreflight Error Details:\n%w",
+		"validating deployment to %s:\n\nValidation Error Details:\n%w",
 		typeMessage,
 		err,
 	)

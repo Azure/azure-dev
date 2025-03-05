@@ -107,9 +107,9 @@
                         "type": "string",
                         "title": "Path to the service source code directory"
                     },
-                    "parentPath": {
+                    "rootPath": {
                         "type": "string",
-                        "title": "Path to the parent directory of the service"
+                        "title": "Path to the root directory of the service"
                     },
                     "image": {
                         "type": "string",

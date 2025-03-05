@@ -47,7 +47,7 @@ func TestDetect(t *testing.T) {
 				{
 					Language:      Java,
 					Path:          "java-multimodules/application",
-					ParentPath:    filepath.Join(dir, "java-multimodules"),
+					RootPath:      filepath.Join(dir, "java-multimodules"),
 					DetectionRule: "Inferred by presence of: pom.xml",
 					DatabaseDeps: []DatabaseDep{
 						DbMySql,
@@ -57,25 +57,25 @@ func TestDetect(t *testing.T) {
 				{
 					Language:      Java,
 					Path:          "java-multimodules/library",
-					ParentPath:    filepath.Join(dir, "java-multimodules"),
+					RootPath:      filepath.Join(dir, "java-multimodules"),
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{
 					Language:      Java,
 					Path:          "java-multimodules/module1",
-					ParentPath:    filepath.Join(dir, "java-multimodules"),
+					RootPath:      filepath.Join(dir, "java-multimodules"),
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{
 					Language:      Java,
 					Path:          "java-multimodules/module2/submodule1",
-					ParentPath:    filepath.Join(dir, "java-multimodules"), // point to the root, not direct parent
+					RootPath:      filepath.Join(dir, "java-multimodules"), // point to the root, not direct parent
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{
 					Language:      Java,
 					Path:          "java-multimodules/notmodule",
-					ParentPath:    "",
+					RootPath:      "",
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{
@@ -151,7 +151,7 @@ func TestDetect(t *testing.T) {
 				{
 					Language:      Java,
 					Path:          "java-multimodules/application",
-					ParentPath:    filepath.Join(dir, "java-multimodules"),
+					RootPath:      filepath.Join(dir, "java-multimodules"),
 					DetectionRule: "Inferred by presence of: pom.xml",
 					DatabaseDeps: []DatabaseDep{
 						DbMySql,
@@ -161,25 +161,25 @@ func TestDetect(t *testing.T) {
 				{
 					Language:      Java,
 					Path:          "java-multimodules/library",
-					ParentPath:    filepath.Join(dir, "java-multimodules"),
+					RootPath:      filepath.Join(dir, "java-multimodules"),
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{
 					Language:      Java,
 					Path:          "java-multimodules/module1",
-					ParentPath:    filepath.Join(dir, "java-multimodules"),
+					RootPath:      filepath.Join(dir, "java-multimodules"),
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{
 					Language:      Java,
 					Path:          "java-multimodules/module2/submodule1",
-					ParentPath:    filepath.Join(dir, "java-multimodules"), // point to the root, not direct parent
+					RootPath:      filepath.Join(dir, "java-multimodules"), // point to the root, not direct parent
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{
 					Language:      Java,
 					Path:          "java-multimodules/notmodule",
-					ParentPath:    "",
+					RootPath:      "",
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 			},
@@ -204,7 +204,7 @@ func TestDetect(t *testing.T) {
 				{
 					Language:      Java,
 					Path:          "java-multimodules/application",
-					ParentPath:    filepath.Join(dir, "java-multimodules"),
+					RootPath:      filepath.Join(dir, "java-multimodules"),
 					DetectionRule: "Inferred by presence of: pom.xml",
 					DatabaseDeps: []DatabaseDep{
 						DbMySql,
@@ -214,25 +214,25 @@ func TestDetect(t *testing.T) {
 				{
 					Language:      Java,
 					Path:          "java-multimodules/library",
-					ParentPath:    filepath.Join(dir, "java-multimodules"),
+					RootPath:      filepath.Join(dir, "java-multimodules"),
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{
 					Language:      Java,
 					Path:          "java-multimodules/module1",
-					ParentPath:    filepath.Join(dir, "java-multimodules"),
+					RootPath:      filepath.Join(dir, "java-multimodules"),
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{
 					Language:      Java,
 					Path:          "java-multimodules/module2/submodule1",
-					ParentPath:    filepath.Join(dir, "java-multimodules"), // point to the root, not direct parent
+					RootPath:      filepath.Join(dir, "java-multimodules"), // point to the root, not direct parent
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{
 					Language:      Java,
 					Path:          "java-multimodules/notmodule",
-					ParentPath:    "",
+					RootPath:      "",
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 			},
@@ -260,7 +260,7 @@ func TestDetect(t *testing.T) {
 				{
 					Language:      Java,
 					Path:          "java-multimodules/application",
-					ParentPath:    filepath.Join(dir, "java-multimodules"),
+					RootPath:      filepath.Join(dir, "java-multimodules"),
 					DetectionRule: "Inferred by presence of: pom.xml",
 					DatabaseDeps: []DatabaseDep{
 						DbMySql,
@@ -270,25 +270,25 @@ func TestDetect(t *testing.T) {
 				{
 					Language:      Java,
 					Path:          "java-multimodules/library",
-					ParentPath:    filepath.Join(dir, "java-multimodules"),
+					RootPath:      filepath.Join(dir, "java-multimodules"),
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{
 					Language:      Java,
 					Path:          "java-multimodules/module1",
-					ParentPath:    filepath.Join(dir, "java-multimodules"),
+					RootPath:      filepath.Join(dir, "java-multimodules"),
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{
 					Language:      Java,
 					Path:          "java-multimodules/module2/submodule1",
-					ParentPath:    filepath.Join(dir, "java-multimodules"), // point to the root, not direct parent
+					RootPath:      filepath.Join(dir, "java-multimodules"), // point to the root, not direct parent
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{
 					Language:      Java,
 					Path:          "java-multimodules/notmodule",
-					ParentPath:    "",
+					RootPath:      "",
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{

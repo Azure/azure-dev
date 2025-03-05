@@ -17,9 +17,9 @@ import (
 )
 
 type javaDetector struct {
-	mvnCli         *maven.Cli
-	rootProjects   []mavenProject
-	moduleProjects map[string]mavenProject
+	mvnCli                  *maven.Cli
+	rootProjects            []mavenProject
+	modulePathToRootProject map[string]mavenProject
 }
 
 func (jd *javaDetector) Language() Language {
@@ -47,8 +47,8 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 				// 1) the project path is under the root project
 				// 2) the project is the module of root project
 				underRootProject := strings.HasPrefix(pomFile, filepath.Dir(rootProject.path)+string(filepath.Separator))
-				moduleOfRootProject, exist := jd.moduleProjects[project.path]
-				if underRootProject && exist && moduleOfRootProject.path == rootProject.path {
+				moduleOfRootProject, exists := jd.modulePathToRootProject[project.path]
+				if underRootProject && exists && moduleOfRootProject.path == rootProject.path {
 					currentRoot = &rootProject
 					break
 				}
@@ -63,7 +63,7 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 				return nil, fmt.Errorf("detecting dependencies: %w", err)
 			}
 			if currentRoot != nil {
-				result.ParentPath = currentRoot.path
+				result.RootPath = currentRoot.path
 			}
 
 			return result, nil
@@ -153,17 +153,17 @@ func detectDependencies(mavenProject *mavenProject, project *Project) (*Project,
 
 // captureRootAndModules records the root and modules projects to detect parent later
 func (jd *javaDetector) captureRootAndModules(mavenProject mavenProject, path string) {
-	if _, ok := jd.moduleProjects[mavenProject.path]; !ok {
+	if _, ok := jd.modulePathToRootProject[mavenProject.path]; !ok {
 		// Add into root projects if it's new root
 		jd.rootProjects = append(jd.rootProjects, mavenProject)
 	}
 	for _, module := range mavenProject.Modules {
 		modulePath := filepath.Join(path, module)
 		// modulePath points to the actual root, not current direct parent
-		jd.moduleProjects[modulePath] = mavenProject
+		jd.modulePathToRootProject[modulePath] = mavenProject
 		for {
-			if result, ok := jd.moduleProjects[jd.moduleProjects[modulePath].path]; ok {
-				jd.moduleProjects[modulePath] = result
+			if result, ok := jd.modulePathToRootProject[jd.modulePathToRootProject[modulePath].path]; ok {
+				jd.modulePathToRootProject[modulePath] = result
 			} else {
 				break
 			}

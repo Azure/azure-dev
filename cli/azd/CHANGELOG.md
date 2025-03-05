@@ -1,14 +1,36 @@
 # Release History
 
-## 1.13.0-beta.1 (Unreleased)
+## 1.13.0 (2025-03-05)
 
 ### Features Added
 
-### Breaking Changes
+- [[4841]](https://github.com/Azure/azure-dev/pull/4841) `azd add` support for Azure AI Services models and Azure AI Foundry resources. Also add intelligent filtering support for location Bicep parameter based on AI model quota and usage info.
+- [[4780]](https://github.com/Azure/azure-dev/pull/4780) `azd add` support for Azure Cosmos DB. Thanks @saragluna for the contribution!
+- [[4783]](https://github.com/Azure/azure-dev/pull/4783) `azd add` support for Azure Database for MySQL. Thanks @saragluna for the contribution!
+- [[4842]](https://github.com/Azure/azure-dev/pull/4842) `azd add` support for Azure Key Vault.
+- [[4743]](https://github.com/Azure/azure-dev/pull/4743) `azd add` support for Azure Service Bus and Azure Event Hubs.
+- [[4765]](https://github.com/Azure/azure-dev/pull/4765) `azd add` support for Azure Storage (blob service).
+- [[4859]](https://github.com/Azure/azure-dev/pull/4859) Add `docker` language type to support containerized applications written in languages like Go without native support in azd.
+- [[4770]](https://github.com/Azure/azure-dev/pull/4770) Add support for environment secrets in pipeline configuration.
+- [[4547]](https://github.com/Azure/azure-dev/pull/4547) Add warning to `azd env set` when setting a key that already exists in a different casing.
+- [[4872]](https://github.com/Azure/azure-dev/pull/4872) Improve error message when running `pwsh` hooks without PowerShell 7 installed.
 
 ### Bugs Fixed
 
+- [[4806]](https://github.com/Azure/azure-dev/pull/4806) Fix error retrieving effective POM for multi-module Maven projects. Thanks @rujche for the contribution!
+- [[4773]](https://github.com/Azure/azure-dev/pull/4773) Fix error packaging app code with directory symlinks.
+- [[4807]](https://github.com/Azure/azure-dev/pull/4807) Fix YAML parsing to better handle nested structures.
+- [[4847]](https://github.com/Azure/azure-dev/pull/4847) Improve color consistency to align with design guidelines.
+- [[4801]](https://github.com/Azure/azure-dev/pull/4801), [[4782]](https://github.com/Azure/azure-dev/pull/4782) Fix Aspire bind mounts on Windows paths outside of C: drive and add support for single file binding.
+- [[4789]](https://github.com/Azure/azure-dev/pull/4789) Fix container entrypoints not being respected for Aspire.
+- [[4849]](https://github.com/Azure/azure-dev/pull/4849) Restrict password generation character set to be compatible with Aspire.
+- [[4850]](https://github.com/Azure/azure-dev/pull/4850) Support `azd init --from-code --no-prompt` in CI to initialize and deploy Aspire apps without prompting.
+
 ### Other Changes
+
+- [[3976]](https://github.com/Azure/azure-dev/pull/3976) Convert azd templates to use AVM instead of infra/core.
+- [[4797]](https://github.com/Azure/azure-dev/pull/4797) Add GitHub Copilot for Azure telemetry user agent type.
+- [[4784]](https://github.com/Azure/azure-dev/pull/4784) Correct links in `CONTRIBUTING.md`. Thanks @Lunatico9 for the contribution!
 
 ## 1.12.0 (2025-02-05)
 

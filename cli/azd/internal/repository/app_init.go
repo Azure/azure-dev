@@ -362,6 +362,8 @@ func prjConfigFromDetect(
 		svc.Host = project.ContainerAppTarget
 		svc.RelativePath = rel
 
+		svc.ParentPath = prj.ParentPath
+
 		language, supported := languageMap[prj.Language]
 		if !supported {
 			continue

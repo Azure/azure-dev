@@ -141,6 +141,9 @@ type Project struct {
 	// Experimental: Database dependencies inferred through heuristics while scanning dependencies in the project.
 	DatabaseDeps []DatabaseDep
 
+	// The path to the parent project directory.
+	ParentPath string
+
 	// The path to the project directory.
 	Path string
 
@@ -179,7 +182,9 @@ type projectDetector interface {
 var allDetectors = []projectDetector{
 	// Order here determines precedence when two projects are in the same directory.
 	// This is unlikely to occur in practice, but reordering could help to break the tie in these cases.
-	&javaDetector{},
+	&javaDetector{
+		moduleProjects: make(map[string]mavenProject),
+	},
 	&dotNetAppHostDetector{
 		// TODO(ellismg): Remove ambient authority.
 		dotnetCli: dotnet.NewCli(exec.NewCommandRunner(nil)),

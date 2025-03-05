@@ -107,6 +107,10 @@
                         "type": "string",
                         "title": "Path to the service source code directory"
                     },
+                    "parentPath": {
+                        "type": "string",
+                        "title": "Path to the parent directory of the service"
+                    },
                     "image": {
                         "type": "string",
                         "title": "Optional. The source image to be used for the container image instead of building from source. Supports environment variable substitution.",

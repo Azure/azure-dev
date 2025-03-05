@@ -4,17 +4,19 @@
 package ux
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"slices"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
 
 	"dario.cat/mergo"
 	"github.com/eiannone/keyboard"
-	"github.com/fatih/color"
 )
 
 // ConfirmOptions represents the options for the Confirm component.
@@ -107,89 +109,87 @@ func (p *Confirm) WithCanvas(canvas Canvas) Visual {
 }
 
 // Ask prompts the user to confirm a message.
-func (p *Confirm) Ask() (*bool, error) {
+func (p *Confirm) Ask(ctx context.Context) (*bool, error) {
 	if p.canvas == nil {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
-	}
-
-	if err := p.canvas.Run(); err != nil {
-		return nil, err
 	}
 
 	inputConfig := &internal.InputConfig{
 		InitialValue:   p.displayValue,
 		IgnoreHintKeys: true,
 	}
-	input, done, err := p.input.ReadInput(inputConfig)
+
+	if err := p.canvas.Run(); err != nil {
+		return nil, err
+	}
+
+	done := func() {
+		if err := p.canvas.Update(); err != nil {
+			log.Printf("Error updating canvas: %s\n", err.Error())
+		}
+	}
+
+	err := p.input.ReadInput(ctx, inputConfig, func(args *internal.KeyPressEventArgs) (bool, error) {
+		defer done()
+
+		if args.Cancelled {
+			p.cancelled = true
+			return false, nil
+		}
+
+		p.showHelp = args.Hint
+
+		if args.Key == keyboard.KeyEnter {
+			p.submitted = true
+
+			if !p.hasValidationError {
+				p.complete = true
+			}
+		} else {
+			p.hasValidationError = false
+			if args.Value == "" && p.options.DefaultValue != nil {
+				p.value = p.options.DefaultValue
+				p.displayValue = getBooleanString(*p.value)
+			} else {
+				value, err := parseBooleanString(string(args.Char))
+				if err != nil {
+					p.hasValidationError = true
+					p.value = nil
+					p.displayValue = args.Value
+				} else {
+					p.value = value
+					p.displayValue = getBooleanString(*value)
+				}
+			}
+		}
+
+		if !p.hasValidationError {
+			p.input.ResetValue()
+		}
+
+		if p.complete {
+			return false, nil
+		}
+
+		return true, nil
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	for {
-		select {
-		case <-p.input.SigChan:
-			p.cancelled = true
-			done()
-			if err := p.canvas.Update(); err != nil {
-				return nil, err
-			}
-
-			return nil, ErrCancelled
-
-		case msg := <-input:
-			p.showHelp = msg.Hint
-
-			if msg.Key == keyboard.KeyEnter {
-				p.submitted = true
-
-				if !p.hasValidationError {
-					p.complete = true
-				}
-			} else {
-				p.hasValidationError = false
-				if msg.Value == "" && p.options.DefaultValue != nil {
-					p.value = p.options.DefaultValue
-					p.displayValue = getBooleanString(*p.value)
-				} else {
-					value, err := parseBooleanString(string(msg.Char))
-					if err != nil {
-						p.hasValidationError = true
-						p.value = nil
-						p.displayValue = msg.Value
-					} else {
-						p.value = value
-						p.displayValue = getBooleanString(*value)
-					}
-				}
-			}
-
-			if !p.hasValidationError {
-				p.input.ResetValue()
-			}
-
-			if err := p.canvas.Update(); err != nil {
-				done()
-				return nil, err
-			}
-
-			if p.complete {
-				done()
-				return p.value, nil
-			}
-		}
-	}
+	return p.value, nil
 }
 
 // Render renders the Confirm component.
 func (p *Confirm) Render(printer Printer) error {
-	printer.Fprintf(color.CyanString("? "))
+	printer.Fprintf(output.WithHighLightFormat("? "))
 
 	// Message
 	printer.Fprintf(BoldString("%s: ", p.options.Message))
 
 	// Hint
 	if !p.cancelled && !p.complete && p.options.Hint != "" {
-		printer.Fprintf("%s ", color.CyanString(p.options.Hint))
+		printer.Fprintf("%s ", output.WithHighLightFormat(p.options.Hint))
 	}
 
 	// Value
@@ -197,11 +197,11 @@ func (p *Confirm) Render(printer Printer) error {
 	valueOutput := rawStringValue
 
 	if p.complete || p.value == p.options.DefaultValue {
-		valueOutput = color.CyanString(rawStringValue)
+		valueOutput = output.WithHighLightFormat(rawStringValue)
 	}
 
 	if p.cancelled {
-		valueOutput = color.RedString("(Cancelled)")
+		valueOutput = output.WithErrorFormat("(Cancelled)")
 	}
 
 	printer.Fprintf(valueOutput)
@@ -215,17 +215,16 @@ func (p *Confirm) Render(printer Printer) error {
 
 	// Validation error
 	if !p.showHelp && p.hasValidationError {
-		printer.Fprintln(color.YellowString("Enter a valid value"))
+		printer.Fprintln(output.WithWarningFormat("Enter a valid value"))
 	}
 
 	// Hint
 	if p.showHelp && p.options.HelpMessage != "" {
 		printer.Fprintln()
 		printer.Fprintf(
-			color.HiMagentaString("%s %s\n",
-				BoldString("Hint:"),
-				p.options.HelpMessage,
-			),
+			"%s %s\n",
+			output.WithHintFormat(BoldString("Hint:")),
+			output.WithHintFormat(p.options.HelpMessage),
 		)
 	}
 

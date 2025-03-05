@@ -8,12 +8,17 @@ import (
 	"io"
 	"math"
 	"os"
+	"os/signal"
 	"regexp"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
+	"github.com/nathan-fiscaletti/consolesize-go"
 )
+
+const SIGWINCH = syscall.Signal(0x1c)
 
 var (
 	specialTextRegex = regexp.MustCompile("\x1b\\[[0-9;]*m")
@@ -39,20 +44,28 @@ func NewPrinter(writer io.Writer) Printer {
 		writer = os.Stdout
 	}
 
-	return &printer{
+	width, _ := consolesize.GetConsoleSize()
+
+	printer := &printer{
 		Cursor: internal.NewCursor(writer),
 
 		writer:         writer,
 		currentLine:    "",
 		size:           newCanvasSize(),
 		cursorPosition: nil,
+		consoleWidth:   width,
 	}
+
+	printer.listenForResize()
+
+	return printer
 }
 
 type printer struct {
 	internal.Cursor
 
 	writer         io.Writer
+	consoleWidth   int
 	currentLine    string
 	size           *CanvasSize
 	cursorPosition *CursorPosition
@@ -118,25 +131,44 @@ func (p *printer) Fprintf(format string, a ...any) {
 	defer p.writeLock.Unlock()
 
 	content := fmt.Sprintf(format, a...)
-	lineCount := strings.Count(content, "\n")
+
+	// Check if the content includes any line breaks
+	hasNewLines := strings.Count(content, "\n") > 0
 
 	var lastLine string
+	newLines := 0
 
-	if lineCount > 0 {
-		lines := strings.Split(content, "\n")
-		lastLine = lines[len(lines)-1]
+	if hasNewLines {
+		// Find text after the last line break
+		// This is used to keep track of the current line being printed
+		lastNewLineIndex := strings.LastIndex(content, "\n")
+		lastLine = content[lastNewLineIndex+1:]
+		newLines = CountLineBreaks(content, p.consoleWidth)
 		p.currentLine = lastLine
 	} else {
-		lastLine = content
-		p.currentLine += lastLine
+		// Need to see if appending content to the current line will cause wrapping
+		// (i.e. if the line is longer than the console width)
+		p.currentLine += content
+		newLines = CountLineBreaks(p.currentLine, p.consoleWidth)
 	}
 
 	fmt.Fprint(p.writer, content)
 
-	visibleContent := specialTextRegex.ReplaceAllString(p.currentLine, "")
+	p.size.Cols = VisibleLength(p.currentLine)
+	p.size.Rows += newLines
+}
 
-	p.size.Cols = len(visibleContent)
-	p.size.Rows += lineCount
+func (p *printer) listenForResize() {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, SIGWINCH) // Listen for resize
+
+	go func() {
+		for range sigChan {
+			p.writeLock.Lock()
+			p.consoleWidth, _ = consolesize.GetConsoleSize()
+			p.writeLock.Unlock()
+		}
+	}()
 }
 
 // Fprintln writes text to the screen followed by a newline character.

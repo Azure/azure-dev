@@ -64,7 +64,7 @@ module {{bicepParameterName $name}} '{{ fixBackSlash $module.Path }}' = {
   }
 }
 {{- end }}
-{{- if not .AppHostInfraMigration }}
+{{ if not .AppHostInfraMigration }}
 output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
 output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
 {{if .HasLogAnalyticsWorkspace -}}

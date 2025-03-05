@@ -294,6 +294,7 @@ func ServiceFromDetect(
 
 	svc.Host = project.ContainerAppTarget
 	svc.RelativePath = rel
+	svc.RootPath = prj.RootPath
 
 	language, supported := LanguageMap[prj.Language]
 	if !supported {

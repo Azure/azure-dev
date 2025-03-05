@@ -142,6 +142,9 @@ type Project struct {
 	// Experimental: Database dependencies inferred through heuristics while scanning dependencies in the project.
 	DatabaseDeps []DatabaseDep
 
+	// The path to the root project directory.
+	RootPath string
+
 	// The path to the project directory.
 	Path string
 
@@ -181,7 +184,8 @@ var allDetectors = []projectDetector{
 	// Order here determines precedence when two projects are in the same directory.
 	// This is unlikely to occur in practice, but reordering could help to break the tie in these cases.
 	&javaDetector{
-		mvnCli: maven.NewCli(exec.NewCommandRunner(nil)),
+		mvnCli:                  maven.NewCli(exec.NewCommandRunner(nil)),
+		modulePathToRootProject: make(map[string]mavenProject),
 	},
 	&dotNetAppHostDetector{
 		// TODO(ellismg): Remove ambient authority.

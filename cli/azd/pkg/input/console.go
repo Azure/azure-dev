@@ -169,8 +169,7 @@ type AskerConsole struct {
 	consoleWidth *atomic.Int32
 	// holds the last 2 bytes written by message or messageUX. This is used to detect when there is already an empty
 	// line (\n\n)
-	last2Byte  [2]byte
-	signalChan chan os.Signal
+	last2Byte [2]byte
 }
 
 type ConsoleOptions struct {
@@ -408,9 +407,6 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		// calling Start may result in an additional line of output being written in non-tty scenarios
 		_ = c.spinner.Start()
 	}
-
-	watchTerminalInterrupt(c)
-
 	c.spinnerLineMu.Unlock()
 }
 
@@ -477,8 +473,6 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 		// Avoid using StopMessage() as it may result in an extra Message line print in non-tty scenarios
 		fmt.Fprintln(c.writer, lastMessage)
 	}
-
-	stopTerminalInterrupt(c)
 
 	c.spinnerLineMu.Unlock()
 }
@@ -945,19 +939,16 @@ func watchTerminalResize(c *AskerConsole) {
 }
 
 func watchTerminalInterrupt(c *AskerConsole) {
-	signal.Notify(c.signalChan, os.Interrupt)
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt)
 	go func() {
-		<-c.signalChan
+		<-signalChan
 
 		// unhide the cursor if applicable
 		_ = c.spinner.Stop()
 
 		os.Exit(1)
 	}()
-}
-
-func stopTerminalInterrupt(c *AskerConsole) {
-	signal.Stop(c.signalChan)
 }
 
 // Writers that back the underlying console.
@@ -996,7 +987,6 @@ func NewConsole(
 		isTerminal:    isTerminal,
 		currentIndent: atomic.NewString(""),
 		noPrompt:      noPrompt,
-		signalChan:    make(chan os.Signal, 1),
 	}
 
 	if writers.Spinner == nil {
@@ -1025,6 +1015,7 @@ func NewConsole(
 	if isTerminal {
 		c.consoleWidth = atomic.NewInt32(consoleWidth())
 		watchTerminalResize(c)
+		watchTerminalInterrupt(c)
 	}
 
 	return c

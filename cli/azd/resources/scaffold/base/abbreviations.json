@@ -37,6 +37,7 @@
     "devicesProvisioningServices": "provs-",
     "devicesProvisioningServicesCertificates": "pcert-",
     "documentDBDatabaseAccounts": "cosmos-",
+    "documentDBMongoDatabaseAccounts": "cosmon-",
     "eventGridDomains": "evgd-",
     "eventGridDomainsTopics": "evgt-",
     "eventGridEventSubscriptions": "evgs-",

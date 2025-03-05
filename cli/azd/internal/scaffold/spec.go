@@ -16,6 +16,7 @@ type InfraSpec struct {
 	DbPostgres    *DatabasePostgres
 	DbMySql       *DatabaseMysql
 	DbCosmosMongo *DatabaseCosmosMongo
+	DbCosmos      *DatabaseCosmos
 	DbRedis       *DatabaseRedis
 
 	// Key vault
@@ -30,6 +31,9 @@ type InfraSpec struct {
 
 	// ai models
 	AIModels []AIModel
+
+	// ai foundry models
+	AiFoundryProject *AiFoundrySpec
 }
 
 type Parameter struct {
@@ -51,6 +55,16 @@ type DatabaseCosmosMongo struct {
 	DatabaseName string
 }
 
+type DatabaseCosmos struct {
+	DatabaseName string
+	Containers   []CosmosSqlDatabaseContainer
+}
+
+type CosmosSqlDatabaseContainer struct {
+	ContainerName     string
+	PartitionKeyPaths []string
+}
+
 type DatabaseRedis struct {
 }
 
@@ -58,6 +72,24 @@ type DatabaseRedis struct {
 type AIModel struct {
 	Name  string
 	Model AIModelModel
+}
+
+// AIModel represents a deployed, ready to use AI model.
+type AiFoundrySpec struct {
+	Name   string
+	Models []AiFoundryModel
+}
+
+type AiFoundryModel struct {
+	AIModelModel
+	Format string            `yaml:"format,omitempty"`
+	Sku    AiFoundryModelSku `yaml:"sku,omitempty"`
+}
+
+type AiFoundryModelSku struct {
+	Name      string `yaml:"name,omitempty"`
+	UsageName string `yaml:"usageName,omitempty"`
+	Capacity  int32  `yaml:"capacity,omitempty"`
 }
 
 // AIModelModel represents a model that backs the AIModel.
@@ -103,6 +135,7 @@ type ServiceSpec struct {
 	DbPostgres    *DatabaseReference
 	DbMySql       *DatabaseReference
 	DbCosmosMongo *DatabaseReference
+	DbCosmos      *DatabaseReference
 	DbRedis       *DatabaseReference
 
 	StorageAccount *StorageReference
@@ -113,6 +146,8 @@ type ServiceSpec struct {
 	// Messaging services
 	ServiceBus *ServiceBus
 	EventHubs  *EventHubs
+
+	HasAiFoundryProject *AiFoundrySpec
 }
 
 type Frontend struct {

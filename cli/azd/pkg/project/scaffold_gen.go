@@ -157,6 +157,19 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			infraSpec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
 				DatabaseName: res.Name,
 			}
+		case ResourceTypeDbCosmos:
+			props := res.Props.(CosmosDBProps)
+			containers := make([]scaffold.CosmosSqlDatabaseContainer, 0)
+			for _, c := range props.Containers {
+				containers = append(containers, scaffold.CosmosSqlDatabaseContainer{
+					ContainerName:     c.Name,
+					PartitionKeyPaths: c.PartitionKeys,
+				})
+			}
+			infraSpec.DbCosmos = &scaffold.DatabaseCosmos{
+				DatabaseName: res.Name,
+				Containers:   containers,
+			}
 		case ResourceTypeDbPostgres:
 			infraSpec.DbPostgres = &scaffold.DatabasePostgres{
 				DatabaseName: res.Name,
@@ -225,6 +238,31 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			infraSpec.StorageAccount = &scaffold.StorageAccount{
 				Containers: props.Containers,
 			}
+		case ResourceTypeAiProject:
+			// It's okay to forcefully panic here. The only way we would land here is that the marshal/unmarshal
+			// in resources.go was not done right.
+			props := res.Props.(AiFoundryModelProps)
+			foundryName := res.Name
+			var foundryModels []scaffold.AiFoundryModel
+			foundrySpec := scaffold.AiFoundrySpec{
+				Name: foundryName,
+			}
+			for _, model := range props.Models {
+				foundryModels = append(foundryModels, scaffold.AiFoundryModel{
+					AIModelModel: scaffold.AIModelModel{
+						Name:    model.Name,
+						Version: model.Version,
+					},
+					Format: model.Format,
+					Sku: scaffold.AiFoundryModelSku{
+						Name:      model.Sku.Name,
+						UsageName: model.Sku.UsageName,
+						Capacity:  model.Sku.Capacity,
+					},
+				})
+			}
+			foundrySpec.Models = foundryModels
+			infraSpec.AiFoundryProject = &foundrySpec
 		case ResourceTypeKeyVault:
 			infraSpec.KeyVault = &scaffold.KeyVault{}
 		}
@@ -304,6 +342,8 @@ func mapHostUses(
 		switch useRes.Type {
 		case ResourceTypeDbMongo:
 			svcSpec.DbCosmosMongo = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
+		case ResourceTypeDbCosmos:
+			svcSpec.DbCosmos = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 		case ResourceTypeDbPostgres:
 			svcSpec.DbPostgres = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 		case ResourceTypeDbMySql:
@@ -326,6 +366,8 @@ func mapHostUses(
 			svcSpec.ServiceBus = &scaffold.ServiceBus{}
 		case ResourceTypeStorage:
 			svcSpec.StorageAccount = &scaffold.StorageReference{}
+		case ResourceTypeAiProject:
+			svcSpec.HasAiFoundryProject = &scaffold.AiFoundrySpec{}
 		case ResourceTypeKeyVault:
 			svcSpec.KeyVault = &scaffold.KeyVaultReference{}
 		}

@@ -83,6 +83,23 @@ func TestExecInfra(t *testing.T) {
 		{
 			"All",
 			InfraSpec{
+				AiFoundryProject: &AiFoundrySpec{
+					Name: "project",
+					Models: []AiFoundryModel{
+						{
+							AIModelModel: AIModelModel{
+								Name:    "model",
+								Version: "1.0",
+							},
+							Format: "OpenAI",
+							Sku: AiFoundryModelSku{
+								Name:      "S0",
+								UsageName: "S0",
+								Capacity:  1,
+							},
+						},
+					},
+				},
 				DbPostgres: &DatabasePostgres{
 					DatabaseName: "appdb",
 				},
@@ -91,6 +108,9 @@ func TestExecInfra(t *testing.T) {
 				},
 				DbCosmosMongo: &DatabaseCosmosMongo{
 					DatabaseName: "appdb",
+				},
+				DbCosmos: &DatabaseCosmos{
+					DatabaseName: "cosmos",
 				},
 				DbRedis:        &DatabaseRedis{},
 				ServiceBus:     &ServiceBus{},
@@ -116,6 +136,9 @@ func TestExecInfra(t *testing.T) {
 						},
 						DbPostgres: &DatabaseReference{
 							DatabaseName: "appdb",
+						},
+						DbCosmos: &DatabaseReference{
+							DatabaseName: "cosmos",
 						},
 						DbMySql: &DatabaseReference{
 							DatabaseName: "mysqldb",
@@ -200,6 +223,21 @@ func TestExecInfra(t *testing.T) {
 						Port: 3100,
 						DbRedis: &DatabaseReference{
 							DatabaseName: "redis",
+						},
+					},
+				},
+			},
+		},
+		{
+			"API with Cosmos",
+			InfraSpec{
+				DbCosmos: &DatabaseCosmos{},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						DbCosmos: &DatabaseReference{
+							DatabaseName: "cosmos",
 						},
 					},
 				},

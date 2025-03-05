@@ -149,6 +149,13 @@ func ExecInfraFs(
 		return nil, fmt.Errorf("scaffolding main.parameters.json: %w", err)
 	}
 
+	if spec.AiFoundryProject != nil {
+		err = executeToFS(fs, t, "ai-project.bicep", "ai-project.bicep", spec)
+		if err != nil {
+			return nil, fmt.Errorf("scaffolding ai-foundry-models.bicep: %w", err)
+		}
+	}
+
 	return fs, nil
 }
 

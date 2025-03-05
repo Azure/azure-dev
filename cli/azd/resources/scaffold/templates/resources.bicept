@@ -12,6 +12,10 @@ param tags object = {}
 param {{.Name}} {{.Type}}
 {{- end}}
 
+{{- if .AiFoundryProject }}
+param aiFoundryProjectConnectionString string
+{{- end}}
+
 @description('Id of the user or app to assign application roles')
 param principalId string
 
@@ -65,10 +69,10 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5
 {{- end}}
 
 {{- if .DbCosmosMongo}}
-module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
-  name: 'cosmos'
+module cosmosMongo 'br/public:avm/res/document-db/database-account:0.8.1' = {
+  name: 'cosmosMongo'
   params: {
-    name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
+    name: '${abbrs.documentDBMongoDatabaseAccounts}${resourceToken}'
     location: location
     tags: tags
     locations: [
@@ -94,6 +98,58 @@ module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
       keyVaultResourceId: keyVault.outputs.resourceId
       primaryWriteConnectionStringSecretName: 'mongodb-url'
     }
+    capabilitiesToAdd: [ 'EnableServerless' ]
+  }
+}
+{{- end}}
+
+{{- if .DbCosmos }}
+module cosmos 'br/public:avm/res/document-db/database-account:0.8.1' = {
+  name: 'cosmos'
+  params: {
+    name: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
+    tags: tags
+    location: location
+    locations: [
+      {
+        failoverPriority: 0
+        isZoneRedundant: false
+        locationName: location
+      }
+    ]
+    networkRestrictions: {
+      ipRules: []
+      virtualNetworkRules: []
+      publicNetworkAccess: 'Enabled'
+    }
+    sqlDatabases: [
+      {
+        name: '{{ .DbCosmos.DatabaseName }}'
+        containers: [
+          {{- range .DbCosmos.Containers}}
+          {
+            name: '{{ .ContainerName }}'
+            paths: [
+              {{- range $path := .PartitionKeyPaths}}
+              '{{ $path }}'
+              {{- end}}
+            ]
+          }
+          {{- end}}
+        ]
+      }
+    ]
+    sqlRoleAssignmentsPrincipalIds: [
+      {{- range .Services}}
+      {{bicepName .Name}}Identity.outputs.principalId
+      {{- end}}
+      principalId
+    ]
+    sqlRoleDefinitions: [
+      {
+        name: 'service-access-cosmos-sql-role'
+      }
+    ]
     capabilitiesToAdd: [ 'EnableServerless' ]
   }
 }
@@ -381,7 +437,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
         {
           name: 'mongodb-url'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: cosmos.outputs.exportedSecrets['mongodb-url'].secretUri
+          keyVaultUrl: cosmosMongo.outputs.exportedSecrets['mongodb-url'].secretUri
         }
         {{- end}}
         {{- if .DbPostgres}}
@@ -443,6 +499,12 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'MONGODB_URL'
             secretRef: 'mongodb-url'
+          }
+          {{- end}}
+          {{- if .DbCosmos}}
+          {
+            name: 'AZURE_COSMOS_ENDPOINT'
+            value: cosmos.outputs.endpoint
           }
           {{- end}}
           {{- if .DbPostgres}}
@@ -565,6 +627,12 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: account.outputs.endpoint
           }
           {{- end}}
+          {{- if .HasAiFoundryProject }}
+          {
+            name: 'AZURE_AIPROJECT_CONNECTION_STRING'
+            value: aiFoundryProjectConnectionString
+          }
+          {{- end}}
           {{- if .Frontend}}
           {{- range $i, $e := .Frontend.Backends}}
           {
@@ -577,6 +645,12 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {
             name: 'PORT'
             value: '{{ .Port }}'
+          }
+          {{- end}}
+          {{- range $key, $value := .Env}}
+          {
+            name: '{{ $key }}'
+            value: {{ $value }}
           }
           {{- end}}
         ],
@@ -602,6 +676,18 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     tags: union(tags, { 'azd-service-name': '{{.Name}}' })
   }
 }
+{{- if .HasAiFoundryProject}}
+
+resource {{bicepName .Name}}backendRoleAzureAIDeveloperRG 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(subscription().id, resourceGroup().id, {{bicepName .Name}}Identity.name, '64702f94-c441-49e6-a78b-ef80e0188fee')
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '64702f94-c441-49e6-a78b-ef80e0188fee') 
+    principalId: {{bicepName .Name}}Identity.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+{{- end }}
 {{- end}}
 
 {{- if .DbRedis}}
@@ -689,6 +775,9 @@ output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = '
 {{- end}}
 {{- if .DbMySql}}
 output AZURE_RESOURCE_{{alphaSnakeUpper .DbMySql.DatabaseName}}_ID string = '${mysqlServer.outputs.resourceId}/databases/{{.DbMySql.DatabaseName}}'
+{{- end}}
+{{- if .DbCosmos }}
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmos.DatabaseName}}_ID string = '${cosmos.outputs.resourceId}/sqlDatabases/{{.DbCosmos.DatabaseName}}'
 {{- end}}
 {{- if .StorageAccount }}
 output AZURE_RESOURCE_STORAGE_ID string = storageAccount.outputs.resourceId

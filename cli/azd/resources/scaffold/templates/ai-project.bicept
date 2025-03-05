@@ -1,0 +1,198 @@
+{{define "ai-project.bicep" -}}
+{{- if .AiFoundryProject }}
+{{- range .AiFoundryProject.Models }}
+param {{bicepName .Name}}{{bicepName .Version}}Location string
+{{- end }}
+{{- end }}
+
+@description('Tags that will be applied to all resources')
+param tags object = {}
+
+@description('Main location for the resources')
+param location string
+
+var abbrs = loadJsonContent('./abbreviations.json')
+var resourceToken = uniqueString(subscription().id, resourceGroup().id, location)
+
+@description('The name of the environment')
+param envName string
+
+module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
+  name: 'keyvaultForHub'
+  params: {
+    name: '${abbrs.keyVaultVaults}hub${resourceToken}'
+    location: location
+    tags: tags
+    enableRbacAuthorization: false
+  }
+}
+
+module storage 'br/public:avm/res/storage/storage-account:0.17.2' = {
+  name: 'storageAccountForHub'
+  params: {
+    tags: tags
+    name: '${abbrs.storageStorageAccounts}hub${resourceToken}'
+    allowSharedKeyAccess: true
+    allowBlobPublicAccess: true
+    allowCrossTenantReplication: true
+    largeFileSharesState: 'Disabled'
+    publicNetworkAccess: 'Enabled'
+    location: location
+    blobServices: {
+      containers: [
+        {
+          name: 'default'
+        }
+      ]
+    }
+    fileServices: {
+      shares: [
+        {
+          name: 'default'
+        }
+      ]
+    }
+    queueServices: {
+      queues: [
+        {
+          name: 'default'
+        }
+      ]
+    }
+    tableServices: {
+      tables: [
+        {
+          name: 'default'
+        }
+      ]
+    }
+    networkAcls: {
+      bypass: 'AzureServices'
+      defaultAction: 'Allow'
+    }
+  }
+}
+
+{{- if .AiFoundryProject }}
+{{- range .AiFoundryProject.Models }}
+resource {{bicepName .Name}}{{bicepName .Version}}Deploy 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
+  name: '{{bicepName .Name}}{{bicepName .Version}}${resourceToken}'
+  location: {{bicepName .Name}}{{bicepName .Version}}Location
+  tags: tags
+  sku: {
+    name: 'S0'
+  }
+  kind: 'AIServices'
+  properties: {
+    apiProperties: {
+      statisticsEnabled: false
+    }
+  }
+  
+  resource deployment 'deployments' = {
+    name: '{{ .Name }}'
+    properties: {
+      model: {
+        name: '{{ .Name }}'
+        format: '{{ .Format }}'
+        version: '{{ .Version }}'
+      }
+    }
+    sku: {
+      name: '{{ .Sku.Name }}'
+      capacity: {{ .Sku.Capacity }}
+    }
+  }
+}
+{{- end }}
+{{- end }}
+
+resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
+  name: take('${envName}${resourceToken}',32)
+  location: location
+  tags: tags
+  kind: 'Hub'
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    friendlyName: envName
+    storageAccount: storage.outputs.resourceId
+    keyVault: keyVault.outputs.resourceId
+    hbiWorkspace: false
+    managedNetwork: {
+      isolationMode: 'Disabled'
+    }
+    v1LegacyMode: false
+    publicNetworkAccess: 'Enabled'
+  }
+
+{{- if .AiFoundryProject }}
+{{- range .AiFoundryProject.Models }}
+  resource {{bicepName .Name}}{{bicepName .Version}}connection 'connections' = {
+    name: '{{bicepName .Name}}{{bicepName .Version}}-connection'
+    properties: {
+      category: 'AIServices'
+      target: {{bicepName .Name}}{{bicepName .Version}}Deploy.properties.endpoint
+      authType: 'ApiKey'
+      isSharedToAll: true
+      credentials: {
+        key: {{bicepName .Name}}{{bicepName .Version}}Deploy.listKeys().key1
+      }
+      metadata: {
+        ApiType: 'Azure'
+        ResourceId: {{bicepName .Name}}{{bicepName .Version}}Deploy.id
+      }
+    }
+  }
+{{- end }}
+{{- end }}
+}
+
+resource project 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
+  name: envName
+  location: location
+  tags: tags
+  sku: {
+    name: 'Basic'
+    tier: 'Basic'
+  }
+  kind: 'Project'
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    friendlyName: '${envName}Proj'
+    hbiWorkspace: false
+    v1LegacyMode: false
+    publicNetworkAccess: 'Enabled'
+    hubResourceId: hub.id
+  }
+}
+
+resource mlServiceRoleDataScientist 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(subscription().id, resourceGroup().id, project.id, 'mlServiceRoleDataScientist', 'f6c7c914-8db3-469d-8ca1-694a8f32e121')
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f6c7c914-8db3-469d-8ca1-694a8f32e121')
+    principalId: project.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource mlServiceRoleSecretsReader 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(subscription().id, resourceGroup().id, project.id, 'mlServiceRoleSecretsReader','ea01e6af-a1c1-4350-9563-ad00f8c72ec5')
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ea01e6af-a1c1-4350-9563-ad00f8c72ec5') 
+    principalId: project.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+output projectDiscoveryUrl string = project.properties.discoveryUrl
+output projectId string = project.id
+output projectName string = project.name
+output aiFoundryProjectConnectionString string = '${split(project.properties.discoveryUrl, '/')[2]};${subscription().subscriptionId};${resourceGroup().name};${project.name}'
+
+{{ end}}

@@ -39,11 +39,18 @@ func Configure(
 	case project.ResourceTypeHostContainerApp:
 		return fillUses(ctx, r, console, p)
 	case project.ResourceTypeOpenAiModel:
-		return fillAiModelName(ctx, r, console, p)
+		return fillOpenAiModelName(ctx, r, console, p)
 	case project.ResourceTypeDbPostgres,
 		project.ResourceTypeDbMySql,
 		project.ResourceTypeDbMongo:
 		return fillDatabaseName(ctx, r, console, p)
+	case project.ResourceTypeDbCosmos:
+		r, err := fillDatabaseName(ctx, r, console, p)
+		if err != nil {
+			return nil, err
+		}
+		r.Props = project.CosmosDBProps{}
+		return r, nil
 	case project.ResourceTypeMessagingEventHubs:
 		return fillEventHubs(ctx, r, console, p)
 	case project.ResourceTypeMessagingServiceBus:
@@ -57,6 +64,8 @@ func Configure(
 		return r, nil
 	case project.ResourceTypeStorage:
 		return fillStorageDetails(ctx, r, console, p)
+	case project.ResourceTypeAiProject:
+		return fillAiProjectName(ctx, r, console, p)
 	case project.ResourceTypeKeyVault:
 		if _, exists := p.PrjConfig.Resources["vault"]; exists {
 			return nil, fmt.Errorf(
@@ -104,7 +113,7 @@ func fillDatabaseName(
 	return r, nil
 }
 
-func fillAiModelName(
+func fillOpenAiModelName(
 	ctx context.Context,
 	r *project.ResourceConfig,
 	console input.Console,
@@ -148,6 +157,31 @@ func fillAiModelName(
 		break
 	}
 
+	return r, nil
+}
+
+func fillAiProjectName(
+	_ context.Context,
+	r *project.ResourceConfig,
+	_ input.Console,
+	pOptions PromptOptions) (*project.ResourceConfig, error) {
+	if r.Name != "" {
+		return r, nil
+	}
+
+	// provide a default suggestion using the underlying model name
+	defaultName := "ai-project"
+	i := 1
+	for {
+		if _, exists := pOptions.PrjConfig.Resources[defaultName]; exists {
+			i++
+			defaultName = fmt.Sprintf("%s-%d", defaultName, i)
+		} else {
+			break
+		}
+	}
+	// automatically set a name. Avoid prompting the user for a name as we are abstracting the Foundry and project
+	r.Name = defaultName
 	return r, nil
 }
 

@@ -129,7 +129,8 @@ if ($IsWindows) {
         "-trimpath",
         $tagsFlag,
         # -extldflags=-Wl,--high-entropy-va: Pass the high-entropy VA flag to the linker to enable high entropy virtual addresses
-        ($ldFlag + "-linkmode=auto -extldflags=-Wl,--high-entropy-va")
+        # --dynamicbase: Enable dynamic base address for the executable
+        ($ldFlag + "-linkmode=auto -extldflags=-Wl,--high-entropy-va,--dynamicbase")
     )
 }
 elseif ($IsLinux) {
@@ -192,10 +193,7 @@ try {
         Invoke-Expression "$($MSYS2Shell) -mingw64 -defterm -no-start -here -c 'bash ./build.sh'"
         Remove-Item -Path build.sh -ErrorAction Ignore
     }
-    else {
-        go build @buildFlags
-    }
-    if ($BuildRecordMode) {
+    else if ($BuildRecordMode) {
         $recordFlagPresent = $false
         for ($i = 0; $i -lt $buildFlags.Length; $i++) {
             if ($buildFlags[$i].StartsWith("-tags=")) {
@@ -216,6 +214,9 @@ try {
     
         Write-Host "Running: go build (record) ``"
         PrintFlags -flags $buildFlags
+        go build @buildFlags
+    } 
+    else {
         go build @buildFlags
     }
     

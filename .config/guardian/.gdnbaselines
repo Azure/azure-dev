@@ -33,7 +33,8 @@
       "memberOf": [
         "default"
       ],
-      "createdDate": "2025-03-06 21:07:54Z"
+      "createdDate": "2025-03-06 21:07:54Z",
+      "justification": "Testing for regressions before rolling out: https://github.com/Azure/azure-dev/issues/4888"
     }
   }
 }

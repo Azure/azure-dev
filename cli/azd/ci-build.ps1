@@ -184,7 +184,7 @@ $oldGOEXPERIMENT = $env:GOEXPERIMENT
 $env:GOEXPERIMENT="loopvar"
 
 try {
-    Write-Host "Running: go build (oneauth)``"
+    Write-Host "Running: go build ``"
     PrintFlags -flags $buildFlags
     if ($OneAuth) {
         # write the go build command line to a script because that's simpler than trying
@@ -192,10 +192,10 @@ try {
         Set-Content -Path build.sh -Value "go build $($buildFlags)"
         Invoke-Expression "$($MSYS2Shell) -mingw64 -defterm -no-start -here -c 'bash ./build.sh'"
         Remove-Item -Path build.sh -ErrorAction Ignore
-    } else {
+    }
+    else {
         go build @buildFlags
     }
-
     if ($BuildRecordMode) {
         $recordFlagPresent = $false
         for ($i = 0; $i -lt $buildFlags.Length; $i++) {
@@ -219,7 +219,7 @@ try {
         PrintFlags -flags $buildFlags
         go build @buildFlags
     }
-
+    
     if ($LASTEXITCODE) {
         Write-Host "Error running go build"
         exit $LASTEXITCODE

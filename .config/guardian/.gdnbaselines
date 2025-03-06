@@ -34,7 +34,8 @@
         "default"
       ],
       "createdDate": "2025-03-06 21:07:54Z",
-      "justification": "Testing for regressions before rolling out: https://github.com/Azure/azure-dev/issues/4888"
+      "justification": "Testing for regressions before rolling out: https://github.com/Azure/azure-dev/issues/4888",
+      "expirationDate": "2025-03-31 00:00:00Z"
     }
   }
 }

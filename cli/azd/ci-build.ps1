@@ -184,9 +184,9 @@ $oldGOEXPERIMENT = $env:GOEXPERIMENT
 $env:GOEXPERIMENT="loopvar"
 
 try {
-    Write-Host "Running: go build ``"
-    PrintFlags -flags $buildFlags
     if ($OneAuth) {
+        Write-Host "Running: go build (oneauth)``"
+        PrintFlags -flags $buildFlags
         # write the go build command line to a script because that's simpler than trying
         # to escape the build flags, which contain commas and both kinds of quotes
         Set-Content -Path build.sh -Value "go build $($buildFlags)"
@@ -217,6 +217,8 @@ try {
         go build @buildFlags
     } 
     else {
+        Write-Host "Running: go build ``"
+        PrintFlags -flags $buildFlags
         go build @buildFlags
     }
     

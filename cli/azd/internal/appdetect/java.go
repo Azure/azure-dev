@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -70,6 +71,7 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 
 	hasGradleFile := false
 	hasSettingsFile := false
+	var gradleFilePath string
 
 	for _, entry := range entries {
 		name := entry.Name()
@@ -77,6 +79,7 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 		// Check if it's a Gradle build file
 		if slices.Contains(gradleFiles, name) {
 			hasGradleFile = true
+			gradleFilePath = filepath.Join(path, name)
 		}
 
 		// Check if it's a Gradle settings file (usually indicates multi-module project)
@@ -94,12 +97,19 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 		}
 
 		// Create a basic project for Gradle
-		return &Project{
+		project := &Project{
 			Language:      Java,
 			Path:          path,
 			DetectionRule: detectionRule,
-			// Note: We're not detecting dependencies yet for Gradle projects
-		}, nil
+		}
+
+		// Detect dependencies in Gradle project
+		result, err := detectGradleDependencies(gradleFilePath, project)
+		if err != nil {
+			return nil, fmt.Errorf("detecting Gradle dependencies: %w", err)
+		}
+
+		return result, nil
 	}
 
 	return nil, nil
@@ -181,4 +191,73 @@ func detectDependencies(mavenProject *mavenProject, project *Project) (*Project,
 	}
 
 	return project, nil
+}
+
+// detectGradleDependencies parses a Gradle build file to identify dependencies
+func detectGradleDependencies(filePath string, project *Project) (*Project, error) {
+	// Read the build.gradle file content
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("reading Gradle file: %w", err)
+	}
+
+	fileContent := string(content)
+
+	databaseDepMap := map[DatabaseDep]struct{}{}
+
+	// Parse file line by line to better identify actual dependencies
+	// and avoid detecting strings in comments
+	lines := strings.Split(fileContent, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Skip empty lines
+		if line == "" {
+			continue
+		}
+
+		// Skip comment lines
+		if strings.HasPrefix(line, "//") || strings.HasPrefix(line, "/*") || strings.HasPrefix(line, "*") {
+			continue
+		}
+		// Check for MySQL dependency patterns
+		if isGradleDependency(line, "mysql-connector-java") || isGradleDependency(line, "mysql-connector-j") {
+			databaseDepMap[DbMySql] = struct{}{}
+		}
+
+		// Check for PostgreSQL dependency patterns
+		if isGradleDependency(line, "postgresql") {
+			databaseDepMap[DbPostgres] = struct{}{}
+		}
+	}
+
+	if len(databaseDepMap) > 0 {
+		project.DatabaseDeps = slices.SortedFunc(maps.Keys(databaseDepMap),
+			func(a, b DatabaseDep) int {
+				return strings.Compare(string(a), string(b))
+			})
+	}
+
+	return project, nil
+}
+
+// isGradleDependency checks if a line contains a dependency reference with common Gradle configuration keywords
+func isGradleDependency(line, dependencyIdentifier string) bool {
+	if !strings.Contains(line, dependencyIdentifier) {
+		return false
+	}
+
+	// Check for common Gradle dependency configuration keywords
+	// Common formats:
+	// - implementation 'group:artifact:version'
+	// - implementation("group:artifact:version")
+	// - implementation group: 'group', name: 'artifact', version: 'version'
+	gradleConfigs := []string{"implementation", "compile", "api", "runtime", "runtimeOnly", "compileOnly"}
+	for _, config := range gradleConfigs {
+		if strings.Contains(line, config) {
+			return true
+		}
+	}
+
+	return false
 }

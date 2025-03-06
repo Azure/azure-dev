@@ -46,6 +46,15 @@ func TestDetect(t *testing.T) {
 				},
 				{
 					Language:      Java,
+					Path:          "java-gradle",
+					DetectionRule: "Inferred by presence of: build.gradle",
+					DatabaseDeps: []DatabaseDep{
+						DbMySql,
+						DbPostgres,
+					},
+				},
+				{
+					Language:      Java,
 					Path:          "java-multimodules/application",
 					DetectionRule: "Inferred by presence of: pom.xml",
 					DatabaseDeps: []DatabaseDep{
@@ -130,6 +139,15 @@ func TestDetect(t *testing.T) {
 				},
 				{
 					Language:      Java,
+					Path:          "java-gradle",
+					DetectionRule: "Inferred by presence of: build.gradle",
+					DatabaseDeps: []DatabaseDep{
+						DbMySql,
+						DbPostgres,
+					},
+				},
+				{
+					Language:      Java,
 					Path:          "java-multimodules/application",
 					DetectionRule: "Inferred by presence of: pom.xml",
 					DatabaseDeps: []DatabaseDep{
@@ -160,6 +178,15 @@ func TestDetect(t *testing.T) {
 					Language:      Java,
 					Path:          "java",
 					DetectionRule: "Inferred by presence of: pom.xml",
+				},
+				{
+					Language:      Java,
+					Path:          "java-gradle",
+					DetectionRule: "Inferred by presence of: build.gradle",
+					DatabaseDeps: []DatabaseDep{
+						DbMySql,
+						DbPostgres,
+					},
 				},
 				{
 					Language:      Java,
@@ -196,6 +223,15 @@ func TestDetect(t *testing.T) {
 					Language:      Java,
 					Path:          "java",
 					DetectionRule: "Inferred by presence of: pom.xml",
+				},
+				{
+					Language:      Java,
+					Path:          "java-gradle",
+					DetectionRule: "Inferred by presence of: build.gradle",
+					DatabaseDeps: []DatabaseDep{
+						DbMySql,
+						DbPostgres,
+					},
 				},
 				{
 					Language:      Java,

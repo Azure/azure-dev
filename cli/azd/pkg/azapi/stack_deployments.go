@@ -766,8 +766,8 @@ func convertToStackParams(parameters azure.ArmParameters) map[string]*armdeploym
 	return stackParams
 }
 
-// Preflight API validates whether the specified template is syntactically correct 
-// and will be accepted by Azure Resource Manager. 
+// Preflight API validates whether the specified template is syntactically correct
+// and will be accepted by Azure Resource Manager.
 func (d *StackDeployments) ValidatePreflightToResourceGroup(
 	ctx context.Context,
 	subscriptionId string,
@@ -841,8 +841,8 @@ func (d *StackDeployments) stackFromArmForSubscription(
 	return stack, nil
 }
 
-// Preflight API validates whether the specified template is syntactically correct 
-// and will be accepted by Azure Resource Manager. 
+// Preflight API validates whether the specified template is syntactically correct
+// and will be accepted by Azure Resource Manager.
 func (d *StackDeployments) ValidatePreflightToSubscription(
 	ctx context.Context,
 	subscriptionId string,

@@ -300,26 +300,11 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 			}
 			kvName := resId.Name
 			kvSubId := resId.SubscriptionID
-			// if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
-			// 	e.console.Message(ctx, fmt.Sprintf("\nExisting project Key Vault found with name %s.\n",
-			// 		output.WithHighLightFormat(kvName)))
-			// } else {
-			// 	e.console.Message(ctx, fmt.Sprintf("\nExisting project Key Vault found with name %s:\n%s\n",
-			// 		output.WithHighLightFormat(kvName), output.WithGrayFormat(kvId)))
-			// }
-			subscriptionOptions := []string{"Yes", "No, use a different Key Vault"}
-			var verb string
-			if willCreateNewSecret {
-				verb = "Set"
-			} else {
-				verb = "Select"
-			}
-
+			subscriptionOptions := []string{"Yes", "No, use different key vault"}
 			useProjectKvPrompt, err := e.console.Select(
 				ctx,
 				input.ConsoleOptions{
-					Message: fmt.Sprintf("%s secret in the project %s?",
-						verb, output.WithHighLightFormat("vault")),
+					Message:      "Key vault detected in this project. Use this key vault?",
 					Options:      subscriptionOptions,
 					DefaultValue: subscriptionOptions[0],
 				})
@@ -355,7 +340,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 			}
 		} else if _, hasProjectKv := e.projectConfig.Resources["vault"]; hasProjectKv { // KV defined but not provisioned yet
 			e.console.Message(ctx,
-				output.WithWarningFormat("\nAn existing project Key Vault is defined but has not been provisioned yet. ")+
+				output.WithWarningFormat("\nAn existing project key vault is defined but is not provisioned yet. ")+
 					fmt.Sprintf("Run '%s' first to use it.\n", output.WithHighLightFormat("azd provision")))
 			options := []string{"Use a different key vault", "Cancel"}
 			useProjectKvPrompt, err := e.console.Select(
@@ -416,17 +401,27 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 
 	createNewKvAccountOption := "Create a new Key Vault"
 	selectKvAccountOptions := []string{}
-	// indexOffset makes the ids to start from 1 instead of 0 when displaying the options
-	indexOffset := 1
+
+	// Create a combined list with "Create a new Key Vault" as the first option
 	if willCreateNewSecret {
-		selectKvAccountOptions = append(selectKvAccountOptions, createNewKvAccountOption)
+		if listWithoutNumbers {
+			selectKvAccountOptions = append(selectKvAccountOptions, createNewKvAccountOption)
+		} else {
+			selectKvAccountOptions = append(selectKvAccountOptions, fmt.Sprintf("%2d. %s", 1, createNewKvAccountOption))
+		}
 	}
 
+	// Add the existing vaults with adjusted numbering
 	for index, vault := range vaultsList {
 		if listWithoutNumbers {
 			selectKvAccountOptions = append(selectKvAccountOptions, vault.Name)
 		} else {
-			selectKvAccountOptions = append(selectKvAccountOptions, fmt.Sprintf("%2d. %s", index+indexOffset, vault.Name))
+			offset := 1
+			// Existing KVs start at #2 since #1 will be "Create a new Key Vault"
+			if willCreateNewSecret {
+				offset = 2
+			}
+			selectKvAccountOptions = append(selectKvAccountOptions, fmt.Sprintf("%2d. %s", index+offset, vault.Name))
 		}
 	}
 
@@ -439,11 +434,14 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 		return nil, fmt.Errorf("selecting Key Vault: %w", err)
 	}
 
-	willCreateNewKvAccount := selectKvAccountOptions[kvAccountSelectionIndex] == createNewKvAccountOption
-	if willCreateNewSecret && !willCreateNewKvAccount {
-		// when willCreateNewSecret is true, we added a new option at the beginning of the list
-		// to recover the original kv account name
-		kvAccountSelectionIndex--
+	willCreateNewKvAccount := false
+	if willCreateNewSecret {
+		willCreateNewKvAccount = kvAccountSelectionIndex == 0
+		if !willCreateNewKvAccount {
+			// when willCreateNewSecret is true, we added a new option at the beginning of the list
+			// to recover the original kv account name
+			kvAccountSelectionIndex--
+		}
 	}
 
 	var kvAccount keyvault.Vault

@@ -193,7 +193,7 @@ try {
         Invoke-Expression "$($MSYS2Shell) -mingw64 -defterm -no-start -here -c 'bash ./build.sh'"
         Remove-Item -Path build.sh -ErrorAction Ignore
     }
-    else if ($BuildRecordMode) {
+    elseif ($BuildRecordMode) {
         $recordFlagPresent = $false
         for ($i = 0; $i -lt $buildFlags.Length; $i++) {
             if ($buildFlags[$i].StartsWith("-tags=")) {

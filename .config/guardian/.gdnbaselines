@@ -24,6 +24,18 @@
       "createdDate": "2024-09-16 19:06:00Z",
       "expirationDate": "2025-03-05 21:30:18Z",
       "justification": "This error is baselined with an expiration date of 180 days from 2024-09-16 21:30:18Z"
+    },
+    "94307fedca3397ff8099d1d5e4f1da5116f6c47905d344cd0604f27e9c259ba7": {
+      "signature": "94307fedca3397ff8099d1d5e4f1da5116f6c47905d344cd0604f27e9c259ba7",
+      "alternativeSignatures": [
+        "a9d457e2b0c4581b45d34e2e415b3207ac781e82d99650f771db832d68e82acb"
+      ],
+      "memberOf": [
+        "default"
+      ],
+      "createdDate": "2025-03-06 21:07:54Z",
+      "justification": "Testing for regressions before rolling out: https://github.com/Azure/azure-dev/issues/4888",
+      "expirationDate": "2025-03-31 00:00:00Z"
     }
   }
 }

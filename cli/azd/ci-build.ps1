@@ -184,16 +184,19 @@ $oldGOEXPERIMENT = $env:GOEXPERIMENT
 $env:GOEXPERIMENT="loopvar"
 
 try {
+    Write-Host "Running: go build (oneauth)``"
+    PrintFlags -flags $buildFlags
     if ($OneAuth) {
-        Write-Host "Running: go build (oneauth)``"
-        PrintFlags -flags $buildFlags
         # write the go build command line to a script because that's simpler than trying
         # to escape the build flags, which contain commas and both kinds of quotes
         Set-Content -Path build.sh -Value "go build $($buildFlags)"
         Invoke-Expression "$($MSYS2Shell) -mingw64 -defterm -no-start -here -c 'bash ./build.sh'"
         Remove-Item -Path build.sh -ErrorAction Ignore
+    } else {
+        go build @buildFlags
     }
-    elseif ($BuildRecordMode) {
+
+    if ($BuildRecordMode) {
         $recordFlagPresent = $false
         for ($i = 0; $i -lt $buildFlags.Length; $i++) {
             if ($buildFlags[$i].StartsWith("-tags=")) {
@@ -215,13 +218,8 @@ try {
         Write-Host "Running: go build (record) ``"
         PrintFlags -flags $buildFlags
         go build @buildFlags
-    } 
-    else {
-        Write-Host "Running: go build ``"
-        PrintFlags -flags $buildFlags
-        go build @buildFlags
     }
-    
+
     if ($LASTEXITCODE) {
         Write-Host "Error running go build"
         exit $LASTEXITCODE

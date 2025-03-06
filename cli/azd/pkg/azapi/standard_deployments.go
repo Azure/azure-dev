@@ -695,6 +695,8 @@ func convertFromStandardProvisioningState(state armresources.ProvisioningState) 
 	return DeploymentProvisioningState("")
 }
 
+// Preflight API validates whether the specified template is syntactically correct
+// and will be accepted by Azure Resource Manager.
 func (ds *StandardDeployments) ValidatePreflightToSubscription(
 	ctx context.Context,
 	subscriptionId string,
@@ -766,6 +768,8 @@ func validatePreflightError(
 	)
 }
 
+// Preflight API validates whether the specified template is syntactically correct
+// and will be accepted by Azure Resource Manager.
 func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 	ctx context.Context,
 	subscriptionId, resourceGroup, deploymentName string,

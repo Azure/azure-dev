@@ -33,7 +33,7 @@ extends:
       credscan:
         suppressionsFile: $(Build.SourcesDirectory)/eng/CredScanSuppression.json
       suppression:
-        suppressionsFile: $(Build.SourcesDirectory)/eng/GuardianSuppression.json
+        suppressionFile: $(Build.SourcesDirectory)/eng/GuardianSuppression.json
       sourceRepositoriesToScan:
         exclude:
           - repository: azure-sdk-build-tools

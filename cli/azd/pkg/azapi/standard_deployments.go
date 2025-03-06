@@ -8,10 +8,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -690,4 +693,115 @@ func convertFromStandardProvisioningState(state armresources.ProvisioningState) 
 	}
 
 	return DeploymentProvisioningState("")
+}
+
+// Preflight API validates whether the specified template is syntactically correct
+// and will be accepted by Azure Resource Manager.
+func (ds *StandardDeployments) ValidatePreflightToSubscription(
+	ctx context.Context,
+	subscriptionId string,
+	location string,
+	deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) error {
+	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	var rawResponse *http.Response
+	ctx = policy.WithCaptureResponse(ctx, &rawResponse)
+
+	validateResult, err := deploymentClient.BeginValidateAtSubscriptionScope(
+		ctx, deploymentName,
+		armresources.Deployment{
+			Properties: &armresources.DeploymentProperties{
+				Template:   armTemplate,
+				Parameters: parameters,
+				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
+			},
+			Location: to.Ptr(location),
+			Tags:     tags,
+		}, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "subscription")
+	}
+	_, err = validateResult.PollUntilDone(ctx, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "subscription")
+	}
+
+	return nil
+}
+
+func validatePreflightError(
+	rawResponse *http.Response,
+	err error,
+	typeMessage string,
+) error {
+	var respErr *azcore.ResponseError
+	if errors.As(err, &respErr) {
+		err = createDeploymentError(err)
+	} else if err != nil {
+		// Error returned from azure sdk go bug: we receive a 400 Bad Request from the API,
+		// but the client-handling in azure sdk fails internally with a different error
+		// This special-cased handling and rawResponse capture can be removed once
+		// https://github.com/Azure/azure-sdk-for-go/issues/23350 is fixed
+		if rawResponse != nil && rawResponse.StatusCode == 400 {
+			defer rawResponse.Body.Close()
+			body, errOnRawResponse := io.ReadAll(rawResponse.Body)
+			if errOnRawResponse != nil {
+				return fmt.Errorf("failed to read response error body from validation api to %s: %w",
+					typeMessage, errOnRawResponse)
+			}
+
+			err = NewAzureDeploymentError(string(body))
+		}
+	}
+	return fmt.Errorf(
+		"validating deployment to %s:\n\nValidation Error Details:\n%w",
+		typeMessage,
+		err,
+	)
+}
+
+// Preflight API validates whether the specified template is syntactically correct
+// and will be accepted by Azure Resource Manager.
+func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
+	ctx context.Context,
+	subscriptionId, resourceGroup, deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) error {
+	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	var rawResponse *http.Response
+	ctx = policy.WithCaptureResponse(ctx, &rawResponse)
+
+	validateResult, err := deploymentClient.BeginValidate(ctx, resourceGroup, deploymentName,
+		armresources.Deployment{
+			Properties: &armresources.DeploymentProperties{
+				Template:   armTemplate,
+				Parameters: parameters,
+				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
+			},
+			Tags: tags,
+		}, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "resource group")
+	}
+	_, err = validateResult.PollUntilDone(ctx, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "resource group")
+	}
+
+	return nil
 }

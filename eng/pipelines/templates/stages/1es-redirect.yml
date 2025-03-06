@@ -32,8 +32,6 @@ extends:
           enableForGitHub: true
       credscan:
         suppressionsFile: $(Build.SourcesDirectory)/eng/CredScanSuppression.json
-      suppression:
-        suppressionFile: $(Build.SourcesDirectory)/eng/GuardianSuppression.json
       sourceRepositoriesToScan:
         exclude:
           - repository: azure-sdk-build-tools

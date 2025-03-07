@@ -12,7 +12,7 @@ type ResourceMeta struct {
 	ResourceKind string
 
 	// ParentForEval is the parent resource used for evaluation.
-	// This can be moved into the expression language later.
+	// Note: This is temporarily used for displaying sub-resources and can be moved into the expression language later.
 	ParentForEval string
 
 	// ApiVersion is the api version for the resource.
@@ -32,22 +32,27 @@ var Resources = []ResourceMeta{
 	//    cd tools/avmres && go run main.go
 	// and add the new resource to this list.
 	{
-		ResourceType: "Microsoft.App/containerApps",
-		ApiVersion:   "2023-05-01",
+		ResourceType:      "Microsoft.App/containerApps",
+		ApiVersion:        "2023-05-01",
+		StandardVarPrefix: "${upper .name}",
+		Variables: map[string]string{
+			"baseUrl": "${.properties.configuration.ingress.fqdn}",
+		},
 	},
 	{
 		ResourceType: "Microsoft.App/managedEnvironments",
 		ApiVersion:   "2023-05-01",
 	},
 	{
-		ResourceType: "Microsoft.Cache/redis",
-		ApiVersion:   "2024-03-01",
+		ResourceType:      "Microsoft.Cache/redis",
+		ApiVersion:        "2024-03-01",
+		StandardVarPrefix: "REDIS",
 		Variables: map[string]string{
-			"REDIS_HOST":     "${.properties.hostName}",
-			"REDIS_PORT":     "6380",
-			"REDIS_PASSWORD": "${vault.}",
-			"REDIS_URL":      "redis://${REDIS_HOST}:${REDIS_PORT}",
-			"REDIS_ENDPOINT": "${REDIS_HOST}:${REDIS_PORT}",
+			"host":     "${.properties.hostName}",
+			"port":     "6380",
+			"password": "${vault.redis-password}",
+			"url":      "${vault.redis-url}",
+			"endpoint": "${host}:${port}",
 		},
 	},
 	{
@@ -59,58 +64,64 @@ var Resources = []ResourceMeta{
 		ApiVersion:   "2023-06-01-preview",
 	},
 	{
-		ResourceType: "Microsoft.DBforMySQL/flexibleServers",
-		ApiVersion:   "2023-12-30",
+		ResourceType:      "Microsoft.DBforMySQL/flexibleServers",
+		ApiVersion:        "2023-12-30",
+		StandardVarPrefix: "MYSQL",
 		Variables: map[string]string{
-			"MYSQL_DATABASE": "${spec.name}",
-			"MYSQL_HOST":     "${.properties.fullyQualifiedDomainName}",
-			"MYSQL_USERNAME": "${.properties.administratorLogin}",
-			"MYSQL_PORT":     "3306",
-			"MYSQL_PASSWORD": "${vault.}",
-			"MYSQL_URL":      "mysql://${MYSQL_USERNAME}:${MYSQL_PASSWORD}@${MYSQL_HOST}:3306/${MYSQL_DATABASE}",
+			"database": "${spec.name}",
+			"host":     "${.properties.fullyQualifiedDomainName}",
+			"username": "${.properties.administratorLogin}",
+			"port":     "3306",
+			"password": "${vault.mysql-password}",
+			"url":      "mysql://${username}:${password}@${host}:${port}/${database}",
 		},
 	},
 	{
-		ResourceType: "Microsoft.DBforPostgreSQL/flexibleServers",
-		ApiVersion:   "2022-12-01",
+		ResourceType:      "Microsoft.DBforPostgreSQL/flexibleServers",
+		ApiVersion:        "2022-12-01",
+		StandardVarPrefix: "POSTGRES",
 		Variables: map[string]string{
-			"POSTGRES_DATABASE": "${spec.name}",
-			"POSTGRES_HOST":     "${.properties.fullyQualifiedDomainName}",
-			"POSTGRES_USERNAME": "${.properties.administratorLogin}",
-			"POSTGRES_PORT":     "5432",
-			"POSTGRES_PASSWORD": "${vault.}",
-			"POSTGRES_URL":      "postgresql://${POSTGRES_USERNAME}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DATABASE}",
+			"database": "${spec.name}",
+			"host":     "${.properties.fullyQualifiedDomainName}",
+			"username": "${.properties.administratorLogin}",
+			"port":     "5432",
+			"password": "${vault.postgres-password}",
+			"url":      "postgresql://${username}:${password}@${host}:${port}/${database}",
 		},
 	},
 	{
-		ResourceType:  "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
-		ApiVersion:    "2023-04-15",
-		ParentForEval: "Microsoft.DocumentDB/databaseAccounts",
+		ResourceType:      "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
+		ApiVersion:        "2023-04-15",
+		ParentForEval:     "Microsoft.DocumentDB/databaseAccounts",
+		StandardVarPrefix: "AZURE_COSMOS",
 		Variables: map[string]string{
-			"AZURE_COSMOS_ENDPOINT": "${.properties.documentEndpoint}",
+			"endpoint": "${.properties.documentEndpoint}",
 		},
 	},
 	{
-		ResourceType: "Microsoft.DocumentDB/databaseAccounts/mongodbDatabases",
-		ApiVersion:   "2023-04-15",
+		ResourceType:      "Microsoft.DocumentDB/databaseAccounts/mongodbDatabases",
+		ApiVersion:        "2023-04-15",
+		StandardVarPrefix: "MONGODB",
 		Variables: map[string]string{
-			"MONGODB_URL": "${vault.}",
+			"url": "${vault.mongodb-url}",
 		},
 	},
 	{
-		ResourceType: "Microsoft.EventHub/namespaces",
-		ApiVersion:   "2024-01-01",
+		ResourceType:      "Microsoft.EventHub/namespaces",
+		ApiVersion:        "2024-01-01",
+		StandardVarPrefix: "AZURE_EVENT_HUBS",
 		Variables: map[string]string{
-			"AZURE_EVENT_HUBS_NAME": "${.name}",
-			"AZURE_EVENT_HUBS_HOST": "${host .properties.serviceBusEndpoint}",
+			"name": "${.name}",
+			"host": "${host .properties.serviceBusEndpoint}",
 		},
 	},
 	{
-		ResourceType: "Microsoft.KeyVault/vaults",
-		ApiVersion:   "2022-07-01",
+		ResourceType:      "Microsoft.KeyVault/vaults",
+		ApiVersion:        "2022-07-01",
+		StandardVarPrefix: "AZURE_KEY_VAULT",
 		Variables: map[string]string{
-			"AZURE_KEY_VAULT_NAME":     "${.name}",
-			"AZURE_KEY_VAULT_ENDPOINT": "${.properties.vaultUri}",
+			"name":     "${.name}",
+			"endpoint": "${.properties.vaultUri}",
 		},
 	},
 	{
@@ -118,27 +129,47 @@ var Resources = []ResourceMeta{
 		ApiVersion:   "2023-01-31",
 	},
 	{
-		ResourceType: "Microsoft.ServiceBus/namespaces",
-		ApiVersion:   "2022-10-01-preview",
+		ResourceType:      "Microsoft.ServiceBus/namespaces",
+		ApiVersion:        "2022-10-01-preview",
+		StandardVarPrefix: "AZURE_SERVICE_BUS",
 		Variables: map[string]string{
-			"AZURE_SERVICE_BUS_NAME": "${.name}",
-			"AZURE_SERVICE_BUS_HOST": "${host .properties.serviceBusEndpoint}",
+			"name": "${.name}",
+			"host": "${host .properties.serviceBusEndpoint}",
 		},
 	},
 	{
-		ResourceType: "Microsoft.Storage/storageAccounts",
-		ApiVersion:   "2023-05-01",
+		ResourceType:      "Microsoft.Storage/storageAccounts",
+		ApiVersion:        "2023-05-01",
+		StandardVarPrefix: "AZURE_STORAGE",
 		Variables: map[string]string{
-			"AZURE_STORAGE_ACCOUNT_NAME":  "${.name}",
-			"AZURE_STORAGE_BLOB_ENDPOINT": "${.properties.primaryEndpoints.blob}",
+			"accountName":  "${.name}",
+			"blobEndpoint": "${.properties.primaryEndpoints.blob}",
 		},
 	},
 	{
-		ResourceType: "Microsoft.MachineLearningServices/workspaces",
-		ResourceKind: "Project",
-		ApiVersion:   "2024-10-01",
+		ResourceType:      "Microsoft.MachineLearningServices/workspaces",
+		ResourceKind:      "Project",
+		ApiVersion:        "2024-10-01",
+		StandardVarPrefix: "AZURE_AI_PROJECT",
 		Variables: map[string]string{
-			"AZURE_AI_PROJECT_CONNECTION_STRING": "${aiProjectConnectionString .id .properties.discoveryUrl}",
+			"connectionString": "${aiProjectConnectionString .id .properties.discoveryUrl}",
 		},
 	},
+}
+
+// EnvVars creates a map of environment variables with the given prefix and variable names.
+func EnvVars(prefix string, variables map[string]string) map[string]string {
+	result := make(map[string]string)
+	for name, value := range variables {
+		result[EnvVarName(prefix, name)] = value
+	}
+	return result
+}
+
+// EnvVarName creates an environment variable name by concatenating the prefix and the variable name.
+func EnvVarName(prefix string, varName string) string {
+	if prefix == "" {
+		return AlphaSnakeUpperFromCasing(varName)
+	}
+	return prefix + "_" + AlphaSnakeUpperFromCasing(varName)
 }

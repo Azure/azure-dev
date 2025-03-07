@@ -37,7 +37,7 @@ func (s *showResource) showResourceGeneric(
 		return nil, fmt.Errorf("resource type '%s' is not currently supported", id.ResourceType)
 	}
 
-	spec, err := s.resourceService.GetRawResource(ctx, resourceId, resourceMeta.ApiVersion)
+	armSpec, err := s.resourceService.GetRawResource(ctx, resourceId, resourceMeta.ApiVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resource %s: %w", id.String(), err)
 	}
@@ -49,13 +49,13 @@ func (s *showResource) showResourceGeneric(
 		resolveSecret = func(name string) (string, error) {
 			kvSecret, err := s.kvService.GetKeyVaultSecret(ctx, id.SubscriptionID, vault, name)
 			if err != nil {
-				return "", fmt.Errorf("failed to get secret %s: %w", name, err)
+				return "", err
 			}
 			return kvSecret.Value, nil
 		}
 	} else {
 		resolveSecret = func(name string) (string, error) {
-			return "<secret>", nil
+			return "*******", nil
 		}
 	}
 
@@ -76,13 +76,17 @@ func (s *showResource) showResourceGeneric(
 
 	context := scaffold.EvalEnv{
 		ResourceSpec: resourceNode,
-		ArmResource:  spec,
+		ArmResource:  armSpec,
 		VaultSecret:  resolveSecret,
 	}
+
 	values, err := scaffold.Eval(resourceMeta.Variables, context)
 	if err != nil {
 		return nil, fmt.Errorf("expanding variables: %w", err)
 	}
+
+	// Display environment variables
+	envValues := scaffold.EnvVars(resourceMeta.StandardVarPrefix, values)
 
 	display := id.ResourceType.String()
 	if translated := azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(display)); translated != "" {
@@ -92,7 +96,7 @@ func (s *showResource) showResourceGeneric(
 	showRes := ux.ShowResource{
 		Name:        id.Name,
 		TypeDisplay: display,
-		Variables:   values,
+		Variables:   envValues,
 	}
 
 	return &showRes, nil

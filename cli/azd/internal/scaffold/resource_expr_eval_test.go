@@ -47,16 +47,12 @@ location: westus
 		expected map[string]string
 	}{
 		{
-			name: "Basic function test - concat",
+			name: "Basic function test - replace",
 			input: map[string]string{
-				"prefix":    "prefix-",
-				"suffix":    "-suffix",
-				"full_name": "${concat \"prefix-\" spec.name \"-suffix\"}",
+				"full_name": "${replace .id 'test' 'test-resource'}",
 			},
 			expected: map[string]string{
-				"prefix":    "prefix-",
-				"suffix":    "-suffix",
-				"full_name": "prefix-test-resource-suffix",
+				"full_name": "test-resource-id",
 			},
 		},
 		{
@@ -101,26 +97,6 @@ location: westus
 				"formatted": "TEST-NAME",
 			},
 		},
-		{
-			name: "Mixed argument types",
-			input: map[string]string{
-				"mixed": "${concat \"prefix-\" spec.name '-suffix'}",
-			},
-			expected: map[string]string{
-				"mixed": "prefix-test-resource-suffix",
-			},
-		},
-		{
-			name: "Vault secret",
-			input: map[string]string{
-				"secret":    "${vault.my-secret}",
-				"formatted": "${concat \"Secret: \" vault.my-secret}",
-			},
-			expected: map[string]string{
-				"secret":    "secret-my-secret",
-				"formatted": "Secret: secret-my-secret",
-			},
-		},
 	}
 
 	// Run the tests
@@ -135,12 +111,9 @@ location: westus
 
 func TestEvalAdvanced(t *testing.T) {
 	// Create custom function map
-	customFuncMap := map[string]FunctionCall{}
-	customFuncMap["prefix"] = func(args []string) (string, error) {
-		if len(args) != 2 {
-			return "", assert.AnError
-		}
-		return args[0] + "-" + args[1], nil
+	customFuncMap := map[string]any{}
+	customFuncMap["prefix"] = func(prefix string, suffix string) string {
+		return prefix + "-" + suffix
 	}
 
 	// Create test context
@@ -166,8 +139,8 @@ location: eastus
 		"base":       "base",
 		"app_id":     "${prefix \"app\" spec.name}",
 		"resource":   "${prefix \"res\" .name}",
-		"combined":   "${concat app_id \"-\" resource}",
-		"with_vault": "${concat vault.secretkey \"-\" \"custom\"}",
+		"combined":   "${prefix app_id resource}",
+		"with_vault": "${prefix vault.secretkey \"custom\"}",
 	}
 
 	expected := map[string]string{

@@ -3,7 +3,7 @@ package scaffold
 import (
 	"errors"
 	"fmt"
-	"log"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -25,44 +25,22 @@ type EvalEnv struct {
 	VaultSecret func(string) (string, error)
 
 	// FuncMap is a map of function names to their implementations.
-	FuncMap map[string]FunctionCall
+	FuncMap FuncMap
 }
 
-type FunctionCall func([]string) (string, error)
+// FuncMap is the type of the map defining the mapping from names to functions.
+// Each function must have either a single return value, or two return values of which the second has type error.
+// In that case, if the second (error) return value evaluates to non-nil during execution,
+// execution terminates and Eval returns that error.
+type FuncMap map[string]any
 
-func BaseFuncMap() map[string]FunctionCall {
-	return map[string]FunctionCall{
-		// Add basic string manipulation functions
-		"concat": func(args []string) (string, error) {
-			return strings.Join(args, ""), nil
-		},
-		"lower": func(args []string) (string, error) {
-			if len(args) != 1 {
-				return "", fmt.Errorf("lower function requires exactly 1 argument")
-			}
-			return strings.ToLower(args[0]), nil
-		},
-		"upper": func(args []string) (string, error) {
-			if len(args) != 1 {
-				return "", fmt.Errorf("upper function requires exactly 1 argument")
-			}
-			return strings.ToUpper(args[0]), nil
-		},
-		"replace": func(args []string) (string, error) {
-			if len(args) != 3 {
-				return "", fmt.Errorf("replace function requires exactly 3 arguments: string, old, new")
-			}
-			return strings.Replace(args[0], args[1], args[2], -1), nil
-		},
-		"host": func(args []string) (string, error) {
-			if len(args) != 1 {
-				return "", fmt.Errorf("host function requires exactly 1 argument")
-			}
-			endpoint := args[0]
-			// Extract the host from the endpoint
-			host := strings.Split(strings.ReplaceAll(endpoint, "/", ""), ":")[1]
-			return host, nil
-		},
+func BaseFuncMap() FuncMap {
+	return FuncMap{
+		"lower":                     strings.ToLower,
+		"upper":                     strings.ToUpper,
+		"replace":                   strings.ReplaceAll,
+		"host":                      hostFromEndpoint,
+		"aiProjectConnectionString": aiProjectConnectionString,
 	}
 }
 
@@ -76,7 +54,7 @@ func BaseFuncMap() map[string]FunctionCall {
 // - Spec expressions, ${spec.property.path}
 // - Literal expressions, ${"literal"} (for use in function expressions)
 // - Vault expressions, ${vault.secretName} OR ${vault.} -- the latter will use the key as the secret name
-// - Function expressions (only a single-level of nesting), ${concat "management.azure.com/" spec.id}
+// - Function expressions (only a single-level of nesting), ${replace "management.azure.com/" spec.id}
 //
 // The function also supports nested expressions and circular dependencies.
 func Eval(values map[string]string, env EvalEnv) (map[string]string, error) {
@@ -94,7 +72,7 @@ func Eval(values map[string]string, env EvalEnv) (map[string]string, error) {
 
 	defaultFuncMap := BaseFuncMap()
 	if env.FuncMap == nil {
-		env.FuncMap = make(map[string]FunctionCall, len(defaultFuncMap))
+		env.FuncMap = make(FuncMap, len(defaultFuncMap))
 	}
 	maps.Copy(env.FuncMap, defaultFuncMap)
 
@@ -238,7 +216,7 @@ func evalExpression(env EvalEnv, key string, expr *Expression, results map[strin
 		}
 
 		// Evaluate all arguments
-		args := make([]string, 0, len(funcData.Args))
+		args := make([]interface{}, 0, len(funcData.Args))
 		for _, arg := range funcData.Args {
 			err := evalExpression(env, key, arg, results)
 			if err != nil {
@@ -248,14 +226,14 @@ func evalExpression(env EvalEnv, key string, expr *Expression, results map[strin
 			args = append(args, arg.Value)
 		}
 
-		log.Println("evaluating function", funcName, "with args", args)
 		// Call the function
-		funcResult, err := fn(args)
+		funcResult, err := callFn(fn, funcName, args)
 		if err != nil {
 			return fmt.Errorf("calling '%s' failed: %w", funcName, err)
 		}
 
-		expr.Replace(funcResult)
+		resultString := fmt.Sprintf("%v", funcResult)
+		expr.Replace(resultString)
 	}
 
 	return nil
@@ -307,4 +285,58 @@ func nextVal(evalCtx []*expressionVar, results map[string]*expressionVar) (*expr
 	}
 
 	return nil, nil
+}
+
+// callFn handles dynamic function calling with proper type reflection
+func callFn(fn interface{}, funcName string, args []interface{}) (interface{}, error) {
+	// Use reflection to call the function with proper types
+	funcValue := reflect.ValueOf(fn)
+	funcType := funcValue.Type()
+
+	// Validate function signature according to FuncMap requirements
+	numOut := funcType.NumOut()
+	if numOut != 1 && numOut != 2 {
+		return nil, fmt.Errorf("function '%s' must have one or two return values", funcName)
+	}
+	if numOut == 2 && !funcType.Out(1).Implements(reflect.TypeOf((*error)(nil)).Elem()) {
+		return nil, fmt.Errorf("second return value of function '%s' must be error", funcName)
+	}
+
+	// Create properly typed arguments
+	reflectArgs := make([]reflect.Value, len(args))
+	for i, arg := range args {
+		// Convert each argument to the type expected by the function
+		if i < funcType.NumIn() {
+			expectedType := funcType.In(i)
+			argValue := reflect.ValueOf(arg)
+
+			// If types don't match but can be converted
+			if argValue.Type().ConvertibleTo(expectedType) {
+				reflectArgs[i] = argValue.Convert(expectedType)
+			} else {
+				reflectArgs[i] = argValue
+			}
+		} else {
+			reflectArgs[i] = reflect.ValueOf(arg)
+		}
+	}
+
+	// Call the function with the properly typed arguments
+	resultValues := funcValue.Call(reflectArgs)
+
+	// Process the results according to FuncMap requirements
+	var funcResult interface{}
+
+	// First return value is the result
+	if len(resultValues) > 0 {
+		funcResult = resultValues[0].Interface()
+	}
+
+	// Check for error if there's a second return value
+	if len(resultValues) == 2 && !resultValues[1].IsNil() {
+		err := resultValues[1].Interface().(error)
+		return nil, fmt.Errorf("function '%s' returned error: %w", funcName, err)
+	}
+
+	return funcResult, nil
 }

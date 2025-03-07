@@ -6,8 +6,11 @@ package scaffold
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 )
 
 // BicepName returns a name suitable for use as a bicep variable name.
@@ -54,7 +57,7 @@ func RemoveDotAndDash(name string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(name, ".", ""), "-", "")
 }
 
-// UpperSnakeAlpha returns a name in upper-snake case alphanumeric name separated only by underscores.
+// AlphaSnakeUpper returns a name in upper-snake case alphanumeric name separated only by underscores.
 //
 // Non-alphanumeric characters are discarded, while consecutive separators ('-', '_', and '.') are treated
 // as a single underscore separator.
@@ -84,6 +87,23 @@ func AlphaSnakeUpper(name string) string {
 	}
 
 	return sb.String()
+}
+
+// AlphaSnakeUpperFromCasing transforms a camel case or pascal case name into an upper-snake case name.
+func AlphaSnakeUpperFromCasing(name string) string {
+	result := strings.Builder{}
+	for i := range name {
+		c := name[i]
+		if 'A' <= c && c <= 'Z' {
+			if i > 0 && i != len(name)-1 {
+				result.WriteRune('_')
+			}
+		}
+
+		result.WriteByte(upperCase(c))
+	}
+
+	return result.String()
 }
 
 func isAllUpperCase(c string) bool {
@@ -194,4 +214,27 @@ func FormatParameter(prefix string, indent string, value any) (string, error) {
 		return "", err
 	}
 	return string(val), nil
+}
+
+func hostFromEndpoint(endpoint string) (string, error) {
+	urlEndpoint, err := url.Parse(endpoint)
+	if err != nil {
+		return "", fmt.Errorf("invalid endpoint: %s", endpoint)
+	}
+
+	return urlEndpoint.Hostname(), nil
+}
+
+func aiProjectConnectionString(resourceId string, projectUrl string) (string, error) {
+	hostName, err := hostFromEndpoint(projectUrl)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse project URL: %w", err)
+	}
+
+	resId, err := arm.ParseResourceID(resourceId)
+	if err != nil {
+		return "", nil
+	}
+
+	return fmt.Sprintf("%s;%s;%s;%s", hostName, resId.SubscriptionID, resId.ResourceGroupName, resId.Name), nil
 }

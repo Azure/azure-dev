@@ -302,6 +302,10 @@ func newStartCommand() *cobra.Command {
 							"chatbot": "choose-app-type",
 							"webapp":  "choose-app-type",
 						},
+						AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
+							q.State["interactionType"] = value
+							return nil
+						},
 						Next: "model-selection",
 					},
 					"agent-interaction": {
@@ -320,6 +324,10 @@ func newStartCommand() *cobra.Command {
 							"chatbot":   "choose-app-type",
 							"webapp":    "choose-app-type",
 							"messaging": "choose-app-type",
+						},
+						AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
+							q.State["interactionType"] = value
+							return nil
 						},
 						Next: "model-selection",
 					},
@@ -353,8 +361,15 @@ func newStartCommand() *cobra.Command {
 					"choose-app-type": {
 						Binding: &scenarioData.AppType,
 						Prompt: &qna.SingleSelectPrompt{
-							Client:  azdClient,
-							Message: "What type of application do you want to build?",
+							BeforeAsk: func(ctx context.Context, q *qna.Question, p *qna.SingleSelectPrompt) error {
+								appName := q.State["interactionType"].(string)
+								p.Message = fmt.Sprintf(
+									"Which type of application do you want to build for %s?",
+									appName,
+								)
+								return nil
+							},
+							Client: azdClient,
 							Choices: []qna.Choice{
 								{Label: "App Service", Value: "webapp"},
 								{Label: "Container App", Value: "containerapp"},

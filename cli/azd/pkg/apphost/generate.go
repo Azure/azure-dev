@@ -282,6 +282,7 @@ func ContainerAppManifestTemplateForProject(
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
 // the shared infrastructure that would normally be under the `infra/` folder for the given manifest.
 func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*memfs.FS, error) {
+	appHostInfraMigrationEnabled = options.AppHostInfraMigration
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
@@ -543,7 +544,7 @@ func newInfraGenerator() *infraGenerator {
 
 // withOutputsExpRegex is a regular expression used to match expressions in the format "{<resource>.outputs.<outputName>}" or
 // "{<resource>.secretOutputs.<outputName>}".
-var withOutputsExpRegex = regexp.MustCompile(`\{[a-zA-Z0-9\-]+\.(outputs|secretOutputs)\.[a-zA-Z0-9\-]+\}`)
+var withOutputsExpRegex = regexp.MustCompile(`\{[a-zA-Z0-9\-]+\.(outputs|secretOutputs)\.[a-zA-Z0-9\-\_]+\}`)
 
 // evaluateForOutputs is a function that evaluates a given value and extracts output parameters from it.
 // It searches for patterns in the form of "{<resource>.outputs.<outputName>}" or "{<resource>.secretOutputs.<outputName>}"
@@ -872,6 +873,8 @@ const (
 	defaultBicepModuleScope string = "rg"
 )
 
+var appHostInfraMigrationEnabled = false
+
 // injectValueForBicepParameter checks for aspire-manifest and azd conventions rules for auto injecting values for
 // the bicep.v0 parameters.
 // Conventions examples:
@@ -890,6 +893,11 @@ func injectValueForBicepParameter(resourceName, p string, parameter any) (string
 	emptyJsonString := "\"\""
 	if finalParamValue != emptyJsonString {
 		// injection not required
+		return finalParamValue, false, nil
+	}
+
+	// disable injection for app host migration
+	if appHostInfraMigrationEnabled {
 		return finalParamValue, false, nil
 	}
 

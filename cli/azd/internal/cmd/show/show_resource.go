@@ -104,6 +104,22 @@ func getResourceMeta(id arm.ResourceID) (*scaffold.ResourceMeta, arm.ResourceID)
 
 	for _, res := range resources {
 		if res.ResourceType == resourceType { // exact match
+			if res.ParentForEval != "" {
+				// find the parent resource
+				parentId := &id
+				for {
+					if parentId.Parent != nil {
+						parentId = parentId.Parent
+					}
+
+					if parentId.ResourceType.Type == res.ParentForEval {
+						break
+					}
+				}
+
+				return &res, *parentId
+			}
+
 			return &res, id
 		}
 	}

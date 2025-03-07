@@ -10,13 +10,13 @@ func TestExpressionParsing(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected []expression
+		expected []Expression
 		wantErr  bool
 	}{
 		{
 			name:  "simple property reference",
 			input: "${.properties.host}",
-			expected: []expression{{
+			expected: []Expression{{
 				Kind: PropertyExpr,
 				Data: PropertyExprData{
 					PropertyPath: "properties.host",
@@ -26,7 +26,7 @@ func TestExpressionParsing(t *testing.T) {
 		{
 			name:  "simple spec reference",
 			input: "${spec.name}",
-			expected: []expression{{
+			expected: []Expression{{
 				Kind: SpecExpr,
 				Data: SpecExprData{
 					PropertyPath: "name",
@@ -36,7 +36,7 @@ func TestExpressionParsing(t *testing.T) {
 		{
 			name:  "vault reference",
 			input: "${vault.SECRET-KEY}",
-			expected: []expression{{
+			expected: []Expression{{
 				Kind: VaultExpr,
 				Data: VaultExprData{
 					SecretPath: "SECRET-KEY",
@@ -46,7 +46,7 @@ func TestExpressionParsing(t *testing.T) {
 		{
 			name:  "environment variable",
 			input: "${DATABASE_URL}",
-			expected: []expression{{
+			expected: []Expression{{
 				Kind: VarExpr,
 				Data: VarExprData{
 					Name: "DATABASE_URL",
@@ -56,11 +56,11 @@ func TestExpressionParsing(t *testing.T) {
 		{
 			name:  "func",
 			input: "${func .id spec.name name}",
-			expected: []expression{{
+			expected: []Expression{{
 				Kind: FuncExpr,
 				Data: FuncExprData{
 					FuncName: "func",
-					Args: []*expression{
+					Args: []*Expression{
 						{
 							Kind: PropertyExpr,
 							Data: PropertyExprData{PropertyPath: "id"},
@@ -80,7 +80,7 @@ func TestExpressionParsing(t *testing.T) {
 		{
 			name:  "complex nested expression",
 			input: "postgresql://${.properties.user}:${vault.}@${.properties.host}:${DB_PORT}/${spec.name}",
-			expected: []expression{
+			expected: []Expression{
 				{
 					Kind: PropertyExpr,
 					Data: PropertyExprData{PropertyPath: "properties.user"},
@@ -112,7 +112,7 @@ func TestExpressionParsing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			expressions, err := parseExpressions(&tt.input)
+			expressions, err := Parse(&tt.input)
 
 			if tt.wantErr {
 				assert.Error(t, err)

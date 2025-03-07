@@ -51,7 +51,7 @@ type FuncExprData struct {
 	// The name of the function
 	FuncName string
 	// The arguments to the function
-	Args []*expression
+	Args []*Expression
 }
 
 type LiteralExprData struct {
@@ -59,7 +59,7 @@ type LiteralExprData struct {
 	Value string
 }
 
-type expression struct {
+type Expression struct {
 	// The kind of expression.
 	Kind Kind
 
@@ -78,7 +78,7 @@ type expression struct {
 	end   int
 }
 
-func (e *expression) Replace(val string) {
+func (e *Expression) Replace(val string) {
 	if e.t == nil {
 		e.Value = val
 	} else {
@@ -159,16 +159,16 @@ func (p *parser) skipWhitespace() {
 	}
 }
 
-func (p *parser) parseExpression() (*expression, error) {
+func (p *parser) parseExpression() (*Expression, error) {
 	seen := bytes.Buffer{}
-	var expr *expression
+	var expr *Expression
 	for c := p.peek(); c != 0; c = p.next() {
 		switch c {
 		case '.':
 			p.next() // skip the '.' character
 			switch seen.String() {
 			case VaultToken:
-				expr = &expression{Kind: VaultExpr}
+				expr = &Expression{Kind: VaultExpr}
 				p.until(p.terminal)
 
 				path := p.seen.String()
@@ -177,7 +177,7 @@ func (p *parser) parseExpression() (*expression, error) {
 				}
 				return expr, nil
 			case SpecToken:
-				expr = &expression{Kind: SpecExpr}
+				expr = &Expression{Kind: SpecExpr}
 				p.until(p.terminal)
 
 				path := p.seen.String()
@@ -186,7 +186,7 @@ func (p *parser) parseExpression() (*expression, error) {
 				}
 				return expr, nil
 			case "":
-				expr = &expression{Kind: PropertyExpr}
+				expr = &Expression{Kind: PropertyExpr}
 				p.until(p.terminal)
 
 				path := p.seen.String()
@@ -200,7 +200,7 @@ func (p *parser) parseExpression() (*expression, error) {
 		case DoubleQuotes, SingleQuotes:
 			quote := c
 			p.next() // skip the '"' character
-			expr = &expression{Kind: LiteralExpr}
+			expr = &Expression{Kind: LiteralExpr}
 			p.until(quote)
 			if p.peek() != quote {
 				return nil, fmt.Errorf("missing quotes")
@@ -212,19 +212,19 @@ func (p *parser) parseExpression() (*expression, error) {
 			p.until(p.terminal)
 			return expr, nil
 		case 0, p.terminal: // we're done
-			expr = &expression{Kind: VarExpr}
+			expr = &Expression{Kind: VarExpr}
 			expr.Data = VarExprData{
 				Name: seen.String(),
 			}
 			return expr, nil
 		case Space:
 			p.next()
-			expr = &expression{Kind: FuncExpr}
+			expr = &Expression{Kind: FuncExpr}
 			funcName := seen.String()
 			p.skipWhitespace()
 
 			// Parse all arguments until terminal
-			var args []*expression
+			var args []*Expression
 			for p.peek() != 0 && p.peek() != p.terminal {
 				wordStart := p.cursor
 				origTerminal := p.terminal
@@ -269,10 +269,10 @@ type tmpl struct {
 	// rawOffset is the offset of the raw string due to replacements from expressions
 	rawOffset int
 	// expressions are the parsed expressions in the template
-	expressions []expression
+	expressions []Expression
 }
 
-func (t *tmpl) Replace(expr *expression, val string) {
+func (t *tmpl) Replace(expr *Expression, val string) {
 	raw := *t.raw
 	raw = raw[:expr.start+t.rawOffset] + val + raw[expr.end+t.rawOffset:]
 
@@ -280,7 +280,7 @@ func (t *tmpl) Replace(expr *expression, val string) {
 	t.rawOffset += len(val) - (expr.end - expr.start)
 }
 
-func parseExpressions(s *string) ([]expression, error) {
+func Parse(s *string) ([]Expression, error) {
 	var t *tmpl
 	prev := rune(0)
 	val := *s

@@ -8,11 +8,18 @@ type ResourceMeta struct {
 	// ResourceType is the resource type.
 	ResourceType string
 
-	//
-	ParentResourceType string
+	// ResourceKind is the resource kind.
+	ResourceKind string
+
+	// ParentForEval is the parent resource used for evaluation.
+	// This can be moved into the expression language later.
+	ParentForEval string
 
 	// ApiVersion is the api version for the resource.
 	ApiVersion string
+
+	// StandardVarPrefix is the standard variable prefix for the resource.
+	StandardVarPrefix string
 
 	// Variables are the variables for the resource.
 	// The key is the variable name and the value is the expression.
@@ -76,8 +83,12 @@ var Resources = []ResourceMeta{
 		},
 	},
 	{
-		ResourceType: "Microsoft.DocumentDB/databaseAccounts",
-		ApiVersion:   "2023-04-15",
+		ResourceType:  "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
+		ApiVersion:    "2023-04-15",
+		ParentForEval: "Microsoft.DocumentDB/databaseAccounts",
+		Variables: map[string]string{
+			"AZURE_COSMOS_ENDPOINT": "${.properties.documentEndpoint}",
+		},
 	},
 	{
 		ResourceType: "Microsoft.DocumentDB/databaseAccounts/mongodbDatabases",
@@ -97,6 +108,10 @@ var Resources = []ResourceMeta{
 	{
 		ResourceType: "Microsoft.KeyVault/vaults",
 		ApiVersion:   "2022-07-01",
+		Variables: map[string]string{
+			"AZURE_KEY_VAULT_NAME":     "${.name}",
+			"AZURE_KEY_VAULT_ENDPOINT": "${.properties.vaultUri}",
+		},
 	},
 	{
 		ResourceType: "Microsoft.ManagedIdentity/userAssignedIdentities",
@@ -116,6 +131,14 @@ var Resources = []ResourceMeta{
 		Variables: map[string]string{
 			"AZURE_STORAGE_ACCOUNT_NAME":  "${.name}",
 			"AZURE_STORAGE_BLOB_ENDPOINT": "${.properties.primaryEndpoints.blob}",
+		},
+	},
+	{
+		ResourceType: "Microsoft.MachineLearningServices/workspaces",
+		ResourceKind: "Project",
+		ApiVersion:   "2024-10-01",
+		Variables: map[string]string{
+			"AZURE_AI_PROJECT_CONNECTION_STRING": "${aiProjectConnectionString .id .properties.discoveryUrl}",
 		},
 	},
 }

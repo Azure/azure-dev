@@ -108,7 +108,7 @@ func Eval(values map[string]string, env EvalEnv) (map[string]string, error) {
 			value: value,
 		}
 
-		expressions, err := parseExpressions(&exp.value)
+		expressions, err := Parse(&exp.value)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse expression '%s': %w", exp.value, err)
 		}
@@ -184,7 +184,7 @@ func Eval(values map[string]string, env EvalEnv) (map[string]string, error) {
 	return values, nil
 }
 
-func evalExpression(env EvalEnv, key string, expr *expression, results map[string]*expressionVar) error {
+func evalExpression(env EvalEnv, key string, expr *Expression, results map[string]*expressionVar) error {
 	switch expr.Kind {
 	case VarExpr:
 		// Variable reference
@@ -273,7 +273,7 @@ type expressionVar struct {
 	value string
 
 	// The expressions parsed from the value. Can be nil if the value does not contain any expressions.
-	expressions []expression
+	expressions []Expression
 
 	// Variables that this variable depends on.
 	dependsOn []string

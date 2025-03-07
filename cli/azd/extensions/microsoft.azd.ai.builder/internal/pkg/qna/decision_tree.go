@@ -40,7 +40,9 @@ type Question struct {
 	Next      string         `json:"next"`
 	Binding   any            `json:"-"`
 	Prompt    Prompt         `json:"prompt,omitempty"`
+	State     map[string]any
 	BeforeAsk func(ctx context.Context, question *Question) error
+	AfterAsk  func(ctx context.Context, question *Question, value any) error
 }
 
 type Choice struct {
@@ -77,6 +79,10 @@ func (t *DecisionTree) askQuestion(ctx context.Context, question Question) error
 		return errors.New("question prompt is nil")
 	}
 
+	if question.State == nil {
+		question.State = map[string]any{}
+	}
+
 	if question.BeforeAsk != nil {
 		if err := question.BeforeAsk(ctx, &question); err != nil {
 			return fmt.Errorf("before ask function failed: %w", err)
@@ -97,24 +103,43 @@ func (t *DecisionTree) askQuestion(ctx context.Context, question Question) error
 			if branch, has := question.Branches[v]; has {
 				nextQuestionKey = branch
 			}
+
+			if question.AfterAsk != nil {
+				if err := question.AfterAsk(ctx, &question, v); err != nil {
+					return fmt.Errorf("after ask function failed: %w", err)
+				}
+			}
 		case bool:
 			if branch, has := question.Branches[v]; has {
 				nextQuestionKey = branch
 			}
+
+			if question.AfterAsk != nil {
+				if err := question.AfterAsk(ctx, &question, v); err != nil {
+					return fmt.Errorf("after ask function failed: %w", err)
+				}
+			}
 		case []string:
 			// Handle multi-select case
 			for _, selectedValue := range v {
+				if question.AfterAsk != nil {
+					if err := question.AfterAsk(ctx, &question, selectedValue); err != nil {
+						return fmt.Errorf("after ask function failed: %w", err)
+					}
+				}
+
 				branch, has := question.Branches[selectedValue]
 				if !has {
 					return fmt.Errorf("branch not found for selected value: %s", selectedValue)
 				}
 
-				question, has := t.config.Questions[branch]
+				nextQuestion, has := t.config.Questions[branch]
 				if !has {
 					return fmt.Errorf("question not found for branch: %s", branch)
 				}
 
-				if err = t.askQuestion(ctx, question); err != nil {
+				nextQuestion.State = question.State
+				if err = t.askQuestion(ctx, nextQuestion); err != nil {
 					return fmt.Errorf("failed to ask question: %w", err)
 				}
 			}
@@ -136,5 +161,6 @@ func (t *DecisionTree) askQuestion(ctx context.Context, question Question) error
 		return fmt.Errorf("next question not found: %s", nextQuestionKey)
 	}
 
+	nextQuestion.State = question.State
 	return t.askQuestion(ctx, nextQuestion)
 }

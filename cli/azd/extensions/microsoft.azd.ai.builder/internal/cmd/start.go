@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/pkg/qna"
@@ -17,20 +18,22 @@ import (
 type scenarioInput struct {
 	SelectedScenario string `json:"selectedScenario,omitempty"`
 
-	UseCustomData    bool     `json:"useCustomData,omitempty"`
-	DataTypes        []string `json:"dataTypes,omitempty"`
-	DataLocations    []string `json:"dataLocations,omitempty"`
-	InteractionTypes []string `json:"interactionTypes,omitempty"`
-	ModelSelection   string   `json:"modelSelection,omitempty"`
-	LocalFilePath    string   `json:"localFilePath,omitempty"`
-	DatabaseType     string   `json:"databaseType,omitempty"`
-	StorageAccountId string   `json:"storageAccountId,omitempty"`
-	DatabaseId       string   `json:"databaseId,omitempty"`
-	MessagingType    string   `json:"messageType,omitempty"`
-	MessagingId      string   `json:"messagingId,omitempty"`
-	ModelTasks       []string `json:"modelTasks,omitempty"`
-	AppType          string   `json:"appType,omitempty"`
-	AppId            string   `json:"appId,omitempty"`
+	UseCustomData       bool     `json:"useCustomData,omitempty"`
+	DataTypes           []string `json:"dataTypes,omitempty"`
+	DataLocations       []string `json:"dataLocations,omitempty"`
+	InteractionTypes    []string `json:"interactionTypes,omitempty"`
+	ModelSelection      string   `json:"modelSelection,omitempty"`
+	LocalFilePath       string   `json:"localFilePath,omitempty"`
+	LocalFileSelection  string   `json:"localFileSelection,omitempty"`
+	LocalFileGlobFilter string   `json:"localFileGlobFilter,omitempty"`
+	DatabaseType        string   `json:"databaseType,omitempty"`
+	StorageAccountId    string   `json:"storageAccountId,omitempty"`
+	DatabaseId          string   `json:"databaseId,omitempty"`
+	MessagingType       string   `json:"messageType,omitempty"`
+	MessagingId         string   `json:"messagingId,omitempty"`
+	ModelTasks          []string `json:"modelTasks,omitempty"`
+	AppType             string   `json:"appType,omitempty"`
+	AppId               string   `json:"appId,omitempty"`
 }
 
 type resourceTypeConfig struct {
@@ -145,14 +148,22 @@ func newStartCommand() *cobra.Command {
 
 			scenarioData := scenarioInput{}
 
+			welcomeMessage := []string{
+				"This tool will help you build an AI scenario using Azure services.",
+				"Please answer the following questions to get started.",
+			}
+
 			// Build up list of questions
 			config := qna.DecisionTreeConfig{
 				Questions: map[string]qna.Question{
 					"root": {
 						Binding: &scenarioData.SelectedScenario,
+						Heading: "Welcome to the AI Builder Extension!",
+						Message: strings.Join(welcomeMessage, "\n"),
 						Prompt: &qna.SingleSelectPrompt{
 							Client:          azdClient,
 							Message:         "What type of AI scenario are you building?",
+							HelpMessage:     "Choose the scenario that best fits your needs.",
 							EnableFiltering: to.Ptr(false),
 							Choices: []qna.Choice{
 								{Label: "RAG Application (Retrieval-Augmented Generation)", Value: "rag"},
@@ -187,14 +198,18 @@ func newStartCommand() *cobra.Command {
 						Prompt: &qna.ConfirmPrompt{
 							Client:       azdClient,
 							Message:      "Does your application require custom data?",
+							HelpMessage:  "Custom data is data that is not publicly available and is specific to your application.",
 							DefaultValue: to.Ptr(true),
 						},
 					},
 					"choose-data-types": {
 						Binding: &scenarioData.DataTypes,
+						Heading: "Data Sources",
+						Message: "Lets identify all the data source that will be used in your application.",
 						Prompt: &qna.MultiSelectPrompt{
 							Client:          azdClient,
 							Message:         "What type of data are you using?",
+							HelpMessage:     "Select all the data types that apply to your application.",
 							EnableFiltering: to.Ptr(false),
 							Choices: []qna.Choice{
 								{Label: "Structured documents, ex. JSON, CSV", Value: "structured-documents"},
@@ -211,11 +226,13 @@ func newStartCommand() *cobra.Command {
 						Prompt: &qna.MultiSelectPrompt{
 							Client:          azdClient,
 							Message:         "Where is your data located?",
+							HelpMessage:     "Select all the data locations that apply to your application.",
 							EnableFiltering: to.Ptr(false),
 							Choices: []qna.Choice{
 								{Label: "Azure Blob Storage", Value: "blob-storage"},
 								{Label: "Azure Database", Value: "databases"},
 								{Label: "Local file system", Value: "local-file-system"},
+								{Label: "Other", Value: "other-datasource"},
 							},
 						},
 						Branches: map[any]string{
@@ -239,6 +256,7 @@ func newStartCommand() *cobra.Command {
 							Client:                  azdClient,
 							ResourceType:            "Microsoft.Storage/storageAccounts",
 							ResourceTypeDisplayName: "Storage Account",
+							HelpMessage:             "You can select an existing storage account or create a new one.",
 							AzureContext:            azureContext,
 						},
 					},
@@ -246,6 +264,7 @@ func newStartCommand() *cobra.Command {
 						Binding: &scenarioData.DatabaseType,
 						Prompt: &qna.SingleSelectPrompt{
 							Message:         "Which type of database?",
+							HelpMessage:     "Select the type of database that best fits your needs.",
 							Client:          azdClient,
 							EnableFiltering: to.Ptr(false),
 							Choices: []qna.Choice{
@@ -261,6 +280,7 @@ func newStartCommand() *cobra.Command {
 					"choose-database-resource": {
 						Binding: &scenarioData.DatabaseId,
 						Prompt: &qna.SubscriptionResourcePrompt{
+							HelpMessage:  "You can select an existing database or create a new one.",
 							Client:       azdClient,
 							AzureContext: azureContext,
 							BeforeAsk: func(ctx context.Context, q *qna.Question, p *qna.SubscriptionResourcePrompt) error {
@@ -285,13 +305,46 @@ func newStartCommand() *cobra.Command {
 						Prompt: &qna.TextPrompt{
 							Client:  azdClient,
 							Message: "Path to the local files",
+							HelpMessage: "This path can be absolute or relative to the current working directory. " +
+								"Please make sure the path is accessible from the machine running this command.",
+							Placeholder: "./data",
+						},
+						Next: "local-file-choose-files",
+					},
+					"local-file-choose-files": {
+						Binding: &scenarioData.LocalFileSelection,
+						Prompt: &qna.SingleSelectPrompt{
+							Client:          azdClient,
+							Message:         "Which files?",
+							HelpMessage:     "You can select all files or use a glob expression to filter the files.",
+							EnableFiltering: to.Ptr(false),
+							Choices: []qna.Choice{
+								{Label: "All Files", Value: "all-files"},
+								{Label: "Glob Expression", Value: "glob-expression"},
+							},
+						},
+						Branches: map[any]string{
+							"glob-expression": "local-file-glob",
+						},
+					},
+					"local-file-glob": {
+						Binding: &scenarioData.LocalFileGlobFilter,
+						Prompt: &qna.TextPrompt{
+							Client:  azdClient,
+							Message: "Enter a glob expression to filter files",
+							HelpMessage: "A glob expression is a string that uses wildcard characters to match file names. " +
+								" For example, *.txt will match all text files in the current directory.",
+							Placeholder: "*.json",
 						},
 					},
 					"rag-user-interaction": {
 						Binding: &scenarioData.InteractionTypes,
+						Heading: "Application Hosting",
+						Message: "Now we will figure out all the different ways users will interact with your application.",
 						Prompt: &qna.MultiSelectPrompt{
 							Client:          azdClient,
 							Message:         "How do you want users to interact with the data?",
+							HelpMessage:     "Select all the data interaction types that apply to your application.",
 							EnableFiltering: to.Ptr(false),
 							Choices: []qna.Choice{
 								{Label: "Chatbot", Value: "chatbot"},
@@ -310,9 +363,12 @@ func newStartCommand() *cobra.Command {
 					},
 					"agent-interaction": {
 						Binding: &scenarioData.InteractionTypes,
+						Heading: "Agent Hosting",
+						Message: "Now we will figure out all the different ways users and systems will interact with your agent.",
 						Prompt: &qna.MultiSelectPrompt{
 							Client:          azdClient,
 							Message:         "How do you want users to interact with the agent?",
+							HelpMessage:     "Select all the data interaction types that apply to your application.",
 							EnableFiltering: to.Ptr(false),
 							Choices: []qna.Choice{
 								{Label: "Chatbot", Value: "chatbot"},
@@ -349,11 +405,13 @@ func newStartCommand() *cobra.Command {
 						Prompt: &qna.MultiSelectPrompt{
 							Client:          azdClient,
 							Message:         "What tasks do you want the AI agent to perform?",
+							HelpMessage:     "Select all the tasks that apply to your application.",
 							EnableFiltering: to.Ptr(false),
 							Choices: []qna.Choice{
 								{Label: "Custom Function Calling", Value: "custom-function-calling"},
 								{Label: "Integrate with Open API based services", Value: "openapi"},
 								{Label: "Run Azure Functions", Value: "azure-functions"},
+								{Label: "Other", Value: "other-model-tasks"},
 							},
 						},
 						Next: "use-custom-data",
@@ -369,19 +427,28 @@ func newStartCommand() *cobra.Command {
 								)
 								return nil
 							},
-							Client: azdClient,
+							Client:          azdClient,
+							EnableFiltering: to.Ptr(false),
 							Choices: []qna.Choice{
+								{Label: "Choose for me", Value: "choose-app"},
 								{Label: "App Service", Value: "webapp"},
 								{Label: "Container App", Value: "containerapp"},
 								{Label: "Function App", Value: "functionapp"},
 								{Label: "Static Web App", Value: "staticwebapp"},
+								{Label: "Other", Value: "otherapp"},
 							},
 						},
-						Next: "choose-app-resource",
+						Branches: map[any]string{
+							"webapp":       "choose-app-resource",
+							"containerapp": "choose-app-resource",
+							"functionapp":  "choose-app-resource",
+							"staticwebapp": "choose-app-resource",
+						},
 					},
 					"choose-app-resource": {
 						Binding: &scenarioData.AppId,
 						Prompt: &qna.SubscriptionResourcePrompt{
+							HelpMessage:  "You can select an existing application or create a new one.",
 							Client:       azdClient,
 							AzureContext: azureContext,
 							BeforeAsk: func(ctx context.Context, q *qna.Question, p *qna.SubscriptionResourcePrompt) error {
@@ -406,17 +473,23 @@ func newStartCommand() *cobra.Command {
 						Prompt: &qna.SingleSelectPrompt{
 							Client:          azdClient,
 							Message:         "Which messaging service do you want to use?",
+							HelpMessage:     "Select the messaging service that best fits your needs.",
 							EnableFiltering: to.Ptr(false),
 							Choices: []qna.Choice{
+								{Label: "Choose for me", Value: "choose-messaging"},
 								{Label: "Azure Service Bus", Value: "messaging.eventhubs"},
 								{Label: "Azure Event Hubs", Value: "messaging.servicebus"},
 							},
 						},
-						Next: "choose-messaging-resource",
+						Branches: map[any]string{
+							"messaging.eventhubs":  "choose-messaging-resource",
+							"messaging.servicebus": "choose-messaging-resource",
+						},
 					},
 					"choose-messaging-resource": {
 						Binding: &scenarioData.MessagingId,
 						Prompt: &qna.SubscriptionResourcePrompt{
+							HelpMessage:  "You can select an existing messaging service or create a new one.",
 							Client:       azdClient,
 							AzureContext: azureContext,
 							BeforeAsk: func(ctx context.Context, q *qna.Question, p *qna.SubscriptionResourcePrompt) error {
@@ -441,6 +514,8 @@ func newStartCommand() *cobra.Command {
 						Prompt: &qna.MultiSelectPrompt{
 							Client:  azdClient,
 							Message: "What type of tasks should the AI models perform?",
+							HelpMessage: "Select all the tasks that apply to your application. " +
+								"These tasks will help you narrow down the type of models you need.",
 							Choices: []qna.Choice{
 								{Label: "Text Generation", Value: "text-generation"},
 								{Label: "Image Generation", Value: "image-generation"},
@@ -456,11 +531,6 @@ func newStartCommand() *cobra.Command {
 					},
 				},
 			}
-
-			fmt.Println("Welcome to the AI Builder CLI!")
-			fmt.Println("This tool will help you build an AI scenario using Azure services.")
-			fmt.Println("Please answer the following questions to get started.")
-			fmt.Println()
 
 			decisionTree := qna.NewDecisionTree(azdClient, config)
 			if err := decisionTree.Run(ctx); err != nil {

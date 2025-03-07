@@ -289,9 +289,9 @@ func TestPlanForResourceGroup(t *testing.T) {
 		return options.Message == "Pick a resource group to use:"
 	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 		require.Len(t, options.Options, 3)
-		require.Equal(t, "Create a new resource group", options.Options[0])
-		require.Equal(t, "1. existingGroup1", options.Options[1])
-		require.Equal(t, "2. existingGroup2", options.Options[2])
+		require.Equal(t, "1. Create a new resource group", options.Options[0])
+		require.Equal(t, "2. existingGroup1", options.Options[1])
+		require.Equal(t, "3. existingGroup2", options.Options[2])
 
 		return 0, nil
 	})

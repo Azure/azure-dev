@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/fatih/color"
 )
 
 // DecisionTree represents the entire decision tree structure.
@@ -39,7 +40,10 @@ type Question struct {
 	Branches  map[any]string `json:"branches"`
 	Next      string         `json:"next"`
 	Binding   any            `json:"-"`
-	Prompt    Prompt         `json:"prompt,omitempty"`
+	Heading   string         `json:"heading,omitempty"`
+	Help      string         `json:"help,omitempty"`
+	Message   string
+	Prompt    Prompt `json:"prompt,omitempty"`
 	State     map[string]any
 	BeforeAsk func(ctx context.Context, question *Question) error
 	AfterAsk  func(ctx context.Context, question *Question, value any) error
@@ -81,6 +85,16 @@ func (t *DecisionTree) askQuestion(ctx context.Context, question Question) error
 
 	if question.State == nil {
 		question.State = map[string]any{}
+	}
+
+	if question.Heading != "" {
+		fmt.Println()
+		color.New(color.FgHiWhite, color.Bold).Printf("%s\n", question.Heading)
+	}
+
+	if question.Message != "" {
+		fmt.Println(question.Message)
+		fmt.Println()
 	}
 
 	if question.BeforeAsk != nil {

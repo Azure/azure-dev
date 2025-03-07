@@ -214,14 +214,24 @@ func detectGradleDependencies(filePath string, project *Project) (*Project, erro
 	// and avoid detecting strings in comments
 	lines := strings.Split(fileContent, "\n")
 	for _, line := range lines {
-		// Check for MySQL dependency patterns
-		if isGradleDependency(line, "com.mysql", "mysql-connector-j") {
+		if isGradleDependency(line, "com.mysql", "mysql-connector-j") ||
+			isGradleDependency(line, "com.azure.spring", "spring-cloud-azure-starter-jdbc-mysql") {
 			databaseDepMap[DbMySql] = struct{}{}
 		}
 
-		// Check for PostgreSQL dependency patterns
-		if isGradleDependency(line, "org.postgresql", "postgresql") {
+		if isGradleDependency(line, "org.postgresql", "postgresql") ||
+			isGradleDependency(line, "com.azure.spring", "spring-cloud-azure-starter-jdbc-postgresql") {
 			databaseDepMap[DbPostgres] = struct{}{}
+		}
+
+		if isGradleDependency(line, "org.springframework.boot", "spring-boot-starter-data-redis") ||
+			isGradleDependency(line, "org.springframework.boot", "spring-boot-starter-data-redis-reactive") {
+			databaseDepMap[DbRedis] = struct{}{}
+		}
+
+		if isGradleDependency(line, "org.springframework.boot", "spring-boot-starter-data-mongodb") ||
+			isGradleDependency(line, "org.springframework.boot", "spring-boot-starter-data-mongodb-reactive") {
+			databaseDepMap[DbMongo] = struct{}{}
 		}
 	}
 

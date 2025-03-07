@@ -37,7 +37,7 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 	}
 
 	confirm := ux.NewConfirm(options)
-	value, err := confirm.Ask()
+	value, err := confirm.Ask(ctx)
 
 	return &azdext.ConfirmResponse{
 		Value: value,
@@ -45,10 +45,18 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 }
 
 func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (*azdext.SelectResponse, error) {
+	choices := make([]*ux.SelectChoice, len(req.Options.Choices))
+	for i, choice := range req.Options.Choices {
+		choices[i] = &ux.SelectChoice{
+			Value: choice.Value,
+			Label: choice.Label,
+		}
+	}
+
 	options := &ux.SelectOptions{
 		SelectedIndex:   convertToInt(req.Options.SelectedIndex),
 		Message:         req.Options.Message,
-		Allowed:         req.Options.Allowed,
+		Choices:         choices,
 		HelpMessage:     req.Options.HelpMessage,
 		Hint:            req.Options.Hint,
 		DisplayCount:    int(req.Options.DisplayCount),
@@ -57,7 +65,7 @@ func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (
 	}
 
 	selectPrompt := ux.NewSelect(options)
-	value, err := selectPrompt.Ask()
+	value, err := selectPrompt.Ask(ctx)
 
 	return &azdext.SelectResponse{
 		Value: convertToInt32(value),
@@ -79,7 +87,7 @@ func (s *promptService) Prompt(ctx context.Context, req *azdext.PromptRequest) (
 	}
 
 	prompt := ux.NewPrompt(options)
-	value, err := prompt.Ask()
+	value, err := prompt.Ask(ctx)
 
 	return &azdext.PromptResponse{
 		Value: value,

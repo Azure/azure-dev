@@ -19,6 +19,7 @@ gofrs
 isatty
 joho
 karolz
+Lunatico9
 mattn
 mikekistler
 multierr
@@ -27,6 +28,7 @@ otiai10
 pamelafox
 pbnj
 rujche
+saragluna
 sebastianmattar
 sergi
 sethvargo

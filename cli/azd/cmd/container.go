@@ -180,6 +180,15 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			envValue = ""
 		}
 
+		if envValue == "" {
+			// If no explicit environment flag was set, but one was provided
+			// in the context, use that instead.
+			// This is used in workflow execution (in `up`) to influence the environment used.
+			if envFlag, ok := cmd.Context().Value(envFlagCtxKey).(internal.EnvFlag); ok {
+				return envFlag
+			}
+		}
+
 		return internal.EnvFlag{EnvironmentName: envValue}
 	})
 

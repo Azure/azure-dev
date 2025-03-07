@@ -22,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/joho/godotenv"
@@ -512,6 +513,72 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
+}
+
+// Test_CLI_Up_EnvironmentFlags validates that the up workflow handles the --environment/-e flag
+// correctly.
+func Test_CLI_Up_EnvironmentFlags(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+
+	// set up basic project
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	// create environments
+	envNew(ctx, t, cli, "env1", false)
+	envNew(ctx, t, cli, "env2", false)
+
+	// select env1 as default
+	envSelect(ctx, t, cli, "env1")
+
+	// update up workflow
+	err = os.WriteFile(filepath.Join(dir, "azure.yaml"), []byte(`
+name: up-envflag
+workflows:
+  up:
+    steps:
+    - azd: env set CURRENT_ENV VALUE
+    - azd: env set ENV1 VALUE1 -e env1
+    - azd: env set ENV2 VALUE2 -e env2
+`), osutil.PermissionFile)
+	require.NoError(t, err)
+
+	// run with env1 selected as  implicitly default
+	_, err = cli.RunCommand(ctx, "up")
+	require.NoError(t, err)
+
+	values := envGetValues(ctx, t, cli, "-e", "env1")
+	require.Contains(t, values, "ENV1")
+	require.Contains(t, values, "CURRENT_ENV")
+	require.NotContains(t, values, "ENV2")
+
+	values = envGetValues(ctx, t, cli, "-e", "env2")
+	require.Contains(t, values, "ENV2")
+	require.NotContains(t, values, "CURRENT_ENV")
+	require.NotContains(t, values, "ENV1")
+
+	// run with env2 selected explicitly,
+	// this should newly set CURRENT_ENV on env2
+	_, err = cli.RunCommand(ctx, "up", "-e", "env2")
+	require.NoError(t, err)
+
+	values = envGetValues(ctx, t, cli, "-e", "env1")
+	require.Contains(t, values, "ENV1")
+	require.Contains(t, values, "CURRENT_ENV")
+	require.NotContains(t, values, "ENV2")
+
+	values = envGetValues(ctx, t, cli, "-e", "env2")
+	require.Contains(t, values, "ENV2")
+	require.Contains(t, values, "CURRENT_ENV")
+	require.NotContains(t, values, "ENV1")
+
 }
 
 type httpClient interface {

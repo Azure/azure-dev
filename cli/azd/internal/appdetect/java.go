@@ -27,6 +27,25 @@ var (
 	nameDoubleQuoteRegex  = regexp.MustCompile(`name\s*:\s*"([^"]+)"`)  // Example: name: "library-name"
 )
 
+// Database dependency mappings
+type dbDependency struct {
+	groupId    string
+	artifactId string
+	dbType     DatabaseDep
+}
+
+// Common database dependencies across Maven and Gradle
+var dbDependencies = []dbDependency{
+	{"com.mysql", "mysql-connector-j", DbMySql},
+	{"com.azure.spring", "spring-cloud-azure-starter-jdbc-mysql", DbMySql},
+	{"org.postgresql", "postgresql", DbPostgres},
+	{"com.azure.spring", "spring-cloud-azure-starter-jdbc-postgresql", DbPostgres},
+	{"org.springframework.boot", "spring-boot-starter-data-redis", DbRedis},
+	{"org.springframework.boot", "spring-boot-starter-data-redis-reactive", DbRedis},
+	{"org.springframework.boot", "spring-boot-starter-data-mongodb", DbMongo},
+	{"org.springframework.boot", "spring-boot-starter-data-mongodb-reactive", DbMongo},
+}
+
 type javaDetector struct {
 	mvnCli       *maven.Cli
 	rootProjects []mavenProject
@@ -62,7 +81,7 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 			}
 
 			_ = currentRoot // use currentRoot here in the analysis
-			result, err := detectDependencies(project, &Project{
+			result, err := detectMavenDependencies(project, &Project{
 				Language:      Java,
 				Path:          path,
 				DetectionRule: "Inferred by presence of: pom.xml",
@@ -163,39 +182,30 @@ func readMavenProject(ctx context.Context, mvnCli *maven.Cli, filePath string) (
 	return &project, nil
 }
 
-func detectDependencies(mavenProject *mavenProject, project *Project) (*Project, error) {
-	databaseDepMap := map[DatabaseDep]struct{}{}
-	for _, dep := range mavenProject.Dependencies {
-		if (dep.GroupId == "com.mysql" && dep.ArtifactId == "mysql-connector-j") ||
-			(dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-starter-jdbc-mysql") {
-			databaseDepMap[DbMySql] = struct{}{}
-		}
-
-		if (dep.GroupId == "org.postgresql" && dep.ArtifactId == "postgresql") ||
-			(dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-starter-jdbc-postgresql") {
-			databaseDepMap[DbPostgres] = struct{}{}
-		}
-
-		if (dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-redis") ||
-			(dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-redis-reactive") {
-			databaseDepMap[DbRedis] = struct{}{}
-		}
-
-		if (dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-mongodb") ||
-			(dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-mongodb-reactive") {
-			databaseDepMap[DbMongo] = struct{}{}
-		}
-		// todo: Add DbCosmos
-	}
-
+// processDbDependencies is a common function to process database dependencies and add them to the project
+func processDbDependencies(databaseDepMap map[DatabaseDep]struct{}, project *Project) *Project {
 	if len(databaseDepMap) > 0 {
 		project.DatabaseDeps = slices.SortedFunc(maps.Keys(databaseDepMap),
 			func(a, b DatabaseDep) int {
 				return strings.Compare(string(a), string(b))
 			})
 	}
+	return project
+}
 
-	return project, nil
+func detectMavenDependencies(mavenProject *mavenProject, project *Project) (*Project, error) {
+	databaseDepMap := map[DatabaseDep]struct{}{}
+
+	// Check for dependencies
+	for _, dep := range mavenProject.Dependencies {
+		for _, dbDep := range dbDependencies {
+			if dep.GroupId == dbDep.groupId && dep.ArtifactId == dbDep.artifactId {
+				databaseDepMap[dbDep.dbType] = struct{}{}
+			}
+		}
+	}
+
+	return processDbDependencies(databaseDepMap, project), nil
 }
 
 // detectGradleDependencies parses a Gradle build file to identify dependencies
@@ -207,42 +217,17 @@ func detectGradleDependencies(filePath string, project *Project) (*Project, erro
 	}
 
 	fileContent := string(content)
-
 	databaseDepMap := map[DatabaseDep]struct{}{}
-
-	// Parse file line by line to better identify actual dependencies
-	// and avoid detecting strings in comments
 	lines := strings.Split(fileContent, "\n")
 	for _, line := range lines {
-		if isGradleDependency(line, "com.mysql", "mysql-connector-j") ||
-			isGradleDependency(line, "com.azure.spring", "spring-cloud-azure-starter-jdbc-mysql") {
-			databaseDepMap[DbMySql] = struct{}{}
-		}
-
-		if isGradleDependency(line, "org.postgresql", "postgresql") ||
-			isGradleDependency(line, "com.azure.spring", "spring-cloud-azure-starter-jdbc-postgresql") {
-			databaseDepMap[DbPostgres] = struct{}{}
-		}
-
-		if isGradleDependency(line, "org.springframework.boot", "spring-boot-starter-data-redis") ||
-			isGradleDependency(line, "org.springframework.boot", "spring-boot-starter-data-redis-reactive") {
-			databaseDepMap[DbRedis] = struct{}{}
-		}
-
-		if isGradleDependency(line, "org.springframework.boot", "spring-boot-starter-data-mongodb") ||
-			isGradleDependency(line, "org.springframework.boot", "spring-boot-starter-data-mongodb-reactive") {
-			databaseDepMap[DbMongo] = struct{}{}
+		for _, dbDep := range dbDependencies {
+			if isGradleDependency(line, dbDep.groupId, dbDep.artifactId) {
+				databaseDepMap[dbDep.dbType] = struct{}{}
+			}
 		}
 	}
 
-	if len(databaseDepMap) > 0 {
-		project.DatabaseDeps = slices.SortedFunc(maps.Keys(databaseDepMap),
-			func(a, b DatabaseDep) int {
-				return strings.Compare(string(a), string(b))
-			})
-	}
-
-	return project, nil
+	return processDbDependencies(databaseDepMap, project), nil
 }
 
 // isGradleDependency checks if a line contains both groupId and artifactId with common Gradle configuration keywords

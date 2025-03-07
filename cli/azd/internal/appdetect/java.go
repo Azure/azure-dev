@@ -11,10 +11,20 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
+)
+
+// Regex patterns for Gradle dependency detection
+var (
+	// Separate patterns for single and double quotes
+	groupSingleQuoteRegex = regexp.MustCompile(`group\s*:\s*'([^']+)'`) // Example: group: 'com.example'
+	groupDoubleQuoteRegex = regexp.MustCompile(`group\s*:\s*"([^"]+)"`) // Example: group: "com.example"
+	nameSingleQuoteRegex  = regexp.MustCompile(`name\s*:\s*'([^']+)'`)  // Example: name: 'library-name'
+	nameDoubleQuoteRegex  = regexp.MustCompile(`name\s*:\s*"([^"]+)"`)  // Example: name: "library-name"
 )
 
 type javaDetector struct {
@@ -209,24 +219,13 @@ func detectGradleDependencies(filePath string, project *Project) (*Project, erro
 	// and avoid detecting strings in comments
 	lines := strings.Split(fileContent, "\n")
 	for _, line := range lines {
-		line = strings.TrimSpace(line)
-
-		// Skip empty lines
-		if line == "" {
-			continue
-		}
-
-		// Skip comment lines
-		if strings.HasPrefix(line, "//") || strings.HasPrefix(line, "/*") || strings.HasPrefix(line, "*") {
-			continue
-		}
 		// Check for MySQL dependency patterns
-		if isGradleDependency(line, "mysql-connector-java") || isGradleDependency(line, "mysql-connector-j") {
+		if isGradleDependency(line, "com.mysql", "mysql-connector-j") {
 			databaseDepMap[DbMySql] = struct{}{}
 		}
 
 		// Check for PostgreSQL dependency patterns
-		if isGradleDependency(line, "postgresql") {
+		if isGradleDependency(line, "org.postgresql", "postgresql") {
 			databaseDepMap[DbPostgres] = struct{}{}
 		}
 	}
@@ -241,20 +240,56 @@ func detectGradleDependencies(filePath string, project *Project) (*Project, erro
 	return project, nil
 }
 
-// isGradleDependency checks if a line contains a dependency reference with common Gradle configuration keywords
-func isGradleDependency(line, dependencyIdentifier string) bool {
-	if !strings.Contains(line, dependencyIdentifier) {
+// isGradleDependency checks if a line contains both groupId and artifactId with common Gradle configuration keywords
+func isGradleDependency(line, groupId, artifactId string) bool {
+	line = strings.TrimSpace(line)
+	// Skip empty lines
+	if line == "" {
+		return false
+	}
+	// Skip comment lines
+	if strings.HasPrefix(line, "//") || strings.HasPrefix(line, "/*") || strings.HasPrefix(line, "*") {
+		return false
+	}
+	if !strings.Contains(line, artifactId) || !strings.Contains(line, groupId) {
 		return false
 	}
 
 	// Check for common Gradle dependency configuration keywords
-	// Common formats:
-	// - implementation 'group:artifact:version'
-	// - implementation("group:artifact:version")
-	// - implementation group: 'group', name: 'artifact', version: 'version'
 	gradleConfigs := []string{"implementation", "compile", "api", "runtime", "runtimeOnly", "compileOnly"}
+	hasConfig := false
 	for _, config := range gradleConfigs {
 		if strings.Contains(line, config) {
+			hasConfig = true
+			break
+		}
+	}
+
+	if !hasConfig {
+		return false
+	}
+
+	// Check for different Gradle dependency declaration formats
+
+	// Format: implementation 'group:artifact:version'
+	// Format: implementation("group:artifact:version")
+	colonNotation := fmt.Sprintf("%s:%s", groupId, artifactId)
+	if strings.Contains(line, colonNotation) {
+		return true
+	}
+
+	// Check for group matches with single quotes
+	if matches := groupSingleQuoteRegex.FindStringSubmatch(line); len(matches) >= 2 && matches[1] == groupId {
+		// Check for name matches with single quotes
+		if matches := nameSingleQuoteRegex.FindStringSubmatch(line); len(matches) >= 2 && matches[1] == artifactId {
+			return true
+		}
+	}
+
+	// Check for group matches with double quotes
+	if matches := groupDoubleQuoteRegex.FindStringSubmatch(line); len(matches) >= 2 && matches[1] == groupId {
+		// Check for name matches with double quotes
+		if matches := nameDoubleQuoteRegex.FindStringSubmatch(line); len(matches) >= 2 && matches[1] == artifactId {
 			return true
 		}
 	}

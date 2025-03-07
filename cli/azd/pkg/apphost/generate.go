@@ -559,7 +559,19 @@ func evaluateForOutputs(value string) (map[string]genOutputParameter, error) {
 	for _, match := range matches {
 		noBrackets := strings.TrimRight(strings.TrimLeft(match, "{"), "}")
 		parts := strings.Split(noBrackets, ".")
-		name := fmt.Sprintf("%s_%s", strings.ToUpper(parts[0]), strings.ToUpper(parts[2]))
+		resourceName, outputName := parts[0], parts[2]
+		// On migration mode, the name of the container registry endpoint can be defined from any bicep.v0 resource
+		// typically from a resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
+		// If the AZURE_CONTAINER_REGISTRY_ENDPOINT is spotted, it is promoted as the output to sync with the ACR created
+		// by the appHost.
+		// AZD has currently no support for handling multiple ACR endpoints.
+		if strings.Contains(outputName, environment.ContainerRegistryEndpointEnvVarName) && appHostInfraMigrationEnabled {
+			outputs[environment.ContainerRegistryEndpointEnvVarName] = genOutputParameter{
+				Type:  "string",
+				Value: noBrackets,
+			}
+		}
+		name := fmt.Sprintf("%s_%s", strings.ToUpper(resourceName), strings.ToUpper(outputName))
 		outputs[name] = genOutputParameter{
 			Type:  "string",
 			Value: noBrackets,

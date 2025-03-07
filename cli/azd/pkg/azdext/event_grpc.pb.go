@@ -29,9 +29,10 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// The EventsService allows clients to subscribe and receive event notifications
+// EventService defines methods for event subscription, invocation, and status updates.
+// Clients can subscribe to events and receive notifications via a bidirectional stream.
 type EventServiceClient interface {
-	// Bidirectional stream for event subscription, invocation, and status updates
+	// Bidirectional stream for event subscription, invocation, and status updates.
 	EventStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[EventMessage, EventMessage], error)
 }
 
@@ -60,9 +61,10 @@ type EventService_EventStreamClient = grpc.BidiStreamingClient[EventMessage, Eve
 // All implementations must embed UnimplementedEventServiceServer
 // for forward compatibility.
 //
-// The EventsService allows clients to subscribe and receive event notifications
+// EventService defines methods for event subscription, invocation, and status updates.
+// Clients can subscribe to events and receive notifications via a bidirectional stream.
 type EventServiceServer interface {
-	// Bidirectional stream for event subscription, invocation, and status updates
+	// Bidirectional stream for event subscription, invocation, and status updates.
 	EventStream(grpc.BidiStreamingServer[EventMessage, EventMessage]) error
 	mustEmbedUnimplementedEventServiceServer()
 }

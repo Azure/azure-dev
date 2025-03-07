@@ -178,7 +178,9 @@ type ExtensionReadyEvent struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Status  string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	// Status indicates the readiness state of the extension.
+	Status string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	// Message provides additional details.
 	Message string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 }
 
@@ -226,12 +228,13 @@ func (x *ExtensionReadyEvent) GetMessage() string {
 	return ""
 }
 
-// Client subscribes to events
+// Client subscribes to project-related events
 type SubscribeProjectEvent struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
+	// List of event names to subscribe to.
 	EventNames []string `protobuf:"bytes,1,rep,name=event_names,json=eventNames,proto3" json:"event_names,omitempty"`
 }
 
@@ -272,11 +275,13 @@ func (x *SubscribeProjectEvent) GetEventNames() []string {
 	return nil
 }
 
+// Client subscribes to service-related events
 type SubscribeServiceEvent struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
+	// List of event names to subscribe to.
 	EventNames []string `protobuf:"bytes,1,rep,name=event_names,json=eventNames,proto3" json:"event_names,omitempty"`
 	Language   string   `protobuf:"bytes,2,opt,name=language,proto3" json:"language,omitempty"`
 	Host       string   `protobuf:"bytes,3,opt,name=host,proto3" json:"host,omitempty"`
@@ -333,13 +338,16 @@ func (x *SubscribeServiceEvent) GetHost() string {
 	return ""
 }
 
+// Server invokes the project event handler
 type InvokeProjectHandler struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	EventName string         `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
-	Project   *ProjectConfig `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
+	// Name of the event being invoked.
+	EventName string `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
+	// Current project configuration.
+	Project *ProjectConfig `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
 }
 
 func (x *InvokeProjectHandler) Reset() {
@@ -386,14 +394,18 @@ func (x *InvokeProjectHandler) GetProject() *ProjectConfig {
 	return nil
 }
 
+// Server invokes the service event handler
 type InvokeServiceHandler struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	EventName string         `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
-	Project   *ProjectConfig `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
-	Service   *ServiceConfig `protobuf:"bytes,3,opt,name=service,proto3" json:"service,omitempty"`
+	// Name of the event being invoked.
+	EventName string `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
+	// Current project configuration.
+	Project *ProjectConfig `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
+	// Specific service configuration.
+	Service *ServiceConfig `protobuf:"bytes,3,opt,name=service,proto3" json:"service,omitempty"`
 }
 
 func (x *InvokeServiceHandler) Reset() {
@@ -447,15 +459,18 @@ func (x *InvokeServiceHandler) GetService() *ServiceConfig {
 	return nil
 }
 
-// Client sends status updates back to the server
+// Client sends status updates for project events
 type ProjectHandlerStatus struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	EventName string `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"` // The event this status update is for
-	Status    string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`                        // "running", "completed", "failed", etc.
-	Message   string `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`                      // Optional additional status details
+	// Name of the event this status update is for.
+	EventName string `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
+	// Status such as "running", "completed", "failed", etc.
+	Status string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	// Optional message providing further details.
+	Message string `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
 }
 
 func (x *ProjectHandlerStatus) Reset() {
@@ -509,15 +524,20 @@ func (x *ProjectHandlerStatus) GetMessage() string {
 	return ""
 }
 
+// Client sends status updates for service events
 type ServiceHandlerStatus struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	EventName   string `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`       // The event this status update is for
-	ServiceName string `protobuf:"bytes,2,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"` // The service this status update is for
-	Status      string `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                              // "running", "completed", "failed", etc.
-	Message     string `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`                            // Optional additional status details
+	// Name of the event this status update is for.
+	EventName string `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
+	// Name of the service related to the update.
+	ServiceName string `protobuf:"bytes,2,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"`
+	// Status such as "running", "completed", "failed", etc.
+	Status string `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	// Optional message providing further details.
+	Message string `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
 }
 
 func (x *ServiceHandlerStatus) Reset() {
@@ -674,11 +694,10 @@ var file_event_proto_rawDesc = []byte{
 	0x74, 0x72, 0x65, 0x61, 0x6d, 0x12, 0x14, 0x2e, 0x61, 0x7a, 0x64, 0x65, 0x78, 0x74, 0x2e, 0x45,
 	0x76, 0x65, 0x6e, 0x74, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x1a, 0x14, 0x2e, 0x61, 0x7a,
 	0x64, 0x65, 0x78, 0x74, 0x2e, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67,
-	0x65, 0x28, 0x01, 0x30, 0x01, 0x42, 0x3a, 0x5a, 0x38, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e,
+	0x65, 0x28, 0x01, 0x30, 0x01, 0x42, 0x2f, 0x5a, 0x2d, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e,
 	0x63, 0x6f, 0x6d, 0x2f, 0x61, 0x7a, 0x75, 0x72, 0x65, 0x2f, 0x61, 0x7a, 0x75, 0x72, 0x65, 0x2d,
 	0x64, 0x65, 0x76, 0x2f, 0x63, 0x6c, 0x69, 0x2f, 0x61, 0x7a, 0x64, 0x2f, 0x70, 0x6b, 0x67, 0x2f,
-	0x61, 0x7a, 0x64, 0x65, 0x78, 0x74, 0x2f, 0x67, 0x65, 0x6e, 0x3b, 0x61, 0x7a, 0x64, 0x65, 0x78,
-	0x74, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x61, 0x7a, 0x64, 0x65, 0x78, 0x74, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (

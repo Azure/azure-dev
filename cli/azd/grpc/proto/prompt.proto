@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package azdext;
 
-option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/gen;azdext";
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext";
 
 import "models.proto";
 
@@ -24,6 +24,9 @@ service PromptService {
 
   // Select prompts the user to select an option from a list.
   rpc Select(SelectRequest) returns (SelectResponse);
+
+  // MultiSelect prompts the user to select multiple options from a list.
+  rpc MultiSelect(MultiSelectRequest) returns (MultiSelectResponse);
 
   // PromptSubscriptionResource prompts the user to select a resource from a subscription.
   rpc PromptSubscriptionResource(PromptSubscriptionResourceRequest) returns (PromptSubscriptionResourceResponse);
@@ -78,6 +81,14 @@ message SelectResponse {
   optional int32 value = 1;
 }
 
+message MultiSelectRequest {
+  MultiSelectOptions options = 1;
+}
+
+message MultiSelectResponse {
+  repeated MultiSelectChoice values = 1;
+}
+
 message PromptSubscriptionResourceRequest {
   AzureContext azure_context = 1;
   PromptResourceOptions options = 2;
@@ -122,6 +133,12 @@ message SelectChoice {
   string label = 2;
 }
 
+message MultiSelectChoice {
+  string value = 1;
+  string label = 2;
+  bool selected = 3;
+}
+
 message SelectOptions {
   optional int32 selected_index = 1;
   string message = 2;
@@ -131,6 +148,16 @@ message SelectOptions {
   int32 display_count = 6;
   optional bool display_numbers = 7;
   optional bool enable_filtering = 8;
+}
+
+message MultiSelectOptions {
+  string message = 1;
+  repeated MultiSelectChoice choices = 2;
+  string help_message = 3;
+  string hint = 4;
+  int32 display_count = 5;
+  optional bool display_numbers = 6;
+  optional bool enable_filtering = 7;
 }
 
 message PromptResourceOptions {

@@ -77,51 +77,33 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 
 	// Now, check for Gradle projects
 	gradleFiles := []string{"build.gradle", "build.gradle.kts"}
-	settingsFiles := []string{"settings.gradle", "settings.gradle.kts"}
 
 	hasGradleFile := false
-	hasSettingsFile := false
 	var gradleFilePath string
 
 	for _, entry := range entries {
 		name := entry.Name()
-
 		// Check if it's a Gradle build file
 		if slices.Contains(gradleFiles, name) {
 			hasGradleFile = true
 			gradleFilePath = filepath.Join(path, name)
 		}
-
-		// Check if it's a Gradle settings file (usually indicates multi-module project)
-		if slices.Contains(settingsFiles, name) {
-			hasSettingsFile = true
-		}
 	}
 
 	if hasGradleFile {
-		detectionRule := "Inferred by presence of: build.gradle"
-		if hasSettingsFile {
-			// This is likely a multi-module Gradle project
-			// For now, we'll still report it but in the future we might want to handle it similarly to Maven multi-modules
-			detectionRule = "Inferred by presence of: build.gradle and settings.gradle"
-		}
-
 		// Create a basic project for Gradle
 		project := &Project{
 			Language:      Java,
 			Path:          path,
-			DetectionRule: detectionRule,
+			DetectionRule: "Inferred by presence of: build.gradle",
 		}
-
 		// Detect dependencies in Gradle project
 		result, err := detectGradleDependencies(gradleFilePath, project)
 		if err != nil {
 			return nil, fmt.Errorf("detecting Gradle dependencies: %w", err)
 		}
-
 		return result, nil
 	}
-
 	return nil, nil
 }
 

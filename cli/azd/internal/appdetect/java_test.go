@@ -387,9 +387,9 @@ func TestIsGradleDependency(t *testing.T) {
 	}{
 		{
 			name:       "Single quote colon notation",
-			line:       "implementation 'com.mysql:mysql-connector-java:8.0.28'",
+			line:       "implementation 'com.mysql:mysql-connector-j:8.0.28'",
 			groupId:    "com.mysql",
-			artifactId: "mysql-connector-java",
+			artifactId: "mysql-connector-j",
 			expected:   true,
 		},
 		{
@@ -401,9 +401,9 @@ func TestIsGradleDependency(t *testing.T) {
 		},
 		{
 			name:       "Implementation with parentheses",
-			line:       "implementation(\"com.mysql:mysql-connector-java:8.0.28\")",
+			line:       "implementation(\"com.mysql:mysql-connector-j:8.0.28\")",
 			groupId:    "com.mysql",
-			artifactId: "mysql-connector-java",
+			artifactId: "mysql-connector-j",
 			expected:   true,
 		},
 		{
@@ -415,9 +415,9 @@ func TestIsGradleDependency(t *testing.T) {
 		},
 		{
 			name:       "Map notation with single quotes",
-			line:       "implementation group: 'com.mysql', name: 'mysql-connector-java', version: '8.0.28'",
+			line:       "implementation group: 'com.mysql', name: 'mysql-connector-j', version: '8.0.28'",
 			groupId:    "com.mysql",
-			artifactId: "mysql-connector-java",
+			artifactId: "mysql-connector-j",
 			expected:   true,
 		},
 		{

@@ -91,10 +91,18 @@ if ($IsWindows) {
 
 # Run `go help build` to obtain detailed information about `go build` flags.
 $buildFlags = @(
-    # Remove file system paths from the compiled binary
-    "-gcflags=-trimpath",
-    # Remove file system paths from the assembled code
-    "-asmflags=-trimpath"
+    # remove all file system paths from the resulting executable.
+    # Instead of absolute file system paths, the recorded file names
+    # will begin either a module path@version (when using modules),
+    # or a plain import path (when using the standard library, or GOPATH).
+    "-trimpath",
+    
+    # Use buildmode=pie (Position Independent Executable) for enhanced security across platforms
+    # against memory corruption exploits across all major platforms.
+    #
+    # On Windows, the -buildmode=pie flag enables Address Space Layout 
+    # Randomization (ASLR) and automatically sets DYNAMICBASE and HIGH-ENTROPY-VA flags in the PE header.
+    "-buildmode=pie"
 )
 
 if ($CodeCoverageEnabled) {
@@ -120,37 +128,19 @@ if ($IsWindows) {
         $tagsFlag += ",oneauth"
     }
     Write-Host $msg
-    $buildFlags += @(
-        "-buildmode=exe",
-        # remove all file system paths from the resulting executable.
-        # Instead of absolute file system paths, the recorded file names
-        # will begin either a module path@version (when using modules),
-        # or a plain import path (when using the standard library, or GOPATH).
-        "-trimpath",
-        $tagsFlag,
-        # -extldflags=-Wl,--high-entropy-va: Pass the high-entropy VA flag to the linker to enable high entropy virtual addresses
-        # --dynamicbase: Enable dynamic base address for the executable
-        ($ldFlag + "-linkmode=auto -extldflags=-Wl,--high-entropy-va,--dynamicbase")
-    )
 }
 elseif ($IsLinux) {
     Write-Host "Building for linux"
-    $buildFlags += @(
-        "-buildmode=pie",
-        ($tagsFlag + ",cfgo"),
-        # -extldflags=-Wl,--high-entropy-va: Pass the high-entropy VA flag to the linker to enable high entropy virtual addresses
-        ($ldFlag + "-extldflags=-Wl,--high-entropy-va")
-    )
 }
 elseif ($IsMacOS) {
     Write-Host "Building for macOS"
-    $buildFlags += @(
-        "-buildmode=pie",
-        ($tagsFlag + ",cfgo"),
-        # -linkmode=auto: Link Go object files and C object files together
-        ($ldFlag + "-linkmode=auto")
-    )
 }
+
+# collect flags
+$buildFlags += @(
+    $tagsFlag,
+    $ldFlag
+)
 
 function PrintFlags() {
     param(

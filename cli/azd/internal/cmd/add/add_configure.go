@@ -20,6 +20,7 @@ import (
 var DbMap = map[appdetect.DatabaseDep]project.ResourceType{
 	appdetect.DbMongo:    project.ResourceTypeDbMongo,
 	appdetect.DbPostgres: project.ResourceTypeDbPostgres,
+	appdetect.DbMySql:    project.ResourceTypeDbMySql,
 	appdetect.DbRedis:    project.ResourceTypeDbRedis,
 }
 

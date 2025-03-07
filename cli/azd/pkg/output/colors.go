@@ -35,6 +35,10 @@ func WithGrayFormat(text string, a ...interface{}) string {
 	return color.HiBlackString(text, a...)
 }
 
+func WithHintFormat(text string, a ...interface{}) string {
+	return color.MagentaString(text, a...)
+}
+
 func WithBold(text string, a ...interface{}) string {
 	format := color.New(color.Bold)
 	return format.Sprintf(text, a...)

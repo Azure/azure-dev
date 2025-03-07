@@ -22,9 +22,9 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armsubscriptions/v1.0.0 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armsubscriptions/v1.0.0 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - b5c2724ff9694f7634358e590746438b
+                - e8096ac0bc5046fd40933fadce1a70f5
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations?api-version=2021-01-01
         method: GET
       response:
@@ -44,7 +44,7 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:10:41 GMT
+                - Wed, 05 Mar 2025 22:08:14 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -56,20 +56,20 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - b5c2724ff9694f7634358e590746438b
+                - e8096ac0bc5046fd40933fadce1a70f5
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "16499"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "1099"
             X-Ms-Request-Id:
-                - 9f415a9e-6f68-412f-a739-ccbbc9d1e6bb
+                - 961ba874-6c41-40af-84d8-03b3d41a5600
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021042Z:9f415a9e-6f68-412f-a739-ccbbc9d1e6bb
+                - WESTUS:20250305T220814Z:961ba874-6c41-40af-84d8-03b3d41a5600
             X-Msedge-Ref:
-                - 'Ref A: 9EBAF3DC8666450D8050455C54846E5D Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:10:39Z'
+                - 'Ref A: B4F03036BEF3429E90897ED2A452E698 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:08:11Z'
         status: 200 OK
         code: 200
-        duration: 3.106710177s
+        duration: 3.2057486s
     - id: 1
       request:
         proto: HTTP/1.1
@@ -91,9 +91,9 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - b5c2724ff9694f7634358e590746438b
+                - e8096ac0bc5046fd40933fadce1a70f5
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
         method: GET
       response:
@@ -102,18 +102,18 @@ interactions:
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 59946
+        content_length: 854524
         uncompressed: false
-        body: '{"value":[]}'
+        body: '{"nextLink":"https://management.azure.com/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01\u0026%24skiptoken=3ZLRboIwFIafxV5r0qox0zvYKQm4FiltDbsz6BasgWRjAWp891F0L6C7WHbV%2fuecJt%2f%2fn55RXpV1UX7t6qIqZWUO5SdandGWplKlU3ctD2292X3UhZtYHzq0QmT0NOIya5nNJmg8TIiq%2bemRBR4JE%2fgM3ptEvQJTyZyD7ws4QYJ1wBTFXPqQSP3M5f5NEB6%2fpLiJQfVzWRdLM2U273pNYpnPWIcxN4nd0ggUVJ3QUaDs7cRLrQy%2f6qCv37Qg0UZrb8GMauJjRLl7B05rEEaH6DJG1HvA4%2fwhjy2XYdMn2HCbTdmREt6RRJnlWiiuHC%2bToR2Y6T7RA7vYuLpUpziVzgudcfD6zDLLJJ04P9edze7bGZ7%2fws4M5hBaBhSzglChyMDMZG57zpZB%2fw%2b8ycB6zf4%2b1D8b%2fT%2bxc7l8Aw%3d%3d","value":[]}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "59946"
+                - "854524"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:10:42 GMT
+                - Wed, 05 Mar 2025 22:08:19 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -125,70 +125,62 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - b5c2724ff9694f7634358e590746438b
+                - e8096ac0bc5046fd40933fadce1a70f5
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "16499"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "1099"
             X-Ms-Request-Id:
-                - e3b6a853-a4a8-4727-b06c-15714d92743e
+                - 70cfc740-5034-4a80-b1b1-cecee691fd6b
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021043Z:e3b6a853-a4a8-4727-b06c-15714d92743e
+                - WESTUS2:20250305T220819Z:70cfc740-5034-4a80-b1b1-cecee691fd6b
             X-Msedge-Ref:
-                - 'Ref A: 2C01C527B5754CA6855540BD56B53772 Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:10:42Z'
+                - 'Ref A: F6C4F89FECDB4096A299CF0DA5117B37 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:08:15Z'
         status: 200 OK
         code: 200
-        duration: 775.557342ms
+        duration: 4.8445341s
     - id: 2
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 4363
+        content_length: 0
         transfer_encoding: []
         trailer: {}
         host: management.azure.com
         remote_addr: ""
         request_uri: ""
-        body: '{"location":"eastus2","properties":{"mode":"Incremental","parameters":{"boolTagValue":{"value":false},"environmentName":{"value":"azdtest-la58fe1"},"intTagValue":{"value":678},"location":{"value":"eastus2"},"secureValue":{"value":""}},"template":{"$schema":"https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#","languageVersion":"2.0","contentVersion":"1.0.0.0","metadata":{"_generator":{"name":"bicep","version":"0.32.4.45862","templateHash":"4441115027850158141"}},"parameters":{"environmentName":{"type":"string","minLength":1,"maxLength":64,"metadata":{"description":"Name of the the environment which is used to generate a short unique hash used in all resources."}},"location":{"type":"string","metadata":{"description":"Primary location for all resources"}},"deleteAfterTime":{"type":"string","defaultValue":"[dateTimeAdd(utcNow(''o''), ''PT1H'')]","metadata":{"description":"A time to mark on created resource groups, so they can be cleaned up via an automated process."}},"intTagValue":{"type":"int","metadata":{"description":"Test parameter for int-typed values."}},"boolTagValue":{"type":"bool","metadata":{"description":"Test parameter for bool-typed values."}},"secureValue":{"type":"securestring","metadata":{"description":"Test parameter for secureString-typed values."}},"secureObject":{"type":"secureObject","defaultValue":{},"metadata":{"description":"Test parameter for secureObject-typed values."}},"nullableParam":{"type":"string","nullable":true}},"variables":{"tags":{"azd-env-name":"[parameters(''environmentName'')]","DeleteAfter":"[parameters(''deleteAfterTime'')]","IntTag":"[string(parameters(''intTagValue''))]","BoolTag":"[string(parameters(''boolTagValue''))]","SecureTag":"[parameters(''secureValue'')]","SecureObjectTag":"[string(parameters(''secureObject''))]"}},"resources":{"rg":{"type":"Microsoft.Resources/resourceGroups","apiVersion":"2021-04-01","name":"[format(''rg-{0}'', parameters(''environmentName''))]","location":"[parameters(''location'')]","tags":"[variables(''tags'')]"},"resources":{"type":"Microsoft.Resources/deployments","apiVersion":"2022-09-01","name":"resources","resourceGroup":"[format(''rg-{0}'', parameters(''environmentName''))]","properties":{"expressionEvaluationOptions":{"scope":"inner"},"mode":"Incremental","parameters":{"environmentName":{"value":"[parameters(''environmentName'')]"},"location":{"value":"[parameters(''location'')]"}},"template":{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#","contentVersion":"1.0.0.0","metadata":{"_generator":{"name":"bicep","version":"0.32.4.45862","templateHash":"17458015903043117322"}},"parameters":{"environmentName":{"type":"string"},"location":{"type":"string","defaultValue":"[resourceGroup().location]"}},"variables":{"tags":{"azd-env-name":"[parameters(''environmentName'')]"},"resourceToken":"[toLower(uniqueString(subscription().id, parameters(''environmentName''), parameters(''location'')))]"},"resources":[{"type":"Microsoft.Storage/storageAccounts","apiVersion":"2022-05-01","name":"[format(''st{0}'', variables(''resourceToken''))]","location":"[parameters(''location'')]","tags":"[variables(''tags'')]","kind":"StorageV2","sku":{"name":"Standard_LRS"}}],"outputs":{"AZURE_STORAGE_ACCOUNT_ID":{"type":"string","value":"[resourceId(''Microsoft.Storage/storageAccounts'', format(''st{0}'', variables(''resourceToken'')))]"},"AZURE_STORAGE_ACCOUNT_NAME":{"type":"string","value":"[format(''st{0}'', variables(''resourceToken''))]"}}}},"dependsOn":["rg"]}},"outputs":{"nullableParamOutput":{"type":"string","nullable":true,"value":"[parameters(''nullableParam'')]"},"AZURE_STORAGE_ACCOUNT_ID":{"type":"string","value":"[reference(''resources'').outputs.AZURE_STORAGE_ACCOUNT_ID.value]"},"AZURE_STORAGE_ACCOUNT_NAME":{"type":"string","value":"[reference(''resources'').outputs.AZURE_STORAGE_ACCOUNT_NAME.value]"},"STRING":{"type":"string","value":"abc"},"BOOL":{"type":"bool","value":true},"INT":{"type":"int","value":1234},"ARRAY":{"type":"array","value":[true,"abc",1234]},"ARRAY_INT":{"type":"array","value":[1,2,3]},"ARRAY_STRING":{"type":"array","value":["elem1","elem2","elem3"]},"OBJECT":{"type":"object","value":{"foo":"bar","inner":{"foo":"bar"},"array":[true,"abc",1234]}}}}},"tags":{"azd-env-name":"azdtest-la58fe1","azd-provision-param-hash":"ae6da32990188cd0647349141a356d3448b73d990ce4c9ae65c89130bcc979f0"}}'
+        body: ""
         form: {}
         headers:
-            Accept:
-                - application/json
             Accept-Encoding:
                 - gzip
             Authorization:
                 - SANITIZED
-            Content-Length:
-                - "4363"
-            Content-Type:
-                - application/json
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - b5c2724ff9694f7634358e590746438b
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235?api-version=2021-04-01
-        method: PUT
+                - e8096ac0bc5046fd40933fadce1a70f5
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=3ZLRboIwFIafxV5r0qox0zvYKQm4FiltDbsz6BasgWRjAWp891F0L6C7WHbV%2fuecJt%2f%2fn55RXpV1UX7t6qIqZWUO5SdandGWplKlU3ctD2292X3UhZtYHzq0QmT0NOIya5nNJmg8TIiq%2bemRBR4JE%2fgM3ptEvQJTyZyD7ws4QYJ1wBTFXPqQSP3M5f5NEB6%2fpLiJQfVzWRdLM2U273pNYpnPWIcxN4nd0ggUVJ3QUaDs7cRLrQy%2f6qCv37Qg0UZrb8GMauJjRLl7B05rEEaH6DJG1HvA4%2fwhjy2XYdMn2HCbTdmREt6RRJnlWiiuHC%2bToR2Y6T7RA7vYuLpUpziVzgudcfD6zDLLJJ04P9edze7bGZ7%2fws4M5hBaBhSzglChyMDMZG57zpZB%2fw%2b8ycB6zf4%2b1D8b%2fT%2bxc7l8Aw%3d%3d
+        method: GET
       response:
         proto: HTTP/2.0
         proto_major: 2
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 1601
+        content_length: 1228215
         uncompressed: false
-        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235","name":"azdtest-la58fe1-1737598235","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-la58fe1","azd-provision-param-hash":"ae6da32990188cd0647349141a356d3448b73d990ce4c9ae65c89130bcc979f0"},"properties":{"templateHash":"4441115027850158141","parameters":{"environmentName":{"type":"String","value":"azdtest-la58fe1"},"location":{"type":"String","value":"eastus2"},"deleteAfterTime":{"type":"String","value":"2025-01-23T03:10:43Z"},"intTagValue":{"type":"Int","value":678},"boolTagValue":{"type":"Bool","value":false},"secureValue":{"type":"SecureString"},"secureObject":{"type":"SecureObject"},"nullableParam":{"type":"String","value":null}},"mode":"Incremental","provisioningState":"Accepted","timestamp":"2025-01-23T02:10:45.9646777Z","duration":"PT0.0002357S","correlationId":"b5c2724ff9694f7634358e590746438b","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-la58fe1"}],"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}]}}'
+        body: '{"nextLink":"https://management.azure.com/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01\u0026%24skiptoken=1Y%2fdCoIwGIavxe%2fYYMuK8Cz7DKK2NbcVdhZlIsqEMrTEe%2b%2bHOugO6vD9g%2bdtYV%2faKrOXXZWVVpd5Ys%2fgt7AJlTaqD769FIUL4eQtW7BJU612pyp7DhbJFXygztjhOm7YLe6B%2b2pEZf3JKCFOlM8ChmktzRaZkQOOQRBhgZKsZ8yEhOsApV5PuT4cI8rFUpFaoHn04ivHORUYDgTKh5f2haJc4XzEctnwGxsynTYMjQed%2b8b2vrGff%2f6A%2bscxu%2b4O","value":[]}'
         headers:
-            Azure-Asyncoperation:
-                - https://management.azure.com/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235/operationStatuses/08584640086418103696?api-version=2021-04-01
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "1601"
+                - "1228215"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:10:46 GMT
+                - Wed, 05 Mar 2025 22:08:24 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -200,22 +192,20 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - b5c2724ff9694f7634358e590746438b
-            X-Ms-Deployment-Engine-Version:
-                - 1.173.0
-            X-Ms-Ratelimit-Remaining-Subscription-Global-Writes:
-                - "11999"
-            X-Ms-Ratelimit-Remaining-Subscription-Writes:
-                - "799"
+                - e8096ac0bc5046fd40933fadce1a70f5
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
             X-Ms-Request-Id:
-                - 4c9b27dc-e037-4a35-b9de-5f88e0e97a3d
+                - 862d3f15-bb8d-4df2-b8f9-c959ac5f44c7
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021046Z:4c9b27dc-e037-4a35-b9de-5f88e0e97a3d
+                - WESTUS2:20250305T220824Z:862d3f15-bb8d-4df2-b8f9-c959ac5f44c7
             X-Msedge-Ref:
-                - 'Ref A: 5E5E476028234C318DB30336FB167365 Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:10:43Z'
-        status: 201 Created
-        code: 201
-        duration: 3.406942948s
+                - 'Ref A: 10C28DDF780846D18D09F087458F4B32 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:08:19Z'
+        status: 200 OK
+        code: 200
+        duration: 4.8590741s
     - id: 3
       request:
         proto: HTTP/1.1
@@ -235,10 +225,10 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - b5c2724ff9694f7634358e590746438b
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235/operationStatuses/08584640086418103696?api-version=2021-04-01
+                - e8096ac0bc5046fd40933fadce1a70f5
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=1Y%2fdCoIwGIavxe%2fYYMuK8Cz7DKK2NbcVdhZlIsqEMrTEe%2b%2bHOugO6vD9g%2bdtYV%2faKrOXXZWVVpd5Ys%2fgt7AJlTaqD769FIUL4eQtW7BJU612pyp7DhbJFXygztjhOm7YLe6B%2b2pEZf3JKCFOlM8ChmktzRaZkQOOQRBhgZKsZ8yEhOsApV5PuT4cI8rFUpFaoHn04ivHORUYDgTKh5f2haJc4XzEctnwGxsynTYMjQed%2b8b2vrGff%2f6A%2bscxu%2b4O
         method: GET
       response:
         proto: HTTP/2.0
@@ -246,18 +236,18 @@ interactions:
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 22
+        content_length: 543303
         uncompressed: false
-        body: '{"status":"Succeeded"}'
+        body: '{"nextLink":"https://management.azure.com/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01\u0026%24skiptoken=q1ZKzs8rycwrTSzJzM8Lyc9OzStWsqpWcnUMDgkNNlKyyivNydGBcmG8cFeQJIwX6h3sHxriAeMG%2bPs4%2brk4u%2fqFBDn6wAQhOuDGQbjGENnaWgA%3d","value":[]}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "22"
+                - "543303"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:11:16 GMT
+                - Wed, 05 Mar 2025 22:08:27 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -269,20 +259,20 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - b5c2724ff9694f7634358e590746438b
+                - e8096ac0bc5046fd40933fadce1a70f5
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "16499"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "1099"
             X-Ms-Request-Id:
-                - ebb41131-cb26-47a8-8342-fef850d636be
+                - 6d5961ba-eccf-4b78-a287-d4d1d35f7bb6
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021117Z:ebb41131-cb26-47a8-8342-fef850d636be
+                - WESTUS2:20250305T220827Z:6d5961ba-eccf-4b78-a287-d4d1d35f7bb6
             X-Msedge-Ref:
-                - 'Ref A: 8C4FAFFC69CB48F394F515AE38AF50ED Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:11:17Z'
+                - 'Ref A: 47D286988E17439E9A1C4D09EE2C29EB Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:08:24Z'
         status: 200 OK
         code: 200
-        duration: 357.658201ms
+        duration: 2.3806609s
     - id: 4
       request:
         proto: HTTP/1.1
@@ -302,10 +292,10 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - b5c2724ff9694f7634358e590746438b
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235?api-version=2021-04-01
+                - e8096ac0bc5046fd40933fadce1a70f5
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=q1ZKzs8rycwrTSzJzM8Lyc9OzStWsqpWcnUMDgkNNlKyyivNydGBcmG8cFeQJIwX6h3sHxriAeMG%2bPs4%2brk4u%2fqFBDn6wAQhOuDGQbjGENnaWgA%3d
         method: GET
       response:
         proto: HTTP/2.0
@@ -313,18 +303,18 @@ interactions:
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 2556
+        content_length: 37877
         uncompressed: false
-        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235","name":"azdtest-la58fe1-1737598235","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-la58fe1","azd-provision-param-hash":"ae6da32990188cd0647349141a356d3448b73d990ce4c9ae65c89130bcc979f0"},"properties":{"templateHash":"4441115027850158141","parameters":{"environmentName":{"type":"String","value":"azdtest-la58fe1"},"location":{"type":"String","value":"eastus2"},"deleteAfterTime":{"type":"String","value":"2025-01-23T03:10:43Z"},"intTagValue":{"type":"Int","value":678},"boolTagValue":{"type":"Bool","value":false},"secureValue":{"type":"SecureString"},"secureObject":{"type":"SecureObject"},"nullableParam":{"type":"String"}},"mode":"Incremental","provisioningState":"Succeeded","timestamp":"2025-01-23T02:11:14.8350286Z","duration":"PT28.8705866S","correlationId":"b5c2724ff9694f7634358e590746438b","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-la58fe1"}],"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}],"outputs":{"nullableParamOutput":{"type":"String"},"azurE_STORAGE_ACCOUNT_ID":{"type":"String","value":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Storage/storageAccounts/stkui7mydvgrery"},"azurE_STORAGE_ACCOUNT_NAME":{"type":"String","value":"stkui7mydvgrery"},"string":{"type":"String","value":"abc"},"bool":{"type":"Bool","value":true},"int":{"type":"Int","value":1234},"array":{"type":"Array","value":[true,"abc",1234]},"arraY_INT":{"type":"Array","value":[1,2,3]},"arraY_STRING":{"type":"Array","value":["elem1","elem2","elem3"]},"object":{"type":"Object","value":{"foo":"bar","inner":{"foo":"bar"},"array":[true,"abc",1234]}}},"outputResources":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1"},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Storage/storageAccounts/stkui7mydvgrery"}]}}'
+        body: '{"value":[]}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "2556"
+                - "37877"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:11:17 GMT
+                - Wed, 05 Mar 2025 22:08:29 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -336,32 +326,32 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - b5c2724ff9694f7634358e590746438b
+                - e8096ac0bc5046fd40933fadce1a70f5
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "16499"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "1099"
             X-Ms-Request-Id:
-                - 341067d4-2b59-44ca-ae52-d7bcdbf6847e
+                - f0f8c150-a9c2-4cad-b2f2-f76d240bcaa8
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021117Z:341067d4-2b59-44ca-ae52-d7bcdbf6847e
+                - WESTUS2:20250305T220829Z:f0f8c150-a9c2-4cad-b2f2-f76d240bcaa8
             X-Msedge-Ref:
-                - 'Ref A: 5AE390DECF6545D597AE53119CA28AFB Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:11:17Z'
+                - 'Ref A: B9D82C388B61457D8AFE305312339A02 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:08:27Z'
         status: 200 OK
         code: 200
-        duration: 185.280014ms
+        duration: 1.7031211s
     - id: 5
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 0
+        content_length: 4494
         transfer_encoding: []
         trailer: {}
         host: management.azure.com
         remote_addr: ""
         request_uri: ""
-        body: ""
+        body: '{"location":"eastus2","properties":{"mode":"Incremental","parameters":{"boolTagValue":{"value":false,"reference":null},"environmentName":{"value":"azdtest-wa9b56b","reference":null},"intTagValue":{"value":678,"reference":null},"location":{"value":"eastus2","reference":null},"secureValue":{"value":"","reference":null}},"template":{"$schema":"https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#","languageVersion":"2.0","contentVersion":"1.0.0.0","metadata":{"_generator":{"name":"bicep","version":"0.33.93.31351","templateHash":"11064734108664627865"}},"parameters":{"environmentName":{"type":"string","minLength":1,"maxLength":64,"metadata":{"description":"Name of the the environment which is used to generate a short unique hash used in all resources."}},"location":{"type":"string","metadata":{"description":"Primary location for all resources"}},"deleteAfterTime":{"type":"string","defaultValue":"[dateTimeAdd(utcNow(''o''), ''PT1H'')]","metadata":{"description":"A time to mark on created resource groups, so they can be cleaned up via an automated process."}},"intTagValue":{"type":"int","metadata":{"description":"Test parameter for int-typed values."}},"boolTagValue":{"type":"bool","metadata":{"description":"Test parameter for bool-typed values."}},"secureValue":{"type":"securestring","metadata":{"description":"Test parameter for secureString-typed values."}},"secureObject":{"type":"secureObject","defaultValue":{},"metadata":{"description":"Test parameter for secureObject-typed values."}},"nullableParam":{"type":"string","nullable":true}},"variables":{"tags":{"azd-env-name":"[parameters(''environmentName'')]","DeleteAfter":"[parameters(''deleteAfterTime'')]","IntTag":"[string(parameters(''intTagValue''))]","BoolTag":"[string(parameters(''boolTagValue''))]","SecureTag":"[parameters(''secureValue'')]","SecureObjectTag":"[string(parameters(''secureObject''))]"}},"resources":{"rg":{"type":"Microsoft.Resources/resourceGroups","apiVersion":"2021-04-01","name":"[format(''rg-{0}'', parameters(''environmentName''))]","location":"[parameters(''location'')]","tags":"[variables(''tags'')]"},"resources":{"type":"Microsoft.Resources/deployments","apiVersion":"2022-09-01","name":"resources","resourceGroup":"[format(''rg-{0}'', parameters(''environmentName''))]","properties":{"expressionEvaluationOptions":{"scope":"inner"},"mode":"Incremental","parameters":{"environmentName":{"value":"[parameters(''environmentName'')]"},"location":{"value":"[parameters(''location'')]"}},"template":{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#","contentVersion":"1.0.0.0","metadata":{"_generator":{"name":"bicep","version":"0.33.93.31351","templateHash":"5767758576906504008"}},"parameters":{"environmentName":{"type":"string"},"location":{"type":"string","defaultValue":"[resourceGroup().location]"}},"variables":{"tags":{"azd-env-name":"[parameters(''environmentName'')]"},"resourceToken":"[toLower(uniqueString(subscription().id, parameters(''environmentName''), parameters(''location'')))]"},"resources":[{"type":"Microsoft.Storage/storageAccounts","apiVersion":"2022-05-01","name":"[format(''st{0}'', variables(''resourceToken''))]","location":"[parameters(''location'')]","tags":"[variables(''tags'')]","kind":"StorageV2","sku":{"name":"Standard_LRS"},"properties":{"allowSharedKeyAccess":false}}],"outputs":{"AZURE_STORAGE_ACCOUNT_ID":{"type":"string","value":"[resourceId(''Microsoft.Storage/storageAccounts'', format(''st{0}'', variables(''resourceToken'')))]"},"AZURE_STORAGE_ACCOUNT_NAME":{"type":"string","value":"[format(''st{0}'', variables(''resourceToken''))]"}}}},"dependsOn":["rg"]}},"outputs":{"nullableParamOutput":{"type":"string","nullable":true,"value":"[parameters(''nullableParam'')]"},"AZURE_STORAGE_ACCOUNT_ID":{"type":"string","value":"[reference(''resources'').outputs.AZURE_STORAGE_ACCOUNT_ID.value]"},"AZURE_STORAGE_ACCOUNT_NAME":{"type":"string","value":"[reference(''resources'').outputs.AZURE_STORAGE_ACCOUNT_NAME.value]"},"STRING":{"type":"string","value":"abc"},"BOOL":{"type":"bool","value":true},"INT":{"type":"int","value":1234},"ARRAY":{"type":"array","value":[true,"abc",1234]},"ARRAY_INT":{"type":"array","value":[1,2,3]},"ARRAY_STRING":{"type":"array","value":["elem1","elem2","elem3"]},"OBJECT":{"type":"object","value":{"foo":"bar","inner":{"foo":"bar"},"array":[true,"abc",1234]}}}}},"tags":{"azd-env-name":"azdtest-wa9b56b","azd-provision-param-hash":"ee82ee843e4e47b16b5a0c165dccd56d4b711d08f5bfbe44e8e2f16f9af576c0"}}'
         form: {}
         headers:
             Accept:
@@ -370,30 +360,34 @@ interactions:
                 - gzip
             Authorization:
                 - SANITIZED
+            Content-Length:
+                - "4494"
+            Content-Type:
+                - application/json
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - b5c2724ff9694f7634358e590746438b
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-la58fe1%27&api-version=2021-04-01
-        method: GET
+                - e8096ac0bc5046fd40933fadce1a70f5
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484/validate?api-version=2021-04-01
+        method: POST
       response:
         proto: HTTP/2.0
         proto_major: 2
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 396
+        content_length: 2037
         uncompressed: false
-        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1","name":"rg-azdtest-la58fe1","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-la58fe1","DeleteAfter":"2025-01-23T03:10:43Z","IntTag":"678","BoolTag":"False","SecureTag":"","SecureObjectTag":"{}"},"properties":{"provisioningState":"Succeeded"}}]}'
+        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484","name":"azdtest-wa9b56b-1741212484","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-wa9b56b","azd-provision-param-hash":"ee82ee843e4e47b16b5a0c165dccd56d4b711d08f5bfbe44e8e2f16f9af576c0"},"properties":{"templateHash":"11064734108664627865","parameters":{"environmentName":{"type":"String","value":"azdtest-wa9b56b"},"location":{"type":"String","value":"eastus2"},"deleteAfterTime":{"type":"String","value":"2025-03-05T23:08:29Z"},"intTagValue":{"type":"Int","value":678},"boolTagValue":{"type":"Bool","value":false},"secureValue":{"type":"SecureString"},"secureObject":{"type":"SecureObject"},"nullableParam":{"type":"String","value":null}},"mode":"Incremental","provisioningState":"Succeeded","timestamp":"2025-03-05T22:08:29.5263204Z","duration":"-P739314DT22H8M29.5263204S","correlationId":"e8096ac0bc5046fd40933fadce1a70f5","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-wa9b56b"}],"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}],"validatedResources":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b"},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Resources/deployments/resources"},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Storage/storageAccounts/stwegewssyy47gg"}]}}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "396"
+                - "2037"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:11:17 GMT
+                - Wed, 05 Mar 2025 22:08:31 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -405,32 +399,32 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - b5c2724ff9694f7634358e590746438b
-            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
-                - "16499"
-            X-Ms-Ratelimit-Remaining-Subscription-Reads:
-                - "1099"
+                - e8096ac0bc5046fd40933fadce1a70f5
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Writes:
+                - "11999"
+            X-Ms-Ratelimit-Remaining-Subscription-Writes:
+                - "799"
             X-Ms-Request-Id:
-                - 88b2c9d2-7227-40d1-b8db-023a9abc763e
+                - 27d94b72-572a-4852-be0c-1a2b4062c222
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021117Z:88b2c9d2-7227-40d1-b8db-023a9abc763e
+                - WESTUS:20250305T220831Z:27d94b72-572a-4852-be0c-1a2b4062c222
             X-Msedge-Ref:
-                - 'Ref A: B5D21B599BE84004A8DE1123DC712F91 Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:11:17Z'
+                - 'Ref A: 66CA401E91614C599F8821CD10622955 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:08:29Z'
         status: 200 OK
         code: 200
-        duration: 65.056445ms
+        duration: 2.5946538s
     - id: 6
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 0
+        content_length: 4494
         transfer_encoding: []
         trailer: {}
         host: management.azure.com
         remote_addr: ""
         request_uri: ""
-        body: ""
+        body: '{"location":"eastus2","properties":{"mode":"Incremental","parameters":{"boolTagValue":{"value":false,"reference":null},"environmentName":{"value":"azdtest-wa9b56b","reference":null},"intTagValue":{"value":678,"reference":null},"location":{"value":"eastus2","reference":null},"secureValue":{"value":"","reference":null}},"template":{"$schema":"https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#","languageVersion":"2.0","contentVersion":"1.0.0.0","metadata":{"_generator":{"name":"bicep","version":"0.33.93.31351","templateHash":"11064734108664627865"}},"parameters":{"environmentName":{"type":"string","minLength":1,"maxLength":64,"metadata":{"description":"Name of the the environment which is used to generate a short unique hash used in all resources."}},"location":{"type":"string","metadata":{"description":"Primary location for all resources"}},"deleteAfterTime":{"type":"string","defaultValue":"[dateTimeAdd(utcNow(''o''), ''PT1H'')]","metadata":{"description":"A time to mark on created resource groups, so they can be cleaned up via an automated process."}},"intTagValue":{"type":"int","metadata":{"description":"Test parameter for int-typed values."}},"boolTagValue":{"type":"bool","metadata":{"description":"Test parameter for bool-typed values."}},"secureValue":{"type":"securestring","metadata":{"description":"Test parameter for secureString-typed values."}},"secureObject":{"type":"secureObject","defaultValue":{},"metadata":{"description":"Test parameter for secureObject-typed values."}},"nullableParam":{"type":"string","nullable":true}},"variables":{"tags":{"azd-env-name":"[parameters(''environmentName'')]","DeleteAfter":"[parameters(''deleteAfterTime'')]","IntTag":"[string(parameters(''intTagValue''))]","BoolTag":"[string(parameters(''boolTagValue''))]","SecureTag":"[parameters(''secureValue'')]","SecureObjectTag":"[string(parameters(''secureObject''))]"}},"resources":{"rg":{"type":"Microsoft.Resources/resourceGroups","apiVersion":"2021-04-01","name":"[format(''rg-{0}'', parameters(''environmentName''))]","location":"[parameters(''location'')]","tags":"[variables(''tags'')]"},"resources":{"type":"Microsoft.Resources/deployments","apiVersion":"2022-09-01","name":"resources","resourceGroup":"[format(''rg-{0}'', parameters(''environmentName''))]","properties":{"expressionEvaluationOptions":{"scope":"inner"},"mode":"Incremental","parameters":{"environmentName":{"value":"[parameters(''environmentName'')]"},"location":{"value":"[parameters(''location'')]"}},"template":{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#","contentVersion":"1.0.0.0","metadata":{"_generator":{"name":"bicep","version":"0.33.93.31351","templateHash":"5767758576906504008"}},"parameters":{"environmentName":{"type":"string"},"location":{"type":"string","defaultValue":"[resourceGroup().location]"}},"variables":{"tags":{"azd-env-name":"[parameters(''environmentName'')]"},"resourceToken":"[toLower(uniqueString(subscription().id, parameters(''environmentName''), parameters(''location'')))]"},"resources":[{"type":"Microsoft.Storage/storageAccounts","apiVersion":"2022-05-01","name":"[format(''st{0}'', variables(''resourceToken''))]","location":"[parameters(''location'')]","tags":"[variables(''tags'')]","kind":"StorageV2","sku":{"name":"Standard_LRS"},"properties":{"allowSharedKeyAccess":false}}],"outputs":{"AZURE_STORAGE_ACCOUNT_ID":{"type":"string","value":"[resourceId(''Microsoft.Storage/storageAccounts'', format(''st{0}'', variables(''resourceToken'')))]"},"AZURE_STORAGE_ACCOUNT_NAME":{"type":"string","value":"[format(''st{0}'', variables(''resourceToken''))]"}}}},"dependsOn":["rg"]}},"outputs":{"nullableParamOutput":{"type":"string","nullable":true,"value":"[parameters(''nullableParam'')]"},"AZURE_STORAGE_ACCOUNT_ID":{"type":"string","value":"[reference(''resources'').outputs.AZURE_STORAGE_ACCOUNT_ID.value]"},"AZURE_STORAGE_ACCOUNT_NAME":{"type":"string","value":"[reference(''resources'').outputs.AZURE_STORAGE_ACCOUNT_NAME.value]"},"STRING":{"type":"string","value":"abc"},"BOOL":{"type":"bool","value":true},"INT":{"type":"int","value":1234},"ARRAY":{"type":"array","value":[true,"abc",1234]},"ARRAY_INT":{"type":"array","value":[1,2,3]},"ARRAY_STRING":{"type":"array","value":["elem1","elem2","elem3"]},"OBJECT":{"type":"object","value":{"foo":"bar","inner":{"foo":"bar"},"array":[true,"abc",1234]}}}}},"tags":{"azd-env-name":"azdtest-wa9b56b","azd-provision-param-hash":"ee82ee843e4e47b16b5a0c165dccd56d4b711d08f5bfbe44e8e2f16f9af576c0"}}'
         form: {}
         headers:
             Accept:
@@ -439,28 +433,36 @@ interactions:
                 - gzip
             Authorization:
                 - SANITIZED
+            Content-Length:
+                - "4494"
+            Content-Type:
+                - application/json
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.0; linux)
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-la58fe1%27&api-version=2021-04-01
-        method: GET
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+            X-Ms-Correlation-Request-Id:
+                - e8096ac0bc5046fd40933fadce1a70f5
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484?api-version=2021-04-01
+        method: PUT
       response:
         proto: HTTP/2.0
         proto_major: 2
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 396
+        content_length: 1602
         uncompressed: false
-        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1","name":"rg-azdtest-la58fe1","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-la58fe1","DeleteAfter":"2025-01-23T03:10:43Z","IntTag":"678","BoolTag":"False","SecureTag":"","SecureObjectTag":"{}"},"properties":{"provisioningState":"Succeeded"}}]}'
+        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484","name":"azdtest-wa9b56b-1741212484","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-wa9b56b","azd-provision-param-hash":"ee82ee843e4e47b16b5a0c165dccd56d4b711d08f5bfbe44e8e2f16f9af576c0"},"properties":{"templateHash":"11064734108664627865","parameters":{"environmentName":{"type":"String","value":"azdtest-wa9b56b"},"location":{"type":"String","value":"eastus2"},"deleteAfterTime":{"type":"String","value":"2025-03-05T23:08:32Z"},"intTagValue":{"type":"Int","value":678},"boolTagValue":{"type":"Bool","value":false},"secureValue":{"type":"SecureString"},"secureObject":{"type":"SecureObject"},"nullableParam":{"type":"String","value":null}},"mode":"Incremental","provisioningState":"Accepted","timestamp":"2025-03-05T22:08:32.1683327Z","duration":"PT2.4285388S","correlationId":"e8096ac0bc5046fd40933fadce1a70f5","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-wa9b56b"}],"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}]}}'
         headers:
+            Azure-Asyncoperation:
+                - https://management.azure.com/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484/operationStatuses/08584603943732988788?api-version=2021-04-01&t=638768093156684074&c=MIIHhzCCBm-gAwIBAgITfAaTiaklTwdb3CiPmAAABpOJqTANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDUwHhcNMjUwMTIxMjI0MTE0WhcNMjUwNzIwMjI0MTE0WjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOmbUr8nPmMTJCdlYtukpEJEQ6NI5er-Vfsp5MRwIESjPj6gQ9NC4czYZZZ3dm1Hp85y0l3ZlFsYoTHzzHaj2ZqWW0V97CbxFcGqXohbDUnk9dpmspwGy2SiEGYseXIea4nHCbGLZQy9h7EC74uBI6WqsfoFLCnIiUvBkXQsneM4Y__PD4oGkBE3QX-BFjX1GvNN4lO26JmdnJujHiuGiY_Xdzy4wfChN8m2A3NuGFRyygED5SOQHVAaJaNpxoOgPvS98XVyKf7SpVpY3Edx8OwdSXVus6lL9Lu14CF30haHpRpV2zE3G5nevFwh9XSquojKUfYLTq1ohD1mxiznhm0CAwEAAaOCBHQwggRwMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHLBggrBgEFBQcBAQSCAb0wggG5MGMGCCsGAQUFBzAChldodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MFMGCCsGAQUFBzAChkdodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9DTzFQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDA1LmNydDBTBggrBgEFBQcwAoZHaHR0cDovL2NybDMuYW1lLmdibC9haWEvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MB0GA1UdDgQWBBT870AQV-Tgc57mnegK8TIGwtH2xzAOBgNVHQ8BAf8EBAMCBaAwggEmBgNVHR8EggEdMIIBGTCCARWgggERoIIBDYY_aHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBR61hmFKHlscXYeYPjzS--iBUIWHTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAKt7SAWtCzPHMRCbBGIjKD-lleovshqUK-Rpyq5vsIWLLfzY9HZVzLgVMKYbI7sfGu8DGG2Q_AYLZ-pfZV8p9Q47EY_5LhruBCZDg9158kT335PwQ3aMdnE2cA0Cvkk18UEDWTaXZd0binxFy4dzOklmsDsb8VU-3A3KZfsL6RN_v-i0iw2KaT2zhGu59LdeqtDyBxefzHUHFT00QtVqDQRbq7FOMr-tYyBmUYS_9c8LHvmr0yNHtGH_Vqj7QZa8xYQPBrS-rRnWVDrS3v_xqv-9QxowrZKWmtYYqQakuTuGBh2DYpRjKeyGhNc1DssNE2AJp2l-xShy3IY2Rk24bYE&s=q19Y72Oz7TR27kCZOvNhvJPYdCp2qrolrrrXARZHmlqz3FdRNOkEtKYboJ8txOEkyvG3T1gCNJjrnF00oNL4kj9PNB348WasfhdZ0PixmoexajOXbFB-kaJEKo-tMoAfAFvGFonwtEXxl888rb3x1lyZmOF6hEnu5bi5SRD7vc471jrvw1nLfxbMTSHyiJtBc1Sk-MCVMPqyCHrj8W49AFB3Wp3FZtqDDqtUfTAg116pu761wdi-Yrm7_xRNg9cE3hRGO-vq4PiCVb0A99nTW5Q64KInLS_MPkH8DTO7OYQKkCwQIyZHnfBBd_6T3c0k64E7DGtvrIyUx_CjCxcxIg&h=-m_7s-YzBTRwDgDcehL5-tw13-IW9U64b2Nr2XnLX0s
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "396"
+                - "1602"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:11:17 GMT
+                - Wed, 05 Mar 2025 22:08:35 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -472,20 +474,22 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - e39e9b6c-f925-4f86-8bf7-9af63d3e4c75
-            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
-                - "16498"
-            X-Ms-Ratelimit-Remaining-Subscription-Reads:
-                - "1098"
+                - e8096ac0bc5046fd40933fadce1a70f5
+            X-Ms-Deployment-Engine-Version:
+                - 1.245.0
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Writes:
+                - "11999"
+            X-Ms-Ratelimit-Remaining-Subscription-Writes:
+                - "799"
             X-Ms-Request-Id:
-                - e39e9b6c-f925-4f86-8bf7-9af63d3e4c75
+                - 22ac5030-671d-41d7-b8c4-ea003e27b640
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021118Z:e39e9b6c-f925-4f86-8bf7-9af63d3e4c75
+                - WESTUS:20250305T220835Z:22ac5030-671d-41d7-b8c4-ea003e27b640
             X-Msedge-Ref:
-                - 'Ref A: A441965CEB1049D28C388AD58A3BBF9A Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:11:18Z'
-        status: 200 OK
-        code: 200
-        duration: 63.878543ms
+                - 'Ref A: 723D27073AC245F39823CB368D86E1C1 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:08:31Z'
+        status: 201 Created
+        code: 201
+        duration: 3.9324693s
     - id: 7
       request:
         proto: HTTP/1.1
@@ -500,17 +504,15 @@ interactions:
         body: ""
         form: {}
         headers:
-            Accept:
-                - application/json
             Accept-Encoding:
                 - gzip
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
+                - e8096ac0bc5046fd40933fadce1a70f5
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484/operationStatuses/08584603943732988788?api-version=2021-04-01&t=638768093156684074&c=MIIHhzCCBm-gAwIBAgITfAaTiaklTwdb3CiPmAAABpOJqTANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDUwHhcNMjUwMTIxMjI0MTE0WhcNMjUwNzIwMjI0MTE0WjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOmbUr8nPmMTJCdlYtukpEJEQ6NI5er-Vfsp5MRwIESjPj6gQ9NC4czYZZZ3dm1Hp85y0l3ZlFsYoTHzzHaj2ZqWW0V97CbxFcGqXohbDUnk9dpmspwGy2SiEGYseXIea4nHCbGLZQy9h7EC74uBI6WqsfoFLCnIiUvBkXQsneM4Y__PD4oGkBE3QX-BFjX1GvNN4lO26JmdnJujHiuGiY_Xdzy4wfChN8m2A3NuGFRyygED5SOQHVAaJaNpxoOgPvS98XVyKf7SpVpY3Edx8OwdSXVus6lL9Lu14CF30haHpRpV2zE3G5nevFwh9XSquojKUfYLTq1ohD1mxiznhm0CAwEAAaOCBHQwggRwMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHLBggrBgEFBQcBAQSCAb0wggG5MGMGCCsGAQUFBzAChldodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MFMGCCsGAQUFBzAChkdodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9DTzFQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDA1LmNydDBTBggrBgEFBQcwAoZHaHR0cDovL2NybDMuYW1lLmdibC9haWEvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MB0GA1UdDgQWBBT870AQV-Tgc57mnegK8TIGwtH2xzAOBgNVHQ8BAf8EBAMCBaAwggEmBgNVHR8EggEdMIIBGTCCARWgggERoIIBDYY_aHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBR61hmFKHlscXYeYPjzS--iBUIWHTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAKt7SAWtCzPHMRCbBGIjKD-lleovshqUK-Rpyq5vsIWLLfzY9HZVzLgVMKYbI7sfGu8DGG2Q_AYLZ-pfZV8p9Q47EY_5LhruBCZDg9158kT335PwQ3aMdnE2cA0Cvkk18UEDWTaXZd0binxFy4dzOklmsDsb8VU-3A3KZfsL6RN_v-i0iw2KaT2zhGu59LdeqtDyBxefzHUHFT00QtVqDQRbq7FOMr-tYyBmUYS_9c8LHvmr0yNHtGH_Vqj7QZa8xYQPBrS-rRnWVDrS3v_xqv-9QxowrZKWmtYYqQakuTuGBh2DYpRjKeyGhNc1DssNE2AJp2l-xShy3IY2Rk24bYE&s=q19Y72Oz7TR27kCZOvNhvJPYdCp2qrolrrrXARZHmlqz3FdRNOkEtKYboJ8txOEkyvG3T1gCNJjrnF00oNL4kj9PNB348WasfhdZ0PixmoexajOXbFB-kaJEKo-tMoAfAFvGFonwtEXxl888rb3x1lyZmOF6hEnu5bi5SRD7vc471jrvw1nLfxbMTSHyiJtBc1Sk-MCVMPqyCHrj8W49AFB3Wp3FZtqDDqtUfTAg116pu761wdi-Yrm7_xRNg9cE3hRGO-vq4PiCVb0A99nTW5Q64KInLS_MPkH8DTO7OYQKkCwQIyZHnfBBd_6T3c0k64E7DGtvrIyUx_CjCxcxIg&h=-m_7s-YzBTRwDgDcehL5-tw13-IW9U64b2Nr2XnLX0s
         method: GET
       response:
         proto: HTTP/2.0
@@ -518,18 +520,18 @@ interactions:
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 62503
+        content_length: 22
         uncompressed: false
-        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235","location":"eastus2","name":"azdtest-la58fe1-1737598235","properties":{"correlationId":"b5c2724ff9694f7634358e590746438b","dependencies":[{"dependsOn":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1","resourceName":"rg-azdtest-la58fe1","resourceType":"Microsoft.Resources/resourceGroups"}],"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Resources/deployments/resources","resourceName":"resources","resourceType":"Microsoft.Resources/deployments"}],"duration":"PT28.8705866S","mode":"Incremental","outputResources":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1"},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Storage/storageAccounts/stkui7mydvgrery"}],"outputs":{"arraY_INT":{"type":"Array","value":[1,2,3]},"arraY_STRING":{"type":"Array","value":["elem1","elem2","elem3"]},"array":{"type":"Array","value":[true,"abc",1234]},"azurE_STORAGE_ACCOUNT_ID":{"type":"String","value":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Storage/storageAccounts/stkui7mydvgrery"},"azurE_STORAGE_ACCOUNT_NAME":{"type":"String","value":"stkui7mydvgrery"},"bool":{"type":"Bool","value":true},"int":{"type":"Int","value":1234},"nullableParamOutput":{"type":"String"},"object":{"type":"Object","value":{"array":[true,"abc",1234],"foo":"bar","inner":{"foo":"bar"}}},"string":{"type":"String","value":"abc"}},"parameters":{"boolTagValue":{"type":"Bool","value":false},"deleteAfterTime":{"type":"String","value":"2025-01-23T03:10:43Z"},"environmentName":{"type":"String","value":"azdtest-la58fe1"},"intTagValue":{"type":"Int","value":678},"location":{"type":"String","value":"eastus2"},"nullableParam":{"type":"String"},"secureObject":{"type":"SecureObject"},"secureValue":{"type":"SecureString"}},"providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"locations":["eastus2"],"resourceType":"resourceGroups"},{"locations":[null],"resourceType":"deployments"}]}],"provisioningState":"Succeeded","templateHash":"4441115027850158141","timestamp":"2025-01-23T02:11:14.8350286Z"},"tags":{"azd-env-name":"azdtest-la58fe1","azd-provision-param-hash":"ae6da32990188cd0647349141a356d3448b73d990ce4c9ae65c89130bcc979f0"},"type":"Microsoft.Resources/deployments"}]}'
+        body: '{"status":"Succeeded"}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "62503"
+                - "22"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:11:21 GMT
+                - Wed, 05 Mar 2025 22:09:06 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -541,20 +543,20 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
+                - e8096ac0bc5046fd40933fadce1a70f5
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "16499"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "1099"
             X-Ms-Request-Id:
-                - 8bbcbc8b-ed08-42c9-84f8-566ace91d557
+                - 50c56f6c-7a7d-43c0-8bab-8f3b2737b03e
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021122Z:8bbcbc8b-ed08-42c9-84f8-566ace91d557
+                - WESTUS:20250305T220906Z:50c56f6c-7a7d-43c0-8bab-8f3b2737b03e
             X-Msedge-Ref:
-                - 'Ref A: C2343871FB2E4A5D9D256152AABAF3AE Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:11:21Z'
+                - 'Ref A: 149CC3980937405BB767A53BA706D2CB Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:09:06Z'
         status: 200 OK
         code: 200
-        duration: 792.606172ms
+        duration: 259.7098ms
     - id: 8
       request:
         proto: HTTP/1.1
@@ -569,17 +571,15 @@ interactions:
         body: ""
         form: {}
         headers:
-            Accept:
-                - application/json
             Accept-Encoding:
                 - gzip
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235?api-version=2021-04-01
+                - e8096ac0bc5046fd40933fadce1a70f5
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484?api-version=2021-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -587,18 +587,18 @@ interactions:
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 2556
+        content_length: 2555
         uncompressed: false
-        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235","name":"azdtest-la58fe1-1737598235","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-la58fe1","azd-provision-param-hash":"ae6da32990188cd0647349141a356d3448b73d990ce4c9ae65c89130bcc979f0"},"properties":{"templateHash":"4441115027850158141","parameters":{"environmentName":{"type":"String","value":"azdtest-la58fe1"},"location":{"type":"String","value":"eastus2"},"deleteAfterTime":{"type":"String","value":"2025-01-23T03:10:43Z"},"intTagValue":{"type":"Int","value":678},"boolTagValue":{"type":"Bool","value":false},"secureValue":{"type":"SecureString"},"secureObject":{"type":"SecureObject"},"nullableParam":{"type":"String"}},"mode":"Incremental","provisioningState":"Succeeded","timestamp":"2025-01-23T02:11:14.8350286Z","duration":"PT28.8705866S","correlationId":"b5c2724ff9694f7634358e590746438b","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-la58fe1"}],"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}],"outputs":{"nullableParamOutput":{"type":"String"},"azurE_STORAGE_ACCOUNT_ID":{"type":"String","value":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Storage/storageAccounts/stkui7mydvgrery"},"azurE_STORAGE_ACCOUNT_NAME":{"type":"String","value":"stkui7mydvgrery"},"string":{"type":"String","value":"abc"},"bool":{"type":"Bool","value":true},"int":{"type":"Int","value":1234},"array":{"type":"Array","value":[true,"abc",1234]},"arraY_INT":{"type":"Array","value":[1,2,3]},"arraY_STRING":{"type":"Array","value":["elem1","elem2","elem3"]},"object":{"type":"Object","value":{"foo":"bar","inner":{"foo":"bar"},"array":[true,"abc",1234]}}},"outputResources":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1"},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Storage/storageAccounts/stkui7mydvgrery"}]}}'
+        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484","name":"azdtest-wa9b56b-1741212484","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-wa9b56b","azd-provision-param-hash":"ee82ee843e4e47b16b5a0c165dccd56d4b711d08f5bfbe44e8e2f16f9af576c0"},"properties":{"templateHash":"11064734108664627865","parameters":{"environmentName":{"type":"String","value":"azdtest-wa9b56b"},"location":{"type":"String","value":"eastus2"},"deleteAfterTime":{"type":"String","value":"2025-03-05T23:08:32Z"},"intTagValue":{"type":"Int","value":678},"boolTagValue":{"type":"Bool","value":false},"secureValue":{"type":"SecureString"},"secureObject":{"type":"SecureObject"},"nullableParam":{"type":"String"}},"mode":"Incremental","provisioningState":"Succeeded","timestamp":"2025-03-05T22:09:00.416869Z","duration":"PT25.820663S","correlationId":"e8096ac0bc5046fd40933fadce1a70f5","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-wa9b56b"}],"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}],"outputs":{"nullableParamOutput":{"type":"String"},"azurE_STORAGE_ACCOUNT_ID":{"type":"String","value":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Storage/storageAccounts/stwegewssyy47gg"},"azurE_STORAGE_ACCOUNT_NAME":{"type":"String","value":"stwegewssyy47gg"},"string":{"type":"String","value":"abc"},"bool":{"type":"Bool","value":true},"int":{"type":"Int","value":1234},"array":{"type":"Array","value":[true,"abc",1234]},"arraY_INT":{"type":"Array","value":[1,2,3]},"arraY_STRING":{"type":"Array","value":["elem1","elem2","elem3"]},"object":{"type":"Object","value":{"foo":"bar","inner":{"foo":"bar"},"array":[true,"abc",1234]}}},"outputResources":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b"},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Storage/storageAccounts/stwegewssyy47gg"}]}}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "2556"
+                - "2555"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:11:22 GMT
+                - Wed, 05 Mar 2025 22:09:06 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -610,20 +610,20 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
+                - e8096ac0bc5046fd40933fadce1a70f5
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "16498"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "1098"
             X-Ms-Request-Id:
-                - 534b3f63-0ea6-4e12-8a1d-6c4ef6548cd7
+                - deda1148-1171-4896-9e89-91eb38794e12
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021122Z:534b3f63-0ea6-4e12-8a1d-6c4ef6548cd7
+                - WESTUS:20250305T220906Z:deda1148-1171-4896-9e89-91eb38794e12
             X-Msedge-Ref:
-                - 'Ref A: 40F1C329734E47B5AD1CD56831EA3FA4 Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:11:22Z'
+                - 'Ref A: 857AC8544C6F415EA9827031CFC4C47C Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:09:06Z'
         status: 200 OK
         code: 200
-        duration: 171.520584ms
+        duration: 249.6719ms
     - id: 9
       request:
         proto: HTTP/1.1
@@ -645,10 +645,10 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-la58fe1%27&api-version=2021-04-01
+                - e8096ac0bc5046fd40933fadce1a70f5
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-wa9b56b%27&api-version=2021-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -658,7 +658,7 @@ interactions:
         trailer: {}
         content_length: 396
         uncompressed: false
-        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1","name":"rg-azdtest-la58fe1","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-la58fe1","DeleteAfter":"2025-01-23T03:10:43Z","IntTag":"678","BoolTag":"False","SecureTag":"","SecureObjectTag":"{}"},"properties":{"provisioningState":"Succeeded"}}]}'
+        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b","name":"rg-azdtest-wa9b56b","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-wa9b56b","DeleteAfter":"2025-03-05T23:08:32Z","IntTag":"678","BoolTag":"False","SecureTag":"","SecureObjectTag":"{}"},"properties":{"provisioningState":"Succeeded"}}]}'
         headers:
             Cache-Control:
                 - no-cache
@@ -667,7 +667,7 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:11:22 GMT
+                - Wed, 05 Mar 2025 22:09:06 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -679,20 +679,20 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
+                - e8096ac0bc5046fd40933fadce1a70f5
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "16499"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "1099"
             X-Ms-Request-Id:
-                - fd3ad1d1-3d1a-42c3-aab6-da66b6d55646
+                - 002a7273-0518-439d-ae4f-09a0f315f625
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021122Z:fd3ad1d1-3d1a-42c3-aab6-da66b6d55646
+                - WESTUS:20250305T220906Z:002a7273-0518-439d-ae4f-09a0f315f625
             X-Msedge-Ref:
-                - 'Ref A: AE749F3049FE46439544A67C77F32028 Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:11:22Z'
+                - 'Ref A: 70A851F6E4D24880A0B0A01A12591320 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:09:06Z'
         status: 200 OK
         code: 200
-        duration: 73.543564ms
+        duration: 86.5842ms
     - id: 10
       request:
         proto: HTTP/1.1
@@ -714,10 +714,8 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
-            X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/resources?api-version=2021-04-01
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT)
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-wa9b56b%27&api-version=2021-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -725,18 +723,18 @@ interactions:
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 364
+        content_length: 396
         uncompressed: false
-        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Storage/storageAccounts/stkui7mydvgrery","name":"stkui7mydvgrery","type":"Microsoft.Storage/storageAccounts","sku":{"name":"Standard_LRS","tier":"Standard"},"kind":"StorageV2","location":"eastus2","tags":{"azd-env-name":"azdtest-la58fe1"}}]}'
+        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b","name":"rg-azdtest-wa9b56b","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-wa9b56b","DeleteAfter":"2025-03-05T23:08:32Z","IntTag":"678","BoolTag":"False","SecureTag":"","SecureObjectTag":"{}"},"properties":{"provisioningState":"Succeeded"}}]}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "364"
+                - "396"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:11:22 GMT
+                - Wed, 05 Mar 2025 22:09:07 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -748,20 +746,20 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
+                - 3479b86e-929d-48d9-9e71-733a8cdcf225
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "16499"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "1099"
             X-Ms-Request-Id:
-                - 7331a9a5-e842-408a-bbf7-82da7f0e4044
+                - 3479b86e-929d-48d9-9e71-733a8cdcf225
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021122Z:7331a9a5-e842-408a-bbf7-82da7f0e4044
+                - WESTUS2:20250305T220907Z:3479b86e-929d-48d9-9e71-733a8cdcf225
             X-Msedge-Ref:
-                - 'Ref A: 85C780EE5ACA4F7794CAF78B0F80CB1D Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:11:22Z'
+                - 'Ref A: 426F8B656D8A45838F30D26E16481CF9 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:09:07Z'
         status: 200 OK
         code: 200
-        duration: 199.934747ms
+        duration: 94.0069ms
     - id: 11
       request:
         proto: HTTP/1.1
@@ -783,10 +781,10 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235?api-version=2021-04-01
+                - d939f81302341bffbeffaad8372cf31d
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -794,18 +792,18 @@ interactions:
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 2556
+        content_length: 873417
         uncompressed: false
-        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235","name":"azdtest-la58fe1-1737598235","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-la58fe1","azd-provision-param-hash":"ae6da32990188cd0647349141a356d3448b73d990ce4c9ae65c89130bcc979f0"},"properties":{"templateHash":"4441115027850158141","parameters":{"environmentName":{"type":"String","value":"azdtest-la58fe1"},"location":{"type":"String","value":"eastus2"},"deleteAfterTime":{"type":"String","value":"2025-01-23T03:10:43Z"},"intTagValue":{"type":"Int","value":678},"boolTagValue":{"type":"Bool","value":false},"secureValue":{"type":"SecureString"},"secureObject":{"type":"SecureObject"},"nullableParam":{"type":"String"}},"mode":"Incremental","provisioningState":"Succeeded","timestamp":"2025-01-23T02:11:14.8350286Z","duration":"PT28.8705866S","correlationId":"b5c2724ff9694f7634358e590746438b","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-la58fe1"}],"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}],"outputs":{"nullableParamOutput":{"type":"String"},"azurE_STORAGE_ACCOUNT_ID":{"type":"String","value":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Storage/storageAccounts/stkui7mydvgrery"},"azurE_STORAGE_ACCOUNT_NAME":{"type":"String","value":"stkui7mydvgrery"},"string":{"type":"String","value":"abc"},"bool":{"type":"Bool","value":true},"int":{"type":"Int","value":1234},"array":{"type":"Array","value":[true,"abc",1234]},"arraY_INT":{"type":"Array","value":[1,2,3]},"arraY_STRING":{"type":"Array","value":["elem1","elem2","elem3"]},"object":{"type":"Object","value":{"foo":"bar","inner":{"foo":"bar"},"array":[true,"abc",1234]}}},"outputResources":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1"},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Storage/storageAccounts/stkui7mydvgrery"}]}}'
+        body: '{"nextLink":"https://management.azure.com/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01\u0026%24skiptoken=3ZDBboMwDIafhZyLlLQctt5gTiXWJWmCw8RuVcsmSgXSxgSk4t0HVHuB9bLtZFv%2bZX%2f%2ffyGHumqK6nPfFHWFdZlXH2R9Ic88QZssp7bKu2a3f2%2bKSbHNe7ImzLvzJGadcJlPFrPC1O33jtHAM%2bUmEvDWavsCwupAQhQZOIOm6UZYTiVGoDF9kHh8NUyqp4S2Cuyoy3qF5VK4kkqInQBORcG4sWynTo9c4MEpGD%2fDeDP0fTIsCA9vYA3oLaydxLgdk2ily5bixJnsmbbl%2fdZYaa%2b8sZNQ94YfdTpVMLMPtGeV4DTzlYRw9J45gXz2c81%2b9Yey%2fxnqr43%2bn9gZhi8%3d","value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484","location":"eastus2","name":"azdtest-wa9b56b-1741212484","properties":{"correlationId":"e8096ac0bc5046fd40933fadce1a70f5","dependencies":[{"dependsOn":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b","resourceName":"rg-azdtest-wa9b56b","resourceType":"Microsoft.Resources/resourceGroups"}],"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Resources/deployments/resources","resourceName":"resources","resourceType":"Microsoft.Resources/deployments"}],"duration":"PT25.820663S","mode":"Incremental","outputResources":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b"},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Storage/storageAccounts/stwegewssyy47gg"}],"outputs":{"arraY_INT":{"type":"Array","value":[1,2,3]},"arraY_STRING":{"type":"Array","value":["elem1","elem2","elem3"]},"array":{"type":"Array","value":[true,"abc",1234]},"azurE_STORAGE_ACCOUNT_ID":{"type":"String","value":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Storage/storageAccounts/stwegewssyy47gg"},"azurE_STORAGE_ACCOUNT_NAME":{"type":"String","value":"stwegewssyy47gg"},"bool":{"type":"Bool","value":true},"int":{"type":"Int","value":1234},"nullableParamOutput":{"type":"String"},"object":{"type":"Object","value":{"array":[true,"abc",1234],"foo":"bar","inner":{"foo":"bar"}}},"string":{"type":"String","value":"abc"}},"parameters":{"boolTagValue":{"type":"Bool","value":false},"deleteAfterTime":{"type":"String","value":"2025-03-05T23:08:32Z"},"environmentName":{"type":"String","value":"azdtest-wa9b56b"},"intTagValue":{"type":"Int","value":678},"location":{"type":"String","value":"eastus2"},"nullableParam":{"type":"String"},"secureObject":{"type":"SecureObject"},"secureValue":{"type":"SecureString"}},"providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"locations":["eastus2"],"resourceType":"resourceGroups"},{"locations":[null],"resourceType":"deployments"}]}],"provisioningState":"Succeeded","templateHash":"11064734108664627865","timestamp":"2025-03-05T22:09:00.416869Z"},"tags":{"azd-env-name":"azdtest-wa9b56b","azd-provision-param-hash":"ee82ee843e4e47b16b5a0c165dccd56d4b711d08f5bfbe44e8e2f16f9af576c0"},"type":"Microsoft.Resources/deployments"}]}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "2556"
+                - "873417"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:11:22 GMT
+                - Wed, 05 Mar 2025 22:09:15 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -817,20 +815,20 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
+                - d939f81302341bffbeffaad8372cf31d
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "16499"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "1099"
             X-Ms-Request-Id:
-                - e559d38f-b17a-4892-9c6c-c726a88c5191
+                - 3ea318b1-4c98-4d7a-b0c6-8a73a4a7078d
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021123Z:e559d38f-b17a-4892-9c6c-c726a88c5191
+                - WESTUS:20250305T220915Z:3ea318b1-4c98-4d7a-b0c6-8a73a4a7078d
             X-Msedge-Ref:
-                - 'Ref A: FCE6183DE8284826B6295144B5CD737C Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:11:22Z'
+                - 'Ref A: 3936447226D141ECA91D3FF3836797D3 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:09:10Z'
         status: 200 OK
         code: 200
-        duration: 344.229969ms
+        duration: 4.8423832s
     - id: 12
       request:
         proto: HTTP/1.1
@@ -845,17 +843,15 @@ interactions:
         body: ""
         form: {}
         headers:
-            Accept:
-                - application/json
             Accept-Encoding:
                 - gzip
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-la58fe1%27&api-version=2021-04-01
+                - d939f81302341bffbeffaad8372cf31d
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=3ZDBboMwDIafhZyLlLQctt5gTiXWJWmCw8RuVcsmSgXSxgSk4t0HVHuB9bLtZFv%2bZX%2f%2ffyGHumqK6nPfFHWFdZlXH2R9Ic88QZssp7bKu2a3f2%2bKSbHNe7ImzLvzJGadcJlPFrPC1O33jtHAM%2bUmEvDWavsCwupAQhQZOIOm6UZYTiVGoDF9kHh8NUyqp4S2Cuyoy3qF5VK4kkqInQBORcG4sWynTo9c4MEpGD%2fDeDP0fTIsCA9vYA3oLaydxLgdk2ily5bixJnsmbbl%2fdZYaa%2b8sZNQ94YfdTpVMLMPtGeV4DTzlYRw9J45gXz2c81%2b9Yey%2fxnqr43%2bn9gZhi8%3d
         method: GET
       response:
         proto: HTTP/2.0
@@ -863,18 +859,18 @@ interactions:
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 396
+        content_length: 1226276
         uncompressed: false
-        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1","name":"rg-azdtest-la58fe1","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-la58fe1","DeleteAfter":"2025-01-23T03:10:43Z","IntTag":"678","BoolTag":"False","SecureTag":"","SecureObjectTag":"{}"},"properties":{"provisioningState":"Succeeded"}}]}'
+        body: '{"nextLink":"https://management.azure.com/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01\u0026%24skiptoken=1Y%2fdCoIwGIavxe%2fYYMuK8Cz7DKK2NbcVdhZlIsqEMrTEe%2b%2bHOugO6vD9g%2bdtYV%2faKrOXXZWVVpd5Ys%2fgt7AJlTaqD769FIUL4eQtW7BJU612pyp7DhbJFXygztjhOm7YLe6B%2b2pEZf3JKCFOlM8ChmktzRaZkQOOQRBhgZKsZ8yEhOsApV5PuT4cI8rFUpFaoHn04ivHORUYDgTKh5f2haJc4XzEctnwGxsynTYMjQed%2b8b2vrGff%2f6A%2bscxu%2b4O","value":[]}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "396"
+                - "1226276"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:11:22 GMT
+                - Wed, 05 Mar 2025 22:09:23 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -886,20 +882,20 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
+                - d939f81302341bffbeffaad8372cf31d
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
-                - "16499"
+                - "16500"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
-                - "1099"
+                - "1100"
             X-Ms-Request-Id:
-                - e21df79f-ccab-4823-ade8-c8d16336883e
+                - 37447bc0-7972-4fc1-97de-0bc616d5a4db
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021123Z:e21df79f-ccab-4823-ade8-c8d16336883e
+                - WESTUS:20250305T220923Z:37447bc0-7972-4fc1-97de-0bc616d5a4db
             X-Msedge-Ref:
-                - 'Ref A: 31B884CCF8074AEA9E6BAA42C0DC6484 Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:11:23Z'
+                - 'Ref A: FDA18F80FDB84B7E9753737980D9EAFA Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:09:15Z'
         status: 200 OK
         code: 200
-        duration: 47.961707ms
+        duration: 7.965026s
     - id: 13
       request:
         proto: HTTP/1.1
@@ -914,17 +910,15 @@ interactions:
         body: ""
         form: {}
         headers:
-            Accept:
-                - application/json
             Accept-Encoding:
                 - gzip
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/resources?api-version=2021-04-01
+                - d939f81302341bffbeffaad8372cf31d
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=1Y%2fdCoIwGIavxe%2fYYMuK8Cz7DKK2NbcVdhZlIsqEMrTEe%2b%2bHOugO6vD9g%2bdtYV%2faKrOXXZWVVpd5Ys%2fgt7AJlTaqD769FIUL4eQtW7BJU612pyp7DhbJFXygztjhOm7YLe6B%2b2pEZf3JKCFOlM8ChmktzRaZkQOOQRBhgZKsZ8yEhOsApV5PuT4cI8rFUpFaoHn04ivHORUYDgTKh5f2haJc4XzEctnwGxsynTYMjQed%2b8b2vrGff%2f6A%2bscxu%2b4O
         method: GET
       response:
         proto: HTTP/2.0
@@ -932,18 +926,18 @@ interactions:
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 364
+        content_length: 543303
         uncompressed: false
-        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Storage/storageAccounts/stkui7mydvgrery","name":"stkui7mydvgrery","type":"Microsoft.Storage/storageAccounts","sku":{"name":"Standard_LRS","tier":"Standard"},"kind":"StorageV2","location":"eastus2","tags":{"azd-env-name":"azdtest-la58fe1"}}]}'
+        body: '{"nextLink":"https://management.azure.com/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01\u0026%24skiptoken=q1ZKzs8rycwrTSzJzM8Lyc9OzStWsqpWcnUMDgkNNlKyyivNydGBcmG8cFeQJIwX6h3sHxriAeMG%2bPs4%2brk4u%2fqFBDn6wAQhOuDGQbjGENnaWgA%3d","value":[]}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "364"
+                - "543303"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:11:22 GMT
+                - Wed, 05 Mar 2025 22:09:26 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -955,20 +949,20 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
+                - d939f81302341bffbeffaad8372cf31d
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "16499"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "1099"
             X-Ms-Request-Id:
-                - de119448-3e5c-48eb-80ec-bcc5dcd67a4e
+                - 3a569d02-3432-41b8-9814-9da119b64129
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021123Z:de119448-3e5c-48eb-80ec-bcc5dcd67a4e
+                - WESTUS2:20250305T220926Z:3a569d02-3432-41b8-9814-9da119b64129
             X-Msedge-Ref:
-                - 'Ref A: D5B1DFF669E543CDB0C9E5F5DE0EB5F2 Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:11:23Z'
+                - 'Ref A: 1DDC76B3AB2E4AD5A79AB77334F1AE5E Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:09:24Z'
         status: 200 OK
         code: 200
-        duration: 170.637681ms
+        duration: 2.5565802s
     - id: 14
       request:
         proto: HTTP/1.1
@@ -983,42 +977,38 @@ interactions:
         body: ""
         form: {}
         headers:
-            Accept:
-                - application/json
             Accept-Encoding:
                 - gzip
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups/rg-azdtest-la58fe1?api-version=2021-04-01
-        method: DELETE
+                - d939f81302341bffbeffaad8372cf31d
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=q1ZKzs8rycwrTSzJzM8Lyc9OzStWsqpWcnUMDgkNNlKyyivNydGBcmG8cFeQJIwX6h3sHxriAeMG%2bPs4%2brk4u%2fqFBDn6wAQhOuDGQbjGENnaWgA%3d
+        method: GET
       response:
         proto: HTTP/2.0
         proto_major: 2
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 0
+        content_length: 37877
         uncompressed: false
-        body: ""
+        body: '{"value":[]}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "0"
+                - "37877"
+            Content-Type:
+                - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:11:24 GMT
+                - Wed, 05 Mar 2025 22:09:28 GMT
             Expires:
                 - "-1"
-            Location:
-                - https://management.azure.com/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/operationresults/eyJqb2JJZCI6IlJFU09VUkNFR1JPVVBERUxFVElPTkpPQi1SRzoyREFaRFRFU1Q6MkRMQTU4RkUxLUVBU1RVUzIiLCJqb2JMb2NhdGlvbiI6ImVhc3R1czIifQ?api-version=2021-04-01&t=638731951469432478&c=MIIHhzCCBm-gAwIBAgITHgVxvH65_BmPrKxDIgAABXG8fjANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDYwHhcNMjQwOTI1MTkzNzA4WhcNMjUwMzI0MTkzNzA4WjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKlHcl7gn1b6aLS1hLftgvWE8n-Z9liLRsNGgjYfyY_1N6TVDEHJTtctREIaCRDPEC-hePKBe7OS45JIAD6cl5AGU_dQlGd-3bBZeVfAPJFUnC910pwhDca2OXlf4LyB1KSofXaA4xDB6G7cHXRld_URCnol2LHQEGox0vBzaPz30AUB0ZhAatZgqhXy5qnroV3zbEZC3m4qLDSnG8QNEnw8Wv5GpYH_MxK9mgDPwoIObeDBnjtQonKzvItZ8jXwF-wEmcVAnhr6Dvq3rWdBY9616kXvQ7E3eEvGqMn9W_NZTAqlaanfaACfITkIJZkgsSoJGw5USCMC-vzAb1Ms0j0CAwEAAaOCBHQwggRwMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHLBggrBgEFBQcBAQSCAb0wggG5MGMGCCsGAQUFBzAChldodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQkwyUEtJSU5UQ0EwMi5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNi5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDIuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDYuY3J0MFMGCCsGAQUFBzAChkdodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9CTDJQS0lJTlRDQTAyLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDA2LmNydDBTBggrBgEFBQcwAoZHaHR0cDovL2NybDMuYW1lLmdibC9haWEvQkwyUEtJSU5UQ0EwMi5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNi5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDIuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDYuY3J0MB0GA1UdDgQWBBTELag1gS_F07Xj1us9l4ySYrHYYjAOBgNVHQ8BAf8EBAMCBaAwggEmBgNVHR8EggEdMIIBGTCCARWgggERoIIBDYY_aHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDYuY3JshjFodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDYuY3JshjFodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDYuY3JshjFodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDYuY3JshjFodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDYuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwEwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBTxRmjG8cPwKy19i2rhsvm-NfzRQTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBABJx3Gb3LtjBZ4x70SioNIk8ap3qwt2DMEu9dXEhi28jFB87BBsTCkNeuhGlLzHm7Ykx6xpUjJp4F2_qmJKrQjDH4U0VYT_yc8Ow5mxrFJcewgTXzwmwqXOodok5WWOUVP4Mmdp_O_3je1dVgw4TrdrypIZImBn2jVDrXQ79fFXTR-Td0XMOtWPDwreoMRagD769QW4hlGtVaZCqOAzyomfSc8PhDzKhllbZQrmP-UgiLU14SDsxwq6AHG413ClcJIDGfEsEKwlUyIIAKHDwSdbO41Zs7ZQG5k_eBlGTkr-5Zye8vT7OeGf1_mGZSme6otyTUL_3-6gJ282qCPXoflc&s=SQLCnupzeBFTsFhyVSFmeBhRIBSmaQ-Me_K0q0SZhsU1ZQM5NZZRLxpasWHGd6PGV3ZsYoSHOFJ4pJsOqks2gAxtiUmbTl61RvtvDiJbmG_Kezm-BTvbeIXlI4ZwhjyrU1rxv8o0fgGn-px5RBv1PjgXK9yXQpOgJQChV23db5rlY9byVxqssqv_DNV5EMGmI3ZCpuQRTeHJJ_tg3a-0Eq8pixPSX45RlHJONSZ4zyAtKlnQ0-VFb7DUp7e0Jrf00JwM8NPJ4kjzBnR0x0elRPFWy1IC8AvgZpbgVpQp3xgrwhKgUtEDc6-9RYOcAB6jzB6Zpv6N6EhEKHjCUpKjNg&h=_JRz-S20he06Us1wykqXkw18Jp7JUuz7WUXN4iqU0IU
             Pragma:
                 - no-cache
-            Retry-After:
-                - "0"
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Cache:
@@ -1026,20 +1016,20 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
-            X-Ms-Ratelimit-Remaining-Subscription-Deletes:
-                - "799"
-            X-Ms-Ratelimit-Remaining-Subscription-Global-Deletes:
-                - "11999"
+                - d939f81302341bffbeffaad8372cf31d
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
             X-Ms-Request-Id:
-                - 731f5d98-b45d-4c94-87bb-145536de86ea
+                - 8663eadb-9bbb-4884-82a7-e65e60f50208
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021125Z:731f5d98-b45d-4c94-87bb-145536de86ea
+                - WESTUS:20250305T220928Z:8663eadb-9bbb-4884-82a7-e65e60f50208
             X-Msedge-Ref:
-                - 'Ref A: 048E7724CB284E9397BD44B21195B6EA Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:11:23Z'
-        status: 202 Accepted
-        code: 202
-        duration: 1.941740441s
+                - 'Ref A: 40DD41CDA75F494EACA8B0C3E390764E Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:09:26Z'
+        status: 200 OK
+        code: 200
+        duration: 1.5378325s
     - id: 15
       request:
         proto: HTTP/1.1
@@ -1054,15 +1044,17 @@ interactions:
         body: ""
         form: {}
         headers:
+            Accept:
+                - application/json
             Accept-Encoding:
                 - gzip
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/operationresults/eyJqb2JJZCI6IlJFU09VUkNFR1JPVVBERUxFVElPTkpPQi1SRzoyREFaRFRFU1Q6MkRMQTU4RkUxLUVBU1RVUzIiLCJqb2JMb2NhdGlvbiI6ImVhc3R1czIifQ?api-version=2021-04-01&t=638731951469432478&c=MIIHhzCCBm-gAwIBAgITHgVxvH65_BmPrKxDIgAABXG8fjANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDYwHhcNMjQwOTI1MTkzNzA4WhcNMjUwMzI0MTkzNzA4WjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKlHcl7gn1b6aLS1hLftgvWE8n-Z9liLRsNGgjYfyY_1N6TVDEHJTtctREIaCRDPEC-hePKBe7OS45JIAD6cl5AGU_dQlGd-3bBZeVfAPJFUnC910pwhDca2OXlf4LyB1KSofXaA4xDB6G7cHXRld_URCnol2LHQEGox0vBzaPz30AUB0ZhAatZgqhXy5qnroV3zbEZC3m4qLDSnG8QNEnw8Wv5GpYH_MxK9mgDPwoIObeDBnjtQonKzvItZ8jXwF-wEmcVAnhr6Dvq3rWdBY9616kXvQ7E3eEvGqMn9W_NZTAqlaanfaACfITkIJZkgsSoJGw5USCMC-vzAb1Ms0j0CAwEAAaOCBHQwggRwMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHLBggrBgEFBQcBAQSCAb0wggG5MGMGCCsGAQUFBzAChldodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQkwyUEtJSU5UQ0EwMi5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNi5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDIuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDYuY3J0MFMGCCsGAQUFBzAChkdodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9CTDJQS0lJTlRDQTAyLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDA2LmNydDBTBggrBgEFBQcwAoZHaHR0cDovL2NybDMuYW1lLmdibC9haWEvQkwyUEtJSU5UQ0EwMi5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNi5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDIuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDYuY3J0MB0GA1UdDgQWBBTELag1gS_F07Xj1us9l4ySYrHYYjAOBgNVHQ8BAf8EBAMCBaAwggEmBgNVHR8EggEdMIIBGTCCARWgggERoIIBDYY_aHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDYuY3JshjFodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDYuY3JshjFodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDYuY3JshjFodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDYuY3JshjFodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDYuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwEwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBTxRmjG8cPwKy19i2rhsvm-NfzRQTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBABJx3Gb3LtjBZ4x70SioNIk8ap3qwt2DMEu9dXEhi28jFB87BBsTCkNeuhGlLzHm7Ykx6xpUjJp4F2_qmJKrQjDH4U0VYT_yc8Ow5mxrFJcewgTXzwmwqXOodok5WWOUVP4Mmdp_O_3je1dVgw4TrdrypIZImBn2jVDrXQ79fFXTR-Td0XMOtWPDwreoMRagD769QW4hlGtVaZCqOAzyomfSc8PhDzKhllbZQrmP-UgiLU14SDsxwq6AHG413ClcJIDGfEsEKwlUyIIAKHDwSdbO41Zs7ZQG5k_eBlGTkr-5Zye8vT7OeGf1_mGZSme6otyTUL_3-6gJ282qCPXoflc&s=SQLCnupzeBFTsFhyVSFmeBhRIBSmaQ-Me_K0q0SZhsU1ZQM5NZZRLxpasWHGd6PGV3ZsYoSHOFJ4pJsOqks2gAxtiUmbTl61RvtvDiJbmG_Kezm-BTvbeIXlI4ZwhjyrU1rxv8o0fgGn-px5RBv1PjgXK9yXQpOgJQChV23db5rlY9byVxqssqv_DNV5EMGmI3ZCpuQRTeHJJ_tg3a-0Eq8pixPSX45RlHJONSZ4zyAtKlnQ0-VFb7DUp7e0Jrf00JwM8NPJ4kjzBnR0x0elRPFWy1IC8AvgZpbgVpQp3xgrwhKgUtEDc6-9RYOcAB6jzB6Zpv6N6EhEKHjCUpKjNg&h=_JRz-S20he06Us1wykqXkw18Jp7JUuz7WUXN4iqU0IU
+                - d939f81302341bffbeffaad8372cf31d
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484?api-version=2021-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -1070,16 +1062,18 @@ interactions:
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 0
+        content_length: 2555
         uncompressed: false
-        body: ""
+        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484","name":"azdtest-wa9b56b-1741212484","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-wa9b56b","azd-provision-param-hash":"ee82ee843e4e47b16b5a0c165dccd56d4b711d08f5bfbe44e8e2f16f9af576c0"},"properties":{"templateHash":"11064734108664627865","parameters":{"environmentName":{"type":"String","value":"azdtest-wa9b56b"},"location":{"type":"String","value":"eastus2"},"deleteAfterTime":{"type":"String","value":"2025-03-05T23:08:32Z"},"intTagValue":{"type":"Int","value":678},"boolTagValue":{"type":"Bool","value":false},"secureValue":{"type":"SecureString"},"secureObject":{"type":"SecureObject"},"nullableParam":{"type":"String"}},"mode":"Incremental","provisioningState":"Succeeded","timestamp":"2025-03-05T22:09:00.416869Z","duration":"PT25.820663S","correlationId":"e8096ac0bc5046fd40933fadce1a70f5","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-wa9b56b"}],"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}],"outputs":{"nullableParamOutput":{"type":"String"},"azurE_STORAGE_ACCOUNT_ID":{"type":"String","value":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Storage/storageAccounts/stwegewssyy47gg"},"azurE_STORAGE_ACCOUNT_NAME":{"type":"String","value":"stwegewssyy47gg"},"string":{"type":"String","value":"abc"},"bool":{"type":"Bool","value":true},"int":{"type":"Int","value":1234},"array":{"type":"Array","value":[true,"abc",1234]},"arraY_INT":{"type":"Array","value":[1,2,3]},"arraY_STRING":{"type":"Array","value":["elem1","elem2","elem3"]},"object":{"type":"Object","value":{"foo":"bar","inner":{"foo":"bar"},"array":[true,"abc",1234]}}},"outputResources":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b"},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Storage/storageAccounts/stwegewssyy47gg"}]}}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "0"
+                - "2555"
+            Content-Type:
+                - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:12:41 GMT
+                - Wed, 05 Mar 2025 22:09:28 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -1091,20 +1085,20 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
+                - d939f81302341bffbeffaad8372cf31d
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "16499"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "1099"
             X-Ms-Request-Id:
-                - 66bfa255-5a36-4863-8288-0c50c981e9fe
+                - 210a2c05-83cc-4a77-b07b-7b4d4a9a4d67
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021242Z:66bfa255-5a36-4863-8288-0c50c981e9fe
+                - WESTUS:20250305T220928Z:210a2c05-83cc-4a77-b07b-7b4d4a9a4d67
             X-Msedge-Ref:
-                - 'Ref A: ADBBB59CF672455DA09ED2C039D28739 Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:12:41Z'
+                - 'Ref A: 5646D29E744D4E0A95BA8EBD395BA63C Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:09:28Z'
         status: 200 OK
         code: 200
-        duration: 280.693924ms
+        duration: 410.2905ms
     - id: 16
       request:
         proto: HTTP/1.1
@@ -1126,10 +1120,10 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235?api-version=2021-04-01
+                - d939f81302341bffbeffaad8372cf31d
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-wa9b56b%27&api-version=2021-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -1137,18 +1131,18 @@ interactions:
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 2556
+        content_length: 396
         uncompressed: false
-        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235","name":"azdtest-la58fe1-1737598235","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-la58fe1","azd-provision-param-hash":"ae6da32990188cd0647349141a356d3448b73d990ce4c9ae65c89130bcc979f0"},"properties":{"templateHash":"4441115027850158141","parameters":{"environmentName":{"type":"String","value":"azdtest-la58fe1"},"location":{"type":"String","value":"eastus2"},"deleteAfterTime":{"type":"String","value":"2025-01-23T03:10:43Z"},"intTagValue":{"type":"Int","value":678},"boolTagValue":{"type":"Bool","value":false},"secureValue":{"type":"SecureString"},"secureObject":{"type":"SecureObject"},"nullableParam":{"type":"String"}},"mode":"Incremental","provisioningState":"Succeeded","timestamp":"2025-01-23T02:11:14.8350286Z","duration":"PT28.8705866S","correlationId":"b5c2724ff9694f7634358e590746438b","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-la58fe1"}],"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}],"outputs":{"nullableParamOutput":{"type":"String"},"azurE_STORAGE_ACCOUNT_ID":{"type":"String","value":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Storage/storageAccounts/stkui7mydvgrery"},"azurE_STORAGE_ACCOUNT_NAME":{"type":"String","value":"stkui7mydvgrery"},"string":{"type":"String","value":"abc"},"bool":{"type":"Bool","value":true},"int":{"type":"Int","value":1234},"array":{"type":"Array","value":[true,"abc",1234]},"arraY_INT":{"type":"Array","value":[1,2,3]},"arraY_STRING":{"type":"Array","value":["elem1","elem2","elem3"]},"object":{"type":"Object","value":{"foo":"bar","inner":{"foo":"bar"},"array":[true,"abc",1234]}}},"outputResources":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1"},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-la58fe1/providers/Microsoft.Storage/storageAccounts/stkui7mydvgrery"}]}}'
+        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b","name":"rg-azdtest-wa9b56b","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-wa9b56b","DeleteAfter":"2025-03-05T23:08:32Z","IntTag":"678","BoolTag":"False","SecureTag":"","SecureObjectTag":"{}"},"properties":{"provisioningState":"Succeeded"}}]}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "2556"
+                - "396"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:12:41 GMT
+                - Wed, 05 Mar 2025 22:09:28 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -1160,32 +1154,32 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
+                - d939f81302341bffbeffaad8372cf31d
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "16499"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "1099"
             X-Ms-Request-Id:
-                - 7dbe8381-1d80-4306-8cbd-f8b3d5dacb0e
+                - b9eea6f5-18ad-40d7-a571-f01705f8ae04
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021242Z:7dbe8381-1d80-4306-8cbd-f8b3d5dacb0e
+                - WESTUS2:20250305T220928Z:b9eea6f5-18ad-40d7-a571-f01705f8ae04
             X-Msedge-Ref:
-                - 'Ref A: CA5B2B5151244A65AED9FC139A8B69FD Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:12:42Z'
+                - 'Ref A: AD0C2DF72B564547BA7E1947C1A85043 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:09:28Z'
         status: 200 OK
         code: 200
-        duration: 236.614925ms
+        duration: 46.0403ms
     - id: 17
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 346
+        content_length: 0
         transfer_encoding: []
         trailer: {}
         host: management.azure.com
         remote_addr: ""
         request_uri: ""
-        body: '{"location":"eastus2","properties":{"mode":"Incremental","parameters":{},"template":{"$schema":"https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#","contentVersion":"1.0.0.0","parameters":{},"variables":{},"resources":[],"outputs":{}}},"tags":{"azd-deploy-reason":"down","azd-env-name":"azdtest-la58fe1"}}'
+        body: ""
         form: {}
         headers:
             Accept:
@@ -1194,36 +1188,30 @@ interactions:
                 - gzip
             Authorization:
                 - SANITIZED
-            Content-Length:
-                - "346"
-            Content-Type:
-                - application/json
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235?api-version=2021-04-01
-        method: PUT
+                - d939f81302341bffbeffaad8372cf31d
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/resources?api-version=2021-04-01
+        method: GET
       response:
         proto: HTTP/2.0
         proto_major: 2
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 570
+        content_length: 364
         uncompressed: false
-        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235","name":"azdtest-la58fe1-1737598235","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-deploy-reason":"down","azd-env-name":"azdtest-la58fe1"},"properties":{"templateHash":"14737569621737367585","parameters":{},"mode":"Incremental","provisioningState":"Accepted","timestamp":"2025-01-23T02:12:46.2081595Z","duration":"PT0.0001077S","correlationId":"c3257526a96978a2ce04b2fa1b02d097","providers":[],"dependencies":[]}}'
+        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Storage/storageAccounts/stwegewssyy47gg","name":"stwegewssyy47gg","type":"Microsoft.Storage/storageAccounts","sku":{"name":"Standard_LRS","tier":"Standard"},"kind":"StorageV2","location":"eastus2","tags":{"azd-env-name":"azdtest-wa9b56b"}}]}'
         headers:
-            Azure-Asyncoperation:
-                - https://management.azure.com/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235/operationStatuses/08584640085222990275?api-version=2021-04-01
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "570"
+                - "364"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:12:46 GMT
+                - Wed, 05 Mar 2025 22:09:28 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -1235,23 +1223,299 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
-            X-Ms-Deployment-Engine-Version:
-                - 1.173.0
-            X-Ms-Ratelimit-Remaining-Subscription-Global-Writes:
-                - "11999"
-            X-Ms-Ratelimit-Remaining-Subscription-Writes:
-                - "799"
+                - d939f81302341bffbeffaad8372cf31d
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
             X-Ms-Request-Id:
-                - 8e211677-746b-46ca-9b58-52041649d9b4
+                - 2cdc11fd-8bc1-47d6-b1e9-52b53a8ee1b0
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021246Z:8e211677-746b-46ca-9b58-52041649d9b4
+                - WESTUS2:20250305T220929Z:2cdc11fd-8bc1-47d6-b1e9-52b53a8ee1b0
             X-Msedge-Ref:
-                - 'Ref A: 0B363F0FE8AA49BFB5C909B3EFE4993B Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:12:42Z'
+                - 'Ref A: 61F26D1E3A5C42D6A72DA9F254362394 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:09:28Z'
         status: 200 OK
         code: 200
-        duration: 4.177356473s
+        duration: 204.1435ms
     - id: 18
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+            X-Ms-Correlation-Request-Id:
+                - d939f81302341bffbeffaad8372cf31d
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484?api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 2555
+        uncompressed: false
+        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484","name":"azdtest-wa9b56b-1741212484","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-wa9b56b","azd-provision-param-hash":"ee82ee843e4e47b16b5a0c165dccd56d4b711d08f5bfbe44e8e2f16f9af576c0"},"properties":{"templateHash":"11064734108664627865","parameters":{"environmentName":{"type":"String","value":"azdtest-wa9b56b"},"location":{"type":"String","value":"eastus2"},"deleteAfterTime":{"type":"String","value":"2025-03-05T23:08:32Z"},"intTagValue":{"type":"Int","value":678},"boolTagValue":{"type":"Bool","value":false},"secureValue":{"type":"SecureString"},"secureObject":{"type":"SecureObject"},"nullableParam":{"type":"String"}},"mode":"Incremental","provisioningState":"Succeeded","timestamp":"2025-03-05T22:09:00.416869Z","duration":"PT25.820663S","correlationId":"e8096ac0bc5046fd40933fadce1a70f5","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-wa9b56b"}],"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}],"outputs":{"nullableParamOutput":{"type":"String"},"azurE_STORAGE_ACCOUNT_ID":{"type":"String","value":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Storage/storageAccounts/stwegewssyy47gg"},"azurE_STORAGE_ACCOUNT_NAME":{"type":"String","value":"stwegewssyy47gg"},"string":{"type":"String","value":"abc"},"bool":{"type":"Bool","value":true},"int":{"type":"Int","value":1234},"array":{"type":"Array","value":[true,"abc",1234]},"arraY_INT":{"type":"Array","value":[1,2,3]},"arraY_STRING":{"type":"Array","value":["elem1","elem2","elem3"]},"object":{"type":"Object","value":{"foo":"bar","inner":{"foo":"bar"},"array":[true,"abc",1234]}}},"outputResources":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b"},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Storage/storageAccounts/stwegewssyy47gg"}]}}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "2555"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 05 Mar 2025 22:09:29 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - d939f81302341bffbeffaad8372cf31d
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
+            X-Ms-Request-Id:
+                - 7ef3e90a-ef59-4a81-86b0-d9868d55b6a8
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20250305T220929Z:7ef3e90a-ef59-4a81-86b0-d9868d55b6a8
+            X-Msedge-Ref:
+                - 'Ref A: EE021DE1A6574F24B08638C35FB8BAF9 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:09:29Z'
+        status: 200 OK
+        code: 200
+        duration: 217.0095ms
+    - id: 19
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+            X-Ms-Correlation-Request-Id:
+                - d939f81302341bffbeffaad8372cf31d
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-wa9b56b%27&api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 396
+        uncompressed: false
+        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b","name":"rg-azdtest-wa9b56b","type":"Microsoft.Resources/resourceGroups","location":"eastus2","tags":{"azd-env-name":"azdtest-wa9b56b","DeleteAfter":"2025-03-05T23:08:32Z","IntTag":"678","BoolTag":"False","SecureTag":"","SecureObjectTag":"{}"},"properties":{"provisioningState":"Succeeded"}}]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "396"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 05 Mar 2025 22:09:29 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - d939f81302341bffbeffaad8372cf31d
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16498"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1098"
+            X-Ms-Request-Id:
+                - 0cfc67a0-21e3-4c13-b9d8-f4576e9c7418
+            X-Ms-Routing-Request-Id:
+                - WESTUS:20250305T220929Z:0cfc67a0-21e3-4c13-b9d8-f4576e9c7418
+            X-Msedge-Ref:
+                - 'Ref A: 043675F4E79E4FFE8D99C4F0379133EE Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:09:29Z'
+        status: 200 OK
+        code: 200
+        duration: 63.5533ms
+    - id: 20
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+            X-Ms-Correlation-Request-Id:
+                - d939f81302341bffbeffaad8372cf31d
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/resources?api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 364
+        uncompressed: false
+        body: '{"value":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Storage/storageAccounts/stwegewssyy47gg","name":"stwegewssyy47gg","type":"Microsoft.Storage/storageAccounts","sku":{"name":"Standard_LRS","tier":"Standard"},"kind":"StorageV2","location":"eastus2","tags":{"azd-env-name":"azdtest-wa9b56b"}}]}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "364"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 05 Mar 2025 22:09:29 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - d939f81302341bffbeffaad8372cf31d
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
+            X-Ms-Request-Id:
+                - 954c0e37-0c78-44cc-b290-5ef45724e778
+            X-Ms-Routing-Request-Id:
+                - WESTUS:20250305T220929Z:954c0e37-0c78-44cc-b290-5ef45724e778
+            X-Msedge-Ref:
+                - 'Ref A: 2F0002C1B9F14EEEA71D067676FFF239 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:09:29Z'
+        status: 200 OK
+        code: 200
+        duration: 190.6978ms
+    - id: 21
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+            X-Ms-Correlation-Request-Id:
+                - d939f81302341bffbeffaad8372cf31d
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups/rg-azdtest-wa9b56b?api-version=2021-04-01
+        method: DELETE
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 0
+        uncompressed: false
+        body: ""
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "0"
+            Date:
+                - Wed, 05 Mar 2025 22:09:30 GMT
+            Expires:
+                - "-1"
+            Location:
+                - https://management.azure.com/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/operationresults/eyJqb2JJZCI6IlJFU09VUkNFR1JPVVBERUxFVElPTkpPQi1SRzoyREFaRFRFU1Q6MkRXQTlCNTZCLUVBU1RVUzIiLCJqb2JMb2NhdGlvbiI6ImVhc3R1czIifQ?api-version=2021-04-01&t=638768094314985240&c=MIIHpTCCBo2gAwIBAgITfwTYu0qoRwcN0bP8jwAEBNi7SjANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDIwHhcNMjUwMTIzMjA0ODUxWhcNMjUwNzIyMjA0ODUxWjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJiyUikcpMswfhvdsI_rXYHu5usdpZW7yAqWPwx7nyvDBbA6tYMOwIWDF3lmy48lA46kFg2__zl_gVcj_Jw_2ue8USufQFsjmlCYmhbryemgmCuZucLrVs0nOW_5HVAX7QY9eBRWotqXIDJPTRyoGqWrXm2qO_sMjVacTB19-WMO5gHXKvOrm3HRspddB5sJUi15aHoSTlGgepJ8Bc6vMEFWUSNkkRqGt-EtMDQGAf2PFA2rkeizLvEPyGwqA04f56eXcnvVc-9t6jGFggfFusEW3_EaE1CqF_Aemzi9kaAhLfj5fOyZHybExiqyzL3WDGLAe-mC9uhOggcp5HjtKECAwEAAaOCBJIwggSOMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHaBggrBgEFBQcBAQSCAcwwggHIMGYGCCsGAQUFBzAChlpodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MFYGCCsGAQUFBzAChkpodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9CTDJQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDAyKDQpLmNydDBWBggrBgEFBQcwAoZKaHR0cDovL2NybDMuYW1lLmdibC9haWEvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MB0GA1UdDgQWBBTFiuatBch4getEuR5ddJpfuPsJ8DAOBgNVHQ8BAf8EBAMCBaAwggE1BgNVHR8EggEsMIIBKDCCASSgggEgoIIBHIZCaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBSuecJrXSWIEwb2BwnDl3x7l48dVTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAIxmxJ5xNUiG8PRXsUSme6IbA37JinZso0lwEjfgtHmK1DZhhGugl-cdjEw10JLCVwaiKd-q2yljbccx_MpSj2rx5yGUNb32Cv2p40-HWzxtYMw0j9JGcrJWoP_apkjIELce110mKIOL4dJ3r8N5cXuhEatDvAPjNYjdG9YgGTE1s1CLy9MvJsLRVQnWtxDWlWsj_XgzlBhvgxwXILR7A48GZLe9ENWEJwEl_AmMGT_o5kKmBfcKl6mjYWjCchXL5bHKE5dnl9X3W2eQTdqqGqh2z2KAUwyCu2xOV5xh6Zjg6SDEuPHvcBqAHqMgqi3E38hUBBXw4AXVsmQhz5FyOg8&s=hmnl7ddd-HDERRav8v4gpoLv19JFKzwFUa5kv2JrC9KFGuLUFlONmP_bHfhcsEFpuydjW9hbr3lj12hx57pbF7i0OtDRvQPxHdt7-xGKHDsi29gGqWHy65nv_bc1-GBSQkqBDgJD7J30uMlpIblxj2gcKk-qAcYR1P349KDs4bLYKxRSoXlgoIZkVbay6s89DSi5ZKQFwuuAUdR0BwwwQW0QY7MEkZwkncFsoTWTIIn0HJTzI9_Fhw3Dj_1_9dWhFbpQfY0KG8dMj5GweFMZ0eKd80bw7yWMI3kzWUzOBzwpqpQxaz3EYFwJMeDF3UYcko7dwEezwj8_sza4FLbFwA&h=WekXao8v-aUbFQt3E05dKKa7IqEe6B66i6EYGBOvRGU
+            Pragma:
+                - no-cache
+            Retry-After:
+                - "0"
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - d939f81302341bffbeffaad8372cf31d
+            X-Ms-Ratelimit-Remaining-Subscription-Deletes:
+                - "799"
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Deletes:
+                - "11999"
+            X-Ms-Request-Id:
+                - e5ba8f56-0188-40db-9927-772c92750781
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20250305T220930Z:e5ba8f56-0188-40db-9927-772c92750781
+            X-Msedge-Ref:
+                - 'Ref A: F56F7915DD924AEDB227E8E2C7A50B0D Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:09:29Z'
+        status: 202 Accepted
+        code: 202
+        duration: 707.114ms
+    - id: 22
       request:
         proto: HTTP/1.1
         proto_major: 1
@@ -1270,10 +1534,221 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235/operationStatuses/08584640085222990275?api-version=2021-04-01
+                - d939f81302341bffbeffaad8372cf31d
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/operationresults/eyJqb2JJZCI6IlJFU09VUkNFR1JPVVBERUxFVElPTkpPQi1SRzoyREFaRFRFU1Q6MkRXQTlCNTZCLUVBU1RVUzIiLCJqb2JMb2NhdGlvbiI6ImVhc3R1czIifQ?api-version=2021-04-01&t=638768094314985240&c=MIIHpTCCBo2gAwIBAgITfwTYu0qoRwcN0bP8jwAEBNi7SjANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDIwHhcNMjUwMTIzMjA0ODUxWhcNMjUwNzIyMjA0ODUxWjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJiyUikcpMswfhvdsI_rXYHu5usdpZW7yAqWPwx7nyvDBbA6tYMOwIWDF3lmy48lA46kFg2__zl_gVcj_Jw_2ue8USufQFsjmlCYmhbryemgmCuZucLrVs0nOW_5HVAX7QY9eBRWotqXIDJPTRyoGqWrXm2qO_sMjVacTB19-WMO5gHXKvOrm3HRspddB5sJUi15aHoSTlGgepJ8Bc6vMEFWUSNkkRqGt-EtMDQGAf2PFA2rkeizLvEPyGwqA04f56eXcnvVc-9t6jGFggfFusEW3_EaE1CqF_Aemzi9kaAhLfj5fOyZHybExiqyzL3WDGLAe-mC9uhOggcp5HjtKECAwEAAaOCBJIwggSOMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHaBggrBgEFBQcBAQSCAcwwggHIMGYGCCsGAQUFBzAChlpodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MFYGCCsGAQUFBzAChkpodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9CTDJQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDAyKDQpLmNydDBWBggrBgEFBQcwAoZKaHR0cDovL2NybDMuYW1lLmdibC9haWEvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MB0GA1UdDgQWBBTFiuatBch4getEuR5ddJpfuPsJ8DAOBgNVHQ8BAf8EBAMCBaAwggE1BgNVHR8EggEsMIIBKDCCASSgggEgoIIBHIZCaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBSuecJrXSWIEwb2BwnDl3x7l48dVTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAIxmxJ5xNUiG8PRXsUSme6IbA37JinZso0lwEjfgtHmK1DZhhGugl-cdjEw10JLCVwaiKd-q2yljbccx_MpSj2rx5yGUNb32Cv2p40-HWzxtYMw0j9JGcrJWoP_apkjIELce110mKIOL4dJ3r8N5cXuhEatDvAPjNYjdG9YgGTE1s1CLy9MvJsLRVQnWtxDWlWsj_XgzlBhvgxwXILR7A48GZLe9ENWEJwEl_AmMGT_o5kKmBfcKl6mjYWjCchXL5bHKE5dnl9X3W2eQTdqqGqh2z2KAUwyCu2xOV5xh6Zjg6SDEuPHvcBqAHqMgqi3E38hUBBXw4AXVsmQhz5FyOg8&s=hmnl7ddd-HDERRav8v4gpoLv19JFKzwFUa5kv2JrC9KFGuLUFlONmP_bHfhcsEFpuydjW9hbr3lj12hx57pbF7i0OtDRvQPxHdt7-xGKHDsi29gGqWHy65nv_bc1-GBSQkqBDgJD7J30uMlpIblxj2gcKk-qAcYR1P349KDs4bLYKxRSoXlgoIZkVbay6s89DSi5ZKQFwuuAUdR0BwwwQW0QY7MEkZwkncFsoTWTIIn0HJTzI9_Fhw3Dj_1_9dWhFbpQfY0KG8dMj5GweFMZ0eKd80bw7yWMI3kzWUzOBzwpqpQxaz3EYFwJMeDF3UYcko7dwEezwj8_sza4FLbFwA&h=WekXao8v-aUbFQt3E05dKKa7IqEe6B66i6EYGBOvRGU
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 0
+        uncompressed: false
+        body: ""
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "0"
+            Date:
+                - Wed, 05 Mar 2025 22:10:46 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - d939f81302341bffbeffaad8372cf31d
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
+            X-Ms-Request-Id:
+                - 532a6ecd-c9c6-45f2-9b5a-e21c8ad9dabe
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20250305T221046Z:532a6ecd-c9c6-45f2-9b5a-e21c8ad9dabe
+            X-Msedge-Ref:
+                - 'Ref A: 2323911996BD4BE7AC34435048EB3919 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:10:46Z'
+        status: 200 OK
+        code: 200
+        duration: 192.2738ms
+    - id: 23
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+            X-Ms-Correlation-Request-Id:
+                - d939f81302341bffbeffaad8372cf31d
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484?api-version=2021-04-01
+        method: GET
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 2555
+        uncompressed: false
+        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484","name":"azdtest-wa9b56b-1741212484","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-wa9b56b","azd-provision-param-hash":"ee82ee843e4e47b16b5a0c165dccd56d4b711d08f5bfbe44e8e2f16f9af576c0"},"properties":{"templateHash":"11064734108664627865","parameters":{"environmentName":{"type":"String","value":"azdtest-wa9b56b"},"location":{"type":"String","value":"eastus2"},"deleteAfterTime":{"type":"String","value":"2025-03-05T23:08:32Z"},"intTagValue":{"type":"Int","value":678},"boolTagValue":{"type":"Bool","value":false},"secureValue":{"type":"SecureString"},"secureObject":{"type":"SecureObject"},"nullableParam":{"type":"String"}},"mode":"Incremental","provisioningState":"Succeeded","timestamp":"2025-03-05T22:09:00.416869Z","duration":"PT25.820663S","correlationId":"e8096ac0bc5046fd40933fadce1a70f5","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-wa9b56b"}],"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}],"outputs":{"nullableParamOutput":{"type":"String"},"azurE_STORAGE_ACCOUNT_ID":{"type":"String","value":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Storage/storageAccounts/stwegewssyy47gg"},"azurE_STORAGE_ACCOUNT_NAME":{"type":"String","value":"stwegewssyy47gg"},"string":{"type":"String","value":"abc"},"bool":{"type":"Bool","value":true},"int":{"type":"Int","value":1234},"array":{"type":"Array","value":[true,"abc",1234]},"arraY_INT":{"type":"Array","value":[1,2,3]},"arraY_STRING":{"type":"Array","value":["elem1","elem2","elem3"]},"object":{"type":"Object","value":{"foo":"bar","inner":{"foo":"bar"},"array":[true,"abc",1234]}}},"outputResources":[{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b"},{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wa9b56b/providers/Microsoft.Storage/storageAccounts/stwegewssyy47gg"}]}}'
+        headers:
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "2555"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 05 Mar 2025 22:10:46 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - d939f81302341bffbeffaad8372cf31d
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
+                - "16499"
+            X-Ms-Ratelimit-Remaining-Subscription-Reads:
+                - "1099"
+            X-Ms-Request-Id:
+                - bce5a40b-049f-452e-b812-ae91ab6fa459
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20250305T221046Z:bce5a40b-049f-452e-b812-ae91ab6fa459
+            X-Msedge-Ref:
+                - 'Ref A: 00763D68F9B0434D851484B3F7A3FF34 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:10:46Z'
+        status: 200 OK
+        code: 200
+        duration: 242.5782ms
+    - id: 24
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 346
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: '{"location":"eastus2","properties":{"mode":"Incremental","parameters":{},"template":{"$schema":"https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#","contentVersion":"1.0.0.0","parameters":{},"variables":{},"resources":[],"outputs":{}}},"tags":{"azd-deploy-reason":"down","azd-env-name":"azdtest-wa9b56b"}}'
+        form: {}
+        headers:
+            Accept:
+                - application/json
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            Content-Length:
+                - "346"
+            Content-Type:
+                - application/json
+            User-Agent:
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+            X-Ms-Correlation-Request-Id:
+                - d939f81302341bffbeffaad8372cf31d
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484?api-version=2021-04-01
+        method: PUT
+      response:
+        proto: HTTP/2.0
+        proto_major: 2
+        proto_minor: 0
+        transfer_encoding: []
+        trailer: {}
+        content_length: 568
+        uncompressed: false
+        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484","name":"azdtest-wa9b56b-1741212484","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-deploy-reason":"down","azd-env-name":"azdtest-wa9b56b"},"properties":{"templateHash":"14737569621737367585","parameters":{},"mode":"Incremental","provisioningState":"Accepted","timestamp":"2025-03-05T22:10:47.35823Z","duration":"PT2.2876462S","correlationId":"d939f81302341bffbeffaad8372cf31d","providers":[],"dependencies":[]}}'
+        headers:
+            Azure-Asyncoperation:
+                - https://management.azure.com/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484/operationStatuses/08584603942381155986?api-version=2021-04-01&t=638768094501707724&c=MIIHpTCCBo2gAwIBAgITfwTYu0qoRwcN0bP8jwAEBNi7SjANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDIwHhcNMjUwMTIzMjA0ODUxWhcNMjUwNzIyMjA0ODUxWjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJiyUikcpMswfhvdsI_rXYHu5usdpZW7yAqWPwx7nyvDBbA6tYMOwIWDF3lmy48lA46kFg2__zl_gVcj_Jw_2ue8USufQFsjmlCYmhbryemgmCuZucLrVs0nOW_5HVAX7QY9eBRWotqXIDJPTRyoGqWrXm2qO_sMjVacTB19-WMO5gHXKvOrm3HRspddB5sJUi15aHoSTlGgepJ8Bc6vMEFWUSNkkRqGt-EtMDQGAf2PFA2rkeizLvEPyGwqA04f56eXcnvVc-9t6jGFggfFusEW3_EaE1CqF_Aemzi9kaAhLfj5fOyZHybExiqyzL3WDGLAe-mC9uhOggcp5HjtKECAwEAAaOCBJIwggSOMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHaBggrBgEFBQcBAQSCAcwwggHIMGYGCCsGAQUFBzAChlpodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MFYGCCsGAQUFBzAChkpodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9CTDJQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDAyKDQpLmNydDBWBggrBgEFBQcwAoZKaHR0cDovL2NybDMuYW1lLmdibC9haWEvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MB0GA1UdDgQWBBTFiuatBch4getEuR5ddJpfuPsJ8DAOBgNVHQ8BAf8EBAMCBaAwggE1BgNVHR8EggEsMIIBKDCCASSgggEgoIIBHIZCaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBSuecJrXSWIEwb2BwnDl3x7l48dVTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAIxmxJ5xNUiG8PRXsUSme6IbA37JinZso0lwEjfgtHmK1DZhhGugl-cdjEw10JLCVwaiKd-q2yljbccx_MpSj2rx5yGUNb32Cv2p40-HWzxtYMw0j9JGcrJWoP_apkjIELce110mKIOL4dJ3r8N5cXuhEatDvAPjNYjdG9YgGTE1s1CLy9MvJsLRVQnWtxDWlWsj_XgzlBhvgxwXILR7A48GZLe9ENWEJwEl_AmMGT_o5kKmBfcKl6mjYWjCchXL5bHKE5dnl9X3W2eQTdqqGqh2z2KAUwyCu2xOV5xh6Zjg6SDEuPHvcBqAHqMgqi3E38hUBBXw4AXVsmQhz5FyOg8&s=JNQFUbDt9DoMntGgk3XLfPzWj6jtqu0Z4nduuOrz0l5jQdj6F3VLiq9E6Zzmt1g2sYilpl3e52V-a4kQFCl5Awkc7Gs3a3UfVMRIRDCGx017GZ0XMSpt0gaviucEzQCogUeeoWN6hlfLNcB8fSjKGdQzjtXlTUAFS94Kz0g7t1R4jDftpmwN556KhuEFMyFM_R7UqCTKGmfm6356ndx-DiyMAM9niJx1O3hCwTWGWXXAGN7TjCgej_ug-XSZoyHL702X-mRzULtygkwwsOoiOz6OLXzi4G83VkS7bibo6QIFTIFAW9GPW6C0nP3nL2VwLJe9oMH9Z_CCv_nYYIVbzw&h=sHe3rFL-8YSxXnLMKKnrF9DOzC9LrWkcwhWgESLKgvI
+            Cache-Control:
+                - no-cache
+            Content-Length:
+                - "568"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 05 Mar 2025 22:10:50 GMT
+            Expires:
+                - "-1"
+            Pragma:
+                - no-cache
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Cache:
+                - CONFIG_NOCACHE
+            X-Content-Type-Options:
+                - nosniff
+            X-Ms-Correlation-Request-Id:
+                - d939f81302341bffbeffaad8372cf31d
+            X-Ms-Deployment-Engine-Version:
+                - 1.245.0
+            X-Ms-Ratelimit-Remaining-Subscription-Global-Writes:
+                - "11999"
+            X-Ms-Ratelimit-Remaining-Subscription-Writes:
+                - "799"
+            X-Ms-Request-Id:
+                - 52661c4c-28b0-4f1f-af56-e804b4960cf3
+            X-Ms-Routing-Request-Id:
+                - WESTUS2:20250305T221050Z:52661c4c-28b0-4f1f-af56-e804b4960cf3
+            X-Msedge-Ref:
+                - 'Ref A: 571A8FF26041481FA74D57E713483890 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:10:46Z'
+        status: 200 OK
+        code: 200
+        duration: 3.226849s
+    - id: 25
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        transfer_encoding: []
+        trailer: {}
+        host: management.azure.com
+        remote_addr: ""
+        request_uri: ""
+        body: ""
+        form: {}
+        headers:
+            Accept-Encoding:
+                - gzip
+            Authorization:
+                - SANITIZED
+            User-Agent:
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+            X-Ms-Correlation-Request-Id:
+                - d939f81302341bffbeffaad8372cf31d
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484/operationStatuses/08584603942381155986?api-version=2021-04-01&t=638768094501707724&c=MIIHpTCCBo2gAwIBAgITfwTYu0qoRwcN0bP8jwAEBNi7SjANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDIwHhcNMjUwMTIzMjA0ODUxWhcNMjUwNzIyMjA0ODUxWjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJiyUikcpMswfhvdsI_rXYHu5usdpZW7yAqWPwx7nyvDBbA6tYMOwIWDF3lmy48lA46kFg2__zl_gVcj_Jw_2ue8USufQFsjmlCYmhbryemgmCuZucLrVs0nOW_5HVAX7QY9eBRWotqXIDJPTRyoGqWrXm2qO_sMjVacTB19-WMO5gHXKvOrm3HRspddB5sJUi15aHoSTlGgepJ8Bc6vMEFWUSNkkRqGt-EtMDQGAf2PFA2rkeizLvEPyGwqA04f56eXcnvVc-9t6jGFggfFusEW3_EaE1CqF_Aemzi9kaAhLfj5fOyZHybExiqyzL3WDGLAe-mC9uhOggcp5HjtKECAwEAAaOCBJIwggSOMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHaBggrBgEFBQcBAQSCAcwwggHIMGYGCCsGAQUFBzAChlpodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MFYGCCsGAQUFBzAChkpodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9CTDJQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDAyKDQpLmNydDBWBggrBgEFBQcwAoZKaHR0cDovL2NybDMuYW1lLmdibC9haWEvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MB0GA1UdDgQWBBTFiuatBch4getEuR5ddJpfuPsJ8DAOBgNVHQ8BAf8EBAMCBaAwggE1BgNVHR8EggEsMIIBKDCCASSgggEgoIIBHIZCaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBSuecJrXSWIEwb2BwnDl3x7l48dVTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAIxmxJ5xNUiG8PRXsUSme6IbA37JinZso0lwEjfgtHmK1DZhhGugl-cdjEw10JLCVwaiKd-q2yljbccx_MpSj2rx5yGUNb32Cv2p40-HWzxtYMw0j9JGcrJWoP_apkjIELce110mKIOL4dJ3r8N5cXuhEatDvAPjNYjdG9YgGTE1s1CLy9MvJsLRVQnWtxDWlWsj_XgzlBhvgxwXILR7A48GZLe9ENWEJwEl_AmMGT_o5kKmBfcKl6mjYWjCchXL5bHKE5dnl9X3W2eQTdqqGqh2z2KAUwyCu2xOV5xh6Zjg6SDEuPHvcBqAHqMgqi3E38hUBBXw4AXVsmQhz5FyOg8&s=JNQFUbDt9DoMntGgk3XLfPzWj6jtqu0Z4nduuOrz0l5jQdj6F3VLiq9E6Zzmt1g2sYilpl3e52V-a4kQFCl5Awkc7Gs3a3UfVMRIRDCGx017GZ0XMSpt0gaviucEzQCogUeeoWN6hlfLNcB8fSjKGdQzjtXlTUAFS94Kz0g7t1R4jDftpmwN556KhuEFMyFM_R7UqCTKGmfm6356ndx-DiyMAM9niJx1O3hCwTWGWXXAGN7TjCgej_ug-XSZoyHL702X-mRzULtygkwwsOoiOz6OLXzi4G83VkS7bibo6QIFTIFAW9GPW6C0nP3nL2VwLJe9oMH9Z_CCv_nYYIVbzw&h=sHe3rFL-8YSxXnLMKKnrF9DOzC9LrWkcwhWgESLKgvI
         method: GET
       response:
         proto: HTTP/2.0
@@ -1292,7 +1767,7 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:13:16 GMT
+                - Wed, 05 Mar 2025 22:11:20 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -1304,21 +1779,21 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
+                - d939f81302341bffbeffaad8372cf31d
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "16499"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "1099"
             X-Ms-Request-Id:
-                - df37fdd8-f424-4cad-ad18-e1de183816a1
+                - 1527e6a4-a59b-4e49-b28f-e8f7a1a61f3a
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021317Z:df37fdd8-f424-4cad-ad18-e1de183816a1
+                - WESTUS2:20250305T221120Z:1527e6a4-a59b-4e49-b28f-e8f7a1a61f3a
             X-Msedge-Ref:
-                - 'Ref A: 516467D12F0541AB93F5DB4CF692236F Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:13:16Z'
+                - 'Ref A: 13282EFE804D48F09D8FBB4995ACF002 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:11:20Z'
         status: 200 OK
         code: 200
-        duration: 365.256508ms
-    - id: 19
+        duration: 228.4646ms
+    - id: 26
       request:
         proto: HTTP/1.1
         proto_major: 1
@@ -1337,10 +1812,10 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.0; linux),azdev/0.0.0-dev.0 (Go go1.23.0; linux/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235?api-version=2021-04-01
+                - d939f81302341bffbeffaad8372cf31d
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484?api-version=2021-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -1348,18 +1823,18 @@ interactions:
         proto_minor: 0
         transfer_encoding: []
         trailer: {}
-        content_length: 605
+        content_length: 604
         uncompressed: false
-        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-la58fe1-1737598235","name":"azdtest-la58fe1-1737598235","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-deploy-reason":"down","azd-env-name":"azdtest-la58fe1"},"properties":{"templateHash":"14737569621737367585","parameters":{},"mode":"Incremental","provisioningState":"Succeeded","timestamp":"2025-01-23T02:12:46.8065966Z","duration":"PT0.5985448S","correlationId":"c3257526a96978a2ce04b2fa1b02d097","providers":[],"dependencies":[],"outputs":{},"outputResources":[]}}'
+        body: '{"id":"/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wa9b56b-1741212484","name":"azdtest-wa9b56b-1741212484","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-deploy-reason":"down","azd-env-name":"azdtest-wa9b56b"},"properties":{"templateHash":"14737569621737367585","parameters":{},"mode":"Incremental","provisioningState":"Succeeded","timestamp":"2025-03-05T22:10:50.581802Z","duration":"PT0.9360261S","correlationId":"d939f81302341bffbeffaad8372cf31d","providers":[],"dependencies":[],"outputs":{},"outputResources":[]}}'
         headers:
             Cache-Control:
                 - no-cache
             Content-Length:
-                - "605"
+                - "604"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 23 Jan 2025 02:13:16 GMT
+                - Wed, 05 Mar 2025 22:11:20 GMT
             Expires:
                 - "-1"
             Pragma:
@@ -1371,21 +1846,21 @@ interactions:
             X-Content-Type-Options:
                 - nosniff
             X-Ms-Correlation-Request-Id:
-                - c3257526a96978a2ce04b2fa1b02d097
+                - d939f81302341bffbeffaad8372cf31d
             X-Ms-Ratelimit-Remaining-Subscription-Global-Reads:
                 - "16499"
             X-Ms-Ratelimit-Remaining-Subscription-Reads:
                 - "1099"
             X-Ms-Request-Id:
-                - d9d59b00-b7cf-4217-bcff-12b926e473b7
+                - 668a1dce-5f8f-4fd0-b06b-ff7397be96b4
             X-Ms-Routing-Request-Id:
-                - WESTUS2:20250123T021317Z:d9d59b00-b7cf-4217-bcff-12b926e473b7
+                - WESTUS2:20250305T221120Z:668a1dce-5f8f-4fd0-b06b-ff7397be96b4
             X-Msedge-Ref:
-                - 'Ref A: E2D1F44BD3154917B22C0EC7276510B4 Ref B: CO6AA3150220029 Ref C: 2025-01-23T02:13:17Z'
+                - 'Ref A: D18B84ECEF7843C9A9A7BC83AD33FDE3 Ref B: CO6AA3150217035 Ref C: 2025-03-05T22:11:20Z'
         status: 200 OK
         code: 200
-        duration: 329.77273ms
+        duration: 213.23ms
 ---
-env_name: azdtest-la58fe1
+env_name: azdtest-wa9b56b
 subscription_id: faa080af-c1d8-40ad-9cce-e1a450ca5b57
-time: "1737598235"
+time: "1741212484"

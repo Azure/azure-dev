@@ -219,6 +219,11 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 }
 
 func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
+	// This test is run under SDK playground and it ask us for follow policy requirements
+	// If we disabled local admin account in container registry,
+	// we are not able to perform credential operations
+	t.Skip("Skipping the test due to policy requirement to ask for disable local admin account in container registry")
+
 	t.Parallel()
 
 	if ci_os := os.Getenv("AZURE_DEV_CI_OS"); ci_os != "" && ci_os != "lin" {
@@ -288,6 +293,10 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 }
 
 func Test_CLI_Up_Down_ContainerAppDotNetPublish(t *testing.T) {
+	// This test is run under SDK playground and it ask us for follow policy requirements
+	// If we disabled local admin account in container registry,
+	// we are not able to perform credential operations
+	t.Skip("Skipping the test due to policy requirement to ask for disable local admin account in container registry")
 	t.Parallel()
 
 	ctx, cancel := newTestContext(t)

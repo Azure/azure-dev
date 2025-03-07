@@ -11,6 +11,9 @@ resource storage 'Microsoft.Storage/storageAccounts@2022-05-01' = {
   sku: {
     name: 'Standard_LRS'
   }
+  properties: {
+    allowSharedKeyAccess: false
+  }
 }
 
 output AZURE_STORAGE_ACCOUNT_ID string = storage.id

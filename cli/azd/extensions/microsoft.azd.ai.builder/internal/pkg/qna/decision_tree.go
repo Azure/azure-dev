@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package qna
 
 import (
@@ -26,14 +29,18 @@ func NewDecisionTree(azdClient *azdext.AzdClient, config DecisionTreeConfig) *De
 	}
 }
 
+type Prompt interface {
+	Ask(ctx context.Context, question Question) (any, error)
+}
+
 // Question represents a single prompt in the decision tree.
 type Question struct {
-	ID       string         `json:"id"`
-	Text     string         `json:"text"`
-	Type     QuestionType   `json:"type"`
-	Choices  []Choice       `json:"choices,omitempty"`
-	Branches map[any]string `json:"branches"`
-	Binding  any            `json:"-"`
+	ID        string         `json:"id"`
+	Branches  map[any]string `json:"branches"`
+	Next      string         `json:"next"`
+	Binding   any            `json:"-"`
+	Prompt    Prompt         `json:"prompt,omitempty"`
+	BeforeAsk func(ctx context.Context, question *Question) error
 }
 
 type Choice struct {
@@ -66,38 +73,25 @@ func (t *DecisionTree) Run(ctx context.Context) error {
 }
 
 func (t *DecisionTree) askQuestion(ctx context.Context, question Question) error {
-	var err error
-	var value any
-
-	switch question.Type {
-	case TextInput:
-		value, err = t.askTextQuestion(ctx, question)
-	case BooleanInput:
-		value, err = t.askBooleanQuestion(ctx, question)
-	case SingleSelect:
-		value, err = t.askSingleSelectQuestion(ctx, question)
-	case MultiSelect:
-		value, err = t.askMultiSelectQuestion(ctx, question)
-	default:
-		return errors.New("unsupported question type")
+	if question.Prompt == nil {
+		return errors.New("question prompt is nil")
 	}
 
+	if question.BeforeAsk != nil {
+		if err := question.BeforeAsk(ctx, &question); err != nil {
+			return fmt.Errorf("before ask function failed: %w", err)
+		}
+	}
+
+	value, err := question.Prompt.Ask(ctx, question)
 	if err != nil {
 		return fmt.Errorf("failed to ask question: %w", err)
 	}
 
 	var nextQuestionKey string
 
-	// No branches means no further questions
-	if len(question.Branches) == 0 {
-		return nil
-	}
-
-	// Handle the case where the branch is a wildcard
-	if branchValue, has := question.Branches["*"]; has {
-		nextQuestionKey = branchValue
-	} else {
-		// Handle the case where the branch is based on the user's response
+	// Handle the case where the branch is based on the user's response
+	if len(question.Branches) > 0 {
 		switch v := value.(type) {
 		case string:
 			if branch, has := question.Branches[v]; has {
@@ -108,10 +102,20 @@ func (t *DecisionTree) askQuestion(ctx context.Context, question Question) error
 				nextQuestionKey = branch
 			}
 		case []string:
+			// Handle multi-select case
 			for _, selectedValue := range v {
-				if branch, has := question.Branches[selectedValue]; has {
-					nextQuestionKey = branch
-					break
+				branch, has := question.Branches[selectedValue]
+				if !has {
+					return fmt.Errorf("branch not found for selected value: %s", selectedValue)
+				}
+
+				question, has := t.config.Questions[branch]
+				if !has {
+					return fmt.Errorf("question not found for branch: %s", branch)
+				}
+
+				if err = t.askQuestion(ctx, question); err != nil {
+					return fmt.Errorf("failed to ask question: %w", err)
 				}
 			}
 		default:
@@ -119,109 +123,18 @@ func (t *DecisionTree) askQuestion(ctx context.Context, question Question) error
 		}
 	}
 
-	if nextQuestion, has := t.config.Questions[nextQuestionKey]; has {
-		return t.askQuestion(ctx, nextQuestion)
+	if nextQuestionKey == "" {
+		nextQuestionKey = question.Next
 	}
 
-	if nextQuestionKey == "end" {
+	if nextQuestionKey == "" || nextQuestionKey == "end" {
 		return nil
 	}
 
-	return fmt.Errorf("next question not found: %s", nextQuestionKey)
-}
-
-func (t *DecisionTree) askTextQuestion(ctx context.Context, question Question) (any, error) {
-	promptResponse, err := t.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:  question.Text,
-			Required: true,
-		},
-	})
-	if err != nil {
-		return nil, err
+	nextQuestion, has := t.config.Questions[nextQuestionKey]
+	if !has {
+		return fmt.Errorf("next question not found: %s", nextQuestionKey)
 	}
 
-	if stringPtr, ok := question.Binding.(*string); ok {
-		*stringPtr = promptResponse.Value
-	}
-
-	return promptResponse.Value, nil
-}
-
-func (t *DecisionTree) askBooleanQuestion(ctx context.Context, question Question) (any, error) {
-	defaultValue := true
-	confirmResponse, err := t.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-		Options: &azdext.ConfirmOptions{
-			Message:      question.Text,
-			DefaultValue: &defaultValue,
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if boolPtr, ok := question.Binding.(*bool); ok {
-		*boolPtr = *confirmResponse.Value
-	}
-
-	return confirmResponse.Value, nil
-}
-
-func (t *DecisionTree) askSingleSelectQuestion(ctx context.Context, question Question) (any, error) {
-	choices := make([]*azdext.SelectChoice, len(question.Choices))
-	for i, choice := range question.Choices {
-		choices[i] = &azdext.SelectChoice{
-			Label: choice.Label,
-			Value: choice.Value,
-		}
-	}
-
-	selectResponse, err := t.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message: question.Text,
-			Choices: choices,
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	selectedChoice := question.Choices[*selectResponse.Value]
-
-	if stringPtr, ok := question.Binding.(*string); ok {
-		*stringPtr = selectedChoice.Value
-	}
-
-	return selectedChoice.Value, nil
-}
-
-func (t *DecisionTree) askMultiSelectQuestion(ctx context.Context, question Question) (any, error) {
-	choices := make([]*azdext.MultiSelectChoice, len(question.Choices))
-	for i, choice := range question.Choices {
-		choices[i] = &azdext.MultiSelectChoice{
-			Label: choice.Label,
-			Value: choice.Value,
-		}
-	}
-
-	multiSelectResponse, err := t.azdClient.Prompt().MultiSelect(ctx, &azdext.MultiSelectRequest{
-		Options: &azdext.MultiSelectOptions{
-			Message: question.Text,
-			Choices: choices,
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	selectedChoices := make([]string, len(multiSelectResponse.Values))
-	for i, value := range multiSelectResponse.Values {
-		selectedChoices[i] = value.Value
-	}
-
-	if stringSlicePtr, ok := question.Binding.(*[]string); ok {
-		*stringSlicePtr = selectedChoices
-	}
-
-	return selectedChoices, nil
+	return t.askQuestion(ctx, nextQuestion)
 }

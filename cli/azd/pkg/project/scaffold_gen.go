@@ -244,8 +244,9 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			props := res.Props.(AiFoundryModelProps)
 			foundryName := res.Name
 			var foundryModels []scaffold.AiFoundryModel
-			foundrySpec := scaffold.AiFoundrySpec{
-				Name: foundryName,
+			foundrySpec := scaffold.AiProjectSpec{
+				Name:                 foundryName,
+				ConnStringFromEnvVar: props.ConnStringFromEnvVar,
 			}
 			for _, model := range props.Models {
 				foundryModels = append(foundryModels, scaffold.AiFoundryModel{
@@ -262,7 +263,7 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 				})
 			}
 			foundrySpec.Models = foundryModels
-			infraSpec.AiFoundryProject = &foundrySpec
+			infraSpec.AiProject = &foundrySpec
 		case ResourceTypeKeyVault:
 			infraSpec.KeyVault = &scaffold.KeyVault{}
 		}
@@ -367,7 +368,7 @@ func mapHostUses(
 		case ResourceTypeStorage:
 			svcSpec.StorageAccount = &scaffold.StorageReference{}
 		case ResourceTypeAiProject:
-			svcSpec.HasAiFoundryProject = &scaffold.AiFoundrySpec{}
+			svcSpec.AiProject = &scaffold.AiProjectSpec{}
 		case ResourceTypeKeyVault:
 			svcSpec.KeyVault = &scaffold.KeyVaultReference{}
 		}

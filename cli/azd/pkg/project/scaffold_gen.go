@@ -265,6 +265,8 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			infraSpec.AiFoundryProject = &foundrySpec
 		case ResourceTypeKeyVault:
 			infraSpec.KeyVault = &scaffold.KeyVault{}
+		case ResourceTypeAiSearch:
+			infraSpec.AISearch = &scaffold.AISearch{}
 		}
 	}
 
@@ -368,6 +370,8 @@ func mapHostUses(
 			svcSpec.StorageAccount = &scaffold.StorageReference{}
 		case ResourceTypeAiProject:
 			svcSpec.HasAiFoundryProject = &scaffold.AiFoundrySpec{}
+		case ResourceTypeAiSearch:
+			svcSpec.AISearch = &scaffold.AISearchReference{}
 		case ResourceTypeKeyVault:
 			svcSpec.KeyVault = &scaffold.KeyVaultReference{}
 		}

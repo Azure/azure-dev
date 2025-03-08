@@ -5,6 +5,7 @@ package add
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -31,7 +32,7 @@ func (a *AddAction) selectMenu() []Menu {
 	return []Menu{
 		{Namespace: "db", Label: "Database", SelectResource: selectDatabase},
 		{Namespace: "host", Label: "Host service"},
-		{Namespace: "ai", Label: "AI models", SelectResource: a.selectAiType},
+		{Namespace: "ai", Label: "AI", SelectResource: a.selectAiType},
 		{Namespace: "messaging", Label: "Messaging", SelectResource: selectMessaging},
 		{Namespace: "storage", Label: "Storage account", SelectResource: selectStorage},
 		{Namespace: "keyvault", Label: "Key Vault", SelectResource: selectKeyVault},
@@ -42,12 +43,14 @@ func (a *AddAction) selectAiType(
 	console input.Console, ctx context.Context, p PromptOptions) (*project.ResourceConfig, error) {
 	openAiOption := "Azure OpenAI model"
 	otherAiModels := "Azure AI services model"
+	aiSearch := "Azure AI Search"
 	options := []string{
 		openAiOption,
 		otherAiModels,
+		aiSearch,
 	}
 	aiOptionIndex, err := console.Select(ctx, input.ConsoleOptions{
-		Message:      "Which type of AI model?",
+		Message:      "Which type of AI resource?",
 		DefaultValue: openAiOption,
 		Options:      options,
 	})
@@ -55,10 +58,16 @@ func (a *AddAction) selectAiType(
 		return nil, err
 	}
 	selectedOption := options[aiOptionIndex]
-	if selectedOption == openAiOption {
+	switch selectedOption {
+	case openAiOption:
 		return a.selectOpenAi(console, ctx, p)
+	case aiSearch:
+		return a.selectSearch(console, ctx, p)
+	case otherAiModels: // otherAiModels
+		return a.selectAiModel(console, ctx, p)
+	default:
+		return nil, fmt.Errorf("invalid option %q", selectedOption)
 	}
-	return a.selectAiModel(console, ctx, p)
 }
 
 func selectDatabase(

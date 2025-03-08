@@ -22,6 +22,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
+func (a *AddAction) selectSearch(
+	console input.Console,
+	ctx context.Context,
+	_ PromptOptions) (*project.ResourceConfig, error) {
+	r := &project.ResourceConfig{}
+	r.Type = project.ResourceTypeAiSearch
+	return r, nil
+}
+
 func (a *AddAction) selectOpenAi(
 	console input.Console,
 	ctx context.Context,

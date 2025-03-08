@@ -298,6 +298,47 @@ resource localUserOpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-0
 }
 {{- end}}
 
+{{- if .AISearch}}
+module searchService 'br/public:avm/res/search/search-service:0.9.1' = {
+  name: 'aiSearch'
+  params: {
+    name: '${abbrs.storageStorageAccounts}${resourceToken}'
+    location: location
+    sku: 'basic'
+    replicaCount: 1
+    managedIdentities: {
+      systemAssigned: true
+    }
+    roleAssignments: [
+      {  
+        principalId: principalId
+        principalType: 'User'
+        roleDefinitionIdOrName: 'Search Index Data Contributor'  
+      }
+      {  
+        principalId: principalId
+        principalType: 'User'
+        roleDefinitionIdOrName: 'Search Service Contributor'  
+      }
+      {{- range .Services}}
+      {
+        principalId: {{bicepName .Name}}Identity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'Search Index Data Contributor'
+      }
+      {
+        principalId: {{bicepName .Name}}Identity.outputs.principalId
+        principalType: 'ServicePrincipal'
+        roleDefinitionIdOrName: 'Search Service Contributor'
+      }
+      {{- end}}
+    ]
+    disableLocalAuth: true
+    publicNetworkAccess: 'Enabled'
+  }
+}
+{{- end}}
+
 {{- if .EventHubs }}
 module eventHubNamespace 'br/public:avm/res/event-hub/namespace:0.8.0' = {
   name: 'eventHubNamespace'

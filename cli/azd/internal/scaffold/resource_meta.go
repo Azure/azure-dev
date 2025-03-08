@@ -21,14 +21,15 @@ type ResourceMeta struct {
 	// StandardVarPrefix is the standard variable prefix for the resource.
 	StandardVarPrefix string
 
-	// Variables are the variables for the resource.
-	// The key is the variable name and the value is the expression.
+	// Variables are the variables exposed by this resource for connecting to application code.
+	//
+	// To evaluate the actual values, see [Eval].
 	Variables map[string]string
 }
 
-// Resources that are supported by the scaffold.
+// List of resources that are supported by scaffold.
 var Resources = []ResourceMeta{
-	// To register a new resource from AVM modules in resources.bicept:
+	// To register a newly added resource, run the following command:
 	//    cd tools/avmres && go run main.go
 	// and add the new resource to this list.
 	{

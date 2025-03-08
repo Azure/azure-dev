@@ -30,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -80,6 +81,7 @@ type showAction struct {
 	formatter            output.Formatter
 	writer               io.Writer
 	resourceService      *azapi.ResourceService
+	kvService            keyvault.KeyVaultService
 	envManager           environment.Manager
 	infraResourceManager infra.ResourceManager
 	azdCtx               *azdcontext.AzdContext
@@ -105,6 +107,7 @@ func NewShowAction(
 	featureManager *alpha.FeatureManager,
 	armClientOptions *arm.ClientOptions,
 	creds account.SubscriptionCredentialProvider,
+	kvService keyvault.KeyVaultService,
 	azdCtx *azdcontext.AzdContext,
 	flags *showFlags,
 	args []string,
@@ -121,6 +124,7 @@ func NewShowAction(
 		resourceService:      resourceService,
 		envManager:           envManager,
 		infraResourceManager: infraResourceManager,
+		kvService:            kvService,
 		featureManager:       featureManager,
 		armClientOptions:     armClientOptions,
 		creds:                creds,
@@ -292,6 +296,10 @@ func (s *showAction) showResource(ctx context.Context, name string, env *environ
 		clientOpts:  armOptions,
 	}
 
+	if res, ok := s.projectConfig.Resources[name]; ok {
+		resourceOptions.resourceSpec = res
+	}
+
 	credential, err := s.creds.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return err
@@ -311,7 +319,17 @@ func (s *showAction) showResource(ctx context.Context, name string, env *environ
 			return err
 		}
 	default:
-		return fmt.Errorf("resource type '%s' is not currently supported in alpha", resType)
+		showRes := showResource{
+			env:             env,
+			kvService:       s.kvService,
+			resourceService: s.resourceService,
+			console:         s.console,
+		}
+
+		item, err = showRes.showResourceGeneric(ctx, *id, resourceOptions)
+		if err != nil {
+			return err
+		}
 	}
 
 	if item != nil {
@@ -321,8 +339,9 @@ func (s *showAction) showResource(ctx context.Context, name string, env *environ
 }
 
 type showResourceOptions struct {
-	showSecrets bool
-	clientOpts  *arm.ClientOptions
+	showSecrets  bool
+	resourceSpec *project.ResourceConfig
+	clientOpts   *arm.ClientOptions
 }
 
 func showContainerApp(

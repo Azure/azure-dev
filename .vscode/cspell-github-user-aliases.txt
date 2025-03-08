@@ -33,6 +33,7 @@ sebastianmattar
 sergi
 sethvargo
 stretchr
+tidwall
 theckman
 TheEskhaton
 tonybaloney

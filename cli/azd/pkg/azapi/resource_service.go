@@ -7,9 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -91,6 +94,29 @@ func (rs *ResourceService) GetResource(
 		},
 		Kind: *res.Kind,
 	}, nil
+}
+
+func (rs *ResourceService) GetRawResource(
+	ctx context.Context, resourceId arm.ResourceID, apiVersion string) (string, error) {
+	client, err := rs.createResourcesClient(ctx, resourceId.SubscriptionID)
+	if err != nil {
+		return "", err
+	}
+
+	var revisionResponse *http.Response
+	ctx = policy.WithCaptureResponse(ctx, &revisionResponse)
+
+	_, err = client.GetByID(ctx, resourceId.String(), apiVersion, nil)
+	if err != nil {
+		return "", fmt.Errorf("getting resource by id: %w", err)
+	}
+
+	body, err := runtime.Payload(revisionResponse)
+	if err != nil {
+		return "", fmt.Errorf("reading body: %w", err)
+	}
+
+	return string(body), nil
 }
 
 func (rs *ResourceService) ListResourceGroupResources(

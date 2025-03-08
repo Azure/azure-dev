@@ -191,14 +191,8 @@ func evalExpression(env EvalEnv, key string, expr *Expression, results map[strin
 		literal := expr.Data.(LiteralExprData).Value
 		expr.Replace(literal)
 	case VaultExpr:
-		// Vault expression ${vault.xxx} or ${vault.}
+		// Vault expression ${vault.xxx}
 		secretPath := expr.Data.(VaultExprData).SecretPath
-		if secretPath == "" {
-			// the canonical secret path is the key, but we need to replace _ with -
-			// to match the vault secret name
-			secretPath = strings.ReplaceAll(key, "_", "-")
-		}
-
 		secret, err := env.VaultSecret(secretPath)
 		if err != nil {
 			return fmt.Errorf("failed to get secret '%s': %w", secretPath, err)

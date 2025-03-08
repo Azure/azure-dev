@@ -70,7 +70,7 @@ type Expression struct {
 	Value string
 
 	// The template that this expression is a part of.
-	// Can be nil if the expression is not part of a template, and if so Value is the final value.
+	// Can be nil if the expression is not part of a template, and if so Value will store the final value.
 	t *tmpl
 
 	// The start and end positions of the expression in the template.
@@ -229,7 +229,7 @@ func (p *parser) parseExpression() (*Expression, error) {
 				wordStart := p.cursor
 				origTerminal := p.terminal
 
-				// lookahead for the next token
+				// lookahead for the next word token
 				p.untilOneOf(Space, p.terminal)
 				terminal := p.peek()
 
@@ -287,9 +287,9 @@ func Parse(s *string) ([]Expression, error) {
 	for i, c := range val {
 		switch c {
 		case '$':
-			prev = c
 			if prev == '$' { // escape character, reset prev to avoid parsing
 				prev = 0
+				continue
 			}
 		case '{':
 			if prev == '$' {

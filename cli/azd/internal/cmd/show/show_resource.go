@@ -85,7 +85,7 @@ func (s *showResource) showResourceGeneric(
 		return nil, fmt.Errorf("expanding variables: %w", err)
 	}
 
-	// Display environment variables
+	// Convert to environment variables
 	envValues := scaffold.EnvVars(resourceMeta.StandardVarPrefix, values)
 
 	display := id.ResourceType.String()
@@ -128,10 +128,10 @@ func getResourceMeta(id arm.ResourceID) (*scaffold.ResourceMeta, arm.ResourceID)
 		}
 	}
 
+	// inexact match, find the longest prefix match
 	var matched *scaffold.ResourceMeta
 	parentLevels := 0
 	for _, res := range resources {
-		// find longest prefix match
 		if strings.HasPrefix(resourceType, res.ResourceType) {
 			if matched == nil || len(res.ResourceType) > len(matched.ResourceType) {
 				matched = &res
@@ -140,6 +140,7 @@ func getResourceMeta(id arm.ResourceID) (*scaffold.ResourceMeta, arm.ResourceID)
 		}
 	}
 
+	// level up the resource id to the parent
 	parentId := &id
 	for i := 0; i < parentLevels; i++ {
 		if parentId.Parent != nil {

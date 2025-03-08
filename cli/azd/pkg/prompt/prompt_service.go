@@ -458,6 +458,8 @@ func (ps *promptService) PromptSubscriptionResource(
 		return nil, err
 	}
 
+	allowNewResource := mergedSelectorOptions.AllowNewResource != nil && *mergedSelectorOptions.AllowNewResource
+
 	resource, err := PromptCustomResource(ctx, CustomResourceOptions[azapi.ResourceExtended]{
 		NewResourceValue: azapi.ResourceExtended{
 			Resource: azapi.Resource{
@@ -492,7 +494,7 @@ func (ps *promptService) PromptSubscriptionResource(
 				}
 			}
 
-			if len(filteredResources) == 0 {
+			if len(filteredResources) == 0 && !allowNewResource {
 				if options.ResourceType == nil {
 					return nil, ErrNoResourcesFound
 				}
@@ -594,6 +596,8 @@ func (ps *promptService) PromptResourceGroupResource(
 		return nil, err
 	}
 
+	allowNewResource := mergedSelectorOptions.AllowNewResource != nil && *mergedSelectorOptions.AllowNewResource
+
 	resource, err := PromptCustomResource(ctx, CustomResourceOptions[azapi.ResourceExtended]{
 		NewResourceValue: azapi.ResourceExtended{
 			Resource: azapi.Resource{
@@ -630,7 +634,7 @@ func (ps *promptService) PromptResourceGroupResource(
 				}
 			}
 
-			if len(filteredResources) == 0 {
+			if len(filteredResources) == 0 && !allowNewResource {
 				if options.ResourceType == nil {
 					return nil, ErrNoResourcesFound
 				}

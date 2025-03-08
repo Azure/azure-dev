@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package main
 
 import (
@@ -12,59 +15,74 @@ import (
 
 	//nolint:ST1001
 
-	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	flag "github.com/spf13/pflag"
 )
 
 var (
 	token      = flag.String("token", "", "GitHub token")
-	avmModule  = flag.String("module", "", "AVM module")
 	bicepDir   = flag.String("bicep-dir", "../../resources/scaffold", "Bicep dir")
 	emitSource = flag.Bool("emit-source", false, "Emit the fetched source documents to disk.")
 )
 
-var bicepAvmModuleRegex = regexp.MustCompile(`'br/public:(avm/res/.+?)'`)
+var bicepAvmModuleRegex = regexp.MustCompile(`module\s+(.+?)\s+'br/public:(avm/res/.+?)'`)
+
+type avmModuleReference struct {
+	BicepName     string
+	ResourceType  string
+	ApiVersion    string
+	ModulePath    string
+	ModuleVersion string
+	BicepFile     string
+}
 
 func run() error {
-	var avmModules []string
+	var avmModules []*avmModuleReference
 
-	if avmModule == nil || *avmModule == "" {
-		filepath.WalkDir(*bicepDir, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() {
-				return nil
-			}
-
-			bytes, err := os.ReadFile(filepath.Join(*bicepDir, path))
-			if err != nil {
-				return fmt.Errorf("reading bicep file: %w", err)
-			}
-
-			matches := bicepAvmModuleRegex.FindAllStringSubmatch(string(bytes), -1)
-			for _, match := range matches {
-				if len(match) > 1 {
-					avmModules = append(avmModules, match[1])
-				}
-			}
-
+	err := filepath.WalkDir(*bicepDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
 			return nil
-		})
-	} else {
-		avmModules = append(avmModules, *avmModule)
+		}
+
+		if filepath.Ext(path) != ".bicep" && filepath.Ext(path) != ".bicept" {
+			return nil
+		}
+
+		bytes, err := os.ReadFile(filepath.Join(*bicepDir, path))
+		if err != nil {
+			return fmt.Errorf("reading bicep file: %w", err)
+		}
+
+		matches := bicepAvmModuleRegex.FindAllStringSubmatch(string(bytes), -1)
+		for _, match := range matches {
+			if len(match) > 2 {
+				pathAndVersion := strings.Split(match[2], ":")
+
+				module := &avmModuleReference{
+					BicepName:     match[1],
+					ModulePath:    pathAndVersion[0],
+					ModuleVersion: pathAndVersion[1],
+					BicepFile:     path,
+				}
+				avmModules = append(avmModules, module)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("walking bicep dir: %w", err)
 	}
 
-	resources := []scaffold.ResourceMeta{}
 	for _, avmModule := range avmModules {
-		moduleVersion := strings.Split(avmModule, ":")
-		module, version := moduleVersion[0], moduleVersion[1]
-
 		readme, err := fetchGithub(
 			*token,
 			"Azure/bicep-registry-modules",
-			fmt.Sprintf("%s/README.md", module),
-			fmt.Sprintf("%s/%s", module, version))
+			fmt.Sprintf("%s/README.md", avmModule.ModulePath),
+			fmt.Sprintf("%s/%s", avmModule.ModulePath, avmModule.ModuleVersion))
 		if err != nil {
 			return fmt.Errorf("fetching README: %w", err)
 		}
@@ -109,24 +127,51 @@ func run() error {
 			return fmt.Errorf("unable to find resource type or API version, run with --emit-source to see the source")
 		}
 
-		resources = append(resources, scaffold.ResourceMeta{
-			ApiVersion:   apiVersion,
-			ResourceType: resourceType,
-		})
+		avmModule.ResourceType = resourceType
+		avmModule.ApiVersion = apiVersion
 	}
 
-	slices.SortFunc(resources, func(a, b scaffold.ResourceMeta) int {
-		return strings.Compare(a.ResourceType, b.ResourceType)
+	slices.SortFunc(avmModules, func(a, b *avmModuleReference) int {
+		return strings.Compare(a.BicepName, b.BicepName)
 	})
 
-	for _, res := range resources {
-		fmt.Println("{")
-		fmt.Printf("  ResourceType: \"%s\",\n", res.ResourceType)
-		fmt.Printf("  ApiVersion: \"%s\",\n", res.ApiVersion)
-		fmt.Println("},")
+	formatter := output.TableFormatter{}
+	err = formatter.Format(avmModules, os.Stdout, tableInputOptions)
+	if err != nil {
+		return fmt.Errorf("formatting output: %w", err)
 	}
 
 	return nil
+}
+
+var tableInputOptions = output.TableFormatterOptions{
+	Columns: []output.Column{
+		{
+			Heading:       "BicepName",
+			ValueTemplate: "{{.BicepName}}",
+		},
+		{
+			Heading:       "ResourceType",
+			ValueTemplate: "{{.ResourceType}}",
+		},
+		{
+			Heading:       "ApiVersion",
+			ValueTemplate: "{{.ApiVersion}}",
+		},
+		{
+			Heading:       "ModulePath",
+			ValueTemplate: "{{.ModulePath}}",
+		},
+		{
+			Heading:       "ModuleVersion",
+			ValueTemplate: "{{.ModuleVersion}}",
+		},
+		// {
+		// 	Heading:       "BicepFile",
+		// 	ValueTemplate: "{{.BicepFile}}",
+		// 	Transformer:   filepath.Base,
+		// },
+	},
 }
 
 func main() {
@@ -139,7 +184,8 @@ func main() {
 	}
 }
 
-// path example: specification/cognitiveservices/resource-manager/Microsoft.CognitiveServices/stable/2023-05-01/cognitiveservices.json
+// path example:
+// specification/cognitiveservices/resource-manager/Microsoft.CognitiveServices/stable/2023-05-01/cognitiveservices.json
 // token example: GITHUB_TOKEN
 func fetchGithub(
 	token string,
@@ -175,7 +221,7 @@ func fetchGithub(
 	if emitSource != nil && *emitSource {
 		lastSep := strings.LastIndex(path, "/")
 		fileName := path[lastSep+1:]
-		err = os.WriteFile(fileName, content, 0644)
+		err = os.WriteFile(fileName, content, 0600)
 		if err != nil {
 			return nil, fmt.Errorf("writing file: %w", err)
 		}

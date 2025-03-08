@@ -73,6 +73,43 @@ func (r ResourceType) String() string {
 	return ""
 }
 
+func (r ResourceType) AzureResourceType() string {
+	// DEV note:
+	// This can be updated after the resource is fully generated in scaffold
+	// and well-tested.
+	//
+	// Alongside this, the resource type should be updated in the scaffold/resource_meta.go
+	// See notes there on how to easily obtain the resource type for new AVM modules.
+	switch r {
+	case ResourceTypeHostContainerApp:
+		return "Microsoft.App/containerApps"
+	case ResourceTypeDbRedis:
+		return "Microsoft.Cache/redis"
+	case ResourceTypeDbPostgres:
+		return "Microsoft.DBforPostgreSQL/flexibleServers/databases"
+	case ResourceTypeDbMySql:
+		return "Microsoft.DBforMySQL/flexibleServers/databases"
+	case ResourceTypeDbMongo:
+		return "Microsoft.DocumentDB/databaseAccounts/mongodbDatabases"
+	case ResourceTypeOpenAiModel:
+		return "Microsoft.CognitiveServices/accounts/deployments"
+	case ResourceTypeDbCosmos:
+		return "Microsoft.DocumentDB/databaseAccounts/sqlDatabases"
+	case ResourceTypeMessagingEventHubs:
+		return "Microsoft.EventHub/namespaces"
+	case ResourceTypeMessagingServiceBus:
+		return "Microsoft.ServiceBus/namespaces"
+	case ResourceTypeStorage:
+		return "Microsoft.Storage/storageAccounts"
+	case ResourceTypeKeyVault:
+		return "Microsoft.KeyVault/vaults"
+	case ResourceTypeAiProject:
+		return "Microsoft.MachineLearningServices/workspaces"
+	}
+
+	return ""
+}
+
 type ResourceConfig struct {
 	// Reference to the parent project configuration
 	Project *ProjectConfig `yaml:"-"`

@@ -9,9 +9,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
+	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -19,95 +22,37 @@ import (
 	"github.com/fatih/color"
 )
 
-// resourceMeta contains metadata of the resource
-type resourceMeta struct {
-	// The underlying resource type.
-	AzureResourceType string
-	// UseEnvVars is the list of environment variable names that would be populated when this resource is used
-	UseEnvVars []string
+type metaDisplay struct {
+	ResourceType string
+	Variables    []string
 }
 
-func Metadata(r *project.ResourceConfig) resourceMeta {
-	res := resourceMeta{}
+func Metadata(r *project.ResourceConfig) metaDisplay {
+	azureResType := r.Type.AzureResourceType()
 
-	// These are currently duplicated, static values maintained separately from the backend generation files
-	// If updating resources.bicep, these values should also be updated.
-	switch r.Type {
-	case project.ResourceTypeHostContainerApp:
-		res.AzureResourceType = "Microsoft.App/containerApps"
-		res.UseEnvVars = []string{
-			strings.ToUpper(r.Name) + "_BASE_URL",
-		}
-	case project.ResourceTypeDbRedis:
-		res.AzureResourceType = "Microsoft.Cache/redis"
-		res.UseEnvVars = []string{
-			"REDIS_HOST",
-			"REDIS_PORT",
-			"REDIS_ENDPOINT",
-			"REDIS_PASSWORD",
-			"REDIS_URL",
-		}
-	case project.ResourceTypeDbPostgres:
-		res.AzureResourceType = "Microsoft.DBforPostgreSQL/flexibleServers/databases"
-		res.UseEnvVars = []string{
-			"POSTGRES_HOST",
-			"POSTGRES_USERNAME",
-			"POSTGRES_DATABASE",
-			"POSTGRES_PASSWORD",
-			"POSTGRES_PORT",
-			"POSTGRES_URL",
-		}
-	case project.ResourceTypeDbMySql:
-		res.AzureResourceType = "Microsoft.DBforMySQL/flexibleServers/databases"
-		res.UseEnvVars = []string{
-			"MYSQL_HOST",
-			"MYSQL_USERNAME",
-			"MYSQL_DATABASE",
-			"MYSQL_PASSWORD",
-			"MYSQL_PORT",
-			"MYSQL_URL",
-		}
-	case project.ResourceTypeDbMongo:
-		res.AzureResourceType = "Microsoft.DocumentDB/databaseAccounts/mongodbDatabases"
-		res.UseEnvVars = []string{
-			"MONGODB_URL",
-		}
-	case project.ResourceTypeOpenAiModel:
-		res.AzureResourceType = "Microsoft.CognitiveServices/accounts/deployments"
-		res.UseEnvVars = []string{
-			"AZURE_OPENAI_ENDPOINT",
-		}
-	case project.ResourceTypeDbCosmos:
-		res.AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
-		res.UseEnvVars = []string{
-			"AZURE_COSMOS_ENDPOINT",
-		}
-	case project.ResourceTypeMessagingEventHubs:
-		res.AzureResourceType = "Microsoft.EventHub/namespaces"
-		res.UseEnvVars = []string{
-			"AZURE_EVENT_HUBS_HOST",
-			"AZURE_EVENT_HUBS_NAME",
-		}
-	case project.ResourceTypeMessagingServiceBus:
-		res.AzureResourceType = "Microsoft.ServiceBus/namespaces"
-		res.UseEnvVars = []string{
-			"AZURE_SERVICE_BUS_HOST",
-			"AZURE_SERVICE_BUS_NAME",
-		}
-	case project.ResourceTypeStorage:
-		res.AzureResourceType = "Microsoft.Storage/storageAccounts"
-		res.UseEnvVars = []string{
-			"AZURE_STORAGE_ACCOUNT_NAME",
-			"AZURE_STORAGE_BLOB_ENDPOINT",
-		}
-	case project.ResourceTypeKeyVault:
-		res.AzureResourceType = "Microsoft.KeyVault/vaults"
-		res.UseEnvVars = []string{
-			"AZURE_KEY_VAULT_ENDPOINT",
-			"AZURE_KEY_VAULT_NAME",
+	for _, res := range scaffold.Resources {
+		if res.ResourceType == azureResType {
+			// transform to standard variables
+			prefix := res.StandardVarPrefix
+
+			// host resources are special and prefixed with the name
+			if strings.HasPrefix(string(r.Type), "host.") {
+				prefix = strings.ToUpper(r.Name)
+			}
+
+			variables := scaffold.EnvVars(prefix, res.Variables)
+			displayVariables := slices.Sorted(maps.Keys(variables))
+
+			display := metaDisplay{
+				ResourceType: res.ResourceType,
+				Variables:    displayVariables,
+			}
+
+			return display
 		}
 	}
-	return res
+
+	return metaDisplay{}
 }
 
 func (a *AddAction) previewProvision(
@@ -145,11 +90,11 @@ func (a *AddAction) previewProvision(
 	fmt.Fprintln(w, "b  Name\tResource type")
 	for _, res := range resourcesToAdd {
 		meta := Metadata(res)
-		fmt.Fprintf(w, "+  %s\t%s\n", res.Name, meta.AzureResourceType)
+		fmt.Fprintf(w, "+  %s\t%s\n", res.Name, meta.ResourceType)
 	}
 
 	w.Flush()
-	a.console.Message(ctx, fmt.Sprintf("\n%s\n", output.WithBold("Environment variables")))
+	a.console.Message(ctx, fmt.Sprintf("\n%s\n", output.WithBold("Variables")))
 
 	for _, res := range resourcesToAdd {
 		if strings.HasPrefix(string(res.Type), "host.") {
@@ -158,7 +103,7 @@ func (a *AddAction) previewProvision(
 					fmt.Fprintf(w, "   %s -> %s\n", res.Name, output.WithBold("%s", use))
 
 					meta := Metadata(usingRes)
-					for _, envVar := range meta.UseEnvVars {
+					for _, envVar := range meta.Variables {
 						fmt.Fprintf(w, "g   + %s\n", envVar)
 					}
 
@@ -171,7 +116,7 @@ func (a *AddAction) previewProvision(
 			for _, usedBy := range usedBy {
 				fmt.Fprintf(w, "   %s -> %s\n", usedBy, output.WithBold("%s", res.Name))
 
-				for _, envVar := range meta.UseEnvVars {
+				for _, envVar := range meta.Variables {
 					fmt.Fprintf(w, "g   + %s\n", envVar)
 				}
 

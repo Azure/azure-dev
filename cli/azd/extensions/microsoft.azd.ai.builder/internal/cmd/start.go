@@ -10,8 +10,11 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/pkg/azure/ai"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/pkg/qna"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 )
 
@@ -148,6 +151,36 @@ func newStartCommand() *cobra.Command {
 
 			scenarioData := scenarioInput{}
 
+			credential, err := azidentity.NewAzureDeveloperCLICredential(nil)
+			if err != nil {
+				return fmt.Errorf("Run `azd auth login` to login", err)
+			}
+
+			modelCatalog := ai.NewModelCatalog(credential)
+			var aiModelCatalog []*ai.AiModel
+
+			spinner := ux.NewSpinner(&ux.SpinnerOptions{
+				Text: "Loading AI Model Catalog",
+			})
+			err = spinner.Run(ctx, func(ctx context.Context) error {
+				credential, err := azidentity.NewAzureDeveloperCLICredential(nil)
+				if err != nil {
+					return err
+				}
+
+				var loadErr error
+				modelCatalog = ai.NewModelCatalog(credential)
+				aiModelCatalog, loadErr = modelCatalog.ListAllModels(ctx, azureContext.Scope.SubscriptionId)
+				if loadErr != nil {
+					return err
+				}
+
+				return nil
+			})
+			if err != nil {
+				return fmt.Errorf("failed to load AI model catalog: %w", err)
+			}
+
 			welcomeMessage := []string{
 				"This tool will help you build an AI scenario using Azure services.",
 				"Please answer the following questions to get started.",
@@ -174,7 +207,7 @@ func newStartCommand() *cobra.Command {
 						Branches: map[any]string{
 							"rag":      "use-custom-data",
 							"agent":    "agent-tasks",
-							"ai-model": "model-exploration",
+							"ai-model": "model-capabilities",
 						},
 					},
 					"use-custom-data": {
@@ -359,7 +392,7 @@ func newStartCommand() *cobra.Command {
 							q.State["interactionType"] = value
 							return nil
 						},
-						Next: "model-selection",
+						Next: "start-choose-model",
 					},
 					"agent-interaction": {
 						Binding: &scenarioData.InteractionTypes,
@@ -379,26 +412,13 @@ func newStartCommand() *cobra.Command {
 						Branches: map[any]string{
 							"chatbot":   "choose-app-type",
 							"webapp":    "choose-app-type",
-							"messaging": "choose-app-type",
+							"messaging": "choose-messaging-type",
 						},
 						AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
 							q.State["interactionType"] = value
 							return nil
 						},
-						Next: "model-selection",
-					},
-					"model-selection": {
-						Binding: &scenarioData.ModelSelection,
-						Prompt: &qna.SingleSelectPrompt{
-							Client:          azdClient,
-							Message:         "Do you want to know what type(s) of model(s) you would like to use?",
-							EnableFiltering: to.Ptr(false),
-							Choices: []qna.Choice{
-								{Label: "Choose for me", Value: "choose-model"},
-								{Label: "Help me choose", Value: "guide-model"},
-								{Label: "Yes, I have some models in mind", Value: "user-models"},
-							},
-						},
+						Next: "start-choose-model",
 					},
 					"agent-tasks": {
 						Binding: &scenarioData.ModelTasks,
@@ -431,10 +451,10 @@ func newStartCommand() *cobra.Command {
 							EnableFiltering: to.Ptr(false),
 							Choices: []qna.Choice{
 								{Label: "Choose for me", Value: "choose-app"},
-								{Label: "App Service", Value: "webapp"},
+								{Label: "App Service (Coming Soon)", Value: "webapp"},
 								{Label: "Container App", Value: "containerapp"},
-								{Label: "Function App", Value: "functionapp"},
-								{Label: "Static Web App", Value: "staticwebapp"},
+								{Label: "Function App (Coming Soon)", Value: "functionapp"},
+								{Label: "Static Web App (Coming Soon)", Value: "staticwebapp"},
 								{Label: "Other", Value: "otherapp"},
 							},
 						},
@@ -527,6 +547,129 @@ func newStartCommand() *cobra.Command {
 								{Label: "Video Classification", Value: "video-classification"},
 								{Label: "Text Summarization", Value: "text-summarization"},
 							},
+						},
+					},
+					"start-choose-model": {
+						Prompt: &qna.SingleSelectPrompt{
+							Client:          azdClient,
+							Message:         "How do you want to find the right model?",
+							HelpMessage:     "Select the option that best fits your needs.",
+							EnableFiltering: to.Ptr(false),
+							Choices: []qna.Choice{
+								{Label: "Choose for me", Value: "choose-model"},
+								{Label: "Help me choose", Value: "guide-model"},
+								{Label: "I will choose model", Value: "user-model"},
+							},
+						},
+						Branches: map[any]string{
+							"guide-model": "guide-model-select",
+							"user-model":  "user-model-select",
+						},
+					},
+					"user-model-select": {
+						Prompt: &qna.SingleSelectPrompt{
+							BeforeAsk: func(ctx context.Context, q *qna.Question, p *qna.SingleSelectPrompt) error {
+								filteredModels := modelCatalog.ListFilteredModels(ctx, aiModelCatalog, nil)
+
+								choices := make([]qna.Choice, len(filteredModels))
+								for i, model := range aiModelCatalog {
+									choices[i] = qna.Choice{
+										Label: model.Name,
+										Value: model.Name,
+									}
+								}
+								p.Choices = choices
+
+								return nil
+							},
+							Client:      azdClient,
+							Message:     "Which model do you want to use?",
+							HelpMessage: "Select the model that best fits your needs.",
+						},
+					},
+					"guide-model-select": {
+						Prompt: &qna.MultiSelectPrompt{
+							Client:  azdClient,
+							Message: "Filter AI Models",
+							Choices: []qna.Choice{
+								{Label: "Filter by capabilities", Value: "filter-model-capability"},
+								{Label: "Filter by creator", Value: "filter-model-format"},
+								{Label: "Filter by status", Value: "filter-model-status"},
+							},
+						},
+						Branches: map[any]string{
+							"filter-model-capability": "filter-model-capability",
+							"filter-model-format":     "filter-model-format",
+							"filter-model-status":     "filter-model-status",
+						},
+						Next: "user-model-select",
+					},
+					"filter-model-capability": {
+						Prompt: &qna.MultiSelectPrompt{
+							Client:      azdClient,
+							Message:     "What capabilities do you want the model to have?",
+							HelpMessage: "Select all the capabilities that apply to your application.",
+							Choices: []qna.Choice{
+								{Label: "Audio", Value: "audio"},
+								{Label: "Chat Completion", Value: "chatCompletion"},
+								{Label: "Text Completion", Value: "completion"},
+								{Label: "Generate Vector Embeddings", Value: "embeddings"},
+								{Label: "Image Generation", Value: "imageGenerations"},
+							},
+						},
+						AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
+							capabilities := value.([]string)
+							q.State["capabilities"] = capabilities
+							return nil
+						},
+					},
+					"filter-model-format": {
+						Prompt: &qna.MultiSelectPrompt{
+							BeforeAsk: func(ctx context.Context, q *qna.Question, p *qna.MultiSelectPrompt) error {
+								formats := modelCatalog.ListAllFormats(ctx, aiModelCatalog)
+								choices := make([]qna.Choice, len(formats))
+								for i, format := range formats {
+									choices[i] = qna.Choice{
+										Label: format,
+										Value: format,
+									}
+								}
+								p.Choices = choices
+								return nil
+							},
+							Client:      azdClient,
+							Message:     "Filter my by company or creator",
+							HelpMessage: "Select all the companies or creators that apply to your application.",
+						},
+						AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
+							formats := value.([]string)
+							q.State["formats"] = formats
+							return nil
+						},
+					},
+					"filter-model-status": {
+						Prompt: &qna.MultiSelectPrompt{
+							BeforeAsk: func(ctx context.Context, q *qna.Question, p *qna.MultiSelectPrompt) error {
+								statuses := modelCatalog.ListAllStatuses(ctx, aiModelCatalog)
+								choices := make([]qna.Choice, len(statuses))
+								for i, status := range statuses {
+									choices[i] = qna.Choice{
+										Label: status,
+										Value: status,
+									}
+								}
+								p.Choices = choices
+								return nil
+							},
+							Client:          azdClient,
+							Message:         "Filter by model release status?",
+							HelpMessage:     "Select all the model release status that apply to your application.",
+							EnableFiltering: to.Ptr(false),
+						},
+						AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
+							statuses := value.([]string)
+							q.State["status"] = statuses
+							return nil
 						},
 					},
 				},

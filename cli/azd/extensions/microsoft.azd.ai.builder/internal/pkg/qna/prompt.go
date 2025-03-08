@@ -93,9 +93,16 @@ type MultiSelectPrompt struct {
 	Choices         []Choice
 	EnableFiltering *bool
 	Client          *azdext.AzdClient
+	BeforeAsk       func(ctx context.Context, q *Question, p *MultiSelectPrompt) error
 }
 
 func (p *MultiSelectPrompt) Ask(ctx context.Context, question Question) (any, error) {
+	if p.BeforeAsk != nil {
+		if err := p.BeforeAsk(ctx, &question, p); err != nil {
+			return nil, err
+		}
+	}
+
 	choices := make([]*azdext.MultiSelectChoice, len(p.Choices))
 	for i, choice := range p.Choices {
 		choices[i] = &azdext.MultiSelectChoice{

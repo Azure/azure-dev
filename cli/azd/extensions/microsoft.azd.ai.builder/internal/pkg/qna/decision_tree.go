@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -144,7 +145,8 @@ func (t *DecisionTree) askQuestion(ctx context.Context, question Question) error
 
 				branch, has := question.Branches[selectedValue]
 				if !has {
-					return fmt.Errorf("branch not found for selected value: %s", selectedValue)
+					log.Printf("branch not found for selected value: %s\n", selectedValue)
+					continue
 				}
 
 				nextQuestion, has := t.config.Questions[branch]

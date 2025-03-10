@@ -22,6 +22,34 @@ param principalId string
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = uniqueString(subscription().id, resourceGroup().id, location)
 
+{{if .Existing -}}
+{{- range .Existing }}
+var {{.Name}}IdSegments = split({{.Name}}Id, '/')
+resource {{.Name}} '{{.ResourceType}}@{{.ApiVersion}}' existing = {
+  scope: resourceGroup({{.Name}}IdSegments[2], {{.Name}}IdSegments[4])
+  name: {{.Name}}IdSegments[8]
+}
+
+{{- $existing := . -}}
+{{- range .RoleAssignments}}
+module local_{{$existing.Name}}_{{.Name}}_RoleAssignment 'modules/role-assignment.bicep' = {
+  name: 'local_{{$existing.Name}}_{{.Name}}_RoleAssignment'
+  scope: resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
+  params: {
+    resourceId: {{if eq .Scope 1 -}}
+      resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
+    {{- else -}}
+      {{$existing.Name}}Id
+    {{- end}}
+    roleDefinitionId: '{{.RoleDefinitionId}}'
+    principalId: principalId
+    principalType: 'User'
+  }
+}
+{{- end}}
+{{- end}}
+{{- end -}}
+
 {{- if .Services }}
 
 // Monitor application with Azure Monitor
@@ -439,6 +467,28 @@ resource {{bicepName .Name}}OpenAIIdentity 'Microsoft.Authorization/roleAssignme
     roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
   }
 }
+{{- end}}
+
+{{- $svc := . -}}
+{{- if .Existing }}
+{{- range $index, $existing := .Existing}}
+{{- range .RoleAssignments}}
+module {{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}}_RoleAssignment 'modules/role-assignment.bicep' = {
+  name: '{{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}}_RoleAssignment'
+  scope: resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
+  params: {
+    resourceId: {{if eq .Scope 1 -}}
+      resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
+    {{- else -}}
+      {{$existing.Name}}Id
+    {{- end}}
+    roleDefinitionId: '{{.RoleDefinitionId}}'
+    principalId: {{bicepName $svc.Name}}Identity.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+{{- end}}
+{{- end}}
 {{- end}}
 
 module {{bicepName .Name}}FetchLatestImage './modules/fetch-container-image.bicep' = {

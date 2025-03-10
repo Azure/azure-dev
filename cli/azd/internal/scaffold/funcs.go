@@ -53,6 +53,19 @@ func BicepName(name string) string {
 	return sb.String()
 }
 
+// BicepNameInfix is like BicepName, except that the first character is upper-cased for infix use.
+func BicepNameInfix(name string) string {
+	bicepName := BicepName(name)
+	return capitalizeFirst(bicepName)
+}
+
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return ""
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
 func RemoveDotAndDash(name string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(name, ".", ""), "-", "")
 }

@@ -24,30 +24,6 @@
       "createdDate": "2024-09-16 19:06:00Z",
       "expirationDate": "2025-03-05 21:30:18Z",
       "justification": "This error is baselined with an expiration date of 180 days from 2024-09-16 21:30:18Z"
-    },
-    "94307fedca3397ff8099d1d5e4f1da5116f6c47905d344cd0604f27e9c259ba7": {
-      "signature": "94307fedca3397ff8099d1d5e4f1da5116f6c47905d344cd0604f27e9c259ba7",
-      "alternativeSignatures": [
-        "a9d457e2b0c4581b45d34e2e415b3207ac781e82d99650f771db832d68e82acb",
-        "7d276d608979a50f0253e34b92f0c0fcae8cdbe836966a0ceb5b6df3a67d9b9d",
-        "56e88dc391c9d2c83c10f763004a9924ba3c48cd52004704ee89178d9c1db21a",
-        "78cf96bda432c849ea58a1f63425328293a949020966fa2b23c891e40fd8302a",
-        "f827b6a5dcd0a41d16810c7ac99aa4604c5f6f3cee798ec05a547dd5b9162ad8",
-        "48ee9877bc08931a583e26894e689e7a96ef287045e92d8d5c06870026f66abd",
-        "ce4decc20d50783cc815528201580f51ec31589f3d53725d8f644066a1f6677e",
-        "b381615c8a84c0b168902076ba733a61f0ae166aca5534c58aa5468b528e0a6e",
-        "34d6d4aaf5d0e32ba3a586144a8f08d5556f39b4cbe8f64ac8e5d6b27056b212",
-        "6eb0174b62f350c5176ae723e527453fea3c65074a3262e065669023756a1771",
-        "0d8114663f1d76435231d07d5fb2805c71b442e373eb21ec31cc8be9f5c89d66",
-        "d70345eaf1d867e6d7cfcea1e3c4bdf3ec9de6b57fc189c714afb6cca8d5ebd0",
-        "594400fa95ea5253ea6c20d21f14fc482d650b635bb60767675e401d6a875f0e"
-      ],
-      "memberOf": [
-        "default"
-      ],
-      "createdDate": "2025-03-06 21:07:54Z",
-      "justification": "Testing for regressions before rolling out: https://github.com/Azure/azure-dev/issues/4888",
-      "expirationDate": "2025-03-31 00:00:00Z"
     }
   }
 }

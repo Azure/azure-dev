@@ -115,6 +115,12 @@ func resumeDeployment(err error, progressLog func(msg string)) bool {
 			"Resuming deployment without tracking status.")
 		return true
 	}
+
+	if errors.As(err, &httpErr) && httpErr.StatusCode == 500 {
+		progressLog("Internal server error. Failed to enable tracking runtime status. " +
+			"Resuming deployment without tracking status.")
+		return true
+	}
 	return false
 }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -431,8 +432,11 @@ func (sm *serviceManager) Deploy(
 	var targetResource *environment.TargetResource
 
 	if serviceConfig.Host == DotNetContainerAppTarget {
+		azdApphostInfraMigrationEnabled := sm.alphaFeatureManager.IsEnabled(provisioning.AzdAppHostInfraMigration)
 		containerEnvName := sm.env.GetServiceProperty(serviceConfig.Name, "CONTAINER_ENVIRONMENT_NAME")
-		if containerEnvName == "" {
+		// AZURE_CONTAINER_APPS_ENVIRONMENT_ID is not required for Aspire migration mode because it uses a bicep deployment
+		// to create the ACA instead of YAML data-plane deployment to the ACE. No need for the ACE id
+		if containerEnvName == "" && !azdApphostInfraMigrationEnabled {
 			containerEnvName = sm.env.Getenv("AZURE_CONTAINER_APPS_ENVIRONMENT_ID")
 			if containerEnvName == "" {
 				return nil, fmt.Errorf(

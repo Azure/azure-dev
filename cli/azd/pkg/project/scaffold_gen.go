@@ -14,6 +14,8 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/psanford/memfs"
@@ -133,23 +135,48 @@ func infraFsForProject(ctx context.Context, prjConfig *ProjectConfig) (fs.FS, er
 
 func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	infraSpec := scaffold.InfraSpec{}
+	existingMap := map[string]*scaffold.ExistingResource{}
 	// backends -> frontends
 	backendMapping := map[string]string{}
 
 	// Create a "virtual" copy since we're adding any implicitly dependent resources
 	// that are unrepresented by the current user-provided schema
 	resources := maps.Clone(projectConfig.Resources)
-	// Add any implicit dependencies
+
+	// First pass
 	for _, res := range resources {
+		// Add any implicit dependencies
 		dependencies := DependentResourcesOf(res)
 		for _, dep := range dependencies {
 			if _, exists := resources[dep.Name]; !exists {
 				resources[dep.Name] = dep
 			}
 		}
+
+		if res.Existing { // handle existing flow
+			resourceMeta, ok := scaffold.ResourceMetaFromType(res.Type.AzureResourceType())
+			if !ok {
+				return nil, fmt.Errorf("resource type '%s' is not currently supported for existing", res.Type)
+			}
+
+			existing := scaffold.ExistingResource{
+				Name:             "existing" + scaffold.BicepNameInfix(res.Name),
+				ApiVersion:       resourceMeta.ApiVersion,
+				ResourceIdEnvVar: infra.ResourceIdName(res.Name),
+				ResourceType:     resourceMeta.ResourceType,
+				RoleAssignments:  resourceMeta.RoleAssignments.Write,
+			}
+
+			infraSpec.Existing = append(infraSpec.Existing, existing)
+			existingMap[res.Name] = &existing
+			continue
+		}
 	}
 
 	for _, res := range resources {
+		if res.Existing {
+			continue
+		}
 		switch res.Type {
 		case ResourceTypeDbRedis:
 			infraSpec.DbRedis = &scaffold.DatabaseRedis{}
@@ -190,7 +217,7 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 				return nil, err
 			}
 
-			err = mapHostUses(res, &svcSpec, backendMapping, projectConfig)
+			err = mapHostUses(res, &svcSpec, backendMapping, existingMap, projectConfig)
 			if err != nil {
 				return nil, err
 			}
@@ -334,11 +361,78 @@ func mapHostUses(
 	res *ResourceConfig,
 	svcSpec *scaffold.ServiceSpec,
 	backendMapping map[string]string,
+	existingMap map[string]*scaffold.ExistingResource,
 	prj *ProjectConfig) error {
 	for _, use := range res.Uses {
 		useRes, ok := prj.Resources[use]
 		if !ok {
 			return fmt.Errorf("resource %s uses %s, which does not exist", res.Name, use)
+		}
+
+		if useRes.Existing {
+			resourceMeta, ok := scaffold.ResourceMetaFromType(useRes.Type.AzureResourceType())
+			if !ok {
+				return fmt.Errorf("resource type '%s' is not currently supported for existing", res.Type)
+			}
+
+			existingDecl := existingMap[use]
+
+			for key, value := range resourceMeta.Variables {
+				expressions, err := scaffold.Parse(&value)
+				envKey := scaffold.EnvVarName(
+					fmt.Sprintf("%s_%s", resourceMeta.StandardVarPrefix, environment.Key(use)),
+					key)
+				if err != nil {
+					return fmt.Errorf("parsing environment variable %s: %w", key, err)
+				}
+
+				if envValue, exists := svcSpec.Env[envKey]; exists {
+					panic(fmt.Sprintf(
+						"env collision: env value %s already set to %s, cannot set to %s", envKey, envValue, value))
+				}
+
+				if len(expressions) == 0 { // literal value
+					svcSpec.Env[key] = fmt.Sprintf("'%s'", value)
+					continue
+				}
+
+				// if there are multiple expressions, we need to surround each expression with ${}
+				// to make it a Bicep interpolated string
+				interpolationMode := len(expressions) > 1
+				surround := func(s string) string {
+					if interpolationMode {
+						return fmt.Sprintf("${%s}", s)
+					}
+					return s
+				}
+
+				for _, expr := range expressions {
+					switch expr.Kind {
+					case scaffold.PropertyExpr:
+						path := expr.Data.(scaffold.PropertyExprData).PropertyPath
+						expr.Replace(surround(fmt.Sprintf("%s.%s", existingDecl.Name, path)))
+					case scaffold.SpecExpr:
+						return fmt.Errorf("spec expressions are not currently supported in existing resources")
+					case scaffold.FuncExpr:
+						return fmt.Errorf("function expressions are not currently supported in existing resources")
+					case scaffold.VaultExpr:
+						return fmt.Errorf("vault expressions are not currently supported in existing resources")
+					case scaffold.VarExpr:
+						return fmt.Errorf("variable expressions are not currently supported in existing resources")
+					}
+				}
+
+				if !interpolationMode {
+					svcSpec.Env[envKey] = value
+				} else {
+					svcSpec.Env[envKey] = fmt.Sprintf("'%s'", value)
+				}
+
+				continue
+			}
+
+			svcSpec.Existing = append(svcSpec.Existing, existingDecl)
+			continue
 		}
 
 		switch useRes.Type {

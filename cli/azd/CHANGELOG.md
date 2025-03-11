@@ -5,7 +5,6 @@
 ### Features Added
 
 - [[4886]](https://github.com/Azure/azure-dev/pull/4886) Improve database dependency detection for Maven projects. Thanks @rujche for the contribution!
-- [[4884]](https://github.com/Azure/azure-dev/pull/4884) New config switch `alpha.apphost.infra.migration` to skip generating compute infrastructure for Aspire projects.
 
 ### Bugs Fixed
 

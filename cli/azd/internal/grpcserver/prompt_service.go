@@ -58,7 +58,6 @@ func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (
 		Message:         req.Options.Message,
 		Choices:         choices,
 		HelpMessage:     req.Options.HelpMessage,
-		Hint:            req.Options.Hint,
 		DisplayCount:    int(req.Options.DisplayCount),
 		DisplayNumbers:  req.Options.DisplayNumbers,
 		EnableFiltering: req.Options.EnableFiltering,
@@ -69,6 +68,45 @@ func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (
 
 	return &azdext.SelectResponse{
 		Value: convertToInt32(value),
+	}, err
+}
+
+func (s *promptService) MultiSelect(
+	ctx context.Context,
+	req *azdext.MultiSelectRequest,
+) (*azdext.MultiSelectResponse, error) {
+	choices := make([]*ux.MultiSelectChoice, len(req.Options.Choices))
+	for i, choice := range req.Options.Choices {
+		choices[i] = &ux.MultiSelectChoice{
+			Value:    choice.Value,
+			Label:    choice.Label,
+			Selected: choice.Selected,
+		}
+	}
+
+	options := &ux.MultiSelectOptions{
+		Message:         req.Options.Message,
+		Choices:         choices,
+		HelpMessage:     req.Options.HelpMessage,
+		DisplayCount:    int(req.Options.DisplayCount),
+		DisplayNumbers:  req.Options.DisplayNumbers,
+		EnableFiltering: req.Options.EnableFiltering,
+	}
+
+	selectPrompt := ux.NewMultiSelect(options)
+	values, err := selectPrompt.Ask(ctx)
+
+	resultValues := make([]*azdext.MultiSelectChoice, len(values))
+	for i, value := range values {
+		resultValues[i] = &azdext.MultiSelectChoice{
+			Value:    value.Value,
+			Label:    value.Label,
+			Selected: value.Selected,
+		}
+	}
+
+	return &azdext.MultiSelectResponse{
+		Values: resultValues,
 	}, err
 }
 

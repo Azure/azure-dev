@@ -31,6 +31,26 @@ func newPromptCommand() *cobra.Command {
 
 			defer azdClient.Close()
 
+			_, err = azdClient.Prompt().MultiSelect(ctx, &azdext.MultiSelectRequest{
+				Options: &azdext.MultiSelectOptions{
+					Message: "Which Azure services do you use most with AZD?",
+					Choices: []*azdext.MultiSelectChoice{
+						{Label: "Container Apps", Value: "container-apps"},
+						{Label: "Functions", Value: "functions"},
+						{Label: "Static Web Apps", Value: "static-web-apps"},
+						{Label: "App Service", Value: "app-service"},
+						{Label: "Cosmos DB", Value: "cosmos-db"},
+						{Label: "SQL Database", Value: "sql-db"},
+						{Label: "Storage", Value: "storage"},
+						{Label: "Key Vault", Value: "key-vault"},
+						{Label: "Kubernetes Service", Value: "kubernetes-service"},
+					},
+				},
+			})
+			if err != nil {
+				return nil
+			}
+
 			confirmResponse, err := azdClient.
 				Prompt().
 				Confirm(ctx, &azdext.ConfirmRequest{

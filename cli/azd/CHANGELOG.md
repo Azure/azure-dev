@@ -1,14 +1,16 @@
 # Release History
 
-## 1.14.0-beta.1 (Unreleased)
+## 1.13.1 (2025-03-11)
 
 ### Features Added
 
-### Breaking Changes
+- [[4886]](https://github.com/Azure/azure-dev/pull/4886) Improve database dependency detection for Maven projects. Thanks @rujche for the contribution!
+- [[4884]](https://github.com/Azure/azure-dev/pull/4884) New config switch `alpha.apphost.infra.migration` to skip generating compute infrastructure for Aspire projects
 
 ### Bugs Fixed
 
-### Other Changes
+- [[4917]](https://github.com/Azure/azure-dev/pull/4917) Allow Linux App Service deployments to resume on 500 deployment status response
+- [[4924]](https://github.com/Azure/azure-dev/pull/4924) Fix cast error when parsing usage name Bicep param metadata
 
 ## 1.13.0 (2025-03-06)
 

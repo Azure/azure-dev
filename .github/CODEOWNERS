@@ -20,3 +20,8 @@
 /schemas/         @wbreza
 
 /templates/       @jongio @wbreza
+
+# Exclude @jongio from version bump PRs opened by dependabot
+/templates/**/package-lock.json     @wbreza
+
+/.github/CODEOWNERS   @rajeshkamal5050 @Azure/azure-sdk-eng

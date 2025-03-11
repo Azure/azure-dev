@@ -116,13 +116,13 @@ func (a *BicepProvider) locationsWithQuotaFor(
 	}
 	wg.Wait()
 	var results []string
-	skuUsageName := quotaFor
+	skuUsageName := strings.Trim(quotaFor, " ")
 	var skuCapacity float64
 	skuCapacity = 1
 	if strings.Contains(skuUsageName, ",") {
 		parts := strings.Split(skuUsageName, ",")
-		skuUsageName = parts[0]
-		cap, err := strconv.ParseFloat(parts[1], 64)
+		skuUsageName = strings.Trim(parts[0], " ")
+		cap, err := strconv.ParseFloat(strings.Trim(parts[1], " "), 64)
 		if err != nil {
 			return nil, fmt.Errorf("parsing quota '%s': %w", quotaFor, err)
 		}

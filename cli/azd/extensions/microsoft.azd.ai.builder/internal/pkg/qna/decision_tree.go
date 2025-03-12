@@ -10,7 +10,7 @@ import (
 	"log"
 
 	"dario.cat/mergo"
-	"github.com/fatih/color"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // DecisionTree represents the entire decision tree structure.
@@ -85,7 +85,7 @@ func (t *DecisionTree) askQuestion(ctx context.Context, question Question, value
 
 	if question.Heading != "" {
 		fmt.Println()
-		color.New(color.FgHiWhite, color.Bold).Printf("%s\n", question.Heading)
+		fmt.Println(output.WithHintFormat(question.Heading))
 	}
 
 	if question.Message != "" {

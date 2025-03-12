@@ -78,7 +78,7 @@ module aiModelsDeploy 'ai-project.bicep' = {
 }
 
 {{- if .AISearch }}
-module aiSearchConnection 'ai-search-conn.bicep' = {
+module aiSearchConnection 'modules/ai-search-conn.bicep' = {
   scope: rg
   name: 'ai-search-connection'
   params: {

@@ -300,7 +300,7 @@ resource localUserOpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-0
 
 {{- if .AISearch}}
 module search 'br/public:avm/res/search/search-service:0.9.1' = {
-  name: 'aiSearch'
+  name: 'ai-search'
   params: {
     name: '${abbrs.storageStorageAccounts}${resourceToken}'
     location: location

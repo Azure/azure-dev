@@ -75,6 +75,10 @@ func supportingFiles(spec InfraSpec) []string {
 		files = append(files, "/modules/fetch-container-image.bicep")
 	}
 
+	if spec.AiFoundryProject != nil && spec.AISearch != nil {
+		files = append(files, "/modules/ai-search-conn.bicep")
+	}
+
 	return files
 }
 
@@ -153,13 +157,6 @@ func ExecInfraFs(
 		err = executeToFS(fs, t, "ai-project.bicep", "ai-project.bicep", spec)
 		if err != nil {
 			return nil, fmt.Errorf("scaffolding ai-foundry-models.bicep: %w", err)
-		}
-
-		if spec.AISearch != nil {
-			err = executeToFS(fs, t, "ai-search-conn.bicep", "ai-search-conn.bicep", spec)
-			if err != nil {
-				return nil, fmt.Errorf("scaffolding ai-search-conn.bicep: %w", err)
-			}
 		}
 	}
 

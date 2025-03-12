@@ -1,5 +1,3 @@
-{{define "ai-search-conn.bicep" -}}
-
 @description('The name of the AI Hub')
 param aiHubName string
 
@@ -30,5 +28,3 @@ resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' existing 
     }
   }
 }
-
-{{ end}}

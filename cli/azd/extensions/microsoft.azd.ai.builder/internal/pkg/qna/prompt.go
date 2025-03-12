@@ -35,10 +35,6 @@ func (p *TextPrompt) Ask(ctx context.Context, question Question) (any, error) {
 		return nil, err
 	}
 
-	if stringPtr, ok := question.Binding.(*string); ok {
-		*stringPtr = promptResponse.Value
-	}
-
 	return promptResponse.Value, nil
 }
 
@@ -79,10 +75,6 @@ func (p *SingleSelectPrompt) Ask(ctx context.Context, question Question) (any, e
 	}
 
 	selectedChoice := p.Choices[*selectResponse.Value]
-
-	if stringPtr, ok := question.Binding.(*string); ok {
-		*stringPtr = selectedChoice.Value
-	}
 
 	return selectedChoice.Value, nil
 }
@@ -128,10 +120,6 @@ func (p *MultiSelectPrompt) Ask(ctx context.Context, question Question) (any, er
 		selectedChoices[i] = value.Value
 	}
 
-	if stringPtr, ok := question.Binding.(*[]string); ok {
-		*stringPtr = selectedChoices
-	}
-
 	return selectedChoices, nil
 }
 
@@ -154,10 +142,6 @@ func (p *ConfirmPrompt) Ask(ctx context.Context, question Question) (any, error)
 	})
 	if err != nil {
 		return nil, err
-	}
-
-	if boolPtr, ok := question.Binding.(*bool); ok {
-		*boolPtr = *confirmResponse.Value
 	}
 
 	return *confirmResponse.Value, nil
@@ -195,10 +179,6 @@ func (p *SubscriptionResourcePrompt) Ask(ctx context.Context, question Question)
 	})
 	if err != nil {
 		return nil, err
-	}
-
-	if stringPtr, ok := question.Binding.(*string); ok {
-		*stringPtr = resourceResponse.Resource.Id
 	}
 
 	return resourceResponse.Resource.Id, nil

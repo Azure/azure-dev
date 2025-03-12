@@ -2,6 +2,8 @@ package azure
 
 import (
 	"context"
+	"slices"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
@@ -17,7 +19,7 @@ func NewAzureClient(credential azcore.TokenCredential) *AzureClient {
 	}
 }
 
-func (c *AzureClient) ListLocation(ctx context.Context, subscriptionId string) ([]*armsubscriptions.Location, error) {
+func (c *AzureClient) ListLocations(ctx context.Context, subscriptionId string) ([]*armsubscriptions.Location, error) {
 	client, err := createSubscriptionsClient(subscriptionId, c.credential)
 	if err != nil {
 		return nil, err
@@ -33,6 +35,10 @@ func (c *AzureClient) ListLocation(ctx context.Context, subscriptionId string) (
 		}
 		locations = append(locations, page.Value...)
 	}
+
+	slices.SortFunc(locations, func(a, b *armsubscriptions.Location) int {
+		return strings.Compare(*a.Name, *b.Name)
+	})
 
 	return locations, nil
 }

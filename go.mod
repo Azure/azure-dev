@@ -3,6 +3,7 @@ module github.com/azure/azure-dev
 go 1.23
 
 require (
+	dario.cat/mergo v1.0.1
 	github.com/AlecAivazis/survey/v2 v2.3.2
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.17.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.8.0
@@ -30,6 +31,7 @@ require (
 	github.com/Azure/azure-storage-file-go v0.8.0
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.2.2
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
+	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/adam-lavrik/go-imath v0.0.0-20210910152346-265a42a96f0b
 	github.com/benbjohnson/clock v1.3.0
 	github.com/blang/semver/v4 v4.0.0
@@ -39,8 +41,10 @@ require (
 	github.com/buger/goterm v1.0.4
 	github.com/cli/browser v1.1.0
 	github.com/drone/envsubst v1.0.3
+	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203
 	github.com/fatih/color v1.13.0
 	github.com/gofrs/flock v0.8.1
+	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/golobby/container/v3 v3.3.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.1
@@ -61,6 +65,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.10.0
 	github.com/theckman/yacspin v0.13.12
+	github.com/tidwall/gjson v1.18.0
 	go.lsp.dev/jsonrpc2 v0.10.0
 	go.opentelemetry.io/otel v1.8.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.8.0
@@ -73,20 +78,17 @@ require (
 	google.golang.org/grpc v1.68.1
 	google.golang.org/protobuf v1.34.2
 	gopkg.in/dnaeon/go-vcr.v3 v3.1.2
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
-	dario.cat/mergo v1.0.1 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.10.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.1.0 // indirect
-	github.com/Masterminds/semver/v3 v3.3.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.1.3 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.7.0 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
@@ -100,6 +102,8 @@ require (
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.3.4 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.8.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.8.0 // indirect
 	go.opentelemetry.io/proto/otlp v0.18.0 // indirect
@@ -108,5 +112,4 @@ require (
 	golang.org/x/term v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

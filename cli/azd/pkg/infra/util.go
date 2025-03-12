@@ -36,3 +36,8 @@ func ResourceId(name string, env *environment.Environment) (resId *arm.ResourceI
 
 	return resId, nil
 }
+
+// KeyVaultName returns the name of the "canonical" key vault to use for secrets.
+func KeyVaultName(env *environment.Environment) string {
+	return env.Getenv("AZURE_KEY_VAULT_NAME")
+}

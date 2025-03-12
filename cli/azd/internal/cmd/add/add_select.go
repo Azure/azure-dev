@@ -61,10 +61,10 @@ func (a *AddAction) selectAiType(
 	switch selectedOption {
 	case openAiOption:
 		return a.selectOpenAi(console, ctx, p)
+	case otherAiModels:
+		return a.selectAiModel(console, ctx, p)
 	case aiSearch:
 		return a.selectSearch(console, ctx, p)
-	case otherAiModels: // otherAiModels
-		return a.selectAiModel(console, ctx, p)
 	default:
 		return nil, fmt.Errorf("invalid option %q", selectedOption)
 	}

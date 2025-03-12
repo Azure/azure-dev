@@ -133,7 +133,8 @@ func (a *BicepProvider) locationsWithQuotaFor(
 	sharedResults.Range(func(key, value any) bool {
 		usages := value.([]*armcognitiveservices.Usage)
 		hasS0SkuQuota := slices.ContainsFunc(usages, func(q *armcognitiveservices.Usage) bool {
-			return *q.Name.Value == "OpenAI.S0.AccountCount" && *q.CurrentValue < *q.Limit
+			// The minimum quota for the S0 SKU in Microsoft.CognitiveServices/accounts is 2 capacity units
+			return *q.Name.Value == "OpenAI.S0.AccountCount" && (*q.Limit-*q.CurrentValue) >= 2
 		})
 		hasQuotaForModel := slices.ContainsFunc(usages, func(q *armcognitiveservices.Usage) bool {
 			hasQuota := *q.Name.Value == skuUsageName

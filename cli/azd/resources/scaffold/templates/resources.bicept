@@ -299,11 +299,12 @@ resource localUserOpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-0
 {{- end}}
 
 {{- if .AISearch}}
-module searchService 'br/public:avm/res/search/search-service:0.9.1' = {
+module search 'br/public:avm/res/search/search-service:0.9.1' = {
   name: 'aiSearch'
   params: {
     name: '${abbrs.storageStorageAccounts}${resourceToken}'
     location: location
+    tags: tags
     sku: 'basic'
     replicaCount: 1
     managedIdentities: {
@@ -333,7 +334,12 @@ module searchService 'br/public:avm/res/search/search-service:0.9.1' = {
       }
       {{- end}}
     ]
-    disableLocalAuth: true
+    disableLocalAuth: false
+    authOptions: {
+      aadOrApiKey: {
+        aadAuthFailureMode: 'http401WithBearerChallenge'
+      }
+    }
     publicNetworkAccess: 'Enabled'
   }
 }
@@ -668,6 +674,12 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: account.outputs.endpoint
           }
           {{- end}}
+          {{- if .AISearch}}
+          {
+            name: 'AZURE_SEARCH_ENDPOINT'
+            value: 'https://${search.outputs.name}.search.windows.net'
+          }
+          {{- end}}
           {{- if .HasAiFoundryProject }}
           {
             name: 'AZURE_AIPROJECT_CONNECTION_STRING'
@@ -828,5 +840,9 @@ output AZURE_RESOURCE_EVENT_HUBS_ID string = eventHubNamespace.outputs.resourceI
 {{- end}}
 {{- if .ServiceBus}}
 output AZURE_RESOURCE_SERVICE_BUS_ID string = serviceBusNamespace.outputs.resourceId
+{{- end}}
+{{- if .AISearch}}
+output AZURE_RESOURCE_SEARCH_ID string = search.outputs.resourceId
+output aiSearchName string = search.outputs.name
 {{- end}}
 {{ end}}

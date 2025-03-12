@@ -154,6 +154,13 @@ func ExecInfraFs(
 		if err != nil {
 			return nil, fmt.Errorf("scaffolding ai-foundry-models.bicep: %w", err)
 		}
+
+		if spec.AISearch != nil {
+			err = executeToFS(fs, t, "ai-search-conn.bicep", "ai-search-conn.bicep", spec)
+			if err != nil {
+				return nil, fmt.Errorf("scaffolding ai-search-conn.bicep: %w", err)
+			}
+		}
 	}
 
 	return fs, nil

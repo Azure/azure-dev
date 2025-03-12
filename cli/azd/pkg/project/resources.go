@@ -110,6 +110,8 @@ func (r ResourceType) AzureResourceType() string {
 		return "Microsoft.KeyVault/vaults"
 	case ResourceTypeAiProject:
 		return "Microsoft.MachineLearningServices/workspaces"
+	case ResourceTypeAiSearch:
+		return "Microsoft.Search/searchServices"
 	}
 
 	return ""

@@ -156,6 +156,14 @@ var Resources = []ResourceMeta{
 			"connectionString": "${aiProjectConnectionString .id .properties.discoveryUrl}",
 		},
 	},
+	{
+		ResourceType:      "Microsoft.Search/searchServices",
+		ApiVersion:        "2024-06-01-preview",
+		StandardVarPrefix: "AZURE_SEARCH",
+		Variables: map[string]string{
+			"endpoint": "https://${.name}.search.windows.net",
+		},
+	},
 }
 
 // EnvVars creates a map of environment variables with the given prefix and variable names.

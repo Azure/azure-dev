@@ -132,6 +132,6 @@ output AZURE_AIPROJECT_CONNECTION_STRING string = aiModelsDeploy.outputs.aiFound
 output AZURE_RESOURCE_AI_PROJECT_ID string = aiModelsDeploy.outputs.projectId
 {{- end}}
 {{- if .AISearch }}
-output AZURE_RESOURCE_SEARCH_ID string = resources.outputs.aiSearchName
+output AZURE_RESOURCE_SEARCH_ID string = resources.outputs.AZURE_RESOURCE_SEARCH_ID
 {{- end}}
 {{ end}}

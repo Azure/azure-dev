@@ -264,13 +264,12 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				Choices: []qna.Choice{
 					{Label: "RAG Application (Retrieval-Augmented Generation)", Value: "rag"},
 					{Label: "AI Agent", Value: "agent"},
-					{Label: "Explore AI Models", Value: "ai-model"},
+					{Label: "Other Scenarios (Coming Soon)", Value: "other-scenarios"},
 				},
 			},
 			Branches: map[any]string{
-				"rag":      "use-custom-data",
-				"agent":    "agent-tasks",
-				"ai-model": "model-capabilities",
+				"rag":   "use-custom-data",
+				"agent": "agent-tasks",
 			},
 		},
 		"use-custom-data": {
@@ -340,19 +339,19 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 		},
 		"choose-storage": {
 			Binding: &a.scenarioData.StorageAccountId,
-			Heading: "Azure Blob Storage",
+			Heading: "Storage Account",
 			Message: "We'll need to setup a storage account to store the data for your application.",
 			Prompt: &qna.SubscriptionResourcePrompt{
 				Client:                  a.azdClient,
 				ResourceType:            "Microsoft.Storage/storageAccounts",
 				ResourceTypeDisplayName: "Storage Account",
-				HelpMessage:             "You can select an existing storage account or create a new one.",
+				HelpMessage:             "Select an existing storage account or create a new one.",
 				AzureContext:            a.azureContext,
 			},
 		},
 		"choose-database-type": {
 			Binding: &a.scenarioData.DatabaseType,
-			Heading: "Azure Database",
+			Heading: "Database",
 			Message: "We'll need to setup a database that will be used by your application to power AI model(s).",
 			Prompt: &qna.SingleSelectPrompt{
 				Message:         "Which type of database?",
@@ -372,7 +371,7 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 		"choose-database-resource": {
 			Binding: &a.scenarioData.DatabaseId,
 			Prompt: &qna.SubscriptionResourcePrompt{
-				HelpMessage:  "You can select an existing database or create a new one.",
+				HelpMessage:  "Select an existing database or create a new one.",
 				Client:       a.azdClient,
 				AzureContext: a.azureContext,
 				BeforeAsk: func(ctx context.Context, q *qna.Question, p *qna.SubscriptionResourcePrompt) error {
@@ -410,7 +409,7 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 			Prompt: &qna.SingleSelectPrompt{
 				Client:          a.azdClient,
 				Message:         "Which files?",
-				HelpMessage:     "You can select all files or use a glob expression to filter the files.",
+				HelpMessage:     "Select all files or use a glob expression to filter the files.",
 				EnableFiltering: to.Ptr(false),
 				Choices: []qna.Choice{
 					{Label: "All Files", Value: "all-files"},
@@ -463,7 +462,7 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 		"choose-vector-store-resource": {
 			Binding: &a.scenarioData.VectorStoreId,
 			Prompt: &qna.SubscriptionResourcePrompt{
-				HelpMessage:  "You can select an existing vector store or create a new one.",
+				HelpMessage:  "Select an existing vector store or create a new one.",
 				Client:       a.azdClient,
 				AzureContext: a.azureContext,
 				BeforeAsk: func(ctx context.Context, q *qna.Question, p *qna.SubscriptionResourcePrompt) error {
@@ -568,8 +567,8 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				EnableFiltering: to.Ptr(false),
 				Choices: []qna.Choice{
 					{Label: "Choose for me", Value: "choose-app"},
-					{Label: "App Service (Coming Soon)", Value: "webapp"},
 					{Label: "Container App", Value: "containerapp"},
+					{Label: "App Service (Coming Soon)", Value: "webapp"},
 					{Label: "Function App (Coming Soon)", Value: "functionapp"},
 					{Label: "Static Web App (Coming Soon)", Value: "staticwebapp"},
 					{Label: "Other", Value: "otherapp"},
@@ -586,7 +585,7 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				return nil
 			},
 			Prompt: &qna.SubscriptionResourcePrompt{
-				HelpMessage:  "You can select an existing application or create a new one.",
+				HelpMessage:  "Select an existing application or create a new one.",
 				Client:       a.azdClient,
 				AzureContext: a.azureContext,
 				BeforeAsk: func(ctx context.Context, q *qna.Question, p *qna.SubscriptionResourcePrompt) error {
@@ -629,7 +628,7 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 		"choose-messaging-resource": {
 			Binding: &a.scenarioData.MessagingId,
 			Prompt: &qna.SubscriptionResourcePrompt{
-				HelpMessage:  "You can select an existing messaging service or create a new one.",
+				HelpMessage:  "Select an existing messaging service or create a new one.",
 				Client:       a.azdClient,
 				AzureContext: a.azureContext,
 				BeforeAsk: func(ctx context.Context, q *qna.Question, p *qna.SubscriptionResourcePrompt) error {
@@ -649,26 +648,6 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				},
 			},
 		},
-		"model-exploration": {
-			Binding: &a.scenarioData.ModelTasks,
-			Prompt: &qna.MultiSelectPrompt{
-				Client:  a.azdClient,
-				Message: "What type of tasks should the AI models perform?",
-				HelpMessage: "Select all the tasks that apply to your application. " +
-					"These tasks will help you narrow down the type of models you need.",
-				Choices: []qna.Choice{
-					{Label: "Text Generation", Value: "text-generation"},
-					{Label: "Image Generation", Value: "image-generation"},
-					{Label: "Audio Generation", Value: "audio-generation"},
-					{Label: "Video Generation", Value: "video-generation"},
-					{Label: "Text Classification", Value: "text-classification"},
-					{Label: "Image Classification", Value: "image-classification"},
-					{Label: "Audio Classification", Value: "audio-classification"},
-					{Label: "Video Classification", Value: "video-classification"},
-					{Label: "Text Summarization", Value: "text-summarization"},
-				},
-			},
-		},
 		"start-choose-models": {
 			Heading: "AI Model Selection",
 			Message: "Now we will figure out the best AI model(s) for your application.",
@@ -677,25 +656,53 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 					return fmt.Errorf("failed to load AI model catalog: %w", err)
 				}
 
-				return nil
-			},
-			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
-				q.Next = []qna.QuestionReference{
-					{
-						Key: "start-choose-model",
-						State: map[string]any{
-							"modelSelectMessage": "Lets choose a chat completion model",
-							"capabilities":       []string{"chatCompletion"},
+				allModelTypes := map[string]struct {
+					Heading           string
+					Description       string
+					QuestionReference qna.QuestionReference
+				}{
+					"llm": {
+						Heading:     "Large Language Model (LLM) (For generating responses)",
+						Description: "Processes user queries and retrieved documents to generate intelligent responses.",
+						QuestionReference: qna.QuestionReference{
+							Key: "start-choose-model",
+							State: map[string]any{
+								"modelSelectMessage": "Lets choose a chat completion model",
+								"capabilities":       []string{"chatCompletion"},
+							},
 						},
 					},
-					{
-						Key: "start-choose-model",
-						State: map[string]any{
-							"modelSelectMessage": "Lets choose a text embedding model",
-							"capabilities":       []string{"embeddings"},
+					"embedding": {
+						Heading:     "Embedding Model (For vectorizing text)",
+						Description: "Used to convert documents and queries into vector representations for efficient similarity searches.",
+						QuestionReference: qna.QuestionReference{
+							Key: "start-choose-model",
+							State: map[string]any{
+								"modelSelectMessage": "Lets choose a text embedding model",
+								"capabilities":       []string{"embeddings"},
+							},
 						},
 					},
 				}
+
+				requiredModels := []string{"llm"}
+				if a.scenarioData.UseCustomData {
+					requiredModels = append(requiredModels, "embedding")
+				}
+
+				nextQuestions := []qna.QuestionReference{}
+
+				fmt.Printf("  Based on your choices, you will need the following AI models:\n\n")
+				for _, model := range requiredModels {
+					if modelType, ok := allModelTypes[model]; ok {
+						fmt.Printf("  - %s\n", output.WithBold(modelType.Heading))
+						fmt.Printf("    %s\n", output.WithGrayFormat(modelType.Description))
+						fmt.Println()
+						nextQuestions = append(nextQuestions, modelType.QuestionReference)
+					}
+				}
+
+				question.Next = nextQuestions
 
 				return nil
 			},
@@ -779,6 +786,13 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				Client:      a.azdClient,
 				Message:     "Which model do you want to use?",
 				HelpMessage: "Select the model that best fits your needs.",
+			},
+			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
+				delete(q.State, "capabilities")
+				delete(q.State, "formats")
+				delete(q.State, "status")
+				delete(q.State, "locations")
+				return nil
 			},
 		},
 		"guide-model-select": {

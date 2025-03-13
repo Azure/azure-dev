@@ -5,6 +5,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"sync"
@@ -18,16 +19,6 @@ import (
 type AiModel struct {
 	Name      string
 	Locations []*AiModelLocation
-}
-
-type AiModelDescription struct {
-	Name         string
-	Format       string
-	Kind         string
-	Capabilities []string
-	Status       string
-	Locations    []string
-	SKUs         []string
 }
 
 type AiModelLocation struct {
@@ -47,8 +38,8 @@ func NewModelCatalogService(credential azcore.TokenCredential) *ModelCatalogServ
 	}
 }
 
-func (c *ModelCatalogService) ListAllCapabilities(ctx context.Context, models []*AiModel) []string {
-	return filterDistinctModelData(models, func(m *armcognitiveservices.Model) []string {
+func (c *ModelCatalogService) ListAllCapabilities(ctx context.Context, allModels map[string]*AiModel) []string {
+	return filterDistinctModelData(allModels, func(m *armcognitiveservices.Model) []string {
 		capabilities := []string{}
 		for key := range m.Model.Capabilities {
 			capabilities = append(capabilities, key)
@@ -58,20 +49,20 @@ func (c *ModelCatalogService) ListAllCapabilities(ctx context.Context, models []
 	})
 }
 
-func (c *ModelCatalogService) ListAllStatuses(ctx context.Context, models []*AiModel) []string {
-	return filterDistinctModelData(models, func(m *armcognitiveservices.Model) []string {
+func (c *ModelCatalogService) ListAllStatuses(ctx context.Context, allModels map[string]*AiModel) []string {
+	return filterDistinctModelData(allModels, func(m *armcognitiveservices.Model) []string {
 		return []string{string(*m.Model.LifecycleStatus)}
 	})
 }
 
-func (c *ModelCatalogService) ListAllFormats(ctx context.Context, models []*AiModel) []string {
-	return filterDistinctModelData(models, func(m *armcognitiveservices.Model) []string {
+func (c *ModelCatalogService) ListAllFormats(ctx context.Context, allModels map[string]*AiModel) []string {
+	return filterDistinctModelData(allModels, func(m *armcognitiveservices.Model) []string {
 		return []string{*m.Model.Format}
 	})
 }
 
-func (c *ModelCatalogService) ListAllKinds(ctx context.Context, models []*AiModel) []string {
-	return filterDistinctModelData(models, func(m *armcognitiveservices.Model) []string {
+func (c *ModelCatalogService) ListAllKinds(ctx context.Context, allModels map[string]*AiModel) []string {
+	return filterDistinctModelData(allModels, func(m *armcognitiveservices.Model) []string {
 		return []string{*m.Kind}
 	})
 }
@@ -118,9 +109,13 @@ type FilterOptions struct {
 	Locations    []string
 }
 
-func (c *ModelCatalogService) ListFilteredModels(ctx context.Context, allModels []*AiModel, options *FilterOptions) []*AiModel {
+func (c *ModelCatalogService) ListFilteredModels(
+	ctx context.Context,
+	allModels map[string]*AiModel,
+	options *FilterOptions,
+) []*AiModel {
 	if options == nil {
-		return allModels
+		options = &FilterOptions{}
 	}
 
 	filteredModels := []*AiModel{}
@@ -143,7 +138,8 @@ func (c *ModelCatalogService) ListFilteredModels(ctx context.Context, allModels 
 				}
 			}
 
-			if !isLocationMatch && len(options.Locations) > 0 && slices.Contains(options.Locations, *location.Location.Name) {
+			if !isLocationMatch && len(options.Locations) > 0 &&
+				slices.Contains(options.Locations, *location.Location.Name) {
 				isLocationMatch = true
 			}
 
@@ -152,11 +148,13 @@ func (c *ModelCatalogService) ListFilteredModels(ctx context.Context, allModels 
 				isStatusMatch = true
 			}
 
-			if !isFormatMatch && len(options.Formats) > 0 && slices.Contains(options.Formats, *location.Model.Model.Format) {
+			if !isFormatMatch && len(options.Formats) > 0 &&
+				slices.Contains(options.Formats, *location.Model.Model.Format) {
 				isFormatMatch = true
 			}
 
-			if !isKindMatch && len(options.Kinds) > 0 && slices.Contains(options.Kinds, *location.Model.Kind) {
+			if !isKindMatch && len(options.Kinds) > 0 &&
+				slices.Contains(options.Kinds, *location.Model.Kind) {
 				isKindMatch = true
 			}
 		}
@@ -166,10 +164,15 @@ func (c *ModelCatalogService) ListFilteredModels(ctx context.Context, allModels 
 		}
 	}
 
+	// Sort the filtered models by name
+	slices.SortFunc(filteredModels, func(a, b *AiModel) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
 	return filteredModels
 }
 
-func (c *ModelCatalogService) ListAllModels(ctx context.Context, subscriptionId string) ([]*AiModel, error) {
+func (c *ModelCatalogService) ListAllModels(ctx context.Context, subscriptionId string) (map[string]*AiModel, error) {
 	locations, err := c.azureClient.ListLocations(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -233,20 +236,110 @@ func (c *ModelCatalogService) ListAllModels(ctx context.Context, subscriptionId 
 		return true
 	})
 
-	allModels := []*AiModel{}
-	for _, model := range modelMap {
-		allModels = append(allModels, model)
+	return modelMap, nil
+	// allModels := []*AiModel{}
+	// for _, model := range modelMap {
+	// 	allModels = append(allModels, model)
+	// }
+
+	// slices.SortFunc(allModels, func(a, b *AiModel) int {
+	// 	return strings.Compare(a.Name, b.Name)
+	// })
+
+	// return allModels, nil
+}
+
+type AiModelDeployment struct {
+	Name    string
+	Format  string
+	Version string
+	Sku     AiModelDeploymentSku
+}
+
+type AiModelDeploymentSku struct {
+	Name      string
+	UsageName string
+	Capacity  int32
+}
+
+type AiModelDeploymentOptions struct {
+	Locations []string
+	Versions  []string
+	Skus      []string
+}
+
+func (c *ModelCatalogService) GetModelDeployment(
+	ctx context.Context,
+	model *AiModel,
+	options *AiModelDeploymentOptions,
+) (*AiModelDeployment, error) {
+	if options == nil {
+		options = &AiModelDeploymentOptions{
+			Skus: []string{
+				"GlobalStandard",
+				"Standard",
+			},
+		}
 	}
 
-	slices.SortFunc(allModels, func(a, b *AiModel) int {
-		return strings.Compare(a.Name, b.Name)
-	})
+	var modelDeployment *AiModelDeployment
 
-	return allModels, nil
+	for _, location := range model.Locations {
+		if modelDeployment != nil {
+			break
+		}
+
+		// Check for location match if specified
+		if len(options.Locations) > 0 && !slices.Contains(options.Locations, *location.Location.Name) {
+			continue
+		}
+
+		// Check for version match if specified
+		if len(options.Versions) > 0 && !slices.Contains(options.Versions, *location.Model.Model.Version) {
+			continue
+		}
+
+		// Check for default version if no version is specified
+		if len(options.Versions) > 0 {
+			if !slices.Contains(options.Versions, *location.Model.Model.Version) {
+				continue
+			}
+		} else {
+			if location.Model.Model.IsDefaultVersion != nil && !*location.Model.Model.IsDefaultVersion {
+				continue
+			}
+		}
+
+		// Check for SKU match if specified
+		for _, sku := range location.Model.Model.SKUs {
+			if !slices.Contains(options.Skus, *sku.Name) {
+				continue
+			}
+
+			modelDeployment = &AiModelDeployment{
+				Name:    *location.Model.Model.Name,
+				Format:  *location.Model.Model.Format,
+				Version: *location.Model.Model.Version,
+				Sku: AiModelDeploymentSku{
+					Name:      *sku.Name,
+					UsageName: *sku.UsageName,
+					Capacity:  *sku.Capacity.Default,
+				},
+			}
+
+			break
+		}
+	}
+
+	if modelDeployment == nil {
+		return nil, errors.New("No model deployment found for the specified options")
+	}
+
+	return modelDeployment, nil
 }
 
 func filterDistinctModelData(
-	models []*AiModel,
+	models map[string]*AiModel,
 	filterFunc func(*armcognitiveservices.Model) []string,
 ) []string {
 	filtered := make(map[string]struct{})

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package start
+package cmd
 
 import (
 	"context"
@@ -100,28 +100,28 @@ var (
 	}
 
 	appResourceMap = map[string]resourceTypeConfig{
-		"webapp": {
+		"host.webapp": {
 			ResourceType:            "Microsoft.Web/sites",
 			ResourceTypeDisplayName: "Web App",
 			Kinds:                   []string{"app"},
 		},
-		"containerapp": {
+		"host.containerapp": {
 			ResourceType:            "Microsoft.App/containerApps",
 			ResourceTypeDisplayName: "Container App",
 		},
-		"functionapp": {
+		"host.functionapp": {
 			ResourceType:            "Microsoft.Web/sites",
 			ResourceTypeDisplayName: "Function App",
 			Kinds:                   []string{"functionapp"},
 		},
-		"staticwebapp": {
+		"host.staticwebapp": {
 			ResourceType:            "Microsoft.Web/staticSites",
 			ResourceTypeDisplayName: "Static Web App",
 		},
 	}
 )
 
-func NewStartCommand() *cobra.Command {
+func newStartCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "start",
 		Short: "Get the context of the AZD project & environment.",
@@ -215,6 +215,73 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	decisionTree := qna.NewDecisionTree(a.createQuestions())
 	if err := decisionTree.Run(ctx); err != nil {
 		return fmt.Errorf("failed to run decision tree: %w", err)
+	}
+
+	resourcesToAdd := []*azdext.ComposedResource{}
+	for i, appKey := range a.scenarioData.InteractionTypes {
+		appResource := &azdext.ComposedResource{
+			Name: appKey,
+			Type: a.scenarioData.AppTypes[i],
+		}
+
+		resourcesToAdd = append(resourcesToAdd, appResource)
+	}
+
+	if a.scenarioData.DatabaseType != "" {
+		dbResource := &azdext.ComposedResource{
+			Name: "database",
+			Type: a.scenarioData.DatabaseType,
+		}
+		resourcesToAdd = append(resourcesToAdd, dbResource)
+	}
+
+	// if a.scenarioData.VectorStoreType != "" {
+	// 	vectorStoreResource := &azdext.ComposedResource{
+	// 		Name: "vectorStore",
+	// 		Type: a.scenarioData.VectorStoreType,
+	// 	}
+	// 	resourcesToAdd = append(resourcesToAdd, vectorStoreResource)
+	// }
+
+	if a.scenarioData.UseCustomData {
+		storageConfig := map[string]any{
+			"containers": []string{"blobs"},
+		}
+
+		storageConfigJson, err := json.Marshal(storageConfig)
+		if err != nil {
+			return fmt.Errorf("failed to marshal storage config: %w", err)
+		}
+
+		storageResource := &azdext.ComposedResource{
+			Name:   "storage",
+			Type:   "storage",
+			Config: storageConfigJson,
+		}
+
+		resourcesToAdd = append(resourcesToAdd, storageResource)
+	}
+
+	spinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text:        "Adding infrastructure resources to project",
+		ClearOnStop: true,
+	})
+
+	if err := spinner.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start spinner: %w", err)
+	}
+
+	for _, resource := range resourcesToAdd {
+		_, err := a.azdClient.Compose().AddResource(ctx, &azdext.AddResourceRequest{
+			Resource: resource,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to add resource %s: %w", resource.Name, err)
+		}
+	}
+
+	if err := spinner.Stop(ctx); err != nil {
+		return fmt.Errorf("failed to stop spinner: %w", err)
 	}
 
 	return nil
@@ -567,15 +634,15 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				EnableFiltering: to.Ptr(false),
 				Choices: []qna.Choice{
 					{Label: "Choose for me", Value: "choose-app"},
-					{Label: "Container App", Value: "containerapp"},
-					{Label: "App Service (Coming Soon)", Value: "webapp"},
-					{Label: "Function App (Coming Soon)", Value: "functionapp"},
-					{Label: "Static Web App (Coming Soon)", Value: "staticwebapp"},
+					{Label: "Container App", Value: "host.containerapp"},
+					{Label: "App Service (Coming Soon)", Value: "host.webapp"},
+					{Label: "Function App (Coming Soon)", Value: "host.functionapp"},
+					{Label: "Static Web App (Coming Soon)", Value: "host.staticwebapp"},
 					{Label: "Other", Value: "otherapp"},
 				},
 			},
 			Branches: map[any]string{
-				"containerapp": "choose-app-resource",
+				"host.containerapp": "choose-app-resource",
 			},
 		},
 		"choose-app-resource": {

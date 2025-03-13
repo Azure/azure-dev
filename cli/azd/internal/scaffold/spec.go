@@ -33,7 +33,7 @@ type InfraSpec struct {
 	AIModels []AIModel
 
 	// ai foundry models
-	AiFoundryProject *AiFoundrySpec
+	AiProject *AiProjectSpec
 }
 
 type Parameter struct {
@@ -75,9 +75,10 @@ type AIModel struct {
 }
 
 // AIModel represents a deployed, ready to use AI model.
-type AiFoundrySpec struct {
-	Name   string
-	Models []AiFoundryModel
+type AiProjectSpec struct {
+	Name                 string
+	ConnStringFromEnvVar *string
+	Models               []AiFoundryModel
 }
 
 type AiFoundryModel struct {
@@ -147,7 +148,7 @@ type ServiceSpec struct {
 	ServiceBus *ServiceBus
 	EventHubs  *EventHubs
 
-	HasAiFoundryProject *AiFoundrySpec
+	AiProject *AiProjectSpec
 }
 
 type Frontend struct {

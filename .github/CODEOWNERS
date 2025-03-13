@@ -1,11 +1,13 @@
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-syntax
 
-/**               @wbreza
+/**               @wbreza @vhvb1989 @weikanglim
 
 /cli/             @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA
 /cli/installer/   @danieljurek
 
 /ext/             @karolz-ms
+
+/ext/vscode/      @bwateratmsft
 
 /generators/repo/ @wbreza @danieljurek
 
@@ -15,9 +17,11 @@
 
 /eng/             @danieljurek
 
-/schemas/         @karolz-ms @wbreza
+/schemas/         @wbreza
 
 /templates/       @jongio @wbreza
 
 # Exclude @jongio from version bump PRs opened by dependabot
 /templates/**/package-lock.json     @wbreza
+
+/.github/CODEOWNERS   @rajeshkamal5050 @Azure/azure-sdk-eng

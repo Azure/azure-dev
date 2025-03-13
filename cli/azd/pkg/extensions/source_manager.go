@@ -174,6 +174,14 @@ func (sm *SourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	var source Source
 	var err error
 
+	if config.Name == "" {
+		return nil, errors.New("extension source name is required")
+	}
+
+	if config.Location == "" {
+		return nil, errors.New("extension source location is required")
+	}
+
 	switch config.Type {
 	case SourceKindFile:
 		source, err = newFileSource(config.Name, config.Location)

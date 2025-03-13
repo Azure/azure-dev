@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -135,7 +136,20 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	// backends -> frontends
 	backendMapping := map[string]string{}
 
-	for _, res := range projectConfig.Resources {
+	// Create a "virtual" copy since we're adding any implicitly dependent resources
+	// that are unrepresented by the current user-provided schema
+	resources := maps.Clone(projectConfig.Resources)
+	// Add any implicit dependencies
+	for _, res := range resources {
+		dependencies := DependentResourcesOf(res)
+		for _, dep := range dependencies {
+			if _, exists := resources[dep.Name]; !exists {
+				resources[dep.Name] = dep
+			}
+		}
+	}
+
+	for _, res := range resources {
 		switch res.Type {
 		case ResourceTypeDbRedis:
 			infraSpec.DbRedis = &scaffold.DatabaseRedis{}
@@ -143,15 +157,32 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			infraSpec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
 				DatabaseName: res.Name,
 			}
+		case ResourceTypeDbCosmos:
+			props := res.Props.(CosmosDBProps)
+			containers := make([]scaffold.CosmosSqlDatabaseContainer, 0)
+			for _, c := range props.Containers {
+				containers = append(containers, scaffold.CosmosSqlDatabaseContainer{
+					ContainerName:     c.Name,
+					PartitionKeyPaths: c.PartitionKeys,
+				})
+			}
+			infraSpec.DbCosmos = &scaffold.DatabaseCosmos{
+				DatabaseName: res.Name,
+				Containers:   containers,
+			}
 		case ResourceTypeDbPostgres:
 			infraSpec.DbPostgres = &scaffold.DatabasePostgres{
 				DatabaseName: res.Name,
-				DatabaseUser: "pgadmin",
+			}
+		case ResourceTypeDbMySql:
+			infraSpec.DbMySql = &scaffold.DatabaseMysql{
+				DatabaseName: res.Name,
 			}
 		case ResourceTypeHostContainerApp:
 			svcSpec := scaffold.ServiceSpec{
 				Name: res.Name,
 				Port: -1,
+				Env:  map[string]string{},
 			}
 
 			err := mapContainerApp(res, &svcSpec, &infraSpec)
@@ -182,6 +213,58 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 					Version: props.Model.Version,
 				},
 			})
+		case ResourceTypeMessagingEventHubs:
+			if infraSpec.EventHubs != nil {
+				return nil, fmt.Errorf("only one event hubs resource is currently allowed")
+			}
+			props := res.Props.(EventHubsProps)
+			infraSpec.EventHubs = &scaffold.EventHubs{
+				Hubs: props.Hubs,
+			}
+		case ResourceTypeMessagingServiceBus:
+			if infraSpec.ServiceBus != nil {
+				return nil, fmt.Errorf("only one service bus resource is currently allowed")
+			}
+			props := res.Props.(ServiceBusProps)
+			infraSpec.ServiceBus = &scaffold.ServiceBus{
+				Queues: props.Queues,
+				Topics: props.Topics,
+			}
+		case ResourceTypeStorage:
+			if infraSpec.StorageAccount != nil {
+				return nil, fmt.Errorf("only one storage account resource is currently allowed")
+			}
+			props := res.Props.(StorageProps)
+			infraSpec.StorageAccount = &scaffold.StorageAccount{
+				Containers: props.Containers,
+			}
+		case ResourceTypeAiProject:
+			// It's okay to forcefully panic here. The only way we would land here is that the marshal/unmarshal
+			// in resources.go was not done right.
+			props := res.Props.(AiFoundryModelProps)
+			foundryName := res.Name
+			var foundryModels []scaffold.AiFoundryModel
+			foundrySpec := scaffold.AiFoundrySpec{
+				Name: foundryName,
+			}
+			for _, model := range props.Models {
+				foundryModels = append(foundryModels, scaffold.AiFoundryModel{
+					AIModelModel: scaffold.AIModelModel{
+						Name:    model.Name,
+						Version: model.Version,
+					},
+					Format: model.Format,
+					Sku: scaffold.AiFoundryModelSku{
+						Name:      model.Sku.Name,
+						UsageName: model.Sku.UsageName,
+						Capacity:  model.Sku.Capacity,
+					},
+				})
+			}
+			foundrySpec.Models = foundryModels
+			infraSpec.AiFoundryProject = &foundrySpec
+		case ResourceTypeKeyVault:
+			infraSpec.KeyVault = &scaffold.KeyVault{}
 		}
 	}
 
@@ -259,8 +342,12 @@ func mapHostUses(
 		switch useRes.Type {
 		case ResourceTypeDbMongo:
 			svcSpec.DbCosmosMongo = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
+		case ResourceTypeDbCosmos:
+			svcSpec.DbCosmos = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 		case ResourceTypeDbPostgres:
 			svcSpec.DbPostgres = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
+		case ResourceTypeDbMySql:
+			svcSpec.DbMySql = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 		case ResourceTypeDbRedis:
 			svcSpec.DbRedis = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 		case ResourceTypeHostContainerApp:
@@ -273,6 +360,16 @@ func mapHostUses(
 			backendMapping[use] = res.Name // record the backend -> frontend mapping
 		case ResourceTypeOpenAiModel:
 			svcSpec.AIModels = append(svcSpec.AIModels, scaffold.AIModelReference{Name: use})
+		case ResourceTypeMessagingEventHubs:
+			svcSpec.EventHubs = &scaffold.EventHubs{}
+		case ResourceTypeMessagingServiceBus:
+			svcSpec.ServiceBus = &scaffold.ServiceBus{}
+		case ResourceTypeStorage:
+			svcSpec.StorageAccount = &scaffold.StorageReference{}
+		case ResourceTypeAiProject:
+			svcSpec.HasAiFoundryProject = &scaffold.AiFoundrySpec{}
+		case ResourceTypeKeyVault:
+			svcSpec.KeyVault = &scaffold.KeyVaultReference{}
 		}
 	}
 
@@ -347,4 +444,16 @@ func genBicepParamsFromEnvSubst(
 	}
 
 	return result
+}
+
+// DependentResourcesOf returns implicit resource dependencies for a given resource type.
+// These dependencies (like Key Vault to store connection strings, passwords for databases)
+// are automatically added to the project configuration. Returns an empty slice if none exist.
+func DependentResourcesOf(resource *ResourceConfig) []*ResourceConfig {
+	switch resource.Type {
+	case ResourceTypeDbMongo, ResourceTypeDbMySql, ResourceTypeDbPostgres, ResourceTypeDbRedis:
+		return []*ResourceConfig{{Name: "vault", Type: ResourceTypeKeyVault}}
+	default:
+		return nil
+	}
 }

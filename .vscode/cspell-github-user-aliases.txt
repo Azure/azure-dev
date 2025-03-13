@@ -19,6 +19,7 @@ gofrs
 isatty
 joho
 karolz
+Lunatico9
 mattn
 mikekistler
 multierr
@@ -26,13 +27,16 @@ nicksnyder
 otiai10
 pamelafox
 pbnj
+rujche
+saragluna
 sebastianmattar
 sergi
 sethvargo
 stretchr
+tidwall
 theckman
 TheEskhaton
 tonybaloney
+vivazqu
 weilim
 Yionse
-rujche

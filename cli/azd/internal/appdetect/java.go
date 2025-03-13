@@ -125,13 +125,26 @@ func readMavenProject(ctx context.Context, mvnCli *maven.Cli, filePath string) (
 func detectDependencies(mavenProject *mavenProject, project *Project) (*Project, error) {
 	databaseDepMap := map[DatabaseDep]struct{}{}
 	for _, dep := range mavenProject.Dependencies {
-		if dep.GroupId == "com.mysql" && dep.ArtifactId == "mysql-connector-j" {
+		if (dep.GroupId == "com.mysql" && dep.ArtifactId == "mysql-connector-j") ||
+			(dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-starter-jdbc-mysql") {
 			databaseDepMap[DbMySql] = struct{}{}
 		}
 
-		if dep.GroupId == "org.postgresql" && dep.ArtifactId == "postgresql" {
+		if (dep.GroupId == "org.postgresql" && dep.ArtifactId == "postgresql") ||
+			(dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-starter-jdbc-postgresql") {
 			databaseDepMap[DbPostgres] = struct{}{}
 		}
+
+		if (dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-redis") ||
+			(dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-redis-reactive") {
+			databaseDepMap[DbRedis] = struct{}{}
+		}
+
+		if (dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-mongodb") ||
+			(dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-mongodb-reactive") {
+			databaseDepMap[DbMongo] = struct{}{}
+		}
+		// todo: Add DbCosmos
 	}
 
 	if len(databaseDepMap) > 0 {

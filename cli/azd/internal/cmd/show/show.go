@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package cmd
+package show
 
 import (
 	"context"
@@ -20,6 +20,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -29,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -37,6 +39,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
+
+var composeFeature = alpha.MustFeatureKey("compose")
 
 type showFlags struct {
 	global      *internal.GlobalCommandOptions
@@ -55,14 +59,14 @@ func (s *showFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 	s.global = global
 }
 
-func newShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *showFlags {
+func NewShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *showFlags {
 	flags := &showFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
 }
 
-func newShowCmd() *cobra.Command {
+func NewShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Short: "Display information about your app and its resources.",
 	}
@@ -77,6 +81,7 @@ type showAction struct {
 	formatter            output.Formatter
 	writer               io.Writer
 	resourceService      *azapi.ResourceService
+	kvService            keyvault.KeyVaultService
 	envManager           environment.Manager
 	infraResourceManager infra.ResourceManager
 	azdCtx               *azdcontext.AzdContext
@@ -90,7 +95,7 @@ type showAction struct {
 	portalUrlBase        string
 }
 
-func newShowAction(
+func NewShowAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
@@ -102,6 +107,7 @@ func newShowAction(
 	featureManager *alpha.FeatureManager,
 	armClientOptions *arm.ClientOptions,
 	creds account.SubscriptionCredentialProvider,
+	kvService keyvault.KeyVaultService,
 	azdCtx *azdcontext.AzdContext,
 	flags *showFlags,
 	args []string,
@@ -118,6 +124,7 @@ func newShowAction(
 		resourceService:      resourceService,
 		envManager:           envManager,
 		infraResourceManager: infraResourceManager,
+		kvService:            kvService,
 		featureManager:       featureManager,
 		armClientOptions:     armClientOptions,
 		creds:                creds,
@@ -269,7 +276,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		AppName:         s.projectConfig.Name,
 		Services:        uxServices,
 		Environments:    uxEnvironments,
-		AzurePortalLink: azurePortalLink(s.portalUrlBase, subId, rgName),
+		AzurePortalLink: cmd.AzurePortalLink(s.portalUrlBase, subId, rgName),
 	})
 
 	return nil, nil
@@ -287,6 +294,10 @@ func (s *showAction) showResource(ctx context.Context, name string, env *environ
 	resourceOptions := showResourceOptions{
 		showSecrets: s.flags.showSecrets,
 		clientOpts:  armOptions,
+	}
+
+	if res, ok := s.projectConfig.Resources[name]; ok {
+		resourceOptions.resourceSpec = res
 	}
 
 	credential, err := s.creds.CredentialForSubscription(ctx, subscriptionId)
@@ -308,7 +319,17 @@ func (s *showAction) showResource(ctx context.Context, name string, env *environ
 			return err
 		}
 	default:
-		return fmt.Errorf("resource type '%s' is not currently supported in alpha", resType)
+		showRes := showResource{
+			env:             env,
+			kvService:       s.kvService,
+			resourceService: s.resourceService,
+			console:         s.console,
+		}
+
+		item, err = showRes.showResourceGeneric(ctx, *id, resourceOptions)
+		if err != nil {
+			return err
+		}
 	}
 
 	if item != nil {
@@ -318,8 +339,9 @@ func (s *showAction) showResource(ctx context.Context, name string, env *environ
 }
 
 type showResourceOptions struct {
-	showSecrets bool
-	clientOpts  *arm.ClientOptions
+	showSecrets  bool
+	resourceSpec *project.ResourceConfig
+	clientOpts   *arm.ClientOptions
 }
 
 func showContainerApp(
@@ -421,7 +443,8 @@ func showModelDeployment(
 	if account.Properties.Endpoint != nil {
 		console.Message(ctx, color.HiMagentaString("%s (Azure AI Services Model Deployment)", id.Name))
 		console.Message(ctx, "  Endpoint:")
-		console.Message(ctx, color.HiBlueString(fmt.Sprintf("    AZURE_OPENAI_ENDPOINT=%s", *account.Properties.Endpoint)))
+		console.Message(ctx,
+			output.WithHighLightFormat(fmt.Sprintf("    AZURE_OPENAI_ENDPOINT=%s", *account.Properties.Endpoint)))
 		console.Message(ctx, "  Access:")
 		console.Message(ctx, "    Keyless (Microsoft Entra ID)")
 		//nolint:lll

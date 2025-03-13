@@ -1,6 +1,5 @@
 PROTO_DIR=grpc/proto
 GEN_DIR=pkg/azdext
-INCLUDE_DIR=grpc/include  # Local directory containing the protobuf include files
 
 .PHONY: all proto clean
 
@@ -10,8 +9,7 @@ proto:
 	# Generate server-side code
 	mkdir -p $(GEN_DIR)
 	# Generate code for all .proto files into the same package
-	protoc --proto_path=$(INCLUDE_DIR) \
-	       --proto_path=$(PROTO_DIR) \
+	protoc --proto_path=$(PROTO_DIR) \
 	       --go_out=$(GEN_DIR) --go_opt=paths=source_relative \
 	       --go-grpc_out=$(GEN_DIR) --go-grpc_opt=paths=source_relative \
 	       $(PROTO_DIR)/*.proto

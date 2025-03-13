@@ -75,6 +75,8 @@ type BicepProvider struct {
 	compileBicepMemoryCache *compileBicepResult
 	keyvaultService         keyvault.KeyVaultService
 	portalUrlBase           string
+	subscriptionManager     *account.SubscriptionsManager
+	azureClient             *azapi.AzureClient
 }
 
 // Name gets the name of the infra provider
@@ -136,7 +138,15 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	if isBicepFile(modulePath) {
 		locationParam, locationParamDefined := compileResult.Template.Parameters["location"]
 		var filterLocation = func(loc account.Location) bool {
-			return locationParameterFilterImpl(locationParam, loc)
+			if locationParam.AllowedValues == nil {
+				return true
+			}
+			allowedLocations := make([]string, len(*locationParam.AllowedValues))
+			for i, allowedLocation := range *locationParam.AllowedValues {
+				allowedLocations[i] = allowedLocation.(string)
+			}
+
+			return locationParameterFilterImpl(allowedLocations, loc)
 		}
 		var defaultLocationToSelect *string
 		if locationParamDefined {
@@ -179,15 +189,11 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	return nil
 }
 
-func locationParameterFilterImpl(param azure.ArmTemplateParameterDefinition, location account.Location) bool {
-	if param.AllowedValues == nil {
+func locationParameterFilterImpl(allowedLocations []string, location account.Location) bool {
+	if allowedLocations == nil {
 		return true
 	}
-
-	return slices.IndexFunc(*param.AllowedValues, func(v any) bool {
-		s, ok := v.(string)
-		return ok && location.Name == s
-	}) != -1
+	return slices.Contains(allowedLocations, location.Name)
 }
 
 // defaultPromptValue resolves if there is an intention from a location parameter to use a default location.
@@ -593,6 +599,30 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		logDS("%s", err.Error())
 	}
 
+	deploymentTags := map[string]*string{
+		azure.TagKeyAzdEnvName: to.Ptr(p.env.Name()),
+	}
+	if parametersHashErr == nil {
+		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
+	}
+
+	optionsMap, err := convert.ToMap(p.options)
+	if err != nil {
+		return nil, err
+	}
+
+	err = p.validatePreflight(
+		ctx,
+		bicepDeploymentData.Target,
+		bicepDeploymentData.CompiledBicep.RawArmTemplate,
+		bicepDeploymentData.CompiledBicep.Parameters,
+		deploymentTags,
+		optionsMap,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	cancelProgress := make(chan bool)
 	defer func() { cancelProgress <- true }()
 	go func() {
@@ -629,18 +659,6 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 
 	// Start the deployment
 	p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
-
-	deploymentTags := map[string]*string{
-		azure.TagKeyAzdEnvName: to.Ptr(p.env.Name()),
-	}
-	if parametersHashErr == nil {
-		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
-	}
-
-	optionsMap, err := convert.ToMap(p.options)
-	if err != nil {
-		return nil, err
-	}
 
 	deployResult, err := p.deployModule(
 		ctx,
@@ -1755,6 +1773,17 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) (*p
 	return &template, nil
 }
 
+func (p *BicepProvider) validatePreflight(
+	ctx context.Context,
+	target infra.Deployment,
+	armTemplate azure.RawArmTemplate,
+	armParameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) error {
+	return target.ValidatePreflight(ctx, armTemplate, armParameters, tags, options)
+}
+
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
 func (p *BicepProvider) deployModule(
 	ctx context.Context,
@@ -1882,7 +1911,7 @@ func (p *BicepProvider) ensureParameters(
 				if stringValue, isString := paramValue.(string); isString && param.Secure() {
 					// For secure parameters using a string value, azd checks if the string is an Azure Key Vault Secret
 					// and if yes, it fetches the secret value from the Key Vault.
-					if keyvault.IsAkvs(stringValue) {
+					if keyvault.IsAzureKeyVaultSecret(stringValue) {
 						paramValue, err = p.keyvaultService.SecretFromAkvs(ctx, stringValue)
 						if err != nil {
 							return nil, err
@@ -2133,18 +2162,22 @@ func NewBicepProvider(
 	curPrincipal provisioning.CurrentPrincipalIdProvider,
 	keyvaultService keyvault.KeyVaultService,
 	cloud *cloud.Cloud,
+	subscriptionManager *account.SubscriptionsManager,
+	azureClient *azapi.AzureClient,
 ) provisioning.Provider {
 	return &BicepProvider{
-		envManager:        envManager,
-		env:               env,
-		console:           console,
-		azapi:             azapi,
-		bicepCli:          bicepCli,
-		resourceService:   resourceService,
-		deploymentManager: deploymentManager,
-		prompters:         prompters,
-		curPrincipal:      curPrincipal,
-		keyvaultService:   keyvaultService,
-		portalUrlBase:     cloud.PortalUrlBase,
+		envManager:          envManager,
+		env:                 env,
+		console:             console,
+		azapi:               azapi,
+		bicepCli:            bicepCli,
+		resourceService:     resourceService,
+		deploymentManager:   deploymentManager,
+		prompters:           prompters,
+		curPrincipal:        curPrincipal,
+		keyvaultService:     keyvaultService,
+		portalUrlBase:       cloud.PortalUrlBase,
+		subscriptionManager: subscriptionManager,
+		azureClient:         azureClient,
 	}
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -94,6 +95,7 @@ type PipelineManager struct {
 	configOptions     *configurePipelineOptions
 	infra             *project.Infra
 	userConfigManager config.UserConfigManager
+	keyVaultService   keyvault.KeyVaultService
 }
 
 func NewPipelineManager(
@@ -108,6 +110,7 @@ func NewPipelineManager(
 	serviceLocator ioc.ServiceLocator,
 	importManager *project.ImportManager,
 	userConfigManager config.UserConfigManager,
+	keyVaultService keyvault.KeyVaultService,
 ) (*PipelineManager, error) {
 	pipelineProvider := &PipelineManager{
 		azdCtx:            azdCtx,
@@ -120,6 +123,7 @@ func NewPipelineManager(
 		serviceLocator:    serviceLocator,
 		importManager:     importManager,
 		userConfigManager: userConfigManager,
+		keyVaultService:   keyVaultService,
 	}
 
 	// check that scm and ci providers are set
@@ -407,6 +411,72 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 	pm.configOptions.variables, pm.configOptions.secrets = mergeProjectVariablesAndSecrets(
 		pm.configOptions.projectVariables, pm.configOptions.projectSecrets,
 		defaultAzdVariables, defaultAzdSecrets, pm.env.Dotenv())
+
+	// resolve akvs secrets
+	// For each akvs in the secrets array:
+	// azd gets the value from Azure Key Vault and use it as a secret in the pipeline
+	for key, value := range pm.configOptions.secrets {
+		if !strings.HasPrefix(value, "akvs://") {
+			continue
+		}
+		kvSecret, err := pm.keyVaultService.SecretFromAkvs(ctx, value)
+		if err != nil {
+			return result, fmt.Errorf("failed to resolve akvs '%s': %w", key, err)
+		}
+		pm.configOptions.secrets[key] = kvSecret
+	}
+	// For each akvs in the variables array:
+	// azd must grant read access role to the pipelines's identity to read the akvs
+	displayMsg = "Assigning read access role for Key Vault to service principal"
+	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
+	kvAccounts := make(map[string]struct{})
+	for key, value := range pm.configOptions.variables {
+		if !strings.HasPrefix(value, "akvs://") {
+			continue
+		}
+
+		akvs, err := keyvault.ParseAzureKeyVaultSecret(value)
+		if err != nil {
+			return result, fmt.Errorf("failed to parse akvs '%s': %w", key, err)
+		}
+		kvId := akvs.SubscriptionId + akvs.VaultName
+		if _, ok := kvAccounts[kvId]; ok {
+			// skip if already assigned role for this key vault
+			continue
+		}
+
+		// can't use keyvaultService.Get() because it requires the resource group name and we don't save it for akvs
+		allKvFromSub, err := pm.keyVaultService.ListSubscriptionVaults(ctx, akvs.SubscriptionId)
+		if err != nil {
+			return result, fmt.Errorf(
+				"assigning read access role for Key Vault to service principal: %w", err)
+		}
+		var vaultResourceId string
+		foundKeyVault := slices.ContainsFunc(allKvFromSub, func(kv keyvault.Vault) bool {
+			if kv.Name == akvs.VaultName {
+				vaultResourceId = kv.Id
+				return true
+			}
+			return false
+		})
+		if !foundKeyVault {
+			return result, fmt.Errorf(
+				"assigning read access role for Key Vault to service principal: "+
+					"key vault '%s' not found in subscription '%s'", akvs.VaultName, akvs.SubscriptionId)
+		}
+
+		// CreateRbac uses the azure-sdk RoleAssignmentsClient.Create() which creates or updates the role assignment
+		// We don't need to check if the role assignment already exists, the method will handle it.
+		err = pm.entraIdService.CreateRbac(
+			ctx, akvs.SubscriptionId, vaultResourceId, keyvault.RoleIdKeyVaultSecretsUser, *servicePrincipal.Id)
+		if err != nil {
+			return result, fmt.Errorf(
+				"assigning read access role for Key Vault to service principal: %w", err)
+		}
+		// save the kvId to avoid assigning the role multiple times for the same key vault
+		kvAccounts[kvId] = struct{}{}
+	}
+	pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 
 	// config pipeline handles setting or creating the provider pipeline to be used
 	ciPipeline, err := pm.ciProvider.configurePipeline(ctx, gitRepoInfo, pm.configOptions)
@@ -766,6 +836,8 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 			HasAppHost:    hasAppHost,
 			BranchName:    branchName,
 			AuthType:      authType,
+			Variables:     prjConfig.Pipeline.Variables,
+			Secrets:       prjConfig.Pipeline.Secrets,
 		}); err != nil {
 		return err
 	}
@@ -975,10 +1047,14 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		BranchName             string
 		FedCredLogIn           bool
 		InstallDotNetForAspire bool
+		Variables              []string
+		Secrets                []string
 	}{
 		BranchName:             props.BranchName,
 		FedCredLogIn:           props.AuthType == AuthTypeFederated,
 		InstallDotNetForAspire: props.HasAppHost,
+		Variables:              props.Variables,
+		Secrets:                props.Secrets,
 	})
 	if err != nil {
 		return fmt.Errorf("executing template: %w", err)

@@ -22,6 +22,7 @@ import { disableDevCenterMode, enableDevCenterMode } from './devCenterMode';
 
 export function registerCommands(): void {
     registerActivityCommand('azure-dev.commands.cli.init', init);
+    registerActivityCommand('azure-dev.commands.cli.initFromPom', init);
     registerActivityCommand('azure-dev.commands.cli.provision', provision);
     registerActivityCommand('azure-dev.commands.cli.deploy', deploy);
     registerActivityCommand('azure-dev.commands.cli.restore', restore);

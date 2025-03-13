@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -159,13 +160,54 @@ func newEnvSetAction(
 }
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	e.env.DotenvSet(e.args[0], e.args[1])
+	key := e.args[0]
+	value := e.args[1]
+
+	dotEnv := e.env.Dotenv()
+	warnKeyCaseConflicts(ctx, e.console, dotEnv, key)
+
+	e.env.DotenvSet(key, value)
 
 	if err := e.envManager.Save(ctx, e.env); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
 	return nil, nil
+}
+
+// Prints a warning message if there are any case-insensitive conflicts with the provided key
+func warnKeyCaseConflicts(
+	ctx context.Context,
+	console input.Console,
+	dotEnv map[string]string,
+	key string) {
+	var conflicts []string
+	for k := range dotEnv {
+		if strings.EqualFold(k, key) && k != key {
+			conflicts = append(conflicts, "'"+k+"'")
+		}
+	}
+
+	if len(conflicts) == 1 {
+		console.MessageUxItem(ctx,
+			&ux.WarningMessage{
+				Description: fmt.Sprintf(
+					"'%s' already exists as %s. Did you mean to set %s instead?",
+					key,
+					conflicts[0],
+					conflicts[0]),
+			})
+	} else if len(conflicts) > 1 {
+		slices.Sort(conflicts)
+
+		console.MessageUxItem(ctx,
+			&ux.WarningMessage{
+				Description: fmt.Sprintf(
+					"'%s' already exists as %s",
+					key,
+					ux.ListAsText(conflicts)),
+			})
+	}
 }
 
 func newEnvSetSecretFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envSetSecretFlags {
@@ -426,7 +468,7 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 	}
 
 	// akvs -> Azure Key Vault Secret (akvs://<subId>/<keyvault-name>/<secret-name>)
-	envValue := keyvault.NewAkvs(subId, kvAccount.Name, kvSecretName)
+	envValue := keyvault.NewAzureKeyVaultSecret(subId, kvAccount.Name, kvSecretName)
 	e.env.DotenvSet(secretName, envValue)
 	if err := e.envManager.Save(ctx, e.env); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)

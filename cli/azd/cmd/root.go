@@ -15,13 +15,16 @@ import (
 
 	// Importing for infrastructure provider plugin registrations
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd/add"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd/show"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -150,9 +153,9 @@ func NewRootCmd(
 	})
 
 	root.Add("show", &actions.ActionDescriptorOptions{
-		Command:        newShowCmd(),
-		FlagsResolver:  newShowFlags,
-		ActionResolver: newShowAction,
+		Command:        show.NewShowCmd(),
+		FlagsResolver:  show.NewShowFlags,
+		ActionResolver: show.NewShowAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
 		GroupingOptions: actions.CommandGroupOptions{
@@ -207,7 +210,8 @@ func NewRootCmd(
 				RootLevelHelp: actions.CmdGroupConfig,
 			},
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
 		Add("build", &actions.ActionDescriptorOptions{
@@ -217,7 +221,8 @@ func NewRootCmd(
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
 		Add("provision", &actions.ActionDescriptorOptions{
@@ -240,6 +245,13 @@ func NewRootCmd(
 				return false
 			}
 			return true
+		}).
+		UseMiddlewareWhen("extensions", middleware.NewExtensionsMiddleware, func(descriptor *actions.ActionDescriptor) bool {
+			if onPreview, _ := descriptor.Options.Command.Flags().GetBool("preview"); onPreview {
+				log.Println("Skipping provision hooks due to preview flag.")
+				return false
+			}
+			return true
 		})
 
 	root.
@@ -257,7 +269,8 @@ func NewRootCmd(
 				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
 		Add("deploy", &actions.ActionDescriptorOptions{
@@ -274,7 +287,8 @@ func NewRootCmd(
 				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
 		Add("up", &actions.ActionDescriptorOptions{
@@ -290,7 +304,8 @@ func NewRootCmd(
 				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.Add("monitor", &actions.ActionDescriptorOptions{
 		Command:        newMonitorCmd(),
@@ -320,7 +335,8 @@ func NewRootCmd(
 				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 	root.
 		Add("add", &actions.ActionDescriptorOptions{
 			Command:        add.NewAddCmd(),
@@ -348,6 +364,35 @@ func NewRootCmd(
 	}
 	ioc.RegisterNamedInstance(rootContainer, "root-cmd", rootCmd)
 	registerCommonDependencies(rootContainer)
+
+	// Conditionally register the 'extension' commands if the feature is enabled
+	err := rootContainer.Invoke(func(alphaFeatureManager *alpha.FeatureManager, extensionManager *extensions.Manager) error {
+		if alphaFeatureManager.IsEnabled(extensions.FeatureExtensions) {
+			// Enables the "extension (ext)" command group.
+			extensionActions(root)
+
+			// Enables custom extension commands
+			installedExtensions, err := extensionManager.ListInstalled()
+			if err != nil {
+				return fmt.Errorf("Failed to get installed extensions: %w", err)
+			}
+
+			// Bind custom extension commands for extensions that expose the capability
+			for _, ext := range installedExtensions {
+				if ext.HasCapability(extensions.CustomCommandCapability) {
+					if err := bindExtension(rootContainer, root, ext); err != nil {
+						return fmt.Errorf("Failed to bind extension commands: %w", err)
+					}
+				}
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		panic(err)
+	}
 
 	// Initialize the platform specific components for the IoC container
 	// Only container resolution errors will return an error
@@ -429,6 +474,11 @@ func getCmdRootHelpCommands(cmd *cobra.Command) (result string) {
 
 	var paragraph []string
 	for _, title := range groups {
+		groupCommands := commandGroups[string(title)]
+		if len(groupCommands) == 0 {
+			continue
+		}
+
 		paragraph = append(paragraph, fmt.Sprintf("  %s\n    %s\n",
 			output.WithBold("%s", string(title)),
 			strings.Join(commandGroups[string(title)], "\n    ")))

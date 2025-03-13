@@ -14,13 +14,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/fatih/color"
 )
 
 // DbMap is a map of supported database dependencies.
 var DbMap = map[appdetect.DatabaseDep]project.ResourceType{
 	appdetect.DbMongo:    project.ResourceTypeDbMongo,
 	appdetect.DbPostgres: project.ResourceTypeDbPostgres,
+	appdetect.DbMySql:    project.ResourceTypeDbMySql,
 	appdetect.DbRedis:    project.ResourceTypeDbRedis,
 }
 
@@ -40,16 +40,42 @@ func Configure(
 	case project.ResourceTypeHostContainerApp:
 		return fillUses(ctx, r, console, p)
 	case project.ResourceTypeOpenAiModel:
-		return fillAiModelName(ctx, r, console, p)
+		return fillOpenAiModelName(ctx, r, console, p)
 	case project.ResourceTypeDbPostgres,
+		project.ResourceTypeDbMySql,
 		project.ResourceTypeDbMongo:
 		return fillDatabaseName(ctx, r, console, p)
+	case project.ResourceTypeDbCosmos:
+		r, err := fillDatabaseName(ctx, r, console, p)
+		if err != nil {
+			return nil, err
+		}
+		r.Props = project.CosmosDBProps{}
+		return r, nil
+	case project.ResourceTypeMessagingEventHubs:
+		return fillEventHubs(ctx, r, console, p)
+	case project.ResourceTypeMessagingServiceBus:
+		return fillServiceBus(ctx, r, console, p)
 	case project.ResourceTypeDbRedis:
 		if _, exists := p.PrjConfig.Resources["redis"]; exists {
 			return nil, fmt.Errorf("only one Redis resource is allowed at this time")
 		}
 
 		r.Name = "redis"
+		return r, nil
+	case project.ResourceTypeStorage:
+		return fillStorageDetails(ctx, r, console, p)
+	case project.ResourceTypeAiProject:
+		return fillAiProjectName(ctx, r, console, p)
+	case project.ResourceTypeKeyVault:
+		if _, exists := p.PrjConfig.Resources["vault"]; exists {
+			return nil, fmt.Errorf(
+				"you already have a project key vault named 'vault'. " +
+					"To add a secret to it, run 'azd env set-secret <name>'",
+			)
+		}
+
+		r.Name = "vault"
 		return r, nil
 	default:
 		return r, nil
@@ -88,7 +114,7 @@ func fillDatabaseName(
 	return r, nil
 }
 
-func fillAiModelName(
+func fillOpenAiModelName(
 	ctx context.Context,
 	r *project.ResourceConfig,
 	console input.Console,
@@ -135,6 +161,31 @@ func fillAiModelName(
 	return r, nil
 }
 
+func fillAiProjectName(
+	_ context.Context,
+	r *project.ResourceConfig,
+	_ input.Console,
+	pOptions PromptOptions) (*project.ResourceConfig, error) {
+	if r.Name != "" {
+		return r, nil
+	}
+
+	// provide a default suggestion using the underlying model name
+	defaultName := "ai-project"
+	i := 1
+	for {
+		if _, exists := pOptions.PrjConfig.Resources[defaultName]; exists {
+			i++
+			defaultName = fmt.Sprintf("%s-%d", defaultName, i)
+		} else {
+			break
+		}
+	}
+	// automatically set a name. Avoid prompting the user for a name as we are abstracting the Foundry and project
+	r.Name = defaultName
+	return r, nil
+}
+
 func fillUses(
 	ctx context.Context,
 	r *project.ResourceConfig,
@@ -175,7 +226,7 @@ func fillUses(
 			labels = formatted
 		}
 		uses, err := console.MultiSelect(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("Select the resources that %s uses", color.BlueString(r.Name)),
+			Message: fmt.Sprintf("Select the resources that %s uses", output.WithHighLightFormat(r.Name)),
 			Options: labels,
 		})
 		if err != nil {

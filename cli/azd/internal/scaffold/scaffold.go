@@ -149,6 +149,13 @@ func ExecInfraFs(
 		return nil, fmt.Errorf("scaffolding main.parameters.json: %w", err)
 	}
 
+	if spec.AiFoundryProject != nil {
+		err = executeToFS(fs, t, "ai-project.bicep", "ai-project.bicep", spec)
+		if err != nil {
+			return nil, fmt.Errorf("scaffolding ai-foundry-models.bicep: %w", err)
+		}
+	}
+
 	return fs, nil
 }
 
@@ -200,12 +207,21 @@ func executeToFS(targetFS *memfs.FS, tmpl *template.Template, name string, path 
 }
 
 func preExecExpand(spec *InfraSpec) {
-	// postgres requires specific password seeding parameters
+	// postgres and mysql requires specific password seeding parameters
 	if spec.DbPostgres != nil {
 		spec.Parameters = append(spec.Parameters,
 			Parameter{
-				Name:   "databasePassword",
-				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} databasePassword)",
+				Name:   "postgresDatabasePassword",
+				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} postgres-password)",
+				Type:   "string",
+				Secret: true,
+			})
+	}
+	if spec.DbMySql != nil {
+		spec.Parameters = append(spec.Parameters,
+			Parameter{
+				Name:   "mysqlDatabasePassword",
+				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} mysql-password)",
 				Type:   "string",
 				Secret: true,
 			})

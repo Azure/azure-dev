@@ -80,6 +80,7 @@ func (m *Manager) State(ctx context.Context, options *StateOptions) (*StateResul
 }
 
 var AzdOperationsFeatureKey = alpha.MustFeatureKey("azd.operations")
+var AzdAppHostInfraMigration = alpha.MustFeatureKey("apphost.infra.migration")
 
 // Deploys the Azure infrastructure for the specified project
 func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
@@ -384,6 +385,32 @@ func EnsureSubscriptionAndLocation(
 
 	// Same as before, this make sure the location is persisted in the .env file.
 	env.SetLocation(location)
+	return envManager.Save(ctx, env)
+}
+
+func EnsureSubscription(
+	ctx context.Context,
+	envManager environment.Manager,
+	env *environment.Environment,
+	prompter prompt.Prompter,
+) error {
+	subId := env.GetSubscriptionId()
+	if subId == "" {
+		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")
+		if err != nil {
+			return err
+		}
+		subId = subscriptionId
+	}
+	// GetSubscriptionId() can get the value from the .env file or from system environment.
+	// We want to ensure that, if the value came from the system environment, it is persisted in the .env file.
+	// By doing this, we ensure that any command depending on .env values does not need to read system env.
+	// For example, on CI, when running `azd provision`, we want the .env to have the subscription id and location
+	// so that `azd deploy` can just use the values from .env w/o checking os-env again.
+	env.SetSubscriptionId(subId)
+	if err := envManager.Save(ctx, env); err != nil {
+		return err
+	}
 	return envManager.Save(ctx, env)
 }
 

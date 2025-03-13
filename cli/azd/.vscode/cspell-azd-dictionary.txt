@@ -31,6 +31,7 @@ aspnet
 aspnetcore
 asyncmy
 asyncpg
+avmres
 azapi
 azblob
 AZCLI
@@ -57,6 +58,7 @@ azuretools
 azureutil
 azureyaml
 Backticks
+bicept
 bicepparam
 blockblob
 BOOLSLICE
@@ -104,12 +106,14 @@ envsubst
 errcheck
 errorinfo
 errorlint
+eventhubs
 executil
 flexconsumption
 Frontends
 funcapp
 functestapp
 functionapp
+gjson
 go-imath
 GOARCH
 GOCOVERDIR
@@ -119,6 +123,8 @@ gosec
 goterm
 gotest
 gotestsum
+govet
+grpcserver
 hotspot
 ignorefile
 iidfile
@@ -146,6 +152,7 @@ mongojs
 mvnw
 mysqlclient
 mysqldb
+mysqladmin
 nobanner
 nodeapp
 nolint

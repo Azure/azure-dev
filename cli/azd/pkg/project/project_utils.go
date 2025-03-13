@@ -27,7 +27,7 @@ func createDeployableZip(projectName string, appName string, path string) (strin
 		// if we fail here just do our best to close things out and cleanup
 		zipFile.Close()
 		os.Remove(zipFile.Name())
-		return "", err
+		return "", fmt.Errorf("creating deployable zip: %w", err)
 	}
 
 	if err := zipFile.Close(); err != nil {

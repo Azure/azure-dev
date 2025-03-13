@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"dario.cat/mergo"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
-	"github.com/fatih/color"
 )
 
 // Spinner is a component for displaying a spinner.
@@ -145,7 +145,7 @@ func (s *Spinner) Render(printer Printer) error {
 		return nil
 	}
 
-	printer.Fprintf(color.HiMagentaString(s.options.Animation[s.animationIndex]))
+	printer.Fprintf(output.WithHintFormat(s.options.Animation[s.animationIndex]))
 	printer.Fprintf(" %s", s.text)
 
 	if s.animationIndex == len(s.options.Animation)-1 {

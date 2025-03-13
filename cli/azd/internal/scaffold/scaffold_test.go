@@ -83,13 +83,40 @@ func TestExecInfra(t *testing.T) {
 		{
 			"All",
 			InfraSpec{
+				AiFoundryProject: &AiFoundrySpec{
+					Name: "project",
+					Models: []AiFoundryModel{
+						{
+							AIModelModel: AIModelModel{
+								Name:    "model",
+								Version: "1.0",
+							},
+							Format: "OpenAI",
+							Sku: AiFoundryModelSku{
+								Name:      "S0",
+								UsageName: "S0",
+								Capacity:  1,
+							},
+						},
+					},
+				},
 				DbPostgres: &DatabasePostgres{
 					DatabaseName: "appdb",
+				},
+				DbMySql: &DatabaseMysql{
+					DatabaseName: "mysqldb",
 				},
 				DbCosmosMongo: &DatabaseCosmosMongo{
 					DatabaseName: "appdb",
 				},
-				DbRedis: &DatabaseRedis{},
+				DbCosmos: &DatabaseCosmos{
+					DatabaseName: "cosmos",
+				},
+				DbRedis:        &DatabaseRedis{},
+				ServiceBus:     &ServiceBus{},
+				EventHubs:      &EventHubs{},
+				StorageAccount: &StorageAccount{},
+				KeyVault:       &KeyVault{},
 				Services: []ServiceSpec{
 					{
 						Name: "api",
@@ -110,6 +137,16 @@ func TestExecInfra(t *testing.T) {
 						DbPostgres: &DatabaseReference{
 							DatabaseName: "appdb",
 						},
+						DbCosmos: &DatabaseReference{
+							DatabaseName: "cosmos",
+						},
+						DbMySql: &DatabaseReference{
+							DatabaseName: "mysqldb",
+						},
+						ServiceBus:     &ServiceBus{},
+						EventHubs:      &EventHubs{},
+						StorageAccount: &StorageReference{},
+						KeyVault:       &KeyVaultReference{},
 					},
 					{
 						Name: "web",
@@ -130,13 +167,29 @@ func TestExecInfra(t *testing.T) {
 			InfraSpec{
 				DbPostgres: &DatabasePostgres{
 					DatabaseName: "appdb",
-					DatabaseUser: "appuser",
 				},
 				Services: []ServiceSpec{
 					{
 						Name: "api",
 						Port: 3100,
 						DbPostgres: &DatabaseReference{
+							DatabaseName: "appdb",
+						},
+					},
+				},
+			},
+		},
+		{
+			"API with MySQL",
+			InfraSpec{
+				DbMySql: &DatabaseMysql{
+					DatabaseName: "appdb",
+				},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						DbMySql: &DatabaseReference{
 							DatabaseName: "appdb",
 						},
 					},
@@ -170,6 +223,21 @@ func TestExecInfra(t *testing.T) {
 						Port: 3100,
 						DbRedis: &DatabaseReference{
 							DatabaseName: "redis",
+						},
+					},
+				},
+			},
+		},
+		{
+			"API with Cosmos",
+			InfraSpec{
+				DbCosmos: &DatabaseCosmos{},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						DbCosmos: &DatabaseReference{
+							DatabaseName: "cosmos",
 						},
 					},
 				},

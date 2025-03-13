@@ -198,7 +198,7 @@ func (d *detectConfirm) render(ctx context.Context) error {
 			status = " " + output.WithSuccessFormat("[Added]")
 		}
 
-		d.console.Message(ctx, "  "+color.BlueString(projectDisplayName(svc))+status)
+		d.console.Message(ctx, "  "+output.WithHighLightFormat(projectDisplayName(svc))+status)
 		d.console.Message(ctx, "  "+"Detected in: "+output.WithHighLightFormat(relSafe(d.root, svc.Path)))
 		d.console.Message(ctx, "")
 
@@ -211,6 +211,8 @@ func (d *detectConfirm) render(ctx context.Context) error {
 		switch db {
 		case appdetect.DbPostgres:
 			recommendedServices = append(recommendedServices, "Azure Database for PostgreSQL flexible server")
+		case appdetect.DbMySql:
+			recommendedServices = append(recommendedServices, "Azure Database for MySQL flexible server")
 		case appdetect.DbMongo:
 			recommendedServices = append(recommendedServices, "Azure CosmosDB API for MongoDB")
 		case appdetect.DbRedis:
@@ -224,7 +226,7 @@ func (d *detectConfirm) render(ctx context.Context) error {
 			status = " " + output.WithSuccessFormat("[Added]")
 		}
 
-		d.console.Message(ctx, "  "+color.BlueString(db.Display())+status)
+		d.console.Message(ctx, "  "+output.WithHighLightFormat(db.Display())+status)
 		d.console.Message(ctx, "")
 	}
 

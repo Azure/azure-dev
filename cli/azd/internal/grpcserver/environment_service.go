@@ -185,6 +185,9 @@ func (s *environmentService) SetValue(ctx context.Context, req *azdext.SetEnvReq
 	}
 
 	env.DotenvSet(req.Key, req.Value)
+	if err := s.envManager.Save(ctx, env); err != nil {
+		return nil, fmt.Errorf("failed to save environment: %w", err)
+	}
 
 	return &azdext.EmptyResponse{}, nil
 }

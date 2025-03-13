@@ -6,7 +6,6 @@ package grpcserver
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -35,7 +34,10 @@ func NewComposeService(
 }
 
 // AddResource implements azdext.ComposeServiceServer.
-func (c *ComposeService) AddResource(ctx context.Context, req *azdext.AddResourceRequest) (*azdext.AddResourceResponse, error) {
+func (c *ComposeService) AddResource(
+	ctx context.Context,
+	req *azdext.AddResourceRequest,
+) (*azdext.AddResourceResponse, error) {
 	azdContext, err := c.lazyAzdContext.GetValue()
 	if err != nil {
 		return nil, err
@@ -74,40 +76,70 @@ func (c *ComposeService) AddResource(ctx context.Context, req *azdext.AddResourc
 func createResourceProps(resourceType string, config []byte) (any, error) {
 	switch project.ResourceType(resourceType) {
 	case project.ResourceTypeHostContainerApp:
-		var props project.ContainerAppProps
-		if config == nil || len(config) == 0 {
+		props := project.ContainerAppProps{}
+		if len(config) == 0 {
 			return props, nil
 		}
-
 		if err := json.Unmarshal(config, &props); err != nil {
 			return nil, err
 		}
-
 		return props, nil
 	case project.ResourceTypeDbCosmos:
-		var props project.CosmosDBProps
-		if config == nil || len(config) == 0 {
+		props := project.CosmosDBProps{}
+		if len(config) == 0 {
 			return props, nil
 		}
-
 		if err := json.Unmarshal(config, &props); err != nil {
 			return nil, err
 		}
-
 		return props, nil
 	case project.ResourceTypeStorage:
-		var props project.StorageProps
-		if config == nil || len(config) == 0 {
+		props := project.StorageProps{}
+		if len(config) == 0 {
 			return props, nil
 		}
-
 		if err := json.Unmarshal(config, &props); err != nil {
 			return nil, err
 		}
-
+		return props, nil
+	case project.ResourceTypeAiProject:
+		props := project.AiFoundryModelProps{}
+		if len(config) == 0 {
+			return props, nil
+		}
+		if err := json.Unmarshal(config, &props); err != nil {
+			return nil, err
+		}
+		return props, nil
+	case project.ResourceTypeDbMongo:
+		props := project.CosmosDBProps{}
+		if len(config) == 0 {
+			return props, nil
+		}
+		if err := json.Unmarshal(config, &props); err != nil {
+			return nil, err
+		}
+		return props, nil
+	case project.ResourceTypeMessagingEventHubs:
+		props := project.EventHubsProps{}
+		if len(config) == 0 {
+			return props, nil
+		}
+		if err := json.Unmarshal(config, &props); err != nil {
+			return nil, err
+		}
+		return props, nil
+	case project.ResourceTypeMessagingServiceBus:
+		props := project.ServiceBusProps{}
+		if len(config) == 0 {
+			return props, nil
+		}
+		if err := json.Unmarshal(config, &props); err != nil {
+			return nil, err
+		}
 		return props, nil
 	default:
-		return nil, errors.New("unsupported resource type")
+		return nil, nil
 	}
 }
 
@@ -144,21 +176,22 @@ func (c *ComposeService) GetResource(
 }
 
 // GetResourceType implements azdext.ComposeServiceServer.
-func (c *ComposeService) GetResourceType(context.Context, *azdext.GetResourceTypeRequest) (*azdext.GetResourceTypeResponse, error) {
+func (c *ComposeService) GetResourceType(
+	context.Context,
+	*azdext.GetResourceTypeRequest,
+) (*azdext.GetResourceTypeResponse, error) {
 	panic("unimplemented")
 }
 
 // ListResourceTypes implements azdext.ComposeServiceServer.
-func (c *ComposeService) ListResourceTypes(context.Context, *azdext.EmptyRequest) (*azdext.ListResourceTypesResponse, error) {
+func (c *ComposeService) ListResourceTypes(
+	context.Context,
+	*azdext.EmptyRequest,
+) (*azdext.ListResourceTypesResponse, error) {
 	panic("unimplemented")
 }
 
 // ListResources implements azdext.ComposeServiceServer.
 func (c *ComposeService) ListResources(context.Context, *azdext.EmptyRequest) (*azdext.ListResourcesResponse, error) {
-	panic("unimplemented")
-}
-
-// mustEmbedUnimplementedComposeServiceServer implements azdext.ComposeServiceServer.
-func (c *ComposeService) mustEmbedUnimplementedComposeServiceServer() {
 	panic("unimplemented")
 }

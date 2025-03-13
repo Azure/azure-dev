@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -19,6 +18,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
+)
+
+const (
+	defaultChatCompletionModel = "gpt-4o"
+	defaultEmbeddingModel      = "text-embedding-3-small"
 )
 
 type scenarioInput struct {
@@ -137,7 +141,20 @@ func newStartCommand() *cobra.Command {
 
 			defer azdClient.Close()
 
-			credential, err := azidentity.NewAzureDeveloperCLICredential(nil)
+			fmt.Println()
+			fmt.Println(output.WithHintFormat("Welcome to the AI Builder!"))
+			fmt.Println("This tool will help you build an AI scenario using Azure services.")
+			fmt.Println()
+
+			azureContext, err := ensureAzureContext(ctx, azdClient)
+			if err != nil {
+				return fmt.Errorf("failed to ensure azure context: %w", err)
+			}
+
+			credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+				TenantID:                   azureContext.Scope.TenantId,
+				AdditionallyAllowedTenants: []string{"*"},
+			})
 			if err != nil {
 				return fmt.Errorf("failed to create azure credential: %w", err)
 			}
@@ -145,6 +162,7 @@ func newStartCommand() *cobra.Command {
 			action := &startAction{
 				azdClient:           azdClient,
 				credential:          credential,
+				azureContext:        azureContext,
 				azureClient:         azure.NewAzureClient(credential),
 				modelCatalogService: ai.NewModelCatalogService(credential),
 				scenarioData:        &scenarioInput{},
@@ -153,16 +171,6 @@ func newStartCommand() *cobra.Command {
 			if err := action.Run(ctx, args); err != nil {
 				return fmt.Errorf("failed to run start action: %w", err)
 			}
-
-			jsonBytes, err := json.MarshalIndent(action.scenarioData, "", "    ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal scenario data: %w", err)
-			}
-
-			fmt.Println()
-			fmt.Println("Captured scenario data:")
-			fmt.Println()
-			fmt.Println(string(jsonBytes))
 
 			return nil
 		},
@@ -176,41 +184,10 @@ type startAction struct {
 	modelCatalogService *ai.ModelCatalogService
 	azureClient         *azure.AzureClient
 	scenarioData        *scenarioInput
-	modelCatalog        []*ai.AiModel
+	modelCatalog        map[string]*ai.AiModel
 }
 
 func (a *startAction) Run(ctx context.Context, args []string) error {
-	_, err := a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("project not found. Run `azd init` to create a new project, %w", err)
-	}
-
-	envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("environment not found. Run `azd env new` to create a new environment, %w", err)
-	}
-
-	envValues, err := a.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: envResponse.Environment.Name,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get environment values: %w", err)
-	}
-
-	envValueMap := make(map[string]string)
-	for _, value := range envValues.KeyValues {
-		envValueMap[value.Key] = value.Value
-	}
-
-	azureContext := &azdext.AzureContext{
-		Scope: &azdext.AzureScope{
-			SubscriptionId: envValueMap["AZURE_SUBSCRIPTION_ID"],
-		},
-		Resources: []string{},
-	}
-
-	a.azureContext = azureContext
-
 	// Build up list of questions
 	decisionTree := qna.NewDecisionTree(a.createQuestions())
 	if err := decisionTree.Run(ctx); err != nil {
@@ -218,15 +195,33 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	}
 
 	resourcesToAdd := []*azdext.ComposedResource{}
+
+	// Add host resources such as container apps.
 	for i, appKey := range a.scenarioData.InteractionTypes {
+		appType := a.scenarioData.AppTypes[i]
+		if appType == "" || appType == "choose-app" {
+			appType = "host.containerapp"
+		}
+
+		appConfig := map[string]any{
+			"port": 8080,
+		}
+
+		appConfigJson, err := json.Marshal(appConfig)
+		if err != nil {
+			return fmt.Errorf("failed to marshal app config: %w", err)
+		}
+
 		appResource := &azdext.ComposedResource{
-			Name: appKey,
-			Type: a.scenarioData.AppTypes[i],
+			Name:   appKey,
+			Type:   appType,
+			Config: appConfigJson,
 		}
 
 		resourcesToAdd = append(resourcesToAdd, appResource)
 	}
 
+	// Add database resources
 	if a.scenarioData.DatabaseType != "" {
 		dbResource := &azdext.ComposedResource{
 			Name: "database",
@@ -243,6 +238,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	// 	resourcesToAdd = append(resourcesToAdd, vectorStoreResource)
 	// }
 
+	// Add storage resources
 	if a.scenarioData.UseCustomData {
 		storageConfig := map[string]any{
 			"containers": []string{"blobs"},
@@ -260,6 +256,51 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		}
 
 		resourcesToAdd = append(resourcesToAdd, storageResource)
+	}
+
+	if len(a.scenarioData.ModelSelections) == 0 {
+		a.scenarioData.ModelSelections = []string{}
+
+		if a.scenarioData.SelectedScenario == "rag" {
+			a.scenarioData.ModelSelections = append(a.scenarioData.ModelSelections, defaultChatCompletionModel)
+			if a.scenarioData.UseCustomData {
+				a.scenarioData.ModelSelections = append(a.scenarioData.ModelSelections, defaultEmbeddingModel)
+			}
+		}
+	}
+
+	models := []*ai.AiModelDeployment{}
+
+	// Add AI model resources
+	if len(a.scenarioData.ModelSelections) > 0 {
+		aiProject := &azdext.ComposedResource{
+			Name: "ai-project",
+			Type: "ai.project",
+		}
+
+		for _, modelName := range a.scenarioData.ModelSelections {
+			aiModel, exists := a.modelCatalog[modelName]
+			if exists {
+				modelDeployment, err := a.modelCatalogService.GetModelDeployment(ctx, aiModel, nil)
+				if err != nil {
+					return fmt.Errorf("failed to get model deployment: %w", err)
+				}
+
+				models = append(models, modelDeployment)
+			}
+		}
+
+		resourceConfig := map[string]any{
+			"models": models,
+		}
+
+		configJson, err := json.Marshal(resourceConfig)
+		if err != nil {
+			return fmt.Errorf("failed to marshal AI project config: %w", err)
+		}
+
+		aiProject.Config = configJson
+		resourcesToAdd = append(resourcesToAdd, aiProject)
 	}
 
 	spinner := ux.NewSpinner(&ux.SpinnerOptions{
@@ -284,6 +325,55 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed to stop spinner: %w", err)
 	}
 
+	fmt.Println()
+	fmt.Println(output.WithSuccessFormat("SUCCESS! The following resources have been staged for provisioning:"))
+	for _, resource := range resourcesToAdd {
+		fmt.Printf("  - %s (%s)\n", resource.Name, output.WithGrayFormat(resource.Type))
+	}
+
+	for _, modelDeployment := range models {
+		fmt.Printf("  - %s %s\n",
+			modelDeployment.Name,
+			output.WithGrayFormat("(Format: %s, Version: %s)", modelDeployment.Format, modelDeployment.Version),
+		)
+	}
+
+	fmt.Println()
+	confirmResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
+			Message:      "Do you want to provision resources to your project now?",
+			DefaultValue: to.Ptr(true),
+			HelpMessage:  "Provisioning resources will create the necessary Azure infrastructure for your application.",
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to confirm provisioning: %w", err)
+	}
+
+	if *confirmResponse.Value {
+		workflow := &azdext.Workflow{
+			Name: "provision",
+			Steps: []*azdext.WorkflowStep{
+				{
+					Command: &azdext.WorkflowCommand{
+						Args: []string{"provision"},
+					},
+				},
+			},
+		}
+
+		_, err = a.azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+			Workflow: workflow,
+		})
+
+		if err != nil {
+			return fmt.Errorf("failed to run provision workflow: %w", err)
+		}
+	} else {
+		fmt.Println()
+		fmt.Printf("To provision resources, run %s\n", output.WithHighLightFormat("azd provision"))
+	}
+
 	return nil
 }
 
@@ -297,7 +387,9 @@ func (a *startAction) loadAiCatalog(ctx context.Context) error {
 		ClearOnStop: true,
 	})
 
-	spinner.Start(ctx)
+	if err := spinner.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start spinner: %w", err)
+	}
 
 	aiModelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId)
 	if err != nil {
@@ -312,17 +404,106 @@ func (a *startAction) loadAiCatalog(ctx context.Context) error {
 	return nil
 }
 
-func (a *startAction) createQuestions() map[string]qna.Question {
-	welcomeMessage := []string{
-		"This tool will help you build an AI scenario using Azure services.",
-		"Please answer the following questions to get started.",
+func ensureAzureContext(ctx context.Context, azdClient *azdext.AzdClient) (*azdext.AzureContext, error) {
+	_, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("project not found. Run `azd init` to create a new project, %w", err)
 	}
 
+	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("environment not found. Run `azd env new` to create a new environment, %w", err)
+	}
+
+	envValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: envResponse.Environment.Name,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get environment values: %w", err)
+	}
+
+	envValueMap := make(map[string]string)
+	for _, value := range envValues.KeyValues {
+		envValueMap[value.Key] = value.Value
+	}
+
+	azureContext := &azdext.AzureContext{
+		Scope: &azdext.AzureScope{
+			TenantId:       envValueMap["AZURE_TENANT_ID"],
+			SubscriptionId: envValueMap["AZURE_SUBSCRIPTION_ID"],
+			Location:       envValueMap["AZURE_LOCATION"],
+		},
+		Resources: []string{},
+	}
+
+	if azureContext.Scope.SubscriptionId == "" {
+		fmt.Print()
+		fmt.Println("It looks like we first need to connect to your Azure subscription.")
+
+		subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to prompt for subscription: %w", err)
+		}
+
+		azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
+		azureContext.Scope.TenantId = subscriptionResponse.Subscription.TenantId
+
+		// Set the subscription ID in the environment
+		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: envResponse.Environment.Name,
+			Key:     "AZURE_TENANT_ID",
+			Value:   azureContext.Scope.TenantId,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to set tenant ID in environment: %w", err)
+		}
+
+		// Set the tenant ID in the environment
+		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: envResponse.Environment.Name,
+			Key:     "AZURE_SUBSCRIPTION_ID",
+			Value:   azureContext.Scope.SubscriptionId,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to set subscription ID in environment: %w", err)
+		}
+	}
+
+	if azureContext.Scope.Location == "" {
+		fmt.Println()
+		fmt.Println(
+			"Next, we need to select a default Azure location that will be used as the target for your infrastructure.",
+		)
+
+		locationResponse, err := azdClient.Prompt().PromptLocation(ctx, &azdext.PromptLocationRequest{
+			AzureContext: azureContext,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to prompt for location: %w", err)
+		}
+
+		azureContext.Scope.Location = locationResponse.Location.Name
+
+		// Set the location in the environment
+		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: envResponse.Environment.Name,
+			Key:     "AZURE_LOCATION",
+			Value:   azureContext.Scope.Location,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to set location in environment: %w", err)
+		}
+	}
+
+	return azureContext, nil
+}
+
+func (a *startAction) createQuestions() map[string]qna.Question {
 	return map[string]qna.Question{
 		"root": {
 			Binding: &a.scenarioData.SelectedScenario,
-			Heading: "Welcome to the AI Builder Extension!",
-			Message: strings.Join(welcomeMessage, "\n"),
+			Heading: "Identify AI Scenario",
+			Message: "Let's start drilling into your AI scenario to identify all the required infrastructure we will need.",
 			Prompt: &qna.SingleSelectPrompt{
 				Client:          a.azdClient,
 				Message:         "What type of AI scenario are you building?",
@@ -461,7 +642,8 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 		"local-file-system": {
 			Binding: &a.scenarioData.LocalFilePath,
 			Heading: "Local File System",
-			Message: "Lets identify the files that will be used in your application. Later on we will upload these files to Azure so they can be used by your application.",
+			Message: "Lets identify the files that will be used in your application. " +
+				"Later on we will upload these files to Azure so they can be used by your application.",
 			Prompt: &qna.TextPrompt{
 				Client:  a.azdClient,
 				Message: "Path to the local files",
@@ -638,7 +820,7 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 					{Label: "App Service (Coming Soon)", Value: "host.webapp"},
 					{Label: "Function App (Coming Soon)", Value: "host.functionapp"},
 					{Label: "Static Web App (Coming Soon)", Value: "host.staticwebapp"},
-					{Label: "Other", Value: "otherapp"},
+					{Label: "Other", Value: "other-app"},
 				},
 			},
 			Branches: map[any]string{
@@ -740,8 +922,9 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 						},
 					},
 					"embedding": {
-						Heading:     "Embedding Model (For vectorizing text)",
-						Description: "Used to convert documents and queries into vector representations for efficient similarity searches.",
+						Heading: "Embedding Model (For vectorizing text)",
+						Description: "Used to convert documents and queries into vector representations " +
+							"for efficient similarity searches.",
 						QuestionReference: qna.QuestionReference{
 							Key: "start-choose-model",
 							State: map[string]any{
@@ -762,6 +945,7 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				fmt.Printf("  Based on your choices, you will need the following AI models:\n\n")
 				for _, model := range requiredModels {
 					if modelType, ok := allModelTypes[model]; ok {
+						//nolint printf
 						fmt.Printf("  - %s\n", output.WithBold(modelType.Heading))
 						fmt.Printf("    %s\n", output.WithGrayFormat(modelType.Description))
 						fmt.Println()

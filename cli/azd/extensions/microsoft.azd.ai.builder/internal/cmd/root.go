@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/cmd/start"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +21,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 	rootCmd.PersistentFlags().Bool("debug", false, "Enable debug mode")
 
-	rootCmd.AddCommand(start.NewStartCommand())
+	rootCmd.AddCommand(newStartCommand())
 	rootCmd.AddCommand(newVersionCommand())
 
 	return rootCmd

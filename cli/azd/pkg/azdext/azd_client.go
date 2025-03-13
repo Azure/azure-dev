@@ -24,6 +24,7 @@ type AzdClient struct {
 	promptClient      PromptServiceClient
 	deploymentClient  DeploymentServiceClient
 	eventsClient      EventServiceClient
+	composeClient     ComposeServiceClient
 }
 
 // WithAddress sets the address of the `azd` gRPC server.
@@ -124,4 +125,13 @@ func (c *AzdClient) Events() EventServiceClient {
 	}
 
 	return c.eventsClient
+}
+
+// Compose returns the compose service client.
+func (c *AzdClient) Compose() ComposeServiceClient {
+	if c.composeClient == nil {
+		c.composeClient = NewComposeServiceClient(c.connection)
+	}
+
+	return c.composeClient
 }

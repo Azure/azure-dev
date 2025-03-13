@@ -825,6 +825,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(grpcserver.NewDeploymentService)
 	container.MustRegisterScoped(grpcserver.NewEventService)
 	container.MustRegisterSingleton(grpcserver.NewUserConfigService)
+	container.MustRegisterSingleton(grpcserver.NewComposeService)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")

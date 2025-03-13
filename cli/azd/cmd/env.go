@@ -169,6 +169,7 @@ func newEnvSetAction(
 }
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	// To track case conflicts
 	dotEnv := e.env.Dotenv()
 
 	for i := 0; i < len(e.args); i += 2 {
@@ -177,6 +178,8 @@ func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		warnKeyCaseConflicts(ctx, e.console, dotEnv, key)
 		e.env.DotenvSet(key, value)
+		// Update to check case conflicts in subsequent keys
+		dotEnv[key] = value
 	}
 
 	if err := e.envManager.Save(ctx, e.env); err != nil {

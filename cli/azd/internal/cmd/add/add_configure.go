@@ -28,6 +28,10 @@ var DbMap = map[appdetect.DatabaseDep]project.ResourceType{
 type PromptOptions struct {
 	// PrjConfig is the current project configuration.
 	PrjConfig *project.ProjectConfig
+
+	// ExistingId is the ID of an existing resource.
+	// This is only used to configure the resource with an existing resource.
+	ExistingId string
 }
 
 // Configure fills in the fields for a resource.
@@ -36,6 +40,10 @@ func Configure(
 	r *project.ResourceConfig,
 	console input.Console,
 	p PromptOptions) (*project.ResourceConfig, error) {
+	if r.Existing {
+		return ConfigureExisting(ctx, r, console, p)
+	}
+
 	switch r.Type {
 	case project.ResourceTypeHostContainerApp:
 		return fillUses(ctx, r, console, p)

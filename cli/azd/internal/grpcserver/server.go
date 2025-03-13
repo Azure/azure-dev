@@ -31,6 +31,7 @@ type Server struct {
 	userConfigService  azdext.UserConfigServiceServer
 	deploymentService  azdext.DeploymentServiceServer
 	eventService       azdext.EventServiceServer
+	composeService     azdext.ComposeServiceServer
 }
 
 func NewServer(
@@ -40,6 +41,7 @@ func NewServer(
 	userConfigService azdext.UserConfigServiceServer,
 	deploymentService azdext.DeploymentServiceServer,
 	eventService azdext.EventServiceServer,
+	composeService azdext.ComposeServiceServer,
 ) *Server {
 	return &Server{
 		projectService:     projectService,
@@ -48,6 +50,7 @@ func NewServer(
 		userConfigService:  userConfigService,
 		deploymentService:  deploymentService,
 		eventService:       eventService,
+		composeService:     composeService,
 	}
 }
 
@@ -79,6 +82,7 @@ func (s *Server) Start() (*ServerInfo, error) {
 	azdext.RegisterUserConfigServiceServer(s.grpcServer, s.userConfigService)
 	azdext.RegisterDeploymentServiceServer(s.grpcServer, s.deploymentService)
 	azdext.RegisterEventServiceServer(s.grpcServer, s.eventService)
+	azdext.RegisterComposeServiceServer(s.grpcServer, s.composeService)
 
 	serverInfo.Address = fmt.Sprintf("localhost:%d", randomPort)
 	serverInfo.Port = randomPort

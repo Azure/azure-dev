@@ -153,7 +153,9 @@ func (t *DecisionTree) askQuestion(ctx context.Context, question Question, value
 				return fmt.Errorf("failed to ask question: %w", err)
 			}
 
-			mergo.Merge(&question.State, nextQuestion.State, mergo.WithOverride)
+			if err := mergo.Merge(&question.State, nextQuestion.State, mergo.WithOverride); err != nil {
+				return fmt.Errorf("failed to merge question states: %w", err)
+			}
 		}
 	}
 
@@ -170,14 +172,18 @@ func (t *DecisionTree) askQuestion(ctx context.Context, question Question, value
 
 		nextQuestion.State = question.State
 		if nextQuestionRef.State != nil {
-			mergo.Merge(&nextQuestion.State, nextQuestionRef.State, mergo.WithOverride)
+			if err := mergo.Merge(&nextQuestion.State, nextQuestionRef.State, mergo.WithOverride); err != nil {
+				return fmt.Errorf("failed to merge question states: %w", err)
+			}
 		}
 
 		if err = t.askQuestion(ctx, nextQuestion, response); err != nil {
 			return fmt.Errorf("failed to ask next question: %w", err)
 		}
 
-		mergo.Merge(&question.State, nextQuestion.State, mergo.WithOverride)
+		if err := mergo.Merge(&question.State, nextQuestion.State, mergo.WithOverride); err != nil {
+			return fmt.Errorf("failed to merge question states: %w", err)
+		}
 	}
 
 	return nil

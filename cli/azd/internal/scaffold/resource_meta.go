@@ -160,7 +160,7 @@ var Resources = []ResourceMeta{
 		ResourceType: "Microsoft.Search/searchServices",
 		// TODO: Switch to 2025-02-01-preview once available, which has a new 'endpoint' property
 		ApiVersion:        "2024-06-01-preview",
-		StandardVarPrefix: "AZURE_SEARCH",
+		StandardVarPrefix: "AZURE_AI_SEARCH",
 		Variables: map[string]string{
 			"endpoint": "https://${.name}.search.windows.net",
 		},

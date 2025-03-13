@@ -676,7 +676,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {{- end}}
           {{- if .AISearch}}
           {
-            name: 'AZURE_SEARCH_ENDPOINT'
+            name: 'AZURE_AI_SEARCH_ENDPOINT'
             value: 'https://${search.outputs.name}.search.windows.net'
           }
           {{- end}}
@@ -842,6 +842,7 @@ output AZURE_RESOURCE_EVENT_HUBS_ID string = eventHubNamespace.outputs.resourceI
 output AZURE_RESOURCE_SERVICE_BUS_ID string = serviceBusNamespace.outputs.resourceId
 {{- end}}
 {{- if .AISearch}}
+output AZURE_AI_SEARCH_ENDPOINT string = 'https://${search.outputs.name}.search.windows.net'
 output AZURE_RESOURCE_SEARCH_ID string = search.outputs.resourceId
 output aiSearchName string = search.outputs.name
 {{- end}}

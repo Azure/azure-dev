@@ -1,8 +1,8 @@
 
-Manage your environment settings.
+Set one or more environment values.
 
 Usage
-  azd env set <key> <value> [flags]
+  azd env set <key> <value> [<key2> <value2> ...] [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.

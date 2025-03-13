@@ -50,6 +50,7 @@ type AddAction struct {
 	alphaManager     *alpha.FeatureManager
 	creds            account.SubscriptionCredentialProvider
 	rm               infra.ResourceManager
+	resourceService  *azapi.ResourceService
 	armClientOptions *arm.ClientOptions
 	prompter         prompt.Prompter
 	console          input.Console
@@ -259,6 +260,21 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("closing file: %w", err)
 	}
 
+	envModified := false
+	for _, resource := range resourcesToAdd {
+		if resource.ResourceId != "" {
+			a.env.DotenvSet(infra.ResourceIdName(resource.Name), resource.ResourceId)
+			envModified = true
+		}
+	}
+
+	if envModified {
+		err = a.envManager.Save(ctx, a.env)
+		if err != nil {
+			return nil, fmt.Errorf("saving environment: %w", err)
+		}
+	}
+
 	a.console.MessageUxItem(ctx, &ux.ActionResult{
 		SuccessMessage: "azure.yaml updated.",
 	})
@@ -414,6 +430,7 @@ func NewAddAction(
 	creds account.SubscriptionCredentialProvider,
 	prompter prompt.Prompter,
 	rm infra.ResourceManager,
+	resourceService *azapi.ResourceService,
 	armClientOptions *arm.ClientOptions,
 	azd workflow.AzdCommandRunner,
 	accountManager account.Manager,
@@ -428,6 +445,7 @@ func NewAddAction(
 		env:              env,
 		prompter:         prompter,
 		rm:               rm,
+		resourceService:  resourceService,
 		armClientOptions: armClientOptions,
 		creds:            creds,
 		azd:              azd,

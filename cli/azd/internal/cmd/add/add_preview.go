@@ -15,6 +15,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -34,6 +35,10 @@ func Metadata(r *project.ResourceConfig) metaDisplay {
 		if res.ResourceType == azureResType {
 			// transform to standard variables
 			prefix := res.StandardVarPrefix
+
+			if r.Existing {
+				prefix += "_" + environment.Key(r.Name)
+			}
 
 			// host resources are special and prefixed with the name
 			if strings.HasPrefix(string(r.Type), "host.") {
@@ -90,7 +95,12 @@ func (a *AddAction) previewProvision(
 	fmt.Fprintln(w, "b  Name\tResource type")
 	for _, res := range resourcesToAdd {
 		meta := Metadata(res)
-		fmt.Fprintf(w, "+  %s\t%s\n", res.Name, meta.ResourceType)
+		status := ""
+		if res.Existing {
+			status = " (existing)"
+		}
+
+		fmt.Fprintf(w, "+  %s\t%s%s\n", res.Name, meta.ResourceType, status)
 	}
 
 	w.Flush()

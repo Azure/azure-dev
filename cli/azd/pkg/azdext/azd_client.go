@@ -25,6 +25,7 @@ type AzdClient struct {
 	deploymentClient  DeploymentServiceClient
 	eventsClient      EventServiceClient
 	composeClient     ComposeServiceClient
+	workflowClient    WorkflowServiceClient
 }
 
 // WithAddress sets the address of the `azd` gRPC server.
@@ -134,4 +135,13 @@ func (c *AzdClient) Compose() ComposeServiceClient {
 	}
 
 	return c.composeClient
+}
+
+// Workflow returns the workflow service client.
+func (c *AzdClient) Workflow() WorkflowServiceClient {
+	if c.workflowClient == nil {
+		c.workflowClient = NewWorkflowServiceClient(c.connection)
+	}
+
+	return c.workflowClient
 }

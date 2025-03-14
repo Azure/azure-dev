@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -116,9 +117,22 @@ func newEnvSetFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 
 func newEnvSetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "set <key> <value>",
-		Short: "Manage your environment settings.",
-		Args:  cobra.ExactArgs(2),
+		Use:   "set <key> <value> [<key2> <value2> ...]",
+		Short: "Set one or more environment values.",
+		Long:  "Set one or more key-value pairs in the environment. Each key must be followed by its value.",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) < 2 {
+				return fmt.Errorf("requires at least one key-value pair")
+			}
+			if len(args)%2 != 0 {
+				return fmt.Errorf("each key must be followed by a value")
+			}
+			return nil
+		},
+		// Sample arguments used in tests
+		Annotations: map[string]string{
+			"azdtest.use": "set key value key2 value2",
+		},
 	}
 }
 
@@ -160,13 +174,35 @@ func newEnvSetAction(
 }
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	key := e.args[0]
-	value := e.args[1]
-
+	// To track case conflicts
 	dotEnv := e.env.Dotenv()
-	warnKeyCaseConflicts(ctx, e.console, dotEnv, key)
+	keysToSet := make(map[string]bool)
 
-	e.env.DotenvSet(key, value)
+	for i := 0; i < len(e.args); i += 2 {
+		key := e.args[i]
+		value := e.args[i+1]
+
+		warnKeyCaseConflicts(ctx, e.console, dotEnv, key)
+		e.env.DotenvSet(key, value)
+		// Update to check case conflicts in subsequent keys
+		dotEnv[key] = value
+		keysToSet[key] = true
+	}
+
+	if len(keysToSet) > 1 {
+		keys := slices.Collect(maps.Keys(keysToSet))
+		slices.Sort(keys)
+		confirmed, err := e.console.Confirm(ctx, input.ConsoleOptions{
+			Message:      fmt.Sprintf("Confirm saving environment values for keys: %s?", strings.Join(keys, ", ")),
+			DefaultValue: true,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if !confirmed {
+			return nil, nil
+		}
+	}
 
 	if err := e.envManager.Save(ctx, e.env); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)

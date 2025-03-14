@@ -3,21 +3,23 @@
 
 package util
 
-import "os"
+import (
+	"os"
+)
 
-func IsDirEmpty(dirPath string) (bool, error) {
+func IsDirEmpty(dirPath string) bool {
 	dir, err := os.Open(dirPath)
 	if err != nil {
-		return false, err // Handle errors like "directory does not exist"
+		return false
 	}
 	defer dir.Close()
 
 	// Read at most 1 entry
 	entries, err := dir.Readdirnames(1)
 	if err != nil {
-		return false, err
+		return true
 	}
 
-	// If no entries found, directory is empty
-	return len(entries) == 0, nil
+	// If no entries, the directory is empty
+	return len(entries) == 0
 }

@@ -377,58 +377,27 @@ func mapHostUses(
 
 			existingDecl := existingMap[use]
 
-			for key, value := range resourceMeta.Variables {
-				expressions, err := scaffold.Parse(&value)
+			emitEnv := EmitEnv{FuncMap: scaffold.BaseEmitBicepFuncMap(), ResourceVarName: existingDecl.Name}
+			emitter := func(val *scaffold.ExpressionVar, results map[string]string) error {
+				return emitVariable(emitEnv, val, results)
+			}
+
+			results, err := scaffold.EmitBicep(resourceMeta.Variables, emitter)
+			if err != nil {
+				return fmt.Errorf("emitting bicep bindings: %w", err)
+			}
+
+			for key, value := range results {
 				envKey := scaffold.EnvVarName(
 					fmt.Sprintf("%s_%s", resourceMeta.StandardVarPrefix, environment.Key(use)),
 					key)
-				if err != nil {
-					return fmt.Errorf("parsing environment variable %s: %w", key, err)
-				}
 
 				if envValue, exists := svcSpec.Env[envKey]; exists {
 					panic(fmt.Sprintf(
 						"env collision: env value %s already set to %s, cannot set to %s", envKey, envValue, value))
 				}
 
-				if len(expressions) == 0 { // literal value
-					svcSpec.Env[key] = fmt.Sprintf("'%s'", value)
-					continue
-				}
-
-				// if there are multiple expressions, we need to surround each expression with ${}
-				// to make it a Bicep interpolated string
-				interpolationMode := len(expressions) > 1
-				surround := func(s string) string {
-					if interpolationMode {
-						return fmt.Sprintf("${%s}", s)
-					}
-					return s
-				}
-
-				for _, expr := range expressions {
-					switch expr.Kind {
-					case scaffold.PropertyExpr:
-						path := expr.Data.(scaffold.PropertyExprData).PropertyPath
-						expr.Replace(surround(fmt.Sprintf("%s.%s", existingDecl.Name, path)))
-					case scaffold.SpecExpr:
-						return fmt.Errorf("spec expressions are not currently supported in existing resources")
-					case scaffold.FuncExpr:
-						return fmt.Errorf("function expressions are not currently supported in existing resources")
-					case scaffold.VaultExpr:
-						return fmt.Errorf("vault expressions are not currently supported in existing resources")
-					case scaffold.VarExpr:
-						return fmt.Errorf("variable expressions are not currently supported in existing resources")
-					}
-				}
-
-				if !interpolationMode {
-					svcSpec.Env[envKey] = value
-				} else {
-					svcSpec.Env[envKey] = fmt.Sprintf("'%s'", value)
-				}
-
-				continue
+				svcSpec.Env[envKey] = value
 			}
 
 			svcSpec.Existing = append(svcSpec.Existing, existingDecl)
@@ -469,6 +438,103 @@ func mapHostUses(
 		case ResourceTypeKeyVault:
 			svcSpec.KeyVault = &scaffold.KeyVaultReference{}
 		}
+	}
+
+	return nil
+}
+
+type EmitEnv struct {
+	// The function map to use for evaluating expressions.
+	FuncMap scaffold.FuncMap
+
+	// ResourceVarName is the name of Bicep symbol to assign property expressions.
+	ResourceVarName string
+}
+
+func emitVariable(emitEnv EmitEnv, val *scaffold.ExpressionVar, results map[string]string) error {
+	if len(val.Expressions) == 0 { // literal value, surround with quotes
+		val.Value = fmt.Sprintf("'%s'", val.Value)
+		return nil
+	}
+
+	// if there are multiple expressions, we need to surround each expression with ${}
+	// to make it a Bicep interpolated string
+	interpolationMode := len(val.Expressions) > 1
+	surround := func(s string) string {
+		if interpolationMode {
+			return fmt.Sprintf("${%s}", s)
+		}
+		return s
+	}
+
+	for _, expr := range val.Expressions {
+		err := emitVariableExpression(emitEnv, val.Key, expr, surround, results)
+		if err != nil {
+			return fmt.Errorf("evaluating expression '%s': %w", val.Key, err)
+		}
+	}
+
+	if strings.ContainsAny(val.Value, "${") {
+		// If the value contains any ${}, we need to surround it with quotes.
+		//
+		// It may be tempting to check interpolationMode here, but we need to
+		// handle the case where a single function returns a string that contains ${}.
+		// Thus, it is safer to check the result and surround it with quotes.
+		val.Value = fmt.Sprintf("'%s'", val.Value)
+	}
+
+	return nil
+}
+
+func emitVariableExpression(
+	env EmitEnv,
+	key string,
+	expr *scaffold.Expression,
+	surround func(string) string,
+	results map[string]string) error {
+	switch expr.Kind {
+	case scaffold.PropertyExpr:
+		path := expr.Data.(scaffold.PropertyExprData).PropertyPath
+		expr.Replace(surround(fmt.Sprintf("%s.%s", env.ResourceVarName, path)))
+	case scaffold.VarExpr:
+		name := expr.Data.(scaffold.VarExprData).Name
+		expr.Replace(surround(results[name]))
+	case scaffold.FuncExpr:
+		funcData := expr.Data.(scaffold.FuncExprData)
+		funcName := funcData.FuncName
+
+		// Check if function exists
+		fn, ok := env.FuncMap[funcName]
+		if !ok {
+			return fmt.Errorf("unknown function: %s", funcName)
+		}
+
+		// identity function for arguments passed to the function
+		id := func(s string) string { return s }
+
+		// Evaluate all arguments
+		args := make([]interface{}, 0, len(funcData.Args))
+		for _, arg := range funcData.Args {
+			err := emitVariableExpression(env, key, arg, id, results)
+			if err != nil {
+				return fmt.Errorf("evaluating arguments for '%s': %w", funcName, err)
+			}
+
+			args = append(args, arg.Value)
+		}
+
+		// Call the function
+		funcResult, err := scaffold.CallFn(fn, funcName, args)
+		if err != nil {
+			return fmt.Errorf("calling '%s' failed: %w", funcName, err)
+		}
+
+		resultString := fmt.Sprintf("%v", funcResult)
+		expr.Replace(resultString)
+	case scaffold.SpecExpr:
+		return fmt.Errorf("spec expressions are not currently supported in existing resources")
+	case scaffold.VaultExpr:
+		return fmt.Errorf("vault expressions are not currently supported in existing resources")
 	}
 
 	return nil

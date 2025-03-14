@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -194,6 +195,15 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed to run decision tree: %w", err)
 	}
 
+	spinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text:        "Adding infrastructure resources to project",
+		ClearOnStop: true,
+	})
+
+	if err := spinner.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start spinner: %w", err)
+	}
+
 	resourcesToAdd := []*azdext.ComposedResource{}
 
 	// Add host resources such as container apps.
@@ -258,17 +268,6 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		resourcesToAdd = append(resourcesToAdd, storageResource)
 	}
 
-	if len(a.scenarioData.ModelSelections) == 0 {
-		a.scenarioData.ModelSelections = []string{}
-
-		if a.scenarioData.SelectedScenario == "rag" {
-			a.scenarioData.ModelSelections = append(a.scenarioData.ModelSelections, defaultChatCompletionModel)
-			if a.scenarioData.UseCustomData {
-				a.scenarioData.ModelSelections = append(a.scenarioData.ModelSelections, defaultEmbeddingModel)
-			}
-		}
-	}
-
 	models := []*ai.AiModelDeployment{}
 
 	// Add AI model resources
@@ -303,15 +302,6 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		resourcesToAdd = append(resourcesToAdd, aiProject)
 	}
 
-	spinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text:        "Adding infrastructure resources to project",
-		ClearOnStop: true,
-	})
-
-	if err := spinner.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start spinner: %w", err)
-	}
-
 	for _, resource := range resourcesToAdd {
 		_, err := a.azdClient.Compose().AddResource(ctx, &azdext.AddResourceRequest{
 			Resource: resource,
@@ -328,13 +318,18 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	fmt.Println()
 	fmt.Println(output.WithSuccessFormat("SUCCESS! The following resources have been staged for provisioning:"))
 	for _, resource := range resourcesToAdd {
-		fmt.Printf("  - %s (%s)\n", resource.Name, output.WithGrayFormat(resource.Type))
+		fmt.Printf("  - %s %s\n", resource.Name, output.WithGrayFormat("(%s)", resource.Type))
 	}
 
 	for _, modelDeployment := range models {
 		fmt.Printf("  - %s %s\n",
 			modelDeployment.Name,
-			output.WithGrayFormat("(Format: %s, Version: %s)", modelDeployment.Format, modelDeployment.Version),
+			output.WithGrayFormat(
+				"(Format: %s, Version: %s, SKU: %s)",
+				modelDeployment.Format,
+				modelDeployment.Version,
+				modelDeployment.Sku.Name,
+			),
 		)
 	}
 
@@ -350,29 +345,37 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed to confirm provisioning: %w", err)
 	}
 
-	if *confirmResponse.Value {
-		workflow := &azdext.Workflow{
-			Name: "provision",
-			Steps: []*azdext.WorkflowStep{
-				{
-					Command: &azdext.WorkflowCommand{
-						Args: []string{"provision"},
-					},
+	if !*confirmResponse.Value {
+		fmt.Println()
+		fmt.Printf("To provision resources later, run %s\n", output.WithHighLightFormat("azd provision"))
+		return nil
+	}
+
+	workflow := &azdext.Workflow{
+		Name: "provision",
+		Steps: []*azdext.WorkflowStep{
+			{
+				Command: &azdext.WorkflowCommand{
+					Args: []string{"provision"},
 				},
 			},
-		}
-
-		_, err = a.azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
-			Workflow: workflow,
-		})
-
-		if err != nil {
-			return fmt.Errorf("failed to run provision workflow: %w", err)
-		}
-	} else {
-		fmt.Println()
-		fmt.Printf("To provision resources, run %s\n", output.WithHighLightFormat("azd provision"))
+		},
 	}
+
+	_, err = a.azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+		Workflow: workflow,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to run provision workflow: %w", err)
+	}
+
+	fmt.Println()
+	fmt.Println(output.WithSuccessFormat("SUCCESS! Your Azure resources have been provisioned."))
+	fmt.Printf(
+		"You can add additional resources to your project by running %s\n",
+		output.WithHighLightFormat("azd compose add"),
+	)
 
 	return nil
 }
@@ -984,6 +987,30 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 					{Label: "Help me choose", Value: "guide-model"},
 					{Label: "I will choose model", Value: "user-model"},
 				},
+			},
+			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
+				selectedValue := value.(string)
+				if selectedValue == "choose-model" {
+					capabilities, ok := q.State["capabilities"].([]string)
+					if !ok {
+						return nil
+					}
+
+					// If the user selected "choose-model", we need to set the model selection
+					if slices.Contains(capabilities, "chatCompletion") {
+						a.scenarioData.ModelSelections = append(
+							a.scenarioData.ModelSelections,
+							defaultChatCompletionModel,
+						)
+					} else if slices.Contains(capabilities, "embeddings") {
+						a.scenarioData.ModelSelections = append(
+							a.scenarioData.ModelSelections,
+							defaultEmbeddingModel,
+						)
+					}
+				}
+
+				return nil
 			},
 			Branches: map[any]string{
 				"guide-model": "guide-model-select",

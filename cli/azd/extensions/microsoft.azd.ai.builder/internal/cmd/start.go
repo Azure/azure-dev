@@ -7,7 +7,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path" // added for POSIX path joining
+	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -15,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/pkg/azure/ai"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/pkg/qna"
+	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/resources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
@@ -39,11 +44,12 @@ type scenarioInput struct {
 	DatabaseType        string   `json:"databaseType,omitempty"`
 	StorageAccountId    string   `json:"storageAccountId,omitempty"`
 	DatabaseId          string   `json:"databaseId,omitempty"`
-	MessagingType       string   `json:"messageType,omitempty"`
+	MessagingType       string   `json:"messagingType,omitempty"`
 	MessagingId         string   `json:"messagingId,omitempty"`
 	ModelTasks          []string `json:"modelTasks,omitempty"`
 	ModelSelections     []string `json:"modelSelections,omitempty"`
-	AppTypes            []string `json:"appTypes,omitempty"`
+	AppHostTypes        []string `json:"appHostTypes,omitempty"`
+	AppLanguages        []string `json:"appLanguages,omitempty"`
 	AppResourceIds      []string `json:"appResourceIds,omitempty"`
 	VectorStoreType     string   `json:"vectorStoreType,omitempty"`
 	VectorStoreId       string   `json:"vectorStoreId,omitempty"`
@@ -147,7 +153,7 @@ func newStartCommand() *cobra.Command {
 			fmt.Println("This tool will help you build an AI scenario using Azure services.")
 			fmt.Println()
 
-			azureContext, err := ensureAzureContext(ctx, azdClient)
+			azureContext, projectConfig, err := ensureAzureContext(ctx, azdClient)
 			if err != nil {
 				return fmt.Errorf("failed to ensure azure context: %w", err)
 			}
@@ -166,6 +172,7 @@ func newStartCommand() *cobra.Command {
 				azureContext:        azureContext,
 				azureClient:         azure.NewAzureClient(credential),
 				modelCatalogService: ai.NewModelCatalogService(credential),
+				projectConfig:       projectConfig,
 				scenarioData:        &scenarioInput{},
 			}
 
@@ -184,6 +191,7 @@ type startAction struct {
 	azureContext        *azdext.AzureContext
 	modelCatalogService *ai.ModelCatalogService
 	azureClient         *azure.AzureClient
+	projectConfig       *azdext.ProjectConfig
 	scenarioData        *scenarioInput
 	modelCatalog        map[string]*ai.AiModel
 }
@@ -196,22 +204,26 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	}
 
 	spinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text:        "Adding infrastructure resources to project",
+		Text:        "Updating `azd` project configuration",
 		ClearOnStop: true,
 	})
 
+	fmt.Println()
 	if err := spinner.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start spinner: %w", err)
 	}
 
 	resourcesToAdd := []*azdext.ComposedResource{}
+	servicesToAdd := []*azdext.ServiceConfig{}
 
 	// Add host resources such as container apps.
 	for i, appKey := range a.scenarioData.InteractionTypes {
-		appType := a.scenarioData.AppTypes[i]
+		appType := a.scenarioData.AppHostTypes[i]
 		if appType == "" || appType == "choose-app" {
 			appType = "host.containerapp"
 		}
+
+		languageType := a.scenarioData.AppLanguages[i]
 
 		appConfig := map[string]any{
 			"port": 8080,
@@ -228,6 +240,14 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 			Config: appConfigJson,
 		}
 
+		serviceConfig := &azdext.ServiceConfig{
+			Name:         appKey,
+			Language:     languageType,
+			Host:         strings.ReplaceAll(appType, "host.", ""),
+			RelativePath: filepath.Join("src", appKey),
+		}
+
+		servicesToAdd = append(servicesToAdd, serviceConfig)
 		resourcesToAdd = append(resourcesToAdd, appResource)
 	}
 
@@ -302,6 +322,41 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		resourcesToAdd = append(resourcesToAdd, aiProject)
 	}
 
+	for _, service := range servicesToAdd {
+		_, err := a.azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{
+			Service: service,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to add service %s: %w", service.Name, err)
+		}
+
+		// Copy files from the embedded resources to the local service path.
+		servicePath := filepath.Join(a.projectConfig.Path, service.RelativePath)
+		if err := os.MkdirAll(servicePath, os.ModePerm); err != nil {
+			return fmt.Errorf("failed to create service path %s: %w", servicePath, err)
+		}
+
+		// Determine the correct resource folder path using POSIX join.
+		resourceDir := path.Join("scenarios", a.scenarioData.SelectedScenario, service.Name, service.Language)
+		entries, err := resources.Scenarios.ReadDir(resourceDir)
+		if err != nil {
+			return fmt.Errorf("failed to read resource directory %s: %w", resourceDir, err)
+		}
+
+		for _, entry := range entries {
+			srcPath := path.Join(resourceDir, entry.Name())
+			destPath := filepath.Join(servicePath, entry.Name())
+			data, err := resources.Scenarios.ReadFile(srcPath)
+			if err != nil {
+				return fmt.Errorf("failed to read resource file %s: %w", srcPath, err)
+			}
+			//nolint:gosec
+			if err := os.WriteFile(destPath, data, 0644); err != nil {
+				return fmt.Errorf("failed to write file %s: %w", destPath, err)
+			}
+		}
+	}
+
 	for _, resource := range resourcesToAdd {
 		_, err := a.azdClient.Compose().AddResource(ctx, &azdext.AddResourceRequest{
 			Resource: resource,
@@ -315,22 +370,45 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed to stop spinner: %w", err)
 	}
 
-	fmt.Println()
-	fmt.Println(output.WithSuccessFormat("SUCCESS! The following resources have been staged for provisioning:"))
-	for _, resource := range resourcesToAdd {
-		fmt.Printf("  - %s %s\n", resource.Name, output.WithGrayFormat("(%s)", resource.Type))
+	fmt.Println(output.WithSuccessFormat("SUCCESS! The following have been staged for provisioning and deployment:"))
+
+	if len(servicesToAdd) > 0 {
+		fmt.Println()
+		fmt.Println(output.WithHintFormat("Services"))
+		for _, service := range servicesToAdd {
+			fmt.Printf("  - %s %s\n",
+				service.Name,
+				output.WithGrayFormat(
+					"(Host: %s, Language: %s)",
+					service.Host,
+					service.Language,
+				),
+			)
+		}
 	}
 
-	for _, modelDeployment := range models {
-		fmt.Printf("  - %s %s\n",
-			modelDeployment.Name,
-			output.WithGrayFormat(
-				"(Format: %s, Version: %s, SKU: %s)",
-				modelDeployment.Format,
-				modelDeployment.Version,
-				modelDeployment.Sku.Name,
-			),
-		)
+	if len(resourcesToAdd) > 0 {
+		fmt.Println()
+		fmt.Println(output.WithHintFormat("Resources"))
+		for _, resource := range resourcesToAdd {
+			fmt.Printf("  - %s %s\n", resource.Name, output.WithGrayFormat("(%s)", resource.Type))
+		}
+	}
+
+	if len(models) > 0 {
+		fmt.Println()
+		fmt.Println(output.WithHintFormat("AI Models"))
+		for _, modelDeployment := range models {
+			fmt.Printf("  - %s %s\n",
+				modelDeployment.Name,
+				output.WithGrayFormat(
+					"(Format: %s, Version: %s, SKU: %s)",
+					modelDeployment.Format,
+					modelDeployment.Version,
+					modelDeployment.Sku.Name,
+				),
+			)
+		}
 	}
 
 	fmt.Println()
@@ -407,22 +485,25 @@ func (a *startAction) loadAiCatalog(ctx context.Context) error {
 	return nil
 }
 
-func ensureAzureContext(ctx context.Context, azdClient *azdext.AzdClient) (*azdext.AzureContext, error) {
-	_, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+func ensureAzureContext(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+) (*azdext.AzureContext, *azdext.ProjectConfig, error) {
+	getProjectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return nil, fmt.Errorf("project not found. Run `azd init` to create a new project, %w", err)
+		return nil, nil, fmt.Errorf("project not found. Run `azd init` to create a new project, %w", err)
 	}
 
 	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return nil, fmt.Errorf("environment not found. Run `azd env new` to create a new environment, %w", err)
+		return nil, nil, fmt.Errorf("environment not found. Run `azd env new` to create a new environment, %w", err)
 	}
 
 	envValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
 		Name: envResponse.Environment.Name,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get environment values: %w", err)
+		return nil, nil, fmt.Errorf("failed to get environment values: %w", err)
 	}
 
 	envValueMap := make(map[string]string)
@@ -445,7 +526,7 @@ func ensureAzureContext(ctx context.Context, azdClient *azdext.AzdClient) (*azde
 
 		subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
 		if err != nil {
-			return nil, fmt.Errorf("failed to prompt for subscription: %w", err)
+			return nil, nil, fmt.Errorf("failed to prompt for subscription: %w", err)
 		}
 
 		azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
@@ -458,7 +539,7 @@ func ensureAzureContext(ctx context.Context, azdClient *azdext.AzdClient) (*azde
 			Value:   azureContext.Scope.TenantId,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to set tenant ID in environment: %w", err)
+			return nil, nil, fmt.Errorf("failed to set tenant ID in environment: %w", err)
 		}
 
 		// Set the tenant ID in the environment
@@ -468,7 +549,7 @@ func ensureAzureContext(ctx context.Context, azdClient *azdext.AzdClient) (*azde
 			Value:   azureContext.Scope.SubscriptionId,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to set subscription ID in environment: %w", err)
+			return nil, nil, fmt.Errorf("failed to set subscription ID in environment: %w", err)
 		}
 	}
 
@@ -482,7 +563,7 @@ func ensureAzureContext(ctx context.Context, azdClient *azdext.AzdClient) (*azde
 			AzureContext: azureContext,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to prompt for location: %w", err)
+			return nil, nil, fmt.Errorf("failed to prompt for location: %w", err)
 		}
 
 		azureContext.Scope.Location = locationResponse.Location.Name
@@ -494,11 +575,11 @@ func ensureAzureContext(ctx context.Context, azdClient *azdext.AzdClient) (*azde
 			Value:   azureContext.Scope.Location,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to set location in environment: %w", err)
+			return nil, nil, fmt.Errorf("failed to set location in environment: %w", err)
 		}
 	}
 
-	return azureContext, nil
+	return azureContext, getProjectResponse.Project, nil
 }
 
 func (a *startAction) createQuestions() map[string]qna.Question {
@@ -736,7 +817,7 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 		},
 		"rag-user-interaction": {
 			Binding: &a.scenarioData.InteractionTypes,
-			Heading: "Application Hosting",
+			Heading: "User Interaction",
 			Message: "Now we will figure out all the different ways users will interact with your application.",
 			Prompt: &qna.MultiSelectPrompt{
 				Client:          a.azdClient,
@@ -801,20 +882,15 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 			Next: []qna.QuestionReference{{Key: "use-custom-data"}},
 		},
 		"choose-app-type": {
-			Binding: &a.scenarioData.AppTypes,
+			Binding: &a.scenarioData.AppHostTypes,
 			BeforeAsk: func(ctx context.Context, q *qna.Question, value any) error {
+				q.Heading = fmt.Sprintf("Configure '%s' Application", value)
+				q.Message = fmt.Sprintf("Lets collect some information about your %s application.", value)
 				q.State["interactionType"] = value
 				return nil
 			},
 			Prompt: &qna.SingleSelectPrompt{
-				BeforeAsk: func(ctx context.Context, q *qna.Question, p *qna.SingleSelectPrompt) error {
-					appName := q.State["interactionType"].(string)
-					p.Message = fmt.Sprintf(
-						"Which type of application do you want to build for %s?",
-						appName,
-					)
-					return nil
-				},
+				Message:         "Which application host do you want to use?",
 				Client:          a.azdClient,
 				EnableFiltering: to.Ptr(false),
 				Choices: []qna.Choice{
@@ -828,6 +904,27 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 			},
 			Branches: map[any]string{
 				"host.containerapp": "choose-app-resource",
+			},
+			Next: []qna.QuestionReference{
+				{Key: "choose-app-language"},
+			},
+		},
+		"choose-app-language": {
+			Binding: &a.scenarioData.AppLanguages,
+			Prompt: &qna.SingleSelectPrompt{
+				Client:          a.azdClient,
+				Message:         "Which programming language do you want to use?",
+				HelpMessage:     "Select the programming language that best fits your needs.",
+				EnableFiltering: to.Ptr(false),
+				Choices: []qna.Choice{
+					{Label: "Choose for me", Value: "python"},
+					{Label: "C#", Value: "csharp"},
+					{Label: "Python", Value: "python"},
+					{Label: "JavaScript", Value: "js"},
+					{Label: "TypeScript", Value: "ts"},
+					{Label: "Java", Value: "java"},
+					{Label: "Other", Value: "other"},
+				},
 			},
 		},
 		"choose-app-resource": {
@@ -903,7 +1000,7 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 		"start-choose-models": {
 			Heading: "AI Model Selection",
 			Message: "Now we will figure out the best AI model(s) for your application.",
-			BeforeAsk: func(ctx context.Context, question *qna.Question, value any) error {
+			AfterAsk: func(ctx context.Context, question *qna.Question, value any) error {
 				if err := a.loadAiCatalog(ctx); err != nil {
 					return fmt.Errorf("failed to load AI model catalog: %w", err)
 				}

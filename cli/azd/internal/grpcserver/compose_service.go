@@ -19,17 +19,14 @@ import (
 type ComposeService struct {
 	azdext.UnimplementedComposeServiceServer
 
-	lazyAzdContext    *lazy.Lazy[*azdcontext.AzdContext]
-	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]
+	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]
 }
 
 func NewComposeService(
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
-	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 ) azdext.ComposeServiceServer {
 	return &ComposeService{
-		lazyAzdContext:    lazyAzdContext,
-		lazyProjectConfig: lazyProjectConfig,
+		lazyAzdContext: lazyAzdContext,
 	}
 }
 
@@ -43,7 +40,7 @@ func (c *ComposeService) AddResource(
 		return nil, err
 	}
 
-	projectConfig, err := c.lazyProjectConfig.GetValue()
+	projectConfig, err := project.Load(ctx, azdContext.ProjectPath())
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +145,12 @@ func (c *ComposeService) GetResource(
 	ctx context.Context,
 	req *azdext.GetResourceRequest,
 ) (*azdext.GetResourceResponse, error) {
-	projectConfig, err := c.lazyProjectConfig.GetValue()
+	azdContext, err := c.lazyAzdContext.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	projectConfig, err := project.Load(ctx, azdContext.ProjectPath())
 	if err != nil {
 		return nil, err
 	}

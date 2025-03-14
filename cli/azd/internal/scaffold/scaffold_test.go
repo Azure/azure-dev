@@ -147,6 +147,7 @@ func TestExecInfra(t *testing.T) {
 						EventHubs:      &EventHubs{},
 						StorageAccount: &StorageReference{},
 						KeyVault:       &KeyVaultReference{},
+						AISearch:       &AISearchReference{},
 					},
 					{
 						Name: "web",

@@ -75,6 +75,10 @@ func supportingFiles(spec InfraSpec) []string {
 		files = append(files, "/modules/fetch-container-image.bicep")
 	}
 
+	if spec.AiFoundryProject != nil && spec.AISearch != nil {
+		files = append(files, "/modules/ai-search-conn.bicep")
+	}
+
 	return files
 }
 

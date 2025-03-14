@@ -34,6 +34,8 @@ type InfraSpec struct {
 
 	// ai foundry models
 	AiFoundryProject *AiFoundrySpec
+
+	AISearch *AISearch
 }
 
 type Parameter struct {
@@ -100,6 +102,9 @@ type AIModelModel struct {
 	Version string
 }
 
+type AISearch struct {
+}
+
 type ServiceBus struct {
 	Queues []string
 	Topics []string
@@ -148,6 +153,8 @@ type ServiceSpec struct {
 	EventHubs  *EventHubs
 
 	HasAiFoundryProject *AiFoundrySpec
+
+	AISearch *AISearchReference
 }
 
 type Frontend struct {
@@ -171,6 +178,9 @@ type AIModelReference struct {
 }
 
 type StorageReference struct {
+}
+
+type AISearchReference struct {
 }
 
 type KeyVaultReference struct {

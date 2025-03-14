@@ -372,6 +372,7 @@
                             "db.mongo",
                             "db.cosmos",
                             "ai.openai.model",
+                            "ai.search",
                             "host.containerapp",
                             "messaging.eventhubs",
                             "messaging.servicebus",
@@ -391,6 +392,7 @@
                 "allOf": [
                     { "if": { "properties": { "type": { "const": "host.containerapp" }}}, "then": { "$ref": "#/definitions/containerAppResource" } },
                     { "if": { "properties": { "type": { "const": "ai.openai.model" }}}, "then": { "$ref": "#/definitions/aiModelResource" } },
+                    { "if": { "properties": { "type": { "const": "ai.search" }}}, "then": { "$ref": "#/definitions/resource" } },
                     { "if": { "properties": { "type": { "const": "db.postgres"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "db.mysql"  }}}, "then": { "$ref": "#/definitions/resource"} },
                     { "if": { "properties": { "type": { "const": "db.redis"  }}}, "then": { "$ref": "#/definitions/resource"} },
@@ -1243,6 +1245,7 @@
                         "db.cosmos",
                         "host.containerapp",
                         "ai.openai.model",
+                        "ai.search",
                         "keyvault"
                     ]
                 },

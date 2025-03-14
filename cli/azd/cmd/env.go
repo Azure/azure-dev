@@ -132,6 +132,10 @@ func newEnvSetCmd() *cobra.Command {
 			}
 			return nil
 		},
+		// Sample arguments used in tests
+		Annotations: map[string]string{
+			"azdtest.use": "set key value key2 value2",
+		},
 	}
 }
 

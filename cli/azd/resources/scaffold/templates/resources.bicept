@@ -22,7 +22,7 @@ param principalId string
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = uniqueString(subscription().id, resourceGroup().id, location)
 
-{{if .Existing -}}
+{{if .Existing}}
 {{- range .Existing }}
 var {{.Name}}IdSegments = split({{.Name}}Id, '/')
 resource {{.Name}} '{{.ResourceType}}@{{.ApiVersion}}' existing = {
@@ -30,23 +30,20 @@ resource {{.Name}} '{{.ResourceType}}@{{.ApiVersion}}' existing = {
   name: {{.Name}}IdSegments[8]
 }
 
-{{- $existing := . -}}
-{{- range .RoleAssignments}}
+{{- $existing := .}}{{- range .RoleAssignments}}
 module local_{{$existing.Name}}_{{.Name}}_RoleAssignment 'modules/role-assignment.bicep' = {
   name: 'local_{{$existing.Name}}_{{.Name}}_RoleAssignment'
   scope: resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
   params: {
-    resourceId: {{if eq .Scope 1 -}}
-      string(resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4]))
-    {{- else -}}
-      {{$existing.Name}}Id
+    {{- if eq .Scope 0}}
+    resourceId: {{$existing.Name}}Id
     {{- end}}
     roleDefinitionId: '{{.RoleDefinitionId}}'
     principalId: principalId
     principalType: 'User'
   }
 }
-{{- end}}
+{{end}}
 {{- end}}
 {{- end -}}
 
@@ -477,11 +474,7 @@ module {{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}}_RoleAssignment 'modu
   name: '{{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}}_RoleAssignment'
   scope: resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
   params: {
-    resourceId: {{if eq .Scope 1 -}}
-      string(resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4]))
-    {{- else -}}
-      {{$existing.Name}}Id
-    {{- end}}
+    {{ if eq .Scope 0 -}}resourceId: {{$existing.Name}}Id{{- end}}
     roleDefinitionId: '{{.RoleDefinitionId}}'
     principalId: {{bicepName $svc.Name}}Identity.outputs.principalId
     principalType: 'ServicePrincipal'

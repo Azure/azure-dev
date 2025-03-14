@@ -1,4 +1,4 @@
-param resourceId string
+param resourceId string = ''
 param roleDefinitionId string
 param principalId string
 param principalType string = ''

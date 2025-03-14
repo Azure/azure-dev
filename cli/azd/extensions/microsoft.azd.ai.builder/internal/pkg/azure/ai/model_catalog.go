@@ -283,6 +283,7 @@ func (c *ModelCatalogService) GetModelDeployment(
 	}
 
 	var modelDeployment *AiModelDeployment
+	hasDefaultVersion := c.hasDefaultVersion(model)
 
 	for _, location := range model.Locations {
 		if modelDeployment != nil {
@@ -304,7 +305,8 @@ func (c *ModelCatalogService) GetModelDeployment(
 			if !slices.Contains(options.Versions, *location.Model.Model.Version) {
 				continue
 			}
-		} else {
+		} else if hasDefaultVersion {
+			// Not all models have a default version
 			if location.Model.Model.IsDefaultVersion != nil && !*location.Model.Model.IsDefaultVersion {
 				continue
 			}
@@ -336,6 +338,15 @@ func (c *ModelCatalogService) GetModelDeployment(
 	}
 
 	return modelDeployment, nil
+}
+
+func (c *ModelCatalogService) hasDefaultVersion(model *AiModel) bool {
+	for _, location := range model.Locations {
+		if location.Model.Model.IsDefaultVersion != nil && *location.Model.Model.IsDefaultVersion {
+			return true
+		}
+	}
+	return false
 }
 
 func filterDistinctModelData(

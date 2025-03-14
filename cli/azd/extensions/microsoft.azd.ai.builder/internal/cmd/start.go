@@ -261,13 +261,13 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		resourcesToAdd = append(resourcesToAdd, dbResource)
 	}
 
-	// if a.scenarioData.VectorStoreType != "" {
-	// 	vectorStoreResource := &azdext.ComposedResource{
-	// 		Name: "vectorStore",
-	// 		Type: a.scenarioData.VectorStoreType,
-	// 	}
-	// 	resourcesToAdd = append(resourcesToAdd, vectorStoreResource)
-	// }
+	if a.scenarioData.VectorStoreType != "" {
+		vectorStoreResource := &azdext.ComposedResource{
+			Name: "vector-store",
+			Type: a.scenarioData.VectorStoreType,
+		}
+		resourcesToAdd = append(resourcesToAdd, vectorStoreResource)
+	}
 
 	// Add storage resources
 	if a.scenarioData.UseCustomData {
@@ -337,12 +337,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 			return fmt.Errorf("failed to create service path %s: %w", servicePath, err)
 		}
 
-		isEmpty, err := util.IsDirEmpty(servicePath)
-		if err != nil {
-			return fmt.Errorf("failed to check if directory is empty: %w", err)
-		}
-
-		if !isEmpty {
+		if !util.IsDirEmpty(servicePath) {
 			if err := spinner.Stop(ctx); err != nil {
 				return fmt.Errorf("failed to stop spinner: %w", err)
 			}
@@ -807,7 +802,7 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				Client:          a.azdClient,
 				EnableFiltering: to.Ptr(false),
 				Choices: []qna.Choice{
-					{Label: "Choose for me", Value: "choose-vector-store"},
+					{Label: "Choose for me", Value: "ai.search"},
 					{Label: "AI Search", Value: "ai.search"},
 					{Label: "CosmosDB", Value: "db.cosmos"},
 				},

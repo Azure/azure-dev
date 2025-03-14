@@ -47,6 +47,16 @@ func BaseFuncMap() FuncMap {
 	}
 }
 
+func BaseEmitBicepFuncMap() FuncMap {
+	return FuncMap{
+		"lower":                     bicepFuncCall("toLower"),
+		"upper":                     bicepFuncCall("toUpper"),
+		"replace":                   bicepFuncCallThree("replace"),
+		"host":                      emitHostFromEndpoint,
+		"aiProjectConnectionString": emitAiProjectConnectionString,
+	}
+}
+
 // Eval evaluates the given values using the provided environment.
 // It replaces the expressions in the values with their resolved values.
 // It returns the resolved values as a map.
@@ -79,30 +89,43 @@ func Eval(values map[string]string, env EvalEnv) (map[string]string, error) {
 	}
 	maps.Copy(env.FuncMap, defaultFuncMap)
 
+	evaluator := func(value *ExpressionVar, results map[string]string) error {
+		return evalVariable(env, value, results)
+	}
+
+	return resolveVariables(values, evaluator)
+}
+
+// EmitBicep emits the given variables suitable for Bicep.
+func EmitBicep(values map[string]string, emitter Resolver) (map[string]string, error) {
+	return resolveVariables(values, emitter)
+}
+
+// Resolver is a function that resolves a variable expression.
+// It takes the expression value, and the current results map.
+// The function should evaluate expressions within value and call Replace.
+type Resolver func(value *ExpressionVar, results map[string]string) error
+
+func resolveVariables(values map[string]string, resolver Resolver) (map[string]string, error) {
 	// parse into map of expression values
-	evalValues := make([]*expressionVar, 0, len(values))
-	results := make(map[string]*expressionVar, len(values))
+	evalValues := make([]*ExpressionVar, 0, len(values))
+	results := make(map[string]string, len(values))
 
 	for key, value := range values {
-		exp := &expressionVar{
-			key:   key,
-			value: value,
+		exp := &ExpressionVar{
+			Key:   key,
+			Value: value,
 		}
 
-		expressions, err := Parse(&exp.value)
+		expressions, err := Parse(&exp.Value)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse expression '%s': %w", exp.value, err)
+			return nil, fmt.Errorf("failed to parse expression '%s': %w", exp.Value, err)
 		}
 
-		if len(expressions) == 0 {
-			results[key] = exp
-			continue
-		}
-
-		exp.expressions = expressions
+		exp.Expressions = expressions
 
 		// parse dependencies
-		for _, expr := range exp.expressions {
+		for _, expr := range exp.Expressions {
 			switch expr.Kind {
 			case VarExpr:
 				dependOn := expr.Data.(VarExprData).Name
@@ -131,8 +154,8 @@ func Eval(values map[string]string, env EvalEnv) (map[string]string, error) {
 	}
 
 	// sort for determinism
-	slices.SortFunc(evalValues, func(a, b *expressionVar) int {
-		return strings.Compare(a.key, b.key)
+	slices.SortFunc(evalValues, func(a, b *ExpressionVar) int {
+		return strings.Compare(a.Key, b.Key)
 	})
 
 	// evaluate expressions
@@ -147,30 +170,35 @@ func Eval(values map[string]string, env EvalEnv) (map[string]string, error) {
 			break
 		}
 
-		for _, expr := range val.expressions {
-			err := evalExpression(env, val.key, &expr, results)
-			if err != nil {
-				return nil, fmt.Errorf("evaluating key '%s': %w", val.key, err)
-			}
+		err = resolver(val, results)
+		if err != nil {
+			return nil, err
+		}
 
-			results[val.key] = val
+		val.done = true
+		results[val.Key] = val.Value
+	}
+
+	return results, nil
+}
+
+func evalVariable(env EvalEnv, val *ExpressionVar, results map[string]string) error {
+	for _, expr := range val.Expressions {
+		err := evalExpression(env, val.Key, expr, results)
+		if err != nil {
+			return fmt.Errorf("evaluating key '%s': %w", val.Key, err)
 		}
 	}
 
-	// return resolved values as map
-	for key, val := range results {
-		values[key] = val.value
-	}
-
-	return values, nil
+	return nil
 }
 
-func evalExpression(env EvalEnv, key string, expr *Expression, results map[string]*expressionVar) error {
+func evalExpression(env EvalEnv, key string, expr *Expression, results map[string]string) error {
 	switch expr.Kind {
 	case VarExpr:
 		// Variable reference
 		varName := expr.Data.(VarExprData).Name
-		expr.Replace(results[varName].value)
+		expr.Replace(results[varName])
 	case PropertyExpr:
 		// Property expression ${.xxx}
 		path := expr.Data.(PropertyExprData).PropertyPath
@@ -224,7 +252,7 @@ func evalExpression(env EvalEnv, key string, expr *Expression, results map[strin
 		}
 
 		// Call the function
-		funcResult, err := callFn(fn, funcName, args)
+		funcResult, err := CallFn(fn, funcName, args)
 		if err != nil {
 			return fmt.Errorf("calling '%s' failed: %w", funcName, err)
 		}
@@ -236,29 +264,32 @@ func evalExpression(env EvalEnv, key string, expr *Expression, results map[strin
 	return nil
 }
 
-// expressionVar represents an expression variable to be resolved, and its final output value.
-type expressionVar struct {
+// ExpressionVar represents an expression variable to be resolved, and its final output value.
+type ExpressionVar struct {
 	// The name of the variable
-	key string
+	Key string
 
-	// The value of the expression
+	// The Value of the expression
 	//
-	// When initially created, this is the raw value of the expression.
-	// When the expression is resolved, this is the resolved value.
-	value string
+	// When initially created, this is the raw Value of the expression.
+	// When the expression is resolved, this is the resolved Value.
+	Value string
 
-	// The expressions parsed from the value. Can be nil if the value does not contain any expressions.
-	expressions []Expression
+	// The Expressions parsed from the value. Can be nil if the value does not contain any Expressions.
+	Expressions []*Expression
+
+	// done indicates whether the expression has been resolved.
+	done bool
 
 	// Variables that this variable depends on.
 	dependsOn []string
 }
 
-func nextVal(evalCtx []*expressionVar, results map[string]*expressionVar) (*expressionVar, error) {
+func nextVal(evalCtx []*ExpressionVar, results map[string]string) (*ExpressionVar, error) {
 	allDone := true
 
 	for _, val := range evalCtx {
-		if results[val.key] != nil {
+		if val.done {
 			// already done
 			continue
 		}
@@ -284,8 +315,8 @@ func nextVal(evalCtx []*expressionVar, results map[string]*expressionVar) (*expr
 	return nil, nil
 }
 
-// callFn handles dynamic function calling with proper type reflection
-func callFn(fn interface{}, funcName string, args []interface{}) (interface{}, error) {
+// CallFn handles dynamic function calling with proper type reflection
+func CallFn(fn interface{}, funcName string, args []interface{}) (interface{}, error) {
 	// Use reflection to call the function with proper types
 	funcValue := reflect.ValueOf(fn)
 	funcType := funcValue.Type()

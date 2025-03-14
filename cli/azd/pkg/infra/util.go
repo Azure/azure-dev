@@ -19,7 +19,7 @@ func ResourceId(name string, env *environment.Environment) (resId *arm.ResourceI
 		return resId, nil
 	}
 
-	key := fmt.Sprintf("AZURE_RESOURCE_%s_ID", environment.Key(name))
+	key := ResourceIdName(name)
 	resourceId, ok := env.LookupEnv(key)
 	if !ok {
 		return resId, fmt.Errorf("%s is not set as an output variable", key)
@@ -35,6 +35,11 @@ func ResourceId(name string, env *environment.Environment) (resId *arm.ResourceI
 	}
 
 	return resId, nil
+}
+
+// ResourceIdName returns the environment variable name for the resource ID of the given name.
+func ResourceIdName(name string) string {
+	return fmt.Sprintf("AZURE_RESOURCE_%s_ID", environment.Key(name))
 }
 
 // KeyVaultName returns the name of the "canonical" key vault to use for secrets.

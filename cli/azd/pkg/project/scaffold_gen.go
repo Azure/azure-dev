@@ -141,15 +141,17 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 
 	// Create a "virtual" copy since we're adding any implicitly dependent resources
 	// that are unrepresented by the current user-provided schema
-	resources := maps.Clone(projectConfig.Resources)
+	resMap := maps.Clone(projectConfig.Resources)
+	resources := slices.Sorted(maps.Keys(resMap))
 
 	// First pass
 	for _, res := range resources {
+		res := resMap[res]
 		// Add any implicit dependencies
 		dependencies := DependentResourcesOf(res)
 		for _, dep := range dependencies {
-			if _, exists := resources[dep.Name]; !exists {
-				resources[dep.Name] = dep
+			if _, exists := resMap[dep.Name]; !exists {
+				resMap[dep.Name] = dep
 			}
 		}
 
@@ -174,9 +176,11 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	}
 
 	for _, res := range resources {
+		res := resMap[res]
 		if res.Existing {
 			continue
 		}
+
 		switch res.Type {
 		case ResourceTypeDbRedis:
 			infraSpec.DbRedis = &scaffold.DatabaseRedis{}

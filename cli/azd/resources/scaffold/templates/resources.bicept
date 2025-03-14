@@ -302,7 +302,7 @@ resource localUserOpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-0
 module search 'br/public:avm/res/search/search-service:0.9.1' = {
   name: 'ai-search'
   params: {
-    name: '${abbrs.storageStorageAccounts}${resourceToken}'
+    name: '${abbrs.searchSearchServices}${resourceToken}'
     location: location
     tags: tags
     sku: 'basic'

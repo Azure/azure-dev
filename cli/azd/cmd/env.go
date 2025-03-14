@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -179,6 +180,7 @@ func newEnvSetAction(
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// To track case conflicts
 	dotEnv := e.env.Dotenv()
+	keysToSet := make(map[string]bool)
 
 	for i := 0; i < len(e.args); i += 2 {
 		key := e.args[i]
@@ -188,6 +190,22 @@ func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		e.env.DotenvSet(key, value)
 		// Update to check case conflicts in subsequent keys
 		dotEnv[key] = value
+		keysToSet[key] = true
+	}
+
+	if len(keysToSet) > 1 {
+		keys := slices.Collect(maps.Keys(keysToSet))
+		slices.Sort(keys)
+		confirmed, err := e.console.Confirm(ctx, input.ConsoleOptions{
+			Message:      fmt.Sprintf("Confirm saving environment values for keys: %s?", strings.Join(keys, ", ")),
+			DefaultValue: true,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if !confirmed {
+			return nil, nil
+		}
 	}
 
 	if err := e.envManager.Save(ctx, e.env); err != nil {

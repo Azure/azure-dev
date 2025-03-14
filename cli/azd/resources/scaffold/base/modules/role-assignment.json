@@ -34,7 +34,7 @@
     "outputs": {
       "roleAssignmentId": {
         "type": "string",
-        "value": "[extensionResourceId(parameters('scope'), 'Microsoft.Authorization/roleAssignments', parameters('name'))]"
+        "value": "[if(empty(parameters('scope')), resourceId('Microsoft.Authorization/roleAssignments', parameters('name')), extensionResourceId(parameters('scope'), 'Microsoft.Authorization/roleAssignments', parameters('name')))]"
       }
     }
   }

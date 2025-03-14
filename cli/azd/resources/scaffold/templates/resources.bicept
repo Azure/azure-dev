@@ -774,7 +774,7 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.12.0' = {
       {
         objectId: principalId
         permissions: {
-          secrets: [ 'get', 'list' ]
+          secrets: [ 'get', 'list', 'set' ]
         }
       }
       {{- range .Services}}

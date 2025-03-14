@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/pkg/azure/ai"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/pkg/qna"
+	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/pkg/util"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/resources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -204,7 +205,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	}
 
 	spinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text:        "Updating `azd` project configuration",
+		Text:        "Updating project configuration",
 		ClearOnStop: true,
 	})
 
@@ -334,6 +335,39 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		servicePath := filepath.Join(a.projectConfig.Path, service.RelativePath)
 		if err := os.MkdirAll(servicePath, os.ModePerm); err != nil {
 			return fmt.Errorf("failed to create service path %s: %w", servicePath, err)
+		}
+
+		isEmpty, err := util.IsDirEmpty(servicePath)
+		if err != nil {
+			return fmt.Errorf("failed to check if directory is empty: %w", err)
+		}
+
+		if !isEmpty {
+			if err := spinner.Stop(ctx); err != nil {
+				return fmt.Errorf("failed to stop spinner: %w", err)
+			}
+
+			overwriteResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+				Options: &azdext.ConfirmOptions{
+					DefaultValue: to.Ptr(false),
+					Message: fmt.Sprintf(
+						"The directory %s is not empty. Do you want to overwrite it?",
+						output.WithHighLightFormat(service.RelativePath),
+					),
+				},
+			})
+
+			if err != nil {
+				return fmt.Errorf("failed to confirm overwrite: %w", err)
+			}
+
+			if !*overwriteResponse.Value {
+				continue
+			}
+
+			if err := spinner.Start(ctx); err != nil {
+				return fmt.Errorf("failed to start spinner: %w", err)
+			}
 		}
 
 		// Determine the correct resource folder path using POSIX join.

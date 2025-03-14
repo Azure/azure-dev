@@ -157,6 +157,15 @@ var Resources = []ResourceMeta{
 			"name": "${.name}",
 			"host": "${host .properties.serviceBusEndpoint}",
 		},
+		RoleAssignments: RoleAssignments{
+			Write: []RoleAssignment{
+				{
+					Name:               "HubDataOwner",
+					RoleDefinitionName: "Azure Event Hubs Data Owner",
+					RoleDefinitionId:   "f526a384-b230-433a-b45c-95f59c4a2dec",
+				},
+			},
+		},
 	},
 	{
 		ResourceType:      "Microsoft.KeyVault/vaults",
@@ -178,6 +187,15 @@ var Resources = []ResourceMeta{
 		Variables: map[string]string{
 			"name": "${.name}",
 			"host": "${host .properties.serviceBusEndpoint}",
+		},
+		RoleAssignments: RoleAssignments{
+			Write: []RoleAssignment{
+				{
+					Name:               "BusDataOwner",
+					RoleDefinitionName: "Azure Service Bus Data Owner",
+					RoleDefinitionId:   "090c5cfd-751d-490a-894a-3ce6f1109419",
+				},
+			},
 		},
 	},
 	{

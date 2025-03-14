@@ -263,7 +263,7 @@ func emitAiProjectConnectionString(resourceIdVar string, projectUrlVar string) (
 
 func emitHostFromEndpoint(endpointVar string) (string, error) {
 	// example: https://{your-namespace}.servicebus.windows.net:443
-	return fmt.Sprintf("split(split('%s', '//')[1], ':')[0]", endpointVar), nil
+	return fmt.Sprintf("split(split(%s, '//')[1], ':')[0]", endpointVar), nil
 
 }
 

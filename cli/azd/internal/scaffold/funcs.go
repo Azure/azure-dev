@@ -251,3 +251,32 @@ func aiProjectConnectionString(resourceId string, projectUrl string) (string, er
 
 	return fmt.Sprintf("%s;%s;%s;%s", hostName, resId.SubscriptionID, resId.ResourceGroupName, resId.Name), nil
 }
+
+func emitAiProjectConnectionString(resourceIdVar string, projectUrlVar string) (string, error) {
+	return fmt.Sprintf(
+		"${split(%s, '/')[2]};${split(%s, '/')[2]}};${split(%s, '/')[4]};${split(%s, '/')[8]}",
+		projectUrlVar,
+		resourceIdVar,
+		resourceIdVar,
+		resourceIdVar), nil
+}
+
+func emitHostFromEndpoint(endpointVar string) (string, error) {
+	// example: https://{your-namespace}.servicebus.windows.net:443
+	return fmt.Sprintf("split(split('%s', '//')[1], ':')[0]", endpointVar), nil
+
+}
+
+func bicepFuncCall(funcName string) func(name string) string {
+	// example: toLower(foo)
+	return func(name string) string {
+		return fmt.Sprintf("%s(%s)", funcName, name)
+	}
+}
+
+func bicepFuncCallThree(funcName string) func(a string, b string, c string) string {
+	// example: replace(foo, bar, baz)
+	return func(a string, b string, c string) string {
+		return fmt.Sprintf("%s(%s, %s, %s)", funcName, a, b, c)
+	}
+}

@@ -37,7 +37,7 @@ module local_{{$existing.Name}}_{{.Name}}_RoleAssignment 'modules/role-assignmen
   scope: resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
   params: {
     resourceId: {{if eq .Scope 1 -}}
-      resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
+      string(resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4]))
     {{- else -}}
       {{$existing.Name}}Id
     {{- end}}
@@ -478,7 +478,7 @@ module {{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}}_RoleAssignment 'modu
   scope: resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
   params: {
     resourceId: {{if eq .Scope 1 -}}
-      resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
+      string(resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4]))
     {{- else -}}
       {{$existing.Name}}Id
     {{- end}}

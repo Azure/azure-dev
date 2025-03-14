@@ -1,0 +1,11 @@
+{
+  "name": "webapp-ts",
+  "version": "1.0.0",
+  "main": "main.ts",
+  "scripts": {
+    "start": "ts-node main.ts"
+  },
+  "dependencies": {
+    "@azure/openai": "^1.0.0"
+  }
+}

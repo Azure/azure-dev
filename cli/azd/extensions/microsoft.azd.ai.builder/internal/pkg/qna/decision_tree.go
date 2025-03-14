@@ -83,6 +83,12 @@ func (t *DecisionTree) askQuestion(ctx context.Context, question Question, value
 		question.State = map[string]any{}
 	}
 
+	if question.BeforeAsk != nil {
+		if err := question.BeforeAsk(ctx, &question, value); err != nil {
+			return fmt.Errorf("before ask function failed: %w", err)
+		}
+	}
+
 	if question.Heading != "" {
 		fmt.Println()
 		fmt.Println(output.WithHintFormat(question.Heading))
@@ -91,12 +97,6 @@ func (t *DecisionTree) askQuestion(ctx context.Context, question Question, value
 	if question.Message != "" {
 		fmt.Println(question.Message)
 		fmt.Println()
-	}
-
-	if question.BeforeAsk != nil {
-		if err := question.BeforeAsk(ctx, &question, value); err != nil {
-			return fmt.Errorf("before ask function failed: %w", err)
-		}
 	}
 
 	var response any

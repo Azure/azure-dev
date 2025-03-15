@@ -105,6 +105,12 @@ const (
 	AlphaFeaturesKey = attribute.Key("config.features")
 )
 
+// Machine-level configuration related attribute.
+const (
+	// Tracks what option out features are enabled on each command
+	OptionOutFeaturesKey = attribute.Key("config.features")
+)
+
 // Environment related attributes
 const (
 	// Hashed environment name

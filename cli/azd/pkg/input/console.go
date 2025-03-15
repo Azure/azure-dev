@@ -27,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/optionout"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	tm "github.com/buger/goterm"
@@ -89,7 +90,8 @@ type Console interface {
 	Message(ctx context.Context, message string)
 	// Prints out a message following a contract ux item
 	MessageUxItem(ctx context.Context, item ux.UxItem)
-	WarnForFeature(ctx context.Context, id alpha.FeatureId)
+	WarnForAlphaFeature(ctx context.Context, id alpha.FeatureId)
+	WarnForOptionOutFeature(ctx context.Context, id optionout.FeatureId)
 	// Prints progress spinner with the given title.
 	// If a previous spinner is running, the title is updated.
 	ShowSpinner(ctx context.Context, title string, format SpinnerUxType)
@@ -243,7 +245,7 @@ func (c *AskerConsole) updateLastBytes(msg string) {
 	c.last2Byte[1] = msg[msgLen-1]
 }
 
-func (c *AskerConsole) WarnForFeature(ctx context.Context, key alpha.FeatureId) {
+func (c *AskerConsole) WarnForAlphaFeature(ctx context.Context, key alpha.FeatureId) {
 	if shouldWarn() {
 		c.MessageUxItem(ctx, &ux.MultilineMessage{
 			Lines: []string{
@@ -251,6 +253,21 @@ func (c *AskerConsole) WarnForFeature(ctx context.Context, key alpha.FeatureId) 
 				output.WithWarningFormat("WARNING: Feature '%s' is in alpha stage.", string(key)),
 				fmt.Sprintf("To learn more about alpha features and their support, visit %s.",
 					output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
+				"",
+			},
+		})
+	}
+}
+
+func (c *AskerConsole) WarnForOptionOutFeature(ctx context.Context, key optionout.FeatureId) {
+	if shouldWarn() {
+		featureKey := fmt.Sprintf("optionout.%s", string(key))
+		c.MessageUxItem(ctx, &ux.MultilineMessage{
+			Lines: []string{
+				"",
+				output.WithWarningFormat("WARNING: Feature '%s' is optioned out.", string(key)),
+				fmt.Sprintf("Run `azd config unset %s` or `azd config set %s off` to option in.",
+					featureKey, featureKey),
 				"",
 			},
 		})

@@ -106,7 +106,7 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if a.alphaFeatureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
-		a.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
+		a.console.WarnForAlphaFeature(ctx, azapi.FeatureDeploymentStacks)
 	}
 
 	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)

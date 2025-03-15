@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/optionout"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -29,17 +30,18 @@ type DefaultProviderResolver func() (ProviderKind, error)
 
 // Manages the orchestration of infrastructure provisioning
 type Manager struct {
-	serviceLocator      ioc.ServiceLocator
-	defaultProvider     DefaultProviderResolver
-	envManager          environment.Manager
-	env                 *environment.Environment
-	console             input.Console
-	provider            Provider
-	alphaFeatureManager *alpha.FeatureManager
-	projectPath         string
-	options             *Options
-	fileShareService    storage.FileShareService
-	cloud               *cloud.Cloud
+	serviceLocator          ioc.ServiceLocator
+	defaultProvider         DefaultProviderResolver
+	envManager              environment.Manager
+	env                     *environment.Environment
+	console                 input.Console
+	provider                Provider
+	alphaFeatureManager     *alpha.FeatureManager
+	optionOutFeatureManager *optionout.FeatureManager
+	projectPath             string
+	options                 *Options
+	fileShareService        storage.FileShareService
+	cloud                   *cloud.Cloud
 }
 
 // defaultOptions for this package.
@@ -81,6 +83,7 @@ func (m *Manager) State(ctx context.Context, options *StateOptions) (*StateResul
 
 var AzdOperationsFeatureKey = alpha.MustFeatureKey("azd.operations")
 var AzdAppHostInfraMigration = alpha.MustFeatureKey("apphost.infra.migration")
+var AzdProvisionValidationFeatureKey = optionout.MustFeatureKey("provisionValidation")
 
 // Deploys the Azure infrastructure for the specified project
 func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
@@ -422,18 +425,20 @@ func NewManager(
 	env *environment.Environment,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
+	optionOutFeatureManager *optionout.FeatureManager,
 	fileShareService storage.FileShareService,
 	cloud *cloud.Cloud,
 ) *Manager {
 	return &Manager{
-		serviceLocator:      serviceLocator,
-		defaultProvider:     defaultProvider,
-		envManager:          envManager,
-		env:                 env,
-		console:             console,
-		alphaFeatureManager: alphaFeatureManager,
-		fileShareService:    fileShareService,
-		cloud:               cloud,
+		serviceLocator:          serviceLocator,
+		defaultProvider:         defaultProvider,
+		envManager:              envManager,
+		env:                     env,
+		console:                 console,
+		alphaFeatureManager:     alphaFeatureManager,
+		optionOutFeatureManager: optionOutFeatureManager,
+		fileShareService:        fileShareService,
+		cloud:                   cloud,
 	}
 }
 
@@ -452,7 +457,7 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 			)
 		}
 
-		m.console.WarnForFeature(ctx, alphaFeatureId)
+		m.console.WarnForAlphaFeature(ctx, alphaFeatureId)
 	}
 
 	providerKey := m.options.Provider

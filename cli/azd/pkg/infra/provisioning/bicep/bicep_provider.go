@@ -36,6 +36,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
+	"github.com/azure/azure-dev/cli/azd/pkg/optionout"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
@@ -77,6 +78,7 @@ type BicepProvider struct {
 	portalUrlBase           string
 	subscriptionManager     *account.SubscriptionsManager
 	azureClient             *azapi.AzureClient
+	optionOutFeatureManager *optionout.FeatureManager
 }
 
 // Name gets the name of the infra provider
@@ -611,16 +613,18 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		return nil, err
 	}
 
-	err = p.validatePreflight(
-		ctx,
-		bicepDeploymentData.Target,
-		bicepDeploymentData.CompiledBicep.RawArmTemplate,
-		bicepDeploymentData.CompiledBicep.Parameters,
-		deploymentTags,
-		optionsMap,
-	)
-	if err != nil {
-		return nil, err
+	if !p.optionOutFeatureManager.IsEnabled(provisioning.AzdProvisionValidationFeatureKey) {
+		err = p.validatePreflight(
+			ctx,
+			bicepDeploymentData.Target,
+			bicepDeploymentData.CompiledBicep.RawArmTemplate,
+			bicepDeploymentData.CompiledBicep.Parameters,
+			deploymentTags,
+			optionsMap,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	cancelProgress := make(chan bool)
@@ -2164,20 +2168,22 @@ func NewBicepProvider(
 	cloud *cloud.Cloud,
 	subscriptionManager *account.SubscriptionsManager,
 	azureClient *azapi.AzureClient,
+	optionOutFeatureManager *optionout.FeatureManager,
 ) provisioning.Provider {
 	return &BicepProvider{
-		envManager:          envManager,
-		env:                 env,
-		console:             console,
-		azapi:               azapi,
-		bicepCli:            bicepCli,
-		resourceService:     resourceService,
-		deploymentManager:   deploymentManager,
-		prompters:           prompters,
-		curPrincipal:        curPrincipal,
-		keyvaultService:     keyvaultService,
-		portalUrlBase:       cloud.PortalUrlBase,
-		subscriptionManager: subscriptionManager,
-		azureClient:         azureClient,
+		envManager:              envManager,
+		env:                     env,
+		console:                 console,
+		azapi:                   azapi,
+		bicepCli:                bicepCli,
+		resourceService:         resourceService,
+		deploymentManager:       deploymentManager,
+		prompters:               prompters,
+		curPrincipal:            curPrincipal,
+		keyvaultService:         keyvaultService,
+		portalUrlBase:           cloud.PortalUrlBase,
+		subscriptionManager:     subscriptionManager,
+		azureClient:             azureClient,
+		optionOutFeatureManager: optionOutFeatureManager,
 	}
 }

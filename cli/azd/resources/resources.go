@@ -13,6 +13,9 @@ var TemplatesJson []byte
 //go:embed alpha_features.yaml
 var AlphaFeatures []byte
 
+//go:embed option_out_features.yaml
+var OptionOutFeatures []byte
+
 //go:embed minimal/main.bicep
 var MinimalBicep []byte
 

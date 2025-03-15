@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/optionout"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/spf13/cobra"
@@ -167,6 +168,16 @@ $ azd config set defaults.location eastus`,
 			Footer: getCmdListAlphaHelpFooter,
 		},
 		ActionResolver: newConfigListAlphaAction,
+	})
+
+	group.Add("list-option-out", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Short: "Display the list of available features to option out.",
+		},
+		HelpOptions: actions.ActionHelpOptions{
+			Footer: getCmdListOptionOutHelpFooter,
+		},
+		ActionResolver: newConfigListOptionOutAction,
 	})
 
 	return group
@@ -454,6 +465,12 @@ type configListAlphaAction struct {
 	args                 []string
 }
 
+type configListOptionOutAction struct {
+	optionOutFeaturesManager *optionout.FeatureManager
+	console                  input.Console
+	args                     []string
+}
+
 func (a *configListAlphaAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	features, err := a.alphaFeaturesManager.ListFeatures()
 	if err != nil {
@@ -480,6 +497,32 @@ func (a *configListAlphaAction) Run(ctx context.Context) (*actions.ActionResult,
 	return nil, nil
 }
 
+func (o *configListOptionOutAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	features, err := o.optionOutFeaturesManager.ListFeatures()
+	if err != nil {
+		return nil, err
+	}
+
+	featureKeys := slices.Sorted(maps.Keys(features))
+	var optionOutOutput []string
+	for _, optionOutFeatureKey := range featureKeys {
+		optionOutFeature := features[optionOutFeatureKey]
+		optionOutOutput = append(optionOutOutput,
+			strings.Join(
+				[]string{
+					fmt.Sprintf("Name: %s", optionOutFeature.Id),
+					fmt.Sprintf("Description: %s", optionOutFeature.Description),
+					fmt.Sprintf("Status: %s", optionOutFeature.Status),
+				},
+				"\n",
+			))
+	}
+	o.console.Message(ctx, strings.Join(optionOutOutput, "\n\n"))
+
+	// No UX output
+	return nil, nil
+}
+
 func newConfigListAlphaAction(
 	alphaFeaturesManager *alpha.FeatureManager,
 	console input.Console,
@@ -488,6 +531,17 @@ func newConfigListAlphaAction(
 		alphaFeaturesManager: alphaFeaturesManager,
 		console:              console,
 		args:                 args,
+	}
+}
+
+func newConfigListOptionOutAction(
+	optionOutFeaturesManager *optionout.FeatureManager,
+	console input.Console,
+	args []string) actions.Action {
+	return &configListOptionOutAction{
+		optionOutFeaturesManager: optionOutFeaturesManager,
+		console:                  console,
+		args:                     args,
 	}
 }
 
@@ -507,6 +561,26 @@ func getCmdListAlphaHelpFooter(*cobra.Command) string {
 		),
 		"Turn off all alpha features": output.WithHighLightFormat(
 			"azd config set alpha.all off",
+		),
+	})
+}
+
+func getCmdListOptionOutHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Displays a list of all available features to option out": output.WithHighLightFormat(
+			"azd config list-option-out",
+		),
+		"Option out a specific feature": output.WithHighLightFormat(
+			"azd config set optionout.<feature-name> on",
+		),
+		"Option in a specific feature": output.WithHighLightFormat(
+			"azd config set optionout.<feature-name> off",
+		),
+		"Option out all optionout features": output.WithHighLightFormat(
+			"azd config set optionout.all on",
+		),
+		"Option in all optionout features": output.WithHighLightFormat(
+			"azd config set optionout.all off",
 		),
 	})
 }

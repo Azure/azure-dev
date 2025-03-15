@@ -246,7 +246,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(svc.Host)); isAlphaFeature {
 			// alpha feature on/off detection for host is done during initialization.
 			// This is just for displaying the warning during deployment.
-			da.console.WarnForFeature(ctx, alphaFeatureId)
+			da.console.WarnForAlphaFeature(ctx, alphaFeatureId)
 		}
 
 		var packageResult *project.ServicePackageResult

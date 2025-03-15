@@ -18,8 +18,6 @@ type projectService struct {
 
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]
 	lazyEnvManager *lazy.Lazy[environment.Manager]
-
-	initialized bool
 }
 
 func NewProjectService(

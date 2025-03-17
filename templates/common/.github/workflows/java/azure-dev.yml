@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install azd
-        uses: Azure/setup-azd@v2
+        uses: Azure/setup-azd@ae0f8b5482eeac61e940f447327d84c73beb8b1e
 
       - name: Install java
         uses: actions/setup-java@v3

@@ -13,8 +13,6 @@ import (
 	"slices"
 	"strings"
 
-	//nolint:ST1001
-
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	flag "github.com/spf13/pflag"
 )

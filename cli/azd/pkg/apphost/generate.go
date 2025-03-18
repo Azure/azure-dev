@@ -1235,7 +1235,7 @@ func (b *infraGenerator) initCompilerOptions(m *Manifest) error {
 	// start by assuming the manifest requires a compute environment
 	generatorOwnsComputeEnv := true
 	for _, comp := range m.Resources {
-		if comp.Type == "bicep.v0" || comp.Type == "bicep.v1" {
+		if comp.Type == "azure.bicep.v0" || comp.Type == "azure.bicep.v1" {
 			for pKey, pValue := range comp.Params {
 				if pKey == knownParameterUserPrincipalId {
 					if pValue != nil {

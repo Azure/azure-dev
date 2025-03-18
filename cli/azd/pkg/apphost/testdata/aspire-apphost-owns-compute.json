@@ -26,7 +26,8 @@
           "values": [
             "one",
             "two"
-          ]
+          ],
+          "userPrincipalId": ""
         },
         "scope": {
           "resourceGroup": "{rg-scope.value}"
@@ -104,8 +105,7 @@
         "path": "aspire.hosting.azure.bicep.appinsights.bicep",
         "params": {
           "appInsightsName": "ai",
-          "logAnalyticsWorkspaceId": "",
-          "userPrincipalId": "fixed-value-to-test-userPrincipalId-convention"
+          "logAnalyticsWorkspaceId": ""
         }
       },
       "sql": {

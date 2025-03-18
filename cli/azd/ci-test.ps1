@@ -56,12 +56,11 @@ $oldGOEXPERIMENT = $env:GOEXPERIMENT
 # GOCOVERDIR enables any binaries (in this case, azd.exe) built with '-cover',
 # to write out coverage output to the specific directory.
 $env:GOCOVERDIR = $intCoverDir.FullName
-# Enable the loopvar experiment, which makes the loop variaible for go loops like `range` behave as most folks would expect.
-# the go team is exploring making this default in the future, and we'd like to opt into the behavior now.
-$env:GOEXPERIMENT="loopvar"
+# Set any experiment flags that are needed for the tests.
+$env:GOEXPERIMENT=""
 
 try {
-    & $gotestsum -- ./test/... -v -timeout $IntegrationTestTimeout
+    & $gotestsum -- ./... -v -timeout $IntegrationTestTimeout
     if ($LASTEXITCODE) {
         exit $LASTEXITCODE
     }    

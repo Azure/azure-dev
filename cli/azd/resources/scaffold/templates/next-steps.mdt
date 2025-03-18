@@ -18,7 +18,8 @@ To troubleshoot any issues, see [troubleshooting](#troubleshooting).
 
 ### Configure environment variables for running services
 
-Configure environment variables for running services by updating `settings` in [main.parameters.json](./infra/main.parameters.json).
+Environment variables can be configured by modifying the `env` settings in [resources.bicep](./infra/resources.bicep).
+To define a secret, add the variable as a `secretRef` pointing to a `secrets` entry or a stored KeyVault secret.
 
 {{- range .Services}}
 {{- if or .DbPostgres .DbCosmosMongo .DbRedis }}

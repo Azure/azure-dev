@@ -920,7 +920,7 @@ func injectValueForBicepParameter(resourceName, p string, parameter any, appHost
 	// disable injection for app host migration
 	if appHostOwnsCompute {
 		if p == knownParameterUserPrincipalId {
-			return "principalId", true, nils
+			return "principalId", true, nil
 		}
 		return finalParamValue, false, nil
 	}

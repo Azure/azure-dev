@@ -4,7 +4,7 @@ This Azure DevOps task allows you to provision resources and deploy your applica
 
 The task installs the Azure Developer CLI on a user-defined Azure Developer CLI version. If the user does not specify a version, latest CLI version is used. Read more about various Azure Developer CLI versions [here](https://github.com/Azure/azure-dev/releases).
 
-- `version` – **Optional** Example: 1.0.1, Default: set to latest azd cli version.
+- `version` – **Optional** Example: 1.13.0, Default: set to latest azd cli version.
 
 ## Sample pipeline install latest `azd` version
 
@@ -38,7 +38,7 @@ pool:
 steps:
   - task: setup-azd@1
     inputs:
-        version: '1.0.2'
+        version: '1.13.0'
     displayName: Install azd
 ```
 

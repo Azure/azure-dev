@@ -18,7 +18,7 @@ pool:
 # vmImage: windows-latest
 
 steps:
-  - task: setup-azd@0
+  - task: setup-azd@1
     displayName: Install azd
 ```
 
@@ -36,7 +36,7 @@ pool:
 # vmImage: windows-latest
 
 steps:
-  - task: setup-azd@0
+  - task: setup-azd@1
     inputs:
         version: '1.0.2'
     displayName: Install azd

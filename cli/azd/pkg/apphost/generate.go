@@ -869,6 +869,7 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 const (
 	knownParameterKeyVault         string = "keyVaultName"
 	knownParameterPrincipalId      string = "principalId"
+	knownParameterUserPrincipalId  string = "userPrincipalId"
 	knownParameterPrincipalType    string = "principalType"
 	knownParameterPrincipalName    string = "principalName"
 	knownParameterLogAnalytics     string = "logAnalyticsWorkspaceId"
@@ -910,6 +911,9 @@ func injectValueForBicepParameter(resourceName, p string, parameter any) (string
 
 	// disable injection for app host migration
 	if appHostInfraMigrationEnabled {
+		if p == knownParameterUserPrincipalId {
+			return "principalId", true, nil
+		}
 		return finalParamValue, false, nil
 	}
 

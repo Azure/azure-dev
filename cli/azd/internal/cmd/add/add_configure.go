@@ -34,6 +34,36 @@ type PromptOptions struct {
 	ExistingId string
 }
 
+// ConfigureLive fills in the fields for a resource by first querying live Azure for information.
+//
+// This is used in addition to Configure currently.
+func (a *AddAction) ConfigureLive(
+	ctx context.Context,
+	r *project.ResourceConfig,
+	console input.Console,
+	p PromptOptions) (*project.ResourceConfig, error) {
+	if r.Existing {
+		return r, nil
+	}
+
+	var resourceToAdd *project.ResourceConfig
+	var err error
+
+	switch r.Type {
+	case project.ResourceTypeAiProject:
+		resourceToAdd, err = a.promptAiModel(console, ctx, r, p)
+	case project.ResourceTypeOpenAiModel:
+		resourceToAdd, err = a.promptOpenAi(console, ctx, r, p)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	r = resourceToAdd
+	return r, nil
+}
+
 // Configure fills in the fields for a resource.
 func Configure(
 	ctx context.Context,

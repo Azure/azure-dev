@@ -31,8 +31,8 @@ resource {{.Name}} '{{.ResourceType}}@{{.ApiVersion}}' existing = {
 }
 
 {{- $existing := .}}{{- range .RoleAssignments}}
-module local_{{$existing.Name}}_{{.Name}}_RoleAssignment 'modules/role-assignment.bicep' = {
-  name: 'local_{{$existing.Name}}_{{.Name}}_RoleAssignment'
+module local_{{$existing.Name}}_{{.Name}} 'modules/role-assignment.bicep' = {
+  name: 'local_{{$existing.Name}}_{{.Name}}'
   scope: resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
   params: {
     {{- if eq .Scope 0}}
@@ -470,8 +470,8 @@ resource {{bicepName .Name}}OpenAIIdentity 'Microsoft.Authorization/roleAssignme
 {{- if .Existing }}
 {{- range $index, $existing := .Existing}}
 {{- range .RoleAssignments}}
-module {{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}}_RoleAssignment 'modules/role-assignment.bicep' = {
-  name: '{{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}}_RoleAssignment'
+module {{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}} 'modules/role-assignment.bicep' = {
+  name: '{{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}}'
   scope: resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
   params: {
     {{ if eq .Scope 0 -}}resourceId: {{$existing.Name}}Id{{- end}}

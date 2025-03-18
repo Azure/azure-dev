@@ -11,6 +11,9 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -154,6 +157,7 @@ func (a *AddAction) selectExistingResource(
 				selectMenu = append(selectMenu, menu)
 			}
 		}
+
 		slices.SortFunc(selectMenu, func(a, b Menu) int {
 			return strings.Compare(a.Label, b.Label)
 		})
@@ -178,7 +182,17 @@ func (a *AddAction) selectExistingResource(
 		}
 
 		azureResourceType := r.Type.AzureResourceType()
-		resourceId, err := a.promptResource(ctx, "Which resource?", azureResourceType)
+		resourceMeta, ok := scaffold.ResourceMetaFromType(azureResourceType)
+		if ok && resourceMeta.ParentForEval != "" {
+			azureResourceType = resourceMeta.ParentForEval
+		}
+
+		displayName := azureResourceType
+		if friendlyName := azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(azureResourceType)); friendlyName != "" {
+			displayName = friendlyName
+		}
+
+		resourceId, err := a.promptResource(ctx, fmt.Sprintf("Which %s resource?", displayName), azureResourceType)
 		if err != nil {
 			return nil, fmt.Errorf("prompting for resource: %w", err)
 		}
@@ -213,12 +227,12 @@ func (a *AddAction) promptResource(
 	msg string,
 	resourceType string,
 ) (string, error) {
-	options := azapi.ListResourcesOptions{
-		ResourceType: resourceType,
+	options := armresources.ClientListOptions{
+		Filter: to.Ptr(fmt.Sprintf("resourceType eq '%s'", resourceType)),
 	}
 
 	a.console.ShowSpinner(ctx, "Listing resources...", input.Step)
-	resources, err := a.resourceService.ListResources(ctx, a.env.GetSubscriptionId(), &options)
+	resources, err := a.resourceService.ListSubscriptionResources(ctx, a.env.GetSubscriptionId(), &options)
 	if err != nil {
 		return "", fmt.Errorf("listing resources: %w", err)
 	}
@@ -227,7 +241,7 @@ func (a *AddAction) promptResource(
 	}
 	a.console.StopSpinner(ctx, "", input.StepDone)
 
-	slices.SortFunc(resources, func(a, b *azapi.Resource) int {
+	slices.SortFunc(resources, func(a, b *azapi.ResourceExtended) int {
 		return strings.Compare(a.Name, b.Name)
 	})
 

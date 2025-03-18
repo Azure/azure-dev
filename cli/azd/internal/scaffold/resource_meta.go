@@ -227,7 +227,7 @@ var Resources = []ResourceMeta{
 		ResourceType:      "Microsoft.MachineLearningServices/workspaces",
 		ResourceKind:      "Project",
 		ApiVersion:        "2024-10-01",
-		StandardVarPrefix: "AZURE_AI_PROJECT",
+		StandardVarPrefix: "AZURE_AIPROJECT",
 		Variables: map[string]string{
 			"connectionString": "${aiProjectConnectionString .id .properties.discoveryUrl}",
 		},
@@ -249,6 +249,20 @@ var Resources = []ResourceMeta{
 		StandardVarPrefix: "AZURE_AI_SEARCH",
 		Variables: map[string]string{
 			"endpoint": "https://${.name}.search.windows.net",
+		},
+		RoleAssignments: RoleAssignments{
+			Write: []RoleAssignment{
+				{
+					Name:               "IdxContributor",
+					RoleDefinitionName: "Search Index Data Contributor",
+					RoleDefinitionId:   "8ebe5a00-799e-43f5-93ac-243d3dce84a7",
+				},
+				{
+					Name:               "SvcContributor",
+					RoleDefinitionName: "Search Service Contributor",
+					RoleDefinitionId:   "7ca78c08-252a-4471-8644-bb5ff32d4ba0",
+				},
+			},
 		},
 	},
 }

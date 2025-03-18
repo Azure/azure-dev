@@ -119,6 +119,11 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		resourceToAdd = r
 	}
 
+	resourceToAdd, err = a.ConfigureLive(ctx, resourceToAdd, a.console, promptOpts)
+	if err != nil {
+		return nil, err
+	}
+
 	resourceToAdd, err = Configure(ctx, resourceToAdd, a.console, promptOpts)
 	if err != nil {
 		return nil, err

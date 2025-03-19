@@ -235,7 +235,5 @@ func preExecExpand(spec *InfraSpec) {
 		// containerapp requires a global '_exist' parameter for each service
 		spec.Parameters = append(spec.Parameters,
 			containerAppExistsParameter(svc.Name))
-		spec.Parameters = append(spec.Parameters,
-			serviceDefPlaceholder(svc.Name))
 	}
 }

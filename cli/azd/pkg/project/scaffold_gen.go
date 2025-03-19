@@ -369,7 +369,7 @@ func mapHostUses(
 		case ResourceTypeStorage:
 			svcSpec.StorageAccount = &scaffold.StorageReference{}
 		case ResourceTypeAiProject:
-			svcSpec.HasAiFoundryProject = &scaffold.AiFoundrySpec{}
+			svcSpec.AiFoundryProject = &scaffold.AiFoundrySpec{}
 		case ResourceTypeAiSearch:
 			svcSpec.AISearch = &scaffold.AISearchReference{}
 		case ResourceTypeKeyVault:

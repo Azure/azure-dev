@@ -32,15 +32,6 @@ resource rg 'Microsoft.Resources/resourceGroups@2022-09-01' = {
   location: location
   tags: tags
 }
-module resources 'resources.bicep' = {
-  scope: rg
-  name: 'resources'
-  params: {
-    location: location
-    tags: tags
-    principalId: principalId
-  }
-}
 
 module ai 'ai/aspire.hosting.azure.bicep.appinsights.bicep' = {
   name: 'ai'
@@ -48,8 +39,7 @@ module ai 'ai/aspire.hosting.azure.bicep.appinsights.bicep' = {
   params: {
     appInsightsName: 'ai'
     location: location
-    logAnalyticsWorkspaceId: resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID
-    userPrincipalId: 'fixed-value-to-test-userPrincipalId-convention'
+    logAnalyticsWorkspaceId: ''
   }
 }
 module postgres_2 'postgres-2/aspire.hosting.azure.bicep.postgres.bicep' = {
@@ -58,10 +48,10 @@ module postgres_2 'postgres-2/aspire.hosting.azure.bicep.postgres.bicep' = {
   params: {
     administratorLogin: administrator_login
     administratorLoginPassword: administratorLoginPassword
-    containerAppEnvironmentId: resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
-    containerAppEnvironmentName: resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME
+    containerAppEnvironmentId: ''
+    containerAppEnvironmentName: ''
     databases: ['db2']
-    keyVaultName: resources.outputs.SERVICE_BINDING_KV854251F1_NAME
+    keyVaultName: ''
     location: location
     serverName: 'postgres-2'
   }
@@ -71,8 +61,8 @@ module s_b 's-b/aspire.hosting.azure.bicep.servicebus.bicep' = {
   scope: rg
   params: {
     location: location
-    principalId: resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID
-    principalType: 'ServicePrincipal'
+    principalId: ''
+    principalType: ''
     queues: ['queue1']
     serviceBusNamespaceName: 's-b'
     topics: [{name:'topic1',subscriptions:['subscription1','subscription2']},{name:'topic2',subscriptions:['subscription1']}]
@@ -84,8 +74,8 @@ module sql 'sql/aspire.hosting.azure.bicep.sql.bicep' = {
   params: {
     databases: ['db']
     location: location
-    principalId: resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID
-    principalName: resources.outputs.MANAGED_IDENTITY_NAME
+    principalId: ''
+    principalName: ''
     serverName: 'sql'
   }
 }
@@ -97,21 +87,10 @@ module test 'test/test.bicep' = {
     location: location
     test: parameter
     url: 'http://frontend.internal.${resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}'
+    userPrincipalId: principalId
     values: ['one','two']
   }
 }
-
-output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
-output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
-output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
-output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
-output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.AZURE_CONTAINER_REGISTRY_NAME
-output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME
-output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
-output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
-output SERVICE_BINDING_KV854251F1_ENDPOINT string = resources.outputs.SERVICE_BINDING_KV854251F1_ENDPOINT
-output SERVICE_BINDING_KV854251F1_NAME string = resources.outputs.SERVICE_BINDING_KV854251F1_NAME
 output AI_APPINSIGHTSCONNECTIONSTRING string = ai.outputs.appInsightsConnectionString
 output S_B_SERVICEBUSENDPOINT string = s_b.outputs.serviceBusEndpoint
 output SQL_SQLSERVERFQDN string = sql.outputs.sqlServerFqdn

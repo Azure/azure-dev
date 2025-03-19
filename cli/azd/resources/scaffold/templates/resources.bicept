@@ -38,7 +38,7 @@ module local_{{$existing.Name}}_{{.Name}} 'modules/role-assignment.bicep' = {
     {{- if eq .Scope 0}}
     resourceId: {{$existing.Name}}Id
     {{- end}}
-    roleDefinitionId: '{{.RoleDefinitionId}}'
+    roleDefinitionId: '{{.RoleDefinitionId}}' // {{.RoleDefinitionName}}
     principalId: principalId
     principalType: 'User'
   }
@@ -475,7 +475,7 @@ module {{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}} 'modules/role-assign
   scope: resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
   params: {
     {{ if eq .Scope 0 -}}resourceId: {{$existing.Name}}Id{{- end}}
-    roleDefinitionId: '{{.RoleDefinitionId}}'
+    roleDefinitionId: '{{.RoleDefinitionId}}' // {{.RoleDefinitionName}}
     principalId: {{bicepName $svc.Name}}Identity.outputs.principalId
     principalType: 'ServicePrincipal'
   }

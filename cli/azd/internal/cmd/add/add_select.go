@@ -15,6 +15,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
@@ -153,9 +154,18 @@ func (a *AddAction) selectExistingResource(
 		all := a.selectMenu()
 		selectMenu := make([]Menu, 0, len(all))
 		for _, menu := range all {
-			if menu.Namespace != "existing" {
-				selectMenu = append(selectMenu, menu)
+			if menu.Namespace == "existing" {
+				continue
 			}
+
+			if menu.Namespace == "host" || // host resources are not yet supported
+				menu.Namespace == "keyvault" || // keyvault (RBAC) is not yet supported
+				menu.Namespace == "db" { // db resources are not yet supported
+				continue
+			}
+
+			selectMenu = append(selectMenu, menu)
+
 		}
 
 		slices.SortFunc(selectMenu, func(a, b Menu) int {
@@ -187,12 +197,24 @@ func (a *AddAction) selectExistingResource(
 			azureResourceType = resourceMeta.ParentForEval
 		}
 
-		displayName := azureResourceType
-		if friendlyName := azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(azureResourceType)); friendlyName != "" {
-			displayName = friendlyName
+		managedResourceIds := make([]string, 0, len(p.PrjConfig.Resources))
+		env := a.env.Dotenv()
+
+		for res, resCfg := range p.PrjConfig.Resources {
+			if resCfg.Type != r.Type {
+				continue
+			}
+
+			if resId, ok := env[infra.ResourceIdName(res)]; ok {
+				managedResourceIds = append(managedResourceIds, resId)
+			}
 		}
 
-		resourceId, err := a.promptResource(ctx, fmt.Sprintf("Which %s resource?", displayName), azureResourceType)
+		resourceId, err := a.promptResource(
+			ctx,
+			fmt.Sprintf("Which %s resource?", r.Type.String()),
+			azureResourceType,
+			managedResourceIds)
 		if err != nil {
 			return nil, fmt.Errorf("prompting for resource: %w", err)
 		}
@@ -226,16 +248,27 @@ func (a *AddAction) promptResource(
 	ctx context.Context,
 	msg string,
 	resourceType string,
+	excludeResourceIds []string,
 ) (string, error) {
 	options := armresources.ClientListOptions{
 		Filter: to.Ptr(fmt.Sprintf("resourceType eq '%s'", resourceType)),
 	}
 
 	a.console.ShowSpinner(ctx, "Listing resources...", input.Step)
-	resources, err := a.resourceService.ListSubscriptionResources(ctx, a.env.GetSubscriptionId(), &options)
+	allResources, err := a.resourceService.ListSubscriptionResources(ctx, a.env.GetSubscriptionId(), &options)
 	if err != nil {
 		return "", fmt.Errorf("listing resources: %w", err)
 	}
+
+	resources := make([]*azapi.ResourceExtended, 0, len(allResources))
+	for _, resource := range allResources {
+		if slices.Contains(excludeResourceIds, resource.Id) {
+			continue
+		}
+
+		resources = append(resources, resource)
+	}
+
 	if len(resources) == 0 {
 		return "", nil
 	}

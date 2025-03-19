@@ -461,14 +461,16 @@ func emitVariable(emitEnv EmitEnv, val *scaffold.ExpressionVar, results map[stri
 		return nil
 	}
 
-	// if there are multiple expressions, we need to surround each expression with ${}
-	// to make it a Bicep interpolated string
-	interpolationMode := len(val.Expressions) > 1
+	// surround each expression with ${} in a Bicep interpolated string
 	surround := func(s string) string {
-		if interpolationMode {
-			return fmt.Sprintf("${%s}", s)
+		return fmt.Sprintf("${%s}", s)
+	}
+
+	if len(val.Expressions) == 1 && val.Expressions[0].Start == 0 && val.Expressions[0].End == len(val.Value) {
+		// if there is only one expression and it covers the entire value, we don't need to surround it
+		surround = func(s string) string {
+			return s
 		}
-		return s
 	}
 
 	for _, expr := range val.Expressions {

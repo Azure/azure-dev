@@ -99,6 +99,10 @@ func (s *showResource) showResourceGeneric(
 		Variables:   envValues,
 	}
 
+	if opts.resourceSpec != nil {
+		showRes.Name = opts.resourceSpec.Name
+	}
+
 	return &showRes, nil
 }
 
@@ -112,13 +116,15 @@ func getResourceMeta(id arm.ResourceID) (*scaffold.ResourceMeta, arm.ResourceID)
 				// find the parent resource
 				parentId := &id
 				for {
-					if parentId.Parent != nil {
-						parentId = parentId.Parent
+					if parentId == nil {
+						panic(fmt.Sprintf("'%s' was not found as a parent of '%s'", res.ParentForEval, resourceType))
 					}
 
-					if parentId.ResourceType.Type == res.ParentForEval {
+					if parentId.ResourceType.String() == res.ParentForEval {
 						break
 					}
+
+					parentId = parentId.Parent
 				}
 
 				return &res, *parentId

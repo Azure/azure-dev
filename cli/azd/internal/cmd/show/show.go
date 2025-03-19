@@ -17,7 +17,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
@@ -35,7 +34,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -313,11 +311,6 @@ func (s *showAction) showResource(ctx context.Context, name string, env *environ
 		if err != nil {
 			return err
 		}
-	case strings.EqualFold(resType, "Microsoft.CognitiveServices/accounts/deployments"):
-		err = showModelDeployment(ctx, s.console, credential, id.Parent, resourceOptions)
-		if err != nil {
-			return err
-		}
 	default:
 		showRes := showResource{
 			env:             env,
@@ -422,43 +415,6 @@ func showContainerApp(
 	}
 
 	return service, nil
-}
-
-func showModelDeployment(
-	ctx context.Context,
-	console input.Console,
-	cred azcore.TokenCredential,
-	id *arm.ResourceID,
-	opts showResourceOptions) error {
-	client, err := armcognitiveservices.NewAccountsClient(id.SubscriptionID, cred, opts.clientOpts)
-	if err != nil {
-		return fmt.Errorf("creating accounts client: %w", err)
-	}
-
-	account, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
-	if err != nil {
-		return fmt.Errorf("getting account: %w", err)
-	}
-
-	if account.Properties.Endpoint != nil {
-		console.Message(ctx, color.HiMagentaString("%s (Azure AI Services Model Deployment)", id.Name))
-		console.Message(ctx, "  Endpoint:")
-		console.Message(ctx,
-			output.WithHighLightFormat(fmt.Sprintf("    AZURE_OPENAI_ENDPOINT=%s", *account.Properties.Endpoint)))
-		console.Message(ctx, "  Access:")
-		console.Message(ctx, "    Keyless (Microsoft Entra ID)")
-		//nolint:lll
-		console.Message(
-			ctx,
-			output.WithGrayFormat(
-				"        Hint: To access locally, use DefaultAzureCredential. To learn more, visit https://learn.microsoft.com/en-us/azure/ai-services/openai/supported-languages",
-			),
-		)
-
-		console.Message(ctx, "")
-	}
-
-	return nil
 }
 
 func (s *showAction) serviceEndpoint(

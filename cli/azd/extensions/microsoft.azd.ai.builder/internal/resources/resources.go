@@ -7,5 +7,5 @@ import (
 	"embed"
 )
 
-//go:embed scenarios/*
+//go:embed scenarios
 var Scenarios embed.FS

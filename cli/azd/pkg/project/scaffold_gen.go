@@ -158,7 +158,7 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 		if res.Existing { // handle existing flow
 			resourceMeta, ok := scaffold.ResourceMetaFromType(res.Type.AzureResourceType())
 			if !ok {
-				return nil, fmt.Errorf("resource type '%s' is not currently supported for existing", res.Type)
+				return nil, fmt.Errorf("resource type '%s' is not currently supported for existing", string(res.Type))
 			}
 
 			existing := scaffold.ExistingResource{
@@ -167,6 +167,10 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 				ResourceIdEnvVar: infra.ResourceIdName(res.Name),
 				ResourceType:     resourceMeta.ResourceType,
 				RoleAssignments:  resourceMeta.RoleAssignments.Write,
+			}
+
+			if resourceMeta.ParentForEval != "" {
+				existing.ResourceType = resourceMeta.ParentForEval
 			}
 
 			infraSpec.Existing = append(infraSpec.Existing, existing)
@@ -376,7 +380,7 @@ func mapHostUses(
 		if useRes.Existing {
 			resourceMeta, ok := scaffold.ResourceMetaFromType(useRes.Type.AzureResourceType())
 			if !ok {
-				return fmt.Errorf("resource type '%s' is not currently supported for existing", res.Type)
+				return fmt.Errorf("resource type '%s' is not currently supported for existing", string(res.Type))
 			}
 
 			existingDecl := existingMap[use]
@@ -388,7 +392,7 @@ func mapHostUses(
 
 			results, err := scaffold.EmitBicep(resourceMeta.Variables, emitter)
 			if err != nil {
-				return fmt.Errorf("emitting bicep bindings: %w", err)
+				return fmt.Errorf("emitting bicep bindings for '%s': %w", useRes.Name, err)
 			}
 
 			for key, value := range results {

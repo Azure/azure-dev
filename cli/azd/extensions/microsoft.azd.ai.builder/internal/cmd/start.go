@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path" // added for POSIX path joining
 	"path/filepath"
@@ -367,22 +368,8 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 
 		// Determine the correct resource folder path using POSIX join.
 		resourceDir := path.Join("scenarios", a.scenarioData.SelectedScenario, service.Name, service.Language)
-		entries, err := resources.Scenarios.ReadDir(resourceDir)
-		if err != nil {
-			return fmt.Errorf("failed to read resource directory %s: %w", resourceDir, err)
-		}
-
-		for _, entry := range entries {
-			srcPath := path.Join(resourceDir, entry.Name())
-			destPath := filepath.Join(servicePath, entry.Name())
-			data, err := resources.Scenarios.ReadFile(srcPath)
-			if err != nil {
-				return fmt.Errorf("failed to read resource file %s: %w", srcPath, err)
-			}
-			//nolint:gosec
-			if err := os.WriteFile(destPath, data, 0644); err != nil {
-				return fmt.Errorf("failed to write file %s: %w", destPath, err)
-			}
+		if err := copyResourceDir(resourceDir, servicePath); err != nil {
+			return fmt.Errorf("failed to copy resource directory %s: %w", resourceDir, err)
 		}
 	}
 
@@ -854,8 +841,8 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				HelpMessage:     "Select all the data interaction types that apply to your application.",
 				EnableFiltering: to.Ptr(false),
 				Choices: []qna.Choice{
-					{Label: "Chatbot", Value: "chatbot"},
-					{Label: "Web Application", Value: "webapp"},
+					{Label: "Chatbot UI Frontend", Value: "chatbot"},
+					{Label: "API Backend Application", Value: "webapp"},
 				},
 			},
 			Branches: map[any]string{
@@ -878,9 +865,9 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				HelpMessage:     "Select all the data interaction types that apply to your application.",
 				EnableFiltering: to.Ptr(false),
 				Choices: []qna.Choice{
-					{Label: "Chatbot", Value: "chatbot"},
-					{Label: "Web Application", Value: "webapp"},
-					{Label: "Message Queue", Value: "messaging"},
+					{Label: "Chatbot UI Frontend", Value: "chatbot"},
+					{Label: "API Backend Application", Value: "webapp"},
+					{Label: "Message based Backed Queue", Value: "messaging"},
 				},
 			},
 			Branches: map[any]string{
@@ -1352,4 +1339,30 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 			},
 		},
 	}
+}
+
+// New helper function to recursively copy resource directories.
+func copyResourceDir(src, dest string) error {
+	return fs.WalkDir(resources.Scenarios, src, func(entryPath string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relPath, err := filepath.Rel(src, entryPath)
+		if err != nil {
+			return err
+		}
+		targetPath := filepath.Join(dest, relPath)
+		if d.IsDir() {
+			return os.MkdirAll(targetPath, os.ModePerm)
+		}
+		data, err := resources.Scenarios.ReadFile(entryPath)
+		if err != nil {
+			return fmt.Errorf("failed to read resource file %s: %w", entryPath, err)
+		}
+		//nolint:gosec
+		if err := os.WriteFile(targetPath, data, 0644); err != nil {
+			return fmt.Errorf("failed to write file %s: %w", targetPath, err)
+		}
+		return nil
+	})
 }

@@ -22,30 +22,14 @@ param principalId string
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = uniqueString(subscription().id, resourceGroup().id, location)
 
-{{if .Existing}}
 {{- range .Existing }}
+
 var {{.Name}}IdSegments = split({{.Name}}Id, '/')
 resource {{.Name}} '{{.ResourceType}}@{{.ApiVersion}}' existing = {
   scope: resourceGroup({{.Name}}IdSegments[2], {{.Name}}IdSegments[4])
   name: {{.Name}}IdSegments[8]
 }
-
-{{- $existing := .}}{{- range .RoleAssignments}}
-module local_{{$existing.Name}}_{{.Name}} 'modules/role-assignment.bicep' = {
-  name: 'local_{{$existing.Name}}_{{.Name}}'
-  scope: resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
-  params: {
-    {{- if eq .Scope 0}}
-    resourceId: {{$existing.Name}}Id
-    {{- end}}
-    roleDefinitionId: '{{.RoleDefinitionId}}' // {{.RoleDefinitionName}}
-    principalId: principalId
-    principalType: 'User'
-  }
-}
-{{end}}
 {{- end}}
-{{- end -}}
 
 {{- if .Services }}
 
@@ -467,9 +451,9 @@ resource {{bicepName .Name}}OpenAIIdentity 'Microsoft.Authorization/roleAssignme
 {{- end}}
 
 {{- $svc := . -}}
-{{- if .Existing }}
 {{- range $index, $existing := .Existing}}
 {{- range .RoleAssignments}}
+
 module {{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}} 'modules/role-assignment.bicep' = {
   name: '{{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}}'
   scope: resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
@@ -480,7 +464,6 @@ module {{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}} 'modules/role-assign
     principalType: 'ServicePrincipal'
   }
 }
-{{- end}}
 {{- end}}
 {{- end}}
 

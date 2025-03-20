@@ -3,9 +3,11 @@ param roleDefinitionId string
 param principalId string
 param principalType string = ''
 
+var fullRoleDefinitionId = az.subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleDefinitionId)
+
 #disable-next-line no-deployments-resources
 resource roleAssignment 'Microsoft.Resources/deployments@2021-04-01' = {
-    name: guid(resourceId, principalId, roleDefinitionId)
+    name: guid(resourceId, principalId, fullRoleDefinitionId)
     properties: {
         mode: 'Incremental'
         expressionEvaluationOptions: {
@@ -17,10 +19,10 @@ resource roleAssignment 'Microsoft.Resources/deployments@2021-04-01' = {
                 value: resourceId
             }
             name: {
-                value: guid(resourceId, principalId, roleDefinitionId)
+                value: guid(resourceId, principalId, fullRoleDefinitionId)
             }
             roleDefinitionId: {
-                value: roleDefinitionId
+                value: fullRoleDefinitionId
             }
             principalId: {
                 value: principalId

@@ -1,16 +1,12 @@
-from azure.ai.openai import OpenAIClient
-from azure.core.credentials import AzureKeyCredential
+import os
 
-def main():
-    endpoint = "https://your-resource.openai.azure.com/"
-    api_key = "your-key"
-    client = OpenAIClient(endpoint, AzureKeyCredential(api_key))
-    deployment_id = "deployment-id"
-    response = client.get_chat_completions(deployment_id, messages=[
-        {"role": "system", "content": "You are an assistant."},
-        {"role": "user", "content": "Hello, world!"}
-    ])
-    print(response.choices[0].message.content)
+from app import create_app
+from load_azd_env import load_azd_env
 
-if __name__ == "__main__":
-    main()
+# WEBSITE_HOSTNAME is always set by App Service, RUNNING_IN_PRODUCTION is set in main.bicep
+RUNNING_ON_AZURE = os.getenv("WEBSITE_HOSTNAME") is not None or os.getenv("RUNNING_IN_PRODUCTION") is not None
+
+if not RUNNING_ON_AZURE:
+    load_azd_env()
+
+app = create_app()

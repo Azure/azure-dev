@@ -134,6 +134,11 @@ var (
 		"imageGenerations": "dall-e-3",
 		"audio":            "whisper",
 	}
+
+	defaultAppLanguageMap = map[string]string{
+		"rag-ui":  "ts",
+		"rag-api": "python",
+	}
 )
 
 func newStartCommand() *cobra.Command {
@@ -269,7 +274,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	// Add database resources
 	if a.scenarioData.DatabaseType != "" {
 		dbResource := &azdext.ComposedResource{
-			Name: "database",
+			Name: strings.ReplaceAll(a.scenarioData.DatabaseType, "db.", ""),
 			Type: a.scenarioData.DatabaseType,
 		}
 		resourcesToAdd = append(resourcesToAdd, dbResource)
@@ -286,7 +291,10 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	// Add storage resources
 	if a.scenarioData.UseCustomData && a.scenarioData.StorageAccountId != "" {
 		storageConfig := map[string]any{
-			"containers": []string{"blobs"},
+			"containers": []string{
+				"data",
+				"embeddings",
+			},
 		}
 
 		storageConfigJson, err := json.Marshal(storageConfig)
@@ -960,13 +968,13 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				HelpMessage:     "Select all the data interaction types that apply to your application.",
 				EnableFiltering: to.Ptr(false),
 				Choices: []qna.Choice{
-					{Label: "Chatbot UI Frontend", Value: "chatbot"},
-					{Label: "API Backend Application", Value: "webapp"},
+					{Label: "Chatbot UI Frontend", Value: "rag-ui"},
+					{Label: "API Backend Application", Value: "rag-api"},
 				},
 			},
 			Branches: map[any]string{
-				"chatbot": "choose-app",
-				"webapp":  "choose-app",
+				"rag-ui":  "choose-app",
+				"rag-api": "choose-app",
 			},
 			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
 				q.State["interactionTypes"] = value
@@ -1051,14 +1059,13 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 			},
 		},
 		"choose-app-language": {
-			Binding: &a.scenarioData.AppLanguages,
 			Prompt: &qna.SingleSelectPrompt{
 				Client:          a.azdClient,
 				Message:         "Which programming language do you want to use?",
 				HelpMessage:     "Select the programming language that best fits your needs.",
 				EnableFiltering: to.Ptr(false),
 				Choices: []qna.Choice{
-					{Label: "Choose for me", Value: "python"},
+					{Label: "Choose for me", Value: "default"},
 					{Label: "C#", Value: "csharp"},
 					{Label: "Python", Value: "python"},
 					{Label: "JavaScript", Value: "js"},
@@ -1066,6 +1073,23 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 					{Label: "Java", Value: "java"},
 					{Label: "Other", Value: "other"},
 				},
+			},
+			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
+				selectedLanguage := value.(string)
+
+				// Find the default language for the selected interaction type if available.
+				if selectedLanguage == "default" {
+					interactionType := q.State["interactionType"].(string)
+					interactionDefault, has := defaultAppLanguageMap[interactionType]
+					if has {
+						selectedLanguage = interactionDefault
+					} else {
+						selectedLanguage = "python"
+					}
+				}
+
+				a.scenarioData.AppLanguages = append(a.scenarioData.AppLanguages, selectedLanguage)
+				return nil
 			},
 		},
 		"choose-app-resource": {
@@ -1107,14 +1131,14 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				HelpMessage:     "Select all the data interaction types that apply to your application.",
 				EnableFiltering: to.Ptr(false),
 				Choices: []qna.Choice{
-					{Label: "Chatbot UI Frontend", Value: "chatbot"},
-					{Label: "API Backend Application", Value: "webapp"},
+					{Label: "Chatbot UI Frontend", Value: "rag-ui"},
+					{Label: "API Backend Application", Value: "rag-api"},
 					{Label: "Message based Backed Queue", Value: "messaging"},
 				},
 			},
 			Branches: map[any]string{
-				"chatbot":   "choose-app",
-				"webapp":    "choose-app",
+				"rag-ui":    "choose-app",
+				"rag-api":   "choose-app",
 				"messaging": "choose-messaging-type",
 			},
 			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {

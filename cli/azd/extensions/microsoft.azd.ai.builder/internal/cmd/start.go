@@ -28,11 +28,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const (
-	defaultChatCompletionModel = "gpt-4o"
-	defaultEmbeddingModel      = "text-embedding-3-small"
-)
-
 type scenarioInput struct {
 	SelectedScenario string `json:"selectedScenario,omitempty"`
 
@@ -132,6 +127,13 @@ var (
 			ResourceTypeDisplayName: "Static Web App",
 		},
 	}
+
+	defaultModelMap = map[string]string{
+		"chatCompletion":   "gpt-4o",
+		"embedding":        "text-embedding-3-small",
+		"imageGenerations": "dall-e-3",
+		"audio":            "whisper",
+	}
 )
 
 func newStartCommand() *cobra.Command {
@@ -160,6 +162,11 @@ func newStartCommand() *cobra.Command {
 				return fmt.Errorf("failed to ensure azure context: %w", err)
 			}
 
+			getComposedResourcesResponse, err := azdClient.Compose().ListResources(ctx, &azdext.EmptyRequest{})
+			if err != nil {
+				return fmt.Errorf("failed to get composed resources: %w", err)
+			}
+
 			credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
 				TenantID:                   azureContext.Scope.TenantId,
 				AdditionallyAllowedTenants: []string{"*"},
@@ -172,6 +179,7 @@ func newStartCommand() *cobra.Command {
 				azdClient:           azdClient,
 				credential:          credential,
 				azureContext:        azureContext,
+				composedResources:   getComposedResourcesResponse.Resources,
 				azureClient:         azure.NewAzureClient(credential),
 				modelCatalogService: ai.NewModelCatalogService(credential),
 				projectConfig:       projectConfig,
@@ -196,6 +204,7 @@ type startAction struct {
 	projectConfig       *azdext.ProjectConfig
 	scenarioData        *scenarioInput
 	modelCatalog        map[string]*ai.AiModel
+	composedResources   []*azdext.ComposedResource
 }
 
 func (a *startAction) Run(ctx context.Context, args []string) error {
@@ -220,6 +229,10 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 
 	// Add host resources such as container apps.
 	for i, appKey := range a.scenarioData.InteractionTypes {
+		if i >= len(a.scenarioData.AppHostTypes) {
+			break
+		}
+
 		appType := a.scenarioData.AppHostTypes[i]
 		if appType == "" || appType == "choose-app" {
 			appType = "host.containerapp"
@@ -271,7 +284,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	}
 
 	// Add storage resources
-	if a.scenarioData.UseCustomData {
+	if a.scenarioData.UseCustomData && a.scenarioData.StorageAccountId != "" {
 		storageConfig := map[string]any{
 			"containers": []string{"blobs"},
 		}
@@ -680,15 +693,49 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 			},
 			Branches: map[any]string{
 				"blob-storage":      "choose-storage",
-				"databases":         "choose-database-type",
+				"databases":         "choose-database",
 				"local-file-system": "local-file-system",
 			},
-			Next: []qna.QuestionReference{{Key: "choose-vector-store-type"}},
+			Next: []qna.QuestionReference{{Key: "choose-vector-store"}},
 		},
 		"choose-storage": {
-			Binding: &a.scenarioData.StorageAccountId,
 			Heading: "Storage Account",
 			Message: "We'll need to setup a storage account to store the data for your application.",
+			BeforeAsk: func(ctx context.Context, q *qna.Question, _ any) error {
+				hasStorageResource := false
+				for _, resource := range a.composedResources {
+					if resource.Type == "storage" {
+						hasStorageResource = true
+						break
+					}
+				}
+
+				if hasStorageResource {
+					q.Prompt = &qna.ConfirmPrompt{
+						Client:       a.azdClient,
+						Message:      "It looks like you already have a configured storage account. Do you want to reuse it?",
+						DefaultValue: to.Ptr(true),
+						HelpMessage:  "Using an existing storage account will save you time and resources.",
+					}
+				}
+
+				q.State["hasStorageResource"] = hasStorageResource
+
+				return nil
+			},
+			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
+				hasStorageResource := q.State["hasStorageResource"].(bool)
+				reuseStorage, ok := value.(bool)
+
+				if !hasStorageResource || ok && !reuseStorage {
+					q.Next = []qna.QuestionReference{{Key: "choose-storage-resource"}}
+				}
+
+				return nil
+			},
+		},
+		"choose-storage-resource": {
+			Binding: &a.scenarioData.StorageAccountId,
 			Prompt: &qna.SubscriptionResourcePrompt{
 				Client:                  a.azdClient,
 				ResourceType:            "Microsoft.Storage/storageAccounts",
@@ -697,10 +744,44 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				AzureContext:            a.azureContext,
 			},
 		},
-		"choose-database-type": {
-			Binding: &a.scenarioData.DatabaseType,
+		"choose-database": {
 			Heading: "Database",
 			Message: "We'll need to setup a database that will be used by your application to power AI model(s).",
+			BeforeAsk: func(ctx context.Context, q *qna.Question, _ any) error {
+				hasDatabaseResource := false
+				for _, resource := range a.composedResources {
+					if strings.HasPrefix(resource.Type, "db.") {
+						hasDatabaseResource = true
+						break
+					}
+				}
+
+				if hasDatabaseResource {
+					q.Prompt = &qna.ConfirmPrompt{
+						Client:       a.azdClient,
+						Message:      "It looks like you already have a configured database. Do you want to reuse it?",
+						DefaultValue: to.Ptr(true),
+						HelpMessage:  "Using an existing database will save you time and resources.",
+					}
+				}
+
+				q.State["hasDatabaseResource"] = hasDatabaseResource
+
+				return nil
+			},
+			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
+				hasDatabaseResource := q.State["hasDatabaseResource"].(bool)
+				reuseDatabase, ok := value.(bool)
+
+				if !hasDatabaseResource || ok && !reuseDatabase {
+					q.Next = []qna.QuestionReference{{Key: "choose-database-type"}}
+				}
+
+				return nil
+			},
+		},
+		"choose-database-type": {
+			Binding: &a.scenarioData.DatabaseType,
 			Prompt: &qna.SingleSelectPrompt{
 				Message:         "Which type of database?",
 				HelpMessage:     "Select the type of database that best fits your needs.",
@@ -779,10 +860,48 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				Placeholder: "*.json",
 			},
 		},
-		"choose-vector-store-type": {
-			Binding: &a.scenarioData.VectorStoreType,
+		"choose-vector-store": {
 			Heading: "Vector Store",
 			Message: "Based on your choices we're going to need a vector store to store the text embeddings for your data.",
+			BeforeAsk: func(ctx context.Context, q *qna.Question, _ any) error {
+				hasVectorStoreResource := false
+				for _, resource := range a.composedResources {
+					if resource.Type == "ai.search" {
+						hasVectorStoreResource = true
+						break
+					}
+				}
+
+				if hasVectorStoreResource {
+					q.Prompt = &qna.ConfirmPrompt{
+						Client:       a.azdClient,
+						Message:      "It looks like you already have a configured vector store. Do you want to reuse it?",
+						DefaultValue: to.Ptr(true),
+						HelpMessage:  "Using an existing vector store will save you time and resources.",
+					}
+				}
+
+				q.State["hasVectorStoreResource"] = hasVectorStoreResource
+
+				return nil
+			},
+			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
+				hasVectorStoreResource := q.State["hasVectorStoreResource"].(bool)
+				reuseVectorStore, ok := value.(bool)
+
+				next := "rag-user-interaction"
+
+				if !hasVectorStoreResource || ok && !reuseVectorStore {
+					next = "choose-vector-store-type"
+				}
+
+				q.Next = []qna.QuestionReference{{Key: next}}
+
+				return nil
+			},
+		},
+		"choose-vector-store-type": {
+			Binding: &a.scenarioData.VectorStoreType,
 			Prompt: &qna.SingleSelectPrompt{
 				Message:         "What type of vector store do you want to use?",
 				HelpMessage:     "Select the type of vector store that best fits your needs.",
@@ -846,8 +965,8 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				},
 			},
 			Branches: map[any]string{
-				"chatbot": "choose-app-type",
-				"webapp":  "choose-app-type",
+				"chatbot": "choose-app",
+				"webapp":  "choose-app",
 			},
 			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
 				q.State["interactionTypes"] = value
@@ -855,56 +974,62 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 			},
 			Next: []qna.QuestionReference{{Key: "start-choose-models"}},
 		},
-		"agent-interaction": {
-			Binding: &a.scenarioData.InteractionTypes,
-			Heading: "Agent Hosting",
-			Message: "Now we will figure out all the different ways users and systems will interact with your agent.",
-			Prompt: &qna.MultiSelectPrompt{
-				Client:          a.azdClient,
-				Message:         "How do you want users to interact with the agent?",
-				HelpMessage:     "Select all the data interaction types that apply to your application.",
-				EnableFiltering: to.Ptr(false),
-				Choices: []qna.Choice{
-					{Label: "Chatbot UI Frontend", Value: "chatbot"},
-					{Label: "API Backend Application", Value: "webapp"},
-					{Label: "Message based Backed Queue", Value: "messaging"},
-				},
-			},
-			Branches: map[any]string{
-				"chatbot":   "choose-app-type",
-				"webapp":    "choose-app-type",
-				"messaging": "choose-messaging-type",
-			},
-			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
-				q.State["interactionTypes"] = value
-				return nil
-			},
-			Next: []qna.QuestionReference{{Key: "start-choose-model"}},
-		},
-		"agent-tasks": {
-			Binding: &a.scenarioData.ModelTasks,
-			Prompt: &qna.MultiSelectPrompt{
-				Client:          a.azdClient,
-				Message:         "What tasks do you want the AI agent to perform?",
-				HelpMessage:     "Select all the tasks that apply to your application.",
-				EnableFiltering: to.Ptr(false),
-				Choices: []qna.Choice{
-					{Label: "Custom Function Calling", Value: "custom-function-calling"},
-					{Label: "Integrate with Open API based services", Value: "openapi"},
-					{Label: "Run Azure Functions", Value: "azure-functions"},
-					{Label: "Other", Value: "other-model-tasks"},
-				},
-			},
-			Next: []qna.QuestionReference{{Key: "use-custom-data"}},
-		},
-		"choose-app-type": {
-			Binding: &a.scenarioData.AppHostTypes,
+		"choose-app": {
 			BeforeAsk: func(ctx context.Context, q *qna.Question, value any) error {
 				q.Heading = fmt.Sprintf("Configure '%s' Application", value)
 				q.Message = fmt.Sprintf("Lets collect some information about your %s application.", value)
 				q.State["interactionType"] = value
+
+				hasHostAppResource := false
+				appHostCount := 0
+				for _, resource := range a.composedResources {
+					if strings.HasPrefix(resource.Type, "host.") {
+						appHostCount++
+						hasHostAppResource = true
+					}
+				}
+
+				hostName := "host"
+				hostName2 := "it"
+				if appHostCount > 1 {
+					hostName = "hosts"
+					hostName2 = "them"
+				}
+
+				msg := fmt.Sprintf(
+					"It looks like you project already contains %d application %s. Do you want to reuse %s?",
+					appHostCount,
+					hostName,
+					hostName2,
+				)
+
+				if hasHostAppResource {
+					q.Prompt = &qna.ConfirmPrompt{
+						Client:       a.azdClient,
+						Message:      msg,
+						DefaultValue: to.Ptr(true),
+						HelpMessage:  "Using an existing application host will save you time and resources.",
+					}
+				}
+
+				q.State["hasHostAppResource"] = hasHostAppResource
+
 				return nil
 			},
+			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
+				hasHostAppResource := q.State["hasHostAppResource"].(bool)
+				reuseHostApp, ok := value.(bool)
+				if !hasHostAppResource || ok && !reuseHostApp {
+					q.Next = []qna.QuestionReference{{Key: "choose-app-type"}}
+				}
+
+				delete(q.State, "hasHostAppResource")
+
+				return nil
+			},
+		},
+		"choose-app-type": {
+			Binding: &a.scenarioData.AppHostTypes,
 			Prompt: &qna.SingleSelectPrompt{
 				Message:         "Which application host do you want to use?",
 				Client:          a.azdClient,
@@ -972,6 +1097,49 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				},
 			},
 		},
+		"agent-interaction": {
+			Binding: &a.scenarioData.InteractionTypes,
+			Heading: "Agent Hosting",
+			Message: "Now we will figure out all the different ways users and systems will interact with your agent.",
+			Prompt: &qna.MultiSelectPrompt{
+				Client:          a.azdClient,
+				Message:         "How do you want users to interact with the agent?",
+				HelpMessage:     "Select all the data interaction types that apply to your application.",
+				EnableFiltering: to.Ptr(false),
+				Choices: []qna.Choice{
+					{Label: "Chatbot UI Frontend", Value: "chatbot"},
+					{Label: "API Backend Application", Value: "webapp"},
+					{Label: "Message based Backed Queue", Value: "messaging"},
+				},
+			},
+			Branches: map[any]string{
+				"chatbot":   "choose-app",
+				"webapp":    "choose-app",
+				"messaging": "choose-messaging-type",
+			},
+			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
+				q.State["interactionTypes"] = value
+				return nil
+			},
+			Next: []qna.QuestionReference{{Key: "start-choose-model"}},
+		},
+		"agent-tasks": {
+			Binding: &a.scenarioData.ModelTasks,
+			Prompt: &qna.MultiSelectPrompt{
+				Client:          a.azdClient,
+				Message:         "What tasks do you want the AI agent to perform?",
+				HelpMessage:     "Select all the tasks that apply to your application.",
+				EnableFiltering: to.Ptr(false),
+				Choices: []qna.Choice{
+					{Label: "Custom Function Calling", Value: "custom-function-calling"},
+					{Label: "Integrate with Open API based services", Value: "openapi"},
+					{Label: "Run Azure Functions", Value: "azure-functions"},
+					{Label: "Other", Value: "other-model-tasks"},
+				},
+			},
+			Next: []qna.QuestionReference{{Key: "use-custom-data"}},
+		},
+
 		"choose-messaging-type": {
 			Binding: &a.scenarioData.MessagingType,
 			Prompt: &qna.SingleSelectPrompt{
@@ -1037,7 +1205,7 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 							},
 						},
 					},
-					"embedding": {
+					"embeddings": {
 						Heading: "Embedding Model (For vectorizing text)",
 						Description: "Used to convert documents and queries into vector representations " +
 							"for efficient similarity searches.",
@@ -1049,11 +1217,43 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 							},
 						},
 					},
+					"audio": {
+						Heading:     "Audio Model (For transcribing audio)",
+						Description: "Used to convert audio files into text for further processing.",
+						QuestionReference: qna.QuestionReference{
+							Key: "start-choose-model",
+							State: map[string]any{
+								"modelSelectMessage": "Lets choose a audio model",
+								"capabilities":       []string{"audio"},
+							},
+						},
+					},
+					"images": {
+						Heading:     "Image Generation Model (For generating images)",
+						Description: "Used to generate images based on text prompts.",
+						QuestionReference: qna.QuestionReference{
+							Key: "start-choose-model",
+							State: map[string]any{
+								"modelSelectMessage": "Lets choose a image generation model",
+								"capabilities":       []string{"imageGenerations"},
+							},
+						},
+					},
 				}
 
 				requiredModels := []string{"llm"}
-				if a.scenarioData.UseCustomData {
-					requiredModels = append(requiredModels, "embedding")
+				if slices.Contains(a.scenarioData.DataTypes, "structured-documents") ||
+					slices.Contains(a.scenarioData.DataTypes, "unstructured-documents") {
+					requiredModels = append(requiredModels, "embeddings")
+				}
+
+				if slices.Contains(a.scenarioData.DataTypes, "audio") {
+					requiredModels = append(requiredModels, "audio")
+				}
+
+				if slices.Contains(a.scenarioData.DataTypes, "images") ||
+					slices.Contains(a.scenarioData.DataTypes, "videos") {
+					requiredModels = append(requiredModels, "images")
 				}
 
 				nextQuestions := []qna.QuestionReference{}
@@ -1110,16 +1310,13 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 					}
 
 					// If the user selected "choose-model", we need to set the model selection
-					if slices.Contains(capabilities, "chatCompletion") {
-						a.scenarioData.ModelSelections = append(
-							a.scenarioData.ModelSelections,
-							defaultChatCompletionModel,
-						)
-					} else if slices.Contains(capabilities, "embeddings") {
-						a.scenarioData.ModelSelections = append(
-							a.scenarioData.ModelSelections,
-							defaultEmbeddingModel,
-						)
+					for key, value := range defaultModelMap {
+						if slices.Contains(capabilities, key) {
+							a.scenarioData.ModelSelections = append(
+								a.scenarioData.ModelSelections,
+								value,
+							)
+						}
 					}
 				}
 

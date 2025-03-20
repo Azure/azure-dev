@@ -194,6 +194,38 @@ func (c *ComposeService) ListResourceTypes(
 }
 
 // ListResources implements azdext.ComposeServiceServer.
-func (c *ComposeService) ListResources(context.Context, *azdext.EmptyRequest) (*azdext.ListResourcesResponse, error) {
-	panic("unimplemented")
+func (c *ComposeService) ListResources(
+	ctx context.Context,
+	req *azdext.EmptyRequest,
+) (*azdext.ListResourcesResponse, error) {
+	azdContext, err := c.lazyAzdContext.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	projectConfig, err := project.Load(ctx, azdContext.ProjectPath())
+	if err != nil {
+		return nil, err
+	}
+
+	existingResources := projectConfig.Resources
+	composedResources := make([]*azdext.ComposedResource, 0, len(existingResources))
+
+	for _, resource := range existingResources {
+		resourceConfigBytes, err := json.Marshal(resource.Props)
+		if err != nil {
+			return nil, fmt.Errorf("marshaling resource config: %w", err)
+		}
+		composedResource := &azdext.ComposedResource{
+			Name:   resource.Name,
+			Type:   string(resource.Type),
+			Config: resourceConfigBytes,
+			Uses:   resource.Uses,
+		}
+		composedResources = append(composedResources, composedResource)
+	}
+
+	return &azdext.ListResourcesResponse{
+		Resources: composedResources,
+	}, nil
 }

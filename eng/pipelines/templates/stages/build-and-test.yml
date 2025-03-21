@@ -186,6 +186,28 @@ stages:
             workingDirectory: $(Pipeline.Workspace)/docs
             displayName: Show doc artifacts to publish
 
+
+          - pwsh: |
+              New-Item -ItemType Directory -Path release-metadata -Force
+              # CLI Version may have been set by set-cli-version-cd.yml
+              $cliVersion = "$(CLI_VERSION)"
+
+              # Given a package version and a configuration for AllowPrerelease, 
+              # determine if the package should be submitted or not.
+              $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+                -CliVersion "$(CLI_VERSION)" `
+                -AllowPrerelease:$false
+
+
+              $releaseMetadata = @{
+                cliVersion = $cliVersion;
+                msiVersion = (eng/scripts/Get-MsiVersion.ps1 -CliVersion $cliVersion);
+                submitChocoPackage = $submitPackage;
+              }
+
+              Set-Content -Path release-metadata/metadata.json -Value ($releaseMetadata | ConvertTo-Json -Depth 100)
+            displayName: Create release metadata
+
         templateContext: 
           outputs: 
             - output: pipelineArtifact
@@ -196,3 +218,9 @@ stages:
               path: $(Pipeline.Workspace)/docs/
               artifact: docs
               displayName: Upload generated documentation
+
+            - output: pipelineArtifact
+              path: release-metadata
+              condition: succeeded()
+              artifact: release-metadata
+              displayName: Upload release metadata

@@ -1,0 +1,27 @@
+parameters:
+  - name: BaseRepoBranch
+    type: string
+    default: main
+
+steps: 
+  - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      artifactName: homebrew-formula
+      targetPath: homebrew-formula
+
+  - pwsh: git clone https://github.com/Azure/homebrew-azd
+    displayName: Clone Azure/homebrew-azd
+
+  - pwsh: |
+      Copy-Item homebrew-formula/azd.rb homebrew-azd/Formula/azd.rb
+
+  - template: /eng/common/pipelines/templates/steps/git-push-changes.yml
+    parameters:
+      # The azure-sdk user has permission to push directly to main
+      BaseRepoBranch: ${{ parameters.BaseRepoBranch }}
+      BaseRepoOwner: Azure
+      CommitMsg: Update formula for azd release $(CLI_VERSION)
+      TargetRepoName: homebrew-azd
+      WorkingDirectory: homebrew-azd

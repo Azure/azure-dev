@@ -259,30 +259,38 @@ stages:
 
           # Download signed artifacts
           - input: pipelineArtifact
-            pipeline: BasicBuildPipeline
             artifactName: signed-win
             targetPath: signed/win
 
           - input: pipelineArtifact
-            pipeline: BasicBuildPipeline
             artifactName: signed-mac
             targetPath: signed/mac
 
           - input: pipelineArtifact
-            pipeline: BasicBuildPipeline
             artifactName: signed-linux
             targetPath: signed/linux
 
           # Linux binaries are not signed today so download from build outputs
           - input: pipelineArtifact
-            pipeline: BasicBuildPipeline
             artifactName: azd-linux-amd64
             targetPath: release-staging
 
           - input: pipelineArtifact
-            pipeline: BasicBuildPipeline
             artifactName: azd-linux-arm64
             targetPath: release-staging
+
+        outputs:
+          - output: pipelineArtifact
+            path: release
+            artifact: release
+            condition: succeeded()
+            displayName: Upload azd release artifact
+
+          - outputs: pipelineArtifact
+            path: homebrew-formula
+            artifact: homebrew-formula
+            condition: succeeded()
+            displayName: Upload homebrew formula artifact
 
       steps:
         - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
@@ -330,3 +338,19 @@ stages:
             Copy-Item signed/linux/*.deb release/
             Copy-Item signed/linux/*.rpm release/
           displayName: Copy signed Linux packages to release
+
+        # Homebrew formula
+        - pwsh: New-Item -ItemType Directory -Path homebrew-formula -Force
+          displayName: Create homebrew formula directory
+
+        - task: PowerShell@2
+          condition: eq(variables['SubmitBrewFormula'], 'true')
+          displayName: Create updated brew formula
+          inputs:
+            targetType: filePath
+            filePath: eng/scripts/Update-HomebrewFormula.ps1
+            arguments: >-
+              -ZipFilePathAmd64 release/azd-darwin-amd64.zip
+              -ZipFilePathArm64 release/azd-darwin-arm64.zip
+              -Version $(CLI_VERSION)
+              -OutFile homebrew-formula/azd.rb

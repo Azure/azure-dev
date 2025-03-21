@@ -66,7 +66,6 @@ stages:
                       PublishShield: true
                       PublishUpdatedDocs: true
                       UploadMsi: true
-                      PublishBrewFormula: true
 
         - deployment: Publish_Choco
           dependsOn: Publish_Release
@@ -103,13 +102,29 @@ stages:
             image: azsdk-pool-mms-win-2022-1espt
             os: windows
 
+          steps:
+            - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
+
+        - job: Publish_Brew
+          dependsOn: Publish_Release
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+
+          pool:
+            name: azsdk-pool-mms-ubuntu-2004-general
+            image: azsdk-pool-mms-ubuntu-2004-1espt
+            os: linux
+  
           templateContext:
             inputs:
               - input: checkout
                 repository: self
 
           steps:
-            - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
+            - template: /eng/pipelines/templates/steps/publish-cli-brew.yml
 
         - deployment: Increment_Version
           condition: >-

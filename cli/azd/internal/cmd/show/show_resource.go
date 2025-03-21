@@ -86,7 +86,11 @@ func (s *showResource) showResourceGeneric(
 	}
 
 	// Convert to environment variables
-	envValues := scaffold.EnvVars(resourceMeta.StandardVarPrefix, values)
+	prefix := resourceMeta.StandardVarPrefix
+	if opts.resourceSpec != nil && opts.resourceSpec.Existing {
+		prefix += "_" + environment.Key(id.Name)
+	}
+	envValues := scaffold.EnvVars(prefix, values)
 
 	display := id.ResourceType.String()
 	if translated := azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(display)); translated != "" {

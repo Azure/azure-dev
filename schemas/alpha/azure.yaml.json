@@ -388,6 +388,11 @@
                             "type": "string"
                         },
                         "uniqueItems": true
+                    },
+                    "existing": {
+                        "type": "boolean",
+                        "title": "An existing resource for referencing purposes",
+                        "description": "Optional. When set to true, this resource will not be created and instead be used for referencing purposes. (Default: false)"
                     }
                 },
                 "allOf": [
@@ -1272,6 +1277,11 @@
                         "type": "string"
                     },
                     "uniqueItems": true
+                },
+                "existing": {
+                    "type": "boolean",
+                    "title": "An existing resource for referencing purposes",
+                    "description": "Optional. When set to true, this resource will not be created and instead be used for referencing purposes. (Default: false)"
                 }
             }
         },
@@ -1392,6 +1402,7 @@
             "properties": {
                 "type": true,
                 "uses": true,
+                "existing": true,
                 "hubs": {
                     "type": "array",
                     "title": "Hubs to create in the Event Hubs namespace",
@@ -1410,6 +1421,7 @@
             "properties": {
                 "type": true,
                 "uses": true,
+                "existing": true,
                 "queues": {
                     "type": "array",
                     "title": "Queues to create in the Service Bus namespace",
@@ -1437,6 +1449,7 @@
             "properties": {
                 "type": true,
                 "uses": true,
+                "existing": true,
                 "containers": {
                     "type": "array",
                     "title": "Azure Storage Account container names.",
@@ -1456,6 +1469,7 @@
             "properties": {
                 "type": true,
                 "uses": true,
+                "existing": true,
                 "models": {
                     "type": "array",
                     "title": "AI models to deploy",

@@ -19,4 +19,5 @@ steps:
       $metadata = Get-Content -Path release-metadata/metadata.json -Raw | ConvertFrom-Json
       Write-Host "##vso[task.setvariable variable=CLI_VERSION]$($metadata.cliVersion)"
       Write-Host "##vso[task.setvariable variable=MSI_VERSION]$($metadata.msiVersion)"
+      Write-Host "###vso[task.setvariable variable=SubmitChocoPackage]$($metadata.submitChocoPackage)"
     displayName: Set release metadata variables

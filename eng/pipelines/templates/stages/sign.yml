@@ -158,6 +158,25 @@ stages:
         - pwsh: Copy-Item cli/installer/windows/bin/Release/* signed-win/
           displayName: Copy MSI for publishing
 
+        - pwsh: Copy-Item cli/installer/windows/bin/Release/azd-windows-amd64.msi cli/installer/choco/tools
+          displayName: Copy MSI for Choco package
+
+        - task: PowerShell@2
+          displayName: Build Choco Package
+          inputs:
+            pwsh: true
+            targetType: filePath
+            filePath: eng/scripts/New-ChocoPackage.ps1
+            arguments: >-
+              -Version $(MSI_VERSION)
+              -Tag 'azure-dev-cli_$(CLI_VERSION)'
+        
+        - pwsh: |
+            New-Item -ItemType Directory -Path $(Build.ArtifactStagingDirectory)/choco-package -Force
+            Copy-Item cli/installer/choco/*.nupkg $(Build.ArtifactStagingDirectory)/choco-package
+          displayName: Copy Choco Package to Artifact Staging Directory for upload
+
+
         # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
         # when the common engsys is imported.
         # https://github.com/Azure/azure-dev/issues/956
@@ -174,6 +193,13 @@ stages:
           inputs:
             artifactName: signed-win-FailedAttempt$(System.JobAttempt)
             path: signed-win/
+
+        - task: 1ES.PublishPipelineArtifact
+          condition: succeeded()
+          displayName: Publish Choco Package Artifact
+          inputs: 
+            targetPath: $(Build.ArtifactStagingDirectory)/choco-package
+            artifact: choco-package
 
     - job: SignLinux
       pool:

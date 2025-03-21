@@ -236,7 +236,7 @@ var Resources = []ResourceMeta{
 		ResourceType:      "Microsoft.MachineLearningServices/workspaces",
 		ResourceKind:      "Project",
 		ApiVersion:        "2024-10-01",
-		StandardVarPrefix: "AZURE_AIPROJECT",
+		StandardVarPrefix: "AZURE_AI_PROJECT",
 		Variables: map[string]string{
 			"connectionString": "${aiProjectConnectionString .id .properties.discoveryUrl}",
 		},

@@ -151,11 +151,25 @@ stages:
 
           - template: /eng/pipelines/templates/steps/setup-go.yml
 
+          - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
+
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: eng/scripts/Set-CliVersionVariable.ps1
+            displayName: Set CLI_VERSION
+
           # Install scripts
           - pwsh: |
-              New-Item -ItemType Directory -Path installer
-              Copy-Item cli/installer/*install-azd.ps1 installer/
+              New-Item -ItemType Directory -Path install-pwsh
+              Copy-Item cli/installer/*install-azd.ps1 install-pwsh/
             displayName: Copy installer scripts (*.ps1) for artifact upload
+
+          - pwsh: |
+              New-Item -ItemType Directory -Path install-sh
+              Copy-Item cli/installer/*install-azd.sh install-sh/
+            displayName: Copy installer scripts (*.sh) for artifact upload
 
           # CLI ref docs
           - pwsh: New-Item -ItemType Directory -Path docs
@@ -186,7 +200,21 @@ stages:
             workingDirectory: $(Pipeline.Workspace)/docs
             displayName: Show doc artifacts to publish
 
+          # Create changelog
+          - pwsh: New-Item -ItemType Directory -Path changelog
+            displayName: Create changelog folder
 
+          - task: PowerShell@2
+            inputs:
+              targetType: filePath
+              filePath: eng/scripts/New-ReleaseNotesFile.ps1
+              arguments: >-
+                -ChangeLogPath cli/azd/CHANGELOG.md
+                -Version $(CLI_VERSION)
+                -OutPath changelog/CHANGELOG.md
+            displayName: Set release changelog content
+
+          # Create release metadata
           - pwsh: |
               New-Item -ItemType Directory -Path release-metadata -Force
               # CLI Version may have been set by set-cli-version-cd.yml
@@ -197,7 +225,6 @@ stages:
               $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
                 -CliVersion "$(CLI_VERSION)" `
                 -AllowPrerelease:$false
-
 
               $releaseMetadata = @{
                 cliVersion = $cliVersion;
@@ -211,13 +238,22 @@ stages:
         templateContext: 
           outputs: 
             - output: pipelineArtifact
-              path: installer
+              path: install-pwsh
               artifact: install-pwsh
+
+            - output: pipelineArtifact
+              path: install-sh
+              artifact: install-sh
 
             - output: pipelineArtifact
               path: $(Pipeline.Workspace)/docs/
               artifact: docs
               displayName: Upload generated documentation
+
+            - output: pipelineArtifact
+              path: changelog
+              artifact: changelog
+              displayName: Upload changelog
 
             - output: pipelineArtifact
               path: release-metadata

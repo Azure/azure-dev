@@ -241,3 +241,92 @@ stages:
           inputs:
             artifactName: signed-linux-FailedAttempt$(System.JobAttempt)
             path: signed-linux/
+
+    - job: CreateRelease
+      pool:
+        name: $(LINUXPOOL)
+        image: $(LINUXVMIMAGE)
+        os: linux
+
+      dependsOn:
+        - SignMac
+        - SignWindows
+        - SignLinux
+
+      templateContext:
+        inputs:
+          - checkout: self
+
+          # Download signed artifacts
+          - input: pipelineArtifact
+            pipeline: BasicBuildPipeline
+            artifactName: signed-win
+            targetPath: signed/win
+
+          - input: pipelineArtifact
+            pipeline: BasicBuildPipeline
+            artifactName: signed-mac
+            targetPath: signed/mac
+
+          - input: pipelineArtifact
+            pipeline: BasicBuildPipeline
+            artifactName: signed-linux
+            targetPath: signed/linux
+
+          # Linux binaries are not signed today so download from build outputs
+          - input: pipelineArtifact
+            pipeline: BasicBuildPipeline
+            artifactName: azd-linux-amd64
+            targetPath: release-staging
+
+          - input: pipelineArtifact
+            pipeline: BasicBuildPipeline
+            artifactName: azd-linux-arm64
+            targetPath: release-staging
+
+      steps:
+        - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+
+        - bash: | 
+            chmod +x \
+            signed/mac/azd-darwin-amd64 \
+            signed/mac/azd-darwin-arm64 \
+            release-staging/azd-linux-amd64 \
+            release-staging/azd-linux-arm64
+          displayName: Set execute bit for the mac and linux release
+
+        - pwsh: New-Item -ItemType Directory -Path release -Force
+          displayName: Create release directory
+
+        - pwsh: |
+            zip release/azd-darwin-amd64.zip -j signed/mac/azd-darwin-amd64 NOTICE.txt
+            zip release/azd-windows-amd64.zip -j signed/win/azd-windows-amd64.exe NOTICE.txt
+
+            # Must place NOTICE.txt in file tree for tar to pick it up and place it in
+            # the same place in the directory structure
+            Copy-Item NOTICE.txt ./release-staging/
+            tar -C ./release-staging/ -cvzf release/azd-linux-amd64.tar.gz azd-linux-amd64 NOTICE.txt
+
+            # ARM64 releases
+            Rename-Item signed/win/azd-windows-arm64.exe azd-windows-arm64-alpha.exe
+            zip release/azd-windows-arm64-alpha.zip -j signed/win/azd-windows-arm64-alpha.exe NOTICE.txt
+
+            Move-Item release-staging/azd-linux-arm64 release-staging/azd-linux-arm64
+            Move-Item signed/mac/azd-darwin-arm64 signed/mac/azd-darwin-arm64
+
+            zip release/azd-darwin-arm64.zip -j signed/mac/azd-darwin-arm64 NOTICE.txt
+
+            # Must place NOTICE.txt in file tree for tar to pick it up and place it in
+            # the same place in the directory structure
+            Copy-Item NOTICE.txt ./release-staging/
+            tar -C ./release-staging/ -cvzf release/azd-linux-arm64.tar.gz azd-linux-arm64 NOTICE.txt
+          displayName: Compress standalone binary for release
+
+        - pwsh: |
+            Copy-Item signed/win/azd-windows-amd64.msi release/
+          displayName: Copy MSI to release
+
+        - pwsh: |
+            Copy-Item signed/linux/*.deb release/
+            Copy-Item signed/linux/*.rpm release/
+          displayName: Copy signed Linux packages to release

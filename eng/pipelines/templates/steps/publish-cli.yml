@@ -2,7 +2,6 @@ parameters:
   CreateGitHubRelease: true
   PublishUploadLocations:
   UploadInstaller: false
-  UploadMsi: false
   PublishShield: false
   PublishUpdatedDocs: false
   StorageContainerName: '`$web'
@@ -13,6 +12,8 @@ steps:
   - ${{ if eq('true', parameters.CreateGitHubRelease) }}:
     # This step must run first because a duplicated tag means we don't need to
     # continue with any of the subsequent steps.
+
+    # TODO: INLINE THIS
     - task: PowerShell@2
       inputs:
         pwsh: true
@@ -24,83 +25,7 @@ steps:
           -DevOpsOutputFormat
       displayName: Verify and set GitHub Release Tag
 
-  # Download signed artifacts, prepare packaging
-  - task: DownloadPipelineArtifact@2
-    displayName: Download signed Windows binaries
-    inputs:
-      artifact: signed-win
-      path: signed/win
-
-  - task: DownloadPipelineArtifact@2
-    displayName: Download signed Mac binaries
-    inputs:
-      artifact: signed-mac
-      path: signed/mac
-
-  - task: DownloadPipelineArtifact@2
-    displayName: Download signed Linux packages
-    inputs:
-      artifact: signed-linux
-      path: signed/linux
-
-  # Linux binary is not signed today so download from output artifacts
-  - task: DownloadPipelineArtifact@2
-    inputs:
-      artifact: azd-linux-amd64
-      # Copy the item from artifacts straight to where it will go
-      path: release-staging
-
-  - task: DownloadPipelineArtifact@2
-    inputs:
-      artifact: azd-linux-arm64
-      # Copy the item from artifacts straight to where it will go
-      path: release-staging
-
-  - bash: | 
-      chmod +x \
-      signed/mac/azd-darwin-amd64 \
-      signed/mac/azd-darwin-arm64 \
-      release-staging/azd-linux-amd64 \
-      release-staging/azd-linux-arm64
-    displayName: Set execute bit for the mac and linux release
-
-  - pwsh: |
-      New-Item -ItemType Directory -Path release -Force
-      zip release/azd-darwin-amd64.zip -j signed/mac/azd-darwin-amd64 NOTICE.txt
-      zip release/azd-windows-amd64.zip -j signed/win/azd-windows-amd64.exe NOTICE.txt
-
-      # Must place NOTICE.txt in file tree for tar to pick it up and place it in
-      # the same place in the directory structure
-      Copy-Item NOTICE.txt ./release-staging/
-      tar -C ./release-staging/ -cvzf release/azd-linux-amd64.tar.gz azd-linux-amd64 NOTICE.txt
-
-      # ARM64 releases
-      Rename-Item signed/win/azd-windows-arm64.exe azd-windows-arm64-alpha.exe
-      zip release/azd-windows-arm64-alpha.zip -j signed/win/azd-windows-arm64-alpha.exe NOTICE.txt
-
-      Move-Item release-staging/azd-linux-arm64 release-staging/azd-linux-arm64
-      Move-Item signed/mac/azd-darwin-arm64 signed/mac/azd-darwin-arm64
-
-      New-Item -ItemType Directory -Path release -Force
-      zip release/azd-darwin-arm64.zip -j signed/mac/azd-darwin-arm64 NOTICE.txt
-
-      # Must place NOTICE.txt in file tree for tar to pick it up and place it in
-      # the same place in the directory structure
-      Copy-Item NOTICE.txt ./release-staging/
-      tar -C ./release-staging/ -cvzf release/azd-linux-arm64.tar.gz azd-linux-arm64 NOTICE.txt
-    displayName: Compress standalone binary for release
-
-  - ${{ if eq('true', parameters.UploadMsi) }}: 
-    - pwsh: |
-        Copy-Item signed/win/azd-windows-amd64.msi release/
-        # TODO: Copy signed MSI to release
-      displayName: Copy MSI to release
-
-  - pwsh: |
-      Copy-Item signed/linux/*.deb release/
-      Copy-Item signed/linux/*.rpm release/
-    displayName: Copy signed Linux packages to release
-
+  # TODO: Ensure this has files in proper locations
   - ${{ if eq('true', parameters.UploadInstaller) }}:
     - pwsh: |
         Copy-Item cli/installer/install-azd.sh release/
@@ -112,21 +37,11 @@ steps:
 
   # Create release
   - ${{ if eq('true', parameters.CreateGitHubRelease ) }}:
-    - task: PowerShell@2
-      inputs:
-        targetType: filePath
-        filePath: eng/scripts/New-ReleaseNotesFile.ps1
-        arguments: >-
-          -ChangeLogPath cli/azd/CHANGELOG.md
-          -Version $(CLI_VERSION)
-          -DevOpsOutputFormat
-      displayName: Set release changelog content
-
     - pwsh: |
         gh release create `
           "$(GH_RELEASE_TAG)" `
           --title "$(GH_RELEASE_TAG)" `
-          --notes-file $(ReleaseChangeLogPath)
+          --notes-file changelog/CHANGELOG.md
 
         gh release upload $(GH_RELEASE_TAG) release/*
       displayName: Create GitHub Release and upload artifacts

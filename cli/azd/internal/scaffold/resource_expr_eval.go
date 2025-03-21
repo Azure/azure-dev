@@ -37,7 +37,10 @@ type EvalEnv struct {
 // execution terminates and Eval returns that error.
 type FuncMap map[string]any
 
-func BaseFuncMap() FuncMap {
+// BaseEvalFuncMap returns a map of functions that can be used for evaluation purposes.
+//
+// The functions are evaluated at runtime against live Azure resources.
+func BaseEvalFuncMap() FuncMap {
 	return FuncMap{
 		"lower":                     strings.ToLower,
 		"upper":                     strings.ToUpper,
@@ -47,6 +50,11 @@ func BaseFuncMap() FuncMap {
 	}
 }
 
+// BaseEmitFuncMap returns a map of functions that can be used for bicep emitting purposes.
+//
+// The functions are similar to the base function map, except they are compile-time expressions that operate
+// on the string symbols of the variables, rather than their resolved values.
+// The functions are not evaluated at runtime, but rather emitted as part of the Bicep template.
 func BaseEmitBicepFuncMap() FuncMap {
 	return FuncMap{
 		"lower":                     bicepFuncCall("toLower"),
@@ -83,7 +91,7 @@ func Eval(values map[string]string, env EvalEnv) (map[string]string, error) {
 		return values, fmt.Errorf("missing vault secret resolver")
 	}
 
-	defaultFuncMap := BaseFuncMap()
+	defaultFuncMap := BaseEvalFuncMap()
 	if env.FuncMap == nil {
 		env.FuncMap = make(FuncMap, len(defaultFuncMap))
 	}

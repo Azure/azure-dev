@@ -141,17 +141,17 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 
 	// Create a "virtual" copy since we're adding any implicitly dependent resources
 	// that are unrepresented by the current user-provided schema
-	resMap := maps.Clone(projectConfig.Resources)
-	resources := slices.Sorted(maps.Keys(resMap))
+	resources := maps.Clone(projectConfig.Resources)
+	keys := slices.Sorted(maps.Keys(resources))
 
 	// First pass
-	for _, res := range resources {
-		res := resMap[res]
+	for _, k := range keys {
+		res := resources[k]
 		// Add any implicit dependencies
 		dependencies := DependentResourcesOf(res)
 		for _, dep := range dependencies {
-			if _, exists := resMap[dep.Name]; !exists {
-				resMap[dep.Name] = dep
+			if _, exists := resources[dep.Name]; !exists {
+				resources[dep.Name] = dep
 			}
 		}
 
@@ -173,14 +173,19 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 				existing.ResourceType = resourceMeta.ParentForEval
 			}
 
+			if res.Type == ResourceTypeKeyVault {
+				// For Key Vault, we grant read access to secrets by default
+				existing.RoleAssignments = resourceMeta.RoleAssignments.Read
+			}
+
 			infraSpec.Existing = append(infraSpec.Existing, existing)
 			existingMap[res.Name] = &existing
 			continue
 		}
 	}
 
-	for _, res := range resources {
-		res := resMap[res]
+	for _, k := range keys {
+		res := resources[k]
 		if res.Existing {
 			continue
 		}
@@ -465,13 +470,15 @@ func emitVariable(emitEnv EmitEnv, val *scaffold.ExpressionVar, results map[stri
 		return nil
 	}
 
-	// surround each expression with ${} in a Bicep interpolated string
+	// by default, surround each expression with ${} within a Bicep interpolated string
 	surround := func(s string) string {
 		return fmt.Sprintf("${%s}", s)
 	}
 
-	if len(val.Expressions) == 1 && val.Expressions[0].Start == 0 && val.Expressions[0].End == len(val.Value) {
-		// if there is only one expression and it covers the entire value, we don't need to surround it
+	// when the expression is a single expression that covers the entire value, don't surround it
+	if len(val.Expressions) == 1 &&
+		val.Expressions[0].Start == 0 &&
+		val.Expressions[0].End == len(val.Value) {
 		surround = func(s string) string {
 			return s
 		}
@@ -484,12 +491,14 @@ func emitVariable(emitEnv EmitEnv, val *scaffold.ExpressionVar, results map[stri
 		}
 	}
 
-	if strings.ContainsAny(val.Value, "${") {
-		// If the value contains any ${}, we need to surround it with quotes.
+	if isBicepInterpolatedString(val.Value) {
+		// If the final value contains any interpolation ${}, we wrap the final value with quotes.
 		//
-		// It may be tempting to check interpolationMode here, but we need to
-		// handle the case where a single function returns a string that contains ${}.
-		// Thus, it is safer to check the result and surround it with quotes.
+		// By doing this "reflection-like" behavior of examining the output string,
+		// we allow functions to be composable while respecting string-interpolation rules.
+		//
+		// Regardless of whether an interpolation was emitted as part of a function expression,
+		// or because we surrounded values here, we will detect all cases and wrap the final value nicely.
 		val.Value = fmt.Sprintf("'%s'", val.Value)
 	}
 
@@ -519,7 +528,8 @@ func emitVariableExpression(
 			return fmt.Errorf("unknown function: %s", funcName)
 		}
 
-		// identity function for arguments passed to the function
+		// for arguments of a function, we return the value as literal.
+		// the interpolation (if any) is done in the function itself.
 		id := func(s string) string { return s }
 
 		// Evaluate all arguments
@@ -540,7 +550,7 @@ func emitVariableExpression(
 		}
 
 		resultString := fmt.Sprintf("%v", funcResult)
-		expr.Replace(resultString)
+		expr.Replace(surround(resultString))
 	case scaffold.SpecExpr:
 		return fmt.Errorf("spec expressions are not currently supported in existing resources")
 	case scaffold.VaultExpr:
@@ -548,6 +558,21 @@ func emitVariableExpression(
 	}
 
 	return nil
+}
+
+// isBicepInterpolatedString checks if a string contains any Bicep interpolation expressions.
+//
+// Bicep interpolation expressions are of the form ${expression},
+// and are not escaped with a backslash.
+func isBicepInterpolatedString(s string) bool {
+	for i, r := range s {
+		if r == '$' &&
+			i+1 < len(s) && s[i+1] == '{' && // we see '${'
+			i-1 >= 0 && s[i-1] != '\\' { // we do not see escaped '\${'
+			return true
+		}
+	}
+	return false
 }
 
 func setParameter(spec *scaffold.InfraSpec, name string, value string, isSecret bool) {

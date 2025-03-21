@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package add
 
 import (
@@ -5,11 +8,11 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/internal/names"
-	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
+// ConfigureExisting prompts the user to configure details for an existing resource.
 func ConfigureExisting(
 	ctx context.Context,
 	r *project.ResourceConfig,
@@ -42,8 +45,6 @@ func ConfigureExisting(
 		}
 	}
 
-	_ = getResourceMeta(r.Type.AzureResourceType())
-
 	return r, nil
 }
 
@@ -57,14 +58,4 @@ func resourceType(azureResourceType string) project.ResourceType {
 	}
 
 	return project.ResourceType("")
-}
-
-func getResourceMeta(resourceType string) scaffold.ResourceMeta {
-	for _, res := range scaffold.Resources {
-		if res.ResourceType == resourceType {
-			return res
-		}
-	}
-
-	return scaffold.ResourceMeta{}
 }

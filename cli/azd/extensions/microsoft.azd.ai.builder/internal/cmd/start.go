@@ -389,6 +389,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		resourcesToAdd = append(resourcesToAdd, appResource)
 	}
 
+	// Adds any new services to the azure.yaml.
 	for _, service := range servicesToAdd {
 		_, err := a.azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{
 			Service: service,

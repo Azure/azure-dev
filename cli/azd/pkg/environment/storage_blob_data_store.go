@@ -36,7 +36,8 @@ type StorageBlobDataStore struct {
 	azdContext    *azdcontext.AzdContext
 }
 
-func NewStorageBlobDataStore(configManager config.Manager, blobClient storage.BlobClient, azdContext *azdcontext.AzdContext) RemoteDataStore {
+func NewStorageBlobDataStore(configManager config.Manager, blobClient storage.BlobClient,
+	azdContext *azdcontext.AzdContext) RemoteDataStore {
 	return &StorageBlobDataStore{
 		configManager: configManager,
 		blobClient:    blobClient,

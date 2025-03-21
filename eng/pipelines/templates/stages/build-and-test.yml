@@ -231,6 +231,7 @@ stages:
                 msiVersion = (eng/scripts/Get-MsiVersion.ps1 -CliVersion $cliVersion);
                 submitChocoPackage = $submitPackage;
                 submitWingetPackage = $submitPackage;
+                submitBrewFormula = $submitPackage;
               }
 
               Set-Content -Path release-metadata/metadata.json -Value ($releaseMetadata | ConvertTo-Json -Depth 100)

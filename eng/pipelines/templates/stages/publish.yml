@@ -538,22 +538,22 @@ stages:
 
           templateContext:
             inputs:
-              - input: checkout
-                repository: self
+              - input: pipelineArtifact
+                name: signed-win
+                targetPath: signed-win
+
+              - input: pipelineArtifact
+                name: install-sh
+                targetPath: install-sh
 
           strategy:
             runOnce:
               deploy:
                 steps:
-                  - task: DownloadPipelineArtifact@2
-                    inputs:
-                      artifact: signed-win
-                      path: signed-win
-
                   - pwsh: |
                       New-Item -ItemType Directory -Path script-release
                       Copy-Item signed-win/*.ps1 script-release/
-                      Copy-Item cli/installer/*.sh script-release/
+                      Copy-Item install-sh/*.sh script-release/
                     displayName: Copy scripts for release upload
 
                   - task: AzurePowerShell@5

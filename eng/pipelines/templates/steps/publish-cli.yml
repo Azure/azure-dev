@@ -8,7 +8,6 @@ parameters:
   StorageContainerName: '`$web'
   PublishBrewFormula: false
   AllowPrerelease: false
-  CliVersion: $(CLI_VERSION)
 
 steps:
   - ${{ if eq('true', parameters.CreateGitHubRelease) }}:
@@ -56,7 +55,6 @@ steps:
       artifact: azd-linux-arm64
       # Copy the item from artifacts straight to where it will go
       path: release-staging
-
 
   - bash: | 
       chmod +x \
@@ -174,7 +172,7 @@ steps:
   - ${{ if eq('true', parameters.PublishBrewFormula) }}:
     - pwsh: |
         $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
-          -CliVersion '${{ parameters.CliVersion }}' `
+          -CliVersion '$(CLI_VERSION)' `
           -AllowPrerelease:$${{ parameters.AllowPrerelease }}
 
         if ('$(Skip.ReleaseBrew)' -eq 'true') {

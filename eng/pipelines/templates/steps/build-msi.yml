@@ -1,5 +1,4 @@
 parameters: 
-  CliVersion: $(CLI_VERSION)
   Title: Build MSI
   Condition: succeeded()
   # Building for release will specify a version number directly and the MSI will
@@ -18,16 +17,7 @@ steps:
 
   - ${{ if eq(parameters.ShouldBuildForRelease, 'true') }}:
     # Release build uses version and product name for release
-    - task: PowerShell@2
-      displayName: Get MSI version from CLI version
-      condition: ${{ parameters.Condition }}
-      inputs:
-        pwsh: true
-        targetType: filePath
-        filePath: eng/scripts/Get-MsiVersion.ps1
-        arguments: >-
-          -CliVersion "${{ parameters.CliVersion }}"
-          -DevOpsOutput
+    - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
 
     - pwsh: |
         Write-Host "##vso[task.setvariable variable=MSI_PRODUCT_NAME_PARAM]/p:ProductName=`"Azure Developer CLI`""

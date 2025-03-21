@@ -195,8 +195,26 @@ jobs:
             -Version "$(CLI_VERSION)"
         displayName: Set shield info
 
+      - pwsh: |
+          New-Item -ItemType Directory -Path release-metadata -Force
+          # CLI Version may have been set by set-cli-version-cd.yml
+          $cliVersion = "$(CLI_VERSION)"
+          $releaseMetadata = @{
+            cliVersion = $cliVersion;
+            msiVersion = (eng/scripts/Get-MsiVersion.ps1 -CliVersion $cliVersion);
+          }
+
+          Set-Content -Path release-metadata/metadata.json -Value ($releaseMetadata | ConvertTo-Json -Depth 100)
+        displayName: Create release metadata
+
     templateContext:
       outputs:
+      - output: pipelineArtifact
+        path: release-metadata
+        condition: succeeded()
+        artifact: release-metadata
+        displayName: Upload release metadata
+
       - output: pipelineArtifact
         path: cli/azd/cover-$(AZURE_DEV_CI_OS)
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))

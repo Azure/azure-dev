@@ -1,0 +1,22 @@
+steps:
+  - pwsh: |
+      if (!(Test-Path -Path release-metadata/metadata.json)) { 
+        Write-Host "Metadata artifact not downloaded. Setting DownloadMetadataArtifact to true"
+        Write-Host "###vso[task.setvariable variable=DownloadMetadataArtifact]true"
+      } else {
+        Write-Host "Metadata artifact already downloaded. Setting DownloadMetadataArtifact to false"
+        Write-Host "###vso[task.setvariable variable=DownloadMetadataArtifact]false"
+      }
+    displayName: Check for metadata artifact
+
+  - task: DownloadPipelineArtifact@2
+    condition: eq(variables['DownloadMetadataArtifact'], 'true')
+    displayName: Download release metadata artifact
+    inputs:
+      artifact: release-metadata
+
+  - pwsh: |
+      $metadata = Get-Content -Path release-metadata/metadata.json -Raw | ConvertFrom-Json
+      Write-Host "##vso[task.setvariable variable=CLI_VERSION]$($metadata.cliVersion)"
+      Write-Host "##vso[task.setvariable variable=MSI_VERSION]$($metadata.msiVersion)"
+    displayName: Set release metadata variables

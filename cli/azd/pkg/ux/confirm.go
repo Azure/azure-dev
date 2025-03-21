@@ -115,8 +115,7 @@ func (p *Confirm) Ask(ctx context.Context) (*bool, error) {
 	}
 
 	inputConfig := &internal.InputConfig{
-		InitialValue:   p.displayValue,
-		IgnoreHintKeys: true,
+		InitialValue: p.displayValue,
 	}
 
 	if err := p.canvas.Run(); err != nil {
@@ -145,7 +144,7 @@ func (p *Confirm) Ask(ctx context.Context) (*bool, error) {
 			if !p.hasValidationError {
 				p.complete = true
 			}
-		} else {
+		} else if !p.showHelp {
 			p.hasValidationError = false
 			if args.Value == "" && p.options.DefaultValue != nil {
 				p.value = p.options.DefaultValue
@@ -155,7 +154,7 @@ func (p *Confirm) Ask(ctx context.Context) (*bool, error) {
 				if err != nil {
 					p.hasValidationError = true
 					p.value = nil
-					p.displayValue = args.Value
+					p.displayValue = ""
 				} else {
 					p.value = value
 					p.displayValue = getBooleanString(*value)
@@ -214,7 +213,7 @@ func (p *Confirm) Render(printer Printer) error {
 	}
 
 	// Validation error
-	if !p.showHelp && p.hasValidationError {
+	if p.hasValidationError {
 		printer.Fprintln(output.WithWarningFormat("Enter a valid value"))
 	}
 

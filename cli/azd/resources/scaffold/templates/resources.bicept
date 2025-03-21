@@ -696,7 +696,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {{- end}}
           {{- if .AiFoundryProject }}
           {
-            name: 'AZURE_AIPROJECT_CONNECTION_STRING'
+            name: 'AZURE_AI_PROJECT_CONNECTION_STRING'
             value: aiFoundryProjectConnectionString
           }
           {{- end}}

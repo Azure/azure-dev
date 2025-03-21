@@ -351,11 +351,16 @@ func (i *Initializer) genProjectFile(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
 	detect detectConfirm,
-	addResources bool) error {
-	config, err := i.prjConfigFromDetect(ctx, azdCtx.ProjectDirectory(), detect, addResources)
+	composeEnabled bool) error {
+	config, err := i.prjConfigFromDetect(ctx, azdCtx.ProjectDirectory(), detect, composeEnabled)
 	if err != nil {
 		return fmt.Errorf("converting config: %w", err)
 	}
+
+	if composeEnabled {
+		config.MetaSchemaVersion = "alpha"
+	}
+
 	err = project.Save(
 		ctx,
 		&config,

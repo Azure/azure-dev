@@ -64,7 +64,6 @@ stages:
                       CreateGitHubRelease: true
                       PublishUploadLocations: $(StorageUploadLocations)
                       PublishShield: true
-                      PublishUpdatedDocs: true
                       UploadMsi: true
 
         - deployment: Publish_Choco
@@ -149,13 +148,12 @@ stages:
                 PublishDestination: azd/standalone/latest
 
         - job: Increment_Version
+          dependsOn: Publish_Release
           condition: >-
             and(
               succeeded(),
               ne('true', variables['Skip.IncrementVersion'])
             )
-          dependsOn: Publish_Release
-          environment: azure-dev
 
           pool:
             name: azsdk-pool-mms-ubuntu-2004-general
@@ -180,6 +178,31 @@ stages:
                 PRBranchName: cli-version-increment-$(Build.BuildId)
                 CommitMsg: Increment CLI version after release
                 PRTitle: Increment CLI version after release
+
+        - job: Publish_Docs_PR
+          dependsOn: Publish_Release
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+
+          pool:
+            name: azdsk-pool-mms-ubuntu-2004-general
+            image: azsdk-pool-mms-ubuntu-2004-1espt
+            os: linux
+
+          templateContext:
+            inputs:
+              - input: checkout
+                repository: self
+              
+              - input: pipelineArtifact
+                name: docs
+                targetPath: docs
+
+          steps:
+            - template: /eng/pipelines/templates/steps/publish-cli-docs.yml
 
     - stage: PublishVersionTxt
       dependsOn: PublishCLI

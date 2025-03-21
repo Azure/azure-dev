@@ -130,7 +130,7 @@ var (
 
 	defaultModelMap = map[string]string{
 		"chatCompletion":   "gpt-4o",
-		"embedding":        "text-embedding-3-small",
+		"embeddings":       "text-embedding-3-small",
 		"imageGenerations": "dall-e-3",
 		"audio":            "whisper",
 	}
@@ -313,11 +313,37 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 
 	models := []*ai.AiModelDeployment{}
 
+	type AiProjectResourceConfig struct {
+		Models []*ai.AiModelDeployment `json:"models,omitempty"`
+	}
+
 	// Add AI model resources
 	if len(a.scenarioData.ModelSelections) > 0 {
-		aiProject := &azdext.ComposedResource{
-			Name: "ai-project",
-			Type: "ai.project",
+		var aiProject *azdext.ComposedResource
+		var aiProjectConfig *AiProjectResourceConfig
+		for _, resource := range a.composedResources {
+			if resource.Type == "ai.project" {
+				aiProject = resource
+
+				if err := json.Unmarshal(resource.Config, &aiProjectConfig); err != nil {
+					return fmt.Errorf("failed to unmarshal AI project config: %w", err)
+				}
+
+				break
+			}
+		}
+
+		if aiProject == nil {
+			aiProject = &azdext.ComposedResource{
+				Name: "ai-project",
+				Type: "ai.project",
+			}
+			aiProjectConfig = &AiProjectResourceConfig{}
+		}
+
+		modelMap := map[string]*ai.AiModelDeployment{}
+		for _, modelDeployment := range aiProjectConfig.Models {
+			modelMap[modelDeployment.Name] = modelDeployment
 		}
 
 		for _, modelName := range a.scenarioData.ModelSelections {
@@ -328,15 +354,15 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 					return fmt.Errorf("failed to get model deployment: %w", err)
 				}
 
-				models = append(models, modelDeployment)
+				if _, has := modelMap[modelDeployment.Name]; !has {
+					modelMap[modelDeployment.Name] = modelDeployment
+					aiProjectConfig.Models = append(aiProjectConfig.Models, modelDeployment)
+					models = append(models, modelDeployment)
+				}
 			}
 		}
 
-		resourceConfig := map[string]any{
-			"models": models,
-		}
-
-		configJson, err := json.Marshal(resourceConfig)
+		configJson, err := json.Marshal(aiProjectConfig)
 		if err != nil {
 			return fmt.Errorf("failed to marshal AI project config: %w", err)
 		}

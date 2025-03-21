@@ -295,6 +295,7 @@ stages:
       steps:
         - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
 
+        # Set up the release directory with all packages
         - bash: | 
             chmod +x \
             signed/mac/azd-darwin-amd64 \

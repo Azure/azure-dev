@@ -159,7 +159,6 @@ func (a *AddAction) selectExistingResource(
 			}
 
 			if menu.Namespace == "host" || // host resources are not yet supported
-				menu.Namespace == "keyvault" || // keyvault (RBAC) is not yet supported
 				menu.Namespace == "db" { // db resources are not yet supported
 				continue
 			}

@@ -58,10 +58,6 @@ type ListResourceGroupResourcesOptions struct {
 	Filter *string
 }
 
-type ListResourcesOptions struct {
-	ResourceType string
-}
-
 type ResourceService struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	armClientOptions   *arm.ClientOptions

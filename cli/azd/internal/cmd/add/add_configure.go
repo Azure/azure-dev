@@ -46,21 +46,19 @@ func (a *AddAction) ConfigureLive(
 		return r, nil
 	}
 
-	var resourceToAdd *project.ResourceConfig
 	var err error
 
 	switch r.Type {
 	case project.ResourceTypeAiProject:
-		resourceToAdd, err = a.promptAiModel(console, ctx, r, p)
+		r, err = a.promptAiModel(console, ctx, r, p)
 	case project.ResourceTypeOpenAiModel:
-		resourceToAdd, err = a.promptOpenAi(console, ctx, r, p)
+		r, err = a.promptOpenAi(console, ctx, r, p)
 	}
 
 	if err != nil {
 		return nil, err
 	}
 
-	r = resourceToAdd
 	return r, nil
 }
 

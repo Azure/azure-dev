@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -77,6 +78,7 @@ type BicepProvider struct {
 	portalUrlBase           string
 	subscriptionManager     *account.SubscriptionsManager
 	azureClient             *azapi.AzureClient
+	userConfigManager       config.UserConfigManager
 }
 
 // Name gets the name of the infra provider
@@ -611,16 +613,33 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		return nil, err
 	}
 
-	err = p.validatePreflight(
-		ctx,
-		bicepDeploymentData.Target,
-		bicepDeploymentData.CompiledBicep.RawArmTemplate,
-		bicepDeploymentData.CompiledBicep.Parameters,
-		deploymentTags,
-		optionsMap,
-	)
+	userConfig, err := p.userConfigManager.Load()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("loading user configuration: %w", err)
+	}
+
+	preflightDisableVar := "provision.disableValidation"
+	preflightDisable, exists := userConfig.GetString(preflightDisableVar)
+	if !(preflightDisable == "on" && exists) {
+		err = p.validatePreflight(
+			ctx,
+			bicepDeploymentData.Target,
+			bicepDeploymentData.CompiledBicep.RawArmTemplate,
+			bicepDeploymentData.CompiledBicep.Parameters,
+			deploymentTags,
+			optionsMap,
+		)
+		if err != nil {
+			return nil, &internal.ErrorWithSuggestion{
+				Err: err,
+				Suggestion: fmt.Sprintf("To disable provision validation, please run %s.",
+					output.WithHighLightFormat("`azd config set %s on`", preflightDisableVar)),
+			}
+		}
+	} else {
+		warningMessage := fmt.Sprintf("WARNING: Provision validation is disabled. To enable it, please run `azd config set %s off`.\n",
+			preflightDisableVar)
+		p.console.Message(ctx, output.WithWarningFormat(warningMessage))
 	}
 
 	cancelProgress := make(chan bool)
@@ -2164,6 +2183,7 @@ func NewBicepProvider(
 	cloud *cloud.Cloud,
 	subscriptionManager *account.SubscriptionsManager,
 	azureClient *azapi.AzureClient,
+	userConfigManager config.UserConfigManager,
 ) provisioning.Provider {
 	return &BicepProvider{
 		envManager:          envManager,
@@ -2179,5 +2199,6 @@ func NewBicepProvider(
 		portalUrlBase:       cloud.PortalUrlBase,
 		subscriptionManager: subscriptionManager,
 		azureClient:         azureClient,
+		userConfigManager:   userConfigManager,
 	}
 }

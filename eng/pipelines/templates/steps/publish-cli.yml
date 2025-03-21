@@ -69,20 +69,6 @@ steps:
     env:
       AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
 
-  - task: 1ES.PublishPipelineArtifact@1
-    inputs: 
-      targetPath: release
-      artifact: UploadedReleaseArtifacts
-
-  - ${{ if eq('true', parameters.PublishShield) }}:
-    - template: /eng/pipelines/templates/steps/publish-shield.yml
-      parameters:
-        ArtifactName: shield-standalone
-        ArtifactDownloadPath: shields/standalone
-        ArtifactFilename: standalone.json
-        StorageContainerName: ${{ parameters.StorageContainerName }}
-        PublishDestination: azd/standalone/latest
-
   - ${{ if eq('true', parameters.PublishUpdatedDocs) }}:
     - task: DownloadPipelineArtifact@2
       displayName: Download docs

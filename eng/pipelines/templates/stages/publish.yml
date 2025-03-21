@@ -126,7 +126,29 @@ stages:
           steps:
             - template: /eng/pipelines/templates/steps/publish-cli-brew.yml
 
-        - deployment: Increment_Version
+        - job: Publish_Shield
+          dependsOn: Publish_Release
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+
+          pool:
+            name: azsdk-pool-mms-ubuntu-2004-general
+            image: azsdk-pool-mms-ubuntu-2004-1espt
+            os: linux
+
+          steps:
+            - template: /eng/pipelines/templates/steps/publish-cli-shield.yml
+              parameters:
+                ArtifactName: shield-standalone
+                ArtifactDownloadPath: shields/standalone
+                ArtifactFilename: standalone.json
+                StorageContainerName: ${{ parameters.StorageContainerName }}
+                PublishDestination: azd/standalone/latest
+
+        - job: Increment_Version
           condition: >-
             and(
               succeeded(),
@@ -145,22 +167,19 @@ stages:
               - input: checkout
                 repository: self
 
-          strategy:
-            runOnce:
-              deploy:
-                steps:
-                  - task: PowerShell@2
-                    inputs:
-                      pwsh: true
-                      targetType: filePath
-                      filePath: eng/scripts/Update-CliVersion.ps1
-                    displayName: Increment CLI version
+          steps:
+            - task: PowerShell@2
+              inputs:
+                pwsh: true
+                targetType: filePath
+                filePath: eng/scripts/Update-CliVersion.ps1
+              displayName: Increment CLI version
 
-                  - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-                    parameters:
-                      PRBranchName: cli-version-increment-$(Build.BuildId)
-                      CommitMsg: Increment CLI version after release
-                      PRTitle: Increment CLI version after release
+            - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+              parameters:
+                PRBranchName: cli-version-increment-$(Build.BuildId)
+                CommitMsg: Increment CLI version after release
+                PRTitle: Increment CLI version after release
 
     - stage: PublishVersionTxt
       dependsOn: PublishCLI

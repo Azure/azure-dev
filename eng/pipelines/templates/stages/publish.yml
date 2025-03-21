@@ -90,14 +90,13 @@ stages:
                     parameters:
                       CliVersion: $(CLI_VERSION)
 
-        - deployment: Publish_WinGet
+        - job: Publish_WinGet
           dependsOn: Publish_Release
           condition: >-
             and(
               succeeded(),
               ne('true', variables['Skip.Publish'])
             )
-          environment: azure-dev
 
           pool:
             name: azsdk-pool-mms-win-2022-general
@@ -109,11 +108,8 @@ stages:
               - input: checkout
                 repository: self
 
-          strategy:
-            runOnce:
-              deploy:
-                steps:
-                  - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
+          steps:
+            - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
 
         - deployment: Increment_Version
           condition: >-

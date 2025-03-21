@@ -1,8 +1,4 @@
 parameters:
-  - name: AllowPrerelease
-    type: boolean
-    default: false
-    displayName: Allow prerelease versions to be published. Should be "false" after GA.
   - name: GitHubToken
     type: string
     default: $(azuresdk-github-pat)
@@ -12,29 +8,21 @@ steps:
   - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
 
   - pwsh: |
-      $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
-        -CliVersion '$(CLI_VERSION)' `
-        -AllowPrerelease:$${{ parameters.AllowPrerelease }}
+      $PSNativeCommandArgumentPassing = 'Legacy'
+      Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
 
-      if ('$(Skip.ReleaseWinGet)' -eq 'true') {
-        $submitPackage = 'false'
+      $AdditionalArgs = ""
+      if ($$(SubmitWinGetPackage)) {
+          $AdditionalArgs = "--submit"
       }
-      Write-Host "Setting SubmitWinGetPackage to $submitPackage"
-      Write-Host "##vso[task.setvariable variable=SubmitWinGetPackage]$submitPackage"
-    displayName: Set SubmitWinGetPackage
 
-  - task: PowerShell@2
-    displayName: Update WinGet Manifest
-    inputs:
-      pwsh: true
-      targetType: filePath
-      filePath: eng/scripts/Update-WinGetManifest.ps1
-      arguments: >-
-        -PackageIdentifier Microsoft.Azd
-        -Version '$(MSI_VERSION)'
-        -Url "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_$(CLI_VERSION)/azd-windows-amd64.msi"
-        -GitHubToken ${{ parameters.GitHubToken }}
-        -Submit:$$(SubmitWinGetPackage)
+      ./wingetcreate.exe update `
+          $PackageIdentifier `
+          --version '$(MSI_VERSION)' `
+          --urls "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_$(CLI_VERSION)/azd-windows-amd64.msi" `
+          --token ${{ parameters.GitHubToken }} `
+          --out winget `
+          $AdditionalArgs
 
   - task: 1ES.PublishPipelineArtifact@1
     displayName: Upload updated WinGet manifest

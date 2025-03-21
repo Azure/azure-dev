@@ -20,4 +20,5 @@ steps:
       Write-Host "##vso[task.setvariable variable=CLI_VERSION]$($metadata.cliVersion)"
       Write-Host "##vso[task.setvariable variable=MSI_VERSION]$($metadata.msiVersion)"
       Write-Host "###vso[task.setvariable variable=SubmitChocoPackage]$($metadata.submitChocoPackage)"
+      Write-Host "###vso[task.setvariable variable=SubmitWingetPackage]$($metadata.submitWingetPackage)"
     displayName: Set release metadata variables

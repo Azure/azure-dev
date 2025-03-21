@@ -82,11 +82,6 @@ stages:
             image: azsdk-pool-mms-win-2022-1espt
             os: windows
 
-          templateContext:
-            inputs:
-              - input: checkout
-                repository: self
-
           strategy:
             runOnce:
               deploy:

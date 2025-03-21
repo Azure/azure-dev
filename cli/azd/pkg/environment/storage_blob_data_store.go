@@ -162,8 +162,8 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, opt
 			return fmt.Errorf("failed to open file for upload: %w", err)
 		}
 		defer fileBuffer.Close()
-
-		if err := sbd.blobClient.Upload(ctx, fmt.Sprintf("%s/%s/%s", env.name, InfraFilesDir, fileName), fileBuffer); err != nil {
+		err = sbd.blobClient.Upload(ctx, fmt.Sprintf("%s/%s/%s", env.name, InfraFilesDir, fileName), fileBuffer)
+		if err != nil {
 			return fmt.Errorf("uploading infra file: %w", err)
 		}
 	}

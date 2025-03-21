@@ -139,6 +139,23 @@ var (
 		"rag-ui":  "ts",
 		"rag-api": "python",
 	}
+
+	appUsesMap = map[string][]string{
+		"rag-ui": {
+			"host.containerapp",
+		},
+		"rag-api": {
+			"ai.project",
+			"ai.search",
+			"db.cosmos",
+			"db.postgres",
+			"db.redis",
+			"db.mongo",
+			"db.mysql",
+			"messaging.eventhubs",
+			"messaging.servicebus",
+		},
+	}
 )
 
 func newStartCommand() *cobra.Command {
@@ -231,45 +248,6 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 
 	resourcesToAdd := []*azdext.ComposedResource{}
 	servicesToAdd := []*azdext.ServiceConfig{}
-
-	// Add host resources such as container apps.
-	for i, appKey := range a.scenarioData.InteractionTypes {
-		if i >= len(a.scenarioData.AppHostTypes) {
-			break
-		}
-
-		appType := a.scenarioData.AppHostTypes[i]
-		if appType == "" || appType == "choose-app" {
-			appType = "host.containerapp"
-		}
-
-		languageType := a.scenarioData.AppLanguages[i]
-
-		appConfig := map[string]any{
-			"port": 8080,
-		}
-
-		appConfigJson, err := json.Marshal(appConfig)
-		if err != nil {
-			return fmt.Errorf("failed to marshal app config: %w", err)
-		}
-
-		appResource := &azdext.ComposedResource{
-			Name:   appKey,
-			Type:   appType,
-			Config: appConfigJson,
-		}
-
-		serviceConfig := &azdext.ServiceConfig{
-			Name:         appKey,
-			Language:     languageType,
-			Host:         strings.ReplaceAll(appType, "host.", ""),
-			RelativePath: filepath.Join("src", appKey),
-		}
-
-		servicesToAdd = append(servicesToAdd, serviceConfig)
-		resourcesToAdd = append(resourcesToAdd, appResource)
-	}
 
 	// Add database resources
 	if a.scenarioData.DatabaseType != "" {
@@ -371,6 +349,46 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		resourcesToAdd = append(resourcesToAdd, aiProject)
 	}
 
+	// Add host resources such as container apps.
+	for i, appKey := range a.scenarioData.InteractionTypes {
+		if i >= len(a.scenarioData.AppHostTypes) {
+			break
+		}
+
+		appType := a.scenarioData.AppHostTypes[i]
+		if appType == "" || appType == "choose-app" {
+			appType = "host.containerapp"
+		}
+
+		languageType := a.scenarioData.AppLanguages[i]
+
+		appConfig := map[string]any{
+			"port": 8080,
+		}
+
+		appConfigJson, err := json.Marshal(appConfig)
+		if err != nil {
+			return fmt.Errorf("failed to marshal app config: %w", err)
+		}
+
+		appResource := &azdext.ComposedResource{
+			Name:   appKey,
+			Type:   appType,
+			Config: appConfigJson,
+			Uses:   []string{},
+		}
+
+		serviceConfig := &azdext.ServiceConfig{
+			Name:         appKey,
+			Language:     languageType,
+			Host:         strings.ReplaceAll(appType, "host.", ""),
+			RelativePath: filepath.Join("src", appKey),
+		}
+
+		servicesToAdd = append(servicesToAdd, serviceConfig)
+		resourcesToAdd = append(resourcesToAdd, appResource)
+	}
+
 	for _, service := range servicesToAdd {
 		_, err := a.azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{
 			Service: service,
@@ -421,6 +439,16 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	}
 
 	for _, resource := range resourcesToAdd {
+		// Identify dependent resources.
+		uses := appUsesMap[resource.Name]
+		if len(uses) > 0 {
+			for _, dependentResource := range resourcesToAdd {
+				if slices.Contains(uses, dependentResource.Type) && resource.Name != dependentResource.Name {
+					resource.Uses = append(resource.Uses, dependentResource.Name)
+				}
+			}
+		}
+
 		_, err := a.azdClient.Compose().AddResource(ctx, &azdext.AddResourceRequest{
 			Resource: resource,
 		})

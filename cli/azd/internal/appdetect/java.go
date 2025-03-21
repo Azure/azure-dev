@@ -17,8 +17,9 @@ import (
 )
 
 type javaDetector struct {
-	mvnCli       *maven.Cli
-	rootProjects []mavenProject
+	mvnCli                  *maven.Cli
+	rootProjects            []mavenProject
+	modulePathToRootProject map[string]mavenProject
 }
 
 func (jd *javaDetector) Language() Language {
@@ -35,21 +36,24 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 			}
 
 			if len(project.Modules) > 0 {
-				// This is a multi-module project, we will capture the analysis, but return nil
-				// to continue recursing
-				jd.rootProjects = append(jd.rootProjects, *project)
+				// This is a multi-module project, we will capture the analysis, but return nil to continue recursing
+				jd.captureRootAndModules(*project, path)
 				return nil, nil
 			}
 
 			var currentRoot *mavenProject
 			for _, rootProject := range jd.rootProjects {
-				// we can say that the project is in the root project if the path is under the project
-				if inRoot := strings.HasPrefix(pomFile, rootProject.path); inRoot {
+				// We can say that the project is in the root project if
+				// 1) the project path is under the root project
+				// 2) the project is the module of root project
+				underRootProject := strings.HasPrefix(pomFile, filepath.Dir(rootProject.path)+string(filepath.Separator))
+				moduleOfRootProject, exists := jd.modulePathToRootProject[project.path]
+				if underRootProject && exists && moduleOfRootProject.path == rootProject.path {
 					currentRoot = &rootProject
+					break
 				}
 			}
 
-			_ = currentRoot // use currentRoot here in the analysis
 			result, err := detectDependencies(project, &Project{
 				Language:      Java,
 				Path:          path,
@@ -57,6 +61,9 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 			})
 			if err != nil {
 				return nil, fmt.Errorf("detecting dependencies: %w", err)
+			}
+			if currentRoot != nil {
+				result.RootPath = currentRoot.path
 			}
 
 			return result, nil
@@ -155,4 +162,24 @@ func detectDependencies(mavenProject *mavenProject, project *Project) (*Project,
 	}
 
 	return project, nil
+}
+
+// captureRootAndModules records the root and modules projects to detect parent later
+func (jd *javaDetector) captureRootAndModules(mavenProject mavenProject, path string) {
+	if _, ok := jd.modulePathToRootProject[mavenProject.path]; !ok {
+		// Add into root projects if it's new root
+		jd.rootProjects = append(jd.rootProjects, mavenProject)
+	}
+	for _, module := range mavenProject.Modules {
+		modulePath := filepath.Join(path, module)
+		// modulePath points to the actual root, not current direct parent
+		jd.modulePathToRootProject[modulePath] = mavenProject
+		for {
+			if result, ok := jd.modulePathToRootProject[jd.modulePathToRootProject[modulePath].path]; ok {
+				jd.modulePathToRootProject[modulePath] = result
+			} else {
+				break
+			}
+		}
+	}
 }

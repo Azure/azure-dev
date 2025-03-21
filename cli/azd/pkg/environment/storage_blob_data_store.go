@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -19,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 )
@@ -31,12 +33,14 @@ var (
 type StorageBlobDataStore struct {
 	configManager config.Manager
 	blobClient    storage.BlobClient
+	azdContext    *azdcontext.AzdContext
 }
 
-func NewStorageBlobDataStore(configManager config.Manager, blobClient storage.BlobClient) RemoteDataStore {
+func NewStorageBlobDataStore(configManager config.Manager, blobClient storage.BlobClient, azdContext *azdcontext.AzdContext) RemoteDataStore {
 	return &StorageBlobDataStore{
 		configManager: configManager,
 		blobClient:    blobClient,
+		azdContext:    azdContext,
 	}
 }
 
@@ -48,6 +52,11 @@ func (fs *StorageBlobDataStore) EnvPath(env *Environment) string {
 // ConfigPath returns the path to the config.json file for the given environment
 func (fs *StorageBlobDataStore) ConfigPath(env *Environment) string {
 	return fmt.Sprintf("%s/%s", env.name, ConfigFileName)
+}
+
+// InfraPath returns the path to the infra files for the given environment
+func (fs *StorageBlobDataStore) InfraPath(env *Environment) string {
+	return fmt.Sprintf("%s/%s", env.name, InfraFilesDir)
 }
 
 func (sbd *StorageBlobDataStore) List(ctx context.Context) ([]*contracts.EnvListEnvironment, error) {
@@ -143,6 +152,22 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, opt
 		return fmt.Errorf("uploading .env: %w", describeError(err))
 	}
 
+	// Upload Infra Files if any
+	filesToUpload := sbd.azdContext.GetEnvironmentInfraFiles(env.name)
+
+	for _, file := range filesToUpload {
+		fileName := filepath.Base(file)
+		fileBuffer, err := os.Open(file)
+		if err != nil {
+			return fmt.Errorf("failed to open file for upload: %w", err)
+		}
+		defer fileBuffer.Close()
+
+		if err := sbd.blobClient.Upload(ctx, fmt.Sprintf("%s/%s/%s", env.name, InfraFilesDir, fileName), fileBuffer); err != nil {
+			return fmt.Errorf("uploading infra file: %w", err)
+		}
+	}
+
 	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))
 	return nil
 }
@@ -189,6 +214,41 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 		tracing.SetGlobalAttributes(fields.SubscriptionIdKey.String(env.GetSubscriptionId()))
 	} else {
 		tracing.SetGlobalAttributes(fields.StringHashed(fields.SubscriptionIdKey, env.GetSubscriptionId()))
+	}
+
+	// Reload infra config file if any
+	items, err := sbd.blobClient.Items(ctx)
+	if err != nil {
+		return describeError(err)
+	}
+
+	for _, item := range items {
+		if strings.Contains(item.Path, sbd.InfraPath(env)) {
+
+			blobStream, err := sbd.blobClient.Download(ctx, item.Path)
+			if err != nil {
+				return fmt.Errorf("failed to download blob: %w", err)
+			}
+			defer blobStream.Close()
+
+			localInfraDir := sbd.azdContext.GetEnvironmentInfraDirectory(env.name)
+			err = os.MkdirAll(localInfraDir, os.ModePerm)
+			if err != nil {
+				return fmt.Errorf("failed to create directory: %w", err)
+			}
+
+			localFilePath := fmt.Sprintf("%s/%s", localInfraDir, filepath.Base(item.Path))
+			file, err := os.Create(localFilePath)
+			if err != nil {
+				return fmt.Errorf("failed to create local file: %w", err)
+			}
+			defer file.Close()
+
+			_, err = io.Copy(file, blobStream)
+			if err != nil {
+				return fmt.Errorf("failed to write blob to local file: %w", err)
+			}
+		}
 	}
 
 	return nil

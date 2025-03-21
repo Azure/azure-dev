@@ -43,6 +43,7 @@ type Spec struct {
 
 const DotEnvFileName = ".env"
 const ConfigFileName = "config.json"
+const InfraFilesDir = "infra"
 
 var (
 	// Error returned when an environment with the specified name already exists

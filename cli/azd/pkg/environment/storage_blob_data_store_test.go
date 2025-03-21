@@ -12,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -39,11 +40,12 @@ var validBlobItems []*storage.Blob = []*storage.Blob{
 func Test_StorageBlobDataStore_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := config.NewManager()
+	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 
 	t.Run("List", func(t *testing.T) {
 		blobClient := &MockBlobClient{}
 		blobClient.On("Items", *mockContext.Context).Return(validBlobItems, nil)
-		dataStore := NewStorageBlobDataStore(configManager, blobClient)
+		dataStore := NewStorageBlobDataStore(configManager, blobClient, azdContext)
 
 		envList, err := dataStore.List(*mockContext.Context)
 		require.NoError(t, err)
@@ -56,7 +58,7 @@ func Test_StorageBlobDataStore_List(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
 		blobClient := &MockBlobClient{}
 		blobClient.On("Items", *mockContext.Context).Return(nil, storage.ErrContainerNotFound)
-		dataStore := NewStorageBlobDataStore(configManager, blobClient)
+		dataStore := NewStorageBlobDataStore(configManager, blobClient, azdContext)
 
 		envList, err := dataStore.List(*mockContext.Context)
 		require.NoError(t, err)
@@ -69,7 +71,8 @@ func Test_StorageBlobDataStore_SaveAndGet(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := config.NewManager()
 	blobClient := &MockBlobClient{}
-	dataStore := NewStorageBlobDataStore(configManager, blobClient)
+	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	dataStore := NewStorageBlobDataStore(configManager, blobClient, azdContext)
 
 	t.Run("Success", func(t *testing.T) {
 		envReader := io.NopCloser(bytes.NewReader([]byte("key1=value1")))
@@ -96,7 +99,8 @@ func Test_StorageBlobDataStore_SaveAndGet(t *testing.T) {
 func Test_StorageBlobDataStore_Path(t *testing.T) {
 	configManager := config.NewManager()
 	blobClient := &MockBlobClient{}
-	dataStore := NewStorageBlobDataStore(configManager, blobClient)
+	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	dataStore := NewStorageBlobDataStore(configManager, blobClient, azdContext)
 
 	env := New("env1")
 	expected := fmt.Sprintf("%s/%s", env.name, DotEnvFileName)
@@ -108,7 +112,8 @@ func Test_StorageBlobDataStore_Path(t *testing.T) {
 func Test_StorageBlobDataStore_ConfigPath(t *testing.T) {
 	configManager := config.NewManager()
 	blobClient := &MockBlobClient{}
-	dataStore := NewStorageBlobDataStore(configManager, blobClient)
+	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	dataStore := NewStorageBlobDataStore(configManager, blobClient, azdContext)
 
 	env := New("env1")
 	expected := fmt.Sprintf("%s/%s", env.name, ConfigFileName)

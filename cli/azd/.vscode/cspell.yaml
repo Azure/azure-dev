@@ -152,6 +152,7 @@ overrides:
       - println
   - filename: extensions/microsoft.azd.ai.builder/internal/cmd/start.go
     words:
+      - dall
       - datasource
       - vectorizing
 ignorePaths:

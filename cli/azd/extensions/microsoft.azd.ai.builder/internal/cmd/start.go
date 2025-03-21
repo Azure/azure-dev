@@ -744,10 +744,12 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 					}
 				}
 
+				promptMessage := "It looks like you already have a configured storage account. Do you want to reuse it?"
+
 				if hasStorageResource {
 					q.Prompt = &qna.ConfirmPrompt{
 						Client:       a.azdClient,
-						Message:      "It looks like you already have a configured storage account. Do you want to reuse it?",
+						Message:      promptMessage,
 						DefaultValue: to.Ptr(true),
 						HelpMessage:  "Using an existing storage account will save you time and resources.",
 					}

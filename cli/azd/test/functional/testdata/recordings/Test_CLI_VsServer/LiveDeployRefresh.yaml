@@ -22,7 +22,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armsubscriptions/v1.0.0 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armsubscriptions/v1.0.0 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations?api-version=2021-01-01
         method: GET
       response:
@@ -89,7 +89,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
         method: GET
       response:
@@ -154,7 +154,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=1ZDRboIwFIafxV5r0ioxm3ewUxPmzqmUlo3dGXUGMJBsLEiN7z7QmO16XnnVNv1zzvd%2fR7auyjorv1d1VpWmKrblF5sd2auMjY3H%2fbXcHurl6rPO%2bsRi27IZE4OHAZn0gC4dseE5oavm%2bie4N9DFPEDYNZF9B7SRRxAEGvYQ8WSOVnIyAUQmeSKz%2bdCC1EvMGwW2y6WtMsUYXcEJQocgOWZCaiuWKn%2bWaNZOQbcZupn%2baMROQyb9G1g9fgvrgUzYdCYacukYcymoFZEtHhfakr3who6garXcREl%2fgj73MHavYtO%2f5YTA77qnDo0897m4n9yR%2b%2f%2bhiumt6j0FOKF8zcmFnorFm7Z7jC2fYqGtTshi%2fquY3K5B5%2f9RfGfYp9MP
         method: GET
       response:
@@ -219,7 +219,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=zc9RS4RAEAfwz%2bI8G7jeGeFb3nggNbOtu3thb0eZiLJCeegpfvfu4iKiD1CPM%2fP%2fw29meO5cX7vDvq87Z7qmdO8Qz%2fCYamN1CLE7tK0P6e1lnMGVY%2f%2bwf%2bvrc%2bGuPEIMwrvx2BQjTcUV%2bJ%2bJvBu%2bbiIIvLzZJoTVoOwTklVrxiTJsUUV7LZk04BNgsrsNmxeXnPB8l4Hg0R7yhVHxkxITNcS1WlXhVIL1phdU6NGnigiU42EdgWLf2GvfrLP%2f%2fyFOuRJRYxqkoZCufmlHshk0bf6nzOX5QM%3d
         method: GET
       response:
@@ -284,7 +284,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=q1ZKzs8rycwrTSzJzM8Lyc9OzStWsqpWcnUMDgkNNlKyyivNydGBcmG8cFeQJIwX6h3sHxriAeMG%2bPs4%2brk4u%2fqFBDn6wAQhOuDGQbjGENnaWgA%3d
         method: GET
       response:
@@ -355,7 +355,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-w27a7fa-1741210758/validate?api-version=2021-04-01
         method: POST
       response:
@@ -426,7 +426,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-w27a7fa-1741210758?api-version=2021-04-01
         method: PUT
       response:
@@ -495,7 +495,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-w27a7fa-1741210758/operationStatuses/08584603960698903706?api-version=2021-04-01&t=638768076173629377&c=MIIHhzCCBm-gAwIBAgITfAaTiaklTwdb3CiPmAAABpOJqTANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDUwHhcNMjUwMTIxMjI0MTE0WhcNMjUwNzIwMjI0MTE0WjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOmbUr8nPmMTJCdlYtukpEJEQ6NI5er-Vfsp5MRwIESjPj6gQ9NC4czYZZZ3dm1Hp85y0l3ZlFsYoTHzzHaj2ZqWW0V97CbxFcGqXohbDUnk9dpmspwGy2SiEGYseXIea4nHCbGLZQy9h7EC74uBI6WqsfoFLCnIiUvBkXQsneM4Y__PD4oGkBE3QX-BFjX1GvNN4lO26JmdnJujHiuGiY_Xdzy4wfChN8m2A3NuGFRyygED5SOQHVAaJaNpxoOgPvS98XVyKf7SpVpY3Edx8OwdSXVus6lL9Lu14CF30haHpRpV2zE3G5nevFwh9XSquojKUfYLTq1ohD1mxiznhm0CAwEAAaOCBHQwggRwMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHLBggrBgEFBQcBAQSCAb0wggG5MGMGCCsGAQUFBzAChldodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MFMGCCsGAQUFBzAChkdodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9DTzFQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDA1LmNydDBTBggrBgEFBQcwAoZHaHR0cDovL2NybDMuYW1lLmdibC9haWEvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MB0GA1UdDgQWBBT870AQV-Tgc57mnegK8TIGwtH2xzAOBgNVHQ8BAf8EBAMCBaAwggEmBgNVHR8EggEdMIIBGTCCARWgggERoIIBDYY_aHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBR61hmFKHlscXYeYPjzS--iBUIWHTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAKt7SAWtCzPHMRCbBGIjKD-lleovshqUK-Rpyq5vsIWLLfzY9HZVzLgVMKYbI7sfGu8DGG2Q_AYLZ-pfZV8p9Q47EY_5LhruBCZDg9158kT335PwQ3aMdnE2cA0Cvkk18UEDWTaXZd0binxFy4dzOklmsDsb8VU-3A3KZfsL6RN_v-i0iw2KaT2zhGu59LdeqtDyBxefzHUHFT00QtVqDQRbq7FOMr-tYyBmUYS_9c8LHvmr0yNHtGH_Vqj7QZa8xYQPBrS-rRnWVDrS3v_xqv-9QxowrZKWmtYYqQakuTuGBh2DYpRjKeyGhNc1DssNE2AJp2l-xShy3IY2Rk24bYE&s=yTbSVKQSN5c7bj_u9eIDVprqoEJDX31i9F-AxKbH1Rv0lPsnRM-t6S37-5RGZJXVxXK0mGYyFFcZ3SAWflDrgVs7wv7j7fVnKI3qw4Sr7LPDSllRrD6fSz_h_GDvHRSVDI4Uvb14wdodaxzoHByB4eV4k--bJQXiLWyw3C_oY43YeUNSz5hXswRct19_6jENVXx0CIO2TGPjgFLGzDxp_pnhT1klhyX5a6n8iWx4F0Ix0NvnjQrb2J-7qQOnjVbUfYOq-sScuWb39JcdRFKfeTHBn15xxIhtzHE2lceU0tvteYbxu0hxDwrGPy0kiZrqKFswn4S7_Xwa-6fgFkLOXg&h=CuI6MQ1vXecD3j8BvYQGH9b8a0hgGixYfEQL3QDx9J0
         method: GET
       response:
@@ -560,7 +560,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-w27a7fa-1741210758?api-version=2021-04-01
         method: GET
       response:
@@ -627,7 +627,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-w27a7fa%27&api-version=2021-04-01
         method: GET
       response:
@@ -694,7 +694,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-w27a7fa%27&api-version=2021-04-01
         method: GET
       response:
@@ -768,7 +768,7 @@ interactions:
             Content-Type:
                 - application/x-www-form-urlencoded
             User-Agent:
-                - azsdk-go-azd-acr/0.0.0-dev.0 (commit 0000000000000000000000000000000000000000) (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-azd-acr/0.0.0-dev.0 (commit 0000000000000000000000000000000000000000) (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://acrgvnx27wmgb2nk.azurecr.io:443/oauth2/exchange
         method: POST
       response:
@@ -824,7 +824,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/apiservice?api-version=2024-02-02-preview
         method: PUT
       response:
@@ -897,7 +897,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.App/locations/westus3/containerappOperationStatuses/3ec1f5df-50b1-4b54-930d-fd6e56b72506?api-version=2024-02-02-preview&azureAsyncOperation=true&c=MIIHhzCCBm-gAwIBAgITfAaTiaklTwdb3CiPmAAABpOJqTANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDUwHhcNMjUwMTIxMjI0MTE0WhcNMjUwNzIwMjI0MTE0WjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOmbUr8nPmMTJCdlYtukpEJEQ6NI5er-Vfsp5MRwIESjPj6gQ9NC4czYZZZ3dm1Hp85y0l3ZlFsYoTHzzHaj2ZqWW0V97CbxFcGqXohbDUnk9dpmspwGy2SiEGYseXIea4nHCbGLZQy9h7EC74uBI6WqsfoFLCnIiUvBkXQsneM4Y__PD4oGkBE3QX-BFjX1GvNN4lO26JmdnJujHiuGiY_Xdzy4wfChN8m2A3NuGFRyygED5SOQHVAaJaNpxoOgPvS98XVyKf7SpVpY3Edx8OwdSXVus6lL9Lu14CF30haHpRpV2zE3G5nevFwh9XSquojKUfYLTq1ohD1mxiznhm0CAwEAAaOCBHQwggRwMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHLBggrBgEFBQcBAQSCAb0wggG5MGMGCCsGAQUFBzAChldodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MFMGCCsGAQUFBzAChkdodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9DTzFQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDA1LmNydDBTBggrBgEFBQcwAoZHaHR0cDovL2NybDMuYW1lLmdibC9haWEvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MB0GA1UdDgQWBBT870AQV-Tgc57mnegK8TIGwtH2xzAOBgNVHQ8BAf8EBAMCBaAwggEmBgNVHR8EggEdMIIBGTCCARWgggERoIIBDYY_aHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBR61hmFKHlscXYeYPjzS--iBUIWHTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAKt7SAWtCzPHMRCbBGIjKD-lleovshqUK-Rpyq5vsIWLLfzY9HZVzLgVMKYbI7sfGu8DGG2Q_AYLZ-pfZV8p9Q47EY_5LhruBCZDg9158kT335PwQ3aMdnE2cA0Cvkk18UEDWTaXZd0binxFy4dzOklmsDsb8VU-3A3KZfsL6RN_v-i0iw2KaT2zhGu59LdeqtDyBxefzHUHFT00QtVqDQRbq7FOMr-tYyBmUYS_9c8LHvmr0yNHtGH_Vqj7QZa8xYQPBrS-rRnWVDrS3v_xqv-9QxowrZKWmtYYqQakuTuGBh2DYpRjKeyGhNc1DssNE2AJp2l-xShy3IY2Rk24bYE&h=ZV0kV4Btc_jk-vV22qh7b-gHzpcO7hi8-MuGLuiZYLI&s=S4-ILEEBf3KMEv5LgHZ292pQS8R9cWAEgLMLLPeIkcUXsmYYal2jOCIt7qKz08fZn-JmsTk804TwqBBcUQON_Xq3rVWP_UAMu8rwVJPvk2k2RUOZmdiwy59gnjZN7yXWdU_HDpi--ym0zv_EhHeWkSvpWF7JNrHymV18cMcUMNG3z1w5cVpXnfxuBXfNLZh1dnCp2NLrqYX3grui8GXunHXnp7XTHAWouHXEXM5fdRZZ0V8OOBv3Y4j8KDh-nC98aRdg2aHyfp4H-hT1fKHZmvZ0e9y9tVDJWPGjQWsnjz5UfG87qCoZAcLnWhBd5t2YqWPJGkFDC33trWUZsl4Fvw&t=638768079739067962
         method: GET
       response:
@@ -968,7 +968,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/apiservice?api-version=2024-02-02-preview
         method: GET
       response:
@@ -1041,7 +1041,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/apiservice?api-version=2023-11-02-preview
         method: GET
       response:
@@ -1114,7 +1114,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-w27a7fa%27&api-version=2021-04-01
         method: GET
       response:
@@ -1188,7 +1188,7 @@ interactions:
             Content-Type:
                 - application/x-www-form-urlencoded
             User-Agent:
-                - azsdk-go-azd-acr/0.0.0-dev.0 (commit 0000000000000000000000000000000000000000) (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-azd-acr/0.0.0-dev.0 (commit 0000000000000000000000000000000000000000) (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://acrgvnx27wmgb2nk.azurecr.io:443/oauth2/exchange
         method: POST
       response:
@@ -1244,7 +1244,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/pubsub?api-version=2024-02-02-preview
         method: PUT
       response:
@@ -1317,7 +1317,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.App/locations/westus3/containerappOperationStatuses/3a3b0920-52c4-42be-a4a2-a89143afe2bb?api-version=2024-02-02-preview&azureAsyncOperation=true&c=MIIHhzCCBm-gAwIBAgITfAaTiaklTwdb3CiPmAAABpOJqTANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDUwHhcNMjUwMTIxMjI0MTE0WhcNMjUwNzIwMjI0MTE0WjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOmbUr8nPmMTJCdlYtukpEJEQ6NI5er-Vfsp5MRwIESjPj6gQ9NC4czYZZZ3dm1Hp85y0l3ZlFsYoTHzzHaj2ZqWW0V97CbxFcGqXohbDUnk9dpmspwGy2SiEGYseXIea4nHCbGLZQy9h7EC74uBI6WqsfoFLCnIiUvBkXQsneM4Y__PD4oGkBE3QX-BFjX1GvNN4lO26JmdnJujHiuGiY_Xdzy4wfChN8m2A3NuGFRyygED5SOQHVAaJaNpxoOgPvS98XVyKf7SpVpY3Edx8OwdSXVus6lL9Lu14CF30haHpRpV2zE3G5nevFwh9XSquojKUfYLTq1ohD1mxiznhm0CAwEAAaOCBHQwggRwMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHLBggrBgEFBQcBAQSCAb0wggG5MGMGCCsGAQUFBzAChldodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MFMGCCsGAQUFBzAChkdodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9DTzFQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDA1LmNydDBTBggrBgEFBQcwAoZHaHR0cDovL2NybDMuYW1lLmdibC9haWEvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MB0GA1UdDgQWBBT870AQV-Tgc57mnegK8TIGwtH2xzAOBgNVHQ8BAf8EBAMCBaAwggEmBgNVHR8EggEdMIIBGTCCARWgggERoIIBDYY_aHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBR61hmFKHlscXYeYPjzS--iBUIWHTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAKt7SAWtCzPHMRCbBGIjKD-lleovshqUK-Rpyq5vsIWLLfzY9HZVzLgVMKYbI7sfGu8DGG2Q_AYLZ-pfZV8p9Q47EY_5LhruBCZDg9158kT335PwQ3aMdnE2cA0Cvkk18UEDWTaXZd0binxFy4dzOklmsDsb8VU-3A3KZfsL6RN_v-i0iw2KaT2zhGu59LdeqtDyBxefzHUHFT00QtVqDQRbq7FOMr-tYyBmUYS_9c8LHvmr0yNHtGH_Vqj7QZa8xYQPBrS-rRnWVDrS3v_xqv-9QxowrZKWmtYYqQakuTuGBh2DYpRjKeyGhNc1DssNE2AJp2l-xShy3IY2Rk24bYE&h=eaEkA3gQms5qsqaaHFBEZQ1VaHrC753P5ZN9KYhT-Xo&s=0cR21ymOM7jOpUj1Fs0_HDXfeN2eGFu0g1aLwNsLkNqM_xdsO0NAuXryrv6igbSBOwcbG-wsBCDPCt9uCyvpw-C5ewplftK5Hwoxi4-KnKQ3Hi0YqLMuLD9dIc7XzFPMK8LK5xWpPuXEIcfPFHBGE4qFy_J-glYnZnOTSTTWio0PXC82CBbm917dfuy8KWlMTqdPv2UK1IvEP2WQEWWtsgCrhojHTxIJbh_3twA9GmCR_Sf0I3FJBYHNoboaOjz6aH3JrnwA1ZYH-bj9TA2iCSj5Q05FbotDiF2HtmKOYJff9tV9Hdzj_h3qyZgPKoep5yGbY0ViSNIa8z27B0Lb7g&t=638768079915038871
         method: GET
       response:
@@ -1388,7 +1388,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/pubsub?api-version=2024-02-02-preview
         method: GET
       response:
@@ -1461,7 +1461,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/pubsub?api-version=2023-11-02-preview
         method: GET
       response:
@@ -1534,7 +1534,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-w27a7fa%27&api-version=2021-04-01
         method: GET
       response:
@@ -1608,7 +1608,7 @@ interactions:
             Content-Type:
                 - application/x-www-form-urlencoded
             User-Agent:
-                - azsdk-go-azd-acr/0.0.0-dev.0 (commit 0000000000000000000000000000000000000000) (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-azd-acr/0.0.0-dev.0 (commit 0000000000000000000000000000000000000000) (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://acrgvnx27wmgb2nk.azurecr.io:443/oauth2/exchange
         method: POST
       response:
@@ -1664,7 +1664,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/webfrontend?api-version=2024-02-02-preview
         method: PUT
       response:
@@ -1737,7 +1737,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.App/locations/westus3/containerappOperationStatuses/a2077c8a-628e-4a3a-8c6f-d100da782e49?api-version=2024-02-02-preview&azureAsyncOperation=true&c=MIIHhzCCBm-gAwIBAgITfAaTiaklTwdb3CiPmAAABpOJqTANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDUwHhcNMjUwMTIxMjI0MTE0WhcNMjUwNzIwMjI0MTE0WjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOmbUr8nPmMTJCdlYtukpEJEQ6NI5er-Vfsp5MRwIESjPj6gQ9NC4czYZZZ3dm1Hp85y0l3ZlFsYoTHzzHaj2ZqWW0V97CbxFcGqXohbDUnk9dpmspwGy2SiEGYseXIea4nHCbGLZQy9h7EC74uBI6WqsfoFLCnIiUvBkXQsneM4Y__PD4oGkBE3QX-BFjX1GvNN4lO26JmdnJujHiuGiY_Xdzy4wfChN8m2A3NuGFRyygED5SOQHVAaJaNpxoOgPvS98XVyKf7SpVpY3Edx8OwdSXVus6lL9Lu14CF30haHpRpV2zE3G5nevFwh9XSquojKUfYLTq1ohD1mxiznhm0CAwEAAaOCBHQwggRwMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHLBggrBgEFBQcBAQSCAb0wggG5MGMGCCsGAQUFBzAChldodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MFMGCCsGAQUFBzAChkdodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9DTzFQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDA1LmNydDBTBggrBgEFBQcwAoZHaHR0cDovL2NybDMuYW1lLmdibC9haWEvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MB0GA1UdDgQWBBT870AQV-Tgc57mnegK8TIGwtH2xzAOBgNVHQ8BAf8EBAMCBaAwggEmBgNVHR8EggEdMIIBGTCCARWgggERoIIBDYY_aHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBR61hmFKHlscXYeYPjzS--iBUIWHTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAKt7SAWtCzPHMRCbBGIjKD-lleovshqUK-Rpyq5vsIWLLfzY9HZVzLgVMKYbI7sfGu8DGG2Q_AYLZ-pfZV8p9Q47EY_5LhruBCZDg9158kT335PwQ3aMdnE2cA0Cvkk18UEDWTaXZd0binxFy4dzOklmsDsb8VU-3A3KZfsL6RN_v-i0iw2KaT2zhGu59LdeqtDyBxefzHUHFT00QtVqDQRbq7FOMr-tYyBmUYS_9c8LHvmr0yNHtGH_Vqj7QZa8xYQPBrS-rRnWVDrS3v_xqv-9QxowrZKWmtYYqQakuTuGBh2DYpRjKeyGhNc1DssNE2AJp2l-xShy3IY2Rk24bYE&h=Jg1mHhiqde2rAa65cZGrxh0TG102Nv84-N5AsiMtLjw&s=nf_srgew5hId7I1TAgW58z0-yQfPL6ghcMCPDOvNhei7JBgCEUVslm3rbpAxULGmxUei4D-ca-diAgipy1D-jRd6sPgRTRR10wjDkGo460k6buIzGKoVkRQ37xKfSDLZqs20loZytUzuV8GACX0jn1_pa_qVwComd4iWNYsnACtGZKkrzJ5FIiVxJOQyPW4DjZiMYs_KR6nsON59b4yAwNBAgwj6gB1SBtiCCBL7DQBTNSl3Fck_5yD-kUTt_XpELGyXQrH20HjPcoGnAFnoSNIIxjX-VQWGLCrgu9CGI0OoEqB9CYgcDkr36AMu-WeLvhxE-4bcz1YO0Nzm2fwMVg&t=638768080242853633
         method: GET
       response:
@@ -1808,7 +1808,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/webfrontend?api-version=2024-02-02-preview
         method: GET
       response:
@@ -1881,7 +1881,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/webfrontend?api-version=2023-11-02-preview
         method: GET
       response:
@@ -1954,7 +1954,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-w27a7fa%27&api-version=2021-04-01
         method: GET
       response:
@@ -2028,7 +2028,7 @@ interactions:
             Content-Type:
                 - application/x-www-form-urlencoded
             User-Agent:
-                - azsdk-go-azd-acr/0.0.0-dev.0 (commit 0000000000000000000000000000000000000000) (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-azd-acr/0.0.0-dev.0 (commit 0000000000000000000000000000000000000000) (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://acrgvnx27wmgb2nk.azurecr.io:443/oauth2/exchange
         method: POST
       response:
@@ -2084,7 +2084,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/worker?api-version=2024-02-02-preview
         method: PUT
       response:
@@ -2157,7 +2157,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.App/locations/westus3/containerappOperationStatuses/fe07a63b-3e50-43db-82a5-943382caef14?api-version=2024-02-02-preview&azureAsyncOperation=true&c=MIIHhzCCBm-gAwIBAgITfAaTiaklTwdb3CiPmAAABpOJqTANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDUwHhcNMjUwMTIxMjI0MTE0WhcNMjUwNzIwMjI0MTE0WjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOmbUr8nPmMTJCdlYtukpEJEQ6NI5er-Vfsp5MRwIESjPj6gQ9NC4czYZZZ3dm1Hp85y0l3ZlFsYoTHzzHaj2ZqWW0V97CbxFcGqXohbDUnk9dpmspwGy2SiEGYseXIea4nHCbGLZQy9h7EC74uBI6WqsfoFLCnIiUvBkXQsneM4Y__PD4oGkBE3QX-BFjX1GvNN4lO26JmdnJujHiuGiY_Xdzy4wfChN8m2A3NuGFRyygED5SOQHVAaJaNpxoOgPvS98XVyKf7SpVpY3Edx8OwdSXVus6lL9Lu14CF30haHpRpV2zE3G5nevFwh9XSquojKUfYLTq1ohD1mxiznhm0CAwEAAaOCBHQwggRwMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHLBggrBgEFBQcBAQSCAb0wggG5MGMGCCsGAQUFBzAChldodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MFMGCCsGAQUFBzAChkdodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9DTzFQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDA1LmNydDBTBggrBgEFBQcwAoZHaHR0cDovL2NybDMuYW1lLmdibC9haWEvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MB0GA1UdDgQWBBT870AQV-Tgc57mnegK8TIGwtH2xzAOBgNVHQ8BAf8EBAMCBaAwggEmBgNVHR8EggEdMIIBGTCCARWgggERoIIBDYY_aHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBR61hmFKHlscXYeYPjzS--iBUIWHTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAKt7SAWtCzPHMRCbBGIjKD-lleovshqUK-Rpyq5vsIWLLfzY9HZVzLgVMKYbI7sfGu8DGG2Q_AYLZ-pfZV8p9Q47EY_5LhruBCZDg9158kT335PwQ3aMdnE2cA0Cvkk18UEDWTaXZd0binxFy4dzOklmsDsb8VU-3A3KZfsL6RN_v-i0iw2KaT2zhGu59LdeqtDyBxefzHUHFT00QtVqDQRbq7FOMr-tYyBmUYS_9c8LHvmr0yNHtGH_Vqj7QZa8xYQPBrS-rRnWVDrS3v_xqv-9QxowrZKWmtYYqQakuTuGBh2DYpRjKeyGhNc1DssNE2AJp2l-xShy3IY2Rk24bYE&h=4m4ZIzS-2qjRmk5Ii3q3zAJXPLQn6aCnmXCmXnPZc1M&s=pjjIv6Q1htl_88xPamMYF2leZ10t0NZSBt-sjalCYCnwmawH-kaaYLp64q0w7Zj9ovp4D5VH6cfeGa1jODSoahJdT-QFVlkV4TIFi6ETM7-T34OqGgrP3_YXobtewO7-G1utfYU_jGZ-jc7vk_7TmqLnTpOWTDTXoAJCa9GdGJA11nDB5hCF9GpLWYoTYM7jQg6ab2WBemfSJ9YFDZMe8gy9lbNlXKGn7StsVoDuo-CQQ1auPErMX4jnwf3HjMTESUdePKUVMQV9TDRlTXIdYaKJiyq9pgs6fKmZFtz_LePFVh8Xo0S62bgTzYxxeAhfh6xJOWLU-8zVr6cRfrLClw&t=638768080507869345
         method: GET
       response:
@@ -2228,7 +2228,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/worker?api-version=2024-02-02-preview
         method: GET
       response:
@@ -2301,7 +2301,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/worker?api-version=2023-11-02-preview
         method: GET
       response:
@@ -2374,7 +2374,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-w27a7fa%27&api-version=2021-04-01
         method: GET
       response:
@@ -2441,7 +2441,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
         method: GET
       response:
@@ -2506,7 +2506,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=3ZLBbsIwEES%2fBZ%2bLFIcUAbekdiSgXhPHm9a9IaCIJEqkNlWIEf9eB1S153JqT97Rrux5sz6RTV01h%2bpj3RzqStfFrnonsxN54qnG1O%2fLandsVuu35tBPLHcdmRE6mAxAm6OwZkjuLhOqbr961J8MVBFHgu3bBF%2bYwCQAFkWKlSzxslgg90BHLNHZA%2bjtq6IgH1OvlQzdnOmkLnxh907vW3A1dJQrpCuZL7jQGyuZe5n1d9ZUlYsYvWmGBcRoL9qADe%2fJ%2bY7w8AaGwLuF4Qh67rybFqzxRc6pY0iwmC4VAl455tb57xTfJll%2fMnXh01jKVPeaj4CFLgNjhebDnue6k9E%2f2MnvEOj41pUEkokR5BsP7DyQKX1WWIoUvbEoFKoMUOTf0YP7gsKGP6L%2fY7bP508%3d
         method: GET
       response:
@@ -2571,7 +2571,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=zc9RS4RAEAfwz%2bI8G7jeGeFb3nggNbOtu3thb0eZiLJCeegpfvfu4iKiD1CPM%2fP%2fw29meO5cX7vDvq87Z7qmdO8Qz%2fCYamN1CLE7tK0P6e1lnMGVY%2f%2bwf%2bvrc%2bGuPEIMwrvx2BQjTcUV%2bJ%2bJvBu%2bbiIIvLzZJoTVoOwTklVrxiTJsUUV7LZk04BNgsrsNmxeXnPB8l4Hg0R7yhVHxkxITNcS1WlXhVIL1phdU6NGnigiU42EdgWLf2GvfrLP%2f%2fyFOuRJRYxqkoZCufmlHshk0bf6nzOX5QM%3d
         method: GET
       response:
@@ -2636,7 +2636,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=q1ZKzs8rycwrTSzJzM8Lyc9OzStWsqpWcnUMDgkNNlKyyivNydGBcmG8cFeQJIwX6h3sHxriAeMG%2bPs4%2brk4u%2fqFBDn6wAQhOuDGQbjGENnaWgA%3d
         method: GET
       response:
@@ -2703,7 +2703,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-w27a7fa%27&api-version=2021-04-01
         method: GET
       response:
@@ -2770,7 +2770,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27apiservice%27&api-version=2021-04-01
         method: GET
       response:
@@ -2837,7 +2837,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-w27a7fa%27&api-version=2021-04-01
         method: GET
       response:
@@ -2904,7 +2904,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27apiservice%27&api-version=2021-04-01
         method: GET
       response:
@@ -2971,7 +2971,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/apiservice?api-version=2023-11-02-preview
         method: GET
       response:
@@ -3044,7 +3044,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27pubsub%27&api-version=2021-04-01
         method: GET
       response:
@@ -3111,7 +3111,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27webfrontend%27&api-version=2021-04-01
         method: GET
       response:
@@ -3178,7 +3178,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-w27a7fa%27&api-version=2021-04-01
         method: GET
       response:
@@ -3245,7 +3245,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27webfrontend%27&api-version=2021-04-01
         method: GET
       response:
@@ -3312,7 +3312,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/webfrontend?api-version=2023-11-02-preview
         method: GET
       response:
@@ -3385,7 +3385,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27worker%27&api-version=2021-04-01
         method: GET
       response:
@@ -3452,7 +3452,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-w27a7fa%27&api-version=2021-04-01
         method: GET
       response:
@@ -3519,7 +3519,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27worker%27&api-version=2021-04-01
         method: GET
       response:
@@ -3586,7 +3586,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/worker?api-version=2023-11-02-preview
         method: GET
       response:
@@ -3659,7 +3659,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?api-version=2021-04-01
         method: GET
       response:
@@ -3726,7 +3726,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
         method: GET
       response:
@@ -3791,7 +3791,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=3ZLBbsIwEES%2fBZ%2bLFIcUAbekdiSgXhPHm9a9IaCIJEqkNlWIEf9eB1S153JqT97Rrux5sz6RTV01h%2bpj3RzqStfFrnonsxN54qnG1O%2fLandsVuu35tBPLHcdmRE6mAxAm6OwZkjuLhOqbr961J8MVBFHgu3bBF%2bYwCQAFkWKlSzxslgg90BHLNHZA%2bjtq6IgH1OvlQzdnOmkLnxh907vW3A1dJQrpCuZL7jQGyuZe5n1d9ZUlYsYvWmGBcRoL9qADe%2fJ%2bY7w8AaGwLuF4Qh67rybFqzxRc6pY0iwmC4VAl455tb57xTfJll%2fMnXh01jKVPeaj4CFLgNjhebDnue6k9E%2f2MnvEOj41pUEkokR5BsP7DyQKX1WWIoUvbEoFKoMUOTf0YP7gsKGP6L%2fY7bP508%3d
         method: GET
       response:
@@ -3856,7 +3856,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=zc9RS4RAEAfwz%2bI8G7jeGeFb3nggNbOtu3thb0eZiLJCeegpfvfu4iKiD1CPM%2fP%2fw29meO5cX7vDvq87Z7qmdO8Qz%2fCYamN1CLE7tK0P6e1lnMGVY%2f%2bwf%2bvrc%2bGuPEIMwrvx2BQjTcUV%2bJ%2bJvBu%2bbiIIvLzZJoTVoOwTklVrxiTJsUUV7LZk04BNgsrsNmxeXnPB8l4Hg0R7yhVHxkxITNcS1WlXhVIL1phdU6NGnigiU42EdgWLf2GvfrLP%2f%2fyFOuRJRYxqkoZCufmlHshk0bf6nzOX5QM%3d
         method: GET
       response:
@@ -3921,7 +3921,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=q1ZKzs8rycwrTSzJzM8Lyc9OzStWsqpWcnUMDgkNNlKyyivNydGBcmG8cFeQJIwX6h3sHxriAeMG%2bPs4%2brk4u%2fqFBDn6wAQhOuDGQbjGENnaWgA%3d
         method: GET
       response:
@@ -3988,7 +3988,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-w27a7fa%27&api-version=2021-04-01
         method: GET
       response:
@@ -4055,7 +4055,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27apiservice%27&api-version=2021-04-01
         method: GET
       response:
@@ -4122,7 +4122,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-w27a7fa%27&api-version=2021-04-01
         method: GET
       response:
@@ -4189,7 +4189,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27apiservice%27&api-version=2021-04-01
         method: GET
       response:
@@ -4256,7 +4256,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/apiservice?api-version=2023-11-02-preview
         method: GET
       response:
@@ -4329,7 +4329,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27pubsub%27&api-version=2021-04-01
         method: GET
       response:
@@ -4396,7 +4396,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27webfrontend%27&api-version=2021-04-01
         method: GET
       response:
@@ -4463,7 +4463,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-w27a7fa%27&api-version=2021-04-01
         method: GET
       response:
@@ -4530,7 +4530,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27webfrontend%27&api-version=2021-04-01
         method: GET
       response:
@@ -4597,7 +4597,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/webfrontend?api-version=2023-11-02-preview
         method: GET
       response:
@@ -4670,7 +4670,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27worker%27&api-version=2021-04-01
         method: GET
       response:
@@ -4737,7 +4737,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-w27a7fa%27&api-version=2021-04-01
         method: GET
       response:
@@ -4804,7 +4804,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27worker%27&api-version=2021-04-01
         method: GET
       response:
@@ -4871,7 +4871,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armappcontainers/v3.0.0-beta.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/providers/Microsoft.App/containerApps/worker?api-version=2023-11-02-preview
         method: GET
       response:
@@ -4944,7 +4944,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?api-version=2021-04-01
         method: GET
       response:
@@ -5011,7 +5011,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
         method: GET
       response:
@@ -5076,7 +5076,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=3ZLBbsIwEES%2fBZ%2bLFIcUAbekdiSgXhPHm9a9IaCIJEqkNlWIEf9eB1S153JqT97Rrux5sz6RTV01h%2bpj3RzqStfFrnonsxN54qnG1O%2fLandsVuu35tBPLHcdmRE6mAxAm6OwZkjuLhOqbr961J8MVBFHgu3bBF%2bYwCQAFkWKlSzxslgg90BHLNHZA%2bjtq6IgH1OvlQzdnOmkLnxh907vW3A1dJQrpCuZL7jQGyuZe5n1d9ZUlYsYvWmGBcRoL9qADe%2fJ%2bY7w8AaGwLuF4Qh67rybFqzxRc6pY0iwmC4VAl455tb57xTfJll%2fMnXh01jKVPeaj4CFLgNjhebDnue6k9E%2f2MnvEOj41pUEkokR5BsP7DyQKX1WWIoUvbEoFKoMUOTf0YP7gsKGP6L%2fY7bP508%3d
         method: GET
       response:
@@ -5141,7 +5141,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=zc9RS4RAEAfwz%2bI8G7jeGeFb3nggNbOtu3thb0eZiLJCeegpfvfu4iKiD1CPM%2fP%2fw29meO5cX7vDvq87Z7qmdO8Qz%2fCYamN1CLE7tK0P6e1lnMGVY%2f%2bwf%2bvrc%2bGuPEIMwrvx2BQjTcUV%2bJ%2bJvBu%2bbiIIvLzZJoTVoOwTklVrxiTJsUUV7LZk04BNgsrsNmxeXnPB8l4Hg0R7yhVHxkxITNcS1WlXhVIL1phdU6NGnigiU42EdgWLf2GvfrLP%2f%2fyFOuRJRYxqkoZCufmlHshk0bf6nzOX5QM%3d
         method: GET
       response:
@@ -5206,7 +5206,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=q1ZKzs8rycwrTSzJzM8Lyc9OzStWsqpWcnUMDgkNNlKyyivNydGBcmG8cFeQJIwX6h3sHxriAeMG%2bPs4%2brk4u%2fqFBDn6wAQhOuDGQbjGENnaWgA%3d
         method: GET
       response:
@@ -5273,7 +5273,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-w27a7fa-1741210758?api-version=2021-04-01
         method: GET
       response:
@@ -5340,7 +5340,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-w27a7fa%27&api-version=2021-04-01
         method: GET
       response:
@@ -5407,7 +5407,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?api-version=2021-04-01
         method: GET
       response:
@@ -5474,7 +5474,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-w27a7fa-1741210758?api-version=2021-04-01
         method: GET
       response:
@@ -5541,7 +5541,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-w27a7fa%27&api-version=2021-04-01
         method: GET
       response:
@@ -5608,7 +5608,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-w27a7fa/resources?api-version=2021-04-01
         method: GET
       response:
@@ -5675,7 +5675,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups/rg-azdtest-w27a7fa?api-version=2021-04-01
         method: DELETE
       response:
@@ -5742,7 +5742,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/operationresults/eyJqb2JJZCI6IlJFU09VUkNFR1JPVVBERUxFVElPTkpPQi1SRzoyREFaRFRFU1Q6MkRXMjdBN0ZBLVdFU1RVUzMiLCJqb2JMb2NhdGlvbiI6Indlc3R1czMifQ?api-version=2021-04-01&t=638768092336888058&c=MIIHhzCCBm-gAwIBAgITfAaTiaklTwdb3CiPmAAABpOJqTANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDUwHhcNMjUwMTIxMjI0MTE0WhcNMjUwNzIwMjI0MTE0WjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOmbUr8nPmMTJCdlYtukpEJEQ6NI5er-Vfsp5MRwIESjPj6gQ9NC4czYZZZ3dm1Hp85y0l3ZlFsYoTHzzHaj2ZqWW0V97CbxFcGqXohbDUnk9dpmspwGy2SiEGYseXIea4nHCbGLZQy9h7EC74uBI6WqsfoFLCnIiUvBkXQsneM4Y__PD4oGkBE3QX-BFjX1GvNN4lO26JmdnJujHiuGiY_Xdzy4wfChN8m2A3NuGFRyygED5SOQHVAaJaNpxoOgPvS98XVyKf7SpVpY3Edx8OwdSXVus6lL9Lu14CF30haHpRpV2zE3G5nevFwh9XSquojKUfYLTq1ohD1mxiznhm0CAwEAAaOCBHQwggRwMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHLBggrBgEFBQcBAQSCAb0wggG5MGMGCCsGAQUFBzAChldodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MFMGCCsGAQUFBzAChkdodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9DTzFQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDA1LmNydDBTBggrBgEFBQcwAoZHaHR0cDovL2NybDMuYW1lLmdibC9haWEvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MB0GA1UdDgQWBBT870AQV-Tgc57mnegK8TIGwtH2xzAOBgNVHQ8BAf8EBAMCBaAwggEmBgNVHR8EggEdMIIBGTCCARWgggERoIIBDYY_aHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBR61hmFKHlscXYeYPjzS--iBUIWHTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAKt7SAWtCzPHMRCbBGIjKD-lleovshqUK-Rpyq5vsIWLLfzY9HZVzLgVMKYbI7sfGu8DGG2Q_AYLZ-pfZV8p9Q47EY_5LhruBCZDg9158kT335PwQ3aMdnE2cA0Cvkk18UEDWTaXZd0binxFy4dzOklmsDsb8VU-3A3KZfsL6RN_v-i0iw2KaT2zhGu59LdeqtDyBxefzHUHFT00QtVqDQRbq7FOMr-tYyBmUYS_9c8LHvmr0yNHtGH_Vqj7QZa8xYQPBrS-rRnWVDrS3v_xqv-9QxowrZKWmtYYqQakuTuGBh2DYpRjKeyGhNc1DssNE2AJp2l-xShy3IY2Rk24bYE&s=IQv7Sig3JlzHYWia6UBc3BOhUoAT-e2z7IHMR_fp8xF4_oE3nmuAwPJ9fLn0rko4xDmEHcJaP-WCV5mtBgmlHdRFrjaD_1QHnjJRLcaKp7Z_Q2g2PjLh1CWL2uduSKccpNmV7Kg6iTvCDddClsuhrhhUQ_o69BJ-5NXgCzIrtaO8MFLYOsAG7www1f5nEIexqnH9_PhxW10p5BgmmgshgvvxCmnjb0BNeo0FErwez2J-nb0BPSt3sQKS_IykJHXo-zJz7SLAUEShLEboclAqfKUXa9q_bHNvaljyE7mSjXCvXsQwqG8R3nvZQY5Adk-cDfqbSV6Mbeio51CBbG5MQA&h=iUvlVhUOKfFe7xG9aepuo1RSW18ztCITuqemAM9RUGA
         method: GET
       response:
@@ -5807,7 +5807,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-w27a7fa-1741210758?api-version=2021-04-01
         method: GET
       response:
@@ -5878,7 +5878,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-w27a7fa-1741210758?api-version=2021-04-01
         method: PUT
       response:
@@ -5947,7 +5947,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-w27a7fa-1741210758/operationStatuses/08584603944359727429?api-version=2021-04-01&t=638768092504031000&c=MIIHhzCCBm-gAwIBAgITfAaTiaklTwdb3CiPmAAABpOJqTANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDUwHhcNMjUwMTIxMjI0MTE0WhcNMjUwNzIwMjI0MTE0WjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOmbUr8nPmMTJCdlYtukpEJEQ6NI5er-Vfsp5MRwIESjPj6gQ9NC4czYZZZ3dm1Hp85y0l3ZlFsYoTHzzHaj2ZqWW0V97CbxFcGqXohbDUnk9dpmspwGy2SiEGYseXIea4nHCbGLZQy9h7EC74uBI6WqsfoFLCnIiUvBkXQsneM4Y__PD4oGkBE3QX-BFjX1GvNN4lO26JmdnJujHiuGiY_Xdzy4wfChN8m2A3NuGFRyygED5SOQHVAaJaNpxoOgPvS98XVyKf7SpVpY3Edx8OwdSXVus6lL9Lu14CF30haHpRpV2zE3G5nevFwh9XSquojKUfYLTq1ohD1mxiznhm0CAwEAAaOCBHQwggRwMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHLBggrBgEFBQcBAQSCAb0wggG5MGMGCCsGAQUFBzAChldodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MFMGCCsGAQUFBzAChkdodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9DTzFQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDA1LmNydDBTBggrBgEFBQcwAoZHaHR0cDovL2NybDMuYW1lLmdibC9haWEvQ08xUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwNS5jcnQwUwYIKwYBBQUHMAKGR2h0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0NPMVBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3J0MB0GA1UdDgQWBBT870AQV-Tgc57mnegK8TIGwtH2xzAOBgNVHQ8BAf8EBAMCBaAwggEmBgNVHR8EggEdMIIBGTCCARWgggERoIIBDYY_aHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JshjFodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDUuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBR61hmFKHlscXYeYPjzS--iBUIWHTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAKt7SAWtCzPHMRCbBGIjKD-lleovshqUK-Rpyq5vsIWLLfzY9HZVzLgVMKYbI7sfGu8DGG2Q_AYLZ-pfZV8p9Q47EY_5LhruBCZDg9158kT335PwQ3aMdnE2cA0Cvkk18UEDWTaXZd0binxFy4dzOklmsDsb8VU-3A3KZfsL6RN_v-i0iw2KaT2zhGu59LdeqtDyBxefzHUHFT00QtVqDQRbq7FOMr-tYyBmUYS_9c8LHvmr0yNHtGH_Vqj7QZa8xYQPBrS-rRnWVDrS3v_xqv-9QxowrZKWmtYYqQakuTuGBh2DYpRjKeyGhNc1DssNE2AJp2l-xShy3IY2Rk24bYE&s=ZkZ05kMabx8pXVsB7glt83fYojWxEaQ4Xk2Dc8f2QMeOqOACicECFrKtkuo8X3_SEsCM5fGKWTRI25lg4TEDe5iuKpGxM45deVOI4CkT7ewYTT8wd8MMwQFD8O3Sv_MIv0TcgKKZbQC3Banx4s88rfsVUlFr7o8A-emyQxWxjjEQeZz6tu2kyGlb4Bogwuorzv26oVCv39P86G2QX9o5lz9eQtksYsYyyfE7fL_qpaF6NJ8S1y4CFLDWMmzap-u3Ink3GrYFag_21JtzwMmfVE1oOx-4BBcAiACzkFd0qvdR9mniuyBD93iFPlZcc6Fx10SdjxcY7lHQzr0550yoiQ&h=I8Vh8bltaYdJ5anau2w95vblb6fLqLApgq_EJTpyF50
         method: GET
       response:
@@ -6012,7 +6012,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-w27a7fa-1741210758?api-version=2021-04-01
         method: GET
       response:

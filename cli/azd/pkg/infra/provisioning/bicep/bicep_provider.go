@@ -637,7 +637,8 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 			}
 		}
 	} else {
-		warningMessage := fmt.Sprintf("WARNING: Provision validation is disabled. To enable it, please run `azd config set %s off`.\n",
+		warningMessage := fmt.Sprintf("WARNING: Provision validation is disabled. "+
+			"To enable it, please run `azd config set %s off`.\n",
 			preflightDisableVar)
 		p.console.Message(ctx, output.WithWarningFormat(warningMessage))
 	}

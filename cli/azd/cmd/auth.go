@@ -41,5 +41,10 @@ func authActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		ActionResolver: newLogoutAction,
 	})
 
+	group.Add("serve", &actions.ActionDescriptorOptions{
+		Command:        newServeCmd("auth"),
+		ActionResolver: newServeAction,
+	})
+
 	return group
 }

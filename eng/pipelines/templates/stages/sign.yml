@@ -254,7 +254,8 @@ stages:
 
       templateContext:
         inputs:
-          - checkout: self
+          - input: checkout
+            repository: self
 
           # Download signed artifacts
           - input: pipelineArtifact

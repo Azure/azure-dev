@@ -193,7 +193,7 @@ stages:
             artifactName: signed-win-FailedAttempt$(System.JobAttempt)
             path: signed-win/
 
-        - task: 1ES.PublishPipelineArtifact
+        - task: 1ES.PublishPipelineArtifact@1
           condition: succeeded()
           displayName: Publish Choco Package Artifact
           inputs: 

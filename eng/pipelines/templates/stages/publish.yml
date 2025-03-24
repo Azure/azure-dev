@@ -38,7 +38,7 @@ stages:
             isProduction: true
             inputs:
               - input: pipelineArtifact
-                name: release
+                artifactName: release
                 targetPath: release
 
           strategy:
@@ -86,7 +86,7 @@ stages:
             isProduction: true
             inputs:
               - input: pipelineArtifact
-                name: choco-package
+                artifactName: choco-package
                 targetPath: choco
 
           strategy:
@@ -211,7 +211,7 @@ stages:
                 repository: self
               
               - input: pipelineArtifact
-                name: docs
+                artifactName: docs
                 targetPath: docs
 
           steps:
@@ -277,7 +277,7 @@ stages:
               - input: checkout
                 repository: self
               - input: pipelineArtifact
-                name: release-metadata
+                artifactName: release-metadata
 
           steps:
             - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
@@ -552,11 +552,11 @@ stages:
           templateContext:
             inputs:
               - input: pipelineArtifact
-                name: signed-win
+                artifactName: signed-win
                 targetPath: signed-win
 
               - input: pipelineArtifact
-                name: install-sh
+                artifactName: install-sh
                 targetPath: install-sh
 
           strategy:

@@ -136,8 +136,11 @@ var (
 	}
 
 	defaultAppLanguageMap = map[string]string{
-		"rag-ui":  "ts",
-		"rag-api": "python",
+		"rag-ui":          "ts",
+		"rag-api":         "python",
+		"agent-ui":        "ts",
+		"agent-api":       "python",
+		"agent-messaging": "python",
 	}
 
 	appUsesMap = map[string][]string{
@@ -260,6 +263,17 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		resourcesToAdd[dbResource.Name] = dbResource
 	}
 
+	// Add messaging resources
+	if a.scenarioData.MessagingType != "" {
+		desiredName := strings.ReplaceAll(a.scenarioData.MessagingType, "messaging.", "")
+		messagingResource := &azdext.ComposedResource{
+			Name: a.generateResourceName(desiredName),
+			Type: a.scenarioData.MessagingType,
+		}
+		resourcesToAdd[messagingResource.Name] = messagingResource
+	}
+
+	// Add vector store resources
 	if a.scenarioData.VectorStoreType != "" {
 		vectorStoreResource := &azdext.ComposedResource{
 			Name: a.generateResourceName("vector-store"),
@@ -440,8 +454,10 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 
 		// Determine the correct resource folder path using POSIX join.
 		sourceResourceDir := path.Join("scenarios", a.scenarioData.SelectedScenario, interactionName, service.Language)
-		if err := copyResourceDir(sourceResourceDir, destServicePath); err != nil {
-			return fmt.Errorf("failed to copy resource directory %s: %w", sourceResourceDir, err)
+		if _, err := fs.Stat(resources.Scenarios, sourceResourceDir); err == nil {
+			if err := copyResourceDir(sourceResourceDir, destServicePath); err != nil {
+				return fmt.Errorf("failed to copy resource directory %s: %w", sourceResourceDir, err)
+			}
 		}
 
 		// Identify dependent resources.
@@ -717,9 +733,9 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 					{Label: "Other Scenarios (Coming Soon)", Value: "other-scenarios"},
 				},
 			},
-			Branches: map[any]string{
-				"rag":   "use-custom-data",
-				"agent": "agent-tasks",
+			Branches: map[any][]qna.QuestionReference{
+				"rag":   {{Key: "use-custom-data"}},
+				"agent": {{Key: "agent-tasks"}},
 			},
 		},
 		"use-custom-data": {
@@ -733,14 +749,14 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 			AfterAsk: func(ctx context.Context, q *qna.Question, _ any) error {
 				switch a.scenarioData.SelectedScenario {
 				case "rag":
-					q.Branches = map[any]string{
-						true:  "choose-data-types",
-						false: "rag-user-interaction",
+					q.Branches = map[any][]qna.QuestionReference{
+						true:  {{Key: "choose-data-types"}},
+						false: {{Key: "rag-user-interaction"}},
 					}
 				case "agent":
-					q.Branches = map[any]string{
-						true:  "choose-data-types",
-						false: "agent-tasks",
+					q.Branches = map[any][]qna.QuestionReference{
+						true:  {{Key: "choose-data-types"}},
+						false: {{Key: "agent-tasks"}},
 					}
 				}
 
@@ -780,10 +796,10 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 					{Label: "Other", Value: "other-datasource"},
 				},
 			},
-			Branches: map[any]string{
-				"blob-storage":      "choose-storage",
-				"databases":         "choose-database",
-				"local-file-system": "local-file-system",
+			Branches: map[any][]qna.QuestionReference{
+				"blob-storage":      {{Key: "choose-storage"}},
+				"databases":         {{Key: "choose-database"}},
+				"local-file-system": {{Key: "local-file-system"}},
 			},
 			Next: []qna.QuestionReference{{Key: "choose-vector-store"}},
 		},
@@ -937,8 +953,8 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 					{Label: "Glob Expression", Value: "glob-expression"},
 				},
 			},
-			Branches: map[any]string{
-				"glob-expression": "local-file-glob",
+			Branches: map[any][]qna.QuestionReference{
+				"glob-expression": {{Key: "local-file-glob"}},
 			},
 		},
 		"local-file-glob": {
@@ -980,7 +996,12 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				hasVectorStoreResource := q.State["hasVectorStoreResource"].(bool)
 				reuseVectorStore, ok := value.(bool)
 
-				next := "rag-user-interaction"
+				var next string
+				if a.scenarioData.SelectedScenario == "rag" {
+					next = "rag-user-interaction"
+				} else {
+					next = "agent-interaction"
+				}
 
 				if !hasVectorStoreResource || ok && !reuseVectorStore {
 					next = "choose-vector-store-type"
@@ -1004,9 +1025,9 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 					{Label: "CosmosDB", Value: "db.cosmos"},
 				},
 			},
-			Branches: map[any]string{
-				"ai.search": "choose-vector-store-resource",
-				"db.cosmos": "choose-vector-store-resource",
+			Branches: map[any][]qna.QuestionReference{
+				"ai.search": {{Key: "choose-vector-store-resource"}},
+				"db.cosmos": {{Key: "choose-vector-store-resource"}},
 			},
 			AfterAsk: func(ctx context.Context, q *qna.Question, _ any) error {
 				switch a.scenarioData.SelectedScenario {
@@ -1055,9 +1076,9 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 					{Label: "API Backend Application", Value: "rag-api"},
 				},
 			},
-			Branches: map[any]string{
-				"rag-ui":  "choose-app",
-				"rag-api": "choose-app",
+			Branches: map[any][]qna.QuestionReference{
+				"rag-ui":  {{Key: "choose-app"}},
+				"rag-api": {{Key: "choose-app"}},
 			},
 			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
 				q.State["interactionTypes"] = value
@@ -1134,8 +1155,8 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 					{Label: "Other", Value: "other-app"},
 				},
 			},
-			Branches: map[any]string{
-				"host.containerapp": "choose-app-resource",
+			Branches: map[any][]qna.QuestionReference{
+				"host.containerapp": {{Key: "choose-app-resource"}},
 			},
 			Next: []qna.QuestionReference{
 				{Key: "choose-app-language"},
@@ -1214,21 +1235,21 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				HelpMessage:     "Select all the data interaction types that apply to your application.",
 				EnableFiltering: to.Ptr(false),
 				Choices: []qna.Choice{
-					{Label: "Chatbot UI Frontend", Value: "rag-ui"},
-					{Label: "API Backend Application", Value: "rag-api"},
-					{Label: "Message based Backed Queue", Value: "messaging"},
+					{Label: "Chatbot UI Frontend", Value: "agent-ui"},
+					{Label: "API Backend Application", Value: "agent-api"},
+					{Label: "Message based Backed Queue", Value: "agent-messaging"},
 				},
 			},
-			Branches: map[any]string{
-				"rag-ui":    "choose-app",
-				"rag-api":   "choose-app",
-				"messaging": "choose-messaging-type",
+			Branches: map[any][]qna.QuestionReference{
+				"agent-ui":        {{Key: "choose-app"}},
+				"agent-api":       {{Key: "choose-app"}},
+				"agent-messaging": {{Key: "choose-app"}, {Key: "choose-messaging"}},
 			},
 			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
 				q.State["interactionTypes"] = value
 				return nil
 			},
-			Next: []qna.QuestionReference{{Key: "start-choose-model"}},
+			Next: []qna.QuestionReference{{Key: "start-choose-models"}},
 		},
 		"agent-tasks": {
 			Binding: &a.scenarioData.ModelTasks,
@@ -1246,7 +1267,40 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 			},
 			Next: []qna.QuestionReference{{Key: "use-custom-data"}},
 		},
+		"choose-messaging": {
+			BeforeAsk: func(ctx context.Context, q *qna.Question, _ any) error {
+				hasMessagingResource := false
+				for _, resource := range a.composedResources {
+					if strings.HasPrefix(resource.Type, "messaging.") {
+						hasMessagingResource = true
+						break
+					}
+				}
 
+				if hasMessagingResource {
+					q.Prompt = &qna.ConfirmPrompt{
+						Client:       a.azdClient,
+						Message:      "It looks like you already have a configured messaging source. Do you want to reuse it?",
+						DefaultValue: to.Ptr(true),
+						HelpMessage:  "Using an existing database will save you time and resources.",
+					}
+				}
+
+				q.State["hasMessagingResource"] = hasMessagingResource
+
+				return nil
+			},
+			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
+				hasMessagingResource := q.State["hasMessagingResource"].(bool)
+				reuseMessaging, ok := value.(bool)
+
+				if !hasMessagingResource || ok && !reuseMessaging {
+					q.Next = []qna.QuestionReference{{Key: "choose-messaging-type"}}
+				}
+
+				return nil
+			},
+		},
 		"choose-messaging-type": {
 			Binding: &a.scenarioData.MessagingType,
 			Prompt: &qna.SingleSelectPrompt{
@@ -1255,14 +1309,14 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				HelpMessage:     "Select the messaging service that best fits your needs.",
 				EnableFiltering: to.Ptr(false),
 				Choices: []qna.Choice{
-					{Label: "Choose for me", Value: "choose-messaging"},
-					{Label: "Azure Service Bus", Value: "messaging.eventhubs"},
-					{Label: "Azure Event Hubs", Value: "messaging.servicebus"},
+					{Label: "Choose for me", Value: "messaging.servicebus"},
+					{Label: "Azure Service Bus", Value: "messaging.servicebus"},
+					{Label: "Azure Event Hubs", Value: "messaging.eventhubs"},
 				},
 			},
-			Branches: map[any]string{
-				"messaging.eventhubs":  "choose-messaging-resource",
-				"messaging.servicebus": "choose-messaging-resource",
+			Branches: map[any][]qna.QuestionReference{
+				"messaging.eventhubs":  {{Key: "choose-messaging-resource"}},
+				"messaging.servicebus": {{Key: "choose-messaging-resource"}},
 			},
 		},
 		"choose-messaging-resource": {
@@ -1275,7 +1329,7 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 					resourceType, has := messagingResourceMap[a.scenarioData.MessagingType]
 					if !has {
 						return fmt.Errorf(
-							"unknown resource type for database: %s",
+							"unknown resource type for messaging: %s",
 							a.scenarioData.MessagingType,
 						)
 					}
@@ -1408,6 +1462,10 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 					{Label: "I will choose model", Value: "user-model"},
 				},
 			},
+			Branches: map[any][]qna.QuestionReference{
+				"guide-model": {{Key: "guide-model-select"}},
+				"user-model":  {{Key: "user-model-select"}},
+			},
 			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
 				selectedValue := value.(string)
 				if selectedValue == "choose-model" {
@@ -1429,10 +1487,54 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 
 				return nil
 			},
-			Branches: map[any]string{
-				"guide-model": "guide-model-select",
-				"user-model":  "user-model-select",
+		},
+		"guide-model-select": {
+			Prompt: &qna.MultiSelectPrompt{
+				Client:  a.azdClient,
+				Message: "Filter AI Models",
+				HelpMessage: "Select all the filters that apply to your application. " +
+					"These filters will help you narrow down the type of models you need.",
+				EnableFiltering: to.Ptr(false),
+				BeforeAsk: func(ctx context.Context, q *qna.Question, p *qna.MultiSelectPrompt) error {
+					choices := []qna.Choice{}
+
+					if _, has := q.State["capabilities"]; !has {
+						choices = append(choices, qna.Choice{
+							Label: "Filter by capabilities",
+							Value: "filter-model-capability",
+						})
+					}
+
+					if _, has := q.State["formats"]; !has {
+						choices = append(choices, qna.Choice{
+							Label: "Filter by author",
+							Value: "filter-model-format",
+						})
+					}
+					if _, has := q.State["status"]; !has {
+						choices = append(choices, qna.Choice{
+							Label: "Filter by status",
+							Value: "filter-model-status",
+						})
+					}
+					if _, has := q.State["locations"]; !has {
+						choices = append(choices, qna.Choice{
+							Label: "Filter by location",
+							Value: "filter-model-location",
+						})
+					}
+
+					p.Choices = choices
+					return nil
+				},
 			},
+			Branches: map[any][]qna.QuestionReference{
+				"filter-model-capability": {{Key: "filter-model-capability"}},
+				"filter-model-format":     {{Key: "filter-model-format"}},
+				"filter-model-status":     {{Key: "filter-model-status"}},
+				"filter-model-location":   {{Key: "filter-model-location"}},
+			},
+			Next: []qna.QuestionReference{{Key: "user-model-select"}},
 		},
 		"user-model-select": {
 			Binding: &a.scenarioData.ModelSelections,
@@ -1489,54 +1591,6 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				delete(q.State, "locations")
 				return nil
 			},
-		},
-		"guide-model-select": {
-			Prompt: &qna.MultiSelectPrompt{
-				Client:  a.azdClient,
-				Message: "Filter AI Models",
-				HelpMessage: "Select all the filters that apply to your application. " +
-					"These filters will help you narrow down the type of models you need.",
-				EnableFiltering: to.Ptr(false),
-				BeforeAsk: func(ctx context.Context, q *qna.Question, p *qna.MultiSelectPrompt) error {
-					choices := []qna.Choice{}
-
-					if _, has := q.State["capabilities"]; !has {
-						choices = append(choices, qna.Choice{
-							Label: "Filter by capabilities",
-							Value: "filter-model-capability",
-						})
-					}
-
-					if _, has := q.State["formats"]; !has {
-						choices = append(choices, qna.Choice{
-							Label: "Filter by author",
-							Value: "filter-model-format",
-						})
-					}
-					if _, has := q.State["status"]; !has {
-						choices = append(choices, qna.Choice{
-							Label: "Filter by status",
-							Value: "filter-model-status",
-						})
-					}
-					if _, has := q.State["locations"]; !has {
-						choices = append(choices, qna.Choice{
-							Label: "Filter by location",
-							Value: "filter-model-location",
-						})
-					}
-
-					p.Choices = choices
-					return nil
-				},
-			},
-			Branches: map[any]string{
-				"filter-model-capability": "filter-model-capability",
-				"filter-model-format":     "filter-model-format",
-				"filter-model-status":     "filter-model-status",
-				"filter-model-location":   "filter-model-location",
-			},
-			Next: []qna.QuestionReference{{Key: "user-model-select"}},
 		},
 		"filter-model-capability": {
 			Prompt: &qna.MultiSelectPrompt{

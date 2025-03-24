@@ -154,6 +154,7 @@ var (
 			"db.mysql",
 			"messaging.eventhubs",
 			"messaging.servicebus",
+			"storage",
 		},
 	}
 )
@@ -246,24 +247,25 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed to start spinner: %w", err)
 	}
 
-	resourcesToAdd := []*azdext.ComposedResource{}
-	servicesToAdd := []*azdext.ServiceConfig{}
+	resourcesToAdd := map[string]*azdext.ComposedResource{}
+	servicesToAdd := map[string]*azdext.ServiceConfig{}
 
 	// Add database resources
 	if a.scenarioData.DatabaseType != "" {
+		desiredName := strings.ReplaceAll(a.scenarioData.DatabaseType, "db.", "")
 		dbResource := &azdext.ComposedResource{
-			Name: strings.ReplaceAll(a.scenarioData.DatabaseType, "db.", ""),
+			Name: a.generateResourceName(desiredName),
 			Type: a.scenarioData.DatabaseType,
 		}
-		resourcesToAdd = append(resourcesToAdd, dbResource)
+		resourcesToAdd[dbResource.Name] = dbResource
 	}
 
 	if a.scenarioData.VectorStoreType != "" {
 		vectorStoreResource := &azdext.ComposedResource{
-			Name: "vector-store",
+			Name: a.generateResourceName("vector-store"),
 			Type: a.scenarioData.VectorStoreType,
 		}
-		resourcesToAdd = append(resourcesToAdd, vectorStoreResource)
+		resourcesToAdd[vectorStoreResource.Name] = vectorStoreResource
 	}
 
 	// Add storage resources
@@ -281,12 +283,12 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		}
 
 		storageResource := &azdext.ComposedResource{
-			Name:   "storage",
+			Name:   a.generateResourceName("storage"),
 			Type:   "storage",
 			Config: storageConfigJson,
 		}
 
-		resourcesToAdd = append(resourcesToAdd, storageResource)
+		resourcesToAdd[storageResource.Name] = storageResource
 	}
 
 	models := []*ai.AiModelDeployment{}
@@ -313,7 +315,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 
 		if aiProject == nil {
 			aiProject = &azdext.ComposedResource{
-				Name: "ai-project",
+				Name: a.generateResourceName("ai-project"),
 				Type: "ai.project",
 			}
 			aiProjectConfig = &AiProjectResourceConfig{}
@@ -346,7 +348,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		}
 
 		aiProject.Config = configJson
-		resourcesToAdd = append(resourcesToAdd, aiProject)
+		resourcesToAdd[aiProject.Name] = aiProject
 	}
 
 	// Add host resources such as container apps.
@@ -372,25 +374,29 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		}
 
 		appResource := &azdext.ComposedResource{
-			Name:   appKey,
+			Name:   a.generateResourceName(appKey),
 			Type:   appType,
 			Config: appConfigJson,
 			Uses:   []string{},
 		}
 
+		serviceName := a.generateServiceName(appKey)
+
 		serviceConfig := &azdext.ServiceConfig{
-			Name:         appKey,
+			Name:         serviceName,
 			Language:     languageType,
 			Host:         strings.ReplaceAll(appType, "host.", ""),
-			RelativePath: filepath.Join("src", appKey),
+			RelativePath: filepath.Join("src", serviceName),
 		}
 
-		servicesToAdd = append(servicesToAdd, serviceConfig)
-		resourcesToAdd = append(resourcesToAdd, appResource)
+		// Setting the key of the service to the scenario interaction type since this is used for the
+		// file copying.
+		servicesToAdd[appKey] = serviceConfig
+		resourcesToAdd[appResource.Name] = appResource
 	}
 
 	// Adds any new services to the azure.yaml.
-	for _, service := range servicesToAdd {
+	for interactionName, service := range servicesToAdd {
 		_, err := a.azdClient.Project().AddService(ctx, &azdext.AddServiceRequest{
 			Service: service,
 		})
@@ -399,12 +405,12 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		}
 
 		// Copy files from the embedded resources to the local service path.
-		servicePath := filepath.Join(a.projectConfig.Path, service.RelativePath)
-		if err := os.MkdirAll(servicePath, os.ModePerm); err != nil {
-			return fmt.Errorf("failed to create service path %s: %w", servicePath, err)
+		destServicePath := filepath.Join(a.projectConfig.Path, service.RelativePath)
+		if err := os.MkdirAll(destServicePath, os.ModePerm); err != nil {
+			return fmt.Errorf("failed to create service path %s: %w", destServicePath, err)
 		}
 
-		if !util.IsDirEmpty(servicePath) {
+		if !util.IsDirEmpty(destServicePath) {
 			if err := spinner.Stop(ctx); err != nil {
 				return fmt.Errorf("failed to stop spinner: %w", err)
 			}
@@ -433,23 +439,43 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		}
 
 		// Determine the correct resource folder path using POSIX join.
-		resourceDir := path.Join("scenarios", a.scenarioData.SelectedScenario, service.Name, service.Language)
-		if err := copyResourceDir(resourceDir, servicePath); err != nil {
-			return fmt.Errorf("failed to copy resource directory %s: %w", resourceDir, err)
+		sourceResourceDir := path.Join("scenarios", a.scenarioData.SelectedScenario, interactionName, service.Language)
+		if err := copyResourceDir(sourceResourceDir, destServicePath); err != nil {
+			return fmt.Errorf("failed to copy resource directory %s: %w", sourceResourceDir, err)
 		}
-	}
 
-	for _, resource := range resourcesToAdd {
 		// Identify dependent resources.
-		uses := appUsesMap[resource.Name]
+		uses := appUsesMap[interactionName]
+		resource := resourcesToAdd[service.Name]
+		resourceUseMap := map[string]struct{}{}
 		if len(uses) > 0 {
 			for _, dependentResource := range resourcesToAdd {
+				// Skip if the resource type is already added.
+				if _, has := resourceUseMap[dependentResource.Type]; has {
+					continue
+				}
+
 				if slices.Contains(uses, dependentResource.Type) && resource.Name != dependentResource.Name {
 					resource.Uses = append(resource.Uses, dependentResource.Name)
+					resourceUseMap[dependentResource.Type] = struct{}{}
+				}
+			}
+			for _, existingResource := range a.composedResources {
+				// Skip if the resource type is already added.
+				if _, has := resourceUseMap[existingResource.Type]; has {
+					continue
+				}
+
+				if slices.Contains(uses, existingResource.Type) && resource.Name != existingResource.Name {
+					resource.Uses = append(resource.Uses, existingResource.Name)
+					resourceUseMap[existingResource.Type] = struct{}{}
 				}
 			}
 		}
+	}
 
+	// Add any new resources to the azure.yaml.
+	for _, resource := range resourcesToAdd {
 		_, err := a.azdClient.Compose().AddResource(ctx, &azdext.AddResourceRequest{
 			Resource: resource,
 		})
@@ -1616,6 +1642,41 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				return nil
 			},
 		},
+	}
+}
+
+func (a *startAction) generateResourceName(desiredName string) string {
+	resourceMap := map[string]struct{}{}
+	for _, resource := range a.composedResources {
+		resourceMap[resource.Name] = struct{}{}
+	}
+
+	if _, exists := resourceMap[desiredName]; !exists {
+		return desiredName
+	}
+	// If the desired name already exists, append a number (always 2 digits) to the name
+	nextIndex := 1
+	for {
+		newName := fmt.Sprintf("%s-%02d", desiredName, nextIndex)
+		if _, exists := resourceMap[newName]; !exists {
+			return newName
+		}
+		nextIndex++
+	}
+}
+
+func (a *startAction) generateServiceName(desiredName string) string {
+	if _, exists := a.projectConfig.Services[desiredName]; !exists {
+		return desiredName
+	}
+	// If the desired name already exists, append a number (always 2 digits) to the name
+	nextIndex := 1
+	for {
+		newName := fmt.Sprintf("%s-%02d", desiredName, nextIndex)
+		if _, exists := a.projectConfig.Services[newName]; !exists {
+			return newName
+		}
+		nextIndex++
 	}
 }
 

@@ -286,7 +286,7 @@ stages:
             condition: succeeded()
             displayName: Upload azd release artifact
 
-          - outputs: pipelineArtifact
+          - output: pipelineArtifact
             path: homebrew-formula
             artifact: homebrew-formula
             condition: succeeded()

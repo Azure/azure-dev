@@ -1,3 +1,8 @@
+parameters:
+  - name: Use1ESArtifactTask
+    type: boolean
+    default: false
+
 steps:
   - pwsh: |
       if (!(Test-Path -Path release-metadata/metadata.json)) { 
@@ -9,11 +14,18 @@ steps:
       }
     displayName: Check for metadata artifact
 
-  - task: 1ES.DownloadPipelineArtifact@1
-    condition: eq(variables['DownloadMetadataArtifact'], 'true')
-    displayName: Download release metadata artifact
-    inputs:
-      artifactName: release-metadata
+  - ${{ if eq('true', parameters.Use1ESArtifactTask) }}:
+    - task: 1ES.DownloadPipelineArtifact@1
+      condition: eq(variables['DownloadMetadataArtifact'], 'true')
+      displayName: Download release metadata artifact
+      inputs:
+        artifactName: release-metadata
+  - ${{ else }}: 
+    - task: DownloadPipelineArtifact@2
+      condition: eq(variables['DownloadMetadataArtifact'], 'true')
+      displayName: Download release metadata artifact
+      inputs:
+        artifactName: release-metadata
 
   - pwsh: |
       $metadata = Get-Content -Path release-metadata/metadata.json -Raw | ConvertFrom-Json

@@ -46,6 +46,8 @@ stages:
               deploy:
                 steps:
                   - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+                    parameters:
+                      Use1ESArtifactTask: true
 
                   - pwsh: |
                       # Initial upload locations
@@ -93,6 +95,11 @@ stages:
             runOnce:
               deploy:
                 steps:
+                  # Sets SubmitChocoPackage
+                  - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+                    parameters:
+                      Use1ESArtifactTask: true
+
                   - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
 
         - job: Publish_WinGet
@@ -136,6 +143,7 @@ stages:
                 repository: self
 
           steps:
+            - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
             - template: /eng/pipelines/templates/steps/publish-cli-brew.yml
 
         - job: Publish_Shield
@@ -376,7 +384,6 @@ stages:
               parameters:
                 CreateGitHubRelease: false
                 PublishUploadLocations: release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
-                PublishShield: false
                 UploadMsi: true
 
       - job: Publish_For_PR

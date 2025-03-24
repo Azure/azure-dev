@@ -2,11 +2,11 @@ parameters:
   - name: ChocoApiKey
     type: string
     default: $(azure-sdk-choco-api-key)
+  - name: Use1ESArtifactTask
+    type: boolean
+    default: true
 
 steps:
-  # Sets SubmitChocoPackage  
-  - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
-
   - pwsh: |
       # Defense in depth: Legacy argument passing may be needed here
       $PSNativeCommandArgumentPassing = 'Legacy'

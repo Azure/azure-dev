@@ -4,9 +4,7 @@ parameters:
     default: main
 
 steps: 
-  - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
-
-  - task: 1ES.DownloadPipelineArtifact@1
+  - task: DownloadPipelineArtifact@2
     inputs:
       artifactName: homebrew-formula
       targetPath: homebrew-formula

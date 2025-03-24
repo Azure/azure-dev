@@ -30,11 +30,11 @@ type Prompt interface {
 
 // Question represents a single prompt in the decision tree.
 type Question struct {
-	Branches  map[any]string      `json:"branches"`
-	Next      []QuestionReference `json:"next"`
-	Binding   any                 `json:"-"`
-	Heading   string              `json:"heading,omitempty"`
-	Help      string              `json:"help,omitempty"`
+	Branches  map[any][]QuestionReference `json:"branches"`
+	Next      []QuestionReference         `json:"next"`
+	Binding   any                         `json:"-"`
+	Heading   string                      `json:"heading,omitempty"`
+	Help      string                      `json:"help,omitempty"`
 	Message   string
 	Prompt    Prompt `json:"prompt,omitempty"`
 	State     map[string]any
@@ -49,11 +49,6 @@ type QuestionReference struct {
 type Choice struct {
 	Label string `json:"label"`
 	Value string `json:"value"`
-}
-
-// EndNode represents the terminal state of the decision tree.
-type EndNode struct {
-	Message string `json:"message"`
 }
 
 // QuestionType defines the allowed input types.
@@ -137,24 +132,27 @@ func (t *DecisionTree) askQuestion(ctx context.Context, question Question, value
 		// We need to process all the question branches from the selected values
 		// Iterate through the selected values and find the corresponding branches
 		for _, selectedValue := range selectionValues {
-			branch, has := question.Branches[selectedValue]
+			steps, has := question.Branches[selectedValue]
 			if !has {
 				log.Printf("branch not found for selected value: %s\n", selectedValue)
 				continue
 			}
 
-			nextQuestion, has := t.questions[branch]
-			if !has {
-				return fmt.Errorf("question not found for branch: %s", branch)
-			}
+			// Iterate through the steps in the branch
+			for _, questionReference := range steps {
+				nextQuestion, has := t.questions[questionReference.Key]
+				if !has {
+					return fmt.Errorf("question not found for branch: %s\n", selectedValue)
+				}
 
-			nextQuestion.State = question.State
-			if err = t.askQuestion(ctx, nextQuestion, selectedValue); err != nil {
-				return fmt.Errorf("failed to ask question: %w", err)
-			}
+				nextQuestion.State = question.State
+				if err = t.askQuestion(ctx, nextQuestion, selectedValue); err != nil {
+					return fmt.Errorf("failed to ask question: %w", err)
+				}
 
-			if err := mergo.Merge(&question.State, nextQuestion.State, mergo.WithOverride); err != nil {
-				return fmt.Errorf("failed to merge question states: %w", err)
+				if err := mergo.Merge(&question.State, nextQuestion.State, mergo.WithOverride); err != nil {
+					return fmt.Errorf("failed to merge question states: %w", err)
+				}
 			}
 		}
 	}

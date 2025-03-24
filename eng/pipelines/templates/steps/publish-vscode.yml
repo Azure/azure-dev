@@ -8,7 +8,7 @@ parameters:
 steps:
   - task: 1ES.DownloadPipelineArtifact@1
     inputs:
-      artifact: signed
+      artifactName: signed
       path: signed
 
   - ${{ if eq('true', parameters.TagRepository) }}:

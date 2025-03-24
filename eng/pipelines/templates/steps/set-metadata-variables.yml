@@ -13,7 +13,7 @@ steps:
     condition: eq(variables['DownloadMetadataArtifact'], 'true')
     displayName: Download release metadata artifact
     inputs:
-      artifact: release-metadata
+      artifactName: release-metadata
 
   - pwsh: |
       $metadata = Get-Content -Path release-metadata/metadata.json -Raw | ConvertFrom-Json

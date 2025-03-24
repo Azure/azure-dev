@@ -94,8 +94,6 @@ stages:
               deploy:
                 steps:
                   - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
-                    parameters:
-                      CliVersion: $(CLI_VERSION)
 
         - job: Publish_WinGet
           dependsOn: Publish_Release
@@ -253,7 +251,7 @@ stages:
             image: azsdk-pool-mms-ubuntu-2004-1espt
             os: linux
 
-          deploymentStrategy:
+          strategy:
             runOnce:
               deploy:
                 steps:

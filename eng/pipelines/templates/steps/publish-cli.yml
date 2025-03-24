@@ -2,39 +2,33 @@ parameters:
   CreateGitHubRelease: true
   PublishUploadLocations:
   UploadInstaller: false
-  PublishShield: false
   StorageContainerName: '`$web'
-  AllowPrerelease: false
 
 steps:
   - ${{ if eq('true', parameters.CreateGitHubRelease) }}:
     # This step must run first because a duplicated tag means we don't need to
     # continue with any of the subsequent steps.
-
-    # TODO: INLINE THIS
-    - task: PowerShell@2
-      inputs:
-        pwsh: true
-        targetType: filePath
-        filePath: ./eng/scripts/Set-GitHubReleaseTag.ps1
-        arguments: >-
-          -Tag "azure-dev-cli_$(CLI_VERSION)"
-          -OutputName "GH_RELEASE_TAG"
-          -DevOpsOutputFormat
-      displayName: Verify and set GitHub Release Tag
-
-  # TODO: Ensure this has files in proper locations
-  - ${{ if eq('true', parameters.UploadInstaller) }}:
     - pwsh: |
-        Copy-Item cli/installer/install-azd.sh release/
-        Copy-Item cli/installer/install-azd-report.sh release/
-        Copy-Item cli/installer/uninstall-azd.sh release/
-        Copy-Item cli/installer/install-azd.ps1 release/
-        Copy-Item cli/installer/uninstall-azd.ps1 release/
-      displayName: Copy install scripts to release (PR only)
+        $tag = "azure-dev-cli_$(CLI_VERSION)"
 
-  # Create release
-  - ${{ if eq('true', parameters.CreateGitHubRelease ) }}:
+        # Check for tag using gh API
+        $existingTag = gh api /repos/Azure/azure-dev/tags | ConvertFrom-Json | Where-Object { $_.name -eq $tag }
+        if ($existingTag) {
+            Write-Host "Tag $tag already exists. Exiting.""
+            exit 1
+        }
+
+        gh release view $tag 
+        if ($LASTEXITCODE -eq 0) {
+          Write-Host "Release ($tag) already exists. Exiting."
+          exit 1
+        }
+
+        Write-Host "##vso[task.setvariable variable=$OutputName;]$tag"
+      displayName: Check for existing GitHub release
+      env:
+        GH_TOKEN: $(azuresdk-github-pat)
+
     - pwsh: |
         gh release create `
           "$(GH_RELEASE_TAG)" `
@@ -45,6 +39,16 @@ steps:
       displayName: Create GitHub Release and upload artifacts
       env:
         GH_TOKEN: $(azuresdk-github-pat)
+
+  # TODO: Ensure this has files in proper locations
+  - ${{ if eq('true', parameters.UploadInstaller) }}:
+    - pwsh: |
+        Copy-Item cli/installer/install-azd.sh release/
+        Copy-Item cli/installer/install-azd-report.sh release/
+        Copy-Item cli/installer/uninstall-azd.sh release/
+        Copy-Item cli/installer/install-azd.ps1 release/
+        Copy-Item cli/installer/uninstall-azd.ps1 release/
+      displayName: Copy install scripts to release (PR only)
 
   - task: AzurePowerShell@5
     displayName: Upload release to storage account

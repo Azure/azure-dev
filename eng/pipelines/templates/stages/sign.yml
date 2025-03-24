@@ -176,7 +176,6 @@ stages:
             Copy-Item cli/installer/choco/*.nupkg $(Build.ArtifactStagingDirectory)/choco-package
           displayName: Copy Choco Package to Artifact Staging Directory for upload
 
-
         # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
         # when the common engsys is imported.
         # https://github.com/Azure/azure-dev/issues/956

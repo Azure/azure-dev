@@ -4,12 +4,6 @@ parameters:
     default: $(azure-sdk-choco-api-key)
 
 steps:
-  - task: DownloadPipelineArtifact@2
-    inputs:
-      artifactName: choco-package
-      itemPattern: "*.nupkg"
-      targetPath: cli/installer/choco/tools
-
   # Sets SubmitChocoPackage  
   - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
 
@@ -27,4 +21,4 @@ steps:
         ne(variables['Skip.ReleaseChoco'], 'true')
       )
     displayName: Push Choco Package
-    workingDirectory: cli/installer/choco
+    workingDirectory: choco

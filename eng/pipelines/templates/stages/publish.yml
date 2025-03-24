@@ -26,7 +26,7 @@ stages:
               succeeded(),
               ne('true', variables['Skip.Publish'])
             )
-          environment: azure-dev
+          environment: package-publish
 
           pool:
             name: azsdk-pool-mms-ubuntu-2004-general
@@ -34,9 +34,12 @@ stages:
             os: linux
 
           templateContext:
+            type: releaseJob
+            isProduction: true
             inputs:
-              - input: checkout
-                repository: self
+              - input: pipelineArtifact
+                name: release
+                targetPath: release
 
           strategy:
             runOnce:
@@ -63,8 +66,6 @@ stages:
                     parameters:
                       CreateGitHubRelease: true
                       PublishUploadLocations: $(StorageUploadLocations)
-                      PublishShield: true
-                      UploadMsi: true
 
         - deployment: Publish_Choco
           dependsOn: Publish_Release
@@ -73,12 +74,20 @@ stages:
               succeeded(),
               ne('true', variables['Skip.Publish'])
             )
-          environment: azure-dev
+          environment: package-publish
 
           pool:
             name: azsdk-pool-mms-win-2022-general
             image: azsdk-pool-mms-win-2022-1espt
             os: windows
+
+          templateContext:
+            type: releaseJob
+            isProduction: true
+            inputs:
+              - input: pipelineArtifact
+                name: choco-package
+                targetPath: choco
 
           strategy:
             runOnce:
@@ -100,6 +109,12 @@ stages:
             name: azsdk-pool-mms-win-2022-general
             image: azsdk-pool-mms-win-2022-1espt
             os: windows
+
+          templateContext:
+            outputs:
+              - output: pipelineArtifact
+                name: winget-manifest
+                targetPath: winget
 
           steps:
             - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
@@ -139,7 +154,7 @@ stages:
             os: linux
 
           steps:
-            - template: /eng/pipelines/templates/steps/publish-cli-shield.yml
+            - template: /eng/pipelines/templates/steps/publish-shield.yml
               parameters:
                 ArtifactName: shield-standalone
                 ArtifactDownloadPath: shields/standalone
@@ -231,7 +246,7 @@ stages:
               succeeded(),
               ne('true', variables['Skip.Publish'])
             )
-          environment: azure-dev
+          environment: package-publish
 
           pool:
             name: azsdk-pool-mms-ubuntu-2004-general
@@ -530,7 +545,7 @@ stages:
 
       jobs:
         - deployment: PublishInstallers
-          environment: azure-dev
+          environment: package-publish
           pool:
             name: azsdk-pool-mms-ubuntu-2004-general
             image: azsdk-pool-mms-ubuntu-2004-1espt

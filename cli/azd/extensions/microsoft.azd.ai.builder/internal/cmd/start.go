@@ -1278,9 +1278,11 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				}
 
 				if hasMessagingResource {
+					promptMessage := "It looks like you already have a configured messaging source. Do you want to reuse it?"
+
 					q.Prompt = &qna.ConfirmPrompt{
 						Client:       a.azdClient,
-						Message:      "It looks like you already have a configured messaging source. Do you want to reuse it?",
+						Message:      promptMessage,
 						DefaultValue: to.Ptr(true),
 						HelpMessage:  "Using an existing database will save you time and resources.",
 					}

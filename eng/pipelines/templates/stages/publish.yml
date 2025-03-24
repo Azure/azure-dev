@@ -111,7 +111,7 @@ stages:
           templateContext:
             outputs:
               - output: pipelineArtifact
-                name: winget-manifest
+                artifact: winget-manifest
                 targetPath: winget
 
           steps:

@@ -6,7 +6,7 @@ parameters:
   PublishToMarketplace: false
 
 steps:
-  - task: DownloadPipelineArtifact@2
+  - task: 1ES.DownloadPipelineArtifact@1
     inputs:
       artifact: signed
       path: signed

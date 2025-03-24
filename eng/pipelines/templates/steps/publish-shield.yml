@@ -6,7 +6,7 @@ parameters:
   PublishDestination: not-set
 
 steps:
-  - task: DownloadPipelineArtifact@2
+  - task: 1ES.DownloadPipelineArtifact@1
     inputs:
       artifact: ${{ parameters.ArtifactName }}
       path: ${{ parameters.ArtifactDownloadPath }}

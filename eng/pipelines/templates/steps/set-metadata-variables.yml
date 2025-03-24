@@ -9,7 +9,7 @@ steps:
       }
     displayName: Check for metadata artifact
 
-  - task: DownloadPipelineArtifact@2
+  - task: 1ES.DownloadPipelineArtifact@1
     condition: eq(variables['DownloadMetadataArtifact'], 'true')
     displayName: Download release metadata artifact
     inputs:

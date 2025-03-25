@@ -279,8 +279,9 @@ stages:
 
         templateContext: 
           inputs:
-            - input: Checkout
+            - input: checkout
               repository: self
+              path: s
 
         steps: 
           - template: /eng/pipelines/templates/steps/set-metadata-variables.yml

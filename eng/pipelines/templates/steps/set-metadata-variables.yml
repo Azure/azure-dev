@@ -20,12 +20,14 @@ steps:
       displayName: Download release metadata artifact
       inputs:
         artifactName: release-metadata
+        targetPath: release-metadata
   - ${{ else }}: 
     - task: DownloadPipelineArtifact@2
       condition: eq(variables['DownloadMetadataArtifact'], 'true')
       displayName: Download release metadata artifact
       inputs:
         artifactName: release-metadata
+        targetPath: release-metadata
 
   - pwsh: |
       $metadata = Get-Content -Path release-metadata/metadata.json -Raw | ConvertFrom-Json

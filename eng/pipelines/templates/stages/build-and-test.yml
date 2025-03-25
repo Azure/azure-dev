@@ -277,16 +277,13 @@ stages:
           os: linux
         dependsOn: GenerateReleaseArtifacts
 
-        templateContext: 
-          inputs:
-            - input: checkout
-              repository: self
-              path: s
-
-            - input: pipelineArtifact
-              artifactName: release-metadata
-
         steps: 
+          - checkout: self
+          - task: 1ES.DownloadPipelineArtifact@1
+            inputs:
+              artifactName: release-metadata
+              targetPath: release-metadata
+            displayName: Download release metadata artifact
           - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
 
           - pwsh: |

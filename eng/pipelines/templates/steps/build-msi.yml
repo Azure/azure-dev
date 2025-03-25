@@ -16,9 +16,6 @@ steps:
       restoreSolution: cli/installer/windows.sln
 
   - ${{ if eq(parameters.ShouldBuildForRelease, 'true') }}:
-    # Release build uses version and product name for release
-    - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
-
     - pwsh: |
         Write-Host "##vso[task.setvariable variable=MSI_PRODUCT_NAME_PARAM]/p:ProductName=`"Azure Developer CLI`""
         Write-Host "##vso[task.setvariable variable=MSI_VERSION_PARAM]/p:ProductVersion=$(MSI_VERSION)"

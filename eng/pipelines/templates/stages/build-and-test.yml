@@ -280,7 +280,6 @@ stages:
         steps: 
           # - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
           - task: DownloadPipelineArtifact@2
-            condition: eq(variables['DownloadMetadataArtifact'], 'true')
             displayName: Download release metadata artifact
             inputs:
               artifactName: release-metadata

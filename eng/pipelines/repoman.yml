@@ -219,7 +219,8 @@ extends:
 
             - template: /eng/pipelines/templates/steps/repoman-generate.yml
               parameters:
-                TargetBranchName: $(TargetBranchName)
+                # TODO: Revert before merging
+                TargetBranchName: test/template-release-refactor
                 RemoteName: azure-samples-main
                 # TODO: Remove -WhatIf before merging
                 AdditionalParams: '-WhatIf'

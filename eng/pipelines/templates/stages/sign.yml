@@ -254,9 +254,6 @@ stages:
 
       templateContext:
         inputs:
-          - input: checkout
-            repository: self
-
           # Download signed artifacts
           - input: pipelineArtifact
             artifactName: signed-win
@@ -293,6 +290,8 @@ stages:
             displayName: Upload homebrew formula artifact
 
       steps:
+        - checkout: self
+
         - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
 
         - pwsh: |

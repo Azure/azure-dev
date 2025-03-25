@@ -137,11 +137,6 @@ stages:
             image: azsdk-pool-mms-ubuntu-2004-1espt
             os: linux
   
-          templateContext:
-            inputs:
-              - input: checkout
-                repository: self
-
           steps:
             - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
             - template: /eng/pipelines/templates/steps/publish-cli-brew.yml
@@ -181,12 +176,8 @@ stages:
             image: azsdk-pool-mms-ubuntu-2004-1espt
             os: linux
 
-          templateContext:
-            inputs:
-              - input: checkout
-                repository: self
-
           steps:
+            - checkout: self
             - task: PowerShell@2
               inputs:
                 pwsh: true
@@ -215,14 +206,12 @@ stages:
 
           templateContext:
             inputs:
-              - input: checkout
-                repository: self
-              
               - input: pipelineArtifact
                 artifactName: docs
                 targetPath: docs
 
           steps:
+            - checkout: self
             - template: /eng/pipelines/templates/steps/publish-cli-docs.yml
 
     - stage: PublishVersionTxt
@@ -282,12 +271,12 @@ stages:
 
           templateContext:
             inputs:
-              - input: checkout
-                repository: self
               - input: pipelineArtifact
                 artifactName: release-metadata
 
           steps:
+            - checkout: self
+
             - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
 
             - task: PowerShell@2

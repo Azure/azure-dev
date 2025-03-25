@@ -175,7 +175,7 @@ extends:
           - template: /eng/pipelines/templates/variables/globals.yml
 
         jobs:
-        - deployment: ReleaseGate
+        - deployment: Release_Gate
           environment: package-publish
 
           pool:

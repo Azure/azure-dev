@@ -35,16 +35,15 @@ repoman generate `
     $($additionalParameters -join ([System.Environment]::NewLine + "    "))
 "@
 
-    # TODO: Uncomment before merging
-    # & repoman generate `
-    #     -s $projectPath `
-    #     -o $RunnerTemp `
-    #     -t $templatePath `
-    #     --branch `"$TargetBranchName`" `
-    #     --remote "$RemoteName" `
-    #     --https `
-    #     --fail-on-update-error `
-    #     @additionalParameters
+    & repoman generate `
+        -s $projectPath `
+        -o $RunnerTemp `
+        -t $templatePath `
+        --branch `"$TargetBranchName`" `
+        --remote "$RemoteName" `
+        --https `
+        --fail-on-update-error `
+        @additionalParameters
 
     if ($LASTEXITCODE) {
         Write-Error "Error running repoman generate. Exit code: $LASTEXITCODE"

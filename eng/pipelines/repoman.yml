@@ -221,3 +221,5 @@ extends:
               parameters:
                 TargetBranchName: $(TargetBranchName)
                 RemoteName: azure-samples-main
+                # TODO: Remove -WhatIf before merging
+                AdditionalParams: '-WhatIf'

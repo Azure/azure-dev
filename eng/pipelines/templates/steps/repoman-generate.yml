@@ -3,6 +3,8 @@ parameters:
   RemoteName: azure-samples-main
   GitHubPat: $(azuresdk-github-pat)
   ResultsFileLocation: ""
+  # TODO: Remove -WhatIf before merging
+  AdditionalParams: ""
 
 steps:
   - task: NodeTool@0
@@ -29,9 +31,8 @@ steps:
       pwsh: true
       targetType: filePath
       filePath: ./eng/scripts/Invoke-RepomanGenerate.ps1
-      # TODO: Remove -WhatIf before merging
       arguments: >-
-        -WhatIf
+        ${{ parameters.AdditionalParams }}
         -TargetBranchName "${{ parameters.TargetBranchName }}"
         -RemoteName "${{ parameters.RemoteName }}"
         -ResultsFileLocation "${{ parameters.ResultsFileLocation }}"

@@ -283,6 +283,9 @@ stages:
               repository: self
               path: s
 
+            - input: pipelineArtifact
+              artifactName: release-metadata
+
         steps: 
           - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
 

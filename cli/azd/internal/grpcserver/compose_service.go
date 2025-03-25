@@ -16,7 +16,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type ComposeService struct {
+// composeService exposes features of the AZD composability model to the Extensions Framework layer.
+type composeService struct {
 	azdext.UnimplementedComposeServiceServer
 
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]
@@ -25,13 +26,13 @@ type ComposeService struct {
 func NewComposeService(
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
 ) azdext.ComposeServiceServer {
-	return &ComposeService{
+	return &composeService{
 		lazyAzdContext: lazyAzdContext,
 	}
 }
 
-// AddResource implements azdext.ComposeServiceServer.
-func (c *ComposeService) AddResource(
+// AddResource adds or updates a resource with the given name in the project configuration.
+func (c *composeService) AddResource(
 	ctx context.Context,
 	req *azdext.AddResourceRequest,
 ) (*azdext.AddResourceResponse, error) {
@@ -70,6 +71,98 @@ func (c *ComposeService) AddResource(
 	}, nil
 }
 
+// GetResource retrieves a resource by its name from the project configuration.
+// If the resource does not exist, it returns a NotFound error.
+func (c *composeService) GetResource(
+	ctx context.Context,
+	req *azdext.GetResourceRequest,
+) (*azdext.GetResourceResponse, error) {
+	azdContext, err := c.lazyAzdContext.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	projectConfig, err := project.Load(ctx, azdContext.ProjectPath())
+	if err != nil {
+		return nil, err
+	}
+
+	existingResource, has := projectConfig.Resources[req.Name]
+	if !has {
+		return nil, status.Errorf(codes.NotFound, "resource %s not found", req.Name)
+	}
+
+	resourceConfigBytes, err := json.Marshal(existingResource.Props)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling resource config: %w", err)
+	}
+
+	composedResource := &azdext.ComposedResource{
+		Name:   existingResource.Name,
+		Type:   string(existingResource.Type),
+		Config: resourceConfigBytes,
+		Uses:   existingResource.Uses,
+	}
+
+	return &azdext.GetResourceResponse{
+		Resource: composedResource,
+	}, nil
+}
+
+// GetResourceType gets the resource type configuration schema by the specified name.
+func (c *composeService) GetResourceType(
+	context.Context,
+	*azdext.GetResourceTypeRequest,
+) (*azdext.GetResourceTypeResponse, error) {
+	panic("unimplemented")
+}
+
+// ListResourceTypes lists all available resource types.
+func (c *composeService) ListResourceTypes(
+	context.Context,
+	*azdext.EmptyRequest,
+) (*azdext.ListResourceTypesResponse, error) {
+	panic("unimplemented")
+}
+
+// ListResources lists all resources in the project configuration.
+func (c *composeService) ListResources(
+	ctx context.Context,
+	req *azdext.EmptyRequest,
+) (*azdext.ListResourcesResponse, error) {
+	azdContext, err := c.lazyAzdContext.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	projectConfig, err := project.Load(ctx, azdContext.ProjectPath())
+	if err != nil {
+		return nil, err
+	}
+
+	existingResources := projectConfig.Resources
+	composedResources := make([]*azdext.ComposedResource, 0, len(existingResources))
+
+	for _, resource := range existingResources {
+		resourceConfigBytes, err := json.Marshal(resource.Props)
+		if err != nil {
+			return nil, fmt.Errorf("marshaling resource config: %w", err)
+		}
+		composedResource := &azdext.ComposedResource{
+			Name:   resource.Name,
+			Type:   string(resource.Type),
+			Config: resourceConfigBytes,
+			Uses:   resource.Uses,
+		}
+		composedResources = append(composedResources, composedResource)
+	}
+
+	return &azdext.ListResourcesResponse{
+		Resources: composedResources,
+	}, nil
+}
+
+// createResourceProps unmarshals the resource configuration bytes into the appropriate struct based on the resource type.
 func createResourceProps(resourceType string, config []byte) (any, error) {
 	switch project.ResourceType(resourceType) {
 	case project.ResourceTypeHostContainerApp:
@@ -138,94 +231,4 @@ func createResourceProps(resourceType string, config []byte) (any, error) {
 	default:
 		return nil, nil
 	}
-}
-
-// GetResource implements azdext.ComposeServiceServer.
-func (c *ComposeService) GetResource(
-	ctx context.Context,
-	req *azdext.GetResourceRequest,
-) (*azdext.GetResourceResponse, error) {
-	azdContext, err := c.lazyAzdContext.GetValue()
-	if err != nil {
-		return nil, err
-	}
-
-	projectConfig, err := project.Load(ctx, azdContext.ProjectPath())
-	if err != nil {
-		return nil, err
-	}
-
-	existingResource, has := projectConfig.Resources[req.Name]
-	if !has {
-		return nil, status.Errorf(codes.NotFound, "resource %s not found", req.Name)
-	}
-
-	resourceConfigBytes, err := json.Marshal(existingResource.Props)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling resource config: %w", err)
-	}
-
-	composedResource := &azdext.ComposedResource{
-		Name:   existingResource.Name,
-		Type:   string(existingResource.Type),
-		Config: resourceConfigBytes,
-		Uses:   existingResource.Uses,
-	}
-
-	return &azdext.GetResourceResponse{
-		Resource: composedResource,
-	}, nil
-}
-
-// GetResourceType implements azdext.ComposeServiceServer.
-func (c *ComposeService) GetResourceType(
-	context.Context,
-	*azdext.GetResourceTypeRequest,
-) (*azdext.GetResourceTypeResponse, error) {
-	panic("unimplemented")
-}
-
-// ListResourceTypes implements azdext.ComposeServiceServer.
-func (c *ComposeService) ListResourceTypes(
-	context.Context,
-	*azdext.EmptyRequest,
-) (*azdext.ListResourceTypesResponse, error) {
-	panic("unimplemented")
-}
-
-// ListResources implements azdext.ComposeServiceServer.
-func (c *ComposeService) ListResources(
-	ctx context.Context,
-	req *azdext.EmptyRequest,
-) (*azdext.ListResourcesResponse, error) {
-	azdContext, err := c.lazyAzdContext.GetValue()
-	if err != nil {
-		return nil, err
-	}
-
-	projectConfig, err := project.Load(ctx, azdContext.ProjectPath())
-	if err != nil {
-		return nil, err
-	}
-
-	existingResources := projectConfig.Resources
-	composedResources := make([]*azdext.ComposedResource, 0, len(existingResources))
-
-	for _, resource := range existingResources {
-		resourceConfigBytes, err := json.Marshal(resource.Props)
-		if err != nil {
-			return nil, fmt.Errorf("marshaling resource config: %w", err)
-		}
-		composedResource := &azdext.ComposedResource{
-			Name:   resource.Name,
-			Type:   string(resource.Type),
-			Config: resourceConfigBytes,
-			Uses:   resource.Uses,
-		}
-		composedResources = append(composedResources, composedResource)
-	}
-
-	return &azdext.ListResourcesResponse{
-		Resources: composedResources,
-	}, nil
 }

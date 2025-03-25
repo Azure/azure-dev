@@ -12,19 +12,22 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type WorkflowService struct {
+// workflowService exposes features of AZD workflows to the Extensions Framework layer.
+type workflowService struct {
 	azdext.UnimplementedWorkflowServiceServer
 
 	runner *workflow.Runner
 }
 
+// NewWorkflowService creates a new instance of the workflow service.
 func NewWorkflowService(runner *workflow.Runner) azdext.WorkflowServiceServer {
-	return &WorkflowService{
+	return &workflowService{
 		runner: runner,
 	}
 }
 
-func (s *WorkflowService) Run(ctx context.Context, request *azdext.RunWorkflowRequest) (*azdext.EmptyResponse, error) {
+// Run executes the specified workflow.
+func (s *workflowService) Run(ctx context.Context, request *azdext.RunWorkflowRequest) (*azdext.EmptyResponse, error) {
 	wf := request.Workflow
 	if wf == nil || len(wf.Steps) == 0 {
 		return nil, status.Errorf(codes.InvalidArgument, "workflow is empty")
@@ -42,6 +45,7 @@ func (s *WorkflowService) Run(ctx context.Context, request *azdext.RunWorkflowRe
 	return &azdext.EmptyResponse{}, nil
 }
 
+// convertWorkflow converts an azdext.Workflow to a workflow.Workflow.
 func convertWorkflow(wf *azdext.Workflow) (*workflow.Workflow, error) {
 	azdWorkflow := workflow.Workflow{
 		Name:  wf.Name,

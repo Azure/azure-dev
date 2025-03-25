@@ -195,7 +195,7 @@ extends:
                     displayName: Release gate passed
 
         - job: Publish_Repos
-          dependsOn: ReleaseGate
+          dependsOn: Release_Gate
 
           pool:
             name: azsdk-pool-mms-ubuntu-2004-general

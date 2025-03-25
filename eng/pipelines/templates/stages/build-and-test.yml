@@ -275,6 +275,7 @@ stages:
           name: $(LINUXPOOL)
           image: $(LINUXVMIMAGE)
           os: linux
+        dependsOn: GenerateReleaseArtifacts
 
         steps: 
           # - template: /eng/pipelines/templates/steps/set-metadata-variables.yml

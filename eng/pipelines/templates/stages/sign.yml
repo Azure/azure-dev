@@ -295,6 +295,11 @@ stages:
       steps:
         - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
 
+        - pwsh: |
+            Get-Location | Write-Host 
+            Get-ChildItem -Recurse | Select-Object -Property FullName
+          displayName: List files in current directory
+
         # Set up the release directory with all packages
         - bash: | 
             chmod +x \

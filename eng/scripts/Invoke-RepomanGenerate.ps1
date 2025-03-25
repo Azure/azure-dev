@@ -19,8 +19,7 @@ if ($ResultsFileLocation) {
     $additionalParameters += "--resultsFile", $ResultsFileLocation
 }
 
-# TODO: Remove [0..0] before merge
-foreach ($project in $projects[0..0]) {
+foreach ($project in $projects) {
     $projectPath = $project.projectPath
     $templatePath = $project.templatePath.Replace($projectPath, "")
 

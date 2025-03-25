@@ -209,7 +209,7 @@ stages:
             )
 
           pool:
-            name: azdsk-pool-mms-ubuntu-2004-general
+            name: azsdk-pool-mms-ubuntu-2004-general
             image: azsdk-pool-mms-ubuntu-2004-1espt
             os: linux
 

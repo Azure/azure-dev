@@ -297,7 +297,6 @@ func createResourceOptions(options *azdext.PromptResourceOptions) prompt.Resourc
 		selectOptions = &prompt.SelectOptions{
 			ForceNewResource:   options.SelectOptions.ForceNewResource,
 			NewResourceMessage: options.SelectOptions.NewResourceMessage,
-			CreatingMessage:    options.SelectOptions.CreatingMessage,
 			Message:            options.SelectOptions.Message,
 			HelpMessage:        options.SelectOptions.HelpMessage,
 			LoadingMessage:     options.SelectOptions.LoadingMessage,

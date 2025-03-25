@@ -206,6 +206,7 @@ extends:
             inputs:
               - input: checkout
                 repository: self
+                path: $(Pipeline.Workspace)/s
 
           steps:
             - pwsh: |

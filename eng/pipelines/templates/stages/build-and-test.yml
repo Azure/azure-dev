@@ -279,7 +279,7 @@ stages:
 
         steps: 
           - checkout: self
-          - task: 1ES.DownloadPipelineArtifact@1
+          - task: DownloadPipelineArtifact@2
             inputs:
               artifactName: release-metadata
               targetPath: release-metadata

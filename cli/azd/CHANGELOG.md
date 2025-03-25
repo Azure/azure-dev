@@ -1,14 +1,10 @@
 # Release History
 
-## 1.14.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.13.2 (2025-03-25)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[4937]](https://github.com/Azure/azure-dev/pull/4937) Security fix (GHSA-qxp5-gwg8-xv66). golang.org/x/net.
 
 ## 1.13.1 (2025-03-11)
 

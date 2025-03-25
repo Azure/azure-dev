@@ -63,82 +63,82 @@ stages:
       - template: /eng/pipelines/templates/variables/globals.yml
       - template: /eng/pipelines/templates/variables/image.yml
     jobs: 
-      - ${{ each build in parameters.BuildMatrix }}:
-        - template: /eng/pipelines/templates/jobs/build-cli.yml
-          parameters:
-            NameSuffix: ${{ build.key}}
-            Pool: ${{ build.value.Pool }}
-            ImageKey: ${{ build.value.ImageKey }}
-            OSVmImage: ${{ build.value.OSVmImage }} 
-            OS: ${{ build.value.OS }}
-            UploadArtifact: ${{ build.value.UploadArtifact}}
-            Variables: ${{ build.value.Variables }}
+      # - ${{ each build in parameters.BuildMatrix }}:
+      #   - template: /eng/pipelines/templates/jobs/build-cli.yml
+      #     parameters:
+      #       NameSuffix: ${{ build.key}}
+      #       Pool: ${{ build.value.Pool }}
+      #       ImageKey: ${{ build.value.ImageKey }}
+      #       OSVmImage: ${{ build.value.OSVmImage }} 
+      #       OS: ${{ build.value.OS }}
+      #       UploadArtifact: ${{ build.value.UploadArtifact}}
+      #       Variables: ${{ build.value.Variables }}
 
-      # This is separated today because Skip.LiveTest is a queue-time variable
-      # and cannot be set in a matrix entry.       
-      - ${{ each build in parameters.CrossBuildMatrix }}: 
-        - template: /eng/pipelines/templates/jobs/cross-build-cli.yml
-          parameters:
-            NameSuffix: ${{ build.key }}
-            Pool: ${{ build.value.Pool }}
-            ImageKey: ${{ build.value.ImageKey }}
-            OSVmImage: ${{ build.value.OSVmImage }} 
-            OS: ${{ build.value.OS }}
-            Variables: ${{ build.value.Variables }}
+      # # This is separated today because Skip.LiveTest is a queue-time variable
+      # # and cannot be set in a matrix entry.       
+      # - ${{ each build in parameters.CrossBuildMatrix }}: 
+      #   - template: /eng/pipelines/templates/jobs/cross-build-cli.yml
+      #     parameters:
+      #       NameSuffix: ${{ build.key }}
+      #       Pool: ${{ build.value.Pool }}
+      #       ImageKey: ${{ build.value.ImageKey }}
+      #       OSVmImage: ${{ build.value.OSVmImage }} 
+      #       OS: ${{ build.value.OS }}
+      #       Variables: ${{ build.value.Variables }}
 
-      - job: MergeLinuxPackages
-        pool:
-          name: $(LINUXPOOL)
-          image: $(LINUXVMIMAGE)
-          os: linux
-        dependsOn:
-          - ${{ each build in parameters.CrossBuildMatrix }}: 
-            - CrossBuildCLI_${{ build.key }}
-          - ${{ each build in parameters.BuildMatrix }}: 
-            - BuildCLI_${{ build.key }}
-        steps:
-          - download: current
-            artifact: linux-packages-amd64
-            displayName: Download linux-packages-amd64
+      # - job: MergeLinuxPackages
+      #   pool:
+      #     name: $(LINUXPOOL)
+      #     image: $(LINUXVMIMAGE)
+      #     os: linux
+      #   dependsOn:
+      #     - ${{ each build in parameters.CrossBuildMatrix }}: 
+      #       - CrossBuildCLI_${{ build.key }}
+      #     - ${{ each build in parameters.BuildMatrix }}: 
+      #       - BuildCLI_${{ build.key }}
+      #   steps:
+      #     - download: current
+      #       artifact: linux-packages-amd64
+      #       displayName: Download linux-packages-amd64
 
-          - download: current
-            artifact: linux-packages-arm64
-            displayName: Download linux-packages-arm64
+      #     - download: current
+      #       artifact: linux-packages-arm64
+      #       displayName: Download linux-packages-arm64
 
-          # Merge the folders
-          - pwsh: |
-              New-Item -ItemType Directory -Path linux-packages
-              Get-ChildItem $(Pipeline.Workspace)/linux-packages-amd64 -Exclude '_manifest' | ForEach-Object { Copy-Item $_ linux-packages }
-              Get-ChildItem $(Pipeline.Workspace)/linux-packages-arm64 -Exclude '_manifest' | ForEach-Object { Copy-Item $_ linux-packages }
-            displayName: Merge linux packages
-        templateContext: 
-          outputs: 
-            - output: pipelineArtifact
-              path: linux-packages
-              artifact: linux-packages
-              displayName: Publish merged linux packages
+      #     # Merge the folders
+      #     - pwsh: |
+      #         New-Item -ItemType Directory -Path linux-packages
+      #         Get-ChildItem $(Pipeline.Workspace)/linux-packages-amd64 -Exclude '_manifest' | ForEach-Object { Copy-Item $_ linux-packages }
+      #         Get-ChildItem $(Pipeline.Workspace)/linux-packages-arm64 -Exclude '_manifest' | ForEach-Object { Copy-Item $_ linux-packages }
+      #       displayName: Merge linux packages
+      #   templateContext: 
+      #     outputs: 
+      #       - output: pipelineArtifact
+      #         path: linux-packages
+      #         artifact: linux-packages
+      #         displayName: Publish merged linux packages
 
-      - ${{ each validationBuild in parameters.CrossBuildMatrix }}:
-        - ${{ if validationBuild.value.ValidateCrossCompile }}:
-          - job: ValidateCrossCompile${{ validationBuild.key }}
-            dependsOn:
-              - ${{ each build in parameters.CrossBuildMatrix }}:
-                - CrossBuildCLI_${{ build.key }}
-            pool:
-              name: ${{ validationBuild.value.ValidateVm.PoolName }}
-              image: ${{ validationBuild.value.ValidateVm.ImageName }}
-              os: ${{ validationBuild.value.ValidateVm.Os }}
-            timeoutInMinutes: 10
-            steps:
-              - checkout: none
+      # - ${{ each validationBuild in parameters.CrossBuildMatrix }}:
+      #   - ${{ if validationBuild.value.ValidateCrossCompile }}:
+      #     - job: ValidateCrossCompile${{ validationBuild.key }}
+      #       dependsOn:
+      #         - ${{ each build in parameters.CrossBuildMatrix }}:
+      #           - CrossBuildCLI_${{ build.key }}
+      #       pool:
+      #         name: ${{ validationBuild.value.ValidateVm.PoolName }}
+      #         image: ${{ validationBuild.value.ValidateVm.ImageName }}
+      #         os: ${{ validationBuild.value.ValidateVm.Os }}
+      #       timeoutInMinutes: 10
+      #       steps:
+      #         - checkout: none
 
-              - task: DownloadPipelineArtifact@2
-                inputs:
-                  artifact: ${{ validationBuild.value.Variables.BuildTarget}}
-                  targetPath: $(Build.SourcesDirectory)
+      #         - task: DownloadPipelineArtifact@2
+      #           inputs:
+      #             artifact: ${{ validationBuild.value.Variables.BuildTarget}}
+      #             targetPath: $(Build.SourcesDirectory)
 
-              - ${{ validationBuild.value.ValidationTask }}: ${{ validationBuild.value.ValidationScript }}
-                displayName: Validate cross-compiled binary
+      #         - ${{ validationBuild.value.ValidationTask }}: ${{ validationBuild.value.ValidationScript }}
+      #           displayName: Validate cross-compiled binary
 
       - job: GenerateReleaseArtifacts
         pool:

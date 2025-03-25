@@ -12,9 +12,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/template"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
@@ -43,6 +45,7 @@ type dotnetContainerAppTarget struct {
 	keyvaultService     keyvault.KeyVaultService
 	alphaFeatureManager *alpha.FeatureManager
 	deploymentService   azapi.DeploymentService
+	azureClient         *azapi.AzureClient
 }
 
 // NewDotNetContainerAppTarget creates the Service Target for a Container App that is written in .NET. Unlike
@@ -65,6 +68,7 @@ func NewDotNetContainerAppTarget(
 	keyvaultService keyvault.KeyVaultService,
 	alphaFeatureManager *alpha.FeatureManager,
 	deploymentService azapi.DeploymentService,
+	azureClient *azapi.AzureClient,
 ) ServiceTarget {
 	return &dotnetContainerAppTarget{
 		env:                 env,
@@ -78,6 +82,7 @@ func NewDotNetContainerAppTarget(
 		keyvaultService:     keyvaultService,
 		alphaFeatureManager: alphaFeatureManager,
 		deploymentService:   deploymentService,
+		azureClient:         azureClient,
 	}
 }
 
@@ -300,6 +305,8 @@ func (at *dotnetContainerAppTarget) Deploy(
 		return nil, fmt.Errorf("failed executing template file: %w", err)
 	}
 
+	aspireDeploymentType := azapi.AzureResourceTypeContainerApp
+	resourceName := serviceConfig.Name
 	if useBicepForContainerApps {
 		// Compile the bicep template
 		compiled, params, err := func() (azure.RawArmTemplate, azure.ArmParameters, error) {
@@ -382,7 +389,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 		armTemplate = &compiled
 		armParams = params
 
-		_, err = at.deploymentService.DeployToResourceGroup(
+		deploymentResult, err := at.deploymentService.DeployToResourceGroup(
 			ctx,
 			at.env.GetSubscriptionId(),
 			targetResource.ResourceGroupName(),
@@ -392,6 +399,17 @@ func (at *dotnetContainerAppTarget) Deploy(
 			nil, nil)
 		if err != nil {
 			return nil, fmt.Errorf("deploying bicep template: %w", err)
+		}
+		if slices.ContainsFunc(deploymentResult.Resources,
+			func(resource *armresources.ResourceReference) bool {
+				webAppType := string(azapi.AzureResourceTypeWebSite)
+				if foundWebApp := strings.Contains(*resource.ID, webAppType); foundWebApp {
+					resourceName = strings.Split(*resource.ID, webAppType+"/")[1]
+					return true
+				}
+				return false
+			}) {
+			aspireDeploymentType = azapi.AzureResourceTypeWebSite
 		}
 	} else {
 		containerAppOptions := containerapps.ContainerAppOptions{
@@ -411,15 +429,15 @@ func (at *dotnetContainerAppTarget) Deploy(
 		}
 	}
 
-	progress.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
+	progress.SetProgress(NewServiceProgress("Fetching endpoints for service"))
 
-	containerAppTarget := environment.NewTargetResource(
+	target := environment.NewTargetResource(
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
-		serviceConfig.Name,
-		string(azapi.AzureResourceTypeContainerApp))
+		resourceName,
+		string(aspireDeploymentType))
 
-	endpoints, err := at.Endpoints(ctx, serviceConfig, containerAppTarget)
+	endpoints, err := at.Endpoints(ctx, serviceConfig, target)
 	if err != nil {
 		return nil, err
 	}
@@ -445,23 +463,47 @@ func (at *dotnetContainerAppTarget) Endpoints(
 	containerAppOptions := containerapps.ContainerAppOptions{
 		ApiVersion: serviceConfig.ApiVersion,
 	}
+	resourceType := targetResource.ResourceType()
+	if resourceType == string(azapi.AzureResourceTypeContainerApp) {
+		if ingressConfig, err := at.containerAppService.GetIngressConfiguration(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+			&containerAppOptions,
+		); err != nil {
+			return nil, fmt.Errorf("fetching service properties: %w", err)
+		} else {
+			endpoints := make([]string, len(ingressConfig.HostNames))
+			for idx, hostName := range ingressConfig.HostNames {
+				endpoints[idx] = fmt.Sprintf("https://%s/", hostName)
+			}
 
-	if ingressConfig, err := at.containerAppService.GetIngressConfiguration(
+			return endpoints, nil
+		}
+	}
+
+	// Not ACA, had to be WebApp
+	if resourceType != string(azapi.AzureResourceTypeWebSite) {
+		return nil, fmt.Errorf("unsupported resource type")
+	}
+
+	appServiceProperties, err := at.azureClient.GetAppServiceProperties(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
-		&containerAppOptions,
-	); err != nil {
+	)
+	if err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
-	} else {
-		endpoints := make([]string, len(ingressConfig.HostNames))
-		for idx, hostName := range ingressConfig.HostNames {
-			endpoints[idx] = fmt.Sprintf("https://%s/", hostName)
-		}
-
-		return endpoints, nil
 	}
+
+	endpoints := make([]string, len(appServiceProperties.HostNames))
+	for idx, hostName := range appServiceProperties.HostNames {
+		endpoints[idx] = fmt.Sprintf("https://%s/", hostName)
+	}
+
+	return endpoints, nil
 }
 
 func (at *dotnetContainerAppTarget) validateTargetResource(

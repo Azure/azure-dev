@@ -29,7 +29,9 @@ steps:
       pwsh: true
       targetType: filePath
       filePath: ./eng/scripts/Invoke-RepomanGenerate.ps1
+      # TODO: Remove -WhatIf before merging
       arguments: >-
+        -WhatIf
         -TargetBranchName "${{ parameters.TargetBranchName }}"
         -RemoteName "${{ parameters.RemoteName }}"
         -ResultsFileLocation "${{ parameters.ResultsFileLocation }}"

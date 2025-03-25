@@ -277,14 +277,17 @@ stages:
           os: linux
         dependsOn: GenerateReleaseArtifacts
 
+        templateContext: 
+          inputs:
+            - input: Checkout
+              repository: self
+
         steps: 
-          # - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
-          - task: DownloadPipelineArtifact@2
-            displayName: Download release metadata artifact
-            inputs:
-              artifactName: release-metadata
-              targetPath: release-metadata
+          - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+
           - pwsh: |
-              Get-Location | Write-Host
+              Write-Host "Build.SourcesDirectory: $(Build.SourcesDirectory)"
+              Write-Host "System.DefaultWorkingDirectory: $(System.DefaultWorkingDirectory)"
+              Get-Location | Write-Host 
               Get-ChildItem -Recurse | Select-Object -Property FullName
-            displayName: Show artifacts
+            displayName: List files in current directory

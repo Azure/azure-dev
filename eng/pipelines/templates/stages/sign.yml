@@ -254,6 +254,9 @@ stages:
 
       templateContext:
         inputs:
+          - input: checkout
+            repository: self
+
           # Download signed artifacts
           - input: pipelineArtifact
             artifactName: signed-win
@@ -290,11 +293,11 @@ stages:
             displayName: Upload homebrew formula artifact
 
       steps:
-        - checkout: self
-
         - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
 
         - pwsh: |
+            Write-Host "Build.SourcesDirectory: $(Build.SourcesDirectory)"
+            Write-Host "System.DefaultWorkingDirectory: $(System.DefaultWorkingDirectory)"
             Get-Location | Write-Host 
             Get-ChildItem -Recurse | Select-Object -Property FullName
           displayName: List files in current directory

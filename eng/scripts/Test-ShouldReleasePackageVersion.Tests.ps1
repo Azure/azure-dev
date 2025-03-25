@@ -21,3 +21,13 @@ Describe 'Releases when it should' {
         $actual | Should -BeExactly $expected
     }
 }
+
+Describe 'Throws when it should' { 
+    It "Throws when given a PR version" {
+        $version = '1.14.0-beta.1-pr.4686388'
+        { 
+            & $PSScriptRoot/Test-ShouldReleasePackageVersion.ps1 `
+                -CliVersion $version
+        } | Should -Throw
+    }
+}

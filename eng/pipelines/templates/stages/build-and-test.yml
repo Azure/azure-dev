@@ -222,9 +222,15 @@ stages:
 
               # Given a package version and a configuration for AllowPrerelease, 
               # determine if the package should be submitted or not.
-              $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
-                -CliVersion "$(CLI_VERSION)" `
-                -AllowPrerelease:$false
+              $submitPackage = $false
+
+              try { 
+                $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+                  -CliVersion "$(CLI_VERSION)" `
+                  -AllowPrerelease:$false
+              } catch { 
+                Write-Host "Package version is not valid: $(CLI_VERSION). `$submitPackage is set to false."
+              }
 
               $releaseMetadata = @{
                 cliVersion = $cliVersion;

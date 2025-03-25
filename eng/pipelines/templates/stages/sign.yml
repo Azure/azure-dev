@@ -253,32 +253,6 @@ stages:
         - SignLinux
 
       templateContext:
-        inputs:
-          - input: checkout
-            repository: self
-
-          # Download signed artifacts
-          - input: pipelineArtifact
-            artifactName: signed-win
-            targetPath: signed/win
-
-          - input: pipelineArtifact
-            artifactName: signed-mac
-            targetPath: signed/mac
-
-          - input: pipelineArtifact
-            artifactName: signed-linux
-            targetPath: signed/linux
-
-          # Linux binaries are not signed today so download from build outputs
-          - input: pipelineArtifact
-            artifactName: azd-linux-amd64
-            targetPath: release-staging
-
-          - input: pipelineArtifact
-            artifactName: azd-linux-arm64
-            targetPath: release-staging
-
         outputs:
           - output: pipelineArtifact
             path: release
@@ -293,6 +267,34 @@ stages:
             displayName: Upload homebrew formula artifact
 
       steps:
+        - checkout: self
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifactName: signed-win
+            targetPath: signed/win
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifactName: signed-mac
+            targetPath: signed/mac
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifactName: signed-linux
+            targetPath: signed/linux
+
+        # Linux binaries are not signed today so download from build outputs
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifactName: azd-linux-amd64
+            targetPath: release-staging
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifactName: azd-linux-arm64
+            targetPath: release-staging
+
         - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
 
         - pwsh: |
@@ -301,6 +303,7 @@ stages:
             Get-Location | Write-Host 
             Get-ChildItem -Recurse | Select-Object -Property FullName
           displayName: List files in current directory
+
 
         # Set up the release directory with all packages
         - bash: | 

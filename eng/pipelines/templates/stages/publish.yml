@@ -205,13 +205,17 @@ stages:
             os: linux
 
           templateContext:
-            inputs:
+            inputs:            
+              - input: checkout
+                repository: self
+                path: s
+
               - input: pipelineArtifact
                 artifactName: docs
                 targetPath: docs
 
           steps:
-            - checkout: self
+            - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
             - template: /eng/pipelines/templates/steps/publish-cli-docs.yml
 
     - stage: PublishVersionTxt
@@ -268,11 +272,6 @@ stages:
             name: azsdk-pool-mms-win-2022-general
             image: azsdk-pool-mms-win-2022-1espt
             os: windows
-
-          templateContext:
-            inputs:
-              - input: pipelineArtifact
-                artifactName: release-metadata
 
           steps:
             - checkout: self
@@ -373,7 +372,6 @@ stages:
               parameters:
                 CreateGitHubRelease: false
                 PublishUploadLocations: release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
-                UploadMsi: true
 
       - job: Publish_For_PR
         condition: >-
@@ -411,7 +409,6 @@ stages:
               CreateGitHubRelease: false
               PublishUploadLocations: pr/$(PRNumber)
               UploadInstaller: true
-              UploadMsi: true
 
           - pwsh: |
               $urlBase = "$(publish-storage-static-host)/azd/standalone/pr/$(PRNumber)"

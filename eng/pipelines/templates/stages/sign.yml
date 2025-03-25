@@ -97,6 +97,8 @@ stages:
             artifact: azd-windows-arm64.exe
             path: win-arm64
 
+        - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+
         - pwsh: |
             New-Item -ItemType Directory -Path win
 
@@ -134,8 +136,6 @@ stages:
             Copy-Item win/azd-windows-amd64.exe cli/azd/azd.exe
           displayName: Copy signing outputs for publishing and MSI build
           condition: always()
-
-        - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
 
         - template: /eng/pipelines/templates/steps/build-msi.yml
           parameters:

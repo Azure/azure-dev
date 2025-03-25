@@ -175,6 +175,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				DbPostgres: &scaffold.DatabasePostgres{
 					DatabaseName: "myappdb",
 				},
+				KeyVault: &scaffold.KeyVault{},
 				Services: []scaffold.ServiceSpec{
 					{
 						Name: "py",

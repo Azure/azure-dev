@@ -26,6 +26,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 )
 
@@ -425,6 +426,12 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 		}
 
 		targetPath := filepath.Join(targetDir, entryPoint)
+
+		// Need to set the executable permission for the binary
+		// This change is specifically required for Linux but will apply consistently across all platforms
+		if err := os.Chmod(targetPath, osutil.PermissionExecutableFile); err != nil {
+			return nil, fmt.Errorf("failed to set executable permission: %w", err)
+		}
 
 		relativeExtensionPath, err = filepath.Rel(userConfigDir, targetPath)
 		if err != nil {

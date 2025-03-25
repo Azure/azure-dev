@@ -76,6 +76,17 @@ module aiModelsDeploy 'ai-project.bicep' = {
     envName: environmentName
   }
 }
+
+{{- if .AISearch }}
+module aiSearchConnection 'modules/ai-search-conn.bicep' = {
+  scope: rg
+  name: 'ai-search-connection'
+  params: {
+    aiHubName: aiModelsDeploy.outputs.hubName
+    aiSearchName: resources.outputs.aiSearchName
+  }
+}
+{{- end}}
 {{- end}}
 
 {{- if .Services}}
@@ -119,5 +130,9 @@ output AZURE_RESOURCE_SERVICE_BUS_ID string = resources.outputs.AZURE_RESOURCE_S
 {{- if .AiFoundryProject }}
 output AZURE_AIPROJECT_CONNECTION_STRING string = aiModelsDeploy.outputs.aiFoundryProjectConnectionString
 output AZURE_RESOURCE_AI_PROJECT_ID string = aiModelsDeploy.outputs.projectId
+{{- end}}
+{{- if .AISearch }}
+output AZURE_AI_SEARCH_ENDPOINT string = resources.outputs.AZURE_AI_SEARCH_ENDPOINT
+output AZURE_RESOURCE_SEARCH_ID string = resources.outputs.AZURE_RESOURCE_SEARCH_ID
 {{- end}}
 {{ end}}

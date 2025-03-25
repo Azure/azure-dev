@@ -80,7 +80,6 @@ func (m *Manager) State(ctx context.Context, options *StateOptions) (*StateResul
 }
 
 var AzdOperationsFeatureKey = alpha.MustFeatureKey("azd.operations")
-var AzdAppHostInfraMigration = alpha.MustFeatureKey("apphost.infra.migration")
 
 // Deploys the Azure infrastructure for the specified project
 func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {

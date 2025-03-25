@@ -111,10 +111,8 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 	}
 
 	azdOperationsEnabled := ai.alphaFeatureManager.IsEnabled(provisioning.AzdOperationsFeatureKey)
-	azdApphostInfraMigrationEnabled := ai.alphaFeatureManager.IsEnabled(provisioning.AzdAppHostInfraMigration)
 	files, err := apphost.BicepTemplate("main", manifest, apphost.AppHostOptions{
-		AzdOperations:         azdOperationsEnabled,
-		AppHostInfraMigration: azdApphostInfraMigrationEnabled,
+		AzdOperations: azdOperationsEnabled,
 	})
 	if err != nil {
 		if errors.Is(err, provisioning.ErrAzdOperationsNotEnabled) {
@@ -479,10 +477,8 @@ func (ai *DotNetImporter) SynthAllInfrastructure(ctx context.Context, p *Project
 	}
 
 	azdOperationsEnabled := ai.alphaFeatureManager.IsEnabled(provisioning.AzdOperationsFeatureKey)
-	azdApphostInfraMigrationEnabled := ai.alphaFeatureManager.IsEnabled(provisioning.AzdAppHostInfraMigration)
 	infraFS, err := apphost.BicepTemplate(rootModuleName, manifest, apphost.AppHostOptions{
-		AzdOperations:         azdOperationsEnabled,
-		AppHostInfraMigration: azdApphostInfraMigrationEnabled,
+		AzdOperations: azdOperationsEnabled,
 	})
 	if err != nil {
 		if errors.Is(err, provisioning.ErrAzdOperationsNotEnabled) {

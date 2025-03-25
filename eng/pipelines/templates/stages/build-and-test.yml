@@ -283,6 +283,7 @@ stages:
             displayName: Download release metadata artifact
             inputs:
               artifactName: release-metadata
+              targetPath: release-metadata
           - pwsh: |
               Get-Location | Write-Host
               Get-ChildItem -Recurse | Select-Object -Property FullName

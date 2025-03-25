@@ -6,7 +6,10 @@ package ux
 import (
 	"context"
 	"io"
+	"log"
 	"os"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"dario.cat/mergo"
@@ -20,10 +23,11 @@ type Spinner struct {
 
 	cursor         internal.Cursor
 	options        *SpinnerOptions
+	running        int32
 	animationIndex int
 	text           string
 	clear          bool
-	cancel         context.CancelFunc
+	canvasMutex    sync.Mutex
 }
 
 // SpinnerOptions represents the options for the Spinner component.
@@ -62,6 +66,9 @@ func NewSpinner(options *SpinnerOptions) *Spinner {
 
 // WithCanvas sets the canvas for the spinner.
 func (s *Spinner) WithCanvas(canvas Canvas) Visual {
+	s.canvasMutex.Lock()
+	defer s.canvasMutex.Unlock()
+
 	if canvas != nil {
 		s.canvas = canvas
 	}
@@ -71,57 +78,40 @@ func (s *Spinner) WithCanvas(canvas Canvas) Visual {
 
 // Start starts the spinner.
 func (s *Spinner) Start(ctx context.Context) error {
-	if s.canvas == nil {
-		s.canvas = NewCanvas(s).WithWriter(s.options.Writer)
-	}
-
-	// Use a context to determine when to stop the spinner
-	cancelCtx, cancel := context.WithCancel(ctx)
-	s.cancel = cancel
+	s.ensureCanvas()
 
 	s.clear = false
+	atomic.StoreInt32(&s.running, 1)
 	s.cursor.HideCursor()
 
-	if err := s.canvas.Run(); err != nil {
-		return err
-	}
-
-	// Periodic update goroutine
 	go func(ctx context.Context) {
 		for {
-			select {
-			// Context is stopped, exit
-			case <-ctx.Done():
+			if atomic.LoadInt32(&s.running) == 0 {
 				return
-			// Update the spinner on each tick interval
-			case <-time.After(s.options.Interval):
-				_ = s.canvas.Update()
 			}
-		}
-	}(cancelCtx)
 
-	return nil
+			if err := s.update(); err != nil {
+				log.Println("Failed to update spinner:", err)
+				return
+			}
+
+			time.Sleep(s.options.Interval)
+		}
+	}(ctx)
+
+	return s.run()
 }
 
 // Stop stops the spinner.
 func (s *Spinner) Stop(ctx context.Context) error {
-	defer func() {
-		s.cursor.ShowCursor()
-	}()
+	s.ensureCanvas()
 
-	if s.cancel == nil {
-		return nil
-	}
+	atomic.StoreInt32(&s.running, 0)
+	s.cursor.ShowCursor()
 
 	if s.options.ClearOnStop {
 		s.clear = true
-	}
-
-	s.cancel()
-	s.cancel = nil
-
-	if err := s.canvas.Update(); err != nil {
-		return err
+		return s.update()
 	}
 
 	return nil
@@ -129,6 +119,8 @@ func (s *Spinner) Stop(ctx context.Context) error {
 
 // Run runs a task with the spinner.
 func (s *Spinner) Run(ctx context.Context, task func(context.Context) error) error {
+	s.ensureCanvas()
+
 	s.options.ClearOnStop = true
 
 	if err := s.Start(ctx); err != nil {
@@ -153,7 +145,8 @@ func (s *Spinner) Render(printer Printer) error {
 		return nil
 	}
 
-	printer.Fprintf("%s %s", output.WithHintFormat(s.options.Animation[s.animationIndex]), s.text)
+	printer.Fprintf(output.WithHintFormat(s.options.Animation[s.animationIndex]))
+	printer.Fprintf(" %s", s.text)
 
 	if s.animationIndex == len(s.options.Animation)-1 {
 		s.animationIndex = 0
@@ -162,4 +155,35 @@ func (s *Spinner) Render(printer Printer) error {
 	}
 
 	return nil
+}
+
+func (s *Spinner) ensureCanvas() {
+	s.canvasMutex.Lock()
+	defer s.canvasMutex.Unlock()
+
+	if s.canvas == nil {
+		s.canvas = NewCanvas(s).WithWriter(s.options.Writer)
+	}
+}
+
+func (s *Spinner) update() error {
+	s.canvasMutex.Lock()
+	defer s.canvasMutex.Unlock()
+
+	if s.canvas == nil {
+		return nil
+	}
+
+	return s.canvas.Update()
+}
+
+func (s *Spinner) run() error {
+	s.canvasMutex.Lock()
+	defer s.canvasMutex.Unlock()
+
+	if s.canvas == nil {
+		return nil
+	}
+
+	return s.canvas.Run()
 }

@@ -39,10 +39,6 @@ func NewAzureResourceList(resourceService ResourceService, resources []*arm.Reso
 
 // Add adds an Azure resource to the list.
 func (arl *AzureResourceList) Add(resourceId string) error {
-	if resourceId == "new" {
-		return nil
-	}
-
 	if _, has := arl.FindById(resourceId); has {
 		return nil
 	}

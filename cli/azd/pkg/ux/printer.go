@@ -45,9 +45,6 @@ func NewPrinter(writer io.Writer) Printer {
 	}
 
 	width, _ := consolesize.GetConsoleSize()
-	if width == 0 {
-		width = 100
-	}
 
 	printer := &printer{
 		Cursor: internal.NewCursor(writer),

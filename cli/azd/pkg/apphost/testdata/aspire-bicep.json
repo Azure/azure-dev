@@ -104,8 +104,7 @@
         "path": "aspire.hosting.azure.bicep.appinsights.bicep",
         "params": {
           "appInsightsName": "ai",
-          "logAnalyticsWorkspaceId": "",
-          "userPrincipalId": "fixed-value-to-test-userPrincipalId-convention"
+          "logAnalyticsWorkspaceId": ""
         }
       },
       "sql": {

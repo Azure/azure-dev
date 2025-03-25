@@ -894,7 +894,7 @@ func stdinForCreateKvAccount(rg, kva, kvs, kvsv string) string {
 		"\n" + // "choose subscription" (we're choosing the default)
 		"\n" + // "Create new Key Vault
 		"\n" + // "choose location" (we're choosing the default)
-		"1. Create a new resource group\n" + // "1. Create new resource group"
+		"Create a new resource group\n" + // "Create new resource group"
 		rg + "\n" + // "resource group name"
 		kva + "\n" + // "key vault name"
 		kvs + "\n" + // "key vault secret name"

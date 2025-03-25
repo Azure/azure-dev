@@ -13,7 +13,6 @@ import (
 // so the user can control what environment is loaded in a uniform way across all our commands.
 type EnvFlag struct {
 	EnvironmentName string
-	fromEnvVarValue string
 }
 
 // EnvironmentNameFlagName is the full name of the flag as it appears on the command line.
@@ -23,17 +22,11 @@ const EnvironmentNameFlagName string = "environment"
 const envNameEnvVarName = "AZURE_ENV_NAME"
 
 func (e *EnvFlag) Bind(local *pflag.FlagSet, global *GlobalCommandOptions) {
-	e.fromEnvVarValue = os.Getenv(envNameEnvVarName)
 	local.StringVarP(
 		&e.EnvironmentName,
 		EnvironmentNameFlagName,
 		"e",
 		// Set the default value to AZURE_ENV_NAME value if available
-		e.fromEnvVarValue,
+		os.Getenv(envNameEnvVarName),
 		"The name of the environment to use.")
-}
-
-// checks if the environment name was set from the command line
-func (e *EnvFlag) FromArg() bool {
-	return e.EnvironmentName != "" && e.EnvironmentName != e.fromEnvVarValue
 }

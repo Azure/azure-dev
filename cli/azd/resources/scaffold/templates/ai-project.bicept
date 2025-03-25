@@ -190,7 +190,6 @@ resource mlServiceRoleSecretsReader 'Microsoft.Authorization/roleAssignments@202
   }
 }
 
-output hubName string = hub.name
 output projectDiscoveryUrl string = project.properties.discoveryUrl
 output projectId string = project.id
 output projectName string = project.name

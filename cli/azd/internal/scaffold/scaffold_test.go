@@ -14,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/otiai10/copy"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -118,7 +117,6 @@ func TestExecInfra(t *testing.T) {
 				EventHubs:      &EventHubs{},
 				StorageAccount: &StorageAccount{},
 				KeyVault:       &KeyVault{},
-				AISearch:       &AISearch{},
 				Services: []ServiceSpec{
 					{
 						Name: "api",
@@ -145,12 +143,10 @@ func TestExecInfra(t *testing.T) {
 						DbMySql: &DatabaseReference{
 							DatabaseName: "mysqldb",
 						},
-						ServiceBus:       &ServiceBus{},
-						EventHubs:        &EventHubs{},
-						StorageAccount:   &StorageReference{},
-						KeyVault:         &KeyVaultReference{},
-						AISearch:         &AISearchReference{},
-						AiFoundryProject: &AiFoundrySpec{},
+						ServiceBus:     &ServiceBus{},
+						EventHubs:      &EventHubs{},
+						StorageAccount: &StorageReference{},
+						KeyVault:       &KeyVaultReference{},
 					},
 					{
 						Name: "web",
@@ -172,13 +168,76 @@ func TestExecInfra(t *testing.T) {
 				DbPostgres: &DatabasePostgres{
 					DatabaseName: "appdb",
 				},
-				KeyVault: &KeyVault{},
 				Services: []ServiceSpec{
 					{
 						Name: "api",
 						Port: 3100,
 						DbPostgres: &DatabaseReference{
 							DatabaseName: "appdb",
+						},
+					},
+				},
+			},
+		},
+		{
+			"API with MySQL",
+			InfraSpec{
+				DbMySql: &DatabaseMysql{
+					DatabaseName: "appdb",
+				},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						DbMySql: &DatabaseReference{
+							DatabaseName: "appdb",
+						},
+					},
+				},
+			},
+		},
+		{
+			"API with MongoDB",
+			InfraSpec{
+				DbCosmosMongo: &DatabaseCosmosMongo{
+					DatabaseName: "appdb",
+				},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						DbCosmosMongo: &DatabaseReference{
+							DatabaseName: "appdb",
+						},
+					},
+				},
+			},
+		},
+		{
+			"API with Redis",
+			InfraSpec{
+				DbRedis: &DatabaseRedis{},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						DbRedis: &DatabaseReference{
+							DatabaseName: "redis",
+						},
+					},
+				},
+			},
+		},
+		{
+			"API with Cosmos",
+			InfraSpec{
+				DbCosmos: &DatabaseCosmos{},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						DbCosmos: &DatabaseReference{
+							DatabaseName: "cosmos",
 						},
 					},
 				},
@@ -213,21 +272,7 @@ func TestExecInfra(t *testing.T) {
 
 			res, err := cli.Build(ctx, filepath.Join(dir, "main.bicep"))
 			require.NoError(t, err)
-
-			lintErrs := strings.Split(res.LintErr, "\n")
-			for _, lintErr := range lintErrs {
-				if lintErr == "" {
-					continue
-				}
-
-				if strings.Contains(lintErr, "no-unused-params: Parameter \"principalId\" ") { // suppress this error
-					// we always set principalId regardless of whether it's used
-					// in the current implementation
-					continue
-				}
-
-				assert.Failf(t, "found bicep lint error", "lint: %s", lintErr)
-			}
+			require.Empty(t, res.LintErr, "lint errors occurred")
 		})
 	}
 }

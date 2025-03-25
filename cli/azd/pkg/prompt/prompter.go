@@ -166,11 +166,11 @@ func (p *DefaultPrompter) PromptResourceGroupFrom(
 	canCreateOverride := 0
 	if canCreateNeResourceGroup {
 		choices = make([]string, len(groups)+1)
-		choices[0] = "1. Create a new resource group"
+		choices[0] = "Create a new resource group"
 		canCreateOverride = 1
 	}
 	for idx, group := range groups {
-		choices[idx+canCreateOverride] = fmt.Sprintf("%d. %s", idx+canCreateOverride+1, group.Name)
+		choices[idx+canCreateOverride] = fmt.Sprintf("%d. %s", idx+1, group.Name)
 	}
 
 	choice, err := p.console.Select(ctx, input.ConsoleOptions{

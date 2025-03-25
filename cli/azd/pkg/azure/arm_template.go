@@ -145,28 +145,7 @@ type AzdMetadata struct {
 	AutoGenerateConfig *AutoGenInput    `json:"config,omitempty"`
 	DefaultValueExpr   *string          `json:"defaultValueExpr,omitempty"`
 	Default            *string          `json:"default,omitempty"`
-	UsageName          usageName        `json:"usageName,omitempty"`
-}
-
-// usageName is a custom type that can be either a single string or an array of strings.
-// Enables unmarshalling from both formats, so user can set one only usageName like usageName: "foo" or
-// multiple usageNames like usageName: ["foo", "bar"].
-type usageName []string
-
-func (u *usageName) UnmarshalJSON(data []byte) error {
-	var single string
-	if err := json.Unmarshal(data, &single); err == nil {
-		*u = usageName{single}
-		return nil
-	}
-
-	var multiple []string
-	if err := json.Unmarshal(data, &multiple); err != nil {
-		return err
-	}
-
-	*u = usageName(multiple)
-	return nil
+	UsageName          *string          `json:"usageName,omitempty"`
 }
 
 // Description returns the value of the "Description" string metadata for this parameter or empty if it can not be found.

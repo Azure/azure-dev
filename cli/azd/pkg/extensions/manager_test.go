@@ -301,23 +301,14 @@ var sampleArtifacts = map[string]ExtensionArtifact{
 	"darwin": {
 		//nolint:lll
 		URL: "https://aka.ms/azd/extensions/registry/test.extension/azd-ext-test-darwin-amd64",
-		AdditionalMetadata: map[string]any{
-			"entryPoint": "azd-ext-test-darwin-amd64",
-		},
 	},
 	"windows": {
 		//nolint:lll
 		URL: "https://aka.ms/azd/extensions/registry/test.extension/azd-ext-test-windows-amd64.exe",
-		AdditionalMetadata: map[string]any{
-			"entryPoint": "azd-ext-test-windows-amd64.exe",
-		},
 	},
 	"linux": {
 		//nolint:lll
 		URL: "https://aka.ms/azd/extensions/registry/test.extension/azd-ext-test-linux-amd64",
-		AdditionalMetadata: map[string]any{
-			"entryPoint": "azd-ext-test-linux-amd64",
-		},
 	},
 }
 

@@ -298,53 +298,6 @@ resource localUserOpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-0
 }
 {{- end}}
 
-{{- if .AISearch}}
-module search 'br/public:avm/res/search/search-service:0.9.1' = {
-  name: 'ai-search'
-  params: {
-    name: '${abbrs.searchSearchServices}${resourceToken}'
-    location: location
-    tags: tags
-    sku: 'basic'
-    replicaCount: 1
-    managedIdentities: {
-      systemAssigned: true
-    }
-    roleAssignments: [
-      {  
-        principalId: principalId
-        principalType: 'User'
-        roleDefinitionIdOrName: 'Search Index Data Contributor'  
-      }
-      {  
-        principalId: principalId
-        principalType: 'User'
-        roleDefinitionIdOrName: 'Search Service Contributor'  
-      }
-      {{- range .Services}}
-      {
-        principalId: {{bicepName .Name}}Identity.outputs.principalId
-        principalType: 'ServicePrincipal'
-        roleDefinitionIdOrName: 'Search Index Data Contributor'
-      }
-      {
-        principalId: {{bicepName .Name}}Identity.outputs.principalId
-        principalType: 'ServicePrincipal'
-        roleDefinitionIdOrName: 'Search Service Contributor'
-      }
-      {{- end}}
-    ]
-    disableLocalAuth: false
-    authOptions: {
-      aadOrApiKey: {
-        aadAuthFailureMode: 'http401WithBearerChallenge'
-      }
-    }
-    publicNetworkAccess: 'Enabled'
-  }
-}
-{{- end}}
-
 {{- if .EventHubs }}
 module eventHubNamespace 'br/public:avm/res/event-hub/namespace:0.8.0' = {
   name: 'eventHubNamespace'
@@ -383,9 +336,6 @@ module serviceBusNamespace 'br/public:avm/res/service-bus/namespace:0.11.2' = {
   params: {
     name: '${abbrs.serviceBusNamespaces}${resourceToken}'
     location: location
-    skuObject: {
-      name: 'Standard'
-    }
     roleAssignments: [
       {{- range .Services}}
       {
@@ -449,6 +399,17 @@ module {{bicepName .Name}}FetchLatestImage './modules/fetch-container-image.bice
   }
 }
 
+var {{bicepName .Name}}AppSettingsArray = filter(array({{bicepName .Name}}Definition.settings), i => i.name != '')
+var {{bicepName .Name}}Secrets = map(filter({{bicepName .Name}}AppSettingsArray, i => i.?secret != null), i => {
+  name: i.name
+  value: i.value
+  secretRef: i.?secretRef ?? take(replace(replace(toLower(i.name), '_', '-'), '.', '-'), 32)
+})
+var {{bicepName .Name}}Env = map(filter({{bicepName .Name}}AppSettingsArray, i => i.?secret == null), i => {
+  name: i.name
+  value: i.value
+})
+
 module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
   name: '{{bicepName .Name}}'
   params: {
@@ -471,7 +432,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     scaleMinReplicas: 1
     scaleMaxReplicas: 10
     secrets: {
-      secureList:  [
+      secureList:  union([
         {{- if .DbCosmosMongo}}
         {
           name: 'mongodb-url'
@@ -511,7 +472,11 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           keyVaultUrl: '${keyVault.outputs.uri}secrets/redis-url'
         }
         {{- end}}
-      ]
+      ],
+      map({{bicepName .Name}}Secrets, secret => {
+        name: secret.secretRef
+        value: secret.value
+      }))
     }
     containers: [
       {
@@ -521,7 +486,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           cpu: json('0.5')
           memory: '1.0Gi'
         }
-        env: [
+        env: union([
           {
             name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
             value: monitoring.outputs.applicationInsightsConnectionString
@@ -662,13 +627,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: account.outputs.endpoint
           }
           {{- end}}
-          {{- if .AISearch}}
-          {
-            name: 'AZURE_AI_SEARCH_ENDPOINT'
-            value: 'https://${search.outputs.name}.search.windows.net'
-          }
-          {{- end}}
-          {{- if .AiFoundryProject }}
+          {{- if .HasAiFoundryProject }}
           {
             name: 'AZURE_AIPROJECT_CONNECTION_STRING'
             value: aiFoundryProjectConnectionString
@@ -694,7 +653,12 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
             value: {{ $value }}
           }
           {{- end}}
-        ]
+        ],
+        {{bicepName .Name}}Env,
+        map({{bicepName .Name}}Secrets, secret => {
+            name: secret.name
+            secretRef: secret.secretRef
+        }))
       }
     ]
     managedIdentities:{
@@ -712,7 +676,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     tags: union(tags, { 'azd-service-name': '{{.Name}}' })
   }
 }
-{{- if .AiFoundryProject}}
+{{- if .HasAiFoundryProject}}
 
 resource {{bicepName .Name}}backendRoleAzureAIDeveloperRG 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
   name: guid(subscription().id, resourceGroup().id, {{bicepName .Name}}Identity.name, '64702f94-c441-49e6-a78b-ef80e0188fee')
@@ -757,7 +721,7 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.12.0' = {
       {
         objectId: principalId
         permissions: {
-          secrets: [ 'get', 'list', 'set' ]
+          secrets: [ 'get', 'list' ]
         }
       }
       {{- range .Services}}
@@ -823,10 +787,5 @@ output AZURE_RESOURCE_EVENT_HUBS_ID string = eventHubNamespace.outputs.resourceI
 {{- end}}
 {{- if .ServiceBus}}
 output AZURE_RESOURCE_SERVICE_BUS_ID string = serviceBusNamespace.outputs.resourceId
-{{- end}}
-{{- if .AISearch}}
-output AZURE_AI_SEARCH_ENDPOINT string = 'https://${search.outputs.name}.search.windows.net'
-output AZURE_RESOURCE_SEARCH_ID string = search.outputs.resourceId
-output aiSearchName string = search.outputs.name
 {{- end}}
 {{ end}}

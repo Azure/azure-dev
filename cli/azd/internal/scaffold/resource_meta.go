@@ -61,15 +61,6 @@ var Resources = []ResourceMeta{
 		ApiVersion:   "2023-05-01",
 	},
 	{
-		ResourceType:      "Microsoft.CognitiveServices/accounts/deployments",
-		ApiVersion:        "2023-05-01",
-		ParentForEval:     "Microsoft.CognitiveServices/accounts",
-		StandardVarPrefix: "AZURE_OPENAI",
-		Variables: map[string]string{
-			"endpoint": "${.properties.endpoint}",
-		},
-	},
-	{
 		ResourceType: "Microsoft.ContainerRegistry/registries",
 		ApiVersion:   "2023-06-01-preview",
 	},
@@ -163,15 +154,6 @@ var Resources = []ResourceMeta{
 		StandardVarPrefix: "AZURE_AI_PROJECT",
 		Variables: map[string]string{
 			"connectionString": "${aiProjectConnectionString .id .properties.discoveryUrl}",
-		},
-	},
-	{
-		ResourceType: "Microsoft.Search/searchServices",
-		// TODO: Switch to 2025-02-01-preview once available, which has a new 'endpoint' property
-		ApiVersion:        "2024-06-01-preview",
-		StandardVarPrefix: "AZURE_AI_SEARCH",
-		Variables: map[string]string{
-			"endpoint": "https://${.name}.search.windows.net",
 		},
 	},
 }

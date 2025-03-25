@@ -42,9 +42,6 @@ var aspireContainerArgsManifest []byte
 //go:embed testdata/aspire-projectv1.json
 var aspireProjectV1Manifet []byte
 
-//go:embed testdata/aspire-apphost-owns-compute.json
-var aspireApphostOwnsCompute []byte
-
 // mockPublishManifest mocks the dotnet run --publisher manifest command to return a fixed manifest.
 func mockPublishManifest(mockCtx *mocks.MockContext, manifest []byte, files map[string]string) {
 	mockCtx.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -69,57 +66,6 @@ func mockPublishManifest(mockCtx *mocks.MockContext, manifest []byte, files map[
 		}
 		return exec.RunResult{}, nil
 	})
-}
-
-func TestAspireBicepGenerationAppHostOwnsCompute(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping due to EOL issues on Windows with the baselines")
-	}
-
-	ctx := context.Background()
-	mockCtx := mocks.NewMockContext(ctx)
-	filesFromManifest := make(map[string]string)
-	ignoredBicepContent := "bicep file contents"
-	filesFromManifest["test.bicep"] = ignoredBicepContent
-	filesFromManifest["aspire.hosting.azure.bicep.postgres.bicep"] = ignoredBicepContent
-	filesFromManifest["aspire.hosting.azure.bicep.servicebus.bicep"] = ignoredBicepContent
-	filesFromManifest["aspire.hosting.azure.bicep.appinsights.bicep"] = ignoredBicepContent
-	filesFromManifest["aspire.hosting.azure.bicep.sql.bicep"] = ignoredBicepContent
-	mockPublishManifest(mockCtx, aspireApphostOwnsCompute, filesFromManifest)
-	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
-
-	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
-	require.NoError(t, err)
-
-	files, err := BicepTemplate("main", m, AppHostOptions{})
-	require.NoError(t, err)
-
-	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		contents, err := fs.ReadFile(files, path)
-		if err != nil {
-			return err
-		}
-		t.Run(path, func(t *testing.T) {
-			snapshot.SnapshotT(t, string(contents))
-		})
-		return nil
-	})
-	require.NoError(t, err)
-
-	for _, name := range []string{"frontend"} {
-		t.Run(name, func(t *testing.T) {
-			tmpl, mType, err := ContainerAppManifestTemplateForProject(m, name, AppHostOptions{})
-			require.NoError(t, err)
-			require.Equal(t, ContainerAppManifestTypeYAML, mType)
-			snapshot.SnapshotT(t, tmpl)
-		})
-	}
 }
 
 func TestAspireBicepGeneration(t *testing.T) {
@@ -362,7 +308,7 @@ func TestEvaluateForOutputs(t *testing.T) {
 		},
 	}
 
-	outputs, err := evaluateForOutputs(value, false)
+	outputs, err := evaluateForOutputs(value)
 	require.NoError(t, err)
 	require.Equal(t, expectedOutputs, outputs)
 }
@@ -372,14 +318,14 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	param := knownParameterKeyVault
 	expectedParameter := `"exampleParameter"`
 
-	value, inject, err := injectValueForBicepParameter(resourceName, param, "exampleParameter", false)
+	value, inject, err := injectValueForBicepParameter(resourceName, param, "exampleParameter")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.False(t, inject)
 
 	uniqueName := strings.ToUpper("kv" + uniqueFnvNumber(resourceName))
 	expectedParameter = fmt.Sprintf("resources.outputs.SERVICE_BINDING_%s_NAME", uniqueName)
-	value, inject, err = injectValueForBicepParameter(resourceName, param, "", false)
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.True(t, inject)
@@ -387,7 +333,7 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	withDash := resourceName + "-01"
 	uniqueName = strings.ToUpper("kv" + uniqueFnvNumber(withDash))
 	expectedParameter = fmt.Sprintf("resources.outputs.SERVICE_BINDING_%s_NAME", uniqueName)
-	value, inject, err = injectValueForBicepParameter(withDash, param, "", false)
+	value, inject, err = injectValueForBicepParameter(withDash, param, "")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.True(t, inject)
@@ -395,13 +341,13 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	param = knownParameterPrincipalId
 	expectedParameter = `"exampleParameter"`
 
-	value, inject, err = injectValueForBicepParameter(resourceName, param, "exampleParameter", false)
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "exampleParameter")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.False(t, inject)
 
 	expectedParameter = knownInjectedValuePrincipalId
-	value, inject, err = injectValueForBicepParameter(resourceName, param, "", false)
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.True(t, inject)
@@ -409,7 +355,7 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	param = knownParameterPrincipalType
 	expectedParameter = `"exampleParameter"`
 
-	value, inject, err = injectValueForBicepParameter(resourceName, param, "exampleParameter", false)
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "exampleParameter")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.False(t, inject)
@@ -417,7 +363,7 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	param = knownParameterPrincipalType
 	expectedParameter = knownInjectedValuePrincipalType
 
-	value, inject, err = injectValueForBicepParameter(resourceName, param, "", false)
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.True(t, inject)
@@ -425,7 +371,7 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	param = knownParameterPrincipalName
 	expectedParameter = `"exampleParameter"`
 
-	value, inject, err = injectValueForBicepParameter(resourceName, param, "exampleParameter", false)
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "exampleParameter")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.False(t, inject)
@@ -433,7 +379,7 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	param = knownParameterPrincipalName
 	expectedParameter = knownInjectedValuePrincipalName
 
-	value, inject, err = injectValueForBicepParameter(resourceName, param, "", false)
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.True(t, inject)
@@ -441,7 +387,7 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	param = knownParameterContainerEnvName
 	expectedParameter = knownInjectedValueContainerEnvName
 
-	value, inject, err = injectValueForBicepParameter(resourceName, param, "", false)
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.True(t, inject)
@@ -449,7 +395,7 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	param = knownParameterContainerEnvId
 	expectedParameter = knownInjectedValueContainerEnvId
 
-	value, inject, err = injectValueForBicepParameter(resourceName, param, "", false)
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.True(t, inject)
@@ -457,7 +403,7 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	param = knownParameterLogAnalytics
 	expectedParameter = `"exampleParameter"`
 
-	value, inject, err = injectValueForBicepParameter(resourceName, param, "exampleParameter", false)
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "exampleParameter")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.False(t, inject)
@@ -465,32 +411,32 @@ func TestInjectValueForBicepParameter(t *testing.T) {
 	param = knownParameterLogAnalytics
 	expectedParameter = knownInjectedValueLogAnalytics
 
-	value, inject, err = injectValueForBicepParameter(resourceName, param, "", false)
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.True(t, inject)
 
 	param = "otherParam"
 	expectedParameter = `"exampleParameter"`
-	value, inject, err = injectValueForBicepParameter(resourceName, param, "exampleParameter", false)
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "exampleParameter")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.False(t, inject)
 
 	expectedParameter = `["exampleParameter"]`
-	value, inject, err = injectValueForBicepParameter(resourceName, param, []string{"exampleParameter"}, false)
+	value, inject, err = injectValueForBicepParameter(resourceName, param, []string{"exampleParameter"})
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.False(t, inject)
 
 	expectedParameter = `true`
-	value, inject, err = injectValueForBicepParameter(resourceName, param, true, false)
+	value, inject, err = injectValueForBicepParameter(resourceName, param, true)
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.False(t, inject)
 
 	expectedParameter = `""`
-	value, inject, err = injectValueForBicepParameter(resourceName, param, "", false)
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
 	require.NoError(t, err)
 	require.Equal(t, expectedParameter, value)
 	require.False(t, inject)

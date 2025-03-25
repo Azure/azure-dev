@@ -27,10 +27,7 @@ func (i *Initializer) infraSpecFromDetect(
 	ctx context.Context,
 	detect detectConfirm) (scaffold.InfraSpec, error) {
 	spec := scaffold.InfraSpec{}
-
-	hasDb := false
 	for database := range detect.Databases {
-		hasDb = true
 		if database == appdetect.DbRedis {
 			spec.DbRedis = &scaffold.DatabaseRedis{}
 			// no further configuration needed for redis
@@ -62,10 +59,6 @@ func (i *Initializer) infraSpecFromDetect(
 			}
 			break dbPrompt
 		}
-	}
-
-	if hasDb {
-		spec.KeyVault = &scaffold.KeyVault{}
 	}
 
 	for _, svc := range detect.Services {

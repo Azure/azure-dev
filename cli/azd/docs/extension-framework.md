@@ -11,6 +11,15 @@ Table of Contents
 - [Managing Extensions](#managing-extensions)
 - [Developing Extensions](#developing-extensions)
 - [Developer Artifacts](#developer-artifacts)
+- [gRPC Services](#grpc-services)
+	- [Project Service](#project-service)
+	- [Environment Service](#environment-service)
+	- [User Config Service](#user-config-service)
+	- [Deployment Service](#deployment-service)
+	- [Prompt Service](#prompt-service)
+	- [Event Service](#event-service)
+	- [Compose Service](#compose-service)
+	- [Workflow Service](#workflow-service)
 
 ## Capabilities
 
@@ -326,6 +335,8 @@ The following are a list of available gRPC services for extension developer to i
 - [Deployment Service](#deployment-service)
 - [Prompt Service](#prompt-service)
 - [Event Service](#event-service)
+- [Compose Service](#compose-service)
+- [Workflow Service](#workflow-service)
 
 ### Project Service
 
@@ -345,9 +356,13 @@ Gets the current project configuration.
     - `services`: map of *ServiceConfig*
     - `infra`: *InfraOptions*
 
-*See [project.proto](../grpc/proto/project.proto).*
+#### AddService
+Adds a new service to the project.
 
-------------------------------------------
+- **Request:** *AddServiceRequest*
+  - Contains:
+    - `service`: *ServiceConfig*
+- **Response:** *EmptyResponse*
 
 ### Environment Service
 
@@ -467,8 +482,6 @@ Removes a config value at a given path.
   - `path` (string)
 - **Response:** *EmptyResponse*
 
-------------------------------------------
-
 ### User Config Service
 
 This service manages user-specific configuration retrieval and updates.
@@ -527,8 +540,6 @@ Removes a user configuration value.
   - Contains:
     - `status` (string)
 
-------------------------------------------
-
 ### Deployment Service
 
 This service provides operations for deployment retrieval and context management.
@@ -564,8 +575,6 @@ Retrieves the current deployment context.
       - `location` (string)
       - `resourceGroup` (string)
     - `resources` (repeated string)
-
-------------------------------------------
 
 ### Prompt Service
 
@@ -738,3 +747,69 @@ Clients can subscribe to events and receive notifications via a bidirectional st
   - `service_name`: The name of the service.
   - `status`: Status such as "running", "completed", or "failed".
   - `message`: Optional additional details.
+
+### Compose Service
+
+This service manages composability resources in an AZD project.
+
+#### ListResources
+
+Lists all configured composability resources.
+
+- **Request:** *EmptyRequest*
+- **Response:** *ListResourcesResponse*
+  - Contains a list of **ComposedResource**
+
+#### GetResource
+
+Retrieves the configuration of a specific composability resource.
+
+- **Request:** *GetResourceRequest*
+  - Contains:
+    - `name` (string)
+- **Response:** *GetResourceResponse*
+  - Contains:
+    - `resource`: *ComposedResource*
+
+#### ListResourceTypes
+
+Lists all supported composability resource types.
+
+- **Request:** *EmptyRequest*
+- **Response:** *ListResourceTypesResponse*
+  - Contains a list of **ComposedResourceType**
+
+#### GetResourceType
+
+Retrieves the schema of a specific composability resource type.
+
+- **Request:** *GetResourceTypeRequest*
+  - Contains:
+    - `type_name` (string)
+- **Response:** *GetResourceTypeResponse*
+  - Contains:
+    - `resource_type`: *ComposedResourceType*
+
+#### AddResource
+
+Adds a new composability resource to the project.
+
+- **Request:** *AddResourceRequest*
+  - Contains:
+    - `resource`: *ComposedResource*
+- **Response:** *AddResourceResponse*
+  - Contains:
+    - `resource`: *ComposedResource*
+
+### Workflow Service
+
+This service executes workflows defined within the project.
+
+#### Run
+
+Executes a workflow consisting of sequential steps.
+
+- **Request:** *RunWorkflowRequest*
+  - Contains:
+    - `workflow`: *Workflow* (with `name` and `steps`)
+- **Response:** *EmptyResponse*

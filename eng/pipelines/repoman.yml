@@ -175,8 +175,27 @@ extends:
           - template: /eng/pipelines/templates/variables/globals.yml
 
         jobs:
-        - deployment: Publish_Repos
-          environment: azure-dev
+        - deployment: ReleaseGate
+          environment: package-publish
+
+          pool:
+            name: azsdk-pool-mms-ubuntu-2004-general
+            image: azsdk-pool-mms-ubuntu-2004-1espt
+            os: linux
+
+          templateContext:
+            type: releaseJob
+            isProduction: true
+
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - pwsh: Write-Host "Release gate passed. Dependant jobs will run."
+                    displayName: Release gate passed
+
+        - job: Publish_Repos
+          dependsOn: ReleaseGate
 
           pool:
             name: azsdk-pool-mms-ubuntu-2004-general
@@ -188,20 +207,17 @@ extends:
               - input: checkout
                 repository: self
 
-          strategy:
-            runOnce:
-              deploy:
-                steps:
-                  - pwsh: |
-                      $targetBranchName = ''
-                      if ($env:TARGETBRANCHNAMEOVERRIDE) {
-                        Write-Host "Target branch override $($env:TARGETBRANCHNAMEOVERRIDE)"
-                        $targetBranchName = $env:TARGETBRANCHNAMEOVERRIDE
-                      }
-                      Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
-                    displayName: Set TargetBranchName
+          steps:
+            - pwsh: |
+                $targetBranchName = ''
+                if ($env:TARGETBRANCHNAMEOVERRIDE) {
+                  Write-Host "Target branch override $($env:TARGETBRANCHNAMEOVERRIDE)"
+                  $targetBranchName = $env:TARGETBRANCHNAMEOVERRIDE
+                }
+                Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
+              displayName: Set TargetBranchName
 
-                  - template: /eng/pipelines/templates/steps/repoman-generate.yml
-                    parameters:
-                      TargetBranchName: $(TargetBranchName)
-                      RemoteName: azure-samples-main
+            - template: /eng/pipelines/templates/steps/repoman-generate.yml
+              parameters:
+                TargetBranchName: $(TargetBranchName)
+                RemoteName: azure-samples-main

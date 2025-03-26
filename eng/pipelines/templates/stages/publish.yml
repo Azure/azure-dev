@@ -393,6 +393,12 @@ stages:
 
         steps:
           - checkout: self
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: release
+              path: release
+
           - pwsh: |
               $PRNumber = '$(System.PullRequest.PullRequestNumber)'
               if ($env:PRNUMBEROVERRIDE) {

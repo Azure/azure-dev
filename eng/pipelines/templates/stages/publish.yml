@@ -41,6 +41,10 @@ stages:
                 artifactName: release
                 targetPath: release
 
+              - input: pipelineArtifact
+                artifactName: changelog
+                targetPath: changelog
+
           strategy:
             runOnce:
               deploy:

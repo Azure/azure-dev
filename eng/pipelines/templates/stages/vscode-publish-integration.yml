@@ -68,8 +68,9 @@ stages:
           - template: /eng/pipelines/templates/steps/vscode-set-metadata-variables.yml
 
           - task: DownloadPipelineArtifact@2
-            artifactName: release
-            targetPath: release
+            inputs:
+              artifactName: release
+              targetPath: release
 
           - pwsh: |
               $PRNumber = '$(System.PullRequest.PullRequestNumber)'

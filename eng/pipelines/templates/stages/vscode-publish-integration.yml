@@ -69,8 +69,8 @@ stages:
 
           - task: DownloadPipelineArtifact@2
             inputs:
-              artifactName: release
-              targetPath: release
+              artifactName: signed
+              targetPath: signed
 
           - pwsh: |
               $PRNumber = '$(System.PullRequest.PullRequestNumber)'

@@ -12,9 +12,11 @@ steps:
       $PSNativeCommandArgumentPassing = 'Legacy'
 
       Write-Host 'Pushing Choco Package...'
-      choco push azd.$(MSI_VERSION).nupkg `
-        --source https://push.chocolatey.org/ `
-        --api-key ${{ parameters.ChocoApiKey }}
+      Get-ChildItem *.nupkg | Write-Host 
+      if (!(Test-Path azd.$(MSI_VERSION).nupkg)) { 
+        Write-Host "Choco package azd.$(MSI_VERSION).nupkg not found"
+        exit 1
+      }
     condition: >-
       and(
         eq(variables['SubmitChocoPackage'], 'true'),

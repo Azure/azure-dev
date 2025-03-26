@@ -189,11 +189,7 @@ stages:
                 filePath: eng/scripts/Update-CliVersion.ps1
               displayName: Increment CLI version
 
-            - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-              parameters:
-                PRBranchName: cli-version-increment-$(Build.BuildId)
-                CommitMsg: Increment CLI version after release
-                PRTitle: Increment CLI version after release
+            - pwsh: Get-Content cli/version.txt | Write-Host
 
         - job: Publish_Docs_PR
           dependsOn: Publish_Release
@@ -282,30 +278,36 @@ stages:
 
             - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
 
-            - task: PowerShell@2
-              displayName: Wait for WinGet package
-              inputs:
-                pwsh: true
-                targetType: filePath
-                filePath: eng/scripts/Wait-WinGetPackage.ps1
-                arguments: >-
-                  -PackageName 'Microsoft.Azd'
-                  -PackageVersion '$(MSI_VERSION)'
+            - pwsh: Get-ChildItem -Recurse | Select-Object -Property FullName
+              displayName: Show contents of working directory
 
-            - task: PowerShell@2
-              displayName: Wait for Choco package
-              inputs:
-                pwsh: true
-                targetType: filePath
-                filePath: eng/scripts/Wait-ChocoPackage.ps1
-                arguments: >-
-                  -PackageName 'azd'
-                  -PackageVersion '$(MSI_VERSION)'
+            # - task: PowerShell@2
+            #   displayName: Wait for WinGet package
+            #   inputs:
+            #     pwsh: true
+            #     targetType: filePath
+            #     filePath: eng/scripts/Wait-WinGetPackage.ps1
+            #     arguments: >-
+            #       -PackageName 'Microsoft.Azd'
+            #       -PackageVersion '$(MSI_VERSION)'
+
+            # - task: PowerShell@2
+            #   displayName: Wait for Choco package
+            #   inputs:
+            #     pwsh: true
+            #     targetType: filePath
+            #     filePath: eng/scripts/Wait-ChocoPackage.ps1
+            #     arguments: >-
+            #       -PackageName 'azd'
+            #       -PackageVersion '$(MSI_VERSION)'
 
             - pwsh: |
                 New-Item -ItemType Directory -Path release
                 Write-Output $(CLI_VERSION) | Out-File -Encoding utf8 -FilePath ./release/version.txt
               displayName: Write version.txt file for release
+
+            - pwsh: Get-Content release/version.txt | Write-Host
+              displayName: Show contents of version.txt
 
             - task: AzurePowerShell@5
               displayName: Upload version.txt to storage account
@@ -327,7 +329,8 @@ stages:
 
                   foreach ($folder in $publishUploadLocations) {
                     Write-Host "Upload to azd/standalone/$folder"
-                    azcopy copy "release/*" "$(publish-storage-location)/`$web/azd/standalone/$folder" --overwrite=true
+                    $output = "copy command copy `"release/*`" `"$(publish-storage-location)/`$web/azd/standalone/$folder`" --overwrite=true"
+                    Write-Host $output
                     if ($LASTEXITCODE) {
                       Write-Error "Upload failed"
                       exit 1
@@ -572,6 +575,9 @@ stages:
                       Copy-Item install-sh/*.sh script-release/
                     displayName: Copy scripts for release upload
 
+                  - pwsh: Get-ChildItem -Recurse | Select-Object -Property FullName
+                    displayName: Show contents of working directory
+
                   - task: AzurePowerShell@5
                     displayName: Upload installer to storage location
                     inputs:
@@ -580,7 +586,8 @@ stages:
                       pwsh: true
                       ScriptType: InlineScript
                       Inline: |
-                        azcopy copy "script-release/*" "$(publish-storage-location)/`$web/azd/standalone/installer" --overwrite=true
+                        $output = "copy command copy `"script-release/*`" `"$(publish-storage-location)/`$web/azd/standalone/installer`" --overwrite=true"
+                        Write-Host $output
                         if ($LASTEXITCODE) {
                           Write-Error "Upload failed"
                           exit 1

@@ -12,14 +12,5 @@ steps:
       Copy-Item docs/azd.md azure-dev-docs-pr/articles/azure-developer-cli/reference.md -Force
     displayName: Update azd reference.md
 
-  - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-    parameters:
-      # Use a unique branch name per-build and per-attempt to prevent
-      # collisions
-      PRBranchName: azure-dev-cli/$(CLI_VERSION)-$(Build.BuildId).$(System.JobAttempt)
-      CommitMsg: Update reference documents for Azure CLI @ $(CLI_VERSION)
-      PRTitle: Update reference documents for Azure CLI @ $(CLI_VERSION)
-      WorkingDirectory: $(System.DefaultWorkingDirectory)/azure-dev-docs-pr
-      RepoOwner: MicrosoftDocs
-      RepoName: azure-dev-docs-pr
-      BaseBranchName: main
+  - pwsh: Get-ChildItem azure-dev-docs-pr -Recurse | Select-Object -Property FullName
+    displayName: Show azure-dev-docs-pr contents

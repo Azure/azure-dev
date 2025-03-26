@@ -15,11 +15,7 @@ steps:
   - pwsh: |
       Copy-Item homebrew-formula/azd.rb homebrew-azd/Formula/azd.rb
 
-  - template: /eng/common/pipelines/templates/steps/git-push-changes.yml
-    parameters:
-      # The azure-sdk user has permission to push directly to main
-      BaseRepoBranch: ${{ parameters.BaseRepoBranch }}
-      BaseRepoOwner: Azure
-      CommitMsg: Update formula for azd release $(CLI_VERSION)
-      TargetRepoName: homebrew-azd
-      WorkingDirectory: homebrew-azd
+  - pwsh: |
+      Get-ChildItem homebrew-azd -Recurse | Select-Object -Property FullName
+      Get-Content homebrew-azd/Formula/azd.rb | Write-Host
+    displayName: Show homebrew-azd contents

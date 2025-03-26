@@ -328,17 +328,17 @@ stages:
 
             # ARM64 releases
             Rename-Item signed/win/azd-windows-arm64.exe azd-windows-arm64-alpha.exe
-            zip release/azd-windows-arm64-alpha.zip -j signed/win/azd-windows-arm64-alpha.exe azure-dev/NOTICE.txt
+            zip release/azd-windows-arm64-alpha.zip -j signed/win/azd-windows-arm64-alpha.exe NOTICE.txt
 
             Move-Item release-staging/azd-linux-arm64 release-staging/azd-linux-arm64
             Move-Item signed/mac/azd-darwin-arm64 signed/mac/azd-darwin-arm64
 
-            zip release/azd-darwin-arm64.zip -j signed/mac/azd-darwin-arm64 azure-dev/NOTICE.txt
+            zip release/azd-darwin-arm64.zip -j signed/mac/azd-darwin-arm64 NOTICE.txt
 
             # Must place NOTICE.txt in file tree for tar to pick it up and place it in
             # the same place in the directory structure
-            Copy-Item azure-dev/NOTICE.txt ./release-staging/
-            tar -C ./release-staging/ -cvzf release/azd-linux-arm64.tar.gz azd-linux-arm64 azure-dev/NOTICE.txt
+            Copy-Item NOTICE.txt ./release-staging/
+            tar -C ./release-staging/ -cvzf release/azd-linux-arm64.tar.gz azd-linux-arm64 NOTICE.txt
           displayName: Compress standalone binary for release
 
         - pwsh: |

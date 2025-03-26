@@ -235,6 +235,7 @@ stages:
               $releaseMetadata = @{
                 cliVersion = $cliVersion;
                 msiVersion = (eng/scripts/Get-MsiVersion.ps1 -CliVersion $cliVersion);
+                isPublishingGa = $submitPackage;
                 submitChocoPackage = $submitPackage;
                 submitWingetPackage = $submitPackage;
                 submitBrewFormula = $submitPackage;

@@ -57,10 +57,7 @@ stages:
                       # Initial upload locations
                       $publishUploadLocations = 'release/$(CLI_VERSION);release/latest'
 
-                      $isPublishingGa = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
-                        -CliVersion '$(CLI_VERSION)'
-
-                      if ($isPublishingGa) {
+                      if ('true' -eq '$(IsPublishingGa)') {
                         $publishUploadLocations += ";release/stable"
                       }
 

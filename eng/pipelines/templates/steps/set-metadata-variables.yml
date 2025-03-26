@@ -33,6 +33,7 @@ steps:
       $metadata = Get-Content -Path release-metadata/metadata.json -Raw | ConvertFrom-Json
       Write-Host "##vso[task.setvariable variable=CLI_VERSION]$($metadata.cliVersion)"
       Write-Host "##vso[task.setvariable variable=MSI_VERSION]$($metadata.msiVersion)"
+      Write-Host "##vso[task.setvariable variable=IsPublishingGa]$($metadata.isPublishingGa)"
       Write-Host "###vso[task.setvariable variable=SubmitChocoPackage]$($metadata.submitChocoPackage)"
       Write-Host "###vso[task.setvariable variable=SubmitWingetPackage]$($metadata.submitWingetPackage)"
       Write-Host "###vso[task.setvariable variable=SubmitBrewFormula]$($metadata.submitBrewFormula)"

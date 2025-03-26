@@ -26,10 +26,18 @@ stages:
           image: $(LINUXVMIMAGE)
           os: linux
 
-        steps:
-          - checkout: self
+        templateContext:
+          inputs:
+            - input: pipelineArtifact
+              artifactName: release
+              targetPath: release
 
-          - template: /eng/pipelines/templates/steps/set-vscode-version.yml
+            - input: pipelineArtifact
+              artifactName: changelog
+              targetPath: changelog
+
+        steps:
+          - template: /eng/pipelines/templates/steps/vscode-set-metadata-variables.yml
 
           - template: /eng/pipelines/templates/steps/publish-vscode.yml
             parameters:
@@ -54,7 +62,14 @@ stages:
           os: linux
 
         steps:
+          # Checkout for /eng/scripts/Update-PRComment.ps1
           - checkout: self
+
+          - template: /eng/pipelines/templates/steps/vscode-set-metadata-variables.yml
+
+          - task: DownloadPipelineArtifact@2
+            artifactName: release
+            targetPath: release
 
           - pwsh: |
               $PRNumber = '$(System.PullRequest.PullRequestNumber)'
@@ -64,8 +79,6 @@ stages:
               }
               Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
             displayName: Set PR Number Variable
-
-          - template: /eng/pipelines/templates/steps/set-vscode-version.yml
 
           - template: /eng/pipelines/templates/steps/publish-vscode.yml
             parameters:

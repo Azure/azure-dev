@@ -1,0 +1,36 @@
+parameters:
+  - name: Use1ESArtifactTask
+    type: boolean
+    default: false
+
+steps:
+  - pwsh: |
+      if (!(Test-Path -Path release-metadata/metadata.json)) { 
+        Write-Host "Metadata artifact not downloaded. Setting DownloadMetadataArtifact to true"
+        Write-Host "###vso[task.setvariable variable=DownloadMetadataArtifact]true"
+      } else {
+        Write-Host "Metadata artifact already downloaded. Setting DownloadMetadataArtifact to false"
+        Write-Host "###vso[task.setvariable variable=DownloadMetadataArtifact]false"
+      }
+    displayName: Check for metadata artifact
+
+  - ${{ if eq('true', parameters.Use1ESArtifactTask) }}:
+    - task: 1ES.DownloadPipelineArtifact@1
+      condition: eq(variables['DownloadMetadataArtifact'], 'true')
+      displayName: Download release metadata artifact
+      inputs:
+        artifactName: release-metadata
+        targetPath: release-metadata
+  - ${{ else }}: 
+    - task: DownloadPipelineArtifact@2
+      condition: eq(variables['DownloadMetadataArtifact'], 'true')
+      displayName: Download release metadata artifact
+      inputs:
+        artifactName: release-metadata
+        targetPath: release-metadata
+
+  - pwsh: |
+      $metadata = Get-Content -Path release-metadata/metadata.json -Raw | ConvertFrom-Json
+      Write-Host "##vso[task.setvariable variable=VSIX_VERSION]$($metadata.vsixVersion)"
+      Write-Host "##vso[task.setvariable variable=GH_RELEASE_TAG]$($metadata.ghReleaseTag)"
+    displayName: Set release metadata variables

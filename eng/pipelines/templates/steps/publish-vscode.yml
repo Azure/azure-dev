@@ -1,28 +1,28 @@
 parameters:
   TagRepository: false
   VsixVersion: $(VSIX_VERSION)
-  UpdateShield: false
   StorageContainerName: '`$web'
   PublishToMarketplace: false
 
 steps:
-  - task: DownloadPipelineArtifact@2
-    inputs:
-      artifact: signed
-      path: signed
-
   - ${{ if eq('true', parameters.TagRepository) }}:
     # Perform tag verification before publishing anything
-    - task: PowerShell@2
-      inputs:
-        pwsh: true
-        targetType: filePath
-        filePath: ./eng/scripts/Set-GitHubReleaseTag.ps1
-        arguments: >-
-          -Tag "azure-dev-vscode_${{ parameters.VsixVersion }}"
-          -OutputName "GH_RELEASE_TAG"
-          -DevOpsOutputFormat
-      displayName: Verify and set GitHub Release Tag
+    - pwsh: |
+        git fetch --tags
+        $existingTag = git tag -l $(GH_RELEASE_TAG)
+
+        if ($existingTag) {
+            Write-Error "Tag ($(GH_RELEASE_TAG)) exists. Exiting."
+            exit 1
+        }
+
+        gh release view $(GH_RELEASE_TAG)
+        if ($LASTEXITCODE -eq 0) {
+            Write-Error "Release ($(GH_RELEASE_TAG)) exists. Exiting."
+            exit 1
+        }
+      displayName: Check for existing tag or release
+
 
   - pwsh: |
       New-Item -ItemType Directory -Path release -Force
@@ -52,31 +52,12 @@ steps:
     env:
       AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
 
-  - ${{ if eq('true', parameters.UpdateShield) }}:
-    - template: /eng/pipelines/templates/steps/publish-shield.yml
-      parameters:
-        ArtifactName: shield-vscode
-        ArtifactDownloadPath: shields/vscode
-        ArtifactFilename: vscode.json
-        StorageContainerName: ${{ parameters.StorageContainerName }}
-        PublishDestination: azd/vscode/latest
-
   - ${{ if eq('true', parameters.TagRepository) }}:
-    - task: PowerShell@2
-      inputs:
-        targetType: filePath
-        filePath: eng/scripts/New-ReleaseNotesFile.ps1
-        arguments: >-
-          -ChangeLogPath ext/vscode/CHANGELOG.md
-          -Version ${{ parameters.VsixVersion }}
-          -DevOpsOutputFormat
-      displayName: Set release changelog content
-
     - pwsh: |
         gh release create `
           "$(GH_RELEASE_TAG)" `
           --title "$(GH_RELEASE_TAG)" `
-          --notes-file $(ReleaseChangeLogPath)
+          --notes-file changelog/CHANGELOG.md
 
         gh release upload $(GH_RELEASE_TAG) release/*
       displayName: Create GitHub Release and upload artifacts

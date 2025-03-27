@@ -1,5 +1,5 @@
 param(
-    [string] $BaseUrl='https://azd-release-gfgac2cmf7b8cuay.b02.azurefd.net/azd/standalone/release',
+    [string] $BaseUrl='https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/release',
     [string] $Version = 'latest',
     [string] $ContainerPrefix = '',
     [string] $AdditionalBuildArgs = '--no-cache',

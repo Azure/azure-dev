@@ -48,7 +48,7 @@ steps:
         $publishLocations = "${{ parameters.PublishLocations }}" -split ';'
         foreach ($location in $publishLocations) {
           Write-Host "Publishing to $location"
-          $output = "copy command copy "release/*" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/$location" --overwrite=true"
+          $output = "copy command copy `"release/*`" `"$(publish-storage-location)/${{ parameters.StorageContainerName }}/$location`" --overwrite=true`"
           Write-Host $output
         }
     env:

@@ -19,6 +19,7 @@ steps:
             Write-Error "Release ($(GH_RELEASE_TAG)) exists. Exiting."
             exit 1
         }
+        exit 0
       displayName: Check for existing tag or release
       env:
         GH_TOKEN: $(azuresdk-github-pat)

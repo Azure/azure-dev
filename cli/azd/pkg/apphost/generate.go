@@ -1728,7 +1728,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 				}
 				if parts[0] != resource {
 					return "", fmt.Errorf(
-						"expecting to find connectionString for resource %s to auto-referencd itself"+
+						"expecting to find connectionString for resource %s to auto-referenced itself"+
 							", like %s.outputs.name. But found: %s",
 						resource,
 						resource,

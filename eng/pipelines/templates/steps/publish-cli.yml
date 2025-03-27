@@ -12,7 +12,7 @@ steps:
         $tag = "azure-dev-cli_$(CLI_VERSION)"
         Write-Host "Releasing with tag: $tag"
 
-        Write-Host "##vso[task.setvariable variable=$OutputName;]$tag"
+        Write-Host "##vso[task.setvariable variable=GH_RELEASE_TAG;]$tag"
       displayName: Check for existing GitHub release
       env:
         GH_TOKEN: $(azuresdk-github-pat)

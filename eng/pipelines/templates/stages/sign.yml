@@ -37,14 +37,16 @@ stages:
             -DestinationPath mac/azd-darwin-arm64.zip
           displayName: Package mac binary for signing
 
-        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
-          - template: pipelines/steps/azd-cli-mac-signing.yml@azure-sdk-build-tools
-            parameters:
-              MacPath: mac
+        # TODO: Revert before merge
+        # - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+        #   - template: pipelines/steps/azd-cli-mac-signing.yml@azure-sdk-build-tools
+        #     parameters:
+        #       MacPath: mac
 
-        - ${{ else }}:
-          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
-            displayName: Signing process skipped for non-release build
+        # - ${{ else }}:
+        # TODO: Tab in before merge
+        - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+          displayName: Signing process skipped for non-release build
 
         - pwsh: |
             Expand-Archive -Path mac/azd-darwin-amd64.zip -DestinationPath mac/
@@ -120,15 +122,17 @@ stages:
             Get-Childitem -Recurse win/ | Select-Object -Property Length,FullName
           displayName: Prepare assets for signing
 
-        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
-          - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
-            parameters:
-              WinPath:  win
-              WinPattern: '**'
+        # TODO: Revert before merge
+        # - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+        #   - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
+        #     parameters:
+        #       WinPath:  win
+        #       WinPattern: '**'
 
-        - ${{ else }}:
-          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
-            displayName: Signing process skipped for non-release build
+        # - ${{ else }}:
+        # TODO: Tab in before merge
+        - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+          displayName: Signing process skipped for non-release build
 
         - pwsh: |
             New-Item -ItemType Directory -Path signed-win
@@ -145,15 +149,17 @@ stages:
             # it to be installed over any previously installed version.
             ShouldBuildForRelease: ${{ eq(variables['Build.Reason'], 'Manual') }}
 
-        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
-          - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
-            parameters:
-              WinPath:  cli/installer/windows/bin/Release
-              WinPattern: '*.msi'
+        # TODO: Revert before merge
+        # - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+        #   - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
+        #     parameters:
+        #       WinPath:  cli/installer/windows/bin/Release
+        #       WinPattern: '*.msi'
 
-        - ${{ else }}:
-          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
-            displayName: Signing process skipped for non-release build
+        # - ${{ else }}:
+        # TODO: Tab in before merge
+        - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+          displayName: Signing process skipped for non-release build
 
         - pwsh: Copy-Item cli/installer/windows/bin/Release/* signed-win/
           displayName: Copy MSI for publishing
@@ -211,15 +217,16 @@ stages:
           inputs:
             artifact: linux-packages
             path: linux
+        # TODO: Revert before merge
+        # - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+        #   - template: pipelines/steps/azd-cli-linux-signing.yml@azure-sdk-build-tools
+        #     parameters:
+        #       LinuxPath: linux
 
-        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
-          - template: pipelines/steps/azd-cli-linux-signing.yml@azure-sdk-build-tools
-            parameters:
-              LinuxPath: linux
-
-        - ${{ else }}:
-          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
-            displayName: Signing process skipped for non-release build
+        # - ${{ else }}:
+        # TODO: Tab in before merge
+        - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+          displayName: Signing process skipped for non-release build
 
         - pwsh: |
             New-Item -ItemType Directory -Path signed-linux

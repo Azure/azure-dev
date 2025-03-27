@@ -19,6 +19,9 @@ steps:
       pwsh: true
       ScriptType: InlineScript
       Inline: |
-        azcopy copy "${{ parameters.ArtifactDownloadPath }}/${{ parameters.ArtifactFilename }}" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/${{ parameters.PublishDestination }}/shield.json" --overwrite=true
+        $output = @"
+        upload command copy "${{ parameters.ArtifactDownloadPath }}/${{ parameters.ArtifactFilename }}" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/${{ parameters.PublishDestination }}/shield.json" --overwrite=true
+        "@ 
+        Write-Host $output
     env:
       AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'

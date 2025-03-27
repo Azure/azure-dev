@@ -29,8 +29,8 @@ stages:
         templateContext:
           inputs:
             - input: pipelineArtifact
-              artifactName: release
-              targetPath: release
+              artifactName: signed
+              targetPath: signed
 
             - input: pipelineArtifact
               artifactName: changelog

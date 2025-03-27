@@ -27,6 +27,8 @@ stages:
           os: linux
 
         templateContext:
+          type: releaseJob
+          isProduction: true
           inputs:
             - input: pipelineArtifact
               artifactName: signed
@@ -41,6 +43,8 @@ stages:
             deploy:
               steps:
                 - template: /eng/pipelines/templates/steps/vscode-set-metadata-variables.yml
+                  parameters:
+                    Use1ESArtifactTask: true
 
                 - template: /eng/pipelines/templates/steps/publish-vscode.yml
                   parameters:

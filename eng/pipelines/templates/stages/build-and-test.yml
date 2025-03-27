@@ -211,8 +211,11 @@ stages:
               arguments: >-
                 -ChangeLogPath cli/azd/CHANGELOG.md
                 -Version $(CLI_VERSION)
-                -OutPath changelog/CHANGELOG.md
+                -OutputPath changelog/CHANGELOG.md
             displayName: Set release changelog content
+
+          - pwsh: Get-Content changelog/CHANGELOG.md
+            displayName: Show changelog content
 
           # Create release metadata
           - pwsh: |

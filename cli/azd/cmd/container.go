@@ -197,12 +197,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Azd Context
-	container.MustRegisterSingleton(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
+	container.MustRegisterScoped(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
 		return lazyAzdContext.GetValue()
 	})
 
 	// Lazy loads the Azd context after the azure.yaml file becomes available
-	container.MustRegisterSingleton(func() *lazy.Lazy[*azdcontext.AzdContext] {
+	container.MustRegisterScoped(func() *lazy.Lazy[*azdcontext.AzdContext] {
 		return lazy.NewLazy(azdcontext.NewAzdContext)
 	})
 

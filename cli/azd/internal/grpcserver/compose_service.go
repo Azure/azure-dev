@@ -163,6 +163,8 @@ func (c *composeService) ListResources(
 }
 
 // createResourceProps unmarshals the resource configuration bytes into the appropriate struct based on the resource type.
+// For the short term this marshalling of resource properties needs to stay in sync with `pkg\project\resources.go`
+// In the future we will converge this into a common component.
 func createResourceProps(resourceType string, config []byte) (any, error) {
 	switch project.ResourceType(resourceType) {
 	case project.ResourceTypeHostContainerApp:

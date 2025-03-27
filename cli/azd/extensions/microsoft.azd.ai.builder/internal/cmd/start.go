@@ -619,22 +619,95 @@ func (a *startAction) loadAiCatalog(ctx context.Context) error {
 	return nil
 }
 
+func ensureProject(ctx context.Context, azdClient *azdext.AzdClient) (*azdext.ProjectConfig, error) {
+	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		fmt.Println("Lets get your project initialized.")
+
+		// We don't have a project yet
+		// Dispatch a workflow to init the project and create a new environment
+		workflow := &azdext.Workflow{
+			Name: "init",
+			Steps: []*azdext.WorkflowStep{
+				{Command: &azdext.WorkflowCommand{Args: []string{"init"}}},
+			},
+		}
+
+		_, err := azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+			Workflow: workflow,
+		})
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize project: %w", err)
+		}
+
+		projectResponse, err = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get project: %w", err)
+		}
+
+		fmt.Println()
+	}
+
+	if projectResponse.Project == nil {
+		return nil, fmt.Errorf("project not found")
+	}
+
+	return projectResponse.Project, nil
+}
+
+func ensureEnvironment(ctx context.Context, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
+	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		fmt.Println("Lets create a new default environment for your project.")
+
+		// We don't have a project yet
+		// Dispatch a workflow to init the project and create a new environment
+		workflow := &azdext.Workflow{
+			Name: "env new",
+			Steps: []*azdext.WorkflowStep{
+				{Command: &azdext.WorkflowCommand{Args: []string{"env", "new"}}},
+			},
+		}
+
+		_, err = azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+			Workflow: workflow,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create new environment: %w", err)
+		}
+
+		envResponse, err = azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current environment: %w", err)
+		}
+
+		fmt.Println()
+	}
+
+	if envResponse.Environment == nil {
+		return nil, fmt.Errorf("environment not found")
+	}
+
+	return envResponse.Environment, nil
+}
+
 func ensureAzureContext(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 ) (*azdext.AzureContext, *azdext.ProjectConfig, error) {
-	getProjectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+	project, err := ensureProject(ctx, azdClient)
 	if err != nil {
-		return nil, nil, fmt.Errorf("project not found. Run `azd init` to create a new project, %w", err)
+		return nil, nil, fmt.Errorf("failed to ensure environment: %w", err)
 	}
 
-	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	env, err := ensureEnvironment(ctx, azdClient)
 	if err != nil {
-		return nil, nil, fmt.Errorf("environment not found. Run `azd env new` to create a new environment, %w", err)
+		return nil, nil, fmt.Errorf("failed to ensure environment: %w", err)
 	}
 
 	envValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: envResponse.Environment.Name,
+		Name: env.Name,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get environment values: %w", err)
@@ -668,7 +741,7 @@ func ensureAzureContext(
 
 		// Set the subscription ID in the environment
 		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: envResponse.Environment.Name,
+			EnvName: env.Name,
 			Key:     "AZURE_TENANT_ID",
 			Value:   azureContext.Scope.TenantId,
 		})
@@ -678,7 +751,7 @@ func ensureAzureContext(
 
 		// Set the tenant ID in the environment
 		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: envResponse.Environment.Name,
+			EnvName: env.Name,
 			Key:     "AZURE_SUBSCRIPTION_ID",
 			Value:   azureContext.Scope.SubscriptionId,
 		})
@@ -704,7 +777,7 @@ func ensureAzureContext(
 
 		// Set the location in the environment
 		_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: envResponse.Environment.Name,
+			EnvName: env.Name,
 			Key:     "AZURE_LOCATION",
 			Value:   azureContext.Scope.Location,
 		})
@@ -713,7 +786,7 @@ func ensureAzureContext(
 		}
 	}
 
-	return azureContext, getProjectResponse.Project, nil
+	return azureContext, project, nil
 }
 
 func (a *startAction) createQuestions() map[string]qna.Question {

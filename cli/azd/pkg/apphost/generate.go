@@ -1676,7 +1676,9 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 					"bindings.<binding-name>.[scheme|protocol|transport|external|host|targetPort|port|url] but was: %s", v)
 		}
 	case targetType == "azure.bicep.v0" || targetType == "azure.bicep.v1":
-		if !strings.HasPrefix(prop, "outputs.") && !strings.HasPrefix(prop, "secretOutputs") {
+		if !strings.HasPrefix(prop, "outputs.") &&
+			!strings.HasPrefix(prop, "secretOutputs") &&
+			!strings.HasPrefix(prop, "secrets") {
 			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
 		}
 		replaceDash := strings.ReplaceAll(resource, "-", "_")
@@ -1697,6 +1699,52 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			if emitType == inputEmitTypeBicep {
 				// using `{{ }}` helps to check if the result of evaluating a string is a complex expression or not.
 				return fmt.Sprintf("{{%s.outputs.%s}}", replaceDash, outputName), nil
+			}
+			return "", fmt.Errorf("unexpected output type %s", string(emitType))
+		} else if outputType == "secrets" {
+			// resource.secrets.<secret-name> was introduced after resource.outputs and resource.secretOutputs
+			// (few releases after).
+			// It enables Aspire to control the Key Vault used to save secrets.
+			// Before this, `secretOutputs` would:
+			//  - Create a KeyVault, Assigned read-role for azd-user, output Key Vault Endpoint and resolve the secret during
+			//    deployment
+			// Now, using `secrets`, Aspire owns creating the Key Vault and assigning the read-role to it.
+			if emitType == inputEmitTypeYaml {
+				// Get the ENV VAR Name for the Keyvault URL from the resource.connectionString
+				kvConnString, hasConString := b.connectionStrings[resource]
+				if !hasConString {
+					return "", fmt.Errorf(
+						"expecting to find connectionString for resource %s because it provides secrets", resource)
+				}
+				kvConnString = strings.TrimRight(strings.TrimLeft(kvConnString, "{"), "}")
+				if hasOutputs := strings.Contains(kvConnString, "outputs."); !hasOutputs {
+					return "", fmt.Errorf(
+						"expecting connectionString for resource %s to contains outputs reference", resource)
+				}
+				parts := strings.Split(kvConnString, ".outputs.")
+				if len(parts) != 2 {
+					return "", fmt.Errorf(
+						"unexpected connectionString for resource %s. Expecting the form of resource.outputs.name", resource)
+				}
+				if parts[0] != resource {
+					return "", fmt.Errorf(
+						"expecting to find connectionString for resource %s to auto-referencd itself"+
+							", like %s.outputs.name. But found: %s",
+						resource,
+						resource,
+						kvConnString,
+					)
+				}
+				envNarName := strings.ToUpper(parts[1])
+
+				return fmt.Sprintf(
+					"{{ secretOutput {{ .Env.%s_%s }}secrets/%s }}",
+					strings.ToUpper(replaceDash),
+					envNarName,
+					outputName), nil
+			}
+			if emitType == inputEmitTypeBicep {
+				return "", fmt.Errorf("secretOutputs not supported as inputs for bicep modules")
 			}
 			return "", fmt.Errorf("unexpected output type %s", string(emitType))
 		} else {

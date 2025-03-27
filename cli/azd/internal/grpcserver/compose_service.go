@@ -190,7 +190,18 @@ func (c *ComposeService) ListResourceTypes(
 	context.Context,
 	*azdext.EmptyRequest,
 ) (*azdext.ListResourceTypesResponse, error) {
-	panic("unimplemented")
+	resourceType := project.AllResourceTypes()
+	var composedResourceTypes []*azdext.ComposedResourceType
+	for _, resource := range resourceType {
+		composedResourceType := &azdext.ComposedResourceType{
+			TypeName: project.ResourceType(resource).String(),
+			Schema:   []byte{}, // TODO: check if we need to add schema
+		}
+		composedResourceTypes = append(composedResourceTypes, composedResourceType)
+	}
+	return &azdext.ListResourceTypesResponse{
+		ResourceTypes: composedResourceTypes,
+	}, nil
 }
 
 // ListResources implements azdext.ComposeServiceServer.

@@ -8,15 +8,13 @@ steps:
   - ${{ if eq('true', parameters.TagRepository) }}:
     # Perform tag verification before publishing anything
     - pwsh: |
-        git fetch --tags
-        $existingTag = git tag -l $(GH_RELEASE_TAG)
-
+        $existingTag = gh api /repos/$(Build.Repository.Name)/tags --paginate | ConvertFrom-Json | Where-Object { $_.name -eq $tag }
         if ($existingTag) {
             Write-Error "Tag ($(GH_RELEASE_TAG)) exists. Exiting."
             exit 1
         }
 
-        gh release view $(GH_RELEASE_TAG)
+        gh release view $(GH_RELEASE_TAG) --repo $(Build.Repository.Name)
         if ($LASTEXITCODE -eq 0) {
             Write-Error "Release ($(GH_RELEASE_TAG)) exists. Exiting."
             exit 1

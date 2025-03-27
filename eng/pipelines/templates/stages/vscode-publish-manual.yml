@@ -66,7 +66,7 @@ stages:
               ArtifactName: shield-vscode
               ArtifactDownloadPath: shields/vscode
               ArtifactFilename: vscode.json
-              StorageContainerName: ${{ parameters.StorageContainerName }}
+              StorageContainerName: '`$web'
               PublishDestination: azd/vscode/latest
 
 

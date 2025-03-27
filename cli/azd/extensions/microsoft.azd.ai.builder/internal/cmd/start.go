@@ -193,6 +193,14 @@ func newStartCommand() *cobra.Command {
 				return fmt.Errorf("failed to get composed resources: %w", err)
 			}
 
+			listResourcesTypes, err := azdClient.Compose().ListResourceTypes(ctx, &azdext.EmptyRequest{})
+			if err != nil {
+				return fmt.Errorf("failed to list composed resources type: %w", err)
+			}
+
+			// Will improve UI later
+			fmt.Println("Resource type: ", listResourcesTypes)
+
 			credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
 				TenantID:                   azureContext.Scope.TenantId,
 				AdditionallyAllowedTenants: []string{"*"},

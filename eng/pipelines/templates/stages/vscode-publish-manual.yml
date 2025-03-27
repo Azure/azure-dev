@@ -88,16 +88,16 @@ stages:
             - input: checkout
               repository: self
 
-          steps:
-            - task: PowerShell@2
-              inputs:
-                pwsh: true
-                targetType: filePath
-                filePath: eng/scripts/Update-VscodeExtensionVersion.ps1
-              displayName: Increment VSCode Extension version
+        steps:
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: eng/scripts/Update-VscodeExtensionVersion.ps1
+            displayName: Increment VSCode Extension version
 
-            - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-              parameters:
-                PRBranchName: vscode-version-increment-$(Build.BuildId)
-                CommitMsg: Increment VSCode Extension version after release
-                PRTitle: Increment VSCode Extension version after release
+          - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+            parameters:
+              PRBranchName: vscode-version-increment-$(Build.BuildId)
+              CommitMsg: Increment VSCode Extension version after release
+              PRTitle: Increment VSCode Extension version after release

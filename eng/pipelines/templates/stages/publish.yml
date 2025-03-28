@@ -201,17 +201,8 @@ stages:
             image: azsdk-pool-mms-ubuntu-2004-1espt
             os: linux
 
-          templateContext:
-            inputs:            
-              - input: checkout
-                repository: self
-                path: s
-
-              - input: pipelineArtifact
-                artifactName: docs
-                targetPath: docs
-
           steps:
+            - checkout: self
             - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
             - template: /eng/pipelines/templates/steps/publish-cli-docs.yml
 

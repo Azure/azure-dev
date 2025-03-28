@@ -2,7 +2,7 @@ steps:
   - task: DownloadPipelineArtifact@2
     inputs:
       artifactName: docs
-      targetPath: docs  
+      targetPath: docs
 
   # Credentials are required to sync private repo
   - template: /eng/pipelines/templates/steps/set-git-credentials.yml

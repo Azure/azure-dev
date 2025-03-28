@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -29,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/fatih/color"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
@@ -113,6 +115,7 @@ type initAction struct {
 	templateManager   *templates.TemplateManager
 	featuresManager   *alpha.FeatureManager
 	extensionsManager *extensions.Manager
+	azd               workflow.AzdCommandRunner
 }
 
 func newInitAction(
@@ -126,6 +129,7 @@ func newInitAction(
 	templateManager *templates.TemplateManager,
 	featuresManager *alpha.FeatureManager,
 	extensionsManager *extensions.Manager,
+	azd workflow.AzdCommandRunner,
 ) actions.Action {
 	return &initAction{
 		lazyAzdCtx:        lazyAzdCtx,
@@ -138,6 +142,7 @@ func newInitAction(
 		templateManager:   templateManager,
 		featuresManager:   featuresManager,
 		extensionsManager: extensionsManager,
+		azd:               azd,
 	}
 }
 
@@ -236,6 +241,28 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if _, err := i.initializeEnv(ctx, azdCtx, template.Metadata); err != nil {
 			return nil, err
 		}
+
+		// Prompt to deploy to Azure
+		deploy, err := i.console.Confirm(ctx, input.ConsoleOptions{
+			Message:      "Deploy to Azure now?",
+			DefaultValue: true,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if deploy {
+			// Call azd up
+			startTime := time.Now()
+			i.azd.SetArgs([]string{"up", "--cwd", azdCtx.ProjectDirectory()})
+			err := i.azd.ExecuteContext(ctx)
+			header = "New project initialized! Provision and deploy to Azure is completed in " +
+				ux.DurationAsText(since(startTime)) + "."
+			if err != nil {
+				return nil, err
+			}
+		}
+
 	case initFromApp:
 		tracing.SetUsageAttributes(fields.InitMethod.String("app"))
 

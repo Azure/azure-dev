@@ -41,6 +41,7 @@ ignoreWords:
     - azurecr
     - azuredevops
     - azurerm
+    - azuresdkartifacts
     - armcontainerregistry
     - azidentity
     - azsecrets

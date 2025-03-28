@@ -112,8 +112,8 @@ stages:
             )
 
           pool:
-            name: azsdk-pool-mms-win-2022-general
-            image: azsdk-pool-mms-win-2022-1espt
+            name: $(WINDOWSPOOL)
+            image: $(WINDOWSVMIMAGE)
             os: windows
 
           templateContext:
@@ -134,8 +134,8 @@ stages:
             )
 
           pool:
-            name: azsdk-pool-mms-ubuntu-2004-general
-            image: azsdk-pool-mms-ubuntu-2004-1espt
+            name: $(LINUXPOOL)
+            image: $(LINUXVMIMAGE)
             os: linux
   
           steps:
@@ -152,8 +152,8 @@ stages:
             )
 
           pool:
-            name: azsdk-pool-mms-ubuntu-2004-general
-            image: azsdk-pool-mms-ubuntu-2004-1espt
+            name: $(LINUXPOOL)
+            image: $(LINUXVMIMAGE)
             os: linux
 
           steps:
@@ -174,8 +174,8 @@ stages:
             )
 
           pool:
-            name: azsdk-pool-mms-ubuntu-2004-general
-            image: azsdk-pool-mms-ubuntu-2004-1espt
+            name: $(LINUXPOOL)
+            image: $(LINUXVMIMAGE)
             os: linux
 
           steps:
@@ -202,8 +202,8 @@ stages:
             )
 
           pool:
-            name: azsdk-pool-mms-ubuntu-2004-general
-            image: azsdk-pool-mms-ubuntu-2004-1espt
+            name: $(LINUXPOOL)
+            image: $(LINUXVMIMAGE)
             os: linux
 
           steps:
@@ -262,8 +262,8 @@ stages:
           dependsOn: ReleaseGate
 
           pool:
-            name: azsdk-pool-mms-win-2022-general
-            image: azsdk-pool-mms-win-2022-1espt
+            name: $(WINDOWSPOOL)
+            image: $(WINDOWSVMIMAGE)
             os: windows
 
           steps:
@@ -537,8 +537,8 @@ stages:
         - deployment: PublishInstallers
           environment: package-publish
           pool:
-            name: azsdk-pool-mms-ubuntu-2004-general
-            image: azsdk-pool-mms-ubuntu-2004-1espt
+            name: $(LINUXPOOL)
+            image: $(LINUXVMIMAGE)
             os: linux
 
           templateContext:

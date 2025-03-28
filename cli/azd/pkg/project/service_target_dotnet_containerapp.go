@@ -399,12 +399,12 @@ func (at *dotnetContainerAppTarget) Deploy(
 		if err != nil {
 			return nil, fmt.Errorf("deploying bicep template: %w", err)
 		}
-		deploymentAppHostResourceType, err := deploymentHost(deploymentResult)
+		deploymentHostDetails, err := deploymentHost(deploymentResult)
 		if err != nil {
 			return nil, fmt.Errorf("getting deployment host type: %w", err)
 		}
-		resourceName = deploymentAppHostResourceType.name
-		aspireDeploymentType = deploymentAppHostResourceType.hostType
+		resourceName = deploymentHostDetails.name
+		aspireDeploymentType = deploymentHostDetails.hostType
 
 	} else {
 		containerAppOptions := containerapps.ContainerAppOptions{

@@ -366,8 +366,6 @@ stages:
             runOnce:
               deploy:
                 steps:
-                  - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
-
                   - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
                     parameters:
                       Use1ESArtifactTask: true

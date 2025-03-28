@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -29,7 +30,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/fatih/color"
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -112,6 +115,7 @@ type initAction struct {
 	templateManager   *templates.TemplateManager
 	featuresManager   *alpha.FeatureManager
 	extensionsManager *extensions.Manager
+	azd               workflow.AzdCommandRunner
 }
 
 func newInitAction(
@@ -125,6 +129,7 @@ func newInitAction(
 	templateManager *templates.TemplateManager,
 	featuresManager *alpha.FeatureManager,
 	extensionsManager *extensions.Manager,
+	azd workflow.AzdCommandRunner,
 ) actions.Action {
 	return &initAction{
 		lazyAzdCtx:        lazyAzdCtx,
@@ -137,6 +142,7 @@ func newInitAction(
 		templateManager:   templateManager,
 		featuresManager:   featuresManager,
 		extensionsManager: extensionsManager,
+		azd:               azd,
 	}
 }
 
@@ -164,6 +170,24 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Initializing an app to run on Azure (azd init)",
 	})
+
+	// AZD supports having .env at the root of the project directory as the initial environment file.
+	// godotenv.Load() -> add all the values from the .env file in the process environment
+	// If AZURE_ENV_NAME is set in the .env file, it will be used to name the environment during env initialize.
+	if err := godotenv.Overload(); err != nil {
+		// ignore the error if the file does not exist
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("reading .env file: %w", err)
+		}
+	}
+	if i.flags.EnvFlag.EnvironmentName == "" ||
+		(i.flags.EnvFlag.EnvironmentName != "" && !i.flags.EnvFlag.FromArg()) {
+		// only azd init supports using .env to influence the command. The `-e` flag is linked to the
+		// env var AZURE_ENV_NAME, which means it could've be set either from ENV or from arg.
+		// re-setting the value here after loading the .env file overrides any value coming from the system env but
+		// doest not override the value coming from the arg.
+		i.flags.EnvFlag.EnvironmentName = os.Getenv(environment.EnvNameEnvVarName)
+	}
 
 	var existingProject bool
 	if _, err := os.Stat(azdCtx.ProjectPath()); err == nil {
@@ -217,6 +241,28 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if _, err := i.initializeEnv(ctx, azdCtx, template.Metadata); err != nil {
 			return nil, err
 		}
+
+		// Prompt to deploy to Azure
+		deploy, err := i.console.Confirm(ctx, input.ConsoleOptions{
+			Message:      "Deploy to Azure now?",
+			DefaultValue: true,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if deploy {
+			// Call azd up
+			startTime := time.Now()
+			i.azd.SetArgs([]string{"up", "--cwd", azdCtx.ProjectDirectory()})
+			err := i.azd.ExecuteContext(ctx)
+			header = "New project initialized! Provision and deploy to Azure is completed in " +
+				ux.DurationAsText(since(startTime)) + "."
+			if err != nil {
+				return nil, err
+			}
+		}
+
 	case initFromApp:
 		tracing.SetUsageAttributes(fields.InitMethod.String("app"))
 
@@ -453,6 +499,14 @@ func (i *initAction) initializeEnv(
 		if err := env.Config.Set(key, value); err != nil {
 			return nil, fmt.Errorf("setting environment config: %w", err)
 		}
+	}
+
+	initialValuesFromEnv, err := repository.InitEnvFileValues()
+	if err != nil {
+		return nil, fmt.Errorf("loading initial env file values: %w", err)
+	}
+	for key, value := range initialValuesFromEnv {
+		env.DotenvSet(key, value)
 	}
 
 	if err := envManager.Save(ctx, env); err != nil {

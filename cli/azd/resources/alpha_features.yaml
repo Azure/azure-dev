@@ -16,5 +16,3 @@
   description: "Enable simplified app-centric modeling. Run `azd add` to add Azure components to your project."
 - id: extensions
   description: "Enables the use of `azd` extension packages."
-- id: apphost.infra.migration
-  description: "For .NET Aspire projects. Migrates compute resources to the new apphost infrastructure."

@@ -1,6 +1,6 @@
 # Release History
 
-## 1.14.0 (2025-03-27)
+## 1.14.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,8 +9,6 @@
 ### Bugs Fixed
 
 ### Other Changes
-
-* Test release behavior. No release.
 
 ## 1.13.1 (2025-03-11)
 

@@ -40,7 +40,6 @@ steps:
       env:
         GH_TOKEN: $(azuresdk-github-pat)
 
-  # TODO: Ensure this has files in proper locations
   - ${{ if eq('true', parameters.UploadInstaller) }}:
     - pwsh: |
         Copy-Item cli/installer/install-azd.sh release/

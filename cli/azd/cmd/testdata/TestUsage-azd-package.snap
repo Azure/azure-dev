@@ -11,6 +11,7 @@ Usage
 Flags
         --all                	: Packages all services that are listed in azure.yaml
     -e, --environment string 	: The name of the environment to use.
+    -o, --output string      	: The output format (the supported formats are json, none).
         --output-path string 	: File or folder path where the generated packages will be saved.
 
 Global Flags

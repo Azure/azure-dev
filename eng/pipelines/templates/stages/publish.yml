@@ -405,6 +405,10 @@ stages:
               artifactName: release
               targetPath: release
 
+            - input: pipelineArtifact
+              artifactName: docs
+              targetPath: docs
+
         strategy:
           runOnce:
             deploy:
@@ -433,11 +437,6 @@ stages:
                     Write-Host "##vso[task.setvariable variable=UrlBase;isOutput=true]$urlBase"
                   name: GenerateUrlBase
                   displayName: Set UrlBase
-
-                - task: DownloadPipelineArtifact@2
-                  inputs:
-                    artifact: docs
-                    path: docs
 
                 - pwsh: |
                     $urlBase = "$(GenerateUrlBase.UrlBase)"
@@ -518,19 +517,10 @@ stages:
                     Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
                   displayName: Write body content to temporary file
 
-                - task: PowerShell@2
-                  displayName: Add PR comment
-                  inputs:
-                    pwsh: true
-                    targetType: filePath
-                    filePath: ./eng/scripts/Update-PRComment.ps1
-                    arguments: >-
-                      -Repo "$(Build.Repository.Name)"
-                      -PrNumber $(PRNumber)
-                      -Tag "<!-- #comment-cli-pr -->"
-                      -BodyFile $(CommentBodyFile)
-                  env:
-                    GH_TOKEN: $(azuresdk-github-pat)
+                - template: /eng/pipelines/templates/steps/update-prcomment.yml
+                  parameters:
+                    BodyFile: $(CommentBodyFile)
+                    Tag: '<!-- #comment-cli-pr -->'
 
   - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
     - stage: PublishInstallers

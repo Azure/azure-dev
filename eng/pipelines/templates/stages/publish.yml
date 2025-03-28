@@ -139,6 +139,7 @@ stages:
             os: linux
   
           steps:
+            - checkout: self
             - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
             - template: /eng/pipelines/templates/steps/publish-cli-brew.yml
 

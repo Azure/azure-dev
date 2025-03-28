@@ -407,6 +407,14 @@ stages:
               artifactName: docs
               targetPath: docs
 
+            - input: pipelineArtifact
+              artifactName: install-sh
+              targetPath: installer
+
+            - input: pipelineArtifact
+              artifactName: install-pwsh
+              targetPath: installer
+
         strategy:
           runOnce:
             deploy:

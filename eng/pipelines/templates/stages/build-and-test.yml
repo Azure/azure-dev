@@ -163,12 +163,12 @@ stages:
           # Install scripts
           - pwsh: |
               New-Item -ItemType Directory -Path install-pwsh
-              Copy-Item cli/installer/*install-azd.ps1 install-pwsh/
+              Copy-Item cli/installer/*install-azd*.ps1 install-pwsh/
             displayName: Copy installer scripts (*.ps1) for artifact upload
 
           - pwsh: |
               New-Item -ItemType Directory -Path install-sh
-              Copy-Item cli/installer/*install-azd.sh install-sh/
+              Copy-Item cli/installer/*install-azd*.sh install-sh/
             displayName: Copy installer scripts (*.sh) for artifact upload
 
           # CLI ref docs

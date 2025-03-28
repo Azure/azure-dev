@@ -11,13 +11,21 @@ steps:
       $PSNativeCommandArgumentPassing = 'Legacy'
       Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
 
+      $AdditionalArgs = ""
+      if ($$(SubmitWinGetPackage)) {
+          $AdditionalArgs = "--submit"
+      }
 
-      $output = @"
-       create command update `
+      ./wingetcreate.exe update `
           $PackageIdentifier `
           --version '$(MSI_VERSION)' `
-          --urls `"https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_$(CLI_VERSION)/azd-windows-amd64.msi`" `
+          --urls "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_$(CLI_VERSION)/azd-windows-amd64.msi" `
           --token ${{ parameters.GitHubToken }} `
-          --out winget
-      "@
-      Write-host $output
+          --out winget `
+          $AdditionalArgs
+
+  - task: 1ES.PublishPipelineArtifact@1
+    displayName: Upload updated WinGet manifest
+    inputs: 
+      targetPath: winget
+      artifact: WinGetManifest

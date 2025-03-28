@@ -10,7 +10,19 @@ steps:
     # continue with any of the subsequent steps.
     - pwsh: |
         $tag = "azure-dev-cli_$(CLI_VERSION)"
-        Write-Host "Releasing with tag: $tag"
+
+        # Check for tag using gh API
+        $existingTag = gh api /repos/Azure/azure-dev/tags | ConvertFrom-Json | Where-Object { $_.name -eq $tag }
+        if ($existingTag) {
+            Write-Host "Tag $tag already exists. Exiting.""
+            exit 1
+        }
+
+        gh release view $tag 
+        if ($LASTEXITCODE -eq 0) {
+          Write-Host "Release ($tag) already exists. Exiting."
+          exit 1
+        }
 
         Write-Host "##vso[task.setvariable variable=GH_RELEASE_TAG;]$tag"
       displayName: Check for existing GitHub release
@@ -18,11 +30,12 @@ steps:
         GH_TOKEN: $(azuresdk-github-pat)
 
     - pwsh: |
-        Write-Host "Would have created a release with $(GH_RELEASE_TAG) and notes-file changelog/CHANGELOG.md"
-        Get-Content changelog/CHANGELOG.md | Write-host 
-        Write-Host "Releasing files:"
-        Get-ChildItem release/* | Write-Host
+        gh release create `
+          "$(GH_RELEASE_TAG)" `
+          --title "$(GH_RELEASE_TAG)" `
+          --notes-file changelog/CHANGELOG.md
 
+        gh release upload $(GH_RELEASE_TAG) release/*
       displayName: Create GitHub Release and upload artifacts
       env:
         GH_TOKEN: $(azuresdk-github-pat)
@@ -50,7 +63,7 @@ steps:
         Get-ChildItem release/
         foreach ($folder in $uploadLocations) {
             Write-Host "Upload to ${{ parameters.StorageContainerName }}/azd/standalone/$folder"
-            Write-Host "Upload using the copy command: copy `"release/*`" `"$(publish-storage-location)/${{ parameters.StorageContainerName }}/azd/standalone/$folder`" --overwrite=true"
+            azcopy copy "release/*" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/azd/standalone/$folder" --overwrite=true
             if ($LASTEXITCODE) {
               Write-Error "Upload failed"
               exit 1

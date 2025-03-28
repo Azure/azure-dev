@@ -52,6 +52,13 @@ module ai 'ai/aspire.hosting.azure.bicep.appinsights.bicep' = {
     userPrincipalId: 'fixed-value-to-test-userPrincipalId-convention'
   }
 }
+module kv 'kv/kv.bicep' = {
+  name: 'kv'
+  scope: rg
+  params: {
+    location: location
+  }
+}
 module postgres_2 'postgres-2/aspire.hosting.azure.bicep.postgres.bicep' = {
   name: 'postgres-2'
   scope: rg
@@ -113,6 +120,7 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.output
 output SERVICE_BINDING_KV854251F1_ENDPOINT string = resources.outputs.SERVICE_BINDING_KV854251F1_ENDPOINT
 output SERVICE_BINDING_KV854251F1_NAME string = resources.outputs.SERVICE_BINDING_KV854251F1_NAME
 output AI_APPINSIGHTSCONNECTIONSTRING string = ai.outputs.appInsightsConnectionString
+output KV_KVURI string = kv.outputs.kvUri
 output S_B_SERVICEBUSENDPOINT string = s_b.outputs.serviceBusEndpoint
 output SQL_SQLSERVERFQDN string = sql.outputs.sqlServerFqdn
 output TEST_TEST string = test.outputs.test

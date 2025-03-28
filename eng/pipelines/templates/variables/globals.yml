@@ -12,7 +12,3 @@ variables:
   ${{ else }}:
     publish-storage-location: 'NOT-SUPPORTED'
     publish-storage-static-host: 'NOT-SUPPORTED'
-
-  # TODO: Remove before merging
-  Skip.LiveTest: true
-  Skip.VerifyInstallers: true

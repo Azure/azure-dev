@@ -335,7 +335,8 @@ stages:
     jobs:
       # Only publish Continuous Deployment if this is the public repo
       - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
-        - job: Publish_Continuous_Deployment
+        - deployment: Publish_Continuous_Deployment
+          environment: none
           condition: >-
             and(
               succeeded(),
@@ -350,23 +351,34 @@ stages:
             )
 
           pool:
-            name: $(LINUXPOOL)
-            image: $(LINUXVMIMAGE)
+            name: azsdk-pool-mms-ubuntu-2004-general
+            image: azsdk-pool-mms-ubuntu-2004-1espt
             os: linux
 
-          steps:
-            - checkout: self
+          templateContext:
+            type: releaseJob
+            isProduction: false
+            inputs:
+              - input: pipelineArtifact
+                artifactName: release
+                targetPath: release
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
 
-            - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
+                  - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+                    parameters:
+                      Use1ESArtifactTask: true
 
-            - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+                  - template: /eng/pipelines/templates/steps/publish-cli.yml
+                    parameters:
+                      CreateGitHubRelease: false
+                      PublishUploadLocations: release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
 
-            - template: /eng/pipelines/templates/steps/publish-cli.yml
-              parameters:
-                CreateGitHubRelease: false
-                PublishUploadLocations: release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
-
-      - job: Publish_For_PR
+      - deployment: Publish_For_PR
+        environment: none
         condition: >-
           and(
             succeeded(),
@@ -379,139 +391,146 @@ stages:
               )
             )
           )
+
         pool:
-          name: $(LINUXPOOL)
-          image: $(LINUXVMIMAGE)
+          name: azsdk-pool-mms-ubuntu-2004-general
+          image: azsdk-pool-mms-ubuntu-2004-1espt
           os: linux
 
-        steps:
-          - checkout: self
+        templateContext:
+          type: releaseJob
+          isProduction: false
+          inputs:
+            - input: pipelineArtifact
+              artifactName: release
+              targetPath: release
 
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              artifact: release
-              path: release
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - pwsh: |
+                    $PRNumber = '$(System.PullRequest.PullRequestNumber)'
+                    if ($env:PRNUMBEROVERRIDE) {
+                      Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
+                      $PRNumber = "$($env:PRNUMBEROVERRIDE)"
+                    }
+                    Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
+                  displayName: Set PR Number Variable
 
-          - pwsh: |
-              $PRNumber = '$(System.PullRequest.PullRequestNumber)'
-              if ($env:PRNUMBEROVERRIDE) {
-                Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
-                $PRNumber = "$($env:PRNUMBEROVERRIDE)"
-              }
-              Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
-            displayName: Set PR Number Variable
+                - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+                  parameters:
+                    Use1ESArtifactTask: true
 
-          - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+                - template: /eng/pipelines/templates/steps/publish-cli.yml
+                  parameters:
+                    CreateGitHubRelease: false
+                    PublishUploadLocations: pr/$(PRNumber)
+                    UploadInstaller: true
 
-          - template: /eng/pipelines/templates/steps/publish-cli.yml
-            parameters:
-              CreateGitHubRelease: false
-              PublishUploadLocations: pr/$(PRNumber)
-              UploadInstaller: true
+                - pwsh: |
+                    $urlBase = "$(publish-storage-static-host)/azd/standalone/pr/$(PRNumber)"
+                    Write-Host "##vso[task.setvariable variable=UrlBase;isOutput=true]$urlBase"
+                  name: GenerateUrlBase
+                  displayName: Set UrlBase
 
-          - pwsh: |
-              $urlBase = "$(publish-storage-static-host)/azd/standalone/pr/$(PRNumber)"
-              Write-Host "##vso[task.setvariable variable=UrlBase;isOutput=true]$urlBase"
-            name: GenerateUrlBase
-            displayName: Set UrlBase
+                - task: DownloadPipelineArtifact@2
+                  inputs:
+                    artifact: docs
+                    path: docs
 
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              artifact: docs
-              path: docs
+                - pwsh: |
+                    $urlBase = "$(GenerateUrlBase.UrlBase)"
+                    $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
+                    $linuxReleaseUrlArm64 = "$urlBase/azd-linux-arm64.tar.gz"
+                    $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
+                    $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64.zip"
+                    $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
+                    $windowsReleaseUrlArm64 = "$urlBase/azd-windows-arm64-alpha.zip"
+                    $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
 
-          - pwsh: |
-              $urlBase = "$(GenerateUrlBase.UrlBase)"
-              $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
-              $linuxReleaseUrlArm64 = "$urlBase/azd-linux-arm64.tar.gz"
-              $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
-              $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64.zip"
-              $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
-              $windowsReleaseUrlArm64 = "$urlBase/azd-windows-arm64-alpha.zip"
-              $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
+                    $refDocContent = Get-Content docs/azd.md -Raw
 
-              $refDocContent = Get-Content docs/azd.md -Raw
+                    $content = @"
+                    <!-- #comment-cli-pr -->
+                    ## Azure Dev CLI Install Instructions
 
-              $content = @"
-              <!-- #comment-cli-pr -->
-              ## Azure Dev CLI Install Instructions
+                    ### Install scripts
 
-              ### Install scripts
+                    #### MacOS/Linux
 
-              #### MacOS/Linux
+                    > May elevate using ``sudo`` on some platforms and configurations
 
-              > May elevate using ``sudo`` on some platforms and configurations
+                    bash:
+                    ``````
+                    curl -fsSL $urlBase/uninstall-azd.sh | bash;
+                    curl -fsSL $urlBase/install-azd.sh | bash -s -- --base-url $urlBase --version '' --verbose --skip-verify
+                    ``````
 
-              bash:
-              ``````
-              curl -fsSL $urlBase/uninstall-azd.sh | bash;
-              curl -fsSL $urlBase/install-azd.sh | bash -s -- --base-url $urlBase --version '' --verbose --skip-verify
-              ``````
-
-              pwsh:
-              ``````
-              Invoke-RestMethod '$urlBase/uninstall-azd.ps1' -OutFile uninstall-azd.ps1; ./uninstall-azd.ps1
-              Invoke-RestMethod '$urlBase/install-azd.ps1' -OutFile install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -SkipVerify -Verbose
-              ``````
+                    pwsh:
+                    ``````
+                    Invoke-RestMethod '$urlBase/uninstall-azd.ps1' -OutFile uninstall-azd.ps1; ./uninstall-azd.ps1
+                    Invoke-RestMethod '$urlBase/install-azd.ps1' -OutFile install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -SkipVerify -Verbose
+                    ``````
 
 
-              #### Windows
+                    #### Windows
 
-              PowerShell install
+                    PowerShell install
 
-              ``````
-              powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/uninstall-azd.ps1' > uninstall-azd.ps1; ./uninstall-azd.ps1;"
-              powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/install-azd.ps1' > install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -SkipVerify -Verbose;"
-              ``````
+                    ``````
+                    powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/uninstall-azd.ps1' > uninstall-azd.ps1; ./uninstall-azd.ps1;"
+                    powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/install-azd.ps1' > install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -SkipVerify -Verbose;"
+                    ``````
 
-              MSI install
-              ``````
-              powershell -c "irm '$msiReleaseUrl' -OutFile azd-windows-amd64.msi; msiexec /i azd-windows-amd64.msi /qn"
-              ``````
+                    MSI install
+                    ``````
+                    powershell -c "irm '$msiReleaseUrl' -OutFile azd-windows-amd64.msi; msiexec /i azd-windows-amd64.msi /qn"
+                    ``````
 
-              ### Standalone Binary
+                    ### Standalone Binary
 
-              * Linux - 
-                  * x86_64 - $linuxReleaseUrl
-                  * ARM64 - $linuxReleaseUrlArm64
-              * MacOS - 
-                  * x86_64 - $macosReleaseUrl
-                  * ARM64 - $macosReleaseUrlArm64
-              * Windows -
-                  * x86_64 - $windowsReleaseUrl
-                  * ARM64 - $windowsReleaseUrlArm64
+                    * Linux - 
+                        * x86_64 - $linuxReleaseUrl
+                        * ARM64 - $linuxReleaseUrlArm64
+                    * MacOS - 
+                        * x86_64 - $macosReleaseUrl
+                        * ARM64 - $macosReleaseUrlArm64
+                    * Windows -
+                        * x86_64 - $windowsReleaseUrl
+                        * ARM64 - $windowsReleaseUrlArm64
 
-              ### MSI
+                    ### MSI
 
-              * x86_64 - $msiReleaseUrl
+                    * x86_64 - $msiReleaseUrl
 
-              ## Documentation
+                    ## Documentation
 
-              <details>
-              <summary>learn.microsoft.com documentation</summary>
+                    <details>
+                    <summary>learn.microsoft.com documentation</summary>
 
-              $refDocContent
+                    $refDocContent
 
-              </details>
-              "@
-              $file = New-TemporaryFile
-              Set-Content -Path $file -Value $content
-              Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
-            displayName: Write body content to temporary file
+                    </details>
+                    "@
+                    $file = New-TemporaryFile
+                    Set-Content -Path $file -Value $content
+                    Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
+                  displayName: Write body content to temporary file
 
-          - task: PowerShell@2
-            displayName: Add PR comment
-            inputs:
-              pwsh: true
-              targetType: filePath
-              filePath: ./eng/scripts/Update-PRComment.ps1
-              arguments: >-
-                -Repo "$(Build.Repository.Name)"
-                -PrNumber $(PRNumber)
-                -Tag "<!-- #comment-cli-pr -->"
-                -BodyFile $(CommentBodyFile)
-            env:
-              GH_TOKEN: $(azuresdk-github-pat)
+                - task: PowerShell@2
+                  displayName: Add PR comment
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: ./eng/scripts/Update-PRComment.ps1
+                    arguments: >-
+                      -Repo "$(Build.Repository.Name)"
+                      -PrNumber $(PRNumber)
+                      -Tag "<!-- #comment-cli-pr -->"
+                      -BodyFile $(CommentBodyFile)
+                  env:
+                    GH_TOKEN: $(azuresdk-github-pat)
 
   - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
     - stage: PublishInstallers

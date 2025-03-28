@@ -12,11 +12,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"text/template"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
@@ -400,17 +399,13 @@ func (at *dotnetContainerAppTarget) Deploy(
 		if err != nil {
 			return nil, fmt.Errorf("deploying bicep template: %w", err)
 		}
-		if slices.ContainsFunc(deploymentResult.Resources,
-			func(resource *armresources.ResourceReference) bool {
-				webAppType := string(azapi.AzureResourceTypeWebSite)
-				if foundWebApp := strings.Contains(*resource.ID, webAppType); foundWebApp {
-					resourceName = strings.Split(*resource.ID, webAppType+"/")[1]
-					return true
-				}
-				return false
-			}) {
-			aspireDeploymentType = azapi.AzureResourceTypeWebSite
+		deploymentAppHostResourceType, err := deploymentHost(deploymentResult)
+		if err != nil {
+			return nil, fmt.Errorf("getting deployment host type: %w", err)
 		}
+		resourceName = deploymentAppHostResourceType.name
+		aspireDeploymentType = deploymentAppHostResourceType.hostType
+
 	} else {
 		containerAppOptions := containerapps.ContainerAppOptions{
 			ApiVersion: serviceConfig.ApiVersion,
@@ -452,6 +447,41 @@ func (at *dotnetContainerAppTarget) Deploy(
 		Kind:      ContainerAppTarget,
 		Endpoints: endpoints,
 	}, nil
+}
+
+type appDeploymentHost struct {
+	name     string
+	hostType azapi.AzureResourceType
+}
+
+// deploymentHost inspect the deployment result and returns the type of the
+// host when it is a known host like Container App or WebApp.
+// Returns error if the type is not know.
+func deploymentHost(deploymentResult *azapi.ResourceDeployment) (appDeploymentHost, error) {
+	if deploymentResult == nil {
+		return appDeploymentHost{}, fmt.Errorf("deployment result is empty")
+	}
+
+	for _, resource := range deploymentResult.Resources {
+		rType, err := arm.ParseResourceType(*resource.ID)
+		r, err := arm.ParseResourceID(*resource.ID)
+		if err != nil {
+			return appDeploymentHost{}, err
+		}
+		if rType.String() == string(azapi.AzureResourceTypeWebSite) {
+			return appDeploymentHost{
+				name:     r.Name,
+				hostType: azapi.AzureResourceTypeWebSite,
+			}, nil
+		}
+		if rType.String() == string(azapi.AzureResourceTypeContainerApp) {
+			return appDeploymentHost{
+				name:     r.Name,
+				hostType: azapi.AzureResourceTypeContainerApp,
+			}, nil
+		}
+	}
+	return appDeploymentHost{}, fmt.Errorf("didn't find any known application host from the deployment")
 }
 
 // Gets endpoint for the container app service

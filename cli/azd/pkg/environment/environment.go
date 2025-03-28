@@ -46,6 +46,9 @@ const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 // PlatformTypeEnvVarName is the name of the key used to store the current azd platform type
 const PlatformTypeEnvVarName = "AZD_PLATFORM_TYPE"
 
+// DisablePreflightName is used to allow users to skip the preflight validation check
+const DisablePreflightName = "AZURE_PROVISION_SKIP_VALIDATE"
+
 // The zero value of an Environment is not valid. Use [New] to create one. When writing tests,
 // [Ephemeral] and [EphemeralWithValues] are useful to create environments which are not persisted to disk.
 type Environment struct {

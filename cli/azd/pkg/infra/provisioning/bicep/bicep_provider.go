@@ -78,7 +78,6 @@ type BicepProvider struct {
 	portalUrlBase           string
 	subscriptionManager     *account.SubscriptionsManager
 	azureClient             *azapi.AzureClient
-	userConfigManager       config.UserConfigManager
 }
 
 // Name gets the name of the infra provider
@@ -613,14 +612,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		return nil, err
 	}
 
-	userConfig, err := p.userConfigManager.Load()
-	if err != nil {
-		return nil, fmt.Errorf("loading user configuration: %w", err)
-	}
-
-	preflightDisableVar := "provision.disableValidation"
-	preflightDisable, exists := userConfig.GetString(preflightDisableVar)
-	if !(preflightDisable == "on" && exists) {
+	if strings.ToLower(p.env.Getenv(environment.DisablePreflightName)) != "true" {
 		err = p.validatePreflight(
 			ctx,
 			bicepDeploymentData.Target,
@@ -632,14 +624,14 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		if err != nil {
 			return nil, &internal.ErrorWithSuggestion{
 				Err: err,
-				Suggestion: fmt.Sprintf("To disable provision validation, please run %s.",
-					output.WithHighLightFormat("`azd config set %s on`", preflightDisableVar)),
+				Suggestion: fmt.Sprintf("To skip provision validation, please run %s.",
+					output.WithHighLightFormat("`azd env set %s true`", environment.DisablePreflightName)),
 			}
 		}
 	} else {
-		warningMessage := fmt.Sprintf("WARNING: Provision validation is disabled. "+
-			"To enable it, please run `azd config set %s off`.\n",
-			preflightDisableVar)
+		warningMessage := fmt.Sprintf("WARNING: Provision validation is skipped. "+
+			"To enable it, please run `azd env set %s false` or remove %s from your .env file.\n",
+			environment.DisablePreflightName, environment.DisablePreflightName)
 		p.console.Message(ctx, output.WithWarningFormat(warningMessage))
 	}
 
@@ -2184,7 +2176,6 @@ func NewBicepProvider(
 	cloud *cloud.Cloud,
 	subscriptionManager *account.SubscriptionsManager,
 	azureClient *azapi.AzureClient,
-	userConfigManager config.UserConfigManager,
 ) provisioning.Provider {
 	return &BicepProvider{
 		envManager:          envManager,
@@ -2200,6 +2191,5 @@ func NewBicepProvider(
 		portalUrlBase:       cloud.PortalUrlBase,
 		subscriptionManager: subscriptionManager,
 		azureClient:         azureClient,
-		userConfigManager:   userConfigManager,
 	}
 }

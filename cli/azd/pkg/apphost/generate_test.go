@@ -136,6 +136,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 	filesFromManifest["aspire.hosting.azure.bicep.servicebus.bicep"] = ignoredBicepContent
 	filesFromManifest["aspire.hosting.azure.bicep.appinsights.bicep"] = ignoredBicepContent
 	filesFromManifest["aspire.hosting.azure.bicep.sql.bicep"] = ignoredBicepContent
+	filesFromManifest["kv.bicep"] = ignoredBicepContent
 	mockPublishManifest(mockCtx, aspireBicepManifest, filesFromManifest)
 	mockCli := dotnet.NewCli(mockCtx.CommandRunner)
 

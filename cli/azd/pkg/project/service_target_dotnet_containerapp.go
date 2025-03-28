@@ -176,7 +176,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 		remoteImageName = fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName)
 	}
 
-	progress.SetProgress(NewServiceProgress("Updating container app"))
+	progress.SetProgress(NewServiceProgress("Updating application"))
 
 	var manifestTemplate string
 	var armTemplate *azure.RawArmTemplate
@@ -464,6 +464,9 @@ func deploymentHost(deploymentResult *azapi.ResourceDeployment) (appDeploymentHo
 
 	for _, resource := range deploymentResult.Resources {
 		rType, err := arm.ParseResourceType(*resource.ID)
+		if err != nil {
+			return appDeploymentHost{}, err
+		}
 		r, err := arm.ParseResourceID(*resource.ID)
 		if err != nil {
 			return appDeploymentHost{}, err
@@ -490,49 +493,52 @@ func (at *dotnetContainerAppTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
-	containerAppOptions := containerapps.ContainerAppOptions{
-		ApiVersion: serviceConfig.ApiVersion,
+	resourceType := azapi.AzureResourceType(targetResource.ResourceType())
+	// Currently supports ACA and WebApp for Aspire (on reading Endpoints)
+	if resourceType != azapi.AzureResourceTypeWebSite &&
+		resourceType != azapi.AzureResourceTypeContainerApp {
+		return nil, fmt.Errorf("unsupported resource type: %s", resourceType)
 	}
-	resourceType := targetResource.ResourceType()
-	if resourceType == string(azapi.AzureResourceTypeContainerApp) {
-		if ingressConfig, err := at.containerAppService.GetIngressConfiguration(
+
+	var hostNames []string
+	switch resourceType {
+	case azapi.AzureResourceTypeContainerApp:
+
+		containerAppOptions := containerapps.ContainerAppOptions{
+			ApiVersion: serviceConfig.ApiVersion,
+		}
+		ingressConfig, err := at.containerAppService.GetIngressConfiguration(
 			ctx,
 			targetResource.SubscriptionId(),
 			targetResource.ResourceGroupName(),
 			targetResource.ResourceName(),
 			&containerAppOptions,
-		); err != nil {
+		)
+		if err != nil {
 			return nil, fmt.Errorf("fetching service properties: %w", err)
-		} else {
-			endpoints := make([]string, len(ingressConfig.HostNames))
-			for idx, hostName := range ingressConfig.HostNames {
-				endpoints[idx] = fmt.Sprintf("https://%s/", hostName)
-			}
-
-			return endpoints, nil
 		}
+		hostNames = ingressConfig.HostNames
+
+	case azapi.AzureResourceTypeWebSite:
+		appServiceProperties, err := at.azureClient.GetAppServiceProperties(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("fetching service properties: %w", err)
+		}
+
+		hostNames = appServiceProperties.HostNames
+	default:
+		hostNames = []string{}
 	}
 
-	// Not ACA, had to be WebApp
-	if resourceType != string(azapi.AzureResourceTypeWebSite) {
-		return nil, fmt.Errorf("unsupported resource type")
-	}
-
-	appServiceProperties, err := at.azureClient.GetAppServiceProperties(
-		ctx,
-		targetResource.SubscriptionId(),
-		targetResource.ResourceGroupName(),
-		targetResource.ResourceName(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("fetching service properties: %w", err)
-	}
-
-	endpoints := make([]string, len(appServiceProperties.HostNames))
-	for idx, hostName := range appServiceProperties.HostNames {
+	endpoints := make([]string, len(hostNames))
+	for idx, hostName := range hostNames {
 		endpoints[idx] = fmt.Sprintf("https://%s/", hostName)
 	}
-
 	return endpoints, nil
 }
 

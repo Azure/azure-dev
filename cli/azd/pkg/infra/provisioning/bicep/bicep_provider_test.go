@@ -26,7 +26,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -381,7 +380,6 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 			},
 		},
 	}
-	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
 
 	provider := NewBicepProvider(
 		azCli,
@@ -405,7 +403,6 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		cloud.AzurePublic(),
 		nil,
 		nil,
-		userConfigManager,
 	)
 
 	err = provider.Initialize(*mockContext.Context, projectDir, options)
@@ -992,7 +989,6 @@ func TestUserDefinedTypes(t *testing.T) {
 			cloud.AzurePublic(),
 		),
 		cloud.AzurePublic(),
-		nil,
 		nil,
 		nil,
 	)

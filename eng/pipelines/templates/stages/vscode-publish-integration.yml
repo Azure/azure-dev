@@ -83,9 +83,6 @@ stages:
           runOnce:
             deploy:
               steps:
-                # Checkout for /eng/scripts/Update-PRComment.ps1
-                - checkout: self
-
                 - template: /eng/pipelines/templates/steps/vscode-set-metadata-variables.yml
                   parameters:
                     Use1ESArtifactTask: true
@@ -123,16 +120,7 @@ stages:
                     Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
                   displayName: Write body content to temporary file
 
-                - task: PowerShell@2
-                  displayName: Add PR comment
-                  inputs:
-                    pwsh: true
-                    targetType: filePath
-                    filePath: ./eng/scripts/Update-PRComment.ps1
-                    arguments: >-
-                      -Repo "azure/azure-dev"
-                      -PrNumber $(PRNumber)
-                      -Tag "<!-- #comment-vscode-pr -->"
-                      -BodyFile $(CommentBodyFile)
-                  env:
-                    GH_TOKEN: $(azuresdk-github-pat)
+                - template: /eng/pipelines/templates/steps/update-prcomment.yml
+                  parameters:
+                    Tag: '<!-- #comment-vscode-pr -->'
+                    BodyFile: $(CommentBodyFile)

@@ -48,20 +48,19 @@ steps:
         $publishLocations = "${{ parameters.PublishLocations }}" -split ';'
         foreach ($location in $publishLocations) {
           Write-Host "Publishing to $location"
-          $output = "copy command copy `"release/*`" `"$(publish-storage-location)/${{ parameters.StorageContainerName }}/$location`" --overwrite=true"
-          Write-Host $output
+          azcopy copy "release/*" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/$location" --overwrite=true
         }
     env:
       AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
 
   - ${{ if eq('true', parameters.TagRepository) }}:
     - pwsh: |
-        Write-Host "Creating GitHub release $(GH_RELEASE_TAG)"
-        Write-Host "Notes file:" 
-        Get-Content changelog/CHANGELOG.md | Write-Host
+        gh release create `
+          "$(GH_RELEASE_TAG)" `
+          --title "$(GH_RELEASE_TAG)" `
+          --notes-file changelog/CHANGELOG.md
 
-        Write-Host "Uploading releases" 
-        Get-ChildItem release -Recurse | Select-Object -Property FullName
+        gh release upload $(GH_RELEASE_TAG) release/*
       displayName: Create GitHub Release and upload artifacts
       env:
         GH_TOKEN: $(azuresdk-github-pat)
@@ -77,11 +76,8 @@ steps:
         inlineScript: |
           npm install -g @vscode/vsce
           $baseName = "azure-dev-${{ parameters.VsixVersion }}"
-          $output = @"
-          the command to publish publish `
+          vsce publish `
             --azure-credential `
             --packagePath "$($baseName).vsix" `
             --manifestPath "$($baseName).manifest" `
             --signaturePath "$($baseName).p7s"
-          "@
-          Write-Host $output

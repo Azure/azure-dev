@@ -6,9 +6,9 @@ parameters:
   PublishToMarketplace: false
 
 steps:
-  - task: 1ES.DownloadPipelineArtifact@1
+  - task: DownloadPipelineArtifact@2
     inputs:
-      artifactName: signed
+      artifact: signed
       path: signed
 
   - ${{ if eq('true', parameters.TagRepository) }}:

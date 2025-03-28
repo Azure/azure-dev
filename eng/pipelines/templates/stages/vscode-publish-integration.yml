@@ -7,7 +7,8 @@ stages:
       - template: /eng/pipelines/templates/variables/image.yml
 
     jobs:
-      - job: Publish_Continuous_Deployment
+      - deployment: Publish_Continuous_Deployment
+        environment: none
         condition: >-
           and(
             succeeded(),
@@ -27,6 +28,8 @@ stages:
           os: linux
 
         templateContext:
+          type: releaseJob
+          isProduction: false 
           inputs:
             - input: pipelineArtifact
               artifactName: signed
@@ -36,14 +39,20 @@ stages:
               artifactName: changelog
               targetPath: changelog
 
-        steps:
-          - template: /eng/pipelines/templates/steps/vscode-set-metadata-variables.yml
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - template: /eng/pipelines/templates/steps/vscode-set-metadata-variables.yml
+                  parameters:
+                    Use1ESArtifactTask: true
 
-          - template: /eng/pipelines/templates/steps/publish-vscode.yml
-            parameters:
-              PublishLocations: azd/vscode/release/daily;azd/vscode/daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
+                - template: /eng/pipelines/templates/steps/publish-vscode.yml
+                  parameters:
+                    PublishLocations: azd/vscode/release/daily;azd/vscode/daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
 
-      - job: Publish_For_PR
+      - deployment: Publish_For_PR
+        environment: none
         condition: >-
           and(
             succeeded(),
@@ -56,21 +65,27 @@ stages:
               )
             )
           )
+
         pool:
           name: $(LINUXPOOL)
           image: $(LINUXVMIMAGE)
           os: linux
+
+        templateContext:
+          type: releaseJob
+          isProduction: false
+          inputs:
+            - input: pipelineArtifact
+              artifactName: signed
+              targetPath: signed
 
         steps:
           # Checkout for /eng/scripts/Update-PRComment.ps1
           - checkout: self
 
           - template: /eng/pipelines/templates/steps/vscode-set-metadata-variables.yml
-
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              artifactName: signed
-              targetPath: signed
+            parameters:
+              Use1ESArtifactTask: true
 
           - pwsh: |
               $PRNumber = '$(System.PullRequest.PullRequestNumber)'

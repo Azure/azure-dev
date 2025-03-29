@@ -66,6 +66,11 @@ jobs:
           workingDirectory: cli/azd
         displayName: Build Go Binary (For tests)
 
+      - pwsh: |
+          eng/scripts/Get-MsiVersion.ps1 -DevOpsOutput
+        displayName: Set MSI_VERSION
+        condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
+
       - template: /eng/pipelines/templates/steps/build-msi.yml
         parameters:
           Title: Build Test MSI

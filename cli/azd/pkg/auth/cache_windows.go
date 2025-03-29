@@ -149,6 +149,7 @@ func (c *encryptedCache) Set(key string, val []byte) error {
 	cs := make([]byte, encrypted.Size)
 	copy(cs, encryptedSlice)
 
+	// #nosec G103
 	if _, err := windows.LocalFree(windows.Handle(unsafe.Pointer(encrypted.Data))); err != nil {
 		return fmt.Errorf("failed to free encrypted data: %w", err)
 	}

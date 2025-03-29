@@ -955,6 +955,7 @@ func injectValueForBicepParameter(resourceName, p string, parameter any, appHost
 // The generated 32-bit hash number is returned as an 8-length hexadecimal string.
 func uniqueFnvNumber(val string) string {
 	hash := fnv.New32a()
+	// #nosec G104 // FNV-1a hash is not cryptographically secure, but it is suitable for generating a unique hash.
 	hash.Write([]byte(val))
 	return fmt.Sprintf("%x", hash.Sum32())
 }
@@ -1522,12 +1523,12 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		}
 	}
 
-	switch {
-	case targetType == "project.v0" ||
-		targetType == "container.v0" ||
-		targetType == "container.v1" ||
-		targetType == "dockerfile.v0" ||
-		targetType == "project.v1":
+	switch targetType {
+	case "project.v0",
+		"container.v0",
+		"container.v1",
+		"dockerfile.v0",
+		"project.v1":
 		if strings.HasPrefix(prop, "containerImage") {
 			return `{{ .Image }}`, nil
 		}
@@ -1675,7 +1676,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 				fmt.Errorf("malformed binding expression, expected "+
 					"bindings.<binding-name>.[scheme|protocol|transport|external|host|targetPort|port|url] but was: %s", v)
 		}
-	case targetType == "azure.bicep.v0" || targetType == "azure.bicep.v1":
+	case "azure.bicep.v0", "azure.bicep.v1":
 		if !strings.HasPrefix(prop, "outputs.") &&
 			!strings.HasPrefix(prop, "secretOutputs") &&
 			!strings.HasPrefix(prop, "secrets") {
@@ -1764,7 +1765,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			}
 			return "", fmt.Errorf("unexpected output type %s", string(emitType))
 		}
-	case targetType == "parameter.v0":
+	case "parameter.v0":
 		param := b.bicepContext.InputParameters[resource]
 		inputType := "parameter"
 		if param.Secret {

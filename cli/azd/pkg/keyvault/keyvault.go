@@ -347,7 +347,7 @@ func IsAzureKeyVaultSecret(id string) bool {
 
 func IsValidSecretName(kvSecretName string) bool {
 	return len(kvSecretName) >= 1 && len(kvSecretName) <= 127 && strings.IndexFunc(kvSecretName, func(r rune) bool {
-		return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-')
+		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-'
 	}) == -1
 }
 

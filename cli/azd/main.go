@@ -367,6 +367,7 @@ func startBackgroundUploadProcess() error {
 		return fmt.Errorf("failed to get current executable path: %w", err)
 	}
 
+	// #nosec G204 - this is not a security issue, we are executing our own binary
 	cmd := exec.Command(execPath, cmd.TelemetryCommandFlag, cmd.TelemetryUploadCommandFlag)
 
 	// Use the location of azd as the cwd for the background uploading process.  On windows, when a process is running

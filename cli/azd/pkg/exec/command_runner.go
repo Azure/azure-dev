@@ -369,6 +369,7 @@ func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, i
 	allArgs = append(allArgs, shellCommandPrefix)
 	allArgs = append(allArgs, args...)
 
+	// #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive
 	return CmdTree{
 		CmdTreeOptions: options,
 		Cmd:            exec.Command(shellName, allArgs...),

@@ -78,7 +78,6 @@ stages:
             - input: pipelineArtifact
               artifactName: signed
               targetPath: signed
-            - input: 
 
         strategy:
           runOnce:

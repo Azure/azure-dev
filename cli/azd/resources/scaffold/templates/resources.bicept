@@ -22,6 +22,15 @@ param principalId string
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = uniqueString(subscription().id, resourceGroup().id, location)
 
+{{- range .Existing }}
+
+var {{.Name}}IdSegments = split({{.Name}}Id, '/')
+resource {{.Name}} '{{.ResourceType}}@{{.ApiVersion}}' existing = {
+  scope: resourceGroup({{.Name}}IdSegments[2], {{.Name}}IdSegments[4])
+  name: {{.Name}}IdSegments[8]
+}
+{{- end}}
+
 {{- if .Services }}
 
 // Monitor application with Azure Monitor
@@ -439,6 +448,23 @@ resource {{bicepName .Name}}OpenAIIdentity 'Microsoft.Authorization/roleAssignme
     roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
   }
 }
+{{- end}}
+
+{{- $svc := . -}}
+{{- range $index, $existing := .Existing}}
+{{- range .RoleAssignments}}
+
+module {{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}} 'modules/role-assignment.bicep' = {
+  name: '{{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}}'
+  scope: resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
+  params: {
+    {{ if eq .Scope 0 -}}resourceId: {{$existing.Name}}Id{{- end}}
+    roleDefinitionId: '{{.RoleDefinitionId}}' // {{.RoleDefinitionName}}
+    principalId: {{bicepName $svc.Name}}Identity.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+{{- end}}
 {{- end}}
 
 module {{bicepName .Name}}FetchLatestImage './modules/fetch-container-image.bicep' = {

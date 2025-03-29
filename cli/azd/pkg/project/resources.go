@@ -129,6 +129,11 @@ type ResourceConfig struct {
 	Props    interface{}          `yaml:"-"`
 	// Relationships to other resources
 	Uses []string `yaml:"uses,omitempty"`
+	// Existing indicates whether the resource is an existing resource.
+	Existing bool `yaml:"existing,omitempty"`
+	// Resource ID in the project.
+	// This is a virtual field. It is stored as environment state.
+	ResourceId string `yaml:"-"`
 
 	// IncludeName indicates whether the `name` field should be included upon serialization.
 	IncludeName bool `yaml:"-"`
@@ -156,26 +161,28 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		return nil
 	}
 
-	var errMarshal error
-	switch raw.Type {
-	case ResourceTypeOpenAiModel:
-		errMarshal = marshalRawProps(raw.Props.(AIModelProps))
-	case ResourceTypeHostContainerApp:
-		errMarshal = marshalRawProps(raw.Props.(ContainerAppProps))
-	case ResourceTypeDbCosmos:
-		errMarshal = marshalRawProps(raw.Props.(CosmosDBProps))
-	case ResourceTypeMessagingEventHubs:
-		errMarshal = marshalRawProps(raw.Props.(EventHubsProps))
-	case ResourceTypeMessagingServiceBus:
-		errMarshal = marshalRawProps(raw.Props.(ServiceBusProps))
-	case ResourceTypeStorage:
-		errMarshal = marshalRawProps(raw.Props.(StorageProps))
-	case ResourceTypeAiProject:
-		errMarshal = marshalRawProps(raw.Props.(AiFoundryModelProps))
-	}
+	if raw.Props != nil {
+		var errMarshal error
+		switch raw.Type {
+		case ResourceTypeOpenAiModel:
+			errMarshal = marshalRawProps(raw.Props.(AIModelProps))
+		case ResourceTypeHostContainerApp:
+			errMarshal = marshalRawProps(raw.Props.(ContainerAppProps))
+		case ResourceTypeDbCosmos:
+			errMarshal = marshalRawProps(raw.Props.(CosmosDBProps))
+		case ResourceTypeMessagingEventHubs:
+			errMarshal = marshalRawProps(raw.Props.(EventHubsProps))
+		case ResourceTypeMessagingServiceBus:
+			errMarshal = marshalRawProps(raw.Props.(ServiceBusProps))
+		case ResourceTypeStorage:
+			errMarshal = marshalRawProps(raw.Props.(StorageProps))
+		case ResourceTypeAiProject:
+			errMarshal = marshalRawProps(raw.Props.(AiFoundryModelProps))
+		}
 
-	if errMarshal != nil {
-		return nil, errMarshal
+		if errMarshal != nil {
+			return nil, errMarshal
+		}
 	}
 
 	return raw, nil

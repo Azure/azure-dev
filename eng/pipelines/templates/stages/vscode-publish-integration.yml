@@ -78,6 +78,7 @@ stages:
             - input: pipelineArtifact
               artifactName: signed
               targetPath: signed
+            - input: 
 
         strategy:
           runOnce:
@@ -122,5 +123,6 @@ stages:
 
                 - template: /eng/pipelines/templates/steps/update-prcomment.yml
                   parameters:
+                    PrNumber: $(PRNumber)
                     Tag: '<!-- #comment-vscode-pr -->'
                     BodyFile: $(CommentBodyFile)

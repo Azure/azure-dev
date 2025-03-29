@@ -1,6 +1,6 @@
 module github.com/azure/azure-dev
 
-go 1.24.0
+go 1.24
 
 require (
 	dario.cat/mergo v1.0.1

@@ -31,6 +31,8 @@ type Server struct {
 	userConfigService  azdext.UserConfigServiceServer
 	deploymentService  azdext.DeploymentServiceServer
 	eventService       azdext.EventServiceServer
+	composeService     azdext.ComposeServiceServer
+	workflowService    azdext.WorkflowServiceServer
 }
 
 func NewServer(
@@ -40,6 +42,8 @@ func NewServer(
 	userConfigService azdext.UserConfigServiceServer,
 	deploymentService azdext.DeploymentServiceServer,
 	eventService azdext.EventServiceServer,
+	composeService azdext.ComposeServiceServer,
+	workflowService azdext.WorkflowServiceServer,
 ) *Server {
 	return &Server{
 		projectService:     projectService,
@@ -48,6 +52,8 @@ func NewServer(
 		userConfigService:  userConfigService,
 		deploymentService:  deploymentService,
 		eventService:       eventService,
+		composeService:     composeService,
+		workflowService:    workflowService,
 	}
 }
 
@@ -72,13 +78,15 @@ func (s *Server) Start() (*ServerInfo, error) {
 	// Get the assigned random port
 	randomPort := listener.Addr().(*net.TCPAddr).Port
 
-	// Register the Greeter service with the gRPC server
+	// Register the azd services with the gRPC server
 	azdext.RegisterProjectServiceServer(s.grpcServer, s.projectService)
 	azdext.RegisterEnvironmentServiceServer(s.grpcServer, s.environmentService)
 	azdext.RegisterPromptServiceServer(s.grpcServer, s.promptService)
 	azdext.RegisterUserConfigServiceServer(s.grpcServer, s.userConfigService)
 	azdext.RegisterDeploymentServiceServer(s.grpcServer, s.deploymentService)
 	azdext.RegisterEventServiceServer(s.grpcServer, s.eventService)
+	azdext.RegisterComposeServiceServer(s.grpcServer, s.composeService)
+	azdext.RegisterWorkflowServiceServer(s.grpcServer, s.workflowService)
 
 	serverInfo.Address = fmt.Sprintf("localhost:%d", randomPort)
 	serverInfo.Port = randomPort

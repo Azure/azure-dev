@@ -40,7 +40,7 @@ func WithHintFormat(text string, a ...interface{}) string {
 }
 
 func WithBold(text string, a ...interface{}) string {
-	format := color.New(color.Bold)
+	format := color.New(color.FgHiWhite, color.Bold)
 	return format.Sprintf(text, a...)
 }
 

@@ -18,10 +18,6 @@ type environmentService struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]
 	lazyEnvManager *lazy.Lazy[environment.Manager]
-
-	azdContext  *azdcontext.AzdContext
-	envManager  environment.Manager
-	initialized bool
 }
 
 func NewEnvironmentService(
@@ -35,11 +31,12 @@ func NewEnvironmentService(
 }
 
 func (s *environmentService) List(ctx context.Context, req *azdext.EmptyRequest) (*azdext.EnvironmentListResponse, error) {
-	if err := s.initialize(); err != nil {
+	envManager, err := s.lazyEnvManager.GetValue()
+	if err != nil {
 		return nil, err
 	}
 
-	envList, err := s.envManager.List(ctx)
+	envList, err := envManager.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -63,10 +60,6 @@ func (s *environmentService) GetCurrent(
 	ctx context.Context,
 	req *azdext.EmptyRequest,
 ) (*azdext.EnvironmentResponse, error) {
-	if err := s.initialize(); err != nil {
-		return nil, err
-	}
-
 	env, err := s.currentEnvironment(ctx)
 	if err != nil {
 		return nil, err
@@ -83,11 +76,12 @@ func (s *environmentService) Get(
 	ctx context.Context,
 	req *azdext.GetEnvironmentRequest,
 ) (*azdext.EnvironmentResponse, error) {
-	if err := s.initialize(); err != nil {
+	envManager, err := s.lazyEnvManager.GetValue()
+	if err != nil {
 		return nil, err
 	}
 
-	env, err := s.envManager.Get(ctx, req.Name)
+	env, err := envManager.Get(ctx, req.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -103,11 +97,17 @@ func (s *environmentService) Select(
 	ctx context.Context,
 	req *azdext.SelectEnvironmentRequest,
 ) (*azdext.EmptyResponse, error) {
-	if err := s.initialize(); err != nil {
+	azdContext, err := s.lazyAzdContext.GetValue()
+	if err != nil {
 		return nil, err
 	}
 
-	env, err := s.envManager.Get(ctx, req.Name)
+	envManager, err := s.lazyEnvManager.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	env, err := envManager.Get(ctx, req.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +116,7 @@ func (s *environmentService) Select(
 		DefaultEnvironment: env.Name(),
 	}
 
-	if err := s.azdContext.SetProjectState(projectState); err != nil {
+	if err := azdContext.SetProjectState(projectState); err != nil {
 		return nil, err
 	}
 
@@ -128,11 +128,12 @@ func (s *environmentService) GetValues(
 	ctx context.Context,
 	req *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
-	if err := s.initialize(); err != nil {
+	envManager, err := s.lazyEnvManager.GetValue()
+	if err != nil {
 		return nil, err
 	}
 
-	env, err := s.envManager.Get(ctx, req.Name)
+	env, err := envManager.Get(ctx, req.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -156,11 +157,12 @@ func (s *environmentService) GetValues(
 
 // GetValue retrieves the value of a specific key in the specified environment.
 func (s *environmentService) GetValue(ctx context.Context, req *azdext.GetEnvRequest) (*azdext.KeyValueResponse, error) {
-	if err := s.initialize(); err != nil {
+	envManager, err := s.lazyEnvManager.GetValue()
+	if err != nil {
 		return nil, err
 	}
 
-	env, err := s.envManager.Get(ctx, req.EnvName)
+	env, err := envManager.Get(ctx, req.EnvName)
 	if err != nil {
 		return nil, err
 	}
@@ -175,26 +177,36 @@ func (s *environmentService) GetValue(ctx context.Context, req *azdext.GetEnvReq
 
 // SetValue sets the value of a key in the specified environment.
 func (s *environmentService) SetValue(ctx context.Context, req *azdext.SetEnvRequest) (*azdext.EmptyResponse, error) {
-	if err := s.initialize(); err != nil {
+	envManager, err := s.lazyEnvManager.GetValue()
+	if err != nil {
 		return nil, err
 	}
 
-	env, err := s.envManager.Get(ctx, req.EnvName)
+	env, err := envManager.Get(ctx, req.EnvName)
 	if err != nil {
 		return nil, err
 	}
 
 	env.DotenvSet(req.Key, req.Value)
+	if err := envManager.Save(ctx, env); err != nil {
+		return nil, fmt.Errorf("failed to save environment: %w", err)
+	}
 
 	return &azdext.EmptyResponse{}, nil
 }
 
 func (s *environmentService) currentEnvironment(ctx context.Context) (*environment.Environment, error) {
-	if err := s.initialize(); err != nil {
+	azdContext, err := s.lazyAzdContext.GetValue()
+	if err != nil {
 		return nil, err
 	}
 
-	defaultEnvironment, err := s.azdContext.GetDefaultEnvironmentName()
+	envManager, err := s.lazyEnvManager.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	defaultEnvironment, err := azdContext.GetDefaultEnvironmentName()
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +215,7 @@ func (s *environmentService) currentEnvironment(ctx context.Context) (*environme
 		return nil, environment.ErrDefaultEnvironmentNotFound
 	}
 
-	env, err := s.envManager.Get(ctx, defaultEnvironment)
+	env, err := envManager.Get(ctx, defaultEnvironment)
 	if err != nil {
 		return nil, err
 	}
@@ -216,10 +228,6 @@ func (s *environmentService) GetConfig(
 	ctx context.Context,
 	req *azdext.GetConfigRequest,
 ) (*azdext.GetConfigResponse, error) {
-	if err := s.initialize(); err != nil {
-		return nil, err
-	}
-
 	env, err := s.currentEnvironment(ctx)
 	if err != nil {
 		return nil, err
@@ -248,10 +256,6 @@ func (s *environmentService) GetConfigString(
 	ctx context.Context,
 	req *azdext.GetConfigStringRequest,
 ) (*azdext.GetConfigStringResponse, error) {
-	if err := s.initialize(); err != nil {
-		return nil, err
-	}
-
 	env, err := s.currentEnvironment(ctx)
 	if err != nil {
 		return nil, err
@@ -270,10 +274,6 @@ func (s *environmentService) GetConfigSection(
 	ctx context.Context,
 	req *azdext.GetConfigSectionRequest,
 ) (*azdext.GetConfigSectionResponse, error) {
-	if err := s.initialize(); err != nil {
-		return nil, err
-	}
-
 	env, err := s.currentEnvironment(ctx)
 	if err != nil {
 		return nil, err
@@ -304,7 +304,8 @@ func (s *environmentService) GetConfigSection(
 
 // SetConfig sets a config value at a given path.
 func (s *environmentService) SetConfig(ctx context.Context, req *azdext.SetConfigRequest) (*azdext.EmptyResponse, error) {
-	if err := s.initialize(); err != nil {
+	envManager, err := s.lazyEnvManager.GetValue()
+	if err != nil {
 		return nil, err
 	}
 
@@ -322,7 +323,7 @@ func (s *environmentService) SetConfig(ctx context.Context, req *azdext.SetConfi
 		return nil, fmt.Errorf("failed to set value: %w", err)
 	}
 
-	if err := s.envManager.Save(ctx, env); err != nil {
+	if err := envManager.Save(ctx, env); err != nil {
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 
@@ -334,7 +335,8 @@ func (s *environmentService) UnsetConfig(
 	ctx context.Context,
 	req *azdext.UnsetConfigRequest,
 ) (*azdext.EmptyResponse, error) {
-	if err := s.initialize(); err != nil {
+	envManager, err := s.lazyEnvManager.GetValue()
+	if err != nil {
 		return nil, err
 	}
 
@@ -347,31 +349,9 @@ func (s *environmentService) UnsetConfig(
 		return nil, fmt.Errorf("failed to unset value: %w", err)
 	}
 
-	if err := s.envManager.Save(ctx, env); err != nil {
+	if err := envManager.Save(ctx, env); err != nil {
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
 
 	return &azdext.EmptyResponse{}, nil
-}
-
-func (s *environmentService) initialize() error {
-	if s.initialized {
-		return nil
-	}
-
-	azdContext, err := s.lazyAzdContext.GetValue()
-	if err != nil {
-		return err
-	}
-
-	envManager, err := s.lazyEnvManager.GetValue()
-	if err != nil {
-		return err
-	}
-
-	s.azdContext = azdContext
-	s.envManager = envManager
-	s.initialized = true
-
-	return nil
 }

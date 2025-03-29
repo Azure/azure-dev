@@ -137,6 +137,10 @@ func (p *Select) Ask(ctx context.Context) (*int, error) {
 		p.cursor.HideCursor()
 	}
 
+	defer func() {
+		p.cursor.ShowCursor()
+	}()
+
 	if err := p.canvas.Run(); err != nil {
 		return nil, err
 	}
@@ -212,7 +216,10 @@ func (p *Select) applyFilter() {
 			}
 		}
 
-		if strings.Contains(strings.ToLower(option.Value), strings.ToLower(p.filter)) {
+		containsValue := strings.Contains(strings.ToLower(option.Value), strings.ToLower(p.filter))
+		containsLabel := strings.Contains(strings.ToLower(option.Label), strings.ToLower(p.filter))
+
+		if containsValue || containsLabel {
 			p.filteredChoices = append(p.filteredChoices, option)
 		}
 	}

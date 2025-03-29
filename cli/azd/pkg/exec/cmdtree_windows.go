@@ -50,7 +50,9 @@ func (o *CmdTree) Start() error {
 	_, err = windows.SetInformationJobObject(
 		handle,
 		windows.JobObjectExtendedLimitInformation,
+		// #nosec G103
 		uintptr(unsafe.Pointer(&info)),
+		// #nosec G103
 		uint32(unsafe.Sizeof(info)))
 
 	if err != nil {

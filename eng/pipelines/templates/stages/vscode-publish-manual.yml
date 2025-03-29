@@ -20,62 +20,80 @@ stages:
 
     jobs:
       - deployment: Publish_Release
-        environment: azure-dev
+        environment: package-publish
         pool:
           name: azsdk-pool-mms-ubuntu-2004-general
           image: azsdk-pool-mms-ubuntu-2004-1espt
           os: linux
 
         templateContext:
+          type: releaseJob
+          isProduction: true
           inputs:
-            - input: checkout
-              repository: self
+            - input: pipelineArtifact
+              artifactName: signed
+              targetPath: signed
+
+            - input: pipelineArtifact
+              artifactName: changelog
+              targetPath: changelog
         
         strategy:
           runOnce:
             deploy:
               steps:
-                - template: /eng/pipelines/templates/steps/set-vscode-version.yml
+                - template: /eng/pipelines/templates/steps/vscode-set-metadata-variables.yml
+                  parameters:
+                    Use1ESArtifactTask: true
 
                 - template: /eng/pipelines/templates/steps/publish-vscode.yml
                   parameters:
                     PublishLocations: azd/vscode/release/$(VSIX_VERSION);azd/vscode/release/latest
                     TagRepository: true
-                    UpdateShield: true
                     PublishToMarketplace: true
 
-      - deployment: Increment_Version
+      - job: Publish_Shield
+        dependsOn: Publish_Release
+
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+
+        steps:
+          - template: /eng/pipelines/templates/steps/publish-shield.yml
+            parameters:
+              ArtifactName: shield-vscode
+              ArtifactDownloadPath: shields/vscode
+              ArtifactFilename: vscode.json
+              StorageContainerName: '`$web'
+              PublishDestination: azd/vscode/latest
+
+
+      - job: Increment_Version
         condition: >-
           and(
             succeeded(),
             ne('true', variables['Skip.IncrementVersion'])
           )
         dependsOn: Publish_Release
-        environment: azure-dev
 
         pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
-          image: azsdk-pool-mms-ubuntu-2004-1espt
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
           os: linux
 
-        templateContext:
-          inputs:
-            - input: checkout
-              repository: self
+        steps:
+          - checkout: self
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: eng/scripts/Update-VscodeExtensionVersion.ps1
+            displayName: Increment VSCode Extension version
 
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - task: PowerShell@2
-                  inputs:
-                    pwsh: true
-                    targetType: filePath
-                    filePath: eng/scripts/Update-VscodeExtensionVersion.ps1
-                  displayName: Increment VSCode Extension version
-
-                - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-                  parameters:
-                    PRBranchName: vscode-version-increment-$(Build.BuildId)
-                    CommitMsg: Increment VSCode Extension version after release
-                    PRTitle: Increment VSCode Extension version after release
+          - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+            parameters:
+              PRBranchName: vscode-version-increment-$(Build.BuildId)
+              CommitMsg: Increment VSCode Extension version after release
+              PRTitle: Increment VSCode Extension version after release

@@ -22,7 +22,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armsubscriptions/v1.0.0 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armsubscriptions/v1.0.0 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e69829477560f1cf20bb7307cebdfb58
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations?api-version=2021-01-01
@@ -91,7 +91,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e69829477560f1cf20bb7307cebdfb58
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
@@ -158,7 +158,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e69829477560f1cf20bb7307cebdfb58
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=3ZJBa8JAEIV%2fi3uusKtBWm%2bms4K1MzGbnbTpTdRKjCTQpsSs%2bN%2b7UQqe66k97cA%2bZt77eEexqso6L7%2bWdV6Vtio25acYH8WLTiwng24sN4d6sfyo804x37RiLFTvvkc2O6DL%2buLurDBV8%2fOnZNAzxTRE2DYxvwFyHBCEoYE9xDKdImtJNoTYpo9k1%2b9GUfScyCYC9rqsjWwxQFdIgplD0BJzpQ2rRbR70mhXLgJ%2fGfzOSb8vTndCT27wqka3eD2Q1QHZlaLOr2NJuXo1vMeE5QgLwyYlxl3VGtBDgonPuPX58Oz7wnj4hxj%2fzmogb0Q8a3zZGnLZAHdaUatiLh7mhokvlZg5Ao9Yr%2bO0e8Gcq2J5HyX2Gn3m0Oor9P8kzun0DQ%3d%3d
@@ -225,7 +225,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e69829477560f1cf20bb7307cebdfb58
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=zc9La4NAFAXg3%2bKsDTgaS3BXeycg6Z3p6EyK3QVrxAcjtAZf%2bN9rSkrptt10ebnnwHdmkrWmK83l1JWtUW2dm3cSzOSZJUonLgnMpWlswu5v50xMPnRPp7euvBYO%2bUgCQq2dxVU64JRuiP2ZiNv%2b60ednRXX%2bxCh6KV%2bAdRyyyEMY2hAOsc9auZwFYJUxweuXs8x5eIxcXoBes2lI06Zj1Xk8wp9AdEkEirlmsGK9RraMQbm4VSPWGUuh2JDFvvG937yr7t%2boXf%2bpOcQUQFsK0Cuiwp31fMEojus5cAn9FEVA4L2vtX%2fnLksHw%3d%3d
@@ -292,7 +292,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e69829477560f1cf20bb7307cebdfb58
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=q1ZKzs8rycwrTSzJzM8Lyc9OzStWsqpWcnUMDgkNNlKyyivNydGBcmG8cFeQJIwX6h3sHxriAeMG%2bPs4%2brk4u%2fqFBDn6wAQhOuDGQbjGENnaWgA%3d
@@ -365,7 +365,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e69829477560f1cf20bb7307cebdfb58
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531/validate?api-version=2021-04-01
@@ -438,7 +438,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e69829477560f1cf20bb7307cebdfb58
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531?api-version=2021-04-01
@@ -509,7 +509,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e69829477560f1cf20bb7307cebdfb58
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531/operationStatuses/08584603873137775201?api-version=2021-04-01&t=638768163746399715&c=MIIHpTCCBo2gAwIBAgITfwTYu0qoRwcN0bP8jwAEBNi7SjANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDIwHhcNMjUwMTIzMjA0ODUxWhcNMjUwNzIyMjA0ODUxWjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJiyUikcpMswfhvdsI_rXYHu5usdpZW7yAqWPwx7nyvDBbA6tYMOwIWDF3lmy48lA46kFg2__zl_gVcj_Jw_2ue8USufQFsjmlCYmhbryemgmCuZucLrVs0nOW_5HVAX7QY9eBRWotqXIDJPTRyoGqWrXm2qO_sMjVacTB19-WMO5gHXKvOrm3HRspddB5sJUi15aHoSTlGgepJ8Bc6vMEFWUSNkkRqGt-EtMDQGAf2PFA2rkeizLvEPyGwqA04f56eXcnvVc-9t6jGFggfFusEW3_EaE1CqF_Aemzi9kaAhLfj5fOyZHybExiqyzL3WDGLAe-mC9uhOggcp5HjtKECAwEAAaOCBJIwggSOMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHaBggrBgEFBQcBAQSCAcwwggHIMGYGCCsGAQUFBzAChlpodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MFYGCCsGAQUFBzAChkpodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9CTDJQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDAyKDQpLmNydDBWBggrBgEFBQcwAoZKaHR0cDovL2NybDMuYW1lLmdibC9haWEvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MB0GA1UdDgQWBBTFiuatBch4getEuR5ddJpfuPsJ8DAOBgNVHQ8BAf8EBAMCBaAwggE1BgNVHR8EggEsMIIBKDCCASSgggEgoIIBHIZCaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBSuecJrXSWIEwb2BwnDl3x7l48dVTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAIxmxJ5xNUiG8PRXsUSme6IbA37JinZso0lwEjfgtHmK1DZhhGugl-cdjEw10JLCVwaiKd-q2yljbccx_MpSj2rx5yGUNb32Cv2p40-HWzxtYMw0j9JGcrJWoP_apkjIELce110mKIOL4dJ3r8N5cXuhEatDvAPjNYjdG9YgGTE1s1CLy9MvJsLRVQnWtxDWlWsj_XgzlBhvgxwXILR7A48GZLe9ENWEJwEl_AmMGT_o5kKmBfcKl6mjYWjCchXL5bHKE5dnl9X3W2eQTdqqGqh2z2KAUwyCu2xOV5xh6Zjg6SDEuPHvcBqAHqMgqi3E38hUBBXw4AXVsmQhz5FyOg8&s=ZZslnwU7TU-CCnPrIubqI55ySGg_xqvPpYLzWGJ99DpmfQXPUweoqToXH_Vs5lv628cAm9AVAD82sKw7KpjPAxQcWuOqAs0HH3LCGQpakfk0ZzYCrf8RD4uCpJxl_SAwZty4H5pdxLbQBz6PARFvy7TYkc18mT8p3Ft5xCDoqKrblXdJppVpOUBqeBHan0qZyUfQyqTAt2S100IZpLudNhqVf3Z9dbS9djMCwkzMP_pAwVrpyOqCriha8MPARzC_bkJrkfgG62cBJv1C_pV1SUkp2yxORpI-HwyerE-2mDMyAwhc_g_4JGzf-gtr6Ofced9Bi5CBCB1efSGRjjNb_A&h=7A0Dd8BDp5YK15mUJSOO9vXRupsnZe1cH5QRrHE8MVo
@@ -576,7 +576,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e69829477560f1cf20bb7307cebdfb58
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531?api-version=2021-04-01
@@ -645,7 +645,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e69829477560f1cf20bb7307cebdfb58
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-wfad9fd%27&api-version=2021-04-01
@@ -714,7 +714,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armsubscriptions/v1.0.0 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armsubscriptions/v1.0.0 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e6388fd5f876793bfbe2535cdcc311ea
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations?api-version=2021-01-01
@@ -783,7 +783,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e6388fd5f876793bfbe2535cdcc311ea
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
@@ -850,7 +850,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e6388fd5f876793bfbe2535cdcc311ea
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=3ZJBa8JAEIV%2fi3uusKtBWm%2bms4K1MzGbnbTpTdRKjCTQpsSs%2bN%2b7UQqe66k97cA%2bZt77eEexqso6L7%2bWdV6Vtio25acYH8WLTiwng24sN4d6sfyo804x37RiLFTvvkc2O6DL%2buLurDBV8%2fOnZNAzxTRE2DYxvwFyHBCEoYE9xDKdImtJNoTYpo9k1%2b9GUfScyCYC9rqsjWwxQFdIgplD0BJzpQ2rRbR70mhXLgJ%2fGfzOSb8vTndCT27wqka3eD2Q1QHZlaLOr2NJuXo1vMeE5QgLwyYlxl3VGtBDgonPuPX58Oz7wnj4hxj%2fzmogb0Q8a3zZGnLZAHdaUatiLh7mhokvlZg5Ao9Yr%2bO0e8Gcq2J5HyX2Gn3m0Oor9P8kzun0DQ%3d%3d
@@ -917,7 +917,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e6388fd5f876793bfbe2535cdcc311ea
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=zc9La4NAFAXg3%2bKsDTgaS3BXeycg6Z3p6EyK3QVrxAcjtAZf%2bN9rSkrptt10ebnnwHdmkrWmK83l1JWtUW2dm3cSzOSZJUonLgnMpWlswu5v50xMPnRPp7euvBYO%2bUgCQq2dxVU64JRuiP2ZiNv%2b60ednRXX%2bxCh6KV%2bAdRyyyEMY2hAOsc9auZwFYJUxweuXs8x5eIxcXoBes2lI06Zj1Xk8wp9AdEkEirlmsGK9RraMQbm4VSPWGUuh2JDFvvG937yr7t%2boXf%2bpOcQUQFsK0Cuiwp31fMEojus5cAn9FEVA4L2vtX%2fnLksHw%3d%3d
@@ -984,7 +984,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e6388fd5f876793bfbe2535cdcc311ea
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=q1ZKzs8rycwrTSzJzM8Lyc9OzStWsqpWcnUMDgkNNlKyyivNydGBcmG8cFeQJIwX6h3sHxriAeMG%2bPs4%2brk4u%2fqFBDn6wAQhOuDGQbjGENnaWgA%3d
@@ -1057,7 +1057,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e6388fd5f876793bfbe2535cdcc311ea
         url: https://management.azure.com:443/providers/Microsoft.Resources/calculateTemplateHash?api-version=2021-04-01
@@ -1124,7 +1124,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0219b48a4100954746d6665de116f3fd
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
@@ -1191,7 +1191,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0219b48a4100954746d6665de116f3fd
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=3ZJBa8JAEIV%2fi3uusKtBWm%2bms4K1MzGbnbTpTdRKjCTQpsSs%2bN%2b7UQqe66k97cA%2bZt77eEexqso6L7%2bWdV6Vtio25acYH8WLTiwng24sN4d6sfyo804x37RiLFTvvkc2O6DL%2buLurDBV8%2fOnZNAzxTRE2DYxvwFyHBCEoYE9xDKdImtJNoTYpo9k1%2b9GUfScyCYC9rqsjWwxQFdIgplD0BJzpQ2rRbR70mhXLgJ%2fGfzOSb8vTndCT27wqka3eD2Q1QHZlaLOr2NJuXo1vMeE5QgLwyYlxl3VGtBDgonPuPX58Oz7wnj4hxj%2fzmogb0Q8a3zZGnLZAHdaUatiLh7mhokvlZg5Ao9Yr%2bO0e8Gcq2J5HyX2Gn3m0Oor9P8kzun0DQ%3d%3d
@@ -1258,7 +1258,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0219b48a4100954746d6665de116f3fd
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=zc9La4NAFAXg3%2bKsDTgaS3BXeycg6Z3p6EyK3QVrxAcjtAZf%2bN9rSkrptt10ebnnwHdmkrWmK83l1JWtUW2dm3cSzOSZJUonLgnMpWlswu5v50xMPnRPp7euvBYO%2bUgCQq2dxVU64JRuiP2ZiNv%2b60ednRXX%2bxCh6KV%2bAdRyyyEMY2hAOsc9auZwFYJUxweuXs8x5eIxcXoBes2lI06Zj1Xk8wp9AdEkEirlmsGK9RraMQbm4VSPWGUuh2JDFvvG937yr7t%2boXf%2bpOcQUQFsK0Cuiwp31fMEojus5cAn9FEVA4L2vtX%2fnLksHw%3d%3d
@@ -1325,7 +1325,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0219b48a4100954746d6665de116f3fd
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=q1ZKzs8rycwrTSzJzM8Lyc9OzStWsqpWcnUMDgkNNlKyyivNydGBcmG8cFeQJIwX6h3sHxriAeMG%2bPs4%2brk4u%2fqFBDn6wAQhOuDGQbjGENnaWgA%3d
@@ -1394,7 +1394,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0219b48a4100954746d6665de116f3fd
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531?api-version=2021-04-01
@@ -1463,7 +1463,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0219b48a4100954746d6665de116f3fd
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-wfad9fd%27&api-version=2021-04-01
@@ -1532,7 +1532,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0219b48a4100954746d6665de116f3fd
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wfad9fd/resources?api-version=2021-04-01
@@ -1601,7 +1601,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0219b48a4100954746d6665de116f3fd
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531?api-version=2021-04-01
@@ -1670,7 +1670,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0219b48a4100954746d6665de116f3fd
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-wfad9fd%27&api-version=2021-04-01
@@ -1739,7 +1739,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0219b48a4100954746d6665de116f3fd
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wfad9fd/resources?api-version=2021-04-01
@@ -1808,7 +1808,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0219b48a4100954746d6665de116f3fd
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups/rg-azdtest-wfad9fd?api-version=2021-04-01
@@ -1877,7 +1877,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0219b48a4100954746d6665de116f3fd
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/operationresults/eyJqb2JJZCI6IlJFU09VUkNFR1JPVVBERUxFVElPTkpPQi1SRzoyREFaRFRFU1Q6MkRXRkFEOUZELUVBU1RVUzIiLCJqb2JMb2NhdGlvbiI6ImVhc3R1czIifQ?api-version=2021-04-01&t=638768165137346671&c=MIIHpTCCBo2gAwIBAgITfwTYu0qoRwcN0bP8jwAEBNi7SjANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDIwHhcNMjUwMTIzMjA0ODUxWhcNMjUwNzIyMjA0ODUxWjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJiyUikcpMswfhvdsI_rXYHu5usdpZW7yAqWPwx7nyvDBbA6tYMOwIWDF3lmy48lA46kFg2__zl_gVcj_Jw_2ue8USufQFsjmlCYmhbryemgmCuZucLrVs0nOW_5HVAX7QY9eBRWotqXIDJPTRyoGqWrXm2qO_sMjVacTB19-WMO5gHXKvOrm3HRspddB5sJUi15aHoSTlGgepJ8Bc6vMEFWUSNkkRqGt-EtMDQGAf2PFA2rkeizLvEPyGwqA04f56eXcnvVc-9t6jGFggfFusEW3_EaE1CqF_Aemzi9kaAhLfj5fOyZHybExiqyzL3WDGLAe-mC9uhOggcp5HjtKECAwEAAaOCBJIwggSOMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHaBggrBgEFBQcBAQSCAcwwggHIMGYGCCsGAQUFBzAChlpodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MFYGCCsGAQUFBzAChkpodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9CTDJQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDAyKDQpLmNydDBWBggrBgEFBQcwAoZKaHR0cDovL2NybDMuYW1lLmdibC9haWEvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MB0GA1UdDgQWBBTFiuatBch4getEuR5ddJpfuPsJ8DAOBgNVHQ8BAf8EBAMCBaAwggE1BgNVHR8EggEsMIIBKDCCASSgggEgoIIBHIZCaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBSuecJrXSWIEwb2BwnDl3x7l48dVTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAIxmxJ5xNUiG8PRXsUSme6IbA37JinZso0lwEjfgtHmK1DZhhGugl-cdjEw10JLCVwaiKd-q2yljbccx_MpSj2rx5yGUNb32Cv2p40-HWzxtYMw0j9JGcrJWoP_apkjIELce110mKIOL4dJ3r8N5cXuhEatDvAPjNYjdG9YgGTE1s1CLy9MvJsLRVQnWtxDWlWsj_XgzlBhvgxwXILR7A48GZLe9ENWEJwEl_AmMGT_o5kKmBfcKl6mjYWjCchXL5bHKE5dnl9X3W2eQTdqqGqh2z2KAUwyCu2xOV5xh6Zjg6SDEuPHvcBqAHqMgqi3E38hUBBXw4AXVsmQhz5FyOg8&s=a9jomyQNiWCSOsYiFlW01M47CIxeuVR7wTo6BsSH9jR_vLY3p5Hqa3NuFH2elcilYXYen5V7TLSqQJ5JYxox1FJ5hmBiH2cvAVHLL4JZuBDlVvnGHQo7IWTsEfph0GHFgBmgwnKmren0GeuZCsWNfNjm4f-86YRtZUOel-kJa8HewtlMh_-0d3vtQcKSjX_3PyY0W3Rn0acbLHK9gPgERwZC5M2eMUPvpP2hNWOjTYzATeUzWqBOqMcQuPtXhNf4fxUGrMuXSj1au0tB8_QoiwNqeZC9zIScSbyoQqBPKeCGVKbxZ9LX-Cmy_15UA5hFx_3yB3p96MPXvUj1vdwMCQ&h=CEhz8kI42mR-NFTmqmFJ1bDYoxBiH3Ps2m4ARoAKdog
@@ -1944,7 +1944,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0219b48a4100954746d6665de116f3fd
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531?api-version=2021-04-01
@@ -2017,7 +2017,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0219b48a4100954746d6665de116f3fd
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531?api-version=2021-04-01
@@ -2088,7 +2088,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0219b48a4100954746d6665de116f3fd
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531/operationStatuses/08584603871555621975?api-version=2021-04-01&t=638768165322283520&c=MIIHpTCCBo2gAwIBAgITfwTYu0qoRwcN0bP8jwAEBNi7SjANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDIwHhcNMjUwMTIzMjA0ODUxWhcNMjUwNzIyMjA0ODUxWjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJiyUikcpMswfhvdsI_rXYHu5usdpZW7yAqWPwx7nyvDBbA6tYMOwIWDF3lmy48lA46kFg2__zl_gVcj_Jw_2ue8USufQFsjmlCYmhbryemgmCuZucLrVs0nOW_5HVAX7QY9eBRWotqXIDJPTRyoGqWrXm2qO_sMjVacTB19-WMO5gHXKvOrm3HRspddB5sJUi15aHoSTlGgepJ8Bc6vMEFWUSNkkRqGt-EtMDQGAf2PFA2rkeizLvEPyGwqA04f56eXcnvVc-9t6jGFggfFusEW3_EaE1CqF_Aemzi9kaAhLfj5fOyZHybExiqyzL3WDGLAe-mC9uhOggcp5HjtKECAwEAAaOCBJIwggSOMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHaBggrBgEFBQcBAQSCAcwwggHIMGYGCCsGAQUFBzAChlpodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MFYGCCsGAQUFBzAChkpodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9CTDJQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDAyKDQpLmNydDBWBggrBgEFBQcwAoZKaHR0cDovL2NybDMuYW1lLmdibC9haWEvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MB0GA1UdDgQWBBTFiuatBch4getEuR5ddJpfuPsJ8DAOBgNVHQ8BAf8EBAMCBaAwggE1BgNVHR8EggEsMIIBKDCCASSgggEgoIIBHIZCaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBSuecJrXSWIEwb2BwnDl3x7l48dVTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAIxmxJ5xNUiG8PRXsUSme6IbA37JinZso0lwEjfgtHmK1DZhhGugl-cdjEw10JLCVwaiKd-q2yljbccx_MpSj2rx5yGUNb32Cv2p40-HWzxtYMw0j9JGcrJWoP_apkjIELce110mKIOL4dJ3r8N5cXuhEatDvAPjNYjdG9YgGTE1s1CLy9MvJsLRVQnWtxDWlWsj_XgzlBhvgxwXILR7A48GZLe9ENWEJwEl_AmMGT_o5kKmBfcKl6mjYWjCchXL5bHKE5dnl9X3W2eQTdqqGqh2z2KAUwyCu2xOV5xh6Zjg6SDEuPHvcBqAHqMgqi3E38hUBBXw4AXVsmQhz5FyOg8&s=FK4HX3xwLDVa9SdI250uBQWSMLLWplcbPMu19ZW96qQ8qYsqIJNCIp5EFKlBQtiz3eovpCL0fA5zMR20zvFZBw2596dRvRsCdc377QpoOGeQxsurpBBL5B_zhz795eaxmqw3HrkwcUr7G_JNquwSqQtHY4wr1y1DGoFu4wynVfKcWXDHJcG3--mf3AGd-xcSh9G_vaGNWZD3eNJLNQ0uRPylX5UBdLj-UTPTjgRVasNVk37YiR7yrTIRbgVrZaw2fuvjEFLxQA4Gs_Z2C4xP6tZf4iLZL_jEctX9URHSkFaU8U-QQ151dBJd6Hj573uQfF5fTW_nf0BWIS2fhU9yzg&h=6ZEbx-1YOpn5Y4m84zBWsjKdkv-ruh7dNF5lHrjd65w
@@ -2155,7 +2155,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 0219b48a4100954746d6665de116f3fd
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531?api-version=2021-04-01
@@ -2224,7 +2224,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armsubscriptions/v1.0.0 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armsubscriptions/v1.0.0 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 781ea458d5113457667d942e165b1b47
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/locations?api-version=2021-01-01
@@ -2293,7 +2293,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 781ea458d5113457667d942e165b1b47
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
@@ -2360,7 +2360,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 781ea458d5113457667d942e165b1b47
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=3ZJBa8JAEIV%2fi3uusKtBWm%2bms4K1MzGbnbTpTdRKjCTQpsSs%2bN%2b7UQqe66k97cA%2bZt77eEexqso6L7%2bWdV6Vtio25acYH8WLTiwng24sN4d6sfyo804x37RiLFTvvkc2O6DL%2buLurDBV8%2fOnZNAzxTRE2DYxvwFyHBCEoYE9xDKdImtJNoTYpo9k1%2b9GUfScyCYC9rqsjWwxQFdIgplD0BJzpQ2rRbR70mhXLgJ%2fGfzOSb8vTndCT27wqka3eD2Q1QHZlaLOr2NJuXo1vMeE5QgLwyYlxl3VGtBDgonPuPX58Oz7wnj4hxj%2fzmogb0Q8a3zZGnLZAHdaUatiLh7mhokvlZg5Ao9Yr%2bO0e8Gcq2J5HyX2Gn3m0Oor9P8kzun0DQ%3d%3d
@@ -2427,7 +2427,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 781ea458d5113457667d942e165b1b47
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=zc9La4NAFAXg3%2bKsDTgaS3BXeycg6Z3p6EyK3QVrxAcjtAZf%2bN9rSkrptt10ebnnwHdmkrWmK83l1JWtUW2dm3cSzOSZJUonLgnMpWlswu5v50xMPnRPp7euvBYO%2bUgCQq2dxVU64JRuiP2ZiNv%2b60ednRXX%2bxCh6KV%2bAdRyyyEMY2hAOsc9auZwFYJUxweuXs8x5eIxcXoBes2lI06Zj1Xk8wp9AdEkEirlmsGK9RraMQbm4VSPWGUuh2JDFvvG937yr7t%2boXf%2bpOcQUQFsK0Cuiwp31fMEojus5cAn9FEVA4L2vtX%2fnLksHw%3d%3d
@@ -2494,7 +2494,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 781ea458d5113457667d942e165b1b47
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=q1ZKzs8rycwrTSzJzM8Lyc9OzStWsqpWcnUMDgkNNlKyyivNydGBcmG8cFeQJIwX6h3sHxriAeMG%2bPs4%2brk4u%2fqFBDn6wAQhOuDGQbjGENnaWgA%3d
@@ -2567,7 +2567,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 781ea458d5113457667d942e165b1b47
         url: https://management.azure.com:443/providers/Microsoft.Resources/calculateTemplateHash?api-version=2021-04-01
@@ -2638,7 +2638,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 781ea458d5113457667d942e165b1b47
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531/validate?api-version=2021-04-01
@@ -2711,7 +2711,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 781ea458d5113457667d942e165b1b47
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531?api-version=2021-04-01
@@ -2782,7 +2782,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 781ea458d5113457667d942e165b1b47
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531/operationStatuses/08584603870969839417?api-version=2021-04-01&t=638768165908424491&c=MIIHpTCCBo2gAwIBAgITfwTYu0qoRwcN0bP8jwAEBNi7SjANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDIwHhcNMjUwMTIzMjA0ODUxWhcNMjUwNzIyMjA0ODUxWjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJiyUikcpMswfhvdsI_rXYHu5usdpZW7yAqWPwx7nyvDBbA6tYMOwIWDF3lmy48lA46kFg2__zl_gVcj_Jw_2ue8USufQFsjmlCYmhbryemgmCuZucLrVs0nOW_5HVAX7QY9eBRWotqXIDJPTRyoGqWrXm2qO_sMjVacTB19-WMO5gHXKvOrm3HRspddB5sJUi15aHoSTlGgepJ8Bc6vMEFWUSNkkRqGt-EtMDQGAf2PFA2rkeizLvEPyGwqA04f56eXcnvVc-9t6jGFggfFusEW3_EaE1CqF_Aemzi9kaAhLfj5fOyZHybExiqyzL3WDGLAe-mC9uhOggcp5HjtKECAwEAAaOCBJIwggSOMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHaBggrBgEFBQcBAQSCAcwwggHIMGYGCCsGAQUFBzAChlpodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MFYGCCsGAQUFBzAChkpodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9CTDJQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDAyKDQpLmNydDBWBggrBgEFBQcwAoZKaHR0cDovL2NybDMuYW1lLmdibC9haWEvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MB0GA1UdDgQWBBTFiuatBch4getEuR5ddJpfuPsJ8DAOBgNVHQ8BAf8EBAMCBaAwggE1BgNVHR8EggEsMIIBKDCCASSgggEgoIIBHIZCaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBSuecJrXSWIEwb2BwnDl3x7l48dVTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAIxmxJ5xNUiG8PRXsUSme6IbA37JinZso0lwEjfgtHmK1DZhhGugl-cdjEw10JLCVwaiKd-q2yljbccx_MpSj2rx5yGUNb32Cv2p40-HWzxtYMw0j9JGcrJWoP_apkjIELce110mKIOL4dJ3r8N5cXuhEatDvAPjNYjdG9YgGTE1s1CLy9MvJsLRVQnWtxDWlWsj_XgzlBhvgxwXILR7A48GZLe9ENWEJwEl_AmMGT_o5kKmBfcKl6mjYWjCchXL5bHKE5dnl9X3W2eQTdqqGqh2z2KAUwyCu2xOV5xh6Zjg6SDEuPHvcBqAHqMgqi3E38hUBBXw4AXVsmQhz5FyOg8&s=M9xnfeA3GDB_Z6pz49THd6rXXg7oH2FoJGHjj1w_wEsAhgbir9P7IQid05XB9dA_oIZi7mLKfKJT_61TeCfyPdmy918XLTA4RlbcILAWrJlrWzx874C-1Krgvs_UwVXUb-9nPB5r-FRi3gjtnetmtwcR5nOFXVFDBHk62-jmfsz_AQz79jIzL6Z_9XRNK3tWU3It9hxFkEqgfE9QGKpw8hef8XSjqc6VJ6AlWhsVvaKJrmeXXTpcnio5pfTPlL8QkUM44yMaAfKTXNX6wRAF97jTeYS9k9SmuREsztbFHTALQibNDYJYP3w4ybQjf4mFl05n7ng3eFsQiku25w_yVg&h=s_y0c9v-A6WEkCW-Am0Z731XjuHEypLxP1ZanEoux5Y
@@ -2849,7 +2849,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 781ea458d5113457667d942e165b1b47
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531?api-version=2021-04-01
@@ -2918,7 +2918,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 781ea458d5113457667d942e165b1b47
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-wfad9fd%27&api-version=2021-04-01
@@ -2987,7 +2987,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e303d41a64e6aeafec60ff6484a499e3
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
@@ -3054,7 +3054,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e303d41a64e6aeafec60ff6484a499e3
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=3ZJBa8JAEIV%2fi3uusKtBWm%2bms4K1MzGbnbTpTdRKjCTQpsSs%2bN%2b7UQqe66k97cA%2bZt77eEexqso6L7%2bWdV6Vtio25acYH8WLTiwng24sN4d6sfyo804x37RiLFTvvkc2O6DL%2buLurDBV8%2fOnZNAzxTRE2DYxvwFyHBCEoYE9xDKdImtJNoTYpo9k1%2b9GUfScyCYC9rqsjWwxQFdIgplD0BJzpQ2rRbR70mhXLgJ%2fGfzOSb8vTndCT27wqka3eD2Q1QHZlaLOr2NJuXo1vMeE5QgLwyYlxl3VGtBDgonPuPX58Oz7wnj4hxj%2fzmogb0Q8a3zZGnLZAHdaUatiLh7mhokvlZg5Ao9Yr%2bO0e8Gcq2J5HyX2Gn3m0Oor9P8kzun0DQ%3d%3d
@@ -3121,7 +3121,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e303d41a64e6aeafec60ff6484a499e3
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=zc9La4NAFAXg3%2bKsDTgaS3BXeycg6Z3p6EyK3QVrxAcjtAZf%2bN9rSkrptt10ebnnwHdmkrWmK83l1JWtUW2dm3cSzOSZJUonLgnMpWlswu5v50xMPnRPp7euvBYO%2bUgCQq2dxVU64JRuiP2ZiNv%2b60ednRXX%2bxCh6KV%2bAdRyyyEMY2hAOsc9auZwFYJUxweuXs8x5eIxcXoBes2lI06Zj1Xk8wp9AdEkEirlmsGK9RraMQbm4VSPWGUuh2JDFvvG937yr7t%2boXf%2bpOcQUQFsK0Cuiwp31fMEojus5cAn9FEVA4L2vtX%2fnLksHw%3d%3d
@@ -3188,7 +3188,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e303d41a64e6aeafec60ff6484a499e3
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/?api-version=2021-04-01&%24skiptoken=q1ZKzs8rycwrTSzJzM8Lyc9OzStWsqpWcnUMDgkNNlKyyivNydGBcmG8cFeQJIwX6h3sHxriAeMG%2bPs4%2brk4u%2fqFBDn6wAQhOuDGQbjGENnaWgA%3d
@@ -3257,7 +3257,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e303d41a64e6aeafec60ff6484a499e3
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531?api-version=2021-04-01
@@ -3326,7 +3326,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e303d41a64e6aeafec60ff6484a499e3
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-wfad9fd%27&api-version=2021-04-01
@@ -3395,7 +3395,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e303d41a64e6aeafec60ff6484a499e3
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wfad9fd/resources?api-version=2021-04-01
@@ -3464,7 +3464,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e303d41a64e6aeafec60ff6484a499e3
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531?api-version=2021-04-01
@@ -3533,7 +3533,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e303d41a64e6aeafec60ff6484a499e3
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-wfad9fd%27&api-version=2021-04-01
@@ -3602,7 +3602,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.Client/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.Client/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e303d41a64e6aeafec60ff6484a499e3
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-wfad9fd/resources?api-version=2021-04-01
@@ -3671,7 +3671,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e303d41a64e6aeafec60ff6484a499e3
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourcegroups/rg-azdtest-wfad9fd?api-version=2021-04-01
@@ -3740,7 +3740,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.ResourceGroupsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e303d41a64e6aeafec60ff6484a499e3
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/operationresults/eyJqb2JJZCI6IlJFU09VUkNFR1JPVVBERUxFVElPTkpPQi1SRzoyREFaRFRFU1Q6MkRXRkFEOUZELUVBU1RVUzIiLCJqb2JMb2NhdGlvbiI6ImVhc3R1czIifQ?api-version=2021-04-01&t=638768167057163884&c=MIIHpTCCBo2gAwIBAgITfwTYu0qoRwcN0bP8jwAEBNi7SjANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDIwHhcNMjUwMTIzMjA0ODUxWhcNMjUwNzIyMjA0ODUxWjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJiyUikcpMswfhvdsI_rXYHu5usdpZW7yAqWPwx7nyvDBbA6tYMOwIWDF3lmy48lA46kFg2__zl_gVcj_Jw_2ue8USufQFsjmlCYmhbryemgmCuZucLrVs0nOW_5HVAX7QY9eBRWotqXIDJPTRyoGqWrXm2qO_sMjVacTB19-WMO5gHXKvOrm3HRspddB5sJUi15aHoSTlGgepJ8Bc6vMEFWUSNkkRqGt-EtMDQGAf2PFA2rkeizLvEPyGwqA04f56eXcnvVc-9t6jGFggfFusEW3_EaE1CqF_Aemzi9kaAhLfj5fOyZHybExiqyzL3WDGLAe-mC9uhOggcp5HjtKECAwEAAaOCBJIwggSOMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHaBggrBgEFBQcBAQSCAcwwggHIMGYGCCsGAQUFBzAChlpodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MFYGCCsGAQUFBzAChkpodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9CTDJQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDAyKDQpLmNydDBWBggrBgEFBQcwAoZKaHR0cDovL2NybDMuYW1lLmdibC9haWEvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MB0GA1UdDgQWBBTFiuatBch4getEuR5ddJpfuPsJ8DAOBgNVHQ8BAf8EBAMCBaAwggE1BgNVHR8EggEsMIIBKDCCASSgggEgoIIBHIZCaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBSuecJrXSWIEwb2BwnDl3x7l48dVTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAIxmxJ5xNUiG8PRXsUSme6IbA37JinZso0lwEjfgtHmK1DZhhGugl-cdjEw10JLCVwaiKd-q2yljbccx_MpSj2rx5yGUNb32Cv2p40-HWzxtYMw0j9JGcrJWoP_apkjIELce110mKIOL4dJ3r8N5cXuhEatDvAPjNYjdG9YgGTE1s1CLy9MvJsLRVQnWtxDWlWsj_XgzlBhvgxwXILR7A48GZLe9ENWEJwEl_AmMGT_o5kKmBfcKl6mjYWjCchXL5bHKE5dnl9X3W2eQTdqqGqh2z2KAUwyCu2xOV5xh6Zjg6SDEuPHvcBqAHqMgqi3E38hUBBXw4AXVsmQhz5FyOg8&s=FOBCvPkcJDN26BpRMPe7Y-lZnxZX04MRPU5EYs1LAWuaEEM2u92RFbmvPCnKuJxNrn2VGCZzG1RMTwpPCb1rur5vGxlrvyU3qw8W8kGvsoCdEdgnjyBfMWGK-eS9lGVccezgYPjYCcfzJBQ-5tHK74Ufz6a4xPeIl8qBCFNzBHu9wLqFeujO9RVgSF95rIJ4Um1QDaBB5IrIKDtvC5DQPRbnWPrbvVUyHZN7sJrYwJtjfFz5KGyMsPaXDutfo0KICkqpy7WZVmXw8M53buOUKvQd7spniy7fESoVuOqhCSPoIATlBQ65Z07240myTkMrbGjVPkym__UaTrR8aCtRlw&h=-T9od-5UQ8BAfweoCMgqaAAyOGaXKtKTNrEv-bXAVC0
@@ -3807,7 +3807,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e303d41a64e6aeafec60ff6484a499e3
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531?api-version=2021-04-01
@@ -3880,7 +3880,7 @@ interactions:
             Content-Type:
                 - application/json
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e303d41a64e6aeafec60ff6484a499e3
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531?api-version=2021-04-01
@@ -3951,7 +3951,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e303d41a64e6aeafec60ff6484a499e3
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531/operationStatuses/08584603869639008493?api-version=2021-04-01&t=638768167235570529&c=MIIHpTCCBo2gAwIBAgITfwTYu0qoRwcN0bP8jwAEBNi7SjANBgkqhkiG9w0BAQsFADBEMRMwEQYKCZImiZPyLGQBGRYDR0JMMRMwEQYKCZImiZPyLGQBGRYDQU1FMRgwFgYDVQQDEw9BTUUgSW5mcmEgQ0EgMDIwHhcNMjUwMTIzMjA0ODUxWhcNMjUwNzIyMjA0ODUxWjBAMT4wPAYDVQQDEzVhc3luY29wZXJhdGlvbnNpZ25pbmdjZXJ0aWZpY2F0ZS5tYW5hZ2VtZW50LmF6dXJlLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJiyUikcpMswfhvdsI_rXYHu5usdpZW7yAqWPwx7nyvDBbA6tYMOwIWDF3lmy48lA46kFg2__zl_gVcj_Jw_2ue8USufQFsjmlCYmhbryemgmCuZucLrVs0nOW_5HVAX7QY9eBRWotqXIDJPTRyoGqWrXm2qO_sMjVacTB19-WMO5gHXKvOrm3HRspddB5sJUi15aHoSTlGgepJ8Bc6vMEFWUSNkkRqGt-EtMDQGAf2PFA2rkeizLvEPyGwqA04f56eXcnvVc-9t6jGFggfFusEW3_EaE1CqF_Aemzi9kaAhLfj5fOyZHybExiqyzL3WDGLAe-mC9uhOggcp5HjtKECAwEAAaOCBJIwggSOMCcGCSsGAQQBgjcVCgQaMBgwCgYIKwYBBQUHAwEwCgYIKwYBBQUHAwIwPQYJKwYBBAGCNxUHBDAwLgYmKwYBBAGCNxUIhpDjDYTVtHiE8Ys-hZvdFs6dEoFghfmRS4WsmTQCAWQCAQcwggHaBggrBgEFBQcBAQSCAcwwggHIMGYGCCsGAQUFBzAChlpodHRwOi8vY3JsLm1pY3Jvc29mdC5jb20vcGtpaW5mcmEvQ2VydHMvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmwxLmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MFYGCCsGAQUFBzAChkpodHRwOi8vY3JsMi5hbWUuZ2JsL2FpYS9CTDJQS0lJTlRDQTAxLkFNRS5HQkxfQU1FJTIwSW5mcmElMjBDQSUyMDAyKDQpLmNydDBWBggrBgEFBQcwAoZKaHR0cDovL2NybDMuYW1lLmdibC9haWEvQkwyUEtJSU5UQ0EwMS5BTUUuR0JMX0FNRSUyMEluZnJhJTIwQ0ElMjAwMig0KS5jcnQwVgYIKwYBBQUHMAKGSmh0dHA6Ly9jcmw0LmFtZS5nYmwvYWlhL0JMMlBLSUlOVENBMDEuQU1FLkdCTF9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3J0MB0GA1UdDgQWBBTFiuatBch4getEuR5ddJpfuPsJ8DAOBgNVHQ8BAf8EBAMCBaAwggE1BgNVHR8EggEsMIIBKDCCASSgggEgoIIBHIZCaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3BraWluZnJhL0NSTC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMS5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMi5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsMy5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JshjRodHRwOi8vY3JsNC5hbWUuZ2JsL2NybC9BTUUlMjBJbmZyYSUyMENBJTIwMDIoNCkuY3JsMIGdBgNVHSAEgZUwgZIwDAYKKwYBBAGCN3sBATBmBgorBgEEAYI3ewICMFgwVgYIKwYBBQUHAgIwSh5IADMAMwBlADAAMQA5ADIAMQAtADQAZAA2ADQALQA0AGYAOABjAC0AYQAwADUANQAtADUAYgBkAGEAZgBmAGQANQBlADMAMwBkMAwGCisGAQQBgjd7AwIwDAYKKwYBBAGCN3sEAjAfBgNVHSMEGDAWgBSuecJrXSWIEwb2BwnDl3x7l48dVTAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwDQYJKoZIhvcNAQELBQADggEBAIxmxJ5xNUiG8PRXsUSme6IbA37JinZso0lwEjfgtHmK1DZhhGugl-cdjEw10JLCVwaiKd-q2yljbccx_MpSj2rx5yGUNb32Cv2p40-HWzxtYMw0j9JGcrJWoP_apkjIELce110mKIOL4dJ3r8N5cXuhEatDvAPjNYjdG9YgGTE1s1CLy9MvJsLRVQnWtxDWlWsj_XgzlBhvgxwXILR7A48GZLe9ENWEJwEl_AmMGT_o5kKmBfcKl6mjYWjCchXL5bHKE5dnl9X3W2eQTdqqGqh2z2KAUwyCu2xOV5xh6Zjg6SDEuPHvcBqAHqMgqi3E38hUBBXw4AXVsmQhz5FyOg8&s=luxANndP-Dht8qLKQtLKW-jV2-Sy8j2UiKKBmHKYvemoS5SEHQqdrcHj1FQ0JoR15SzHe6Ufu0mnJvX5qJOvV_wXJTGswuym1tWRfprS7mOOwA-ARcSYYw4lt_sY1nSo3_fxatwn6UwMZZLFndbaK7LJRQ5k833Te8qbcZHeRfmKbgRv4mIRAAu3G5RF3A5-DVRsVZ9eciujA_ReVi0qeKo7ZtjAXEBiJnmwazZK-rHE-6uEMdeZMxCvxWaL7MIN-clmmtyQIAj0CSPi0YT2C7W9X1qwIx6CCnURvu7ZXb3laEDb7TQtnIHneeRsvMJ1M1S9kDEoxD3kvMrPyNtQuQ&h=PVh0JahOw4teNRl2BqY1Wv-HXdk30mzNgi0GV5RY950
@@ -4018,7 +4018,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.23.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.23.2; windows/amd64)
+                - azsdk-go-armresources.DeploymentsClient/v1.1.1 (go1.24.2; Windows_NT),azdev/0.0.0-dev.0 (Go go1.24.2; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - e303d41a64e6aeafec60ff6484a499e3
         url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/azdtest-wfad9fd-1741219531?api-version=2021-04-01

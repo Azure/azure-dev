@@ -55,7 +55,7 @@ func main() {
 	// of generating help text that includes execution-specific state.
 	cmd := azd.NewRootCmd(true, nil, nil)
 
-	basename := strings.Replace(cmd.CommandPath(), " ", "_", -1) + ".md"
+	basename := strings.ReplaceAll(cmd.CommandPath(), " ", "_") + ".md"
 	filename := filepath.Join("./md", basename)
 
 	if err := os.MkdirAll(filepath.Dir(filename), directoryMode); err != nil {
@@ -234,7 +234,7 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 			if parent != cmd.Root() {
 				pname := parent.CommandPath()
 				link := pname + ".md"
-				link = strings.Replace(link, " ", "_", -1)
+				link = strings.ReplaceAll(link, " ", "_")
 				buf.WriteString(fmt.Sprintf("* [%s](%s): %s\n", pname, linkHandler(link), parent.Short))
 			}
 			cmd.VisitParents(func(c *cobra.Command) {
@@ -253,7 +253,7 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 			}
 			cname := name + " " + child.Name()
 			link := cname + ".md"
-			link = strings.Replace(link, " ", "_", -1)
+			link = strings.ReplaceAll(link, " ", "_")
 			buf.WriteString(fmt.Sprintf("* [%s](%s): %s\n", cname, linkHandler(link), child.Short))
 		}
 
@@ -262,7 +262,7 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 			root := cmd.Root()
 			cname := root.Name()
 			link := cname + ".md"
-			link = strings.Replace(link, " ", "_", -1)
+			link = strings.ReplaceAll(link, " ", "_")
 			buf.WriteString(fmt.Sprintf("* [Back to top](%s)\n", linkHandler(link)))
 		}
 

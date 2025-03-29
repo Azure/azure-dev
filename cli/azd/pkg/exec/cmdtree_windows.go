@@ -50,13 +50,16 @@ func (o *CmdTree) Start() error {
 	_, err = windows.SetInformationJobObject(
 		handle,
 		windows.JobObjectExtendedLimitInformation,
+		// #nosec G103
 		uintptr(unsafe.Pointer(&info)),
+		// #nosec G103
 		uint32(unsafe.Sizeof(info)))
 
 	if err != nil {
 		return fmt.Errorf("failed to set job object info: %w", err)
 	}
 
+	//nolint:gosec // G115: integer overflow conversion int -> uint32
 	process, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(o.Process.Pid))
 	if err != nil {
 		return fmt.Errorf("failed to open process: %w", err)

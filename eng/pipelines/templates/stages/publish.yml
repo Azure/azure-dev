@@ -525,6 +525,7 @@ stages:
 
                 - template: /eng/pipelines/templates/steps/update-prcomment.yml
                   parameters:
+                    PrNumber: $(PRNumber)
                     BodyFile: $(CommentBodyFile)
                     Tag: '<!-- #comment-cli-pr -->'
 

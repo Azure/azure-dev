@@ -1,14 +1,37 @@
 # Release History
 
-## 1.14.0-beta.1 (Unreleased)
+## 1.14.0 (2025-04-02)
+
+### Uncategorized
+
+- [[4979]](https://github.com/Azure/azure-dev/pull/4979) aspire support webapp
+- [[4999]](https://github.com/Azure/azure-dev/pull/4999) aspire secrets impl change
+- [[4959]](https://github.com/Azure/azure-dev/pull/4959) aspire self migration detection
+- [[4957]](https://github.com/Azure/azure-dev/pull/4957) support userPrincipalId injection for AppHost Migration mode
 
 ### Features Added
 
-### Breaking Changes
+- [[4939]](https://github.com/Azure/azure-dev/pull/4939) Automatically load environment values from root .env on `azd init`.
+- [[4939]](https://github.com/Azure/azure-dev/pull/4939) Introduce `AZD_ALLOW_NON_EMPTY_FOLDER` variable that bypasses warning about initializing template in non-empty directory.
+- [[4977]](https://github.com/Azure/azure-dev/pull/4977), [[4995]](https://github.com/Azure/azure-dev/pull/4995) New `azd init --up` flag that runs `azd up` after init. Thanks @lianw for the contribution!
+- [[4931]](https://github.com/Azure/azure-dev/pull/4931) `azd add` support for Azure AI Search.
+- [[4914]](https://github.com/Azure/azure-dev/pull/4914) `azd show` support for all resources supported by `azd add`.
+- [[4874]](https://github.com/Azure/azure-dev/pull/4874) Provide shortcuts for `azd env set-secrets` to directly use Key Vault created with `azd add`.
+- [[4953]](https://github.com/Azure/azure-dev/pull/4953) Support array of model usage names for quota validation.
 
 ### Bugs Fixed
 
+- [[4966]](https://github.com/Azure/azure-dev/pull/4966) Fix `AZURE_OPENAI_ENDPOINT` not showing in `azd add` preview.
+- [[4561]](https://github.com/Azure/azure-dev/pull/4561) Fix `azd up -e <env>` so it uses the specified environment.
+- [[4960]](https://github.com/Azure/azure-dev/pull/4960) Fix simplified init failing to provision with detected databases and `alpha.compose` off.
+- [[4929]](https://github.com/Azure/azure-dev/pull/4929) Improve quota check for Azure Cognitive Services accounts to require at least 2 capacity units.
+
 ### Other Changes
+
+- [[4794]](https://github.com/Azure/azure-dev/pull/4794) Upgrade to Go 1.24.
+- [[4960]](https://github.com/Azure/azure-dev/pull/4960) Use Standard SKU for Azure Service Bus.
+- [[4960]](https://github.com/Azure/azure-dev/pull/4960) Remove passing host settings through `main.parameters.json`.
+- [[4972]](https://github.com/Azure/azure-dev/pull/4972) Remove unused core Bicep modules.
 
 ## 1.13.2 (2025-03-25)
 

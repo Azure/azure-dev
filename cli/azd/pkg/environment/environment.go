@@ -37,6 +37,8 @@ const TenantIdEnvVarName = "AZURE_TENANT_ID"
 // to.
 const ContainerRegistryEndpointEnvVarName = "AZURE_CONTAINER_REGISTRY_ENDPOINT"
 
+const ContainerEnvironmentEndpointEnvVarName = "AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN"
+
 // AksClusterEnvVarName is the name of they key used to store the endpoint of the AKS cluster to push to.
 const AksClusterEnvVarName = "AZURE_AKS_CLUSTER_NAME"
 

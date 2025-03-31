@@ -92,8 +92,12 @@ module test 'test/test.bicep' = {
   }
 }
 output AI_APPINSIGHTSCONNECTIONSTRING string = ai.outputs.appInsightsConnectionString
+output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = test.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = test.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output S_B_SERVICEBUSENDPOINT string = s_b.outputs.serviceBusEndpoint
 output SQL_SQLSERVERFQDN string = sql.outputs.sqlServerFqdn
+output TEST_AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = test.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
+output TEST_AZURE_CONTAINER_REGISTRY_ENDPOINT string = test.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output TEST_TEST string = test.outputs.test
 output TEST_VAL0 string = test.outputs.val0
 

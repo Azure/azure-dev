@@ -575,6 +575,14 @@ func evaluateForOutputs(value string, appHostOwnsCompute bool) (map[string]genOu
 				Value: noBrackets,
 			}
 		}
+		// Same for AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN as it is required to display the Aspire Dashboard link
+		// at the end of the deployment.
+		if strings.Contains(outputName, environment.ContainerEnvironmentEndpointEnvVarName) && appHostOwnsCompute {
+			outputs[environment.ContainerEnvironmentEndpointEnvVarName] = genOutputParameter{
+				Type:  "string",
+				Value: noBrackets,
+			}
+		}
 		name := fmt.Sprintf("%s_%s", strings.ToUpper(resourceName), strings.ToUpper(outputName))
 		outputs[name] = genOutputParameter{
 			Type:  "string",

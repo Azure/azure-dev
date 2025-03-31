@@ -1,0 +1,52 @@
+parameters:
+  - name: Repo
+    type: string
+    default: $(Build.Repository.Name)
+  - name: PrNumber
+    type: string
+    default:  $(System.PullRequest.PullRequestNumber)
+  - name: BodyFile
+    type: string
+    default:  not-specified
+  - name: Tag
+    type: string
+    default:  '<!-- #not-specified -->'
+  - name: GitHubToken
+    type: string
+    default:  $(azuresdk-github-pat)
+
+steps:
+  - pwsh: |
+      $Repo = "${{ parameters.Repo }}"
+      $PrNumber = "${{ parameters.PrNumber }}"
+      $BodyFile = "${{ parameters.BodyFile }}"
+      $Tag = "${{ parameters.Tag }}"
+
+      if ($Tag) {
+          # Using --jq formats the JSON objects on separate lines which can be
+          # parsed individually by PowerShell. Leaving --jq out results in the entire
+          # paginated result set returning on a single line with no clear separating
+          # sequence (i.e. "[{...}, {...}][{...},{...}]"). The result without --jq is
+          # not parsable JSON because of the "][" sequence without a wrapping array.
+          $commentsJsonRows = gh api `
+              repos/$Repo/issues/$PrNumber/comments `
+              --paginate `
+              --jq '.[]'
+          $comments = @()
+          foreach ($row in $commentsJsonRows) {
+              $comments +=@( ConvertFrom-Json $row )
+          }
+
+          Write-Host "Comments found: $($comments.Length)"
+
+          $commentsToErase = $comments.Where({ $_.body.Contains($Tag) })
+          foreach ($comment in $commentsToErase) {
+              Write-Host "Deleting previous tagged comment $($comment.id)"
+              gh api --method DELETE "repos/$Repo/issues/comments/$($comment.id)"
+          }
+      }
+
+      Write-Host "Posting comment"
+      gh pr comment $PRNumber --repo "$Repo" --body-file $BodyFile
+    env:
+      GH_TOKEN: ${{ parameters.GitHubToken }}

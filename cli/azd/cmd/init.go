@@ -253,7 +253,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if i.flags.up {
 			// Prompt to deploy to Azure
 			deploy, err := i.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "Deploy to Azure now?",
+				Message: "Template files have been initialized in your local directory. " +
+					"If you want to provision and deploy now without making changes, select Y. If not, select N.",
 				DefaultValue: true,
 			})
 			if err != nil {

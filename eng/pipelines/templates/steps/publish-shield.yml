@@ -8,7 +8,7 @@ parameters:
 steps:
   - task: DownloadPipelineArtifact@2
     inputs:
-      artifact: ${{ parameters.ArtifactName }}
+      artifactName: ${{ parameters.ArtifactName }}
       path: ${{ parameters.ArtifactDownloadPath }}
 
   - task: AzurePowerShell@5

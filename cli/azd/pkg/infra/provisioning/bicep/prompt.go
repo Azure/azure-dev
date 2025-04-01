@@ -81,36 +81,36 @@ func autoGenerate(parameter string, azdMetadata azure.AzdMetadata) (string, erro
 	return genValue, nil
 }
 
-// azureAiServicesLocations is the locations where Azure AI Services are available.
-// Acquired from Azure Portal on 3/31/2025
-var azureAiServicesLocations = []string{
-	"australiaeast",
-	"brazilsouth",
-	"canadacentral",
-	"canadaeast",
-	"centraluseuap",
-	"eastus",
-	"eastus2",
-	"eastus2euap",
-	"francecentral",
-	"germanywestcentral",
-	"japaneast",
-	"koreacentral",
-	"northcentralus",
-	"norwayeast",
-	"polandcentral",
-	"southafricanorth",
-	"southcentralus",
-	"southindia",
-	"southeastasia",
-	"swedencentral",
-	"switzerlandnorth",
-	"uaenorth",
-	"uksouth",
-	"westeurope",
-	"westus",
-	"westus3",
-}
+// // azureAiServicesLocations is the locations where Azure AI Services are available.
+// // Acquired from Azure Portal on 3/31/2025
+// var azureAiServicesLocations = []string{
+// 	"australiaeast",
+// 	"brazilsouth",
+// 	"canadacentral",
+// 	"canadaeast",
+// 	"centraluseuap",
+// 	"eastus",
+// 	"eastus2",
+// 	"eastus2euap",
+// 	"francecentral",
+// 	"germanywestcentral",
+// 	"japaneast",
+// 	"koreacentral",
+// 	"northcentralus",
+// 	"norwayeast",
+// 	"polandcentral",
+// 	"southafricanorth",
+// 	"southcentralus",
+// 	"southindia",
+// 	"southeastasia",
+// 	"swedencentral",
+// 	"switzerlandnorth",
+// 	"uaenorth",
+// 	"uksouth",
+// 	"westeurope",
+// 	"westus",
+// 	"westus3",
+// }
 
 // locationsWithQuotaFor checks which locations have available quota for a specified list of SKU.
 // It concurrently queries the Azure API for usage data in each location and filters the results
@@ -134,6 +134,13 @@ func (a *BicepProvider) locationsWithQuotaFor(
 	ctx context.Context, subId string, locations []string, quotaFor []string) ([]string, error) {
 	var sharedResults sync.Map
 	var wg sync.WaitGroup
+
+	azureAiServicesLocations, err := a.azureClient.GetResourceSkuLocations(
+		ctx, subId, "AIServices", "S0", "Standard", "accounts")
+	if err != nil {
+		return nil, fmt.Errorf("getting Azure AI Services locations: %w", err)
+	}
+
 	for _, location := range locations {
 		if !slices.Contains(azureAiServicesLocations, location) {
 			// Skip locations that are not in the list of Azure AI Services locations

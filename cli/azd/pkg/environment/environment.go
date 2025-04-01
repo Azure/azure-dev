@@ -37,6 +37,8 @@ const TenantIdEnvVarName = "AZURE_TENANT_ID"
 // to.
 const ContainerRegistryEndpointEnvVarName = "AZURE_CONTAINER_REGISTRY_ENDPOINT"
 
+// ContainerEnvironmentEndpointEnvVarName is the name of the environment variable
+// that specifies the default domain for Azure Container Apps environments.
 const ContainerEnvironmentEndpointEnvVarName = "AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN"
 
 // AksClusterEnvVarName is the name of they key used to store the endpoint of the AKS cluster to push to.

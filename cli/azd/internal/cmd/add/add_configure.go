@@ -28,6 +28,38 @@ var DbMap = map[appdetect.DatabaseDep]project.ResourceType{
 type PromptOptions struct {
 	// PrjConfig is the current project configuration.
 	PrjConfig *project.ProjectConfig
+
+	// ExistingId is the ID of an existing resource.
+	// This is only used to configure the resource with an existing resource.
+	ExistingId string
+}
+
+// ConfigureLive fills in the fields for a resource by first querying live Azure for information.
+//
+// This is used in addition to Configure currently.
+func (a *AddAction) ConfigureLive(
+	ctx context.Context,
+	r *project.ResourceConfig,
+	console input.Console,
+	p PromptOptions) (*project.ResourceConfig, error) {
+	if r.Existing {
+		return r, nil
+	}
+
+	var err error
+
+	switch r.Type {
+	case project.ResourceTypeAiProject:
+		r, err = a.promptAiModel(console, ctx, r, p)
+	case project.ResourceTypeOpenAiModel:
+		r, err = a.promptOpenAi(console, ctx, r, p)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return r, nil
 }
 
 // Configure fills in the fields for a resource.
@@ -36,6 +68,10 @@ func Configure(
 	r *project.ResourceConfig,
 	console input.Console,
 	p PromptOptions) (*project.ResourceConfig, error) {
+	if r.Existing {
+		return ConfigureExisting(ctx, r, console, p)
+	}
+
 	switch r.Type {
 	case project.ResourceTypeHostContainerApp:
 		return fillUses(ctx, r, console, p)

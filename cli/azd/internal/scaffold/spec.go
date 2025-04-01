@@ -10,7 +10,13 @@ import (
 
 type InfraSpec struct {
 	Parameters []Parameter
-	Services   []ServiceSpec
+
+	Services []ServiceSpec
+
+	// Existing resources for declaration purposes.
+	// These are resources that are already created and should be used by the
+	// current deployment for referencing
+	Existing []ExistingResource
 
 	// Databases to create
 	DbPostgres    *DatabasePostgres
@@ -155,6 +161,9 @@ type ServiceSpec struct {
 	AiFoundryProject *AiFoundrySpec
 
 	AISearch *AISearchReference
+
+	// Existing resource bindings
+	Existing []*ExistingResource
 }
 
 type Frontend struct {
@@ -184,6 +193,19 @@ type AISearchReference struct {
 }
 
 type KeyVaultReference struct {
+}
+
+type ExistingResource struct {
+	// The unique logical name of the existing resource in the infra scope.
+	Name string
+	// The resource ID of the resource.
+	ResourceIdEnvVar string
+	// The resource type of the resource. This should match the type contained in the resource ID.
+	ResourceType string
+	// The API version of the resource to look up values.
+	ApiVersion string
+	// Role assignment
+	RoleAssignments []RoleAssignment
 }
 
 func containerAppExistsParameter(serviceName string) Parameter {

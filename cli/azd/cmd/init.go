@@ -59,6 +59,7 @@ type initFlags struct {
 	location       string
 	global         *internal.GlobalCommandOptions
 	fromCode       bool
+	up             bool
 	internal.EnvFlag
 }
 
@@ -97,6 +98,13 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"",
 		false,
 		"Initializes a new application from your existing code.",
+	)
+	local.BoolVarP(
+		&i.up,
+		"up",
+		"",
+		false,
+		"Provision and deploy to Azure after initializing the project from a template.",
 	)
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
 	i.EnvFlag.Bind(local, global)
@@ -242,24 +250,28 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 
-		// Prompt to deploy to Azure
-		deploy, err := i.console.Confirm(ctx, input.ConsoleOptions{
-			Message:      "Deploy to Azure now?",
-			DefaultValue: true,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		if deploy {
-			// Call azd up
-			startTime := time.Now()
-			i.azd.SetArgs([]string{"up", "--cwd", azdCtx.ProjectDirectory()})
-			err := i.azd.ExecuteContext(ctx)
-			header = "New project initialized! Provision and deploy to Azure is completed in " +
-				ux.DurationAsText(since(startTime)) + "."
+		if i.flags.up {
+			// Prompt to deploy to Azure
+			deploy, err := i.console.Confirm(ctx, input.ConsoleOptions{
+				Message:      "Do you want to run " + output.WithHighLightFormat("azd up") + " now?",
+				DefaultValue: true,
+				Help: "Template files have been initialized in your local directory. " +
+					"If you want to provision and deploy now without making changes, select Y. If not, select N.",
+			})
 			if err != nil {
 				return nil, err
+			}
+
+			if deploy {
+				// Call azd up
+				startTime := time.Now()
+				i.azd.SetArgs([]string{"up", "--cwd", azdCtx.ProjectDirectory()})
+				err := i.azd.ExecuteContext(ctx)
+				header = "New project initialized! Provision and deploy to Azure was completed in " +
+					ux.DurationAsText(since(startTime)) + "."
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 

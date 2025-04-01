@@ -210,7 +210,6 @@ func (cli *AzureClient) GetResourceSkuLocations(
 	}
 	locations := make([]string, 0, len(locationsUniqueName))
 	for location := range locationsUniqueName {
-		println(location)
 		locations = append(locations, strings.ToLower(location))
 	}
 	// make the output consistent

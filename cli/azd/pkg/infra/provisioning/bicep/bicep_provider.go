@@ -136,28 +136,8 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	// for .bicep, azd must load a parameters.json file and create the ArmParameters so we know if the are filters
 	// to apply for location (using the allowedValues or the location azd metadata)
 	if isBicepFile(modulePath) {
-		locationParam, locationParamDefined := compileResult.Template.Parameters["location"]
-		var filterLocation = func(loc account.Location) bool {
-			if locationParam.AllowedValues == nil {
-				return true
-			}
-			allowedLocations := make([]string, len(*locationParam.AllowedValues))
-			for i, allowedLocation := range *locationParam.AllowedValues {
-				allowedLocations[i] = allowedLocation.(string)
-			}
-
-			return locationParameterFilterImpl(allowedLocations, loc)
-		}
-		var defaultLocationToSelect *string
-		if locationParamDefined {
-			defaultLocationToSelect = defaultPromptValue(locationParam)
-		}
-
-		err := provisioning.EnsureSubscriptionAndLocation(
-			ctx, p.envManager, p.env, p.prompters, provisioning.EnsureSubscriptionAndLocationOptions{
-				LocationFiler:         filterLocation,
-				SelectDefaultLocation: defaultLocationToSelect,
-			})
+		err := provisioning.EnsureSubscription(
+			ctx, p.envManager, p.env, p.prompters)
 		if err != nil {
 			return err
 		}
@@ -2028,6 +2008,13 @@ func (p *BicepProvider) ensureParameters(
 				value, err := p.promptForParameter(ctx, key, prompt.param)
 				if err != nil {
 					return nil, fmt.Errorf("prompting for value: %w", err)
+				}
+
+				if key == "location" {
+					// location param is special.
+					// It is not persisted in config, it is set in the environment
+					// by promptForParameter
+					continue
 				}
 
 				mustSetParamAsConfig(key, value, p.env.Config, prompt.param.Secure())

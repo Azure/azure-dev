@@ -81,6 +81,37 @@ func autoGenerate(parameter string, azdMetadata azure.AzdMetadata) (string, erro
 	return genValue, nil
 }
 
+// azureAiServicesLocations is the locations where Azure AI Services are available.
+// Acquired from Azure Portal on 3/31/2025
+var azureAiServicesLocations = []string{
+	"australiaeast",
+	"brazilsouth",
+	"canadacentral",
+	"canadaeast",
+	"centraluseuap",
+	"eastus",
+	"eastus2",
+	"eastus2euap",
+	"francecentral",
+	"germanywestcentral",
+	"japaneast",
+	"koreacentral",
+	"northcentralus",
+	"norwayeast",
+	"polandcentral",
+	"southafricanorth",
+	"southcentralus",
+	"southindia",
+	"southeastasia",
+	"swedencentral",
+	"switzerlandnorth",
+	"uaenorth",
+	"uksouth",
+	"westeurope",
+	"westus",
+	"westus3",
+}
+
 // locationsWithQuotaFor checks which locations have available quota for a specified list of SKU.
 // It concurrently queries the Azure API for usage data in each location and filters the results
 // based on the quota and capacity requirements.
@@ -104,6 +135,10 @@ func (a *BicepProvider) locationsWithQuotaFor(
 	var sharedResults sync.Map
 	var wg sync.WaitGroup
 	for _, location := range locations {
+		if !slices.Contains(azureAiServicesLocations, location) {
+			// Skip locations that are not in the list of Azure AI Services locations
+			continue
+		}
 		wg.Add(1)
 		go func(location string) {
 			defer wg.Done()
@@ -122,14 +157,6 @@ func (a *BicepProvider) locationsWithQuotaFor(
 	var iterationError error
 	sharedResults.Range(func(location, quotaDetails any) bool {
 		usages := quotaDetails.([]*armcognitiveservices.Usage)
-		hasS0SkuQuota := slices.ContainsFunc(usages, func(q *armcognitiveservices.Usage) bool {
-			// The minimum quota for the S0 SKU in Microsoft.CognitiveServices/accounts is 2 capacity units
-			return *q.Name.Value == "OpenAI.S0.AccountCount" && (*q.Limit-*q.CurrentValue) >= 2
-		})
-		if !hasS0SkuQuota {
-			// If the S0 SKU quota is not available, skip this location
-			return true
-		}
 
 		// Check if all requested quotas can be satisfied in this location
 		for _, definedUsageName := range quotaFor {
@@ -222,8 +249,22 @@ func (p *BicepProvider) promptForParameter(
 	help, _ := param.Description()
 	azdMetadata, _ := param.AzdMetadata()
 	paramType := p.mapBicepTypeToInterfaceType(param.Type)
+	// parameter `location` is a special case for azd, as it can be set in the environment
+	// and its value must be persisted in the .env file as AZURE_LOCATION
+	isLocationParam := key == "location"
 
 	var value any
+
+	if isLocationParam {
+		if paramType != provisioning.ParameterTypeString {
+			return nil, fmt.Errorf("location parameter must be a string")
+		}
+		envLoc := p.env.GetLocation()
+		if envLoc != "" {
+			// If the location is already set in the environment, use it as the default value
+			return value, nil
+		}
+	}
 
 	if paramType == provisioning.ParameterTypeString &&
 		azdMetadata.Type != nil &&
@@ -388,6 +429,10 @@ func (p *BicepProvider) promptForParameter(
 		default:
 			panic(fmt.Sprintf("unknown parameter type: %s", p.mapBicepTypeToInterfaceType(param.Type)))
 		}
+	}
+	if isLocationParam {
+		p.env.SetLocation(value.(string))
+		p.envManager.Save(ctx, p.env)
 	}
 
 	return value, nil

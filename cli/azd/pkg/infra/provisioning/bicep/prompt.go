@@ -244,8 +244,8 @@ func (p *BicepProvider) promptForParameter(
 
 	if value == nil {
 		if paramType == provisioning.ParameterTypeString &&
-			azdMetadata.Type != nil &&
-			*azdMetadata.Type == azure.AzdMetadataTypeLocation {
+			(isLocationParam || (azdMetadata.Type != nil &&
+				*azdMetadata.Type == azure.AzdMetadataTypeLocation)) {
 
 			// location can be combined with allowedValues and with usageName metadata
 			// allowedValues == nil => all locations are allowed

@@ -2,14 +2,6 @@
 
 ## 1.14.0 (2025-04-02)
 
-### Un-categorized
-
-- [[5008]](https://github.com/Azure/azure-dev/pull/5008) feat: add support for Azure Container Apps environment domain and registry outputs
-- [[4979]](https://github.com/Azure/azure-dev/pull/4979) aspire support webapp
-- [[4999]](https://github.com/Azure/azure-dev/pull/4999) aspire secrets impl change
-- [[4959]](https://github.com/Azure/azure-dev/pull/4959) aspire self migration detection
-- [[4957]](https://github.com/Azure/azure-dev/pull/4957) support userPrincipalId injection for AppHost Migration mode
-
 ### Features Added
 
 - [[4939]](https://github.com/Azure/azure-dev/pull/4939) Automatically load environment values from root .env on `azd init`.
@@ -19,6 +11,7 @@
 - [[4931]](https://github.com/Azure/azure-dev/pull/4931) `azd add` support for Azure AI Search.
 - [[4914]](https://github.com/Azure/azure-dev/pull/4914) `azd show` support for all resources supported by `azd add`.
 - [[4874]](https://github.com/Azure/azure-dev/pull/4874) Provide shortcuts for `azd env set-secrets` to directly use Key Vault created with `azd add`.
+- [[4957]](https://github.com/Azure/azure-dev/pull/4957), [[4959]](https://github.com/Azure/azure-dev/pull/4959), [[4979]](https://github.com/Azure/azure-dev/pull/4979), [[4999]](https://github.com/Azure/azure-dev/pull/4999), [[5008]](https://github.com/Azure/azure-dev/pull/5008) Support .NET Aspire 9.1
 - [[4953]](https://github.com/Azure/azure-dev/pull/4953) Support array of model usage names for quota validation.
 - [[5010]](https://github.com/Azure/azure-dev/pull/5010) Support model usage name metadata for main `location` Bicep parameter.
 

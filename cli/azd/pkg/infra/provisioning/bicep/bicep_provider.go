@@ -142,8 +142,33 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 			return err
 		}
 
-		if _, err := p.ensureParameters(ctx, compileResult.Template); err != nil {
+		// We only want to prompt for a location if the location is actually a parameter.
+		// But if the AZURE_LOCATION is set in system env, we want to set if in the AZD .env, just like the prompt
+		// for location used to do in the past (after prompting or finding the location in system env).
+		_, locationInAzdEnv := p.env.Dotenv()[environment.LocationEnvVarName]
+		if !locationInAzdEnv {
+			if location, locationInSystemEnv := os.LookupEnv(environment.LocationEnvVarName); locationInSystemEnv {
+				p.env.SetLocation(location)
+				if err := p.envManager.Save(ctx, p.env); err != nil {
+					return fmt.Errorf("saving location: %w", err)
+				}
+			}
+		}
+
+		// if location is a parameter and is not in system env, ensureParameters() will prompt for it, supporting all the
+		// metadata and settings as any other bicep parameter.
+		deploymentParams, err := p.ensureParameters(ctx, compileResult.Template)
+		if err != nil {
 			return err
+		}
+
+		// Check if location is a parameter and if it is not set in the AZD env
+		// If it is not set, we need to prompt for it.
+		if locParam, hasLocationParam := deploymentParams[environment.LocationEnvVarName]; hasLocationParam {
+			if _, locationInAzdEnv := p.env.Dotenv()[environment.LocationEnvVarName]; !locationInAzdEnv {
+				p.env.SetLocation(locParam.Value.(string))
+				p.envManager.Save(ctx, p.env)
+			}
 		}
 	}
 

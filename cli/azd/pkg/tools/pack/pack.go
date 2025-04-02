@@ -31,7 +31,7 @@ import (
 
 // Version is the minimum version of pack that we require (and the one we fetch when we fetch pack on behalf of a
 // user).
-var Version semver.Version = semver.MustParse("0.30.0")
+var Version semver.Version = semver.MustParse("0.37.0")
 
 var statusCodeFailureRegexp = regexp.MustCompile(`failed with status code: (\d+)`)
 

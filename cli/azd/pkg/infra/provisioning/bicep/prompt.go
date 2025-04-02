@@ -103,7 +103,23 @@ func (a *BicepProvider) locationsWithQuotaFor(
 	ctx context.Context, subId string, locations []string, quotaFor []string) ([]string, error) {
 	var sharedResults sync.Map
 	var wg sync.WaitGroup
+
+	azureAiServicesLocations, err := a.azureClient.GetResourceSkuLocations(
+		ctx, subId, "AIServices", "S0", "Standard", "accounts")
+	if err != nil {
+		return nil, fmt.Errorf("getting Azure AI Services locations: %w", err)
+	}
+
+	if locations == nil {
+		// If no locations are provided, use the Azure AI Services locations
+		locations = azureAiServicesLocations
+	}
+
 	for _, location := range locations {
+		if !slices.Contains(azureAiServicesLocations, location) {
+			// Skip locations that are not in the list of Azure AI Services locations
+			continue
+		}
 		wg.Add(1)
 		go func(location string) {
 			defer wg.Done()
@@ -222,12 +238,25 @@ func (p *BicepProvider) promptForParameter(
 	help, _ := param.Description()
 	azdMetadata, _ := param.AzdMetadata()
 	paramType := p.mapBicepTypeToInterfaceType(param.Type)
+	// parameter `location` is a special case for azd, as it can be set in the environment
+	// and its value must be persisted in the .env file as AZURE_LOCATION
+	isLocationParam := key == "location"
 
 	var value any
 
+	if isLocationParam {
+		if paramType != provisioning.ParameterTypeString {
+			return nil, fmt.Errorf("location parameter must be a string")
+		}
+		envLoc := p.env.GetLocation()
+		if envLoc != "" {
+			return envLoc, nil
+		}
+	}
+
 	if paramType == provisioning.ParameterTypeString &&
-		azdMetadata.Type != nil &&
-		*azdMetadata.Type == azure.AzdMetadataTypeLocation {
+		(isLocationParam || (azdMetadata.Type != nil &&
+			*azdMetadata.Type == azure.AzdMetadataTypeLocation)) {
 
 		// location can be combined with allowedValues and with usageName metadata
 		// allowedValues == nil => all locations are allowed
@@ -243,16 +272,6 @@ func (p *BicepProvider) promptForParameter(
 			}
 		}
 		if len(azdMetadata.UsageName) > 0 {
-			if allowedLocations == nil {
-				allLocations, err := p.subscriptionManager.ListLocations(ctx, p.env.GetSubscriptionId())
-				if err != nil {
-					return nil, fmt.Errorf("listing locations: %w", err)
-				}
-				allowedLocations = make([]string, len(allLocations))
-				for i, location := range allLocations {
-					allowedLocations[i] = location.Name
-				}
-			}
 			withQuotaLocations, err := p.locationsWithQuotaFor(
 				ctx, p.env.GetSubscriptionId(), allowedLocations, azdMetadata.UsageName)
 			if err != nil {
@@ -261,9 +280,10 @@ func (p *BicepProvider) promptForParameter(
 			allowedLocations = withQuotaLocations
 		}
 
-		location, err := p.prompters.PromptLocation(ctx, p.env.GetSubscriptionId(), msg, func(loc account.Location) bool {
-			return locationParameterFilterImpl(allowedLocations, loc)
-		}, defaultPromptValue(param))
+		location, err := p.prompters.PromptLocation(
+			ctx, p.env.GetSubscriptionId(), msg, func(loc account.Location) bool {
+				return locationParameterFilterImpl(allowedLocations, loc)
+			}, defaultPromptValue(param))
 		if err != nil {
 			return nil, err
 		}

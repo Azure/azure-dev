@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../extension.schema.json
+id: microsoft.azd.mcp
+namespace: mcp
+displayName: MCP Extension
+description: This extension provides examples of the AZD extension framework.
+usage: azd mcp start [options]
+version: 0.0.1
+capabilities:
+  - custom-commands
+examples:
+  - name: start
+    description: Starts the `azd` MCP server.
+    usage: azd mcp start

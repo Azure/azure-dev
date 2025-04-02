@@ -133,6 +133,14 @@ func (a *BicepProvider) locationsWithQuotaFor(
 	var iterationError error
 	sharedResults.Range(func(location, quotaDetails any) bool {
 		usages := quotaDetails.([]*armcognitiveservices.Usage)
+		hasS0SkuQuota := slices.ContainsFunc(usages, func(q *armcognitiveservices.Usage) bool {
+			// The minimum quota for the S0 SKU in Microsoft.CognitiveServices/accounts is 2 capacity units
+			return *q.Name.Value == "OpenAI.S0.AccountCount" && (*q.Limit-*q.CurrentValue) >= 2
+		})
+		if !hasS0SkuQuota {
+			// If the S0 SKU quota is not available, skip this location
+			return true
+		}
 
 		// Check if all requested quotas can be satisfied in this location
 		for _, definedUsageName := range quotaFor {
@@ -261,16 +269,6 @@ func (p *BicepProvider) promptForParameter(
 				}
 			}
 			if len(azdMetadata.UsageName) > 0 {
-				if allowedLocations == nil {
-					allLocations, err := p.subscriptionManager.ListLocations(ctx, p.env.GetSubscriptionId())
-					if err != nil {
-						return nil, fmt.Errorf("listing locations: %w", err)
-					}
-					allowedLocations = make([]string, len(allLocations))
-					for i, location := range allLocations {
-						allowedLocations[i] = location.Name
-					}
-				}
 				withQuotaLocations, err := p.locationsWithQuotaFor(
 					ctx, p.env.GetSubscriptionId(), allowedLocations, azdMetadata.UsageName)
 				if err != nil {

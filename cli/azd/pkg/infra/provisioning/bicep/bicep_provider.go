@@ -164,7 +164,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 
 		// Check if location is a parameter and if it is not set in the AZD env
 		// If it is not set, we need to prompt for it.
-		if locParam, hasLocationParam := deploymentParams[environment.LocationEnvVarName]; hasLocationParam {
+		if locParam, hasLocationParam := deploymentParams["location"]; hasLocationParam {
 			if _, locationInAzdEnv := p.env.Dotenv()[environment.LocationEnvVarName]; !locationInAzdEnv {
 				p.env.SetLocation(locParam.Value.(string))
 				p.envManager.Save(ctx, p.env)
@@ -2035,14 +2035,11 @@ func (p *BicepProvider) ensureParameters(
 					return nil, fmt.Errorf("prompting for value: %w", err)
 				}
 
-				if key == "location" {
+				if key != "location" {
 					// location param is special.
-					// It is not persisted in config, it is set in the environment
-					// by promptForParameter
-					continue
+					// It is not persisted in config, it is set in the .env directly
+					mustSetParamAsConfig(key, value, p.env.Config, prompt.param.Secure())
 				}
-
-				mustSetParamAsConfig(key, value, p.env.Config, prompt.param.Secure())
 				configModified = true
 				configuredParameters[key] = azure.ArmParameter{
 					Value: value,

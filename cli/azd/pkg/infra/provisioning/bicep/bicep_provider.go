@@ -188,7 +188,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 
 			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
 			if err := p.envManager.Save(ctx, p.env); err != nil {
-				return fmt.Errorf("saving location to env: %w", err)
+				return fmt.Errorf("saving resource group name: %w", err)
 			}
 		}
 	}

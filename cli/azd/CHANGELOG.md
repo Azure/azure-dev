@@ -1,14 +1,33 @@
 # Release History
 
-## 1.14.0-beta.1 (Unreleased)
+## 1.14.0 (2025-04-02)
 
 ### Features Added
 
-### Breaking Changes
+- [[4939]](https://github.com/Azure/azure-dev/pull/4939) Automatically load environment values from root .env on `azd init`.
+- [[4939]](https://github.com/Azure/azure-dev/pull/4939) Introduce `AZD_ALLOW_NON_EMPTY_FOLDER` variable that bypasses warning about initializing template in non-empty directory.
+- [[4977]](https://github.com/Azure/azure-dev/pull/4977), [[4995]](https://github.com/Azure/azure-dev/pull/4995) New `azd init --up` flag that runs `azd up` after initializing from a template. Thanks @lianw for the contribution!
+- [[4943]](https://github.com/Azure/azure-dev/pull/4943) `azd add` support for existing resources (AI models, AI Search, Key Vault, Event Hubs, Service Bus, Storage).
+- [[4931]](https://github.com/Azure/azure-dev/pull/4931) `azd add` support for Azure AI Search.
+- [[4914]](https://github.com/Azure/azure-dev/pull/4914) `azd show` support for all resources supported by `azd add`.
+- [[4874]](https://github.com/Azure/azure-dev/pull/4874) Provide shortcuts for `azd env set-secrets` to directly use Key Vault created with `azd add`.
+- [[4957]](https://github.com/Azure/azure-dev/pull/4957), [[4959]](https://github.com/Azure/azure-dev/pull/4959), [[4979]](https://github.com/Azure/azure-dev/pull/4979), [[4999]](https://github.com/Azure/azure-dev/pull/4999), [[5008]](https://github.com/Azure/azure-dev/pull/5008) Support .NET Aspire 9.1
+- [[4953]](https://github.com/Azure/azure-dev/pull/4953) Support array of model usage names for quota validation.
+- [[5010]](https://github.com/Azure/azure-dev/pull/5010) Support model usage name metadata for main `location` Bicep parameter.
 
 ### Bugs Fixed
 
+- [[4966]](https://github.com/Azure/azure-dev/pull/4966) Fix `AZURE_OPENAI_ENDPOINT` not showing in `azd add` preview.
+- [[4561]](https://github.com/Azure/azure-dev/pull/4561) Fix `azd up -e <env>` so it uses the specified environment.
+- [[4960]](https://github.com/Azure/azure-dev/pull/4960) Fix simplified init failing to provision with detected databases and `alpha.compose` off.
+- [[4929]](https://github.com/Azure/azure-dev/pull/4929), [[5010]](https://github.com/Azure/azure-dev/pull/5010) Improve location and quota validation for Azure AI Services resources.
+
 ### Other Changes
+
+- [[4794]](https://github.com/Azure/azure-dev/pull/4794) Upgrade to Go 1.24.
+- [[4960]](https://github.com/Azure/azure-dev/pull/4960) Use Standard SKU for Azure Service Bus.
+- [[4960]](https://github.com/Azure/azure-dev/pull/4960) Remove passing host settings through `main.parameters.json`.
+- [[4972]](https://github.com/Azure/azure-dev/pull/4972) Remove unused core Bicep modules.
 
 ## 1.13.2 (2025-03-25)
 

@@ -167,7 +167,9 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 		if locParam, hasLocationParam := deploymentParams["location"]; hasLocationParam {
 			if _, locationInAzdEnv := p.env.Dotenv()[environment.LocationEnvVarName]; !locationInAzdEnv {
 				p.env.SetLocation(locParam.Value.(string))
-				p.envManager.Save(ctx, p.env)
+				if err := p.envManager.Save(ctx, p.env); err != nil {
+					return fmt.Errorf("saving location to env: %w", err)
+				}
 			}
 		}
 	}
@@ -186,7 +188,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 
 			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
 			if err := p.envManager.Save(ctx, p.env); err != nil {
-				return fmt.Errorf("saving resource group name: %w", err)
+				return fmt.Errorf("saving location to env: %w", err)
 			}
 		}
 	}

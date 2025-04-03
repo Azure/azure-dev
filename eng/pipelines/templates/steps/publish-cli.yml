@@ -34,9 +34,10 @@ steps:
         gh release create `
           "$(GH_RELEASE_TAG)" `
           --title "$(GH_RELEASE_TAG)" `
-          --notes-file changelog/CHANGELOG.md
+          --notes-file changelog/CHANGELOG.md `
+          --repo Azure/azure-dev
 
-        gh release upload $(GH_RELEASE_TAG) release/*
+        gh release upload $(GH_RELEASE_TAG) release/* --repo Azure/azure-dev
       displayName: Create GitHub Release and upload artifacts
       env:
         GH_TOKEN: $(azuresdk-github-pat)

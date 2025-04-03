@@ -19,7 +19,7 @@ steps:
             exit 1
         }
 
-        gh release view $tag 
+        gh release view $tag --repo Azure/azure-dev
         if ($LASTEXITCODE -eq 0) {
           Write-Host "Release ($tag) already exists. Exiting."
           exit 1

@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -618,16 +619,27 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		return nil, err
 	}
 
-	err = p.validatePreflight(
-		ctx,
-		bicepDeploymentData.Target,
-		bicepDeploymentData.CompiledBicep.RawArmTemplate,
-		bicepDeploymentData.CompiledBicep.Parameters,
-		deploymentTags,
-		optionsMap,
-	)
-	if err != nil {
-		return nil, err
+	if strings.ToLower(p.env.Getenv(environment.DisablePreflightName)) != "true" {
+		err = p.validatePreflight(
+			ctx,
+			bicepDeploymentData.Target,
+			bicepDeploymentData.CompiledBicep.RawArmTemplate,
+			bicepDeploymentData.CompiledBicep.Parameters,
+			deploymentTags,
+			optionsMap,
+		)
+		if err != nil {
+			return nil, &internal.ErrorWithSuggestion{
+				Err: err,
+				Suggestion: fmt.Sprintf("To skip provision validation, please run %s.",
+					output.WithHighLightFormat("`azd env set %s true`", environment.DisablePreflightName)),
+			}
+		}
+	} else {
+		warningMessage := fmt.Sprintf("WARNING: Provision validation is skipped. "+
+			"To enable it, please run `azd env set %s false` or remove %s from your .env file.\n",
+			environment.DisablePreflightName, environment.DisablePreflightName)
+		p.console.Message(ctx, output.WithWarningFormat(warningMessage))
 	}
 
 	cancelProgress := make(chan bool)

@@ -6,8 +6,12 @@ package cmd
 import (
 	// added for MCP server functionality
 	"context"
+	"errors"
 	"fmt"
+	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -32,7 +36,8 @@ func newStartCommand() *cobra.Command {
 
 			registerTools(mcpServer)
 
-			fmt.Println("Starting MCP server...")
+			log.Println("Starting MCP server...")
+
 			if err := server.ServeStdio(mcpServer); err != nil {
 				return err
 			}
@@ -165,6 +170,15 @@ func onBeforeTool(id any, request *mcp.CallToolRequest) {
 }
 
 func invokeGetEnvValues(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !projectExists(request) {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				mcp.NewTextContent("azd project not found. Run 'azd init' to create a new azd project."),
+			},
+			IsError: true,
+		}, errors.New("azd project not found")
+	}
+
 	args := []string{"env", "get-values"}
 
 	args = appendGlobalFlags(args, request)
@@ -177,6 +191,15 @@ func invokeGetEnvValues(ctx context.Context, request mcp.CallToolRequest) (*mcp.
 }
 
 func invokeSetEnvValue(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !projectExists(request) {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				mcp.NewTextContent("azd project not found. Run 'azd init' to create a new azd project."),
+			},
+			IsError: true,
+		}, errors.New("azd project not found")
+	}
+
 	args := []string{"env", "set"}
 
 	key, hasKey := request.Params.Arguments["key"]
@@ -225,7 +248,31 @@ func invokeInit(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallTool
 	return mcp.NewToolResultText(string(cmdResult)), nil
 }
 
+func projectExists(request mcp.CallToolRequest) bool {
+	cwd := "."
+	cwdArg, hasCwd := request.Params.Arguments["cwd"]
+	if hasCwd {
+		cwd = cwdArg.(string)
+	}
+
+	projectFile := filepath.Join(cwd, "azure.yaml")
+	if _, err := os.Stat(projectFile); err != nil {
+		return false
+	}
+
+	return true
+}
+
 func invokeEnvList(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !projectExists(request) {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				mcp.NewTextContent("azd project not found. Run 'azd init' to create a new azd project."),
+			},
+			IsError: true,
+		}, errors.New("azd project not found")
+	}
+
 	args := []string{"env", "list"}
 
 	args = appendGlobalFlags(args, request)
@@ -238,6 +285,15 @@ func invokeEnvList(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallT
 }
 
 func invokeNewEnv(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !projectExists(request) {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				mcp.NewTextContent("azd project not found. Run 'azd init' to create a new azd project."),
+			},
+			IsError: true,
+		}, errors.New("azd project not found")
+	}
+
 	args := []string{"env", "new"}
 
 	name, hasName := request.Params.Arguments["name"]
@@ -255,6 +311,15 @@ func invokeNewEnv(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallTo
 }
 
 func invokeShow(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !projectExists(request) {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				mcp.NewTextContent("azd project not found. Run 'azd init' to create a new azd project."),
+			},
+			IsError: true,
+		}, errors.New("azd project not found")
+	}
+
 	args := []string{"show"}
 
 	args = appendGlobalFlags(args, request)
@@ -279,6 +344,15 @@ func invokeGlobalConfig(ctx context.Context, request mcp.CallToolRequest) (*mcp.
 }
 
 func invokeProvision(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !projectExists(request) {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				mcp.NewTextContent("azd project not found. Run 'azd init' to create a new azd project."),
+			},
+			IsError: true,
+		}, errors.New("azd project not found")
+	}
+
 	args := []string{"provision"}
 
 	preview, hasPreview := request.Params.Arguments["preview"]
@@ -301,6 +375,15 @@ func invokeProvision(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 }
 
 func invokeDeploy(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if !projectExists(request) {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				mcp.NewTextContent("azd project not found. Run 'azd init' to create a new azd project."),
+			},
+			IsError: true,
+		}, errors.New("azd project not found")
+	}
+
 	args := []string{"deploy"}
 
 	serviceName, hasServiceName := request.Params.Arguments["serviceName"]

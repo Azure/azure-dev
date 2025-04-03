@@ -10,11 +10,12 @@ steps:
     # continue with any of the subsequent steps.
     - pwsh: |
         $tag = "azure-dev-cli_$(CLI_VERSION)"
+        Write-Host "Release tag: $tag"
 
         # Check for tag using gh API
         $existingTag = gh api /repos/Azure/azure-dev/tags | ConvertFrom-Json | Where-Object { $_.name -eq $tag }
         if ($existingTag) {
-            Write-Host "Tag $tag already exists. Exiting.""
+            Write-Host "Tag $tag already exists. Exiting."
             exit 1
         }
 

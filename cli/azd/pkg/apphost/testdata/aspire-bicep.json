@@ -49,9 +49,14 @@
           }
         }
       },
+      "kv": {
+        "type": "azure.bicep.v0",
+        "connectionString": "{kv.outputs.kvUri}",
+        "path": "kv.bicep"
+      },
       "postgres-2": {
         "type": "azure.bicep.v0",
-        "connectionString": "{postgres-2.secretOutputs.connectionString}",
+        "connectionString": "{kv.secrets.connectionstrings--db}",
         "path": "aspire.hosting.azure.bicep.postgres.bicep",
         "params": {
           "serverName": "postgres-2",

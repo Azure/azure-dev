@@ -5,6 +5,7 @@ package grpcserver
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -83,4 +84,60 @@ func Test_ProjectService_Flow(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, getResponse)
 	require.Equal(t, projectConfig.Name, getResponse.Project.Name)
+}
+
+func Test_ProjectService_AddService(t *testing.T) {
+	// Setup a mock context and temporary project directory.
+	mockContext := mocks.NewMockContext(context.Background())
+	temp := t.TempDir()
+
+	// Initialize AzdContext with the temporary directory.
+	azdContext := azdcontext.NewAzdContextWithDirectory(temp)
+
+	// Define and save project configuration.
+	projectConfig := project.ProjectConfig{
+		Name: "test",
+	}
+	err := project.Save(*mockContext.Context, &projectConfig, azdContext.ProjectPath())
+	require.NoError(t, err)
+
+	// Configure and initialize environment manager.
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	localDataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
+	envManager, err := environment.NewManager(mockContext.Container, azdContext, mockContext.Console, localDataStore, nil)
+	require.NoError(t, err)
+	require.NotNil(t, envManager)
+
+	// Create lazy-loaded instances.
+	lazyAzdContext := lazy.From(azdContext)
+	lazyEnvManager := lazy.From(envManager)
+
+	// Create the project service.
+	service := NewProjectService(lazyAzdContext, lazyEnvManager)
+
+	// Prepare a new service addition request.
+	serviceRequest := &azdext.AddServiceRequest{
+		Service: &azdext.ServiceConfig{
+			Name:         "service1",
+			RelativePath: filepath.Join("src", "service1"),
+			Language:     "python",
+			Host:         "containerapp",
+		},
+	}
+
+	// Call AddService.
+	emptyResponse, err := service.AddService(*mockContext.Context, serviceRequest)
+	require.NoError(t, err)
+	require.NotNil(t, emptyResponse)
+
+	// Reload the project configuration and verify the service was added.
+	updatedConfig, err := project.Load(*mockContext.Context, azdContext.ProjectPath())
+	require.NoError(t, err)
+	require.NotNil(t, updatedConfig.Services)
+	serviceConfig, exists := updatedConfig.Services["service1"]
+	require.True(t, exists)
+	require.Equal(t, "service1", serviceConfig.Name)
+	require.Equal(t, filepath.Join("src", "service1"), serviceConfig.RelativePath)
+	require.Equal(t, project.ServiceLanguagePython, serviceConfig.Language)
+	require.Equal(t, project.ContainerAppTarget, serviceConfig.Host)
 }

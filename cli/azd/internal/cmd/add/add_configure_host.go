@@ -294,7 +294,6 @@ func ServiceFromDetect(
 
 	svc.Host = project.ContainerAppTarget
 	svc.RelativePath = rel
-	svc.RootPath = prj.RootPath
 
 	language, supported := LanguageMap[prj.Language]
 	if !supported {
@@ -309,9 +308,16 @@ func ServiceFromDetect(
 			return svc, err
 		}
 
-		svc.Docker = project.DockerProjectOptions{
-			Path: relDocker,
+		svc.Docker.Path = relDocker
+	}
+
+	if prj.RootPath != "" {
+		relContext, err := filepath.Rel(prj.Path, prj.RootPath)
+		if err != nil {
+			return svc, err
 		}
+
+		svc.Docker.Context = relContext
 	}
 
 	if prj.HasWebUIFramework() {

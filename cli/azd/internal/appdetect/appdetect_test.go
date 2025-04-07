@@ -133,7 +133,7 @@ func TestDetect(t *testing.T) {
 			"IncludeExcludeLanguages",
 			[]DetectOption{
 				WithDotNet(),
-				WithJava(),
+				WithoutJava(),
 				WithJavaScript(),
 				WithoutJavaScript(),
 			},
@@ -143,50 +143,12 @@ func TestDetect(t *testing.T) {
 					Path:          "dotnet",
 					DetectionRule: "Inferred by presence of: dotnettestapp.csproj, Program.cs",
 				},
-				{
-					Language:      Java,
-					Path:          "java",
-					DetectionRule: "Inferred by presence of: pom.xml",
-				},
-				{
-					Language:      Java,
-					Path:          "java-multimodules/application",
-					RootPath:      filepath.Join(dir, "java-multimodules"),
-					DetectionRule: "Inferred by presence of: pom.xml",
-					DatabaseDeps: []DatabaseDep{
-						DbMySql,
-						DbPostgres,
-					},
-				},
-				{
-					Language:      Java,
-					Path:          "java-multimodules/library",
-					RootPath:      filepath.Join(dir, "java-multimodules"),
-					DetectionRule: "Inferred by presence of: pom.xml",
-				},
-				{
-					Language:      Java,
-					Path:          "java-multimodules/module1",
-					RootPath:      filepath.Join(dir, "java-multimodules"),
-					DetectionRule: "Inferred by presence of: pom.xml",
-				},
-				{
-					Language:      Java,
-					Path:          "java-multimodules/module2/submodule1",
-					RootPath:      filepath.Join(dir, "java-multimodules"), // point to the root, not direct parent
-					DetectionRule: "Inferred by presence of: pom.xml",
-				},
-				{
-					Language:      Java,
-					Path:          "java-multimodules/notmodule",
-					RootPath:      "",
-					DetectionRule: "Inferred by presence of: pom.xml",
-				},
 			},
 		},
 		{
 			"ExcludeLanguages",
 			[]DetectOption{
+				WithoutJava(),
 				WithoutJavaScript(),
 				WithoutPython(),
 			},
@@ -196,51 +158,13 @@ func TestDetect(t *testing.T) {
 					Path:          "dotnet",
 					DetectionRule: "Inferred by presence of: dotnettestapp.csproj, Program.cs",
 				},
-				{
-					Language:      Java,
-					Path:          "java",
-					DetectionRule: "Inferred by presence of: pom.xml",
-				},
-				{
-					Language:      Java,
-					Path:          "java-multimodules/application",
-					RootPath:      filepath.Join(dir, "java-multimodules"),
-					DetectionRule: "Inferred by presence of: pom.xml",
-					DatabaseDeps: []DatabaseDep{
-						DbMySql,
-						DbPostgres,
-					},
-				},
-				{
-					Language:      Java,
-					Path:          "java-multimodules/library",
-					RootPath:      filepath.Join(dir, "java-multimodules"),
-					DetectionRule: "Inferred by presence of: pom.xml",
-				},
-				{
-					Language:      Java,
-					Path:          "java-multimodules/module1",
-					RootPath:      filepath.Join(dir, "java-multimodules"),
-					DetectionRule: "Inferred by presence of: pom.xml",
-				},
-				{
-					Language:      Java,
-					Path:          "java-multimodules/module2/submodule1",
-					RootPath:      filepath.Join(dir, "java-multimodules"), // point to the root, not direct parent
-					DetectionRule: "Inferred by presence of: pom.xml",
-				},
-				{
-					Language:      Java,
-					Path:          "java-multimodules/notmodule",
-					RootPath:      "",
-					DetectionRule: "Inferred by presence of: pom.xml",
-				},
 			},
 		},
 		{
 			"ExcludePatterns",
 			[]DetectOption{
 				WithExcludePatterns([]string{
+					"**/*-multi*",
 					"**/*-full",
 					"**/javascript",
 					"typescript",
@@ -255,40 +179,6 @@ func TestDetect(t *testing.T) {
 				{
 					Language:      Java,
 					Path:          "java",
-					DetectionRule: "Inferred by presence of: pom.xml",
-				},
-				{
-					Language:      Java,
-					Path:          "java-multimodules/application",
-					RootPath:      filepath.Join(dir, "java-multimodules"),
-					DetectionRule: "Inferred by presence of: pom.xml",
-					DatabaseDeps: []DatabaseDep{
-						DbMySql,
-						DbPostgres,
-					},
-				},
-				{
-					Language:      Java,
-					Path:          "java-multimodules/library",
-					RootPath:      filepath.Join(dir, "java-multimodules"),
-					DetectionRule: "Inferred by presence of: pom.xml",
-				},
-				{
-					Language:      Java,
-					Path:          "java-multimodules/module1",
-					RootPath:      filepath.Join(dir, "java-multimodules"),
-					DetectionRule: "Inferred by presence of: pom.xml",
-				},
-				{
-					Language:      Java,
-					Path:          "java-multimodules/module2/submodule1",
-					RootPath:      filepath.Join(dir, "java-multimodules"), // point to the root, not direct parent
-					DetectionRule: "Inferred by presence of: pom.xml",
-				},
-				{
-					Language:      Java,
-					Path:          "java-multimodules/notmodule",
-					RootPath:      "",
 					DetectionRule: "Inferred by presence of: pom.xml",
 				},
 				{

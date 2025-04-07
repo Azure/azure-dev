@@ -447,13 +447,23 @@ func (p *dockerProject) packBuild(
 		return nil, err
 	}
 	builder := DefaultBuilderImage
-
-	buildContext := svc.Path()
 	environ := []string{}
 	userDefinedImage := false
+
 	if os.Getenv("AZD_BUILDER_IMAGE") != "" {
 		builder = os.Getenv("AZD_BUILDER_IMAGE")
 		userDefinedImage = true
+	}
+
+	svcPath := svc.Path()
+	buildContext := svcPath
+
+	if svc.Docker.Context != "" {
+		buildContext = svc.Docker.Context
+
+		if !filepath.IsAbs(buildContext) {
+			buildContext = filepath.Join(svcPath, buildContext)
+		}
 	}
 
 	if !userDefinedImage {
@@ -463,13 +473,12 @@ func (p *dockerProject) packBuild(
 		if svc.Language == ServiceLanguageJava {
 			environ = append(environ, "ORYX_RUNTIME_PORT=8080")
 
-			// Specify parent context and build module for multi-module project when pack build
-			if svc.RootPath != "" {
-				buildContext = svc.RootPath
-				svcRelPath, err := filepath.Rel(buildContext, svc.Path())
+			if buildContext != svcPath {
+				svcRelPath, err := filepath.Rel(buildContext, svcPath)
 				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("calculating relative context path: %w", err)
 				}
+
 				environ = append(environ, fmt.Sprintf("BP_MAVEN_BUILT_MODULE=%s", filepath.ToSlash(svcRelPath)))
 			}
 		}

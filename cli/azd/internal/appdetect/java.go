@@ -17,9 +17,8 @@ import (
 )
 
 type javaDetector struct {
-	mvnCli                  *maven.Cli
-	rootProjects            []mavenProject
-	modulePathToRootProject map[string]mavenProject
+	mvnCli       *maven.Cli
+	rootProjects []mavenProject
 }
 
 func (jd *javaDetector) Language() Language {
@@ -36,20 +35,29 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 			}
 
 			if len(project.Modules) > 0 {
-				// This is a multi-module project, we will capture the analysis, but return nil to continue recursing
-				jd.captureRootAndModules(*project, path)
+				// This is a multi-module project, we will capture the analysis, but return nil
+				// to continue recursing
+				jd.rootProjects = append(jd.rootProjects, *project)
 				return nil, nil
 			}
 
-			var currentRoot *mavenProject
-			for _, rootProject := range jd.rootProjects {
-				// We can say that the project is in the root project if
-				// 1) the project path is under the root project
-				// 2) the project is the module of root project
-				underRootProject := strings.HasPrefix(pomFile, filepath.Dir(rootProject.path)+string(filepath.Separator))
-				moduleOfRootProject, exists := jd.modulePathToRootProject[project.path]
-				if underRootProject && exists && moduleOfRootProject.path == rootProject.path {
-					currentRoot = &rootProject
+			// the absolute root project
+			var root *mavenProject
+			current := project
+			for {
+				newRoot := false
+
+				for _, rootProject := range jd.rootProjects {
+					for _, module := range rootProject.Modules {
+						if filepath.Join(rootProject.path, module) == current.path {
+							root = &rootProject
+							current = root
+							newRoot = true
+						}
+					}
+				}
+
+				if !newRoot { // we iterated and didn't find a new parent, there is either no root or we've found it
 					break
 				}
 			}
@@ -62,8 +70,9 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 			if err != nil {
 				return nil, fmt.Errorf("detecting dependencies: %w", err)
 			}
-			if currentRoot != nil {
-				result.RootPath = currentRoot.path
+
+			if root != nil {
+				result.RootPath = root.path
 			}
 
 			return result, nil
@@ -132,13 +141,26 @@ func readMavenProject(ctx context.Context, mvnCli *maven.Cli, filePath string) (
 func detectDependencies(mavenProject *mavenProject, project *Project) (*Project, error) {
 	databaseDepMap := map[DatabaseDep]struct{}{}
 	for _, dep := range mavenProject.Dependencies {
-		if dep.GroupId == "com.mysql" && dep.ArtifactId == "mysql-connector-j" {
+		if (dep.GroupId == "com.mysql" && dep.ArtifactId == "mysql-connector-j") ||
+			(dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-starter-jdbc-mysql") {
 			databaseDepMap[DbMySql] = struct{}{}
 		}
 
-		if dep.GroupId == "org.postgresql" && dep.ArtifactId == "postgresql" {
+		if (dep.GroupId == "org.postgresql" && dep.ArtifactId == "postgresql") ||
+			(dep.GroupId == "com.azure.spring" && dep.ArtifactId == "spring-cloud-azure-starter-jdbc-postgresql") {
 			databaseDepMap[DbPostgres] = struct{}{}
 		}
+
+		if (dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-redis") ||
+			(dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-redis-reactive") {
+			databaseDepMap[DbRedis] = struct{}{}
+		}
+
+		if (dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-mongodb") ||
+			(dep.GroupId == "org.springframework.boot" && dep.ArtifactId == "spring-boot-starter-data-mongodb-reactive") {
+			databaseDepMap[DbMongo] = struct{}{}
+		}
+		// todo: Add DbCosmos
 	}
 
 	if len(databaseDepMap) > 0 {
@@ -149,24 +171,4 @@ func detectDependencies(mavenProject *mavenProject, project *Project) (*Project,
 	}
 
 	return project, nil
-}
-
-// captureRootAndModules records the root and modules projects to detect parent later
-func (jd *javaDetector) captureRootAndModules(mavenProject mavenProject, path string) {
-	if _, ok := jd.modulePathToRootProject[mavenProject.path]; !ok {
-		// Add into root projects if it's new root
-		jd.rootProjects = append(jd.rootProjects, mavenProject)
-	}
-	for _, module := range mavenProject.Modules {
-		modulePath := filepath.Join(path, module)
-		// modulePath points to the actual root, not current direct parent
-		jd.modulePathToRootProject[modulePath] = mavenProject
-		for {
-			if result, ok := jd.modulePathToRootProject[jd.modulePathToRootProject[modulePath].path]; ok {
-				jd.modulePathToRootProject[modulePath] = result
-			} else {
-				break
-			}
-		}
-	}
 }

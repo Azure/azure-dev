@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	msiArm "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
+	"github.com/azure/azure-dev/cli/azd/pkg/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -48,6 +50,7 @@ const (
 	lookupKindPrincipleName         servicePrincipalLookupKind = "principal-name"
 	lookupKindEnvironmentVariable   servicePrincipalLookupKind = "environment-variable"
 	AzurePipelineClientIdEnvVarName string                     = "AZURE_PIPELINE_CLIENT_ID"
+	AzurePipelineMsiClientId        string                     = "AZURE_PIPELINE_MSI_CLIENT_ID"
 )
 
 var (
@@ -96,6 +99,7 @@ type PipelineManager struct {
 	infra             *project.Infra
 	userConfigManager config.UserConfigManager
 	keyVaultService   keyvault.KeyVaultService
+	msiService        armmsi.ArmMsiService
 }
 
 func NewPipelineManager(
@@ -111,6 +115,7 @@ func NewPipelineManager(
 	importManager *project.ImportManager,
 	userConfigManager config.UserConfigManager,
 	keyVaultService keyvault.KeyVaultService,
+	msiService armmsi.ArmMsiService,
 ) (*PipelineManager, error) {
 	pipelineProvider := &PipelineManager{
 		azdCtx:            azdCtx,
@@ -124,6 +129,7 @@ func NewPipelineManager(
 		importManager:     importManager,
 		userConfigManager: userConfigManager,
 		keyVaultService:   keyVaultService,
+		msiService:        msiService,
 	}
 
 	// check that scm and ci providers are set
@@ -147,6 +153,10 @@ type servicePrincipalResult struct {
 	applicationName  string
 	lookupKind       servicePrincipalLookupKind
 	servicePrincipal *graphsdk.ServicePrincipal
+}
+
+type msiUser struct {
+	msiArm.Identity
 }
 
 func servicePrincipal(
@@ -269,11 +279,23 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 		)
 	}
 
+	// if AZURE_PIPELINE_MSI_CLIENT_ID is defined, the project is using MSI
+	// When both AZURE_PIPELINE_CLIENT_ID and AZURE_PIPELINE_MSI_CLIENT_ID are defined, the MSI will be used
+	// This could be the case from projects which migrated from SP to MSI
+	msiClientId := pm.env.Getenv(AzurePipelineMsiClientId)
+	msiEnabled := msiClientId != ""
+
 	// see if SP already exists - This step will not create the SP if it doesn't exist.
 	spConfig, err := servicePrincipal(
 		ctx, pm.env.Getenv(AzurePipelineClientIdEnvVarName), pm.env.GetSubscriptionId(), pm.args, pm.entraIdService)
 	if err != nil {
 		return result, err
+	}
+
+	usingSP := spConfig.servicePrincipal != nil
+	if msiEnabled && usingSP {
+		pm.console.Message(ctx, output.WithWarningFormat("Found both SP and MSI client id. Using MSI client id. "+
+			"Remove AZURE_PIPELINE_CLIENT_ID from the environment to remove this warning."))
 	}
 
 	// Update the message depending on the SP already exists or not

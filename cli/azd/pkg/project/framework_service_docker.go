@@ -434,7 +434,7 @@ func (p *dockerProject) Package(
 }
 
 // Default builder image to produce container images from source, needn't java jdk storage, use the standard bp
-const DefaultBuilderImage = "mcr.microsoft.com/oryx/builder:debian-bullseye-20240424.1"
+const DefaultBuilderImage = "mcr.microsoft.com/oryx/build:github-actions-debian-bullseye-20250228.3"
 
 func (p *dockerProject) packBuild(
 	ctx context.Context,

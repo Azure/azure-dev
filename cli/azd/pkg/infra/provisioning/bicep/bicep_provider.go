@@ -180,6 +180,15 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	}
 
 	if scope == azure.DeploymentScopeResourceGroup {
+		// We used to call EnsureSubscriptionAndLocation all the time, no matter if it was a resource group or subscription
+		// deployment. Then we changed this pattern to only call EnsureSubscription() and consider `location` just as
+		// any other parameter. Since `location` is not just another param for resource group deployments, we need to
+		// make sure it is set in the AZD environment before asking for a resource group.
+		if err := provisioning.EnsureSubscriptionAndLocation(
+			ctx, p.envManager, p.env, p.prompters, provisioning.EnsureSubscriptionAndLocationOptions{}); err != nil {
+			return fmt.Errorf("ensuring subscription and location for resource group deployment: %w", err)
+		}
+
 		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
 			rgName, err := p.prompters.PromptResourceGroup(ctx, prompt.PromptResourceOptions{})
 			if err != nil {

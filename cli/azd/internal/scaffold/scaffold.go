@@ -119,7 +119,7 @@ func ExecInfra(
 			return err
 		}
 
-		return os.WriteFile(target, contents, d.Type().Perm())
+		return os.WriteFile(target, contents, osutil.PermissionFile)
 	})
 	if err != nil {
 		return fmt.Errorf("writing infrastructure: %w", err)

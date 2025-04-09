@@ -74,7 +74,7 @@ func tempInfra(
 			return err
 		}
 
-		return os.WriteFile(target, contents, d.Type().Perm())
+		return os.WriteFile(target, contents, osutil.PermissionFile)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("writing infrastructure: %w", err)

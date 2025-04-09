@@ -124,12 +124,12 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 			return err
 		}
 
-		err = os.MkdirAll(filepath.Join(staging, filepath.Dir(path)), osutil.PermissionDirectoryOwnerOnly)
+		err = os.MkdirAll(filepath.Join(staging, filepath.Dir(path)), osutil.PermissionDirectory)
 		if err != nil {
 			return err
 		}
 
-		return os.WriteFile(filepath.Join(staging, path), contents, d.Type().Perm())
+		return os.WriteFile(filepath.Join(staging, path), contents, osutil.PermissionFile)
 	})
 	if err != nil {
 		return nil, err

@@ -191,7 +191,7 @@ func (i *Initializer) InitFromApp(
 				return err
 			}
 
-			if err := os.WriteFile(filepath.Join(staging, path), []byte(file.Contents), file.Mode); err != nil {
+			if err := os.WriteFile(filepath.Join(staging, path), []byte(file.Contents), osutil.PermissionFile); err != nil {
 				return err
 			}
 		}

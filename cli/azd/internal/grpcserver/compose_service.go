@@ -185,12 +185,36 @@ func (c *ComposeService) GetResourceType(
 	panic("unimplemented")
 }
 
+func addListResourcesKind(resourceType project.ResourceType) []string {
+	switch resourceType {
+	case project.ResourceTypeDbCosmos:
+		return []string{"GlobalDocumentDB"}
+	case project.ResourceTypeDbMongo:
+		return []string{"MongoDB"}
+	default:
+		return []string{}
+	}
+}
+
 // ListResourceTypes implements azdext.ComposeServiceServer.
 func (c *ComposeService) ListResourceTypes(
 	context.Context,
 	*azdext.EmptyRequest,
 ) (*azdext.ListResourceTypesResponse, error) {
-	panic("unimplemented")
+	resourceType := project.AllResourceTypes()
+	var composedResourceTypes []*azdext.ComposedResourceType
+	for _, resource := range resourceType {
+		composedResourceType := &azdext.ComposedResourceType{
+			Name:        string(resource),
+			DisplayName: project.ResourceType(resource).String(),
+			Type:        project.ResourceType(resource).AzureResourceType(),
+			Kinds:       addListResourcesKind(resource),
+		}
+		composedResourceTypes = append(composedResourceTypes, composedResourceType)
+	}
+	return &azdext.ListResourceTypesResponse{
+		ResourceTypes: composedResourceTypes,
+	}, nil
 }
 
 // ListResources implements azdext.ComposeServiceServer.

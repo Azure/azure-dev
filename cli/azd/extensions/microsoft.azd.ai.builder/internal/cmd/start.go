@@ -59,54 +59,6 @@ type resourceTypeConfig struct {
 }
 
 var (
-	dbResourceMap = map[string]resourceTypeConfig{
-		"db.cosmos": {
-			ResourceType:            "Microsoft.DocumentDB/databaseAccounts",
-			ResourceTypeDisplayName: "Cosmos Database Account",
-			Kinds:                   []string{"GlobalDocumentDB"},
-		},
-		"db.mongo": {
-			ResourceType:            "Microsoft.DocumentDB/databaseAccounts",
-			ResourceTypeDisplayName: "MongoDB Database Account",
-			Kinds:                   []string{"MongoDB"},
-		},
-		"db.postgres": {
-			ResourceType:            "Microsoft.DBforPostgreSQL/flexibleServers",
-			ResourceTypeDisplayName: "PostgreSQL Server",
-		},
-		"db.mysql": {
-			ResourceType:            "Microsoft.DBforMySQL/flexibleServers",
-			ResourceTypeDisplayName: "MySQL Server",
-		},
-		"db.redis": {
-			ResourceType:            "Microsoft.Cache/Redis",
-			ResourceTypeDisplayName: "Redis Cache",
-		},
-	}
-
-	vectorStoreMap = map[string]resourceTypeConfig{
-		"ai.search": {
-			ResourceType:            "Microsoft.Search/searchServices",
-			ResourceTypeDisplayName: "AI Search",
-		},
-		"db.cosmos": {
-			ResourceType:            "Microsoft.DocumentDB/databaseAccounts",
-			ResourceTypeDisplayName: "Cosmos Database Account",
-			Kinds:                   []string{"GlobalDocumentDB"},
-		},
-	}
-
-	messagingResourceMap = map[string]resourceTypeConfig{
-		"messaging.eventhubs": {
-			ResourceType:            "Microsoft.EventHub/namespaces",
-			ResourceTypeDisplayName: "Event Hub Namespace",
-		},
-		"messaging.servicebus": {
-			ResourceType:            "Microsoft.ServiceBus/namespaces",
-			ResourceTypeDisplayName: "Service Bus Namespace",
-		},
-	}
-
 	appResourceMap = map[string]resourceTypeConfig{
 		"host.webapp": {
 			ResourceType:            "Microsoft.Web/sites",
@@ -235,7 +187,12 @@ type startAction struct {
 
 func (a *startAction) Run(ctx context.Context, args []string) error {
 	// Build up list of questions
-	decisionTree := qna.NewDecisionTree(a.createQuestions())
+	listOfQuestions, err := a.createQuestions(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to generate prompt: %w", err)
+	}
+
+	decisionTree := qna.NewDecisionTree(listOfQuestions)
 	if err := decisionTree.Run(ctx); err != nil {
 		return fmt.Errorf("failed to run decision tree: %w", err)
 	}
@@ -789,7 +746,35 @@ func ensureAzureContext(
 	return azureContext, project, nil
 }
 
-func (a *startAction) createQuestions() map[string]qna.Question {
+func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Question, error) {
+	azdClient, err := azdext.NewAzdClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create azd client: %w", err)
+	}
+
+	defer azdClient.Close()
+
+	resourceTypes, err := azdClient.Compose().ListResourceTypes(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list resource types: %w", err)
+	}
+
+	dbResourceMap := make(map[string]*azdext.ComposedResourceType)
+	vectorStoreMap := make(map[string]*azdext.ComposedResourceType)
+	messagingResourceMap := make(map[string]*azdext.ComposedResourceType)
+	for _, resourceType := range resourceTypes.ResourceTypes {
+		key := resourceType.Name
+		if strings.HasPrefix(key, "db.") {
+			dbResourceMap[key] = resourceType
+		} else if strings.HasPrefix(key, "messaging.") {
+			messagingResourceMap[key] = resourceType
+		}
+
+		if strings.Contains(key, "ai.search") || strings.Contains(key, "db.cosmos") {
+			vectorStoreMap[key] = resourceType
+		}
+	}
+
 	return map[string]qna.Question{
 		"root": {
 			Binding: &a.scenarioData.SelectedScenario,
@@ -992,9 +977,9 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 						)
 					}
 
-					p.ResourceType = resourceType.ResourceType
+					p.ResourceType = resourceType.Type
 					p.Kinds = resourceType.Kinds
-					p.ResourceTypeDisplayName = resourceType.ResourceTypeDisplayName
+					p.ResourceTypeDisplayName = resourceType.DisplayName
 
 					return nil
 				},
@@ -1127,10 +1112,9 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 						)
 					}
 
-					p.ResourceType = resourceType.ResourceType
+					p.ResourceType = resourceType.Type
 					p.Kinds = resourceType.Kinds
-					p.ResourceTypeDisplayName = resourceType.ResourceTypeDisplayName
-
+					p.ResourceTypeDisplayName = resourceType.DisplayName
 					return nil
 				},
 			},
@@ -1409,10 +1393,9 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 						)
 					}
 
-					p.ResourceType = resourceType.ResourceType
+					p.ResourceType = resourceType.Type
 					p.Kinds = resourceType.Kinds
-					p.ResourceTypeDisplayName = resourceType.ResourceTypeDisplayName
-
+					p.ResourceTypeDisplayName = resourceType.DisplayName
 					return nil
 				},
 			},
@@ -1771,7 +1754,7 @@ func (a *startAction) createQuestions() map[string]qna.Question {
 				return nil
 			},
 		},
-	}
+	}, nil
 }
 
 func (a *startAction) generateResourceName(desiredName string) string {

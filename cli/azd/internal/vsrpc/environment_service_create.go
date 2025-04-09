@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
 
@@ -87,7 +88,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 		file := files["azure.yaml"]
 		projectFilePath := filepath.Join(c.azdContext.ProjectDirectory(), "azure.yaml")
 
-		if err := os.WriteFile(projectFilePath, []byte(file.Contents), file.Mode); err != nil {
+		if err := os.WriteFile(projectFilePath, []byte(file.Contents), osutil.PermissionFile); err != nil {
 			return false, fmt.Errorf("writing azure.yaml: %w", err)
 		}
 	} else if err != nil {

@@ -143,7 +143,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 		}
 
 		// We only want to prompt for a location if the location is actually a parameter.
-		// But if the AZURE_LOCATION is set in system env, we want to set if in the AZD .env, just like the prompt
+		// But if the AZURE_LOCATION is set in system env, we want to set it in the AZD .env, just like the prompt
 		// for location used to do in the past (after prompting or finding the location in system env).
 		_, locationInAzdEnv := p.env.Dotenv()[environment.LocationEnvVarName]
 		if !locationInAzdEnv {
@@ -162,13 +162,17 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 			return err
 		}
 
-		// Check if location is a parameter and if it is not set in the AZD env
-		// If it is not set, we need to prompt for it.
+		// Check if location is a parameter, is not empty string and if it is not set in the AZD env
+		// If it is not set in AZD env, set it
+		// If it is a parameter with empty string, it is
 		if locParam, hasLocationParam := deploymentParams["location"]; hasLocationParam {
-			if _, locationInAzdEnv := p.env.Dotenv()[environment.LocationEnvVarName]; !locationInAzdEnv {
-				p.env.SetLocation(locParam.Value.(string))
-				if err := p.envManager.Save(ctx, p.env); err != nil {
-					return fmt.Errorf("saving location to env: %w", err)
+			locationAsString, castOk := locParam.Value.(string)
+			if castOk && locationAsString != "" {
+				if _, locationInAzdEnv := p.env.Dotenv()[environment.LocationEnvVarName]; !locationInAzdEnv {
+					p.env.SetLocation(locationAsString)
+					if err := p.envManager.Save(ctx, p.env); err != nil {
+						return fmt.Errorf("saving location to env: %w", err)
+					}
 				}
 			}
 		}
@@ -1567,12 +1571,23 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.Ar
 		return nil, fmt.Errorf("fetching current principal id: %w", err)
 	}
 
+	// undefinedEnvVars is a list environment variables which are mapped to one or more parameters but are not set
+	// in the environment. Parameters mapped to these variables will be removed from the parameters file.
+	// This is used to avoid passing empty parameters to the ARM template.
+	undefinedEnvVars := []string{}
+
 	replaced, err := envsubst.Eval(string(parametersBytes), func(name string) string {
 		if name == environment.PrincipalIdEnvVarName {
 			return principalId
 		}
 
-		return p.env.Getenv(name)
+		value, isDefined := p.env.LookupEnv(name)
+		if !isDefined {
+			key := fmt.Sprintf("$%s", name)
+			undefinedEnvVars = append(undefinedEnvVars, key)
+			return key
+		}
+		return value
 	})
 	if err != nil {
 		return nil, fmt.Errorf("substituting environment variables inside parameter file: %w", err)
@@ -1589,6 +1604,20 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.Ar
 	var armParameters azure.ArmParameterFile
 	if err := json.Unmarshal([]byte(replaced), &armParameters); err != nil {
 		return nil, fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
+	}
+
+	// get parameters mapped to undefined environment variables
+	for key, param := range armParameters.Parameters {
+		if param.Value == nil {
+			continue
+		}
+		parameterValue, ok := param.Value.(string)
+		if !ok {
+			continue
+		}
+		if slices.Contains(undefinedEnvVars, parameterValue) {
+			delete(armParameters.Parameters, key)
+		}
 	}
 
 	return armParameters.Parameters, nil

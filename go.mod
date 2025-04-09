@@ -45,7 +45,7 @@ require (
 	github.com/fatih/color v1.18.0
 	github.com/gofrs/flock v0.12.1
 	github.com/golang-jwt/jwt/v5 v5.2.2
-	github.com/golobby/container/v3 v3.3.1
+	github.com/golobby/container/v3 v3.3.2
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1

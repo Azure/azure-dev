@@ -13,7 +13,7 @@ pool:
   vmImage: ubuntu-latest
 
 steps:
-  - task: setup-azd@0
+  - task: setup-azd@1
     displayName: Install azd
   
   # If you can't install above task in your organization, you can comment it and uncomment below task to install azd

@@ -155,8 +155,6 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 		// 	}
 		// }
 
-		// if location is a parameter and is not in system env, ensureParameters() will prompt for it, supporting all the
-		// metadata and settings as any other bicep parameter.
 		deploymentParams, err := p.ensureParameters(ctx, compileResult.Template)
 		if err != nil {
 			return err
@@ -1571,10 +1569,60 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.Ar
 		return nil, fmt.Errorf("fetching current principal id: %w", err)
 	}
 
+	var decodedParamsFile azure.ArmParameterFile
+	if err := json.Unmarshal(parametersBytes, &decodedParamsFile); err != nil {
+		return nil, fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
+	}
+
+	parametersMappedToAzureLocation := []string{}
+	toBeRemovedParams := []string{}
+
+	// resolving each parameter to keep track of the name during the resolution.
+	// We used to resolve all the file before, supporting env var substitution at any part of the file.
+	// We want to support substitution only for the parameter value.
+	// We also need to identify which parameters are mapped to AZURE_LOCATION (if any).
+	// We also want to exclude parameters mapped to env vars which env var is not set (instead of passing empty string).
+	for paramName, param := range decodedParamsFile.Parameters {
+		paramBytes, err := json.Marshal(param)
+		if err != nil {
+			return nil, fmt.Errorf("error decoding deployment parameter %s: %w", paramName, err)
+		}
+		var hasUnsetEnvVar bool
+		// envsubst.Eval handles env var substitution and default values like ${VAR=default}
+		replaced, err := envsubst.Eval(string(paramBytes), func(name string) string {
+			if name == environment.PrincipalIdEnvVarName {
+				return principalId
+			}
+			if name == environment.LocationEnvVarName {
+				parametersMappedToAzureLocation = append(parametersMappedToAzureLocation, paramName)
+			}
+			if _, isDefined := p.env.LookupEnv(name); !isDefined {
+				hasUnsetEnvVar = true
+			}
+			return p.env.Getenv(name)
+		})
+		if err != nil {
+			return nil, fmt.Errorf("substituting environment variables for %s: %w", paramName, err)
+		}
+		var resolvedParam azure.ArmParameter
+		if err := json.Unmarshal([]byte(replaced), &resolvedParam); err != nil {
+			return nil, fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
+		}
+		if resolvedParam.Value == nil && resolvedParam.KeyVaultReference == nil {
+			toBeRemovedParams = append(toBeRemovedParams, paramName)
+			log.Println("removing parameter", paramName, "because it is not defined to a value or key vault reference")
+			continue
+		}
+		if resolvedParam.Value != nil && resolvedParam.KeyVaultReference != nil {
+			log.Println("removing parameter", paramName, "because it is not defined to a value or key vault reference")
+			continue
+		}
+
+	}
+
 	// undefinedEnvVars is a list environment variables which are mapped to one or more parameters but are not set
 	// in the environment. Parameters mapped to these variables will be removed from the parameters file.
 	// This is used to avoid passing empty parameters to the ARM template.
-	undefinedEnvVars := []string{}
 
 	replaced, err := envsubst.Eval(string(parametersBytes), func(name string) string {
 		if name == environment.PrincipalIdEnvVarName {
@@ -1903,13 +1951,22 @@ func inputsParameter(
 	}, wroteNewInput, nil
 }
 
-// Ensures the provisioning parameters are valid and prompts the user for input as needed
+// ensureParameters validates that all parameters from the template are defined.
+// Parameters values can be defined in the parameters file (main.parameters.json). This file supports mapping values to
+// environment variables.
+// If a parameter is not defined in the parameters file AND there is not a default value defined in the template for it,
+// AZD will prompt the user for a value.
+// Parameters mapped to env var ${AZURE_LOCATION} are identified as location parameters for AZD during prompting. AZD will
+// prompt just for one location and save the value in AZD's .env file as AZURE_LOCATION and the value is used for all
+// parameters mapped to that env var.
+// AZD supports resolving env vars with a default value defined in the parameters file using the syntax
+// ${AZURE_LOCATION=defaultValue}. If the env var is not set, the default value will be used.
 func (p *BicepProvider) ensureParameters(
 	ctx context.Context,
 	template azure.ArmTemplate,
 ) (azure.ArmParameters, error) {
 	// using loadParameters to resolve the parameters file (usually main.parameters.json)
-	// parameters with a mapping to env vars are resolved (assigned the value of the env var)
+	// parameters with a mapping to env vars are resolved.
 	// Parameters mapped to env vars that are not set in the environment are removed from the parameters file
 	parameters, err := p.loadParameters(ctx)
 	if err != nil {

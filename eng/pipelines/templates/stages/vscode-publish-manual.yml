@@ -1,4 +1,4 @@
-stages: 
+stages:
   - stage: PublishManual
     dependsOn: Sign
     condition: >-
@@ -14,7 +14,7 @@ stages:
         )
       )
 
-    variables: 
+    variables:
       - template: /eng/pipelines/templates/variables/globals.yml
       - template: /eng/pipelines/templates/variables/image.yml
 
@@ -22,8 +22,8 @@ stages:
       - deployment: Publish_Release
         environment: package-publish
         pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
-          image: azsdk-pool-mms-ubuntu-2004-1espt
+          name: azsdk-pool
+          image: ubuntu-22.04
           os: linux
 
         templateContext:
@@ -37,7 +37,7 @@ stages:
             - input: pipelineArtifact
               artifactName: changelog
               targetPath: changelog
-        
+
         strategy:
           runOnce:
             deploy:

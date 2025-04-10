@@ -38,7 +38,7 @@ jobs:
           BuildTarget: azd-windows-amd64.exe
           BuildOutputName: azd.exe
         Linux:
-          Pool: azsdk-pool-mms-ubuntu-2004-general
+          Pool: azsdk-pool
           OSVmImage:  MMSUbuntu20.04
           BuildTarget: azd-linux-amd64
           BuildOutputName: azd
@@ -86,7 +86,7 @@ jobs:
         #   Pool: azsdk-pool-mms-win-2022-general
         #   OSVmImage: MMS2022
         Linux:
-          Pool: azsdk-pool-mms-ubuntu-2004-general
+          Pool: azsdk-pool
           OSVmImage:  MMSUbuntu20.04
         Mac:
           Pool: Azure Pipelines
@@ -117,7 +117,7 @@ jobs:
 
   - job: GenerateNoticeTxt
     pool:
-      name: azsdk-pool-mms-ubuntu-2004-general
+      name: azsdk-pool
       OSVmImage: MMSUbuntu20.04
 
     steps:

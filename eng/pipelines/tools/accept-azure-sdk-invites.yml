@@ -4,7 +4,7 @@ trigger: none
 jobs:
   - job: AcceptInvites
     pool:
-        name: azsdk-pool-mms-ubuntu-2004-general
+        name: azsdk-pool
         vmImage: MMSUbuntu20.04
 
     steps:

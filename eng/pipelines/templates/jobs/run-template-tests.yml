@@ -14,7 +14,7 @@ parameters:
   default: 'all'
 
 - name: TemplateListFilter
-  displayName: | 
+  displayName: |
     Regex filter expression to filter templates. Examples: 'csharp', 'terraform', 'python-mongo'
   type: string
   default: '^Azure-Samples/todo-.*$'
@@ -55,7 +55,7 @@ parameters:
 
 - name: Pool
   type: string
-  default: azsdk-pool-mms-ubuntu-2004-general
+  default: azsdk-pool
 
 # Image name (compliant image required for 1ES pipelines that release)
 - name: Image

@@ -10,13 +10,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "azure-pipelines-task-lib": "^4.4.0",
-    "decompress": "^4.2.1",
-    "download": "^8.0.0"
+    "azure-pipelines-task-lib": "^4.4.0"
   },
   "devDependencies": {
-    "@types/decompress": "^4.2.4",
-    "@types/download": "^8.0.2",
     "@types/mocha": "^10.0.9",
     "@types/node": "^20.4.2",
     "@types/q": "^1.5.5",

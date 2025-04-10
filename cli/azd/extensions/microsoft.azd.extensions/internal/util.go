@@ -1,0 +1,18 @@
+package internal
+
+import "os"
+
+func ToPtr[T any](value T) *T {
+	return &value
+}
+
+const (
+	PermissionDirectory      os.FileMode = 0755
+	PermissionExecutableFile os.FileMode = 0755
+	PermissionFile           os.FileMode = 0644
+
+	PermissionDirectoryOwnerOnly os.FileMode = 0700
+	PermissionFileOwnerOnly      os.FileMode = 0600
+
+	PermissionMaskDirectoryExecute os.FileMode = 0100
+)

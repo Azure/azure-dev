@@ -51,6 +51,15 @@ jobs:
         shell: pwsh
 {{ end }}
 
+{{- if .AlphaFeatures }}
+      - name: Enabled required alpha features
+        run: |
+{{- range $feature := .AlphaFeatures }}
+          azd config set alpha.{{ $feature }} on
+{{- end }}
+        shell: pwsh
+{{ end }}
+
 {{- if not .FedCredLogIn }}
       - name: Log in with Azure (Client Credentials)
         run: |

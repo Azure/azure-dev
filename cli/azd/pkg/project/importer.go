@@ -226,6 +226,7 @@ func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConf
 type Infra struct {
 	Options    provisioning.Options
 	cleanupDir string
+	IsCompose  bool
 }
 
 func (i *Infra) Cleanup() error {

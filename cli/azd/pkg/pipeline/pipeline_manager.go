@@ -810,6 +810,10 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 		return err
 	}
 
+	var requiredAlphaFeatures []string
+	if infra.IsCompose {
+		requiredAlphaFeatures = append(requiredAlphaFeatures, "compose")
+	}
 	// There are 2 possible options, for the git branch name, when running azd pipeline config:
 	// - There is not a git repo, so the branch name is empty. In this case, we default to "main".
 	// - There is a git repo and we can get the name of the current branch.
@@ -830,14 +834,15 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	// Check and prompt for missing CI/CD files
 	if err := pm.checkAndPromptForProviderFiles(
 		ctx, projectProperties{
-			CiProvider:    pipelineProvider,
-			RepoRoot:      repoRoot,
-			InfraProvider: infraProvider,
-			HasAppHost:    hasAppHost,
-			BranchName:    branchName,
-			AuthType:      authType,
-			Variables:     prjConfig.Pipeline.Variables,
-			Secrets:       prjConfig.Pipeline.Secrets,
+			CiProvider:            pipelineProvider,
+			RepoRoot:              repoRoot,
+			InfraProvider:         infraProvider,
+			HasAppHost:            hasAppHost,
+			BranchName:            branchName,
+			AuthType:              authType,
+			Variables:             prjConfig.Pipeline.Variables,
+			Secrets:               prjConfig.Pipeline.Secrets,
+			RequiredAlphaFeatures: requiredAlphaFeatures,
 		}); err != nil {
 		return err
 	}
@@ -1049,12 +1054,14 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		InstallDotNetForAspire bool
 		Variables              []string
 		Secrets                []string
+		AlphaFeatures          []string
 	}{
 		BranchName:             props.BranchName,
 		FedCredLogIn:           props.AuthType == AuthTypeFederated,
 		InstallDotNetForAspire: props.HasAppHost,
 		Variables:              props.Variables,
 		Secrets:                props.Secrets,
+		AlphaFeatures:          props.RequiredAlphaFeatures,
 	})
 	if err != nil {
 		return fmt.Errorf("executing template: %w", err)

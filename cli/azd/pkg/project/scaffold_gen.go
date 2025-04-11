@@ -87,6 +87,7 @@ func tempInfra(
 			Module:   DefaultModule,
 		},
 		cleanupDir: tmpDir,
+		IsCompose:  true,
 	}, nil
 }
 

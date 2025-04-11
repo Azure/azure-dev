@@ -45,6 +45,7 @@ module monitoring 'br/public:avm/ptn/azd/monitoring:0.1.0' = {
   }
 }
 
+{{- if hasACA .Services}}
 // Container registry
 module containerRegistry 'br/public:avm/res/container-registry/registry:0.1.1' = {
   name: 'registry'
@@ -75,6 +76,21 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.4.5
     zoneRedundant: false
   }
 }
+{{- end}}
+
+{{- if hasAppService .Services}}
+module appServicePlan 'br/public:avm/res/web/serverfarm:0.4.1' = {
+  name: 'appServicePlanDeployment'
+  params: {
+    name: '${abbrs.webServerFarms}${resourceToken}'
+    location: location
+    tags: tags
+    kind: 'linux'
+    skuCapacity: 1
+    skuName: 'B1'
+  }
+}
+{{- end}}
 {{- end}}
 
 {{- if .DbCosmosMongo}}
@@ -467,6 +483,7 @@ module {{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}} 'modules/role-assign
 {{- end}}
 {{- end}}
 
+{{- if isACA .Host}}
 module {{bicepName .Name}}FetchLatestImage './modules/fetch-container-image.bicep' = {
   name: '{{bicepName .Name}}-fetch-image'
   params: {
@@ -529,12 +546,12 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
         {
           name: 'redis-pass'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/redis-password'
+          keyVaultUrl: redis.outputs.exportedSecrets['redis-password'].secretUri
         }
         {
           name: 'redis-url'
           identity:{{bicepName .Name}}Identity.outputs.resourceId
-          keyVaultUrl: '${keyVault.outputs.uri}secrets/redis-url'
+          keyVaultUrl: redis.outputs.exportedSecrets['redis-url'].secretUri
         }
         {{- end}}
       ]
@@ -738,6 +755,115 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
     tags: union(tags, { 'azd-service-name': '{{.Name}}' })
   }
 }
+{{- end}}
+
+{{- if isAppService .Host}}
+module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
+  name: 'appServiceDeployment-{{bicepName .Name}}'
+  params: {
+    name: '${abbrs.webSitesAppService}${resourceToken}'
+    location: location
+    tags: union(tags, { 'azd-service-name': '{{.Name}}' })
+    kind: 'app,linux'
+    serverFarmResourceId: appServicePlan.outputs.resourceId
+    managedIdentities:{
+      systemAssigned: false
+      userAssignedResourceIds: [{{bicepName .Name}}Identity.outputs.resourceId]
+    }
+    siteConfig: {
+      linuxFxVersion: '{{.Runtime.Type}}|{{.Runtime.Version}}'
+      cors: {
+        allowedOrigins: [ 'https://portal.azure.com', 'https://ms.portal.azure.com' ]
+      }
+    }
+    clientAffinityEnabled: false
+    httpsOnly: true
+    appSettingsKeyValuePairs: {
+      AZURE_CLIENT_ID: {{bicepName .Name}}Identity.outputs.clientId
+      {{- if .DbCosmosMongo}}
+      'MONGODB_URL': '@Microsoft.KeyVault(SecretUri=${cosmosMongo.outputs.exportedSecrets['mongodb-url'].secretUri})'
+      {{- end}}
+      {{- if .DbCosmos}}
+      AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
+      {{- end}}
+      {{- if .DbPostgres}}
+      POSTGRES_HOST: postgresServer.outputs.fqdn
+      POSTGRES_USERNAME: postgresDatabaseUser
+      POSTGRES_DATABASE: postgresDatabaseName
+      POSTGRES_PORT: '5432'
+      POSTGRES_PASSWORD: postgresDatabasePassword
+      POSTGRES_URL: 'postgresql://${postgresDatabaseUser}:${postgresDatabasePassword}@${postgresServer.outputs.fqdn}:5432/${postgresDatabaseName}'
+      {{- end}}
+      {{- if .DbMySql}}
+      MYSQL_HOST: mysqlServer.outputs.fqdn
+      MYSQL_USERNAME: mysqlDatabaseUser
+      MYSQL_DATABASE: mysqlDatabaseName
+      MYSQL_PORT: '3306'
+      MYSQL_PASSWORD: mysqlDatabasePassword
+      MYSQL_URL: 'mysql://${mysqlDatabaseUser}:${mysqlDatabasePassword}@${mysqlServer.outputs.fqdn}:3306/${mysqlDatabaseName}'
+      {{- end}}
+      {{- if .DbRedis}}
+      REDIS_HOST: redis.outputs.hostName
+      REDIS_PORT: string(redis.outputs.sslPort)
+      REDIS_ENDPOINT: '${redis.outputs.hostName}:${string(redis.outputs.sslPort)}'
+      REDIS_PASSWORD: '@Microsoft.KeyVault(SecretUri=${redis.outputs.exportedSecrets['redis-password'].secretUri})'
+      REDIS_URL: '@Microsoft.KeyVault(SecretUri=${redis.outputs.exportedSecrets['redis-url'].secretUri})'
+      {{- end}}
+      {{- if .EventHubs}}
+      AZURE_EVENT_HUBS_NAME: eventHubNamespace.outputs.name
+      AZURE_EVENT_HUBS_HOST: '${eventHubNamespace.outputs.name}.servicebus.windows.net'
+      {{- end}}
+      {{- if .ServiceBus}}
+      AZURE_SERVICE_BUS_NAME: serviceBusNamespace.outputs.name
+      AZURE_SERVICE_BUS_HOST: '${serviceBusNamespace.outputs.name}.servicebus.windows.net'
+      {{- end}}
+      {{- if .StorageAccount}}
+      AZURE_STORAGE_ACCOUNT_NAME: storageAccount.outputs.name
+      AZURE_STORAGE_BLOB_ENDPOINT: storageAccount.outputs.serviceEndpoints.blob
+      {{- end}}
+      {{- if $infra.KeyVault}}
+      AZURE_KEY_VAULT_NAME: keyVault.outputs.name
+      AZURE_KEY_VAULT_ENDPOINT: keyVault.outputs.uri
+      {{- end}}
+      {{- if .AIModels}}
+      AZURE_OPENAI_ENDPOINT: account.outputs.endpoint
+      {{- end}}
+      {{- if .AISearch}}
+      AZURE_AI_SEARCH_ENDPOINT: 'https://${search.outputs.name}.search.windows.net'
+      {{- end}}
+      {{- if .AiFoundryProject }}
+      AZURE_AI_PROJECT_CONNECTION_STRING: aiFoundryProjectConnectionString
+      {{- end}}
+
+      {{- if ne .Port 0}}
+      PORT: '{{ .Port }}'
+      {{- end}}
+      {{- range $key, $value := .Env}}
+      {{ $key }}: {{ $value }}
+      {{- end}}
+    }
+    appInsightResourceId: monitoring.outputs.applicationInsightsResourceId
+    keyVaultAccessIdentityResourceId: {{bicepName .Name}}Identity.outputs.resourceId
+    basicPublishingCredentialsPolicies: [
+      {
+        name: 'ftp'
+        allow: false
+      }
+      {
+        name: 'scm'
+        allow: false
+      }
+    ]
+    logsConfiguration: {
+      applicationLogs: { fileSystem: { level: 'Verbose' } }
+      detailedErrorMessages: { enabled: true }
+      failedRequestsTracing: { enabled: true }
+      httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
+    }
+  }
+}
+{{- end}}
+
 {{- if .AiFoundryProject}}
 
 resource {{bicepName .Name}}backendRoleAzureAIDeveloperRG 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
@@ -814,7 +940,9 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.12.0' = {
 {{- end}}
 
 {{- if .Services}}
+{{- if hasACA .Services}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
+{{- end}}
 {{- range .Services}}
 output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = {{bicepName .Name}}.outputs.resourceId
 {{- end}}

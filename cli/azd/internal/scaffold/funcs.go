@@ -254,7 +254,7 @@ func aiProjectConnectionString(resourceId string, projectUrl string) (string, er
 
 func emitAiProjectConnectionString(resourceIdVar string, projectUrlVar string) (string, error) {
 	return fmt.Sprintf(
-		"${split(%s, '/')[2]};${split(%s, '/')[2]}};${split(%s, '/')[4]};${split(%s, '/')[8]}",
+		"${split(%s, '/')[2]};${split(%s, '/')[2]};${split(%s, '/')[4]};${split(%s, '/')[8]}",
 		projectUrlVar,
 		resourceIdVar,
 		resourceIdVar,

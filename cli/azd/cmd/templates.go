@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -103,9 +102,6 @@ func newTemplateListAction(
 }
 
 func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	foo := os.Getenv("AZURE_DEV_USER_AGENT")
-	fmt.Println("AZURE_DEV_USER_AGENT:", foo)
-
 	options := &templates.ListOptions{
 		Source: tl.flags.source,
 		Tags:   tl.flags.tags,

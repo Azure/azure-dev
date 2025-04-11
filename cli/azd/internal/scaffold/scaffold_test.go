@@ -36,6 +36,7 @@ func TestExecInfra(t *testing.T) {
 					{
 						Name: "api",
 						Port: 3100,
+						Host: "containerapp",
 					},
 				},
 			},
@@ -48,6 +49,39 @@ func TestExecInfra(t *testing.T) {
 						Name:     "web",
 						Port:     3100,
 						Frontend: &Frontend{},
+						Host:     "containerapp",
+					},
+				},
+			},
+		},
+		{
+			"App Service Python",
+			InfraSpec{
+				Services: []ServiceSpec{
+					{
+						Name: "py",
+						Port: 3100,
+						Host: "appservice",
+						Runtime: &RuntimeInfo{
+							Type:    "python",
+							Version: "3.11",
+						},
+					},
+				},
+			},
+		},
+		{
+			"App Service Node",
+			InfraSpec{
+				Services: []ServiceSpec{
+					{
+						Name: "node",
+						Port: 3100,
+						Host: "appservice",
+						Runtime: &RuntimeInfo{
+							Type:    "node",
+							Version: "22-lts",
+						},
 					},
 				},
 			},
@@ -66,6 +100,7 @@ func TestExecInfra(t *testing.T) {
 								},
 							},
 						},
+						Host: "containerapp",
 					},
 					{
 						Name: "web",
@@ -77,6 +112,7 @@ func TestExecInfra(t *testing.T) {
 								},
 							},
 						},
+						Host: "containerapp",
 					},
 				},
 			},
@@ -151,6 +187,7 @@ func TestExecInfra(t *testing.T) {
 						KeyVault:         &KeyVaultReference{},
 						AISearch:         &AISearchReference{},
 						AiFoundryProject: &AiFoundrySpec{},
+						Host:             "containerapp",
 					},
 					{
 						Name: "web",
@@ -161,6 +198,16 @@ func TestExecInfra(t *testing.T) {
 									Name: "api",
 								},
 							},
+						},
+						Host: "containerapp",
+					},
+					{
+						Name: "app",
+						Port: 3000,
+						Host: "appservice",
+						Runtime: &RuntimeInfo{
+							Type:    "python",
+							Version: "3.11",
 						},
 					},
 				},
@@ -180,6 +227,7 @@ func TestExecInfra(t *testing.T) {
 						DbPostgres: &DatabaseReference{
 							DatabaseName: "appdb",
 						},
+						Host: "containerapp",
 					},
 				},
 			},

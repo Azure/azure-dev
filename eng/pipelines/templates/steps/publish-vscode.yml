@@ -81,4 +81,4 @@ steps:
             --azure-credential `
             --packagePath "$($baseName).vsix" `
             --manifestPath "$($baseName).manifest" `
-            --signaturePath "$($baseName).p7s"
+            --signaturePath "$($baseName).signature.p7s"

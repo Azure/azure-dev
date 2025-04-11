@@ -23,27 +23,45 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type packageFlags struct {
+	extensionPath string
+	registryPath  string
+	outputPath    string
+	basePath      string
+}
+
 func newPackageCommand() *cobra.Command {
+	flags := &packageFlags{}
+
 	packageCmd := &cobra.Command{
 		Use:   "package",
 		Short: "Build, package and update the extension registry",
-		RunE:  buildRegistry,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			internal.WriteCommandHeader(
+				"Package azd extension (azd x package)",
+				"Packages the azd extension project and updates the registry",
+			)
+
+			defaultPackageFlags(flags)
+			err := runPackageAction(flags)
+			if err != nil {
+				return err
+			}
+
+			internal.WriteCommandSuccess("Extension packaged successfully")
+			return nil
+		},
 	}
 
-	packageCmd.Flags().StringP("path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
-	packageCmd.Flags().StringP("registry", "r", "", "Path to the registry.json file. If not provided, will use a local registry.")
-	packageCmd.Flags().StringP("output", "o", "", "Path to the artifacts output directory. If not provided, will use local registry")
-	packageCmd.Flags().StringP("base-path", "b", "", "Base path for artifact paths. If not provided, will use local relative paths.")
+	packageCmd.Flags().StringVarP(&flags.extensionPath, "path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
+	packageCmd.Flags().StringVarP(&flags.registryPath, "registry", "r", "", "Path to the registry.json file. If not provided, will use a local registry.")
+	packageCmd.Flags().StringVarP(&flags.outputPath, "output", "o", "", "Path to the artifacts output directory. If not provided, will use local registry")
+	packageCmd.Flags().StringVarP(&flags.basePath, "base-path", "b", "", "Base path for artifact paths. If not provided, will use local relative paths.")
 
 	return packageCmd
 }
 
-func buildRegistry(cmd *cobra.Command, args []string) error {
-	extensionPath, _ := cmd.Flags().GetString("path")
-	registryPath, _ := cmd.Flags().GetString("registry")
-	outputPath, _ := cmd.Flags().GetString("output")
-	basePath, _ := cmd.Flags().GetString("base-path")
-
+func runPackageAction(flags *packageFlags) error {
 	azdConfigDir := os.Getenv("AZD_CONFIG_DIR")
 	if azdConfigDir == "" {
 		userHomeDir, err := os.UserHomeDir()
@@ -53,30 +71,25 @@ func buildRegistry(cmd *cobra.Command, args []string) error {
 		azdConfigDir = filepath.Join(userHomeDir, ".azd")
 	}
 
-	if registryPath == "" {
-		registryPath = filepath.Join(azdConfigDir, "registry.json")
+	if flags.registryPath == "" {
+		flags.registryPath = filepath.Join(azdConfigDir, "registry.json")
 	}
 
-	if outputPath == "" {
-		outputPath = filepath.Join(azdConfigDir, "registry")
+	if flags.outputPath == "" {
+		flags.outputPath = filepath.Join(azdConfigDir, "registry")
 
-		if _, err := os.Stat(outputPath); os.IsNotExist(err) {
-			if err := os.MkdirAll(outputPath, internal.PermissionDirectory); err != nil {
+		if _, err := os.Stat(flags.outputPath); os.IsNotExist(err) {
+			if err := os.MkdirAll(flags.outputPath, internal.PermissionDirectory); err != nil {
 				return fmt.Errorf("failed to create output directory: %w", err)
 			}
 		}
 	}
 
-	if basePath == "" {
-		basePath = "registry"
+	if flags.basePath == "" {
+		flags.basePath = "registry"
 	}
 
-	internal.WriteCommandHeader(
-		"Package azd extension (azd x package)",
-		"Packages the azd extension project and updates the registry",
-	)
-
-	extensionMetadata, err := models.LoadExtension(extensionPath)
+	extensionMetadata, err := models.LoadExtension(flags.extensionPath)
 	if err != nil {
 		return fmt.Errorf("failed to load extension metadata: %w", err)
 	}
@@ -88,8 +101,8 @@ func buildRegistry(cmd *cobra.Command, args []string) error {
 		Title: "Find extension registry",
 		Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 			// Load or create the registry
-			if _, err := os.Stat(registryPath); err == nil {
-				data, err := os.ReadFile(registryPath)
+			if _, err := os.Stat(flags.registryPath); err == nil {
+				data, err := os.ReadFile(flags.registryPath)
 				if err != nil {
 					return ux.Error, common.NewDetailedError(
 						"Cannot read registry",
@@ -110,13 +123,13 @@ func buildRegistry(cmd *cobra.Command, args []string) error {
 		},
 	})
 
-	absArtifactsOutputPath, err := filepath.Abs(outputPath)
+	absArtifactsOutputPath, err := filepath.Abs(flags.outputPath)
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path for output directory: %w", err)
 	}
 
 	// Load metadata
-	metadataPath := filepath.Join(extensionPath, "extension.yaml")
+	metadataPath := filepath.Join(flags.extensionPath, "extension.yaml")
 	metadataBytes, err := os.ReadFile(metadataPath)
 	if err != nil {
 		return fmt.Errorf("failed to read metadata: %w", err)
@@ -130,7 +143,7 @@ func buildRegistry(cmd *cobra.Command, args []string) error {
 	taskList.AddTask(ux.TaskOptions{
 		Title: fmt.Sprintf("Packaging extension %s (%s)", extensionMetadata.Id, extensionMetadata.Version),
 		Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-			if err := processExtension(extensionMetadata, absArtifactsOutputPath, basePath, &registry); err != nil {
+			if err := processExtension(extensionMetadata, absArtifactsOutputPath, flags.basePath, &registry); err != nil {
 				return ux.Error, common.NewDetailedError(
 					"Packaging failed",
 					fmt.Errorf("failed to package extension: %w", err),
@@ -145,7 +158,7 @@ func buildRegistry(cmd *cobra.Command, args []string) error {
 		Title: "Updating extension registry",
 		Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 			// Save the updated registry without a signature
-			if err := saveRegistry(registryPath, &registry); err != nil {
+			if err := saveRegistry(flags.registryPath, &registry); err != nil {
 				return ux.Error, common.NewDetailedError(
 					"Registry update failed",
 					fmt.Errorf("failed to save registry: %w", err),
@@ -160,7 +173,6 @@ func buildRegistry(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to package tasks: %w", err)
 	}
 
-	internal.WriteCommandSuccess("Extension packaged successfully")
 	return nil
 }
 
@@ -383,4 +395,27 @@ func getFileNameWithoutExt(filePath string) string {
 
 	// Remove the extension
 	return strings.TrimSuffix(fileName, filepath.Ext(fileName))
+}
+
+func defaultPackageFlags(flags *packageFlags) {
+	if flags.extensionPath == "" {
+		flags.extensionPath = "."
+	}
+
+	if flags.registryPath == "" {
+		azdConfigDir := os.Getenv("AZD_CONFIG_DIR")
+		if azdConfigDir == "" {
+			userHomeDir, _ := os.UserHomeDir()
+			azdConfigDir = filepath.Join(userHomeDir, ".azd")
+		}
+		flags.registryPath = filepath.Join(azdConfigDir, "registry.json")
+	}
+
+	if flags.outputPath == "" {
+		flags.outputPath = filepath.Join(filepath.Dir(flags.registryPath), "registry")
+	}
+
+	if flags.basePath == "" {
+		flags.basePath = "registry"
+	}
 }

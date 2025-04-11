@@ -18,27 +18,45 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type buildFlags struct {
+	extensionPath string
+	outputPath    string
+	allPlatforms  bool
+	skipInstall   bool
+}
+
 func newBuildCommand() *cobra.Command {
+	flags := &buildFlags{}
+
 	buildCmd := &cobra.Command{
 		Use:   "build",
 		Short: "Build the azd extension project",
-		RunE:  buildExtension,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			internal.WriteCommandHeader(
+				"Build and azd extension (azd x build)",
+				"Builds the azd extension project for one or more platforms",
+			)
+
+			defaultBuildFlags(flags)
+			err := runBuildAction(flags)
+			if err != nil {
+				return err
+			}
+
+			internal.WriteCommandSuccess("Build completed successfully!")
+			return nil
+		},
 	}
 
-	buildCmd.Flags().StringP("path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
-	buildCmd.Flags().StringP("output", "o", "", "Path to the output directory. Defaults to relative /bin folder.")
-	buildCmd.Flags().Bool("all", false, "When set builds for all os/platforms. Defaults to the current os/platform only.")
-	buildCmd.Flags().Bool("skip-install", false, "When set skips reinstalling extension after successful build.")
+	buildCmd.Flags().StringVarP(&flags.extensionPath, "path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
+	buildCmd.Flags().StringVarP(&flags.outputPath, "output", "o", "", "Path to the output directory. Defaults to relative /bin folder.")
+	buildCmd.Flags().BoolVar(&flags.allPlatforms, "all", false, "When set builds for all os/platforms. Defaults to the current os/platform only.")
+	buildCmd.Flags().BoolVar(&flags.skipInstall, "skip-install", false, "When set skips reinstalling extension after successful build.")
 
 	return buildCmd
 }
 
-func buildExtension(cmd *cobra.Command, args []string) error {
-	extensionPath, _ := cmd.Flags().GetString("path")
-	outputPath, _ := cmd.Flags().GetString("output")
-	allPlatforms, _ := cmd.Flags().GetBool("all")
-	skipInstall, _ := cmd.Flags().GetBool("skip-install")
-
+func runBuildAction(flags *buildFlags) error {
 	azdConfigDir := os.Getenv("AZD_CONFIG_DIR")
 	if azdConfigDir == "" {
 		userHomeDir, err := os.UserHomeDir()
@@ -48,32 +66,23 @@ func buildExtension(cmd *cobra.Command, args []string) error {
 		azdConfigDir = filepath.Join(userHomeDir, ".azd")
 	}
 
-	if outputPath == "" {
-		outputPath = filepath.Join(extensionPath, "bin")
-	}
-
-	internal.WriteCommandHeader(
-		"Build and azd extension (azd x build)",
-		"Builds the azd extension project for one ore more platforms",
-	)
-
-	extensionYamlPath := filepath.Join(extensionPath, "extension.yaml")
+	extensionYamlPath := filepath.Join(flags.extensionPath, "extension.yaml")
 	if _, err := os.Stat(extensionYamlPath); err != nil {
 		return fmt.Errorf("extension.yaml file not found in the specified path: %w", err)
 	}
 
-	absOutputPath, err := filepath.Abs(outputPath)
+	absOutputPath, err := filepath.Abs(flags.outputPath)
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path for output directory: %w", err)
 	}
 
-	absExtensionPath, err := filepath.Abs(extensionPath)
+	absExtensionPath, err := filepath.Abs(flags.extensionPath)
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path for extension directory: %w", err)
 	}
 
 	// Load metadata
-	schema, err := models.LoadExtension(extensionPath)
+	schema, err := models.LoadExtension(flags.extensionPath)
 	if err != nil {
 		return fmt.Errorf("failed to load extension metadata: %w", err)
 	}
@@ -83,11 +92,16 @@ func buildExtension(cmd *cobra.Command, args []string) error {
 		Title: "Building extension artifacts",
 		Action: func(progress ux.SetProgressFunc) (ux.TaskState, error) {
 			// Build the binaries
-			buildScript := filepath.Join(extensionPath, "build.sh")
+			buildScript := filepath.Join(flags.extensionPath, "build.sh")
 			if _, err := os.Stat(buildScript); err == nil {
-				// nolint:gosec // G204
-				cmd := exec.Command("bash", "build.sh")
-				cmd.Dir = extensionPath
+				var cmd *exec.Cmd
+				if runtime.GOOS == "windows" {
+					cmd = exec.Command("pwsh", "build.ps1")
+				} else {
+					cmd = exec.Command("bash", "build.sh")
+				}
+
+				cmd.Dir = absExtensionPath
 
 				envVars := map[string]string{
 					"OUTPUT_DIR":        absOutputPath,
@@ -97,7 +111,7 @@ func buildExtension(cmd *cobra.Command, args []string) error {
 				}
 
 				// By default builds for current os/arch
-				if !allPlatforms {
+				if !flags.allPlatforms {
 					envVars["EXTENSION_PLATFORM"] = fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
 				}
 
@@ -108,6 +122,8 @@ func buildExtension(cmd *cobra.Command, args []string) error {
 				}
 
 				if result, err := cmd.CombinedOutput(); err != nil {
+					flags.skipInstall = true
+
 					return ux.Error, common.NewDetailedError(
 						"Build Failed",
 						fmt.Errorf("failed to build artifacts: %s, %w", string(result), err),
@@ -122,7 +138,7 @@ func buildExtension(cmd *cobra.Command, args []string) error {
 	taskList.AddTask(ux.TaskOptions{
 		Title: "Installing extension",
 		Action: func(progress ux.SetProgressFunc) (ux.TaskState, error) {
-			if skipInstall {
+			if flags.skipInstall {
 				return ux.Skipped, nil
 			}
 
@@ -142,7 +158,6 @@ func buildExtension(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to run build tasks: %w", err)
 	}
 
-	internal.WriteCommandSuccess("Build completed successfully!")
 	return nil
 }
 
@@ -197,4 +212,14 @@ func copyFile(src, dst string) error {
 	}
 
 	return destFile.Sync()
+}
+
+func defaultBuildFlags(flags *buildFlags) {
+	if flags.extensionPath == "" {
+		flags.extensionPath = "."
+	}
+
+	if flags.outputPath == "" {
+		flags.outputPath = filepath.Join(flags.extensionPath, "bin")
+	}
 }

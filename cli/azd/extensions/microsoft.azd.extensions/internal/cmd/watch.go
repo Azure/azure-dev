@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -14,26 +13,38 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type watchFlags struct {
+	extensionPath string
+}
+
 func newWatchCommand() *cobra.Command {
+	flags := &watchFlags{}
+
 	watchCmd := &cobra.Command{
 		Use:   "watch",
-		Short: "Watch the azd extension project",
-		RunE:  watchAndRebuild,
+		Short: "Watches the AZD extension project for file changes and rebuilds it.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			internal.WriteCommandHeader(
+				"Watch and azd extension (azd x watch)",
+				"Watches the azd extension project for changes and rebuilds it.",
+			)
+
+			defaultWatchFlags(flags)
+			err := runWatchAction(flags)
+			if err != nil {
+				return err
+			}
+
+			return nil
+		},
 	}
 
-	watchCmd.Flags().StringP("path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
+	watchCmd.Flags().StringVarP(&flags.extensionPath, "path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
 
 	return watchCmd
 }
 
-func watchAndRebuild(cmd *cobra.Command, args []string) error {
-	extensionPath, _ := cmd.Flags().GetString("path")
-
-	internal.WriteCommandHeader(
-		"Watch and azd extension (azd x watch)",
-		"Watches the azd extension project for changes and rebuilds it.",
-	)
-
+func runWatchAction(flags *watchFlags) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("Error creating watcher: %w", err)
@@ -50,16 +61,11 @@ func watchAndRebuild(cmd *cobra.Command, args []string) error {
 		"bin/**/*", // Matches all files and subdirectories inside "bin"
 	}
 
-	if err := watchRecursive(extensionPath, watcher, ignoredFolders); err != nil {
+	if err := watchRecursive(flags.extensionPath, watcher, ignoredFolders); err != nil {
 		return fmt.Errorf("Error watching for changes: %w", err)
 	}
 
-	rebuild(extensionPath)
-	fmt.Println()
-
-	fmt.Println("Watching for changes...")
-	fmt.Println("Press Ctrl+C to stop.")
-	fmt.Println()
+	rebuild(flags.extensionPath)
 
 	debounce := time.NewTimer(0)
 	if !debounce.Stop() {
@@ -109,7 +115,7 @@ func watchAndRebuild(cmd *cobra.Command, args []string) error {
 				uniqueChanges = make(map[string]struct{}) // Clear the map
 
 				// Trigger rebuild
-				rebuild(extensionPath)
+				rebuild(flags.extensionPath)
 				fmt.Println()
 			}
 		}
@@ -136,10 +142,20 @@ func watchRecursive(root string, watcher *fsnotify.Watcher, ignoredFolders map[s
 }
 
 func rebuild(extensionPath string) {
-	cmd := exec.Command("azd", "x", "build")
-	cmd.Dir = extensionPath
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	flags := &buildFlags{}
+	defaultBuildFlags(flags)
 
-	_ = cmd.Run()
+	if err := runBuildAction(flags); err != nil {
+		color.Red("BUILD FAILED: \n%s\n\n", err.Error())
+	}
+
+	fmt.Println("Watching for changes...")
+	color.HiBlack("Press Ctrl+C to stop.")
+	fmt.Println()
+}
+
+func defaultWatchFlags(flags *watchFlags) {
+	if flags.extensionPath == "" {
+		flags.extensionPath = "."
+	}
 }

@@ -24,18 +24,18 @@ import (
 )
 
 func newPackageCommand() *cobra.Command {
-	rootCmd := &cobra.Command{
+	packageCmd := &cobra.Command{
 		Use:   "package",
 		Short: "Build, package and update the extension registry",
 		RunE:  buildRegistry,
 	}
 
-	rootCmd.Flags().StringP("path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
-	rootCmd.Flags().StringP("registry", "r", "", "Path to the registry.json file. If not provided, will use a local registry.")
-	rootCmd.Flags().StringP("output", "o", "", "Path to the artifacts output directory. If not provided, will use local registry")
-	rootCmd.Flags().StringP("base-path", "b", "", "Base path for artifact paths. If not provided, will use local relative paths.")
+	packageCmd.Flags().StringP("path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
+	packageCmd.Flags().StringP("registry", "r", "", "Path to the registry.json file. If not provided, will use a local registry.")
+	packageCmd.Flags().StringP("output", "o", "", "Path to the artifacts output directory. If not provided, will use local registry")
+	packageCmd.Flags().StringP("base-path", "b", "", "Base path for artifact paths. If not provided, will use local relative paths.")
 
-	return rootCmd
+	return packageCmd
 }
 
 func buildRegistry(cmd *cobra.Command, args []string) error {

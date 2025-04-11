@@ -19,18 +19,18 @@ import (
 )
 
 func newBuildCommand() *cobra.Command {
-	rootCmd := &cobra.Command{
+	buildCmd := &cobra.Command{
 		Use:   "build",
 		Short: "Build the azd extension project",
 		RunE:  buildExtension,
 	}
 
-	rootCmd.Flags().StringP("path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
-	rootCmd.Flags().StringP("output", "o", "", "Path to the output directory. Defaults to relative /bin folder.")
-	rootCmd.Flags().Bool("all", false, "When set builds for all os/platforms. Defaults to the current os/platform only.")
-	rootCmd.Flags().Bool("skip-install", false, "When set skips reinstalling extension after successful build.")
+	buildCmd.Flags().StringP("path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
+	buildCmd.Flags().StringP("output", "o", "", "Path to the output directory. Defaults to relative /bin folder.")
+	buildCmd.Flags().Bool("all", false, "When set builds for all os/platforms. Defaults to the current os/platform only.")
+	buildCmd.Flags().Bool("skip-install", false, "When set skips reinstalling extension after successful build.")
 
-	return rootCmd
+	return buildCmd
 }
 
 func buildExtension(cmd *cobra.Command, args []string) error {

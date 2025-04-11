@@ -4,15 +4,25 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
+	"text/template"
 
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/models"
+	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/resources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/common"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -22,6 +32,12 @@ func newInitCommand() *cobra.Command {
 		Use:   "init",
 		Short: "Initialize a new AZD extension project",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			internal.WriteCommandHeader(
+				"Initialize a new azd extension project (azd x init)",
+				"Initializes a new azd extension project from a template",
+			)
+			fmt.Println()
+
 			// Create a new context that includes the AZD access token
 			ctx := azdext.WithAccessToken(cmd.Context())
 
@@ -38,9 +54,98 @@ func newInitCommand() *cobra.Command {
 				return fmt.Errorf("failed to collect extension metadata: %w", err)
 			}
 
-			if err := createExtensionDirectory(ctx, azdClient, extensionMetadata); err != nil {
-				return fmt.Errorf("failed to create extension directory: %w", err)
+			taskList := ux.NewTaskList(nil)
+			taskList.AddTask(ux.TaskOptions{
+				Title: fmt.Sprintf("Creating extension directory %s", extensionMetadata.Id),
+				Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+					if err := createExtensionDirectory(ctx, azdClient, extensionMetadata); err != nil {
+						return ux.Error, common.NewDetailedError(
+							"Error creating directory",
+							fmt.Errorf("failed to create extension directory: %w", err),
+						)
+					}
+
+					return ux.Success, nil
+				},
+			})
+
+			taskList.AddTask(ux.TaskOptions{
+				Title: "Create local azd extension source",
+				Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+					if has, err := hasLocalRegistry(); err == nil && has {
+						return ux.Skipped, nil
+					}
+
+					if err := createLocalRegistry(ctx, azdClient); err != nil {
+						return ux.Error, common.NewDetailedError(
+							"Registry creation failed",
+							fmt.Errorf("failed to create local registry: %w", err),
+						)
+					}
+
+					return ux.Success, nil
+				},
+			})
+
+			taskList.AddTask(ux.TaskOptions{
+				Title: fmt.Sprintf("Build %s extension", extensionMetadata.Id),
+				Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+					// Build the extension
+					cmd := exec.Command("azd", "x", "build", "--skip-install")
+					cmd.Dir = extensionMetadata.Path
+					if result, err := cmd.CombinedOutput(); err != nil {
+						return ux.Error, common.NewDetailedError(
+							"Build failed",
+							fmt.Errorf("failed to build extension: %s, %w", string(result), err),
+						)
+					}
+
+					return ux.Success, nil
+				},
+			})
+
+			taskList.AddTask(ux.TaskOptions{
+				Title: fmt.Sprintf("Package %s extension", extensionMetadata.Id),
+				Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+					// Package the extension
+					cmd := exec.Command("azd", "x", "package")
+					cmd.Dir = extensionMetadata.Path
+					if result, err := cmd.CombinedOutput(); err != nil {
+						return ux.Error, common.NewDetailedError(
+							"Package failed",
+							fmt.Errorf("failed to package extension: %s, %w", string(result), err),
+						)
+					}
+					return ux.Success, nil
+				},
+			})
+
+			taskList.AddTask(ux.TaskOptions{
+				Title: fmt.Sprintf("Install %s extension", extensionMetadata.Id),
+				Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+					cmd := exec.Command("azd", "ext", "install", extensionMetadata.Id, "--source", "local")
+					cmd.Dir = extensionMetadata.Path
+					if result, err := cmd.CombinedOutput(); err != nil {
+						return ux.Error, common.NewDetailedError(
+							"Install failed",
+							fmt.Errorf("failed to install extension: %s, %w", string(result), err),
+						)
+					}
+					return ux.Success, nil
+				},
+			})
+
+			if err := taskList.Run(); err != nil {
+				return fmt.Errorf("failed running init tasks: %w", err)
 			}
+
+			internal.WriteCommandSuccess("Extension initialized successfully!")
+			fmt.Println()
+			fmt.Printf("Run %s to try your extension now.\n", output.WithHighLightFormat("azd %s -h", extensionMetadata.Namespace))
+			fmt.Println()
+			fmt.Printf("Run %s to rebuild the extension\n", output.WithHighLightFormat("azd x build"))
+			fmt.Printf("Run %s to package the extension\n", output.WithHighLightFormat("azd x package"))
+			fmt.Printf("Run %s to watch for changes and auto re-build the extension\n", output.WithHighLightFormat("azd x watch"))
 
 			return nil
 		},
@@ -72,6 +177,32 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to prompt for display name: %w", err)
+	}
+
+	descriptionPrompt, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:         "Enter a description for your extension",
+			Placeholder:     "A brief description of your extension",
+			RequiredMessage: "Description is required",
+			Required:        true,
+			HelpMessage:     "Description is used to provide more information about your extension. It should be concise and informative.",
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to prompt for description: %w", err)
+	}
+
+	tagsPrompt, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:         "Enter tags for your extension (comma-separated)",
+			Placeholder:     "tag1, tag2",
+			RequiredMessage: "Tags are required",
+			Required:        true,
+			HelpMessage:     "Tags are used to categorize your extension. You can enter multiple tags separated by commas.",
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to prompt for tags: %w", err)
 	}
 
 	namespacePrompt, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
@@ -113,13 +244,30 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 		capabilities[i] = extensions.CapabilityType(capability.Value)
 	}
 
+	tags := []string{}
+	strings.Split(tagsPrompt.Value, ",")
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag != "" {
+			tags = append(tags, tag)
+		}
+	}
+
+	absExtensionPath, err := filepath.Abs(idPrompt.Value)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path for extension directory: %w", err)
+	}
+
 	return &models.ExtensionSchema{
 		Id:           idPrompt.Value,
 		DisplayName:  displayNamePrompt.Value,
+		Description:  descriptionPrompt.Value,
 		Namespace:    namespacePrompt.Value,
 		Capabilities: capabilities,
+		Tags:         tags,
 		Usage:        fmt.Sprintf("azd %s <command> [options]", namespacePrompt.Value),
 		Version:      "0.0.1",
+		Path:         absExtensionPath,
 	}, nil
 }
 
@@ -148,6 +296,12 @@ func createExtensionDirectory(ctx context.Context, azdClient *azdext.AzdClient, 
 		}
 	}
 
+	// Create project from template.
+	err = copyAndProcessTemplates(resources.Languages, "languages/go", extensionPath, extensionMetadata)
+	if err != nil {
+		return fmt.Errorf("failed to copy and process templates: %w", err)
+	}
+
 	// Create the extension.yaml file
 	yamlBytes, err := yaml.Marshal(extensionMetadata)
 	if err != nil {
@@ -157,6 +311,127 @@ func createExtensionDirectory(ctx context.Context, azdClient *azdext.AzdClient, 
 	extensionFilePath := filepath.Join(extensionPath, "extension.yaml")
 	if err := os.WriteFile(extensionFilePath, yamlBytes, internal.PermissionFile); err != nil {
 		return fmt.Errorf("failed to create extension.yaml file: %w", err)
+	}
+
+	return nil
+}
+
+func copyAndProcessTemplates(srcFS fs.FS, srcDir, destDir string, data any) error {
+	return fs.WalkDir(srcFS, srcDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("failed to access path %s: %w", path, err)
+		}
+
+		relPath, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return fmt.Errorf("failed to calculate relative path: %w", err)
+		}
+
+		destPath := filepath.Join(destDir, relPath)
+
+		if d.IsDir() {
+			if err := os.MkdirAll(destPath, internal.PermissionDirectory); err != nil {
+				return fmt.Errorf("failed to create directory %s: %w", destPath, err)
+			}
+			return nil
+		}
+
+		fileBytes, err := fs.ReadFile(srcFS, path)
+		if err != nil {
+			return fmt.Errorf("failed to read file %s: %w", path, err)
+		}
+
+		if strings.HasSuffix(path, ".tmpl") {
+			tmpl, err := template.New(filepath.Base(path)).Parse(string(fileBytes))
+			if err != nil {
+				return fmt.Errorf("failed to parse template %s: %w", path, err)
+			}
+
+			var processed bytes.Buffer
+			if err := tmpl.Execute(&processed, data); err != nil {
+				return fmt.Errorf("failed to execute template %s: %w", path, err)
+			}
+
+			destPath = strings.TrimSuffix(destPath, ".tmpl")
+			fileBytes = processed.Bytes()
+		}
+
+		if err := os.WriteFile(destPath, fileBytes, internal.PermissionFile); err != nil {
+			return fmt.Errorf("failed to write file %s: %w", destPath, err)
+		}
+
+		return nil
+	})
+}
+
+func hasLocalRegistry() (bool, error) {
+	cmdBytes, err := exec.Command("azd", "ext", "source", "list", "-o", "json").CombinedOutput()
+	if err != nil {
+		return false, fmt.Errorf("failed to execute command: %w", err)
+	}
+
+	var extensionSources []any
+	if err := json.Unmarshal(cmdBytes, &extensionSources); err != nil {
+		return false, fmt.Errorf("failed to unmarshal command output: %w", err)
+	}
+
+	for _, source := range extensionSources {
+		extensionSource, ok := source.(map[string]any)
+		if ok {
+			if extensionSource["name"] == "local" && extensionSource["type"] == "file" {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+}
+
+func createLocalRegistry(ctx context.Context, azdClient *azdext.AzdClient) error {
+	azdConfigDir := os.Getenv("AZD_CONFIG_DIR")
+	if azdConfigDir == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("failed to get user home directory: %w", err)
+		}
+		azdConfigDir = filepath.Join(homeDir, ".azd")
+	}
+
+	localRegistryPath := filepath.Join(azdConfigDir, "registry.json")
+	emptyRegistry := map[string]any{
+		"registry": []any{},
+	}
+
+	registryJson, err := json.MarshalIndent(emptyRegistry, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal empty registry: %w", err)
+	}
+
+	if err := os.WriteFile(localRegistryPath, registryJson, internal.PermissionFile); err != nil {
+		return fmt.Errorf("failed to create local registry file: %w", err)
+	}
+
+	setupRegistryWorkflow := azdext.Workflow{
+		Name: "setup-local-registry",
+		Steps: []*azdext.WorkflowStep{
+			{
+				Command: &azdext.WorkflowCommand{
+					Args: []string{
+						"ext", "source", "add",
+						"--name", "local",
+						"--type", "file",
+						"--location", "registry.json",
+					},
+				},
+			},
+		},
+	}
+
+	_, err = azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+		Workflow: &setupRegistryWorkflow,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to run workflow: %w", err)
 	}
 
 	return nil

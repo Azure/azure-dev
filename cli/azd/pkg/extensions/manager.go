@@ -576,19 +576,16 @@ func (m *Manager) downloadFromRemote(ctx context.Context, artifactUrl string) (s
 		return "", err
 	}
 
-	// Perform HTTP GET request
 	resp, err := m.pipeline.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to download file: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Check for successful response
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("failed to download file, status code: %d", resp.StatusCode)
 	}
 
-	// Extract the filename from the URL
 	filename := filepath.Base(artifactUrl)
 	tempFilePath := filepath.Join(os.TempDir(), filename)
 
@@ -598,7 +595,6 @@ func (m *Manager) downloadFromRemote(ctx context.Context, artifactUrl string) (s
 	}
 	defer tempFile.Close()
 
-	// Write the response body to the file
 	_, err = io.Copy(tempFile, resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to write to temporary file: %w", err)

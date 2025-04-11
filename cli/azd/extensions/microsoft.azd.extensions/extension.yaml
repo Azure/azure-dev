@@ -11,6 +11,12 @@ examples:
   - name: init
     description: Initialize a new AZD extension project.
     usage: azd x init
+  - name: build
+    description: Build the AZD extension project.
+    usage: azd x build
+  - name: package
+    description: Package the AZD extension project into a distributable format and add to local registry.
+    usage: azd x package
   - name: watch
     description: Watch for changes in the extension project and automatically rebuild and reload the extension.
     usage: azd x watch

@@ -353,7 +353,13 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	return &infraSpec, nil
 }
 
-func mapHostProps(res *ResourceConfig, svcSpec *scaffold.ServiceSpec, infraSpec *scaffold.InfraSpec, port int, env []ServiceEnvVar) error {
+func mapHostProps(
+	res *ResourceConfig,
+	svcSpec *scaffold.ServiceSpec,
+	infraSpec *scaffold.InfraSpec,
+	port int,
+	env []ServiceEnvVar,
+) error {
 	for _, envVar := range env {
 		if len(envVar.Value) == 0 && len(envVar.Secret) == 0 {
 			return fmt.Errorf(
@@ -397,7 +403,12 @@ func mapContainerApp(res *ResourceConfig, svcSpec *scaffold.ServiceSpec, infraSp
 	return mapHostProps(res, svcSpec, infraSpec, props.Port, props.Env)
 }
 
-func mapAppService(res *ResourceConfig, svcSpec *scaffold.ServiceSpec, infraSpec *scaffold.InfraSpec, svcConfig *ServiceConfig) error {
+func mapAppService(
+	res *ResourceConfig,
+	svcSpec *scaffold.ServiceSpec,
+	infraSpec *scaffold.InfraSpec,
+	svcConfig *ServiceConfig,
+) error {
 	props := res.Props.(AppServiceProps)
 	if err := mapHostProps(res, svcSpec, infraSpec, props.Port, props.Env); err != nil {
 		return err

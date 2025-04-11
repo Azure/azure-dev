@@ -73,7 +73,8 @@ func Configure(
 	}
 
 	switch r.Type {
-	case project.ResourceTypeHostContainerApp:
+	case project.ResourceTypeHostAppService,
+		project.ResourceTypeHostContainerApp:
 		return fillUses(ctx, r, console, p)
 	case project.ResourceTypeOpenAiModel:
 		return fillOpenAiModelName(ctx, r, console, p)

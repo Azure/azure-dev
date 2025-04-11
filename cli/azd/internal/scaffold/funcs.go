@@ -214,6 +214,31 @@ func EnvFormat(src string) string {
 	return fmt.Sprintf("${AZURE_%s}", snake)
 }
 
+func HasACA(services []ServiceSpec) bool {
+	return hasHostType(services, ContainerAppKind)
+}
+
+func HasAppService(services []ServiceSpec) bool {
+	return hasHostType(services, AppServiceKind)
+}
+
+func IsACA(host HostKind) bool {
+	return host == ContainerAppKind
+}
+
+func IsAppService(host HostKind) bool {
+	return host == AppServiceKind
+}
+
+func hasHostType(services []ServiceSpec, host HostKind) bool {
+	for _, service := range services {
+		if service.Host == host {
+			return true
+		}
+	}
+	return false
+}
+
 // Formats a parameter value for use in a bicep file.
 // If the value is a string, it is quoted inline with no indentation.
 // Otherwise, the value is marshaled with indentation specified by prefix and indent.

@@ -218,11 +218,35 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			infraSpec.DbMySql = &scaffold.DatabaseMysql{
 				DatabaseName: res.Name,
 			}
+		case ResourceTypeHostAppService:
+			svcConfig, ok := projectConfig.Services[res.Name]
+			if !ok {
+				return nil, fmt.Errorf("service %s not found in project config", res.Name)
+			}
+			svcSpec := scaffold.ServiceSpec{
+				Name: res.Name,
+				Port: -1,
+				Env:  map[string]string{},
+				Host: scaffold.AppServiceKind,
+			}
+
+			err := mapAppService(res, &svcSpec, &infraSpec, svcConfig)
+			if err != nil {
+				return nil, err
+			}
+
+			err = mapHostUses(res, &svcSpec, backendMapping, existingMap, projectConfig)
+			if err != nil {
+				return nil, err
+			}
+
+			infraSpec.Services = append(infraSpec.Services, svcSpec)
 		case ResourceTypeHostContainerApp:
 			svcSpec := scaffold.ServiceSpec{
 				Name: res.Name,
 				Port: -1,
 				Env:  map[string]string{},
+				Host: scaffold.ContainerAppKind,
 			}
 
 			err := mapContainerApp(res, &svcSpec, &infraSpec)
@@ -329,9 +353,8 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	return &infraSpec, nil
 }
 
-func mapContainerApp(res *ResourceConfig, svcSpec *scaffold.ServiceSpec, infraSpec *scaffold.InfraSpec) error {
-	props := res.Props.(ContainerAppProps)
-	for _, envVar := range props.Env {
+func mapHostProps(res *ResourceConfig, svcSpec *scaffold.ServiceSpec, infraSpec *scaffold.InfraSpec, port int, env []ServiceEnvVar) error {
+	for _, envVar := range env {
 		if len(envVar.Value) == 0 && len(envVar.Secret) == 0 {
 			return fmt.Errorf(
 				"environment variable %s for host %s is invalid: both value and secret are empty",
@@ -361,12 +384,48 @@ func mapContainerApp(res *ResourceConfig, svcSpec *scaffold.ServiceSpec, infraSp
 		svcSpec.Env[envVar.Name] = evaluatedValue
 	}
 
-	port := props.Port
 	if port < 1 || port > 65535 {
 		return fmt.Errorf("port value %d for host %s must be between 1 and 65535", port, res.Name)
 	}
 
 	svcSpec.Port = port
+	return nil
+}
+
+func mapContainerApp(res *ResourceConfig, svcSpec *scaffold.ServiceSpec, infraSpec *scaffold.InfraSpec) error {
+	props := res.Props.(ContainerAppProps)
+	return mapHostProps(res, svcSpec, infraSpec, props.Port, props.Env)
+}
+
+func mapAppService(res *ResourceConfig, svcSpec *scaffold.ServiceSpec, infraSpec *scaffold.InfraSpec, svcConfig *ServiceConfig) error {
+	props := res.Props.(AppServiceProps)
+	if err := mapHostProps(res, svcSpec, infraSpec, props.Port, props.Env); err != nil {
+		return err
+	}
+
+	if len(props.Runtime.Stack) == 0 {
+		return fmt.Errorf("resources.%s.runtime.type is required", res.Name)
+	}
+
+	if len(props.Runtime.Version) == 0 {
+		return fmt.Errorf("resources.%s.runtime.version is required", res.Name)
+	}
+
+	svcSpec.Runtime = &scaffold.RuntimeInfo{
+		Type:    string(props.Runtime.Stack),
+		Version: props.Runtime.Version,
+	}
+
+	// Set common environment variables for App Service
+	svcSpec.Env["SCM_DO_BUILD_DURING_DEPLOYMENT"] = "true"
+	svcSpec.Env["ENABLE_ORYX_BUILD"] = "true"
+
+	// Set language-specific environment variables
+	switch svcConfig.Language {
+	case ServiceLanguagePython:
+		svcSpec.Env["PYTHON_ENABLE_GUNICORN_MULTIWORKERS"] = "true"
+	}
+
 	return nil
 }
 

@@ -102,20 +102,18 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	var serviceToAdd *project.ServiceConfig
 
 	promptOpts := PromptOptions{PrjConfig: prjConfig}
+	r, err := selected.SelectResource(a.console, ctx, promptOpts)
+	if err != nil {
+		return nil, err
+	}
+	resourceToAdd = r
+
 	if strings.EqualFold(selected.Namespace, "host") {
-		svc, r, err := a.configureHost(a.console, ctx, promptOpts)
+		svc, r, err := a.configureHost(a.console, ctx, promptOpts, r.Type)
 		if err != nil {
 			return nil, err
 		}
-
-		resourceToAdd = r
 		serviceToAdd = svc
-	} else {
-		r, err := selected.SelectResource(a.console, ctx, promptOpts)
-		if err != nil {
-			return nil, err
-		}
-
 		resourceToAdd = r
 	}
 

@@ -73,6 +73,7 @@ func (i *Initializer) infraSpecFromDetect(
 		serviceSpec := scaffold.ServiceSpec{
 			Name: name,
 			Port: -1,
+			Host: scaffold.ContainerAppKind,
 		}
 
 		port, err := add.PromptPort(i.console, ctx, name, svc)

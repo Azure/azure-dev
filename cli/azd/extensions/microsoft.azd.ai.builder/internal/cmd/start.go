@@ -747,14 +747,7 @@ func ensureAzureContext(
 }
 
 func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Question, error) {
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create azd client: %w", err)
-	}
-
-	defer azdClient.Close()
-
-	resourceTypes, err := azdClient.Compose().ListResourceTypes(ctx, &azdext.EmptyRequest{})
+	resourceTypes, err := a.azdClient.Compose().ListResourceTypes(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list resource types: %w", err)
 	}

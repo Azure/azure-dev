@@ -181,6 +181,8 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 
 	if scope == azure.DeploymentScopeResourceGroup {
 		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
+			// Prompt Resource Group supports creating a new resource group
+			// And prompts for a location as part of creating a new resource group
 			rgName, err := p.prompters.PromptResourceGroup(ctx, prompt.PromptResourceOptions{})
 			if err != nil {
 				return err

@@ -353,6 +353,31 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	return &infraSpec, nil
 }
 
+// mergeDefaultEnvVars combines default environment variables with user-provided ones.
+func mergeDefaultEnvVars(defaultEnv map[string]string, userEnv []ServiceEnvVar) []ServiceEnvVar {
+	// Map to track which env vars are provided by the user
+	userEnvMap := make(map[string]struct{}, len(userEnv))
+	for _, env := range userEnv {
+		userEnvMap[env.Name] = struct{}{}
+	}
+
+	combinedEnv := make([]ServiceEnvVar, 0, len(defaultEnv)+len(userEnv))
+
+	// Add default env vars that aren't overridden
+	for name, value := range defaultEnv {
+		if _, overridden := userEnvMap[name]; !overridden {
+			combinedEnv = append(combinedEnv, ServiceEnvVar{
+				Name:  name,
+				Value: value,
+			})
+		}
+	}
+
+	// Add user-provided env vars
+	combinedEnv = append(combinedEnv, userEnv...)
+	return combinedEnv
+}
+
 func mapHostProps(
 	res *ResourceConfig,
 	svcSpec *scaffold.ServiceSpec,
@@ -410,9 +435,6 @@ func mapAppService(
 	svcConfig *ServiceConfig,
 ) error {
 	props := res.Props.(AppServiceProps)
-	if err := mapHostProps(res, svcSpec, infraSpec, props.Port, props.Env); err != nil {
-		return err
-	}
 
 	if len(props.Runtime.Stack) == 0 {
 		return fmt.Errorf("resources.%s.runtime.type is required", res.Name)
@@ -427,14 +449,19 @@ func mapAppService(
 		Version: props.Runtime.Version,
 	}
 
-	// Set common environment variables for App Service
-	svcSpec.Env["SCM_DO_BUILD_DURING_DEPLOYMENT"] = "true"
-	svcSpec.Env["ENABLE_ORYX_BUILD"] = "true"
+	// Common environment variables for App Service
+	defaultEnv := map[string]string{
+		"SCM_DO_BUILD_DURING_DEPLOYMENT": "true",
+		"ENABLE_ORYX_BUILD":              "true",
+	}
+	// Language-specific environment variables
+	if svcConfig.Language == ServiceLanguagePython {
+		defaultEnv["PYTHON_ENABLE_GUNICORN_MULTIWORKERS"] = "true"
+	}
+	combinedEnv := mergeDefaultEnvVars(defaultEnv, props.Env)
 
-	// Set language-specific environment variables
-	switch svcConfig.Language {
-	case ServiceLanguagePython:
-		svcSpec.Env["PYTHON_ENABLE_GUNICORN_MULTIWORKERS"] = "true"
+	if err := mapHostProps(res, svcSpec, infraSpec, props.Port, combinedEnv); err != nil {
+		return err
 	}
 
 	return nil

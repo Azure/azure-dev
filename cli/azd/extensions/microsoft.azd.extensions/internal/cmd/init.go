@@ -280,7 +280,11 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 	}, nil
 }
 
-func createExtensionDirectory(ctx context.Context, azdClient *azdext.AzdClient, extensionMetadata *models.ExtensionSchema) error {
+func createExtensionDirectory(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	extensionMetadata *models.ExtensionSchema,
+) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current working directory: %w", err)
@@ -292,7 +296,10 @@ func createExtensionDirectory(ctx context.Context, azdClient *azdext.AzdClient, 
 	if err == nil && info.IsDir() {
 		azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 			Options: &azdext.ConfirmOptions{
-				Message:      fmt.Sprintf("The extension directory '%s' already exists. Do you want to continue?", extensionMetadata.Id),
+				Message: fmt.Sprintf(
+					"The extension directory '%s' already exists. Do you want to continue?",
+					extensionMetadata.Id,
+				),
 				DefaultValue: internal.ToPtr(false),
 			},
 		})

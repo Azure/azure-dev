@@ -48,10 +48,14 @@ func newBuildCommand() *cobra.Command {
 		},
 	}
 
-	buildCmd.Flags().StringVarP(&flags.extensionPath, "path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
-	buildCmd.Flags().StringVarP(&flags.outputPath, "output", "o", "", "Path to the output directory. Defaults to relative /bin folder.")
-	buildCmd.Flags().BoolVar(&flags.allPlatforms, "all", false, "When set builds for all os/platforms. Defaults to the current os/platform only.")
-	buildCmd.Flags().BoolVar(&flags.skipInstall, "skip-install", false, "When set skips reinstalling extension after successful build.")
+	buildCmd.Flags().
+		StringVarP(&flags.extensionPath, "path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
+	buildCmd.Flags().
+		StringVarP(&flags.outputPath, "output", "o", "", "Path to the output directory. Defaults to relative /bin folder.")
+	buildCmd.Flags().
+		BoolVar(&flags.allPlatforms, "all", false, "When set builds for all os/platforms. Defaults to the current os/platform only.")
+	buildCmd.Flags().
+		BoolVar(&flags.skipInstall, "skip-install", false, "When set skips reinstalling extension after successful build.")
 
 	return buildCmd
 }

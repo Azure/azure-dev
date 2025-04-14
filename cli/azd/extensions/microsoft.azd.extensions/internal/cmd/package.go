@@ -53,10 +53,14 @@ func newPackageCommand() *cobra.Command {
 		},
 	}
 
-	packageCmd.Flags().StringVarP(&flags.extensionPath, "path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
-	packageCmd.Flags().StringVarP(&flags.registryPath, "registry", "r", "", "Path to the registry.json file. If not provided, will use a local registry.")
-	packageCmd.Flags().StringVarP(&flags.outputPath, "output", "o", "", "Path to the artifacts output directory. If not provided, will use local registry")
-	packageCmd.Flags().StringVarP(&flags.basePath, "base-path", "b", "", "Base path for artifact paths. If not provided, will use local relative paths.")
+	packageCmd.Flags().
+		StringVarP(&flags.extensionPath, "path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
+	packageCmd.Flags().
+		StringVarP(&flags.registryPath, "registry", "r", "", "Path to the registry.json file. If not provided, will use a local registry.")
+	packageCmd.Flags().
+		StringVarP(&flags.outputPath, "output", "o", "", "Path to the artifacts output directory. If not provided, will use local registry")
+	packageCmd.Flags().
+		StringVarP(&flags.basePath, "base-path", "b", "", "Base path for artifact paths. If not provided, will use local relative paths.")
 
 	return packageCmd
 }
@@ -176,7 +180,12 @@ func runPackageAction(flags *packageFlags) error {
 	return nil
 }
 
-func processExtension(extensionMetadata *models.ExtensionSchema, outputPath string, baseURL string, registry *extensions.Registry) error {
+func processExtension(
+	extensionMetadata *models.ExtensionSchema,
+	outputPath string,
+	baseURL string,
+	registry *extensions.Registry,
+) error {
 	// Prepare artifacts for registry
 	artifactsPath := filepath.Join(extensionMetadata.Path, "bin")
 	artifacts, err := os.ReadDir(artifactsPath)
@@ -218,7 +227,13 @@ func processExtension(extensionMetadata *models.ExtensionSchema, outputPath stri
 			}
 
 			// Generate URL for the artifact using the base URL
-			url := fmt.Sprintf("%s/%s/%s/%s", baseURL, extensionMetadata.Id, extensionMetadata.Version, filepath.Base(targetFilePath))
+			url := fmt.Sprintf(
+				"%s/%s/%s/%s",
+				baseURL,
+				extensionMetadata.Id,
+				extensionMetadata.Version,
+				filepath.Base(targetFilePath),
+			)
 
 			platformMetadata := map[string]any{
 				"entryPoint": artifact.Name(),

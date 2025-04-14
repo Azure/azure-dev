@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cmd
 
 import (
@@ -39,7 +42,8 @@ func newWatchCommand() *cobra.Command {
 		},
 	}
 
-	watchCmd.Flags().StringVarP(&flags.extensionPath, "path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
+	watchCmd.Flags().
+		StringVarP(&flags.extensionPath, "path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
 
 	return watchCmd
 }

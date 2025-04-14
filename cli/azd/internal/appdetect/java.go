@@ -41,15 +41,27 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 				return nil, nil
 			}
 
-			var currentRoot *mavenProject
-			for _, rootProject := range jd.rootProjects {
-				// we can say that the project is in the root project if the path is under the project
-				if inRoot := strings.HasPrefix(pomFile, rootProject.path); inRoot {
-					currentRoot = &rootProject
+			// the absolute root project
+			var root *mavenProject
+			current := project
+			for {
+				newRoot := false
+
+				for _, rootProject := range jd.rootProjects {
+					for _, module := range rootProject.Modules {
+						if filepath.Join(rootProject.path, module) == current.path {
+							root = &rootProject
+							current = root
+							newRoot = true
+						}
+					}
+				}
+
+				if !newRoot { // we iterated and didn't find a new parent, there is either no root or we've found it
+					break
 				}
 			}
 
-			_ = currentRoot // use currentRoot here in the analysis
 			result, err := detectDependencies(project, &Project{
 				Language:      Java,
 				Path:          path,
@@ -57,6 +69,10 @@ func (jd *javaDetector) DetectProject(ctx context.Context, path string, entries 
 			})
 			if err != nil {
 				return nil, fmt.Errorf("detecting dependencies: %w", err)
+			}
+
+			if root != nil {
+				result.RootPath = root.path
 			}
 
 			return result, nil

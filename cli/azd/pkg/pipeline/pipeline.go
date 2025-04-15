@@ -245,12 +245,13 @@ func toInfraProviderType(provider string) (infraProviderType, error) {
 }
 
 type projectProperties struct {
-	CiProvider    ciProviderType
-	InfraProvider infraProviderType
-	RepoRoot      string
-	HasAppHost    bool
-	BranchName    string
-	AuthType      PipelineAuthType
-	Variables     []string
-	Secrets       []string
+	CiProvider            ciProviderType
+	InfraProvider         infraProviderType
+	RepoRoot              string
+	HasAppHost            bool
+	BranchName            string
+	AuthType              PipelineAuthType
+	Variables             []string
+	Secrets               []string
+	RequiredAlphaFeatures []string
 }

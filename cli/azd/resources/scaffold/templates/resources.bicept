@@ -759,19 +759,6 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
 
 {{- if isAppService .Host}}
 
-{{- if (and .Backend .Backend.Frontends)}}
-{{- $backendName := .Name }}
-{{- range .Backend.Frontends}}
-module {{bicepName .Name}}Cors './modules/app-service-cors.bicep' = {
-  name: '{{bicepName .Name}}-cors'
-  params: {
-    sourceAppName: {{.Name}}.outputs.name
-    targetAppName: {{$backendName}}.outputs.name
-  }
-}
-{{- end}}
-{{- end}}
-
 module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
   name: 'appServiceDeployment-{{bicepName .Name}}'
   params: {
@@ -791,6 +778,11 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
         allowedOrigins: [
           'https://portal.azure.com'
           'https://ms.portal.azure.com'
+          {{- if (and .Backend .Backend.Frontends)}}
+          {{- range .Backend.Frontends}}
+          'https://${abbrs.webSitesAppService}{{.Name}}-${resourceToken}.azurewebsites.net'
+          {{- end}}
+          {{- end}}
         ]
       }
     }

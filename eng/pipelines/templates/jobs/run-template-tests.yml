@@ -60,7 +60,7 @@ parameters:
 # Image name (compliant image required for 1ES pipelines that release)
 - name: Image
   type: string
-  default: MMSUbuntu20.04
+  default: ubuntu-22.04
 
 jobs:
   - job: TemplateTest_CreateMatrix

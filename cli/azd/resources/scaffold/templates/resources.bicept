@@ -87,7 +87,7 @@ module appServicePlan 'br/public:avm/res/web/serverfarm:0.4.1' = {
     tags: tags
     kind: 'linux'
     skuCapacity: 1
-    skuName: 'B1'
+    skuName: 'B2'
   }
 }
 {{- end}}

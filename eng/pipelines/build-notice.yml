@@ -20,7 +20,7 @@ jobs:
   - job: PoliCheck
     pool:
       name: azsdk-pool
-      vmImage: windows-2022
+      demands: ImageOverride -equals windows-2022
     timeoutInMinutes: 120
     steps:
       - template: /eng/common/pipelines/templates/steps/policheck.yml

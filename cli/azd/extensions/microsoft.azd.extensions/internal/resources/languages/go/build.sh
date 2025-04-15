@@ -66,7 +66,7 @@ for PLATFORM in "${PLATFORMS[@]}"; do
         else
             RUNTIME="linux-$ARCH"
         fi
-        PROJECT_FILE="$EXTENSION_DIR/azd-extension.csproj"
+        PROJECT_FILE="azd-extension.csproj"
 
         # Run dotnet publish for single file executable
         dotnet publish \

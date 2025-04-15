@@ -61,7 +61,7 @@ foreach ($PLATFORM in $PLATFORMS) {
     if ($env:EXTENSION_LANGUAGE -eq "dotnet") {
         # Set runtime identifier for .NET
         $RUNTIME = if ($OS -eq "windows") { "win-$ARCH" } elseif ($OS -eq "darwin") { "osx-$ARCH" } else { "linux-$ARCH" }
-        $PROJECT_FILE = "$azd-extension.csproj"
+        $PROJECT_FILE = "azd-extension.csproj"
 
         # Run dotnet publish for single file executable
         dotnet publish `

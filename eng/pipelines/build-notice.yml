@@ -28,44 +28,9 @@ jobs:
           ExclusionDataBaseFileName: AzDevPoliCheckExclusion
           PublishAnalysisLogs: false
 
-  - template: /eng/pipelines/templates/jobs/build-azd-notice.yml
+  - template: /eng/pipelines/templates/jobs/build-scan-cli.yml
 
-  - job: BuildScanVscode
-    strategy:
-      matrix:
-        # Disable Windows build until packaging fixed on Windows https://github.com/Azure/azure-dev/issues/1336
-        # Windows:
-        #   Pool: azsdk-pool-mms-win-2022-general
-        #   OSVmImage: MMS2022
-        Linux:
-          Pool: azsdk-pool
-          OSVmImage:  ubuntu-22.04
-        Mac:
-          Pool: Azure Pipelines
-          OSVmImage: macOS-latest
-
-    pool:
-      name: $(Pool)
-      demands: ImageOverride -equals $(OSVmImage)
-
-    variables:
-      NodeVersion: 18.x
-
-    steps:
-      - task: NodeTool@0
-        inputs:
-          versionSpec: $(NodeVersion)
-
-      - bash: |
-          npm install -g npm vsce
-          npm ci --no-optional
-        workingDirectory: ext/vscode
-
-      - pwsh: ./ci-package.ps1
-        workingDirectory: ext/vscode
-        displayName: Package
-
-      - task: ComponentGovernanceComponentDetection@0
+  - template: /eng/pipelines/templates/jobs/build-scan-vscode.yml
 
   - job: GenerateNoticeTxt
     pool:

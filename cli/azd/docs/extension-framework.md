@@ -312,7 +312,12 @@ if err := eventManager.Receive(ctx); err != nil {
 - Generated files @ [pkg/azdext](../pkg/azdext)
 - Make file @ [Makefile](../Makefile)
 
-To re-generate gRPC clients run `make proto` from the `~/cli/azd` folder of the repo.
+To re-generate gRPC clients:
+- Run `protoc --version` to check if `protoc` is installed. If not, download and install it from [GitHub](https://github.com/protocolbuffers/protobuf/releases).
+- Run `make --version` to check if `make` is installed.
+- Run `go install google.golang.org/protobuf/cmd/protoc-gen-go@latest` and `go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest` to install the required Go tools.
+- Run `make proto` from the `~/cli/azd` folder of the repo in `Git Bash`.
+- Run `../../eng/scripts/copyright-check.sh . --fix` to add copyright.
 
 ## gRPC Services
 

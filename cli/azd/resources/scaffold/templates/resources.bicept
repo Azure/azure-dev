@@ -775,7 +775,7 @@ module {{bicepName .Name}}Cors './modules/app-service-cors.bicep' = {
 module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
   name: 'appServiceDeployment-{{bicepName .Name}}'
   params: {
-    name: '${abbrs.webSitesAppService}${resourceToken}'
+    name: '${abbrs.webSitesAppService}{{.Name}}-${resourceToken}'
     location: location
     tags: union(tags, { 'azd-service-name': '{{.Name}}' })
     kind: 'app,linux'

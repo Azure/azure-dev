@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
@@ -448,11 +449,12 @@ func mapAppService(
 		Type:    string(props.Runtime.Stack),
 		Version: props.Runtime.Version,
 	}
+	svcSpec.StartupCommand = props.StartupCommand
 
-	// Common environment variables for App Service
+	useOryxStr := strconv.FormatBool(!props.ServeStatic)
 	defaultEnv := map[string]string{
-		"SCM_DO_BUILD_DURING_DEPLOYMENT": "true",
-		"ENABLE_ORYX_BUILD":              "true",
+		"SCM_DO_BUILD_DURING_DEPLOYMENT": useOryxStr,
+		"ENABLE_ORYX_BUILD":              useOryxStr,
 	}
 	// Language-specific environment variables
 	if svcConfig.Language == ServiceLanguagePython {

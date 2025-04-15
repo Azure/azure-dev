@@ -135,7 +135,8 @@ type ServiceSpec struct {
 	Env map[string]string
 
 	// App Service specific configuration
-	Runtime *RuntimeInfo
+	Runtime        *RuntimeInfo
+	StartupCommand string
 
 	// Front-end properties.
 	Frontend *Frontend

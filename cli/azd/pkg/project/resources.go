@@ -278,9 +278,11 @@ type ContainerAppProps struct {
 }
 
 type AppServiceProps struct {
-	Port    int               `yaml:"port,omitempty"`
-	Env     []ServiceEnvVar   `yaml:"env,omitempty"`
-	Runtime AppServiceRuntime `yaml:"runtime,omitempty"`
+	Port           int               `yaml:"port,omitempty"`
+	Env            []ServiceEnvVar   `yaml:"env,omitempty"`
+	Runtime        AppServiceRuntime `yaml:"runtime,omitempty"`
+	ServeStatic    bool              `yaml:"serveStatic,omitempty"`
+	StartupCommand string            `yaml:"startupCommand,omitempty"`
 }
 
 type AppServiceRuntimeStack string

@@ -786,6 +786,7 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
     }
     siteConfig: {
       linuxFxVersion: '{{.Runtime.Type}}|{{.Runtime.Version}}'
+      appCommandLine: '{{.StartupCommand}}'
       cors: {
         allowedOrigins: [
           'https://portal.azure.com'

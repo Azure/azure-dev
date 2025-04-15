@@ -301,23 +301,46 @@ func addServiceAsResource(
 			return nil, fmt.Errorf("unsupported language: %s", svc.Language)
 		}
 
-		confirm, err := console.Confirm(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("azd will use %s to host this project on %s. Continue?",
-				output.WithHighLightFormat(string(runtime.Stack)+" "+runtime.Version),
-				color.MagentaString("Azure App Service"),
-			),
-			DefaultValue: true,
-		})
+		serveStatic := false
+		startupCommand := ""
 
-		if err != nil {
-			return nil, err
-		} else if !confirm {
-			return nil, errors.New("cancelled")
+		if runtime.Stack == project.AppServiceRuntimeStackNode {
+			static, err := console.Confirm(ctx, input.ConsoleOptions{
+				Message:      "Is this service serving static files?",
+				Help:         "Static files are HTML, CSS, JS, and other files that do not require server-side processing.",
+				DefaultValue: true,
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			if static {
+				serveStatic = true
+				spa, err := console.Confirm(ctx, input.ConsoleOptions{
+					Message:      "Is this service a Single Page Application (SPA)?",
+					Help:         "An SPA is a web application that loads a single HTML page and dynamically updates the page as the user interacts with the app.",
+					DefaultValue: true,
+				})
+				if err != nil {
+					return nil, err
+				}
+				startupCommand = fmt.Sprintf("pm2 serve /home/site/wwwroot %d --no-daemon", port)
+				if spa {
+					startupCommand += " --spa"
+				}
+			}
 		}
 
+		console.Message(ctx,
+			fmt.Sprintf("\nazd will use %s to host this project on %s.\n",
+				output.WithHighLightFormat(string(runtime.Stack)+" "+runtime.Version),
+				color.MagentaString("Azure App Service")))
+
 		resSpec.Props = project.AppServiceProps{
-			Port:    port,
-			Runtime: runtime,
+			Port:           port,
+			Runtime:        runtime,
+			ServeStatic:    serveStatic,
+			StartupCommand: startupCommand,
 		}
 	}
 

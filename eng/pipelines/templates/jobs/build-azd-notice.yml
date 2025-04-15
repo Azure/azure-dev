@@ -27,11 +27,11 @@ jobs:
     - job: BuildCLI
 
       pool:
-        name: ${{ build.Pool }}
-        ${{ if eq('mac', build.OS) }}:
-          vmImage: ${{ build.OSVmImage }}
+        name: ${{ build.value.Pool }}
+        ${{ if eq('mac', build.value.OS) }}:
+          vmImage: ${{ build.value.OSVmImage }}
         ${{ else }}:
-          demands: ImageOverride -equals ${{ build.OSVmImage }}
+          demands: ImageOverride -equals ${{ build.value.OSVmImage }}
 
       variables:
         CLI_VERSION: 1.0.0-alpha.1

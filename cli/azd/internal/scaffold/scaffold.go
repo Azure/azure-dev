@@ -79,6 +79,10 @@ func supportingFiles(spec InfraSpec) []string {
 		files = append(files, "/modules/fetch-container-image.bicep")
 	}
 
+	if HasAppService(spec.Services) {
+		files = append(files, "/modules/app-service-cors.bicep")
+	}
+
 	if len(spec.Existing) > 0 {
 		files = append(files,
 			"/modules/role-assignment.bicep",

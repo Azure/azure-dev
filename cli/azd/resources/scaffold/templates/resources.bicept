@@ -758,6 +758,20 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
 {{- end}}
 
 {{- if isAppService .Host}}
+
+{{- if (and .Backend .Backend.Frontends)}}
+{{- $backendName := .Name }}
+{{- range .Backend.Frontends}}
+module {{bicepName .Name}}Cors './modules/app-service-cors.bicep' = {
+  name: '{{bicepName .Name}}-cors'
+  params: {
+    sourceAppName: {{.Name}}.outputs.name
+    targetAppName: {{$backendName}}.outputs.name
+  }
+}
+{{- end}}
+{{- end}}
+
 module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
   name: 'appServiceDeployment-{{bicepName .Name}}'
   params: {
@@ -773,7 +787,10 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
     siteConfig: {
       linuxFxVersion: '{{.Runtime.Type}}|{{.Runtime.Version}}'
       cors: {
-        allowedOrigins: [ 'https://portal.azure.com', 'https://ms.portal.azure.com' ]
+        allowedOrigins: [
+          'https://portal.azure.com'
+          'https://ms.portal.azure.com'
+        ]
       }
     }
     clientAffinityEnabled: false
@@ -833,6 +850,12 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
       {{- end}}
       {{- if .AiFoundryProject }}
       AZURE_AI_PROJECT_CONNECTION_STRING: aiFoundryProjectConnectionString
+      {{- end}}
+
+      {{- if .Frontend}}
+      {{- range $i, $e := .Frontend.Backends}}
+      {{upper .Name}}_BASE_URL: {{.Name}}.outputs.defaultHostname
+      {{- end}}
       {{- end}}
 
       {{- if ne .Port 0}}

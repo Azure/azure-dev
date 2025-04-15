@@ -525,7 +525,8 @@ func mapHostUses(
 			svcSpec.DbMySql = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 		case ResourceTypeDbRedis:
 			svcSpec.DbRedis = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
-		case ResourceTypeHostContainerApp:
+		case ResourceTypeHostAppService,
+			ResourceTypeHostContainerApp:
 			if svcSpec.Frontend == nil {
 				svcSpec.Frontend = &scaffold.Frontend{}
 			}

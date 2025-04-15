@@ -117,6 +117,9 @@ overrides:
     words:
       - GUNICORN
       - MULTIWORKERS
+  - filename: internal/cmd/add/add_configure_host.go
+    words:
+      - wwwroot
   - filename: CHANGELOG.md
     words:
       - aistudio

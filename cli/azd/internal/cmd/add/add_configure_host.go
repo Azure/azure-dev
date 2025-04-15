@@ -318,7 +318,7 @@ func addServiceAsResource(
 				serveStatic = true
 				spa, err := console.Confirm(ctx, input.ConsoleOptions{
 					Message:      "Is this service a Single Page Application (SPA)?",
-					Help:         "An SPA is a web application that loads a single HTML page and dynamically updates the page as the user interacts with the app.",
+					Help:         "An SPA uses client-side routing and needs all requests to be directed to index.html.",
 					DefaultValue: true,
 				})
 				if err != nil {

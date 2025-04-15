@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/models"
@@ -95,23 +96,35 @@ func runBuildAction(flags *buildFlags) error {
 	taskList.AddTask(ux.TaskOptions{
 		Title: "Building extension artifacts",
 		Action: func(progress ux.SetProgressFunc) (ux.TaskState, error) {
-			// Build the binaries
-			buildScript := filepath.Join(flags.extensionPath, "build.sh")
-			if _, err := os.Stat(buildScript); err == nil {
-				var cmd *exec.Cmd
-				if runtime.GOOS == "windows" {
-					cmd = exec.Command("pwsh", "build.ps1")
-				} else {
-					cmd = exec.Command("bash", "build.sh")
+			// Create output directory if it doesn't exist
+			if _, err := os.Stat(absOutputPath); os.IsNotExist(err) {
+				if err := os.MkdirAll(absOutputPath, os.ModePerm); err != nil {
+					return ux.Error, common.NewDetailedError("Failed to create output directory", err)
 				}
+			}
 
+			var command string
+			var scriptFile string
+			if runtime.GOOS == "windows" {
+				command = "pwsh"
+				scriptFile = "build.ps1"
+			} else {
+				command = "bash"
+				scriptFile = "build.sh"
+			}
+
+			// Build the binaries
+			buildScript := filepath.Join(flags.extensionPath, scriptFile)
+			if _, err := os.Stat(buildScript); err == nil {
+				cmd := exec.Command(command, scriptFile)
 				cmd.Dir = absExtensionPath
 
 				envVars := map[string]string{
-					"OUTPUT_DIR":        absOutputPath,
-					"EXTENSION_DIR":     absExtensionPath,
-					"EXTENSION_ID":      schema.Id,
-					"EXTENSION_VERSION": schema.Version,
+					"OUTPUT_DIR":         absOutputPath,
+					"EXTENSION_DIR":      absExtensionPath,
+					"EXTENSION_ID":       schema.Id,
+					"EXTENSION_VERSION":  schema.Version,
+					"EXTENSION_LANGUAGE": schema.Language,
 				}
 
 				// By default builds for current os/arch
@@ -147,7 +160,9 @@ func runBuildAction(flags *buildFlags) error {
 			}
 
 			extensionInstallDir := filepath.Join(azdConfigDir, "extensions", schema.Id)
-			if err := copyFiles(absOutputPath, extensionInstallDir); err != nil {
+			extensionBinaryPrefix := strings.ReplaceAll(schema.Id, ".", "-")
+
+			if err := copyBinaryFiles(extensionBinaryPrefix, absOutputPath, extensionInstallDir); err != nil {
 				return ux.Error, common.NewDetailedError(
 					"Install failed",
 					fmt.Errorf("failed to copy files to install directory: %w", err),
@@ -165,7 +180,7 @@ func runBuildAction(flags *buildFlags) error {
 	return nil
 }
 
-func copyFiles(sourcePath, destPath string) error {
+func copyBinaryFiles(extensionId, sourcePath, destPath string) error {
 	if _, err := os.Stat(destPath); os.IsNotExist(err) {
 		if err := os.MkdirAll(destPath, os.ModePerm); err != nil {
 			return fmt.Errorf("failed to create install directory: %w", err)
@@ -177,20 +192,22 @@ func copyFiles(sourcePath, destPath string) error {
 			return err
 		}
 
-		relPath, err := filepath.Rel(sourcePath, path)
-		if err != nil {
-			return err
+		// Only process files in the root of the source path
+		if filepath.Dir(path) != sourcePath {
+			return nil
 		}
 
-		destPath := filepath.Join(destPath, relPath)
-
-		if info.IsDir() {
-			if err := os.MkdirAll(destPath, internal.PermissionDirectory); err != nil {
-				return fmt.Errorf("failed to create directory %s: %w", destPath, err)
-			}
-		} else {
-			if err := copyFile(path, destPath); err != nil {
-				return fmt.Errorf("failed to copy file %s to %s: %w", path, destPath, err)
+		// Check if the file name starts with the extensionId and is either .exe or has no extension
+		if info.Mode().IsRegular() {
+			fileName := info.Name()
+			if strings.HasPrefix(fileName, extensionId) {
+				ext := filepath.Ext(fileName)
+				if ext == ".exe" || ext == "" {
+					destFilePath := filepath.Join(destPath, fileName)
+					if err := copyFile(path, destFilePath); err != nil {
+						return fmt.Errorf("failed to copy file %s to %s: %w", path, destFilePath, err)
+					}
+				}
 			}
 		}
 

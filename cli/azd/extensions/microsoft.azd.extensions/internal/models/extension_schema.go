@@ -19,6 +19,7 @@ type ExtensionSchema struct {
 
 	Id           string                           `yaml:"id"           json:"id"`
 	Namespace    string                           `yaml:"namespace"    json:"namespace,omitempty"`
+	Language     string                           `yaml:"language"     json:"language,omitempty"`
 	EntryPoint   string                           `yaml:"entryPoint"   json:"entryPoint,omitempty"`
 	Version      string                           `yaml:"version"      json:"version"`
 	Capabilities []extensions.CapabilityType      `yaml:"capabilities" json:"capabilities"`
@@ -29,7 +30,7 @@ type ExtensionSchema struct {
 	Tags         []string                         `yaml:"tags"         json:"tags,omitempty"`
 	Dependencies []extensions.ExtensionDependency `yaml:"dependencies" json:"dependencies,omitempty"`
 	Platforms    map[string]map[string]any        `yaml:"platforms"    json:"platforms,omitempty"`
-	Path         string                           `yaml:"-"            json:"-"` // Path to the extension directory
+	Path         string                           `yaml:"-"            json:"-"`
 }
 
 func LoadExtension(extensionPath string) (*ExtensionSchema, error) {

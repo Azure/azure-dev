@@ -57,12 +57,15 @@ func runWatchAction(flags *watchFlags) error {
 
 	ignoredFolders := map[string]struct{}{
 		"bin": {},
+		"obj": {},
 	}
 
 	// Define glob patterns for ignored paths
 	globIgnorePaths := []string{
 		"bin",      // Matches the "bin" folder itself
 		"bin/**/*", // Matches all files and subdirectories inside "bin"
+		"obj",      // Matches the "obj" folder itself
+		"obj/**/*", // Matches all files and subdirectories inside "obj"
 	}
 
 	if err := watchRecursive(flags.extensionPath, watcher, ignoredFolders); err != nil {

@@ -192,6 +192,7 @@ func processExtension(
 	artifactMap := map[string]extensions.ExtensionArtifact{}
 	if err == nil {
 		targetPath := filepath.Join(outputPath, extensionMetadata.Id, extensionMetadata.Version)
+		extensionYamlSourcePath := filepath.Join(extensionMetadata.Path, "extension.yaml")
 
 		// Ensure target directory exists
 		if err := os.MkdirAll(targetPath, osutil.PermissionDirectory); err != nil {
@@ -200,14 +201,29 @@ func processExtension(
 
 		// Map and copy artifacts
 		for _, artifact := range artifacts {
-			extensionYamlSourcePath := filepath.Join(extensionMetadata.Path, "extension.yaml")
-			artifactSourcePath := filepath.Join(artifactsPath, artifact.Name())
+			if artifact.IsDir() {
+				continue
+			}
 
-			fileWithoutExt := getFileNameWithoutExt(artifact.Name())
+			artifactSafePrefix := strings.ReplaceAll(extensionMetadata.Id, ".", "-")
+
+			// Only process files that match the extension ID
+			artifactName := artifact.Name()
+			if !strings.HasPrefix(artifactName, artifactSafePrefix) {
+				continue
+			}
+
+			ext := filepath.Ext(artifactName)
+			if !(ext == ".exe" || ext == "") {
+				continue
+			}
+
+			fileWithoutExt := getFileNameWithoutExt(artifactName)
 			zipFileName := fmt.Sprintf("%s.zip", fileWithoutExt)
 			targetFilePath := filepath.Join(targetPath, zipFileName)
 
 			// Create a ZIP archive for the artifact
+			artifactSourcePath := filepath.Join(artifactsPath, artifact.Name())
 			zipFiles := []string{extensionYamlSourcePath, artifactSourcePath}
 
 			if err := zipSource(zipFiles, targetFilePath); err != nil {

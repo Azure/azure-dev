@@ -3,10 +3,28 @@
 
 package internal
 
-import "os"
+import (
+	"os"
+	"strings"
+	"unicode"
+)
 
 func ToPtr[T any](value T) *T {
 	return &value
+}
+
+func ToPascalCase(value string) string {
+	parts := strings.Split(value, ".")
+
+	for i, part := range parts {
+		if len(part) > 0 {
+			runes := []rune(part)
+			runes[0] = unicode.ToUpper(runes[0])
+			parts[i] = string(runes)
+		}
+	}
+
+	return strings.Join(parts, ".")
 }
 
 const (

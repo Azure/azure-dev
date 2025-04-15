@@ -9,8 +9,8 @@ import (
 
 func NewRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:           "azd {{.Namespace}} <command> [options]",
-		Short:         "{{.Description}}",
+		Use:           "azd {{.Metadata.Namespace}} <command> [options]",
+		Short:         "{{.Metadata.Description}}",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		CompletionOptions: cobra.CompletionOptions{

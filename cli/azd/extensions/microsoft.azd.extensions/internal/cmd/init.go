@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -248,6 +249,30 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 		return nil, fmt.Errorf("failed to prompt for capabilities: %w", err)
 	}
 
+	languageChoices := []*azdext.SelectChoice{
+		{
+			Label: "Go",
+			Value: "go",
+		},
+		{
+			Label: "C#",
+			Value: "dotnet",
+		},
+	}
+
+	programmingLanguagePrompt, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:         "Select a programming language for your extension",
+			Choices:         languageChoices,
+			EnableFiltering: internal.ToPtr(false),
+			DisplayNumbers:  internal.ToPtr(false),
+			HelpMessage:     "Programming language is used to define the language in which your extension is written. You can select one programming language.",
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to prompt for programming language: %w", err)
+	}
+
 	capabilities := make([]extensions.CapabilityType, len(capabilitiesPrompt.Values))
 	for i, capability := range capabilitiesPrompt.Values {
 		capabilities[i] = extensions.CapabilityType(capability.Value)
@@ -273,6 +298,7 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 		Description:  descriptionPrompt.Value,
 		Namespace:    namespacePrompt.Value,
 		Capabilities: capabilities,
+		Language:     languageChoices[*programmingLanguagePrompt.Value].Value,
 		Tags:         tags,
 		Usage:        fmt.Sprintf("azd %s <command> [options]", namespacePrompt.Value),
 		Version:      "0.0.1",
@@ -313,7 +339,16 @@ func createExtensionDirectory(
 	}
 
 	// Create project from template.
-	err = copyAndProcessTemplates(resources.Languages, "languages/go", extensionPath, extensionMetadata)
+	templateMetadata := &ExtensionTemplate{
+		Metadata: extensionMetadata,
+		DotNet: &DotNetTemplate{
+			Namespace: internal.ToPascalCase(extensionMetadata.Id),
+			ExeName:   strings.ReplaceAll(extensionMetadata.Id, ".", "-"),
+		},
+	}
+
+	templatePath := path.Join("languages", extensionMetadata.Language)
+	err = copyAndProcessTemplates(resources.Languages, templatePath, extensionPath, templateMetadata)
 	if err != nil {
 		return fmt.Errorf("failed to copy and process templates: %w", err)
 	}
@@ -451,4 +486,14 @@ func createLocalRegistry(ctx context.Context, azdClient *azdext.AzdClient) error
 	}
 
 	return nil
+}
+
+type ExtensionTemplate struct {
+	Metadata *models.ExtensionSchema
+	DotNet   *DotNetTemplate
+}
+
+type DotNetTemplate struct {
+	Namespace string
+	ExeName   string
 }

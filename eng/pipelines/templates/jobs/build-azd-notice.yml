@@ -24,7 +24,7 @@ parameters:
 
 jobs:
   - ${{ each build in parameters.BuildMatrix }}:
-    - job: BuildCLI
+    - job: BuildCLI_${{ build.key}}
 
       pool:
         name: ${{ build.value.Pool }}

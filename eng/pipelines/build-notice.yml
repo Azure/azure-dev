@@ -19,8 +19,8 @@ variables:
 jobs:
   - job: PoliCheck
     pool:
-      name: azsdk-pool-mms-win-2022-general
-      vmImage: MMS2022
+      name: azsdk-pool
+      vmImage: windows-2022
     timeoutInMinutes: 120
     steps:
       - template: /eng/common/pipelines/templates/steps/policheck.yml
@@ -33,13 +33,13 @@ jobs:
     strategy:
       matrix:
         Windows:
-          Pool: azsdk-pool-mms-win-2022-general
-          OSVmImage: MMS2022
+          Pool: azsdk-pool
+          OSVmImage: windows-2022
           BuildTarget: azd-windows-amd64.exe
           BuildOutputName: azd.exe
         Linux:
           Pool: azsdk-pool
-          OSVmImage:  MMSUbuntu20.04
+          OSVmImage:  ubuntu-22.04
           BuildTarget: azd-linux-amd64
           BuildOutputName: azd
         Mac:
@@ -49,7 +49,7 @@ jobs:
           BuildOutputName: azd
     pool:
         name: $(Pool)
-        vmImage: $(OSVmImage)
+        demands: ImageOverride -equals $(OSVmImage)
 
     variables:
       CLI_VERSION: 1.0.0-alpha.1
@@ -87,14 +87,14 @@ jobs:
         #   OSVmImage: MMS2022
         Linux:
           Pool: azsdk-pool
-          OSVmImage:  MMSUbuntu20.04
+          OSVmImage:  ubuntu-22.04
         Mac:
           Pool: Azure Pipelines
           OSVmImage: macOS-latest
 
     pool:
       name: $(Pool)
-      vmImage: $(OSVmImage)
+      demands: ImageOverride -equals $(OSVmImage)
 
     variables:
       NodeVersion: 18.x
@@ -118,7 +118,7 @@ jobs:
   - job: GenerateNoticeTxt
     pool:
       name: azsdk-pool
-      OSVmImage: MMSUbuntu20.04
+      demands: ImageOverride -equals $(OSVmImage)
 
     steps:
       - task: ComponentGovernanceComponentDetection@0

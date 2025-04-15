@@ -28,11 +28,6 @@ jobs:
           ExclusionDataBaseFileName: AzDevPoliCheckExclusion
           PublishAnalysisLogs: false
 
-
-  - templates: /eng/pipelines/jobs/build-azd-notice.yml
-    parameters:
-      BuildMatrix:
-
   - template: /eng/pipelines/templates/jobs/build-azd-notice.yml
 
   - job: BuildScanVscode

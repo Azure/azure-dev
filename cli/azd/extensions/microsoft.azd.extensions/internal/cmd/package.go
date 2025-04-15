@@ -54,13 +54,29 @@ func newPackageCommand() *cobra.Command {
 	}
 
 	packageCmd.Flags().
-		StringVarP(&flags.extensionPath, "path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
+		StringVarP(
+			&flags.extensionPath,
+			"path", "p", ".",
+			"Paths to the extension directory. Defaults to the current directory.",
+		)
 	packageCmd.Flags().
-		StringVarP(&flags.registryPath, "registry", "r", "", "Path to the registry.json file. If not provided, will use a local registry.")
+		StringVarP(
+			&flags.registryPath,
+			"registry", "r", "",
+			"Path to the registry.json file. If not provided, will use a local registry.",
+		)
 	packageCmd.Flags().
-		StringVarP(&flags.outputPath, "output", "o", "", "Path to the artifacts output directory. If not provided, will use local registry")
+		StringVarP(
+			&flags.outputPath,
+			"output", "o", "",
+			"Path to the artifacts output directory. If not provided, will use local registry",
+		)
 	packageCmd.Flags().
-		StringVarP(&flags.basePath, "base-path", "b", "", "Base path for artifact paths. If not provided, will use local relative paths.")
+		StringVarP(
+			&flags.basePath,
+			"base-path", "b", "",
+			"Base path for artifact paths. If not provided, will use local relative paths.",
+		)
 
 	return packageCmd
 }
@@ -214,7 +230,7 @@ func processExtension(
 			}
 
 			ext := filepath.Ext(artifactName)
-			if !(ext == ".exe" || ext == "") {
+			if ext != ".exe" && ext != "" {
 				continue
 			}
 

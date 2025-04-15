@@ -43,7 +43,11 @@ func newWatchCommand() *cobra.Command {
 	}
 
 	watchCmd.Flags().
-		StringVarP(&flags.extensionPath, "path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
+		StringVarP(
+			&flags.extensionPath,
+			"path", "p", ".",
+			"Paths to the extension directory. Defaults to the current directory.",
+		)
 
 	return watchCmd
 }

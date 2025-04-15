@@ -50,13 +50,28 @@ func newBuildCommand() *cobra.Command {
 	}
 
 	buildCmd.Flags().
-		StringVarP(&flags.extensionPath, "path", "p", ".", "Paths to the extension directory. Defaults to the current directory.")
+		StringVarP(
+			&flags.extensionPath,
+			"path", "p", ".",
+			"Paths to the extension directory. Defaults to the current directory.",
+		)
 	buildCmd.Flags().
-		StringVarP(&flags.outputPath, "output", "o", "", "Path to the output directory. Defaults to relative /bin folder.")
+		StringVarP(
+			&flags.outputPath,
+			"output", "o", "",
+			"Path to the output directory. Defaults to relative /bin folder.",
+		)
 	buildCmd.Flags().
-		BoolVar(&flags.allPlatforms, "all", false, "When set builds for all os/platforms. Defaults to the current os/platform only.")
+		BoolVar(
+			&flags.allPlatforms, "all", false,
+			"When set builds for all os/platforms. Defaults to the current os/platform only.",
+		)
 	buildCmd.Flags().
-		BoolVar(&flags.skipInstall, "skip-install", false, "When set skips reinstalling extension after successful build.")
+		BoolVar(
+			&flags.skipInstall,
+			"skip-install", false,
+			"When set skips reinstalling extension after successful build.",
+		)
 
 	return buildCmd
 }
@@ -116,6 +131,7 @@ func runBuildAction(flags *buildFlags) error {
 			// Build the binaries
 			buildScript := filepath.Join(flags.extensionPath, scriptFile)
 			if _, err := os.Stat(buildScript); err == nil {
+				/* #nosec G204 - Subprocess launched with variable */
 				cmd := exec.Command(command, scriptFile)
 				cmd.Dir = absExtensionPath
 

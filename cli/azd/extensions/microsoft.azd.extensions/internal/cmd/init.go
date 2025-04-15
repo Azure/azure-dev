@@ -136,6 +136,7 @@ func runInitAction(ctx context.Context) error {
 	taskList.AddTask(ux.TaskOptions{
 		Title: "Install extension",
 		Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+			/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments */
 			cmd := exec.Command("azd", "ext", "install", extensionMetadata.Id, "--source", "local")
 			cmd.Dir = extensionMetadata.Path
 
@@ -169,7 +170,8 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 			Placeholder:     "company.extension",
 			RequiredMessage: "Extension ID is required",
 			Required:        true,
-			Hint:            "Extension ID is used to identify your extension in the AZD ecosystem. It should be unique and follow the format 'company.extension'.",
+			Hint: "Extension ID is used to identify your extension in the AZD ecosystem. " +
+				"It should be unique and follow the format 'company.extension'.",
 		},
 	})
 	if err != nil {
@@ -182,7 +184,8 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 			Placeholder:     "My Extension",
 			RequiredMessage: "Display name is required",
 			Required:        true,
-			HelpMessage:     "Display name is used to show the extension name in the AZD CLI. It should be user-friendly and descriptive.",
+			HelpMessage: "Display name is used to show the extension name in the AZD CLI. " +
+				"It should be user-friendly and descriptive.",
 		},
 	})
 	if err != nil {
@@ -195,7 +198,8 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 			Placeholder:     "A brief description of your extension",
 			RequiredMessage: "Description is required",
 			Required:        true,
-			HelpMessage:     "Description is used to provide more information about your extension. It should be concise and informative.",
+			HelpMessage: "Description is used to provide more information about your extension. " +
+				"It should be concise and informative.",
 		},
 	})
 	if err != nil {
@@ -208,7 +212,8 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 			Placeholder:     "tag1, tag2",
 			RequiredMessage: "Tags are required",
 			Required:        true,
-			HelpMessage:     "Tags are used to categorize your extension. You can enter multiple tags separated by commas.",
+			HelpMessage: "Tags are used to categorize your extension. " +
+				"You can enter multiple tags separated by commas.",
 		},
 	})
 	if err != nil {
@@ -220,7 +225,8 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 			Message:         "Enter a namespace for your extension",
 			RequiredMessage: "Namespace is required",
 			Required:        true,
-			HelpMessage:     "Namespace is used to group custom commands into a single command group used for executing the extension.",
+			HelpMessage: "Namespace is used to group custom commands into a single command " +
+				"group used for executing the extension.",
 		},
 	})
 	if err != nil {
@@ -242,7 +248,8 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 			},
 			EnableFiltering: internal.ToPtr(false),
 			DisplayNumbers:  internal.ToPtr(false),
-			HelpMessage:     "Capabilities define the features and functionalities of your extension. You can select multiple capabilities.",
+			HelpMessage: "Capabilities define the features and functionalities of your extension. " +
+				"You can select multiple capabilities.",
 		},
 	})
 	if err != nil {
@@ -266,7 +273,8 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 			Choices:         languageChoices,
 			EnableFiltering: internal.ToPtr(false),
 			DisplayNumbers:  internal.ToPtr(false),
-			HelpMessage:     "Programming language is used to define the language in which your extension is written. You can select one programming language.",
+			HelpMessage: "Programming language is used to define the language in which your extension is written. " +
+				"You can select one programming language.",
 		},
 	})
 	if err != nil {

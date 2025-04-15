@@ -35,7 +35,7 @@ jobs:
   - job: GenerateNoticeTxt
     pool:
       name: azsdk-pool
-      demands: ImageOverride -equals $(OSVmImage)
+      demands: ImageOverride -equals ubuntu-22.04
 
     steps:
       - task: ComponentGovernanceComponentDetection@0

@@ -1,88 +1,106 @@
 #!/bin/bash
 
 # Get the directory of the script
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+EXTENSION_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Change to the script directory
-cd "$SCRIPT_DIR" || exit
+cd "$EXTENSION_DIR" || exit
 
-# Parse named input parameters: --app-name and --version
-while [[ "$#" -gt 0 ]]; do
-    case $1 in
-    --app-name)
-        APP_NAME="$2"
-        shift 2
-        ;;
-    --version)
-        VERSION="$2"
-        shift 2
-        ;;
-    *)
-        echo "Unknown parameter passed: $1"
-        exit 1
-        ;;
-    esac
-done
-
-if [ -z "$APP_NAME" ]; then
-    echo "Error: --app-name parameter is required"
-    exit 1
-fi
-
-if [ -z "$VERSION" ]; then
-    echo "Error: --version parameter is required"
-    exit 1
-fi
-
-# Create a safe version of APP_NAME replacing dots with dashes
-APP_NAME_SAFE="${APP_NAME//./-}"
+# Create a safe version of EXTENSION_ID replacing dots with dashes
+EXTENSION_ID_SAFE="${EXTENSION_ID//./-}"
 
 # Define output directory
-OUTPUT_DIR="$SCRIPT_DIR/bin"
+OUTPUT_DIR="${OUTPUT_DIR:-$EXTENSION_DIR/bin}"
 
 # Create output and target directories if they don't exist
 mkdir -p "$OUTPUT_DIR"
-mkdir -p "$HOME/.azd/extensions/$APP_NAME" # new: create destination directory
 
 # Get Git commit hash and build date
 COMMIT=$(git rev-parse HEAD)
 BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # List of OS and architecture combinations
-PLATFORMS=(
-    "windows/amd64"
-    # "windows/arm64"
-    # "darwin/amd64"
-    # "darwin/arm64"
-    # "linux/amd64"
-    # "linux/arm64"
-)
+if [ -n "$EXTENSION_PLATFORM" ]; then
+    PLATFORMS=("$EXTENSION_PLATFORM")
+else
+    PLATFORMS=(
+        "windows/amd64"
+        "windows/arm64"
+        "darwin/amd64"
+        "darwin/arm64"
+        "linux/amd64"
+        "linux/arm64"
+    )
+fi
 
-APP_PATH="github.com/azure/azure-dev/cli/azd/extensions/$APP_NAME/internal/cmd"
+APP_PATH="github.com/azure/azure-dev/cli/azd/extensions/$EXTENSION_ID/internal/cmd"
+
+# Check if the build type is specified
+if [ -z "$EXTENSION_LANGUAGE" ]; then
+    echo "Error: EXTENSION_LANGUAGE environment variable is required (go or dotnet)"
+    exit 1
+fi
 
 # Loop through platforms and build
 for PLATFORM in "${PLATFORMS[@]}"; do
     OS=$(echo "$PLATFORM" | cut -d'/' -f1)
     ARCH=$(echo "$PLATFORM" | cut -d'/' -f2)
 
-    OUTPUT_NAME="$OUTPUT_DIR/$APP_NAME_SAFE-$OS-$ARCH"
+    OUTPUT_NAME="$OUTPUT_DIR/$EXTENSION_ID_SAFE-$OS-$ARCH"
 
     if [ "$OS" = "windows" ]; then
         OUTPUT_NAME+='.exe'
     fi
 
     echo "Building for $OS/$ARCH..."
-    GOOS=$OS GOARCH=$ARCH go build \
-        -ldflags="-X '$APP_PATH.Version=$VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" \
-        -o "$OUTPUT_NAME"
 
-    if [ $? -ne 0 ]; then
-        echo "An error occurred while building for $OS/$ARCH"
+    # Delete the output file if it already exists
+    [ -f "$OUTPUT_NAME" ] && rm -f "$OUTPUT_NAME"
+
+    if [ "$EXTENSION_LANGUAGE" = "dotnet" ]; then
+        # Set runtime identifier for .NET
+        if [ "$OS" = "windows" ]; then
+            RUNTIME="win-$ARCH"
+        elif [ "$OS" = "darwin" ]; then
+            RUNTIME="osx-$ARCH"
+        else
+            RUNTIME="linux-$ARCH"
+        fi
+        PROJECT_FILE="azd-extension.csproj"
+
+        # Run dotnet publish for single file executable
+        dotnet publish \
+            -c Release \
+            -r "$RUNTIME" \
+            -o "$OUTPUT_DIR" \
+            /p:PublishTrimmed=true \
+            "$PROJECT_FILE"
+
+        if [ $? -ne 0 ]; then
+            echo "An error occurred while building for $OS/$ARCH"
+            exit 1
+        fi
+
+        EXPECTED_OUTPUT_NAME="$EXTENSION_ID_SAFE"
+        if [ "$OS" = "windows" ]; then
+            EXPECTED_OUTPUT_NAME+='.exe'
+        fi
+
+        mv "$OUTPUT_DIR/$EXPECTED_OUTPUT_NAME" "$OUTPUT_NAME"
+    elif [ "$EXTENSION_LANGUAGE" = "go" ]; then
+        # Set environment variables for Go build
+        GOOS=$OS GOARCH=$ARCH go build \
+            -ldflags="-X '$APP_PATH.Version=$EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" \
+            -o "$OUTPUT_NAME"
+
+        if [ $? -ne 0 ]; then
+            echo "An error occurred while building for $OS/$ARCH"
+            exit 1
+        fi
+    else
+        echo "Error: Unsupported EXTENSION_LANGUAGE '$EXTENSION_LANGUAGE'. Use 'go' or 'dotnet'."
         exit 1
     fi
-
-    # new: copy built binary to extensions folder
-    cp "$OUTPUT_NAME" "$HOME/.azd/extensions/$APP_NAME"
 done
 
 echo "Build completed successfully!"

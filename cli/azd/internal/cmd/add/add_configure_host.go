@@ -238,7 +238,7 @@ func (a *AddAction) projectAsService(
 		if prj.Docker != nil {
 			return nil, fmt.Errorf(
 				"dockerfile detected. App Service with custom containers is currently unsupported with `azd add`. " +
-					"Please use Container Apps for containerized deployments")
+					"Please use Container Apps instead")
 		}
 
 		if prj.HasWebUIFramework() {

@@ -1,2 +1,0 @@
-# No external dependencies required.
-azure-ai-openai==1.0.0

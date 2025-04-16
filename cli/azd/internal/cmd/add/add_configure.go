@@ -240,13 +240,19 @@ func fillUses(
 		Display  string
 	}
 	res := make([]resourceDisplay, 0, len(p.PrjConfig.Resources))
-	for _, r := range p.PrjConfig.Resources {
+	isHost := strings.HasPrefix(string(r.Type), "host.")
+	for _, other := range p.PrjConfig.Resources {
+		otherIsHost := strings.HasPrefix(string(other.Type), "host.")
+		// Linking between different host types is not supported yet
+		if isHost && otherIsHost && r.Type != other.Type {
+			continue
+		}
 		res = append(res, resourceDisplay{
-			Resource: r,
+			Resource: other,
 			Display: fmt.Sprintf(
 				"[%s]\t%s",
-				r.Type.String(),
-				r.Name),
+				other.Type.String(),
+				other.Name),
 		})
 	}
 	slices.SortFunc(res, func(a, b resourceDisplay) int {
@@ -298,8 +304,14 @@ func promptUsedBy(
 	console input.Console,
 	p PromptOptions) ([]string, error) {
 	svc := []string{}
+	isHost := strings.HasPrefix(string(r.Type), "host.")
 	for _, other := range p.PrjConfig.Resources {
-		if strings.HasPrefix(string(other.Type), "host.") && !slices.Contains(r.Uses, other.Name) {
+		otherIsHost := strings.HasPrefix(string(other.Type), "host.")
+		// Linking between different host types is not supported yet
+		if isHost && otherIsHost && r.Type != other.Type {
+			continue
+		}
+		if otherIsHost && !slices.Contains(r.Uses, other.Name) {
 			svc = append(svc, other.Name)
 		}
 	}

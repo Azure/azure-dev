@@ -174,7 +174,6 @@ extends:
 
         variables:
           - template: /eng/pipelines/templates/variables/globals.yml
-          - template: /eng/pipelines/templates/variables/image.yml
 
         jobs:
         - deployment: Release_Gate
@@ -200,8 +199,8 @@ extends:
           dependsOn: Release_Gate
 
           pool:
-            name: $(LINUXPOOL)
-            image: $(LINUXVMIMAGE)
+            name: azsdk-pool-mms-ubuntu-2004-general
+            image: azsdk-pool-mms-ubuntu-2004-1espt
             os: linux
 
           templateContext:

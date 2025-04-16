@@ -237,8 +237,14 @@ func (a *AddAction) projectAsService(
 	} else if kind == project.AppServiceTarget {
 		if prj.Docker != nil {
 			return nil, fmt.Errorf(
-				"detected Dockerfile. Containerized App Service is currently unsupported with `azd add`. " +
-					"Please use Container Apps instead")
+				"dockerfile detected. App Service with custom containers is currently unsupported with `azd add`. " +
+					"Please use Container Apps for containerized deployments")
+		}
+
+		if prj.HasWebUIFramework() {
+			return nil, fmt.Errorf(
+				"web UI framework detected. App Service deployment for static site applications " +
+					"is currently unsupported with `azd add`")
 		}
 	}
 
@@ -301,45 +307,26 @@ func addServiceAsResource(
 			return nil, fmt.Errorf("unsupported language: %s", svc.Language)
 		}
 
-		serveStatic := false
 		startupCommand := ""
 
-		if runtime.Stack == project.AppServiceRuntimeStackNode {
-			static, err := console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "Is this service serving static files?",
-				Help:         "Static files are HTML, CSS, JS, and other files that do not require server-side processing.",
-				DefaultValue: true,
-			})
-			if err != nil {
-				return nil, err
-			}
-
-			if static {
-				serveStatic = true
-				spa, err := console.Confirm(ctx, input.ConsoleOptions{
-					Message:      "Is this service a Single Page Application (SPA)?",
-					Help:         "An SPA uses client-side routing and needs all requests to be directed to index.html.",
-					DefaultValue: true,
-				})
-				if err != nil {
-					return nil, err
-				}
-				startupCommand = fmt.Sprintf("pm2 serve /home/site/wwwroot %d --no-daemon", port)
-				if spa {
-					startupCommand += " --spa"
-				}
-			}
+		startupCommand, err := console.Prompt(ctx, input.ConsoleOptions{
+			Message: "Enter an optional startup command:",
+			Help: fmt.Sprintf("A custom startup command lets you override the default command used to start your application. %s",
+				output.WithHyperlink("https://go.microsoft.com/fwlink/?linkid=861969", "Learn more.")),
+			DefaultValue: "",
+		})
+		if err != nil {
+			return nil, err
 		}
 
 		console.Message(ctx,
-			fmt.Sprintf("\nazd will use %s to host this project on %s.\n",
+			fmt.Sprintf("\nazd will use %s to host this project on %s.",
 				output.WithHighLightFormat(string(runtime.Stack)+" "+runtime.Version),
 				color.MagentaString("Azure App Service")))
 
 		resSpec.Props = project.AppServiceProps{
 			Port:           port,
 			Runtime:        runtime,
-			ServeStatic:    serveStatic,
 			StartupCommand: startupCommand,
 		}
 	}

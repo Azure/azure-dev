@@ -1592,6 +1592,11 @@
                             "description": "Required. The language runtime version. Format varies by stack. (Example: '22-lts' for Node, '3.13' for Python)"
                         }
                     }
+                },
+                "startupCommand": {
+                    "type": "string",
+                    "title": "Startup command",
+                    "description": "Optional. Startup command that will be run as part of web app startup."
                 }
             }
         }

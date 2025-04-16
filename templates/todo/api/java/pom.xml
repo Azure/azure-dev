@@ -4,7 +4,7 @@
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.0.6</version>
+    <version>3.4.4</version>
     <relativePath/>
     <!-- lookup parent from repository -->
   </parent>
@@ -17,7 +17,7 @@
     <java.version>17</java.version>
     <maven.compiler.source>${java.version}</maven.compiler.source>
     <maven.compiler.target>${java.version}</maven.compiler.target>
-    <springdoc.version>2.0.0</springdoc.version>
+    <springdoc.version>2.8.6</springdoc.version>
     <!-- By default, set to write which formats the code.
         This sample does not include format check failures on CI.
         To see how to enable this, visit https://github.com/HubSpot/prettier-maven-plugin
@@ -52,7 +52,7 @@
     <dependency>
       <groupId>org.yaml</groupId>
       <artifactId>snakeyaml</artifactId>
-      <version>2.0</version>
+      <version>2.4</version>
     </dependency>
     <!-- Swagger UI dependencies -->
     <dependency>
@@ -64,17 +64,17 @@
     <dependency>
       <groupId>com.azure</groupId>
       <artifactId>azure-identity</artifactId>
-      <version>1.12.2</version>
+      <version>1.15.4</version>
     </dependency>
     <dependency>
       <groupId>com.azure.spring</groupId>
       <artifactId>spring-cloud-azure-starter-keyvault-secrets</artifactId>
-      <version>5.1.0</version>
+      <version>5.22.0</version>
     </dependency>
     <dependency>
       <groupId>com.microsoft.azure</groupId>
       <artifactId>applicationinsights-runtime-attach</artifactId>
-      <version>3.4.12</version>
+      <version>3.7.1</version>
     </dependency>
   </dependencies>
   <build>

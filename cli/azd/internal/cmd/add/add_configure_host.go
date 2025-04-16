@@ -311,8 +311,10 @@ func addServiceAsResource(
 
 		startupCommand, err := console.Prompt(ctx, input.ConsoleOptions{
 			Message: "Enter an optional startup command:",
-			Help: fmt.Sprintf("A custom startup command lets you override the default command used to start your application. %s",
-				output.WithHyperlink("https://go.microsoft.com/fwlink/?linkid=861969", "Learn more.")),
+			Help: fmt.Sprintf(
+				"A custom startup command lets you override the default command used to start your application. %s",
+				output.WithHyperlink("https://go.microsoft.com/fwlink/?linkid=861969", "Learn more."),
+			),
 			DefaultValue: "",
 		})
 		if err != nil {

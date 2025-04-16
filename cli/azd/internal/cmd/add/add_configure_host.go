@@ -307,7 +307,10 @@ func addServiceAsResource(
 			return nil, fmt.Errorf("unsupported language: %s", svc.Language)
 		}
 
-		startupCommand := ""
+		console.Message(ctx,
+			fmt.Sprintf("\nazd will use %s to host this project on %s.",
+				output.WithHighLightFormat(string(runtime.Stack)+" "+runtime.Version),
+				color.MagentaString("Azure App Service")))
 
 		startupCommand, err := console.Prompt(ctx, input.ConsoleOptions{
 			Message: "Enter an optional startup command:",
@@ -320,11 +323,6 @@ func addServiceAsResource(
 		if err != nil {
 			return nil, err
 		}
-
-		console.Message(ctx,
-			fmt.Sprintf("\nazd will use %s to host this project on %s.",
-				output.WithHighLightFormat(string(runtime.Stack)+" "+runtime.Version),
-				color.MagentaString("Azure App Service")))
 
 		resSpec.Props = project.AppServiceProps{
 			Port:           port,

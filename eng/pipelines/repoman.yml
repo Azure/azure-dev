@@ -174,14 +174,15 @@ extends:
 
         variables:
           - template: /eng/pipelines/templates/variables/globals.yml
+          - template: /eng/pipelines/templates/variables/image.yml
 
         jobs:
         - deployment: Release_Gate
           environment: package-publish
 
           pool:
-            name: azsdk-pool-mms-ubuntu-2004-general
-            image: azsdk-pool-mms-ubuntu-2004-1espt
+            name: $(LINUXPOOL)
+            image: $(LINUXVMIMAGE)
             os: linux
 
           templateContext:

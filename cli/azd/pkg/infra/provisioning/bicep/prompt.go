@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -228,6 +229,7 @@ func (p *BicepProvider) promptForParameter(
 	ctx context.Context,
 	key string,
 	param azure.ArmTemplateParameterDefinition,
+	mappedToAzureLocationParams []string,
 ) (any, error) {
 	securedParam := "parameter"
 	isSecuredParam := param.Secure()
@@ -238,25 +240,19 @@ func (p *BicepProvider) promptForParameter(
 	help, _ := param.Description()
 	azdMetadata, _ := param.AzdMetadata()
 	paramType := p.mapBicepTypeToInterfaceType(param.Type)
-	// parameter `location` is a special case for azd, as it can be set in the environment
-	// and its value must be persisted in the .env file as AZURE_LOCATION
-	isLocationParam := key == "location"
 
 	var value any
 
-	if isLocationParam {
-		if paramType != provisioning.ParameterTypeString {
-			return nil, fmt.Errorf("location parameter must be a string")
-		}
-		envLoc := p.env.GetLocation()
-		if envLoc != "" {
-			return envLoc, nil
-		}
-	}
-
 	if paramType == provisioning.ParameterTypeString &&
-		(isLocationParam || (azdMetadata.Type != nil &&
-			*azdMetadata.Type == azure.AzdMetadataTypeLocation)) {
+		azdMetadata.Type != nil && *azdMetadata.Type == azure.AzdMetadataTypeLocation {
+
+		// when more than one parameter is mapped to AZURE_LOCATION and AZURE_LOCATION is not set in the environment,
+		// AZD will prompt just once and immediately set the value in the .env for the next parameter to re-use the value
+		paramIsMappedToAzureLocation := slices.Contains(mappedToAzureLocationParams, key)
+		valueFromEnv, valueDefinedInEnv := p.env.LookupEnv(environment.LocationEnvVarName)
+		if paramIsMappedToAzureLocation && valueDefinedInEnv {
+			return valueFromEnv, nil
+		}
 
 		// location can be combined with allowedValues and with usageName metadata
 		// allowedValues == nil => all locations are allowed
@@ -286,6 +282,14 @@ func (p *BicepProvider) promptForParameter(
 			}, defaultPromptValue(param))
 		if err != nil {
 			return nil, err
+		}
+
+		if paramIsMappedToAzureLocation && !valueDefinedInEnv {
+			// set the location in the environment variable
+			p.env.SetLocation(location)
+			if err := p.envManager.Save(ctx, p.env); err != nil {
+				return nil, fmt.Errorf("setting location in environment variable: %w", err)
+			}
 		}
 		value = location
 	} else if paramType == provisioning.ParameterTypeString &&

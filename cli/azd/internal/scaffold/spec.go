@@ -130,8 +130,13 @@ type StorageAccount struct {
 type ServiceSpec struct {
 	Name string
 	Port int
+	Host HostKind
 
 	Env map[string]string
+
+	// App Service specific configuration
+	Runtime        *RuntimeInfo
+	StartupCommand string
 
 	// Front-end properties.
 	Frontend *Frontend
@@ -164,6 +169,18 @@ type ServiceSpec struct {
 
 	// Existing resource bindings
 	Existing []*ExistingResource
+}
+
+type HostKind string
+
+const (
+	AppServiceKind   HostKind = "appservice"
+	ContainerAppKind HostKind = "containerapp"
+)
+
+type RuntimeInfo struct {
+	Type    string
+	Version string
 }
 
 type Frontend struct {

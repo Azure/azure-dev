@@ -389,7 +389,7 @@ func (i *Initializer) prjConfigFromDetect(
 
 	svcMapping := map[string]string{}
 	for _, prj := range detect.Services {
-		svc, err := add.ServiceFromDetect(root, "", prj)
+		svc, err := add.ServiceFromDetect(root, "", prj, project.ContainerAppTarget)
 		if err != nil {
 			return config, err
 		}

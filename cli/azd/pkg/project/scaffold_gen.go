@@ -219,11 +219,35 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 			infraSpec.DbMySql = &scaffold.DatabaseMysql{
 				DatabaseName: res.Name,
 			}
+		case ResourceTypeHostAppService:
+			svcConfig, ok := projectConfig.Services[res.Name]
+			if !ok {
+				return nil, fmt.Errorf("service %s not found in project config", res.Name)
+			}
+			svcSpec := scaffold.ServiceSpec{
+				Name: res.Name,
+				Port: -1,
+				Env:  map[string]string{},
+				Host: scaffold.AppServiceKind,
+			}
+
+			err := mapAppService(res, &svcSpec, &infraSpec, svcConfig)
+			if err != nil {
+				return nil, err
+			}
+
+			err = mapHostUses(res, &svcSpec, backendMapping, existingMap, projectConfig)
+			if err != nil {
+				return nil, err
+			}
+
+			infraSpec.Services = append(infraSpec.Services, svcSpec)
 		case ResourceTypeHostContainerApp:
 			svcSpec := scaffold.ServiceSpec{
 				Name: res.Name,
 				Port: -1,
 				Env:  map[string]string{},
+				Host: scaffold.ContainerAppKind,
 			}
 
 			err := mapContainerApp(res, &svcSpec, &infraSpec)
@@ -330,9 +354,39 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	return &infraSpec, nil
 }
 
-func mapContainerApp(res *ResourceConfig, svcSpec *scaffold.ServiceSpec, infraSpec *scaffold.InfraSpec) error {
-	props := res.Props.(ContainerAppProps)
-	for _, envVar := range props.Env {
+// mergeDefaultEnvVars combines default environment variables with user-provided ones.
+func mergeDefaultEnvVars(defaultEnv map[string]string, userEnv []ServiceEnvVar) []ServiceEnvVar {
+	// Map to track which env vars are provided by the user
+	userEnvMap := make(map[string]struct{}, len(userEnv))
+	for _, env := range userEnv {
+		userEnvMap[env.Name] = struct{}{}
+	}
+
+	combinedEnv := make([]ServiceEnvVar, 0, len(defaultEnv)+len(userEnv))
+
+	// Add default env vars that aren't overridden
+	for name, value := range defaultEnv {
+		if _, overridden := userEnvMap[name]; !overridden {
+			combinedEnv = append(combinedEnv, ServiceEnvVar{
+				Name:  name,
+				Value: value,
+			})
+		}
+	}
+
+	// Add user-provided env vars
+	combinedEnv = append(combinedEnv, userEnv...)
+	return combinedEnv
+}
+
+func mapHostProps(
+	res *ResourceConfig,
+	svcSpec *scaffold.ServiceSpec,
+	infraSpec *scaffold.InfraSpec,
+	port int,
+	env []ServiceEnvVar,
+) error {
+	for _, envVar := range env {
 		if len(envVar.Value) == 0 && len(envVar.Secret) == 0 {
 			return fmt.Errorf(
 				"environment variable %s for host %s is invalid: both value and secret are empty",
@@ -362,12 +416,55 @@ func mapContainerApp(res *ResourceConfig, svcSpec *scaffold.ServiceSpec, infraSp
 		svcSpec.Env[envVar.Name] = evaluatedValue
 	}
 
-	port := props.Port
 	if port < 1 || port > 65535 {
 		return fmt.Errorf("port value %d for host %s must be between 1 and 65535", port, res.Name)
 	}
 
 	svcSpec.Port = port
+	return nil
+}
+
+func mapContainerApp(res *ResourceConfig, svcSpec *scaffold.ServiceSpec, infraSpec *scaffold.InfraSpec) error {
+	props := res.Props.(ContainerAppProps)
+	return mapHostProps(res, svcSpec, infraSpec, props.Port, props.Env)
+}
+
+func mapAppService(
+	res *ResourceConfig,
+	svcSpec *scaffold.ServiceSpec,
+	infraSpec *scaffold.InfraSpec,
+	svcConfig *ServiceConfig,
+) error {
+	props := res.Props.(AppServiceProps)
+
+	if len(props.Runtime.Stack) == 0 {
+		return fmt.Errorf("resources.%s.runtime.type is required", res.Name)
+	}
+
+	if len(props.Runtime.Version) == 0 {
+		return fmt.Errorf("resources.%s.runtime.version is required", res.Name)
+	}
+
+	svcSpec.Runtime = &scaffold.RuntimeInfo{
+		Type:    string(props.Runtime.Stack),
+		Version: props.Runtime.Version,
+	}
+	svcSpec.StartupCommand = props.StartupCommand
+
+	defaultEnv := map[string]string{
+		"SCM_DO_BUILD_DURING_DEPLOYMENT": "true",
+		"ENABLE_ORYX_BUILD":              "true",
+	}
+	// Language-specific environment variables
+	if svcConfig.Language == ServiceLanguagePython {
+		defaultEnv["PYTHON_ENABLE_GUNICORN_MULTIWORKERS"] = "true"
+	}
+	combinedEnv := mergeDefaultEnvVars(defaultEnv, props.Env)
+
+	if err := mapHostProps(res, svcSpec, infraSpec, props.Port, combinedEnv); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -429,7 +526,8 @@ func mapHostUses(
 			svcSpec.DbMySql = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
 		case ResourceTypeDbRedis:
 			svcSpec.DbRedis = &scaffold.DatabaseReference{DatabaseName: useRes.Name}
-		case ResourceTypeHostContainerApp:
+		case ResourceTypeHostAppService,
+			ResourceTypeHostContainerApp:
 			if svcSpec.Frontend == nil {
 				svcSpec.Frontend = &scaffold.Frontend{}
 			}

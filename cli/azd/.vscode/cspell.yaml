@@ -113,6 +113,10 @@ overrides:
     words:
       - kustomization
       - templating
+  - filename: pkg/project/scaffold_gen.go
+    words:
+      - GUNICORN
+      - MULTIWORKERS
   - filename: CHANGELOG.md
     words:
       - aistudio

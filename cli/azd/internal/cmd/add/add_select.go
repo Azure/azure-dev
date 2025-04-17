@@ -37,7 +37,7 @@ type Menu struct {
 func (a *AddAction) selectMenu() []Menu {
 	return []Menu{
 		{Namespace: "db", Label: "Database", SelectResource: selectDatabase},
-		{Namespace: "host", Label: "Host service"},
+		{Namespace: "host", Label: "Host service", SelectResource: selectHost},
 		{Namespace: "ai", Label: "AI", SelectResource: a.selectAiType},
 		{Namespace: "messaging", Label: "Messaging", SelectResource: selectMessaging},
 		{Namespace: "storage", Label: "Storage account", SelectResource: selectStorage},
@@ -99,6 +99,31 @@ func selectDatabase(
 	}
 
 	r.Type = resourceTypesDisplayMap[resourceTypesDisplay[dbOption]]
+	return r, nil
+}
+
+func selectHost(
+	console input.Console,
+	ctx context.Context,
+	p PromptOptions) (*project.ResourceConfig, error) {
+	resourceTypesDisplayMap := make(map[string]project.ResourceType)
+	for _, resourceType := range project.AllResourceTypes() {
+		if strings.HasPrefix(string(resourceType), "host.") {
+			resourceTypesDisplayMap[resourceType.String()] = resourceType
+		}
+	}
+
+	r := &project.ResourceConfig{}
+	resourceTypesDisplay := slices.Sorted(maps.Keys(resourceTypesDisplayMap))
+	hostOption, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "Which type of host?",
+		Options: resourceTypesDisplay,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	r.Type = resourceTypesDisplayMap[resourceTypesDisplay[hostOption]]
 	return r, nil
 }
 

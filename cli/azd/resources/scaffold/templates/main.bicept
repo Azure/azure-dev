@@ -90,8 +90,9 @@ module aiSearchConnection 'modules/ai-search-conn.bicep' = {
 {{- end}}
 
 {{- if .Services}}
-
+{{- if hasACA .Services}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
+{{- end}}
 {{- range .Services}}
 output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID
 {{- end}}

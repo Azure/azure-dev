@@ -375,6 +375,7 @@
                             "ai.project",
                             "ai.search",
                             "host.containerapp",
+                            "host.appservice",
                             "messaging.eventhubs",
                             "messaging.servicebus",
                             "storage",
@@ -396,6 +397,7 @@
                     }
                 },
                 "allOf": [
+                    { "if": { "properties": { "type": { "const": "host.appservice" } } }, "then": { "$ref": "#/definitions/appServiceResource" } },
                     { "if": { "properties": { "type": { "const": "host.containerapp" }}}, "then": { "$ref": "#/definitions/containerAppResource" } },
                     { "if": { "properties": { "type": { "const": "ai.openai.model" }}}, "then": { "$ref": "#/definitions/aiModelResource" } },
                     { "if": { "properties": { "type": { "const": "ai.project" }}}, "then": { "$ref": "#/definitions/aiProjectResource" } },
@@ -1263,6 +1265,7 @@
                         "db.mysql",
                         "db.mongo",
                         "db.cosmos",
+                        "host.appservice",
                         "host.containerapp",
                         "ai.openai.model",
                         "ai.project",
@@ -1521,6 +1524,79 @@
                             }
                         }
                     }
+                }
+            }
+        },
+        "appServiceResource": {
+            "type": "object",
+            "description": "An Azure App Service web app.",
+            "additionalProperties": false,
+            "required": [
+                "port",
+                "runtime"
+            ],
+            "properties": {
+                "type": true,
+                "uses": true,
+                "port": {
+                    "type": "integer",
+                    "title": "Port that the web app listens on",
+                    "description": "Optional. The port that the web app listens on. (Default: 80)"
+                },
+                "env": {
+                    "type": "array",
+                    "title": "Environment variables to set for the web app",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "name"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "title": "Name of the environment variable"
+                            },
+                            "value": {
+                                "type": "string",
+                                "title": "Value of the environment variable. Supports environment variable substitution."
+                            },
+                            "secret": {
+                                "type": "string",
+                                "title": "Secret value of the environment variable. Supports environment variable substitution."
+                            }
+                        }
+                    }
+                },
+                "runtime": {
+                    "type": "object",
+                    "title": "Runtime stack configuration",
+                    "description": "Required. The language runtime configuration for the App Service web app.",
+                    "required": [
+                        "stack",
+                        "version"
+                    ],
+                    "properties": {
+                        "stack": {
+                            "type": "string",
+                            "title": "Language runtime stack",
+                            "description": "Required. The language runtime stack.",
+                            "enum": [
+                                "node",
+                                "python"
+                            ]
+                        },
+                        "version": {
+                            "type": "string",
+                            "title": "Runtime stack version",
+                            "description": "Required. The language runtime version. Format varies by stack. (Example: '22-lts' for Node, '3.13' for Python)"
+                        }
+                    }
+                },
+                "startupCommand": {
+                    "type": "string",
+                    "title": "Startup command",
+                    "description": "Optional. Startup command that will be run as part of web app startup."
                 }
             }
         }

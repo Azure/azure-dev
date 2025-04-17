@@ -791,7 +791,7 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
     appSettingsKeyValuePairs: {
       AZURE_CLIENT_ID: {{bicepName .Name}}Identity.outputs.clientId
       {{- if .DbCosmosMongo}}
-      'MONGODB_URL': '@Microsoft.KeyVault(SecretUri=${cosmosMongo.outputs.exportedSecrets['mongodb-url'].secretUri})'
+      MONGODB_URL: '@Microsoft.KeyVault(SecretUri=${cosmosMongo.outputs.exportedSecrets['mongodb-url'].secretUri})'
       {{- end}}
       {{- if .DbCosmos}}
       AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
@@ -844,13 +844,11 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
       {{- if .AiFoundryProject }}
       AZURE_AI_PROJECT_CONNECTION_STRING: aiFoundryProjectConnectionString
       {{- end}}
-
       {{- if .Frontend}}
       {{- range $i, $e := .Frontend.Backends}}
       {{upper .Name}}_BASE_URL: {{.Name}}.outputs.defaultHostname
       {{- end}}
       {{- end}}
-
       {{- if ne .Port 0}}
       PORT: '{{ .Port }}'
       {{- end}}

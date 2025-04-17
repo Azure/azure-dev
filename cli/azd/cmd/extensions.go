@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -139,6 +138,8 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("failed to start gRPC server: %w", err)
 	}
 
+	defer a.azdServer.Stop()
+
 	jwtToken, err := grpcserver.GenerateExtensionToken(extension, serverInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate extension token")
@@ -159,11 +160,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	_, err = a.extensionRunner.Invoke(ctx, extension, options)
 	if err != nil {
-		log.Printf("Failed to invoke extension %s: %v\n", extensionNamespace, err)
-	}
-
-	if err = a.azdServer.Stop(); err != nil {
-		log.Printf("Failed to stop gRPC server: %v\n", err)
+		os.Exit(1)
 	}
 
 	return nil, nil

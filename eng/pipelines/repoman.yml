@@ -199,8 +199,8 @@ extends:
           dependsOn: Release_Gate
 
           pool:
-            name: $(LINUXPOOL)
-            image: $(LINUXVMIMAGE)
+            name: azsdk-pool-mms-ubuntu-2004-general
+            image: azsdk-pool-mms-ubuntu-2004-1espt
             os: linux
 
           templateContext:

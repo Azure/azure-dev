@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
@@ -31,7 +33,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type DockerProjectOptions struct {
@@ -446,12 +447,23 @@ func (p *dockerProject) packBuild(
 		return nil, err
 	}
 	builder := DefaultBuilderImage
-
 	environ := []string{}
 	userDefinedImage := false
+
 	if os.Getenv("AZD_BUILDER_IMAGE") != "" {
 		builder = os.Getenv("AZD_BUILDER_IMAGE")
 		userDefinedImage = true
+	}
+
+	svcPath := svc.Path()
+	buildContext := svcPath
+
+	if svc.Docker.Context != "" {
+		buildContext = svc.Docker.Context
+
+		if !filepath.IsAbs(buildContext) {
+			buildContext = filepath.Join(svcPath, buildContext)
+		}
 	}
 
 	if !userDefinedImage {
@@ -460,6 +472,15 @@ func (p *dockerProject) packBuild(
 
 		if svc.Language == ServiceLanguageJava {
 			environ = append(environ, "ORYX_RUNTIME_PORT=8080")
+
+			if buildContext != svcPath {
+				svcRelPath, err := filepath.Rel(buildContext, svcPath)
+				if err != nil {
+					return nil, fmt.Errorf("calculating relative context path: %w", err)
+				}
+
+				environ = append(environ, fmt.Sprintf("BP_MAVEN_BUILT_MODULE=%s", filepath.ToSlash(svcRelPath)))
+			}
 		}
 
 		if svc.OutputPath != "" && (svc.Language == ServiceLanguageTypeScript || svc.Language == ServiceLanguageJavaScript) {
@@ -518,7 +539,7 @@ func (p *dockerProject) packBuild(
 
 	err = packCli.Build(
 		ctx,
-		svc.Path(),
+		buildContext,
 		builder,
 		imageName,
 		environ,

@@ -59,7 +59,6 @@ extends:
               Codeql.Enabled: true
               Codeql.SkipTaskAutoInjection: false
               Codeql.BuildIdentifier: cli_linux
-              CGO_ENABLED: 0
           Mac:
             Pool: Azure Pipelines
             OSVmImage: $(MACVMIMAGE)

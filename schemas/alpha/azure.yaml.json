@@ -1545,7 +1545,7 @@
                 },
                 "env": {
                     "type": "array",
-                    "title": "Environment variables to set for the container app",
+                    "title": "Environment variables to set for the web app",
                     "items": {
                         "type": "object",
                         "required": [

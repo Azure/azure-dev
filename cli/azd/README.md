@@ -7,5 +7,3 @@ Install Go extension https://marketplace.visualstudio.com/items?itemName=golang.
 ## Contribute
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for information on contributing.
-
-TODO: Revert this trivial change that tests CI

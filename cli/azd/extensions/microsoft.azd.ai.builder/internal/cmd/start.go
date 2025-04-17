@@ -1462,8 +1462,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				fmt.Printf("  Based on your choices, you will need the following AI models:\n\n")
 				for _, model := range requiredModels {
 					if modelType, ok := allModelTypes[model]; ok {
-						//nolint printf
-						fmt.Printf("  - %s\n", output.WithBold(modelType.Heading))
+						fmt.Printf("  - %s\n", output.WithBold("%s", modelType.Heading))
 						fmt.Printf("    %s\n", output.WithGrayFormat(modelType.Description))
 						fmt.Println()
 						nextQuestions = append(nextQuestions, modelType.QuestionReference)

@@ -190,14 +190,6 @@ func (p *DefaultPrompter) PromptResourceGroupFrom(
 		return groups[choice-1].Name, nil
 	}
 
-	// make sure there is a subscription and location
-	if subscriptionId == "" {
-		sub, err := p.PromptSubscription(ctx, "Select a subscription to create the resource group in:")
-		if err != nil {
-			return "", fmt.Errorf("prompting for subscription: %w", err)
-		}
-		subscriptionId = sub
-	}
 	if location == "" {
 		loc, err := p.PromptLocation(ctx, subscriptionId, "Select a location to create the resource group in:", nil, nil)
 		if err != nil {

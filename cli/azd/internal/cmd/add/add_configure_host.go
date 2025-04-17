@@ -312,22 +312,9 @@ func addServiceAsResource(
 				output.WithHighLightFormat(string(runtime.Stack)+" "+runtime.Version),
 				color.MagentaString("Azure App Service")))
 
-		startupCommand, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message: "Enter an optional startup command:",
-			Help: fmt.Sprintf(
-				"A custom startup command lets you override the default command used to start your application. %s",
-				output.WithHyperlink("https://go.microsoft.com/fwlink/?linkid=861969", "Learn more."),
-			),
-			DefaultValue: "",
-		})
-		if err != nil {
-			return nil, err
-		}
-
 		resSpec.Props = project.AppServiceProps{
-			Port:           port,
-			Runtime:        runtime,
-			StartupCommand: startupCommand,
+			Port:    port,
+			Runtime: runtime,
 		}
 	}
 

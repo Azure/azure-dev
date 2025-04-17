@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -249,9 +250,17 @@ func (p *BicepProvider) promptForParameter(
 		// when more than one parameter is mapped to AZURE_LOCATION and AZURE_LOCATION is not set in the environment,
 		// AZD will prompt just once and immediately set the value in the .env for the next parameter to re-use the value
 		paramIsMappedToAzureLocation := slices.Contains(mappedToAzureLocationParams, key)
-		valueFromEnv, valueDefinedInEnv := p.env.LookupEnv(environment.LocationEnvVarName)
-		if paramIsMappedToAzureLocation && valueDefinedInEnv {
-			return valueFromEnv, nil
+		valueFromSysEnv, valueDefinedInSysEnv := os.LookupEnv(environment.LocationEnvVarName)
+		valueFromAzdEnv, valueDefinedInAzdEnv := p.env.Dotenv()[environment.LocationEnvVarName]
+		if paramIsMappedToAzureLocation && valueDefinedInAzdEnv {
+			return valueFromAzdEnv, nil
+		}
+		if paramIsMappedToAzureLocation && valueDefinedInSysEnv {
+			p.env.SetLocation(valueFromSysEnv)
+			if err := p.envManager.Save(ctx, p.env); err != nil {
+				return nil, fmt.Errorf("setting location in environment variable: %w", err)
+			}
+			return valueFromSysEnv, nil
 		}
 
 		// location can be combined with allowedValues and with usageName metadata
@@ -284,7 +293,7 @@ func (p *BicepProvider) promptForParameter(
 			return nil, err
 		}
 
-		if paramIsMappedToAzureLocation && !valueDefinedInEnv {
+		if paramIsMappedToAzureLocation && !valueDefinedInSysEnv {
 			// set the location in the environment variable
 			p.env.SetLocation(location)
 			if err := p.envManager.Save(ctx, p.env); err != nil {

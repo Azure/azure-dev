@@ -1931,6 +1931,15 @@ func (p *BicepProvider) ensureParameters(
 	ctx context.Context,
 	template azure.ArmTemplate,
 ) (azure.ArmParameters, error) {
+	//snapshot the AZURE_LOCATIOn in azd env if it is set in System env
+	locationSystemEnv, hasLocation := os.LookupEnv(environment.LocationEnvVarName)
+	_, hasAzdLocation := p.env.Dotenv()[environment.LocationEnvVarName]
+	if hasLocation && !hasAzdLocation && locationSystemEnv != "" {
+		p.env.SetLocation(locationSystemEnv)
+		if err := p.envManager.Save(ctx, p.env); err != nil {
+			return nil, fmt.Errorf("saving location to .env: %w", err)
+		}
+	}
 	// using loadParameters to resolve the parameters file (usually main.parameters.json)
 	// parameters with a mapping to env vars are resolved.
 	// Parameters mapped to env vars that are not set in the environment are removed from the parameters file

@@ -180,6 +180,15 @@ func (c *composeService) ListResources(
 // In the future we will converge this into a common component.
 func createResourceProps(resourceType string, config []byte) (any, error) {
 	switch project.ResourceType(resourceType) {
+	case project.ResourceTypeHostAppService:
+		props := project.AppServiceProps{}
+		if len(config) == 0 {
+			return props, nil
+		}
+		if err := json.Unmarshal(config, &props); err != nil {
+			return nil, err
+		}
+		return props, nil
 	case project.ResourceTypeHostContainerApp:
 		props := project.ContainerAppProps{}
 		if len(config) == 0 {

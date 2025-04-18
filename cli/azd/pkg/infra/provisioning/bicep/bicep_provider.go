@@ -142,36 +142,11 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 			return err
 		}
 
-		// We only want to prompt for a location if the location is actually a parameter.
-		// But if the AZURE_LOCATION is set in system env, we want to set if in the AZD .env, just like the prompt
-		// for location used to do in the past (after prompting or finding the location in system env).
-		_, locationInAzdEnv := p.env.Dotenv()[environment.LocationEnvVarName]
-		if !locationInAzdEnv {
-			if location, locationInSystemEnv := os.LookupEnv(environment.LocationEnvVarName); locationInSystemEnv {
-				p.env.SetLocation(location)
-				if err := p.envManager.Save(ctx, p.env); err != nil {
-					return fmt.Errorf("saving location: %w", err)
-				}
-			}
-		}
-
-		// if location is a parameter and is not in system env, ensureParameters() will prompt for it, supporting all the
-		// metadata and settings as any other bicep parameter.
-		deploymentParams, err := p.ensureParameters(ctx, compileResult.Template)
+		_, err = p.ensureParameters(ctx, compileResult.Template)
 		if err != nil {
 			return err
 		}
 
-		// Check if location is a parameter and if it is not set in the AZD env
-		// If it is not set, we need to prompt for it.
-		if locParam, hasLocationParam := deploymentParams["location"]; hasLocationParam {
-			if _, locationInAzdEnv := p.env.Dotenv()[environment.LocationEnvVarName]; !locationInAzdEnv {
-				p.env.SetLocation(locParam.Value.(string))
-				if err := p.envManager.Save(ctx, p.env); err != nil {
-					return fmt.Errorf("saving location to env: %w", err)
-				}
-			}
-		}
 	}
 
 	scope, err := compileResult.Template.TargetScope()
@@ -181,6 +156,8 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 
 	if scope == azure.DeploymentScopeResourceGroup {
 		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
+			// Prompt Resource Group supports creating a new resource group
+			// And prompts for a location as part of creating a new resource group
 			rgName, err := p.prompters.PromptResourceGroup(ctx, prompt.PromptResourceOptions{})
 			if err != nil {
 				return err
@@ -1544,9 +1521,14 @@ func (p *BicepProvider) createOutputParameters(
 	return outputParams
 }
 
+type loadParametersResult struct {
+	parameters     map[string]azure.ArmParameter
+	locationParams []string
+}
+
 // loadParameters reads the parameters file template for environment/module specified by Options,
 // doing environment and command substitutions, and returns the values.
-func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.ArmParameter, error) {
+func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResult, error) {
 	parametersFilename := fmt.Sprintf("%s.parameters.json", p.options.Module)
 	parametersRoot := p.options.Path
 
@@ -1556,40 +1538,103 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.Ar
 
 	paramFilePath := filepath.Join(parametersRoot, parametersFilename)
 	parametersBytes, err := os.ReadFile(paramFilePath)
+	// if the file does not exist, we return an empty parameters map
+	// This makes AZD to support deploying bicep modules without parameters file, assuming AZD prompts for all required
+	// parameters.
+	if os.IsNotExist(err) {
+		log.Printf("parameters file %s does not exist, using empty parameters", paramFilePath)
+		return loadParametersResult{}, nil
+	}
 	if err != nil {
-		return nil, fmt.Errorf("reading parameters.json: %w", err)
+		return loadParametersResult{}, fmt.Errorf("reading parameters.json: %w", err)
 	}
 
 	principalId, err := p.curPrincipal.CurrentPrincipalId(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("fetching current principal id: %w", err)
+		return loadParametersResult{}, fmt.Errorf("fetching current principal id: %w", err)
 	}
 
-	replaced, err := envsubst.Eval(string(parametersBytes), func(name string) string {
-		if name == environment.PrincipalIdEnvVarName {
-			return principalId
-		}
-
-		return p.env.Getenv(name)
-	})
-	if err != nil {
-		return nil, fmt.Errorf("substituting environment variables inside parameter file: %w", err)
+	var decodedParamsFile azure.ArmParameterFile
+	if err := json.Unmarshal(parametersBytes, &decodedParamsFile); err != nil {
+		return loadParametersResult{}, fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
 	}
 
-	if cmdsubst.ContainsCommandInvocation(replaced, cmdsubst.SecretOrRandomPasswordCommandName) {
-		cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(p.keyvaultService, p.env.GetSubscriptionId())
-		replaced, err = cmdsubst.Eval(ctx, replaced, cmdExecutor)
+	parametersMappedToAzureLocation := []string{}
+	resolvedParams := map[string]azure.ArmParameter{}
+
+	// resolving each parameter to keep track of the name during the resolution.
+	// We used to resolve all the file before, supporting env var substitution at any part of the file.
+	// We want to support substitution only for the parameter value.
+	// We also need to identify which parameters are mapped to AZURE_LOCATION (if any).
+	// We also want to exclude parameters mapped to env vars which env var is not set (instead of using empty string).
+	for paramName, param := range decodedParamsFile.Parameters {
+		paramBytes, err := json.Marshal(param)
 		if err != nil {
-			return nil, fmt.Errorf("substituting command output inside parameter file: %w", err)
+			return loadParametersResult{}, fmt.Errorf("error decoding deployment parameter %s: %w", paramName, err)
 		}
+		var hasUnsetEnvVar bool
+		// envsubst.Eval handles env var substitution and default values like ${VAR=default}
+		replaced, err := envsubst.Eval(string(paramBytes), func(name string) string {
+			if name == environment.PrincipalIdEnvVarName {
+				return principalId
+			}
+			if name == environment.LocationEnvVarName {
+				parametersMappedToAzureLocation = append(parametersMappedToAzureLocation, paramName)
+			}
+			if _, isDefined := p.env.LookupEnv(name); !isDefined {
+				hasUnsetEnvVar = true
+			}
+			return p.env.Getenv(name)
+		})
+		if err != nil {
+			return loadParametersResult{}, fmt.Errorf("substituting environment variables for %s: %w", paramName, err)
+		}
+		// resolve `secretOrRandomPassword` -> this is a way to ask AZD to generate a password for the user and
+		// store it in a Key Vault. But if the Key Vault and secret exists, AZD just takes the secret from there.
+		if cmdsubst.ContainsCommandInvocation(replaced, cmdsubst.SecretOrRandomPasswordCommandName) {
+			cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(p.keyvaultService, p.env.GetSubscriptionId())
+			replaced, err = cmdsubst.Eval(ctx, replaced, cmdExecutor)
+			if err != nil {
+				return loadParametersResult{}, fmt.Errorf("substituting command output inside parameter file: %w", err)
+			}
+		}
+
+		var resolvedParam azure.ArmParameter
+		if err := json.Unmarshal([]byte(replaced), &resolvedParam); err != nil {
+			return loadParametersResult{}, fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
+		}
+		if resolvedParam.Value == nil && resolvedParam.KeyVaultReference == nil {
+			// ignore parameters that are not set
+			continue
+		}
+		if resolvedParam.Value != nil && resolvedParam.KeyVaultReference != nil {
+			return loadParametersResult{}, fmt.Errorf(
+				"parameter %s has both a value and a keyvault reference: %w", paramName, err)
+		}
+		if resolvedParam.KeyVaultReference != nil {
+			// parameter defined using a key vault reference. AZD does not validate the key vault reference
+			// if there is an issue with it, the deployment will fail.
+			resolvedParams[paramName] = resolvedParam
+			continue
+		}
+		stringValue, isString := resolvedParam.Value.(string)
+		if !isString {
+			continue
+		}
+
+		// After previous checks, we know resolvedParam.Value is not nil
+		if stringValue == "" && hasUnsetEnvVar {
+			// parameter is empty and has an unset env var
+			continue
+		}
+		// all other cases here represent a valid resolved parameter
+		resolvedParams[paramName] = resolvedParam
 	}
 
-	var armParameters azure.ArmParameterFile
-	if err := json.Unmarshal([]byte(replaced), &armParameters); err != nil {
-		return nil, fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
-	}
-
-	return armParameters.Parameters, nil
+	return loadParametersResult{
+		parameters:     resolvedParams,
+		locationParams: parametersMappedToAzureLocation,
+	}, nil
 }
 
 type compiledBicepParamResult struct {
@@ -1872,15 +1917,38 @@ func inputsParameter(
 	}, wroteNewInput, nil
 }
 
-// Ensures the provisioning parameters are valid and prompts the user for input as needed
+// ensureParameters validates that all parameters from the template are defined.
+// Parameters values can be defined in the parameters file (main.parameters.json). This file supports mapping values to
+// environment variables.
+// If a parameter is not defined in the parameters file AND there is not a default value defined in the template for it,
+// AZD will prompt the user for a value.
+// Parameters mapped to env var ${AZURE_LOCATION} are identified as location parameters for AZD during prompting. AZD will
+// prompt just for one location and save the value in AZD's .env file as AZURE_LOCATION and the value is used for all
+// parameters mapped to that env var.
+// AZD supports resolving env vars with a default value defined in the parameters file using the syntax
+// ${AZURE_LOCATION=defaultValue}. If the env var is not set, the default value will be used.
 func (p *BicepProvider) ensureParameters(
 	ctx context.Context,
 	template azure.ArmTemplate,
 ) (azure.ArmParameters, error) {
-	parameters, err := p.loadParameters(ctx)
+	//snapshot the AZURE_LOCATIOn in azd env if it is set in System env
+	locationSystemEnv, hasLocation := os.LookupEnv(environment.LocationEnvVarName)
+	_, hasAzdLocation := p.env.Dotenv()[environment.LocationEnvVarName]
+	if hasLocation && !hasAzdLocation && locationSystemEnv != "" {
+		p.env.SetLocation(locationSystemEnv)
+		if err := p.envManager.Save(ctx, p.env); err != nil {
+			return nil, fmt.Errorf("saving location to .env: %w", err)
+		}
+	}
+	// using loadParameters to resolve the parameters file (usually main.parameters.json)
+	// parameters with a mapping to env vars are resolved.
+	// Parameters mapped to env vars that are not set in the environment are removed from the parameters file
+	parametersResult, err := p.loadParameters(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("resolving bicep parameters file: %w", err)
 	}
+	parameters := parametersResult.parameters
+	locationParameters := parametersResult.locationParams
 
 	if len(template.Parameters) == 0 {
 		return azure.ArmParameters{}, nil
@@ -1894,6 +1962,39 @@ func (p *BicepProvider) ensureParameters(
 	var parameterPrompts []struct {
 		key   string
 		param azure.ArmTemplateParameterDefinition
+	}
+
+	// make all parameters mapped to AZURE_LOCATION env var to be location parameters
+	for _, key := range sortedKeys {
+		param := template.Parameters[key]
+		if slices.Contains(locationParameters, key) {
+			azdMetadata, hasAzdMetadata := param.AzdMetadata()
+			if !hasAzdMetadata {
+				azdMetadata = azure.AzdMetadata{
+					Type: to.Ptr(azure.AzdMetadataTypeLocation),
+				}
+			}
+			if azdMetadata.Type == nil {
+				azdMetadata.Type = to.Ptr(azure.AzdMetadataTypeLocation)
+			}
+			if azdMetadata.Type != nil && *azdMetadata.Type != azure.AzdMetadataTypeLocation {
+				return nil, fmt.Errorf(
+					"parameter %s is mapped to AZURE_LOCATION but has a different azd metadata type: %s."+
+						"Parameters mapped to AZURE_LOCATION can only be typed as location",
+					key,
+					*azdMetadata.Type)
+			}
+			mdBytes, err := json.Marshal(azdMetadata)
+			if err != nil {
+				return nil, fmt.Errorf("marshalling azd metadata: %w", err)
+			}
+			if param.Metadata == nil {
+				param.Metadata = map[string]json.RawMessage{"azd": mdBytes}
+			} else {
+				param.Metadata["azd"] = mdBytes
+			}
+			template.Parameters[key] = param
+		}
 	}
 
 	for _, key := range sortedKeys {
@@ -2032,7 +2133,7 @@ func (p *BicepProvider) ensureParameters(
 				key := prompt.key
 
 				// Otherwise, prompt for the value.
-				value, err := p.promptForParameter(ctx, key, prompt.param)
+				value, err := p.promptForParameter(ctx, key, prompt.param, locationParameters)
 				if err != nil {
 					return nil, fmt.Errorf("prompting for value: %w", err)
 				}

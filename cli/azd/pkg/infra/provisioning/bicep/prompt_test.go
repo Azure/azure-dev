@@ -67,7 +67,7 @@ func TestPromptForParameter(t *testing.T) {
 
 			value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 				Type: tc.paramType,
-			})
+			}, nil)
 
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, value)
@@ -191,7 +191,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 				return ret, nil
 			})
 
-			value, err := p.promptForParameter(*mockContext.Context, "testParam", tc.param)
+			value, err := p.promptForParameter(*mockContext.Context, "testParam", tc.param, nil)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, value)
 
@@ -227,7 +227,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 	value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "string",
 		AllowedValues: to.Ptr([]any{"three", "good", "choices"}),
-	})
+	}, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "good", value)
@@ -235,7 +235,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 	value, err = p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "int",
 		AllowedValues: to.Ptr([]any{10, 20, 30}),
-	})
+	}, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, 20, value)
@@ -295,7 +295,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 		Metadata: map[string]json.RawMessage{
 			"azd": json.RawMessage(`{"type": "location"}`),
 		},
-	})
+	}, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "eastus2", value)
@@ -313,7 +313,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 			"azd": json.RawMessage(`{"type": "location"}`),
 		},
 		AllowedValues: &[]any{"westus"},
-	})
+	}, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "westus", value)

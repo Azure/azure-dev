@@ -1249,7 +1249,8 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
 				selectedLanguage := value.(string)
 
-				// App Service in composability supports a limited set of runtimes, so re-prompt if the user selects an unsupported language
+				// App Service in composability supports a limited set of runtimes, so re-prompt
+				// if the user selects an unsupported language
 				isAppService := len(a.scenarioData.AppHostTypes) > 0 &&
 					a.scenarioData.AppHostTypes[len(a.scenarioData.AppHostTypes)-1] == "host.appservice"
 				if isAppService {

@@ -310,6 +310,14 @@ func (m *Manager) UpdateEnvironment(
 	ctx context.Context,
 	outputs map[string]OutputParameter,
 ) error {
+	return UpdateEnvironment(ctx, m.envManager, m.env, outputs)
+}
+
+func UpdateEnvironment(
+	ctx context.Context,
+	envManager environment.Manager,
+	env *environment.Environment,
+	outputs map[string]OutputParameter) error {
 	if len(outputs) > 0 {
 		for key, param := range outputs {
 			// Complex types marshalled as JSON strings, simple types marshalled as simple strings
@@ -318,13 +326,13 @@ func (m *Manager) UpdateEnvironment(
 				if err != nil {
 					return fmt.Errorf("invalid value for output parameter '%s' (%s): %w", key, string(param.Type), err)
 				}
-				m.env.DotenvSet(key, string(bytes))
+				env.DotenvSet(key, string(bytes))
 			} else {
-				m.env.DotenvSet(key, fmt.Sprintf("%v", param.Value))
+				env.DotenvSet(key, fmt.Sprintf("%v", param.Value))
 			}
 		}
 
-		if err := m.envManager.Save(ctx, m.env); err != nil {
+		if err := envManager.Save(ctx, env); err != nil {
 			return fmt.Errorf("writing environment: %w", err)
 		}
 	}

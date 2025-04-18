@@ -51,8 +51,8 @@ func (dm *DeploymentManager) CalculateTemplateHash(
 	return dm.deploymentService.CalculateTemplateHash(ctx, subscriptionId, template)
 }
 
-func (dm *DeploymentManager) ProgressDisplay(deployment Deployment, moduleName string) *ProvisioningProgressDisplay {
-	return NewProvisioningProgressDisplay(dm.resourceManager, dm.console, deployment, moduleName)
+func (dm *DeploymentManager) ProgressDisplay(deployment Deployment) *ProvisioningProgressDisplay {
+	return NewProvisioningProgressDisplay(dm.resourceManager, dm.console, deployment)
 }
 
 func (dm *DeploymentManager) SubscriptionScope(subscriptionId string, location string) *SubscriptionScope {

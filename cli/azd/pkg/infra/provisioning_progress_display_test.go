@@ -139,7 +139,7 @@ func TestReportProgress(t *testing.T) {
 	startTime := time.Now()
 	outputLength := 0
 	mockResourceManager := mockResourceManager{}
-	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, deployment, "")
+	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, deployment)
 	err := progressDisplay.ReportProgress(*mockContext.Context, &startTime)
 	require.NoError(t, err)
 

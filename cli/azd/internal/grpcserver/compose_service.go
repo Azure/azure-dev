@@ -122,7 +122,20 @@ func (c *composeService) ListResourceTypes(
 	context.Context,
 	*azdext.EmptyRequest,
 ) (*azdext.ListResourceTypesResponse, error) {
-	panic("unimplemented")
+	resourceType := project.AllResourceTypes()
+	var composedResourceTypes []*azdext.ComposedResourceType
+	for _, resource := range resourceType {
+		composedResourceType := &azdext.ComposedResourceType{
+			Name:        string(resource),
+			DisplayName: project.ResourceType(resource).String(),
+			Type:        project.ResourceType(resource).AzureResourceType(),
+			Kinds:       addListResourcesKind(resource),
+		}
+		composedResourceTypes = append(composedResourceTypes, composedResourceType)
+	}
+	return &azdext.ListResourceTypesResponse{
+		ResourceTypes: composedResourceTypes,
+	}, nil
 }
 
 // ListResources lists all resources in the project configuration.
@@ -167,6 +180,15 @@ func (c *composeService) ListResources(
 // In the future we will converge this into a common component.
 func createResourceProps(resourceType string, config []byte) (any, error) {
 	switch project.ResourceType(resourceType) {
+	case project.ResourceTypeHostAppService:
+		props := project.AppServiceProps{}
+		if len(config) == 0 {
+			return props, nil
+		}
+		if err := json.Unmarshal(config, &props); err != nil {
+			return nil, err
+		}
+		return props, nil
 	case project.ResourceTypeHostContainerApp:
 		props := project.ContainerAppProps{}
 		if len(config) == 0 {
@@ -232,5 +254,16 @@ func createResourceProps(resourceType string, config []byte) (any, error) {
 		return props, nil
 	default:
 		return nil, nil
+	}
+}
+
+func addListResourcesKind(resourceType project.ResourceType) []string {
+	switch resourceType {
+	case project.ResourceTypeDbCosmos:
+		return []string{"GlobalDocumentDB"}
+	case project.ResourceTypeDbMongo:
+		return []string{"MongoDB"}
+	default:
+		return []string{}
 	}
 }

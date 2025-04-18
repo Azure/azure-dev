@@ -34,6 +34,7 @@ const (
 type ProjectServiceClient interface {
 	// Gets the current project.
 	Get(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*GetProjectResponse, error)
+	// AddService adds a new service to the project.
 	AddService(ctx context.Context, in *AddServiceRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
 }
 
@@ -73,6 +74,7 @@ func (c *projectServiceClient) AddService(ctx context.Context, in *AddServiceReq
 type ProjectServiceServer interface {
 	// Gets the current project.
 	Get(context.Context, *EmptyRequest) (*GetProjectResponse, error)
+	// AddService adds a new service to the project.
 	AddService(context.Context, *AddServiceRequest) (*EmptyResponse, error)
 	mustEmbedUnimplementedProjectServiceServer()
 }

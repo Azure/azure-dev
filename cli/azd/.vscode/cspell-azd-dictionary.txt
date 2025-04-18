@@ -110,6 +110,7 @@ eventhubs
 executil
 flexconsumption
 Frontends
+fsnotify
 funcapp
 functestapp
 functionapp

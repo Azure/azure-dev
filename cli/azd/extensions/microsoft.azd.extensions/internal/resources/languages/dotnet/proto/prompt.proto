@@ -1,0 +1,181 @@
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext";
+option csharp_namespace = "Microsoft.Azd";
+
+import "models.proto";
+
+service PromptService {
+  // PromptSubscription prompts the user to select a subscription.
+  rpc PromptSubscription (PromptSubscriptionRequest) returns (PromptSubscriptionResponse);
+
+  // PromptLocation prompts the user to select a location.
+  rpc PromptLocation (PromptLocationRequest) returns (PromptLocationResponse);
+
+  // PromptResourceGroup prompts the user to select a resource group.
+  rpc PromptResourceGroup (PromptResourceGroupRequest) returns (PromptResourceGroupResponse);
+
+  // Confirm prompts the user to confirm an action.
+  rpc Confirm(ConfirmRequest) returns (ConfirmResponse);
+
+  // Prompt prompts the user for text input.
+  rpc Prompt(PromptRequest) returns (PromptResponse);
+
+  // Select prompts the user to select an option from a list.
+  rpc Select(SelectRequest) returns (SelectResponse);
+
+  // MultiSelect prompts the user to select multiple options from a list.
+  rpc MultiSelect(MultiSelectRequest) returns (MultiSelectResponse);
+
+  // PromptSubscriptionResource prompts the user to select a resource from a subscription.
+  rpc PromptSubscriptionResource(PromptSubscriptionResourceRequest) returns (PromptSubscriptionResourceResponse);
+
+  // PromptResourceGroupResource prompts the user to select a resource from a resource group.
+  rpc PromptResourceGroupResource(PromptResourceGroupResourceRequest) returns (PromptResourceGroupResourceResponse);
+}
+
+message PromptSubscriptionRequest {}
+
+message PromptSubscriptionResponse {
+  Subscription subscription = 1;
+}
+
+message PromptLocationRequest {
+  AzureContext azure_context = 1;
+}
+
+message PromptLocationResponse {
+  Location location = 1;
+}
+
+message PromptResourceGroupRequest {
+  AzureContext azure_context = 1;
+}
+
+message PromptResourceGroupResponse {
+  ResourceGroup resource_group = 1;
+}
+
+message ConfirmRequest {
+  ConfirmOptions options = 1;
+}
+
+message ConfirmResponse {
+  optional bool value = 1;
+}
+
+message PromptRequest {
+  PromptOptions options = 1;
+}
+
+message PromptResponse {
+  string value = 1;
+}
+
+message SelectRequest {
+  SelectOptions options = 1;
+}
+
+message SelectResponse {
+  optional int32 value = 1;
+}
+
+message MultiSelectRequest {
+  MultiSelectOptions options = 1;
+}
+
+message MultiSelectResponse {
+  repeated MultiSelectChoice values = 1;
+}
+
+message PromptSubscriptionResourceRequest {
+  AzureContext azure_context = 1;
+  PromptResourceOptions options = 2;
+}
+
+message PromptSubscriptionResourceResponse {
+  azdext.ResourceExtended resource = 1;
+}
+
+message PromptResourceGroupResourceRequest {
+  AzureContext azure_context = 1;
+  PromptResourceOptions options = 2;
+}
+
+message PromptResourceGroupResourceResponse {
+  azdext.ResourceExtended resource = 1;
+}
+
+message ConfirmOptions {
+  optional bool default_value = 1;
+  string message = 2;
+  string help_message = 3;
+  string hint = 4;
+  string placeholder = 5;
+}
+
+message PromptOptions {
+  string message = 1;
+  string help_message = 2;
+  string hint = 3;
+  string placeholder = 4;
+  string validation_message = 5;
+  string required_message = 6;
+  bool required = 7;
+  string default_value = 8;
+  bool clear_on_completion = 9;
+  bool ignore_hint_keys = 10;
+}
+
+message SelectChoice {
+  string value = 1;
+  string label = 2;
+}
+
+message MultiSelectChoice {
+  string value = 1;
+  string label = 2;
+  bool selected = 3;
+}
+
+message SelectOptions {
+  optional int32 selected_index = 1;
+  string message = 2;
+  repeated SelectChoice choices = 3;
+  string help_message = 4;
+  string hint = 5;
+  int32 display_count = 6;
+  optional bool display_numbers = 7;
+  optional bool enable_filtering = 8;
+}
+
+message MultiSelectOptions {
+  string message = 1;
+  repeated MultiSelectChoice choices = 2;
+  string help_message = 3;
+  string hint = 4;
+  int32 display_count = 5;
+  optional bool display_numbers = 6;
+  optional bool enable_filtering = 7;
+}
+
+message PromptResourceOptions {
+  string resource_type = 1;
+  repeated string kinds = 2;
+  string resource_type_display_name = 3;
+  PromptResourceSelectOptions select_options = 4;
+}
+
+message PromptResourceSelectOptions {
+  optional bool force_new_resource = 1;
+  optional bool allow_new_resource = 2;
+  string new_resource_message = 3;
+  string creating_message = 4;
+  string message = 5;
+  string help_message = 6;
+  string loading_message = 7;
+  optional bool display_numbers = 8;
+  int32 display_count = 9;
+}

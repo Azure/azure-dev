@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../extension.schema.json
+id: microsoft.azd.extensions
+namespace: x
+language: go
+displayName: AZD Extensions Developer Kit
+description: This extension provides a set of tools for AZD extension developers to test and debug their extensions.
+usage: azd x <command> [options]
+version: 0.0.3
+capabilities:
+  - custom-commands
+examples:
+  - name: init
+    description: Initialize a new AZD extension project.
+    usage: azd x init
+  - name: build
+    description: Build the AZD extension project.
+    usage: azd x build
+  - name: package
+    description: Package the AZD extension project into a distributable format and add to local registry.
+    usage: azd x package
+  - name: watch
+    description: Watch for changes in the extension project and automatically rebuild and reload the extension.
+    usage: azd x watch

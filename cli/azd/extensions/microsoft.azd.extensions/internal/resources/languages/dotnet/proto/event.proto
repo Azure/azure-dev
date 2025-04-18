@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext";
+option csharp_namespace = "Microsoft.Azd";
+
+import "models.proto";
+
+// EventService defines methods for event subscription, invocation, and status updates.
+// Clients can subscribe to events and receive notifications via a bidirectional stream.
+service EventService {
+  // Bidirectional stream for event subscription, invocation, and status updates.
+  rpc EventStream(stream EventMessage) returns (stream EventMessage);
+}
+
+// Represents different types of messages sent over the stream
+message EventMessage {
+  oneof message_type {
+    SubscribeProjectEvent subscribe_project_event = 1;
+    InvokeProjectHandler invoke_project_handler = 2;
+    ProjectHandlerStatus project_handler_status = 3;
+    SubscribeServiceEvent subscribe_service_event = 4;
+    InvokeServiceHandler invoke_service_handler = 5;
+    ServiceHandlerStatus service_handler_status = 6;
+    ExtensionReadyEvent extension_ready_event = 7;
+  }
+}
+
+message ExtensionReadyEvent {
+  // Status indicates the readiness state of the extension.
+  string status = 1;
+  // Message provides additional details.
+  string message = 2;
+}
+
+// Client subscribes to project-related events
+message SubscribeProjectEvent {
+  // List of event names to subscribe to.
+  repeated string event_names = 1;
+}
+
+// Client subscribes to service-related events
+message SubscribeServiceEvent {
+  // List of event names to subscribe to.
+  repeated string event_names = 1;
+  string language = 2;
+  string host = 3;
+}
+
+// Server invokes the project event handler
+message InvokeProjectHandler {
+  // Name of the event being invoked.
+  string event_name = 1;
+  // Current project configuration.
+  ProjectConfig project = 2;
+}
+
+// Server invokes the service event handler
+message InvokeServiceHandler {
+  // Name of the event being invoked.
+  string event_name = 1;
+  // Current project configuration.
+  ProjectConfig project = 2;
+  // Specific service configuration.
+  ServiceConfig service = 3;
+}
+
+// Client sends status updates for project events
+message ProjectHandlerStatus {
+  // Name of the event this status update is for.
+  string event_name = 1;
+  // Status such as "running", "completed", "failed", etc.
+  string status = 2;
+  // Optional message providing further details.
+  string message = 3;
+}
+
+// Client sends status updates for service events
+message ServiceHandlerStatus {
+  // Name of the event this status update is for.
+  string event_name = 1;
+  // Name of the service related to the update.
+  string service_name = 2;
+  // Status such as "running", "completed", "failed", etc.
+  string status = 3;
+  // Optional message providing further details.
+  string message = 4;
+}

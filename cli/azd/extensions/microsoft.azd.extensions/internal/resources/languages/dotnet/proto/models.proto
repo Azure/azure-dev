@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext";
+option csharp_namespace = "Microsoft.Azd";
+
+// Messages for requests and responses
+message EmptyRequest {}
+
+// EmptyResponse message for methods with no output.
+message EmptyResponse {}
+
+// Message representing a Subscription
+message Subscription {
+  string id = 1;
+  string name = 2;
+  string tenant_id = 3;
+  string user_tenant_id = 4;
+  bool is_default = 5;
+}
+
+message ResourceGroup {
+  string id = 1;
+  string name = 2;
+  string location = 3;
+}
+
+message Location {
+  string name = 1;
+  string display_name = 2;
+  string regional_display_name = 3;
+}
+
+message AzureScope {
+  string tenant_id = 1;
+  string subscription_id = 2;
+  string location = 3;
+  string resource_group = 4;
+}
+
+message AzureContext {
+  AzureScope scope = 1;
+  repeated string resources = 2;
+}
+
+message Resource {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+  string location = 4;
+}
+
+message ResourceExtended {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+  string location = 4;
+  string kind = 5;
+}
+
+// ProjectConfig message definition
+message ProjectConfig {
+  string name = 1;
+  string resource_group_name = 2;
+  string path = 3;
+  ProjectMetadata metadata = 4;
+  map<string, ServiceConfig> services = 5;
+  InfraOptions infra = 6;
+}
+
+// RequiredVersions message definition
+message RequiredVersions {
+  string azd = 1;
+}
+
+// ProjectMetadata message definition
+message ProjectMetadata {
+  string template = 1;
+}
+
+// ServiceConfig message definition
+message ServiceConfig {
+  string name = 1;
+  string resource_group_name = 2;
+  string resource_name = 3;
+  string api_version = 4;
+  string relative_path = 5;
+  string host = 6;
+  string language = 7;
+  string output_path = 8;
+  string image = 9;
+}
+
+// InfraOptions message definition
+message InfraOptions {
+  string provider = 1;
+  string path = 2;
+  string module = 3;
+}

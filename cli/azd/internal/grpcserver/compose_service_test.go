@@ -5,7 +5,9 @@ package grpcserver
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
+	"math/big"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -158,4 +160,30 @@ func Test_ComposeService_ListResources(t *testing.T) {
 		_, err := composeService.ListResources(*mockContext.Context, &azdext.EmptyRequest{})
 		require.Error(t, err)
 	})
+}
+
+func Test_Test_ComposeService_ListResourceTypes(t *testing.T) {
+	// Setup a mock context.
+	mockContext := mocks.NewMockContext(context.Background())
+	lazyAzdContext := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
+		return nil, azdcontext.ErrNoProject
+	})
+
+	// Create the service and call ListResourceTypes
+	service := NewComposeService(lazyAzdContext)
+	response, err := service.ListResourceTypes(*mockContext.Context, &azdext.EmptyRequest{})
+	require.NoError(t, err)
+	require.NotNil(t, response)
+	require.NotEmpty(t, response.ResourceTypes)
+
+	// Verify a resource type.
+	maxIndex := big.NewInt(int64(len(response.ResourceTypes)))
+	randomIndexBig, err := rand.Int(rand.Reader, maxIndex)
+	require.NoError(t, err)
+	randomIndex := randomIndexBig.Int64()
+	randomResource := response.ResourceTypes[randomIndex]
+	require.NotNil(t, randomResource)
+	require.NotEmpty(t, randomResource.Name)
+	require.NotEmpty(t, randomResource.DisplayName)
+	require.NotEmpty(t, randomResource.Type)
 }

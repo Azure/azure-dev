@@ -69,6 +69,7 @@ func (x *GetProjectResponse) GetProject() *ProjectConfig {
 	return nil
 }
 
+// AddServiceRequest message definition
 type AddServiceRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache

@@ -606,6 +606,7 @@ func (t *aksTarget) ensureClusterContext(
 		convertOptions := &kubelogin.ConvertOptions{
 			Login:      "azd",
 			KubeConfig: kubeConfigPath,
+			TenantId:   t.env.GetTenantId(),
 		}
 
 		if err := tools.EnsureInstalled(ctx, t.kubeLoginCli); err != nil {

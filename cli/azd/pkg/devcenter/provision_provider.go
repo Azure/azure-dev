@@ -478,7 +478,7 @@ func (p *ProvisionProvider) pollForProgress(ctx context.Context, deployment infr
 	}
 
 	// Report incremental progress
-	progressDisplay := p.deploymentManager.ProgressDisplay(deployment)
+	progressDisplay := p.deploymentManager.ProgressDisplay(deployment, "")
 
 	initialDelay := 3 * time.Second
 	regularDelay := 10 * time.Second

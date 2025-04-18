@@ -48,7 +48,7 @@ func TestBicepPlan(t *testing.T) {
 	prepareBicepMocks(mockContext)
 	infraProvider := createBicepProvider(t, mockContext)
 
-	deploymentPlan, err := infraProvider.plan(*mockContext.Context)
+	deploymentPlan, err := infraProvider.plan(*mockContext.Context, infraProvider.rootModulePath())
 
 	require.Nil(t, err)
 
@@ -68,7 +68,7 @@ func TestBicepPlanKeyVaultRef(t *testing.T) {
 	prepareBicepMocks(mockContext)
 	infraProvider := createBicepProvider(t, mockContext)
 
-	deploymentPlan, err := infraProvider.plan(*mockContext.Context)
+	deploymentPlan, err := infraProvider.plan(*mockContext.Context, infraProvider.rootModulePath())
 
 	require.Nil(t, err)
 
@@ -122,7 +122,7 @@ func TestBicepPlanPrompt(t *testing.T) {
 	}).Respond(false)
 
 	infraProvider := createBicepProvider(t, mockContext)
-	plan, err := infraProvider.plan(*mockContext.Context)
+	plan, err := infraProvider.plan(*mockContext.Context, infraProvider.rootModulePath())
 
 	require.NoError(t, err)
 
@@ -308,7 +308,7 @@ func TestPlanForResourceGroup(t *testing.T) {
 	infraProvider := createBicepProvider(t, mockContext)
 	// The computed plan should target the resource group we picked.
 
-	planResult, err := infraProvider.plan(*mockContext.Context)
+	planResult, err := infraProvider.plan(*mockContext.Context, infraProvider.rootModulePath())
 	require.Nil(t, err)
 	require.NotNil(t, planResult)
 	require.Equal(t, "rg-test-env",
@@ -890,7 +890,7 @@ func TestFindCompletedDeployments(t *testing.T) {
 		*mockContext.Context, &mockedScope{
 			baseDate: baseDate,
 			envTag:   envTag,
-		}, envTag, "")
+		}, envTag, "", "")
 	require.NoError(t, err)
 	require.Equal(t, 1, len(deployments))
 	// should take the base date + 2 years

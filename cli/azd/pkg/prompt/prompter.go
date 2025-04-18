@@ -11,7 +11,6 @@ import (
 	"os"
 	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/MakeNowJust/heredoc/v2"
@@ -22,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/stringutil"
 )
 
 type LocationFilterPredicate func(loc account.Location) bool
@@ -157,7 +157,7 @@ func (p *DefaultPrompter) PromptResourceGroupFrom(
 	}
 
 	slices.SortFunc(groups, func(a, b *azapi.Resource) int {
-		return strings.Compare(a.Name, b.Name)
+		return stringutil.CompareLower(a.Name, b.Name)
 	})
 
 	canCreateNeResourceGroup := !options.DisableCreateNew
@@ -225,6 +225,10 @@ func (p *DefaultPrompter) getSubscriptionOptions(ctx context.Context) ([]string,
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("listing accounts: %w", err)
 	}
+
+	slices.SortFunc(subscriptionInfos, func(a, b account.Subscription) int {
+		return stringutil.CompareLower(a.Name, b.Name)
+	})
 
 	// The default value is based on AZURE_SUBSCRIPTION_ID, falling back to whatever default subscription in
 	// set in azd's config.

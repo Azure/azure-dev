@@ -8,8 +8,9 @@ trigger:
       - go.mod
       - cli/azd/extensions/
       - eng/pipelines/release-azd-extension.yml
-      - eng/pipelines/templates/jobs/build-azd-extension.yml
-      - eng/pipelines/templates/variables/image.yml
+      - /eng/pipelines/templates/jobs/build-azd-extension.yml
+      - /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
+      - /eng/pipelines/templates/variables/image.yml
 
 pr:
   paths:
@@ -32,10 +33,10 @@ variables:
     value: ${{ replace(parameters.AzdExtensionId, '.', '-') }}
 
 extends:
-  template: eng/pipelines/templates/stages/1es-redirect.yml
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
   parameters:
     stages:
-      - template: eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
         parameters:
           AzdExtensionId: ${{ parameters.AzdExtensionId }}
           AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
@@ -100,7 +101,7 @@ extends:
                   SetExecutableBit: true
                   AZURE_DEV_CI_OS: mac-arm64
 
-      - template: eng/pipelines/templates/stages/code-coverage-upload.yml
+      - template: /eng/pipelines/templates/stages/code-coverage-upload.yml
         parameters:
           DownloadArtifacts:
             - cover-win
@@ -110,6 +111,6 @@ extends:
                 - cover-mac-arm64
 
       # - ${{ if ne(variables['Build.Reason'], 'Schedule') }}:
-      #     - template: eng/pipelines/templates/stages/sign.yml
+      #     - template: /eng/pipelines/templates/stages/sign.yml
 
-      #     - template: eng/pipelines/templates/stages/publish.yml
+      #     - template: /eng/pipelines/templates/stages/publish.yml

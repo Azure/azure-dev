@@ -65,7 +65,7 @@ jobs:
             -SourceVersion $(Build.SourceVersion)
             -CodeCoverageEnabled
             -BuildRecordMode
-        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+          workingDirectory: ${{ parameters.AzdExtensionDirectory }}
         displayName: Build Go Binary (For tests)
 
       - pwsh: |

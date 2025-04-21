@@ -100,59 +100,6 @@ extends:
                   MacLocalSign: false
                   SetExecutableBit: true
                   AZURE_DEV_CI_OS: mac-arm64
-          CrossBuildMatrix:
-            # Compliant image name required
-            LinuxARM64:
-              Pool: $(LINUXPOOL)
-              OSVmImage: $(LINUXVMIMAGE)
-              OS: linux
-              ImageKey: image
-              ValidateCrossCompile: true
-              ValidateVm:
-                PoolName: $(ARMPOOL)
-                ImageName: $(LINUXARMVMIMAGE)
-                Os: linux
-              ValidationTask: bash
-              ValidationScript: pwd && ls && chmod +x ./azd-linux-arm64 && ./azd-linux-arm64 version
-              Variables:
-                BuildTarget: ${{ variables.sanitizedExtensionId }}-linux-arm64
-                BuildOutputName: ${{ variables.sanitizedExtensionId }}-linux-arm64
-                SetExecutableBit: true
-                GOOS: linux
-                GOARCH: arm64
-                BuildLinuxPackages: true
-            MacARM64:
-              Pool: Azure Pipelines
-              OSVmImage: $(MACVMIMAGE)
-              OS: macOS
-              ImageKey: vmImage
-              Variables:
-                BuildTarget: ${{ variables.sanitizedExtensionId }}-darwin-arm64
-                BuildOutputName: ${{ variables.sanitizedExtensionId }}-darwin-arm64
-                SetExecutableBit: true
-                GOOS: darwin
-                GOARCH: arm64
-                # CGO_ENABLED is required on MacOS to cross-compile pkg/outil/osversion
-                CGO_ENABLED: 1
-            WindowsARM64:
-              Pool: $(WINDOWSPOOL)
-              OSVmImage: $(WINDOWSVMIMAGE)
-              OS: windows
-              ImageKey: image
-              ValidateCrossCompile: true
-              ValidateVm:
-                PoolName: $(ARMPOOL)
-                ImageName: $(WINDOWSARMVMIMAGE)
-                Os: windows
-              ValidationTask: script
-              ValidationScript: |
-                dir
-                azd-windows-arm64.exe version
-              Variables:
-                BuildTarget: ${{ variables.sanitizedExtensionId }}-windows-arm64.exe
-                BuildOutputName: ${{ variables.sanitizedExtensionId }}-windows-arm64.exe
-                GOOS: windows
-                GOARCH: arm64
 
       - template: /eng/pipelines/templates/stages/code-coverage-upload.yml
         parameters:

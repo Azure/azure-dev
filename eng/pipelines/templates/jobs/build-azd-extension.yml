@@ -20,8 +20,8 @@ parameters:
     type: string
 
 jobs:
-  - job: BuildCLI_${{ parameters.NameSuffix }}
-    displayName: BuildCLI ${{ parameters.NameSuffix }}
+  - job: BuildExtension_${{ parameters.NameSuffix }}
+    displayName: BuildExtension ${{ parameters.NameSuffix }}
 
     variables:
       ${{ insert }}: ${{ parameters.Variables }}
@@ -44,14 +44,14 @@ jobs:
         inputs:
           pwsh: true
           targetType: filePath
-          filePath: /eng/scripts/Set-CliVersionVariable.ps1
+          filePath: eng/scripts/Set-CliVersionVariable.ps1
         displayName: Set CLI_VERSION
 
       - task: PowerShell@2
         inputs:
           pwsh: true
           targetType: filePath
-          filePath: /eng/scripts/Set-CliBuildVariables.ps1
+          filePath: eng/scripts/Set-CliBuildVariables.ps1
           arguments: -BuildReason $(Build.Reason)
         displayName: Set CLI build run variables
 
@@ -59,7 +59,7 @@ jobs:
         inputs:
           pwsh: true
           targetType: filePath
-          filePath: ${{ parameters.AzdExtensionDirectory }}/ci-build.ps1
+          filePath: cli/azd/extensions/scripts/ci-build.ps1
           arguments: >-
             -Version $(CLI_VERSION)
             -SourceVersion $(Build.SourceVersion)
@@ -94,7 +94,7 @@ jobs:
           visibleAzLogin: false
           scriptType: pscore
           scriptLocation: scriptPath
-          scriptPath: ${{ parameters.AzdExtensionDirectory }}/ci-test.ps1
+          scriptPath: cli/azd/extensions/scripts/ci-test.ps1
           workingDirectory: ${{ parameters.AzdExtensionDirectory }}
           scriptArguments: >-
             -UnitTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/unit'
@@ -129,7 +129,7 @@ jobs:
         inputs:
           pwsh: true
           targetType: filePath
-          filePath: ${{ parameters.AzdExtensionDirectory }}/ci-build.ps1
+          filePath: cli/azd/extensions/scripts/ci-build.ps1
           arguments: >-
             -Version $(CLI_VERSION)
             -SourceVersion $(Build.SourceVersion)

@@ -68,18 +68,18 @@ jobs:
           workingDirectory: ${{ parameters.AzdExtensionDirectory }}
         displayName: Build Go Binary (For tests)
 
-      - pwsh: |
-          ./azd auth login --federated-credential-provider "azure-pipelines"
-          ./azd config set defaults.subscription $(SubscriptionId)
-        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
-        env:
-          AZURESUBSCRIPTION_CLIENT_ID: $(AzureSubscriptionClientId)
-          AZURESUBSCRIPTION_TENANT_ID: $(AzureSubscriptionTenantId)
-          AZURESUBSCRIPTION_SERVICE_CONNECTION_ID: $(AzureSubscriptionServiceConnectionId)
-          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
-          AZD_DEBUG_LOGIN_FORCE_SUBSCRIPTION_REFRESH: true
-        displayName: AZD Login
+      # - pwsh: |
+      #     ./azd auth login --federated-credential-provider "azure-pipelines"
+      #     ./azd config set defaults.subscription $(SubscriptionId)
+      #   condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+      #   workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+      #   env:
+      #     AZURESUBSCRIPTION_CLIENT_ID: $(AzureSubscriptionClientId)
+      #     AZURESUBSCRIPTION_TENANT_ID: $(AzureSubscriptionTenantId)
+      #     AZURESUBSCRIPTION_SERVICE_CONNECTION_ID: $(AzureSubscriptionServiceConnectionId)
+      #     SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      #     AZD_DEBUG_LOGIN_FORCE_SUBSCRIPTION_REFRESH: true
+      #   displayName: AZD Login
 
       - task: AzureCLI@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))

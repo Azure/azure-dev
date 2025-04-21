@@ -18,7 +18,7 @@ parameters:
     default: true
   - name: AzdExtensionDirectory
     type: string
-    
+
 jobs:
   - job: BuildCLI_${{ parameters.NameSuffix }}
     displayName: BuildCLI ${{ parameters.NameSuffix }}

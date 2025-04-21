@@ -22,7 +22,7 @@ stages:
               OS: ${{ build.value.OS }}
               UploadArtifact: ${{ build.value.UploadArtifact}}
               Variables: ${{ build.value.Variables }}
-              AzdExtensionDirectory: ${{ build.value.AzdExtensionDirectory }}
+              AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
 
       - job: GenerateReleaseArtifacts
         pool:

@@ -1,0 +1,78 @@
+parameters:
+  - name: BuildMatrix
+    type: object
+  - name: AzdExtensionId
+    type: string
+  - name: AzdExtensionDirectory
+    type: string
+
+stages:
+  - stage: BuildAndTest
+    variables:
+      - template: /eng/pipelines/templates/variables/globals.yml
+      - template: /eng/pipelines/templates/variables/image.yml
+    jobs:
+      - ${{ each build in parameters.BuildMatrix }}:
+          - template: /eng/pipelines/templates/jobs/build-azd-extension.yml
+            parameters:
+              NameSuffix: ${{ build.key}}
+              Pool: ${{ build.value.Pool }}
+              ImageKey: ${{ build.value.ImageKey }}
+              OSVmImage: ${{ build.value.OSVmImage }}
+              OS: ${{ build.value.OS }}
+              UploadArtifact: ${{ build.value.UploadArtifact}}
+              Variables: ${{ build.value.Variables }}
+              AzdExtensionDirectory: ${{ build.value.AzdExtensionDirectory }}
+
+      - job: GenerateReleaseArtifacts
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+
+        steps:
+          - checkout: self
+
+          - template: /eng/pipelines/templates/steps/setup-go.yml
+
+          - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
+
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: eng/scripts/Set-CliVersionVariable.ps1
+            displayName: Set CLI_VERSION
+
+          # Create release metadata
+          - pwsh: |
+              New-Item -ItemType Directory -Path release-metadata -Force
+              # CLI Version may have been set by set-cli-version-cd.yml
+              $cliVersion = "$(CLI_VERSION)"
+
+              # Given a package version and a configuration for AllowPrerelease, 
+              # determine if the package should be submitted or not.
+              $submitPackage = $false
+
+              try { 
+                $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+                  -CliVersion "$(CLI_VERSION)" `
+                  -AllowPrerelease:$false
+              } catch { 
+                Write-Host "Package version is not valid: $(CLI_VERSION). `$submitPackage is set to false."
+              }
+
+              $releaseMetadata = @{
+                cliVersion = $cliVersion;
+              }
+
+              Set-Content -Path release-metadata/metadata.json -Value ($releaseMetadata | ConvertTo-Json -Depth 100)
+            displayName: Create release metadata
+
+        templateContext:
+          outputs:
+            - output: pipelineArtifact
+              path: release-metadata
+              condition: succeeded()
+              artifact: release-metadata
+              displayName: Upload release metadata

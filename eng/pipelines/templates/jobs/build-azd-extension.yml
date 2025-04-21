@@ -1,0 +1,175 @@
+parameters:
+  - name: NameSuffix
+    type: string
+  - name: Pool
+    type: string
+  - name: ImageKey
+    type: string
+    default: image
+  - name: OSVmImage
+    type: string
+  - name: OS
+    type: string
+  - name: Variables
+    type: object
+    default: {}
+  - name: UploadArtifact
+    type: boolean
+    default: true
+  - name: AzdExtensionDirectory
+    type: string
+    
+jobs:
+  - job: BuildCLI_${{ parameters.NameSuffix }}
+    displayName: BuildCLI ${{ parameters.NameSuffix }}
+
+    variables:
+      ${{ insert }}: ${{ parameters.Variables }}
+
+    pool:
+      name: ${{ parameters.Pool }}
+      ${{ parameters.ImageKey }}: ${{ parameters.OSVmImage }}
+      os: ${{ parameters.OS }}
+
+    timeoutInMinutes: 180
+    steps:
+      - checkout: self
+      - template: /eng/pipelines/templates/steps/setup-go.yml
+        parameters:
+          Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+
+      - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: /eng/scripts/Set-CliVersionVariable.ps1
+        displayName: Set CLI_VERSION
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: /eng/scripts/Set-CliBuildVariables.ps1
+          arguments: -BuildReason $(Build.Reason)
+        displayName: Set CLI build run variables
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: ${{ parameters.AzdExtensionDirectory }}/ci-build.ps1
+          arguments: >-
+            -Version $(CLI_VERSION)
+            -SourceVersion $(Build.SourceVersion)
+            -CodeCoverageEnabled
+            -BuildRecordMode
+        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        displayName: Build Go Binary (For tests)
+
+      - pwsh: |
+          ./azd auth login --federated-credential-provider "azure-pipelines"
+          ./azd config set defaults.subscription $(SubscriptionId)
+        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        env:
+          AZURESUBSCRIPTION_CLIENT_ID: $(AzureSubscriptionClientId)
+          AZURESUBSCRIPTION_TENANT_ID: $(AzureSubscriptionTenantId)
+          AZURESUBSCRIPTION_SERVICE_CONNECTION_ID: $(AzureSubscriptionServiceConnectionId)
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+          AZD_DEBUG_LOGIN_FORCE_SUBSCRIPTION_REFRESH: true
+        displayName: AZD Login
+
+      - task: AzureCLI@2
+        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+        inputs:
+          azureSubscription: azd-service-connection
+          # keepAzSessionActive is required when the service connection uses Workload Identity Federation authentication scheme
+          # and the script will run for more than 10 minutes.
+          # the ci-test.ps1 script runs for a long time and the service connection `azure-sdk-tests` use Workload Identity Federation.
+          # This setting will fail if the service connection is updated to use a different authentication scheme.
+          keepAzSessionActive: true
+          # hiding log in output because keepAzSessionActive will keep displaying the output constantly.
+          visibleAzLogin: false
+          scriptType: pscore
+          scriptLocation: scriptPath
+          scriptPath: ${{ parameters.AzdExtensionDirectory }}/ci-test.ps1
+          workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+          scriptArguments: >-
+            -UnitTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/unit'
+            -IntegrationTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/int'
+        displayName: Test Go Binary
+        env:
+          # AZD live test setup variables
+          CI: true
+          AZD_TEST_CLI_VERSION: $(CLI_VERSION)
+          AZD_TEST_CLIENT_ID: $(AzureSubscriptionClientId)
+          AZD_TEST_TENANT_ID: $(AzureSubscriptionTenantId)
+          AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
+          AZD_TEST_AZURE_LOCATION: eastus2
+          AZURE_RECORD_MODE: $(AZURE_RECORD_MODE)
+          # AZD Live Test: Terraform authentication via `az`
+          ARM_USE_CLI: true
+          # Code Coverage: Generate junit report to publish results
+          GOTESTSUM_JUNITFILE: junitTestReport.xml
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+      - task: PublishTestResults@2
+        inputs:
+          testResultsFormat: JUnit
+          testResultsFiles: "**/junitTestReport.xml"
+          testRunTitle: $(Agent.JobName)
+          searchFolder: ${{ parameters.AzdExtensionDirectory }}
+          publishRunAttachments: true
+        displayName: Publish test results
+        condition: succeededOrFailed()
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: ${{ parameters.AzdExtensionDirectory }}/ci-build.ps1
+          arguments: >-
+            -Version $(CLI_VERSION)
+            -SourceVersion $(Build.SourceVersion)
+          workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        displayName: Build Go Binary
+
+      - pwsh: |
+          Write-Host "Move-Item $(BuildOutputName) $(BuildTarget)"
+          Move-Item $(BuildOutputName) $(BuildTarget)
+        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        displayName: Rename binaries
+
+      - bash: chmod +x $(BuildTarget)
+        condition: and(succeeded(), eq(variables['SetExecutableBit'], 'true'))
+        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        displayName: Set executable bit for non-Windows binaries
+
+      - pwsh: |
+          New-Item -ItemType Directory -Path $(Build.ArtifactStagingDirectory)/build-output -Force
+          Copy-Item $(BuildTarget) $(Build.ArtifactStagingDirectory)/build-output
+        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        displayName: Copy binary to artifact staging directory
+
+    templateContext:
+      outputs:
+        - output: pipelineArtifact
+          path: ${{ parameters.AzdExtensionDirectory }}/cover-$(AZURE_DEV_CI_OS)
+          condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+          artifact: cover-$(AZURE_DEV_CI_OS)
+          displayName: Upload code coverage
+
+        - output: pipelineArtifact
+          path: $(Build.ArtifactStagingDirectory)/shield
+          condition: and(succeeded(), eq(variables['SetShieldInfo'], 'true'))
+          artifact: shield-standalone
+          displayName: Upload standalone shield json
+
+        - ${{ if eq(parameters.UploadArtifact, true) }}:
+            - output: pipelineArtifact
+              path: $(Build.ArtifactStagingDirectory)/build-output
+              artifact: $(BuildTarget)
+              condition: succeeded()
+              displayName: Upload azd binary to artifact store

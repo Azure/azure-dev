@@ -73,6 +73,8 @@ message ComposedResource {
 
 // ComposedResourceType represents a type of composability resource.
 message ComposedResourceType {
-  string type_name = 1;
-  bytes schema = 2;
+  string name = 1;
+  string display_name = 2;
+  string type = 3;
+  repeated string kinds = 4;
 }

@@ -113,8 +113,8 @@ extends:
               ValidationTask: bash
               ValidationScript: pwd && ls && chmod +x ./azd-linux-arm64 && ./azd-linux-arm64 version
               Variables:
-                BuildTarget: ${{ parameters.sanitizedExtensionId }}-linux-arm64
-                BuildOutputName: ${{ parameters.sanitizedExtensionId }}-linux-arm64
+                BuildTarget: ${{ variables.sanitizedExtensionId }}-linux-arm64
+                BuildOutputName: ${{ variables.sanitizedExtensionId }}-linux-arm64
                 SetExecutableBit: true
                 GOOS: linux
                 GOARCH: arm64
@@ -125,8 +125,8 @@ extends:
               OS: macOS
               ImageKey: vmImage
               Variables:
-                BuildTarget: ${{ parameters.sanitizedExtensionId }}-darwin-arm64
-                BuildOutputName: ${{ parameters.sanitizedExtensionId }}-darwin-arm64
+                BuildTarget: ${{ variables.sanitizedExtensionId }}-darwin-arm64
+                BuildOutputName: ${{ variables.sanitizedExtensionId }}-darwin-arm64
                 SetExecutableBit: true
                 GOOS: darwin
                 GOARCH: arm64
@@ -147,8 +147,8 @@ extends:
                 dir
                 azd-windows-arm64.exe version
               Variables:
-                BuildTarget: ${{ parameters.sanitizedExtensionId }}-windows-arm64.exe
-                BuildOutputName: ${{ parameters.sanitizedExtensionId }}-windows-arm64.exe
+                BuildTarget: ${{ variables.sanitizedExtensionId }}-windows-arm64.exe
+                BuildOutputName: ${{ variables.sanitizedExtensionId }}-windows-arm64.exe
                 GOOS: windows
                 GOARCH: arm64
 

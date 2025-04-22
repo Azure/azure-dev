@@ -24,6 +24,8 @@ stages:
               Variables: ${{ build.value.Variables }}
               AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
 
+      # TODO: Cross build pipelines for ARM64
+
       - job: GenerateReleaseArtifacts
         pool:
           name: $(LINUXPOOL)
@@ -32,23 +34,18 @@ stages:
 
         steps:
           - checkout: self
-
-          - template: /eng/pipelines/templates/steps/setup-go.yml
-
-          - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
-
-          - task: PowerShell@2
-            inputs:
-              pwsh: true
-              targetType: filePath
-              filePath: eng/scripts/Set-CliVersionVariable.ps1
-            displayName: Set CLI_VERSION
+          # TODO: DRY this up
+          - pwsh: |
+              $extVersion = Get-Content ./version.txt
+              Write-Host "##vso[task.setvariable variable=EXT_VERSION;]$extVersion"
+            workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+            displayName: Set EXT_VERSION
 
           # Create release metadata
           - pwsh: |
               New-Item -ItemType Directory -Path release-metadata -Force
               # CLI Version may have been set by set-cli-version-cd.yml
-              $cliVersion = "$(CLI_VERSION)"
+              $extVersion = "$(EXT_VERSION)"
 
               # Given a package version and a configuration for AllowPrerelease, 
               # determine if the package should be submitted or not.
@@ -56,14 +53,14 @@ stages:
 
               try { 
                 $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
-                  -CliVersion "$(CLI_VERSION)" `
+                  -CliVersion "$(EXT_VERSION)" `
                   -AllowPrerelease:$false
               } catch { 
-                Write-Host "Package version is not valid: $(CLI_VERSION). `$submitPackage is set to false."
+                Write-Host "Package version is not valid: $(EXT_VERSION). `$submitPackage is set to false."
               }
 
               $releaseMetadata = @{
-                cliVersion = $cliVersion;
+                extVersion = $extVersion;
               }
 
               Set-Content -Path release-metadata/metadata.json -Value ($releaseMetadata | ConvertTo-Json -Depth 100)

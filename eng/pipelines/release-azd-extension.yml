@@ -25,6 +25,7 @@ pr:
 parameters:
   - name: AzdExtensionId
     type: string
+    default: microsoft.azd.demo
   - name: AzdExtensionDirectory
     type: string
     # TODO: Root pipeline should specify this directory

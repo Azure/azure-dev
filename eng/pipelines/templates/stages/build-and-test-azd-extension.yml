@@ -24,6 +24,8 @@ stages:
               Variables: ${{ build.value.Variables }}
               AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
 
+      # TODO: Cross build pipelines for ARM64
+
       - job: GenerateReleaseArtifacts
         pool:
           name: $(LINUXPOOL)

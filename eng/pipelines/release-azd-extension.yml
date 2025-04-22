@@ -106,6 +106,7 @@ extends:
       - ${{ if ne(variables['Build.Reason'], 'Schedule') }}:
           - template: /eng/pipelines/templates/stages/sign-extension.yml
             parameters:
-              SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
+              # TODO: This should be a constant
+              SanitizedExtensionId: $(SanitizedExtensionId)
 
       #     - template: /eng/pipelines/templates/stages/publish.yml

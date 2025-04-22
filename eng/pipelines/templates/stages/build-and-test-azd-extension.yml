@@ -5,12 +5,66 @@ parameters:
     type: string
   - name: AzdExtensionDirectory
     type: string
-
+  - name: CrossCompileBuildMatrix
+    type: object
+    default:
+      LinuxARM64: 
+        Pool: $(LINUXPOOL)
+        OSVmImage: $(LINUXVMIMAGE)
+        OS: linux
+        ImageKey: image
+        ValidateCrossCompile: true
+        ValidateVm:
+          PoolName: $(ARMPOOL)
+          ImageName: $(LINUXARMVMIMAGE)
+          Os: linux
+        ValidationTask: bash
+        ValidationScript: ls -lah
+        Variables: 
+          BuildTarget: $(SanitizedExtensionId)-linux-arm64
+          BuildOutputName: azd
+          SetExecutableBit: true
+          GOOS: linux
+          GOARCH: arm64
+      MacARM64:
+        Pool: Azure Pipelines
+        OSVmImage: $(MACVMIMAGE)
+        OS: macOS
+        ImageKey: vmImage
+        Variables: 
+          BuildTarget: $(SanitizedExtensionId)-darwin-arm64
+          BuildOutputName: azd
+          SetExecutableBit: true
+          GOOS: darwin
+          GOARCH: arm64
+          # CGO_ENABLED is required on MacOS to cross-compile pkg/outil/osversion
+          CGO_ENABLED: 1
+      WindowsARM64:
+        Pool: $(WINDOWSPOOL)
+        OSVmImage: $(WINDOWSVMIMAGE)
+        OS: windows
+        ImageKey: image
+        ValidateCrossCompile: true
+        ValidateVm:
+          PoolName: $(ARMPOOL)
+          ImageName: $(WINDOWSARMVMIMAGE)
+          Os: windows
+        ValidationTask: script
+        ValidationScript: |
+          dir
+          $(SanitizedExtensionId)-windows-arm64.exe version
+        Variables:
+          BuildTarget: $(SanitizedExtensionId)-windows-arm64.exe
+          BuildOutputName: azd.exe
+          GOOS: windows
+          GOARCH: arm64
 stages:
   - stage: BuildAndTest
     variables:
       - template: /eng/pipelines/templates/variables/globals.yml
       - template: /eng/pipelines/templates/variables/image.yml
+      - name: SanitizedExtensionId
+        value: ${{ replace(parameters.AzdExtensionId, '.', '-') }}
     jobs:
       - ${{ each build in parameters.BuildMatrix }}:
           - template: /eng/pipelines/templates/jobs/build-azd-extension.yml
@@ -24,7 +78,20 @@ stages:
               Variables: ${{ build.value.Variables }}
               AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
 
-      # TODO: Cross build pipelines for ARM64
+      - ${{ each build in parameters.CrossBuildMatrix }}:
+        - template: /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
+          parameters:
+            NameSuffix: ${{ build.key }}
+            Pool: ${{ build.value.Pool }}
+            ImageKey: ${{ build.value.ImageKey }}
+            OSVmImage: ${{ build.value.OSVmImage }}
+            OS: ${{ build.value.OS }}
+            Variables: ${{ build.value.Variables }}
+            ValidateCrossCompile: ${{ build.value.ValidateCrossCompile }}
+            ValidateVm: ${{ build.value.ValidateVm }}
+            ValidationTask: ${{ build.value.ValidationTask }}
+            ValidationScript: ${{ build.value.ValidationScript }}
+            AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
 
       - job: GenerateReleaseArtifacts
         pool:

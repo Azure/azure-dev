@@ -15,6 +15,18 @@ parameters:
     default: {}
   - name: AzdExtensionDirectory
     type: string
+  - name: ValidateCrossCompile
+    type: boolean
+    default: false
+  - name: ValidateVm
+    type: object
+    default: {}
+  - name: ValidationTask
+    type: string
+    default: script
+  - name: ValidationScript
+    type: string
+    default: echo "validation script goes here"; exit 1;
 
 jobs:
   - job: CrossBuildCLI_${{ parameters.NameSuffix }}
@@ -37,26 +49,12 @@ jobs:
         parameters:
           Condition: false
 
-      # Installing goversioninfo on x86_64 Windows with GOARCH set to another
-      # arch will compile goversioninfo for that architecture and it won't run
-      # on the x86_64 host.
-      # Ensure that a compatible version of goversioninfo is installed.
+      # TODO: DRY this up, also incorporate CI/"daily" builds
       - pwsh: |
-          # Set GOARCH for the current session
-          $env:GOARCH="amd64"
-          go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.0
-          Get-ChildItem -Path (Join-Path (go env GOPATH) "bin") -Recurse | ForEach-Object { Write-Host $_.FullName }
-        condition: and(succeeded(), eq(variables['GOOS'], 'windows'))
-        displayName: Install goversioninfo (Windows x86_64)
-
-      - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
-
-      - task: PowerShell@2
-        inputs:
-          pwsh: true
-          targetType: filePath
-          filePath: eng/scripts/Set-CliVersionVariable.ps1
-        displayName: Set CLI_VERSION
+          $extVersion = Get-Content ./version.txt
+          Write-Host "##vso[task.setvariable variable=EXT_VERSION;]$extVersion"
+        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        displayName: Set EXT_VERSION
 
       - task: PowerShell@2
         inputs:
@@ -64,18 +62,15 @@ jobs:
           targetType: filePath
           filePath: ${{ parameters.AzdExtensionDirectory }}/ci-build.ps1
           arguments: >-
-            -Version $(CLI_VERSION)
+            -Version $(EXT_VERSION)
             -SourceVersion $(Build.SourceVersion)
+            -OutputFileName $(BuildTarget)
           workingDirectory: ${{ parameters.AzdExtensionDirectory }}
         displayName: Build Go Binary (cross compile)
 
-      - pwsh: file azd
+      - pwsh: file $(BuildTarget)
         workingDirectory: ${{ parameters.AzdExtensionDirectory }}
         displayName: Get file info
-
-      - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
-        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
-        displayName: Rename binaries
 
       - bash: chmod +x $(BuildTarget)
         condition: and(succeeded(), eq(variables['SetExecutableBit'], 'true'))
@@ -88,21 +83,31 @@ jobs:
         workingDirectory: ${{ parameters.AzdExtensionDirectory }}
         displayName: Copy binary to artifact staging directory
 
-      - template: /eng/pipelines/templates/steps/build-linux-packages.yml
-        parameters:
-          Architecture: arm64
-          Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
-
     templateContext:
       outputs:
         - output: pipelineArtifact
           path: $(Build.ArtifactStagingDirectory)/build-output
           artifact: $(BuildTarget)
           condition: succeeded()
-          displayName: Upload azd binary to artifact store
+          displayName: Upload azd extension binary to artifact store
 
-        - output: pipelineArtifact
-          path: cli/installer/fpm/artifact
-          artifact: linux-packages-arm64
-          condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
-          displayName: Upload linux packages to artifact store
+  - ${{ if parameters.ValidateCrossCompile }}:
+    - job: ValidateCrossCompile_${{ parameters.NameSuffix }}
+      displayName: ValidateCrossCompile ${{ parameters.NameSuffix }}
+      dependsOn: CrossBuildCLI_${{ parameters.NameSuffix }}
+
+      pool:
+        name: ${{ parameters.ValidateVm.Pool }}
+        ${{ parameters.ValidateVm.ImageKey }}: ${{ parameters.ValidateVm.OSVmImage }}
+        os: ${{ parameters.ValidateVm.OS }}
+
+      steps:
+        - checkout: none
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: ${{ parameters.Variables.BuildTarget }}
+            targetPath: $(Build.SourcesDirectory)
+          
+        - ${{ parameters.ValidationTask }}: ${{ parameters.ValidationScript }}
+          displayName: Validate cross-compiled binary

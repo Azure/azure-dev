@@ -32,7 +32,7 @@ parameters:
     default: cli/azd/extensions/microsoft.azd.demo
 
 variables:
-  - name: sanitizedExtensionId
+  - name: SanitizedExtensionId
     value: ${{ replace(parameters.AzdExtensionId, '.', '-') }}
 
 extends:
@@ -51,8 +51,8 @@ extends:
               ImageKey: image
               UploadArtifact: true
               Variables:
-                BuildTarget: $(sanitizedExtensionId)-windows-amd64.exe
-                BuildOutputName: $(sanitizedExtensionId)-windows-amd64.exe
+                BuildTarget: $(SanitizedExtensionId)-windows-amd64.exe
+                BuildOutputName: $(SanitizedExtensionId)-windows-amd64.exe
                 AZURE_DEV_CI_OS: win
                 Codeql.Enabled: true
                 Codeql.SkipTaskAutoInjection: false
@@ -64,8 +64,8 @@ extends:
               ImageKey: image
               UploadArtifact: true
               Variables:
-                BuildTarget: $(sanitizedExtensionId)-linux-amd64
-                BuildOutputName: $(sanitizedExtensionId)-linux-amd64
+                BuildTarget: $(SanitizedExtensionId)-linux-amd64
+                BuildOutputName: $(SanitizedExtensionId)-linux-amd64
                 SetExecutableBit: true
                 SetShieldInfo: true
                 BuildLinuxPackages: true
@@ -80,8 +80,8 @@ extends:
               ImageKey: vmImage
               UploadArtifact: true
               Variables:
-                BuildTarget: $(sanitizedExtensionId)-darwin-amd64
-                BuildOutputName: $(sanitizedExtensionId)-darwin-amd64
+                BuildTarget: $(SanitizedExtensionId)-darwin-amd64
+                BuildOutputName: $(SanitizedExtensionId)-darwin-amd64
                 MacLocalSign: false
                 SetExecutableBit: true
                 AZURE_DEV_CI_OS: mac
@@ -97,8 +97,8 @@ extends:
                 ImageKey: vmImage
                 UploadArtifact: false
                 Variables:
-                  BuildTarget: $(sanitizedExtensionId)-darwin-amd64
-                  BuildOutputName: $(sanitizedExtensionId)-darwin-amd64
+                  BuildTarget: $(SanitizedExtensionId)-darwin-amd64
+                  BuildOutputName: $(SanitizedExtensionId)-darwin-amd64
                   MacLocalSign: false
                   SetExecutableBit: true
                   AZURE_DEV_CI_OS: mac-arm64

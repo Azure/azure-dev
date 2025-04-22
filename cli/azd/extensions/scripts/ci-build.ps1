@@ -3,7 +3,8 @@ param(
     [string] $SourceVersion = (git rev-parse HEAD),
     [switch] $CodeCoverageEnabled,
     [switch] $BuildRecordMode,
-    [string] $MSYS2Shell # path to msys2_shell.cmd
+    [string] $MSYS2Shell, # path to msys2_shell.cmd
+    [string] $OutputFileName
 )
 $PSNativeCommandArgumentPassing = 'Legacy'
 
@@ -102,10 +103,14 @@ elseif ($IsMacOS) {
     Write-Host "Building for macOS"
 }
 
+# Add output file flag based on specified output file name
+$outputFlag = "-o=$OutputFileName"
+
 # collect flags
 $buildFlags += @(
     $tagsFlag,
-    $ldFlag
+    $ldFlag,
+    $outputFlag
 )
 
 function PrintFlags() {
@@ -143,41 +148,44 @@ try {
     Write-Host "Running: go build ``"
     PrintFlags -flags $buildFlags
     go build @buildFlags
-    if ($BuildRecordMode) {
-        $recordFlagPresent = $false
-        for ($i = 0; $i -lt $buildFlags.Length; $i++) {
-            if ($buildFlags[$i].StartsWith("-tags=")) {
-                $recordFlagPresent = $true
-                $buildFlags[$i] += ",record"
-            }
-        }
-
-        if (-not $recordFlagPresent) {
-            $buildFlags[$i] += "-tags=record"
-        }
-
-        $outputFlag = "-o=azd-record"
-        if ($IsWindows) {
-            $outputFlag += ".exe"
-        }
-        $buildFlags += $outputFlag
-
-        Write-Host "Running: go build (record) ``"
-        PrintFlags -flags $buildFlags
-        go build @buildFlags
-    }
-
     if ($LASTEXITCODE) {
         Write-Host "Error running go build"
         exit $LASTEXITCODE
     }
+
+    if ($BuildRecordMode) {
+        # Modify build tags to include record
+        $recordTagPatched = $false
+        for ($i = 0; $i -lt $buildFlags.Length; $i++) {
+            if ($buildFlags[$i].StartsWith("-tags=")) {
+                $buildFlags[$i] += ",record"
+                $recordTagPatched = $true
+            }
+        }
+        if (-not $recordTagPatched) {
+            $buildFlags += "-tags=record"
+        }
+        # Add output file flag for record mode
+        $recordOutput = "-o=$OutputFileName-record"
+        if ($IsWindows) { $recordOutput += ".exe" }
+        $buildFlags += $recordOutput
+
+        Write-Host "Running: go build (record) ``"
+        PrintFlags -flags $buildFlags
+        go build @buildFlags
+        if ($LASTEXITCODE) {
+            Write-Host "Error running go build (record)"
+            exit $LASTEXITCODE
+        }
+    }
+
     Write-Host "go build succeeded"
 
     if ($IsWindows) {
         Write-Host "Windows exe file version info"
-        $azdExe = Get-Item azd.exe
-        Write-Host "File Version: $($azdExe.VersionInfo.FileVersionRaw)"
-        Write-Host "Product Version: $($azdExe.VersionInfo.ProductVersionRaw)"
+        $extensionExe = Get-Item $OutputFileName
+        Write-Host "File Version: $($extensionExe.VersionInfo.FileVersionRaw)"
+        Write-Host "Product Version: $($extensionExe.VersionInfo.ProductVersionRaw)"
     }
 }
 finally {

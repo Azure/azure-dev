@@ -61,6 +61,7 @@ jobs:
           targetType: filePath
           filePath: cli/azd/extensions/scripts/ci-build.ps1
           arguments: >-
+            -OutputName $(BuildOutputName)
             -Version $(CLI_VERSION)
             -SourceVersion $(Build.SourceVersion)
             -CodeCoverageEnabled
@@ -131,16 +132,11 @@ jobs:
           targetType: filePath
           filePath: cli/azd/extensions/scripts/ci-build.ps1
           arguments: >-
+            -OutputName $(BuildOutputName)
             -Version $(CLI_VERSION)
             -SourceVersion $(Build.SourceVersion)
           workingDirectory: ${{ parameters.AzdExtensionDirectory }}
         displayName: Build Go Binary
-
-      - pwsh: |
-          Write-Host "Move-Item $(BuildOutputName) $(BuildTarget)"
-          Move-Item $(BuildOutputName) $(BuildTarget)
-        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
-        displayName: Rename binaries
 
       - bash: chmod +x $(BuildTarget)
         condition: and(succeeded(), eq(variables['SetExecutableBit'], 'true'))

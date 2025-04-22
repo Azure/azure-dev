@@ -137,6 +137,14 @@ stages:
               Set-Content -Path release-metadata/metadata.json -Value ($releaseMetadata | ConvertTo-Json -Depth 100)
             displayName: Create release metadata
 
+          - pwsh: |
+              Copy-Item ${{ parameters.AzdExtensionDirectory }}/extension.yaml release-metadata/extension.yaml
+            displayName: Copy extension.yaml to release-metadata
+
+          - pwsh: |
+              Copy-Item NOTICE.txt release-metadata/NOTICE.txt
+            displayName: Copy NOTICE.txt to release-metadata
+
         templateContext:
           outputs:
             - output: pipelineArtifact

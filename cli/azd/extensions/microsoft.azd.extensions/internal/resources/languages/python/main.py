@@ -1,9 +1,7 @@
 import sys, os
 
 BASE_DIR = os.path.dirname(__file__)
-# 先加项目根目录（用于找到 azd_client.py）
 sys.path.insert(0, BASE_DIR)
-# 再加 generated_proto 目录（用于找到 *_pb2.py/_pb2_grpc.py）
 sys.path.insert(0, os.path.join(BASE_DIR, "generated_proto"))
 
 import asyncio

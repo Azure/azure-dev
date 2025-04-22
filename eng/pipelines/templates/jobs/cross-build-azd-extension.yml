@@ -95,6 +95,7 @@ jobs:
     - job: ValidateCrossCompile_${{ parameters.NameSuffix }}
       displayName: ValidateCrossCompile ${{ parameters.NameSuffix }}
       dependsOn: CrossBuildCLI_${{ parameters.NameSuffix }}
+      condition: and(succeeded(), ne('true', variables['Skip.CrossCompileValidation']))
 
       pool:
         name: ${{ parameters.ValidateVm.PoolName }}

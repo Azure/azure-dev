@@ -31,6 +31,7 @@ parameters:
         OSVmImage: $(MACVMIMAGE)
         OS: macOS
         ImageKey: vmImage
+        ValidateCrossCompile: false
         Variables: 
           BuildTarget: $(SanitizedExtensionId)-darwin-arm64
           BuildOutputName: azd

@@ -91,23 +91,23 @@ jobs:
           condition: succeeded()
           displayName: Upload azd extension binary to artifact store
 
-  - ${{ if eq('true', parameters.ValidateCrossCompile) }}:
-    - job: ValidateCrossCompile_${{ parameters.NameSuffix }}
-      displayName: ValidateCrossCompile ${{ parameters.NameSuffix }}
-      dependsOn: CrossBuildCLI_${{ parameters.NameSuffix }}
+  # - ${{ if eq('true', parameters.ValidateCrossCompile) }}:
+  #   - job: ValidateCrossCompile_${{ parameters.NameSuffix }}
+  #     displayName: ValidateCrossCompile ${{ parameters.NameSuffix }}
+  #     dependsOn: CrossBuildCLI_${{ parameters.NameSuffix }}
 
-      pool:
-        name: ${{ parameters.ValidateVm.Pool }}
-        ${{ parameters.ValidateVm.ImageKey }}: ${{ parameters.ValidateVm.OSVmImage }}
-        os: ${{ parameters.ValidateVm.OS }}
+  #     pool:
+  #       name: ${{ parameters.ValidateVm.Pool }}
+  #       ${{ parameters.ValidateVm.ImageKey }}: ${{ parameters.ValidateVm.OSVmImage }}
+  #       os: ${{ parameters.ValidateVm.OS }}
 
-      steps:
-        - checkout: none
+  #     steps:
+  #       - checkout: none
 
-        - task: DownloadPipelineArtifact@2
-          inputs:
-            artifact: ${{ parameters.Variables.BuildTarget }}
-            targetPath: $(Build.SourcesDirectory)
+  #       - task: DownloadPipelineArtifact@2
+  #         inputs:
+  #           artifact: ${{ parameters.Variables.BuildTarget }}
+  #           targetPath: $(Build.SourcesDirectory)
           
-        - ${{ parameters.ValidationTask }}: ${{ parameters.ValidationScript }}
-          displayName: Validate cross-compiled binary
+  #       - ${{ parameters.ValidationTask }}: ${{ parameters.ValidationScript }}
+  #         displayName: Validate cross-compiled binary

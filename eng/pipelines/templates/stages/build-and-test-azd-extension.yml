@@ -5,7 +5,7 @@ parameters:
     type: string
   - name: AzdExtensionDirectory
     type: string
-  - name: CrossCompileBuildMatrix
+  - name: CrossBuildMatrix
     type: object
     default:
       LinuxARM64: 

@@ -61,7 +61,7 @@ jobs:
           targetType: filePath
           filePath: cli/azd/extensions/scripts/ci-build.ps1
           arguments: >-
-            -OutputName $(BuildOutputName)
+            -OutputName $(BuildTarget)
             -Version $(CLI_VERSION)
             -SourceVersion $(Build.SourceVersion)
             -CodeCoverageEnabled
@@ -132,7 +132,7 @@ jobs:
           targetType: filePath
           filePath: cli/azd/extensions/scripts/ci-build.ps1
           arguments: >-
-            -OutputName $(BuildOutputName)
+            -OutputName $(BuildTarget)
             -Version $(CLI_VERSION)
             -SourceVersion $(Build.SourceVersion)
           workingDirectory: ${{ parameters.AzdExtensionDirectory }}

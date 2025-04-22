@@ -16,50 +16,6 @@ if ($LASTEXITCODE) {
     exit $LASTEXITCODE
 }
 
-# On Windows, use the goversioninfo tool to embed the version information into the executable.
-if ($IsWindows) {
-    Write-Host "Windows build, set version info and run 'go generate'"
-    if (! (Get-Command "goversioninfo" -ErrorAction SilentlyContinue)) {
-        Write-Host "goversioninfo not found, installing"
-        go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.0
-
-        try {
-            Get-Command "goversioninfo" -ErrorAction Stop
-        }
-        catch {
-            Write-Host "Could not find goversioninfo after installing"
-            Write-Host "Environment PATH: $env:PATH"
-            Get-ChildItem -Path (Join-Path (go env GOPATH) "bin") | ForEach-Object { Write-Host $_.FullName }
-        }
-    }
-
-    $VERSION_INFO_PATH = "$PSScriptRoot/versioninfo.json"
-
-    $exeFileVersion = ."$PSScriptRoot/../../eng/scripts/Get-MsiVersion.ps1" -CliVersion $Version
-    $splitExeFileVersion = $exeFileVersion -split '\.'
-    $versionInfo = Get-Content $VERSION_INFO_PATH | ConvertFrom-Json
-
-    $versionInfo.FixedFileInfo.FileVersion.Major = [int]$splitExeFileVersion[0]
-    $versionInfo.FixedFileInfo.FileVersion.Minor = [int]$splitExeFileVersion[1]
-    $versionInfo.FixedFileInfo.FileVersion.Patch = [int]$splitExeFileVersion[2]
-    $versionInfo.FixedFileInfo.FileVersion.Build = 0
-
-    # Product verison is the same as the file version
-    $versioninfo.FixedFileInfo.ProductVersion = $versionInfo.FixedFileInfo.FileVersion
-
-    $versionInfo.StringFileInfo.ProductVersion = $Version
-
-    $versionInfoJson = ConvertTo-Json $versionInfo -Depth 10
-    Set-Content $VERSION_INFO_PATH $versionInfoJson
-    Write-Host "go generate"
-    go generate
-    if ($LASTEXITCODE) {
-        Write-Host "Error running go generate"
-        exit $LASTEXITCODE
-    }
-    Write-Host "go generate succeeded"
-}
-
 # Run `go help build` to obtain detailed information about `go build` flags.
 $buildFlags = @(
     # remove all file system paths from the resulting executable.
@@ -90,6 +46,8 @@ $tagsFlag = "-tags=cfi,cfg,osusergo"
 # -s: Omit symbol table and debug information
 # -w: Omit DWARF symbol table
 # -X: Set variable at link time. Used to set the version in source.
+
+# TODO: set version properly
 $ldFlag = "-ldflags=-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)' "
 
 if ($IsWindows) {
@@ -180,13 +138,6 @@ try {
     }
 
     Write-Host "go build succeeded"
-
-    if ($IsWindows) {
-        Write-Host "Windows exe file version info"
-        $extensionExe = Get-Item $OutputFileName
-        Write-Host "File Version: $($extensionExe.VersionInfo.FileVersionRaw)"
-        Write-Host "Product Version: $($extensionExe.VersionInfo.ProductVersionRaw)"
-    }
 }
 finally {
     $env:GOEXPERIMENT = $oldGOEXPERIMENT

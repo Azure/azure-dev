@@ -27,6 +27,8 @@ parameters:
     type: string
   - name: AzdExtensionDirectory
     type: string
+    # TODO: Root pipeline should specify this directory
+    default: cli/azd/extensions/microsoft.azd.demo
 
 variables:
   - name: sanitizedExtensionId
@@ -99,15 +101,6 @@ extends:
                   MacLocalSign: false
                   SetExecutableBit: true
                   AZURE_DEV_CI_OS: mac-arm64
-
-      - template: /eng/pipelines/templates/stages/code-coverage-upload.yml
-        parameters:
-          DownloadArtifacts:
-            - cover-win
-            - cover-lin
-            - cover-mac
-            - ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
-                - cover-mac-arm64
 
       # - ${{ if ne(variables['Build.Reason'], 'Schedule') }}:
       #     - template: /eng/pipelines/templates/stages/sign.yml

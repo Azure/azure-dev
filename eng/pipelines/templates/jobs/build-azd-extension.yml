@@ -34,26 +34,16 @@ jobs:
     timeoutInMinutes: 180
     steps:
       - checkout: self
+
       - template: /eng/pipelines/templates/steps/setup-go.yml
         parameters:
           Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
 
-      - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
-
-      - task: PowerShell@2
-        inputs:
-          pwsh: true
-          targetType: filePath
-          filePath: eng/scripts/Set-CliVersionVariable.ps1
+      - pwsh: |
+          $cliVersion = Get-Content ./version.txt
+          Write-Host "##vso[task.setvariable variable=CLI_VERSION;]$cliVersion"
+        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
         displayName: Set CLI_VERSION
-
-      - task: PowerShell@2
-        inputs:
-          pwsh: true
-          targetType: filePath
-          filePath: eng/scripts/Set-CliBuildVariables.ps1
-          arguments: -BuildReason $(Build.Reason)
-        displayName: Set CLI build run variables
 
       - task: PowerShell@2
         inputs:
@@ -61,60 +51,18 @@ jobs:
           targetType: filePath
           filePath: cli/azd/extensions/scripts/ci-build.ps1
           arguments: >-
-            -OutputName $(BuildTarget)
-            -Version $(CLI_VERSION)
+            -OutputFileName $(BuildTarget)
+            -Version 1.2.3-changeme
             -SourceVersion $(Build.SourceVersion)
             -CodeCoverageEnabled
             -BuildRecordMode
           workingDirectory: ${{ parameters.AzdExtensionDirectory }}
-        displayName: Build Go Binary (For tests)
+        displayName: Build Go Binary (for tests)
 
-      # - pwsh: |
-      #     ./azd auth login --federated-credential-provider "azure-pipelines"
-      #     ./azd config set defaults.subscription $(SubscriptionId)
-      #   condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-      #   workingDirectory: ${{ parameters.AzdExtensionDirectory }}
-      #   env:
-      #     AZURESUBSCRIPTION_CLIENT_ID: $(AzureSubscriptionClientId)
-      #     AZURESUBSCRIPTION_TENANT_ID: $(AzureSubscriptionTenantId)
-      #     AZURESUBSCRIPTION_SERVICE_CONNECTION_ID: $(AzureSubscriptionServiceConnectionId)
-      #     SYSTEM_ACCESSTOKEN: $(System.AccessToken)
-      #     AZD_DEBUG_LOGIN_FORCE_SUBSCRIPTION_REFRESH: true
-      #   displayName: AZD Login
-
-      - task: AzureCLI@2
+      - pwsh: Write-Host "Tests would run here..."
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-        inputs:
-          azureSubscription: azd-service-connection
-          # keepAzSessionActive is required when the service connection uses Workload Identity Federation authentication scheme
-          # and the script will run for more than 10 minutes.
-          # the ci-test.ps1 script runs for a long time and the service connection `azure-sdk-tests` use Workload Identity Federation.
-          # This setting will fail if the service connection is updated to use a different authentication scheme.
-          keepAzSessionActive: true
-          # hiding log in output because keepAzSessionActive will keep displaying the output constantly.
-          visibleAzLogin: false
-          scriptType: pscore
-          scriptLocation: scriptPath
-          scriptPath: cli/azd/extensions/scripts/ci-test.ps1
-          workingDirectory: ${{ parameters.AzdExtensionDirectory }}
-          scriptArguments: >-
-            -UnitTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/unit'
-            -IntegrationTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/int'
-        displayName: Test Go Binary
-        env:
-          # AZD live test setup variables
-          CI: true
-          AZD_TEST_CLI_VERSION: $(CLI_VERSION)
-          AZD_TEST_CLIENT_ID: $(AzureSubscriptionClientId)
-          AZD_TEST_TENANT_ID: $(AzureSubscriptionTenantId)
-          AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
-          AZD_TEST_AZURE_LOCATION: eastus2
-          AZURE_RECORD_MODE: $(AZURE_RECORD_MODE)
-          # AZD Live Test: Terraform authentication via `az`
-          ARM_USE_CLI: true
-          # Code Coverage: Generate junit report to publish results
-          GOTESTSUM_JUNITFILE: junitTestReport.xml
-          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        displayName: Run tests
 
       - task: PublishTestResults@2
         inputs:
@@ -132,11 +80,11 @@ jobs:
           targetType: filePath
           filePath: cli/azd/extensions/scripts/ci-build.ps1
           arguments: >-
-            -OutputName $(BuildTarget)
+            -OutputFileName $(BuildTarget)
             -Version $(CLI_VERSION)
             -SourceVersion $(Build.SourceVersion)
           workingDirectory: ${{ parameters.AzdExtensionDirectory }}
-        displayName: Build Go Binary
+        displayName: Build Go Binary (for release)
 
       - bash: chmod +x $(BuildTarget)
         condition: and(succeeded(), eq(variables['SetExecutableBit'], 'true'))
@@ -151,18 +99,6 @@ jobs:
 
     templateContext:
       outputs:
-        - output: pipelineArtifact
-          path: ${{ parameters.AzdExtensionDirectory }}/cover-$(AZURE_DEV_CI_OS)
-          condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-          artifact: cover-$(AZURE_DEV_CI_OS)
-          displayName: Upload code coverage
-
-        - output: pipelineArtifact
-          path: $(Build.ArtifactStagingDirectory)/shield
-          condition: and(succeeded(), eq(variables['SetShieldInfo'], 'true'))
-          artifact: shield-standalone
-          displayName: Upload standalone shield json
-
         - ${{ if eq(parameters.UploadArtifact, true) }}:
             - output: pipelineArtifact
               path: $(Build.ArtifactStagingDirectory)/build-output

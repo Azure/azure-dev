@@ -91,7 +91,7 @@ jobs:
           condition: succeeded()
           displayName: Upload azd extension binary to artifact store
 
-  - ${{ if parameters.ValidateCrossCompile }}:
+  - ${{ if eq('true', parameters.ValidateCrossCompile) }}:
     - job: ValidateCrossCompile_${{ parameters.NameSuffix }}
       displayName: ValidateCrossCompile ${{ parameters.NameSuffix }}
       dependsOn: CrossBuildCLI_${{ parameters.NameSuffix }}

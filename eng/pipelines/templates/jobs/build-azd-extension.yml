@@ -49,7 +49,7 @@ jobs:
         inputs:
           pwsh: true
           targetType: filePath
-          filePath: cli/azd/extensions/scripts/ci-build.ps1
+          filePath: ${{ parameters.AzdExtensionDirectory }}/ci-build.ps1
           arguments: >-
             -OutputFileName $(BuildTarget)
             -Version $(EXT_VERSION)
@@ -78,7 +78,7 @@ jobs:
         inputs:
           pwsh: true
           targetType: filePath
-          filePath: cli/azd/extensions/scripts/ci-build.ps1
+          filePath: ${{ parameters.AzdExtensionDirectory }}/ci-build.ps1
           arguments: >-
             -OutputFileName $(BuildTarget)
             -Version $(EXT_VERSION)

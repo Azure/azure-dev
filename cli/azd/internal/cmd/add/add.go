@@ -303,20 +303,31 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		"\nRun '%s' to add a secret to the key vault.",
 		output.WithHighLightFormat("azd env set-secret <name>"))
 
-	if _, err := pathHasInfraModule(infraRoot, prjConfig.Infra.Module); err == nil {
-		followUpMessage = fmt.Sprintf(
-			"Run '%s' to re-synthesize the infrastructure, "+
-				"then run '%s' to provision these changes anytime later.",
-			output.WithHighLightFormat("azd infra synth"),
-			output.WithHighLightFormat("azd provision"))
-		if addedKeyVault {
-			followUpMessage += keyVaultFollowUpMessage
+	path := []string{
+		infraRoot,
+		filepath.Join(infraRoot, "app")}
+
+	for _, p := range path {
+		if _, err := pathHasInfraModule(p, prjConfig.Infra.Module); err == nil {
+			if _, err := os.Stat(filepath.Join(p, ".azd")); err == nil {
+				followUpMessage = fmt.Sprintf(
+					"Run '%s' to re-synthesize the infrastructure, "+
+						"then run '%s' to provision these changes anytime later.",
+					output.WithHighLightFormat("azd infra synth"),
+					output.WithHighLightFormat("azd provision"))
+				if addedKeyVault {
+					followUpMessage += keyVaultFollowUpMessage
+				}
+
+				return &actions.ActionResult{
+					Message: &actions.ResultMessage{
+						FollowUp: followUpMessage,
+					},
+				}, err
+			}
+		} else {
+			break
 		}
-		return &actions.ActionResult{
-			Message: &actions.ResultMessage{
-				FollowUp: followUpMessage,
-			},
-		}, err
 	}
 
 	verb := "provision"

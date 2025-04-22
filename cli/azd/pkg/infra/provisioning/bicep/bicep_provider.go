@@ -489,8 +489,7 @@ func moduleDisplayNameFromPaths(modulePath string, rootModulePath string) string
 	}
 
 	subModulePath := moduleDir[len(rootModuleDir):]
-	rootModuleBase := filepath.Base(rootModuleDir)
-	return filepath.ToSlash(filepath.Join(rootModuleBase, subModulePath))
+	return filepath.ToSlash(filepath.Join(defaultPath, subModulePath))
 }
 
 // deploymentState returns the latests deployment if it is the same as the deployment within deploymentData or an error
@@ -2069,7 +2068,7 @@ func (p *BicepProvider) rootModulePath() string {
 	return filepath.Join(infraRoot, moduleFilename)
 }
 
-// Returns the path to the module file located in infra/azd, if it exists.
+// Returns the path to the module file located in infra/app, if it exists.
 // An empty string is returned if the file does not exist.
 func (p *BicepProvider) azdModulePath() string {
 	infraRoot := p.options.Path

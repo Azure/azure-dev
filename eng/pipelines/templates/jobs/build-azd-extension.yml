@@ -41,9 +41,9 @@ jobs:
 
       - pwsh: |
           $cliVersion = Get-Content ./version.txt
-          Write-Host "##vso[task.setvariable variable=CLI_VERSION;]$cliVersion"
+          Write-Host "##vso[task.setvariable variable=EXT_VERSION;]$cliVersion"
         workingDirectory: ${{ parameters.AzdExtensionDirectory }}
-        displayName: Set CLI_VERSION
+        displayName: Set EXT_VERSION
 
       - task: PowerShell@2
         inputs:
@@ -52,7 +52,7 @@ jobs:
           filePath: cli/azd/extensions/scripts/ci-build.ps1
           arguments: >-
             -OutputFileName $(BuildTarget)
-            -Version 1.2.3-changeme
+            -Version $(EXT_VERSION)
             -SourceVersion $(Build.SourceVersion)
             -CodeCoverageEnabled
             -BuildRecordMode
@@ -81,7 +81,7 @@ jobs:
           filePath: cli/azd/extensions/scripts/ci-build.ps1
           arguments: >-
             -OutputFileName $(BuildTarget)
-            -Version $(CLI_VERSION)
+            -Version $(EXT_VERSION)
             -SourceVersion $(Build.SourceVersion)
           workingDirectory: ${{ parameters.AzdExtensionDirectory }}
         displayName: Build Go Binary (for release)

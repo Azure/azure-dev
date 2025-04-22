@@ -18,7 +18,8 @@ stages:
           os: windows
 
         steps:
-          - checkout: none
+          # Checkout required for CredScanSuppression.json
+          - checkout: self
 
           - task: DownloadPipelineArtifact@2
             inputs:
@@ -89,7 +90,8 @@ stages:
           os: windows
 
         steps:
-          - checkout: none
+          # Checkout required for CredScanSuppression.json
+          - checkout: self
 
           - task: DownloadPipelineArtifact@2
             inputs:

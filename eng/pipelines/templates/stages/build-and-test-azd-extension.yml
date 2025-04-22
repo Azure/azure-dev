@@ -19,7 +19,10 @@ parameters:
           ImageName: $(LINUXARMVMIMAGE)
           Os: linux
         ValidationTask: bash
-        ValidationScript: ls -lah
+        ValidationScript: |
+          ls -lah 
+          chmod +x $(SanitizedExtensionId)-linux-arm64
+          ./$(SanitizedExtensionId)-linux-arm64 version
         Variables: 
           BuildTarget: $(SanitizedExtensionId)-linux-arm64
           BuildOutputName: azd

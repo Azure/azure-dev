@@ -97,9 +97,9 @@ jobs:
       dependsOn: CrossBuildCLI_${{ parameters.NameSuffix }}
 
       pool:
-        name: ${{ parameters.ValidateVm.Pool }}
-        ${{ parameters.ValidateVm.ImageKey }}: ${{ parameters.ValidateVm.OSVmImage }}
-        os: ${{ parameters.ValidateVm.OS }}
+        name: ${{ parameters.ValidateVm.PoolName }}
+        image: ${{ parameters.ValidateVm.ImageName }}
+        os: ${{ parameters.ValidateVm.Os }}
 
       steps:
         - checkout: none

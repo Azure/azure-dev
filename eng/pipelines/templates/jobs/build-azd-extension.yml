@@ -39,9 +39,10 @@ jobs:
         parameters:
           Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
 
+      # TODO: DRY this up, also incorporate CI/"daily" builds
       - pwsh: |
-          $cliVersion = Get-Content ./version.txt
-          Write-Host "##vso[task.setvariable variable=EXT_VERSION;]$cliVersion"
+          $extVersion = Get-Content ./version.txt
+          Write-Host "##vso[task.setvariable variable=EXT_VERSION;]$extVersion"
         workingDirectory: ${{ parameters.AzdExtensionDirectory }}
         displayName: Set EXT_VERSION
 

@@ -3,7 +3,7 @@ parameters:
     type: string
 
 stages:
-  - stage: PublishExtension_
+  - stage: PublishExtension_${{ parameters.SanitizedExtensionId }}
     dependsOn: Sign
     condition: >-
       and(

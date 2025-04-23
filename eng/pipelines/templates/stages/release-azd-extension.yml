@@ -1,112 +1,84 @@
-# Continuous deployment trigger
-trigger:
-  branches:
-    include:
-      - main
-  paths:
-    include:
-      - go.mod
-      - cli/azd/extensions/
-      - eng/pipelines/release-azd-extension.yml
-      - /eng/pipelines/templates/jobs/build-azd-extension.yml
-      - /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
-      - /eng/pipelines/templates/variables/image.yml
-
-pr:
-  paths:
-    include:
-      - go.mod
-      - cli/azd/extensions/
-      - eng/pipelines/release-azd-extension.yml
-      - eng/pipelines/templates/steps/publish-cli.yml
-    exclude:
-      - cli/azd/docs/**
-
 parameters:
   - name: AzdExtensionId
     type: string
   - name: AzdExtensionDirectory
     type: string
 
-variables:
-  - name: SanitizedExtensionId
-    value: ${{ replace(parameters.AzdExtensionId, '.', '-') }}
-
-extends:
-  template: /eng/pipelines/templates/stages/1es-redirect.yml
-  parameters:
-    stages:
-      - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
-        parameters:
-          AzdExtensionId: ${{ parameters.AzdExtensionId }}
-          AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
-          BuildMatrix:
-            Windows:
-              Pool: $(WINDOWSPOOL)
-              OSVmImage: $(WINDOWSVMIMAGE)
-              OS: windows
-              ImageKey: image
-              UploadArtifact: true
-              Variables:
-                BuildTarget: $(SanitizedExtensionId)-windows-amd64.exe
-                BuildOutputName: $(SanitizedExtensionId)-windows-amd64.exe
-                AZURE_DEV_CI_OS: win
-                Codeql.Enabled: true
-                Codeql.SkipTaskAutoInjection: false
-                Codeql.BuildIdentifier: cli_windows
-            Linux:
-              Pool: $(LINUXPOOL)
-              OSVmImage: $(LINUXVMIMAGE)
-              OS: linux
-              ImageKey: image
-              UploadArtifact: true
-              Variables:
-                BuildTarget: $(SanitizedExtensionId)-linux-amd64
-                BuildOutputName: $(SanitizedExtensionId)-linux-amd64
-                SetExecutableBit: true
-                SetShieldInfo: true
-                BuildLinuxPackages: true
-                AZURE_DEV_CI_OS: lin
-                Codeql.Enabled: true
-                Codeql.SkipTaskAutoInjection: false
-                Codeql.BuildIdentifier: cli_linux
-            Mac:
-              Pool: Azure Pipelines
-              OSVmImage: $(MACVMIMAGE)
-              OS: macOS
-              ImageKey: vmImage
-              UploadArtifact: true
-              Variables:
-                BuildTarget: $(SanitizedExtensionId)-darwin-amd64
-                BuildOutputName: $(SanitizedExtensionId)-darwin-amd64
-                MacLocalSign: false
-                SetExecutableBit: true
-                AZURE_DEV_CI_OS: mac
-                # CodeQL on macOS not supported by the Azure DevOps task as-of current.
-                # Codeql.BuildIdentifier: cli_darwin
-
-            ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
-              # Only run this build during scheduled pipeline executions
-              MacAppleSilicon:
+stages:
+  - template: /eng/pipelines/templates/stages/1es-redirect.yml
+    parameters:
+      stages:
+        - template: /eng/pipelines/templates/stages/build-and-test-azd-extension.yml
+          parameters:
+            AzdExtensionId: ${{ parameters.AzdExtensionId }}
+            AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
+            BuildMatrix:
+              Windows:
+                Pool: $(WINDOWSPOOL)
+                OSVmImage: $(WINDOWSVMIMAGE)
+                OS: windows
+                ImageKey: image
+                UploadArtifact: true
+                Variables:
+                  BuildTarget: ${{ parameters.SanitizedExtensionId }}-windows-amd64.exe
+                  BuildOutputName: ${{ parameters.SanitizedExtensionId }}-windows-amd64.exe
+                  AZURE_DEV_CI_OS: win
+                  Codeql.Enabled: true
+                  Codeql.SkipTaskAutoInjection: false
+                  Codeql.BuildIdentifier: cli_windows
+              Linux:
+                Pool: $(LINUXPOOL)
+                OSVmImage: $(LINUXVMIMAGE)
+                OS: linux
+                ImageKey: image
+                UploadArtifact: true
+                Variables:
+                  BuildTarget: ${{ parameters.SanitizedExtensionId }}-linux-amd64
+                  BuildOutputName: ${{ parameters.SanitizedExtensionId }}-linux-amd64
+                  SetExecutableBit: true
+                  SetShieldInfo: true
+                  BuildLinuxPackages: true
+                  AZURE_DEV_CI_OS: lin
+                  Codeql.Enabled: true
+                  Codeql.SkipTaskAutoInjection: false
+                  Codeql.BuildIdentifier: cli_linux
+              Mac:
                 Pool: Azure Pipelines
-                OSVmImage: $(MACVMIMAGEM1)
+                OSVmImage: $(MACVMIMAGE)
                 OS: macOS
                 ImageKey: vmImage
-                UploadArtifact: false
+                UploadArtifact: true
                 Variables:
-                  BuildTarget: $(SanitizedExtensionId)-darwin-amd64
-                  BuildOutputName: $(SanitizedExtensionId)-darwin-amd64
+                  BuildTarget: ${{ parameters.SanitizedExtensionId }}-darwin-amd64
+                  BuildOutputName: ${{ parameters.SanitizedExtensionId }}-darwin-amd64
                   MacLocalSign: false
                   SetExecutableBit: true
-                  AZURE_DEV_CI_OS: mac-arm64
+                  AZURE_DEV_CI_OS: mac
+                  # CodeQL on macOS not supported by the Azure DevOps task as-of current.
+                  # Codeql.BuildIdentifier: cli_darwin
 
-      # Only sign and release on manual builds
-      - ${{ if eq(variables['Build.Reason'], 'Manual') }}:
-        - template: /eng/pipelines/templates/stages/sign-extension.yml
-          parameters:
-            # TODO: This should be a constant
-            SanitizedExtensionId: $(SanitizedExtensionId)
+              ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+                # Only run this build during scheduled pipeline executions
+                MacAppleSilicon:
+                  Pool: Azure Pipelines
+                  OSVmImage: $(MACVMIMAGEM1)
+                  OS: macOS
+                  ImageKey: vmImage
+                  UploadArtifact: false
+                  Variables:
+                    BuildTarget: ${{ parameters.SanitizedExtensionId }}-darwin-amd64
+                    BuildOutputName: ${{ parameters.SanitizedExtensionId }}-darwin-amd64
+                    MacLocalSign: false
+                    SetExecutableBit: true
+                    AZURE_DEV_CI_OS: mac-arm64
 
-        - template: /eng/pipelines/templates/stages/publish-extension.yml
-          parameters:
-            SanitizedExtensionId: $(SanitizedExtensionId)
+        # Only sign and release on manual builds
+        - ${{ if eq(variables['Build.Reason'], 'Manual') }}:
+          - template: /eng/pipelines/templates/stages/sign-extension.yml
+            parameters:
+              # TODO: This should be a constant
+              SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
+
+          - template: /eng/pipelines/templates/stages/publish-extension.yml
+            parameters:
+              SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}

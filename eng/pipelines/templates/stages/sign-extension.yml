@@ -184,11 +184,6 @@ stages:
               artifactName: signed-mac
               targetPath: signed/mac
 
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              artifactName: signed-linux
-              targetPath: signed/linux
-
           # Linux binaries are not signed today so download from build outputs
           - task: DownloadPipelineArtifact@2
             inputs:

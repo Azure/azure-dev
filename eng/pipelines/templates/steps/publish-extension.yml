@@ -39,6 +39,12 @@ steps:
       GH_TOKEN: $(azuresdk-github-pat)
 
   - pwsh: |
+      Remove-Item -Path release/_manifest -Recurse -Force
+      Write-Host "Release:"
+      Get-ChildItem -Recurse release/ | Select-Object -Property Length,FullName 
+    displayName: Remove _manifest folder
+
+  - pwsh: |
       gh release create `
         "$(GH_RELEASE_TAG)" `
         --title "$(GH_RELEASE_TAG)" `

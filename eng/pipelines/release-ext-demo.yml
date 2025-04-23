@@ -1,0 +1,30 @@
+# Continuous deployment trigger
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - go.mod
+      - cli/azd/extensions/
+      - eng/pipelines/release-azd-extension.yml
+      - /eng/pipelines/templates/jobs/build-azd-extension.yml
+      - /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
+      - /eng/pipelines/templates/variables/image.yml
+
+pr:
+  paths:
+    include:
+      - go.mod
+      - cli/azd/extensions/
+      - eng/pipelines/release-azd-extension.yml
+      - eng/pipelines/templates/steps/publish-cli.yml
+    exclude:
+      - cli/azd/docs/**
+
+extends:
+  template: /eng/pipelines/templates/stages/release-azd-extension.yml
+  parameters: 
+    AzdExtensionId: microsoft.azd.demo
+    SanitizedExtensionId: microsoft-azd-demo
+    AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.demo

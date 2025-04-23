@@ -121,7 +121,7 @@ stages:
               targetType: filePath
               filePath: eng/scripts/New-ReleaseNotesFile.ps1
               arguments: >-
-                -ChangeLogPath cli/azd/CHANGELOG.md
+                -ChangeLogPath ${{ parameters.AzdExtensionDirectory }}/CHANGELOG.md
                 -Version $(EXT_VERSION)
                 -OutputPath changelog/CHANGELOG.md
             displayName: Set release changelog content

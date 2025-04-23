@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,15 +14,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/models"
 	"github.com/azure/azure-dev/cli/azd/pkg/common"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 )
 
 type buildFlags struct {
-	extensionPath string
-	outputPath    string
-	allPlatforms  bool
-	skipInstall   bool
+	cwd          string
+	outputPath   string
+	allPlatforms bool
+	skipInstall  bool
 }
 
 func newBuildCommand() *cobra.Command {
@@ -50,16 +50,16 @@ func newBuildCommand() *cobra.Command {
 	}
 
 	buildCmd.Flags().
-		StringVarP(
-			&flags.extensionPath,
-			"path", "p", ".",
+		StringVar(
+			&flags.cwd,
+			"cwd", ".",
 			"Paths to the extension directory. Defaults to the current directory.",
 		)
 	buildCmd.Flags().
 		StringVarP(
 			&flags.outputPath,
-			"output", "o", "",
-			"Path to the output directory. Defaults to relative /bin folder.",
+			"output", "o", "./bin",
+			"Path to the output directory. Defaults to ./bin folder.",
 		)
 	buildCmd.Flags().
 		BoolVar(
@@ -77,16 +77,7 @@ func newBuildCommand() *cobra.Command {
 }
 
 func runBuildAction(flags *buildFlags) error {
-	azdConfigDir := os.Getenv("AZD_CONFIG_DIR")
-	if azdConfigDir == "" {
-		userHomeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get user home directory: %w", err)
-		}
-		azdConfigDir = filepath.Join(userHomeDir, ".azd")
-	}
-
-	extensionYamlPath := filepath.Join(flags.extensionPath, "extension.yaml")
+	extensionYamlPath := filepath.Join(flags.cwd, "extension.yaml")
 	if _, err := os.Stat(extensionYamlPath); err != nil {
 		return fmt.Errorf("extension.yaml file not found in the specified path: %w", err)
 	}
@@ -96,16 +87,19 @@ func runBuildAction(flags *buildFlags) error {
 		return fmt.Errorf("failed to get absolute path for output directory: %w", err)
 	}
 
-	absExtensionPath, err := filepath.Abs(flags.extensionPath)
+	absExtensionPath, err := filepath.Abs(flags.cwd)
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path for extension directory: %w", err)
 	}
 
 	// Load metadata
-	schema, err := models.LoadExtension(flags.extensionPath)
+	schema, err := models.LoadExtension(flags.cwd)
 	if err != nil {
 		return fmt.Errorf("failed to load extension metadata: %w", err)
 	}
+
+	fmt.Println()
+	fmt.Printf("%s: %s\n", output.WithBold("Output Path"), output.WithHyperlink(absOutputPath, absOutputPath))
 
 	taskList := ux.NewTaskList(nil)
 	taskList.AddTask(ux.TaskOptions{
@@ -129,7 +123,7 @@ func runBuildAction(flags *buildFlags) error {
 			}
 
 			// Build the binaries
-			buildScript := filepath.Join(flags.extensionPath, scriptFile)
+			buildScript := filepath.Join(flags.cwd, scriptFile)
 			if _, err := os.Stat(buildScript); err == nil {
 				/* #nosec G204 - Subprocess launched with variable */
 				cmd := exec.Command(command, scriptFile)
@@ -173,6 +167,14 @@ func runBuildAction(flags *buildFlags) error {
 		Action: func(progress ux.SetProgressFunc) (ux.TaskState, error) {
 			if flags.skipInstall {
 				return ux.Skipped, nil
+			}
+
+			azdConfigDir, err := internal.AzdConfigDir()
+			if err != nil {
+				return ux.Error, common.NewDetailedError(
+					"Failed to get azd config directory",
+					fmt.Errorf("failed to get azd config directory: %w", err),
+				)
 			}
 
 			extensionInstallDir := filepath.Join(azdConfigDir, "extensions", schema.Id)
@@ -220,7 +222,7 @@ func copyBinaryFiles(extensionId, sourcePath, destPath string) error {
 				ext := filepath.Ext(fileName)
 				if ext == ".exe" || ext == "" {
 					destFilePath := filepath.Join(destPath, fileName)
-					if err := copyFile(path, destFilePath); err != nil {
+					if err := internal.CopyFile(path, destFilePath); err != nil {
 						return fmt.Errorf("failed to copy file %s to %s: %w", path, destFilePath, err)
 					}
 				}
@@ -231,32 +233,12 @@ func copyBinaryFiles(extensionId, sourcePath, destPath string) error {
 	})
 }
 
-func copyFile(src, dst string) error {
-	sourceFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	destFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	if _, err := io.Copy(destFile, sourceFile); err != nil {
-		return err
-	}
-
-	return destFile.Sync()
-}
-
 func defaultBuildFlags(flags *buildFlags) {
-	if flags.extensionPath == "" {
-		flags.extensionPath = "."
+	if flags.cwd == "" {
+		flags.cwd = "."
 	}
 
 	if flags.outputPath == "" {
-		flags.outputPath = filepath.Join(flags.extensionPath, "bin")
+		flags.outputPath = filepath.Join(flags.cwd, "bin")
 	}
 }

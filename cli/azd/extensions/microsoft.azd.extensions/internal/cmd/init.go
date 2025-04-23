@@ -351,7 +351,7 @@ func createExtensionDirectory(
 		Metadata: extensionMetadata,
 		DotNet: &DotNetTemplate{
 			Namespace: internal.ToPascalCase(extensionMetadata.Id),
-			ExeName:   strings.ReplaceAll(extensionMetadata.Id, ".", "-"),
+			ExeName:   extensionMetadata.SafeDashId(),
 		},
 	}
 

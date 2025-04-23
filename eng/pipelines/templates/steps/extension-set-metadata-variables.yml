@@ -31,5 +31,5 @@ steps:
 
   - pwsh: |
       $metadata = Get-Content -Path release-metadata/metadata.json -Raw | ConvertFrom-Json
-      Write-Host "##vso[task.setvariable variable=EXT_VERSION]$($metadata.cliVersion)"
+      Write-Host "##vso[task.setvariable variable=EXT_VERSION]$($metadata.extVersion)"
     displayName: Set release metadata variables

@@ -3,6 +3,8 @@ parameters:
     type: string
   - name: AzdExtensionDirectory
     type: string
+  - name: SanitizedExtensionId
+    type: string
 
 stages:
   - template: /eng/pipelines/templates/stages/1es-redirect.yml

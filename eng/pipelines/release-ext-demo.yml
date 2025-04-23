@@ -23,8 +23,11 @@ pr:
       - cli/azd/docs/**
 
 extends:
-  template: /eng/pipelines/templates/stages/release-azd-extension.yml
-  parameters: 
-    AzdExtensionId: microsoft.azd.demo
-    SanitizedExtensionId: microsoft-azd-demo
-    AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.demo
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      - template: /eng/pipelines/templates/stages/release-azd-extension-stage.yml
+        parameters: 
+          AzdExtensionId: microsoft.azd.demo
+          SanitizedExtensionId: microsoft-azd-demo
+          AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.demo

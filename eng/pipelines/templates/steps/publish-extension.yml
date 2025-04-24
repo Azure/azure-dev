@@ -1,0 +1,79 @@
+parameters:
+  - name: PublishUploadLocations
+    type: string
+  - name: StorageContainerName
+    type: string
+    default: '`$web'
+  - name: TagPrefix
+    type: string
+  - name: TagVersion
+    type: string
+
+steps:
+  # This step must run first because a duplicated tag means we don't need to
+  # continue with any of the subsequent steps.
+  - pwsh: |
+      $tag = "${{ parameters.TagPrefix }}_${{ parameters.TagVersion}}"
+      Write-Host "Release tag: $tag"
+
+      # Check for tag using gh API
+      $existingTag = gh api /repos/$(Build.Repository.Name)/tags | ConvertFrom-Json | Where-Object { $_.name -eq $tag }
+      if ($existingTag) {
+          Write-Host "Tag $tag already exists. Exiting."
+          exit 1
+      }
+
+      gh release view $tag --repo $(Build.Repository.Name)
+      if ($LASTEXITCODE -eq 0) {
+        Write-Host "Release ($tag) already exists. Exiting."
+        exit 1
+      }
+
+      Write-Host "##vso[task.setvariable variable=GH_RELEASE_TAG;]$tag"
+
+      # Exit with 0 (otherwise $LASTEXITCODE will not be 0 and the pipeline
+      # will fail)
+      exit 0
+    displayName: Check for existing GitHub release
+    env:
+      GH_TOKEN: $(azuresdk-github-pat)
+
+  - pwsh: |
+      Remove-Item -Path release/_manifest -Recurse -Force
+      Write-Host "Release:"
+      Get-ChildItem -Recurse release/ | Select-Object -Property Length,FullName 
+    displayName: Remove _manifest folder
+
+  - pwsh: |
+      gh release create `
+        "$(GH_RELEASE_TAG)" `
+        --title "$(GH_RELEASE_TAG)" `
+        --notes-file changelog/CHANGELOG.md `
+        --repo $(Build.Repository.Name)
+
+      gh release upload $(GH_RELEASE_TAG) release/* --repo $(Build.Repository.Name)
+    displayName: Create GitHub Release and upload artifacts
+    env:
+      GH_TOKEN: $(azuresdk-github-pat)
+
+  - task: AzurePowerShell@5
+    displayName: Upload release to storage account
+    inputs:
+      azureSubscription: 'Azure SDK Artifacts'
+      azurePowerShellVersion: LatestVersion
+      pwsh: true
+      ScriptType: InlineScript
+      Inline: |
+        $uploadLocations = "${{ parameters.PublishUploadLocations }}" -split ';'
+
+        Get-ChildItem release/
+        foreach ($folder in $uploadLocations) {
+            Write-Host "Upload to ${{ parameters.StorageContainerName }}/azd/extensions/$folder"
+            azcopy copy "release/*" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/azd/extensions/$folder"
+            if ($LASTEXITCODE) {
+              Write-Error "Upload failed"
+              exit 1
+            }
+        }
+    env:
+      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'

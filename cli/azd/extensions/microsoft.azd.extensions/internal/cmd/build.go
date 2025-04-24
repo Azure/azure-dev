@@ -49,29 +49,25 @@ func newBuildCommand() *cobra.Command {
 		},
 	}
 
-	buildCmd.Flags().
-		StringVar(
-			&flags.cwd,
-			"cwd", ".",
-			"Paths to the extension directory. Defaults to the current directory.",
-		)
-	buildCmd.Flags().
-		StringVarP(
-			&flags.outputPath,
-			"output", "o", "./bin",
-			"Path to the output directory. Defaults to ./bin folder.",
-		)
-	buildCmd.Flags().
-		BoolVar(
-			&flags.allPlatforms, "all", false,
-			"When set builds for all os/platforms. Defaults to the current os/platform only.",
-		)
-	buildCmd.Flags().
-		BoolVar(
-			&flags.skipInstall,
-			"skip-install", false,
-			"When set skips reinstalling extension after successful build.",
-		)
+	buildCmd.Flags().StringVar(
+		&flags.cwd,
+		"cwd", ".",
+		"Path to the azd extension project",
+	)
+	buildCmd.Flags().StringVarP(
+		&flags.outputPath,
+		"output", "o", "./bin",
+		"Path to the output directory. Defaults to ./bin folder.",
+	)
+	buildCmd.Flags().BoolVar(
+		&flags.allPlatforms, "all", false,
+		"When set builds for all os/platforms. Defaults to the current os/platform only.",
+	)
+	buildCmd.Flags().BoolVar(
+		&flags.skipInstall,
+		"skip-install", false,
+		"When set skips reinstalling extension after successful build.",
+	)
 
 	return buildCmd
 }

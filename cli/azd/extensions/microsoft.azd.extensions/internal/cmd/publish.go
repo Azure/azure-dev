@@ -23,11 +23,11 @@ import (
 )
 
 type publishFlags struct {
-	extensionPath string
-	repository    string
-	version       string
-	registryPath  string
-	artifacts     string
+	cwd          string
+	repository   string
+	version      string
+	registryPath string
+	artifacts    string
 }
 
 func newPublishCommand() *cobra.Command {
@@ -55,9 +55,9 @@ func newPublishCommand() *cobra.Command {
 		},
 	}
 
-	publishCmd.Flags().StringVarP(
-		&flags.extensionPath,
-		"path", "p", flags.extensionPath,
+	publishCmd.Flags().StringVar(
+		&flags.cwd,
+		"cwd", ".",
 		"Path to the azd extension project",
 	)
 	publishCmd.Flags().StringVar(
@@ -85,7 +85,7 @@ func newPublishCommand() *cobra.Command {
 }
 
 func runPublishAction(flags *publishFlags) error {
-	extensionMetadata, err := models.LoadExtension(flags.extensionPath)
+	extensionMetadata, err := models.LoadExtension(flags.cwd)
 	if err != nil {
 		return err
 	}
@@ -122,12 +122,12 @@ func runPublishAction(flags *publishFlags) error {
 	fmt.Println()
 
 	if flags.repository != "" {
-		repo, err := getGithubRepo(flags.extensionPath, flags.repository)
+		repo, err := getGithubRepo(flags.cwd, flags.repository)
 		if err != nil {
 			return err
 		}
 
-		release, err = getGithubRelease(flags.extensionPath, flags.repository, tagName)
+		release, err = getGithubRelease(flags.cwd, flags.repository, tagName)
 		if err != nil {
 			return err
 		}
@@ -478,8 +478,8 @@ type githubReleaseAsset struct {
 }
 
 func defaultPublishFlags(flags *publishFlags) error {
-	if flags.extensionPath == "" {
-		flags.extensionPath = "."
+	if flags.cwd == "" {
+		flags.cwd = "."
 	}
 
 	if flags.registryPath == "" {

@@ -17,7 +17,7 @@ import (
 )
 
 type watchFlags struct {
-	extensionPath string
+	cwd string
 }
 
 func newWatchCommand() *cobra.Command {
@@ -42,12 +42,11 @@ func newWatchCommand() *cobra.Command {
 		},
 	}
 
-	watchCmd.Flags().
-		StringVarP(
-			&flags.extensionPath,
-			"path", "p", ".",
-			"Paths to the extension directory. Defaults to the current directory.",
-		)
+	watchCmd.Flags().StringVar(
+		&flags.cwd,
+		"cwd", ".",
+		"Path to the azd extension project",
+	)
 
 	return watchCmd
 }
@@ -72,11 +71,11 @@ func runWatchAction(flags *watchFlags) error {
 		"obj/**/*", // Matches all files and subdirectories inside "obj"
 	}
 
-	if err := watchRecursive(flags.extensionPath, watcher, ignoredFolders); err != nil {
+	if err := watchRecursive(flags.cwd, watcher, ignoredFolders); err != nil {
 		return fmt.Errorf("Error watching for changes: %w", err)
 	}
 
-	rebuild(flags.extensionPath)
+	rebuild(flags.cwd)
 
 	debounce := time.NewTimer(0)
 	if !debounce.Stop() {
@@ -126,7 +125,7 @@ func runWatchAction(flags *watchFlags) error {
 				uniqueChanges = make(map[string]struct{}) // Clear the map
 
 				// Trigger rebuild
-				rebuild(flags.extensionPath)
+				rebuild(flags.cwd)
 				fmt.Println()
 			}
 		}
@@ -166,7 +165,7 @@ func rebuild(extensionPath string) {
 }
 
 func defaultWatchFlags(flags *watchFlags) {
-	if flags.extensionPath == "" {
-		flags.extensionPath = "."
+	if flags.cwd == "" {
+		flags.cwd = "."
 	}
 }

@@ -49,32 +49,28 @@ func newPackCommand() *cobra.Command {
 		},
 	}
 
-	packageCmd.Flags().
-		StringVar(
-			&flags.cwd,
-			"cwd", ".",
-			"Paths to the extension directory. Defaults to the current directory.",
-		)
-	packageCmd.Flags().
-		StringVarP(
-			&flags.outputPath,
-			"output", "o", "",
-			"Path to the artifacts output directory. If not provided, will use local registry artifacts path.",
-		)
+	packageCmd.Flags().StringVar(
+		&flags.cwd,
+		"cwd", ".",
+		"Path to the azd extension project",
+	)
+	packageCmd.Flags().StringVarP(
+		&flags.outputPath,
+		"output", "o", "",
+		"Path to the artifacts output directory. If not provided, will use local registry artifacts path.",
+	)
 
-	packageCmd.Flags().
-		StringVarP(
-			&flags.inputPath,
-			"input", "i", "./bin",
-			"Path to the input directory. Defaults to ./bin.",
-		)
+	packageCmd.Flags().StringVarP(
+		&flags.inputPath,
+		"input", "i", "./bin",
+		"Path to the input directory.",
+	)
 
-	packageCmd.Flags().
-		BoolVar(
-			&flags.rebuild,
-			"rebuild", false,
-			"Rebuild the extension before packaging. Defaults to false.",
-		)
+	packageCmd.Flags().BoolVar(
+		&flags.rebuild,
+		"rebuild", false,
+		"Rebuild the extension before packaging.",
+	)
 
 	return packageCmd
 }

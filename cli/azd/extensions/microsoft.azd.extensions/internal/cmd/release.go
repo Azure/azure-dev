@@ -20,15 +20,15 @@ import (
 )
 
 type releaseFlags struct {
-	extensionPath string
-	repository    string
-	artifacts     string
-	title         string
-	notes         string
-	version       string
-	preRelease    bool
-	draft         bool
-	confirm       bool
+	cwd        string
+	repository string
+	artifacts  string
+	title      string
+	notes      string
+	version    string
+	preRelease bool
+	draft      bool
+	confirm    bool
 }
 
 func newReleaseCommand() *cobra.Command {
@@ -53,9 +53,9 @@ func newReleaseCommand() *cobra.Command {
 		},
 	}
 
-	releaseCmd.Flags().StringVarP(
-		&flags.extensionPath,
-		"path", "p", flags.extensionPath,
+	releaseCmd.Flags().StringVar(
+		&flags.cwd,
+		"cwd", ".",
 		"Path to the azd extension project",
 	)
 	releaseCmd.Flags().StringVarP(
@@ -116,7 +116,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 
 	defer azdClient.Close()
 
-	extensionMetadata, err := models.LoadExtension(flags.extensionPath)
+	extensionMetadata, err := models.LoadExtension(flags.cwd)
 	if err != nil {
 		return err
 	}
@@ -168,7 +168,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 
 	var releaseResult string
 
-	repo, err := getGithubRepo(flags.extensionPath, flags.repository)
+	repo, err := getGithubRepo(flags.cwd, flags.repository)
 	if err != nil {
 		return err
 	}
@@ -232,7 +232,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 				Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 					// #nosec G204: Subprocess launched with variable
 					ghReleaseCmd := exec.Command("gh", args...)
-					ghReleaseCmd.Dir = flags.extensionPath
+					ghReleaseCmd.Dir = flags.cwd
 
 					resultBytes, err := ghReleaseCmd.CombinedOutput()
 					releaseResult = string(resultBytes)
@@ -251,7 +251,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 		return err
 	}
 
-	release, err := getGithubRelease(flags.extensionPath, flags.repository, tagName)
+	release, err := getGithubRelease(flags.cwd, flags.repository, tagName)
 	if err != nil {
 		return err
 	}
@@ -267,7 +267,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 }
 
 func defaultReleaseFlags(flags *releaseFlags) {
-	if flags.extensionPath == "" {
-		flags.extensionPath = "."
+	if flags.cwd == "" {
+		flags.cwd = "."
 	}
 }

@@ -1,0 +1,46 @@
+{
+    "name": "azd-extension",
+    "version": "0.0.1",
+    "description": "JavaScript implementation of an AZD developer extension",
+    "main": "index.js",
+    "bin": {
+      "azd-extension": "./index.js"
+    },
+    "scripts": {
+      "start": "node index.js",
+      "build": "pkg . --out-path bin --targets node16-win-x64,node16-linux-x64,node16-macos-x64",
+      "lint": "eslint .",
+      "format": "prettier --write ."
+    },
+    "author": "",
+    "license": "MIT",
+    "type": "module",
+    "dependencies": {
+      "@grpc/grpc-js": "^1.9.9",
+      "@grpc/proto-loader": "^0.7.7",
+      "commander": "^11.1.0"
+    },
+    "devDependencies": {
+      "pkg": "^5.8.1",
+      "prettier": "^3.2.5",
+      "eslint": "^8.57.0"
+    },
+    "pkg": {
+      "scripts": [
+        "index.js",
+        "azdClient.js",
+        "eventManager.js",
+        "commands/*.js"
+      ],
+      "assets": [
+        "proto/*.proto"
+      ],
+      "targets": [
+        "node16-win-x64",
+        "node16-linux-x64",
+        "node16-macos-x64"
+      ],
+      "outputPath": "bin"
+    }
+  }
+  

@@ -1,17 +1,17 @@
 // index.js
-const { Command } = require('commander');
+import { Command } from 'commander';
+import { AzdClient } from './azdClient.js';
+import { createContextCommand } from './commands/context.js';
+import { createPromptCommand } from './commands/prompt.js';
+import { createListenCommand } from './commands/listen.js';
+
 const program = new Command();
+program.name('azd-extension');
 
-program
-  .name('company.js')
-  .description('A sample AZD extension in JavaScript')
-  .version('0.0.1');
+const client = new AzdClient();
 
-program
-  .command('hello')
-  .description('Say hello')
-  .action(() => {
-    console.log('Hello from company.js!');
-  });
+program.addCommand(createContextCommand(client));
+program.addCommand(createPromptCommand(client));
+program.addCommand(createListenCommand(client));
 
-program.parse(process.argv);
+program.parseAsync(process.argv);

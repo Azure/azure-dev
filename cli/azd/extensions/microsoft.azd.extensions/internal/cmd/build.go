@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,7 +21,6 @@ import (
 )
 
 type buildFlags struct {
-	cwd          string
 	outputPath   string
 	allPlatforms bool
 	skipInstall  bool
@@ -39,7 +39,7 @@ func newBuildCommand() *cobra.Command {
 			)
 
 			defaultBuildFlags(flags)
-			err := runBuildAction(flags)
+			err := runBuildAction(cmd.Context(), flags)
 			if err != nil {
 				return err
 			}
@@ -49,11 +49,6 @@ func newBuildCommand() *cobra.Command {
 		},
 	}
 
-	buildCmd.Flags().StringVar(
-		&flags.cwd,
-		"cwd", ".",
-		"Path to the azd extension project",
-	)
 	buildCmd.Flags().StringVarP(
 		&flags.outputPath,
 		"output", "o", "./bin",
@@ -72,24 +67,19 @@ func newBuildCommand() *cobra.Command {
 	return buildCmd
 }
 
-func runBuildAction(flags *buildFlags) error {
-	extensionYamlPath := filepath.Join(flags.cwd, "extension.yaml")
-	if _, err := os.Stat(extensionYamlPath); err != nil {
-		return fmt.Errorf("extension.yaml file not found in the specified path: %w", err)
-	}
-
+func runBuildAction(ctx context.Context, flags *buildFlags) error {
 	absOutputPath, err := filepath.Abs(flags.outputPath)
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path for output directory: %w", err)
 	}
 
-	absExtensionPath, err := filepath.Abs(flags.cwd)
+	absExtensionPath, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path for extension directory: %w", err)
 	}
 
 	// Load metadata
-	schema, err := models.LoadExtension(flags.cwd)
+	schema, err := models.LoadExtension(absExtensionPath)
 	if err != nil {
 		return fmt.Errorf("failed to load extension metadata: %w", err)
 	}
@@ -119,7 +109,7 @@ func runBuildAction(flags *buildFlags) error {
 			}
 
 			// Build the binaries
-			buildScript := filepath.Join(flags.cwd, scriptFile)
+			buildScript := filepath.Join(absExtensionPath, scriptFile)
 			if _, err := os.Stat(buildScript); err == nil {
 				/* #nosec G204 - Subprocess launched with variable */
 				cmd := exec.Command(command, scriptFile)
@@ -230,11 +220,7 @@ func copyBinaryFiles(extensionId, sourcePath, destPath string) error {
 }
 
 func defaultBuildFlags(flags *buildFlags) {
-	if flags.cwd == "" {
-		flags.cwd = "."
-	}
-
 	if flags.outputPath == "" {
-		flags.outputPath = filepath.Join(flags.cwd, "bin")
+		flags.outputPath = "bin"
 	}
 }

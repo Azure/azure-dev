@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,7 +21,6 @@ import (
 )
 
 type packageFlags struct {
-	cwd        string
 	inputPath  string
 	outputPath string
 	rebuild    bool
@@ -39,7 +39,7 @@ func newPackCommand() *cobra.Command {
 			)
 
 			defaultPackageFlags(flags)
-			err := runPackageAction(flags)
+			err := runPackageAction(cmd.Context(), flags)
 			if err != nil {
 				return err
 			}
@@ -49,11 +49,6 @@ func newPackCommand() *cobra.Command {
 		},
 	}
 
-	packageCmd.Flags().StringVar(
-		&flags.cwd,
-		"cwd", ".",
-		"Path to the azd extension project",
-	)
 	packageCmd.Flags().StringVarP(
 		&flags.outputPath,
 		"output", "o", "",
@@ -75,8 +70,13 @@ func newPackCommand() *cobra.Command {
 	return packageCmd
 }
 
-func runPackageAction(flags *packageFlags) error {
-	extensionMetadata, err := models.LoadExtension(flags.cwd)
+func runPackageAction(ctx context.Context, flags *packageFlags) error {
+	absExtensionPath, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path for extension directory: %w", err)
+	}
+
+	extensionMetadata, err := models.LoadExtension(absExtensionPath)
 	if err != nil {
 		return fmt.Errorf("failed to load extension metadata: %w", err)
 	}
@@ -232,11 +232,7 @@ func getFileNameWithoutExt(filePath string) string {
 }
 
 func defaultPackageFlags(flags *packageFlags) {
-	if flags.cwd == "" {
-		flags.cwd = "."
-	}
-
 	if flags.inputPath == "" {
-		flags.inputPath = "./bin"
+		flags.inputPath = "bin"
 	}
 }

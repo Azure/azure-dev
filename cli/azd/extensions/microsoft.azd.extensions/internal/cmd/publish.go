@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -23,7 +24,6 @@ import (
 )
 
 type publishFlags struct {
-	cwd          string
 	repository   string
 	version      string
 	registryPath string
@@ -45,7 +45,7 @@ func newPublishCommand() *cobra.Command {
 				return err
 			}
 
-			err := runPublishAction(flags)
+			err := runPublishAction(cmd.Context(), flags)
 			if err != nil {
 				return err
 			}
@@ -55,11 +55,6 @@ func newPublishCommand() *cobra.Command {
 		},
 	}
 
-	publishCmd.Flags().StringVar(
-		&flags.cwd,
-		"cwd", ".",
-		"Path to the azd extension project",
-	)
 	publishCmd.Flags().StringVar(
 		&flags.repository,
 		"repo", flags.repository,
@@ -84,8 +79,13 @@ func newPublishCommand() *cobra.Command {
 	return publishCmd
 }
 
-func runPublishAction(flags *publishFlags) error {
-	extensionMetadata, err := models.LoadExtension(flags.cwd)
+func runPublishAction(ctx context.Context, flags *publishFlags) error {
+	absExtensionPath, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path for extension directory: %w", err)
+	}
+
+	extensionMetadata, err := models.LoadExtension(absExtensionPath)
 	if err != nil {
 		return err
 	}
@@ -122,12 +122,12 @@ func runPublishAction(flags *publishFlags) error {
 	fmt.Println()
 
 	if flags.repository != "" {
-		repo, err := getGithubRepo(flags.cwd, flags.repository)
+		repo, err := getGithubRepo(absExtensionPath, flags.repository)
 		if err != nil {
 			return err
 		}
 
-		release, err = getGithubRelease(flags.cwd, flags.repository, tagName)
+		release, err = getGithubRelease(absExtensionPath, flags.repository, tagName)
 		if err != nil {
 			return err
 		}
@@ -478,10 +478,6 @@ type githubReleaseAsset struct {
 }
 
 func defaultPublishFlags(flags *publishFlags) error {
-	if flags.cwd == "" {
-		flags.cwd = "."
-	}
-
 	if flags.registryPath == "" {
 		azdConfigDir, err := internal.AzdConfigDir()
 		if err != nil {

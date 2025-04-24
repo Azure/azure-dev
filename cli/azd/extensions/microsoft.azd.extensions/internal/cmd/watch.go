@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,7 +18,6 @@ import (
 )
 
 type watchFlags struct {
-	cwd string
 }
 
 func newWatchCommand() *cobra.Command {
@@ -32,8 +32,7 @@ func newWatchCommand() *cobra.Command {
 				"Watches the azd extension project for changes and rebuilds it.",
 			)
 
-			defaultWatchFlags(flags)
-			err := runWatchAction(flags)
+			err := runWatchAction(cmd.Context(), flags)
 			if err != nil {
 				return err
 			}
@@ -42,16 +41,10 @@ func newWatchCommand() *cobra.Command {
 		},
 	}
 
-	watchCmd.Flags().StringVar(
-		&flags.cwd,
-		"cwd", ".",
-		"Path to the azd extension project",
-	)
-
 	return watchCmd
 }
 
-func runWatchAction(flags *watchFlags) error {
+func runWatchAction(ctx context.Context, flags *watchFlags) error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("Error creating watcher: %w", err)
@@ -71,11 +64,11 @@ func runWatchAction(flags *watchFlags) error {
 		"obj/**/*", // Matches all files and subdirectories inside "obj"
 	}
 
-	if err := watchRecursive(flags.cwd, watcher, ignoredFolders); err != nil {
+	if err := watchRecursive(".", watcher, ignoredFolders); err != nil {
 		return fmt.Errorf("Error watching for changes: %w", err)
 	}
 
-	rebuild(flags.cwd)
+	rebuild(ctx, ".")
 
 	debounce := time.NewTimer(0)
 	if !debounce.Stop() {
@@ -125,7 +118,7 @@ func runWatchAction(flags *watchFlags) error {
 				uniqueChanges = make(map[string]struct{}) // Clear the map
 
 				// Trigger rebuild
-				rebuild(flags.cwd)
+				rebuild(ctx, ".")
 				fmt.Println()
 			}
 		}
@@ -151,21 +144,15 @@ func watchRecursive(root string, watcher *fsnotify.Watcher, ignoredFolders map[s
 	})
 }
 
-func rebuild(extensionPath string) {
+func rebuild(ctx context.Context, extensionPath string) {
 	flags := &buildFlags{}
 	defaultBuildFlags(flags)
 
-	if err := runBuildAction(flags); err != nil {
+	if err := runBuildAction(ctx, flags); err != nil {
 		color.Red("BUILD FAILED: \n%s\n\n", err.Error())
 	}
 
 	fmt.Println("Watching for changes...")
 	color.HiBlack("Press Ctrl+C to stop.")
 	fmt.Println()
-}
-
-func defaultWatchFlags(flags *watchFlags) {
-	if flags.cwd == "" {
-		flags.cwd = "."
-	}
 }

@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 
@@ -20,11 +22,11 @@ import (
 )
 
 type releaseFlags struct {
-	cwd        string
 	repository string
 	artifacts  string
 	title      string
 	notes      string
+	notesFile  string
 	version    string
 	preRelease bool
 	draft      bool
@@ -42,7 +44,6 @@ func newReleaseCommand() *cobra.Command {
 				"Creates a new Github release for the azd extension project",
 			)
 
-			defaultReleaseFlags(flags)
 			err := runReleaseAction(cmd.Context(), flags)
 			if err != nil {
 				return err
@@ -53,11 +54,6 @@ func newReleaseCommand() *cobra.Command {
 		},
 	}
 
-	releaseCmd.Flags().StringVar(
-		&flags.cwd,
-		"cwd", ".",
-		"Path to the azd extension project",
-	)
 	releaseCmd.Flags().StringVarP(
 		&flags.repository,
 		"repo", "r", flags.repository,
@@ -77,6 +73,11 @@ func newReleaseCommand() *cobra.Command {
 		&flags.notes,
 		"notes", "n", flags.notes,
 		"Release notes",
+	)
+	releaseCmd.Flags().StringVarP(
+		&flags.notesFile,
+		"notes-file", "F", flags.notesFile,
+		"Read release notes from file (use \"-\" to read from standard input)",
 	)
 	releaseCmd.Flags().StringVarP(
 		&flags.version,
@@ -116,7 +117,12 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 
 	defer azdClient.Close()
 
-	extensionMetadata, err := models.LoadExtension(flags.cwd)
+	absExtensionPath, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path for extension directory: %w", err)
+	}
+
+	extensionMetadata, err := models.LoadExtension(absExtensionPath)
 	if err != nil {
 		return err
 	}
@@ -136,6 +142,40 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 		}
 
 		flags.artifacts = filepath.Join(localRegistryArtifactsPath, extensionMetadata.Id, flags.version, "*.zip")
+	}
+
+	if flags.notes != "" && flags.notesFile != "" {
+		return errors.New("only one of --notes or --notes-file can be specified")
+	}
+
+	if flags.notesFile != "" {
+		if flags.notesFile == "-" {
+			// Read from standard input
+			notes, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("failed to read notes from stdin: %w", err)
+			}
+			flags.notes = string(notes)
+		} else {
+			// Read from file
+			notes, err := os.ReadFile(flags.notesFile)
+			if err != nil {
+				return fmt.Errorf("failed to read notes from file: %w", err)
+			}
+			flags.notes = string(notes)
+		}
+	}
+
+	// Automatically include changelog.md if not notes are provided
+	if flags.notes == "" {
+		fileInfo, err := os.Stat("changelog.md")
+		if err == nil && !fileInfo.IsDir() {
+			notes, err := os.ReadFile("changelog.md")
+			if err != nil {
+				return fmt.Errorf("failed to read notes from changelog.md: %w", err)
+			}
+			flags.notes = string(notes)
+		}
 	}
 
 	tagName := fmt.Sprintf("azd-ext-%s_%s", extensionMetadata.SafeDashId(), flags.version)
@@ -168,7 +208,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 
 	var releaseResult string
 
-	repo, err := getGithubRepo(flags.cwd, flags.repository)
+	repo, err := getGithubRepo(absExtensionPath, flags.repository)
 	if err != nil {
 		return err
 	}
@@ -232,7 +272,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 				Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 					// #nosec G204: Subprocess launched with variable
 					ghReleaseCmd := exec.Command("gh", args...)
-					ghReleaseCmd.Dir = flags.cwd
+					ghReleaseCmd.Dir = absExtensionPath
 
 					resultBytes, err := ghReleaseCmd.CombinedOutput()
 					releaseResult = string(resultBytes)
@@ -251,7 +291,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 		return err
 	}
 
-	release, err := getGithubRelease(flags.cwd, flags.repository, tagName)
+	release, err := getGithubRelease(absExtensionPath, flags.repository, tagName)
 	if err != nil {
 		return err
 	}
@@ -264,10 +304,4 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 	fmt.Println()
 
 	return nil
-}
-
-func defaultReleaseFlags(flags *releaseFlags) {
-	if flags.cwd == "" {
-		flags.cwd = "."
-	}
 }

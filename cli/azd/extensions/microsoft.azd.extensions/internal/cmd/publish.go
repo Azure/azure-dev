@@ -94,6 +94,20 @@ func runPublishAction(flags *publishFlags) error {
 		flags.version = extensionMetadata.Version
 	}
 
+	if flags.artifacts == "" {
+		localRegistryArtifactsPath, err := internal.LocalRegistryArtifactsPath()
+		if err != nil {
+			return err
+		}
+
+		flags.artifacts = filepath.Join(localRegistryArtifactsPath, extensionMetadata.Id, flags.version, "*.zip")
+	}
+
+	// Setting remote repository overrides local artifacts
+	if flags.repository != "" {
+		flags.artifacts = ""
+	}
+
 	var release *githubRelease
 	artifactMap := map[string]extensions.ExtensionArtifact{}
 	assets := []*githubReleaseAsset{}
@@ -107,7 +121,7 @@ func runPublishAction(flags *publishFlags) error {
 
 	fmt.Println()
 
-	if flags.artifacts == "" {
+	if flags.repository != "" {
 		repo, err := getGithubRepo(flags.extensionPath, flags.repository)
 		if err != nil {
 			return err
@@ -189,7 +203,7 @@ func runPublishAction(flags *publishFlags) error {
 		AddTask(ux.TaskOptions{
 			Title: "Fetching GitHub release assets",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-				if flags.artifacts != "" {
+				if flags.repository == "" {
 					return ux.Skipped, nil
 				}
 

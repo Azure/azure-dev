@@ -99,6 +99,8 @@ func newReleaseCommand() *cobra.Command {
 		"Skip confirmation prompt",
 	)
 
+	releaseCmd.MarkFlagRequired("repo")
+
 	return releaseCmd
 }
 

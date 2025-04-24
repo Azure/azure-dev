@@ -120,12 +120,28 @@ func runInitAction(ctx context.Context) error {
 	taskList.AddTask(ux.TaskOptions{
 		Title: "Package extension",
 		Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-			cmd := exec.Command("azd", "x", "package")
+			cmd := exec.Command("azd", "x", "pack")
 			cmd.Dir = extensionMetadata.Path
 
 			if err := cmd.Run(); err != nil {
 				return ux.Error, common.NewDetailedError(
 					"Package failed",
+					fmt.Errorf("failed to package extension: %w", err),
+				)
+			}
+			return ux.Success, nil
+		},
+	})
+
+	taskList.AddTask(ux.TaskOptions{
+		Title: "Publish extension",
+		Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+			cmd := exec.Command("azd", "x", "publish")
+			cmd.Dir = extensionMetadata.Path
+
+			if err := cmd.Run(); err != nil {
+				return ux.Error, common.NewDetailedError(
+					"Publish failed",
 					fmt.Errorf("failed to package extension: %w", err),
 				)
 			}
@@ -157,7 +173,9 @@ func runInitAction(ctx context.Context) error {
 	fmt.Printf("Run %s to try your extension now.\n", output.WithHighLightFormat("azd %s -h", extensionMetadata.Namespace))
 	fmt.Println()
 	fmt.Printf("Run %s to rebuild the extension\n", output.WithHighLightFormat("azd x build"))
-	fmt.Printf("Run %s to package the extension\n", output.WithHighLightFormat("azd x package"))
+	fmt.Printf("Run %s to package the extension\n", output.WithHighLightFormat("azd x pack"))
+	fmt.Printf("Run %s to create a GitHub release for your extension\n", output.WithHighLightFormat("azd x release"))
+	fmt.Printf("Run %s to publish the extension\n", output.WithHighLightFormat("azd x publish"))
 	fmt.Printf("Run %s to watch for changes and auto re-build the extension\n", output.WithHighLightFormat("azd x watch"))
 
 	return nil

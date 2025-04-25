@@ -23,6 +23,19 @@ func main() {
 	ctx := context.Background()
 	rootCmd := cmd.NewRootCommand()
 
+	cwd, err := rootCmd.PersistentFlags().GetString("cwd")
+	if err != nil {
+		color.Red("Error: %v", err)
+		os.Exit(1)
+	}
+
+	if cwd != "." {
+		if err := os.Chdir(cwd); err != nil {
+			color.Red("Error: failed to change directory to %s: %v", cwd, err)
+			os.Exit(1)
+		}
+	}
+
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		color.Red("Error: %v", err)
 		os.Exit(1)

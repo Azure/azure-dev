@@ -4,8 +4,8 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,15 +15,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/models"
 	"github.com/azure/azure-dev/cli/azd/pkg/common"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 )
 
 type buildFlags struct {
-	extensionPath string
-	outputPath    string
-	allPlatforms  bool
-	skipInstall   bool
+	outputPath   string
+	allPlatforms bool
+	skipInstall  bool
 }
 
 func newBuildCommand() *cobra.Command {
@@ -39,7 +39,7 @@ func newBuildCommand() *cobra.Command {
 			)
 
 			defaultBuildFlags(flags)
-			err := runBuildAction(flags)
+			err := runBuildAction(cmd.Context(), flags)
 			if err != nil {
 				return err
 			}
@@ -49,151 +49,134 @@ func newBuildCommand() *cobra.Command {
 		},
 	}
 
-	buildCmd.Flags().
-		StringVarP(
-			&flags.extensionPath,
-			"path", "p", ".",
-			"Paths to the extension directory. Defaults to the current directory.",
-		)
-	buildCmd.Flags().
-		StringVarP(
-			&flags.outputPath,
-			"output", "o", "",
-			"Path to the output directory. Defaults to relative /bin folder.",
-		)
-	buildCmd.Flags().
-		BoolVar(
-			&flags.allPlatforms, "all", false,
-			"When set builds for all os/platforms. Defaults to the current os/platform only.",
-		)
-	buildCmd.Flags().
-		BoolVar(
-			&flags.skipInstall,
-			"skip-install", false,
-			"When set skips reinstalling extension after successful build.",
-		)
+	buildCmd.Flags().StringVarP(
+		&flags.outputPath,
+		"output", "o", "./bin",
+		"Path to the output directory. Defaults to ./bin folder.",
+	)
+	buildCmd.Flags().BoolVar(
+		&flags.allPlatforms, "all", false,
+		"When set builds for all os/platforms. Defaults to the current os/platform only.",
+	)
+	buildCmd.Flags().BoolVar(
+		&flags.skipInstall,
+		"skip-install", false,
+		"When set skips reinstalling extension after successful build.",
+	)
 
 	return buildCmd
 }
 
-func runBuildAction(flags *buildFlags) error {
-	azdConfigDir := os.Getenv("AZD_CONFIG_DIR")
-	if azdConfigDir == "" {
-		userHomeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get user home directory: %w", err)
-		}
-		azdConfigDir = filepath.Join(userHomeDir, ".azd")
-	}
-
-	extensionYamlPath := filepath.Join(flags.extensionPath, "extension.yaml")
-	if _, err := os.Stat(extensionYamlPath); err != nil {
-		return fmt.Errorf("extension.yaml file not found in the specified path: %w", err)
-	}
-
+func runBuildAction(ctx context.Context, flags *buildFlags) error {
 	absOutputPath, err := filepath.Abs(flags.outputPath)
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path for output directory: %w", err)
 	}
 
-	absExtensionPath, err := filepath.Abs(flags.extensionPath)
+	absExtensionPath, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path for extension directory: %w", err)
 	}
 
 	// Load metadata
-	schema, err := models.LoadExtension(flags.extensionPath)
+	schema, err := models.LoadExtension(absExtensionPath)
 	if err != nil {
 		return fmt.Errorf("failed to load extension metadata: %w", err)
 	}
 
-	taskList := ux.NewTaskList(nil)
-	taskList.AddTask(ux.TaskOptions{
-		Title: "Building extension artifacts",
-		Action: func(progress ux.SetProgressFunc) (ux.TaskState, error) {
-			// Create output directory if it doesn't exist
-			if _, err := os.Stat(absOutputPath); os.IsNotExist(err) {
-				if err := os.MkdirAll(absOutputPath, os.ModePerm); err != nil {
-					return ux.Error, common.NewDetailedError("Failed to create output directory", err)
-				}
-			}
+	fmt.Println()
+	fmt.Printf("%s: %s\n", output.WithBold("Output Path"), output.WithHyperlink(absOutputPath, absOutputPath))
 
-			var command string
-			var scriptFile string
-			if runtime.GOOS == "windows" {
-				command = "pwsh"
-				scriptFile = "build.ps1"
-			} else {
-				command = "bash"
-				scriptFile = "build.sh"
-			}
-
-			// Build the binaries
-			buildScript := filepath.Join(flags.extensionPath, scriptFile)
-			if _, err := os.Stat(buildScript); err == nil {
-				/* #nosec G204 - Subprocess launched with variable */
-				cmd := exec.Command(command, scriptFile)
-				cmd.Dir = absExtensionPath
-
-				envVars := map[string]string{
-					"OUTPUT_DIR":         absOutputPath,
-					"EXTENSION_DIR":      absExtensionPath,
-					"EXTENSION_ID":       schema.Id,
-					"EXTENSION_VERSION":  schema.Version,
-					"EXTENSION_LANGUAGE": schema.Language,
+	taskList := ux.NewTaskList(nil).
+		AddTask(ux.TaskOptions{
+			Title: "Building extension artifacts",
+			Action: func(progress ux.SetProgressFunc) (ux.TaskState, error) {
+				// Create output directory if it doesn't exist
+				if _, err := os.Stat(absOutputPath); os.IsNotExist(err) {
+					if err := os.MkdirAll(absOutputPath, os.ModePerm); err != nil {
+						return ux.Error, common.NewDetailedError("Failed to create output directory", err)
+					}
 				}
 
-				// By default builds for current os/arch
-				if !flags.allPlatforms {
-					envVars["EXTENSION_PLATFORM"] = fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
+				var command string
+				var scriptFile string
+				if runtime.GOOS == "windows" {
+					command = "pwsh"
+					scriptFile = "build.ps1"
+				} else {
+					command = "bash"
+					scriptFile = "build.sh"
 				}
 
-				cmd.Env = os.Environ()
+				// Build the binaries
+				buildScript := filepath.Join(absExtensionPath, scriptFile)
+				if _, err := os.Stat(buildScript); err == nil {
+					/* #nosec G204 - Subprocess launched with variable */
+					cmd := exec.Command(command, scriptFile)
+					cmd.Dir = absExtensionPath
 
-				for key, value := range envVars {
-					cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", key, value))
+					envVars := map[string]string{
+						"OUTPUT_DIR":         absOutputPath,
+						"EXTENSION_DIR":      absExtensionPath,
+						"EXTENSION_ID":       schema.Id,
+						"EXTENSION_VERSION":  schema.Version,
+						"EXTENSION_LANGUAGE": schema.Language,
+					}
+
+					// By default builds for current os/arch
+					if !flags.allPlatforms {
+						envVars["EXTENSION_PLATFORM"] = fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
+					}
+
+					cmd.Env = os.Environ()
+
+					for key, value := range envVars {
+						cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", key, value))
+					}
+
+					if result, err := cmd.CombinedOutput(); err != nil {
+						flags.skipInstall = true
+
+						return ux.Error, common.NewDetailedError(
+							"Build Failed",
+							fmt.Errorf("failed to build artifacts: %s, %w", string(result), err),
+						)
+					}
 				}
 
-				if result, err := cmd.CombinedOutput(); err != nil {
-					flags.skipInstall = true
+				return ux.Success, nil
+			},
+		}).
+		AddTask(ux.TaskOptions{
+			Title: "Installing extension",
+			Action: func(progress ux.SetProgressFunc) (ux.TaskState, error) {
+				if flags.skipInstall {
+					return ux.Skipped, nil
+				}
 
+				azdConfigDir, err := internal.AzdConfigDir()
+				if err != nil {
 					return ux.Error, common.NewDetailedError(
-						"Build Failed",
-						fmt.Errorf("failed to build artifacts: %s, %w", string(result), err),
+						"Failed to get azd config directory",
+						fmt.Errorf("failed to get azd config directory: %w", err),
 					)
 				}
-			}
 
-			return ux.Success, nil
-		},
-	})
+				extensionInstallDir := filepath.Join(azdConfigDir, "extensions", schema.Id)
+				extensionBinaryPrefix := strings.ReplaceAll(schema.Id, ".", "-")
 
-	taskList.AddTask(ux.TaskOptions{
-		Title: "Installing extension",
-		Action: func(progress ux.SetProgressFunc) (ux.TaskState, error) {
-			if flags.skipInstall {
-				return ux.Skipped, nil
-			}
+				if err := copyBinaryFiles(extensionBinaryPrefix, absOutputPath, extensionInstallDir); err != nil {
+					return ux.Error, common.NewDetailedError(
+						"Install failed",
+						fmt.Errorf("failed to copy files to install directory: %w", err),
+					)
+				}
 
-			extensionInstallDir := filepath.Join(azdConfigDir, "extensions", schema.Id)
-			extensionBinaryPrefix := strings.ReplaceAll(schema.Id, ".", "-")
+				return ux.Success, nil
+			},
+		})
 
-			if err := copyBinaryFiles(extensionBinaryPrefix, absOutputPath, extensionInstallDir); err != nil {
-				return ux.Error, common.NewDetailedError(
-					"Install failed",
-					fmt.Errorf("failed to copy files to install directory: %w", err),
-				)
-			}
-
-			return ux.Success, nil
-		},
-	})
-
-	if err := taskList.Run(); err != nil {
-		return fmt.Errorf("failed to run build tasks: %w", err)
-	}
-
-	return nil
+	return taskList.Run()
 }
 
 func copyBinaryFiles(extensionId, sourcePath, destPath string) error {
@@ -220,7 +203,7 @@ func copyBinaryFiles(extensionId, sourcePath, destPath string) error {
 				ext := filepath.Ext(fileName)
 				if ext == ".exe" || ext == "" {
 					destFilePath := filepath.Join(destPath, fileName)
-					if err := copyFile(path, destFilePath); err != nil {
+					if err := internal.CopyFile(path, destFilePath); err != nil {
 						return fmt.Errorf("failed to copy file %s to %s: %w", path, destFilePath, err)
 					}
 				}
@@ -231,32 +214,8 @@ func copyBinaryFiles(extensionId, sourcePath, destPath string) error {
 	})
 }
 
-func copyFile(src, dst string) error {
-	sourceFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	destFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	if _, err := io.Copy(destFile, sourceFile); err != nil {
-		return err
-	}
-
-	return destFile.Sync()
-}
-
 func defaultBuildFlags(flags *buildFlags) {
-	if flags.extensionPath == "" {
-		flags.extensionPath = "."
-	}
-
 	if flags.outputPath == "" {
-		flags.outputPath = filepath.Join(flags.extensionPath, "bin")
+		flags.outputPath = "bin"
 	}
 }

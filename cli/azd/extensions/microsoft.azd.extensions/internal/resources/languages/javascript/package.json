@@ -8,6 +8,8 @@
     "build": "pkg pkg-entry.js --output bin/azd-extention.exe --targets node16-win-x64"
   },
   "dependencies": {
+    "@azure/arm-resources": "^6.0.0",
+    "@azure/identity": "^4.9.1",
     "@grpc/grpc-js": "^1.8.14",
     "@grpc/proto-loader": "^0.7.7",
     "commander": "^11.1.0",
@@ -19,7 +21,8 @@
       "pkg-entry.js",
       "commands/*.js",
       "azdClient.js",
-      "eventManager.js"
+      "eventManager.js",
+      "grpcUtils.js"
     ],
     "assets": [
       "proto/*.proto"

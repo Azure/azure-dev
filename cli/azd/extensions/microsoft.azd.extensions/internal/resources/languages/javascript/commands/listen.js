@@ -1,5 +1,5 @@
 const { Command } = require('commander');
-const { AzdClient } = require('../azdClient');
+const AzdClient = require('../azdClient');
 const { EventManager } = require('../eventManager');
 
 function createListenCommand() {

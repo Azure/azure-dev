@@ -22,32 +22,36 @@ class AzdClient {
       oneofs: true,
     };
 
-    const load = (name) => {
-      const protoPath = path.join(__dirname, 'proto', `${name}.proto`);
-      const pkgDef = protoLoader.loadSync(protoPath, options);
-      const proto = grpc.loadPackageDefinition(pkgDef);
-      return proto.microsoft.azd;
+    // Loads a .proto file and returns the generated gRPC package
+    const loadService = (name) => {
+      const protoPath = path.join(process.cwd(), 'proto', `${name}.proto`);
+      const packageDefinition = protoLoader.loadSync(protoPath, options);
+      const proto = grpc.loadPackageDefinition(packageDefinition);
+
+      return proto.azdext;
     };
 
-    const address = server.startsWith('http') ? server : `http://${server}`;
+    const address = server.replace(/^https?:\/\//, '');
 
-    this.Compose = new load('compose').ComposeService(address, grpc.credentials.createInsecure());
-    this.Deployment = new load('deployment').DeploymentService(address, grpc.credentials.createInsecure());
-    this.Environment = new load('environment').EnvironmentService(address, grpc.credentials.createInsecure());
-    this.Events = new load('event').EventService(address, grpc.credentials.createInsecure());
-    this.Project = new load('project').ProjectService(address, grpc.credentials.createInsecure());
-    this.Prompt = new load('prompt').PromptService(address, grpc.credentials.createInsecure());
-    this.UserConfig = new load('user_config').UserConfigService(address, grpc.credentials.createInsecure());
-    this.Workflow = new load('workflow').WorkflowService(address, grpc.credentials.createInsecure());
-  }
+    // Load each proto service
+    const composeProto = loadService('compose');
+    const deploymentProto = loadService('deployment');
+    const environmentProto = loadService('environment');
+    const eventProto = loadService('event');
+    const projectProto = loadService('project');
+    const promptProto = loadService('prompt');
+    const userConfigProto = loadService('user_config');
+    const workflowProto = loadService('workflow');
 
-  _withMetadata(method) {
-    return (...args) => {
-      const callback = args[args.length - 1];
-      const metadata = this._metadata;
-      method.call(null, ...args.slice(0, -1), metadata, callback);
-    };
+    this.Compose = new composeProto.ComposeService(address, grpc.credentials.createInsecure());
+    this.Deployment = new deploymentProto.DeploymentService(address, grpc.credentials.createInsecure());
+    this.Environment = new environmentProto.EnvironmentService(address, grpc.credentials.createInsecure());
+    this.Events = new eventProto.EventService(address, grpc.credentials.createInsecure());
+    this.Project = new projectProto.ProjectService(address, grpc.credentials.createInsecure());
+    this.Prompt = new promptProto.PromptService(address, grpc.credentials.createInsecure());
+    this.UserConfig = new userConfigProto.UserConfigService(address, grpc.credentials.createInsecure());
+    this.Workflow = new workflowProto.WorkflowService(address, grpc.credentials.createInsecure());
   }
 }
 
-module.exports = { AzdClient };
+module.exports = AzdClient;

@@ -1,4 +1,4 @@
-const { AzdClient } = require('./azdClient');
+const AzdClient = require('./azdClient');
 
 class EventManager {
   constructor(client) {

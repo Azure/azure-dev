@@ -1,29 +1,46 @@
 const { Command } = require('commander');
-const { AzdClient } = require('../azdClient');
+const AzdClient = require('../azdClient');
+const { unary } = require('../grpcUtils');
 
 function createContextCommand() {
   const cmd = new Command('context');
   cmd.description('Get context of the AZD project and environment.');
 
   cmd.action(async () => {
-    const client = new AzdClient();
 
-    const config = await client.UserConfig.get({});
-    console.log('User Config:', config?.value);
+    try {
+      const client = new AzdClient();
 
-    const project = await client.Project.get({});
-    console.log('Project:', project?.project);
+      // === User Config ===
+      const configResponse = await unary(client.UserConfig, 'get', {}, client._metadata);
+      console.log('User Config:', configResponse?.value?.toString());
 
-    const currentEnv = await client.Environment.getCurrent({});
-    const envs = await client.Environment.list({});
-    console.log('Environments:', envs.environments);
-    console.log('Current Environment:', currentEnv?.environment?.name);
+      // === Project Info ===
+      const projectResponse = await unary(client.Project, 'get', {}, client._metadata);
+      console.log('Project:', projectResponse?.project);
 
-    const envValues = await client.Environment.getValues({ name: currentEnv?.environment?.name });
-    console.log('Environment Values:', envValues?.keyValues);
+      // === Current Environment ===
+      const currentEnv = await unary(client.Environment, 'getCurrent', {}, client._metadata);
+      const currentEnvName = currentEnv?.environment?.name;
+      console.log('Current Environment:', currentEnvName);
 
-    const deployContext = await client.Deployment.getDeploymentContext({});
-    console.log('Deployment Context:', deployContext);
+      // === All Environments ===
+      const envList = await unary(client.Environment, 'list', {}, client._metadata);
+      console.log('All Environments:', envList?.environments);
+
+      // === Environment Values ===
+      if (currentEnvName) {
+        const envValues = await unary(client.Environment, 'getValues', { name: currentEnvName }, client._metadata);
+        console.log('Environment Values:', envValues?.keyValues);
+      }
+
+      // === Deployment Context ===
+      const deployCtx = await unary(client.Deployment, 'getDeploymentContext', {}, client._metadata);
+      console.log('Deployment Context:', deployCtx);
+    } catch (err) {
+      console.error(err.message);
+      process.exit(1);
+    }
   });
 
   return cmd;

@@ -1,10 +1,13 @@
-import { Command } from 'commander';
+const { Command } = require('commander');
+const { AzdClient } = require('../azdClient');
 
-export function createContextCommand(client) {
+function createContextCommand() {
   const cmd = new Command('context');
   cmd.description('Get context of the AZD project and environment.');
 
   cmd.action(async () => {
+    const client = new AzdClient();
+
     const config = await client.UserConfig.get({});
     console.log('User Config:', config?.value);
 
@@ -13,7 +16,6 @@ export function createContextCommand(client) {
 
     const currentEnv = await client.Environment.getCurrent({});
     const envs = await client.Environment.list({});
-
     console.log('Environments:', envs.environments);
     console.log('Current Environment:', currentEnv?.environment?.name);
 
@@ -26,3 +28,5 @@ export function createContextCommand(client) {
 
   return cmd;
 }
+
+module.exports = { createContextCommand };

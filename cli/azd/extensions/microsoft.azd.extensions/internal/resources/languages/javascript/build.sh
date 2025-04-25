@@ -96,6 +96,9 @@ for PLATFORM in "${PLATFORMS[@]}"; do
             EXPECTED_OUTPUT_NAME+='.exe'
         fi
 
+        echo "Installing dependencies..."
+        npm install
+        
         echo "Building JavaScript extension for $OS/$ARCH..."
         pkg "$ENTRY_FILE" --output "$OUTPUT_DIR/$EXPECTED_OUTPUT_NAME" --targets "$TARGET"
 

@@ -1,29 +1,42 @@
-import { Command } from 'commander';
-import { EventManager } from '../eventManager.js';
+const { Command } = require('commander');
+const { AzdClient } = require('../azdClient');
+const { EventManager } = require('../eventManager');
 
-export function createListenCommand(client) {
+function createListenCommand() {
   const cmd = new Command('listen');
-  cmd.description('Start listening for events.');
+  cmd.description('Starts the extension and listens for events.');
 
   cmd.action(async () => {
-    const manager = new EventManager(client);
+    const client = new AzdClient();
+    const eventManager = new EventManager(client);
 
-    await manager.addProjectEventHandler('preprovision', async () => {
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+    // Project Event: preprovision
+    await eventManager.addProjectEventHandler('preprovision', async () => {
       for (let i = 1; i <= 20; i++) {
-        console.log(`${i}. Doing work in JavaScript extension...`);
-        await new Promise(r => setTimeout(r, 250));
+        console.log(`${i}. Doing important work in JS extension...`);
+        await sleep(250);
       }
     });
 
-    await manager.addServiceEventHandler('prepackage', async () => {
+    // Service Event: prepackage
+    await eventManager.addServiceEventHandler('prepackage', async () => {
       for (let i = 1; i <= 20; i++) {
-        console.log(`${i}. Service work in JavaScript extension...`);
-        await new Promise(r => setTimeout(r, 250));
+        console.log(`${i}. Doing important work in JS extension...`);
+        await sleep(250);
       }
     });
 
-    await manager.receive();
+    // Start receiving events
+    try {
+      await eventManager.receive();
+    } catch (err) {
+      console.error('Error while receiving events:', err.message);
+    }
   });
 
   return cmd;
 }
+
+module.exports = { createListenCommand };

@@ -82,19 +82,6 @@ foreach ($PLATFORM in $PLATFORMS) {
         }
 
         Rename-Item -Path "$OUTPUT_DIR/$EXPECTED_OUTPUT_NAME" -NewName $OUTPUT_NAME
-    } elseif ($env:EXTENSION_LANGUAGE -eq "go") {
-        # Set environment variables for Go build
-        $env:GOOS = $OS
-        $env:GOARCH = $ARCH
-
-        go build `
-            -ldflags="-X '$APP_PATH.Version=$env:EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" `
-            -o $OUTPUT_NAME
-
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "An error occurred while building for $OS/$ARCH"
-            exit 1
-        }
     } elseif ($env:EXTENSION_LANGUAGE -eq "javascript") {
         $ENTRY_FILE = "index.js"
         $TARGET = "node16-$OS-x64"
@@ -103,8 +90,24 @@ foreach ($PLATFORM in $PLATFORMS) {
             $EXPECTED_OUTPUT_NAME += ".exe"
         }
 
+        Write-Host "Installing dependencies..."
+        npm install
+        
         Write-Host "Building JavaScript extension for $OS/$ARCH..."
         pkg $ENTRY_FILE -o $OUTPUT_DIR/$EXPECTED_OUTPUT_NAME --targets $TARGET
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "An error occurred while building for $OS/$ARCH"
+            exit 1
+        }
+    } elseif ($env:EXTENSION_LANGUAGE -eq "go") {
+        # Set environment variables for Go build
+        $env:GOOS = $OS
+        $env:GOARCH = $ARCH
+
+        go build `
+            -ldflags="-X '$APP_PATH.Version=$env:EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" `
+            -o $OUTPUT_NAME
 
         if ($LASTEXITCODE -ne 0) {
             Write-Host "An error occurred while building for $OS/$ARCH"

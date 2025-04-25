@@ -90,6 +90,9 @@ foreach ($PLATFORM in $PLATFORMS) {
             $EXPECTED_OUTPUT_NAME += ".exe"
         }
 
+        Write-Host "Installing dependencies..."
+        npm install
+        
         Write-Host "Building JavaScript extension for $OS/$ARCH..."
         pkg $ENTRY_FILE -o $OUTPUT_DIR/$EXPECTED_OUTPUT_NAME --targets $TARGET
 

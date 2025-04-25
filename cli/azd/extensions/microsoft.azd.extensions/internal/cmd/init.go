@@ -265,6 +265,10 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 			Label: "C#",
 			Value: "dotnet",
 		},
+		{
+			Label: "Python",
+			Value: "python",
+		},
 	}
 
 	programmingLanguagePrompt, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{

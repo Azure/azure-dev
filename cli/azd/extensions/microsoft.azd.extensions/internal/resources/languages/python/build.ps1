@@ -96,7 +96,10 @@ foreach ($PLATFORM in $PLATFORMS) {
             exit 1
         }
     } elseif ($env:EXTENSION_LANGUAGE -eq "python") {
-        $PYTHON_MAIN_FILE = "src/main.py"
+        $PYTHON_MAIN_FILE = "main.py"
+
+        Write-Host "Installing Python dependencies..."
+        pip install -r requirements.txt
 
         $PYINSTALLER_NAME = "$EXTENSION_ID_SAFE-$OS-$ARCH"
         if ($OS -eq "windows") {
@@ -106,6 +109,7 @@ foreach ($PLATFORM in $PLATFORMS) {
         Write-Host "Running PyInstaller for $OS/$ARCH..."
         python -m PyInstaller `
             --onefile `
+            --add-data "generated_proto:generated_proto" `
             --distpath $OUTPUT_DIR `
             --name $PYINSTALLER_NAME `
             $PYTHON_MAIN_FILE

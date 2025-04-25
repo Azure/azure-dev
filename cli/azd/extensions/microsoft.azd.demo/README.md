@@ -69,4 +69,4 @@ This `listen` command is required when your extension leverages `LifecycleEvents
 
 #### Usage: `azd demo listen`
 
-This command is invoked by `azd` to allow your extension to subscribe to lifecycle events within the current `azd project and services.
+This command is invoked by `azd` to allow your extension to subscribe to lifecycle events within the current `azd` project and services.

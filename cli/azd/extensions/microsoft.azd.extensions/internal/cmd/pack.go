@@ -100,8 +100,7 @@ func runPackageAction(ctx context.Context, flags *packageFlags) error {
 	fmt.Printf("%s: %s\n", output.WithBold("Input Path"), output.WithHyperlink(absInputPath, absInputPath))
 	fmt.Printf("%s: %s\n", output.WithBold("Output Path"), output.WithHyperlink(absOutputPath, absOutputPath))
 
-	taskList := ux.NewTaskList(nil)
-	taskList.
+	taskList := ux.NewTaskList(nil).
 		AddTask(ux.TaskOptions{
 			Title: "Building extension",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
@@ -164,11 +163,7 @@ func runPackageAction(ctx context.Context, flags *packageFlags) error {
 			},
 		})
 
-	if err := taskList.Run(); err != nil {
-		return fmt.Errorf("failed to package tasks: %w", err)
-	}
-
-	return nil
+	return taskList.Run()
 }
 
 func packExtensionBinaries(

@@ -149,8 +149,7 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 
 	fmt.Printf("%s: %s\n", output.WithBold("Registry"), output.WithHyperlink(absRegistryPath, absRegistryPath))
 
-	taskList := ux.NewTaskList(nil)
-	taskList.
+	taskList := ux.NewTaskList(nil).
 		AddTask(ux.TaskOptions{
 			Title: "Fetching local artifacts",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {

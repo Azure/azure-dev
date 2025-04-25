@@ -242,8 +242,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 		}
 	}
 
-	taskList := ux.NewTaskList(nil)
-	taskList.
+	taskList := ux.NewTaskList(nil).
 		AddTask(ux.TaskOptions{
 			Title: "Validating artifacts",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {

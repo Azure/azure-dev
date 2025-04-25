@@ -95,7 +95,7 @@ for PLATFORM in "${PLATFORMS[@]}"; do
     elif [ "$EXTENSION_LANGUAGE" = "python" ]; then
         PYTHON_MAIN_FILE="main.py"
 
-        Write-Host "Installing Python dependencies..."
+        echo "Installing Python dependencies..."
         pip install -r requirements.txt
         
         PYINSTALLER_NAME="$EXTENSION_ID_SAFE-$OS-$ARCH"

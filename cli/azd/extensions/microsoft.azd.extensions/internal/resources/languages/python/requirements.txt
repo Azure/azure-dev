@@ -3,5 +3,8 @@ grpcio-tools==1.71.0
 protobuf==5.29.0
 grpc-interceptor==0.15.4  
 azure.identity== 1.21.0
-azure.mgmt.resource== 23.3.0
+azure.mgmt.resource== 22.0.0
 rich==14.0.0
+typer==0.15.2
+aiohttp==3.11.18
+asyncio==3.4.3

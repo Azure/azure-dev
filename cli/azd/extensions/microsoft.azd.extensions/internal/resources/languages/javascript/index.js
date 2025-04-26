@@ -8,7 +8,7 @@ const { createPromptCommand } = require('./commands/prompt');
 const { createListenCommand } = require('./commands/listen');
 
 // Load extension metadata
-let namespace = 'demoX'; // fallback
+let namespace = 'demoX';
 let version = '0.0.1';
 
 try {

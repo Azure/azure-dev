@@ -83,7 +83,7 @@ foreach ($PLATFORM in $PLATFORMS) {
 
         Rename-Item -Path "$OUTPUT_DIR/$EXPECTED_OUTPUT_NAME" -NewName $OUTPUT_NAME
     } elseif ($env:EXTENSION_LANGUAGE -eq "javascript") {
-        $ENTRY_FILE = "index.js"
+        $ENTRY_FILE = "pkg-entry.js"
         $TARGET = "node16-$OS-x64"
         $EXPECTED_OUTPUT_NAME = "$EXTENSION_ID_SAFE-$OS-$ARCH"
         if ($OS -eq "windows") {

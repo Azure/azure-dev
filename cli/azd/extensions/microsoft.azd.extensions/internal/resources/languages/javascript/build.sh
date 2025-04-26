@@ -88,7 +88,7 @@ for PLATFORM in "${PLATFORMS[@]}"; do
 
         mv "$OUTPUT_DIR/$EXPECTED_OUTPUT_NAME" "$OUTPUT_NAME"
     elif [ "$EXTENSION_LANGUAGE" = "javascript" ]; then
-        ENTRY_FILE="index.js"
+        ENTRY_FILE="pkg-entry.js"
         TARGET="node16-$OS-x64"
         EXPECTED_OUTPUT_NAME="$EXTENSION_ID_SAFE-$OS-$ARCH"
 

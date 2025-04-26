@@ -1,4 +1,4 @@
-const AzdClient = require('./azdClient');
+const grpc = require('@grpc/grpc-js');
 
 class EventManager {
   constructor(client) {
@@ -10,22 +10,26 @@ class EventManager {
 
   async _ensureStream() {
     if (!this._stream) {
-      this._stream = this._client.Events.eventStream();
+      this._stream = this._client.Events.EventStream(this._client._metadata);
 
-      // Send ready event when the stream is ready
+      // Send ExtensionReadyEvent
       await new Promise((resolve) => {
         this._stream.write({ extensionReadyEvent: { status: 'ready' } });
         resolve();
       });
 
+      console.log('[EventManager] Extension ready event sent.');
       this._listen();
     }
   }
 
   _listen() {
     this._stream.on('data', async (msg) => {
+      console.log('[EventManager] Received event:', JSON.stringify(msg));
+
       if (msg.invokeProjectHandler) {
         const eventName = msg.invokeProjectHandler.eventName;
+        console.log(`[EventManager] Handling project event: ${eventName}`);
         const handler = this._projectHandlers[eventName];
         if (handler) {
           try {
@@ -51,6 +55,7 @@ class EventManager {
 
       if (msg.invokeServiceHandler) {
         const eventName = msg.invokeServiceHandler.eventName;
+        console.log(`[EventManager] Handling service event: ${eventName}`);
         const handler = this._serviceHandlers[eventName];
         if (handler) {
           try {
@@ -81,16 +86,29 @@ class EventManager {
     });
 
     this._stream.on('error', (err) => {
-      console.error('[EventManager] Error:', err.message);
+      console.error('[EventManager] Stream error:', err.message);
     });
 
     this._stream.on('end', () => {
-      console.log('[EventManager] Stream ended.');
+      console.log('[EventManager] Stream ended by server.');
     });
   }
 
   async receive() {
     await this._ensureStream();
+
+    // MOCK: send preprovision event
+    setTimeout(() => {
+      console.log('[EventManager] Mock sending preprovision event...');
+      this._stream.emit('data', {
+        invokeProjectHandler: {
+          eventName: 'preprovision',
+          project: {
+            name: 'simple-template'
+          }
+        }
+      });
+    }, 2000);
   }
 
   async addProjectEventHandler(eventName, handler) {
@@ -102,6 +120,8 @@ class EventManager {
         eventNames: [eventName],
       },
     });
+
+    console.log(`[EventManager] Subscribed to project event: ${eventName}`);
   }
 
   async addServiceEventHandler(eventName, handler, options = {}) {
@@ -115,6 +135,8 @@ class EventManager {
         language: options.language || '',
       },
     });
+
+    console.log(`[EventManager] Subscribed to service event: ${eventName}`);
   }
 
   removeProjectEventHandler(eventName) {

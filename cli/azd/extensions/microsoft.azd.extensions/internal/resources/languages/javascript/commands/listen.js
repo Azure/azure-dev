@@ -12,23 +12,20 @@ function createListenCommand() {
 
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-    // Project Event: preprovision
     await eventManager.addProjectEventHandler('preprovision', async () => {
-      for (let i = 1; i <= 20; i++) {
-        console.log(`${i}. Doing important work in JS extension...`);
-        await sleep(250);
+      for (let i = 1; i <= 10; i++) {
+        console.log(`[preprovision] Doing important work... step ${i}`);
+        await sleep(200);
       }
     });
 
-    // Service Event: prepackage
     await eventManager.addServiceEventHandler('prepackage', async () => {
-      for (let i = 1; i <= 20; i++) {
-        console.log(`${i}. Doing important work in JS extension...`);
-        await sleep(250);
+      for (let i = 1; i <= 10; i++) {
+        console.log(`[prepackage] Doing important work... step ${i}`);
+        await sleep(200);
       }
     });
 
-    // Start receiving events
     try {
       await eventManager.receive();
     } catch (err) {

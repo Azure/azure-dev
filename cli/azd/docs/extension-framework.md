@@ -1,97 +1,67 @@
 # Extension Framework
 
-> **NOTE:** The `azd` extension framework is experimental.
->
-> To enable extensions, run:  
-> `azd config set alpha.extensions on`
-
 Table of Contents
 
-- [Capabilities](#capabilities)
+- [Getting Started](#getting-started)
 - [Managing Extensions](#managing-extensions)
 - [Developing Extensions](#developing-extensions)
-- [Developer Artifacts](#developer-artifacts)
-- [gRPC Services](#grpc-services)
-	- [Project Service](#project-service)
-	- [Environment Service](#environment-service)
-	- [User Config Service](#user-config-service)
-	- [Deployment Service](#deployment-service)
-	- [Prompt Service](#prompt-service)
-	- [Event Service](#event-service)
-	- [Compose Service](#compose-service)
-	- [Workflow Service](#workflow-service)
+  - [Capabilities](#capabilities)
+  - [Developer Artifacts](#developer-artifacts)
+  - [gRPC Services](#grpc-services)
+    - [Project Service](#project-service)
+    - [Environment Service](#environment-service)
+    - [User Config Service](#user-config-service)
+    - [Deployment Service](#deployment-service)
+    - [Prompt Service](#prompt-service)
+    - [Event Service](#event-service)
+    - [Compose Service](#compose-service)
+    - [Workflow Service](#workflow-service)
 
-## Capabilities
+## Getting Started
 
-### Current Capabilities (Feb 2025)
+`azd` extensions are currently an alpha feature within `azd.
 
-The following lists the current capabilities of `azd extensions`.
+> [!IMPORTANT]
+> Enable `azd` extensions alpha feature by running `azd config set alpha.extensions on`
 
-#### Extension Commands
-
-> Extensions must declare the `custom-commands` capability in their `extension.yaml` file.
-
-Extensions can register commands under a namespace or command group within `azd`.
-For example, installing the AI extension adds a new `ai` command group.
-
-#### Lifecycle Hooks
-
-> Extensions must declare the `lifecycle-events` capability in their `extension.yaml` file.
-
-Extensions can subscribe to project and service lifecycle events (both pre and post events) for:
-
-- build
-- restore
-- package
-- provision
-- deploy
-
-Your extension _**must**_ include a `listen` command to subscribe to these events.
-`azd` will automatically invoke your extension during supported commands to establish bi-directional communication.
-
-##### Install extensions
-
-Run:
-
-```bash
-azd extension install microsoft.azd.ai
-```
-
-In this example, the AI extension registers under the `ai` namespace.
-
-##### Run extensions
-
-Run:
-
-```bash
-azd ai <command> [flags]
-```
-
-### Future Considerations
-
-Future ideas include:
-
-- Registration of pluggable providers for:
-  - Language support (e.g., Go)
-  - New Azure service targets (e.g., VMs, ACI)
-  - Infrastructure providers (e.g., Pulumi)
-  - Source control providers (e.g., GitLab)
-  - Pipeline providers (e.g., TeamCity)
+- Initially official extensions will start shipping at //BUILD 2025.
+- Official extensions must be developed in a fork of the [azure/azure-dev](https://github.com/azure/azure-dev) github repo.
+- Extension binaries are shipped as Github releases to the same repo through our official pipelines.
 
 ## Managing Extensions
 
 ### Extension Sources
 
-Extension sources are file- or URL-based manifests that provide a registry of available `azd` extensions.
+Extension sources are file or URL based manifests that provide a registry of available `azd` extensions.
 Users can add custom extension sources that connect to private, local, or public registries.
+Extension sources are an equivalent concept to Nuget or NPM feeds.
 
 Extension registries must adhere to the [official extension registry schema](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/registry.schema.json).
 
-The official `azd` extension registry is available in the [`azd` github repo](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/registry.json).
+#### Official Registry
+
+The official extension source registry is pre-configured in `azd` and is hosted at [https://aka.ms/azd/extensions/registry](https://aka.ms/azd/extensions/registry).
+
+The registry is hosted in the [`azd` github repo](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/registry.json).
+
+#### Development Registry
+
+> [!CAUTION]
+> Extensions hosted in the dev registry DO NOT contain signed binaries at the moment.
+
+A shared development registry can be added to your `azd` configuration.
+This registry contains extensions that are experiments and also used for internal testing before shipping official extensions.
+
+To opt-in for the development registry run the following command:
+
+```bash
+# Add a new extension source name 'dev' to your `azd` configuration.
+azd extension source add -n dev -t url -l "https://aka.ms/azd/extensions/registry/dev"
+```
 
 #### `azd extension source list`
 
-Displays a list of installed extension sources
+Displays a list of installed extension sources.
 
 #### `azd extension source add [flags]`
 
@@ -140,7 +110,206 @@ Upgrades one or more extensions to the latest versions.
 
 ## Developing Extensions
 
-`azd` extensions can be developed using any programming language. It is recommended that initial extensions leverage Go for best support.
+The following guide will help you develop and ship extensions for `azd`.
+
+### Prerequisites
+
+1. [Create a fork](https://github.com/Azure/azure-dev/fork) of the `azure/azure-dev` repo for extension development.
+2. Clone your forked repo or open in a codespace.
+3. Navigate to the `cli/azd/extensions` directory in your favorite terminal.
+4. Install the `azd` [Developer Extension](#developer-extension)
+
+### Supported Languages
+
+`azd` extensions can be built in any programming language but starter templates are included for the following:
+
+- Go (Best support)
+- Dotnet (C#)
+- Python
+- JavaScript (Coming Soon)
+- TypeScript (Common Soon)
+
+### Developer Extension
+
+The easiest way to get started building extensions is to install the `azd` Developer extension.
+
+> [!IMPORTANT]
+> Ensure you have added the `dev` extension source to your `azd` configuration
+>
+> [Configure dev extension source](#development-registry)
+
+```bash
+# Install the `azd` developer extension
+azd extension install microsoft.azd.extensions
+```
+
+Once installed the extension registers a suite of commands under the `x` namespace.
+
+> [!NOTE]
+> Having issues or have some ideas to improve the `azd` developer extension?
+>
+> Just [log an issue](https://github.com/Azure/azure-dev/issues) in the `azure/azure-dev` repo.
+
+#### Commands
+
+`init` - Initialize a new extension project.
+
+> [!TIP]
+> You'll typically want to run this command inside the `azd/cli/extensions` directory.
+
+Usage: `azd x init`
+
+- Collects information for the extension and scaffolds and extension in a specified language of choice.
+- Creates local extension source if it doesn't already exist
+- Builds initial binaries for extension
+- Packs extension
+- Publishes extension to local extension source
+- Installs the extension locally for immediate use
+
+---
+
+`build` - Build the binary for the extension.
+
+Usage: `azd x build`
+
+- `--cwd` - The extension directory, defaults to `.`.
+- `--all` - Builds binaries for all supported operating systems and architecture.
+- `--output, -o` - Path to the output directory, defaults to `./bin`.
+- `--skip-install` - When skips local installation after successful build.
+
+---
+
+`watch` - Watches the extension directory for changes and automatically rebuilds and installs extension
+
+Usage: `azd x watch`
+
+- `--cwd` - The extension directory, defaults to `.`.
+
+---
+
+`pack` - Package your extension to prepare for publishing.
+
+Usage: `azd x pack`
+
+- `--cwd` - The extension directory, defaults to `.`.
+- `--input, -i` - Path to the input directory that contains binary files.
+- `--output, -o` - Path to the artifacts output directory, defaults to local `azd` artifacts path, `~/.azd/registry`.
+- `--rebuild` - When set forces a rebuild before packaging.
+
+---
+
+`release` - Create a new Github release for the extension.
+
+Usage: `azd x release --repo {owner}/{name}`
+
+- `--cwd` - The extension directory, defaults to `.`.
+- `--artifacts` - Path to the artifacts to upload for the release, defaults to local `azd` artifacts path, `~/.azd/registry`.
+- `--repo` - The Github repo name in `{owner}/{repo}` format.
+- `--title, -t` - The name of the release, defaults to extension name plus version.
+- `--prerelease` - When set marks the release as a prerelease.
+- `--draft, -d` - When set marks the release a draft
+- `--notes, -n` - The release notes for the release, defaults to using contents of `changelog.md` within extension directory.
+- `--version, -v` - The version of the release, defaults to extension version from extension manifest
+- `--confirm` - When set bypasses confirmation prompts before release
+
+---
+
+`publish` - Updates the extension source registry with new metadata.
+
+Usage: `azd x publish --repo {owner}/{name}`
+
+- `--cwd` - The extension directory, defaults to `.`.
+- `--registry, -r` - The path to the registry.json file to update, defaults to local extension registry
+- `--repo` - The Github repo name in `{owner}/{repo}` format.
+- `--version, -v` - The version of the release, defaults to extension version from extension manifest
+
+---
+
+### Capabilities
+
+#### Current Capabilities (May 2025)
+
+The following lists the current capabilities of `azd extensions`.
+
+##### Extension Commands
+
+> Extensions must declare the `custom-commands` capability in their `extension.yaml` file.
+
+Extensions can register commands under a namespace or command group within `azd`.
+For example, installing the AI extension adds a new `ai` command group.
+
+##### Lifecycle Hooks
+
+> Extensions must declare the `lifecycle-events` capability in their `extension.yaml` file.
+
+Extensions can subscribe to project and service lifecycle events (both pre and post events) for:
+
+- build
+- restore
+- package
+- provision
+- deploy
+
+Your extension _**must**_ include a `listen` command to subscribe to these events.
+`azd` will automatically invoke your extension during supported commands to establish bi-directional communication.
+
+#### Future Considerations
+
+Future ideas include:
+
+- Registration of pluggable providers for:
+  - Language support (e.g., Go)
+  - New Azure service targets (e.g., VMs, ACI)
+  - Infrastructure providers (e.g., Pulumi)
+  - Source control providers (e.g., GitLab)
+  - Pipeline providers (e.g., TeamCity)
+
+---
+
+### Developer Workflow
+
+The following are the most common developer workflow for developing extensions.
+
+#### Creating a new Extension
+
+1. Run `azd x init` to start a new extension
+
+#### Developing an Extension
+
+1. Navigate to the extension folder `azd/cli/extensions/{EXTENSION_ID}`
+1. Run `azd x watch` during development to automatically build and install local updates
+1. Run `azd x build` incrementally build & install local version
+
+#### Validate, Release and Publish development extension
+
+1. Create a new feature branch for the extension `git checkout -b <branch-name>`
+1. Modify the extension code as needed
+1. Update the version parameter within the `extension.yaml` file.
+1. Run `azd x pack --rebuild`
+1. Run `azd x release --prerelease` to create new Github release for the extension
+1. Run `azd x publish --registry ../registry.json` to publish the new version metadata into the registry
+1. Commit and push the changes to the forked repo.
+
+To share the forked registry with others just provide the raw github link to the `azd/cli/extensions/registry.json` file.
+
+#### Validate, Release and Publish official extension
+
+1. Follow above steps for validating, releasing & publishing development extension
+1. Push the local changes `git push <remote> <branch-name> -u`
+1. Create PR for the changes within `azure/azure-dev` repo
+
+> [!IMPORTANT]
+> Make sure modifications to the `registry.json` file are NOT included on extension code PR.
+> Changes to the `registry.json` file should be made after code changes have been merged.
+
+##### After PR has been merged
+
+1. Create a new branch to publish registry changes `git checkout -b <branch-name>`
+1. Run `azd x publish --registry ../registry.json` to publish the new version metadata into the registry
+1. Commit the changes to the local branch, `git commit -am "<description>"`
+1. Create PR for the changes within `azure/azure-dev` repo
+
+Once PR has been merged the extension updates are now live in the official `azd` extension source registry.
 
 ### Extension Manifest
 
@@ -322,6 +491,7 @@ if err := eventManager.Receive(ctx); err != nil {
 - Make file @ [Makefile](../Makefile)
 
 To re-generate gRPC clients:
+
 - Run `protoc --version` to check if `protoc` is installed. If not, download and install it from [GitHub](https://github.com/protocolbuffers/protobuf/releases).
 - Run `make --version` to check if `make` is installed.
 - Run `go install google.golang.org/protobuf/cmd/protoc-gen-go@latest` and `go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest` to install the required Go tools.
@@ -343,74 +513,83 @@ The following are a list of available gRPC services for extension developer to i
 - [Compose Service](#compose-service)
 - [Workflow Service](#workflow-service)
 
+---
+
 ### Project Service
 
 This service manages project configuration retrieval and related operations.
+
+> See [project.proto](../grpc/proto/project.proto) for more details.
 
 #### Get
 
 Gets the current project configuration.
 
-- **Request:** *EmptyRequest* (no fields)
-- **Response:** *GetProjectResponse*
+- **Request:** _EmptyRequest_ (no fields)
+- **Response:** _GetProjectResponse_
   - Contains **ProjectConfig**:
     - `name` (string)
     - `resource_group_name` (string)
     - `path` (string)
     - `metadata`: `{ template: string }`
-    - `services`: map of *ServiceConfig*
-    - `infra`: *InfraOptions*
+    - `services`: map of _ServiceConfig_
+    - `infra`: _InfraOptions_
 
 #### AddService
+
 Adds a new service to the project.
 
-- **Request:** *AddServiceRequest*
+- **Request:** _AddServiceRequest_
   - Contains:
-    - `service`: *ServiceConfig*
-- **Response:** *EmptyResponse*
+    - `service`: _ServiceConfig_
+- **Response:** _EmptyResponse_
+
+---
 
 ### Environment Service
 
 This service handles environment management including retrieval, selection, and key-value operations.
 
+> See [environment.proto](../grpc/proto/environment.proto) for more details.
+
 #### GetCurrent
 
 Gets the current environment.
 
-- **Request:** *EmptyRequest*
-- **Response:** *EnvironmentResponse* (includes an *Environment* with `name`)
+- **Request:** _EmptyRequest_
+- **Response:** _EnvironmentResponse_ (includes an _Environment_ with `name`)
 
 #### List
 
 Retrieves all azd environments.
 
-- **Request:** *EmptyRequest*
-- **Response:** *EnvironmentListResponse* (list of *EnvironmentDescription*)
+- **Request:** _EmptyRequest_
+- **Response:** _EnvironmentListResponse_ (list of _EnvironmentDescription_)
 
 #### Get
 
 Retrieves an environment by its name.
 
-- **Request:** *GetEnvironmentRequest*
+- **Request:** _GetEnvironmentRequest_
   - `name` (string)
-- **Response:** *EnvironmentResponse*
+- **Response:** _EnvironmentResponse_
   - Contains an **Environment** with `name` (string)
 
 #### Select
 
 Sets the selected environment as default.
 
-- **Request:** *SelectEnvironmentRequest*
+- **Request:** _SelectEnvironmentRequest_
   - `name` (string)
-- **Response:** *EmptyResponse*
+- **Response:** _EmptyResponse_
 
 #### GetValues
 
 Retrieves all key-value pairs in the specified environment.
 
-- **Request:** *GetEnvironmentRequest*
+- **Request:** _GetEnvironmentRequest_
   - `name` (string)
-- **Response:** *KeyValueListResponse*
+- **Response:** _KeyValueListResponse_
   - Contains a list of **KeyValue**:
     - `key` (string)
     - `value` (string)
@@ -419,10 +598,10 @@ Retrieves all key-value pairs in the specified environment.
 
 Retrieves the value of a specific key.
 
-- **Request:** *GetEnvRequest*
+- **Request:** _GetEnvRequest_
   - `env_name` (string)  
   - `key` (string)
-- **Response:** *KeyValueResponse*
+- **Response:** _KeyValueResponse_
   - Contains:
     - `key` (string)
     - `value` (string)
@@ -431,19 +610,19 @@ Retrieves the value of a specific key.
 
 Sets the value of a key in an environment.
 
-- **Request:** *SetEnvRequest*
+- **Request:** _SetEnvRequest_
   - `env_name` (string)  
   - `key` (string)  
   - `value` (string)
-- **Response:** *EmptyResponse*
+- **Response:** _EmptyResponse_
 
 #### GetConfig
 
 Retrieves a config value by path.
 
-- **Request:** *GetConfigRequest*
+- **Request:** _GetConfigRequest_
   - `path` (string)
-- **Response:** *GetConfigResponse*
+- **Response:** _GetConfigResponse_
   - Contains:
     - `value` (bytes)
     - `found` (bool)
@@ -452,9 +631,9 @@ Retrieves a config value by path.
 
 Retrieves a config value as a string by path.
 
-- **Request:** *GetConfigStringRequest*
+- **Request:** _GetConfigStringRequest_
   - `path` (string)
-- **Response:** *GetConfigStringResponse*
+- **Response:** _GetConfigStringResponse_
   - Contains:
     - `value` (string)
     - `found` (bool)
@@ -463,9 +642,9 @@ Retrieves a config value as a string by path.
 
 Retrieves a config section by path.
 
-- **Request:** *GetConfigSectionRequest*
+- **Request:** _GetConfigSectionRequest_
   - `path` (string)
-- **Response:** *GetConfigSectionResponse*
+- **Response:** _GetConfigSectionResponse_
   - Contains:
     - `section` (bytes)
     - `found` (bool)
@@ -474,30 +653,34 @@ Retrieves a config section by path.
 
 Sets a config value at a given path.
 
-- **Request:** *SetConfigRequest*
+- **Request:** _SetConfigRequest_
   - `path` (string)  
   - `value` (bytes)
-- **Response:** *EmptyResponse*
+- **Response:** _EmptyResponse_
 
 #### UnsetConfig
 
 Removes a config value at a given path.
 
-- **Request:** *UnsetConfigRequest*
+- **Request:** _UnsetConfigRequest_
   - `path` (string)
-- **Response:** *EmptyResponse*
+- **Response:** _EmptyResponse_
+
+---
 
 ### User Config Service
 
 This service manages user-specific configuration retrieval and updates.
 
+> See [user_config.proto](../grpc/proto/user_config.proto) for more details.
+
 #### Get
 
 Retrieves a user configuration value by path.
 
-- **Request:** *GetRequest*
+- **Request:** _GetRequest_
   - `path` (string)
-- **Response:** *GetResponse*
+- **Response:** _GetResponse_
   - Contains:
     - `value` (bytes)
     - `found` (bool)
@@ -506,9 +689,9 @@ Retrieves a user configuration value by path.
 
 Retrieves a user configuration value as a string.
 
-- **Request:** *GetStringRequest*
+- **Request:** _GetStringRequest_
   - `path` (string)
-- **Response:** *GetStringResponse*
+- **Response:** _GetStringResponse_
   - Contains:
     - `value` (string)
     - `found` (bool)
@@ -517,9 +700,9 @@ Retrieves a user configuration value as a string.
 
 Retrieves a section of the user configuration by path.
 
-- **Request:** *GetSectionRequest*
+- **Request:** _GetSectionRequest_
   - `path` (string)
-- **Response:** *GetSectionResponse*
+- **Response:** _GetSectionResponse_
   - Contains:
     - `section` (bytes)
     - `found` (bool)
@@ -528,10 +711,10 @@ Retrieves a section of the user configuration by path.
 
 Sets a user configuration value.
 
-- **Request:** *SetRequest*
+- **Request:** _SetRequest_
   - `path` (string)
   - `value` (bytes)
-- **Response:** *SetResponse*
+- **Response:** _SetResponse_
   - Contains:
     - `status` (string)
 
@@ -539,22 +722,26 @@ Sets a user configuration value.
 
 Removes a user configuration value.
 
-- **Request:** *UnsetRequest*
+- **Request:** _UnsetRequest_
   - `path` (string)
-- **Response:** *UnsetResponse*
+- **Response:** _UnsetResponse_
   - Contains:
     - `status` (string)
+
+---
 
 ### Deployment Service
 
 This service provides operations for deployment retrieval and context management.
 
+> See [deployment.proto](../grpc/proto/deployment.proto) for more details.
+
 #### GetDeployment
 
 Retrieves the latest Azure deployment provisioned by azd.
 
-- **Request:** *EmptyRequest*
-- **Response:** *GetDeploymentResponse*
+- **Request:** _EmptyRequest_
+- **Response:** _GetDeploymentResponse_
   - Contains **Deployment**:
     - `id` (string)
     - `location` (string)
@@ -565,14 +752,12 @@ Retrieves the latest Azure deployment provisioned by azd.
     - `outputs` (map<string, string>)
     - `resources` (repeated string)
 
-*See [deployment.proto](../grpc/proto/deployment.proto).*
-
 #### GetDeploymentContext
 
 Retrieves the current deployment context.
 
-- **Request:** *EmptyRequest*
-- **Response:** *GetDeploymentContextResponse*
+- **Request:** _EmptyRequest_
+- **Response:** _GetDeploymentContextResponse_
   - Contains **AzureContext**:
     - `scope` with:
       - `tenantId` (string)
@@ -581,55 +766,59 @@ Retrieves the current deployment context.
       - `resourceGroup` (string)
     - `resources` (repeated string)
 
+---
+
 ### Prompt Service
 
 This service manages user prompt interactions for subscriptions, locations, resources, and confirmations.
+
+> See [prompt.proto](../grpc/proto/prompt.proto) for more details.
 
 #### PromptSubscription
 
 Prompts the user to select a subscription.
 
-- **Request:** *PromptSubscriptionRequest* (empty)
-- **Response:** *PromptSubscriptionResponse*
+- **Request:** _PromptSubscriptionRequest_ (empty)
+- **Response:** _PromptSubscriptionResponse_
   - Contains **Subscription**
 
 #### PromptLocation
 
 Prompts the user to select a location.
 
-- **Request:** *PromptLocationRequest*
+- **Request:** _PromptLocationRequest_
   - `azure_context` (AzureContext)
-- **Response:** *PromptLocationResponse*
+- **Response:** _PromptLocationResponse_
   - Contains **Location**
 
 #### PromptResourceGroup
 
 Prompts the user to select a resource group.
 
-- **Request:** *PromptResourceGroupRequest*
+- **Request:** _PromptResourceGroupRequest_
   - `azure_context` (AzureContext)
-- **Response:** *PromptResourceGroupResponse*
+- **Response:** _PromptResourceGroupResponse_
   - Contains **ResourceGroup**
 
 #### Confirm
 
 Prompts the user to confirm an action.
 
-- **Request:** *ConfirmRequest*
+- **Request:** _ConfirmRequest_
   - `options` (ConfirmOptions) with:
     - `default_value` (optional bool)
     - `message` (string)
     - `helpMessage` (string)
     - `hint` (string)
     - `placeholder` (string)
-- **Response:** *ConfirmResponse*
+- **Response:** _ConfirmResponse_
   - Contains an optional `value` (bool)
 
 #### Prompt
 
 Prompts the user for text input.
 
-- **Request:** *PromptRequest*
+- **Request:** _PromptRequest_
   - `options` (PromptOptions) with:
     - `message` (string)
     - `help_message` (string)
@@ -641,14 +830,14 @@ Prompts the user for text input.
     - `defaultValue` (string)
     - `clear_on_completion` (bool)
     - `ignore_hint_keys` (bool)
-- **Response:** *PromptResponse*
+- **Response:** _PromptResponse_
   - Contains `value` (string)
 
 #### Select
 
 Prompts the user to select an option from a list.
 
-- **Request:** *SelectRequest*
+- **Request:** _SelectRequest_
   - `options` (SelectOptions) with:
     - `SelectedIndex` (optional int32)
     - `message` (string)
@@ -658,32 +847,34 @@ Prompts the user to select an option from a list.
     - `display_count` (int32)
     - `display_numbers` (optional bool)
     - `enable_filtering` (optional bool)
-- **Response:** *SelectResponse*
+- **Response:** _SelectResponse_
   - Contains an optional `value` (int32)
 
 #### PromptSubscriptionResource
 
 Prompts the user to select a resource from a subscription.
 
-- **Request:** *PromptSubscriptionResourceRequest* with:
+- **Request:** _PromptSubscriptionResourceRequest_ with:
   - `azure_context` (AzureContext)
   - `options` (PromptResourceOptions) with:
     - `resource_type` (string)
     - `kinds` (repeated string)
     - `resource_type_display_name` (string)
     - `select_options` (PromptResourceSelectOptions)
-- **Response:** *PromptSubscriptionResourceResponse*
+- **Response:** _PromptSubscriptionResourceResponse_
   - Contains **ResourceExtended**
 
 #### PromptResourceGroupResource
 
 Prompts the user to select a resource from a resource group.
 
-- **Request:** *PromptResourceGroupResourceRequest* with:
+- **Request:** _PromptResourceGroupResourceRequest_ with:
   - `azure_context` (AzureContext)
   - `options` (PromptResourceOptions) (same structure as above)
-- **Response:** *PromptResourceGroupResourceResponse*
+- **Response:** _PromptResourceGroupResourceResponse_
   - Contains **ResourceExtended**
+
+---
 
 ### Event Service
 
@@ -697,7 +888,7 @@ Clients can subscribe to events and receive notifications via a bidirectional st
   - Invoke event handlers.
   - Send status updates regarding event processing.
 
-*See [event.proto](../grpc/proto/event.proto) for more details.*
+> See [event.proto](../grpc/proto/event.proto) for more details.
 
 #### Message Types
 
@@ -757,64 +948,70 @@ Clients can subscribe to events and receive notifications via a bidirectional st
 
 This service manages composability resources in an AZD project.
 
+> See [compose.proto](../grpc/proto/compose.proto) for more details.
+
 #### ListResources
 
 Lists all configured composability resources.
 
-- **Request:** *EmptyRequest*
-- **Response:** *ListResourcesResponse*
+- **Request:** _EmptyRequest_
+- **Response:** _ListResourcesResponse_
   - Contains a list of **ComposedResource**
 
 #### GetResource
 
 Retrieves the configuration of a specific composability resource.
 
-- **Request:** *GetResourceRequest*
+- **Request:** _GetResourceRequest_
   - Contains:
     - `name` (string)
-- **Response:** *GetResourceResponse*
+- **Response:** _GetResourceResponse_
   - Contains:
-    - `resource`: *ComposedResource*
+    - `resource`: _ComposedResource_
 
 #### ListResourceTypes
 
 Lists all supported composability resource types.
 
-- **Request:** *EmptyRequest*
-- **Response:** *ListResourceTypesResponse*
+- **Request:** _EmptyRequest_
+- **Response:** _ListResourceTypesResponse_
   - Contains a list of **ComposedResourceType**
 
 #### GetResourceType
 
 Retrieves the schema of a specific composability resource type.
 
-- **Request:** *GetResourceTypeRequest*
+- **Request:** _GetResourceTypeRequest_
   - Contains:
     - `type_name` (string)
-- **Response:** *GetResourceTypeResponse*
+- **Response:** _GetResourceTypeResponse_
   - Contains:
-    - `resource_type`: *ComposedResourceType*
+    - `resource_type`: _ComposedResourceType_
 
 #### AddResource
 
 Adds a new composability resource to the project.
 
-- **Request:** *AddResourceRequest*
+- **Request:** _AddResourceRequest_
   - Contains:
-    - `resource`: *ComposedResource*
-- **Response:** *AddResourceResponse*
+    - `resource`: _ComposedResource_
+- **Response:** _AddResourceResponse_
   - Contains:
-    - `resource`: *ComposedResource*
+    - `resource`: _ComposedResource_
+
+---
 
 ### Workflow Service
 
 This service executes workflows defined within the project.
 
+> See [workflow.proto](../grpc/proto/workflow.proto) for more details.
+
 #### Run
 
 Executes a workflow consisting of sequential steps.
 
-- **Request:** *RunWorkflowRequest*
+- **Request:** _RunWorkflowRequest_
   - Contains:
-    - `workflow`: *Workflow* (with `name` and `steps`)
-- **Response:** *EmptyResponse*
+    - `workflow`: _Workflow_ (with `name` and `steps`)
+- **Response:** _EmptyResponse_

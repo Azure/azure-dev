@@ -4,9 +4,11 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"gopkg.in/yaml.v3"
@@ -31,6 +33,12 @@ type ExtensionSchema struct {
 	Dependencies []extensions.ExtensionDependency `yaml:"dependencies" json:"dependencies,omitempty"`
 	Platforms    map[string]map[string]any        `yaml:"platforms"    json:"platforms,omitempty"`
 	Path         string                           `yaml:"-"            json:"-"`
+}
+
+// SafeDashId replaces all '.' in the extension ID with '-'.
+// This is useful for creating a safe ID for use in URLs or other contexts
+func (e *ExtensionSchema) SafeDashId() string {
+	return strings.ReplaceAll(e.Id, ".", "-")
 }
 
 func LoadExtension(extensionPath string) (*ExtensionSchema, error) {
@@ -62,4 +70,18 @@ func LoadExtension(extensionPath string) (*ExtensionSchema, error) {
 	extensionMetadata.Path = absExtensionPath
 
 	return &extensionMetadata, nil
+}
+
+func LoadRegistry(registryPath string) (*extensions.Registry, error) {
+	registryBytes, err := os.ReadFile(registryPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read registry file: %w", err)
+	}
+
+	var registry extensions.Registry
+	if err := json.Unmarshal(registryBytes, &registry); err != nil {
+		return nil, fmt.Errorf("failed to parse registry file: %w", err)
+	}
+
+	return &registry, nil
 }

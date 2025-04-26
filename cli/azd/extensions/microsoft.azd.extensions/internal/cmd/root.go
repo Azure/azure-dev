@@ -7,10 +7,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type rootFlags struct {
+	cwd string
+}
+
 func NewRootCommand() *cobra.Command {
+	flags := &rootFlags{}
+
 	rootCmd := &cobra.Command{
-		Use:           "azd demo <command> [options]",
-		Short:         "Demonstrates AZD extension framework capabilities.",
+		Use:           "x <command> [options]",
+		Short:         "Runs azd developer extension commands",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		CompletionOptions: cobra.CompletionOptions{
@@ -23,9 +29,17 @@ func NewRootCommand() *cobra.Command {
 
 	rootCmd.AddCommand(newInitCommand())
 	rootCmd.AddCommand(newBuildCommand())
-	rootCmd.AddCommand(newPackageCommand())
 	rootCmd.AddCommand(newWatchCommand())
+	rootCmd.AddCommand(newPackCommand())
+	rootCmd.AddCommand(newReleaseCommand())
+	rootCmd.AddCommand(newPublishCommand())
 	rootCmd.AddCommand(newVersionCommand())
+
+	rootCmd.PersistentFlags().StringVar(
+		&flags.cwd,
+		"cwd", ".",
+		"Path to the azd extension project",
+	)
 
 	return rootCmd
 }

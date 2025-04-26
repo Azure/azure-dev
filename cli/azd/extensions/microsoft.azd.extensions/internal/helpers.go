@@ -4,13 +4,47 @@
 package internal
 
 import (
+	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode"
 )
+
+const (
+	PermissionDirectory      os.FileMode = 0755
+	PermissionExecutableFile os.FileMode = 0755
+	PermissionFile           os.FileMode = 0644
+
+	PermissionDirectoryOwnerOnly os.FileMode = 0700
+	PermissionFileOwnerOnly      os.FileMode = 0600
+
+	PermissionMaskDirectoryExecute os.FileMode = 0100
+)
+
+func ToPtr[T any](value T) *T {
+	return &value
+}
+
+func ToPascalCase(value string) string {
+	parts := strings.Split(value, ".")
+
+	for i, part := range parts {
+		if len(part) > 0 {
+			runes := []rune(part)
+			runes[0] = unicode.ToUpper(runes[0])
+			parts[i] = string(runes)
+		}
+	}
+
+	return strings.Join(parts, ".")
+}
 
 // ComputeChecksum computes the SHA256 checksum of a file
 func ComputeChecksum(filePath string) (string, error) {
@@ -52,11 +86,128 @@ func CopyFile(source, target string) error {
 
 // InferOSArch infers OS/ARCH from a artifact filename
 func InferOSArch(filename string) (string, error) {
-	parts := filepath.Base(filename)
-	partsArr := filepath.SplitList(parts)
-	if len(partsArr) < 3 {
+	// Example filename: azd-ext-ai-windows-amd64.exe
+	parts := strings.Split(filename, "-")
+	if len(parts) < 3 {
 		return "", fmt.Errorf("invalid artifact filename format: %s", filename)
 	}
-	osArch := fmt.Sprintf("%s/%s", partsArr[1], partsArr[2])
-	return osArch, nil
+
+	// Extract OS and ARCH from the filename
+	osPart := parts[len(parts)-2]                                   // Second-to-last part is the OS
+	archPart := parts[len(parts)-1]                                 // Last part is the ARCH (with optional extension)
+	archPart = strings.TrimSuffix(archPart, filepath.Ext(archPart)) // Remove extension
+
+	return fmt.Sprintf("%s/%s", osPart, archPart), nil
+}
+
+// DownloadAssetToTemp downloads an asset (from URL or local path) to a temp file and returns the file path.
+func DownloadAssetToTemp(assetUrl, assetName string) (string, error) {
+	tempFile, err := os.CreateTemp("", "asset-*"+filepath.Ext(assetName))
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+
+	var reader io.Reader
+	parsedUrl, err := url.Parse(assetUrl)
+	if err == nil && (parsedUrl.Scheme == "https") {
+		// #nosec G107: Potential HTTP request made with variable url
+		resp, err := http.Get(assetUrl)
+		if err != nil {
+			os.Remove(tempFile.Name())
+			return "", fmt.Errorf("failed to download asset: %w", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			os.Remove(tempFile.Name())
+			return "", fmt.Errorf("download returned status %d", resp.StatusCode)
+		}
+		reader = resp.Body
+	} else {
+		localFile, err := os.Open(assetUrl)
+		if err != nil {
+			os.Remove(tempFile.Name())
+			return "", fmt.Errorf("failed to open local file: %w", err)
+		}
+		defer localFile.Close()
+		reader = localFile
+	}
+
+	if _, err := io.Copy(tempFile, reader); err != nil {
+		os.Remove(tempFile.Name())
+		return "", fmt.Errorf("failed to write to temp file: %w", err)
+	}
+	tempFile.Close()
+
+	return tempFile.Name(), nil
+}
+
+func ZipSource(files []string, target string) error {
+	outputFile, err := os.Create(target)
+	if err != nil {
+		return err
+	}
+
+	defer outputFile.Close()
+
+	zipWriter := zip.NewWriter(outputFile)
+	defer zipWriter.Close()
+
+	for _, file := range files {
+		fileInfo, err := os.Stat(file)
+		if err != nil {
+			return err
+		}
+
+		header := &zip.FileHeader{
+			Name:     filepath.Base(file),
+			Modified: fileInfo.ModTime(),
+			Method:   zip.Deflate,
+		}
+
+		headerWriter, err := zipWriter.CreateHeader(header)
+		if err != nil {
+			return err
+		}
+
+		file, err := os.Open(file)
+		if err != nil {
+			return err
+		}
+
+		_, err = io.Copy(headerWriter, file)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func LocalRegistryArtifactsPath() (string, error) {
+	azdConfigDir, err := AzdConfigDir()
+	if err != nil {
+		return "", err
+	}
+
+	registryArtifactsPath := filepath.Join(azdConfigDir, "registry")
+	if _, err := os.Stat(registryArtifactsPath); os.IsNotExist(err) {
+		if err := os.MkdirAll(registryArtifactsPath, PermissionDirectory); err != nil {
+			return "", fmt.Errorf("failed to create output directory: %w", err)
+		}
+	}
+
+	return registryArtifactsPath, nil
+}
+
+func AzdConfigDir() (string, error) {
+	azdConfigDir := os.Getenv("AZD_CONFIG_DIR")
+	if azdConfigDir == "" {
+		userHomeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get user home directory: %w", err)
+		}
+		azdConfigDir = filepath.Join(userHomeDir, ".azd")
+	}
+
+	return azdConfigDir, nil
 }

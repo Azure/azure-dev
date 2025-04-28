@@ -12,11 +12,11 @@
             "lifecycle-events"
           ],
           "version": "0.2.0",
-          "usage": "azd demo <command> [options]",
+          "usage": "azd demo \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "context",
-              "description": "Displays the current `azd` project & environment context.",
+              "description": "Displays the current `azd` project \u0026 environment context.",
               "usage": "azd demo context"
             },
             {
@@ -89,7 +89,7 @@
             "custom-commands"
           ],
           "version": "0.1.0",
-          "usage": "azd ai builder <command> [options]",
+          "usage": "azd ai builder \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "start",
@@ -161,7 +161,7 @@
             "custom-commands"
           ],
           "version": "0.2.0",
-          "usage": "azd x <command> [options]",
+          "usage": "azd x \u003ccommand\u003e [options]",
           "examples": [
             {
               "name": "init",
@@ -237,6 +237,90 @@
               },
               "entryPoint": "microsoft-azd-extensions-windows-arm64.exe",
               "url": "https://github.com/wbreza/azd-extensions/releases/download/azd-ext-microsoft-azd-extensions_0.2.0/microsoft-azd-extensions-windows-arm64.zip"
+            }
+          }
+        },
+        {
+          "capabilities": [
+            "custom-commands"
+          ],
+          "version": "0.3.0",
+          "usage": "azd x \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AZD extension project.",
+              "usage": "azd x init"
+            },
+            {
+              "name": "build",
+              "description": "Build the AZD extension project.",
+              "usage": "azd x build"
+            },
+            {
+              "name": "pack",
+              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "usage": "azd x pack"
+            },
+            {
+              "name": "release",
+              "description": "Create an new release of the AZD extension project to a Github repository.",
+              "usage": "azd x release"
+            },
+            {
+              "name": "watch",
+              "description": "Watch for changes in the extension project and automatically rebuild and reload the extension.",
+              "usage": "azd x watch"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "07f5cbf170ffbb5c3ce599910c5baf454f5eefe071ea56538946cc0cb3dd32a1"
+              },
+              "entryPoint": "microsoft-azd-extensions-darwin-amd64",
+              "url": "https://github.com/wbreza/azd-extensions/releases/download/azd-ext-microsoft-azd-extensions_0.3.0/microsoft-azd-extensions-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "be39eaa26a9c088a337cff25d2fd0147529229383a80966e8364e76886631e1c"
+              },
+              "entryPoint": "microsoft-azd-extensions-darwin-arm64",
+              "url": "https://github.com/wbreza/azd-extensions/releases/download/azd-ext-microsoft-azd-extensions_0.3.0/microsoft-azd-extensions-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9db0b14c507482ba201a061be50f91b3bb06a7e9a10b1da1819b20e5f0568a52"
+              },
+              "entryPoint": "microsoft-azd-extensions-linux-amd64",
+              "url": "https://github.com/wbreza/azd-extensions/releases/download/azd-ext-microsoft-azd-extensions_0.3.0/microsoft-azd-extensions-linux-amd64.zip"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "50b152565f1766d492827c7e9914d162ee9c593c0f351a2f52ce7ea9d265eac6"
+              },
+              "entryPoint": "microsoft-azd-extensions-linux-arm64",
+              "url": "https://github.com/wbreza/azd-extensions/releases/download/azd-ext-microsoft-azd-extensions_0.3.0/microsoft-azd-extensions-linux-arm64.zip"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "072531bbbcaf7bdf7b8af2e60394ff99589a75d3594180a35d4cb3762090afa2"
+              },
+              "entryPoint": "microsoft-azd-extensions-windows-amd64.exe",
+              "url": "https://github.com/wbreza/azd-extensions/releases/download/azd-ext-microsoft-azd-extensions_0.3.0/microsoft-azd-extensions-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "4a90fa714037615abe43d940d1ec2cbb54ad81f99c24fd4c093c7289277a6774"
+              },
+              "entryPoint": "microsoft-azd-extensions-windows-arm64.exe",
+              "url": "https://github.com/wbreza/azd-extensions/releases/download/azd-ext-microsoft-azd-extensions_0.3.0/microsoft-azd-extensions-windows-arm64.zip"
             }
           }
         }

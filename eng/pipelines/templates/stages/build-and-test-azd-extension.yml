@@ -107,6 +107,7 @@ stages:
           - checkout: self
 
           - task: PowerShell@2
+            displayName: Set extension version variable
             inputs:
               pwsh: true
               targetType: filePath

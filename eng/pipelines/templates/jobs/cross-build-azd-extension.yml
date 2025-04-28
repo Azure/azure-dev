@@ -50,6 +50,7 @@ jobs:
           Condition: false
 
       - task: PowerShell@2
+        displayName: Set extension version variable
         inputs:
           pwsh: true
           targetType: filePath

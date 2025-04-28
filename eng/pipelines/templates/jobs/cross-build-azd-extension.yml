@@ -49,12 +49,14 @@ jobs:
         parameters:
           Condition: false
 
-      # TODO: DRY this up, also incorporate CI/"daily" builds
-      - pwsh: |
-          $extVersion = Get-Content ./version.txt
-          Write-Host "##vso[task.setvariable variable=EXT_VERSION;]$extVersion"
-        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
-        displayName: Set EXT_VERSION
+      - task: PowerShell@2
+        displayName: Set extension version variable
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: eng/scripts/Set-ExtensionVersionVariable.ps1
+          arguments: >-
+            -ExtensionDirectory ${{ parameters.AzdExtensionDirectory }}
 
       - task: PowerShell@2
         inputs:

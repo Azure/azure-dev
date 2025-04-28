@@ -75,7 +75,6 @@ stages:
   - ${{ if eq(variables['Build.Reason'], 'Manual') }}:
     - template: /eng/pipelines/templates/stages/sign-extension.yml
       parameters:
-        # TODO: This should be a constant
         SanitizedExtensionId: ${{ parameters.SanitizedExtensionId }}
 
     - template: /eng/pipelines/templates/stages/publish-extension.yml

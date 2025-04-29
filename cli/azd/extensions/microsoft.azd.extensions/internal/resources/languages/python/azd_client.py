@@ -20,8 +20,10 @@ class AzdClient:
 
         channel = grpc.insecure_channel(target)
 
-        self.channel = grpc.intercept_channel(channel, _AuthInterceptor(access_token))
-    
+        # Use a comprehensive auth interceptor that handles all call types
+        auth_interceptor = AuthInterceptor(access_token)
+        self.channel = grpc.intercept_channel(channel, auth_interceptor)
+
         self.compose = ComposeServiceStub(self.channel)
         self.deployment = DeploymentServiceStub(self.channel)
         self.environment = EnvironmentServiceStub(self.channel)
@@ -35,18 +37,27 @@ class AzdClient:
         self.channel.close()
 
 
-class _AuthInterceptor(grpc.UnaryUnaryClientInterceptor):
+class AuthInterceptor(
+    grpc.UnaryUnaryClientInterceptor,
+    grpc.UnaryStreamClientInterceptor,
+    grpc.StreamUnaryClientInterceptor,
+    grpc.StreamStreamClientInterceptor
+):
+    """Interceptor that adds authorization headers to all gRPC call types."""
 
     def __init__(self, access_token):
         self._access_token = access_token
 
-    def intercept_unary_unary(self, continuation, client_call_details, request):
+    def _add_auth_metadata(self, client_call_details):
+        """Helper to add authorization metadata to call details."""
         metadata = []
         if client_call_details.metadata is not None:
             metadata = list(client_call_details.metadata)
+
+        # Add the authorization header to all requests
         metadata.append(('authorization', self._access_token))
 
-        new_call_details = _ClientCallDetails(
+        return ClientCallDetails(
             method=client_call_details.method,
             timeout=client_call_details.timeout,
             metadata=metadata,
@@ -54,10 +65,30 @@ class _AuthInterceptor(grpc.UnaryUnaryClientInterceptor):
             wait_for_ready=client_call_details.wait_for_ready,
             compression=client_call_details.compression,
         )
-        return continuation(new_call_details, request)
+
+    def intercept_unary_unary(self, continuation, client_call_details, request):
+        """Intercept unary-unary calls."""
+        new_details = self._add_auth_metadata(client_call_details)
+        return continuation(new_details, request)
+
+    def intercept_unary_stream(self, continuation, client_call_details, request):
+        """Intercept unary-stream calls."""
+        new_details = self._add_auth_metadata(client_call_details)
+        return continuation(new_details, request)
+
+    def intercept_stream_unary(self, continuation, client_call_details, request_iterator):
+        """Intercept stream-unary calls."""
+        new_details = self._add_auth_metadata(client_call_details)
+        return continuation(new_details, request_iterator)
+
+    def intercept_stream_stream(self, continuation, client_call_details, request_iterator):
+        """Intercept stream-stream (bidirectional) calls."""
+        new_details = self._add_auth_metadata(client_call_details)
+        return continuation(new_details, request_iterator)
 
 
-class _ClientCallDetails(grpc.ClientCallDetails):
+class ClientCallDetails(grpc.ClientCallDetails):
+    """Simple implementation of ClientCallDetails."""
 
     def __init__(self, method, timeout, metadata, credentials, wait_for_ready, compression):
         self.method = method

@@ -116,7 +116,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 			}()
 
 			// Wait for the extension to signal readiness or failure.
-			readyCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			readyCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			defer cancel()
 			if err := extension.WaitUntilReady(readyCtx); err != nil {
 				log.Printf("extension '%s' failed to become ready: %s\n", extension.Id, err.Error())

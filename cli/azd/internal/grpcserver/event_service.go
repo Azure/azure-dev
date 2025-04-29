@@ -309,7 +309,10 @@ func (s *eventService) waitForServiceStatus(
 
 // ----- Dispatch Handlers -----
 
-func (s *eventService) handleProjectHandlerStatus(extension *extensions.Extension, statusMessage *azdext.ProjectHandlerStatus) {
+func (s *eventService) handleProjectHandlerStatus(
+	extension *extensions.Extension,
+	statusMessage *azdext.ProjectHandlerStatus,
+) {
 	fullEventName := fmt.Sprintf("%s.%s", extension.Id, statusMessage.EventName)
 	if val, ok := s.projectEvents.Load(fullEventName); ok {
 		ch := val.(chan *azdext.ProjectHandlerStatus)
@@ -317,7 +320,10 @@ func (s *eventService) handleProjectHandlerStatus(extension *extensions.Extensio
 	}
 }
 
-func (s *eventService) handleServiceHandlerStatus(extension *extensions.Extension, statusMessage *azdext.ServiceHandlerStatus) {
+func (s *eventService) handleServiceHandlerStatus(
+	extension *extensions.Extension,
+	statusMessage *azdext.ServiceHandlerStatus,
+) {
 	fullEventName := fmt.Sprintf("%s.%s.%s", extension.Id, statusMessage.ServiceName, statusMessage.EventName)
 	if val, ok := s.serviceEvents.Load(fullEventName); ok {
 		ch := val.(chan *azdext.ServiceHandlerStatus)

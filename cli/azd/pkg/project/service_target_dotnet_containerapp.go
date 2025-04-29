@@ -290,13 +290,31 @@ func (at *dotnetContainerAppTarget) Deploy(
 		return nil, fmt.Errorf("failing parsing manifest template: %w", err)
 	}
 
+	// Both bicepparam and yaml go-template can reference all variables from AZD environment and those variables
+	// from system environment variables that are prefixed either AZURE_ or AZD_
+	// Variables from AZD environment override those from system environment variables.
+	env := make(map[string]string)
+	for _, envVar := range os.Environ() {
+		parts := strings.SplitN(envVar, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		if strings.HasPrefix(parts[0], "AZURE_") || strings.HasPrefix(parts[0], "AZD_") {
+			env[parts[0]] = parts[1]
+		}
+	}
+	// Add the environment variables from the azd environment
+	for key, value := range at.env.Dotenv() {
+		env[key] = value
+	}
+
 	builder := strings.Builder{}
 	err = tmpl.Execute(&builder, struct {
 		Env    map[string]string
 		Image  string
 		Inputs map[string]any
 	}{
-		Env:    at.env.Dotenv(),
+		Env:    env,
 		Image:  remoteImageName,
 		Inputs: inputs,
 	})

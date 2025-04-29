@@ -105,10 +105,10 @@ func (s *eventService) EventStream(stream grpc.BidiStreamingServer[azdext.EventM
 				}
 			case *azdext.EventMessage_ProjectHandlerStatus:
 				statusMsg := msg.GetProjectHandlerStatus()
-				s.handleProjectHandlerStatus(statusMsg)
+				s.handleProjectHandlerStatus(extension, statusMsg)
 			case *azdext.EventMessage_ServiceHandlerStatus:
 				statusMsg := msg.GetServiceHandlerStatus()
-				s.handleServiceHandlerStatus(statusMsg)
+				s.handleServiceHandlerStatus(extension, statusMsg)
 			case *azdext.EventMessage_ExtensionReadyEvent:
 				s.handleReadyEvent(extension)
 			}
@@ -134,9 +134,10 @@ func (s *eventService) handleSubscribeProjectEvent(
 
 	for i := 0; i < len(subscribeMsg.EventNames); i++ {
 		eventName := subscribeMsg.EventNames[i]
+		fullEventName := fmt.Sprintf("%s.%s", extension.Id, eventName)
 
 		// Create a channel for this event.
-		s.projectEvents.Store(eventName, make(chan *azdext.ProjectHandlerStatus, 1))
+		s.projectEvents.Store(fullEventName, make(chan *azdext.ProjectHandlerStatus, 1))
 
 		evt := ext.Event(eventName)
 		handler := s.createProjectEventHandler(stream, extension, eventName)
@@ -182,7 +183,8 @@ func (s *eventService) sendProjectInvokeMessage(
 }
 
 func (s *eventService) waitForProjectStatus(ctx context.Context, eventName string, extension *extensions.Extension) error {
-	val, ok := s.projectEvents.Load(eventName)
+	extensionEventName := fmt.Sprintf("%s.%s", extension.Id, eventName)
+	val, ok := s.projectEvents.Load(extensionEventName)
 	if !ok {
 		return fmt.Errorf("no status channel for event: %s", eventName)
 	}
@@ -194,7 +196,7 @@ func (s *eventService) waitForProjectStatus(ctx context.Context, eventName strin
 		return ctx.Err()
 	case status = <-ch:
 		// Clean up after receiving status.
-		s.projectEvents.Delete(eventName)
+		s.projectEvents.Delete(extensionEventName)
 	}
 
 	if status.Status == "failed" {
@@ -229,7 +231,7 @@ func (s *eventService) handleSubscribeServiceEvent(
 
 			// Create a channel for this event.
 			// fullEventName is used to uniquely identify the event for a specific service.
-			fullEventName := fmt.Sprintf("%s.%s", serviceName, eventName)
+			fullEventName := fmt.Sprintf("%s.%s.%s", extension.Id, serviceName, eventName)
 			s.serviceEvents.Store(fullEventName, make(chan *azdext.ServiceHandlerStatus, 1))
 
 			handler := s.createServiceEventHandler(stream, serviceConfig, extension, eventName)
@@ -247,7 +249,7 @@ func (s *eventService) createServiceEventHandler(
 	extension *extensions.Extension,
 	eventName string,
 ) ext.EventHandlerFn[project.ServiceLifecycleEventArgs] {
-	fullEventName := fmt.Sprintf("%s.%s", serviceConfig.Name, eventName)
+	fullEventName := fmt.Sprintf("%s.%s.%s", extension.Id, serviceConfig.Name, eventName)
 
 	return func(ctx context.Context, args project.ServiceLifecycleEventArgs) error {
 		previewTitle := fmt.Sprintf("%s (%s.%s)", extension.DisplayName, args.Service.Name, eventName)
@@ -307,16 +309,16 @@ func (s *eventService) waitForServiceStatus(
 
 // ----- Dispatch Handlers -----
 
-func (s *eventService) handleProjectHandlerStatus(statusMessage *azdext.ProjectHandlerStatus) {
-	if val, ok := s.projectEvents.Load(statusMessage.EventName); ok {
+func (s *eventService) handleProjectHandlerStatus(extension *extensions.Extension, statusMessage *azdext.ProjectHandlerStatus) {
+	fullEventName := fmt.Sprintf("%s.%s", extension.Id, statusMessage.EventName)
+	if val, ok := s.projectEvents.Load(fullEventName); ok {
 		ch := val.(chan *azdext.ProjectHandlerStatus)
 		ch <- statusMessage
 	}
 }
 
-func (s *eventService) handleServiceHandlerStatus(statusMessage *azdext.ServiceHandlerStatus) {
-	fullEventName := fmt.Sprintf("%s.%s", statusMessage.ServiceName, statusMessage.EventName)
-
+func (s *eventService) handleServiceHandlerStatus(extension *extensions.Extension, statusMessage *azdext.ServiceHandlerStatus) {
+	fullEventName := fmt.Sprintf("%s.%s.%s", extension.Id, statusMessage.ServiceName, statusMessage.EventName)
 	if val, ok := s.serviceEvents.Load(fullEventName); ok {
 		ch := val.(chan *azdext.ServiceHandlerStatus)
 		ch <- statusMessage

@@ -89,8 +89,9 @@ func init() {
 				"bicepParameterName": func(src string) string {
 					return strings.ReplaceAll(src, "-", "_")
 				},
-				"removeDot": scaffold.RemoveDotAndDash,
-				"envFormat": scaffold.EnvFormat,
+				"removeDot":      scaffold.RemoveDotAndDash,
+				"envFormat":      scaffold.EnvFormat,
+				"azureSnakeCase": scaffold.AzureSnakeCase,
 				"bicepParameterValue": func(value *string) string {
 					if value == nil {
 						return ""

@@ -23,15 +23,18 @@ type ExtensionsMiddleware struct {
 	extensionRunner  *extensions.Runner
 	serviceLocator   ioc.ServiceLocator
 	console          input.Console
+	options          *Options
 }
 
 func NewExtensionsMiddleware(
+	options *Options,
 	serviceLocator ioc.ServiceLocator,
 	extensionsManager *extensions.Manager,
 	extensionRunner *extensions.Runner,
 	console input.Console,
 ) Middleware {
 	return &ExtensionsMiddleware{
+		options:          options,
 		serviceLocator:   serviceLocator,
 		extensionManager: extensionsManager,
 		extensionRunner:  extensionRunner,
@@ -40,6 +43,11 @@ func NewExtensionsMiddleware(
 }
 
 func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
+	// Extensions were already started in the root parent command
+	if m.options.IsChildAction(ctx) {
+		return next(ctx)
+	}
+
 	installedExtensions, err := m.extensionManager.ListInstalled()
 	if err != nil {
 		return nil, err

@@ -2003,7 +2003,6 @@ func (p *BicepProvider) ensureParameters(
 		azdMetadata, hasMetadata := param.AzdMetadata()
 
 		// If a value is explicitly configured via a parameters file, use it.
-		// unless the parameter value inference is nil/empty
 		if v, has := parameters[key]; has {
 			// Directly pass through Key Vault references without prompting.
 			if v.KeyVaultReference != nil {
@@ -2027,23 +2026,8 @@ func (p *BicepProvider) ensureParameters(
 					}
 				}
 
-				needForDeployParameter := hasMetadata &&
-					azdMetadata.Type != nil &&
-					*azdMetadata.Type == azure.AzdMetadataTypeNeedForDeploy
-				if needForDeployParameter && paramValue == "" && param.DefaultValue != nil {
-					// Parameters with needForDeploy metadata don't support overriding with empty values when a default
-					// value is present. If the value is empty, we'll use the default value instead.
-					defValue, castOk := param.DefaultValue.(string)
-					if castOk {
-						paramValue = defValue
-					}
-				}
 				configuredParameters[key] = azure.ArmParameter{
 					Value: paramValue,
-				}
-				if needForDeployParameter {
-					mustSetParamAsConfig(key, paramValue, p.env.Config, param.Secure())
-					configModified = true
 				}
 				continue
 			}

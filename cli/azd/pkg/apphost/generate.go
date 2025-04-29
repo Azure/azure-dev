@@ -337,8 +337,6 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 			// if not nil, like empty string or any other string, it is used as `= '<value>'`
 			if parameter.Default.Value != nil {
 				parameterDefaultValue = parameter.Default.Value
-				metadataType = azure.AzdMetadataTypeNeedForDeploy
-				parameterMetadata = "{}"
 			} else if parameter.Default.Generate != nil { // Note: .Value and .Generate are mutually exclusive
 				pMetadata, err := inputMetadata(*parameter.Default.Generate)
 				if err != nil {

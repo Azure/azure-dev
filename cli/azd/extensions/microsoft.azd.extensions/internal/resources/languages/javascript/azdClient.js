@@ -1,6 +1,7 @@
 const grpc = require('@grpc/grpc-js');
 const protoLoader = require('@grpc/proto-loader');
 const path = require('path');
+const fs = require('fs');
 
 class AzdClient {
   constructor() {
@@ -24,7 +25,16 @@ class AzdClient {
 
     // Loads a .proto file and returns the generated gRPC package
     const loadService = (name) => {
-      const protoPath = path.join(process.cwd(), 'proto', `${name}.proto`);
+      let protoPath;
+      if (process.pkg) {
+        protoPath = path.join(path.dirname(process.execPath), 'proto', `${name}.proto`);
+        if (!fs.existsSync(protoPath)) {
+          protoPath = path.join(__dirname, 'proto', `${name}.proto`);
+        }
+      } else {
+        protoPath = path.join(process.cwd(), 'proto', `${name}.proto`);
+      }
+
       const packageDefinition = protoLoader.loadSync(protoPath, options);
       const proto = grpc.loadPackageDefinition(packageDefinition);
 

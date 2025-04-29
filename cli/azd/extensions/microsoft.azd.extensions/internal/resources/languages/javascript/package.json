@@ -5,7 +5,7 @@
   "main": "index.js",
   "bin": "pkg-entry.js",
   "scripts": {
-    "build": "pkg pkg-entry.js --output bin/azd-extention.exe --targets node16-win-x64"
+    "build": "pkg pkg-entry.js --output bin/azd-extention.exe --targets node16-win-x64 --config package.json"
   },
   "dependencies": {
     "@azure/arm-resources": "^6.0.0",
@@ -13,7 +13,8 @@
     "@grpc/grpc-js": "^1.8.14",
     "@grpc/proto-loader": "^0.7.7",
     "commander": "^11.1.0",
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "pkg": "^5.8.1"
   },
   "pkg": {
     "scripts": [

@@ -94,7 +94,7 @@ foreach ($PLATFORM in $PLATFORMS) {
         npm install
         
         Write-Host "Building JavaScript extension for $OS/$ARCH..."
-        pkg $ENTRY_FILE -o $OUTPUT_DIR/$EXPECTED_OUTPUT_NAME --targets $TARGET
+        pkg $ENTRY_FILE -o $OUTPUT_DIR/$EXPECTED_OUTPUT_NAME --targets $TARGET --config package.json
 
         if ($LASTEXITCODE -ne 0) {
             Write-Host "An error occurred while building for $OS/$ARCH"

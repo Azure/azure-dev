@@ -602,7 +602,7 @@ func (_ *containerAppTemplateManifestFuncs) UrlHost(s string) (string, error) {
 const infraParametersKey = "infra.parameters."
 
 // Parameter resolves the name of a parameter defined in the ACA yaml definition. The parameter can be mapped to a system
-// environment variable or persisted in the azd environment configuration.
+// environment variable ONLY.
 func (fns *containerAppTemplateManifestFuncs) Parameter(name string) (string, error) {
 	envVarMapping := scaffold.AzureSnakeCase(name)
 	// map only to system environment variables. Not adding support for mapping to azd environment by design (b/c
@@ -627,9 +627,7 @@ func (fns *containerAppTemplateManifestFuncs) Parameter(name string) (string, er
 // The parameter can be mapped to a system environment variable or be default to a value directly.
 func (fns *containerAppTemplateManifestFuncs) ParameterWithDefault(name string, defaultValue string) (string, error) {
 	envVarMapping := scaffold.AzureSnakeCase(name)
-	// map only to system environment variables. Not adding support for mapping to azd environment by design (b/c
-	// parameters could be secured)
-	if val, found := os.LookupEnv(envVarMapping); found {
+	if val, found := fns.env.LookupEnv(envVarMapping); found {
 		return val, nil
 	}
 	return defaultValue, nil

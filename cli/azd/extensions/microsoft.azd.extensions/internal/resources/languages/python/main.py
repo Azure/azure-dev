@@ -14,6 +14,7 @@ from azd_client import AzdClient
 from commands.context_command import ContextCommand
 from commands.listen_command import ListenCommand
 from commands.prompt_command import PromptCommand
+from commands.version_command import VersionCommand
 
 # Define the Typer app
 app = typer.Typer(help="azd CLI tool", add_completion=False, context_settings={"help_option_names": ["-h", "--help"]})
@@ -113,6 +114,16 @@ def prompt(debug: bool = typer.Option(False, "--debug", help="Enable debug loggi
     try:
         azd_client = get_azd_client()
         command = PromptCommand(azd_client)
+        asyncio.run(command.execute())
+    finally:
+        azd_client.close()
+
+@app.command()
+def version():
+    """Display the version of the extension"""
+    try:
+        azd_client = get_azd_client()
+        command = VersionCommand(azd_client)
         asyncio.run(command.execute())
     finally:
         azd_client.close()

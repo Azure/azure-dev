@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
 	"github.com/fatih/color"
+	"github.com/nathan-fiscaletti/consolesize-go"
 )
 
 var ErrCancelled = internal.ErrCancelled
@@ -71,4 +73,24 @@ func VisibleLength(s string) int {
 	cleaned := specialTextRegex.ReplaceAllString(s, "")
 	// Count actual visible characters
 	return utf8.RuneCountInString(cleaned)
+}
+
+// ConsoleWidth returns the width of the console in characters.
+// It uses the consolesize package to get the size and falls back to check the COLUMNS environment variable
+// Defaults to 120 if the console size cannot be determined.
+func ConsoleWidth() int {
+	width, _ := consolesize.GetConsoleSize()
+	if width <= 0 {
+		// Default to 120 if console size cannot be determined
+		width = 120
+
+		consoleWidth := os.Getenv("COLUMNS")
+		if consoleWidth != "" {
+			if parsedWidth, err := strconv.Atoi(consoleWidth); err == nil {
+				width = parsedWidth
+			}
+		}
+	}
+
+	return width
 }

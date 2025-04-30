@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
-	"github.com/bradleyjkemp/cupaloy/v2"
+	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
@@ -27,8 +27,7 @@ func TestExtensionSchema_MarshalYAML_OmitsEmptyCollections(t *testing.T) {
 	data, err := yaml.Marshal(s)
 	require.NoError(t, err, "marshal failed")
 
-	// Use cupaloy to snapshot the marshaled YAML
-	cupaloy.SnapshotT(t, string(data))
+	snapshot.SnapshotT(t, string(data))
 }
 
 // TestExtensionSchema_MarshalYAML_InlinesAdditionalMetadata verifies that additional metadata
@@ -45,8 +44,7 @@ func TestExtensionSchema_MarshalYAML_InlinesAdditionalMetadata(t *testing.T) {
 	data, err := yaml.Marshal(s)
 	require.NoError(t, err, "marshal failed")
 
-	// Use cupaloy to snapshot the marshaled YAML
-	cupaloy.SnapshotT(t, string(data))
+	snapshot.SnapshotT(t, string(data))
 }
 
 // TestExtensionSchema_MarshalYAML_OmitsEmptyAdditionalMetadata verifies that empty
@@ -63,8 +61,7 @@ func TestExtensionSchema_MarshalYAML_OmitsEmptyAdditionalMetadata(t *testing.T) 
 	data, err := yaml.Marshal(s)
 	require.NoError(t, err, "marshal failed")
 
-	// Use cupaloy to snapshot the marshaled YAML
-	cupaloy.SnapshotT(t, string(data))
+	snapshot.SnapshotT(t, string(data))
 }
 
 // TestExtensionSchema_UnmarshalYAML_BasicFields verifies that all fields are correctly
@@ -115,8 +112,7 @@ func TestExtensionSchema_UnmarshalYAML_BasicFields(t *testing.T) {
 	// Verify the round-trip preserved everything by comparing YAML content
 	require.Equal(t, string(yamlData), string(remarshalled), "Round trip failed - YAML content differs")
 
-	// Use cupaloy to snapshot the result
-	cupaloy.SnapshotT(t, string(remarshalled))
+	snapshot.SnapshotT(t, string(remarshalled))
 }
 
 // TestExtensionSchema_UnmarshalYAML_WithAdditionalMetadata verifies that additional
@@ -147,8 +143,7 @@ func TestExtensionSchema_UnmarshalYAML_WithAdditionalMetadata(t *testing.T) {
 	// Verify the round-trip preserved everything by comparing YAML content
 	require.Equal(t, string(yamlData), string(remarshalled), "Round trip failed - YAML content differs")
 
-	// Use cupaloy to snapshot the result
-	cupaloy.SnapshotT(t, string(remarshalled))
+	snapshot.SnapshotT(t, string(remarshalled))
 }
 
 // TestExtensionSchema_RoundTrip verifies that marshaling and unmarshaling preserves
@@ -182,7 +177,7 @@ func TestExtensionSchema_RoundTrip(t *testing.T) {
 	require.NoError(t, err, "marshal failed")
 
 	// Snapshot the original marshaled data
-	cupaloy.SnapshotT(t, string(yamlData))
+	snapshot.SnapshotT(t, string(yamlData))
 
 	// Unmarshal back to a new ExtensionSchema
 	var unmarshalled ExtensionSchema

@@ -5,7 +5,6 @@ package pipeline
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -391,13 +390,13 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 	// Adding environment.AzdInitialEnvironmentConfigName as a secret to the pipeline as the base configuration for
 	// whenever a new environment is created. This means loading the local environment config into a pipeline secret which
 	// azd will use to restore the the config on CI
-	localEnvConfig, err := json.Marshal(pm.env.Config.ResolvedRaw())
-	if err != nil {
-		return result, fmt.Errorf("failed to marshal environment config: %w", err)
-	}
+	// localEnvConfig, err := json.Marshal(pm.env.Config.ResolvedRaw())
+	// if err != nil {
+	// 	return result, fmt.Errorf("failed to marshal environment config: %w", err)
+	// }
 
 	defaultAzdSecrets := map[string]string{
-		environment.AzdInitialEnvironmentConfigName: string(localEnvConfig),
+		// environment.AzdInitialEnvironmentConfigName: string(localEnvConfig),
 	}
 
 	defaultAzdVariables := map[string]string{}

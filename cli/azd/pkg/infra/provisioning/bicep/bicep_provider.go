@@ -1524,6 +1524,13 @@ func (p *BicepProvider) createOutputParameters(
 type loadParametersResult struct {
 	parameters     map[string]azure.ArmParameter
 	locationParams []string
+	// envMapping is a map of parameter name to environment variable names
+	// holds information about which parameters are mapped to which env vars for
+	// cases like "param": "${env:AZURE_FOO}-${env:AZURE_BAR}", envMapping will
+	// contain {"param": ["AZURE_FOO", "AZURE_BAR"]}
+	// This information is useful for setting a CI/CD automatically. Each env var
+	// will be set to the value of the parameter as variable or secret.
+	envMapping map[string][]string
 }
 
 // loadParameters reads the parameters file template for environment/module specified by Options,
@@ -1561,6 +1568,7 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResul
 
 	parametersMappedToAzureLocation := []string{}
 	resolvedParams := map[string]azure.ArmParameter{}
+	envMapping := map[string][]string{}
 
 	// resolving each parameter to keep track of the name during the resolution.
 	// We used to resolve all the file before, supporting env var substitution at any part of the file.
@@ -1568,6 +1576,7 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResul
 	// We also need to identify which parameters are mapped to AZURE_LOCATION (if any).
 	// We also want to exclude parameters mapped to env vars which env var is not set (instead of using empty string).
 	for paramName, param := range decodedParamsFile.Parameters {
+		mappedEnvVars := []string{}
 		paramBytes, err := json.Marshal(param)
 		if err != nil {
 			return loadParametersResult{}, fmt.Errorf("error decoding deployment parameter %s: %w", paramName, err)
@@ -1581,6 +1590,9 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResul
 			if name == environment.LocationEnvVarName {
 				parametersMappedToAzureLocation = append(parametersMappedToAzureLocation, paramName)
 			}
+			// principalId and locations are intentionally excluded from the mapped env vars as
+			// they are global env vars
+			mappedEnvVars = append(mappedEnvVars, name)
 			if _, isDefined := p.env.LookupEnv(name); !isDefined {
 				hasUnsetEnvVar = true
 			}
@@ -1589,6 +1601,7 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResul
 		if err != nil {
 			return loadParametersResult{}, fmt.Errorf("substituting environment variables for %s: %w", paramName, err)
 		}
+		envMapping[paramName] = mappedEnvVars
 		// resolve `secretOrRandomPassword` -> this is a way to ask AZD to generate a password for the user and
 		// store it in a Key Vault. But if the Key Vault and secret exists, AZD just takes the secret from there.
 		if cmdsubst.ContainsCommandInvocation(replaced, cmdsubst.SecretOrRandomPasswordCommandName) {
@@ -1634,6 +1647,7 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResul
 	return loadParametersResult{
 		parameters:     resolvedParams,
 		locationParams: parametersMappedToAzureLocation,
+		envMapping:     envMapping,
 	}, nil
 }
 
@@ -2276,4 +2290,40 @@ func NewBicepProvider(
 		subscriptionManager: subscriptionManager,
 		azureClient:         azureClient,
 	}
+}
+
+func (p *BicepProvider) Parameters(ctx context.Context) ([]provisioning.Parameter, error) {
+	modulePath := p.modulePath()
+	compileResult, err := p.compileBicep(ctx, modulePath)
+	if err != nil {
+		return nil, fmt.Errorf("creating template: %w", err)
+	}
+	// templateParameters are the parameters defined in the bicep template. We know when a parameter is secured,
+	// its type and its default value from this definition.
+	templateParameters := compileResult.Template.Parameters
+
+	// parametersInfo contains the env vars mappings (from a parameters file). bicepparam is not supported yet.
+	parametersInfo, err := p.loadParameters(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("loading parameters: %w", err)
+	}
+
+	// resolved parameters contains the final value for the parameters after evaluating. The final value can be
+	// from env var, from default value or from user input (prompt).
+	resolvedParams, err := p.ensureParameters(ctx, compileResult.Template)
+	if err != nil {
+		return nil, fmt.Errorf("resolving parameters: %w", err)
+	}
+
+	provisionParameters := make([]provisioning.Parameter, 0, len(templateParameters))
+	for key, param := range templateParameters {
+		provisionParameters = append(provisionParameters, provisioning.Parameter{
+			Name:          key,
+			Secret:        param.Secure(),
+			Value:         resolvedParams[key].Value,
+			EnvVarMapping: parametersInfo.envMapping[key],
+		})
+	}
+
+	return provisionParameters, nil
 }

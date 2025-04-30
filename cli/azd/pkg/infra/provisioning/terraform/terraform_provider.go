@@ -765,3 +765,7 @@ type terraformChildModule struct {
 	Resources    []terraformResource    `json:"resources"`
 	ChildModules []terraformChildModule `json:"child_modules"`
 }
+
+func (t *TerraformProvider) Parameters(ctx context.Context) ([]provisioning.Parameter, error) {
+	return nil, nil
+}

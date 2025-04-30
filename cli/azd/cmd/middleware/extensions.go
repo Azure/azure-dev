@@ -9,6 +9,7 @@ import (
 	"log"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
@@ -123,7 +124,9 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 			}()
 
 			// Wait for the extension to signal readiness or failure.
-			if err := extension.WaitUntilReady(ctx); err != nil {
+			readyCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			if err := extension.WaitUntilReady(readyCtx); err != nil {
 				log.Printf("extension '%s' failed to become ready: %s\n", extension.Id, err.Error())
 			}
 		}(extension, jwtToken)

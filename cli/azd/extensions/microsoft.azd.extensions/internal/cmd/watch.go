@@ -52,16 +52,20 @@ func runWatchAction(ctx context.Context, flags *watchFlags) error {
 	defer watcher.Close()
 
 	ignoredFolders := map[string]struct{}{
-		"bin": {},
-		"obj": {},
+		"bin":   {},
+		"obj":   {},
+		"build": {},
 	}
 
 	// Define glob patterns for ignored paths
 	globIgnorePaths := []string{
-		"bin",      // Matches the "bin" folder itself
-		"bin/**/*", // Matches all files and subdirectories inside "bin"
-		"obj",      // Matches the "obj" folder itself
-		"obj/**/*", // Matches all files and subdirectories inside "obj"
+		"bin",        // Matches the "bin" folder itself
+		"bin/**/*",   // Matches all files and subdirectories inside "bin"
+		"obj",        // Matches the "obj" folder itself
+		"obj/**/*",   // Matches all files and subdirectories inside "obj"
+		"build",      // Matches the "build" folder itself
+		"build/**/*", // Matches all files and subdirectories inside "build"
+		"*.spec",     // Matches all .spec files
 	}
 
 	if err := watchRecursive(".", watcher, ignoredFolders); err != nil {

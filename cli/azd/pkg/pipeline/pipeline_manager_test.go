@@ -64,6 +64,14 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		// Execute the initialize method, which should trigger the confirmation prompt
 		err = manager.initialize(ctx, "")
 		assert.NoError(t, err)
+		manager.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		manager.configOptions = &configurePipelineOptions{}
+		err = manager.ensurePipelineDefinition(ctx)
+		assert.NoError(t, err)
 
 		// Check if the azure-dev.yml file was created in the expected path
 		gitHubYmlPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
@@ -135,6 +143,15 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		// Execute the initialize method, which should trigger the confirmation prompt
 		err = manager.initialize(ctx, "")
+		assert.NoError(t, err)
+		manager.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		manager.configOptions = &configurePipelineOptions{}
+		err = manager.ensurePipelineDefinition(ctx)
+		assert.NoError(t, err)
 		verifyProvider(t, manager, ciProviderAzureDevOps, err)
 
 		// Check if the azure-dev.yml file was created in the expected path
@@ -154,7 +171,14 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		simulateUserInteraction(mockContext, ciProviderAzureDevOps, false)
 
 		manager, err := createPipelineManager(mockContext, azdContext, env, nil)
-		assert.Nil(t, manager)
+		assert.NoError(t, err)
+		manager.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		manager.configOptions = &configurePipelineOptions{}
+		err = manager.ensurePipelineDefinition(ctx)
 		assert.EqualError(t, err, fmt.Sprintf(
 			"%s provider selected, but no pipeline files were found in any expected directories:\n%s\n"+
 				"Please add pipeline files and try again.",
@@ -188,9 +212,16 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		simulateUserInteraction(mockContext, ciProviderGitHubActions, false)
 
-		_, err := createPipelineManager(mockContext, azdContext, env, nil)
+		m, err := createPipelineManager(mockContext, azdContext, env, nil)
 		// No error for GitHub, just a message to the console
 		assert.NoError(t, err)
+		m.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		m.configOptions = &configurePipelineOptions{}
+		err = m.ensurePipelineDefinition(ctx)
 		assert.Contains(t,
 			mockContext.Console.Output(),
 			fmt.Sprintf(
@@ -336,6 +367,13 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		assert.NotNil(t, manager)
 		assert.NoError(t, err)
 
+		manager.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		manager.configOptions = &configurePipelineOptions{}
+
 		// Execute the initialize method, which should trigger the provider selection prompt
 		err = manager.initialize(ctx, "")
 
@@ -354,6 +392,13 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		assert.NotNil(t, manager)
 		assert.NoError(t, err)
 
+		manager.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		manager.configOptions = &configurePipelineOptions{}
+
 		// Execute the initialize method, which should trigger the provider selection prompt
 		err = manager.initialize(ctx, "")
 
@@ -371,6 +416,13 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		assert.NotNil(t, manager)
 		assert.NoError(t, err)
+
+		manager.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		manager.configOptions = &configurePipelineOptions{}
 
 		// Execute the initialize method, which should trigger the provider selection prompt
 		err = manager.initialize(ctx, "")
@@ -391,6 +443,13 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		assert.NotNil(t, manager)
 		assert.NoError(t, err)
 
+		manager.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		manager.configOptions = &configurePipelineOptions{}
+
 		// Execute the initialize method, which should trigger the provider selection prompt
 		err = manager.initialize(ctx, "")
 
@@ -410,6 +469,13 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		assert.NotNil(t, manager)
 		assert.NoError(t, err)
+
+		manager.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		manager.configOptions = &configurePipelineOptions{}
 
 		// Execute the initialize method, which should trigger the provider selection prompt
 		err = manager.initialize(ctx, "")

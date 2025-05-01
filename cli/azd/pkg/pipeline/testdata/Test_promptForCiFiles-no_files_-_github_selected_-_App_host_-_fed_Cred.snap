@@ -47,4 +47,5 @@ jobs:
 
       - name: Deploy Application
         run: azd deploy --no-prompt
+        
 

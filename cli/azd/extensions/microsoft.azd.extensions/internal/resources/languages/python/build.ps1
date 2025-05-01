@@ -58,6 +58,7 @@ COMMIT = "$COMMIT"
 BUILD_DATE = "$BUILD_DATE"
 "@
 Set-Content -Path (Join-Path $EXTENSION_DIR "version.py") -Value $VERSION_PY
+
 # Loop through platforms and build
 foreach ($PLATFORM in $PLATFORMS) {
     $OS, $ARCH = $PLATFORM -split '/'

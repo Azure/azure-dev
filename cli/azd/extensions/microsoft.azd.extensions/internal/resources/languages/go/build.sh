@@ -33,13 +33,7 @@ else
     )
 fi
 
-APP_PATH="github.com/azure/azure-dev/cli/azd/extensions/$EXTENSION_ID/internal/cmd"
-
-# Check if the build type is specified
-if [ -z "$EXTENSION_LANGUAGE" ]; then
-    echo "Error: EXTENSION_LANGUAGE environment variable is required (go or dotnet)"
-    exit 1
-fi
+APP_PATH="$EXTENSION_ID/internal/cmd"
 
 # Loop through platforms and build
 for PLATFORM in "${PLATFORMS[@]}"; do
@@ -57,48 +51,13 @@ for PLATFORM in "${PLATFORMS[@]}"; do
     # Delete the output file if it already exists
     [ -f "$OUTPUT_NAME" ] && rm -f "$OUTPUT_NAME"
 
-    if [ "$EXTENSION_LANGUAGE" = "dotnet" ]; then
-        # Set runtime identifier for .NET
-        if [ "$OS" = "windows" ]; then
-            RUNTIME="win-$ARCH"
-        elif [ "$OS" = "darwin" ]; then
-            RUNTIME="osx-$ARCH"
-        else
-            RUNTIME="linux-$ARCH"
-        fi
-        PROJECT_FILE="azd-extension.csproj"
+    # Set environment variables for Go build
+    GOOS=$OS GOARCH=$ARCH go build \
+        -ldflags="-X '$APP_PATH.Version=$EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" \
+        -o "$OUTPUT_NAME"
 
-        # Run dotnet publish for single file executable
-        dotnet publish \
-            -c Release \
-            -r "$RUNTIME" \
-            -o "$OUTPUT_DIR" \
-            /p:PublishTrimmed=true \
-            "$PROJECT_FILE"
-
-        if [ $? -ne 0 ]; then
-            echo "An error occurred while building for $OS/$ARCH"
-            exit 1
-        fi
-
-        EXPECTED_OUTPUT_NAME="$EXTENSION_ID_SAFE"
-        if [ "$OS" = "windows" ]; then
-            EXPECTED_OUTPUT_NAME+='.exe'
-        fi
-
-        mv "$OUTPUT_DIR/$EXPECTED_OUTPUT_NAME" "$OUTPUT_NAME"
-    elif [ "$EXTENSION_LANGUAGE" = "go" ]; then
-        # Set environment variables for Go build
-        GOOS=$OS GOARCH=$ARCH go build \
-            -ldflags="-X '$APP_PATH.Version=$EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" \
-            -o "$OUTPUT_NAME"
-
-        if [ $? -ne 0 ]; then
-            echo "An error occurred while building for $OS/$ARCH"
-            exit 1
-        fi
-    else
-        echo "Error: Unsupported EXTENSION_LANGUAGE '$EXTENSION_LANGUAGE'. Use 'go' or 'dotnet'."
+    if [ $? -ne 0 ]; then
+        echo "An error occurred while building for $OS/$ARCH"
         exit 1
     fi
 done

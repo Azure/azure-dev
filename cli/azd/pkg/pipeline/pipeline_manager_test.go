@@ -97,6 +97,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 			IsCompose: false}
 		m.configOptions = &configurePipelineOptions{}
 		err = m.ensurePipelineDefinition(ctx)
+		assert.NoError(t, err)
 		assert.Contains(t,
 			mockContext.Console.Output(),
 			fmt.Sprintf(
@@ -222,6 +223,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 			IsCompose: false}
 		m.configOptions = &configurePipelineOptions{}
 		err = m.ensurePipelineDefinition(ctx)
+		assert.NoError(t, err)
 		assert.Contains(t,
 			mockContext.Console.Output(),
 			fmt.Sprintf(

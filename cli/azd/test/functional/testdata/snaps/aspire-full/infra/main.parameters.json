@@ -8,6 +8,9 @@
       "goversion": {
         "value": "${AZURE_GOVERSION}"
       },
+      "goversion2": {
+        "value": "${AZURE_GOVERSION2}"
+      },
       "environmentName": {
         "value": "${AZURE_ENV_NAME}"
       },

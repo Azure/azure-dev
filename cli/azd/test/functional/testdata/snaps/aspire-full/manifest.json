@@ -13,6 +13,15 @@
         }
       }
     },
+    "goversion2": {
+      "type": "parameter.v0",
+      "value": "{goversion2.inputs.value}",
+      "inputs": {
+        "value": {
+          "type": "string"
+        }
+      }
+    },
     "pubsub": {
       "type": "container.v0",
       "connectionString": "{pubsub.bindings.tcp.host}:{pubsub.bindings.tcp.port}",
@@ -93,7 +102,8 @@
         "ConnectionStrings__messages": "{messages.connectionString}",
         "services__apiservice__http__0": "{apiservice.bindings.http.url}",
         "services__apiservice__https__0": "{apiservice.bindings.https.url}",
-        "GOVERSION": "{goversion.value}"
+        "GOVERSION": "{goversion.value}",
+        "GOVERSION2": "{goversion2.value}"
       },
       "bindings": {
         "http": {

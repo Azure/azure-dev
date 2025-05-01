@@ -13,6 +13,7 @@ param location string
 param principalId string = ''
 
 param goversion string = '1.22'
+param goversion2 string
 
 var tags = {
   'azd-env-name': environmentName

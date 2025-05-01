@@ -184,7 +184,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	}
 	p.manager.SetParameters(providerParameters)
 
-	pipelineResult, err := p.manager.Configure(ctx, p.projectConfig.Name)
+	pipelineResult, err := p.manager.Configure(ctx, p.projectConfig.Name, infra)
 	if err != nil {
 		return nil, err
 	}

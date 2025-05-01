@@ -2317,6 +2317,10 @@ func (p *BicepProvider) Parameters(ctx context.Context) ([]provisioning.Paramete
 
 	provisionParameters := make([]provisioning.Parameter, 0, len(templateParameters))
 	for key, param := range templateParameters {
+		if _, usingParam := resolvedParams[key]; !usingParam {
+			// No resolved param for this parameter definition.
+			continue
+		}
 		_, isPrompt := p.env.Config.Get(fmt.Sprintf("infra.parameters.%s", key))
 		provisionParameters = append(provisionParameters, provisioning.Parameter{
 			Name:          key,

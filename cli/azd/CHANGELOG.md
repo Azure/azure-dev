@@ -1,14 +1,22 @@
 # Release History
 
-## 1.15.0-beta.1 (Unreleased)
+## 1.15.0 (2025-05-01)
 
 ### Features Added
 
-### Breaking Changes
+- [[5073]](https://github.com/Azure/azure-dev/pull/5073) Support generate CI definition for alpha feature composability mode.
+- [[5077]](https://github.com/Azure/azure-dev/pull/5077) `azd add` support for Azure App Service (Node and Python).
 
 ### Bugs Fixed
 
+- [[5061]](https://github.com/Azure/azure-dev/pull/5061) Fix location no longer prompted error for targetScope resource group. 
+- [[5117]](https://github.com/Azure/azure-dev/pull/5117) Fix template list filter empty result due to `awesome-azd` source breaking change.
+- [[5102]](https://github.com/Azure/azure-dev/pull/5102) Fix AKS cluster deployment with Microsoft Entra ID authentication and Azure RBAC enabled. Thanks @pauldotyu for the contribution!
+
 ### Other Changes
+
+- [[4885]](https://github.com/Azure/azure-dev/pull/4885) Pack build to support multi-module projects. Thanks @haoozhang for the contribution!
+- [[5081]](https://github.com/Azure/azure-dev/pull/5081) Bump up dependency to fix component governance alert.
 
 ## 1.14.0 (2025-04-02)
 

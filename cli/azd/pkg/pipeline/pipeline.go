@@ -196,10 +196,15 @@ func mergeProjectVariablesAndSecrets(
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal parameter %s: %w", parameter.Name, err)
 		}
+		var strValue string
+		if err := json.Unmarshal(value, &strValue); err != nil {
+			return nil, nil, fmt.Errorf("failed to unmarshal parameter %s: %w", parameter.Name, err)
+		}
+
 		if parameter.Secret {
-			secrets[parameter.EnvVarMapping[0]] = string(value)
+			secrets[parameter.EnvVarMapping[0]] = strValue
 		} else {
-			variables[parameter.EnvVarMapping[0]] = string(value)
+			variables[parameter.EnvVarMapping[0]] = strValue
 		}
 	}
 

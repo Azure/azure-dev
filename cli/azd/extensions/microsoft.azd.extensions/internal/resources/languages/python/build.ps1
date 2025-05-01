@@ -19,22 +19,6 @@ if (-not (Test-Path -Path $OUTPUT_DIR)) {
 $COMMIT = git rev-parse HEAD
 $BUILD_DATE = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
 
-# Extract version from extension.yaml (single source of truth)
-$EXTENSION_YAML = Join-Path $EXTENSION_DIR "extension.yaml"
-if (Test-Path -Path $EXTENSION_YAML) {
-    $YAML_CONTENT = Get-Content -Path $EXTENSION_YAML -Raw
-    if ($YAML_CONTENT -match "version:\s*([\d\.]+)") {
-        $VERSION = $matches[1]
-        Write-Host "Extension Version: $VERSION"
-    } else {
-        $VERSION = "0.0.0"
-        Write-Host "Warning: Version not found in extension.yaml, using default: $VERSION"
-    }
-} else {
-    $VERSION = "0.0.0"
-    Write-Host "Warning: extension.yaml not found, using default version: $VERSION"
-}
-
 # List of OS and architecture combinations
 if ($env:EXTENSION_PLATFORM) {
     $PLATFORMS = @($env:EXTENSION_PLATFORM)
@@ -53,7 +37,7 @@ else {
 # Create a version.py file with version information - this will be embedded in executable
 $VERSION_PY = @"
 # This file is auto-generated during build
-VERSION = "$VERSION"
+VERSION = "$env:EXTENSION_VERSION"
 COMMIT = "$COMMIT"
 BUILD_DATE = "$BUILD_DATE"
 "@

@@ -53,24 +53,6 @@ foreach ($PLATFORM in $PLATFORMS) {
         Remove-Item -Path $OUTPUT_NAME -Force
     }
 
-    } elseif ($env:EXTENSION_LANGUAGE -eq "javascript") {
-        $ENTRY_FILE = "pkg-entry.js"
-        $TARGET = "node16-$OS-x64"
-        $EXPECTED_OUTPUT_NAME = "$EXTENSION_ID_SAFE-$OS-$ARCH"
-        if ($OS -eq "windows") {
-            $EXPECTED_OUTPUT_NAME += ".exe"
-        }
-
-        Write-Host "Installing dependencies..."
-        npm install
-        
-        Write-Host "Building JavaScript extension for $OS/$ARCH..."
-        pkg $ENTRY_FILE -o $OUTPUT_DIR/$EXPECTED_OUTPUT_NAME --targets $TARGET --config package.json
-
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "An error occurred while building for $OS/$ARCH"
-            exit 1
-        }
     # Set environment variables for Go build
     $env:GOOS = $OS
     $env:GOARCH = $ARCH

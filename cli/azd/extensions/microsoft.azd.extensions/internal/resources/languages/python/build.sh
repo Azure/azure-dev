@@ -19,21 +19,6 @@ mkdir -p "$OUTPUT_DIR"
 COMMIT=$(git rev-parse HEAD)
 BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-# Extract version from extension.yaml (single source of truth)
-EXTENSION_YAML="$EXTENSION_DIR/extension.yaml"
-if [ -f "$EXTENSION_YAML" ]; then
-    VERSION=$(grep -E "^version:\s*" "$EXTENSION_YAML" | awk '{print $2}')
-    if [ -z "$VERSION" ]; then
-        VERSION="0.0.0"
-        echo "Warning: Version not found in extension.yaml, using default: $VERSION"
-    else
-        echo "Extension Version: $VERSION"
-    fi
-else
-    VERSION="0.0.0"
-    echo "Warning: extension.yaml not found, using default version: $VERSION"
-fi
-
 # List of OS and architecture combinations
 if [ -n "$EXTENSION_PLATFORM" ]; then
     PLATFORMS=("$EXTENSION_PLATFORM")
@@ -51,7 +36,7 @@ fi
 # Create a version.py file with version information - this will be embedded in executable
 cat > "$EXTENSION_DIR/version.py" << EOF
 # This file is auto-generated during build
-VERSION = "$VERSION"
+VERSION = "$EXTENSION_VERSION"
 COMMIT = "$COMMIT"
 BUILD_DATE = "$BUILD_DATE"
 EOF

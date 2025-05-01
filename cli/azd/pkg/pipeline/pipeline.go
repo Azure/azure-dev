@@ -157,12 +157,16 @@ func mergeProjectVariablesAndSecrets(
 	// second override is based on the provider parameters
 	for _, parameter := range providerParameters {
 		envVarsCount := len(parameter.EnvVarMapping)
-		if envVarsCount == 0 && parameter.LocalPrompt {
-			return nil, nil,
-				fmt.Errorf("parameter %s got its value from a local prompt and it has not a mapped environment variable. "+
-					"The local value can't be configured in CI without having a map to one ENV VAR. "+
-					"Define a mapping for %s to one ENV VAR as part of the infra parameters definition",
-					parameter.Name, parameter.Name)
+		if envVarsCount == 0 {
+			if parameter.LocalPrompt {
+				return nil, nil,
+					fmt.Errorf("parameter %s got its value from a local prompt and it has not a mapped environment variable. "+
+						"The local value can't be configured in CI without having a map to one ENV VAR. "+
+						"Define a mapping for %s to one ENV VAR as part of the infra parameters definition",
+						parameter.Name, parameter.Name)
+			}
+			// env var == 0 AND no local prompt, ignore it
+			continue
 		}
 		if envVarsCount > 1 {
 			// for parameters mapped to more than one ENV VAR, each env var becomes either a variable or a secret

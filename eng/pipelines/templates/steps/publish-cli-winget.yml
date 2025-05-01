@@ -17,9 +17,10 @@ steps:
       }
 
       ./wingetcreate.exe update `
-          $PackageIdentifier `
+          Microsoft.Azd `
           --version '$(MSI_VERSION)' `
           --urls "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_$(CLI_VERSION)/azd-windows-amd64.msi" `
           --token ${{ parameters.GitHubToken }} `
           --out winget `
           $AdditionalArgs
+    displayName: Submit to WinGet

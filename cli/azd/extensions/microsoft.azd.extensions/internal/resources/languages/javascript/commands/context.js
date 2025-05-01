@@ -1,7 +1,6 @@
 const { Command } = require('commander');
 const AzdClient = require('../azdClient');
 const { unary } = require('../grpcUtils');
-const logger = require('../logger');
 
 function createContextCommand() {
   const cmd = new Command('context');
@@ -14,32 +13,32 @@ function createContextCommand() {
 
       // === User Config ===
       const configResponse = await unary(client.UserConfig, 'get', {}, client._metadata);
-      logger.info('User Config:', { value: configResponse?.value?.toString() });
+      console.log('User Config:', configResponse?.value?.toString());
 
       // === Project Info ===
       const projectResponse = await unary(client.Project, 'get', {}, client._metadata);
-      logger.info('Project Info:', { project: projectResponse?.project });
+      console.log('Project:', projectResponse?.project);
 
       // === Current Environment ===
       const currentEnv = await unary(client.Environment, 'getCurrent', {}, client._metadata);
       const currentEnvName = currentEnv?.environment?.name;
-      logger.info('Current Environment:', { name: currentEnvName });
+      console.log('Current Environment:', currentEnvName);
 
       // === All Environments ===
       const envList = await unary(client.Environment, 'list', {}, client._metadata);
-      logger.info('All Environments:', { environments: envList?.environments });
+      console.log('All Environments:', envList?.environments);
 
       // === Environment Values ===
       if (currentEnvName) {
         const envValues = await unary(client.Environment, 'getValues', { name: currentEnvName }, client._metadata);
-        logger.info('Environment Values:', { keyValues: envValues?.keyValues });
+        console.log('Environment Values:', envValues?.keyValues);
       }
 
       // === Deployment Context ===
       const deployCtx = await unary(client.Deployment, 'getDeploymentContext', {}, client._metadata);
-      logger.info('Deployment Context:', { context: deployCtx });
+      console.log('Deployment Context:', deployCtx);
     } catch (err) {
-      logger.error('Error in context command', { error: err.message, stack: err.stack });
+      console.error(err.message);
       process.exit(1);
     }
   });

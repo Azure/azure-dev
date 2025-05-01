@@ -131,6 +131,11 @@ func (p *TestProvider) Destroy(
 	return &destroyResult, nil
 }
 
+func (p *TestProvider) Parameters(ctx context.Context) ([]provisioning.Parameter, error) {
+	// not supported (no-op)
+	return nil, nil
+}
+
 func NewTestProvider(
 	envManager environment.Manager,
 	env *environment.Environment,

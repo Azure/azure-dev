@@ -767,5 +767,6 @@ type terraformChildModule struct {
 }
 
 func (t *TerraformProvider) Parameters(ctx context.Context) ([]provisioning.Parameter, error) {
+	// not supported (no-op)
 	return nil, nil
 }

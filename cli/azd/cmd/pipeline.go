@@ -177,6 +177,13 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 		Title: fmt.Sprintf("Configure your %s pipeline", pipelineProviderName),
 	})
 
+	// Pull provider specific parameters
+	providerParameters, err := p.provisioningManager.Parameters(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get parameters for provider %s: %w", pipelineProviderName, err)
+	}
+	p.manager.SetParameters(providerParameters)
+
 	pipelineResult, err := p.manager.Configure(ctx, p.projectConfig.Name)
 	if err != nil {
 		return nil, err

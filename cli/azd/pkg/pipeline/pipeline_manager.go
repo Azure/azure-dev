@@ -387,18 +387,7 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 		return result, err
 	}
 
-	// Adding environment.AzdInitialEnvironmentConfigName as a secret to the pipeline as the base configuration for
-	// whenever a new environment is created. This means loading the local environment config into a pipeline secret which
-	// azd will use to restore the the config on CI
-	// localEnvConfig, err := json.Marshal(pm.env.Config.ResolvedRaw())
-	// if err != nil {
-	// 	return result, fmt.Errorf("failed to marshal environment config: %w", err)
-	// }
-
-	defaultAzdSecrets := map[string]string{
-		// environment.AzdInitialEnvironmentConfigName: string(localEnvConfig),
-	}
-
+	defaultAzdSecrets := map[string]string{}
 	defaultAzdVariables := map[string]string{}
 	// If the user has set the resource group name as an environment variable, we need to pass it to the pipeline
 	// as this likely means rg-deployment
@@ -407,9 +396,12 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 	}
 
 	// Merge azd default variables and secrets with the ones defined on azure.yaml
-	pm.configOptions.variables, pm.configOptions.secrets = mergeProjectVariablesAndSecrets(
+	pm.configOptions.variables, pm.configOptions.secrets, err = mergeProjectVariablesAndSecrets(
 		pm.configOptions.projectVariables, pm.configOptions.projectSecrets,
-		defaultAzdVariables, defaultAzdSecrets, pm.env.Dotenv())
+		defaultAzdVariables, defaultAzdSecrets, pm.configOptions.providerParameters, pm.env.Dotenv())
+	if err != nil {
+		return result, fmt.Errorf("failed to merge variables and secrets: %w", err)
+	}
 
 	// resolve akvs secrets
 	// For each akvs in the secrets array:
@@ -1165,4 +1157,13 @@ func resolveSmr(smrArg string, projectConfig config.Config, userConfig config.Co
 	}
 	// no smr configuration
 	return nil
+}
+
+// SetParameters adds parameter configuration for the manager to use during pipeline config.
+// Parameters passed here are automatically defined as variables or secrets in the pipeline without user explicitly
+// defining them in the azure.yaml -> pipeline file.
+// This is useful for provisioning providers to define a list of parameters that are required for the pipeline.
+// If parameters is nil, it means that the pipeline manager should not set up any parameters automatically.
+func (pm *PipelineManager) SetParameters(parameters []provisioning.Parameter) {
+	pm.configOptions.providerParameters = parameters
 }

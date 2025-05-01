@@ -5,8 +5,10 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
 	"path/filepath"
 	"slices"
 
@@ -103,6 +105,10 @@ type configurePipelineOptions struct {
 	// projectSecrets are the keys defined on the project (azure.yaml) to be collected form the env and set it as
 	// secrets in the CI provider when their values are not empty.
 	projectSecrets []string
+	// providerParameters can be used to automatically set variables and secrets by the provisioning provider.
+	// This is useful for fully-managed scenarios like Aspire, where user is not manually defining the variables and secrets
+	// in the azure.yaml file. The provider can provide the parameters and values required in CI.
+	providerParameters []provisioning.Parameter
 }
 
 // CiProvider defines the base behavior for a continuous integration provider.
@@ -136,13 +142,64 @@ type CiProvider interface {
 }
 
 // mergeProjectVariablesAndSecrets returns the list of variables and secrets to be used in the pipeline
-// The initial values reference azd known values, which are merged with the ones defined on azure.yaml by the user.
+// The initial values reference azd known values, which are merged with the ones defined on azure.yaml by the user and the
+// provider parameters.
 func mergeProjectVariablesAndSecrets(
 	projectVariables, projectSecrets []string,
-	initialVariables, initialSecrets, env map[string]string) (variables, secrets map[string]string) {
+	initialVariables, initialSecrets map[string]string,
+	providerParameters []provisioning.Parameter,
+	env map[string]string) (variables, secrets map[string]string, err error) {
+
+	// initial state comes from the list of initial variables and secrets
 	variables = maps.Clone(initialVariables)
 	secrets = maps.Clone(initialSecrets)
 
+	// second override is based on the provider parameters
+	for _, parameter := range providerParameters {
+		envVarsCount := len(parameter.EnvVarMapping)
+		if envVarsCount == 0 && parameter.LocalPrompt {
+			return nil, nil,
+				fmt.Errorf("parameter %s got its value from a local prompt and it has not a mapped environment variable. "+
+					"The local value can't be configured in CI without having a map to one ENV VAR. "+
+					"Define a mapping for %s to one ENV VAR as part of the infra parameters definition",
+					parameter.Name, parameter.Name)
+		}
+		if envVarsCount > 1 {
+			// for parameters mapped to more than one ENV VAR, each env var becomes either a variable or a secret
+			for _, envVar := range parameter.EnvVarMapping {
+				// see if the env var is set in the system env or azd env
+				// NOTE: provider parameters have access to system env vars but not project env vars/secrets.
+				value := env[envVar]
+				if value == "" {
+					value = os.Getenv(envVar)
+				}
+				if value == "" {
+					// env var not set, ignore it
+					continue
+				}
+				if parameter.Secret {
+					secrets[envVar] = value
+				} else {
+					variables[envVar] = value
+				}
+			}
+			// nothing else to do for parameters mapped to multiple env vars
+			continue
+		}
+		// Param mapped to a single env var, use that ENV VAR to set the link in CI
+		// marshall the value to a string
+		value, err := json.Marshal(parameter.Value)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal parameter %s: %w", parameter.Name, err)
+		}
+		if parameter.Secret {
+			secrets[parameter.EnvVarMapping[0]] = string(value)
+		} else {
+			variables[parameter.EnvVarMapping[0]] = string(value)
+		}
+	}
+
+	// Last override is based on the user explicitly defined variables and secrets
 	for key, value := range env {
 		if value == "" {
 			// skip empty values
@@ -156,7 +213,7 @@ func mergeProjectVariablesAndSecrets(
 		}
 	}
 
-	return variables, secrets
+	return variables, secrets, nil
 }
 
 const (

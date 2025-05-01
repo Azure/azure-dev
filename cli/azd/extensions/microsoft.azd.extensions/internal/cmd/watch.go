@@ -52,21 +52,24 @@ func runWatchAction(ctx context.Context, flags *watchFlags) error {
 	defer watcher.Close()
 
 	ignoredFolders := map[string]struct{}{
-		"bin":   {},
-		"obj":   {},
-		"build": {},
+		"bin":          {},
+		"obj":          {},
+		"build":        {},
+		"node_modules": {},
+	}
+
+	globIgnorePaths := []string{}
+
+	for folder := range ignoredFolders {
+		globIgnorePaths = append(globIgnorePaths, folder)
+		globIgnorePaths = append(globIgnorePaths, fmt.Sprintf("%s/**/*", folder))
 	}
 
 	// Define glob patterns for ignored paths
-	globIgnorePaths := []string{
-		"bin",        // Matches the "bin" folder itself
-		"bin/**/*",   // Matches all files and subdirectories inside "bin"
-		"obj",        // Matches the "obj" folder itself
-		"obj/**/*",   // Matches all files and subdirectories inside "obj"
-		"build",      // Matches the "build" folder itself
-		"build/**/*", // Matches all files and subdirectories inside "build"
-		"*.spec",     // Matches all .spec files
-	}
+	globIgnorePaths = append(globIgnorePaths,
+		"*.spec",            // Matches all .spec files
+		"package-lock.json", // Matches package-lock.json files
+	)
 
 	if err := watchRecursive(".", watcher, ignoredFolders); err != nil {
 		return fmt.Errorf("Error watching for changes: %w", err)

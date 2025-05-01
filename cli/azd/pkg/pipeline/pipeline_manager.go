@@ -796,58 +796,6 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	}
 	pm.prjConfig = prjConfig
 
-	// infra, err := pm.importManager.ProjectInfrastructure(ctx, prjConfig)
-	// if err != nil {
-	// 	return err
-	// }
-	// defer func() { _ = infra.Cleanup() }()
-	// pm.infra = infra
-
-	// hasAppHost := pm.importManager.HasAppHost(ctx, prjConfig)
-
-	// infraProvider, err := toInfraProviderType(string(pm.infra.Options.Provider))
-	// if err != nil {
-	// 	return err
-	// }
-
-	// var requiredAlphaFeatures []string
-	// if infra.IsCompose {
-	// 	requiredAlphaFeatures = append(requiredAlphaFeatures, "compose")
-	// }
-	// // There are 2 possible options, for the git branch name, when running azd pipeline config:
-	// // - There is not a git repo, so the branch name is empty. In this case, we default to "main".
-	// // - There is a git repo and we can get the name of the current branch.
-	// branchName := "main"
-	// customBranchName, err := pm.gitCli.GetCurrentBranch(ctx, repoRoot)
-	// // It is fine if we can't get the branch name, we will default to "main"
-	// if err == nil {
-	// 	branchName = customBranchName
-	// }
-
-	// // default auth type for all providers
-	// authType := AuthTypeFederated
-	// if pm.args.PipelineAuthTypeName == "" && infraProvider == infraProviderTerraform {
-	// 	// empty arg for auth and terraform forces client credentials, otherwise, it will be federated
-	// 	authType = AuthTypeClientCredentials
-	// }
-
-	// // Check and prompt for missing CI/CD files
-	// if err := pm.checkAndPromptForProviderFiles(
-	// 	ctx, projectProperties{
-	// 		CiProvider:            pipelineProvider,
-	// 		RepoRoot:              repoRoot,
-	// 		InfraProvider:         infraProvider,
-	// 		HasAppHost:            hasAppHost,
-	// 		BranchName:            branchName,
-	// 		AuthType:              authType,
-	// 		Variables:             prjConfig.Pipeline.Variables,
-	// 		Secrets:               prjConfig.Pipeline.Secrets,
-	// 		RequiredAlphaFeatures: requiredAlphaFeatures,
-	// 		providerParameters:    pm.configOptions.providerParameters,
-	// 	}); err != nil {
-	// 	return err
-	// }
-
 	// Save the provider to the environment
 	if err := pm.savePipelineProviderToEnv(ctx, pipelineProvider, pm.env); err != nil {
 		return err
@@ -1214,7 +1162,8 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 	projectDir := pm.azdCtx.ProjectDirectory()
 	repoRoot, err := pm.gitCli.GetRepoRoot(ctx, projectDir)
 	if err != nil {
-		return fmt.Errorf("getting git repo root: %w", err)
+		repoRoot = projectDir
+		log.Printf("using project root as repo root, since git repo wasn't available: %s", err)
 	}
 	customBranchName, err := pm.gitCli.GetCurrentBranch(ctx, repoRoot)
 	// It is fine if we can't get the branch name, we will default to "main"

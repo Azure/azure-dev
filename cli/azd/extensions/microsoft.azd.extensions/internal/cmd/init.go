@@ -368,6 +368,10 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 			Value: "dotnet",
 		},
 		{
+			Label: "JavaScript",
+			Value: "javascript",
+		},
+		{
 			Label: "Python",
 			Value: "python",
 		},
@@ -465,6 +469,16 @@ func createExtensionDirectory(
 	err = copyAndProcessTemplates(resources.Languages, templatePath, extensionPath, templateMetadata)
 	if err != nil {
 		return fmt.Errorf("failed to copy and process templates: %w", err)
+	}
+
+	if extensionMetadata.Language == "dotnet" || extensionMetadata.Language == "javascript" {
+		protoSrcPath := path.Join("languages", "proto")
+		protoDstPath := filepath.Join(extensionPath, "proto")
+
+		err = copyAndProcessTemplates(resources.Languages, protoSrcPath, protoDstPath, templateMetadata)
+		if err != nil {
+			return fmt.Errorf("failed to copy and process proto templates: %w", err)
+		}
 	}
 
 	// Create the extension.yaml file

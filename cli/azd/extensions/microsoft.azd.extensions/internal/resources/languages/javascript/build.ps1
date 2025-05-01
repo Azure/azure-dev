@@ -113,29 +113,8 @@ foreach ($PLATFORM in $PLATFORMS) {
             Write-Host "An error occurred while building for $OS/$ARCH"
             exit 1
         }
-    } elseif ($env:EXTENSION_LANGUAGE -eq "python") {
-        $PYTHON_MAIN_FILE = "src/main.py"
-
-        $PYINSTALLER_NAME = "$EXTENSION_ID_SAFE-$OS-$ARCH"
-        if ($OS -eq "windows") {
-            $PYINSTALLER_NAME += ".exe"
-        }
-
-        Write-Host "Running PyInstaller for $OS/$ARCH..."
-        python -m PyInstaller `
-            --onefile `
-            --distpath $OUTPUT_DIR `
-            --name $PYINSTALLER_NAME `
-            $PYTHON_MAIN_FILE
-
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "An error occurred while building Python extension for $OS/$ARCH"
-            exit 1
-        }
-
-        Rename-Item -Path (Join-Path $OUTPUT_DIR $PYINSTALLER_NAME) -NewName $OUTPUT_NAME
     } else {
-        Write-Host "Error: Unsupported BUILD_TYPE '$env:BUILD_TYPE'. Use 'go' or 'dotnet' or 'python'."
+        Write-Host "Error: Unsupported BUILD_TYPE '$env:BUILD_TYPE'. Use 'go' or 'dotnet'."
         exit 1
     }
 }

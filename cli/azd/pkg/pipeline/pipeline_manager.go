@@ -96,6 +96,7 @@ type PipelineManager struct {
 	userConfigManager config.UserConfigManager
 	keyVaultService   keyvault.KeyVaultService
 	prjConfig         *project.ProjectConfig
+	ciProviderType    ciProviderType
 }
 
 func NewPipelineManager(
@@ -238,59 +239,7 @@ func (pm *PipelineManager) Configure(
 	}
 
 	// pipeline definition files
-	hasAppHost := pm.importManager.HasAppHost(ctx, pm.prjConfig)
-
-	infraProvider, err := toInfraProviderType(string(pm.infra.Options.Provider))
-	if err != nil {
-		return nil, err
-	}
-
-	var requiredAlphaFeatures []string
-	if infra.IsCompose {
-		requiredAlphaFeatures = append(requiredAlphaFeatures, "compose")
-	}
-	// There are 2 possible options, for the git branch name, when running azd pipeline config:
-	// - There is not a git repo, so the branch name is empty. In this case, we default to "main".
-	// - There is a git repo and we can get the name of the current branch.
-	branchName := "main"
-	projectDir := pm.azdCtx.ProjectDirectory()
-	repoRoot, err := pm.gitCli.GetRepoRoot(ctx, projectDir)
-	if err != nil {
-		return nil, fmt.Errorf("getting git repo root: %w", err)
-	}
-	customBranchName, err := pm.gitCli.GetCurrentBranch(ctx, repoRoot)
-	// It is fine if we can't get the branch name, we will default to "main"
-	if err == nil {
-		branchName = customBranchName
-	}
-
-	// default auth type for all providers
-	authType := AuthTypeFederated
-	if pm.args.PipelineAuthTypeName == "" && infraProvider == infraProviderTerraform {
-		// empty arg for auth and terraform forces client credentials, otherwise, it will be federated
-		authType = AuthTypeClientCredentials
-	}
-
-	// Check and prompt for missing CI/CD files
-	err = pm.checkAndPromptForProviderFiles(
-		ctx, projectProperties{
-			CiProvider:            ciProviderType(strings.ToLower(pm.ciProvider.Name())),
-			RepoRoot:              repoRoot,
-			InfraProvider:         infraProvider,
-			HasAppHost:            hasAppHost,
-			BranchName:            branchName,
-			AuthType:              authType,
-			Variables:             pm.prjConfig.Pipeline.Variables,
-			Secrets:               pm.prjConfig.Pipeline.Secrets,
-			RequiredAlphaFeatures: requiredAlphaFeatures,
-			providerParameters:    pm.configOptions.providerParameters,
-		})
-	if err != nil {
-		return nil, err
-	}
-	pm.configOptions.projectSecrets = slices.Clone(pm.prjConfig.Pipeline.Secrets)
-	pm.configOptions.projectVariables = slices.Clone(pm.prjConfig.Pipeline.Variables)
-	pm.configOptions.provisioningProvider = &infra.Options
+	pm.ensurePipelineDefinition(ctx)
 
 	userConfig, err := pm.userConfigManager.Load()
 	if err != nil {
@@ -839,6 +788,7 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 		}
 		pipelineProvider = p
 	}
+	pm.ciProviderType = pipelineProvider
 
 	prjConfig, err := project.Load(ctx, projectPath)
 	if err != nil {
@@ -1242,4 +1192,62 @@ func (pm *PipelineManager) SetParameters(parameters []provisioning.Parameter) {
 		pm.configOptions = &configurePipelineOptions{}
 	}
 	pm.configOptions.providerParameters = parameters
+}
+
+func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
+	// pipeline definition files
+	hasAppHost := pm.importManager.HasAppHost(ctx, pm.prjConfig)
+
+	infraProvider, err := toInfraProviderType(string(pm.infra.Options.Provider))
+	if err != nil {
+		return err
+	}
+
+	var requiredAlphaFeatures []string
+	if pm.infra.IsCompose {
+		requiredAlphaFeatures = append(requiredAlphaFeatures, "compose")
+	}
+	// There are 2 possible options, for the git branch name, when running azd pipeline config:
+	// - There is not a git repo, so the branch name is empty. In this case, we default to "main".
+	// - There is a git repo and we can get the name of the current branch.
+	branchName := "main"
+	projectDir := pm.azdCtx.ProjectDirectory()
+	repoRoot, err := pm.gitCli.GetRepoRoot(ctx, projectDir)
+	if err != nil {
+		return fmt.Errorf("getting git repo root: %w", err)
+	}
+	customBranchName, err := pm.gitCli.GetCurrentBranch(ctx, repoRoot)
+	// It is fine if we can't get the branch name, we will default to "main"
+	if err == nil {
+		branchName = customBranchName
+	}
+
+	// default auth type for all providers
+	authType := AuthTypeFederated
+	if pm.args.PipelineAuthTypeName == "" && infraProvider == infraProviderTerraform {
+		// empty arg for auth and terraform forces client credentials, otherwise, it will be federated
+		authType = AuthTypeClientCredentials
+	}
+
+	// Check and prompt for missing CI/CD files
+	err = pm.checkAndPromptForProviderFiles(
+		ctx, projectProperties{
+			CiProvider:            pm.ciProviderType,
+			RepoRoot:              repoRoot,
+			InfraProvider:         infraProvider,
+			HasAppHost:            hasAppHost,
+			BranchName:            branchName,
+			AuthType:              authType,
+			Variables:             pm.prjConfig.Pipeline.Variables,
+			Secrets:               pm.prjConfig.Pipeline.Secrets,
+			RequiredAlphaFeatures: requiredAlphaFeatures,
+			providerParameters:    pm.configOptions.providerParameters,
+		})
+	if err != nil {
+		return err
+	}
+	pm.configOptions.projectSecrets = slices.Clone(pm.prjConfig.Pipeline.Secrets)
+	pm.configOptions.projectVariables = slices.Clone(pm.prjConfig.Pipeline.Variables)
+	pm.configOptions.provisioningProvider = &pm.infra.Options
+	return nil
 }

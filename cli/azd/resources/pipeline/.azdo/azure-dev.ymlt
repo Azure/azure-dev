@@ -73,8 +73,6 @@ steps:
         azd deploy --no-prompt
     env:
       AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
-      AZURE_ENV_NAME: $(AZURE_ENV_NAME)
-      AZURE_LOCATION: $(AZURE_LOCATION)
 {{- range $variable := .Variables }}
       {{ $variable }}: $({{ $variable }})
 {{- end}}

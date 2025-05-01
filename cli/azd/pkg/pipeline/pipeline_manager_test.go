@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -78,9 +79,16 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		simulateUserInteraction(mockContext, ciProviderGitHubActions, false)
 
-		_, err := createPipelineManager(mockContext, azdContext, nil, nil)
+		m, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		// No error for GitHub, just a message to the console
 		assert.NoError(t, err)
+		m.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		m.configOptions = &configurePipelineOptions{}
+		err = m.ensurePipelineDefinition(ctx)
 		assert.Contains(t,
 			mockContext.Console.Output(),
 			fmt.Sprintf(
@@ -97,8 +105,15 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		simulateUserInteraction(mockContext, ciProviderAzureDevOps, false)
 
-		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
-		assert.Nil(t, manager)
+		m, err := createPipelineManager(mockContext, azdContext, nil, nil)
+		assert.NoError(t, err)
+		m.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		m.configOptions = &configurePipelineOptions{}
+		err = m.ensurePipelineDefinition(ctx)
 		assert.EqualError(t, err, fmt.Sprintf(
 			"%s provider selected, but no pipeline files were found in any expected directories:\n%s\n"+
 				"Please add pipeline files and try again.",

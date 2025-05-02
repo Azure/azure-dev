@@ -407,6 +407,90 @@
               "url": "https://github.com/wbreza/azd-extensions/releases/download/azd-ext-microsoft-azd-extensions_0.4.0/microsoft-azd-extensions-windows-arm64.zip"
             }
           }
+        },
+        {
+          "capabilities": [
+            "custom-commands"
+          ],
+          "version": "0.4.1",
+          "usage": "azd x \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AZD extension project.",
+              "usage": "azd x init"
+            },
+            {
+              "name": "build",
+              "description": "Build the AZD extension project.",
+              "usage": "azd x build"
+            },
+            {
+              "name": "pack",
+              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "usage": "azd x pack"
+            },
+            {
+              "name": "release",
+              "description": "Create an new release of the AZD extension project to a Github repository.",
+              "usage": "azd x release"
+            },
+            {
+              "name": "watch",
+              "description": "Watch for changes in the extension project and automatically rebuild and reload the extension.",
+              "usage": "azd x watch"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "42fda403a2fdbc916ae41019b1491e139a28f0c66fa555d5d8c48b8642e82c12"
+              },
+              "entryPoint": "microsoft-azd-extensions-darwin-amd64",
+              "url": "https://github.com/wbreza/azd-extensions/releases/download/azd-ext-microsoft-azd-extensions_0.4.1/microsoft-azd-extensions-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "886ccb071d18b07e97a82363ccf83f65d604217eeebc956505851f6f746cb7d1"
+              },
+              "entryPoint": "microsoft-azd-extensions-darwin-arm64",
+              "url": "https://github.com/wbreza/azd-extensions/releases/download/azd-ext-microsoft-azd-extensions_0.4.1/microsoft-azd-extensions-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "5e654535a9f8f1753f0c468a1cf619f47c0abbe87f262bc0496489f761fefc9f"
+              },
+              "entryPoint": "microsoft-azd-extensions-linux-amd64",
+              "url": "https://github.com/wbreza/azd-extensions/releases/download/azd-ext-microsoft-azd-extensions_0.4.1/microsoft-azd-extensions-linux-amd64.zip"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "3fe9d19e73e254f526bd69967d10771140f3a64c47148866a2402f576d767434"
+              },
+              "entryPoint": "microsoft-azd-extensions-linux-arm64",
+              "url": "https://github.com/wbreza/azd-extensions/releases/download/azd-ext-microsoft-azd-extensions_0.4.1/microsoft-azd-extensions-linux-arm64.zip"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "31166acc1fb2fefd31f88c661ed026326dcb211217e6b488e2fb9de92143700c"
+              },
+              "entryPoint": "microsoft-azd-extensions-windows-amd64.exe",
+              "url": "https://github.com/wbreza/azd-extensions/releases/download/azd-ext-microsoft-azd-extensions_0.4.1/microsoft-azd-extensions-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "858f4e0f60303e4838add3a3c9abf25b4d4b4466ef9afad9521651a64eaea4d5"
+              },
+              "entryPoint": "microsoft-azd-extensions-windows-arm64.exe",
+              "url": "https://github.com/wbreza/azd-extensions/releases/download/azd-ext-microsoft-azd-extensions_0.4.1/microsoft-azd-extensions-windows-arm64.zip"
+            }
+          }
         }
       ]
     }

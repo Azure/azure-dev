@@ -50,7 +50,7 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 }
 
 // The AKS cluster to host applications
-module aks 'br/public:avm/ptn/azd/aks:0.1.2' = {
+module aks 'br/public:avm/ptn/azd/aks:0.2.0' = {
   scope: rg
   name: 'aks'
   params: {
@@ -128,6 +128,6 @@ output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
 output AZURE_AKS_CLUSTER_NAME string = aks.outputs.managedClusterName
-output AZURE_AKS_IDENTITY_CLIENT_ID string = aks.outputs.managedClusterClientId
+output AZURE_AKS_IDENTITY_CLIENT_ID string? = aks.outputs.?managedClusterClientId
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = aks.outputs.containerRegistryLoginServer
 output AZURE_CONTAINER_REGISTRY_NAME string = aks.outputs.containerRegistryName

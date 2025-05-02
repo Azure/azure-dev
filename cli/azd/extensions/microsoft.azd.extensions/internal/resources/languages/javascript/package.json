@@ -14,7 +14,9 @@
     "@grpc/proto-loader": "^0.7.7",
     "commander": "^11.1.0",
     "js-yaml": "^4.1.0",
-    "pkg": "^5.8.1"
+    "pkg": "^5.8.1",
+    "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^4.7.1"
   },
   "pkg": {
     "scripts": [
@@ -23,7 +25,8 @@
       "commands/*.js",
       "azdClient.js",
       "eventManager.js",
-      "grpcUtils.js"
+      "grpcUtils.js",
+      "logger.js"
     ],
     "assets": [
       "proto/*.proto"

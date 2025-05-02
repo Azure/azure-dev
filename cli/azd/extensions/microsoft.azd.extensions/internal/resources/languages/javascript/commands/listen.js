@@ -1,6 +1,7 @@
 const { Command } = require('commander');
 const AzdClient = require('../azdClient');
 const { EventManager } = require('../eventManager');
+const logger = require('../logger');
 
 function createListenCommand() {
   const cmd = new Command('listen');
@@ -13,14 +14,14 @@ function createListenCommand() {
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
     await eventManager.addProjectEventHandler('preprovision', async () => {
-      for (let i = 1; i <= 10; i++) {
+      for (let i = 1; i <= 20; i++) {
         console.log(`[preprovision] Doing important work... step ${i}`);
         await sleep(200);
       }
     });
 
     await eventManager.addServiceEventHandler('prepackage', async () => {
-      for (let i = 1; i <= 10; i++) {
+      for (let i = 1; i <= 20; i++) {
         console.log(`[prepackage] Doing important work... step ${i}`);
         await sleep(200);
       }
@@ -29,7 +30,7 @@ function createListenCommand() {
     try {
       await eventManager.receive();
     } catch (err) {
-      console.error('Error while receiving events:', err.message);
+      logger.error('Error while receiving events:', { error: err.message, stack: err.stack });
     }
   });
 

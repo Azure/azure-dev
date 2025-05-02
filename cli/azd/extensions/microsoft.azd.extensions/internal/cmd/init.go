@@ -68,7 +68,10 @@ func newInitCommand() *cobra.Command {
 				}
 
 				if len(missingParams) > 0 {
-					return fmt.Errorf("when using --no-prompt, the following parameters are required: %s", strings.Join(missingParams, ", "))
+					return fmt.Errorf(
+						"when using --no-prompt, the following parameters are required: %s",
+						strings.Join(missingParams, ", "),
+					)
 				}
 			}
 
@@ -341,7 +344,10 @@ func collectExtensionMetadataFromFlags(flags *initFlags) (*models.ExtensionSchem
 	}
 
 	if !validLanguages[flags.language] {
-		return nil, fmt.Errorf("invalid language '%s', supported languages are: go, dotnet, javascript, python", flags.language)
+		return nil, fmt.Errorf(
+			"invalid language '%s', supported languages are: go, dotnet, javascript, python",
+			flags.language,
+		)
 	}
 
 	// Convert capabilities from string slice to CapabilityType slice

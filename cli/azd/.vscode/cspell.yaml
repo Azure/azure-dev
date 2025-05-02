@@ -26,6 +26,7 @@ words:
   - Retryable
   - runcontext
   - unmarshals
+  - unmarshaling
   - unsetting
   - usgovcloudapi
   - jdbc

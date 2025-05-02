@@ -1248,23 +1248,6 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 			},
 			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
 				selectedLanguage := value.(string)
-
-				// App Service in composability supports a limited set of runtimes, so re-prompt
-				// if the user selects an unsupported language
-				isAppService := len(a.scenarioData.AppHostTypes) > 0 &&
-					a.scenarioData.AppHostTypes[len(a.scenarioData.AppHostTypes)-1] == "host.appservice"
-				if isAppService {
-					if _, ok := appServiceStackMap[selectedLanguage]; !ok && selectedLanguage != "default" {
-						q.Branches = map[any][]qna.QuestionReference{
-							selectedLanguage: {{Key: "choose-app-language"}},
-						}
-						fmt.Println(output.WithErrorFormat(
-							"%s is not a supported language for App Service. Please choose another language.",
-							selectedLanguage))
-						return nil
-					}
-				}
-
 				// Find the default language for the selected interaction type if available.
 				if selectedLanguage == "default" {
 					interactionType := q.State["interactionType"].(string)
@@ -1273,6 +1256,22 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 						selectedLanguage = interactionDefault
 					} else {
 						selectedLanguage = "python"
+					}
+				}
+
+				// App Service in composability supports a limited set of runtimes, so re-prompt
+				// if the user selects an unsupported language
+				isAppService := len(a.scenarioData.AppHostTypes) > 0 &&
+					a.scenarioData.AppHostTypes[len(a.scenarioData.AppHostTypes)-1] == "host.appservice"
+				if isAppService {
+					if _, ok := appServiceStackMap[selectedLanguage]; !ok {
+						q.Branches = map[any][]qna.QuestionReference{
+							selectedLanguage: {{Key: "choose-app-language"}},
+						}
+						fmt.Println(output.WithErrorFormat(
+							"%s is not a supported language for App Service. Please choose another language.",
+							selectedLanguage))
+						return nil
 					}
 				}
 

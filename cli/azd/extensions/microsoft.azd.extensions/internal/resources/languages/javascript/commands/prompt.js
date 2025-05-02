@@ -2,6 +2,7 @@ const { Command } = require('commander');
 const AzdClient = require('../azdClient');
 const { DefaultAzureCredential } = require('@azure/identity');
 const { ResourceManagementClient } = require('@azure/arm-resources');
+const logger = require('../logger');
 
 function createPromptCommand() {
   const cmd = new Command('prompt');
@@ -10,7 +11,7 @@ function createPromptCommand() {
   cmd.action(async () => {
     const client = new AzdClient();
 
-    console.log('[prompt] Prompting user for multi-select...');
+    logger.info('Prompting user for multi-select...');
 
     // === Prompt for multi-select
     await new Promise((resolve, reject) => {
@@ -31,7 +32,7 @@ function createPromptCommand() {
         }
       }, client._metadata, (err, res) => {
         if (err) return reject(err);
-        console.log('[prompt] Selected:', res.values);
+        logger.info('Selected services', { values: res.values });
         resolve();
       });
     });
@@ -50,7 +51,7 @@ function createPromptCommand() {
     });
 
     if (!confirm?.value) {
-      console.log('[prompt] Cancelled by user.');
+      logger.info('Cancelled by user.');
       return;
     }
 
@@ -64,8 +65,8 @@ function createPromptCommand() {
 
     const subscription_id = subRes.subscription.id;
     const tenant_id = subRes.subscription.tenant_id;
-    console.log('[prompt] Subscription:', subscription_id);
-    console.log('[prompt] Tenant:', tenant_id);
+    logger.info('Subscription selected', { subscription_id });
+    logger.info('Tenant', { tenant_id });
 
     const credential = new DefaultAzureCredential();
     const armClient = new ResourceManagementClient(credential, subscription_id);
@@ -203,15 +204,16 @@ function createPromptCommand() {
 
 function logSelected(resource) {
   if (!resource) {
-    console.log('[prompt] No resource selected.');
+    logger.info('No resource selected.');
     return;
   }
 
-  console.log('[prompt] Selected Resource:');
-  console.log('  Name:', resource.name);
-  console.log('  Type:', resource.type);
-  console.log('  Location:', resource.location);
-  console.log('  ID:', resource.id);
+  logger.info('Selected Resource', {
+    name: resource.name,
+    type: resource.type,
+    location: resource.location,
+    id: resource.id
+  });
 }
 
 module.exports = { createPromptCommand };

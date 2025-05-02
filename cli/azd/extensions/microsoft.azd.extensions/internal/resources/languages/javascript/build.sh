@@ -57,67 +57,22 @@ for PLATFORM in "${PLATFORMS[@]}"; do
     # Delete the output file if it already exists
     [ -f "$OUTPUT_NAME" ] && rm -f "$OUTPUT_NAME"
 
-    if [ "$EXTENSION_LANGUAGE" = "dotnet" ]; then
-        # Set runtime identifier for .NET
-        if [ "$OS" = "windows" ]; then
-            RUNTIME="win-$ARCH"
-        elif [ "$OS" = "darwin" ]; then
-            RUNTIME="osx-$ARCH"
-        else
-            RUNTIME="linux-$ARCH"
-        fi
-        PROJECT_FILE="azd-extension.csproj"
+    ENTRY_FILE="pkg-entry.js"
+    TARGET="node16-$OS-x64"
+    EXPECTED_OUTPUT_NAME="$EXTENSION_ID_SAFE-$OS-$ARCH"
 
-        # Run dotnet publish for single file executable
-        dotnet publish \
-            -c Release \
-            -r "$RUNTIME" \
-            -o "$OUTPUT_DIR" \
-            /p:PublishTrimmed=true \
-            "$PROJECT_FILE"
+    if [ "$OS" = "windows" ]; then
+        EXPECTED_OUTPUT_NAME+='.exe'
+    fi
 
-        if [ $? -ne 0 ]; then
-            echo "An error occurred while building for $OS/$ARCH"
-            exit 1
-        fi
+    echo "Installing dependencies..."
+    npm install
 
-        EXPECTED_OUTPUT_NAME="$EXTENSION_ID_SAFE"
-        if [ "$OS" = "windows" ]; then
-            EXPECTED_OUTPUT_NAME+='.exe'
-        fi
+    echo "Building JavaScript extension for $OS/$ARCH..."
+    pkg "$ENTRY_FILE" --output "$OUTPUT_DIR/$EXPECTED_OUTPUT_NAME" --targets "$TARGET"
 
-        mv "$OUTPUT_DIR/$EXPECTED_OUTPUT_NAME" "$OUTPUT_NAME"
-    elif [ "$EXTENSION_LANGUAGE" = "javascript" ]; then
-        ENTRY_FILE="pkg-entry.js"
-        TARGET="node16-$OS-x64"
-        EXPECTED_OUTPUT_NAME="$EXTENSION_ID_SAFE-$OS-$ARCH"
-
-        if [ "$OS" = "windows" ]; then
-            EXPECTED_OUTPUT_NAME+='.exe'
-        fi
-
-        echo "Installing dependencies..."
-        npm install
-        
-        echo "Building JavaScript extension for $OS/$ARCH..."
-        pkg "$ENTRY_FILE" --output "$OUTPUT_DIR/$EXPECTED_OUTPUT_NAME" --targets "$TARGET"
-
-        if [ $? -ne 0 ]; then
-            echo "An error occurred while building for $OS/$ARCH"
-            exit 1
-        fi
-    elif [ "$EXTENSION_LANGUAGE" = "go" ]; then
-        # Set environment variables for Go build
-        GOOS=$OS GOARCH=$ARCH go build \
-            -ldflags="-X '$APP_PATH.Version=$EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" \
-            -o "$OUTPUT_NAME"
-
-        if [ $? -ne 0 ]; then
-            echo "An error occurred while building for $OS/$ARCH"
-            exit 1
-        fi
-    else
-        echo "Error: Unsupported EXTENSION_LANGUAGE '$EXTENSION_LANGUAGE'. Use 'go' or 'dotnet'."
+    if [ $? -ne 0 ]; then
+        echo "An error occurred while building for $OS/$ARCH"
         exit 1
     fi
 done

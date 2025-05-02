@@ -15,14 +15,11 @@ if (-not (Test-Path -Path $OUTPUT_DIR)) {
     New-Item -ItemType Directory -Path $OUTPUT_DIR | Out-Null
 }
 
-# Get Git commit hash and build date
-$COMMIT = git rev-parse HEAD
-$BUILD_DATE = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
-
 # List of OS and architecture combinations
 if ($env:EXTENSION_PLATFORM) {
     $PLATFORMS = @($env:EXTENSION_PLATFORM)
-} else {
+}
+else {
     $PLATFORMS = @(
         "windows/amd64",
         "windows/arm64",
@@ -32,8 +29,6 @@ if ($env:EXTENSION_PLATFORM) {
         "linux/arm64"
     )
 }
-
-$APP_PATH = "github.com/azure/azure-dev/cli/azd/extensions/$env:EXTENSION_ID/internal/cmd"
 
 # Check if the build type is specified
 if (-not $env:EXTENSION_LANGUAGE) {
@@ -58,63 +53,21 @@ foreach ($PLATFORM in $PLATFORMS) {
         Remove-Item -Path $OUTPUT_NAME -Force
     }
 
-    if ($env:EXTENSION_LANGUAGE -eq "dotnet") {
-        # Set runtime identifier for .NET
-        $RUNTIME = if ($OS -eq "windows") { "win-$ARCH" } elseif ($OS -eq "darwin") { "osx-$ARCH" } else { "linux-$ARCH" }
-        $PROJECT_FILE = "$EXTENSION_ID_SAFE.csproj"
+    $ENTRY_FILE = "pkg-entry.js"
+    $TARGET = "node16-$OS-x64"
+    $EXPECTED_OUTPUT_NAME = "$EXTENSION_ID_SAFE-$OS-$ARCH"
+    if ($OS -eq "windows") {
+        $EXPECTED_OUTPUT_NAME += ".exe"
+    }
 
-        # Run dotnet publish for single file executable
-        dotnet publish `
-            -c Release `
-            -r $RUNTIME `
-            -o $OUTPUT_DIR `
-            /p:PublishTrimmed=true `
-            $PROJECT_FILE
+    Write-Host "Installing dependencies..."
+    npm install
 
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "An error occurred while building for $OS/$ARCH"
-            exit 1
-        }
+    Write-Host "Building JavaScript extension for $OS/$ARCH..."
+    pkg $ENTRY_FILE -o $OUTPUT_DIR/$EXPECTED_OUTPUT_NAME --targets $TARGET --config package.json
 
-        $EXPECTED_OUTPUT_NAME = $EXTENSION_ID_SAFE
-        if ($OS -eq "windows") {
-            $EXPECTED_OUTPUT_NAME += ".exe"
-        }
-
-        Rename-Item -Path "$OUTPUT_DIR/$EXPECTED_OUTPUT_NAME" -NewName $OUTPUT_NAME
-    } elseif ($env:EXTENSION_LANGUAGE -eq "javascript") {
-        $ENTRY_FILE = "pkg-entry.js"
-        $TARGET = "node16-$OS-x64"
-        $EXPECTED_OUTPUT_NAME = "$EXTENSION_ID_SAFE-$OS-$ARCH"
-        if ($OS -eq "windows") {
-            $EXPECTED_OUTPUT_NAME += ".exe"
-        }
-
-        Write-Host "Installing dependencies..."
-        npm install
-        
-        Write-Host "Building JavaScript extension for $OS/$ARCH..."
-        pkg $ENTRY_FILE -o $OUTPUT_DIR/$EXPECTED_OUTPUT_NAME --targets $TARGET --config package.json
-
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "An error occurred while building for $OS/$ARCH"
-            exit 1
-        }
-    } elseif ($env:EXTENSION_LANGUAGE -eq "go") {
-        # Set environment variables for Go build
-        $env:GOOS = $OS
-        $env:GOARCH = $ARCH
-
-        go build `
-            -ldflags="-X '$APP_PATH.Version=$env:EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" `
-            -o $OUTPUT_NAME
-
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "An error occurred while building for $OS/$ARCH"
-            exit 1
-        }
-    } else {
-        Write-Host "Error: Unsupported BUILD_TYPE '$env:BUILD_TYPE'. Use 'go' or 'dotnet'."
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "An error occurred while building for $OS/$ARCH"
         exit 1
     }
 }

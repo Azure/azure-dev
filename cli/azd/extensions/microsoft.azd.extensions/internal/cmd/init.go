@@ -31,6 +31,12 @@ import (
 
 type initFlags struct {
 	createRegistry bool
+	noPrompt       bool
+	id             string
+	name           string
+	capabilities   []string
+	language       string
+	namespace      string
 }
 
 func newInitCommand() *cobra.Command {
@@ -44,6 +50,30 @@ func newInitCommand() *cobra.Command {
 				"Initialize a new azd extension project (azd x init)",
 				"Initializes a new azd extension project from a template",
 			)
+
+			// Validate required parameters when in headless mode
+			if flags.noPrompt {
+				var missingParams []string
+				if flags.id == "" {
+					missingParams = append(missingParams, "--id")
+				}
+				if flags.name == "" {
+					missingParams = append(missingParams, "--name")
+				}
+				if len(flags.capabilities) == 0 {
+					missingParams = append(missingParams, "--capabilities")
+				}
+				if flags.language == "" {
+					missingParams = append(missingParams, "--language")
+				}
+
+				if len(missingParams) > 0 {
+					return fmt.Errorf(
+						"when using --no-prompt, the following parameters are required: %s",
+						strings.Join(missingParams, ", "),
+					)
+				}
+			}
 
 			err := runInitAction(cmd.Context(), flags)
 			if err != nil {
@@ -59,6 +89,42 @@ func newInitCommand() *cobra.Command {
 		&flags.createRegistry,
 		"registry", "r", false,
 		"When set will create a local extension source registry.",
+	)
+
+	initCmd.Flags().BoolVar(
+		&flags.noPrompt,
+		"no-prompt", false,
+		"Skip all prompts by providing all required parameters via command-line flags.",
+	)
+
+	initCmd.Flags().StringVar(
+		&flags.id,
+		"id", "",
+		"The extension identifier (e.g., company.extension).",
+	)
+
+	initCmd.Flags().StringVar(
+		&flags.name,
+		"name", "",
+		"The display name for the extension.",
+	)
+
+	initCmd.Flags().StringSliceVar(
+		&flags.capabilities,
+		"capabilities", []string{},
+		"The list of capabilities for the extension (e.g., custom-commands,lifecycle-events).",
+	)
+
+	initCmd.Flags().StringVar(
+		&flags.language,
+		"language", "",
+		"The programming language for the extension (go, dotnet, javascript, python).",
+	)
+
+	initCmd.Flags().StringVar(
+		&flags.namespace,
+		"namespace", "",
+		"The namespace for the extension commands.",
 	)
 
 	return initCmd
@@ -77,7 +143,14 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 	defer azdClient.Close()
 
 	var extensionMetadata *models.ExtensionSchema
-	if !flags.createRegistry {
+	if flags.noPrompt {
+		// In headless mode, use the provided command-line arguments
+		extensionMetadata, err = collectExtensionMetadataFromFlags(flags)
+		if err != nil {
+			return err
+		}
+	} else if !flags.createRegistry {
+		// Interactive mode - collect metadata through prompts
 		extensionMetadata, err = collectExtensionMetadata(ctx, azdClient)
 		if err != nil {
 			return fmt.Errorf("failed to collect extension metadata: %w", err)
@@ -103,17 +176,6 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 		}
 	}
 
-	createExtensionDirectoryAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-		if err := createExtensionDirectory(ctx, azdClient, extensionMetadata); err != nil {
-			return ux.Error, common.NewDetailedError(
-				"Error creating directory",
-				fmt.Errorf("failed to create extension directory: %w", err),
-			)
-		}
-
-		return ux.Success, nil
-	}
-
 	localRegistryExists := false
 
 	createLocalExtensionSourceAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
@@ -126,6 +188,17 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 			return ux.Error, common.NewDetailedError(
 				"Registry creation failed",
 				fmt.Errorf("failed to create local registry: %w", err),
+			)
+		}
+
+		return ux.Success, nil
+	}
+
+	createExtensionDirectoryAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+		if err := createExtensionDirectory(ctx, azdClient, extensionMetadata); err != nil {
+			return ux.Error, common.NewDetailedError(
+				"Error creating directory",
+				fmt.Errorf("failed to create extension directory: %w", err),
 			)
 		}
 
@@ -258,6 +331,60 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 	}
 
 	return nil
+}
+
+// collectExtensionMetadataFromFlags creates extension metadata from command-line flags
+func collectExtensionMetadataFromFlags(flags *initFlags) (*models.ExtensionSchema, error) {
+	// Validate that the language is supported
+	validLanguages := map[string]bool{
+		"go":         true,
+		"dotnet":     true,
+		"javascript": true,
+		"python":     true,
+	}
+
+	if !validLanguages[flags.language] {
+		return nil, fmt.Errorf(
+			"invalid language '%s', supported languages are: go, dotnet, javascript, python",
+			flags.language,
+		)
+	}
+
+	// Convert capabilities from string slice to CapabilityType slice
+	capabilities := make([]extensions.CapabilityType, len(flags.capabilities))
+	for i, cap := range flags.capabilities {
+		capabilities[i] = extensions.CapabilityType(cap)
+	}
+
+	// Use default empty tags
+	tags := []string{}
+
+	// Set a default description
+	description := "An AZD extension"
+
+	// Default namespace to ID if not provided
+	namespace := flags.id
+	if flags.namespace != "" {
+		namespace = flags.namespace
+	}
+
+	absExtensionPath, err := filepath.Abs(flags.id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path for extension directory: %w", err)
+	}
+
+	return &models.ExtensionSchema{
+		Id:           flags.id,
+		DisplayName:  flags.name,
+		Description:  description,
+		Namespace:    namespace,
+		Capabilities: capabilities,
+		Language:     flags.language,
+		Tags:         tags,
+		Usage:        fmt.Sprintf("azd %s <command> [options]", namespace),
+		Version:      "0.0.1",
+		Path:         absExtensionPath,
+	}, nil
 }
 
 func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) (*models.ExtensionSchema, error) {

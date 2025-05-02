@@ -37,7 +37,7 @@ func NewUserFriendlyError(errorMessage, userDetails string) *UserFriendlyError {
 // NewUserFriendlyErrorf creates a new UserFriendlyError with a formatted error message and user details
 func NewUserFriendlyErrorf(errorMessage string, userDetails string, args ...interface{}) *UserFriendlyError {
 	return &UserFriendlyError{
-		ErrorMessage: fmt.Sprintf(errorMessage, args...),
-		UserDetails:  userDetails,
+		ErrorMessage: errorMessage,
+		UserDetails:  fmt.Sprintf(userDetails, args...),
 	}
 }

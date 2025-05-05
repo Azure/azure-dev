@@ -42,11 +42,11 @@ type FuncMap map[string]any
 // The functions are evaluated at runtime against live Azure resources.
 func BaseEvalFuncMap() FuncMap {
 	return FuncMap{
-		"lower":                     strings.ToLower,
-		"upper":                     strings.ToUpper,
-		"replace":                   strings.ReplaceAll,
-		"host":                      hostFromEndpoint,
-		"aiProjectConnectionString": aiProjectConnectionString,
+		"lower":             strings.ToLower,
+		"upper":             strings.ToUpper,
+		"replace":           strings.ReplaceAll,
+		"host":              hostFromEndpoint,
+		"aiProjectEndpoint": aiProjectEndpoint,
 	}
 }
 
@@ -57,11 +57,10 @@ func BaseEvalFuncMap() FuncMap {
 // The functions are not evaluated at runtime, but rather emitted as part of the Bicep template.
 func BaseEmitBicepFuncMap() FuncMap {
 	return FuncMap{
-		"lower":                     bicepFuncCall("toLower"),
-		"upper":                     bicepFuncCall("toUpper"),
-		"replace":                   bicepFuncCallThree("replace"),
-		"host":                      emitHostFromEndpoint,
-		"aiProjectConnectionString": emitAiProjectConnectionString,
+		"lower":   bicepFuncCall("toLower"),
+		"upper":   bicepFuncCall("toUpper"),
+		"replace": bicepFuncCallThree("replace"),
+		"host":    emitHostFromEndpoint,
 	}
 }
 

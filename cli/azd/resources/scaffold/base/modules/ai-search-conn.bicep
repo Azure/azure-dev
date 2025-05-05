@@ -1,29 +1,34 @@
-@description('The name of the AI Hub')
-param aiHubName string
+@description('The name of the main AI Services')
+param aiServicesName string
+
+@description('The name of the AI Services project')
+param aiServicesProjectName string
 
 @description('The name of the AI Search')
 param aiSearchName string
 
-resource search 'Microsoft.Search/searchServices@2024-06-01-preview' existing = {
+resource search 'Microsoft.Search/searchServices@2025-02-01-preview' existing = {
   name: aiSearchName
 }
 
-resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' existing = {
-  name: aiHubName
+resource aiServices 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' existing = {
+  name: aiServicesName
 
-  resource AzureAISearch 'connections@2024-10-01' = {
-    name: 'AzureAISearch-connection'
-    properties: {
-      category: 'CognitiveSearch'
-      target: 'https://${search.name}.search.windows.net'
-      authType: 'ApiKey'
-      isSharedToAll: true
-      credentials: {
-        key: search.listAdminKeys().primaryKey
-      }
-      metadata: {
-        ApiType: 'Azure'
-        ResourceId: search.id
+  resource project 'projects' existing = {
+    name: aiServicesProjectName
+
+    resource AzureAISearch 'connections' = {
+      name: 'AzureAISearch-connection'
+      properties: {
+        category: 'CognitiveSearch'
+        target: search.properties.endpoint
+        authType: 'AAD'
+        isSharedToAll: true
+        metadata: {
+          ApiType: 'Azure'
+          ResourceId: search.id
+          location: search.location
+        }
       }
     }
   }

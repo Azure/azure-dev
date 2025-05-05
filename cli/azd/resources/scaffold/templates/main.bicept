@@ -57,7 +57,7 @@ module resources 'resources.bicep' = {
     {{.Name}}: {{.Name}}
 {{- end }}
 {{- if .AiFoundryProject }}
-    aiFoundryProjectConnectionString: aiModelsDeploy.outputs.aiFoundryProjectConnectionString
+    aiProjectEndpoint: aiModelsDeploy.outputs.aiProjectEndpoint
 {{- end}}
   }
 }
@@ -83,7 +83,8 @@ module aiSearchConnection 'modules/ai-search-conn.bicep' = {
   scope: rg
   name: 'ai-search-connection'
   params: {
-    aiHubName: aiModelsDeploy.outputs.hubName
+    aiServicesName: aiModelsDeploy.outputs.aiServicesAccountName
+    aiServicesProjectName: aiModelsDeploy.outputs.aiServicesProjectName
     aiSearchName: resources.outputs.aiSearchName
   }
 }
@@ -130,8 +131,8 @@ output AZURE_RESOURCE_EVENT_HUBS_ID string = resources.outputs.AZURE_RESOURCE_EV
 output AZURE_RESOURCE_SERVICE_BUS_ID string = resources.outputs.AZURE_RESOURCE_SERVICE_BUS_ID
 {{- end}}
 {{- if .AiFoundryProject }}
-output AZURE_AI_PROJECT_CONNECTION_STRING string = aiModelsDeploy.outputs.aiFoundryProjectConnectionString
 output AZURE_RESOURCE_AI_PROJECT_ID string = aiModelsDeploy.outputs.projectId
+output AZURE_AI_PROJECT_ENDPOINT string = aiModelsDeploy.outputs.aiProjectEndpoint
 {{- end}}
 {{- if .AISearch }}
 output AZURE_AI_SEARCH_ENDPOINT string = resources.outputs.AZURE_AI_SEARCH_ENDPOINT

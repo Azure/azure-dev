@@ -72,6 +72,7 @@ module aiModelsDeploy 'ai-project.bicep' = {
     {{bicepName .Name}}{{bicepName .Version}}Location:  {{bicepName .Name}}{{bicepName .Version}}Location
 {{- end }}    
     tags: tags
+    principalId: principalId
     location: location
     envName: environmentName
   }

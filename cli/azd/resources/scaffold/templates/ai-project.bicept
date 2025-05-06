@@ -17,6 +17,9 @@ var resourceToken = uniqueString(subscription().id, resourceGroup().id, location
 @description('The name of the environment')
 param envName string
 
+@description('Id of the user or app to assign application roles')
+param principalId string
+
 module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
   name: 'keyvaultForHub'
   params: {
@@ -27,13 +30,13 @@ module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
   }
 }
 
-module storage 'br/public:avm/res/storage/storage-account:0.17.2' = {
+module storage 'br/public:avm/res/storage/storage-account:0.19.0' = {
   name: 'storageAccountForHub'
   params: {
     tags: tags
     name: '${abbrs.storageStorageAccounts}hub${resourceToken}'
-    allowSharedKeyAccess: true
-    allowBlobPublicAccess: true
+    allowSharedKeyAccess: false
+    allowBlobPublicAccess: false
     allowCrossTenantReplication: true
     largeFileSharesState: 'Disabled'
     publicNetworkAccess: 'Enabled'
@@ -66,6 +69,18 @@ module storage 'br/public:avm/res/storage/storage-account:0.17.2' = {
         }
       ]
     }
+    roleAssignments: [
+      {
+        principalId: principalId
+        principalType: 'User'
+        roleDefinitionIdOrName: 'Storage Blob Data Contributor'
+      }
+      {
+        principalId: principalId
+        principalType: 'User'
+        roleDefinitionIdOrName: 'Storage File Data Privileged Contributor'
+      }
+    ]
     networkAcls: {
       bypass: 'AzureServices'
       defaultAction: 'Allow'
@@ -83,11 +98,7 @@ resource {{bicepName .Name}}{{bicepName .Version}}Deploy 'Microsoft.CognitiveSer
     name: 'S0'
   }
   kind: 'AIServices'
-  properties: {
-    apiProperties: {
-      statisticsEnabled: false
-    }
-  }
+  properties: {}
   
   resource deployment 'deployments' = {
     name: '{{ .Name }}'
@@ -107,7 +118,7 @@ resource {{bicepName .Name}}{{bicepName .Version}}Deploy 'Microsoft.CognitiveSer
 {{- end }}
 {{- end }}
 
-resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
+resource hub 'Microsoft.MachineLearningServices/workspaces@2025-01-01-preview' = {
   name: take('${envName}${resourceToken}',32)
   location: location
   tags: tags
@@ -125,6 +136,7 @@ resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
     }
     v1LegacyMode: false
     publicNetworkAccess: 'Enabled'
+    systemDatastoresAuthMode: 'Identity'
   }
 
 {{- if .AiFoundryProject }}
@@ -149,7 +161,7 @@ resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
 {{- end }}
 }
 
-resource project 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
+resource project 'Microsoft.MachineLearningServices/workspaces@2025-01-01-preview' = {
   name: envName
   location: location
   tags: tags

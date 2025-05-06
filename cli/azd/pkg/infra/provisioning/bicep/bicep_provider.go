@@ -1617,8 +1617,17 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResul
 			resolvedParams[paramName] = resolvedParam
 			continue
 		}
+
+		// Check if the parameter has a valid type
 		stringValue, isString := resolvedParam.Value.(string)
-		if !isString {
+		mapValue, isMap := resolvedParam.Value.(map[string]any)
+		_, isArray := resolvedParam.Value.([]any)
+		if !isString && !isMap && !isArray {
+			continue
+		}
+
+		// Ensure that an object is not empty
+		if isMap && len(mapValue) == 0 {
 			continue
 		}
 

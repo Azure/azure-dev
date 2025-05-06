@@ -12,7 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/fatih/color"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -82,12 +81,7 @@ func (d *detectConfirmAppHost) render(ctx context.Context) error {
 	d.console.Message(ctx, "  "+output.WithHighLightFormat(projectDisplayName(d.AppHost)))
 	d.console.Message(ctx, "  "+"Detected in: "+output.WithHighLightFormat(relSafe(d.root, d.AppHost.Path)))
 	d.console.Message(ctx, "")
-	d.console.Message(
-		ctx,
-		"azd will generate the files necessary to host your app on Azure using "+color.MagentaString(
-			"Azure Container Apps",
-		)+".\n",
-	)
+	d.console.Message(ctx, "azd will generate the files necessary to host your app on Azure.")
 
 	return nil
 }

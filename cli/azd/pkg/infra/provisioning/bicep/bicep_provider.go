@@ -1618,24 +1618,15 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResul
 			continue
 		}
 
-		// Check if the parameter has a valid type
-		stringValue, isString := resolvedParam.Value.(string)
-		mapValue, isMap := resolvedParam.Value.(map[string]any)
-		_, isArray := resolvedParam.Value.([]any)
-		if !isString && !isMap && !isArray {
-			continue
+		// Ignore string parameters which are empty b/c they are mapped to an undefined env var
+		if stringValue, isString := resolvedParam.Value.(string); isString {
+			// After previous checks, we know resolvedParam.Value is not nil
+			if stringValue == "" && hasUnsetEnvVar {
+				// parameter is empty and has an unset env var
+				continue
+			}
 		}
 
-		// Ensure that an object is not empty
-		if isMap && len(mapValue) == 0 {
-			continue
-		}
-
-		// After previous checks, we know resolvedParam.Value is not nil
-		if stringValue == "" && hasUnsetEnvVar {
-			// parameter is empty and has an unset env var
-			continue
-		}
 		// all other cases here represent a valid resolved parameter
 		resolvedParams[paramName] = resolvedParam
 	}

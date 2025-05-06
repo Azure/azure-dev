@@ -10,17 +10,18 @@ param environmentName string
 @description('Primary location for all resources')
 param location string
 
-{{- if .AiFoundryProject }}
-{{- range .AiFoundryProject.Models }}
+{{ if .AiFoundryProject -}}
 @metadata({azd: {
   type: 'location'
-  usageName: '{{ .Sku.UsageName }},{{ .Sku.Capacity }}'
-  }
+  usageName: [
+  {{- range .AiFoundryProject.Models }}
+    '{{ .Sku.UsageName }},{{ .Sku.Capacity }}'
+  {{- end }}
+  ]}
 })
-param {{bicepName .Name}}{{bicepName .Version}}Location string
+param aiDeploymentsLocation string
 {{- end }}
-{{- end }}
-{{ range .Parameters}}
+{{- range .Parameters}}
 {{- if .Secret}}
 @secure()
 {{- end }}
@@ -57,7 +58,7 @@ module resources 'resources.bicep' = {
     {{.Name}}: {{.Name}}
 {{- end }}
 {{- if .AiFoundryProject }}
-    aiFoundryProjectConnectionString: aiModelsDeploy.outputs.aiFoundryProjectConnectionString
+    aiFoundryProjectEndpoint: aiModelsDeploy.outputs.ENDPOINT
 {{- end}}
   }
 }
@@ -68,9 +69,7 @@ module aiModelsDeploy 'ai-project.bicep' = {
   scope: rg
   name: '{{.AiFoundryProject.Name}}'
   params: {
-{{- range .AiFoundryProject.Models }}
-    {{bicepName .Name}}{{bicepName .Version}}Location:  {{bicepName .Name}}{{bicepName .Version}}Location
-{{- end }}    
+    aiDeploymentsLocation: aiDeploymentsLocation
     tags: tags
     location: location
     envName: environmentName
@@ -129,8 +128,8 @@ output AZURE_RESOURCE_EVENT_HUBS_ID string = resources.outputs.AZURE_RESOURCE_EV
 output AZURE_RESOURCE_SERVICE_BUS_ID string = resources.outputs.AZURE_RESOURCE_SERVICE_BUS_ID
 {{- end}}
 {{- if .AiFoundryProject }}
-output AZURE_AI_PROJECT_CONNECTION_STRING string = aiModelsDeploy.outputs.aiFoundryProjectConnectionString
-output AZURE_RESOURCE_AI_PROJECT_ID string = aiModelsDeploy.outputs.projectId
+output AZURE_AI_PROJECT_ENDPOINT string = aiModelsDeploy.outputs.ENDPOINT
+output AZURE_RESOURCE_AI_ACCOUNT_ID string = aiModelsDeploy.outputs.accountId
 {{- end}}
 {{- if .AISearch }}
 output AZURE_AI_SEARCH_ENDPOINT string = resources.outputs.AZURE_AI_SEARCH_ENDPOINT

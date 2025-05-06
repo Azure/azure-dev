@@ -100,8 +100,7 @@ func TestBicepPlanParameterTypes(t *testing.T) {
 
 	require.NotEmpty(t, configuredParameters["regularObject"])
 	require.Equal(t, configuredParameters["regularObject"].Value, map[string]any{"test": "test"})
-	require.Empty(t, configuredParameters["emptyObject"])
-	require.Nil(t, configuredParameters["emptyObject"].Value)
+	require.Equal(t, configuredParameters["emptyObject"].Value, map[string]any{})
 
 	require.NotEmpty(t, configuredParameters["regularArray"])
 	require.Equal(t, configuredParameters["regularArray"].Value, []any{"test"})

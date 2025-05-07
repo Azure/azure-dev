@@ -1,123 +1,19 @@
 {{define "ai-project.bicep" -}}
-{{- if .AiFoundryProject }}
-{{- range .AiFoundryProject.Models }}
-param {{bicepName .Name}}{{bicepName .Version}}Location string
-{{- end }}
-{{- end }}
-
 @description('Tags that will be applied to all resources')
 param tags object = {}
 
 @description('Main location for the resources')
 param location string
 
-var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = uniqueString(subscription().id, resourceGroup().id, location)
 
 @description('The name of the environment')
 param envName string
 
-@description('Id of the user or app to assign application roles')
-param principalId string
+param deployments deploymentsType
 
-module storage 'br/public:avm/res/storage/storage-account:0.19.0' = {
-  name: 'storage-AI-Services'
-  params: {
-    tags: tags
-    name: '${abbrs.storageStorageAccounts}ais${resourceToken}'
-    allowSharedKeyAccess: false
-    allowBlobPublicAccess: false
-    allowCrossTenantReplication: true
-    largeFileSharesState: 'Disabled'
-    publicNetworkAccess: 'Enabled'
-    location: location
-    blobServices: {
-      containers: [
-        {
-          name: 'default'
-        }
-      ]
-    }
-    fileServices: {
-      shares: [
-        {
-          name: 'default'
-        }
-      ]
-    }
-    queueServices: {
-      queues: [
-        {
-          name: 'default'
-        }
-      ]
-    }
-    tableServices: {
-      tables: [
-        {
-          name: 'default'
-        }
-      ]
-    }
-    roleAssignments: [
-      {
-        principalId: principalId
-        principalType: 'User'
-        roleDefinitionIdOrName: 'Storage Blob Data Contributor'
-      }
-      {
-        principalId: principalId
-        principalType: 'User'
-        roleDefinitionIdOrName: 'Storage File Data Privileged Contributor'
-      }
-    ]
-    networkAcls: {
-      bypass: 'AzureServices'
-      defaultAction: 'Allow'
-    }
-  }
-}
-
-{{- if .AiFoundryProject }}
-{{- range .AiFoundryProject.Models }}
-resource {{bicepName .Name}}{{bicepName .Version}}Account 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
-  name: '${abbrs.cognitiveServicesAIServices}{{bicepName .Name}}{{bicepName .Version}}-${resourceToken}'
-  location: {{bicepName .Name}}{{bicepName .Version}}Location
-  tags: tags
-  sku: {
-    name: 'S0'
-  }
-  kind: 'AIServices'
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    allowProjectManagement: true
-    customSubDomainName: '{{bicepName .Name}}{{bicepName .Version}}${resourceToken}'
-    publicNetworkAccess: 'Enabled'
-    disableLocalAuth: false
-  }
-  
-  resource deployment 'deployments' = {
-    name: '{{bicepName .Name}}{{bicepName .Version}}'
-    properties: {
-      model: {
-        name: '{{ .Name }}'
-        format: '{{ .Format }}'
-        version: '{{ .Version }}'
-      }
-    }
-    sku: {
-      name: '{{ .Sku.Name }}'
-      capacity: {{ .Sku.Capacity }}
-    }
-  }
-}
-{{- end }}
-{{- end }}
-
-resource hubAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
-  name: '${abbrs.cognitiveServicesAIServices}hub-${resourceToken}'
+resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
+  name: 'ai-account-${resourceToken}'
   location: location
   tags: tags
   sku: {
@@ -129,76 +25,48 @@ resource hubAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = 
   }
   properties: {
     allowProjectManagement: true
-    customSubDomainName: '${abbrs.cognitiveServicesAIServices}hub-${resourceToken}'
+    customSubDomainName: 'ai-account-${resourceToken}'
+    networkAcls: {
+      defaultAction: 'Allow'
+      virtualNetworkRules: []
+      ipRules: []
+    }
     publicNetworkAccess: 'Enabled'
     disableLocalAuth: false
   }
   
-  resource project 'projects' = {
-    name: 'project'
+  @batchSize(1)
+  resource seqDeployments 'deployments' = [
+    for dep in (deployments??[]): {
+      name: dep.name
+      properties: {
+        model: dep.model
+      }
+      sku: dep.sku
+    }
+  ]
+
+  resource account_name_project_name 'projects@2025-04-01-preview' = {
+    name: envName
     location: location
     identity: {
       type: 'SystemAssigned'
     }
     properties: {
-      displayName: 'project'
+      description: '${envName} Project'
+      displayName: '${envName}Project'
     }
-
-    resource storageConnection 'connections' = {
-      name: 'storage-connection'
-      properties: {
-        category: 'AzureStorageAccount'
-        target: storage.outputs.primaryBlobEndpoint
-        authType: 'AAD'
-        metadata: {
-          ApiType: 'Azure'
-          ResourceId: storage.outputs.resourceId
-          location: storage.outputs.location
-        }
-      }
-    }
-
-    {{- range .AiFoundryProject.Models }}
-    resource {{bicepName .Name}}{{bicepName .Version}}Connection 'connections' = {
-      name: '{{bicepName .Name}}{{bicepName .Version}}-connection'
-      properties: {
-        category: 'AzureOpenAI'
-        target: {{bicepName .Name}}{{bicepName .Version}}Account.properties.endpoint
-        authType: 'AAD'
-        metadata: {
-          ApiType: 'Azure'
-          ResourceId: {{bicepName .Name}}{{bicepName .Version}}Account.id
-          location: {{bicepName .Name}}{{bicepName .Version}}Account.location
-        }
-      }
-    }
-    {{- end }}
-  }
-}
-
-resource projectRoleStorageBlobDataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(subscription().id, resourceGroup().id, hubAccount::project.id, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-  properties: {
-    principalId: hubAccount::project.identity.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-  }
-}
-
-resource projectRoleStorageBlobDataOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(subscription().id, resourceGroup().id, hubAccount::project.id, 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')
-  properties: {
-    principalId: hubAccount::project.identity.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')
+    dependsOn: [
+      seqDeployments
+    ]
   }
 }
 
 resource projectSearchIndexDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: resourceGroup()
-  name: guid(subscription().id, resourceGroup().id, hubAccount::project.id, '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+  name: guid(subscription().id, resourceGroup().id, aiAccount::account_name_project_name.id, '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
   properties: {
-    principalId: hubAccount::project.identity.principalId
+    principalId: aiAccount::account_name_project_name.identity.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
   }
@@ -206,17 +74,41 @@ resource projectSearchIndexDataContributorAssignment 'Microsoft.Authorization/ro
 
 resource projectSearchServiceContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: resourceGroup()
-  name: guid(subscription().id, resourceGroup().id, hubAccount::project.id, '7ca78c08-252a-4471-8644-bb5ff32d4ba0')
+  name: guid(subscription().id, resourceGroup().id, aiAccount::account_name_project_name.id, '7ca78c08-252a-4471-8644-bb5ff32d4ba0')
   properties: {
-    principalId: hubAccount::project.identity.principalId
+    principalId: aiAccount::account_name_project_name.identity.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', '7ca78c08-252a-4471-8644-bb5ff32d4ba0')
   }
 }
 
-output aiServicesAccountName string = hubAccount.name
-output aiServicesProjectName string = hubAccount::project.name
-output projectId string = hubAccount::project.id
-output aiProjectEndpoint string = hubAccount::project.properties.endpoints['AI Foundry API']
+output ENDPOINT string = aiAccount.properties.endpoint
+output accountId string = aiAccount.id
+
+type deploymentsType = {
+  @description('Specify the name of cognitive service account deployment.')
+  name: string
+
+  @description('Required. Properties of Cognitive Services account deployment model.')
+  model: {
+    @description('Required. The name of Cognitive Services account deployment model.')
+    name: string
+
+    @description('Required. The format of Cognitive Services account deployment model.')
+    format: string
+
+    @description('Required. The version of Cognitive Services account deployment model.')
+    version: string
+  }
+
+  @description('The resource model definition representing SKU.')
+  sku: {
+    @description('Required. The name of the resource model definition representing SKU.')
+    name: string
+
+    @description('The capacity of the resource model definition representing SKU.')
+    capacity: int
+  }
+}[]?
 
 {{ end}}

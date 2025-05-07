@@ -62,6 +62,16 @@ resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
   }
 }
 
+resource projectAiDeveloperRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: resourceGroup()
+  name: guid(subscription().id, resourceGroup().id, aiAccount::account_name_project_name.id, 'fd1bd22b-8476-40bc-a0bc-3260815545e9')
+  properties: {
+    principalId: aiAccount::account_name_project_name.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', 'fd1bd22b-8476-40bc-a0bc-3260815545e9')
+  }
+}
+
 resource projectSearchIndexDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: resourceGroup()
   name: guid(subscription().id, resourceGroup().id, aiAccount::account_name_project_name.id, '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
@@ -82,8 +92,10 @@ resource projectSearchServiceContributorRoleAssignment 'Microsoft.Authorization/
   }
 }
 
-output ENDPOINT string = aiAccount.properties.endpoint
-output accountId string = aiAccount.id
+output ENDPOINT string = aiAccount::account_name_project_name.properties.endpoints['AI Foundry API']
+output projectId string = aiAccount::account_name_project_name.id
+output aiServicesAccountName string = aiAccount.name
+output aiServicesProjectName string = aiAccount::account_name_project_name.name
 
 type deploymentsType = {
   @description('Specify the name of cognitive service account deployment.')

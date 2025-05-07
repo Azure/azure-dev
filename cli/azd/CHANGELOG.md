@@ -1,5 +1,11 @@
 # Release History
 
+## 1.15.0 (2025-05-07)
+
+### Bugs Fixed
+
+- [[5151]](https://github.com/Azure/azure-dev/issues/5151) Fix bicep provisioning failure with array parameters in `main.parameters.json`.
+
 ## 1.15.0 (2025-05-01)
 
 ### Features Added

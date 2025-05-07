@@ -13,7 +13,7 @@ param {{.Name}} {{.Type}}
 {{- end}}
 
 {{- if .AiFoundryProject }}
-param aiProjectEndpoint string
+param aiFoundryProjectEndpoint string
 {{- end}}
 
 @description('Id of the user or app to assign application roles')
@@ -714,7 +714,7 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {{- if .AiFoundryProject }}
           {
             name: 'AZURE_AI_PROJECT_ENDPOINT'
-            value: aiProjectEndpoint
+            value: aiFoundryProjectEndpoint
           }
           {{- end}}
           {{- if .Frontend}}
@@ -842,7 +842,7 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
       AZURE_AI_SEARCH_ENDPOINT: search.outputs.endpoint
       {{- end}}
       {{- if .AiFoundryProject }}
-      AZURE_AI_PROJECT_ENDPOINT: aiProjectEndpoint
+      AZURE_AI_PROJECT_ENDPOINT: aiFoundryProjectEndpoint
       {{- end}}
       {{- if .Frontend}}
       {{- range $i, $e := .Frontend.Backends}}

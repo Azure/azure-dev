@@ -263,6 +263,8 @@ func addListResourcesKind(resourceType project.ResourceType) []string {
 		return []string{"GlobalDocumentDB"}
 	case project.ResourceTypeDbMongo:
 		return []string{"MongoDB"}
+	case project.ResourceTypeHostAppService:
+		return []string{"app", "app,linux"}
 	default:
 		return []string{}
 	}

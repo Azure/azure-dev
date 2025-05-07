@@ -49,39 +49,12 @@ type scenarioInput struct {
 	VectorStoreId       string   `json:"vectorStoreId,omitempty"`
 }
 
-type resourceTypeConfig struct {
-	ResourceType            string
-	ResourceTypeDisplayName string
-	Kinds                   []string
-}
-
 type appServiceRuntime struct {
 	Stack   string `json:"stack,omitempty"`
 	Version string `json:"version,omitempty"`
 }
 
 var (
-	appResourceMap = map[string]resourceTypeConfig{
-		"host.appservice": {
-			ResourceType:            "Microsoft.Web/sites",
-			ResourceTypeDisplayName: "Web App",
-			Kinds:                   []string{"app", "app,linux"},
-		},
-		"host.containerapp": {
-			ResourceType:            "Microsoft.App/containerApps",
-			ResourceTypeDisplayName: "Container App",
-		},
-		"host.functionapp": {
-			ResourceType:            "Microsoft.Web/sites",
-			ResourceTypeDisplayName: "Function App",
-			Kinds:                   []string{"functionapp"},
-		},
-		"host.staticwebapp": {
-			ResourceType:            "Microsoft.Web/staticSites",
-			ResourceTypeDisplayName: "Static Web App",
-		},
-	}
-
 	appServiceStackMap = map[string]appServiceRuntime{
 		"python": {
 			Stack:   "python",
@@ -772,12 +745,16 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 	dbResourceMap := make(map[string]*azdext.ComposedResourceType)
 	vectorStoreMap := make(map[string]*azdext.ComposedResourceType)
 	messagingResourceMap := make(map[string]*azdext.ComposedResourceType)
+	appResourceMap := make(map[string]*azdext.ComposedResourceType)
+
 	for _, resourceType := range resourceTypes.ResourceTypes {
 		key := resourceType.Name
 		if strings.HasPrefix(key, "db.") {
 			dbResourceMap[key] = resourceType
 		} else if strings.HasPrefix(key, "messaging.") {
 			messagingResourceMap[key] = resourceType
+		} else if strings.HasPrefix(key, "host.") {
+			appResourceMap[key] = resourceType
 		}
 
 		if strings.Contains(key, "ai.search") || strings.Contains(key, "db.cosmos") {
@@ -1300,9 +1277,9 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 						)
 					}
 
-					p.ResourceType = resourceType.ResourceType
+					p.ResourceType = resourceType.Type
 					p.Kinds = resourceType.Kinds
-					p.ResourceTypeDisplayName = resourceType.ResourceTypeDisplayName
+					p.ResourceTypeDisplayName = resourceType.DisplayName
 
 					return nil
 				},

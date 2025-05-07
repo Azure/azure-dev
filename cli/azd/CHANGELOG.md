@@ -4,7 +4,7 @@
 
 ### Bugs Fixed
 
-- [[5151]](https://github.com/Azure/azure-dev/issues/5151) Fix bicep provisioning failure with array parameters in `main.parameters.json`.
+- [[5151]](https://github.com/Azure/azure-dev/issues/5151) Fix bicep provisioning failure with array parameters in `main.parameters.json`. Thanks @Mstiekema for the contribution!
 
 ## 1.15.0 (2025-05-01)
 

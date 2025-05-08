@@ -197,6 +197,9 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	for _, svc := range usedBy {
+		if slices.Contains(prjConfig.Resources[svc].Uses, resourceToAdd.Name) {
+			continue
+		}
 		err = yamlnode.Append(&doc, fmt.Sprintf("resources.%s.uses[]?", svc), &yaml.Node{
 			Kind:  yaml.ScalarNode,
 			Value: resourceToAdd.Name,

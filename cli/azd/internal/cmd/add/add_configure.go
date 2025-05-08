@@ -311,7 +311,7 @@ func promptUsedBy(
 		if isHost && otherIsHost && r.Type != other.Type {
 			continue
 		}
-		if otherIsHost && !slices.Contains(r.Uses, other.Name) {
+		if otherIsHost && !slices.Contains(other.Uses, r.Name) {
 			svc = append(svc, other.Name)
 		}
 	}

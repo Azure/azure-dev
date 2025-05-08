@@ -308,12 +308,12 @@ func (s *showAction) showResource(ctx context.Context, name string, env *environ
 	resType := id.ResourceType.Namespace + "/" + id.ResourceType.Type
 	var item ux.UxItem
 	switch {
-	case strings.EqualFold(resType, "Microsoft.App/containerApps"):
+	case strings.EqualFold(resType, string(azapi.AzureResourceTypeContainerApp)):
 		item, err = showContainerApp(ctx, credential, id, resourceOptions)
 		if err != nil {
 			return err
 		}
-	case strings.EqualFold(resType, "Microsoft.Web/sites"):
+	case strings.EqualFold(resType, string(azapi.AzureResourceTypeWebSite)):
 		item, err = showAppService(ctx, credential, id, resourceOptions)
 		if err != nil {
 			return err
@@ -394,7 +394,7 @@ func showAppService(
 		}
 
 		value := *val
-		// TODO: Resolve the actual secret value from the AKV secret URI
+		// TODO(azure/azure-dev#5174): Resolve the actual secret value from the AKV secret ref @Microsoft.KeyVault(...)
 		isSecret := strings.HasPrefix(value, "@Microsoft.KeyVault(") || slices.Contains(knownSecretKeys, key)
 
 		if isSecret && !opts.showSecrets {

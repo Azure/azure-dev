@@ -351,8 +351,9 @@ func showAppService(
 	opts showResourceOptions,
 ) (*ux.ShowService, error) {
 	service := &ux.ShowService{
-		Name: id.Name,
-		Env:  make(map[string]string),
+		Name:        id.Name,
+		Env:         make(map[string]string),
+		DisplayType: "App Service",
 	}
 
 	client, err := armappservice.NewWebAppsClient(id.SubscriptionID, cred, opts.clientOpts)
@@ -412,8 +413,9 @@ func showContainerApp(
 	id *arm.ResourceID,
 	opts showResourceOptions) (*ux.ShowService, error) {
 	service := &ux.ShowService{
-		Name: id.Name,
-		Env:  make(map[string]string),
+		Name:        id.Name,
+		Env:         make(map[string]string),
+		DisplayType: "Container App",
 	}
 	client, err := armappcontainers.NewContainerAppsClient(id.SubscriptionID, cred, opts.clientOpts)
 	if err != nil {

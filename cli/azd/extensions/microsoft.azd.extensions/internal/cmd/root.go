@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +23,16 @@ func NewRootCommand() *cobra.Command {
 		SilenceErrors: true,
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd: true,
+		},
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// Set the working directory to the one specified in the flags
+			if flags.cwd != "." {
+				if err := os.Chdir(flags.cwd); err != nil {
+					return err
+				}
+			}
+
+			return nil
 		},
 	}
 

@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"gopkg.in/yaml.v3"
 )
 
@@ -104,6 +106,20 @@ func LoadExtension(extensionPath string) (*ExtensionSchema, error) {
 	metadataPath := filepath.Join(extensionPath, "extension.yaml")
 	metadataBytes, err := os.ReadFile(metadataPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			extensionYaml := output.WithHighLightFormat("extension.yaml")
+
+			return nil, internal.NewUserFriendlyErrorf(
+				"Extension manifest file not found",
+				`Ensure that the %s file exists in the current directory.
+Alternatively, you can specify the path to the %s file using the --cwd flag.
+
+Example: %s`,
+				extensionYaml,
+				extensionYaml,
+				output.WithHighLightFormat("azd x <command> --cwd <path-to-extension>"),
+			)
+		}
 		return nil, fmt.Errorf("failed to read metadata: %w", err)
 	}
 

@@ -113,6 +113,12 @@ var Resources = []ResourceMeta{
 		RoleAssignments: RoleAssignments{
 			Write: []RoleAssignment{
 				{
+					Name:               "AzureAIDeveloper",
+					RoleDefinitionName: "Azure AI Developer",
+					RoleDefinitionId:   "64702f94-c441-49e6-a78b-ef80e0188fee",
+					Scope:              RoleAssignmentScopeGroup,
+				},
+				{
 					Name:               "CognitiveServicesUser",
 					RoleDefinitionName: "Cognitive Services User",
 					RoleDefinitionId:   "a97b65f3-24c7-4388-baec-2e87135dc908",

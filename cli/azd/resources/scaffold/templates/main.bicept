@@ -72,11 +72,12 @@ module aiModelsDeploy 'ai-project.bicep' = {
     tags: tags
     location: aiDeploymentsLocation
     envName: environmentName
+    principalId: principalId
 {{- if .AiFoundryProject.Models }}
     deployments: [
       {{- range .AiFoundryProject.Models }}
       {
-        name: '{{bicepName .Name }}deployment'
+        name: '{{bicepName .Name }}Deployment'
         model: {
           name: '{{ .Name }}'
           format: '{{ .Format }}'

@@ -29,8 +29,9 @@ func Test_ConfigOptions_SecretsAndVars(t *testing.T) {
 	}
 
 	// Call the SecretsAndVars function
-	variables, secrets := mergeProjectVariablesAndSecrets(
-		projectVariables, projectSecrets, initialVariables, initialSecrets, env)
+	variables, secrets, err := mergeProjectVariablesAndSecrets(
+		projectVariables, projectSecrets, initialVariables, initialSecrets, nil, env)
+	assert.NoError(t, err)
 
 	// Assert the expected results
 	expectedVariables := map[string]string{

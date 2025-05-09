@@ -137,7 +137,6 @@ type AzdMetadataType string
 const AzdMetadataTypeLocation AzdMetadataType = "location"
 const AzdMetadataTypeGenerate AzdMetadataType = "generate"
 const AzdMetadataTypeGenerateOrManual AzdMetadataType = "generateOrManual"
-const AzdMetadataTypeNeedForDeploy AzdMetadataType = "needForDeploy"
 const AzdMetadataTypeResourceGroup AzdMetadataType = "resourceGroup"
 
 type AzdMetadata struct {

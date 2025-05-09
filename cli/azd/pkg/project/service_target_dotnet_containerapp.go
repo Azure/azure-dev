@@ -290,13 +290,31 @@ func (at *dotnetContainerAppTarget) Deploy(
 		return nil, fmt.Errorf("failing parsing manifest template: %w", err)
 	}
 
+	// Both bicepparam and yaml go-template can reference all variables from AZD environment and those variables
+	// from system environment variables that are prefixed either AZURE_ or AZD_
+	// Variables from AZD environment override those from system environment variables.
+	env := make(map[string]string)
+	for _, envVar := range os.Environ() {
+		parts := strings.SplitN(envVar, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		if strings.HasPrefix(parts[0], "AZURE_") || strings.HasPrefix(parts[0], "AZD_") {
+			env[parts[0]] = parts[1]
+		}
+	}
+	// Add the environment variables from the azd environment
+	for key, value := range at.env.Dotenv() {
+		env[key] = value
+	}
+
 	builder := strings.Builder{}
 	err = tmpl.Execute(&builder, struct {
 		Env    map[string]string
 		Image  string
 		Inputs map[string]any
 	}{
-		Env:    at.env.Dotenv(),
+		Env:    env,
 		Image:  remoteImageName,
 		Inputs: inputs,
 	})
@@ -584,9 +602,9 @@ func (_ *containerAppTemplateManifestFuncs) UrlHost(s string) (string, error) {
 const infraParametersKey = "infra.parameters."
 
 // Parameter resolves the name of a parameter defined in the ACA yaml definition. The parameter can be mapped to a system
-// environment variable or persisted in the azd environment configuration.
+// environment variable ONLY.
 func (fns *containerAppTemplateManifestFuncs) Parameter(name string) (string, error) {
-	envVarMapping := scaffold.EnvFormat(name)
+	envVarMapping := scaffold.AzureSnakeCase(name)
 	// map only to system environment variables. Not adding support for mapping to azd environment by design (b/c
 	// parameters could be secured)
 	if val, found := os.LookupEnv(envVarMapping); found {
@@ -608,10 +626,8 @@ func (fns *containerAppTemplateManifestFuncs) Parameter(name string) (string, er
 // ParameterWithDefault resolves the name of a parameter defined in the ACA yaml definition.
 // The parameter can be mapped to a system environment variable or be default to a value directly.
 func (fns *containerAppTemplateManifestFuncs) ParameterWithDefault(name string, defaultValue string) (string, error) {
-	envVarMapping := scaffold.EnvFormat(name)
-	// map only to system environment variables. Not adding support for mapping to azd environment by design (b/c
-	// parameters could be secured)
-	if val, found := os.LookupEnv(envVarMapping); found {
+	envVarMapping := scaffold.AzureSnakeCase(name)
+	if val, found := fns.env.LookupEnv(envVarMapping); found {
 		return val, nil
 	}
 	return defaultValue, nil

@@ -531,3 +531,8 @@ func hasInfraTemplates(path string) bool {
 
 	return len(entries) > 0
 }
+
+func (p *ProvisionProvider) Parameters(ctx context.Context) ([]provisioning.Parameter, error) {
+	// not supported (no-op)
+	return nil, nil
+}

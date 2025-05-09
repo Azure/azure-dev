@@ -210,8 +210,12 @@ var camelCaseRegex = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 // EnvFormat takes an input parameter like `fooParam` which is expected to be in camel case and returns it in
 // upper snake case with env var template, like `${AZURE_FOO_PARAM}`.
 func EnvFormat(src string) string {
-	snake := strings.ReplaceAll(strings.ToUpper(camelCaseRegex.ReplaceAllString(src, "${1}_${2}")), "-", "_")
-	return fmt.Sprintf("${AZURE_%s}", snake)
+	return fmt.Sprintf("${%s}", AzureSnakeCase(src))
+}
+
+func AzureSnakeCase(src string) string {
+	return fmt.Sprintf(
+		"AZURE_%s", strings.ReplaceAll(strings.ToUpper(camelCaseRegex.ReplaceAllString(src, "${1}_${2}")), "-", "_"))
 }
 
 func HasACA(services []ServiceSpec) bool {

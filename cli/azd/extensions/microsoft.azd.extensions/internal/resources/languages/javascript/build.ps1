@@ -61,6 +61,7 @@ foreach ($PLATFORM in $PLATFORMS) {
     }
 
     Write-Host "Installing dependencies..."
+    npm install -g pkg
     npm install
 
     Write-Host "Building JavaScript extension for $OS/$ARCH..."

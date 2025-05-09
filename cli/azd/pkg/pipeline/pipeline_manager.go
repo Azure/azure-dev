@@ -826,12 +826,6 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	pm.scmProvider = scmProvider
 	pm.ciProvider = ciProvider
 
-	// pm.configOptions = &configurePipelineOptions{
-	// 	projectVariables:     slices.Clone(prjConfig.Pipeline.Variables),
-	// 	projectSecrets:       slices.Clone(prjConfig.Pipeline.Secrets),
-	// 	provisioningProvider: &pm.infra.Options,
-	// }
-
 	return nil
 }
 

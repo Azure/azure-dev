@@ -2315,7 +2315,7 @@ func (p *BicepProvider) Parameters(ctx context.Context) ([]provisioning.Paramete
 		return nil, fmt.Errorf("resolving parameters: %w", err)
 	}
 
-	provisionParameters := make([]provisioning.Parameter, 0, len(templateParameters))
+	provisionParameters := []provisioning.Parameter{}
 	for key, param := range templateParameters {
 		if _, usingParam := resolvedParams[key]; !usingParam {
 			// No resolved param for this parameter definition.

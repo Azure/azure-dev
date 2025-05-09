@@ -1,0 +1,25 @@
+capabilities:
+    - graph
+    - storage
+dependencies:
+    - id: dep1
+      version: 1.0.0
+description: Test description
+displayName: Test Extension
+entryPoint: main.go
+examples:
+    - name: Example1
+      description: Example Description
+      usage: azd test
+id: test-extension
+language: go
+namespace: test.namespace
+platforms:
+    windows:
+        command: cmd.exe
+tags:
+    - test
+    - yaml
+usage: Test usage
+version: 1.0.0
+

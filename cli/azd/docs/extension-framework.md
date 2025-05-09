@@ -19,7 +19,7 @@ Table of Contents
 
 ## Getting Started
 
-`azd` extensions are currently an alpha feature within `azd.
+`azd` extensions are currently an alpha feature within `azd`.
 
 > [!IMPORTANT]
 > Enable `azd` extensions alpha feature by running `azd config set alpha.extensions on`
@@ -126,8 +126,25 @@ The following guide will help you develop and ship extensions for `azd`.
 - Go (Best support)
 - Dotnet (C#)
 - Python
-- JavaScript (Coming Soon)
-- TypeScript (Common Soon)
+- JavaScript
+- TypeScript (Coming Soon)
+
+Each language has different build times and integration capabilities:
+
+| Language | Build Time | Platform Support | Integration Level |
+|----------|------------|------------------|-------------------|
+| Go       | Fast (~15s)| All platforms    | Full native support |
+| Dotnet   | Medium (~60s)| All platforms  | Strong integration |
+| Python   | Slower (~4m) | All platforms  | Good integration   |
+| JavaScript| Medium (~90s)| All platforms | Basic integration  |
+
+The build process automatically creates binaries for multiple platforms and architectures:
+- Windows (AMD64, ARM64)
+- Linux (AMD64, ARM64)
+- macOS/Darwin (AMD64, ARM64)
+
+> [!NOTE]
+> Build times may vary depending on your hardware and extension complexity.
 
 ### Developer Extension
 
@@ -224,6 +241,169 @@ Usage: `azd x publish --repo {owner}/{name}`
 - `--version, -v` - The version of the release, defaults to extension version from extension manifest
 
 ---
+
+### Extension Structure Overview
+
+When you create a new extension using `azd x init`, it generates a directory structure with several important files:
+
+```
+contoso.azd.samples.<language>/
+├── bin/                    # Contains built binaries
+├── build.ps1               # Windows build script
+├── build.sh                # Unix build script
+├── changelog.md            # Version history and release notes
+├── extension.yaml          # Extension metadata and capabilities
+├── README.md               # Documentation for your extension
+└── <language-specific>     # Source code files specific to the chosen language
+```
+
+Key files in the extension structure:
+
+- **extension.yaml**: Defines metadata, capabilities, and commands for your extension
+- **changelog.md**: Documents changes between versions (used for release notes)
+- **build scripts**: Language-specific scripts for building your extension
+
+Each supported language has a slightly different structure:
+
+#### Go Extension Structure
+```
+├── go.mod                  # Go module definition
+├── go.sum                  # Go dependency checksums
+├── main.go                 # Entry point for the extension
+└── internal/               # Internal implementation code
+```
+
+#### .NET Extension Structure
+```
+├── <ExtensionName>.csproj  # .NET project file
+├── Program.cs              # Entry point for the extension
+└── Commands/               # Command implementations
+```
+
+#### Python Extension Structure
+```
+├── pyproject.toml          # Python project configuration
+├── requirements.txt        # Python dependencies
+├── setup.py                # Package setup script
+├── __main__.py             # Entry point for the extension
+└── src/                    # Source code directory
+```
+
+#### JavaScript Extension Structure
+```
+├── package.json            # NPM package configuration
+├── package-lock.json       # NPM dependency locks
+├── index.js                # Entry point for the extension
+└── src/                    # Source code directory
+```
+
+### Version Upgrade Path
+
+Managing versions of your extension is an important part of the development process. Here's how to properly upgrade your extension version:
+
+1. **Update Version Number**: 
+   - Modify the `version` field in your `extension.yaml` file
+   - Follow [Semantic Versioning](https://semver.org/) (MAJOR.MINOR.PATCH)
+
+2. **Document Changes**:
+   - Update your `changelog.md` with details about what's new or fixed
+   - Include any breaking changes or migration notes
+
+3. **Build, Package and Test**:
+   ```bash
+   azd x build --all     # Build for all platforms
+   azd x pack            # Package the extension
+   ```
+
+4. **Release the New Version**:
+   ```bash
+   azd x release --repo <owner>/<repo>
+   ```
+
+5. **Publish to Registry**:
+   ```bash
+   azd x publish --repo <owner>/<repo>
+   ```
+
+#### Version Compatibility
+
+- **Major Version Changes (1.0.0 → 2.0.0)**: Indicates breaking changes
+- **Minor Version Changes (1.0.0 → 1.1.0)**: Adds new features while maintaining backward compatibility
+- **Patch Version Changes (1.0.0 → 1.0.1)**: Includes bug fixes with no feature changes
+
+When upgrading across major versions, users may need to adapt to API changes. Document these changes clearly in your `changelog.md`.
+
+### GitHub Authentication Requirements
+
+When using the `release` and `publish` commands that interact with GitHub repositories, you'll need proper authentication:
+
+1. Ensure you're authenticated with GitHub before attempting to create releases
+2. Use a Personal Access Token (PAT) with appropriate permissions:
+   - For `azd x release`: `repo` scope permissions
+   - For `azd x publish`: `repo` scope permissions
+
+You can authenticate with GitHub using:
+
+```bash
+# Login with your GitHub credentials
+gh auth login
+
+# Or set the GITHUB_TOKEN environment variable
+export GITHUB_TOKEN=your_personal_access_token
+```
+
+> [!NOTE]
+> Releases and publishing will fail without proper GitHub authentication.
+
+### Publishing Workflow
+
+The publishing process for `azd` extensions involves multiple steps:
+
+1. **Build** the extension for all target platforms
+2. **Package** the extension artifacts
+3. **Release** the extension to GitHub
+4. **Publish** the extension to a registry
+
+Each step can be performed manually or combined in a single script for automation:
+
+```bash
+# Complete publishing workflow example
+cd path/to/your/extension
+azd x pack --rebuild
+azd x release --repo owner/repo 
+azd x publish --repo owner/repo
+```
+
+#### Cross-Platform Support
+
+When publishing an extension, the system automatically generates binaries and packages for multiple platforms:
+- Windows (AMD64, ARM64)
+- Linux (AMD64, ARM64)
+- macOS/Darwin (AMD64, ARM64)
+
+This ensures your extension can be used across different operating systems and architectures without additional configuration.
+
+### Troubleshooting
+
+Common issues you might encounter when developing and publishing extensions:
+
+#### Build Issues
+
+- **Language-Specific Dependencies**: Ensure all required dependencies for your language are installed
+- **Platform Compatibility**: Test on the platforms you're targeting
+- **Build Times**: Python extensions take significantly longer to build (~4 minutes) compared to Go (~15 seconds)
+
+#### Release Issues
+
+- **GitHub Authentication**: Verify your GitHub token has proper permissions
+- **Version Conflicts**: Ensure you're not trying to release a version that already exists
+- **Release Asset Size**: Large extensions may take longer to upload
+
+#### Publishing Issues
+
+- **Registry Conflicts**: Check if the extension ID already exists in the registry
+- **Permission Denied**: Verify your GitHub token has proper permissions
+- **Registry Schema Validation**: Ensure your extension manifest follows the schema
 
 ### Capabilities
 

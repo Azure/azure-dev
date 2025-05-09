@@ -33,13 +33,13 @@ else
     )
 fi
 
-APP_PATH="github.com/azure/azure-dev/cli/azd/extensions/$EXTENSION_ID/internal/cmd"
-
-# Check if the build type is specified
-if [ -z "$EXTENSION_LANGUAGE" ]; then
-    echo "Error: EXTENSION_LANGUAGE environment variable is required (go, dotnet, or python)"
-    exit 1
-fi
+# Create a version.py file with version information - this will be embedded in executable
+cat > "$EXTENSION_DIR/version.py" << EOF
+# This file is auto-generated during build
+VERSION = "$EXTENSION_VERSION"
+COMMIT = "$COMMIT"
+BUILD_DATE = "$BUILD_DATE"
+EOF
 
 # Loop through platforms and build
 for PLATFORM in "${PLATFORMS[@]}"; do
@@ -57,68 +57,29 @@ for PLATFORM in "${PLATFORMS[@]}"; do
     # Delete the output file if it already exists
     [ -f "$OUTPUT_NAME" ] && rm -f "$OUTPUT_NAME"
 
-    if [ "$EXTENSION_LANGUAGE" = "dotnet" ]; then
-        if [ "$OS" = "windows" ]; then
-            RUNTIME="win-$ARCH"
-        elif [ "$OS" = "darwin" ]; then
-            RUNTIME="osx-$ARCH"
-        else
-            RUNTIME="linux-$ARCH"
-        fi
-        PROJECT_FILE="azd-extension.csproj"
+    PYTHON_MAIN_FILE="main.py"
 
-        dotnet publish \
-            -c Release \
-            -r "$RUNTIME" \
-            -o "$OUTPUT_DIR" \
-            /p:PublishTrimmed=true \
-            "$PROJECT_FILE"
+    echo "Installing Python dependencies..."
+    pip install -r requirements.txt
 
-        if [ $? -ne 0 ]; then
-            echo "An error occurred while building for $OS/$ARCH"
-            exit 1
-        fi
+    PYINSTALLER_NAME="$EXTENSION_ID_SAFE-$OS-$ARCH"
+    [ "$OS" = "windows" ] && PYINSTALLER_NAME+='.exe'
 
-        EXPECTED_OUTPUT_NAME="$EXTENSION_ID_SAFE"
-        [ "$OS" = "windows" ] && EXPECTED_OUTPUT_NAME+='.exe'
+    echo "Running PyInstaller for $OS/$ARCH..."
+    python -m PyInstaller \
+        --onefile \
+        --add-data "generated_proto:generated_proto" \
+        --add-data "version.py:." \
+        --distpath "$OUTPUT_DIR" \
+        --name "$PYINSTALLER_NAME" \
+        "$PYTHON_MAIN_FILE"
 
-        mv "$OUTPUT_DIR/$EXPECTED_OUTPUT_NAME" "$OUTPUT_NAME"
-    elif [ "$EXTENSION_LANGUAGE" = "go" ]; then
-        GOOS=$OS GOARCH=$ARCH go build \
-            -ldflags="-X '$APP_PATH.Version=$EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" \
-            -o "$OUTPUT_NAME"
-
-        if [ $? -ne 0 ]; then
-            echo "An error occurred while building for $OS/$ARCH"
-            exit 1
-        fi
-    elif [ "$EXTENSION_LANGUAGE" = "python" ]; then
-        PYTHON_MAIN_FILE="main.py"
-
-        echo "Installing Python dependencies..."
-        pip install -r requirements.txt
-        
-        PYINSTALLER_NAME="$EXTENSION_ID_SAFE-$OS-$ARCH"
-        [ "$OS" = "windows" ] && PYINSTALLER_NAME+='.exe'
-
-        echo "Running PyInstaller for $OS/$ARCH..."
-        python -m PyInstaller \
-            --onefile \
-            --add-data "generated_proto:generated_proto" `
-            --distpath "$OUTPUT_DIR" \
-            --name "$PYINSTALLER_NAME" \
-            "$PYTHON_MAIN_FILE"
-
-        if [ $? -ne 0 ]; then
-            echo "An error occurred while building Python extension for $OS/$ARCH"
-            exit 1
-        fi
-
-        mv "$OUTPUT_DIR/$PYINSTALLER_NAME" "$OUTPUT_NAME"
-    else
-        echo "Error: Unsupported EXTENSION_LANGUAGE '$EXTENSION_LANGUAGE'. Use 'go', 'dotnet' or 'python'."
+    if [ $? -ne 0 ]; then
+        echo "An error occurred while building Python extension for $OS/$ARCH"
         exit 1
     fi
+
+    mv "$OUTPUT_DIR/$PYINSTALLER_NAME" "$OUTPUT_NAME"
 done
 
 echo "Build completed successfully!"

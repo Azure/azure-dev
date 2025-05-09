@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -126,6 +127,13 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	forceColor := !color.NoColor
 	if forceColor {
 		allEnv = append(allEnv, "FORCE_COLOR=1")
+	}
+
+	// Pass the console width down to the child process
+	// COLUMNS is a semi-standard environment variable used by many Unix programs to determine the width of the terminal.
+	width := ux.ConsoleWidth()
+	if width > 0 {
+		allEnv = append(allEnv, fmt.Sprintf("COLUMNS=%d", width))
 	}
 
 	env, err := a.lazyEnv.GetValue()

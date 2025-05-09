@@ -22,7 +22,8 @@ $BUILD_DATE = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
 # List of OS and architecture combinations
 if ($env:EXTENSION_PLATFORM) {
     $PLATFORMS = @($env:EXTENSION_PLATFORM)
-} else {
+}
+else {
     $PLATFORMS = @(
         "windows/amd64",
         "windows/arm64",
@@ -33,13 +34,14 @@ if ($env:EXTENSION_PLATFORM) {
     )
 }
 
-$APP_PATH = "github.com/azure/azure-dev/cli/azd/extensions/$env:EXTENSION_ID/internal/cmd"
-
-# Check if the build type is specified
-if (-not $env:EXTENSION_LANGUAGE) {
-    Write-Host "Error: BUILD_TYPE environment variable is required (go or dotnet)"
-    exit 1
-}
+# Create a version.py file with version information - this will be embedded in executable
+$VERSION_PY = @"
+# This file is auto-generated during build
+VERSION = "$env:EXTENSION_VERSION"
+COMMIT = "$COMMIT"
+BUILD_DATE = "$BUILD_DATE"
+"@
+Set-Content -Path (Join-Path $EXTENSION_DIR "version.py") -Value $VERSION_PY
 
 # Loop through platforms and build
 foreach ($PLATFORM in $PLATFORMS) {
@@ -58,72 +60,31 @@ foreach ($PLATFORM in $PLATFORMS) {
         Remove-Item -Path $OUTPUT_NAME -Force
     }
 
-    if ($env:EXTENSION_LANGUAGE -eq "dotnet") {
-        # Set runtime identifier for .NET
-        $RUNTIME = if ($OS -eq "windows") { "win-$ARCH" } elseif ($OS -eq "darwin") { "osx-$ARCH" } else { "linux-$ARCH" }
-        $PROJECT_FILE = "$EXTENSION_ID_SAFE.csproj"
+    $PYTHON_MAIN_FILE = "main.py"
 
-        # Run dotnet publish for single file executable
-        dotnet publish `
-            -c Release `
-            -r $RUNTIME `
-            -o $OUTPUT_DIR `
-            /p:PublishTrimmed=true `
-            $PROJECT_FILE
+    Write-Host "Installing Python dependencies..."
+    pip install -r requirements.txt
 
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "An error occurred while building for $OS/$ARCH"
-            exit 1
-        }
+    $PYINSTALLER_NAME = "$EXTENSION_ID_SAFE-$OS-$ARCH"
+    if ($OS -eq "windows") {
+        $PYINSTALLER_NAME += ".exe"
+    }
 
-        $EXPECTED_OUTPUT_NAME = $EXTENSION_ID_SAFE
-        if ($OS -eq "windows") {
-            $EXPECTED_OUTPUT_NAME += ".exe"
-        }
+    Write-Host "Running PyInstaller for $OS/$ARCH..."
+    python -m PyInstaller `
+        --onefile `
+        --add-data "generated_proto:generated_proto" `
+        --add-data "version.py:." `
+        --distpath $OUTPUT_DIR `
+        --name $PYINSTALLER_NAME `
+        $PYTHON_MAIN_FILE
 
-        Rename-Item -Path "$OUTPUT_DIR/$EXPECTED_OUTPUT_NAME" -NewName $OUTPUT_NAME
-    } elseif ($env:EXTENSION_LANGUAGE -eq "go") {
-        # Set environment variables for Go build
-        $env:GOOS = $OS
-        $env:GOARCH = $ARCH
-
-        go build `
-            -ldflags="-X '$APP_PATH.Version=$env:EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" `
-            -o $OUTPUT_NAME
-
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "An error occurred while building for $OS/$ARCH"
-            exit 1
-        }
-    } elseif ($env:EXTENSION_LANGUAGE -eq "python") {
-        $PYTHON_MAIN_FILE = "main.py"
-
-        Write-Host "Installing Python dependencies..."
-        pip install -r requirements.txt
-
-        $PYINSTALLER_NAME = "$EXTENSION_ID_SAFE-$OS-$ARCH"
-        if ($OS -eq "windows") {
-            $PYINSTALLER_NAME += ".exe"
-        }
-
-        Write-Host "Running PyInstaller for $OS/$ARCH..."
-        python -m PyInstaller `
-            --onefile `
-            --add-data "generated_proto:generated_proto" `
-            --distpath $OUTPUT_DIR `
-            --name $PYINSTALLER_NAME `
-            $PYTHON_MAIN_FILE
-
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "An error occurred while building Python extension for $OS/$ARCH"
-            exit 1
-        }
-
-        Rename-Item -Path (Join-Path $OUTPUT_DIR $PYINSTALLER_NAME) -NewName $OUTPUT_NAME
-    } else {
-        Write-Host "Error: Unsupported BUILD_TYPE '$env:BUILD_TYPE'. Use 'go' or 'dotnet' or 'python'."
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "An error occurred while building Python extension for $OS/$ARCH"
         exit 1
     }
+
+    Rename-Item -Path (Join-Path $OUTPUT_DIR $PYINSTALLER_NAME) -NewName $OUTPUT_NAME
 }
 
 Write-Host "Build completed successfully!"

@@ -9,6 +9,7 @@ import (
 	"log"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
@@ -23,15 +24,18 @@ type ExtensionsMiddleware struct {
 	extensionRunner  *extensions.Runner
 	serviceLocator   ioc.ServiceLocator
 	console          input.Console
+	options          *Options
 }
 
 func NewExtensionsMiddleware(
+	options *Options,
 	serviceLocator ioc.ServiceLocator,
 	extensionsManager *extensions.Manager,
 	extensionRunner *extensions.Runner,
 	console input.Console,
 ) Middleware {
 	return &ExtensionsMiddleware{
+		options:          options,
 		serviceLocator:   serviceLocator,
 		extensionManager: extensionsManager,
 		extensionRunner:  extensionRunner,
@@ -40,6 +44,11 @@ func NewExtensionsMiddleware(
 }
 
 func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
+	// Extensions were already started in the root parent command
+	if m.options.IsChildAction(ctx) {
+		return next(ctx)
+	}
+
 	installedExtensions, err := m.extensionManager.ListInstalled()
 	if err != nil {
 		return nil, err
@@ -115,7 +124,9 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 			}()
 
 			// Wait for the extension to signal readiness or failure.
-			if err := extension.WaitUntilReady(ctx); err != nil {
+			readyCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			if err := extension.WaitUntilReady(readyCtx); err != nil {
 				log.Printf("extension '%s' failed to become ready: %s\n", extension.Id, err.Error())
 			}
 		}(extension, jwtToken)

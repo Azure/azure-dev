@@ -14,11 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type AdditionalMetadata map[string]string
-
 type ExtensionSchema struct {
-	AdditionalMetadata
-
 	Id           string                           `yaml:"id"           json:"id"`
 	Namespace    string                           `yaml:"namespace"    json:"namespace,omitempty"`
 	Language     string                           `yaml:"language"     json:"language,omitempty"`
@@ -33,6 +29,68 @@ type ExtensionSchema struct {
 	Dependencies []extensions.ExtensionDependency `yaml:"dependencies" json:"dependencies,omitempty"`
 	Platforms    map[string]map[string]any        `yaml:"platforms"    json:"platforms,omitempty"`
 	Path         string                           `yaml:"-"            json:"-"`
+}
+
+type schemaAlias ExtensionSchema
+
+func (e ExtensionSchema) MarshalYAML() (interface{}, error) {
+	// Create a new map to build our output
+	base := make(map[string]interface{})
+
+	// Add required fields
+	base["id"] = e.Id
+	base["version"] = e.Version
+	base["displayName"] = e.DisplayName
+	base["description"] = e.Description
+	base["usage"] = e.Usage
+
+	// Add optional fields only if not empty
+	if e.Namespace != "" {
+		base["namespace"] = e.Namespace
+	}
+	if e.Language != "" {
+		base["language"] = e.Language
+	}
+	if e.EntryPoint != "" {
+		base["entryPoint"] = e.EntryPoint
+	}
+	if len(e.Capabilities) > 0 {
+		base["capabilities"] = e.Capabilities
+	}
+	if len(e.Examples) > 0 {
+		base["examples"] = e.Examples
+	}
+	if len(e.Tags) > 0 {
+		base["tags"] = e.Tags
+	}
+	if len(e.Dependencies) > 0 {
+		base["dependencies"] = e.Dependencies
+	}
+	if len(e.Platforms) > 0 {
+		base["platforms"] = e.Platforms
+	}
+
+	return base, nil
+}
+
+func (e *ExtensionSchema) UnmarshalYAML(value *yaml.Node) error {
+	// Create a temporary map to hold all YAML fields
+	var fields map[string]interface{}
+	if err := value.Decode(&fields); err != nil {
+		return err
+	}
+
+	// Create an alias to avoid recursion when unmarshaling known fields
+	// and decode into it
+	var alias schemaAlias
+	if err := value.Decode(&alias); err != nil {
+		return err
+	}
+
+	// Copy known fields from the alias to the original struct
+	*e = ExtensionSchema(alias)
+
+	return nil
 }
 
 // SafeDashId replaces all '.' in the extension ID with '-'.

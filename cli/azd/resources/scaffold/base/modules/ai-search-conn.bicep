@@ -1,4 +1,4 @@
-@description('The name of the main AI Services')
+@description('The name of the AI Services account')
 param aiServicesName string
 
 @description('The name of the AI Services project')

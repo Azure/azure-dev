@@ -66,6 +66,7 @@ for PLATFORM in "${PLATFORMS[@]}"; do
     fi
 
     echo "Installing dependencies..."
+    npm install -g pkg
     npm install
 
     echo "Building JavaScript extension for $OS/$ARCH..."

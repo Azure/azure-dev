@@ -889,6 +889,16 @@ resource {{bicepName .Name}}backendRoleAzureAIDeveloperRG 'Microsoft.Authorizati
     principalType: 'ServicePrincipal'
   }
 }
+
+resource {{bicepName .Name}}backendRoleCognitiveServicesUserRG 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(subscription().id, resourceGroup().id, {{bicepName .Name}}Identity.name, 'a97b65f3-24c7-4388-baec-2e87135dc908')
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-4388-baec-2e87135dc908') 
+    principalId: {{bicepName .Name}}Identity.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
 {{- end }}
 {{- end}}
 

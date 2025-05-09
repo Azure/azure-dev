@@ -12,6 +12,9 @@ param envName string
 
 param deployments deploymentsType
 
+@description('Id of the user or app to assign application roles')
+param principalId string
+
 resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
   name: 'ai-account-${resourceToken}'
   location: location
@@ -46,7 +49,7 @@ resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
     }
   ]
 
-  resource account_name_project_name 'projects@2025-04-01-preview' = {
+  resource project 'projects' = {
     name: envName
     location: location
     identity: {
@@ -62,40 +65,30 @@ resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
   }
 }
 
-resource projectAiDeveloperRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource localUserAiDeveloperRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: resourceGroup()
-  name: guid(subscription().id, resourceGroup().id, aiAccount::account_name_project_name.id, 'fd1bd22b-8476-40bc-a0bc-3260815545e9')
+  name: guid(subscription().id, resourceGroup().id, 'localUser', '64702f94-c441-49e6-a78b-ef80e0188fee')
   properties: {
-    principalId: aiAccount::account_name_project_name.identity.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', 'fd1bd22b-8476-40bc-a0bc-3260815545e9')
+    principalId: principalId
+    principalType: 'User'
+    roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', '64702f94-c441-49e6-a78b-ef80e0188fee')
   }
 }
 
-resource projectSearchIndexDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource localUserCognitiveServicesUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: resourceGroup()
-  name: guid(subscription().id, resourceGroup().id, aiAccount::account_name_project_name.id, '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+  name: guid(subscription().id, resourceGroup().id, 'localUser', 'a97b65f3-24c7-4388-baec-2e87135dc908')
   properties: {
-    principalId: aiAccount::account_name_project_name.identity.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+    principalId: principalId
+    principalType: 'User'
+    roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-4388-baec-2e87135dc908')
   }
 }
 
-resource projectSearchServiceContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  scope: resourceGroup()
-  name: guid(subscription().id, resourceGroup().id, aiAccount::account_name_project_name.id, '7ca78c08-252a-4471-8644-bb5ff32d4ba0')
-  properties: {
-    principalId: aiAccount::account_name_project_name.identity.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', '7ca78c08-252a-4471-8644-bb5ff32d4ba0')
-  }
-}
-
-output ENDPOINT string = aiAccount::account_name_project_name.properties.endpoints['AI Foundry API']
-output projectId string = aiAccount::account_name_project_name.id
+output ENDPOINT string = aiAccount::project.properties.endpoints['AI Foundry API']
+output projectId string = aiAccount::project.id
 output aiServicesAccountName string = aiAccount.name
-output aiServicesProjectName string = aiAccount::account_name_project_name.name
+output aiServicesProjectName string = aiAccount::project.name
 
 type deploymentsType = {
   @description('Specify the name of cognitive service account deployment.')

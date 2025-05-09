@@ -63,6 +63,8 @@ foreach ($PLATFORM in $PLATFORMS) {
     $PYTHON_MAIN_FILE = "main.py"
 
     Write-Host "Installing Python dependencies..."
+    python -m venv .venv
+    .venv\Scripts\Activate.ps1
     pip install -r requirements.txt
 
     $PYINSTALLER_NAME = "$EXTENSION_ID_SAFE-$OS-$ARCH"

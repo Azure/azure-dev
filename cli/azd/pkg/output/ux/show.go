@@ -13,9 +13,10 @@ import (
 )
 
 type ShowService struct {
-	Name      string
-	IngresUrl string
-	Env       map[string]string
+	Name        string
+	IngresUrl   string
+	Env         map[string]string
+	DisplayType string
 }
 
 func (s *ShowService) ToString(currentIndentation string) string {
@@ -24,7 +25,7 @@ func (s *ShowService) ToString(currentIndentation string) string {
 			"  Endpoint: %s\n"+
 			"  Environment variables:\n"+
 			output.WithHighLightFormat(formatEnv("    ", s.Env)),
-		color.HiMagentaString("%s (Container App)", s.Name),
+		color.HiMagentaString("%s (%s)", s.Name, s.DisplayType),
 		output.WithLinkFormat(s.IngresUrl))
 }
 

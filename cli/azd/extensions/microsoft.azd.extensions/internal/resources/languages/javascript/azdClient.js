@@ -1,7 +1,14 @@
 const grpc = require('@grpc/grpc-js');
-const protoLoader = require('@grpc/proto-loader');
-const path = require('path');
-const fs = require('fs');
+
+// 引入 gRPC 服务定义
+const { ComposeServiceClient } = require('./proto/compose_grpc_pb');
+const { DeploymentServiceClient } = require('./proto/deployment_grpc_pb');
+const { EnvironmentServiceClient } = require('./proto/environment_grpc_pb');
+const { EventServiceClient } = require('./proto/event_grpc_pb');
+const { ProjectServiceClient } = require('./proto/project_grpc_pb');
+const { PromptServiceClient } = require('./proto/prompt_grpc_pb');
+const { UserConfigServiceClient } = require('./proto/user_config_grpc_pb');
+const { WorkflowServiceClient } = require('./proto/workflow_grpc_pb');
 
 class AzdClient {
   constructor() {
@@ -15,52 +22,23 @@ class AzdClient {
     this._metadata = new grpc.Metadata();
     this._metadata.add('authorization', token);
 
-    const options = {
-      keepCase: true,
-      longs: String,
-      enums: String,
-      defaults: true,
-      oneofs: true,
-    };
-
-    // Loads a .proto file and returns the generated gRPC package
-    const loadService = (name) => {
-      let protoPath;
-      if (process.pkg) {
-        protoPath = path.join(path.dirname(process.execPath), 'proto', `${name}.proto`);
-        if (!fs.existsSync(protoPath)) {
-          protoPath = path.join(__dirname, 'proto', `${name}.proto`);
-        }
-      } else {
-        protoPath = path.join(process.cwd(), 'proto', `${name}.proto`);
-      }
-
-      const packageDefinition = protoLoader.loadSync(protoPath, options);
-      const proto = grpc.loadPackageDefinition(packageDefinition);
-
-      return proto.azdext;
-    };
-
     const address = server.replace(/^https?:\/\//, '');
 
-    // Load each proto service
-    const composeProto = loadService('compose');
-    const deploymentProto = loadService('deployment');
-    const environmentProto = loadService('environment');
-    const eventProto = loadService('event');
-    const projectProto = loadService('project');
-    const promptProto = loadService('prompt');
-    const userConfigProto = loadService('user_config');
-    const workflowProto = loadService('workflow');
+    const credentials = grpc.credentials.createInsecure(); // TODO: Replace with secure credentials in prod
 
-    this.Compose = new composeProto.ComposeService(address, grpc.credentials.createInsecure());
-    this.Deployment = new deploymentProto.DeploymentService(address, grpc.credentials.createInsecure());
-    this.Environment = new environmentProto.EnvironmentService(address, grpc.credentials.createInsecure());
-    this.Events = new eventProto.EventService(address, grpc.credentials.createInsecure());
-    this.Project = new projectProto.ProjectService(address, grpc.credentials.createInsecure());
-    this.Prompt = new promptProto.PromptService(address, grpc.credentials.createInsecure());
-    this.UserConfig = new userConfigProto.UserConfigService(address, grpc.credentials.createInsecure());
-    this.Workflow = new workflowProto.WorkflowService(address, grpc.credentials.createInsecure());
+    this.Compose = new ComposeServiceClient(address, credentials);
+    this.Deployment = new DeploymentServiceClient(address, credentials);
+    this.Environment = new EnvironmentServiceClient(address, credentials);
+    this.Events = new EventServiceClient(address, credentials);
+    this.Project = new ProjectServiceClient(address, credentials);
+    this.Prompt = new PromptServiceClient(address, credentials);
+    this.UserConfig = new UserConfigServiceClient(address, credentials);
+    this.Workflow = new WorkflowServiceClient(address, credentials);
+  }
+
+  // Example method to make authenticated call (optional utility)
+  withAuthMetadata(callback) {
+    return (request, callbackFn) => callback(request, this._metadata, callbackFn);
   }
 }
 

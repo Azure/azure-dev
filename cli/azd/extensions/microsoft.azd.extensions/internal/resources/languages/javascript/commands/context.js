@@ -2,7 +2,6 @@ const { Command } = require('commander');
 const AzdClient = require('../azdClient');
 const { unary } = require('../grpcUtils');
 
-// 引入对应的 protobuf 消息类型
 const { EmptyRequest } = require('../proto/models_pb');
 const {
   GetEnvironmentValuesRequest

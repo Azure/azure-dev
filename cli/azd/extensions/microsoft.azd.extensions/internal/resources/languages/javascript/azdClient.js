@@ -1,6 +1,5 @@
 const grpc = require('@grpc/grpc-js');
 
-// 引入 gRPC 服务定义
 const { ComposeServiceClient } = require('./proto/compose_grpc_pb');
 const { DeploymentServiceClient } = require('./proto/deployment_grpc_pb');
 const { EnvironmentServiceClient } = require('./proto/environment_grpc_pb');
@@ -24,7 +23,7 @@ class AzdClient {
 
     const address = server.replace(/^https?:\/\//, '');
 
-    const credentials = grpc.credentials.createInsecure(); // TODO: Replace with secure credentials in prod
+    const credentials = grpc.credentials.createInsecure();
 
     this.Compose = new ComposeServiceClient(address, credentials);
     this.Deployment = new DeploymentServiceClient(address, credentials);
@@ -36,7 +35,6 @@ class AzdClient {
     this.Workflow = new WorkflowServiceClient(address, credentials);
   }
 
-  // Example method to make authenticated call (optional utility)
   withAuthMetadata(callback) {
     return (request, callbackFn) => callback(request, this._metadata, callbackFn);
   }

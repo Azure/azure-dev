@@ -100,4 +100,9 @@ output AZURE_VOLUMES_STORAGE_ACCOUNT string = resources.outputs.AZURE_VOLUMES_ST
 {{range $param, $value := .OutputParameters -}}
 output {{bicepParameterName $param}} {{$value.Type}} = {{bicepParameterName $value.Value}}
 {{end -}}
+{{range $parameter := .WithMetadataParameters -}}
+{{if $parameter.Value -}}
+output {{azureSnakeCase $parameter.Name}} {{$parameter.Type}} = {{$parameter.Name}}
+{{end -}}
+{{end -}}
 {{ end}}

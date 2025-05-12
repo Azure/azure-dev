@@ -57,7 +57,8 @@ type Parameter struct {
 	Value         any
 	EnvVarMapping []string
 	// true when the parameter value was set by the user from the command line (prompt)
-	LocalPrompt bool
+	LocalPrompt        bool
+	UsingEnvVarMapping bool
 }
 
 type Provider interface {

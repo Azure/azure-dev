@@ -203,17 +203,9 @@ func mergeProjectVariablesAndSecrets(
 		// Param mapped to a single env var, use that ENV VAR to set the link in CI
 		// marshall the value to a string
 		envVar := parameter.EnvVarMapping[0]
-		if !parameter.LocalPrompt {
-			// There was no prompt for the parameter. Use it only if the env var mapping is defined.
-			value := env[envVar]
-			if value == "" {
-				value = os.Getenv(envVar)
-			}
-			if value == "" {
-				// env var not set, ignore it. This means the value comes from a default and not from mapping.
-				// The default is committed to the repo, it is not required as pipeline variable.
-				continue
-			}
+		if !parameter.LocalPrompt && !parameter.UsingEnvVarMapping {
+			//For non-prompt params, use it only if the env var mapping is defined.
+			continue
 		}
 		// At this point, either LocalPrompt is true or the env var is set.
 		// This means we have what we need to set the variable in CI as string.

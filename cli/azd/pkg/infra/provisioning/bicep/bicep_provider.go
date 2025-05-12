@@ -2322,6 +2322,12 @@ func (p *BicepProvider) Parameters(ctx context.Context) ([]provisioning.Paramete
 			continue
 		}
 		_, isPrompt := p.env.Config.Get(fmt.Sprintf("infra.parameters.%s", key))
+		singleMapping := len(parametersInfo.envMapping[key]) == 1
+		usingEnvVarMapping := false
+		if singleMapping {
+			envValue, defined := p.env.LookupEnv(parametersInfo.envMapping[key][0])
+			usingEnvVarMapping = singleMapping && defined && envValue == fmt.Sprintf("%v", resolvedParams[key].Value)
+		}
 		provisionParameters = append(provisionParameters, provisioning.Parameter{
 			Name:          key,
 			Secret:        param.Secure(),
@@ -2330,7 +2336,8 @@ func (p *BicepProvider) Parameters(ctx context.Context) ([]provisioning.Paramete
 			// No env var mapping and param is persisted in env config infra.parameters means local prompt only
 			// If user set an env var mapping after a local prompt, the env var overrides the value persisted in config
 			// which turns local prompt false
-			LocalPrompt: isPrompt && len(parametersInfo.envMapping[key]) == 0,
+			LocalPrompt:        isPrompt && !usingEnvVarMapping,
+			UsingEnvVarMapping: usingEnvVarMapping,
 		})
 	}
 

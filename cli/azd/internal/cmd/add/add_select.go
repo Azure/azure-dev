@@ -106,18 +106,29 @@ func selectHost(
 	console input.Console,
 	ctx context.Context,
 	p PromptOptions) (*project.ResourceConfig, error) {
+	// ACA is the default host type, and should be shown first in the list
+	defaultHostType := project.ResourceTypeHostContainerApp
+	defaultHostDisplayName := fmt.Sprintf("%s (default)", defaultHostType.String())
 	resourceTypesDisplayMap := make(map[string]project.ResourceType)
+	resourceTypesDisplayMap[defaultHostDisplayName] = defaultHostType
+	resourceTypesDisplay := []string{defaultHostDisplayName}
+
+	otherHostTypes := []string{}
 	for _, resourceType := range project.AllResourceTypes() {
-		if strings.HasPrefix(string(resourceType), "host.") {
+		if strings.HasPrefix(string(resourceType), "host.") && resourceType != defaultHostType {
 			resourceTypesDisplayMap[resourceType.String()] = resourceType
+			otherHostTypes = append(otherHostTypes, resourceType.String())
 		}
 	}
 
+	slices.Sort(otherHostTypes)
+	resourceTypesDisplay = append(resourceTypesDisplay, otherHostTypes...)
+
 	r := &project.ResourceConfig{}
-	resourceTypesDisplay := slices.Sorted(maps.Keys(resourceTypesDisplayMap))
 	hostOption, err := console.Select(ctx, input.ConsoleOptions{
-		Message: "Which type of host?",
-		Options: resourceTypesDisplay,
+		Message:      "Which type of host?",
+		Options:      resourceTypesDisplay,
+		DefaultValue: defaultHostDisplayName,
 	})
 	if err != nil {
 		return nil, err

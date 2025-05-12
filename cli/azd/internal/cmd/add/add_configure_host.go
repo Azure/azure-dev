@@ -22,7 +22,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/fatih/color"
 )
 
 // LanguageMap is a map of supported languages.
@@ -310,7 +309,7 @@ func addServiceAsResource(
 		console.Message(ctx,
 			fmt.Sprintf("\nazd will use %s to host this project on %s.",
 				output.WithHighLightFormat(string(runtime.Stack)+" "+runtime.Version),
-				color.MagentaString("Azure App Service")))
+				output.WithHighLightFormat("Azure App Service")))
 
 		resSpec.Props = project.AppServiceProps{
 			Port:    port,

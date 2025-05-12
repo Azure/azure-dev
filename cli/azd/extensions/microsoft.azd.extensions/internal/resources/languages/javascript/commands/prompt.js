@@ -182,9 +182,9 @@ function createPromptCommand() {
       const subResReq = new PromptSubscriptionResourceRequest();
       subResReq.setAzureContext(context);
 
-      const resOptions = new PromptResourceSelectOptions();
+      const resOptions = new PromptResourceOptions();
       resOptions.setResourceType(resource_type);
-      const selOpts = new SelectOptions();
+      const selOpts = new PromptResourceSelectOptions();
       selOpts.setAllowNewResource(false);
       resOptions.setSelectOptions(selOpts);
       subResReq.setOptions(resOptions);

@@ -60,12 +60,35 @@ foreach ($PLATFORM in $PLATFORMS) {
         $EXPECTED_OUTPUT_NAME += ".exe"
     }
 
+    # Check Node.js and npm
+    if (-not (Get-Command node -ErrorAction SilentlyContinue) -or -not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        Write-Host "Node.js or npm is not installed. Please install them from https://nodejs.org."
+        exit 1
+    }
+
+    # Check npx
+    if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
+        Write-Host "npx is not available."
+        exit 1
+    }
+
+    # Run npx pkg
+    Write-Host "Ensuring pkg is available using npx..."
+    npx --yes --package pkg echo "Ensured pkg is available"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Failed to download 'pkg' via npx."
+        exit 1
+    }
+
     Write-Host "Installing dependencies..."
-    npm install -g pkg
     npm install
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Failed to install npm dependencies."
+        exit 1
+    }
 
     Write-Host "Building JavaScript extension for $OS/$ARCH..."
-    pkg $ENTRY_FILE -o $OUTPUT_DIR/$EXPECTED_OUTPUT_NAME --targets $TARGET --config package.json
+    npx pkg $ENTRY_FILE -o $OUTPUT_DIR/$EXPECTED_OUTPUT_NAME --targets $TARGET --config package.json
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host "An error occurred while building for $OS/$ARCH"

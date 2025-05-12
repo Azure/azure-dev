@@ -65,12 +65,37 @@ for PLATFORM in "${PLATFORMS[@]}"; do
         EXPECTED_OUTPUT_NAME+='.exe'
     fi
 
+    # Check Node.js and npm
+    if ! command -v node &> /dev/null || ! command -v npm &> /dev/null
+    then
+        echo "Node.js or npm is not installed. Please install them from https://nodejs.org."
+        exit 1
+    fi
+
+    # Check npx
+    if ! command -v npx &> /dev/null
+    then
+        echo "npx is not available."
+        exit 1
+    fi
+
+    # Run npx pkg
+    echo "Ensuring pkg is available using npx..."
+    npx --yes --package pkg echo "Ensured pkg is available"
+    if [ $? -ne 0 ]; then
+        echo "Failed to download 'pkg' via npx."
+        exit 1
+    fi
+    
     echo "Installing dependencies..."
-    npm install -g pkg
     npm install
+    if [ $? -ne 0 ]; then
+        echo "Failed to install npm dependencies."
+        exit 1
+    fi
 
     echo "Building JavaScript extension for $OS/$ARCH..."
-    pkg "$ENTRY_FILE" --output "$OUTPUT_DIR/$EXPECTED_OUTPUT_NAME" --targets "$TARGET"
+    npx pkg "$ENTRY_FILE" --output "$OUTPUT_DIR/$EXPECTED_OUTPUT_NAME" --targets "$TARGET"
 
     if [ $? -ne 0 ]; then
         echo "An error occurred while building for $OS/$ARCH"

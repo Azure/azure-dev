@@ -18,8 +18,13 @@ const {
   PromptResourceGroupResourceRequest,
   PromptSubscriptionResourceRequest,
   PromptResourceSelectOptions,
-  AzureContext,
+  PromptResourceOptions,
 } = require('../proto/prompt_pb');
+
+const { 
+  AzureContext,
+  AzureScope,
+} = require('../proto/models_pb');
 
 function createPromptCommand() {
   const cmd = new Command('prompt');
@@ -146,23 +151,27 @@ function createPromptCommand() {
 
     const filterGroup = await callPrompt(client.Prompt.confirm.bind(client.Prompt), confirmGroupReq, client._metadata);
 
+    const scope = new AzureScope();
+    scope.setSubscriptionId(subscription_id);
+    scope.setTenantId(tenant_id);
+    
     const context = new AzureContext();
-    context.setSubscriptionId(subscription_id);
-    context.setTenantId(tenant_id);
+    context.setScope(scope);
 
     if (filterGroup.getValue()) {
       const rgReq = new PromptResourceGroupRequest();
       rgReq.setAzureContext(context);
 
       const rgRes = await callPrompt(client.Prompt.promptResourceGroup.bind(client.Prompt), rgReq, client._metadata);
-      context.setResourceGroup(rgRes.getResourceGroup().getName());
+      scope.setResourceGroup(rgRes.getResourceGroup().getName());
+      context.setScope(scope);
 
       const rgrReq = new PromptResourceGroupResourceRequest();
       rgrReq.setAzureContext(context);
 
-      const resOptions = new PromptResourceSelectOptions();
+      const resOptions = new PromptResourceOptions();
       resOptions.setResourceType(resource_type);
-      const selOpts = new SelectOptions();
+      const selOpts = new PromptResourceSelectOptions();
       selOpts.setAllowNewResource(false);
       resOptions.setSelectOptions(selOpts);
       rgrReq.setOptions(resOptions);

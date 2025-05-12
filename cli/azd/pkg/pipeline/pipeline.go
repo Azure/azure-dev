@@ -5,7 +5,6 @@ package pipeline
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
@@ -170,6 +169,16 @@ func mergeProjectVariablesAndSecrets(
 			continue
 		}
 		if envVarsCount > 1 {
+			if parameter.LocalPrompt {
+				return nil, nil,
+					fmt.Errorf(
+						"parameter %s got its value from a local prompt and it has more than one mapped environment "+
+							"variable. "+
+							"The value can't be configured in CI mapped to multiple ENV VARS if AZD prompt for its value. "+
+							"Define a single mapping for %s to one ENV VAR as part of the infra parameters definition",
+						parameter.Name, parameter.Name)
+			}
+			// env var > 1 AND no local prompt, ignore it
 			// for parameters mapped to more than one ENV VAR, each env var becomes either a variable or a secret
 			for _, envVar := range parameter.EnvVarMapping {
 				// see if the env var is set in the system env or azd env
@@ -193,19 +202,26 @@ func mergeProjectVariablesAndSecrets(
 		}
 		// Param mapped to a single env var, use that ENV VAR to set the link in CI
 		// marshall the value to a string
-		value, err := json.Marshal(parameter.Value)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to marshal parameter %s: %w", parameter.Name, err)
+		envVar := parameter.EnvVarMapping[0]
+		if !parameter.LocalPrompt {
+			// There was no prompt for the parameter. Use it only if the env var mapping is defined.
+			value := env[envVar]
+			if value == "" {
+				value = os.Getenv(envVar)
+			}
+			if value == "" {
+				// env var not set, ignore it. This means the value comes from a default and not from mapping.
+				// The default is committed to the repo, it is not required as pipeline variable.
+				continue
+			}
 		}
-		var strValue string
-		if err := json.Unmarshal(value, &strValue); err != nil {
-			return nil, nil, fmt.Errorf("failed to unmarshal parameter %s: %w", parameter.Name, err)
-		}
-
+		// At this point, either LocalPrompt is true or the env var is set.
+		// This means we have what we need to set the variable in CI as string.
+		strValue := fmt.Sprintf("%v", parameter.Value)
 		if parameter.Secret {
-			secrets[parameter.EnvVarMapping[0]] = strValue
+			secrets[envVar] = strValue
 		} else {
-			variables[parameter.EnvVarMapping[0]] = strValue
+			variables[envVar] = strValue
 		}
 	}
 

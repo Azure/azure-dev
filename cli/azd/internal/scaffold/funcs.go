@@ -281,6 +281,10 @@ func aiProjectEndpoint(endpoints string) (string, error) {
 	return endpoint.String(), nil
 }
 
+func emitAiProjectEndpoint(projectEndpointsVar string) (string, error) {
+	return fmt.Sprintf("%s['AI Foundry API']", projectEndpointsVar), nil
+}
+
 func emitHostFromEndpoint(endpointVar string) (string, error) {
 	// example: https://{your-namespace}.servicebus.windows.net:443
 	return fmt.Sprintf("split(split(%s, '//')[1], ':')[0]", endpointVar), nil

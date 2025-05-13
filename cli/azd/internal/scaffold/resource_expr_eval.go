@@ -57,10 +57,11 @@ func BaseEvalFuncMap() FuncMap {
 // The functions are not evaluated at runtime, but rather emitted as part of the Bicep template.
 func BaseEmitBicepFuncMap() FuncMap {
 	return FuncMap{
-		"lower":   bicepFuncCall("toLower"),
-		"upper":   bicepFuncCall("toUpper"),
-		"replace": bicepFuncCallThree("replace"),
-		"host":    emitHostFromEndpoint,
+		"lower":             bicepFuncCall("toLower"),
+		"upper":             bicepFuncCall("toUpper"),
+		"replace":           bicepFuncCallThree("replace"),
+		"host":              emitHostFromEndpoint,
+		"aiProjectEndpoint": emitAiProjectEndpoint,
 	}
 }
 

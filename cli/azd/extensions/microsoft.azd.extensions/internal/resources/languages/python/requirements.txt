@@ -8,3 +8,4 @@ rich==14.0.0
 typer==0.15.2
 aiohttp==3.11.18
 asyncio==3.4.3
+pyinstaller==6.13.0

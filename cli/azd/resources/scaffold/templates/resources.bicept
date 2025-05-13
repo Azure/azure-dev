@@ -27,7 +27,7 @@ var resourceToken = uniqueString(subscription().id, resourceGroup().id, location
 var {{.Name}}IdSegments = split({{.Name}}Id, '/')
 resource {{.Name}} '{{.ResourceType}}@{{.ApiVersion}}' existing = {
   scope: resourceGroup({{.Name}}IdSegments[2], {{.Name}}IdSegments[4])
-  name: {{.Name}}IdSegments[8]
+  name: join(map(range(0, length(split('{{.ResourceType}}', '/')) - 1), i => {{.Name}}IdSegments[8 + i * 2]), '/')
 }
 {{- end}}
 

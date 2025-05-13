@@ -131,8 +131,6 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Machine Learning Endpoint"
 	case AzureResourceTypeMachineLearningConnection:
 		return "Machine Learning Connection"
-	case AzureResourceTypeRoleAssignment:
-		return "Role Assignment"
 	}
 
 	return ""

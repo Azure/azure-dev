@@ -63,7 +63,23 @@ foreach ($PLATFORM in $PLATFORMS) {
     $PYTHON_MAIN_FILE = "main.py"
 
     Write-Host "Installing Python dependencies..."
+    python -m venv .venv
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to create virtual environment."
+        exit 1
+    }
+
+    .venv\Scripts\Activate.ps1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to activate virtual environment."
+        exit 1
+    }
+
     pip install -r requirements.txt
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to install dependencies."
+        exit 1
+    }
 
     $PYINSTALLER_NAME = "$EXTENSION_ID_SAFE-$OS-$ARCH"
     if ($OS -eq "windows") {

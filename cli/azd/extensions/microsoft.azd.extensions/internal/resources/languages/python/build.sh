@@ -58,15 +58,85 @@ for PLATFORM in "${PLATFORMS[@]}"; do
     [ -f "$OUTPUT_NAME" ] && rm -f "$OUTPUT_NAME"
 
     PYTHON_MAIN_FILE="main.py"
+    
+    OS_TYPE=$(uname -s)
+    # Install dependencies based on OS
+    if [ "$OS_TYPE" == "Linux" ]; then
+        # For Linux, install python3-venv
+        echo "Linux detected. Installing dependencies..."
+        if ! dpkg -s python3-venv &> /dev/null; then
+            echo "python3-venv not found, attempting to install it..."
+            if [[ $EUID -ne 0 ]]; then
+                echo "Root permission required to install packages. Using sudo..."
+                sudo apt-get update
+                if [ $? -ne 0 ]; then
+                    echo "Failed to update package list."
+                    exit 1
+                fi
+                sudo apt-get install -y python3-venv python3-dev libpython3-dev binutils
+                if [ $? -ne 0 ]; then
+                    echo "Failed to install required packages."
+                    exit 1
+                fi
+            else
+                apt-get update
+                if [ $? -ne 0 ]; then
+                    echo "Failed to update package list."
+                    exit 1
+                fi
+                apt-get install -y python3-venv python3-dev libpython3-dev binutils
+                if [ $? -ne 0 ]; then
+                    echo "Failed to install required packages."
+                    exit 1
+                fi
+            fi
+        fi
+    elif [ "$OS_TYPE" == "Darwin" ]; then
+        # For macOS, install python3-venv via Homebrew
+        echo "macOS detected. Installing dependencies..."
+        if ! command -v brew &> /dev/null; then
+            echo "Homebrew not found. Please install Homebrew first: https://brew.sh/"
+            exit 1
+        fi
+
+        if ! brew list python3 &> /dev/null; then
+            echo "Homebrew Python3 not found, installing it..."
+            brew install python3
+            if [ $? -ne 0 ]; then
+                echo "Failed to install Python3 via Homebrew."
+                exit 1
+            fi
+        fi
+    else
+        echo "Unsupported OS: $OS_TYPE"
+        exit 1
+    fi
+
+    echo "Creating virtual environment..."
+    python3 -m venv .venv
+    if [ $? -ne 0 ]; then
+        echo "Failed to create virtual environment."
+        exit 1
+    fi
+
+    source .venv/bin/activate
+    if [ $? -ne 0 ]; then
+        echo "Failed to activate virtual environment."
+        exit 1
+    fi
 
     echo "Installing Python dependencies..."
     pip install -r requirements.txt
+    if [ $? -ne 0 ]; then
+        echo "Failed to install Python dependencies."
+        exit 1
+    fi
 
     PYINSTALLER_NAME="$EXTENSION_ID_SAFE-$OS-$ARCH"
     [ "$OS" = "windows" ] && PYINSTALLER_NAME+='.exe'
 
     echo "Running PyInstaller for $OS/$ARCH..."
-    python -m PyInstaller \
+    python3 -m PyInstaller \
         --onefile \
         --add-data "generated_proto:generated_proto" \
         --add-data "version.py:." \

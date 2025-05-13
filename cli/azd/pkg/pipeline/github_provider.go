@@ -617,7 +617,8 @@ func (p *GitHubCiProvider) configurePipeline(
 	// - When there was a previous additional variable/secret set and then it was updated to empty string or unset from .env.
 	msg := ""
 	var procErr error
-	ciSecrets, ciVariables := []string{}, []string{}
+	ciVariables := map[string]string{}
+	ciSecrets := []string{}
 	if len(options.projectVariables) > 0 || len(options.providerParameters) > 0 {
 		msg = "Setting up project's variables to be used in the pipeline"
 		ciSecretsInstance, err := p.ghCli.ListSecrets(ctx, repoSlug)
@@ -845,8 +846,18 @@ func (p *GitHubCiProvider) configurePipeline(
 	const selectionDeleteVars string = "Delete the variable from the pipeline."
 	const selectionDeleteAllVars string = "Delete ALL unused variables from the pipeline."
 	// iterate the existing variables on the pipeline and remove the ones matching the project's secrets or variables
-	for _, existingVariable := range ciVariables {
-		if _, willBeUpdated := toBeSetVariables[existingVariable]; willBeUpdated {
+	for existingVariable, existingVariableValue := range ciVariables {
+		if valueToBeSet, willBeUpdated := toBeSetVariables[existingVariable]; willBeUpdated {
+			if existingVariableValue == valueToBeSet {
+				// the variable is already set to the same value, so we can ignore it
+				delete(toBeSetVariables, existingVariable)
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingVariable,
+					Kind:   ux.GitHubVariable,
+					Action: "Unchanged",
+				})
+				continue
+			}
 			if ignoreAllDuplicatesVars {
 				// ignore this variable, as it will be updated
 				delete(toBeSetVariables, existingVariable)

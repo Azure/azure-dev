@@ -232,6 +232,22 @@ func ghOutputToList(output string) []string {
 	return result
 }
 
+func ghOutputToMap(output string) (map[string]string, error) {
+	lines := strings.Split(output, "\n")
+	result := map[string]string{}
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		valueParts := strings.Split(line, "\t")
+		if len(valueParts) < 2 {
+			return nil, fmt.Errorf("unexpected format to parse string to map: %s", line)
+		}
+		result[valueParts[0]] = valueParts[1]
+	}
+	return result, nil
+}
+
 func (cli *Cli) ListSecrets(ctx context.Context, repoSlug string) ([]string, error) {
 	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "list")
 	output, err := cli.run(ctx, runArgs)
@@ -241,13 +257,13 @@ func (cli *Cli) ListSecrets(ctx context.Context, repoSlug string) ([]string, err
 	return ghOutputToList(output.Stdout), nil
 }
 
-func (cli *Cli) ListVariables(ctx context.Context, repoSlug string) ([]string, error) {
+func (cli *Cli) ListVariables(ctx context.Context, repoSlug string) (map[string]string, error) {
 	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "list")
 	output, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed running gh secret list: %w", err)
 	}
-	return ghOutputToList(output.Stdout), nil
+	return ghOutputToMap(output.Stdout)
 }
 
 func (cli *Cli) SetSecret(ctx context.Context, repoSlug string, name string, value string) error {

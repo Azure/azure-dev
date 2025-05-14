@@ -134,16 +134,17 @@ type RootLevelHelpOption string
 
 const (
 	CmdGroupNone       RootLevelHelpOption = ""
-	CmdGroupConfig     RootLevelHelpOption = "Configure and develop your app"
-	CmdGroupManage     RootLevelHelpOption = "Manage Azure resources and app deployments"
-	CmdGroupMonitor    RootLevelHelpOption = "Monitor, test and release your app"
-	CmdGroupAbout      RootLevelHelpOption = "About, help and upgrade"
-	CmdGroupExtensions RootLevelHelpOption = "Installed Extensions"
+	CmdGroupStart      RootLevelHelpOption = "Getting started"
+	CmdGroupAzure      RootLevelHelpOption = "Create and manage Azure resources"
+	CmdGroupBeta       RootLevelHelpOption = "Beta commands"
+	CmdGroupAlpha      RootLevelHelpOption = "Enabled alpha commands"
+	CmdGroupManage     RootLevelHelpOption = "Manage and show settings"
+	CmdGroupExtensions RootLevelHelpOption = "Enabled extensions commands "
 )
 
 func GetGroupAnnotations() []RootLevelHelpOption {
 	return []RootLevelHelpOption{
-		CmdGroupConfig, CmdGroupManage, CmdGroupMonitor, CmdGroupExtensions, CmdGroupAbout,
+		CmdGroupStart, CmdGroupAzure, CmdGroupManage, CmdGroupBeta, CmdGroupAlpha, CmdGroupExtensions,
 	}
 }
 

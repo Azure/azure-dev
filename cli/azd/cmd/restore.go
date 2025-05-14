@@ -60,7 +60,7 @@ func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func newRestoreCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "restore <service>",
-		Short: fmt.Sprintf("Restores the application's dependencies. %s", output.WithWarningFormat("(Beta)")),
+		Short: "Restores the project's dependencies.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 	return cmd

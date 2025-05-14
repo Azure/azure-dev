@@ -21,14 +21,14 @@ import (
 func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("template", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Short: fmt.Sprintf("Find and view template details. %s", output.WithWarningFormat("(Beta)")),
+			Short: "Find and view template details.",
 		},
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdTemplateHelpDescription,
 			Footer:      getCmdTemplateHelpFooter,
 		},
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupConfig,
+			RootLevelHelp: actions.CmdGroupBeta,
 		},
 	})
 

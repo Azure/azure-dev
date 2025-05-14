@@ -26,10 +26,10 @@ func hooksActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("hooks", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "hooks",
-			Short: fmt.Sprintf("Develop, test and run hooks for an application. %s", output.WithWarningFormat("(Beta)")),
+			Short: "Develop, test and run hooks for a project.",
 		},
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupConfig,
+			RootLevelHelp: actions.CmdGroupBeta,
 		},
 	})
 

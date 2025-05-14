@@ -145,11 +145,11 @@ newCommand is my new command
 ```golang
 // Adding top level help grouping information
 GroupingOptions: actions.CommandGroupOptions{
-    RootLevelHelp: actions.CmdGroupConfig,
+    RootLevelHelp: actions.CmdGroupAzure,
 },
 ```
 
-The previous example set the `RootLevelHelp` group to `Config`. When azd displays the top level help (`azd help`), the command will appear within the `configure and develop` group of commands.
+The previous example set the `RootLevelHelp` group to `Azure`. When azd displays the top level help (`azd help`), the command will appear within the `create and manage Azure resources` group of commands.
 
 ## Adding inner level command
 

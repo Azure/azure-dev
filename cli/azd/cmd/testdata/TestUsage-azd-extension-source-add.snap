@@ -5,9 +5,9 @@ Usage
   azd extension source add [flags]
 
 Flags
-        --king string     	: The type of the extension source
-        --location string 	: The location of the extension source
-        --name string     	: The name of the extension source
+    -l, --location string 	: The location of the extension source
+    -n, --name string     	: The name of the extension source
+    -t, --type string     	: The type of the extension source. Supported types are 'file' and 'url'
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

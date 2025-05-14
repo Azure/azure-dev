@@ -54,7 +54,7 @@ func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFl
 func newUpCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "up",
-		Short: "Provision Azure resources, and deploy your project with a single command.",
+		Short: "Provision and deploy your project to Azure with a single command.",
 	}
 }
 

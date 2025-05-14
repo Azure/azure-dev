@@ -16,7 +16,7 @@ func authActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			Short: "Authenticate with Azure.",
 		},
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupConfig,
+			RootLevelHelp: actions.CmdGroupAzure,
 		},
 	})
 

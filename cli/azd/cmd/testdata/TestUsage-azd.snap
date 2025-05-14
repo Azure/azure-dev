@@ -1,33 +1,39 @@
 
-The Azure Developer CLI is an open-source tool that helps onboard and manage your application on Azure
+The Azure Developer CLI is an open-source tool that helps onboard and manage your project on Azure
 
 Usage
   azd [command]
 
 Commands
-  Configure and develop your app
-    auth     	: Authenticate with Azure.
-    config   	: Manage azd configurations (ex: default Azure subscription, location).
-    hooks    	: Develop, test and run hooks for an application. (Beta)
-    init     	: Initialize a new application.
-    restore  	: Restores the application's dependencies. (Beta)
-    template 	: Find and view template details. (Beta)
+  Getting started
+    init        : Initialize a new project.
+    up          : Provision and deploy your project to Azure with a single command.
 
-  Manage Azure resources and app deployments
-    deploy   	: Deploy the application's code to Azure.
-    down     	: Delete Azure resources for an application.
-    env      	: Manage environments.
-    package  	: Packages the application's code to be deployed to Azure. (Beta)
-    provision	: Provision the Azure resources for an application.
-    up       	: Provision Azure resources, and deploy your project with a single command.
+  Create and manage Azure resources
+    auth        : Authenticate with Azure.
+    provision   : Provision Azure resources for your project.
+    deploy      : Deploy your project code to Azure.
+    down        : Delete your project’s Azure resources.
 
-  Monitor, test and release your app
-    monitor  	: Monitor a deployed application. (Beta)
-    pipeline 	: Manage and configure your deployment pipelines. (Beta)
-    show     	: Display information about your app and its resources.
+  Manage and show settings
+    config      : Manage azd configurations (ex: default Azure subscription, location).
+    env         : Manage environments (ex: default environment, environment variables).
+    show        : Display information about your project and its resources.
+    version     : Print the version number of Azure Developer CLI.
 
-  About, help and upgrade
-    version  	: Print the version number of Azure Developer CLI.
+  Beta commands
+    hooks       : Develop, test and run hooks for a project.
+    monitor     : Monitor a deployed project.
+    package     : Packages the project's code to be deployed to Azure.
+    pipeline    : Manage and configure your deployment pipelines.
+    restore     : Restores the project's dependencies.
+    template    : Find and view template details.
+
+  Enabled alpha commands
+    extension   : Manage azd extensions.
+
+  Enabled extensions commands 
+    registry    : Ability to build, package and publish AZD extensions and registries.
 
 Flags
     -C, --cwd string 	: Sets the current working directory.

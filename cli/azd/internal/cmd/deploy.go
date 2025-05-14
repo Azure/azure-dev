@@ -97,7 +97,7 @@ func NewDeployFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *internal
 func NewDeployCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy <service>",
-		Short: "Deploy the application's code to Azure.",
+		Short: "Deploy your project code to Azure.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 

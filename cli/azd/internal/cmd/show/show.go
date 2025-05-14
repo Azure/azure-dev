@@ -68,7 +68,7 @@ func NewShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *sh
 
 func NewShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Short: "Display information about your app and its resources.",
+		Short: "Display information about your project and its resources.",
 	}
 
 	return cmd

@@ -19,12 +19,12 @@ const {
   PromptSubscriptionResourceRequest,
   PromptResourceSelectOptions,
   PromptResourceOptions,
-} = require('../proto/prompt_pb');
+} = require('../generated/proto/prompt_pb');
 
 const { 
   AzureContext,
   AzureScope,
-} = require('../proto/models_pb');
+} = require('../generated/proto/models_pb');
 
 function createPromptCommand() {
   const cmd = new Command('prompt');

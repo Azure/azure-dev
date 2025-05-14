@@ -7,7 +7,7 @@ const {
   SubscribeServiceEvent,
   ProjectHandlerStatus,
   ServiceHandlerStatus,
-} = require("./proto/event_pb");
+} = require("./generated/proto/event_pb");
 
 class EventManager {
   constructor(client) {

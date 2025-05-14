@@ -2,10 +2,10 @@ const { Command } = require('commander');
 const AzdClient = require('../azdClient');
 const { unary } = require('../grpcUtils');
 
-const { EmptyRequest } = require('../proto/models_pb');
+const { EmptyRequest } = require('../generated/proto/models_pb');
 const {
   GetEnvironmentValuesRequest
-} = require('../proto/environment_pb');
+} = require('../generated/proto/environment_pb');
 
 function createContextCommand() {
   const cmd = new Command('context');

@@ -1,13 +1,13 @@
 const grpc = require('@grpc/grpc-js');
 
-const { ComposeServiceClient } = require('./proto/compose_grpc_pb');
-const { DeploymentServiceClient } = require('./proto/deployment_grpc_pb');
-const { EnvironmentServiceClient } = require('./proto/environment_grpc_pb');
-const { EventServiceClient } = require('./proto/event_grpc_pb');
-const { ProjectServiceClient } = require('./proto/project_grpc_pb');
-const { PromptServiceClient } = require('./proto/prompt_grpc_pb');
-const { UserConfigServiceClient } = require('./proto/user_config_grpc_pb');
-const { WorkflowServiceClient } = require('./proto/workflow_grpc_pb');
+const { ComposeServiceClient } = require('./generated/proto/compose_grpc_pb');
+const { DeploymentServiceClient } = require('./generated/proto/deployment_grpc_pb');
+const { EnvironmentServiceClient } = require('./generated/proto/environment_grpc_pb');
+const { EventServiceClient } = require('./generated/proto/event_grpc_pb');
+const { ProjectServiceClient } = require('./generated/proto/project_grpc_pb');
+const { PromptServiceClient } = require('./generated/proto/prompt_grpc_pb');
+const { UserConfigServiceClient } = require('./generated/proto/user_config_grpc_pb');
+const { WorkflowServiceClient } = require('./generated/proto/workflow_grpc_pb');
 
 class AzdClient {
   constructor() {

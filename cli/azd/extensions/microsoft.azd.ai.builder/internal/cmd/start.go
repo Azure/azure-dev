@@ -211,8 +211,9 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	if a.scenarioData.DatabaseType != "" {
 		desiredName := strings.ReplaceAll(a.scenarioData.DatabaseType, "db.", "")
 		dbResource := &azdext.ComposedResource{
-			Name: a.generateResourceName(desiredName),
-			Type: a.scenarioData.DatabaseType,
+			Name:       a.generateResourceName(desiredName),
+			Type:       a.scenarioData.DatabaseType,
+			ResourceId: a.scenarioData.DatabaseId,
 		}
 		resourcesToAdd[dbResource.Name] = dbResource
 	}
@@ -221,8 +222,9 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	if a.scenarioData.MessagingType != "" {
 		desiredName := strings.ReplaceAll(a.scenarioData.MessagingType, "messaging.", "")
 		messagingResource := &azdext.ComposedResource{
-			Name: a.generateResourceName(desiredName),
-			Type: a.scenarioData.MessagingType,
+			Name:       a.generateResourceName(desiredName),
+			Type:       a.scenarioData.MessagingType,
+			ResourceId: a.scenarioData.MessagingId,
 		}
 		resourcesToAdd[messagingResource.Name] = messagingResource
 	}
@@ -230,8 +232,9 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	// Add vector store resources
 	if a.scenarioData.VectorStoreType != "" {
 		vectorStoreResource := &azdext.ComposedResource{
-			Name: a.generateResourceName("vector-store"),
-			Type: a.scenarioData.VectorStoreType,
+			Name:       a.generateResourceName("vector-store"),
+			Type:       a.scenarioData.VectorStoreType,
+			ResourceId: a.scenarioData.VectorStoreId,
 		}
 		resourcesToAdd[vectorStoreResource.Name] = vectorStoreResource
 	}
@@ -251,9 +254,10 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		}
 
 		storageResource := &azdext.ComposedResource{
-			Name:   a.generateResourceName("storage"),
-			Type:   "storage",
-			Config: storageConfigJson,
+			Name:       a.generateResourceName("storage"),
+			Type:       "storage",
+			Config:     storageConfigJson,
+			ResourceId: a.scenarioData.StorageAccountId,
 		}
 
 		resourcesToAdd[storageResource.Name] = storageResource
@@ -342,10 +346,11 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		}
 
 		appResource := &azdext.ComposedResource{
-			Name:   a.generateResourceName(appKey),
-			Type:   appType,
-			Config: appConfigJson,
-			Uses:   []string{},
+			Name:       a.generateResourceName(appKey),
+			Type:       appType,
+			Config:     appConfigJson,
+			Uses:       []string{},
+			ResourceId: a.scenarioData.AppResourceIds[i],
 		}
 
 		serviceName := a.generateServiceName(appKey)
@@ -439,7 +444,8 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	// Add any new resources to the azure.yaml.
 	for _, resource := range resourcesToAdd {
 		_, err := a.azdClient.Compose().AddResource(ctx, &azdext.AddResourceRequest{
-			Resource: resource,
+			Resource:   resource,
+			ExistingId: resource.ResourceId,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to add resource %s: %w", resource.Name, err)

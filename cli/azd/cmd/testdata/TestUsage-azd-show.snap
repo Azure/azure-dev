@@ -1,5 +1,5 @@
 
-Display information about your app and its resources.
+Display information about your project and its resources.
 
 Usage
   azd show [flags]

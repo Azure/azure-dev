@@ -4,6 +4,28 @@ const { DefaultAzureCredential } = require('@azure/identity');
 const { ResourceManagementClient } = require('@azure/arm-resources');
 const logger = require('../logger');
 
+const {
+  MultiSelectRequest,
+  MultiSelectOptions,
+  MultiSelectChoice,
+  ConfirmRequest,
+  ConfirmOptions,
+  SelectRequest,
+  SelectOptions,
+  SelectChoice,
+  PromptSubscriptionRequest,
+  PromptResourceGroupRequest,
+  PromptResourceGroupResourceRequest,
+  PromptSubscriptionResourceRequest,
+  PromptResourceSelectOptions,
+  PromptResourceOptions,
+} = require('../generated/proto/prompt_pb');
+
+const { 
+  AzureContext,
+  AzureScope,
+} = require('../generated/proto/models_pb');
+
 function createPromptCommand() {
   const cmd = new Command('prompt');
   cmd.description('Examples of prompting the user for input.');
@@ -11,60 +33,57 @@ function createPromptCommand() {
   cmd.action(async () => {
     const client = new AzdClient();
 
+    // === Multi-select
     logger.info('Prompting user for multi-select...');
+    const multiSelectReq = new MultiSelectRequest();
+    const multiOptions = new MultiSelectOptions();
+    multiOptions.setMessage('Which Azure services do you use most with AZD?');
 
-    // === Prompt for multi-select
-    await new Promise((resolve, reject) => {
-      client.Prompt.multiSelect({
-        options: {
-          message: 'Which Azure services do you use most with AZD?',
-          choices: [
-            { label: 'Container Apps', value: 'container-apps' },
-            { label: 'Functions', value: 'functions' },
-            { label: 'Static Web Apps', value: 'static-web-apps' },
-            { label: 'App Service', value: 'app-service' },
-            { label: 'Cosmos DB', value: 'cosmos-db' },
-            { label: 'SQL Database', value: 'sql-db' },
-            { label: 'Storage', value: 'storage' },
-            { label: 'Key Vault', value: 'key-vault' },
-            { label: 'Kubernetes Service', value: 'kubernetes-service' }
-          ]
-        }
-      }, client._metadata, (err, res) => {
-        if (err) return reject(err);
-        logger.info('Selected services', { values: res.values });
-        resolve();
-      });
+    const multiChoices = [
+      ['Container Apps', 'container-apps'],
+      ['Functions', 'functions'],
+      ['Static Web Apps', 'static-web-apps'],
+      ['App Service', 'app-service'],
+      ['Cosmos DB', 'cosmos-db'],
+      ['SQL Database', 'sql-db'],
+      ['Storage', 'storage'],
+      ['Key Vault', 'key-vault'],
+      ['Kubernetes Service', 'kubernetes-service']
+    ].map(([label, value]) => {
+      const c = new MultiSelectChoice();
+      c.setLabel(label);
+      c.setValue(value);
+      return c;
     });
 
-    // === Confirm whether to continue
-    const confirm = await new Promise((resolve, reject) => {
-      client.Prompt.confirm({
-        options: {
-          message: 'Do you want to search for Azure resources?',
-          default_value: true
-        }
-      }, client._metadata, (err, res) => {
-        if (err) return reject(err);
-        resolve(res);
-      });
-    });
+    multiOptions.setChoicesList(multiChoices);
+    multiSelectReq.setOptions(multiOptions);
 
-    if (!confirm?.value) {
+    const multiRes = await callPrompt(client.Prompt.multiSelect.bind(client.Prompt), multiSelectReq, client._metadata);
+    logger.info('Selected services', { values: multiRes.getValuesList() });
+
+    // === Confirm continue
+    const confirmReq = new ConfirmRequest();
+    const confirmOptions = new ConfirmOptions();
+    confirmOptions.setMessage('Do you want to search for Azure resources?');
+    confirmOptions.setDefaultValue(true);
+    confirmReq.setOptions(confirmOptions);
+
+    const confirmRes = await callPrompt(client.Prompt.confirm.bind(client.Prompt), confirmReq, client._metadata);
+    if (!confirmRes.getValue()) {
       logger.info('Cancelled by user.');
       return;
     }
 
     // === Prompt for subscription
-    const subRes = await new Promise((resolve, reject) => {
-      client.Prompt.promptSubscription({}, client._metadata, (err, res) => {
-        if (err) return reject(err);
-        resolve(res);
-      });
-    });
+    const subRes = await callPrompt(
+      client.Prompt.promptSubscription.bind(client.Prompt),
+      new PromptSubscriptionRequest(),
+      client._metadata
+    );
 
-    const subscription_id = subRes.subscription.id;
-    const tenant_id = subRes.subscription.tenant_id;
+    const subscription_id = subRes.getSubscription().getId();
+    const tenant_id = subRes.getSubscription().getTenantId();
     logger.info('Subscription selected', { subscription_id });
     logger.info('Tenant', { tenant_id });
 
@@ -73,20 +92,16 @@ function createPromptCommand() {
 
     let resource_type = '';
 
-    // === Ask to filter by resource type
-    const filterType = await new Promise((resolve, reject) => {
-      client.Prompt.confirm({
-        options: {
-          message: 'Do you want to filter by resource type?',
-          default_value: false
-        }
-      }, client._metadata, (err, res) => {
-        if (err) return reject(err);
-        resolve(res);
-      });
-    });
+    // === Confirm filter by resource type
+    const confirmTypeReq = new ConfirmRequest();
+    const typeConfirmOptions = new ConfirmOptions();
+    typeConfirmOptions.setMessage('Do you want to filter by resource type?');
+    typeConfirmOptions.setDefaultValue(false);
+    confirmTypeReq.setOptions(typeConfirmOptions);
 
-    if (filterType?.value) {
+    const filterType = await callPrompt(client.Prompt.confirm.bind(client.Prompt), confirmTypeReq, client._metadata);
+
+    if (filterType.getValue()) {
       const providers = [];
       for await (const p of armClient.providers.list()) {
         if (p.registrationState === 'Registered') {
@@ -94,108 +109,88 @@ function createPromptCommand() {
         }
       }
 
-      const selectProviderRes = await new Promise((resolve, reject) => {
-        client.Prompt.select({
-          options: {
-            message: 'Select a resource provider',
-            choices: providers.map((p, i) => ({
-              label: p.namespace,
-              value: i.toString()
-            }))
-          }
-        }, client._metadata, (err, res) => {
-          if (err) return reject(err);
-          resolve(res);
-        });
+      const selectProviderReq = new SelectRequest();
+      const selectProviderOptions = new SelectOptions();
+      selectProviderOptions.setMessage('Select a resource provider');
+      const providerChoices = providers.map((p, i) => {
+        const c = new SelectChoice();
+        c.setLabel(p.namespace);
+        c.setValue(i.toString());
+        return c;
       });
+      selectProviderOptions.setChoicesList(providerChoices);
+      selectProviderReq.setOptions(selectProviderOptions);
 
-      const selectedProvider = providers[selectProviderRes.value];
+      const providerRes = await callPrompt(client.Prompt.select.bind(client.Prompt), selectProviderReq, client._metadata);
+      const selectedProvider = providers[parseInt(providerRes.getValue(), 10)];
       const resourceTypes = selectedProvider.resourceTypes || [];
 
-      const selectTypeRes = await new Promise((resolve, reject) => {
-        client.Prompt.select({
-          options: {
-            message: `Select a ${selectedProvider.namespace} resource type`,
-            choices: resourceTypes.map((rt, i) => ({
-              label: rt.resourceType,
-              value: i.toString()
-            }))
-          }
-        }, client._metadata, (err, res) => {
-          if (err) return reject(err);
-          resolve(res);
-        });
+      const selectTypeReq = new SelectRequest();
+      const selectTypeOptions = new SelectOptions();
+      selectTypeOptions.setMessage(`Select a ${selectedProvider.namespace} resource type`);
+      const typeChoices = resourceTypes.map((rt, i) => {
+        const c = new SelectChoice();
+        c.setLabel(rt.resourceType);
+        c.setValue(i.toString());
+        return c;
       });
+      selectTypeOptions.setChoicesList(typeChoices);
+      selectTypeReq.setOptions(selectTypeOptions);
 
-      resource_type = `${selectedProvider.namespace}/${resourceTypes[selectTypeRes.value].resourceType}`;
+      const typeRes = await callPrompt(client.Prompt.select.bind(client.Prompt), selectTypeReq, client._metadata);
+      const selectedType = resourceTypes[parseInt(typeRes.getValue(), 10)].resourceType;
+      resource_type = `${selectedProvider.namespace}/${selectedType}`;
     }
 
-    // === Ask to filter by resource group
-    const filterGroup = await new Promise((resolve, reject) => {
-      client.Prompt.confirm({
-        options: {
-          message: 'Do you want to filter by resource group?',
-          default_value: false
-        }
-      }, client._metadata, (err, res) => {
-        if (err) return reject(err);
-        resolve(res);
-      });
-    });
+    // === Confirm filter by resource group
+    const confirmGroupReq = new ConfirmRequest();
+    const groupOptions = new ConfirmOptions();
+    groupOptions.setMessage('Do you want to filter by resource group?');
+    groupOptions.setDefaultValue(false);
+    confirmGroupReq.setOptions(groupOptions);
 
-    let context = {
-      scope: {
-        subscription_id,
-        tenant_id
-      }
-    };
+    const filterGroup = await callPrompt(client.Prompt.confirm.bind(client.Prompt), confirmGroupReq, client._metadata);
 
-    if (filterGroup?.value) {
-      // === Prompt for resource group
-      const rgRes = await new Promise((resolve, reject) => {
-        client.Prompt.promptResourceGroup({
-          azure_context: context
-        }, client._metadata, (err, res) => {
-          if (err) return reject(err);
-          resolve(res);
-        });
-      });
+    const scope = new AzureScope();
+    scope.setSubscriptionId(subscription_id);
+    scope.setTenantId(tenant_id);
+    
+    const context = new AzureContext();
+    context.setScope(scope);
 
-      context.scope.resource_group = rgRes.resource_group.name;
+    if (filterGroup.getValue()) {
+      const rgReq = new PromptResourceGroupRequest();
+      rgReq.setAzureContext(context);
 
-      const resourceRes = await new Promise((resolve, reject) => {
-        client.Prompt.promptResourceGroupResource({
-          azure_context: context,
-          options: {
-            resource_type,
-            select_options: {
-              allow_new_resource: false
-            }
-          }
-        }, client._metadata, (err, res) => {
-          if (err) return reject(err);
-          resolve(res);
-        });
-      });
+      const rgRes = await callPrompt(client.Prompt.promptResourceGroup.bind(client.Prompt), rgReq, client._metadata);
+      scope.setResourceGroup(rgRes.getResourceGroup().getName());
+      context.setScope(scope);
 
-      logSelected(resourceRes?.resource);
+      const rgrReq = new PromptResourceGroupResourceRequest();
+      rgrReq.setAzureContext(context);
+
+      const resOptions = new PromptResourceOptions();
+      resOptions.setResourceType(resource_type);
+      const selOpts = new PromptResourceSelectOptions();
+      selOpts.setAllowNewResource(false);
+      resOptions.setSelectOptions(selOpts);
+      rgrReq.setOptions(resOptions);
+
+      const resourceRes = await callPrompt(client.Prompt.promptResourceGroupResource.bind(client.Prompt), rgrReq, client._metadata);
+      logSelected(resourceRes.getResource());
     } else {
-      const resourceRes = await new Promise((resolve, reject) => {
-        client.Prompt.promptSubscriptionResource({
-          azure_context: context,
-          options: {
-            resource_type,
-            select_options: {
-              allow_new_resource: false
-            }
-          }
-        }, client._metadata, (err, res) => {
-          if (err) return reject(err);
-          resolve(res);
-        });
-      });
+      const subResReq = new PromptSubscriptionResourceRequest();
+      subResReq.setAzureContext(context);
 
-      logSelected(resourceRes?.resource);
+      const resOptions = new PromptResourceOptions();
+      resOptions.setResourceType(resource_type);
+      const selOpts = new PromptResourceSelectOptions();
+      selOpts.setAllowNewResource(false);
+      resOptions.setSelectOptions(selOpts);
+      subResReq.setOptions(resOptions);
+
+      const resourceRes = await callPrompt(client.Prompt.promptSubscriptionResource.bind(client.Prompt), subResReq, client._metadata);
+      logSelected(resourceRes.getResource());
     }
   });
 
@@ -209,10 +204,19 @@ function logSelected(resource) {
   }
 
   logger.info('Selected Resource', {
-    name: resource.name,
-    type: resource.type,
-    location: resource.location,
-    id: resource.id
+    name: resource.getName(),
+    type: resource.getType(),
+    location: resource.getLocation(),
+    id: resource.getId()
+  });
+}
+
+function callPrompt(fn, req, metadata) {
+  return new Promise((resolve, reject) => {
+    fn(req, metadata, (err, res) => {
+      if (err) return reject(err);
+      resolve(res);
+    });
   });
 }
 

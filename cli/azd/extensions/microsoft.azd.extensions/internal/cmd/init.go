@@ -598,7 +598,7 @@ func createExtensionDirectory(
 		return fmt.Errorf("failed to copy and process templates: %w", err)
 	}
 
-	if extensionMetadata.Language == "dotnet" || extensionMetadata.Language == "javascript" {
+	if extensionMetadata.Language != "go" {
 		protoSrcPath := path.Join("languages", "proto")
 		protoDstPath := filepath.Join(extensionPath, "proto")
 

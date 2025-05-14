@@ -1,6 +1,6 @@
 # Release History
 
-## 1.15.2 (2025-05-14)
+## 1.16.0 (2025-05-14)
 
 ### Features Added
 - [[5173]](https://github.com/Azure/azure-dev/pull/5173) `azd show` support for Azure App Service.

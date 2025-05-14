@@ -32,7 +32,7 @@ func Test_ComposeService_AddResource(t *testing.T) {
 	lazyAzdContext := lazy.From(azdCtx)
 	env := environment.New("test")
 	envManager := &mockenv.MockEnvManager{}
-	composeService := NewComposeService(lazyAzdContext,env,envManager    )
+	composeService := NewComposeService(lazyAzdContext, env, envManager)
 
 	t.Run("success", func(t *testing.T) {
 		addReq := &azdext.AddResourceRequest{
@@ -165,7 +165,7 @@ func Test_ComposeService_ListResources(t *testing.T) {
 			return nil, azdcontext.ErrNoProject
 		})
 		env := environment.New("test")
-	envManager := &mockenv.MockEnvManager{}
+		envManager := &mockenv.MockEnvManager{}
 		composeService := NewComposeService(lazyAzdContext, env, envManager)
 		_, err := composeService.ListResources(*mockContext.Context, &azdext.EmptyRequest{})
 		require.Error(t, err)
@@ -182,7 +182,7 @@ func Test_Test_ComposeService_ListResourceTypes(t *testing.T) {
 	// Create the service and call ListResourceTypes
 	env := environment.New("test")
 	envManager := &mockenv.MockEnvManager{}
-	service := NewComposeService(lazyAzdContext,env, envManager)
+	service := NewComposeService(lazyAzdContext, env, envManager)
 	response, err := service.ListResourceTypes(*mockContext.Context, &azdext.EmptyRequest{})
 	require.NoError(t, err)
 	require.NotNil(t, response)

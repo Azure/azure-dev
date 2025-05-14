@@ -11,12 +11,14 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
@@ -306,8 +308,13 @@ func (s *showAction) showResource(ctx context.Context, name string, env *environ
 	resType := id.ResourceType.Namespace + "/" + id.ResourceType.Type
 	var item ux.UxItem
 	switch {
-	case strings.EqualFold(resType, "Microsoft.App/containerApps"):
+	case strings.EqualFold(resType, string(azapi.AzureResourceTypeContainerApp)):
 		item, err = showContainerApp(ctx, credential, id, resourceOptions)
+		if err != nil {
+			return err
+		}
+	case strings.EqualFold(resType, string(azapi.AzureResourceTypeWebSite)):
+		item, err = showAppService(ctx, credential, id, resourceOptions)
 		if err != nil {
 			return err
 		}
@@ -337,14 +344,78 @@ type showResourceOptions struct {
 	clientOpts   *arm.ClientOptions
 }
 
+func showAppService(
+	ctx context.Context,
+	cred azcore.TokenCredential,
+	id *arm.ResourceID,
+	opts showResourceOptions,
+) (*ux.ShowService, error) {
+	service := &ux.ShowService{
+		Name:        id.Name,
+		Env:         make(map[string]string),
+		DisplayType: "App Service",
+	}
+
+	client, err := armappservice.NewWebAppsClient(id.SubscriptionID, cred, opts.clientOpts)
+	if err != nil {
+		return nil, fmt.Errorf("creating web-apps client: %w", err)
+	}
+
+	site, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting web app: %w", err)
+	}
+
+	if site.Properties != nil && site.Properties.DefaultHostName != nil {
+		service.IngresUrl = fmt.Sprintf("https://%s", *site.Properties.DefaultHostName)
+	}
+
+	settings, err := client.ListApplicationSettings(ctx, id.ResourceGroupName, id.Name, nil)
+	if err != nil {
+		return nil, fmt.Errorf("listing application settings: %w", err)
+	}
+
+	// App Service settings don't distinguish between secrets and non-secrets, so maintain list of known
+	// secret keys to mask. In the future, we may want to use Key Vault secret references for Postgres, MySQL,
+	// and other DBs where they take a user-provided password.
+	knownSecretKeys := []string{
+		"MONGODB_URL",
+		"POSTGRES_PASSWORD",
+		"POSTGRES_URL",
+		"MYSQL_PASSWORD",
+		"MYSQL_URL",
+		"REDIS_PASSWORD",
+		"REDIS_URL",
+	}
+
+	for key, val := range settings.Properties {
+		if val == nil {
+			continue
+		}
+
+		value := *val
+		// TODO(azure/azure-dev#5174): Resolve the actual secret value from the AKV secret ref @Microsoft.KeyVault(...)
+		isSecret := strings.HasPrefix(value, "@Microsoft.KeyVault(") || slices.Contains(knownSecretKeys, key)
+
+		if isSecret && !opts.showSecrets {
+			service.Env[key] = "*******"
+		} else {
+			service.Env[key] = value
+		}
+	}
+
+	return service, nil
+}
+
 func showContainerApp(
 	ctx context.Context,
 	cred azcore.TokenCredential,
 	id *arm.ResourceID,
 	opts showResourceOptions) (*ux.ShowService, error) {
 	service := &ux.ShowService{
-		Name: id.Name,
-		Env:  make(map[string]string),
+		Name:        id.Name,
+		Env:         make(map[string]string),
+		DisplayType: "Container App",
 	}
 	client, err := armappcontainers.NewContainerAppsClient(id.SubscriptionID, cred, opts.clientOpts)
 	if err != nil {

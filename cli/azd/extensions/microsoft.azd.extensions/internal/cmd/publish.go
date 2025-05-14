@@ -6,14 +6,15 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"dario.cat/mergo"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
+	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/github"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/models"
 	"github.com/azure/azure-dev/cli/azd/pkg/common"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -108,9 +109,9 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 		flags.artifacts = ""
 	}
 
-	var release *githubRelease
+	var release *github.Release
 	artifactMap := map[string]extensions.ExtensionArtifact{}
-	assets := []*githubReleaseAsset{}
+	assets := []*github.ReleaseAsset{}
 
 	tagName := fmt.Sprintf("azd-ext-%s_%s", extensionMetadata.SafeDashId(), flags.version)
 
@@ -121,14 +122,41 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 
 	fmt.Println()
 
+	// Initialize GitHub CLI wrapper
+	ghCli, err := github.NewGitHubCli()
+	if err != nil {
+		return fmt.Errorf("failed to initialize GitHub CLI: %w", err)
+	}
+
+	// Check if GitHub CLI is installed when repository is specified
 	if flags.repository != "" {
-		repo, err := getGithubRepo(absExtensionPath, flags.repository)
+		if err := ghCli.CheckAndGetInstallError(); err != nil {
+			return err
+		}
+	}
+
+	if flags.repository != "" {
+		repo, err := ghCli.ViewRepository(absExtensionPath, flags.repository)
 		if err != nil {
 			return err
 		}
 
-		release, err = getGithubRelease(absExtensionPath, flags.repository, tagName)
+		release, err = ghCli.ViewRelease(absExtensionPath, flags.repository, tagName)
 		if err != nil {
+			if errors.Is(err, github.ErrReleaseNotFound) {
+				return internal.NewUserFriendlyError("Github Release not found", strings.Join([]string{
+					fmt.Sprintf(
+						"The %s extension does not have a release tagged with version %s.",
+						output.WithHighLightFormat(extensionMetadata.Id),
+						output.WithHighLightFormat(flags.version),
+					),
+					fmt.Sprintf(
+						"To create a new release, run: %s and then try again.",
+						output.WithHighLightFormat("azd x release --repo {owner}/{repo}"),
+					),
+				}, "\n"))
+			}
+
 			return err
 		}
 
@@ -189,7 +217,7 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 						)
 					}
 
-					assets = append(assets, &githubReleaseAsset{
+					assets = append(assets, &github.ReleaseAsset{
 						Name: filepath.Base(file),
 						Path: absFilePath,
 						Size: fileInfo.Size(),
@@ -401,79 +429,6 @@ func createPlatformMetadata(
 	}
 
 	return platformMetadata, nil
-}
-
-func getGithubRepo(cwd string, repo string) (*githubRepo, error) {
-	args := []string{"repo", "view"}
-	if repo != "" {
-		args = append(args, repo)
-	}
-
-	args = append(args, "--json", "nameWithOwner,url")
-	viewRepoCmd := exec.Command("gh", args...)
-	viewRepoCmd.Dir = cwd
-
-	resultBytes, err := viewRepoCmd.CombinedOutput()
-	if err != nil {
-		return nil, common.NewDetailedError(
-			"Failed to get GitHub repository",
-			fmt.Errorf("failed to run command: %w, Command output: %s", err, string(resultBytes)),
-		)
-	}
-
-	var repoResult *githubRepo
-	if err := json.Unmarshal(resultBytes, &repoResult); err != nil {
-		return nil, fmt.Errorf("failed to deserialize command output: %w, Command output: %s", err, string(resultBytes))
-	}
-
-	return repoResult, nil
-}
-
-func getGithubRelease(cwd string, repo string, tagName string) (*githubRelease, error) {
-	args := []string{"release", "view", tagName}
-	if repo != "" {
-		args = append(args, "--repo", repo)
-	}
-
-	args = append(args, "--json", "name,tagName,url,assets")
-
-	// #nosec G204: Subprocess launched with variable
-	viewReleaseCmd := exec.Command("gh", args...)
-	viewReleaseCmd.Dir = cwd
-
-	resultBytes, err := viewReleaseCmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("failed to run command: %w, Command output: %s", err, string(resultBytes))
-	}
-
-	var releaseResult *githubRelease
-	if err := json.Unmarshal(resultBytes, &releaseResult); err != nil {
-		return nil, fmt.Errorf("failed to deserialize command output: %w, Command output: %s", err, string(resultBytes))
-	}
-
-	return releaseResult, nil
-}
-
-type githubRelease struct {
-	Name    string                `json:"name"`
-	TagName string                `json:"tagName"`
-	Url     string                `json:"url"`
-	Assets  []*githubReleaseAsset `json:"assets"`
-}
-
-type githubRepo struct {
-	Name string `json:"nameWithOwner"`
-	Url  string `json:"url"`
-}
-
-type githubReleaseAsset struct {
-	Id          string `json:"id"`
-	ContentType string `json:"contentType"`
-	Name        string `json:"name"`
-	Size        int64  `json:"size"`
-	State       string `json:"state"`
-	Url         string `json:"url"`
-	Path        string `json:"path"`
 }
 
 func defaultPublishFlags(flags *publishFlags) error {

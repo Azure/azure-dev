@@ -5,8 +5,11 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 
+	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/cmd"
 	"github.com/fatih/color"
 )
@@ -37,7 +40,21 @@ func main() {
 	}
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
-		color.Red("Error: %v", err)
+		// Check if this is our custom UserFriendlyError type
+		var userFriendlyErr *internal.UserFriendlyError
+		if errors.As(err, &userFriendlyErr) {
+			// Display the error message in red
+			color.Red("Error: %v", userFriendlyErr.Error())
+
+			// If we have user details, display them in normal text color
+			if userFriendlyErr.GetUserDetails() != "" {
+				fmt.Println()
+				fmt.Println(userFriendlyErr.GetUserDetails())
+			}
+		} else {
+			// Default error handling for regular errors
+			color.Red("Error: %v", err)
+		}
 		os.Exit(1)
 	}
 }

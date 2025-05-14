@@ -66,6 +66,15 @@ type Environment struct {
 	Config config.Config
 }
 
+// AzdInitialEnvironmentConfigName is part of a strategy to re-construct AZD environment in CI/CD from an initial state.
+// This strategy was introduced for templates which takes input parameters. Parameters are saved to azd's environment
+// configuration (.azure/env-name/config.json). This file is not committed to source control, so the saved values can't
+// be used during CI/CD. AZD uses AZD_INITIAL_ENVIRONMENT_CONFIG to smuggle all saved parameters into a CI/CD secret and
+// use it to create the environment configuration file (the first time AZD runs and creates a new environment).
+//
+// While AZD_INITIAL_ENVIRONMENT_CONFIG is still supported for backwards compatibility, it is deprecated.
+// The currently strategy is to create individual variables or secrets for the CI/CD pipeline depending on the parameter
+// configuration.
 const AzdInitialEnvironmentConfigName = "AZD_INITIAL_ENVIRONMENT_CONFIG"
 
 // New returns a new environment with the specified name.

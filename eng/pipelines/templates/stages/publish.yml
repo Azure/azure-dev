@@ -553,8 +553,8 @@ stages:
         - deployment: PublishInstallers
           environment: package-publish
           pool:
-            name: $(LINUXPOOL)
-            image: $(LINUXVMIMAGE)
+            name: azsdk-pool
+            image: ubuntu-22.04
             os: linux
 
           templateContext:

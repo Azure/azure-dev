@@ -49,31 +49,24 @@ type scenarioInput struct {
 	VectorStoreId       string   `json:"vectorStoreId,omitempty"`
 }
 
-type resourceTypeConfig struct {
-	ResourceType            string
-	ResourceTypeDisplayName string
-	Kinds                   []string
+type appServiceRuntime struct {
+	Stack   string `json:"stack,omitempty"`
+	Version string `json:"version,omitempty"`
 }
 
 var (
-	appResourceMap = map[string]resourceTypeConfig{
-		"host.webapp": {
-			ResourceType:            "Microsoft.Web/sites",
-			ResourceTypeDisplayName: "Web App",
-			Kinds:                   []string{"app"},
+	appServiceStackMap = map[string]appServiceRuntime{
+		"python": {
+			Stack:   "python",
+			Version: "3.13",
 		},
-		"host.containerapp": {
-			ResourceType:            "Microsoft.App/containerApps",
-			ResourceTypeDisplayName: "Container App",
+		"js": {
+			Stack:   "node",
+			Version: "22-lts",
 		},
-		"host.functionapp": {
-			ResourceType:            "Microsoft.Web/sites",
-			ResourceTypeDisplayName: "Function App",
-			Kinds:                   []string{"functionapp"},
-		},
-		"host.staticwebapp": {
-			ResourceType:            "Microsoft.Web/staticSites",
-			ResourceTypeDisplayName: "Static Web App",
+		"ts": {
+			Stack:   "node",
+			Version: "22-lts",
 		},
 	}
 
@@ -338,6 +331,14 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 
 		appConfig := map[string]any{
 			"port": 8080,
+		}
+
+		if appType == "host.appservice" {
+			runtime, ok := appServiceStackMap[languageType]
+			if !ok {
+				return fmt.Errorf("unsupported language type: %s", languageType)
+			}
+			appConfig["runtime"] = runtime
 		}
 
 		appConfigJson, err := json.Marshal(appConfig)
@@ -750,12 +751,16 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 	dbResourceMap := make(map[string]*azdext.ComposedResourceType)
 	vectorStoreMap := make(map[string]*azdext.ComposedResourceType)
 	messagingResourceMap := make(map[string]*azdext.ComposedResourceType)
+	appResourceMap := make(map[string]*azdext.ComposedResourceType)
+
 	for _, resourceType := range resourceTypes.ResourceTypes {
 		key := resourceType.Name
 		if strings.HasPrefix(key, "db.") {
 			dbResourceMap[key] = resourceType
 		} else if strings.HasPrefix(key, "messaging.") {
 			messagingResourceMap[key] = resourceType
+		} else if strings.HasPrefix(key, "host.") {
+			appResourceMap[key] = resourceType
 		}
 
 		if strings.Contains(key, "ai.search") || strings.Contains(key, "db.cosmos") {
@@ -1194,7 +1199,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 				Choices: []qna.Choice{
 					{Label: "Choose for me", Value: "choose-app"},
 					{Label: "Container App", Value: "host.containerapp"},
-					{Label: "App Service (Coming Soon)", Value: "host.webapp"},
+					{Label: "App Service", Value: "host.appservice"},
 					{Label: "Function App (Coming Soon)", Value: "host.functionapp"},
 					{Label: "Static Web App (Coming Soon)", Value: "host.staticwebapp"},
 					{Label: "Other", Value: "other-app"},
@@ -1202,6 +1207,7 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 			},
 			Branches: map[any][]qna.QuestionReference{
 				"host.containerapp": {{Key: "choose-app-resource"}},
+				"host.appservice":   {{Key: "choose-app-resource"}},
 			},
 			Next: []qna.QuestionReference{
 				{Key: "choose-app-language"},
@@ -1225,7 +1231,6 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 			},
 			AfterAsk: func(ctx context.Context, q *qna.Question, value any) error {
 				selectedLanguage := value.(string)
-
 				// Find the default language for the selected interaction type if available.
 				if selectedLanguage == "default" {
 					interactionType := q.State["interactionType"].(string)
@@ -1234,6 +1239,22 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 						selectedLanguage = interactionDefault
 					} else {
 						selectedLanguage = "python"
+					}
+				}
+
+				// App Service in composability supports a limited set of runtimes, so re-prompt
+				// if the user selects an unsupported language
+				isAppService := len(a.scenarioData.AppHostTypes) > 0 &&
+					a.scenarioData.AppHostTypes[len(a.scenarioData.AppHostTypes)-1] == "host.appservice"
+				if isAppService {
+					if _, ok := appServiceStackMap[selectedLanguage]; !ok {
+						q.Branches = map[any][]qna.QuestionReference{
+							selectedLanguage: {{Key: "choose-app-language"}},
+						}
+						fmt.Println(output.WithErrorFormat(
+							"%s is not a supported language for App Service. Please choose another language.",
+							selectedLanguage))
+						return nil
 					}
 				}
 
@@ -1262,9 +1283,9 @@ func (a *startAction) createQuestions(ctx context.Context) (map[string]qna.Quest
 						)
 					}
 
-					p.ResourceType = resourceType.ResourceType
+					p.ResourceType = resourceType.Type
 					p.Kinds = resourceType.Kinds
-					p.ResourceTypeDisplayName = resourceType.ResourceTypeDisplayName
+					p.ResourceTypeDisplayName = resourceType.DisplayName
 
 					return nil
 				},

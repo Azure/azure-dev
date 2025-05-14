@@ -107,9 +107,10 @@ var Resources = []ResourceMeta{
 		ApiVersion:   "2023-06-01-preview",
 	},
 	{
-		ResourceType:      "Microsoft.DBforMySQL/flexibleServers",
+		ResourceType:      "Microsoft.DBforMySQL/flexibleServers/databases",
 		ApiVersion:        "2023-12-30",
 		StandardVarPrefix: "MYSQL",
+		ParentForEval:     "Microsoft.DBforMySQL/flexibleServers",
 		Variables: map[string]string{
 			"database": "${spec.name}",
 			"host":     "${.properties.fullyQualifiedDomainName}",
@@ -120,9 +121,10 @@ var Resources = []ResourceMeta{
 		},
 	},
 	{
-		ResourceType:      "Microsoft.DBforPostgreSQL/flexibleServers",
+		ResourceType:      "Microsoft.DBforPostgreSQL/flexibleServers/databases",
 		ApiVersion:        "2022-12-01",
 		StandardVarPrefix: "POSTGRES",
+		ParentForEval:     "Microsoft.DBforPostgreSQL/flexibleServers",
 		Variables: map[string]string{
 			"database": "${spec.name}",
 			"host":     "${.properties.fullyQualifiedDomainName}",

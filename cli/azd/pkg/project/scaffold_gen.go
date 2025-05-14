@@ -185,6 +185,9 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 		}
 	}
 
+	// Re-calculate keys to include any added dependent resources
+	keys = slices.Sorted(maps.Keys(resources))
+
 	for _, k := range keys {
 		res := resources[k]
 		if res.Existing {

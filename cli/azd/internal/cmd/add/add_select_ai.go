@@ -356,6 +356,9 @@ func (a *AddAction) aiDeploymentCatalog(
 
 	var sharedResults sync.Map
 	var wg sync.WaitGroup
+
+	a.console.ShowSpinner(ctx, "Retrieving available models...", input.Step)
+
 	for _, location := range allLocations {
 		wg.Add(1)
 		go func(location string) {
@@ -387,6 +390,7 @@ func (a *AddAction) aiDeploymentCatalog(
 		}(location.Name)
 	}
 	wg.Wait()
+	a.console.StopSpinner(ctx, "", input.StepDone)
 
 	combinedResults := map[string]ModelCatalogKind{}
 	sharedResults.Range(func(key, value any) bool {

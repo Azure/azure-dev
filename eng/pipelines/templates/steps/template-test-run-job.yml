@@ -65,6 +65,8 @@ steps:
     - bash: |
         go build -o ./temp/tfoidc ./cli/azd/test/internal/tfoidc 
       displayName: Build tfoidc
+      env:
+        CGO_ENABLED: 0
 
     - task: DevcontainersCI@0
       inputs:

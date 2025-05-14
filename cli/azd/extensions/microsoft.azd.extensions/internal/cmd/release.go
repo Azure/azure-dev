@@ -9,10 +9,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
+	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/github"
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/models"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/common"
@@ -166,7 +167,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 		}
 	}
 
-	// Automatically include changelog.md if not notes are provided
+	// Automatically include changelog.md if no notes are provided
 	if flags.notes == "" {
 		fileInfo, err := os.Stat("changelog.md")
 		if err == nil && !fileInfo.IsDir() {
@@ -180,35 +181,18 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 
 	tagName := fmt.Sprintf("azd-ext-%s_%s", extensionMetadata.SafeDashId(), flags.version)
 
-	args := []string{
-		"release",
-		"create",
-		tagName,
+	// Initialize GitHub CLI wrapper
+	ghCli, err := github.NewGitHubCli()
+	if err != nil {
+		return fmt.Errorf("failed to initialize GitHub CLI: %w", err)
 	}
 
-	if flags.notes != "" {
-		args = append(args, "--notes", flags.notes)
+	// Check if GitHub CLI is installed using the new method that returns UserFriendlyError
+	if err := ghCli.CheckAndGetInstallError(); err != nil {
+		return err // Pass the UserFriendlyError through
 	}
 
-	if flags.title != "" {
-		args = append(args, "--title", flags.title)
-	}
-
-	if flags.repository != "" {
-		args = append(args, "--repo", flags.repository)
-	}
-
-	if flags.preRelease {
-		args = append(args, "--prerelease")
-	}
-
-	if flags.draft {
-		args = append(args, "--draft")
-	}
-
-	var releaseResult string
-
-	repo, err := getGithubRepo(absExtensionPath, flags.repository)
+	repo, err := ghCli.ViewRepository(absExtensionPath, flags.repository)
 	if err != nil {
 		return err
 	}
@@ -242,6 +226,8 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 		}
 	}
 
+	var release *github.Release
+
 	taskList := ux.NewTaskList(nil).
 		AddTask(ux.TaskOptions{
 			Title: "Validating artifacts",
@@ -260,7 +246,6 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 				}
 
 				spf(fmt.Sprintf("Found %d artifacts", len(files)))
-				args = append(args, files...)
 
 				return ux.Success, nil
 			},
@@ -269,18 +254,53 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 			ux.TaskOptions{
 				Title: "Creating Github release",
 				Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-					// #nosec G204: Subprocess launched with variable
-					ghReleaseCmd := exec.Command("gh", args...)
-					ghReleaseCmd.Dir = absExtensionPath
-
-					resultBytes, err := ghReleaseCmd.CombinedOutput()
-					releaseResult = string(resultBytes)
+					// Get the artifact files
+					files, err := filepath.Glob(flags.artifacts)
 					if err != nil {
-						return ux.Error, common.NewDetailedError(
-							"Release failed",
-							errors.New(releaseResult),
+						return ux.Error, common.NewDetailedError("Artifacts not found",
+							fmt.Errorf("failed to find artifacts: %w", err),
 						)
 					}
+
+					// Build options map for CreateRelease
+					releaseOptions := map[string]string{}
+					if flags.notes != "" {
+						releaseOptions["notes"] = flags.notes
+					}
+					if flags.title != "" {
+						releaseOptions["title"] = flags.title
+					}
+					if flags.repository != "" {
+						releaseOptions["repo"] = flags.repository
+					}
+					if flags.preRelease {
+						releaseOptions["prerelease"] = "true"
+					}
+					if flags.draft {
+						releaseOptions["draft"] = "true"
+					}
+
+					// Create the release and get the result directly
+					releaseResult, err := ghCli.CreateRelease(absExtensionPath, tagName, releaseOptions, files)
+					if err != nil {
+						if errors.Is(err, github.ErrReleaseAlreadyExists) {
+							err = internal.NewUserFriendlyError("Release already exists",
+								strings.Join([]string{
+									fmt.Sprintf(
+										"The %s extension already has been released with version %s",
+										output.WithHighLightFormat(extensionMetadata.Id),
+										output.WithHighLightFormat(flags.version),
+									),
+									"Please update the version number or delete the existing release before trying again.",
+								}, "\n"),
+							)
+						}
+
+						return ux.Error, common.NewDetailedError("Release failed", err)
+					}
+
+					// Store the release for later use
+					release = releaseResult
 
 					return ux.Success, nil
 				},
@@ -290,16 +310,12 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 		return err
 	}
 
-	release, err := getGithubRelease(absExtensionPath, flags.repository, tagName)
-	if err != nil {
-		return err
-	}
-
 	fmt.Printf("%s: %s - %s\n",
 		output.WithBold("GitHub Release"),
 		release.Name,
 		output.WithHyperlink(release.Url, "View Release"),
 	)
+
 	fmt.Println()
 
 	return nil

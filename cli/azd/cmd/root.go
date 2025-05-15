@@ -238,6 +238,7 @@ func NewRootCmd(
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupAzure,
 			},
+			RequireLogin: true,
 		}).
 		UseMiddlewareWhen("hooks", middleware.NewHooksMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			if onPreview, _ := descriptor.Options.Command.Flags().GetBool("preview"); onPreview {
@@ -286,6 +287,7 @@ func NewRootCmd(
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupAzure,
 			},
+			RequireLogin: true,
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware).
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
@@ -335,6 +337,7 @@ func NewRootCmd(
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupAzure,
 			},
+			RequireLogin: true,
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware).
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)

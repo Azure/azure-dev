@@ -5,6 +5,8 @@ trigger:
       - main
   paths:
     include:
+      # Include files and folder paths that, if changed, will trigger a CI build
+      # (e.g. merge to main branch)
       - go.mod
       - cli/azd/extensions/microsoft.azd.demo
       - eng/pipelines/release-azd-extension.yml
@@ -12,13 +14,22 @@ trigger:
       - /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
       - /eng/pipelines/templates/variables/image.yml
 
+# PR trigger
 pr:
   paths:
     include:
+      # Include the extension folder to trigger this build on PRs to that 
+      # extension.
+      # 
+      # Include files and folder paths that, if changed, will trigger a pipeline
+      # build on a PR. For example, if the tool depends on azd's central go.mod
+      # file, include that if the file changes. 
       - go.mod
       - cli/azd/extensions/microsoft.azd.demo
       - eng/pipelines/release-azd-extension.yml
-      - eng/pipelines/templates/steps/publish-cli.yml
+      - eng/pipelines/templates/jobs/build-azd-extension.yml
+      - eng/pipelines/templates/jobs/cross-build-azd-extension.yml
+      - eng/pipelines/templates/variables/image.yml
     exclude:
       - cli/azd/docs/**
 
@@ -28,6 +39,12 @@ extends:
     stages:
       - template: /eng/pipelines/templates/stages/release-azd-extension.yml
         parameters: 
+          # Set this to the name of the extension itself.
           AzdExtensionId: microsoft.azd.demo
+          
+          # Set this to a sanitized name of the extension id used for the 
+          # package filename. Generally, replace dots with dashes.
           SanitizedExtensionId: microsoft-azd-demo
+          
+          # Azd extension directory relative to the root of the repository.
           AzdExtensionDirectory: cli/azd/extensions/microsoft.azd.demo

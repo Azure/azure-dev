@@ -9,7 +9,7 @@ import (
 
 func NewRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:           "azd ai builder <command> [options]",
+		Use:           "builder <command> [options]",
 		Short:         "Runs the Azure AI Builder.",
 		SilenceUsage:  true,
 		SilenceErrors: true,

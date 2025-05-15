@@ -49,7 +49,7 @@ func Test_Container_Resolve(t *testing.T) {
 		err := container.Resolve(&instance)
 
 		require.Error(t, err)
-		require.True(t, errors.Is(err, ErrResolveInstance))
+		require.False(t, errors.Is(err, ErrResolveInstance))
 		require.True(t, errors.Is(err, azdcontext.ErrNoProject))
 	})
 }

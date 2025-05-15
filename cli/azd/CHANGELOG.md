@@ -1,12 +1,14 @@
 # Release History
 
-## 1.17.0-beta.1 (Unreleased)
+## 1.16.1 (2025-05-15)
 
 ### Features Added
 
 ### Breaking Changes
 
 ### Bugs Fixed
+
+- [[5198]](https://github.com/Azure/azure-dev/issues/5198) Fixes error messages surfaced to users that contain internal implementation details.
 
 ### Other Changes
 

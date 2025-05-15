@@ -362,7 +362,17 @@ func NewRootCmd(
 			return !descriptor.Options.DisableTelemetry
 		}).
 		UseMiddlewareWhen("loginGuard", middleware.NewLoginGuardMiddleware, func(descriptor *actions.ActionDescriptor) bool {
-			return descriptor.Options.RequireLogin
+			// Check if the command or any of its parents require login
+			current := descriptor
+			for current != nil {
+				if current.Options != nil && current.Options.RequireLogin {
+					return true
+				}
+
+				current = current.Parent()
+			}
+
+			return false
 		})
 
 	// Register common dependencies for the IoC rootContainer

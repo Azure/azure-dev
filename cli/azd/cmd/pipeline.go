@@ -10,7 +10,6 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -89,6 +88,7 @@ func pipelineActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupBeta,
 		},
+		RequireLogin: true,
 	})
 
 	group.Add("config", &actions.ActionDescriptorOptions{
@@ -134,7 +134,6 @@ type pipelineConfigAction struct {
 
 func newPipelineConfigAction(
 	env *environment.Environment,
-	_ auth.LoggedInGuard,
 	console input.Console,
 	flags *pipelineConfigFlags,
 	prompters prompt.Prompter,

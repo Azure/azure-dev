@@ -191,6 +191,8 @@ type ActionDescriptorOptions struct {
 	HelpOptions ActionHelpOptions
 	// Defines grouping options for the command
 	GroupingOptions CommandGroupOptions
+	// Whether or not the command requires a principal login
+	RequireLogin bool
 }
 
 // Completion function used for cobra command flag completion

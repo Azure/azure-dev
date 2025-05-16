@@ -173,6 +173,11 @@ func (m *Manager) LoginScopes() []string {
 	return LoginScopes(m.cloud)
 }
 
+// Cloud returns the cloud that the manager is configured to use.
+func (m *Manager) Cloud() *cloud.Cloud {
+	return m.cloud
+}
+
 func loginScopesMap(cloud *cloud.Cloud) map[string]struct{} {
 	resourceManagerUrl := cloud.Configuration.Services[azcloud.ResourceManager].Endpoint
 

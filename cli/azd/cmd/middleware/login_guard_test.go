@@ -5,12 +5,15 @@ package middleware
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -27,7 +30,9 @@ func Test_LoginGuard_Run(t *testing.T) {
 			Return(mockContext.Credentials, nil)
 
 		middleware := LoginGuardMiddleware{
-			authManager: mockAuthManager,
+			console:        mockContext.Console,
+			authManager:    mockAuthManager,
+			workflowRunner: &workflow.Runner{},
 		}
 
 		result, err := middleware.Run(*mockContext.Context, next)
@@ -36,6 +41,11 @@ func Test_LoginGuard_Run(t *testing.T) {
 	})
 	t.Run("NotLoggedIn", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.
+			WhenConfirm(func(options input.ConsoleOptions) bool {
+				return strings.Contains(options.Message, "Would you like to log in now?")
+			}).
+			Respond(false)
 
 		mockAuthManager := &mockCurrentUserAuthManager{}
 		mockAuthManager.On("Cloud").Return(cloud.AzurePublic())
@@ -44,7 +54,9 @@ func Test_LoginGuard_Run(t *testing.T) {
 			Return(nil, auth.ErrNoCurrentUser)
 
 		middleware := LoginGuardMiddleware{
-			authManager: mockAuthManager,
+			console:        mockContext.Console,
+			authManager:    mockAuthManager,
+			workflowRunner: &workflow.Runner{},
 		}
 
 		result, err := middleware.Run(*mockContext.Context, next)

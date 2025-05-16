@@ -167,13 +167,13 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 		}
 	}
 
-	// Automatically include changelog.md if no notes are provided
+	// Automatically include CHANGELOG.md if no notes are provided
 	if flags.notes == "" {
-		fileInfo, err := os.Stat("changelog.md")
+		fileInfo, err := os.Stat("CHANGELOG.md")
 		if err == nil && !fileInfo.IsDir() {
-			notes, err := os.ReadFile("changelog.md")
+			notes, err := os.ReadFile("CHANGELOG.md")
 			if err != nil {
-				return fmt.Errorf("failed to read notes from changelog.md: %w", err)
+				return fmt.Errorf("failed to read notes from CHANGELOG.md: %w", err)
 			}
 			flags.notes = string(notes)
 		}

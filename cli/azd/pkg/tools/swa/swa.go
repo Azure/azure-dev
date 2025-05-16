@@ -17,7 +17,7 @@ import (
 )
 
 // swaCliPackage is the npm package (including the version version) we execute with npx to run the SWA CLI.
-const swaCliPackage = "@azure/static-web-apps-cli@2.0.5"
+const swaCliPackage = "@azure/static-web-apps-cli@latest"
 
 var _ tools.ExternalTool = (*Cli)(nil)
 

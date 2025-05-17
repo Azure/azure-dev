@@ -363,5 +363,7 @@ stages:
             arguments: >-
               -ZipFilePathAmd64 release/azd-darwin-amd64.zip
               -ZipFilePathArm64 release/azd-darwin-arm64.zip
+              -LinuxArchivePathAmd64 release/azd-linux-amd64.tar.gz
+              -LinuxArchivePathArm64 release/azd-linux-arm64.tar.gz
               -Version $(CLI_VERSION)
               -OutFile homebrew-formula/azd.rb

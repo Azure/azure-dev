@@ -1,0 +1,11 @@
+capabilities:
+    - custom-commands
+    - lifecycle-events
+    - provisioning-provider
+description: scripts
+displayName: Script Provisioning
+id: wallace.scripts
+language: go
+namespace: provisioning.scripts
+usage: azd provisioning.scripts <command> [options]
+version: 0.0.1

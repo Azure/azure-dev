@@ -295,7 +295,9 @@ func (m *Manager) Preview(ctx context.Context) (*DeployPreviewResult, error) {
 
 // Destroys the Azure infrastructure for the specified project
 func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
-	if options.NoWait() {
+	// If noWait is true but purge is also true, we need to perform the operation synchronously
+	// to ensure purge operations complete, which prevents issues when running azd up later
+	if options.NoWait() && !options.Purge() {
 		// Create a new context that won't be cancelled when the parent context is done
 		newCtx := context.Background()
 		// Run the destroy operation in a goroutine and don't wait for it to complete

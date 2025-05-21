@@ -43,7 +43,7 @@ func (i *downFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		&i.noWait,
 		"no-wait",
 		false,
-		"Does not wait for the destroy operation to complete before returning.",
+		"Does not wait for the destroy operation to complete before returning. Note: When used with --purge, the command will still wait for purge operations to complete.",
 	)
 	i.EnvFlag.Bind(local, global)
 	i.global = global
@@ -123,7 +123,11 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	var header string
 	if a.flags.noWait {
-		header = "Azure resource deletion has started."
+		if a.flags.purgeDelete {
+			header = "Azure resources are being deleted and purged. Waiting for purge operations to complete..."
+		} else {
+			header = "Azure resource deletion has started and is continuing in the background."
+		}
 	} else {
 		header = fmt.Sprintf("Your application was removed from Azure in %s.", ux.DurationAsText(since(startTime)))
 	}

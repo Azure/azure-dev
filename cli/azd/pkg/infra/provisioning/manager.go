@@ -295,6 +295,33 @@ func (m *Manager) Preview(ctx context.Context) (*DeployPreviewResult, error) {
 
 // Destroys the Azure infrastructure for the specified project
 func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
+	if options.NoWait() {
+		// Create a new context that won't be cancelled when the parent context is done
+		newCtx := context.Background()
+		// Run the destroy operation in a goroutine and don't wait for it to complete
+		go func() {
+			destroyResult, err := m.provider.Destroy(newCtx, options)
+			if err != nil {
+				// Just log the error since we can't return it
+				return
+			}
+
+			// Remove any outputs from the template from the environment since destroying the infrastructure
+			// invalidated them all.
+			for _, key := range destroyResult.InvalidatedEnvKeys {
+				m.env.DotenvDelete(key)
+			}
+
+			// Update environment files to remove invalid infrastructure parameters
+			_ = m.envManager.Save(newCtx, m.env)
+		}()
+
+		// Return immediately with an empty result
+		return &DestroyResult{
+			InvalidatedEnvKeys: []string{},
+		}, nil
+	}
+
 	destroyResult, err := m.provider.Destroy(ctx, options)
 	if err != nil {
 		return nil, fmt.Errorf("error deleting Azure resources: %w", err)

@@ -392,7 +392,7 @@ func Test_ProvisionProvider_Destroy(t *testing.T) {
 			Return(outputParams, nil)
 
 		provider := newProvisionProviderForTest(t, mockContext, config, env, manager)
-		destroyOptions := provisioning.NewDestroyOptions(true, true)
+		destroyOptions := provisioning.NewDestroyOptions(true, true, false)
 		result, err := provider.Destroy(*mockContext.Context, destroyOptions)
 		require.NoError(t, err)
 		require.NotNil(t, result)
@@ -419,7 +419,7 @@ func Test_ProvisionProvider_Destroy(t *testing.T) {
 		mockdevcentersdk.MockDeleteEnvironment(mockContext, config.Project, config.User, env.Name(), nil)
 
 		provider := newProvisionProviderForTest(t, mockContext, config, env, nil)
-		destroyOptions := provisioning.NewDestroyOptions(true, true)
+		destroyOptions := provisioning.NewDestroyOptions(true, true, false)
 		result, err := provider.Destroy(*mockContext.Context, destroyOptions)
 		require.Error(t, err)
 		require.Nil(t, result)

@@ -25,6 +25,7 @@ import (
 type downFlags struct {
 	forceDelete bool
 	purgeDelete bool
+	noWait      bool
 	global      *internal.GlobalCommandOptions
 	internal.EnvFlag
 }
@@ -37,6 +38,12 @@ func (i *downFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		false,
 		//nolint:lll
 		"Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).",
+	)
+	local.BoolVar(
+		&i.noWait,
+		"no-wait",
+		false,
+		"Does not wait for the destroy operation to complete before returning.",
 	)
 	i.EnvFlag.Bind(local, global)
 	i.global = global
@@ -109,14 +116,21 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		a.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
 	}
 
-	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
+	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete, a.flags.noWait)
 	if _, err := a.provisionManager.Destroy(ctx, destroyOptions); err != nil {
 		return nil, fmt.Errorf("deleting infrastructure: %w", err)
 	}
 
+	var header string
+	if a.flags.noWait {
+		header = "Azure resource deletion has started."
+	} else {
+		header = fmt.Sprintf("Your application was removed from Azure in %s.", ux.DurationAsText(since(startTime)))
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Your application was removed from Azure in %s.", ux.DurationAsText(since(startTime))),
+			Header: header,
 		},
 	}, nil
 }
@@ -134,5 +148,6 @@ func getCmdDownHelpFooter(*cobra.Command) string {
 		"Forcibly delete all applications resources without confirmation.": output.WithHighLightFormat("azd down --force"),
 		"Permanently delete resources that are soft-deleted by default," +
 			" without confirmation.": output.WithHighLightFormat("azd down --purge"),
+		"Start the delete process but do not wait for it to complete.": output.WithHighLightFormat("azd down --no-wait"),
 	})
 }

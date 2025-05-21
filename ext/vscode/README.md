@@ -5,6 +5,9 @@ This extension makes it easier to run, create Azure Resources, and deploy Azure 
 ## What It Does
 For more information about Azure Developer CLI and this VS Code extension, please [see the documentation](https://aka.ms/azure-dev/vscode).
 
+## Extension Documentation
+- [Available Commands](docs/commands.md) - Documentation for commands provided by this extension, including utility commands for use in VS Code configurations.
+
 ## Tell Us What You Think!
 - [Give us a thumbs up or down](https://aka.ms/azure-dev/hats). We want to hear good news, but bad news are even more important!
 - Use [Discussions](https://aka.ms/azure-dev/discussions) to share new ideas or ask questions about Azure Developer CLI and the VS Code extension.

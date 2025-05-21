@@ -5,6 +5,33 @@ import { IActionContext } from "@microsoft/vscode-azext-utils";
 import * as vscode from 'vscode';
 import { getEnvironments, EnvironmentInfo } from "./cmdUtil";
 
+/**
+ * Get the path to the .env file for an Azure developer environment.
+ * 
+ * This can be used in launch.json to provide environment variables to VS Code tasks:
+ * ```json
+ * {
+ *   "configurations": [
+ *     {
+ *       "envFile": "${input:azdDotenv}"
+ *     }
+ *   ],
+ *   "inputs": [
+ *     {
+ *       "id": "azdDotenv",
+ *       "type": "command",
+ *       "command": "azure-dev.commands.getDotEnvFilePath"
+ *     }
+ *   ]
+ * }
+ * ```
+ * 
+ * @param context - The VS Code extension action context
+ * @param args - Optional array containing [environmentName, workingDir]
+ *               - environmentName: Name of the environment to use (uses default if not provided)
+ *               - workingDir: Working directory to find environments (uses first workspace folder if not provided)
+ * @returns Path to the .env file for the specified environment
+ */
 export async function getDotEnvFilePath(context: IActionContext, args: string[] | undefined): Promise<string> {
     const [environmentName, workingDir] = args ?? [];
     

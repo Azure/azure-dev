@@ -1,34 +1,30 @@
-# VS Code Extension Commands
+# Azure Developer CLI VS Code Extension Commands
 
-This document describes the commands provided by the Azure Developer CLI Visual Studio Code extension.
-
-## Command List
-
-Most commands are available in the Command Palette (Ctrl+Shift+P or Cmd+Shift+P) and are prefixed with "Azure Developer CLI (azd)".
+This document describes utility commands provided by the Azure Developer CLI Visual Studio Code extension.
 
 ## Utility Commands
 
-Some commands are not directly available in the command palette but are provided for use in other VS Code features.
+The following utility commands are provided for use in VS Code configurations but are not directly available in the command palette.
 
 ### azure-dev.commands.getDotEnvFilePath
 
-This command retrieves the path to the `.env` file for a specified Azure Developer environment or for the default environment if none is specified. This is useful for VS Code configurations where you need to access environment variables from an Azure Developer environment.
+This command retrieves the path to the `.env` file for a specified Azure Developer CLI environment or for the default environment if none is specified. This is useful for VS Code configurations where you need to access environment variables from an Azure Developer CLI environment.
 
 #### Usage in launch.json
 
-One common use case is to configure a debug session to use environment variables from an Azure Developer environment's `.env` file. To do this, add the following to your `launch.json` file:
+One common use case is to configure a debug session to use environment variables from an Azure Developer CLI environment's `.env` file. To do this, add the following to your `launch.json` file:
 
 ```json
 {
   "configurations": [
     {
       // Your debug configuration
-      "envFile": "${input:azdDotenv}"
+      "envFile": "${input:dotEnvFilePath}"
     }
   ],
   "inputs": [
     {
-      "id": "azdDotenv",
+      "id": "dotEnvFilePath",
       "type": "command",
       "command": "azure-dev.commands.getDotEnvFilePath"
     }
@@ -36,13 +32,13 @@ One common use case is to configure a debug session to use environment variables
 }
 ```
 
-This configuration will use the `.env` file from the default Azure Developer environment. If you want to use a specific environment, you can pass its name as an argument:
+This configuration will use the `.env` file from the default Azure Developer CLI environment. If you want to use a specific environment, you can pass its name as an argument:
 
 ```json
 {
   "inputs": [
     {
-      "id": "azdDotenv",
+      "id": "dotEnvFilePath",
       "type": "command",
       "command": "azure-dev.commands.getDotEnvFilePath",
       "args": ["my-environment-name"]

@@ -13,9 +13,11 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
@@ -30,6 +32,7 @@ type ExternalProvider struct {
 	console     input.Console
 	prompters   prompt.Prompter
 
+	extension     *extensions.Extension
 	stream        azdext.ProvisioningService_StreamServer
 	providerName  string
 	responseChans sync.Map
@@ -38,6 +41,7 @@ type ExternalProvider struct {
 // Public methods
 func NewExternalProvider(
 	name string,
+	extension *extensions.Extension,
 	stream azdext.ProvisioningService_StreamServer,
 	envManager environment.Manager,
 	env *environment.Environment,
@@ -49,6 +53,7 @@ func NewExternalProvider(
 		env:          env,
 		console:      console,
 		prompters:    prompters,
+		extension:    extension,
 		stream:       stream,
 		providerName: name,
 	}
@@ -78,6 +83,14 @@ func (p *ExternalProvider) Initialize(ctx context.Context, projectPath string, o
 		DeploymentStacks:      map[string]string{},
 		IgnoreDeploymentState: options.IgnoreDeploymentState,
 	}
+
+	config, err := structpb.NewStruct(options.Config)
+	if err != nil {
+		return fmt.Errorf("failed to convert config to struct: %w", err)
+	}
+
+	protoOptions.Config = config
+
 	if options.DeploymentStacks != nil {
 		for k, v := range options.DeploymentStacks {
 			// Only string values are supported in proto map, so convert if possible
@@ -100,16 +113,13 @@ func (p *ExternalProvider) Initialize(ctx context.Context, projectPath string, o
 		},
 	}
 	resp, err := p.sendAndWait(ctx, req, func(r *azdext.ProvisioningMessage) bool {
-		_, ok := r.MessageType.(*azdext.ProvisioningMessage_InitializeResponse)
-		return ok
+		return r.GetInitializeResponse() != nil
 	})
 	if err != nil {
 		return err
 	}
-	if r, ok := resp.MessageType.(*azdext.ProvisioningMessage_InitializeResponse); ok {
-		if !r.InitializeResponse.Success {
-			return errors.New(r.InitializeResponse.ErrorMessage)
-		}
+	result := resp.GetInitializeResponse()
+	if result != nil {
 		return nil
 	}
 	return errors.New("unexpected response type")
@@ -121,13 +131,24 @@ func (p *ExternalProvider) Initialize(ctx context.Context, projectPath string, o
 // An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
 // AZURE_LOCATION value.
 func (t *ExternalProvider) EnsureEnv(ctx context.Context) error {
-	return provisioning.EnsureSubscriptionAndLocation(
-		ctx,
-		t.envManager,
-		t.env,
-		t.prompters,
-		provisioning.EnsureSubscriptionAndLocationOptions{},
-	)
+	requestId := uuid.NewString()
+	req := &azdext.ProvisioningMessage{
+		RequestId: requestId,
+		MessageType: &azdext.ProvisioningMessage_EnsureEnvRequest{
+			EnsureEnvRequest: &azdext.EnsureEnvRequest{},
+		},
+	}
+	resp, err := t.sendAndWait(ctx, req, func(r *azdext.ProvisioningMessage) bool {
+		return r.GetEnsureEnvResponse() != nil
+	})
+	if err != nil {
+		return err
+	}
+	result := resp.GetEnsureEnvResponse()
+	if result != nil {
+		return nil
+	}
+	return errors.New("unexpected response type")
 }
 
 func (p *ExternalProvider) State(ctx context.Context, options *provisioning.StateOptions) (*provisioning.StateResult, error) {
@@ -139,26 +160,33 @@ func (p *ExternalProvider) State(ctx context.Context, options *provisioning.Stat
 		},
 	}
 	resp, err := p.sendAndWait(ctx, req, func(r *azdext.ProvisioningMessage) bool {
-		_, ok := r.MessageType.(*azdext.ProvisioningMessage_StateResponse)
-		return ok
+		return r.GetStateResponse() != nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	if r, ok := resp.MessageType.(*azdext.ProvisioningMessage_StateResponse); ok {
-		if r.StateResponse.StateResult != nil {
-			return &provisioning.StateResult{
-				State: &provisioning.State{
-					Outputs:   map[string]provisioning.OutputParameter{},
-					Resources: []provisioning.Resource{},
-				},
-			}, nil // No fields to map
+	result := resp.GetStateResponse()
+	if result != nil && result.StateResult != nil {
+		protoState := result.StateResult.State
+		state := &provisioning.State{
+			Outputs:   map[string]provisioning.OutputParameter{},
+			Resources: []provisioning.Resource{},
+		}
+		if protoState != nil {
+			for k, v := range protoState.Outputs {
+				state.Outputs[k] = provisioning.OutputParameter{
+					Type:  provisioning.ParameterType(v.Type),
+					Value: v.Value,
+				}
+			}
+			for _, r := range protoState.Resources {
+				state.Resources = append(state.Resources, provisioning.Resource{
+					Id: r.Id,
+				})
+			}
 		}
 		return &provisioning.StateResult{
-			State: &provisioning.State{
-				Outputs:   map[string]provisioning.OutputParameter{},
-				Resources: []provisioning.Resource{},
-			},
+			State: state,
 		}, nil
 	}
 	return nil, errors.New("unexpected response type")
@@ -166,6 +194,9 @@ func (p *ExternalProvider) State(ctx context.Context, options *provisioning.Stat
 
 // Provisioning the infrastructure within the specified template
 func (p *ExternalProvider) Deploy(ctx context.Context) (*provisioning.DeployResult, error) {
+	cleanup := p.wireConsole()
+	defer cleanup()
+
 	requestId := uuid.NewString()
 	req := &azdext.ProvisioningMessage{
 		RequestId: requestId,
@@ -173,27 +204,38 @@ func (p *ExternalProvider) Deploy(ctx context.Context) (*provisioning.DeployResu
 			DeployRequest: &azdext.DeployRequest{},
 		},
 	}
+
 	resp, err := p.sendAndWait(ctx, req, func(r *azdext.ProvisioningMessage) bool {
-		_, ok := r.MessageType.(*azdext.ProvisioningMessage_DeployResult)
-		return ok
+		return r.GetDeployResult() != nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	if r, ok := resp.MessageType.(*azdext.ProvisioningMessage_DeployResult); ok {
-		if r.DeployResult.Result != nil {
-			return &provisioning.DeployResult{
-				Deployment: &provisioning.Deployment{
-					Parameters: map[string]provisioning.InputParameter{},
-					Outputs:    map[string]provisioning.OutputParameter{},
-				},
-			}, nil
+	result := resp.GetDeployResult()
+	if result != nil && result.Result != nil {
+		protoDeployment := result.Result.Deployment
+		deployment := &provisioning.Deployment{
+			Parameters: map[string]provisioning.InputParameter{},
+			Outputs:    map[string]provisioning.OutputParameter{},
+		}
+		if protoDeployment != nil {
+			for k, v := range protoDeployment.Parameters {
+				deployment.Parameters[k] = provisioning.InputParameter{
+					Type:         v.Type,
+					DefaultValue: v.DefaultValue,
+					Value:        v.Value,
+				}
+			}
+			for k, v := range protoDeployment.Outputs {
+				deployment.Outputs[k] = provisioning.OutputParameter{
+					Type:  provisioning.ParameterType(v.Type),
+					Value: v.Value,
+				}
+			}
 		}
 		return &provisioning.DeployResult{
-			Deployment: &provisioning.Deployment{
-				Parameters: map[string]provisioning.InputParameter{},
-				Outputs:    map[string]provisioning.OutputParameter{},
-			},
+			Deployment:    deployment,
+			SkippedReason: provisioning.SkippedReasonType(result.Result.SkippedReason),
 		}, nil
 	}
 	return nil, errors.New("unexpected response type")
@@ -208,17 +250,27 @@ func (p *ExternalProvider) Preview(ctx context.Context) (*provisioning.DeployPre
 		},
 	}
 	resp, err := p.sendAndWait(ctx, req, func(r *azdext.ProvisioningMessage) bool {
-		_, ok := r.MessageType.(*azdext.ProvisioningMessage_PreviewResult)
-		return ok
+		return r.GetPreviewResult() != nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	if r, ok := resp.MessageType.(*azdext.ProvisioningMessage_PreviewResult); ok {
-		if r.PreviewResult.Result != nil {
-			return &provisioning.DeployPreviewResult{}, nil // No fields to map
+	result := resp.GetPreviewResult()
+	if result != nil && result.Result != nil {
+		protoPreview := result.Result.Preview
+		if protoPreview == nil {
+			return &provisioning.DeployPreviewResult{Preview: nil}, nil
 		}
-		return &provisioning.DeployPreviewResult{}, nil
+		// Map protoPreview to Go DeploymentPreview
+		preview := &provisioning.DeploymentPreview{
+			Status:     protoPreview.GetSummary(),
+			Properties: &provisioning.DeploymentPreviewProperties{
+				// No changes field in proto, so leave empty or extend proto if needed
+			},
+		}
+		return &provisioning.DeployPreviewResult{
+			Preview: preview,
+		}, nil
 	}
 	return nil, errors.New("unexpected response type")
 }
@@ -227,25 +279,27 @@ func (p *ExternalProvider) Destroy(
 	ctx context.Context,
 	options provisioning.DestroyOptions,
 ) (*provisioning.DestroyResult, error) {
+	cleanup := p.wireConsole()
+	defer cleanup()
+
 	requestId := uuid.NewString()
 	req := &azdext.ProvisioningMessage{
 		RequestId: requestId,
 		MessageType: &azdext.ProvisioningMessage_DestroyRequest{
-			DestroyRequest: &azdext.DestroyRequest{}, // No fields to map from options
+			DestroyRequest: &azdext.DestroyRequest{},
 		},
 	}
 	resp, err := p.sendAndWait(ctx, req, func(r *azdext.ProvisioningMessage) bool {
-		_, ok := r.MessageType.(*azdext.ProvisioningMessage_DestroyResult)
-		return ok
+		return r.GetDestroyResult() != nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	if r, ok := resp.MessageType.(*azdext.ProvisioningMessage_DestroyResult); ok {
-		if r.DestroyResult.Result != nil {
-			return &provisioning.DestroyResult{}, nil // No fields to map
-		}
-		return &provisioning.DestroyResult{}, nil
+	result := resp.GetDestroyResult()
+	if result != nil && result.Result != nil {
+		return &provisioning.DestroyResult{
+			InvalidatedEnvKeys: result.Result.InvalidatedEnvKeys,
+		}, nil
 	}
 	return nil, errors.New("unexpected response type")
 }
@@ -259,17 +313,25 @@ func (p *ExternalProvider) Parameters(ctx context.Context) ([]provisioning.Param
 		},
 	}
 	resp, err := p.sendAndWait(ctx, req, func(r *azdext.ProvisioningMessage) bool {
-		_, ok := r.MessageType.(*azdext.ProvisioningMessage_ParametersResponse)
-		return ok
+		return r.GetParametersResponse() != nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	if r, ok := resp.MessageType.(*azdext.ProvisioningMessage_ParametersResponse); ok {
-		if r.ParametersResponse.Parameters != nil {
-			return nil, nil // No fields to map
+	result := resp.GetParametersResponse()
+	if result != nil && result.Parameters != nil {
+		params := make([]provisioning.Parameter, 0, len(result.Parameters))
+		for _, p := range result.Parameters {
+			params = append(params, provisioning.Parameter{
+				Name:               p.Name,
+				Secret:             p.Secret,
+				Value:              p.Value,
+				EnvVarMapping:      p.EnvVarMapping,
+				LocalPrompt:        p.LocalPrompt,
+				UsingEnvVarMapping: p.UsingEnvVarMapping,
+			})
 		}
-		return nil, nil
+		return params, nil
 	}
 	return nil, errors.New("unexpected response type")
 }
@@ -289,6 +351,9 @@ func (p *ExternalProvider) sendAndWait(ctx context.Context, req *azdext.Provisio
 		select {
 		case resp := <-ch:
 			if match(resp) {
+				if resp.Error != nil && resp.Error.Message != "" {
+					return nil, errors.New(resp.Error.Message)
+				}
 				return resp, nil
 			}
 		case <-ctx.Done():
@@ -316,4 +381,16 @@ func (p *ExternalProvider) startResponseDispatcher() {
 			}
 		}
 	}()
+}
+
+func (p *ExternalProvider) wireConsole() func() {
+	stdOut := p.extension.StdOut()
+	stdErr := p.extension.StdErr()
+	stdOut.AddWriter(p.console.Handles().Stdout)
+	stdErr.AddWriter(p.console.Handles().Stderr)
+
+	return func() {
+		stdOut.RemoveWriter(p.console.Handles().Stdout)
+		stdErr.RemoveWriter(p.console.Handles().Stderr)
+	}
 }

@@ -1,128 +1,20 @@
 syntax = "proto3";
 
-package provisioning.v1;
+package azdext;
 
 option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
 
-// Request and response messages for each Provider method
+import "include/google/protobuf/struct.proto";
 
-message NameRequest {}
-message NameResponse {
-  string name = 1;
-}
-
-message InitializeRequest {
-  string project_path = 1;
-  ProvisioningOptions options = 2;
-}
-message InitializeResponse {
-  bool success = 1;
-  string error_message = 2;
-}
-
-message StateRequest {
-  ProvisioningStateOptions options = 1;
-}
-message StateResponse {
-  ProvisioningStateResult state_result = 1;
-  string error_message = 2;
-}
-
-message DeployRequest {}
-message DeployProgress {
-  string message = 1;
-}
-message DeployResultResponse {
-  ProvisioningDeployResult result = 1;
-  string error_message = 2;
-}
-
-message PreviewRequest {}
-message PreviewProgress {
-  string message = 1;
-}
-message PreviewResultResponse {
-  ProvisioningDeployPreviewResult result = 1;
-  string error_message = 2;
-}
-
-message DestroyRequest {
-  ProvisioningDestroyOptions options = 1;
-}
-message DestroyProgress {
-  string message = 1;
-}
-message DestroyResultResponse {
-  ProvisioningDestroyResult result = 1;
-  string error_message = 2;
-}
-
-message EnsureEnvRequest {}
-message EnsureEnvResponse {
-  bool success = 1;
-  string error_message = 2;
-}
-
-message ParametersRequest {}
-message ParametersResponse {
-  repeated ProvisioningParameter parameters = 1;
-  string error_message = 2;
-}
-
-// Core types (simplified for proto)
-message ProvisioningOptions {
-  string provider = 1;
-  string path = 2;
-  string module = 3;
-  map<string, string> deployment_stacks = 4;
-  bool ignore_deployment_state = 5;
-}
-
-message ProvisioningStateOptions {
-  // Add fields as needed
-}
-
-message ProvisioningStateResult {
-  // Add fields as needed
-}
-
-message ProvisioningDeployResult {
-  // Add fields as needed
-}
-
-message ProvisioningDeployPreviewResult {
-  // Add fields as needed
-}
-
-message ProvisioningDestroyOptions {
-  // Add fields as needed
-}
-
-message ProvisioningDestroyResult {
-  repeated string invalidated_env_keys = 1;
-}
-
-message ProvisioningParameter {
-  string name = 1;
-  bool secret = 2;
-  string value = 3;
-  repeated string env_var_mapping = 4;
-  bool local_prompt = 5;
-  bool using_env_var_mapping = 6;
-}
-
-message RegisterProviderRequest {
-  string name = 1; // unique identifier for the provider
-  string display_name = 2;
-}
-
-message RegisterProviderResponse {
-  // Add fields as needed (empty for now)
+service ProvisioningService {
+  // Bidirectional stream for provisioning requests and responses
+  rpc Stream(stream ProvisioningMessage) returns (stream ProvisioningMessage);
 }
 
 // Envelope for all possible provisioning messages (requests and responses)
 message ProvisioningMessage {
   string request_id = 1;
+  ErrorMessage error = 99;
   oneof message_type {
     RegisterProviderRequest register_provider_request = 2;
     RegisterProviderResponse register_provider_response = 3;
@@ -148,8 +40,163 @@ message ProvisioningMessage {
   }
 }
 
-// The ProvisioningService definition
-service ProvisioningService {
-  // Bidirectional stream for provisioning requests and responses
-  rpc Stream(stream ProvisioningMessage) returns (stream ProvisioningMessage);
+// Deployment details
+message ProvisioningDeployment {
+  map<string, ProvisioningInputParameter> parameters = 1;
+  map<string, ProvisioningOutputParameter> outputs = 2;
 }
+
+// Skipped reason enum
+enum SkippedReasonType {
+  SKIPPED_REASON_UNSPECIFIED = 0;
+  DEPLOYMENT_STATE = 1;
+}
+
+// DeploymentPreview
+message ProvisioningDeploymentPreview {
+  string summary = 1;
+  map<string, ProvisioningInputParameter> parameters = 2;
+  map<string, ProvisioningOutputParameter> outputs = 3;
+}
+
+// State
+message ProvisioningState {
+  map<string, ProvisioningOutputParameter> outputs = 1;
+  repeated ProvisioningResource resources = 2;
+}
+
+// InputParameter
+message ProvisioningInputParameter {
+  string type = 1;
+  string default_value = 2;
+  string value = 3;
+}
+
+// OutputParameter
+message ProvisioningOutputParameter {
+  string type = 1;
+  string value = 2;
+}
+
+// Resource
+message ProvisioningResource {
+  string id = 1;
+}
+
+// Parameter
+message ProvisioningParameter {
+  string name = 1;
+  bool secret = 2;
+  string value = 3;
+  repeated string env_var_mapping = 4;
+  bool local_prompt = 5;
+  bool using_env_var_mapping = 6;
+}
+
+// --- Request and response messages for each Provider method ---
+
+message NameRequest {}
+message NameResponse {
+  string name = 1;
+}
+
+message InitializeRequest {
+  string project_path = 1;
+  ProvisioningOptions options = 2;
+}
+message InitializeResponse {}
+
+message StateRequest {
+  ProvisioningStateOptions options = 1;
+}
+message StateResponse {
+  ProvisioningStateResult state_result = 1;
+}
+
+message DeployRequest {}
+message DeployProgress {
+  string message = 1;
+}
+message DeployResultResponse {
+  ProvisioningDeployResult result = 1;
+}
+
+message PreviewRequest {}
+message PreviewProgress {
+  string message = 1;
+}
+message PreviewResultResponse {
+  ProvisioningDeployPreviewResult result = 1;
+}
+
+message DestroyRequest {
+  ProvisioningDestroyOptions options = 1;
+}
+message DestroyProgress {
+  string message = 1;
+}
+message DestroyResultResponse {
+  ProvisioningDestroyResult result = 1;
+}
+
+message EnsureEnvRequest {}
+message EnsureEnvResponse {}
+
+message ParametersRequest {}
+message ParametersResponse {
+  repeated ProvisioningParameter parameters = 1;
+}
+
+// Core options and result wrappers
+message ProvisioningOptions {
+  string provider = 1;
+  string path = 2;
+  string module = 3;
+  map<string, string> deployment_stacks = 4;
+  bool ignore_deployment_state = 5;
+  google.protobuf.Struct config = 6;
+}
+
+message ProvisioningStateOptions {
+  // Add fields as needed
+  string hint = 1;
+}
+
+message ProvisioningStateResult {
+  ProvisioningState state = 1;
+}
+
+message ProvisioningDeployResult {
+  ProvisioningDeployment deployment = 1;
+  SkippedReasonType skipped_reason = 2;
+}
+
+message ProvisioningDeployPreviewResult {
+  ProvisioningDeploymentPreview preview = 1;
+}
+
+message ProvisioningDestroyOptions {
+  // Add fields as needed
+  bool force = 1;
+  bool purge = 2;
+}
+
+message ProvisioningDestroyResult {
+  repeated string invalidated_env_keys = 1;
+}
+
+message RegisterProviderRequest {
+  string name = 1;// unique identifier for the provider
+  string display_name = 2;
+}
+
+message RegisterProviderResponse {
+  // Add fields as needed (empty for now)
+}
+
+message ErrorMessage {
+  string message = 2;
+  string details = 3;
+}
+
+

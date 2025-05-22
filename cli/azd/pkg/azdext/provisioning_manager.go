@@ -23,6 +23,7 @@ type ProvisioningProvider interface {
 	Preview(ctx context.Context) (*ProvisioningDeployPreviewResult, error)
 	Destroy(ctx context.Context, options *ProvisioningDestroyOptions) (*ProvisioningDestroyResult, error)
 	Parameters(ctx context.Context) ([]*ProvisioningParameter, error)
+	EnsureEnv(ctx context.Context) error
 }
 
 // ProvisioningManager handles registration and provisioning request forwarding for a provider.
@@ -71,14 +72,14 @@ func (m *ProvisioningManager) Register(ctx context.Context, provider Provisionin
 
 	initResponse := msg.GetInitializeResponse()
 	if initResponse == nil {
-		go m.handleProvisioningStream(provider)
+		go m.handleProvisioningStream(ctx, provider)
 		return nil
 	}
 
 	return status.Errorf(codes.FailedPrecondition, "expected InitializeResponse, got %T", msg.GetMessageType())
 }
 
-func (m *ProvisioningManager) handleProvisioningStream(provider ProvisioningProvider) {
+func (m *ProvisioningManager) handleProvisioningStream(ctx context.Context, provider ProvisioningProvider) {
 	for {
 		msg, err := m.stream.Recv()
 		if err != nil {
@@ -86,7 +87,7 @@ func (m *ProvisioningManager) handleProvisioningStream(provider ProvisioningProv
 			return
 		}
 		go func(msg *ProvisioningMessage) {
-			resp := buildProvisioningResponseMsg(provider, msg)
+			resp := buildProvisioningResponseMsg(ctx, provider, msg)
 			if resp != nil {
 				if err := m.stream.Send(resp); err != nil {
 					log.Printf("failed to send provisioning response: %v", err)
@@ -96,8 +97,7 @@ func (m *ProvisioningManager) handleProvisioningStream(provider ProvisioningProv
 	}
 }
 
-func buildProvisioningResponseMsg(provider ProvisioningProvider, msg *ProvisioningMessage) *ProvisioningMessage {
-	ctx := context.Background()
+func buildProvisioningResponseMsg(ctx context.Context, provider ProvisioningProvider, msg *ProvisioningMessage) *ProvisioningMessage {
 	var resp *ProvisioningMessage
 	switch r := msg.MessageType.(type) {
 	case *ProvisioningMessage_NameRequest:
@@ -113,58 +113,94 @@ func buildProvisioningResponseMsg(provider ProvisioningProvider, msg *Provisioni
 		resp = &ProvisioningMessage{
 			RequestId: msg.RequestId,
 			MessageType: &ProvisioningMessage_InitializeResponse{
-				InitializeResponse: &InitializeResponse{Success: err == nil, ErrorMessage: errorString(err)},
+				InitializeResponse: &InitializeResponse{},
 			},
+		}
+		if err != nil {
+			resp.Error = &ErrorMessage{
+				Message: err.Error(),
+			}
 		}
 	case *ProvisioningMessage_StateRequest:
 		result, err := provider.State(ctx, r.StateRequest.Options)
 		resp = &ProvisioningMessage{
 			RequestId: msg.RequestId,
 			MessageType: &ProvisioningMessage_StateResponse{
-				StateResponse: &StateResponse{StateResult: result, ErrorMessage: errorString(err)},
+				StateResponse: &StateResponse{StateResult: result},
 			},
+		}
+		if err != nil {
+			resp.Error = &ErrorMessage{
+				Message: err.Error(),
+			}
 		}
 	case *ProvisioningMessage_DeployRequest:
 		result, err := provider.Deploy(ctx)
 		resp = &ProvisioningMessage{
 			RequestId: msg.RequestId,
 			MessageType: &ProvisioningMessage_DeployResult{
-				DeployResult: &DeployResultResponse{Result: result, ErrorMessage: errorString(err)},
+				DeployResult: &DeployResultResponse{Result: result},
 			},
+		}
+		if err != nil {
+			resp.Error = &ErrorMessage{
+				Message: err.Error(),
+			}
 		}
 	case *ProvisioningMessage_PreviewRequest:
 		result, err := provider.Preview(ctx)
 		resp = &ProvisioningMessage{
 			RequestId: msg.RequestId,
 			MessageType: &ProvisioningMessage_PreviewResult{
-				PreviewResult: &PreviewResultResponse{Result: result, ErrorMessage: errorString(err)},
+				PreviewResult: &PreviewResultResponse{Result: result},
 			},
+		}
+		if err != nil {
+			resp.Error = &ErrorMessage{
+				Message: err.Error(),
+			}
 		}
 	case *ProvisioningMessage_DestroyRequest:
 		result, err := provider.Destroy(ctx, r.DestroyRequest.Options)
 		resp = &ProvisioningMessage{
 			RequestId: msg.RequestId,
 			MessageType: &ProvisioningMessage_DestroyResult{
-				DestroyResult: &DestroyResultResponse{Result: result, ErrorMessage: errorString(err)},
+				DestroyResult: &DestroyResultResponse{Result: result},
 			},
+		}
+		if err != nil {
+			resp.Error = &ErrorMessage{
+				Message: err.Error(),
+			}
 		}
 	case *ProvisioningMessage_ParametersRequest:
 		params, err := provider.Parameters(ctx)
 		resp = &ProvisioningMessage{
 			RequestId: msg.RequestId,
 			MessageType: &ProvisioningMessage_ParametersResponse{
-				ParametersResponse: &ParametersResponse{Parameters: params, ErrorMessage: errorString(err)},
+				ParametersResponse: &ParametersResponse{Parameters: params},
 			},
+		}
+		if err != nil {
+			resp.Error = &ErrorMessage{
+				Message: err.Error(),
+			}
+		}
+	case *ProvisioningMessage_EnsureEnvRequest:
+		err := provider.EnsureEnv(ctx)
+		resp = &ProvisioningMessage{
+			RequestId: msg.RequestId,
+			MessageType: &ProvisioningMessage_EnsureEnvResponse{
+				EnsureEnvResponse: &EnsureEnvResponse{},
+			},
+		}
+		if err != nil {
+			resp.Error = &ErrorMessage{
+				Message: err.Error(),
+			}
 		}
 	default:
 		log.Printf("Unknown or unhandled provisioning message type: %T", r)
 	}
 	return resp
-}
-
-func errorString(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }

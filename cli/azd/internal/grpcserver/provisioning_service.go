@@ -89,7 +89,7 @@ func (s *ProvisioningService) Stream(
 		console input.Console,
 		prompter prompt.Prompter,
 	) provisioning.Provider {
-		return external.NewExternalProvider(providerName, stream, envManager, env, console, prompter)
+		return external.NewExternalProvider(providerName, extension, stream, envManager, env, console, prompter)
 	})
 
 	if err != nil {

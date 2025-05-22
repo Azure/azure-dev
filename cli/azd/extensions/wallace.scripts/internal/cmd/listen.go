@@ -26,7 +26,7 @@ func newListenCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			provider := provisioning.NewScriptProvider()
+			provider := provisioning.NewScriptProvider(azdClient)
 			provisioningManager := azdext.NewProvisioningManager(azdClient)
 			if err := provisioningManager.Register(ctx, provider, "scripts", "Custom Scripts"); err != nil {
 				return fmt.Errorf("failed to register provider: %w", err)

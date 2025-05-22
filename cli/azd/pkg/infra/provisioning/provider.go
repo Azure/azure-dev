@@ -23,6 +23,7 @@ type Options struct {
 	Path             string         `yaml:"path,omitempty"`
 	Module           string         `yaml:"module,omitempty"`
 	DeploymentStacks map[string]any `yaml:"deploymentStacks,omitempty"`
+	Config           map[string]any `yaml:"config,omitempty"`
 	// Not expected to be defined at azure.yaml
 	IgnoreDeploymentState bool `yaml:"-"`
 }

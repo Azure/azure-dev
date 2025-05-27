@@ -16,6 +16,11 @@ func TestSnapshotsForAspire(t *testing.T) {
 	// Check all resources.bicep snapshots to ensure they don't have explicitContributorUserRoleAssignment
 	snapshotFiles := []string{
 		"testdata/snaps/aspire-full/infra/resources.bicep",
+		"/home/runner/work/azure-dev/azure-dev/cli/azd/pkg/apphost/testdata/TestAspireBicepGeneration-resources.bicep.snap",
+		"/home/runner/work/azure-dev/azure-dev/cli/azd/pkg/apphost/testdata/TestAspireContainerGeneration-resources.bicep.snap",
+		"/home/runner/work/azure-dev/azure-dev/cli/azd/pkg/apphost/testdata/TestAspireDashboardGeneration-resources.bicep.snap",
+		"/home/runner/work/azure-dev/azure-dev/cli/azd/pkg/apphost/testdata/TestAspireDockerGeneration-resources.bicep.snap",
+		"/home/runner/work/azure-dev/azure-dev/cli/azd/pkg/apphost/testdata/TestAspireProjectV1Generation-resources.bicep.snap",
 	}
 
 	for _, file := range snapshotFiles {

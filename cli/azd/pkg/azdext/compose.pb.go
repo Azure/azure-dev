@@ -298,7 +298,6 @@ func (x *GetResourceTypeResponse) GetResourceType() *ComposedResourceType {
 type AddResourceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Resource      *ComposedResource      `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
-	ExistingId    string                 `protobuf:"bytes,2,opt,name=ExistingId,proto3" json:"ExistingId,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -338,13 +337,6 @@ func (x *AddResourceRequest) GetResource() *ComposedResource {
 		return x.Resource
 	}
 	return nil
-}
-
-func (x *AddResourceRequest) GetExistingId() string {
-	if x != nil {
-		return x.ExistingId
-	}
-	return ""
 }
 
 // AddResourceResponse is the response of AddResource operation.
@@ -554,12 +546,9 @@ const file_compose_proto_rawDesc = "" +
 	"\x16GetResourceTypeRequest\x12\x1b\n" +
 	"\ttype_name\x18\x01 \x01(\tR\btypeName\"\\\n" +
 	"\x17GetResourceTypeResponse\x12A\n" +
-	"\rresource_type\x18\x01 \x01(\v2\x1c.azdext.ComposedResourceTypeR\fresourceType\"j\n" +
+	"\rresource_type\x18\x01 \x01(\v2\x1c.azdext.ComposedResourceTypeR\fresourceType\"J\n" +
 	"\x12AddResourceRequest\x124\n" +
-	"\bresource\x18\x01 \x01(\v2\x18.azdext.ComposedResourceR\bresource\x12\x1e\n" +
-	"\n" +
-	"ExistingId\x18\x02 \x01(\tR\n" +
-	"ExistingId\"K\n" +
+	"\bresource\x18\x01 \x01(\v2\x18.azdext.ComposedResourceR\bresource\"K\n" +
 	"\x13AddResourceResponse\x124\n" +
 	"\bresource\x18\x01 \x01(\v2\x18.azdext.ComposedResourceR\bresource\"\x87\x01\n" +
 	"\x10ComposedResource\x12\x12\n" +

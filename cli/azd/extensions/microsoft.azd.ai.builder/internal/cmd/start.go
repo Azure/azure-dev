@@ -445,8 +445,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 	// Add any new resources to the azure.yaml.
 	for _, resource := range resourcesToAdd {
 		_, err := a.azdClient.Compose().AddResource(ctx, &azdext.AddResourceRequest{
-			Resource:   resource,
-			ExistingId: resource.ResourceId,
+			Resource: resource,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to add resource %s: %w", resource.Name, err)

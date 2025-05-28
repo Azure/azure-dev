@@ -56,7 +56,6 @@ message GetResourceTypeResponse {
 // AddResourceRequest is a request to add a new composability resource.
 message AddResourceRequest {
   ComposedResource resource = 1;
-  string ExistingId = 2;
 }
 
 // AddResourceResponse is the response of AddResource operation.

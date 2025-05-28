@@ -22,19 +22,19 @@ import (
 type composeService struct {
 	azdext.UnimplementedComposeServiceServer
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]
-	env            *environment.Environment
-	envManager     environment.Manager
+	lazyEnv        *lazy.Lazy[*environment.Environment]
+	lazyEnvManger  *lazy.Lazy[environment.Manager]
 }
 
 func NewComposeService(
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
-	env *environment.Environment,
-	envManager environment.Manager,
+	lazyEnv *lazy.Lazy[*environment.Environment],
+	lazyEnvManger *lazy.Lazy[environment.Manager],
 ) azdext.ComposeServiceServer {
 	return &composeService{
 		lazyAzdContext: lazyAzdContext,
-		env:            env,
-		envManager:     envManager,
+		lazyEnv:        lazyEnv,
+		lazyEnvManger:  lazyEnvManger,
 	}
 }
 
@@ -44,6 +44,16 @@ func (c *composeService) AddResource(
 	req *azdext.AddResourceRequest,
 ) (*azdext.AddResourceResponse, error) {
 	azdContext, err := c.lazyAzdContext.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	env, err := c.lazyEnv.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	envManager, err := c.lazyEnvManger.GetValue()
 	if err != nil {
 		return nil, err
 	}
@@ -67,18 +77,18 @@ func (c *composeService) AddResource(
 		Type:       project.ResourceType(req.Resource.Type),
 		Props:      resourceProps,
 		Uses:       req.Resource.Uses,
-		ResourceId: req.ExistingId,
+		ResourceId: req.Resource.ResourceId,
 	}
 
-	if req.ExistingId != "" {
+	if req.Resource.ResourceId != "" {
 		// add existing:true to azure.yaml
 		if resource, exists := projectConfig.Resources[req.Resource.Name]; exists {
 			resource.Existing = true
 		}
 		// save resource id to env
-		c.env.DotenvSet(infra.ResourceIdName(req.Resource.Name), req.ExistingId)
+		env.DotenvSet(infra.ResourceIdName(req.Resource.Name), req.Resource.ResourceId)
 
-		err = c.envManager.Save(ctx, c.env)
+		err = envManager.Save(ctx, env)
 		if err != nil {
 			return nil, fmt.Errorf("saving environment: %w", err)
 		}

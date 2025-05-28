@@ -2,12 +2,22 @@ class Azd < Formula
   desc "Azure Developer CLI"
   homepage "https://github.com/azure/azure-dev"
   
-  if Hardware::CPU.intel?
-    url "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_%VERSION%/azd-darwin-amd64.zip"
-    sha256 "%SHA256AMD64%"
-  elsif Hardware::CPU.arm?
-    url "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_%VERSION%/azd-darwin-arm64.zip"
-    sha256 "%SHA256ARM64%"
+  if OS.mac?
+    if Hardware::CPU.intel?
+      url "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_%VERSION%/azd-darwin-amd64.zip"
+      sha256 "%SHA256AMD64%"
+    elsif Hardware::CPU.arm?
+      url "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_%VERSION%/azd-darwin-arm64.zip"
+      sha256 "%SHA256ARM64%"
+    end
+  elsif OS.linux?
+    if Hardware::CPU.intel?
+      url "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_%VERSION%/azd-linux-amd64.tar.gz"
+      sha256 "%SHA256AMD64_LINUX%"
+    elsif Hardware::CPU.arm?
+      url "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_%VERSION%/azd-linux-arm64.tar.gz"
+      sha256 "%SHA256ARM64_LINUX%"
+    end
   end
 
   version "%VERSION%"
@@ -15,10 +25,18 @@ class Azd < Formula
   license "MIT"
 
   def install
-    if Hardware::CPU.intel?
-      bin.install "azd-darwin-amd64" => "azd"
-    elsif Hardware::CPU.arm?
-      bin.install "azd-darwin-arm64" => "azd"
+    if OS.mac?
+      if Hardware::CPU.intel?
+        bin.install "azd-darwin-amd64" => "azd"
+      elsif Hardware::CPU.arm?
+        bin.install "azd-darwin-arm64" => "azd"
+      end
+    elsif OS.linux?
+      if Hardware::CPU.intel?
+        bin.install "azd-linux-amd64" => "azd"
+      elsif Hardware::CPU.arm?
+        bin.install "azd-linux-arm64" => "azd"
+      end
     end
 
     (bin/".installed-by.txt").write "brew"

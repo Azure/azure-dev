@@ -41,7 +41,7 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("env", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "env",
-			Short: "Manage environments.",
+			Short: "Manage environments (ex: default environment, environment variables).",
 		},
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdEnvHelpDescription,

@@ -6,6 +6,7 @@ Usage
 
 Flags
         --all            	: Upgrade all installed extensions
+    -s, --source string  	: The extension source to use for upgrades
     -v, --version string 	: The version of the extension to upgrade to
 
 Global Flags

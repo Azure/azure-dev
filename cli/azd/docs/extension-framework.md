@@ -225,7 +225,7 @@ Usage: `azd x release --repo {owner}/{name}`
 - `--title, -t` - The name of the release, defaults to extension name plus version.
 - `--prerelease` - When set marks the release as a prerelease.
 - `--draft, -d` - When set marks the release a draft
-- `--notes, -n` - The release notes for the release, defaults to using contents of `changelog.md` within extension directory.
+- `--notes, -n` - The release notes for the release, defaults to using contents of `CHANGELOG.md` within extension directory.
 - `--version, -v` - The version of the release, defaults to extension version from extension manifest
 - `--confirm` - When set bypasses confirmation prompts before release
 
@@ -251,7 +251,7 @@ contoso.azd.samples.<language>/
 ├── bin/                    # Contains built binaries
 ├── build.ps1               # Windows build script
 ├── build.sh                # Unix build script
-├── changelog.md            # Version history and release notes
+├── CHANGELOG.md            # Version history and release notes
 ├── extension.yaml          # Extension metadata and capabilities
 ├── README.md               # Documentation for your extension
 └── <language-specific>     # Source code files specific to the chosen language
@@ -260,7 +260,7 @@ contoso.azd.samples.<language>/
 Key files in the extension structure:
 
 - **extension.yaml**: Defines metadata, capabilities, and commands for your extension
-- **changelog.md**: Documents changes between versions (used for release notes)
+- **CHANGELOG.md**: Documents changes between versions (used for release notes)
 - **build scripts**: Language-specific scripts for building your extension
 
 Each supported language has a slightly different structure:
@@ -306,7 +306,7 @@ Managing versions of your extension is an important part of the development proc
    - Follow [Semantic Versioning](https://semver.org/) (MAJOR.MINOR.PATCH)
 
 2. **Document Changes**:
-   - Update your `changelog.md` with details about what's new or fixed
+   - Update your `CHANGELOG.md` with details about what's new or fixed
    - Include any breaking changes or migration notes
 
 3. **Build, Package and Test**:
@@ -331,7 +331,7 @@ Managing versions of your extension is an important part of the development proc
 - **Minor Version Changes (1.0.0 → 1.1.0)**: Adds new features while maintaining backward compatibility
 - **Patch Version Changes (1.0.0 → 1.0.1)**: Includes bug fixes with no feature changes
 
-When upgrading across major versions, users may need to adapt to API changes. Document these changes clearly in your `changelog.md`.
+When upgrading across major versions, users may need to adapt to API changes. Document these changes clearly in your `CHANGELOG.md`.
 
 ### GitHub Authentication Requirements
 

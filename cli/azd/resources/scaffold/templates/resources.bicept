@@ -13,7 +13,7 @@ param {{.Name}} {{.Type}}
 {{- end}}
 
 {{- if .AiFoundryProject }}
-param aiFoundryProjectConnectionString string
+param aiFoundryProjectEndpoint string
 {{- end}}
 
 @description('Id of the user or app to assign application roles')
@@ -27,7 +27,7 @@ var resourceToken = uniqueString(subscription().id, resourceGroup().id, location
 var {{.Name}}IdSegments = split({{.Name}}Id, '/')
 resource {{.Name}} '{{.ResourceType}}@{{.ApiVersion}}' existing = {
   scope: resourceGroup({{.Name}}IdSegments[2], {{.Name}}IdSegments[4])
-  name: {{.Name}}IdSegments[8]
+  name: join(map(range(0, length(split('{{.ResourceType}}', '/')) - 1), i => {{.Name}}IdSegments[8 + i * 2]), '/')
 }
 {{- end}}
 
@@ -324,7 +324,7 @@ resource localUserOpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-0
 {{- end}}
 
 {{- if .AISearch}}
-module search 'br/public:avm/res/search/search-service:0.9.1' = {
+module search 'br/public:avm/res/search/search-service:0.10.0' = {
   name: 'ai-search'
   params: {
     name: '${abbrs.searchSearchServices}${resourceToken}'
@@ -708,13 +708,13 @@ module {{bicepName .Name}} 'br/public:avm/res/app/container-app:0.8.0' = {
           {{- if .AISearch}}
           {
             name: 'AZURE_AI_SEARCH_ENDPOINT'
-            value: 'https://${search.outputs.name}.search.windows.net'
+            value: search.outputs.endpoint
           }
           {{- end}}
           {{- if .AiFoundryProject }}
           {
-            name: 'AZURE_AI_PROJECT_CONNECTION_STRING'
-            value: aiFoundryProjectConnectionString
+            name: 'AZURE_AI_PROJECT_ENDPOINT'
+            value: aiFoundryProjectEndpoint
           }
           {{- end}}
           {{- if .Frontend}}
@@ -839,10 +839,10 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.15.1' = {
       AZURE_OPENAI_ENDPOINT: account.outputs.endpoint
       {{- end}}
       {{- if .AISearch}}
-      AZURE_AI_SEARCH_ENDPOINT: 'https://${search.outputs.name}.search.windows.net'
+      AZURE_AI_SEARCH_ENDPOINT: search.outputs.endpoint
       {{- end}}
       {{- if .AiFoundryProject }}
-      AZURE_AI_PROJECT_CONNECTION_STRING: aiFoundryProjectConnectionString
+      AZURE_AI_PROJECT_ENDPOINT: aiFoundryProjectEndpoint
       {{- end}}
       {{- if .Frontend}}
       {{- range $i, $e := .Frontend.Backends}}
@@ -885,6 +885,16 @@ resource {{bicepName .Name}}backendRoleAzureAIDeveloperRG 'Microsoft.Authorizati
   scope: resourceGroup()
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '64702f94-c441-49e6-a78b-ef80e0188fee') 
+    principalId: {{bicepName .Name}}Identity.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource {{bicepName .Name}}backendRoleCognitiveServicesUserRG 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(subscription().id, resourceGroup().id, {{bicepName .Name}}Identity.name, 'a97b65f3-24c7-4388-baec-2e87135dc908')
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-4388-baec-2e87135dc908') 
     principalId: {{bicepName .Name}}Identity.outputs.principalId
     principalType: 'ServicePrincipal'
   }
@@ -993,7 +1003,7 @@ output AZURE_RESOURCE_EVENT_HUBS_ID string = eventHubNamespace.outputs.resourceI
 output AZURE_RESOURCE_SERVICE_BUS_ID string = serviceBusNamespace.outputs.resourceId
 {{- end}}
 {{- if .AISearch}}
-output AZURE_AI_SEARCH_ENDPOINT string = 'https://${search.outputs.name}.search.windows.net'
+output AZURE_AI_SEARCH_ENDPOINT string = search.outputs.endpoint
 output AZURE_RESOURCE_SEARCH_ID string = search.outputs.resourceId
 output aiSearchName string = search.outputs.name
 {{- end}}

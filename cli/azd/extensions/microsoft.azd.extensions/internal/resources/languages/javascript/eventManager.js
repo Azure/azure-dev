@@ -1,8 +1,13 @@
 const grpc = require("@grpc/grpc-js");
-const fs = require("fs");
-const path = require("path");
-const os = require("os");
 const logger = require("./logger");
+const {
+  EventMessage,
+  ExtensionReadyEvent,
+  SubscribeProjectEvent,
+  SubscribeServiceEvent,
+  ProjectHandlerStatus,
+  ServiceHandlerStatus,
+} = require("./generated/proto/event_pb");
 
 class EventManager {
   constructor(client) {
@@ -27,7 +32,6 @@ class EventManager {
     if (!this._stream) {
       logger.info("Establishing event stream");
       try {
-        // Log metadata right before establishing the stream
         logger.debug("Metadata being used for stream:", {
           metadata:
             this._client && this._client._metadata
@@ -35,7 +39,7 @@ class EventManager {
               : {},
         });
 
-        this._stream = this._client.Events.EventStream(this._client._metadata);
+        this._stream = this._client.Events.eventStream(this._client._metadata);
         logger.info("Event stream established");
         await this._sendReadyEvent();
       } catch (err) {
@@ -47,65 +51,54 @@ class EventManager {
   }
 
   async _sendReadyEvent() {
-    // Directly create the event object with its properties
-    const event = {
-      extension_ready_event: {
-        status: "ready",
-        message: "JavaScript extension is initialized and ready",
-      },
-    };
+    const event = new EventMessage();
+    const payload = new ExtensionReadyEvent();
+    payload.setStatus("ready");
+    payload.setMessage("JavaScript extension is initialized and ready");
 
-    // Log raw details before any transformations
-    logger.debug(`Raw event to send: ${JSON.stringify(event, null, 2)}`, {
-      event,
-    });
-    logger.debug(`Object keys: ${Object.keys(event)}`);
+    event.setExtensionReadyEvent(payload);
+    this._logEvent("SEND", event.toObject());
 
     return new Promise((resolve, reject) => {
       this._stream.write(event, (err) => {
         if (err) {
-          const errorMsg = `Failed to send ready event: ${err.message}`;
-          logger.error(errorMsg, { error: err });
+          logger.error(`Failed to send ready event: ${err.message}`, { error: err });
           reject(err);
-          return;
+        } else {
+          logger.info("Extension ready event sent successfully");
+          resolve();
         }
-
-        logger.info("Extension ready event sent successfully");
-        resolve();
       });
     });
   }
 
   _listen() {
     if (!this._stream) {
-      const errorMsg = "Cannot listen: stream not initialized";
-      logger.error(errorMsg);
+      logger.error("Cannot listen: stream not initialized");
       return;
     }
 
     this._stream.on("data", async (msg) => {
-      this._logEvent("RECV", msg);
+      this._logEvent("RECV", msg.toObject());
 
       try {
-        if (msg.invoke_project_handler) {
-          await this._invokeProjectHandler(msg.invoke_project_handler);
+        if (msg.hasInvokeProjectHandler()) {
+          await this._invokeProjectHandler(msg.getInvokeProjectHandler());
         }
 
-        if (msg.invoke_service_handler) {
-          await this._invokeServiceHandler(msg.invoke_service_handler);
+        if (msg.hasInvokeServiceHandler()) {
+          await this._invokeServiceHandler(msg.getInvokeServiceHandler());
         }
       } catch (err) {
-        const errorMsg = `Error processing received message: ${err.message}`;
-        logger.error(errorMsg, { error: err });
+        logger.error(`Error processing received message: ${err.message}`, {
+          error: err,
+        });
       }
     });
 
     this._stream.on("error", (err) => {
       if (err.code === grpc.status.UNAVAILABLE) {
-        logger.warn(
-          `Stream error (UNAVAILABLE): ${err.message} - treating as expected`,
-          { error: err }
-        );
+        logger.warn(`Stream error (UNAVAILABLE): ${err.message}`, { error: err });
         return;
       }
       logger.error(`Stream error: ${err.message}`, { error: err });
@@ -117,7 +110,7 @@ class EventManager {
   }
 
   async _invokeProjectHandler(invokeMsg) {
-    const eventName = invokeMsg.event_name;
+    const eventName = invokeMsg.getEventName();
     logger.info(`Handling project event: ${eventName}`);
 
     const handler = this._projectHandlers[eventName];
@@ -126,9 +119,7 @@ class EventManager {
       return;
     }
 
-    const args = {
-      project: invokeMsg.project,
-    };
+    const args = { project: invokeMsg.getProject()?.toObject() };
 
     let status = "completed";
     let message = "";
@@ -138,17 +129,17 @@ class EventManager {
     } catch (err) {
       status = "failed";
       message = err.message;
-      logger.error(
-        `invokeProjectHandler error for event ${eventName}: ${err.message}`,
-        { eventName, error: err }
-      );
+      logger.error(`invokeProjectHandler error for event ${eventName}: ${err.message}`, {
+        eventName,
+        error: err,
+      });
     }
 
     return this._sendProjectHandlerStatus(eventName, status, message);
   }
 
   async _invokeServiceHandler(invokeMsg) {
-    const eventName = invokeMsg.event_name;
+    const eventName = invokeMsg.getEventName();
     logger.info(`Handling service event: ${eventName}`);
 
     const handler = this._serviceHandlers[eventName];
@@ -158,8 +149,8 @@ class EventManager {
     }
 
     const args = {
-      project: invokeMsg.project,
-      service: invokeMsg.service,
+      project: invokeMsg.getProject()?.toObject(),
+      service: invokeMsg.getService()?.toObject(),
     };
 
     let status = "completed";
@@ -170,31 +161,32 @@ class EventManager {
     } catch (err) {
       status = "failed";
       message = err.message;
-      logger.error(
-        `invokeServiceHandler error for event ${eventName}: ${err.message}`,
-        { eventName, serviceName: invokeMsg.service.name, error: err }
-      );
+      logger.error(`invokeServiceHandler error for event ${eventName}: ${err.message}`, {
+        eventName,
+        serviceName: invokeMsg.getService()?.getName(),
+        error: err,
+      });
     }
 
     return this._sendServiceHandlerStatus(
       eventName,
-      invokeMsg.service.name,
+      invokeMsg.getService()?.getName() || "",
       status,
       message
     );
   }
 
   _sendProjectHandlerStatus(eventName, status, message) {
-    // Directly create the event object with its properties
-    const event = {
-      project_handler_status: {
-        event_name: eventName,
-        status,
-        message,
-      },
-    };
+    const event = new EventMessage();
+    const statusMsg = new ProjectHandlerStatus();
 
-    this._logEvent("SEND", event);
+    statusMsg.setEventName(eventName);
+    statusMsg.setStatus(status);
+    statusMsg.setMessage(message);
+
+    event.setProjectHandlerStatus(statusMsg);
+    this._logEvent("SEND", event.toObject());
+
     return new Promise((resolve, reject) => {
       this._stream.write(event, (err) => {
         if (err) {
@@ -212,17 +204,17 @@ class EventManager {
   }
 
   _sendServiceHandlerStatus(eventName, serviceName, status, message) {
-    // Directly create the event object with its properties
-    const event = {
-      service_handler_status: {
-        event_name: eventName,
-        service_name: serviceName,
-        status,
-        message,
-      },
-    };
+    const event = new EventMessage();
+    const statusMsg = new ServiceHandlerStatus();
 
-    this._logEvent("SEND", event);
+    statusMsg.setEventName(eventName);
+    statusMsg.setServiceName(serviceName);
+    statusMsg.setStatus(status);
+    statusMsg.setMessage(message);
+
+    event.setServiceHandlerStatus(statusMsg);
+    this._logEvent("SEND", event.toObject());
+
     return new Promise((resolve, reject) => {
       this._stream.write(event, (err) => {
         if (err) {
@@ -246,80 +238,66 @@ class EventManager {
       this._listen();
       logger.info("Started receiving events");
     } catch (err) {
-      const errorMsg = `Failed to start receiving events: ${err.message}`;
-      logger.error(errorMsg, { error: err });
+      logger.error(`Failed to start receiving events: ${err.message}`, { error: err });
       throw err;
     }
   }
 
   async addProjectEventHandler(eventName, handler) {
-    try {
-      await this._ensureStream();
-      this._projectHandlers[eventName] = handler;
+    await this._ensureStream();
+    this._projectHandlers[eventName] = handler;
 
-      // Directly create the event object with its properties
-      const event = {
-        subscribe_project_event: {
-          event_names: [eventName],
-        },
-      };
+    const event = new EventMessage();
+    const sub = new SubscribeProjectEvent();
+    sub.setEventNamesList([eventName]);
+    event.setSubscribeProjectEvent(sub);
 
-      this._logEvent("SEND", event);
+    this._logEvent("SEND", event.toObject());
 
-      return new Promise((resolve, reject) => {
-        this._stream.write(event, (err) => {
-          if (err) {
-            const errorMsg = `Error subscribing to project event ${eventName}: ${err.message}`;
-            logger.error(errorMsg, { eventName, error: err });
-            reject(err);
-            return;
-          }
-
+    return new Promise((resolve, reject) => {
+      this._stream.write(event, (err) => {
+        if (err) {
+          logger.error(`Error subscribing to project event ${eventName}: ${err.message}`, {
+            eventName,
+            error: err,
+          });
+          reject(err);
+        } else {
           logger.info(`Subscribed to project event: ${eventName}`);
           resolve();
-        });
+        }
       });
-    } catch (err) {
-      const errorMsg = `Failed to add project event handler for ${eventName}: ${err.message}`;
-      logger.error(errorMsg, { eventName, error: err });
-      throw err;
-    }
+    });
   }
 
   async addServiceEventHandler(eventName, handler, options = {}) {
-    try {
-      await this._ensureStream();
-      this._serviceHandlers[eventName] = handler;
+    await this._ensureStream();
+    this._serviceHandlers[eventName] = handler;
 
-      // Directly create the event object with its properties
-      const event = {
-        subscribe_service_event: {
-          event_names: [eventName],
-          host: options.host || "",
-          language: options.language || "",
-        },
-      };
+    const event = new EventMessage();
+    const sub = new SubscribeServiceEvent();
+    sub.setEventNamesList([eventName]);
+    sub.setHost(options.host || "");
+    sub.setLanguage(options.language || "");
+    event.setSubscribeServiceEvent(sub);
 
-      this._logEvent("SEND", event);
+    this._logEvent("SEND", event.toObject());
 
-      return new Promise((resolve, reject) => {
-        this._stream.write(event, (err) => {
-          if (err) {
-            const errorMsg = `Error subscribing to service event ${eventName}: ${err.message}`;
-            logger.error(errorMsg, { eventName, options, error: err });
-            reject(err);
-            return;
-          }
-
+    return new Promise((resolve, reject) => {
+      this._stream.write(event, (err) => {
+        if (err) {
+          logger.error(`Error subscribing to service event ${eventName}: ${err.message}`, {
+            eventName,
+            options,
+            error: err,
+          });
+          reject(err);
+        } else {
           logger.info(`Subscribed to service event: ${eventName}`);
           resolve();
-        });
+        }
       });
-    } catch (err) {
-      const errorMsg = `Failed to add service event handler for ${eventName}: ${err.message}`;
-      logger.error(errorMsg, { eventName, error: err });
-      throw err;
-    }
+    });
   }
 
   removeProjectEventHandler(eventName) {
@@ -332,28 +310,21 @@ class EventManager {
     delete this._serviceHandlers[eventName];
   }
 
-  // Fully generic logging function with no hardcoded event types
-  _logEvent(direction, event) {
-    // Find the first defined field in the event object (which represents the event type)
-    const entries = Object.entries(event);
+  _logEvent(direction, eventObj) {
+    const entries = Object.entries(eventObj);
     if (entries.length === 0) {
       logger.warn(`${direction} Empty event object`);
       return;
     }
 
-    // The first non-null field is our event type
     const [eventType, eventData] = entries[0];
-
-    // Convert snake_case to PascalCase for type name
     const typeName = eventType
       .split("_")
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
       .join("");
 
-    // Extract key information from the event data for summary logging
     let details = "";
     try {
-      // Look for common fields that might contain identifying information
       const detailFields = [
         "event_name",
         "status",
@@ -361,37 +332,33 @@ class EventManager {
         "name",
         "service_name",
       ];
-      const extractedDetails = [];
+      const extracted = [];
 
       for (const field of detailFields) {
         if (eventData[field]) {
           if (Array.isArray(eventData[field])) {
-            extractedDetails.push(`${field}: ${eventData[field].join(", ")}`);
+            extracted.push(`${field}: ${eventData[field].join(", ")}`);
           } else {
-            extractedDetails.push(`${field}: ${eventData[field]}`);
+            extracted.push(`${field}: ${eventData[field]}`);
           }
         }
       }
 
-      // Add service name if nested
       if (eventData.service?.name) {
-        extractedDetails.push(`service: ${eventData.service.name}`);
+        extracted.push(`service: ${eventData.service.name}`);
       }
 
-      details = extractedDetails.join(", ");
+      details = extracted.join(", ");
     } catch (err) {
       details = "[Error extracting details]";
       logger.error("Error extracting event details", { error: err });
     }
 
-    // Log summary with event type and details
     logger.info(`${direction} ${typeName} - ${details}`);
-
-    // Log full details at debug level
     logger.debug(`${direction} ${typeName} DETAILS`, {
       direction,
       typeName,
-      eventData: JSON.stringify(eventData),
+      eventData,
     });
   }
 }

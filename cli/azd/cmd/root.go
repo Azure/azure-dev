@@ -51,7 +51,7 @@ func NewRootCmd(
 
 	rootCmd := &cobra.Command{
 		Use:   "azd",
-		Short: fmt.Sprintf("%s is an open-source tool that helps onboard and manage your application on Azure", productName),
+		Short: fmt.Sprintf("%s is an open-source tool that helps onboard and manage your project on Azure", productName),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			// If there was a platform configuration error report it to the user until it is resolved
 			// Using fmt.Printf directly here since we can't leverage our IoC container to resolve a console instance
@@ -140,7 +140,7 @@ func NewRootCmd(
 		OutputFormats:    []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:    output.NoneFormat,
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupAbout,
+			RootLevelHelp: actions.CmdGroupManage,
 		},
 	})
 
@@ -159,7 +159,7 @@ func NewRootCmd(
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupMonitor,
+			RootLevelHelp: actions.CmdGroupManage,
 		},
 	})
 
@@ -191,7 +191,7 @@ func NewRootCmd(
 			Footer:      getCmdInitHelpFooter,
 		},
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupConfig,
+			RootLevelHelp: actions.CmdGroupStart,
 		},
 	})
 
@@ -207,7 +207,7 @@ func NewRootCmd(
 				Footer:      getCmdRestoreHelpFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
-				RootLevelHelp: actions.CmdGroupConfig,
+				RootLevelHelp: actions.CmdGroupBeta,
 			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware).
@@ -236,7 +236,7 @@ func NewRootCmd(
 				Footer:      getCmdHelpDefaultFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
-				RootLevelHelp: actions.CmdGroupManage,
+				RootLevelHelp: actions.CmdGroupAzure,
 			},
 		}).
 		UseMiddlewareWhen("hooks", middleware.NewHooksMiddleware, func(descriptor *actions.ActionDescriptor) bool {
@@ -266,7 +266,7 @@ func NewRootCmd(
 				Footer:      getCmdPackageHelpFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
-				RootLevelHelp: actions.CmdGroupManage,
+				RootLevelHelp: actions.CmdGroupBeta,
 			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware).
@@ -284,7 +284,7 @@ func NewRootCmd(
 				Footer:      cmd.GetCmdDeployHelpFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
-				RootLevelHelp: actions.CmdGroupManage,
+				RootLevelHelp: actions.CmdGroupAzure,
 			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware).
@@ -301,7 +301,7 @@ func NewRootCmd(
 				Description: getCmdUpHelpDescription,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
-				RootLevelHelp: actions.CmdGroupManage,
+				RootLevelHelp: actions.CmdGroupStart,
 			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware).
@@ -316,7 +316,7 @@ func NewRootCmd(
 			Footer:      getCmdMonitorHelpFooter,
 		},
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupMonitor,
+			RootLevelHelp: actions.CmdGroupBeta,
 		},
 	})
 
@@ -332,7 +332,7 @@ func NewRootCmd(
 				Footer:      getCmdDownHelpFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
-				RootLevelHelp: actions.CmdGroupManage,
+				RootLevelHelp: actions.CmdGroupAzure,
 			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware).

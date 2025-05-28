@@ -52,7 +52,7 @@ func newDownFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *do
 func newDownCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "down",
-		Short: "Delete Azure resources for an application.",
+		Short: "Delete your project's Azure resources.",
 	}
 }
 

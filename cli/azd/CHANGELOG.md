@@ -1,14 +1,35 @@
 # Release History
 
-## 1.16.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.16.1 (2025-05-15)
 
 ### Bugs Fixed
 
+- [[5198]](https://github.com/Azure/azure-dev/issues/5198) Fixes error messages surfaced to users that contain internal implementation details.
+
 ### Other Changes
+
+## 1.16.0 (2025-05-14)
+
+### Features Added
+- [[5173]](https://github.com/Azure/azure-dev/pull/5173) `azd show` support for Azure App Service.
+- [[5158]](https://github.com/Azure/azure-dev/pull/5158) Configure Azure AI Foundry hub to use identity-based storage access for compose.
+- [[5143]](https://github.com/Azure/azure-dev/pull/5143), [[5183]](https://github.com/Azure/azure-dev/pull/5183), [[5185]](https://github.com/Azure/azure-dev/pull/5185) Update `azd pipeline config` to auto-detect required variables and secrets from infra provider parameters.
+- [[5190]](https://github.com/Azure/azure-dev/pull/5190) Add interactive controls for managing existing GitHub Actions variables and secrets during `azd pipeline config`.
+- [[5155]](https://github.com/Azure/azure-dev/pull/5155) Adds support for nested extension namespaces
+
+### Bugs Fixed
+
+- [[5176]](https://github.com/Azure/azure-dev/pull/5176) Prevent same resource being added under 'uses' multiple times with `azd add`.
+- [[5176]](https://github.com/Azure/azure-dev/pull/5176) Fix `azd add` preview for MySQL and Postgres and other UX improvements.
+- [[5192]](https://github.com/Azure/azure-dev/pull/5192) Fix Bicep generation for compose projects with implicit Key Vault dependency.
+
+### Other Changes
+
+- [[5194]](https://github.com/Azure/azure-dev/pull/5194) Reorganize `azd` help text with updated command sections (Getting started, Azure resources, Settings, Beta, Alpha, Extensions).
+- [[5189]](https://github.com/Azure/azure-dev/pull/5189) Clarify in environment prompt that the name must be unique.
+- [[5187]](https://github.com/Azure/azure-dev/pull/5187) Improve confirmation UX when declining to initialize template in non-empty directory.
+- [[5159]](https://github.com/Azure/azure-dev/pull/5159) Update Aspire detection message to not specifically mention ACA.
+- [[5138]](https://github.com/Azure/azure-dev/pull/5138) Update Bicep CLI to v0.35.1.
 
 ## 1.15.1 (2025-05-07)
 

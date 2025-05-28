@@ -25,10 +25,10 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		Command: &cobra.Command{
 			Use:     "extension",
 			Aliases: []string{"ext"},
-			Short:   fmt.Sprintf("Manage azd extensions. %s", output.WithWarningFormat("(Alpha)")),
+			Short:   "Manage azd extensions.",
 		},
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupConfig,
+			RootLevelHelp: actions.CmdGroupAlpha,
 		},
 	})
 

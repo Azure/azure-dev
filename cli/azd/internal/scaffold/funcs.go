@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/tidwall/gjson"
 )
 
 // BicepName returns a name suitable for use as a bicep variable name.
@@ -267,27 +267,22 @@ func hostFromEndpoint(endpoint string) (string, error) {
 	return urlEndpoint.Hostname(), nil
 }
 
-func aiProjectConnectionString(resourceId string, projectUrl string) (string, error) {
-	hostName, err := hostFromEndpoint(projectUrl)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse project URL: %w", err)
+func aiProjectEndpoint(endpoints string) (string, error) {
+	result := gjson.Parse(endpoints)
+	if !result.Exists() {
+		return "", fmt.Errorf("invalid endpoints JSON: %s", endpoints)
 	}
 
-	resId, err := arm.ParseResourceID(resourceId)
-	if err != nil {
-		return "", nil
+	endpoint := result.Get("AI Foundry API")
+	if !endpoint.Exists() {
+		return "", fmt.Errorf("endpoint 'AI Foundry API' not found in endpoints")
 	}
 
-	return fmt.Sprintf("%s;%s;%s;%s", hostName, resId.SubscriptionID, resId.ResourceGroupName, resId.Name), nil
+	return endpoint.String(), nil
 }
 
-func emitAiProjectConnectionString(resourceIdVar string, projectUrlVar string) (string, error) {
-	return fmt.Sprintf(
-		"${split(%s, '/')[2]};${split(%s, '/')[2]};${split(%s, '/')[4]};${split(%s, '/')[8]}",
-		projectUrlVar,
-		resourceIdVar,
-		resourceIdVar,
-		resourceIdVar), nil
+func emitAiProjectEndpoint(projectEndpointsVar string) (string, error) {
+	return fmt.Sprintf("%s['AI Foundry API']", projectEndpointsVar), nil
 }
 
 func emitHostFromEndpoint(endpointVar string) (string, error) {

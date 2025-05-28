@@ -91,15 +91,40 @@ var Resources = []ResourceMeta{
 	},
 	{
 		ResourceType: "Microsoft.CognitiveServices/accounts",
-		ApiVersion:   "2023-05-01",
+		ApiVersion:   "2025-04-01-preview",
 	},
 	{
 		ResourceType:      "Microsoft.CognitiveServices/accounts/deployments",
-		ApiVersion:        "2023-05-01",
+		ApiVersion:        "2025-04-01-preview",
 		ParentForEval:     "Microsoft.CognitiveServices/accounts",
 		StandardVarPrefix: "AZURE_OPENAI",
 		Variables: map[string]string{
 			"endpoint": "${.properties.endpoint}",
+		},
+	},
+	{
+		ResourceType:      "Microsoft.CognitiveServices/accounts/projects",
+		ResourceKind:      "AIServices",
+		ApiVersion:        "2025-04-01-preview",
+		StandardVarPrefix: "AZURE_AI_PROJECT",
+		Variables: map[string]string{
+			"endpoint": "${aiProjectEndpoint .properties.endpoints}",
+		},
+		RoleAssignments: RoleAssignments{
+			Write: []RoleAssignment{
+				{
+					Name:               "AzureAIDeveloper",
+					RoleDefinitionName: "Azure AI Developer",
+					RoleDefinitionId:   "64702f94-c441-49e6-a78b-ef80e0188fee",
+					Scope:              RoleAssignmentScopeGroup,
+				},
+				{
+					Name:               "CognitiveServicesUser",
+					RoleDefinitionName: "Cognitive Services User",
+					RoleDefinitionId:   "a97b65f3-24c7-4388-baec-2e87135dc908",
+					Scope:              RoleAssignmentScopeGroup,
+				},
+			},
 		},
 	},
 	{
@@ -235,31 +260,11 @@ var Resources = []ResourceMeta{
 		},
 	},
 	{
-		ResourceType:      "Microsoft.MachineLearningServices/workspaces",
-		ResourceKind:      "Project",
-		ApiVersion:        "2024-10-01",
-		StandardVarPrefix: "AZURE_AI_PROJECT",
-		Variables: map[string]string{
-			"connectionString": "${aiProjectConnectionString .id .properties.discoveryUrl}",
-		},
-		RoleAssignments: RoleAssignments{
-			Write: []RoleAssignment{
-				{
-					Name:               "AIDeveloper",
-					RoleDefinitionName: "Azure AI Developer",
-					RoleDefinitionId:   "64702f94-c441-49e6-a78b-ef80e0188fee",
-					Scope:              RoleAssignmentScopeGroup,
-				},
-			},
-		},
-	},
-	{
-		ResourceType: "Microsoft.Search/searchServices",
-		// TODO: Switch to 2025-02-01-preview once available, which has a new 'endpoint' property
-		ApiVersion:        "2024-06-01-preview",
+		ResourceType:      "Microsoft.Search/searchServices",
+		ApiVersion:        "2025-02-01-preview",
 		StandardVarPrefix: "AZURE_AI_SEARCH",
 		Variables: map[string]string{
-			"endpoint": "https://${.name}.search.windows.net",
+			"endpoint": "${.properties.endpoint}",
 		},
 		RoleAssignments: RoleAssignments{
 			Write: []RoleAssignment{

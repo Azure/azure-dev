@@ -19,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -30,8 +29,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/otiai10/copy"
 )
-
-var featureCompose = alpha.MustFeatureKey("compose")
 
 // InitFromApp initializes the infra directory and project file from the current existing app.
 func (i *Initializer) InitFromApp(
@@ -236,28 +233,37 @@ func (i *Initializer) InitFromApp(
 
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("config"))
 
+	// Ask whether to generate infrastructure as code files
+	genInfraFiles, err := i.console.Confirm(ctx, input.ConsoleOptions{
+		Message:      "azd now tracks infrastructure in memory. Do you still want to generate infrastructure files on disk?",
+		Help:         "This can always be done later with 'azd infra synth'.",
+		DefaultValue: false,
+	})
+	if err != nil {
+		return err
+	}
+
 	// Create the infra spec
 	var infraSpec *scaffold.InfraSpec
-	composeEnabled := i.features.IsEnabled(featureCompose)
-	if !composeEnabled { // backwards compatibility
+	if genInfraFiles {
 		spec, err := i.infraSpecFromDetect(ctx, detect)
 		if err != nil {
 			return err
 		}
 		infraSpec = &spec
 
-		// Prompt for environment before proceeding with generation
-		_, err = initializeEnv()
-		if err != nil {
-			return err
-		}
+		// // Prompt for environment before proceeding with generation
+		// _, err = initializeEnv()
+		// if err != nil {
+		// 	return err
+		// }
 	}
 
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("generate"))
 
 	title = "Generating " + output.WithHighLightFormat("./"+azdcontext.ProjectFileName)
 	i.console.ShowSpinner(ctx, title, input.Step)
-	err = i.genProjectFile(ctx, azdCtx, detect, composeEnabled)
+	err = i.genProjectFile(ctx, azdCtx, detect)
 	if err != nil {
 		i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
 		return err
@@ -350,15 +356,10 @@ func (i *Initializer) genFromInfra(
 func (i *Initializer) genProjectFile(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
-	detect detectConfirm,
-	composeEnabled bool) error {
-	config, err := i.prjConfigFromDetect(ctx, azdCtx.ProjectDirectory(), detect, composeEnabled)
+	detect detectConfirm) error {
+	config, err := i.prjConfigFromDetect(ctx, azdCtx.ProjectDirectory(), detect)
 	if err != nil {
 		return fmt.Errorf("converting config: %w", err)
-	}
-
-	if composeEnabled {
-		config.MetaSchemaVersion = "alpha"
 	}
 
 	err = project.Save(
@@ -377,8 +378,7 @@ const InitGenTemplateId = "azd-init"
 func (i *Initializer) prjConfigFromDetect(
 	ctx context.Context,
 	root string,
-	detect detectConfirm,
-	addResources bool) (project.ProjectConfig, error) {
+	detect detectConfirm) (project.ProjectConfig, error) {
 	config := project.ProjectConfig{
 		Name: azdcontext.ProjectName(root),
 		Metadata: &project.ProjectMetadata{
@@ -398,75 +398,73 @@ func (i *Initializer) prjConfigFromDetect(
 		svcMapping[prj.Path] = svc.Name
 	}
 
-	if addResources {
-		config.Resources = map[string]*project.ResourceConfig{}
-		dbNames := map[appdetect.DatabaseDep]string{}
+	config.Resources = map[string]*project.ResourceConfig{}
+	dbNames := map[appdetect.DatabaseDep]string{}
 
-		databases := slices.SortedFunc(maps.Keys(detect.Databases),
-			func(a appdetect.DatabaseDep, b appdetect.DatabaseDep) int {
-				return strings.Compare(string(a), string(b))
-			})
+	databases := slices.SortedFunc(maps.Keys(detect.Databases),
+		func(a appdetect.DatabaseDep, b appdetect.DatabaseDep) int {
+			return strings.Compare(string(a), string(b))
+		})
 
-		promptOpts := add.PromptOptions{PrjConfig: &config}
+	promptOpts := add.PromptOptions{PrjConfig: &config}
 
-		for _, database := range databases {
-			db := project.ResourceConfig{
-				Type: add.DbMap[database],
-			}
-
-			configured, err := add.Configure(ctx, &db, i.console, promptOpts)
-			if err != nil {
-				return config, err
-			}
-
-			config.Resources[configured.Name] = &db
-			dbNames[database] = configured.Name
+	for _, database := range databases {
+		db := project.ResourceConfig{
+			Type: add.DbMap[database],
 		}
 
-		backends := []*project.ResourceConfig{}
-		frontends := []*project.ResourceConfig{}
-
-		for _, svc := range detect.Services {
-			name := svcMapping[svc.Path]
-			resSpec := project.ResourceConfig{
-				Type: project.ResourceTypeHostContainerApp,
-			}
-
-			props := project.ContainerAppProps{
-				Port: -1,
-			}
-
-			port, err := add.PromptPort(i.console, ctx, name, svc)
-			if err != nil {
-				return config, err
-			}
-			props.Port = port
-
-			for _, db := range svc.DatabaseDeps {
-				// filter out databases that were removed
-				if _, ok := detect.Databases[db]; !ok {
-					continue
-				}
-
-				resSpec.Uses = append(resSpec.Uses, dbNames[db])
-			}
-
-			resSpec.Name = name
-			resSpec.Props = props
-			config.Resources[name] = &resSpec
-
-			frontend := svc.HasWebUIFramework()
-			if frontend {
-				frontends = append(frontends, &resSpec)
-			} else {
-				backends = append(backends, &resSpec)
-			}
+		configured, err := add.Configure(ctx, &db, i.console, promptOpts)
+		if err != nil {
+			return config, err
 		}
 
-		for _, frontend := range frontends {
-			for _, backend := range backends {
-				frontend.Uses = append(frontend.Uses, backend.Name)
+		config.Resources[configured.Name] = &db
+		dbNames[database] = configured.Name
+	}
+
+	backends := []*project.ResourceConfig{}
+	frontends := []*project.ResourceConfig{}
+
+	for _, svc := range detect.Services {
+		name := svcMapping[svc.Path]
+		resSpec := project.ResourceConfig{
+			Type: project.ResourceTypeHostContainerApp,
+		}
+
+		props := project.ContainerAppProps{
+			Port: -1,
+		}
+
+		port, err := add.PromptPort(i.console, ctx, name, svc)
+		if err != nil {
+			return config, err
+		}
+		props.Port = port
+
+		for _, db := range svc.DatabaseDeps {
+			// filter out databases that were removed
+			if _, ok := detect.Databases[db]; !ok {
+				continue
 			}
+
+			resSpec.Uses = append(resSpec.Uses, dbNames[db])
+		}
+
+		resSpec.Name = name
+		resSpec.Props = props
+		config.Resources[name] = &resSpec
+
+		frontend := svc.HasWebUIFramework()
+		if frontend {
+			frontends = append(frontends, &resSpec)
+		} else {
+			backends = append(backends, &resSpec)
+		}
+	}
+
+	for _, frontend := range frontends {
+		for _, backend := range backends {
+			frontend.Uses = append(frontend.Uses, backend.Name)
 		}
 	}
 

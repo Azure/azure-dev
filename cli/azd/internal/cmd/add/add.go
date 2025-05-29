@@ -58,23 +58,6 @@ type AddAction struct {
 	azureClient      *azapi.AzureClient
 }
 
-func EnsureProjectCompatible(
-	ctx context.Context,
-	prjConfig *project.ProjectConfig,
-) error {
-	fmt.Printf("prjConfig.Infra.Path: %v\n", prjConfig.Infra.Path)
-
-	// Ensure that every service in prjConfig has a corresponding resource
-	for serviceName := range prjConfig.Services {
-		_, exists := prjConfig.Resources[serviceName]
-		if !exists {
-			return fmt.Errorf("incompatible project: please reinitialize the project with 'azd init' to use 'azd add'")
-		}
-	}
-
-	return nil
-}
-
 func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	prjConfig, err := project.Load(ctx, a.azdCtx.ProjectPath())
 	if err != nil {
@@ -87,7 +70,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	err = EnsureProjectCompatible(ctx, prjConfig)
+	err = ensureCompatibleProject(prjConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -401,6 +384,22 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			FollowUp: followUpMessage,
 		},
 	}, err
+}
+
+func ensureCompatibleProject(
+	prjConfig *project.ProjectConfig,
+) error {
+	fmt.Printf("prjConfig.Infra.Path: %v\n", prjConfig.Infra.Path)
+
+	// Ensure that every service in prjConfig has a corresponding resource
+	for serviceName := range prjConfig.Services {
+		_, exists := prjConfig.Resources[serviceName]
+		if !exists {
+			return fmt.Errorf("incompatible project: please reinitialize the project with 'azd init' to use 'azd add'")
+		}
+	}
+
+	return nil
 }
 
 type provisionSelection int

@@ -251,12 +251,6 @@ func (i *Initializer) InitFromApp(
 			return err
 		}
 		infraSpec = &spec
-
-		// // Prompt for environment before proceeding with generation
-		// _, err = initializeEnv()
-		// if err != nil {
-		// 	return err
-		// }
 	}
 
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("generate"))

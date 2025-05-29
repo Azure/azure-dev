@@ -571,14 +571,6 @@ func evaluateForOutputs(value string) (map[string]genOutputParameter, error) {
 				Value: noBrackets,
 			}
 		}
-		// Same for AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN as it is required to display the Aspire Dashboard link
-		// at the end of the deployment.
-		if strings.Contains(outputName, environment.ContainerEnvironmentEndpointEnvVarName) && appHostOwnsCompute {
-			outputs[environment.ContainerEnvironmentEndpointEnvVarName] = genOutputParameter{
-				Type:  "string",
-				Value: noBrackets,
-			}
-		}
 		name := fmt.Sprintf("%s_%s", strings.ToUpper(resourceName), strings.ToUpper(outputName))
 		outputs[name] = genOutputParameter{
 			Type:  "string",
@@ -951,7 +943,6 @@ func injectValueForBicepParameter(resourceName, p string, parameter any) (string
 // The generated 32-bit hash number is returned as an 8-length hexadecimal string.
 func uniqueFnvNumber(val string) string {
 	hash := fnv.New32a()
-	// #nosec G104 // FNV-1a hash is not cryptographically secure, but it is suitable for generating a unique hash.
 	hash.Write([]byte(val))
 	return fmt.Sprintf("%x", hash.Sum32())
 }
@@ -1491,12 +1482,12 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		}
 	}
 
-	switch targetType {
-	case "project.v0",
-		"container.v0",
-		"container.v1",
-		"dockerfile.v0",
-		"project.v1":
+	switch {
+	case targetType == "project.v0" ||
+		targetType == "container.v0" ||
+		targetType == "container.v1" ||
+		targetType == "dockerfile.v0" ||
+		targetType == "project.v1":
 		if strings.HasPrefix(prop, "containerImage") {
 			return `{{ .Image }}`, nil
 		}
@@ -1644,10 +1635,8 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 				fmt.Errorf("malformed binding expression, expected "+
 					"bindings.<binding-name>.[scheme|protocol|transport|external|host|targetPort|port|url] but was: %s", v)
 		}
-	case "azure.bicep.v0", "azure.bicep.v1":
-		if !strings.HasPrefix(prop, "outputs.") &&
-			!strings.HasPrefix(prop, "secretOutputs") &&
-			!strings.HasPrefix(prop, "secrets") {
+	case targetType == "azure.bicep.v0" || targetType == "azure.bicep.v1":
+		if !strings.HasPrefix(prop, "outputs.") && !strings.HasPrefix(prop, "secretOutputs") {
 			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
 		}
 		replaceDash := strings.ReplaceAll(resource, "-", "_")
@@ -1670,52 +1659,6 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 				return fmt.Sprintf("{{%s.outputs.%s}}", replaceDash, outputName), nil
 			}
 			return "", fmt.Errorf("unexpected output type %s", string(emitType))
-		} else if outputType == "secrets" {
-			// resource.secrets.<secret-name> was introduced after resource.outputs and resource.secretOutputs
-			// (few releases after).
-			// It enables Aspire to control the Key Vault used to save secrets.
-			// Before this, `secretOutputs` would:
-			//  - Create a KeyVault, Assigned read-role for azd-user, output Key Vault Endpoint and resolve the secret during
-			//    deployment
-			// Now, using `secrets`, Aspire owns creating the Key Vault and assigning the read-role to it.
-			if emitType == inputEmitTypeYaml {
-				// Get the ENV VAR Name for the Keyvault URL from the resource.connectionString
-				kvConnString, hasConString := b.connectionStrings[resource]
-				if !hasConString {
-					return "", fmt.Errorf(
-						"expecting to find connectionString for resource %s because it provides secrets", resource)
-				}
-				kvConnString = strings.TrimRight(strings.TrimLeft(kvConnString, "{"), "}")
-				if hasOutputs := strings.Contains(kvConnString, "outputs."); !hasOutputs {
-					return "", fmt.Errorf(
-						"expecting connectionString for resource %s to contains outputs reference", resource)
-				}
-				parts := strings.Split(kvConnString, ".outputs.")
-				if len(parts) != 2 {
-					return "", fmt.Errorf(
-						"unexpected connectionString for resource %s. Expecting the form of resource.outputs.name", resource)
-				}
-				if parts[0] != resource {
-					return "", fmt.Errorf(
-						"expecting to find connectionString for resource %s to auto-referenced itself"+
-							", like %s.outputs.name. But found: %s",
-						resource,
-						resource,
-						kvConnString,
-					)
-				}
-				envNarName := strings.ToUpper(parts[1])
-
-				return fmt.Sprintf(
-					"{{ secretOutput {{ .Env.%s_%s }}secrets/%s }}",
-					strings.ToUpper(replaceDash),
-					envNarName,
-					outputName), nil
-			}
-			if emitType == inputEmitTypeBicep {
-				return "", fmt.Errorf("secretOutputs not supported as inputs for bicep modules")
-			}
-			return "", fmt.Errorf("unexpected output type %s", string(emitType))
 		} else {
 			if emitType == inputEmitTypeYaml {
 				if noOutputName {
@@ -1733,7 +1676,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			}
 			return "", fmt.Errorf("unexpected output type %s", string(emitType))
 		}
-	case "parameter.v0":
+	case targetType == "parameter.v0":
 		param := b.bicepContext.InputParameters[resource]
 		inputType := "parameter"
 		if param.Secret {

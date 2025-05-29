@@ -14,8 +14,6 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/psanford/memfs"
@@ -135,61 +133,23 @@ func infraFsForProject(ctx context.Context, prjConfig *ProjectConfig) (fs.FS, er
 
 func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 	infraSpec := scaffold.InfraSpec{}
-	existingMap := map[string]*scaffold.ExistingResource{}
 	// backends -> frontends
 	backendMapping := map[string]string{}
 
 	// Create a "virtual" copy since we're adding any implicitly dependent resources
 	// that are unrepresented by the current user-provided schema
 	resources := maps.Clone(projectConfig.Resources)
-	keys := slices.Sorted(maps.Keys(resources))
-
-	// First pass
-	for _, k := range keys {
-		res := resources[k]
-		// Add any implicit dependencies
+	// Add any implicit dependencies
+	for _, res := range resources {
 		dependencies := DependentResourcesOf(res)
 		for _, dep := range dependencies {
 			if _, exists := resources[dep.Name]; !exists {
 				resources[dep.Name] = dep
 			}
 		}
-
-		if res.Existing { // handle existing flow
-			resourceMeta, ok := scaffold.ResourceMetaFromType(res.Type.AzureResourceType())
-			if !ok {
-				return nil, fmt.Errorf("resource type '%s' is not currently supported for existing", string(res.Type))
-			}
-
-			existing := scaffold.ExistingResource{
-				Name:             "existing" + scaffold.BicepNameInfix(res.Name),
-				ApiVersion:       resourceMeta.ApiVersion,
-				ResourceIdEnvVar: infra.ResourceIdName(res.Name),
-				ResourceType:     resourceMeta.ResourceType,
-				RoleAssignments:  resourceMeta.RoleAssignments.Write,
-			}
-
-			if resourceMeta.ParentForEval != "" {
-				existing.ResourceType = resourceMeta.ParentForEval
-			}
-
-			if res.Type == ResourceTypeKeyVault {
-				// For Key Vault, we grant read access to secrets by default
-				existing.RoleAssignments = resourceMeta.RoleAssignments.Read
-			}
-
-			infraSpec.Existing = append(infraSpec.Existing, existing)
-			existingMap[res.Name] = &existing
-			continue
-		}
 	}
 
-	for _, k := range keys {
-		res := resources[k]
-		if res.Existing {
-			continue
-		}
-
+	for _, res := range resources {
 		switch res.Type {
 		case ResourceTypeDbRedis:
 			infraSpec.DbRedis = &scaffold.DatabaseRedis{}
@@ -230,7 +190,7 @@ func infraSpec(projectConfig *ProjectConfig) (*scaffold.InfraSpec, error) {
 				return nil, err
 			}
 
-			err = mapHostUses(res, &svcSpec, backendMapping, existingMap, projectConfig)
+			err = mapHostUses(res, &svcSpec, backendMapping, projectConfig)
 			if err != nil {
 				return nil, err
 			}
@@ -372,47 +332,11 @@ func mapHostUses(
 	res *ResourceConfig,
 	svcSpec *scaffold.ServiceSpec,
 	backendMapping map[string]string,
-	existingMap map[string]*scaffold.ExistingResource,
 	prj *ProjectConfig) error {
 	for _, use := range res.Uses {
 		useRes, ok := prj.Resources[use]
 		if !ok {
 			return fmt.Errorf("resource %s uses %s, which does not exist", res.Name, use)
-		}
-
-		if useRes.Existing {
-			resourceMeta, ok := scaffold.ResourceMetaFromType(useRes.Type.AzureResourceType())
-			if !ok {
-				return fmt.Errorf("resource type '%s' is not currently supported for existing", string(res.Type))
-			}
-
-			existingDecl := existingMap[use]
-
-			emitEnv := EmitEnv{FuncMap: scaffold.BaseEmitBicepFuncMap(), ResourceVarName: existingDecl.Name}
-			emitter := func(val *scaffold.ExpressionVar, results map[string]string) error {
-				return emitVariable(emitEnv, val, results)
-			}
-
-			results, err := scaffold.EmitBicep(resourceMeta.Variables, emitter)
-			if err != nil {
-				return fmt.Errorf("emitting bicep bindings for '%s': %w", useRes.Name, err)
-			}
-
-			for key, value := range results {
-				envKey := scaffold.EnvVarName(
-					fmt.Sprintf("%s_%s", resourceMeta.StandardVarPrefix, environment.Key(use)),
-					key)
-
-				if envValue, exists := svcSpec.Env[envKey]; exists {
-					panic(fmt.Sprintf(
-						"env collision: env value %s already set to %s, cannot set to %s", envKey, envValue, value))
-				}
-
-				svcSpec.Env[envKey] = value
-			}
-
-			svcSpec.Existing = append(svcSpec.Existing, existingDecl)
-			continue
 		}
 
 		switch useRes.Type {
@@ -450,125 +374,6 @@ func mapHostUses(
 	}
 
 	return nil
-}
-
-type EmitEnv struct {
-	// The function map to use for evaluating expressions.
-	FuncMap scaffold.FuncMap
-
-	// ResourceVarName is the name of Bicep symbol to assign property expressions.
-	ResourceVarName string
-}
-
-func emitVariable(emitEnv EmitEnv, val *scaffold.ExpressionVar, results map[string]string) error {
-	if len(val.Expressions) == 0 { // literal value, surround with quotes
-		val.Value = fmt.Sprintf("'%s'", val.Value)
-		return nil
-	}
-
-	// by default, surround each expression with ${} within a Bicep interpolated string
-	surround := func(s string) string {
-		return fmt.Sprintf("${%s}", s)
-	}
-
-	// when the expression is a single expression that covers the entire value, don't surround it
-	if len(val.Expressions) == 1 &&
-		val.Expressions[0].Start == 0 &&
-		val.Expressions[0].End == len(val.Value) {
-		surround = func(s string) string {
-			return s
-		}
-	}
-
-	for _, expr := range val.Expressions {
-		err := emitVariableExpression(emitEnv, val.Key, expr, surround, results)
-		if err != nil {
-			return fmt.Errorf("evaluating expression '%s': %w", val.Key, err)
-		}
-	}
-
-	if isBicepInterpolatedString(val.Value) {
-		// If the final value contains any interpolation ${}, we wrap the final value with quotes.
-		//
-		// By doing this "reflection-like" behavior of examining the output string,
-		// we allow functions to be composable while respecting string-interpolation rules.
-		//
-		// Regardless of whether an interpolation was emitted as part of a function expression,
-		// or because we surrounded values here, we will detect all cases and wrap the final value nicely.
-		val.Value = fmt.Sprintf("'%s'", val.Value)
-	}
-
-	return nil
-}
-
-func emitVariableExpression(
-	env EmitEnv,
-	key string,
-	expr *scaffold.Expression,
-	surround func(string) string,
-	results map[string]string) error {
-	switch expr.Kind {
-	case scaffold.PropertyExpr:
-		path := expr.Data.(scaffold.PropertyExprData).PropertyPath
-		expr.Replace(surround(fmt.Sprintf("%s.%s", env.ResourceVarName, path)))
-	case scaffold.VarExpr:
-		name := expr.Data.(scaffold.VarExprData).Name
-		expr.Replace(surround(results[name]))
-	case scaffold.FuncExpr:
-		funcData := expr.Data.(scaffold.FuncExprData)
-		funcName := funcData.FuncName
-
-		// Check if function exists
-		fn, ok := env.FuncMap[funcName]
-		if !ok {
-			return fmt.Errorf("unknown function: %s", funcName)
-		}
-
-		// for arguments of a function, we return the value as literal.
-		// the interpolation (if any) is done in the function itself.
-		id := func(s string) string { return s }
-
-		// Evaluate all arguments
-		args := make([]interface{}, 0, len(funcData.Args))
-		for _, arg := range funcData.Args {
-			err := emitVariableExpression(env, key, arg, id, results)
-			if err != nil {
-				return fmt.Errorf("evaluating arguments for '%s': %w", funcName, err)
-			}
-
-			args = append(args, arg.Value)
-		}
-
-		// Call the function
-		funcResult, err := scaffold.CallFn(fn, funcName, args)
-		if err != nil {
-			return fmt.Errorf("calling '%s' failed: %w", funcName, err)
-		}
-
-		resultString := fmt.Sprintf("%v", funcResult)
-		expr.Replace(surround(resultString))
-	case scaffold.SpecExpr:
-		return fmt.Errorf("spec expressions are not currently supported in existing resources")
-	case scaffold.VaultExpr:
-		return fmt.Errorf("vault expressions are not currently supported in existing resources")
-	}
-
-	return nil
-}
-
-// isBicepInterpolatedString checks if a string contains any Bicep interpolation expressions.
-//
-// Bicep interpolation expressions are of the form ${expression},
-// and are not escaped with a backslash.
-func isBicepInterpolatedString(s string) bool {
-	for i, r := range s {
-		if r == '$' &&
-			i+1 < len(s) && s[i+1] == '{' && // we see '${'
-			i-1 >= 0 && s[i-1] != '\\' { // we do not see escaped '\${'
-			return true
-		}
-	}
-	return false
 }
 
 func setParameter(spec *scaffold.InfraSpec, name string, value string, isSecret bool) {

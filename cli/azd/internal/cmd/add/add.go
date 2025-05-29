@@ -58,16 +58,7 @@ type AddAction struct {
 	azureClient      *azapi.AzureClient
 }
 
-var composeFeature = alpha.MustFeatureKey("compose")
-
 func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if !a.alphaManager.IsEnabled(composeFeature) {
-		return nil, fmt.Errorf(
-			"compose is currently under alpha support and must be explicitly enabled."+
-				" Run `%s` to enable this feature", alpha.GetEnableCommand(composeFeature),
-		)
-	}
-
 	prjConfig, err := project.Load(ctx, a.azdCtx.ProjectPath())
 	if err != nil {
 		return nil, err

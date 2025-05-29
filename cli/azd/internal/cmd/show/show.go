@@ -40,8 +40,6 @@ import (
 	"github.com/spf13/pflag"
 )
 
-var composeFeature = alpha.MustFeatureKey("compose")
-
 type showFlags struct {
 	global      *internal.GlobalCommandOptions
 	showSecrets bool
@@ -204,7 +202,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 			envName := env.Name()
 
-			if s.featureManager.IsEnabled(composeFeature) && len(s.args) > 0 {
+			if len(s.args) > 0 {
 				name := s.args[0]
 				err := s.showResource(ctx, name, env)
 				if err != nil {

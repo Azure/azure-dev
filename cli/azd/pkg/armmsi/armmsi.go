@@ -33,7 +33,7 @@ type ArmMsiService struct {
 //	- error: An error object if the operation fails, otherwise nil.
 func (s *ArmMsiService) CreateUserIdentity(
 	ctx context.Context,
-	subscriptionId, resourceGroup, name string) (armmsi.Identity, error) {
+	subscriptionId, resourceGroup, location, name string) (armmsi.Identity, error) {
 
 	// Create a new GraphClient for the subscription
 	credential, err := s.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
@@ -47,8 +47,8 @@ func (s *ArmMsiService) CreateUserIdentity(
 	}
 
 	msi, err := client.CreateOrUpdate(
-		ctx, resourceGroup, "myIdentity", armmsi.Identity{
-			Location: to.Ptr("eastus"),
+		ctx, resourceGroup, name, armmsi.Identity{
+			Location: to.Ptr(location),
 		}, nil)
 	if err != nil {
 		return armmsi.Identity{}, err

@@ -134,10 +134,6 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		u.console.Message(ctx, output.WithGrayFormat("Note: Running custom 'up' workflow from azure.yaml"))
 	}
 
-	if u.flags.EnvironmentName != "" {
-		ctx = context.WithValue(ctx, envFlagCtxKey, u.flags.EnvFlag)
-	}
-
 	if err := u.workflowRunner.Run(ctx, upWorkflow); err != nil {
 		return nil, err
 	}

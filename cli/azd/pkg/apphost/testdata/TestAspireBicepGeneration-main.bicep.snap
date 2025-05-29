@@ -49,7 +49,6 @@ module ai 'ai/aspire.hosting.azure.bicep.appinsights.bicep' = {
     appInsightsName: 'ai'
     location: location
     logAnalyticsWorkspaceId: resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID
-    userPrincipalId: 'fixed-value-to-test-userPrincipalId-convention'
   }
 }
 module postgres_2 'postgres-2/aspire.hosting.azure.bicep.postgres.bicep' = {

@@ -94,15 +94,6 @@ var Resources = []ResourceMeta{
 		ApiVersion:   "2023-05-01",
 	},
 	{
-		ResourceType:      "Microsoft.CognitiveServices/accounts/deployments",
-		ApiVersion:        "2023-05-01",
-		ParentForEval:     "Microsoft.CognitiveServices/accounts",
-		StandardVarPrefix: "AZURE_OPENAI",
-		Variables: map[string]string{
-			"endpoint": "${.properties.endpoint}",
-		},
-	},
-	{
 		ResourceType: "Microsoft.ContainerRegistry/registries",
 		ApiVersion:   "2023-06-01-preview",
 	},

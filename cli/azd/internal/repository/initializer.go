@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
-	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,7 +28,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/resources"
-	"github.com/joho/godotenv"
 	"github.com/otiai10/copy"
 )
 
@@ -524,25 +522,6 @@ func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.Az
 	return nil
 }
 
-const allowNonEmptyEnvVar = "AZD_ALLOW_NON_EMPTY_FOLDER"
-
-func InitEnvFileValues() (map[string]string, error) {
-	values, err := godotenv.Read()
-	if err != nil {
-		// ignore the error if the file does not exist
-		if !os.IsNotExist(err) {
-			return nil, fmt.Errorf("reading .env file: %w", err)
-		}
-	}
-
-	// remove azd specific control variables
-	maps.DeleteFunc(values, func(key, value string) bool {
-		return key == allowNonEmptyEnvVar
-	})
-
-	return values, nil
-}
-
 // PromptIfNonEmpty prompts the user for confirmation if the project directory to initialize in is non-empty.
 // Returns error if an error occurred while prompting, or if the user declines confirmation.
 func (i *Initializer) PromptIfNonEmpty(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
@@ -550,10 +529,6 @@ func (i *Initializer) PromptIfNonEmpty(ctx context.Context, azdCtx *azdcontext.A
 	isEmpty, err := osutil.IsDirEmpty(dir)
 	if err != nil {
 		return err
-	}
-
-	if _, allowNonEmpty := os.LookupEnv(allowNonEmptyEnvVar); allowNonEmpty {
-		return nil
 	}
 
 	if !isEmpty {

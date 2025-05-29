@@ -103,13 +103,6 @@ func Configure(
 		return fillStorageDetails(ctx, r, console, p)
 	case project.ResourceTypeAiProject:
 		return fillAiProjectName(ctx, r, console, p)
-	case project.ResourceTypeAiSearch:
-		if _, exists := p.PrjConfig.Resources["search"]; exists {
-			return nil, fmt.Errorf("only one AI Search resource is allowed at this time")
-		}
-
-		r.Name = "search"
-		return r, nil
 	case project.ResourceTypeKeyVault:
 		if _, exists := p.PrjConfig.Resources["vault"]; exists {
 			return nil, fmt.Errorf(

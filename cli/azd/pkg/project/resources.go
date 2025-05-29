@@ -23,8 +23,6 @@ func AllResourceTypes() []ResourceType {
 		ResourceTypeMessagingEventHubs,
 		ResourceTypeMessagingServiceBus,
 		ResourceTypeStorage,
-		ResourceTypeAiProject,
-		ResourceTypeAiSearch,
 		ResourceTypeKeyVault,
 	}
 }
@@ -41,7 +39,6 @@ const (
 	ResourceTypeMessagingServiceBus ResourceType = "messaging.servicebus"
 	ResourceTypeStorage             ResourceType = "storage"
 	ResourceTypeAiProject           ResourceType = "ai.project"
-	ResourceTypeAiSearch            ResourceType = "ai.search"
 	ResourceTypeKeyVault            ResourceType = "keyvault"
 )
 
@@ -69,8 +66,6 @@ func (r ResourceType) String() string {
 		return "Storage Account"
 	case ResourceTypeAiProject:
 		return "AI Foundry"
-	case ResourceTypeAiSearch:
-		return "AI Search"
 	case ResourceTypeKeyVault:
 		return "Key Vault"
 	}
@@ -110,8 +105,6 @@ func (r ResourceType) AzureResourceType() string {
 		return "Microsoft.KeyVault/vaults"
 	case ResourceTypeAiProject:
 		return "Microsoft.MachineLearningServices/workspaces"
-	case ResourceTypeAiSearch:
-		return "Microsoft.Search/searchServices"
 	}
 
 	return ""

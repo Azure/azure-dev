@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -909,7 +910,34 @@ func createPipelineManager(
 		&mockUserConfigManager{},
 		nil,
 		armmsi.ArmMsiService{},
+		&mockPrompter{},
 	)
+}
+
+type mockPrompter struct{}
+
+// PromptLocation implements prompt.Prompter.
+func (m *mockPrompter) PromptLocation(
+	ctx context.Context, subId string, msg string,
+	filter prompt.LocationFilterPredicate, defaultLocation *string) (string, error) {
+	return "eastus", nil
+}
+
+// PromptResourceGroup implements prompt.Prompter.
+func (m *mockPrompter) PromptResourceGroup(ctx context.Context, options prompt.PromptResourceOptions) (string, error) {
+	return "test-rg", nil
+}
+
+// PromptResourceGroupFrom implements prompt.Prompter.
+func (m *mockPrompter) PromptResourceGroupFrom(
+	ctx context.Context, subscriptionId string, location string,
+	options prompt.PromptResourceGroupFromOptions) (string, error) {
+	return "test-rg", nil
+}
+
+// PromptSubscription implements prompt.Prompter.
+func (m *mockPrompter) PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error) {
+	return "00000000-0000-0000-0000-000000000000", nil
 }
 
 type mockUserConfigManager struct {

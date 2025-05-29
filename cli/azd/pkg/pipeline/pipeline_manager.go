@@ -317,12 +317,12 @@ func (pm *PipelineManager) Configure(
 		log.Printf("Authentication mode has not been set. Prompt user if they want to set it up now.")
 		const optionMsi = "Federated User Managed Identity (MSI + OIDC)"
 		const optionOidc = "Federated Service Principal (SP + OIDC)"
-		const optionSecret = "Client Credentials (SP + Secret)"
+		const optionClientSec = "Client Credentials (SP + Secret)"
 		const optionSkip = "Skip authentication setup (for manually configured pipelines or existing set up)"
 		options := []string{
 			optionMsi,
 			optionOidc,
-			optionSecret,
+			optionClientSec,
 			optionSkip,
 		}
 		selectedOption, err := pm.console.Select(ctx, input.ConsoleOptions{
@@ -336,7 +336,7 @@ func (pm *PipelineManager) Configure(
 		switch options[selectedOption] {
 		case optionMsi:
 			msiEnabled = true
-		case optionOidc, optionSecret:
+		case optionOidc, optionClientSec:
 			usingSP = true
 		case optionSkip:
 			skipAuth = true
@@ -401,7 +401,7 @@ func (pm *PipelineManager) Configure(
 	if !skipAuth && msiEnabled {
 		// ************************** Pick or create a new MSI **************************
 		var displayMsg string
-		var msi msi.Identity
+		var msIdentity msi.Identity
 		if msiResourceId == "" {
 			// Prompt for pick or create a new MSI
 			const optionCreate = "Create new User Managed Identity (MSI)"
@@ -442,9 +442,10 @@ func (pm *PipelineManager) Configure(
 					pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 					return result, fmt.Errorf("failed to create User Managed Identity (MSI): %w", err)
 				}
-				msi = newMsi
+				msIdentity = newMsi
 			} else {
 				// List existing MSIs and let the user select one
+				msIdentity = msi.Identity{}
 			}
 		} else {
 			displayMsg = fmt.Sprintf("Updating MSI %s", msiResourceId)
@@ -460,7 +461,7 @@ func (pm *PipelineManager) Configure(
 				pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 				return result, fmt.Errorf("failed to create User Managed Identity (MSI): %w", err)
 			}
-			msi = existingMsi
+			msIdentity = existingMsi
 		}
 
 		// ************************** Role Assign **************************
@@ -474,18 +475,18 @@ func (pm *PipelineManager) Configure(
 		// }
 
 		// Set in .env to be retrieved for any additional runs
-		pm.env.DotenvSet(AzurePipelineMsiResourceId, *msi.ID)
+		pm.env.DotenvSet(AzurePipelineMsiResourceId, *msIdentity.ID)
 		if err := pm.envManager.Save(ctx, pm.env); err != nil {
 			return result, fmt.Errorf("failed to save environment: %w", err)
 		}
 
 		authConfig = &authConfiguration{
 			AzureCredentials: &entraid.AzureCredentials{
-				ClientId:       *msi.Properties.ClientID,
-				TenantId:       *msi.Properties.TenantID,
+				ClientId:       *msIdentity.Properties.ClientID,
+				TenantId:       *msIdentity.Properties.TenantID,
 				SubscriptionId: subscriptionId,
 			},
-			msi: &msi,
+			msi: &msIdentity,
 		}
 	}
 

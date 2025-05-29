@@ -12,11 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 )
 
-const (
-	federatedIdentityIssuer   = "https://token.actions.githubusercontent.com"
-	federatedIdentityAudience = "api://AzureADTokenExchange"
-)
-
 // ArmMsiService provides functionality to interact with Azure Managed Service Identity (MSI) resources.
 // It uses a subscription credential provider and ARM client options to authenticate and configure requests.
 type ArmMsiService struct {

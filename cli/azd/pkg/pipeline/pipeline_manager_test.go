@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -907,6 +908,7 @@ func createPipelineManager(
 		project.NewImportManager(project.NewDotNetImporter(nil, nil, nil, nil, mockContext.AlphaFeaturesManager)),
 		&mockUserConfigManager{},
 		nil,
+		armmsi.ArmMsiService{},
 	)
 }
 

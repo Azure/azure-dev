@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	msiArm "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
@@ -156,9 +155,9 @@ type servicePrincipalResult struct {
 	servicePrincipal *graphsdk.ServicePrincipal
 }
 
-type msiUser struct {
-	msiArm.Identity
-}
+// type msiUser struct {
+// 	msiArm.Identity
+// }
 
 func servicePrincipal(
 	ctx context.Context,

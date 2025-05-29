@@ -75,16 +75,6 @@ func supportingFiles(spec InfraSpec) []string {
 		files = append(files, "/modules/fetch-container-image.bicep")
 	}
 
-	if len(spec.Existing) > 0 {
-		files = append(files,
-			"/modules/role-assignment.bicep",
-			"/modules/role-assignment.json")
-	}
-
-	if spec.AiFoundryProject != nil && spec.AISearch != nil {
-		files = append(files, "/modules/ai-search-conn.bicep")
-	}
-
 	return files
 }
 
@@ -244,15 +234,4 @@ func preExecExpand(spec *InfraSpec) {
 		spec.Parameters = append(spec.Parameters,
 			serviceDefPlaceholder(svc.Name))
 	}
-
-	for _, res := range spec.Existing {
-		// each existing resource adds a parameter declaration input for its resource id
-		spec.Parameters = append(spec.Parameters,
-			Parameter{
-				Name:  res.Name + "Id",
-				Value: fmt.Sprintf("${%s}", res.ResourceIdEnvVar),
-				Type:  "string",
-			})
-	}
-
 }

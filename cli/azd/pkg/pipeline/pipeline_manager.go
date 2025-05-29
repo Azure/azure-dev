@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	msi "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -451,12 +450,7 @@ func (pm *PipelineManager) Configure(
 			displayMsg = fmt.Sprintf("Updating MSI %s", msiResourceId)
 			pm.console.ShowSpinner(ctx, displayMsg, input.Step)
 			// Get the existing MSI by resource ID
-			msiResId, err := arm.ParseResourceID(msiResourceId)
-			if err != nil {
-				return nil, fmt.Errorf("parsing MSI resource id: %w", err)
-			}
-			existingMsi, err := pm.msiService.CreateUserIdentity(
-				ctx, subscriptionId, msiResId.ResourceGroupName, msiResId.Location, msiResId.Name)
+			existingMsi, err := pm.msiService.GetUserIdentity(ctx, msiResourceId)
 			if err != nil {
 				pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 				return result, fmt.Errorf("failed to create User Managed Identity (MSI): %w", err)
@@ -523,11 +517,21 @@ func (pm *PipelineManager) Configure(
 
 		// Enable federated credentials if requested
 		if credentialOptions.EnableFederatedCredentials {
-			createdCredentials, err := pm.entraIdService.ApplyFederatedCredentials(
-				ctx, subscriptionId,
-				authConfig.ClientId,
-				credentialOptions.FederatedCredentialOptions,
-			)
+			var createdCredentials []*graphsdk.FederatedIdentityCredential
+			var err error
+			if msiEnabled {
+				createdCredentials, err = pm.entraIdService.ApplyMsiFederatedCredentials(
+					ctx, subscriptionId,
+					*authConfig.msi.Properties.PrincipalID,
+					credentialOptions.FederatedCredentialOptions,
+				)
+			} else {
+				createdCredentials, err = pm.entraIdService.ApplyFederatedCredentials(
+					ctx, subscriptionId,
+					authConfig.ClientId,
+					credentialOptions.FederatedCredentialOptions,
+				)
+			}
 			if err != nil {
 				return result, fmt.Errorf("failed to create federated credentials: %w", err)
 			}

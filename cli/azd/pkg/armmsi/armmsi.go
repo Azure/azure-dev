@@ -5,6 +5,7 @@ package armmsi
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -17,6 +18,16 @@ import (
 type ArmMsiService struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	armClientOptions   *arm.ClientOptions
+}
+
+func NewArmMsiService(
+	credentialProvider account.SubscriptionCredentialProvider,
+	armClientOptions *arm.ClientOptions,
+) ArmMsiService {
+	return ArmMsiService{
+		credentialProvider: credentialProvider,
+		armClientOptions:   armClientOptions,
+	}
 }
 
 // NewArmMsiService creates a new instance of ArmMsiService.
@@ -55,4 +66,45 @@ func (s *ArmMsiService) CreateUserIdentity(
 	}
 
 	return msi.Identity, nil
+}
+
+// GetUserIdentity retrieves user-assigned managed identity information from Azure.
+//
+// Parameters:
+//   - ctx: The context.Context for the request
+//   - resourceId: The fully qualified resource ID of the user-assigned managed identity
+//
+// Returns:
+//   - armmsi.Identity: The managed identity information if successful
+//   - error: An error if the operation fails, including:
+//   - Error parsing the resource ID
+//   - Error getting credentials for the subscription
+//   - Error creating the MSI client
+//   - Error retrieving the identity from Azure
+func (s *ArmMsiService) GetUserIdentity(
+	ctx context.Context,
+	resourceId string) (armmsi.Identity, error) {
+	msiResId, err := arm.ParseResourceID(resourceId)
+	if err != nil {
+		return armmsi.Identity{}, fmt.Errorf("parsing MSI resource id: %w", err)
+	}
+	subscriptionId := msiResId.SubscriptionID
+	resourceGroup := msiResId.ResourceGroupName
+	resourceName := msiResId.Name
+	credential, err := s.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return armmsi.Identity{}, err
+	}
+
+	client, err := armmsi.NewUserAssignedIdentitiesClient(subscriptionId, credential, s.armClientOptions)
+	if err != nil {
+		return armmsi.Identity{}, err
+	}
+
+	resp, err := client.Get(ctx, resourceGroup, resourceName, nil)
+	if err != nil {
+		return armmsi.Identity{}, err
+	}
+
+	return resp.Identity, nil
 }

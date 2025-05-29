@@ -60,6 +60,12 @@ type EntraIdService interface {
 		clientId string,
 		federatedCredentials []*graphsdk.FederatedIdentityCredential,
 	) ([]*graphsdk.FederatedIdentityCredential, error)
+	ApplyMsiFederatedCredentials(
+		ctx context.Context,
+		subscriptionId string,
+		principalId string,
+		federatedCredentials []*graphsdk.FederatedIdentityCredential,
+	) ([]*graphsdk.FederatedIdentityCredential, error)
 	CreateRbac(ctx context.Context, subscriptionId string, scope, roleId, principalId string) error
 }
 
@@ -190,6 +196,53 @@ func (ad *entraIdService) ResetPasswordCredentials(
 		SubscriptionId: subscriptionId,
 		TenantId:       *servicePrincipal.AppOwnerOrganizationId,
 	}, nil
+}
+
+// ApplyMsiFederatedCredentials implements EntraIdService.
+func (ad *entraIdService) ApplyMsiFederatedCredentials(
+	ctx context.Context, subscriptionId, principalId string,
+	federatedCredentials []*graphsdk.FederatedIdentityCredential) ([]*graphsdk.FederatedIdentityCredential, error) {
+	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	application, err := ad.getServicePrincipalById(ctx, subscriptionId, principalId)
+	if err != nil {
+		return nil, fmt.Errorf("failed finding MSI: %w", err)
+	}
+
+	existingCredsResponse, err := graphClient.
+		ApplicationById(*application.Id).
+		FederatedIdentityCredentials().
+		Get(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed retrieving federated credentials: %w", err)
+	}
+
+	existingCredentials := existingCredsResponse.Value
+	createdCredentials := []*graphsdk.FederatedIdentityCredential{}
+
+	// Ensure the credential exists otherwise create a new one.
+	for i := range federatedCredentials {
+		credential, err := ad.ensureFederatedCredential(
+			ctx,
+			subscriptionId,
+			nil,
+			existingCredentials,
+			federatedCredentials[i],
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if credential != nil {
+			createdCredentials = append(createdCredentials, credential)
+		}
+	}
+
+	return createdCredentials, nil
 }
 
 func (ad *entraIdService) ApplyFederatedCredentials(
@@ -368,6 +421,21 @@ func (ad *entraIdService) getServicePrincipal(
 	}
 
 	return nil, fmt.Errorf("no service principal found for application '%s'", application.DisplayName)
+}
+
+func (ad *entraIdService) getServicePrincipalById(
+	ctx context.Context,
+	subscriptionId string,
+	id string,
+) (*graphsdk.ServicePrincipal, error) {
+	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	return graphClient.
+		ServicePrincipals().
+		GetById(ctx, id)
 }
 
 // Gets or creates a service principal for the specified application name

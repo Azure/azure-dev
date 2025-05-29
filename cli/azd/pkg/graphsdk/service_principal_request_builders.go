@@ -42,6 +42,25 @@ func (c *ServicePrincipalListRequestBuilder) Get(ctx context.Context) (*ServiceP
 	return httputil.ReadRawResponse[ServicePrincipalListResponse](res)
 }
 
+// Gets a list of Microsoft Graph Service Principals that the current logged in user has access to.
+func (c *ServicePrincipalListRequestBuilder) GetById(ctx context.Context, id string) (*ServicePrincipal, error) {
+	req, err := c.createRequest(ctx, http.MethodGet, fmt.Sprintf("%s/servicePrincipals/%s", c.client.host, id))
+	if err != nil {
+		return nil, fmt.Errorf("failed creating request: %w", err)
+	}
+
+	res, err := c.client.pipeline.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if !runtime.HasStatusCode(res, http.StatusOK) {
+		return nil, runtime.NewResponseError(res)
+	}
+
+	return httputil.ReadRawResponse[ServicePrincipal](res)
+}
+
 func (c *ServicePrincipalListRequestBuilder) Post(
 	ctx context.Context,
 	servicePrincipal *ServicePrincipal,

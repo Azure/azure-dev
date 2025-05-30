@@ -102,6 +102,10 @@ func NewServicePrincipalItemRequestBuilder(client *GraphClient, id string) *Serv
 	return builder
 }
 
+func (c *ServicePrincipalItemRequestBuilder) FederatedIdentityCredentials() *MsiFederatedIdentityCredentialListReqBuilder {
+	return NewMsiFederatedIdentityCredentialListRequestBuilder(c.client, c.id)
+}
+
 // Gets a Microsoft Graph Service Principal for the specified service principal identifier
 func (b *ServicePrincipalItemRequestBuilder) Get(ctx context.Context) (*ServicePrincipal, error) {
 	req, err := b.createRequest(ctx, http.MethodGet, fmt.Sprintf("%s/servicePrincipals/%s", b.client.host, b.id))

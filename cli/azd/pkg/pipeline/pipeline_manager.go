@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	msi "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -520,11 +521,27 @@ func (pm *PipelineManager) Configure(
 			var createdCredentials []*graphsdk.FederatedIdentityCredential
 			var err error
 			if msiEnabled {
-				createdCredentials, err = pm.entraIdService.ApplyMsiFederatedCredentials(
-					ctx, subscriptionId,
-					*authConfig.msi.Properties.PrincipalID,
-					credentialOptions.FederatedCredentialOptions,
-				)
+				msiData, err := arm.ParseResourceID(*authConfig.msi.ID)
+				if err != nil {
+					return nil, fmt.Errorf("parsing MSI resource id: %w", err)
+				}
+				for _, fCred := range credentialOptions.FederatedCredentialOptions {
+					c, err := pm.msiService.CreateFederatedCredential(ctx, subscriptionId, msiData.Parent.ResourceGroupName,
+						msiData.Name, fCred.Name, fCred.Subject, fCred.Issuer, fCred.Audiences)
+					if err != nil {
+						return nil, err
+					}
+					audiences := make([]string, len(c.Properties.Audiences))
+					for i, audience := range c.Properties.Audiences {
+						audiences[i] = *audience
+					}
+					createdCredentials = append(createdCredentials, &graphsdk.FederatedIdentityCredential{
+						Name:      *c.Name,
+						Subject:   *c.Properties.Subject,
+						Issuer:    *c.Properties.Issuer,
+						Audiences: audiences,
+					})
+				}
 			} else {
 				createdCredentials, err = pm.entraIdService.ApplyFederatedCredentials(
 					ctx, subscriptionId,

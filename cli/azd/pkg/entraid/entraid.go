@@ -207,13 +207,13 @@ func (ad *entraIdService) ApplyMsiFederatedCredentials(
 		return nil, err
 	}
 
-	application, err := ad.getServicePrincipalById(ctx, subscriptionId, principalId)
+	sp, err := ad.getServicePrincipalById(ctx, subscriptionId, principalId)
 	if err != nil {
 		return nil, fmt.Errorf("failed finding MSI: %w", err)
 	}
 
 	existingCredsResponse, err := graphClient.
-		ApplicationById(*application.Id).
+		ServicePrincipalById(*sp.Id).
 		FederatedIdentityCredentials().
 		Get(ctx)
 
@@ -226,10 +226,10 @@ func (ad *entraIdService) ApplyMsiFederatedCredentials(
 
 	// Ensure the credential exists otherwise create a new one.
 	for i := range federatedCredentials {
-		credential, err := ad.ensureFederatedCredential(
+		credential, err := ad.ensureMsiFederatedCredential(
 			ctx,
 			subscriptionId,
-			nil,
+			sp,
 			existingCredentials,
 			federatedCredentials[i],
 		)
@@ -497,6 +497,44 @@ func (ad *entraIdService) ensureFederatedCredential(
 	// Otherwise create the new federated credential
 	credential, err := graphClient.
 		ApplicationById(*application.Id).
+		FederatedIdentityCredentials().
+		Post(ctx, repoCredential)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed creating federated credential: %w", err)
+	}
+
+	return credential, nil
+}
+
+// Ensures that the federated credential exists on the MSI otherwise create a new one
+func (ad *entraIdService) ensureMsiFederatedCredential(
+	ctx context.Context,
+	subscriptionId string,
+	servicePrincipal *graphsdk.ServicePrincipal,
+	existingCredentials []graphsdk.FederatedIdentityCredential,
+	repoCredential *graphsdk.FederatedIdentityCredential,
+) (*graphsdk.FederatedIdentityCredential, error) {
+	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	// If a federated credential already exists for the same subject then nothing to do.
+	for _, existing := range existingCredentials {
+		if existing.Subject == repoCredential.Subject {
+			log.Printf(
+				"federated credential with subject '%s' already exists on application '%s'",
+				repoCredential.Subject,
+				*servicePrincipal.Id,
+			)
+			return nil, nil
+		}
+	}
+
+	// Otherwise create the new federated credential
+	credential, err := graphClient.
+		ServicePrincipalById(*servicePrincipal.Id).
 		FederatedIdentityCredentials().
 		Post(ctx, repoCredential)
 

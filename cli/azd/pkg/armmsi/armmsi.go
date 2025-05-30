@@ -108,3 +108,36 @@ func (s *ArmMsiService) GetUserIdentity(
 
 	return resp.Identity, nil
 }
+
+func (s *ArmMsiService) CreateFederatedCredential(
+	ctx context.Context,
+	subscriptionId, resourceGroup, msiName, name, subject, issuer string,
+	audiences []string) (armmsi.FederatedIdentityCredential, error) {
+	credential, err := s.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return armmsi.FederatedIdentityCredential{}, err
+	}
+
+	client, err := armmsi.NewFederatedIdentityCredentialsClient(subscriptionId, credential, s.armClientOptions)
+	if err != nil {
+		return armmsi.FederatedIdentityCredential{}, err
+	}
+
+	audiencesRefs := make([]*string, len(audiences))
+	for i, audience := range audiences {
+		audiencesRefs[i] = to.Ptr(audience)
+	}
+	response, err := client.CreateOrUpdate(ctx, resourceGroup, msiName, name,
+		armmsi.FederatedIdentityCredential{
+			Properties: &armmsi.FederatedIdentityCredentialProperties{
+				Subject:   to.Ptr(subject),
+				Issuer:    to.Ptr(issuer),
+				Audiences: audiencesRefs,
+			},
+		}, nil)
+
+	if err != nil {
+		return armmsi.FederatedIdentityCredential{}, fmt.Errorf("creating federated identity credential: %w", err)
+	}
+	return response.FederatedIdentityCredential, nil
+}

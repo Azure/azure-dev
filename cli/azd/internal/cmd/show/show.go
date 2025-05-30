@@ -68,7 +68,7 @@ func NewShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *sh
 
 func NewShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "show [resource name]",
+		Use:   "show [resource name or ID]",
 		Short: "Display information about your project and its resources.",
 	}
 

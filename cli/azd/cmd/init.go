@@ -279,8 +279,11 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		tracing.SetUsageAttributes(fields.InitMethod.String("app"))
 
 		header = "Your app is ready for the cloud!"
-		followUp = "You can provision and deploy your app to Azure by running the " + output.WithHighLightFormat("azd up") +
-			" command in this directory. You can add new Azure components to your project by running the " + output.WithHighLightFormat("azd add") + " command. For more information on configuring your app, see " +
+		followUp = "You can provision and deploy your app to Azure by running the " +
+			output.WithHighLightFormat("azd up") + " command in this directory. " +
+			"You can add new Azure components to your project by running " +
+			output.WithHighLightFormat("azd add") + ". " +
+			"For more information on configuring your app, see " +
 			output.WithHighLightFormat("./next-steps.md")
 		entries, err := os.ReadDir(azdCtx.ProjectDirectory())
 		if err != nil {

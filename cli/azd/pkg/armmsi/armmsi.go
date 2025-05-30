@@ -6,6 +6,8 @@ package armmsi
 import (
 	"context"
 	"fmt"
+	"log"
+	"slices"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -175,16 +177,28 @@ func (s *ArmMsiService) ApplyFederatedCredentials(ctx context.Context,
 	}
 
 	// Get existing federated identity credentials
+	existingCreds := []*armmsi.FederatedIdentityCredential{}
 	existingCredsPager := client.NewListPager(msiData.ResourceGroupName, msiData.Name, nil)
 	for existingCredsPager.More() {
 		resp, err := existingCredsPager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("listing existing federated identity credentials: %w", err)
 		}
-		
+		existingCreds = append(existingCreds, resp.Value...)
+	}
 
-	var result []armmsi.FederatedIdentityCredential
+	result := []armmsi.FederatedIdentityCredential{}
 	for _, cred := range federatedCredentials {
+
+		// Check if the credential already exists
+		if slices.ContainsFunc(existingCreds, func(existing *armmsi.FederatedIdentityCredential) bool {
+			return *existing.Properties.Subject == *cred.Properties.Subject
+		}) {
+			log.Printf(
+				"federated identity credential with subject %s already exists, skipping creation", *cred.Properties.Subject)
+			continue
+		}
+
 		newCred, err := client.CreateOrUpdate(ctx, msiData.ResourceGroupName, msiData.Name, *cred.Name, cred, nil)
 		if err != nil {
 			return nil, fmt.Errorf("creating federated identity credential %s: %w", *cred.Name, err)

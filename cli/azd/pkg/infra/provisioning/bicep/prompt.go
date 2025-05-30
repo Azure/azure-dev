@@ -350,23 +350,40 @@ func (p *BicepProvider) promptForParameter(
 			return nil, fmt.Errorf("parameter '%s' has no allowed values defined", key)
 		}
 
+		// defaultOption enables running with --no-prompt, taking the default value. We use the first option as default.
+		defaultOption := options[0]
+		// user can override the default value with azd metadata
+		if azdMetadata.Default != nil {
+			if !slices.Contains(options, *azdMetadata.Default) {
+				return nil, fmt.Errorf(
+					"default value '%s' is not in the allowed values for parameter '%s'", *azdMetadata.Default, key)
+			}
+			defaultOption = *azdMetadata.Default
+		}
+
 		choice, err := p.console.Select(ctx, input.ConsoleOptions{
-			Message: msg,
-			Help:    help,
-			Options: options,
+			Message:      msg,
+			Help:         help,
+			Options:      options,
+			DefaultValue: defaultOption,
 		})
 		if err != nil {
 			return nil, err
 		}
 		value = (*param.AllowedValues)[choice]
 	} else {
+		var defaultValueForPrompt *string
+		if azdMetadata.Default != nil {
+			defaultValueForPrompt = azdMetadata.Default
+		}
 		switch paramType {
 		case provisioning.ParameterTypeBoolean:
 			options := []string{"False", "True"}
 			choice, err := p.console.Select(ctx, input.ConsoleOptions{
-				Message: msg,
-				Help:    help,
-				Options: options,
+				Message:      msg,
+				Help:         help,
+				Options:      options,
+				DefaultValue: defaultValueForPrompt,
 			})
 			if err != nil {
 				return nil, err
@@ -374,8 +391,9 @@ func (p *BicepProvider) promptForParameter(
 			value = (options[choice] == "True")
 		case provisioning.ParameterTypeNumber:
 			userValue, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
-				Message: msg,
-				Help:    help,
+				Message:      msg,
+				Help:         help,
+				DefaultValue: defaultValueForPrompt,
 			}, convertInt, validateValueRange(key, param.MinValue, param.MaxValue))
 			if err != nil {
 				return nil, err
@@ -383,9 +401,10 @@ func (p *BicepProvider) promptForParameter(
 			value = userValue
 		case provisioning.ParameterTypeString:
 			userValue, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
-				Message:    msg,
-				Help:       help,
-				IsPassword: isSecuredParam,
+				Message:      msg,
+				Help:         help,
+				IsPassword:   isSecuredParam,
+				DefaultValue: defaultValueForPrompt,
 			}, convertString, validateLengthRange(key, param.MinLength, param.MaxLength))
 			if err != nil {
 				return nil, err

@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	msi "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -518,39 +518,51 @@ func (pm *PipelineManager) Configure(
 
 		// Enable federated credentials if requested
 		if credentialOptions.EnableFederatedCredentials {
-			var createdCredentials []*graphsdk.FederatedIdentityCredential
-			var err error
+			type fedCredentialData struct{ Name, Subject, Issuer string }
+			var createdCredentials []fedCredentialData
 			if msiEnabled {
-				msiData, err := arm.ParseResourceID(*authConfig.msi.ID)
-				if err != nil {
-					return nil, fmt.Errorf("parsing MSI resource id: %w", err)
+				// convert fedCredentials from msGraph to armmsi.FederatedIdentityCredential
+				armFedCreds := make([]msi.FederatedIdentityCredential, len(credentialOptions.FederatedCredentialOptions))
+				for i, fedCred := range credentialOptions.FederatedCredentialOptions {
+					armFedCreds[i] = msi.FederatedIdentityCredential{
+						Name: to.Ptr(fedCred.Name),
+						Properties: &msi.FederatedIdentityCredentialProperties{
+							Subject:   to.Ptr(fedCred.Subject),
+							Issuer:    to.Ptr(fedCred.Issuer),
+							Audiences: to.SliceOfPtrs(fedCred.Audiences...),
+						},
+					}
 				}
-				for _, fCred := range credentialOptions.FederatedCredentialOptions {
-					c, err := pm.msiService.CreateFederatedCredential(ctx, subscriptionId, msiData.Parent.ResourceGroupName,
-						msiData.Name, fCred.Name, fCred.Subject, fCred.Issuer, fCred.Audiences)
-					if err != nil {
-						return nil, err
-					}
-					audiences := make([]string, len(c.Properties.Audiences))
-					for i, audience := range c.Properties.Audiences {
-						audiences[i] = *audience
-					}
-					createdCredentials = append(createdCredentials, &graphsdk.FederatedIdentityCredential{
-						Name:      *c.Name,
-						Subject:   *c.Properties.Subject,
-						Issuer:    *c.Properties.Issuer,
-						Audiences: audiences,
+
+				creds, err := pm.msiService.ApplyFederatedCredentials(ctx, subscriptionId, *authConfig.msi.ID, armFedCreds)
+				if err != nil {
+					return result, fmt.Errorf("failed to create federated credentials: %w", err)
+				}
+
+				// Convert the armmsi.FederatedIdentityCredential to fedCredentialData for display
+				for _, c := range creds {
+					createdCredentials = append(createdCredentials, fedCredentialData{
+						Name:    *c.Name,
+						Subject: *c.Properties.Subject,
+						Issuer:  *c.Properties.Issuer,
 					})
 				}
 			} else {
-				createdCredentials, err = pm.entraIdService.ApplyFederatedCredentials(
+				creds, err := pm.entraIdService.ApplyFederatedCredentials(
 					ctx, subscriptionId,
 					authConfig.ClientId,
 					credentialOptions.FederatedCredentialOptions,
 				)
-			}
-			if err != nil {
-				return result, fmt.Errorf("failed to create federated credentials: %w", err)
+				if err != nil {
+					return result, fmt.Errorf("failed to create federated credentials: %w", err)
+				}
+				for _, c := range creds {
+					createdCredentials = append(createdCredentials, fedCredentialData{
+						Name:    c.Name,
+						Subject: c.Subject,
+						Issuer:  c.Issuer,
+					})
+				}
 			}
 
 			for _, credential := range createdCredentials {

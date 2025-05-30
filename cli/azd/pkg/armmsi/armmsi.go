@@ -109,6 +109,21 @@ func (s *ArmMsiService) GetUserIdentity(
 	return resp.Identity, nil
 }
 
+// CreateFederatedCredential creates or updates a federated identity credential for a managed identity.
+//
+// Parameters:
+//   - ctx: The context.Context for the request
+//   - subscriptionId: The Azure subscription ID
+//   - resourceGroup: The resource group name containing the managed identity
+//   - msiName: The name of the managed identity
+//   - name: The name of the federated credential
+//   - subject: The subject identifier
+//   - issuer: The issuer URL
+//   - audiences: A list of audience values that will be valid for the credential
+//
+// Returns:
+//   - FederatedIdentityCredential: The created/updated federated identity credential
+//   - error: An error if the operation fails, nil otherwise
 func (s *ArmMsiService) CreateFederatedCredential(
 	ctx context.Context,
 	subscriptionId, resourceGroup, msiName, name, subject, issuer string,
@@ -140,4 +155,42 @@ func (s *ArmMsiService) CreateFederatedCredential(
 		return armmsi.FederatedIdentityCredential{}, fmt.Errorf("creating federated identity credential: %w", err)
 	}
 	return response.FederatedIdentityCredential, nil
+}
+
+func (s *ArmMsiService) ApplyFederatedCredentials(ctx context.Context,
+	subscriptionId, msiResourceId string,
+	federatedCredentials []armmsi.FederatedIdentityCredential) ([]armmsi.FederatedIdentityCredential, error) {
+	msiData, err := arm.ParseResourceID(msiResourceId)
+	if err != nil {
+		return nil, fmt.Errorf("parsing MSI resource id: %w", err)
+	}
+	credential, err := s.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := armmsi.NewFederatedIdentityCredentialsClient(subscriptionId, credential, s.armClientOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get existing federated identity credentials
+	existingCredsPager := client.NewListPager(msiData.ResourceGroupName, msiData.Name, nil)
+	for existingCredsPager.More() {
+		resp, err := existingCredsPager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing existing federated identity credentials: %w", err)
+		}
+		
+
+	var result []armmsi.FederatedIdentityCredential
+	for _, cred := range federatedCredentials {
+		newCred, err := client.CreateOrUpdate(ctx, msiData.ResourceGroupName, msiData.Name, *cred.Name, cred, nil)
+		if err != nil {
+			return nil, fmt.Errorf("creating federated identity credential %s: %w", *cred.Name, err)
+		}
+		result = append(result, newCred.FederatedIdentityCredential)
+	}
+
+	return result, nil
 }

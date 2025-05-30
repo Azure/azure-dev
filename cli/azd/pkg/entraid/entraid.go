@@ -370,21 +370,6 @@ func (ad *entraIdService) getServicePrincipal(
 	return nil, fmt.Errorf("no service principal found for application '%s'", application.DisplayName)
 }
 
-func (ad *entraIdService) getServicePrincipalById(
-	ctx context.Context,
-	subscriptionId string,
-	id string,
-) (*graphsdk.ServicePrincipal, error) {
-	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	return graphClient.
-		ServicePrincipals().
-		GetById(ctx, id)
-}
-
 // Gets or creates a service principal for the specified application name
 func (ad *entraIdService) ensureServicePrincipal(
 	ctx context.Context,
@@ -444,44 +429,6 @@ func (ad *entraIdService) ensureFederatedCredential(
 	// Otherwise create the new federated credential
 	credential, err := graphClient.
 		ApplicationById(*application.Id).
-		FederatedIdentityCredentials().
-		Post(ctx, repoCredential)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed creating federated credential: %w", err)
-	}
-
-	return credential, nil
-}
-
-// Ensures that the federated credential exists on the MSI otherwise create a new one
-func (ad *entraIdService) ensureMsiFederatedCredential(
-	ctx context.Context,
-	subscriptionId string,
-	servicePrincipal *graphsdk.ServicePrincipal,
-	existingCredentials []graphsdk.FederatedIdentityCredential,
-	repoCredential *graphsdk.FederatedIdentityCredential,
-) (*graphsdk.FederatedIdentityCredential, error) {
-	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	// If a federated credential already exists for the same subject then nothing to do.
-	for _, existing := range existingCredentials {
-		if existing.Subject == repoCredential.Subject {
-			log.Printf(
-				"federated credential with subject '%s' already exists on application '%s'",
-				repoCredential.Subject,
-				*servicePrincipal.Id,
-			)
-			return nil, nil
-		}
-	}
-
-	// Otherwise create the new federated credential
-	credential, err := graphClient.
-		ServicePrincipalById(*servicePrincipal.Id).
 		FederatedIdentityCredentials().
 		Post(ctx, repoCredential)
 

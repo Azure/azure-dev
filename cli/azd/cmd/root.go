@@ -341,6 +341,9 @@ func NewRootCmd(
 		Add("add", &actions.ActionDescriptorOptions{
 			Command:        add.NewAddCmd(),
 			ActionResolver: add.NewAddAction,
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupBeta,
+			},
 		})
 
 	// Register any global middleware defined by the caller

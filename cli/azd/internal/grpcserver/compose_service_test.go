@@ -11,10 +11,12 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,7 +30,15 @@ func Test_ComposeService_AddResource(t *testing.T) {
 	err := project.Save(*mockContext.Context, &projectConfig, azdCtx.ProjectPath())
 	require.NoError(t, err)
 	lazyAzdContext := lazy.From(azdCtx)
-	composeService := NewComposeService(lazyAzdContext)
+	env := environment.New("test")
+	envManager := &mockenv.MockEnvManager{}
+	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
+		return envManager, nil
+	})
+	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+		return env, nil
+	})
+	composeService := NewComposeService(lazyAzdContext, lazyEnv, lazyEnvManager)
 
 	t.Run("success", func(t *testing.T) {
 		addReq := &azdext.AddResourceRequest{
@@ -85,7 +95,15 @@ func Test_ComposeService_GetResource(t *testing.T) {
 	err := project.Save(*mockContext.Context, &projectConfig, azdCtx.ProjectPath())
 	require.NoError(t, err)
 	lazyAzdContext := lazy.From(azdCtx)
-	composeService := NewComposeService(lazyAzdContext)
+	env := environment.New("test")
+	envManager := &mockenv.MockEnvManager{}
+	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
+		return envManager, nil
+	})
+	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+		return env, nil
+	})
+	composeService := NewComposeService(lazyAzdContext, lazyEnv, lazyEnvManager)
 
 	t.Run("success", func(t *testing.T) {
 		getReq := &azdext.GetResourceRequest{
@@ -137,7 +155,15 @@ func Test_ComposeService_ListResources(t *testing.T) {
 		err := project.Save(*mockContext.Context, &projectConfig, azdCtx.ProjectPath())
 		require.NoError(t, err)
 		lazyAzdContext := lazy.From(azdCtx)
-		composeService := NewComposeService(lazyAzdContext)
+		env := environment.New("test")
+		envManager := &mockenv.MockEnvManager{}
+		lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
+			return envManager, nil
+		})
+		lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+			return env, nil
+		})
+		composeService := NewComposeService(lazyAzdContext, lazyEnv, lazyEnvManager)
 
 		listResp, err := composeService.ListResources(*mockContext.Context, &azdext.EmptyRequest{})
 		require.NoError(t, err)
@@ -156,7 +182,15 @@ func Test_ComposeService_ListResources(t *testing.T) {
 		lazyAzdContext := lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 			return nil, azdcontext.ErrNoProject
 		})
-		composeService := NewComposeService(lazyAzdContext)
+		env := environment.New("test")
+		envManager := &mockenv.MockEnvManager{}
+		lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
+			return envManager, nil
+		})
+		lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+			return env, nil
+		})
+		composeService := NewComposeService(lazyAzdContext, lazyEnv, lazyEnvManager)
 		_, err := composeService.ListResources(*mockContext.Context, &azdext.EmptyRequest{})
 		require.Error(t, err)
 	})
@@ -170,7 +204,15 @@ func Test_Test_ComposeService_ListResourceTypes(t *testing.T) {
 	})
 
 	// Create the service and call ListResourceTypes
-	service := NewComposeService(lazyAzdContext)
+	env := environment.New("test")
+	envManager := &mockenv.MockEnvManager{}
+	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
+		return envManager, nil
+	})
+	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
+		return env, nil
+	})
+	service := NewComposeService(lazyAzdContext, lazyEnv, lazyEnvManager)
 	response, err := service.ListResourceTypes(*mockContext.Context, &azdext.EmptyRequest{})
 	require.NoError(t, err)
 	require.NotNil(t, response)

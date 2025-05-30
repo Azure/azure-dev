@@ -426,6 +426,22 @@
                         "github",
                         "azdo"
                     ]
+                },
+                "variables": {
+                    "type": "array",
+                    "title": "Optional. List of azd environment variables to be used in the pipeline as variables.",
+                    "description": "If variable is found on azd environment, it is set as a variable for the pipeline.",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "secrets": {
+                    "type": "array",
+                    "title": "Optional. List of azd environment variables to be used in the pipeline as secrets.",
+                    "description": "If variable is found on azd environment, it is set as a secret for the pipeline.",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -651,6 +667,21 @@
                     "title": "The up workflow configuration",
                     "description": "When specified will override the default behavior for the azd up workflow. Common use cases include changing the order of the provision, package and deploy commands.",
                     "$ref": "#/definitions/workflow"
+                }
+            }
+        },
+        "cloud": {
+            "type": "object",
+            "title": "The cloud configuration used for the project.",
+            "description": "Optional. Provides additional configuration for deploying to sovereign clouds such as Azure Government. The default cloud is AzureCloud.",
+            "additionalProperties": false,
+            "properties": {
+                "name": {
+                    "enum": [
+                        "AzureCloud",
+                        "AzureChinaCloud",
+                        "AzureUSGovernment"
+                    ]
                 }
             }
         }

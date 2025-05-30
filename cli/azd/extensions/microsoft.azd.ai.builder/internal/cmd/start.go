@@ -347,7 +347,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		}
 
 		resourceId := ""
-		if 0 < len(a.scenarioData.AppResourceIds) && len(a.scenarioData.AppResourceIds) <= (i + 1) {
+		if 0 < len(a.scenarioData.AppResourceIds) && len(a.scenarioData.AppResourceIds) <= (i+1) {
 			resourceId = a.scenarioData.AppResourceIds[i]
 		}
 		appResource := &azdext.ComposedResource{

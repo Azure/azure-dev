@@ -35,8 +35,6 @@ import (
 	"github.com/spf13/pflag"
 )
 
-var featureCompose = alpha.MustFeatureKey("compose")
-
 func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("env", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
@@ -292,71 +290,69 @@ func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, er
 	}
 
 	// Provide shortcuts for using the Key Vault created by composability (azd add)
-	if e.alphaFeatureManager.IsEnabled(featureCompose) {
-		if kvId, hasComposeKv := e.env.LookupEnv("AZURE_RESOURCE_VAULT_ID"); hasComposeKv { // KV is provisioned
-			resId, err := arm.ParseResourceID(kvId)
+	if kvId, hasComposeKv := e.env.LookupEnv("AZURE_RESOURCE_VAULT_ID"); hasComposeKv { // KV is provisioned
+		resId, err := arm.ParseResourceID(kvId)
+		if err != nil {
+			return nil, fmt.Errorf("parsing key vault resource id: %w", err)
+		}
+		kvName := resId.Name
+		kvSubId := resId.SubscriptionID
+		subscriptionOptions := []string{"Yes", "No, use different key vault"}
+		useProjectKvPrompt, err := e.console.Select(
+			ctx,
+			input.ConsoleOptions{
+				Message:      "Key vault detected in this project. Use this key vault?",
+				Options:      subscriptionOptions,
+				DefaultValue: subscriptionOptions[0],
+			})
+
+		if err != nil {
+			return nil, fmt.Errorf("selecting key vault option: %w", err)
+		}
+
+		if useProjectKvPrompt == 0 { // Use project Key Vault
+			kvAccount := keyvault.Vault{
+				Name: kvName,
+				Id:   kvId,
+			}
+
+			var kvSecretName string
+			if willCreateNewSecret {
+				kvSecretName, err = e.createNewKeyVaultSecret(ctx, secretName, kvSubId, kvAccount.Name)
+
+			} else {
+				kvSecretName, err = e.selectKeyVaultSecret(ctx, kvSubId, kvAccount.Name)
+			}
 			if err != nil {
-				return nil, fmt.Errorf("parsing key vault resource id: %w", err)
-			}
-			kvName := resId.Name
-			kvSubId := resId.SubscriptionID
-			subscriptionOptions := []string{"Yes", "No, use different key vault"}
-			useProjectKvPrompt, err := e.console.Select(
-				ctx,
-				input.ConsoleOptions{
-					Message:      "Key vault detected in this project. Use this key vault?",
-					Options:      subscriptionOptions,
-					DefaultValue: subscriptionOptions[0],
-				})
-
-			if err != nil {
-				return nil, fmt.Errorf("selecting key vault option: %w", err)
+				return nil, err
 			}
 
-			if useProjectKvPrompt == 0 { // Use project Key Vault
-				kvAccount := keyvault.Vault{
-					Name: kvName,
-					Id:   kvId,
-				}
-
-				var kvSecretName string
-				if willCreateNewSecret {
-					kvSecretName, err = e.createNewKeyVaultSecret(ctx, secretName, kvSubId, kvAccount.Name)
-
-				} else {
-					kvSecretName, err = e.selectKeyVaultSecret(ctx, kvSubId, kvAccount.Name)
-				}
-				if err != nil {
-					return nil, err
-				}
-
-				envValue := keyvault.NewAzureKeyVaultSecret(kvSubId, kvAccount.Name, kvSecretName)
-				e.env.DotenvSet(secretName, envValue)
-				if err := e.envManager.Save(ctx, e.env); err != nil {
-					return nil, fmt.Errorf("saving environment: %w", err)
-				}
-
-				return createSuccessResult(secretName, kvSecretName, kvAccount.Name), nil
+			envValue := keyvault.NewAzureKeyVaultSecret(kvSubId, kvAccount.Name, kvSecretName)
+			e.env.DotenvSet(secretName, envValue)
+			if err := e.envManager.Save(ctx, e.env); err != nil {
+				return nil, fmt.Errorf("saving environment: %w", err)
 			}
-		} else if _, hasProjectKv := e.projectConfig.Resources["vault"]; hasProjectKv { // KV defined but not provisioned yet
-			e.console.Message(ctx,
-				output.WithWarningFormat("\nAn existing project key vault is defined but is not provisioned yet. ")+
-					fmt.Sprintf("Run '%s' first to use it.\n", output.WithHighLightFormat("azd provision")))
-			options := []string{"Use a different key vault", "Cancel"}
-			useProjectKvPrompt, err := e.console.Select(
-				ctx,
-				input.ConsoleOptions{
-					Message:      "How do you want to proceed?",
-					Options:      options,
-					DefaultValue: options[0],
-				})
 
-			if err != nil {
-				return nil, fmt.Errorf("selecting key vault option: %w", err)
-			}
-			if useProjectKvPrompt == 1 { // Cancel
-				return nil, fmt.Errorf("operation cancelled. Run 'azd provision' to provision the project Key Vault first")
-			}
+			return createSuccessResult(secretName, kvSecretName, kvAccount.Name), nil
+		}
+	} else if _, hasProjectKv := e.projectConfig.Resources["vault"]; hasProjectKv { // KV defined but not provisioned yet
+		e.console.Message(ctx,
+			output.WithWarningFormat("\nAn existing project key vault is defined but is not provisioned yet. ")+
+				fmt.Sprintf("Run '%s' first to use it.\n", output.WithHighLightFormat("azd provision")))
+		options := []string{"Use a different key vault", "Cancel"}
+		useProjectKvPrompt, err := e.console.Select(
+			ctx,
+			input.ConsoleOptions{
+				Message:      "How do you want to proceed?",
+				Options:      options,
+				DefaultValue: options[0],
+			})
+
+		if err != nil {
+			return nil, fmt.Errorf("selecting key vault option: %w", err)
+		}
+		if useProjectKvPrompt == 1 { // Cancel
+			return nil, fmt.Errorf("operation cancelled. Run 'azd provision' to provision the project Key Vault first")
 		}
 	}
 

@@ -310,8 +310,7 @@ func TestInitializer_prjConfigFromDetect(t *testing.T) {
 			spec, err := i.prjConfigFromDetect(
 				context.Background(),
 				dir,
-				tt.detect,
-				true)
+				tt.detect)
 
 			// Print extra newline to avoid mangling `go test -v` final test result output while waiting for final stdin,
 			// which may result in incorrect `gotestsum` reporting

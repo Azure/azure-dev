@@ -58,16 +58,7 @@ type AddAction struct {
 	azureClient      *azapi.AzureClient
 }
 
-var composeFeature = alpha.MustFeatureKey("compose")
-
 func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if !a.alphaManager.IsEnabled(composeFeature) {
-		return nil, fmt.Errorf(
-			"compose is currently under alpha support and must be explicitly enabled."+
-				" Run `%s` to enable this feature", alpha.GetEnableCommand(composeFeature),
-		)
-	}
-
 	prjConfig, err := project.Load(ctx, a.azdCtx.ProjectPath())
 	if err != nil {
 		return nil, err
@@ -75,6 +66,11 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	// Having a subscription is required for any azd compose (add)
 	err = provisioning.EnsureSubscription(ctx, a.envManager, a.env, a.prompter)
+	if err != nil {
+		return nil, err
+	}
+
+	err = ensureCompatibleProject(prjConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -388,6 +384,22 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			FollowUp: followUpMessage,
 		},
 	}, err
+}
+
+func ensureCompatibleProject(
+	prjConfig *project.ProjectConfig,
+) error {
+	fmt.Printf("prjConfig.Infra.Path: %v\n", prjConfig.Infra.Path)
+
+	// Ensure that every service in prjConfig has a corresponding resource
+	for serviceName := range prjConfig.Services {
+		_, exists := prjConfig.Resources[serviceName]
+		if !exists {
+			return fmt.Errorf("incompatible project: please reinitialize the project with 'azd init' to use 'azd add'")
+		}
+	}
+
+	return nil
 }
 
 type provisionSelection int

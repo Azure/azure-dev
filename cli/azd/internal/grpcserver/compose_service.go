@@ -72,21 +72,22 @@ func (c *composeService) AddResource(
 		return nil, fmt.Errorf("creating resource props: %w", err)
 	}
 
+	resourceId := req.Resource.ResourceId
 	projectConfig.Resources[req.Resource.Name] = &project.ResourceConfig{
 		Name:       req.Resource.Name,
 		Type:       project.ResourceType(req.Resource.Type),
 		Props:      resourceProps,
 		Uses:       req.Resource.Uses,
-		ResourceId: req.Resource.ResourceId,
+		ResourceId: resourceId,
 	}
 
-	if req.Resource.ResourceId != "" {
+	if resourceId != "" {
 		// add existing:true to azure.yaml
 		if resource, exists := projectConfig.Resources[req.Resource.Name]; exists {
 			resource.Existing = true
 		}
 		// save resource id to env
-		env.DotenvSet(infra.ResourceIdName(req.Resource.Name), req.Resource.ResourceId)
+		env.DotenvSet(infra.ResourceIdName(req.Resource.Name), resourceId)
 
 		err = envManager.Save(ctx, env)
 		if err != nil {

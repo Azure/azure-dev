@@ -346,12 +346,16 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 			return fmt.Errorf("failed to marshal app config: %w", err)
 		}
 
+		resourceId := ""
+		if 0 < len(a.scenarioData.AppResourceIds) && len(a.scenarioData.AppResourceIds) <= (i + 1) {
+			resourceId = a.scenarioData.AppResourceIds[i]
+		}
 		appResource := &azdext.ComposedResource{
 			Name:       a.generateResourceName(appKey),
 			Type:       appType,
 			Config:     appConfigJson,
 			Uses:       []string{},
-			ResourceId: a.scenarioData.AppResourceIds[i],
+			ResourceId: resourceId,
 		}
 
 		serviceName := a.generateServiceName(appKey)

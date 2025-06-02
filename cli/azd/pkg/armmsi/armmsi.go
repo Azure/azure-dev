@@ -70,6 +70,56 @@ func (s *ArmMsiService) CreateUserIdentity(
 	return msi.Identity, nil
 }
 
+// ListUserIdentities retrieves a list of user-assigned managed identities within a specified resource group.
+//
+// Parameters:
+//   - ctx: The context.Context for the request
+//   - subscriptionId: The Azure subscription ID
+//   - resourceGroup: The name of the resource group
+//
+// Returns:
+//   - []armmsi.Identity: A slice of user-assigned managed identities
+//   - error: An error if the operation fails, nil otherwise
+//
+// The function creates a new client using the provided subscription credentials and queries
+// the Azure ARM API to list all user-assigned managed identities in the specified resource group.
+// It handles pagination automatically and returns the complete list of identities.
+func (s *ArmMsiService) ListUserIdentities(
+	ctx context.Context,
+	subscriptionId, resourceGroup string) ([]armmsi.Identity, error) {
+	// Create a new GraphClient for the subscription
+	credential, err := s.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := armmsi.NewUserAssignedIdentitiesClient(subscriptionId, credential, s.armClientOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	pager := client.NewListByResourceGroupPager(resourceGroup, nil)
+
+	var identities []*armmsi.Identity
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing user identities: %w", err)
+		}
+		identities = append(identities, resp.Value...)
+	}
+
+	identitiesResult := make([]armmsi.Identity, len(identities))
+	for i, identity := range identities {
+		if identity == nil {
+			continue
+		}
+		identitiesResult[i] = *identity
+	}
+
+	return identitiesResult, nil
+}
+
 // GetUserIdentity retrieves user-assigned managed identity information from Azure.
 //
 // Parameters:

@@ -232,27 +232,6 @@ func (i *Initializer) InitFromApp(
 	}
 
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("config"))
-
-	// Ask whether to generate infrastructure as code files
-	genInfraFiles, err := i.console.Confirm(ctx, input.ConsoleOptions{
-		Message:      "azd now tracks infrastructure in memory. Do you still want to generate infrastructure files on disk?",
-		Help:         "This can always be done later with 'azd infra synth'.",
-		DefaultValue: false,
-	})
-	if err != nil {
-		return err
-	}
-
-	// Create the infra spec
-	var infraSpec *scaffold.InfraSpec
-	if genInfraFiles {
-		spec, err := i.infraSpecFromDetect(ctx, detect)
-		if err != nil {
-			return err
-		}
-		infraSpec = &spec
-	}
-
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("generate"))
 
 	title = "Generating " + output.WithHighLightFormat("./"+azdcontext.ProjectFileName)
@@ -265,30 +244,20 @@ func (i *Initializer) InitFromApp(
 	i.console.Message(ctx, "\n"+output.WithBold("Generating files to run your app on Azure:")+"\n")
 	i.console.StopSpinner(ctx, title, input.StepDone)
 
-	if infraSpec != nil {
-		title = "Generating Infrastructure as Code files in " + output.WithHighLightFormat("./infra")
-		i.console.ShowSpinner(ctx, title, input.Step)
-		err = i.genFromInfra(ctx, azdCtx, *infraSpec)
-		if err != nil {
-			i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
-			return err
-		}
-		i.console.StopSpinner(ctx, title, input.StepDone)
-	} else {
-		t, err := scaffold.Load()
-		if err != nil {
-			return fmt.Errorf("loading scaffold templates: %w", err)
-		}
-
-		err = scaffold.Execute(t, "next-steps-alpha.md", nil, filepath.Join(azdCtx.ProjectDirectory(), "next-steps.md"))
-		if err != nil {
-			return err
-		}
-
-		i.console.MessageUxItem(ctx, &ux.DoneMessage{
-			Message: "Generating " + output.WithHighLightFormat("./next-steps.md"),
-		})
+	t, err := scaffold.Load()
+	if err != nil {
+		return fmt.Errorf("loading scaffold templates: %w", err)
 	}
+
+	// TODO: Fix
+	err = scaffold.Execute(t, "next-steps-alpha.md", nil, filepath.Join(azdCtx.ProjectDirectory(), "next-steps.md"))
+	if err != nil {
+		return err
+	}
+
+	i.console.MessageUxItem(ctx, &ux.DoneMessage{
+		Message: "Generating " + output.WithHighLightFormat("./next-steps.md"),
+	})
 
 	return nil
 }

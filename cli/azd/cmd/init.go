@@ -279,9 +279,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		tracing.SetUsageAttributes(fields.InitMethod.String("app"))
 
 		header = "Your app is ready for the cloud!"
-		followUp = "Run " + output.WithHighLightFormat("azd up") + " to provision and deploy your app to Azure.\n" +
-			"Run " + output.WithHighLightFormat("azd infra gen") + " to write infrastructure as code files to disk that you can customize and manage.\n" +
-			"Run " + output.WithHighLightFormat("azd add") + " to add new Azure components to your project.\n" +
+		followUp = "Run " + output.WithHighLightFormat("azd add") + " to add new Azure components to your project.\n" +
+			"Run " + output.WithHighLightFormat("azd infra synth") + " to write infrastructure as code files to disk " +
+			"so you can customize and manage.\n" +
+			"Run " + output.WithHighLightFormat("azd up") + " to provision and deploy your app to Azure.\n" +
 			"See " + output.WithHighLightFormat("./next-steps.md") + " for more information on configuring your app."
 		entries, err := os.ReadDir(azdCtx.ProjectDirectory())
 		if err != nil {

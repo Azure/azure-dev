@@ -262,60 +262,6 @@ func (i *Initializer) InitFromApp(
 	return nil
 }
 
-func (i *Initializer) genFromInfra(
-	ctx context.Context,
-	azdCtx *azdcontext.AzdContext,
-	spec scaffold.InfraSpec) error {
-	infra := filepath.Join(azdCtx.ProjectDirectory(), "infra")
-	staging, err := os.MkdirTemp("", "azd-infra")
-	if err != nil {
-		return fmt.Errorf("mkdir temp: %w", err)
-	}
-
-	defer func() { _ = os.RemoveAll(staging) }()
-	t, err := scaffold.Load()
-	if err != nil {
-		return fmt.Errorf("loading scaffold templates: %w", err)
-	}
-
-	err = scaffold.ExecInfra(t, spec, staging)
-	if err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(infra, osutil.PermissionDirectory); err != nil {
-		return err
-	}
-
-	skipStagingFiles, err := i.promptForDuplicates(ctx, staging, infra)
-	if err != nil {
-		return err
-	}
-
-	options := copy.Options{}
-	if skipStagingFiles != nil {
-		options.Skip = func(fileInfo os.FileInfo, src, dest string) (bool, error) {
-			_, skip := skipStagingFiles[src]
-			return skip, nil
-		}
-	}
-
-	if err := copy.Copy(staging, infra, options); err != nil {
-		return fmt.Errorf("copying contents from temp staging directory: %w", err)
-	}
-
-	err = scaffold.Execute(t, "next-steps.md", spec, filepath.Join(azdCtx.ProjectDirectory(), "next-steps.md"))
-	if err != nil {
-		return err
-	}
-
-	i.console.MessageUxItem(ctx, &ux.DoneMessage{
-		Message: "Generating " + output.WithHighLightFormat("./next-steps.md"),
-	})
-
-	return nil
-}
-
 func (i *Initializer) genProjectFile(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,

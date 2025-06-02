@@ -153,7 +153,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	ioc.RegisterInstance[auth.HttpClient](container, client)
 
 	// Auth
-	container.MustRegisterSingleton(auth.NewLoggedInGuard)
 	container.MustRegisterSingleton(auth.NewMultiTenantCredentialProvider)
 	container.MustRegisterSingleton(func(mgr *auth.Manager) CredentialProviderFn {
 		return mgr.CredentialForCurrentUser
@@ -580,6 +579,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 	container.MustRegisterScoped(auth.NewManager)
 	container.MustRegisterSingleton(azapi.NewUserProfileService)
+	container.MustRegisterScoped(func(authManager *auth.Manager) middleware.CurrentUserAuthManager {
+		return authManager
+	})
 	container.MustRegisterSingleton(account.NewSubscriptionsService)
 	container.MustRegisterSingleton(account.NewManager)
 	container.MustRegisterSingleton(account.NewSubscriptionsManager)

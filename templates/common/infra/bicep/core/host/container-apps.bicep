@@ -23,9 +23,11 @@ module containerAppsEnvironment 'container-apps-environment.bicep' = {
   }
 }
 
+var containerRegistryRG = empty(containerRegistryResourceGroupName) ? resourceGroup() : resourceGroup(containerRegistryResourceGroupName)
+
 module containerRegistry 'container-registry.bicep' = {
   name: '${name}-container-registry'
-  scope: !empty(containerRegistryResourceGroupName) ? resourceGroup(containerRegistryResourceGroupName) : resourceGroup()
+  scope: containerRegistryRG
   params: {
     name: containerRegistryName
     location: location

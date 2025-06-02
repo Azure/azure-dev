@@ -296,7 +296,7 @@ func (pm *PipelineManager) Configure(
 	// When both AZURE_PIPELINE_CLIENT_ID and AZURE_PIPELINE_MSI_CLIENT_ID are defined, the MSI will be used
 	// This could be the case from projects which migrated from SP to MSI
 	msiResourceId := pm.env.Getenv(AzurePipelineMsiResourceId)
-	msiEnabled := msiResourceId != ""
+	usingMsi := msiResourceId != ""
 	subscriptionId := pm.env.GetSubscriptionId()
 
 	// see if SP already exists - This step will not create the SP if it doesn't exist.
@@ -306,15 +306,15 @@ func (pm *PipelineManager) Configure(
 		return result, err
 	}
 
-	usingSP := spConfig.servicePrincipal != nil
-	if msiEnabled && usingSP {
+	usingAppRegistration := spConfig.servicePrincipal != nil
+	if usingMsi && usingAppRegistration {
 		pm.console.Message(ctx, output.WithWarningFormat("Found both SP and MSI client id. Using MSI client id. "+
 			"Remove AZURE_PIPELINE_CLIENT_ID from the environment to remove this warning."))
-		usingSP = false // MSI takes precedence over SP
+		usingAppRegistration = false // MSI takes precedence over SP
 	}
 
 	skipAuth := false
-	if !msiEnabled && !usingSP {
+	if !usingMsi && !usingAppRegistration {
 		log.Printf("Authentication mode has not been set. Prompt user if they want to set it up now.")
 		const optionMsi = "Federated User Managed Identity (MSI + OIDC)"
 		const optionOidc = "Federated Service Principal (SP + OIDC)"
@@ -336,9 +336,9 @@ func (pm *PipelineManager) Configure(
 		}
 		switch options[selectedOption] {
 		case optionMsi:
-			msiEnabled = true
+			usingMsi = true
 		case optionOidc, optionClientSec:
-			usingSP = true
+			usingAppRegistration = true
 		case optionSkip:
 			skipAuth = true
 		}
@@ -348,7 +348,7 @@ func (pm *PipelineManager) Configure(
 	var authConfig *authConfiguration
 
 	// *************************** Create or update service principal ***************************
-	if !skipAuth && usingSP {
+	if !skipAuth && usingAppRegistration {
 		// Update the message depending on the SP already exists or not
 		var displayMsg string
 		if spConfig.servicePrincipal == nil {
@@ -399,7 +399,7 @@ func (pm *PipelineManager) Configure(
 	}
 
 	// *************************** Create or update MSI ***************************
-	if !skipAuth && msiEnabled {
+	if !skipAuth && usingMsi {
 		// ************************** Pick or create a new MSI **************************
 		var displayMsg string
 		var msIdentity msi.Identity
@@ -554,7 +554,7 @@ func (pm *PipelineManager) Configure(
 		if credentialOptions.EnableFederatedCredentials {
 			type fedCredentialData struct{ Name, Subject, Issuer string }
 			var createdCredentials []fedCredentialData
-			if msiEnabled {
+			if usingMsi {
 				// convert fedCredentials from msGraph to armmsi.FederatedIdentityCredential
 				armFedCreds := make([]msi.FederatedIdentityCredential, len(credentialOptions.FederatedCredentialOptions))
 				for i, fedCred := range credentialOptions.FederatedCredentialOptions {
@@ -663,6 +663,10 @@ func (pm *PipelineManager) Configure(
 			continue
 		}
 
+		if skipAuth {
+			continue
+		}
+
 		akvs, err := keyvault.ParseAzureKeyVaultSecret(value)
 		if err != nil {
 			return result, fmt.Errorf("failed to parse akvs '%s': %w", key, err)
@@ -693,16 +697,25 @@ func (pm *PipelineManager) Configure(
 					"key vault '%s' not found in subscription '%s'", akvs.VaultName, akvs.SubscriptionId)
 		}
 
+		var spId string
+		if usingMsi {
+			spId = *authConfig.msi.Properties.PrincipalID
+		} else if usingAppRegistration {
+			spId = *authConfig.sp.Id
+		} else {
+			continue
+		}
 		// CreateRbac uses the azure-sdk RoleAssignmentsClient.Create() which creates or updates the role assignment
 		// We don't need to check if the role assignment already exists, the method will handle it.
-		if !skipAuth && usingSP {
+		if !skipAuth && usingAppRegistration {
 			err = pm.entraIdService.CreateRbac(
-				ctx, akvs.SubscriptionId, vaultResourceId, keyvault.RoleIdKeyVaultSecretsUser, *authConfig.sp.Id)
+				ctx, akvs.SubscriptionId, vaultResourceId, keyvault.RoleIdKeyVaultSecretsUser, spId)
 			if err != nil {
 				return result, fmt.Errorf(
 					"assigning read access role for Key Vault to service principal: %w", err)
 			}
 		}
+
 		// save the kvId to avoid assigning the role multiple times for the same key vault
 		kvAccounts[kvId] = struct{}{}
 	}

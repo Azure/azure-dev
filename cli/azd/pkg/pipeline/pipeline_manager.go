@@ -484,15 +484,24 @@ func (pm *PipelineManager) Configure(
 			msIdentity = existingMsi
 		}
 
+		displayMsg = fmt.Sprintf("Assigning roles to User Managed Identity (MSI) %s", *msIdentity.Name)
+		pm.console.ShowSpinner(ctx, displayMsg, input.Step)
 		// ************************** Role Assign **************************
-
-		//pm.console.ShowSpinner(ctx, displayMsg, input.Step)
-		// description := fmt.Sprintf("Created by Azure Developer CLI for project: %s", projectName)
-		// options := entraid.CreateOrUpdateServicePrincipalOptions{
-		// 	RolesToAssign:              pm.args.PipelineRoleNames,
-		// 	Description:                &description,
-		// 	ServiceManagementReference: smr,
-		// }
+		err = pm.entraIdService.EnsureRoleAssignments(
+			ctx,
+			subscriptionId,
+			pm.args.PipelineRoleNames,
+			// EnsureRoleAssignments uses the ServicePrincipal ID and the DisplayName.
+			// We are adapting the MSI to work with the same method as a regular Service Principal, by pulling name and ID.
+			&graphsdk.ServicePrincipal{
+				Id:          msIdentity.Properties.PrincipalID,
+				DisplayName: *msIdentity.Name,
+			},
+		)
+		pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
+		if err != nil {
+			return result, fmt.Errorf("failed to assign role to User Managed Identity (MSI): %w", err)
+		}
 
 		// Set in .env to be retrieved for any additional runs
 		pm.env.DotenvSet(AzurePipelineMsiResourceId, *msIdentity.ID)

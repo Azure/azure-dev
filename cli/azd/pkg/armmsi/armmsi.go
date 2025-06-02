@@ -85,8 +85,7 @@ func (s *ArmMsiService) CreateUserIdentity(
 // the Azure ARM API to list all user-assigned managed identities in the specified resource group.
 // It handles pagination automatically and returns the complete list of identities.
 func (s *ArmMsiService) ListUserIdentities(
-	ctx context.Context,
-	subscriptionId, resourceGroup string) ([]armmsi.Identity, error) {
+	ctx context.Context, subscriptionId string) ([]armmsi.Identity, error) {
 	// Create a new GraphClient for the subscription
 	credential, err := s.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
@@ -98,7 +97,7 @@ func (s *ArmMsiService) ListUserIdentities(
 		return nil, err
 	}
 
-	pager := client.NewListByResourceGroupPager(resourceGroup, nil)
+	pager := client.NewListBySubscriptionPager(nil)
 
 	var identities []*armmsi.Identity
 	for pager.More() {

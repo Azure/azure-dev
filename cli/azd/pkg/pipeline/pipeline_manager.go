@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	msi "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/armmsi"
@@ -445,7 +446,31 @@ func (pm *PipelineManager) Configure(
 				msIdentity = newMsi
 			} else {
 				// List existing MSIs and let the user select one
-				msIdentity = msi.Identity{}
+				msIdentities, err := pm.msiService.ListUserIdentities(ctx, subscriptionId)
+				if err != nil {
+					return result, fmt.Errorf("failed to list User Managed Identities (MSI): %w", err)
+				}
+				if len(msIdentities) == 0 {
+					return result, fmt.Errorf("no User Managed Identities (MSI) found in subscription %s", subscriptionId)
+				}
+				// Prompt the user to select an existing MSI
+				msiOptions := make([]string, len(msIdentities))
+				for i, msi := range msIdentities {
+					msiData, err := arm.ParseResourceID(*msi.ID)
+					if err != nil {
+						return result, fmt.Errorf("parsing MSI resource id: %w", err)
+					}
+					msiOptions[i] = fmt.Sprintf("%2d. %s (%s)", i+1, *msi.Name, msiData.ResourceGroupName)
+				}
+				selectedOption, err := pm.console.Select(ctx, input.ConsoleOptions{
+					Message:      "Select an existing User Managed Identity (MSI) to use:",
+					Options:      msiOptions,
+					DefaultValue: msiOptions[0],
+				})
+				if err != nil {
+					return result, fmt.Errorf("prompting for existing MSI: %w", err)
+				}
+				msIdentity = msIdentities[selectedOption]
 			}
 		} else {
 			displayMsg = fmt.Sprintf("Updating MSI %s", msiResourceId)

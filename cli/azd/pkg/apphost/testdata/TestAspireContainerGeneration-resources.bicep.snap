@@ -111,6 +111,7 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-p
 
 }
 
+
 resource mySqlAbstractProjectAppHostVolumeTwoStore 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
   parent: containerAppEnvironment
   name: take('${toLower('my-sql-abstract')}-${toLower('ProjectAppHostvolumetwo')}', 32)

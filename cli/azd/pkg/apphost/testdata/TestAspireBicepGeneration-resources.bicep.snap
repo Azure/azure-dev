@@ -72,6 +72,7 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-p
 
 }
 
+
 resource kv854251f1 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: replace('kv854251f1-${resourceToken}', '-', '')
   location: location

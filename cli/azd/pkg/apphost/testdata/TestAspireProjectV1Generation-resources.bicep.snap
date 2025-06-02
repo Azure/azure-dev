@@ -98,6 +98,7 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-p
 
 }
 
+
 resource cacheAzurecontainerappsapphost8f235654edCacheDataStore 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
   parent: containerAppEnvironment
   name: take('${toLower('cache')}-${toLower('azurecontainerappsapphost8f235654edcachedata')}', 32)

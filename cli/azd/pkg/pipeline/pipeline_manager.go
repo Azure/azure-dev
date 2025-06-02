@@ -162,10 +162,6 @@ type servicePrincipalResult struct {
 	servicePrincipal *graphsdk.ServicePrincipal
 }
 
-// type msiUser struct {
-// 	msiArm.Identity
-// }
-
 func servicePrincipal(
 	ctx context.Context,
 	envClientId,

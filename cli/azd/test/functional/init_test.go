@@ -28,29 +28,24 @@ func Test_CLI_Init_Minimal(t *testing.T) {
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(),
-		"AZURE_LOCATION=eastus2",
-		"AZD_ALPHA_ENABLE_COMPOSE=0")
 
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		"Create a minimal project\nTESTENV\n",
+		"Create a minimal project\n\n",
 		"init",
 	)
 	require.NoError(t, err)
-
-	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
-
-	require.NoError(t, err)
-	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
 
 	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
 	require.NoError(t, err)
 	require.Equal(t, filepath.Base(dir), proj.Name)
 
-	require.DirExists(t, filepath.Join(dir, ".azure"))
-	require.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
-	require.FileExists(t, filepath.Join(dir, "infra", "main.parameters.json"))
+	require.NoDirExists(t, filepath.Join(dir, "infra"))
+	require.FileExists(t, filepath.Join(dir, ".gitignore"))
+
+	gitignoreContent, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	require.NoError(t, err)
+	require.Contains(t, string(gitignoreContent), ".azure\n")
 }
 
 // Verifies init for the minimal template, when infra folder already exists with main.bicep and main.parameters.json.

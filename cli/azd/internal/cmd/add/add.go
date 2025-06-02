@@ -389,14 +389,15 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 func ensureCompatibleProject(
 	prjConfig *project.ProjectConfig,
 ) error {
-	fmt.Printf("prjConfig.Infra.Path: %v\n", prjConfig.Infra.Path)
+	infraRoot := prjConfig.Infra.Path
+	if !filepath.IsAbs(infraRoot) {
+		infraRoot = filepath.Join(prjConfig.Path, infraRoot)
+	}
 
-	// Ensure that every service in prjConfig has a corresponding resource
-	for serviceName := range prjConfig.Services {
-		_, exists := prjConfig.Resources[serviceName]
-		if !exists {
-			return fmt.Errorf("incompatible project: please reinitialize the project with 'azd init' to use 'azd add'")
-		}
+	hasResources := len(prjConfig.Resources) > 0
+	hasInfra, _ := pathHasInfraModule(infraRoot, prjConfig.Infra.Module)
+	if hasInfra && !hasResources {
+		return fmt.Errorf("incompatible project: please reinitialize the project with 'azd init' to use 'azd add'")
 	}
 
 	return nil

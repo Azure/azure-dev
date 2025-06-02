@@ -1,6 +1,3 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-
 package cmd
 
 import (
@@ -9,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -37,6 +35,92 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// --- Helper functions for TypeScript provider initialization ---
+func initializeTypeScriptInfra(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
+	   infraDir := filepath.Join(azdCtx.ProjectDirectory(), "infra")
+	   // Ensure infra directory exists
+	   if err := os.MkdirAll(infraDir, 0755); err != nil {
+			   return fmt.Errorf("failed to create infra directory: %w", err)
+	   }
+	   // Remove Bicep files if present
+	   entries, err := os.ReadDir(infraDir)
+	   if err == nil {
+			   for _, entry := range entries {
+					   if filepath.Ext(entry.Name()) == ".bicep" || filepath.Ext(entry.Name()) == ".json" {
+							   os.Remove(filepath.Join(infraDir, entry.Name()))
+					   }
+			   }
+	   }
+	   // Only create deploy.ts if it does not exist (do not overwrite template-provided file)
+	   deployTsPath := filepath.Join(infraDir, "deploy.ts")
+	   if _, err := os.Stat(deployTsPath); err == nil {
+			   // File exists, do not overwrite
+	   } else if os.IsNotExist(err) {
+			   deployTsContent := `import { DefaultAzureCredential } from "@azure/identity";
+import { ResourceManagementClient } from "@azure/arm-resources";
+import * as fs from "fs";
+
+const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID!;
+const resourceGroupName = process.env.AZURE_ENV_NAME!;
+const location = process.env.AZURE_LOCATION!;
+
+async function main() {
+	const credential = new DefaultAzureCredential();
+	const client = new ResourceManagementClient(credential, subscriptionId);
+	await client.resourceGroups.createOrUpdate(resourceGroupName, { location });
+	// Add more resources here as needed
+	const outputs = {
+		resourceGroupName: { value: resourceGroupName },
+		location: { value: location },
+	};
+	fs.writeFileSync("outputs.json", JSON.stringify(outputs, null, 2));
+	console.log(JSON.stringify(outputs));
+}
+
+main().catch(err => { console.error(err); process.exit(1); });
+`
+			   if err := os.WriteFile(deployTsPath, []byte(deployTsContent), 0644); err != nil {
+					   return fmt.Errorf("failed to write deploy.ts: %w", err)
+			   }
+	   } else if err != nil {
+			   return fmt.Errorf("failed to stat deploy.ts: %w", err)
+	   }
+	   // Update azure.yaml to use TypeScript provider, or add an infra section if missing
+	   azureYamlPath := filepath.Join(azdCtx.ProjectDirectory(), "azure.yaml")
+	   if _, err := os.Stat(azureYamlPath); err == nil {
+			   azureYaml, err := os.ReadFile(azureYamlPath)
+			   if err != nil {
+					   return fmt.Errorf("failed to read azure.yaml: %w", err)
+			   }
+			   newYaml := string(azureYaml)
+			   if !strings.Contains(newYaml, "infra:") {
+					   // Prepend an infra section if missing
+					   newYaml = "infra:\n  provider: typescript\n  path: infra\n  module: main\n\n" + newYaml
+			   } else {
+					   // Replace 'provider: bicep' with 'provider: typescript' if present
+					   newYaml = replaceInfraProvider(newYaml, "typescript")
+			   }
+			   if err := os.WriteFile(azureYamlPath, []byte(newYaml), 0644); err != nil {
+					   return fmt.Errorf("failed to update azure.yaml: %w", err)
+			   }
+	   } else if os.IsNotExist(err) {
+			   // Do not create a new azure.yaml, just skip
+	   } else if err != nil {
+			   return fmt.Errorf("failed to stat azure.yaml: %w", err)
+	   }
+	   return nil
+}
+
+// replaceInfraProvider replaces the provider in the infra section of azure.yaml
+func replaceInfraProvider(yamlContent string, provider string) string {
+	// Simple string replace for 'provider: bicep' or 'provider: "bicep"'
+	out := yamlContent
+	out = strings.ReplaceAll(out, "provider: bicep", "provider: "+provider)
+	out = strings.ReplaceAll(out, "provider: \"bicep\"", "provider: \""+provider+"\"")
+	return out
+}
+
+
 func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *initFlags {
 	flags := &initFlags{}
 	flags.Bind(cmd.Flags(), global)
@@ -52,6 +136,8 @@ func newInitCmd() *cobra.Command {
 }
 
 type initFlags struct {
+	   // TypeScript Provider flag
+	   tsp bool
 	templatePath   string
 	templateBranch string
 	templateTags   []string
@@ -64,6 +150,12 @@ type initFlags struct {
 }
 
 func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	   local.BoolVar(
+			   &i.tsp,
+			   "tsp",
+			   false,
+			   "Use the TypeScript infrastructure provider (deploy.ts) instead of Bicep.",
+	   )
 	local.StringVarP(
 		&i.templatePath,
 		"template",
@@ -238,7 +330,93 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		output.WithLinkFormat("%s", wd),
 		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
 
-	switch initTypeSelect {
+	   // If --tsp is set, ensure template is initialized first (if provided), then setup TypeScript infra
+	   if i.flags.tsp {
+			   if i.flags.templatePath != "" || len(i.flags.templateTags) > 0 {
+					   // 1. Download template code
+					   template, err := i.initializeTemplate(ctx, azdCtx)
+					   if err != nil {
+							   return nil, err
+					   }
+					   if _, err := i.initializeEnv(ctx, azdCtx, template.Metadata); err != nil {
+							   return nil, err
+					   }
+
+					   // 2. If Bicep config exists, create deploy.ts in infra folder
+					   infraDir := filepath.Join(azdCtx.ProjectDirectory(), "infra")
+					   mainBicepPath := filepath.Join(infraDir, "main.bicep")
+					   if _, err := os.Stat(mainBicepPath); err == nil {
+							   deployTsPath := filepath.Join(infraDir, "deploy.ts")
+							   if _, err := os.Stat(deployTsPath); os.IsNotExist(err) {
+									   // Generate a default deploy.ts (could be improved to parse Bicep in future)
+									   deployTsContent := `import { DefaultAzureCredential } from "@azure/identity";
+import { ResourceManagementClient } from "@azure/arm-resources";
+import * as fs from "fs";
+
+const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID!;
+const resourceGroupName = process.env.AZURE_ENV_NAME!;
+const location = process.env.AZURE_LOCATION!;
+
+async function main() {
+	const credential = new DefaultAzureCredential();
+	const client = new ResourceManagementClient(credential, subscriptionId);
+	await client.resourceGroups.createOrUpdate(resourceGroupName, { location });
+	// Add more resources here as needed
+	const outputs = {
+		resourceGroupName: { value: resourceGroupName },
+		location: { value: location },
+	};
+	fs.writeFileSync("outputs.json", JSON.stringify(outputs, null, 2));
+	console.log(JSON.stringify(outputs));
+}
+
+main().catch(err => { console.error(err); process.exit(1); });
+`
+									   if err := os.WriteFile(deployTsPath, []byte(deployTsContent), 0644); err != nil {
+											   return nil, fmt.Errorf("failed to write deploy.ts: %w", err)
+									   }
+							   }
+
+							   // 3. Delete all files in infra except deploy.ts
+							   entries, err := os.ReadDir(infraDir)
+							   if err == nil {
+									   for _, entry := range entries {
+											   if entry.Name() != "deploy.ts" {
+													   os.RemoveAll(filepath.Join(infraDir, entry.Name()))
+											   }
+									   }
+							   }
+					   }
+			   }
+			   // 4. Now setup TypeScript infra (updates azure.yaml, etc.)
+			   err := initializeTypeScriptInfra(ctx, azdCtx)
+			   if err != nil {
+					   return nil, fmt.Errorf("failed to initialize TypeScript infra: %w", err)
+			   }
+			   header = "Initialized project with TypeScript infrastructure provider."
+			   followUp = "You can now use azd with deploy.ts for infrastructure as code."
+			   if i.flags.up {
+					   // Optionally run azd up
+					   startTime := time.Now()
+					   i.azd.SetArgs([]string{"up", "--cwd", azdCtx.ProjectDirectory()})
+					   err := i.azd.ExecuteContext(ctx)
+					   header = "Project initialized and deployed with TypeScript provider in " + ux.DurationAsText(since(startTime)) + "."
+					   if err != nil {
+							   return nil, err
+					   }
+			   }
+			   if err := i.initializeExtensions(ctx, azdCtx); err != nil {
+					   return nil, fmt.Errorf("initializing project extensions: %w", err)
+			   }
+			   return &actions.ActionResult{
+					   Message: &actions.ResultMessage{
+							   Header:   header,
+							   FollowUp: followUp,
+					   },
+			   }, nil
+	   }
+
+	   switch initTypeSelect {
 	case initAppTemplate:
 		tracing.SetUsageAttributes(fields.InitMethod.String("template"))
 		template, err := i.initializeTemplate(ctx, azdCtx)
@@ -611,3 +789,4 @@ func getCmdInitHelpFooter(*cobra.Command) string {
 		),
 	})
 }
+

@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/typescript"
 )
 
 const PlatformKindDefault platform.PlatformKind = "default"
@@ -77,14 +78,17 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 	container.MustRegisterTransient(infraBicep.NewBicepProvider)
 
 	// Provisioning Providers
-	provisionProviderMap := map[provisioning.ProviderKind]any{
-		provisioning.Bicep:     infraBicep.NewBicepProvider,
-		provisioning.Terraform: infraTerraform.NewTerraformProvider,
-	}
 
-	for provider, constructor := range provisionProviderMap {
-		container.MustRegisterNamedTransient(string(provider), constructor)
-	}
+   // Register TypeScript provider under a string key, since ProviderKind does not have TypeScript
+   provisionProviderMap := map[string]any{
+		   string(provisioning.Bicep):     infraBicep.NewBicepProvider,
+		   string(provisioning.Terraform): infraTerraform.NewTerraformProvider,
+		   "typescript": typescript.NewTypeScriptProvider,
+   }
+
+   for provider, constructor := range provisionProviderMap {
+		   container.MustRegisterNamedTransient(provider, constructor)
+   }
 
 	// Function to determine the default IaC provider when provisioning
 	container.MustRegisterSingleton(func() provisioning.DefaultProviderResolver {
@@ -151,5 +155,5 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 		}
 	})
 
-	return nil
+return nil
 }

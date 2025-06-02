@@ -208,8 +208,6 @@ func Test_CLI_Init_From_App_With_Infra(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	require.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
-	require.FileExists(t, filepath.Join(dir, "infra", "main.parameters.json"))
-	require.FileExists(t, filepath.Join(dir, "infra", "resources.bicep"))
+	require.NoDirExists(t, filepath.Join(dir, "infra"))
 	require.FileExists(t, filepath.Join(dir, "azure.yaml"))
 }

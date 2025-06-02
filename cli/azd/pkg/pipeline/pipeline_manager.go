@@ -707,13 +707,11 @@ func (pm *PipelineManager) Configure(
 		}
 		// CreateRbac uses the azure-sdk RoleAssignmentsClient.Create() which creates or updates the role assignment
 		// We don't need to check if the role assignment already exists, the method will handle it.
-		if !skipAuth && usingAppRegistration {
-			err = pm.entraIdService.CreateRbac(
-				ctx, akvs.SubscriptionId, vaultResourceId, keyvault.RoleIdKeyVaultSecretsUser, spId)
-			if err != nil {
-				return result, fmt.Errorf(
-					"assigning read access role for Key Vault to service principal: %w", err)
-			}
+		err = pm.entraIdService.CreateRbac(
+			ctx, akvs.SubscriptionId, vaultResourceId, keyvault.RoleIdKeyVaultSecretsUser, spId)
+		if err != nil {
+			return result, fmt.Errorf(
+				"assigning read access role for Key Vault to service principal: %w", err)
 		}
 
 		// save the kvId to avoid assigning the role multiple times for the same key vault

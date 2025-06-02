@@ -132,7 +132,6 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-p
   }
 
 }
-
 {{range $name, $value := .ContainerApps}}
 {{- range $volume := $value.Volumes}}
 resource {{mergeBicepName $name $volume.Name}}Store 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {

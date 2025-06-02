@@ -72,7 +72,6 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2024-02-02-p
 
 }
 
-
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
 output MANAGED_IDENTITY_NAME string = managedIdentity.name
 output MANAGED_IDENTITY_PRINCIPAL_ID string = managedIdentity.properties.principalId

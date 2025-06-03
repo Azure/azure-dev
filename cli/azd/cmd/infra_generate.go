@@ -53,15 +53,17 @@ func newInfraGenerateCmd() *cobra.Command {
 
 func newInfraSynthCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "synth",
-		Short: "Write IaC for your project to disk, allowing you to manage it by hand.",
+		Use:    "synth",
+		Short:  "Write IaC for your project to disk, allowing you to manage it by hand.",
+		Hidden: true,
 	}
 }
 
 func newInfraGenCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "gen",
-		Short: "Write IaC for your project to disk, allowing you to manage it by hand.",
+		Use:    "gen",
+		Short:  "Write IaC for your project to disk, allowing you to manage it by hand.",
+		Hidden: true,
 	}
 }
 

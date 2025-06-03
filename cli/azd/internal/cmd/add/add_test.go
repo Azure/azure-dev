@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/stretchr/testify/require"
 )
@@ -71,7 +72,7 @@ func TestEnsureCompatibleProject(t *testing.T) {
 				require.NoError(t, err)
 
 				mainBicepPath := filepath.Join(infraDir, "main.bicep")
-				err = os.WriteFile(mainBicepPath, []byte("// bicep content"), 0644)
+				err = os.WriteFile(mainBicepPath, []byte("// bicep content"), osutil.PermissionFileOwnerOnly)
 				require.NoError(t, err)
 
 				return &project.ProjectConfig{
@@ -102,7 +103,7 @@ func TestEnsureCompatibleProject(t *testing.T) {
 				require.NoError(t, err)
 
 				mainParamPath := filepath.Join(infraDir, "main.bicepparam")
-				err = os.WriteFile(mainParamPath, []byte("// bicepparam content"), 0644)
+				err = os.WriteFile(mainParamPath, []byte("// bicepparam content"), osutil.PermissionFileOwnerOnly)
 				require.NoError(t, err)
 
 				return &project.ProjectConfig{
@@ -133,7 +134,7 @@ func TestEnsureCompatibleProject(t *testing.T) {
 				require.NoError(t, err)
 
 				mainBicepPath := filepath.Join(infraDir, "main.bicep")
-				err = os.WriteFile(mainBicepPath, []byte("// bicep content"), 0644)
+				err = os.WriteFile(mainBicepPath, []byte("// bicep content"), osutil.PermissionFileOwnerOnly)
 				require.NoError(t, err)
 
 				return &project.ProjectConfig{
@@ -159,7 +160,7 @@ func TestEnsureCompatibleProject(t *testing.T) {
 				require.NoError(t, err)
 
 				customBicepPath := filepath.Join(infraDir, "custom.bicep")
-				err = os.WriteFile(customBicepPath, []byte("// bicep content"), 0644)
+				err = os.WriteFile(customBicepPath, []byte("// bicep content"), osutil.PermissionFileOwnerOnly)
 				require.NoError(t, err)
 
 				return &project.ProjectConfig{
@@ -185,7 +186,7 @@ func TestEnsureCompatibleProject(t *testing.T) {
 				require.NoError(t, err)
 
 				mainTfPath := filepath.Join(infraDir, "main.tf")
-				err = os.WriteFile(mainTfPath, []byte("// terraform content"), 0644)
+				err = os.WriteFile(mainTfPath, []byte("// terraform content"), osutil.PermissionFileOwnerOnly)
 				require.NoError(t, err)
 
 				return &project.ProjectConfig{
@@ -229,7 +230,7 @@ func TestPathHasInfraModule(t *testing.T) {
 			setupFunc: func(t *testing.T) (string, string) {
 				tempDir := t.TempDir()
 				mainBicepPath := filepath.Join(tempDir, "main.bicep")
-				err := os.WriteFile(mainBicepPath, []byte("// bicep content"), 0644)
+				err := os.WriteFile(mainBicepPath, []byte("// bicep content"), osutil.PermissionFileOwnerOnly)
 				require.NoError(t, err)
 				return tempDir, "main"
 			},
@@ -241,7 +242,7 @@ func TestPathHasInfraModule(t *testing.T) {
 			setupFunc: func(t *testing.T) (string, string) {
 				tempDir := t.TempDir()
 				mainTfPath := filepath.Join(tempDir, "main.tf")
-				err := os.WriteFile(mainTfPath, []byte("// terraform content"), 0644)
+				err := os.WriteFile(mainTfPath, []byte("// terraform content"), osutil.PermissionFileOwnerOnly)
 				require.NoError(t, err)
 				return tempDir, "main"
 			},
@@ -253,7 +254,7 @@ func TestPathHasInfraModule(t *testing.T) {
 			setupFunc: func(t *testing.T) (string, string) {
 				tempDir := t.TempDir()
 				mainParamPath := filepath.Join(tempDir, "main.bicepparam")
-				err := os.WriteFile(mainParamPath, []byte("// bicepparam content"), 0644)
+				err := os.WriteFile(mainParamPath, []byte("// bicepparam content"), osutil.PermissionFileOwnerOnly)
 				require.NoError(t, err)
 				return tempDir, "main"
 			},
@@ -297,7 +298,7 @@ func TestPathHasInfraModule(t *testing.T) {
 			setupFunc: func(t *testing.T) (string, string) {
 				tempDir := t.TempDir()
 				customBicepPath := filepath.Join(tempDir, "custom.bicep")
-				err := os.WriteFile(customBicepPath, []byte("// bicep content"), 0644)
+				err := os.WriteFile(customBicepPath, []byte("// bicep content"), osutil.PermissionFileOwnerOnly)
 				require.NoError(t, err)
 				return tempDir, "custom"
 			},

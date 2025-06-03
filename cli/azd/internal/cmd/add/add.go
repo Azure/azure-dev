@@ -387,7 +387,8 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 // ensureCompatibleProject checks if the project is compatible with the add command.
-// A project is incompatible if the project has an infra module (e.g. infra/main.bicep) but no 'resources' node in the azure.yaml file.
+// A project is incompatible if the project has an infra module (e.g. infra/main.bicep)
+// but no 'resources' node in the azure.yaml file.
 func ensureCompatibleProject(
 	prjConfig *project.ProjectConfig,
 ) error {

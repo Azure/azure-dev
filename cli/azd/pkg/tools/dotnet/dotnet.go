@@ -345,6 +345,17 @@ func NewCli(commandRunner exec.CommandRunner) *Cli {
 	}
 }
 
+type NewGitIgnoreOptions struct {
+	// ProjectPath is the path to the project where the .gitignore file should be created.
+	ProjectPath string
+}
+
+func (cli *Cli) NewGitIgnore(ctx context.Context, projectPath string) error {
+	runArgs := newDotNetRunArgs("new", "gitignore", "--project", projectPath)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
+	return err
+}
+
 // newDotNetRunArgs creates a new RunArgs to run the specified dotnet command. It sets the environment variable
 // to disable output of workload update notifications, to make it easier for us to parse the output.
 func newDotNetRunArgs(args ...string) exec.RunArgs {

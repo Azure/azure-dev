@@ -47,7 +47,7 @@ func Test_CLI_Init_Minimal(t *testing.T) {
 }
 
 // Verifies init for the minimal template with -e environment flag.
-func Test_CLI_Init_Minimal_With_Env(t *testing.T) {
+func Test_CLI_Init_Minimal_With_Env_Flag(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -55,9 +55,6 @@ func Test_CLI_Init_Minimal_With_Env(t *testing.T) {
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
-	// cli.Env = append(os.Environ(),
-	// 	"AZURE_LOCATION=eastus2",
-	// 	"AZD_ALPHA_ENABLE_COMPOSE=0")
 
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
@@ -83,6 +80,42 @@ func Test_CLI_Init_Minimal_With_Env(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(gitignoreContent), ".azure\n")
 
+}
+
+// Verifies init for the minimal template with AZURE_ENV_NAME set.
+func Test_CLI_Init_Minimal_With_Env_Var(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(),
+		"AZURE_ENV_NAME=TESTENV")
+
+	_, err := cli.RunCommandWithStdIn(
+		ctx,
+		"Create a minimal project\n\n",
+		"init",
+	)
+	require.NoError(t, err)
+
+	require.DirExists(t, filepath.Join(dir, ".azure"))
+	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
+	require.NoError(t, err)
+	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
+
+	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
+	require.NoError(t, err)
+	require.Equal(t, filepath.Base(dir), proj.Name)
+
+	require.NoDirExists(t, filepath.Join(dir, "infra"))
+
+	require.FileExists(t, filepath.Join(dir, ".gitignore"))
+	gitignoreContent, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	require.NoError(t, err)
+	require.Contains(t, string(gitignoreContent), ".azure\n")
 }
 
 // Verifies init for the minimal template, when infra folder already exists with main.bicep and main.parameters.json.
@@ -229,8 +262,47 @@ func Test_CLI_Init_From_App_With_Infra(t *testing.T) {
 	require.FileExists(t, filepath.Join(dir, "azure.yaml"))
 }
 
-// Verifies init from app with infra and environment argument.
-func Test_CLI_Init_From_App_With_Infra_And_Env(t *testing.T) {
+// Verifies init from app with infra and environment flag set.
+func Test_CLI_Init_From_App_With_Infra_And_Env_Flag(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	appDir := filepath.Join(dir, "app")
+	err := os.MkdirAll(appDir, osutil.PermissionDirectory)
+	require.NoError(t, err)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZD_CONFIG_DIR="+dir)
+	cli.Env = append(cli.Env, "AZURE_DEV_COLLECT_TELEMETRY=no")
+
+	err = copySample(appDir, "py-postgres")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(
+		ctx,
+		"Use code in the current directory\n"+
+			"Confirm and continue initializing my app\n"+
+			"appdb\n",
+		"init",
+		"--environment", "TESTENV",
+	)
+	require.NoError(t, err)
+
+	require.NoDirExists(t, filepath.Join(dir, "infra"))
+	require.FileExists(t, filepath.Join(dir, "azure.yaml"))
+	require.DirExists(t, filepath.Join(dir, ".azure"))
+
+	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
+	require.NoError(t, err)
+	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
+}
+
+// Verifies init from app with infra and AZURE_ENV_NAME set.
+func Test_CLI_Init_From_App_With_Infra_And_Env_Var(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -245,7 +317,7 @@ func Test_CLI_Init_From_App_With_Infra_And_Env(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(os.Environ(),
 		"AZURE_LOCATION=eastus2",
-		"AZD_ALPHA_ENABLE_COMPOSE=0")
+		"AZURE_ENV_NAME=TESTENV")
 	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+dir)
 	cli.Env = append(cli.Env, "AZURE_DEV_COLLECT_TELEMETRY=no")
 
@@ -258,7 +330,6 @@ func Test_CLI_Init_From_App_With_Infra_And_Env(t *testing.T) {
 			"Confirm and continue initializing my app\n"+
 			"appdb\n",
 		"init",
-		"--env", "TESTENV",
 	)
 	require.NoError(t, err)
 

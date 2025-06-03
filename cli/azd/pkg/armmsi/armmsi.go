@@ -70,7 +70,7 @@ func (s *ArmMsiService) CreateUserIdentity(
 	return msi.Identity, nil
 }
 
-// ListUserIdentities retrieves a list of user-assigned managed identities within a specified resource group.
+// ListUserIdentities retrieves a list of user-assigned managed identities within a specified Azure subscription.
 //
 // Parameters:
 //   - ctx: The context.Context for the request

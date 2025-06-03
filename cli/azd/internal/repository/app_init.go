@@ -34,7 +34,8 @@ import (
 func (i *Initializer) InitFromApp(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
-	initializeEnv func() (*environment.Environment, error)) error {
+	initializeEnv func() (*environment.Environment, error),
+	envSpecified bool) error {
 	i.console.Message(ctx, "")
 	title := "Scanning app code in current directory"
 	i.console.ShowSpinner(ctx, title, input.Step)
@@ -234,10 +235,12 @@ func (i *Initializer) InitFromApp(
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("config"))
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("generate"))
 
-	// Prompt for environment before proceeding with generation
-	_, err = initializeEnv()
-	if err != nil {
-		return err
+	// Defer env initialization until 'azd up', except cases where user explicitly specifies the env name
+	if envSpecified {
+		_, err = initializeEnv()
+		if err != nil {
+			return err
+		}
 	}
 
 	title = "Generating " + output.WithHighLightFormat("./"+azdcontext.ProjectFileName)

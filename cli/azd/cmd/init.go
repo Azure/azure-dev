@@ -299,9 +299,14 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 		}
 
-		err = i.repoInitializer.InitFromApp(ctx, azdCtx, func() (*environment.Environment, error) {
-			return i.initializeEnv(ctx, azdCtx, templates.Metadata{})
-		})
+		err = i.repoInitializer.InitFromApp(
+			ctx,
+			azdCtx,
+			func() (*environment.Environment, error) {
+				return i.initializeEnv(ctx, azdCtx, templates.Metadata{})
+			},
+			i.flags.EnvironmentName != "",
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -319,6 +324,14 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		err = i.repoInitializer.InitializeMinimal(ctx, azdCtx)
 		if err != nil {
 			return nil, err
+		}
+
+		// Create env upfront only if the environment name is passed in.
+		if i.flags.EnvironmentName != "" {
+			_, err := i.initializeEnv(ctx, azdCtx, templates.Metadata{})
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		header = "Generated azure.yaml project file."

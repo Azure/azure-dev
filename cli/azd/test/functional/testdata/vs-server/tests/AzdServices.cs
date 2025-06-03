@@ -134,15 +134,17 @@ public interface IServerService {
     ValueTask StopAsync(CancellationToken cancellationToken);
 }
 
-public interface IEnvironmentService {
-    ValueTask<IEnumerable<EnvironmentInfo>> GetEnvironmentsAsync(Context c,IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
-    ValueTask<Environment> OpenEnvironmentAsync(Context c,string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
-    ValueTask<Environment> LoadEnvironmentAsync(Context c,string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
-    ValueTask<Environment> RefreshEnvironmentAsync(Context c,string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
-    ValueTask<bool> DeleteEnvironmentAsync(Context c,string envName, EnvironmentDeleteMode mode, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
-    ValueTask<bool> CreateEnvironmentAsync(Context c,Environment newEnv,IObserver<ProgressMessage> outputObserver,  CancellationToken cancellationToken);
-    ValueTask<bool> SetCurrentEnvironmentAsync(Context c,string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
-    ValueTask<Environment> DeployAsync(Context c,string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
+public interface IEnvironmentService
+{
+    ValueTask<IEnumerable<EnvironmentInfo>> GetEnvironmentsAsync(Context c, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
+    ValueTask<Environment> OpenEnvironmentAsync(Context c, string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
+    ValueTask<Environment> LoadEnvironmentAsync(Context c, string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
+    ValueTask<Environment> RefreshEnvironmentAsync(Context c, string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
+    ValueTask<bool> DeleteEnvironmentAsync(Context c, string envName, EnvironmentDeleteMode mode, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
+    ValueTask<bool> CreateEnvironmentAsync(Context c, Environment newEnv, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
+    ValueTask<bool> SetCurrentEnvironmentAsync(Context c, string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
+    ValueTask<Environment> DeployAsync(Context c, string envName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
+    ValueTask<Environment> DeployServiceAsync(Context c,string envName,string serviceName, IObserver<ProgressMessage> outputObserver, CancellationToken cancellationToken);
 }
 
 public interface IAspireService {

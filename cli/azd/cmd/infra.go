@@ -15,6 +15,9 @@ func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		Command: &cobra.Command{
 			Short: "Manage your Azure infrastructure.",
 		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupBeta,
+		},
 	})
 
 	group.

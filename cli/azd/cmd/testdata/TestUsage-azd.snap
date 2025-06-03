@@ -24,6 +24,7 @@ Commands
   Beta commands
     add      	: Add a component to your project.
     hooks    	: Develop, test and run hooks for a project.
+    infra    	: Manage your Azure infrastructure.
     monitor  	: Monitor a deployed project.
     package  	: Packages the project's code to be deployed to Azure.
     pipeline 	: Manage and configure your deployment pipelines.

@@ -40,8 +40,6 @@ import (
 	"github.com/spf13/pflag"
 )
 
-var composeFeature = alpha.MustFeatureKey("compose")
-
 type showFlags struct {
 	global      *internal.GlobalCommandOptions
 	showSecrets bool
@@ -68,6 +66,7 @@ func NewShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *sh
 
 func NewShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
+		Use:   "show [resource name or ID]",
 		Short: "Display information about your project and its resources.",
 	}
 
@@ -204,7 +203,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 			envName := env.Name()
 
-			if s.featureManager.IsEnabled(composeFeature) && len(s.args) > 0 {
+			if len(s.args) > 0 {
 				name := s.args[0]
 				err := s.showResource(ctx, name, env)
 				if err != nil {

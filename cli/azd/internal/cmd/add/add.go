@@ -386,6 +386,8 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}, err
 }
 
+// ensureCompatibleProject checks if the project is compatible with the add command.
+// A project is incompatible if the project has an infra module (e.g. infra/main.bicep) but no 'resources' node in the azure.yaml file.
 func ensureCompatibleProject(
 	prjConfig *project.ProjectConfig,
 ) error {
@@ -397,7 +399,7 @@ func ensureCompatibleProject(
 	hasResources := len(prjConfig.Resources) > 0
 	hasInfra, _ := pathHasInfraModule(infraRoot, prjConfig.Infra.Module)
 	if hasInfra && !hasResources {
-		return fmt.Errorf("incompatible project: please reinitialize the project with 'azd init' to use 'azd add'")
+		return fmt.Errorf("incompatible project: found infra directory with no resources defined in azure.yaml")
 	}
 
 	return nil

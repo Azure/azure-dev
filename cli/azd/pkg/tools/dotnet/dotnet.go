@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -345,13 +346,46 @@ func NewCli(commandRunner exec.CommandRunner) *Cli {
 	}
 }
 
-type NewGitIgnoreOptions struct {
-	// ProjectPath is the path to the project where the .gitignore file should be created.
-	ProjectPath string
+type GitIgnoreIfExistsStrategy string
+
+const (
+	// GitIgnoreIfExistsStrategySkip skips creating the .gitignore file if it already exists. This is the default behavior.
+	GitIgnoreIfExistsStrategySkip GitIgnoreIfExistsStrategy = "skip"
+	// GitIgnoreIfExistsStrategyOverwrite overwrites the existing .gitignore file.
+	GitIgnoreIfExistsStrategyOverwrite GitIgnoreIfExistsStrategy = "overwrite"
+)
+
+type GitIgnoreOptions struct {
+	// IfExistsStrategy determines what to do if the .gitignore file already exists. Default is Skip.
+	IfExistsStrategy GitIgnoreIfExistsStrategy
 }
 
-func (cli *Cli) NewGitIgnore(ctx context.Context, projectPath string) error {
+func (cli *Cli) GitIgnore(ctx context.Context, projectPath string, options *GitIgnoreOptions) error {
+	if options == nil {
+		options = &GitIgnoreOptions{
+			IfExistsStrategy: GitIgnoreIfExistsStrategySkip,
+		}
+	}
+	if !slices.Contains([]GitIgnoreIfExistsStrategy{
+		GitIgnoreIfExistsStrategySkip,
+		GitIgnoreIfExistsStrategyOverwrite,
+	}, options.IfExistsStrategy) {
+		return fmt.Errorf("invalid IfExistsStrategy option: %s", options.IfExistsStrategy)
+	}
+
+	if _, err := os.Stat(filepath.Join(projectPath, ".gitignore")); err == nil {
+		if options.IfExistsStrategy == GitIgnoreIfExistsStrategySkip {
+			log.Printf("Skipping creation of .gitignore file at %s because it already exists.", projectPath)
+			return nil
+		}
+	}
+
 	runArgs := newDotNetRunArgs("new", "gitignore", "--project", projectPath)
+	if options.IfExistsStrategy == GitIgnoreIfExistsStrategyOverwrite {
+		// force argument prevents the command from failing if the .gitignore file already exists.
+		runArgs.Args = append(runArgs.Args, "--force")
+	}
+
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	return err
 }

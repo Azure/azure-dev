@@ -40,10 +40,10 @@ func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	group.
-		Add("synth", &actions.ActionDescriptorOptions{
-			Command:        newInfraSynthCmd(),
-			FlagsResolver:  newInfraSynthFlags,
-			ActionResolver: newInfraSynthAction,
+		Add("generate", &actions.ActionDescriptorOptions{
+			Command:        newInfraGenerateCmd(),
+			FlagsResolver:  newInfraGenerateFlags,
+			ActionResolver: newInfraGenerateAction,
 			OutputFormats:  []output.Format{output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		})

@@ -420,7 +420,7 @@ func Test_ImportManager_ProjectInfrastructure_FromResources(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dir, "resources.bicep"))
 }
 
-func TestImportManager_SynthAllInfrastructure_FromResources(t *testing.T) {
+func TestImportManager_GenerateAllInfrastructure_FromResources(t *testing.T) {
 	im := &ImportManager{
 		dotNetImporter: &DotNetImporter{
 			alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
@@ -431,7 +431,7 @@ func TestImportManager_SynthAllInfrastructure_FromResources(t *testing.T) {
 	err := yaml.Unmarshal([]byte(prjWithResources), prjConfig)
 	require.NoError(t, err)
 
-	projectFs, err := im.SynthAllInfrastructure(context.Background(), prjConfig)
+	projectFs, err := im.GenerateAllInfrastructure(context.Background(), prjConfig)
 	require.NoError(t, err)
 
 	files := []string{

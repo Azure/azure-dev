@@ -305,9 +305,9 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	if _, err := pathHasInfraModule(infraRoot, prjConfig.Infra.Module); err == nil {
 		followUpMessage = fmt.Sprintf(
-			"Run '%s' to re-synthesize the infrastructure, "+
+			"Run '%s' to re-generate the infrastructure, "+
 				"then run '%s' to provision these changes anytime later.",
-			output.WithHighLightFormat("azd infra synth"),
+			output.WithHighLightFormat("azd infra gen"),
 			output.WithHighLightFormat("azd provision"))
 		if addedKeyVault {
 			followUpMessage += keyVaultFollowUpMessage

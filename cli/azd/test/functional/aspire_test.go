@@ -166,8 +166,6 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		cli := azdcli.NewCLI(t)
 		cli.WorkingDirectory = dir
 		cli.Env = append(cli.Env, os.Environ()...)
-		//nolint:lll
-		cli.Env = append(cli.Env, "AZD_ALPHA_ENABLE_INFRASYNTH=true")
 
 		_, err = cli.RunCommand(ctx, "infra", "synth")
 		require.NoError(t, err)

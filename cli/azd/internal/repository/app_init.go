@@ -234,6 +234,12 @@ func (i *Initializer) InitFromApp(
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("config"))
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("generate"))
 
+	// Prompt for environment before proceeding with generation
+	_, err = initializeEnv()
+	if err != nil {
+		return err
+	}
+
 	title = "Generating " + output.WithHighLightFormat("./"+azdcontext.ProjectFileName)
 	i.console.ShowSpinner(ctx, title, input.Step)
 	err = i.genProjectFile(ctx, azdCtx, detect)

@@ -5,6 +5,7 @@ package add
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -398,7 +399,15 @@ func ensureCompatibleProject(
 	}
 
 	hasResources := len(prjConfig.Resources) > 0
-	hasInfra, _ := pathHasInfraModule(infraRoot, prjConfig.Infra.Module)
+	hasInfra, err := pathHasInfraModule(infraRoot, prjConfig.Infra.Module)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			hasInfra = false
+		} else {
+			return err
+		}
+	}
+
 	if hasInfra && !hasResources {
 		return fmt.Errorf("incompatible project: found infra directory with no resources defined in azure.yaml")
 	}

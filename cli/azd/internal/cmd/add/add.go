@@ -37,7 +37,7 @@ import (
 func NewAddCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "add",
-		Short: fmt.Sprintf("Add a component to your project. %s", output.WithWarningFormat("(Beta)")),
+		Short: "Add a component to your project.",
 	}
 }
 

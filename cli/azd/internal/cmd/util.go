@@ -13,7 +13,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
@@ -65,18 +64,6 @@ func AzurePortalLink(portalUrlBase, subscriptionId, resourceGroupName string) st
 		portalUrlBase,
 		subscriptionId,
 		resourceGroupName))
-}
-
-func serviceNameWarningCheck(console input.Console, serviceNameFlag string, commandName string) {
-	if serviceNameFlag == "" {
-		return
-	}
-
-	fmt.Fprintln(
-		console.Handles().Stderr,
-		output.WithWarningFormat("WARNING: The `--service` flag is deprecated and will be removed in a future release."),
-	)
-	fmt.Fprintf(console.Handles().Stderr, "Next time use `azd %s <service>`.\n\n", commandName)
 }
 
 func getTargetServiceName(

@@ -34,6 +34,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/google/uuid"
@@ -105,6 +106,7 @@ type PipelineManager struct {
 	ciProviderType    ciProviderType
 	msiService        armmsi.ArmMsiService
 	prompter          prompt.Prompter
+	dotnetCli         *dotnet.Cli
 }
 
 func NewPipelineManager(
@@ -122,6 +124,7 @@ func NewPipelineManager(
 	keyVaultService keyvault.KeyVaultService,
 	msiService armmsi.ArmMsiService,
 	prompter prompt.Prompter,
+	dotnetCli *dotnet.Cli,
 ) (*PipelineManager, error) {
 	pipelineProvider := &PipelineManager{
 		azdCtx:            azdCtx,
@@ -137,6 +140,7 @@ func NewPipelineManager(
 		keyVaultService:   keyVaultService,
 		msiService:        msiService,
 		prompter:          prompter,
+		dotnetCli:         dotnetCli,
 	}
 
 	// check that scm and ci providers are set
@@ -861,6 +865,15 @@ func (pm *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepositor
 	var err error
 	pm.console.ShowSpinner(ctx, checkGitMessage, input.Step)
 	defer pm.console.StopSpinner(ctx, checkGitMessage, input.GetStepResultFormat(err))
+
+	// For Aspire, AZD adds gitignore when missing
+	if isAspire := pm.importManager.HasAppHost(ctx, pm.prjConfig); isAspire {
+		log.Println("Adding .gitignore for Aspire project if missing")
+		if err := pm.dotnetCli.GitIgnore(ctx, repoPath, nil); err != nil {
+			// log the error but continue. This is not a critical error to hold up the pipeline setup.
+			log.Println("Failed to add .gitignore for Aspire project:", err)
+		}
+	}
 
 	// the warningCount makes sure we only ever show one single warning for the repo missing setup
 	// if there is no git repo, the warning is for no git repo detected, but if there is a git repo

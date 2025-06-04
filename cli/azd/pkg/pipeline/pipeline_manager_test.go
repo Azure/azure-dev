@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -911,6 +912,7 @@ func createPipelineManager(
 		nil,
 		armmsi.ArmMsiService{},
 		&mockPrompter{},
+		dotnet.NewCli(mockContext.CommandRunner),
 	)
 }
 

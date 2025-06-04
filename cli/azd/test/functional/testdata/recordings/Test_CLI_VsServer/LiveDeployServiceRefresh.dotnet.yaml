@@ -1,0 +1,20 @@
+version: "1.0"
+tool: dotnet
+interactions:
+    - id: 0
+      args:
+        - publish
+        - /tmp/Test_CLI_VsServerLiveDeployServiceRefresh2296466816/001/AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj
+        - -r
+        - linux-x64
+        - -c
+        - Release
+        - /t:PublishContainer
+        - -p:ContainerRepository=aspire-azd-tests/apiservice-azdtest-l72aa27
+        - -p:ContainerImageTag=azd-deploy-1748923168
+        - -p:ContainerRegistry=acrzxwehscii2bsm.azurecr.io
+        - --getProperty:GeneratedContainerConfiguration
+      exitCode: 0
+      stdout: |
+        {"config":{"ExposedPorts":{"8080/tcp":{}},"Labels":{"org.opencontainers.image.created":"2025-06-03T04:03:51.0268672Z","org.opencontainers.artifact.created":"2025-06-03T04:03:51.0268672Z","org.opencontainers.image.authors":"AspireAzdTests.ApiService","org.opencontainers.image.version":"1.0.0","org.opencontainers.image.base.name":"mcr.microsoft.com/dotnet/aspnet:8.0","net.dot.runtime.majorminor":"8.0","net.dot.sdk.version":"9.0.200","org.opencontainers.image.base.digest":"sha256:98ce9518b33006bded4c5ab1a04b47a2f06c73ef04383782cf96eba0b5b82c49"},"Env":["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","APP_UID=1654","ASPNETCORE_HTTP_PORTS=8080","DOTNET_RUNNING_IN_CONTAINER=true","DOTNET_VERSION=8.0.16","ASPNET_VERSION=8.0.16"],"WorkingDir":"/app/","Entrypoint":["dotnet","/app/AspireAzdTests.ApiService.dll"],"User":"1654"},"created":"2025-06-03T04:03:53.6645739Z","rootfs":{"type":"layers","diff_ids":["sha256:ace34d1d784c01e3f9d156687089e8f58f786e23ccd097bdbbf337d6d28b3783","sha256:0477dc46ac269eca2662e38d078718c6f5d456292a81291c7d1daafe7ff71912","sha256:727c1c062598e04aa70ace8243d5aa4f4bbb951943354c10a2474d14ff912dfb","sha256:757bed6d444c3503a1e69f7104844a45257c15de080cfe7ada5eb9b67275b043","sha256:1086fe2b7e0db56a6e02b83cf8770be58276a1c4b12dad59532836ad54dba105","sha256:363976da07e0d8add7e47a1797b357aee03a7f3588494d46fb7323e3ae3c7fa7","sha256:e8986e554cafca7d13991b086c553ed67df3b9be40cb1e7a52f839a511095a82"]},"architecture":"amd64","os":"linux","history":[{"comment":"debuerreotype 0.15","created":"2025-05-20T00:00:00.0000000Z","created_by":"# debian.sh --arch \u0027amd64\u0027 out/ \u0027bookworm\u0027 \u0027@1747699200\u0027"},{"comment":"buildkit.dockerfile.v0","created":"2025-05-22T00:30:43.9857928Z","created_by":"ENV APP_UID=1654 ASPNETCORE_HTTP_PORTS=8080 DOTNET_RUNNING_IN_CONTAINER=true","empty_layer":true},{"comment":"buildkit.dockerfile.v0","created":"2025-05-22T00:30:43.9857928Z","created_by":"RUN /bin/sh -c apt-get update     \u0026\u0026 apt-get install -y --no-install-recommends         ca-certificates                 libc6         libgcc-s1         libicu72         libssl3         libstdc\u002B\u002B6         tzdata         zlib1g     \u0026\u0026 rm -rf /var/lib/apt/lists/* # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2025-05-22T00:30:45.5521243Z","created_by":"RUN /bin/sh -c groupadd         --gid=$APP_UID         app     \u0026\u0026 useradd -l         --uid=$APP_UID         --gid=$APP_UID         --create-home         app # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2025-05-22T00:30:52.1942549Z","created_by":"ENV DOTNET_VERSION=8.0.16","empty_layer":true},{"comment":"buildkit.dockerfile.v0","created":"2025-05-22T00:30:52.1942549Z","created_by":"COPY /dotnet /usr/share/dotnet # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2025-05-22T00:30:53.2353082Z","created_by":"RUN /bin/sh -c ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet # buildkit"},{"comment":"buildkit.dockerfile.v0","created":"2025-05-22T00:30:59.0287734Z","created_by":"ENV ASPNET_VERSION=8.0.16","empty_layer":true},{"comment":"buildkit.dockerfile.v0","created":"2025-05-22T00:30:59.0287734Z","created_by":"COPY /dotnet /usr/share/dotnet # buildkit"},{"author":".NET SDK","created":"2025-06-03T04:03:53.6645533Z","created_by":".NET SDK Container Tooling, version 9.0.200-rtm.25073.12\u002B90e8b202f25b7c2bf3b883d421ad5b1cb477e8b0"}]}
+      stderr: ""

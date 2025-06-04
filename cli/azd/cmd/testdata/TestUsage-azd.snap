@@ -22,6 +22,7 @@ Commands
     version  	: Print the version number of Azure Developer CLI.
 
   Beta commands
+    add      	: Add a component to your project.
     hooks    	: Develop, test and run hooks for a project.
     monitor  	: Monitor a deployed project.
     package  	: Packages the project's code to be deployed to Azure.

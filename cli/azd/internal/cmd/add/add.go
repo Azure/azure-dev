@@ -5,6 +5,7 @@ package add
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -37,7 +38,7 @@ import (
 func NewAddCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "add",
-		Short: fmt.Sprintf("Add a component to your project. %s", output.WithWarningFormat("(Alpha)")),
+		Short: "Add a component to your project.",
 	}
 }
 
@@ -58,16 +59,7 @@ type AddAction struct {
 	azureClient      *azapi.AzureClient
 }
 
-var composeFeature = alpha.MustFeatureKey("compose")
-
 func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if !a.alphaManager.IsEnabled(composeFeature) {
-		return nil, fmt.Errorf(
-			"compose is currently under alpha support and must be explicitly enabled."+
-				" Run `%s` to enable this feature", alpha.GetEnableCommand(composeFeature),
-		)
-	}
-
 	prjConfig, err := project.Load(ctx, a.azdCtx.ProjectPath())
 	if err != nil {
 		return nil, err
@@ -75,6 +67,11 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	// Having a subscription is required for any azd compose (add)
 	err = provisioning.EnsureSubscription(ctx, a.envManager, a.env, a.prompter)
+	if err != nil {
+		return nil, err
+	}
+
+	err = ensureCompatibleProject(prjConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -388,6 +385,34 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			FollowUp: followUpMessage,
 		},
 	}, err
+}
+
+// ensureCompatibleProject checks if the project is compatible with the add command.
+// A project is incompatible if the project has an infra module (e.g. infra/main.bicep)
+// but no 'resources' node in the azure.yaml file.
+func ensureCompatibleProject(
+	prjConfig *project.ProjectConfig,
+) error {
+	infraRoot := prjConfig.Infra.Path
+	if !filepath.IsAbs(infraRoot) {
+		infraRoot = filepath.Join(prjConfig.Path, infraRoot)
+	}
+
+	hasResources := len(prjConfig.Resources) > 0
+	hasInfra, err := pathHasInfraModule(infraRoot, prjConfig.Infra.Module)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			hasInfra = false
+		} else {
+			return err
+		}
+	}
+
+	if hasInfra && !hasResources {
+		return fmt.Errorf("incompatible project: found infra directory with no resources defined in azure.yaml")
+	}
+
+	return nil
 }
 
 type provisionSelection int

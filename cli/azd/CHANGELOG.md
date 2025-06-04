@@ -1,5 +1,13 @@
 # Release History
 
+## 1.16.1 (2025-05-15)
+
+### Bugs Fixed
+
+- [[5198]](https://github.com/Azure/azure-dev/issues/5198) Fixes error messages surfaced to users that contain internal implementation details.
+
+### Other Changes
+
 ## 1.16.0 (2025-05-14)
 
 ### Features Added

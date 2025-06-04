@@ -1,5 +1,10 @@
 # Release History
 
+## 0.4.2
+
+- Fixes Python local build support
+- Updates JavaScript support to use generated proto clients
+
 ## 0.4.1
 
 - Fixes line endings for unix based systems

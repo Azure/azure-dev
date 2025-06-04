@@ -279,9 +279,11 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		tracing.SetUsageAttributes(fields.InitMethod.String("app"))
 
 		header = "Your app is ready for the cloud!"
-		followUp = "You can provision and deploy your app to Azure by running the " + output.WithHighLightFormat("azd up") +
-			" command in this directory. For more information on configuring your app, see " +
-			output.WithHighLightFormat("./next-steps.md")
+		followUp = "Run " + output.WithHighLightFormat("azd up") + " to provision and deploy your app to Azure.\n" +
+			"Run " + output.WithHighLightFormat("azd infra synth") + " to write infrastructure as code files to disk " +
+			"so you can customize and manage.\n" +
+			"Run " + output.WithHighLightFormat("azd add") + " to add new Azure components to your project.\n" +
+			"See " + output.WithHighLightFormat("./next-steps.md") + " for more information on configuring your app."
 		entries, err := os.ReadDir(azdCtx.ProjectDirectory())
 		if err != nil {
 			return nil, fmt.Errorf("reading current directory: %w", err)
@@ -297,9 +299,14 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 		}
 
-		err = i.repoInitializer.InitFromApp(ctx, azdCtx, func() (*environment.Environment, error) {
-			return i.initializeEnv(ctx, azdCtx, templates.Metadata{})
-		})
+		err = i.repoInitializer.InitFromApp(
+			ctx,
+			azdCtx,
+			func() (*environment.Environment, error) {
+				return i.initializeEnv(ctx, azdCtx, templates.Metadata{})
+			},
+			i.flags.EnvironmentName != "",
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -314,54 +321,21 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	case initProject:
 		tracing.SetUsageAttributes(fields.InitMethod.String("project"))
 
-		composeAlphaEnabled := i.featuresManager.IsEnabled(composeFeature)
-		if !composeAlphaEnabled {
-			err = i.repoInitializer.InitializeMinimal(ctx, azdCtx)
-			if err != nil {
-				return nil, err
-			}
+		err = i.repoInitializer.InitializeMinimal(ctx, azdCtx)
+		if err != nil {
+			return nil, err
+		}
 
+		// Create env upfront only if the environment name is passed in.
+		if i.flags.EnvironmentName != "" {
 			_, err := i.initializeEnv(ctx, azdCtx, templates.Metadata{})
 			if err != nil {
 				return nil, err
 			}
-
-			followUp = ""
-		} else {
-			fi, err := os.Stat(azdCtx.ProjectPath())
-			if err != nil && !errors.Is(err, os.ErrNotExist) {
-				return nil, err
-			}
-
-			if fi != nil {
-				return nil, fmt.Errorf("project already initialized")
-			}
-
-			name, err := i.console.Prompt(ctx, input.ConsoleOptions{
-				Message:      "What is the name of your project?",
-				DefaultValue: azdcontext.ProjectName(azdCtx.ProjectDirectory()),
-			})
-			if err != nil {
-				return nil, err
-			}
-
-			prjConfig := project.ProjectConfig{
-				Name: name,
-			}
-
-			if composeAlphaEnabled {
-				prjConfig.MetaSchemaVersion = "alpha"
-			}
-
-			err = project.Save(ctx, &prjConfig, azdCtx.ProjectPath())
-			if err != nil {
-				return nil, fmt.Errorf("saving project config: %w", err)
-			}
-
-			followUp = "Run " + output.WithHighLightFormat("azd add") + " to add new Azure components to your project."
 		}
 
 		header = "Generated azure.yaml project file."
+		followUp = "Run " + output.WithHighLightFormat("azd add") + " to add new Azure components to your project."
 	default:
 		panic("unhandled init type")
 	}
@@ -377,8 +351,6 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		},
 	}, nil
 }
-
-var composeFeature = alpha.MustFeatureKey("compose")
 
 type initType int
 

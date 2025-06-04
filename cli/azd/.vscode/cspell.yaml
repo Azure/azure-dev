@@ -160,6 +160,9 @@ overrides:
       - dall
       - datasource
       - vectorizing
+  - filename: internal/cmd/add/add.go
+    words:
+      - resourceless
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

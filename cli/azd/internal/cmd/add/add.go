@@ -16,6 +16,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -409,7 +410,10 @@ func ensureCompatibleProject(
 	}
 
 	if hasInfra && !hasResources {
-		return fmt.Errorf("incompatible project: found infra directory with no resources defined in azure.yaml")
+		return &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("incompatible project: found infra directory and resourceless azure.yaml"),
+			Suggestion: "'azd add' does not support .NET Aspire projects and most Awesome azd templates.",
+		}
 	}
 
 	return nil

@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/tidwall/gjson"
 )
 
 // BicepName returns a name suitable for use as a bicep variable name.
@@ -51,6 +51,19 @@ func BicepName(name string) string {
 	}
 
 	return sb.String()
+}
+
+// BicepNameInfix is like BicepName, except that the first character is upper-cased for infix use.
+func BicepNameInfix(name string) string {
+	bicepName := BicepName(name)
+	return capitalizeFirst(bicepName)
+}
+
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return ""
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 func RemoveDotAndDash(name string) string {
@@ -197,8 +210,37 @@ var camelCaseRegex = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 // EnvFormat takes an input parameter like `fooParam` which is expected to be in camel case and returns it in
 // upper snake case with env var template, like `${AZURE_FOO_PARAM}`.
 func EnvFormat(src string) string {
-	snake := strings.ReplaceAll(strings.ToUpper(camelCaseRegex.ReplaceAllString(src, "${1}_${2}")), "-", "_")
-	return fmt.Sprintf("${AZURE_%s}", snake)
+	return fmt.Sprintf("${%s}", AzureSnakeCase(src))
+}
+
+func AzureSnakeCase(src string) string {
+	return fmt.Sprintf(
+		"AZURE_%s", strings.ReplaceAll(strings.ToUpper(camelCaseRegex.ReplaceAllString(src, "${1}_${2}")), "-", "_"))
+}
+
+func HasACA(services []ServiceSpec) bool {
+	return hasHostType(services, ContainerAppKind)
+}
+
+func HasAppService(services []ServiceSpec) bool {
+	return hasHostType(services, AppServiceKind)
+}
+
+func IsACA(host HostKind) bool {
+	return host == ContainerAppKind
+}
+
+func IsAppService(host HostKind) bool {
+	return host == AppServiceKind
+}
+
+func hasHostType(services []ServiceSpec, host HostKind) bool {
+	for _, service := range services {
+		if service.Host == host {
+			return true
+		}
+	}
+	return false
 }
 
 // Formats a parameter value for use in a bicep file.
@@ -225,16 +267,40 @@ func hostFromEndpoint(endpoint string) (string, error) {
 	return urlEndpoint.Hostname(), nil
 }
 
-func aiProjectConnectionString(resourceId string, projectUrl string) (string, error) {
-	hostName, err := hostFromEndpoint(projectUrl)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse project URL: %w", err)
+func aiProjectEndpoint(endpoints string) (string, error) {
+	result := gjson.Parse(endpoints)
+	if !result.Exists() {
+		return "", fmt.Errorf("invalid endpoints JSON: %s", endpoints)
 	}
 
-	resId, err := arm.ParseResourceID(resourceId)
-	if err != nil {
-		return "", nil
+	endpoint := result.Get("AI Foundry API")
+	if !endpoint.Exists() {
+		return "", fmt.Errorf("endpoint 'AI Foundry API' not found in endpoints")
 	}
 
-	return fmt.Sprintf("%s;%s;%s;%s", hostName, resId.SubscriptionID, resId.ResourceGroupName, resId.Name), nil
+	return endpoint.String(), nil
+}
+
+func emitAiProjectEndpoint(projectEndpointsVar string) (string, error) {
+	return fmt.Sprintf("%s['AI Foundry API']", projectEndpointsVar), nil
+}
+
+func emitHostFromEndpoint(endpointVar string) (string, error) {
+	// example: https://{your-namespace}.servicebus.windows.net:443
+	return fmt.Sprintf("split(split(%s, '//')[1], ':')[0]", endpointVar), nil
+
+}
+
+func bicepFuncCall(funcName string) func(name string) string {
+	// example: toLower(foo)
+	return func(name string) string {
+		return fmt.Sprintf("%s(%s)", funcName, name)
+	}
+}
+
+func bicepFuncCallThree(funcName string) func(a string, b string, c string) string {
+	// example: replace(foo, bar, baz)
+	return func(a string, b string, c string) string {
+		return fmt.Sprintf("%s(%s, %s, %s)", funcName, a, b, c)
+	}
 }

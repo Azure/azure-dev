@@ -1,5 +1,5 @@
 ARG prefix=''
-ARG base='debian:bullseye'
+ARG base='debian:bookworm'
 FROM ${prefix}${base}
 
 ARG shell='bash'

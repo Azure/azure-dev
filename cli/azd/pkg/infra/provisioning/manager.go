@@ -69,6 +69,14 @@ func (m *Manager) Initialize(ctx context.Context, projectPath string, options Op
 	return m.provider.Initialize(ctx, projectPath, options)
 }
 
+// Parameters gets the list of parameters and its value which will be used to provision the infrastructure.
+func (m *Manager) Parameters(ctx context.Context) ([]Parameter, error) {
+	if m.provider == nil {
+		panic("called parameters() with provider not initialized. Make sure to call manager.Initialize() first.")
+	}
+	return m.provider.Parameters(ctx)
+}
+
 // Gets the latest deployment details for the specified scope
 func (m *Manager) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
 	result, err := m.provider.State(ctx, options)
@@ -80,7 +88,6 @@ func (m *Manager) State(ctx context.Context, options *StateOptions) (*StateResul
 }
 
 var AzdOperationsFeatureKey = alpha.MustFeatureKey("azd.operations")
-var AzdAppHostInfraMigration = alpha.MustFeatureKey("apphost.infra.migration")
 
 // Deploys the Azure infrastructure for the specified project
 func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {

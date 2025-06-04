@@ -23,8 +23,6 @@ jobs:
       AZURE_CLIENT_ID: ${{ "{{" }} vars.AZURE_CLIENT_ID {{ "}}" }}
       AZURE_TENANT_ID: ${{ "{{" }} vars.AZURE_TENANT_ID {{ "}}" }}
       AZURE_SUBSCRIPTION_ID: ${{ "{{" }} vars.AZURE_SUBSCRIPTION_ID {{ "}}" }}
-      AZURE_ENV_NAME: ${{ "{{" }} vars.AZURE_ENV_NAME {{ "}}" }}
-      AZURE_LOCATION: ${{ "{{" }} vars.AZURE_LOCATION {{ "}}" }}
 {{- range $variable := .Variables }}
       {{ $variable }}: ${{ "{{" }} vars.{{ $variable }} {{ "}}" }}
 {{- end}}
@@ -51,6 +49,15 @@ jobs:
         shell: pwsh
 {{ end }}
 
+{{- if .AlphaFeatures }}
+      - name: Enabled required alpha features
+        run: |
+{{- range $feature := .AlphaFeatures }}
+          azd config set alpha.{{ $feature }} on
+{{- end }}
+        shell: pwsh
+{{ end }}
+
 {{- if not .FedCredLogIn }}
       - name: Log in with Azure (Client Credentials)
         run: |
@@ -68,12 +75,20 @@ jobs:
 
       - name: Provision Infrastructure
         run: azd provision --no-prompt
+{{- if .Secrets }}
         env:
-          AZD_INITIAL_ENVIRONMENT_CONFIG: ${{ "{{" }} secrets.AZD_INITIAL_ENVIRONMENT_CONFIG {{ "}}" }}
 {{- range $secret := .Secrets }}
           {{ $secret }}: ${{ "{{" }} secrets.{{ $secret }} {{ "}}" }}
 {{- end}}
+{{- end }}
 
       - name: Deploy Application
         run: azd deploy --no-prompt
+{{- if .Secrets }}
+        env:
+{{- range $secret := .Secrets }}
+          {{ $secret }}: ${{ "{{" }} secrets.{{ $secret }} {{ "}}" }}
+{{- end}}
+{{- end }}
+        
 {{ end}}      

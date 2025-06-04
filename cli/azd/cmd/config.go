@@ -91,7 +91,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 			Footer:      getCmdConfigHelpFooter,
 		},
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupConfig,
+			RootLevelHelp: actions.CmdGroupManage,
 		},
 	})
 

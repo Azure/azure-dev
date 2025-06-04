@@ -74,8 +74,8 @@ type Expression struct {
 	t *tmpl
 
 	// The start and end positions of the expression in the template.
-	start int
-	end   int
+	Start int
+	End   int
 }
 
 func (e *Expression) Replace(val string) {
@@ -269,18 +269,18 @@ type tmpl struct {
 	// rawOffset is the offset of the raw string due to replacements from expressions
 	rawOffset int
 	// expressions are the parsed expressions in the template
-	expressions []Expression
+	expressions []*Expression
 }
 
 func (t *tmpl) Replace(expr *Expression, val string) {
 	raw := *t.raw
-	raw = raw[:expr.start+t.rawOffset] + val + raw[expr.end+t.rawOffset:]
+	raw = raw[:expr.Start+t.rawOffset] + val + raw[expr.End+t.rawOffset:]
 
 	*t.raw = raw
-	t.rawOffset += len(val) - (expr.end - expr.start)
+	t.rawOffset += len(val) - (expr.End - expr.Start)
 }
 
-func Parse(s *string) ([]Expression, error) {
+func Parse(s *string) ([]*Expression, error) {
 	var t *tmpl
 	prev := rune(0)
 	val := *s
@@ -305,11 +305,11 @@ func Parse(s *string) ([]Expression, error) {
 					}
 				}
 
-				expr.start = i - 1                // start of '${'
-				expr.end = (i + 1) + p.cursor + 1 // end of '}'
+				expr.Start = i - 1                // start of '${'
+				expr.End = (i + 1) + p.cursor + 1 // end of '}'
 				expr.t = t
 
-				t.expressions = append(t.expressions, *expr)
+				t.expressions = append(t.expressions, expr)
 			}
 		}
 

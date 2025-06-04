@@ -10,7 +10,6 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -80,15 +79,16 @@ func pipelineActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("pipeline", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "pipeline",
-			Short: fmt.Sprintf("Manage and configure your deployment pipelines. %s", output.WithWarningFormat("(Beta)")),
+			Short: "Manage and configure your deployment pipelines.",
 		},
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdPipelineHelpDescription,
 			Footer:      getCmdPipelineHelpFooter,
 		},
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupMonitor,
+			RootLevelHelp: actions.CmdGroupBeta,
 		},
+		RequireLogin: true,
 	})
 
 	group.Add("config", &actions.ActionDescriptorOptions{
@@ -134,7 +134,6 @@ type pipelineConfigAction struct {
 
 func newPipelineConfigAction(
 	env *environment.Environment,
-	_ auth.LoggedInGuard,
 	console input.Console,
 	flags *pipelineConfigFlags,
 	prompters prompt.Prompter,
@@ -177,7 +176,14 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 		Title: fmt.Sprintf("Configure your %s pipeline", pipelineProviderName),
 	})
 
-	pipelineResult, err := p.manager.Configure(ctx, p.projectConfig.Name)
+	// Pull provider specific parameters
+	providerParameters, err := p.provisioningManager.Parameters(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get parameters for provider %s: %w", pipelineProviderName, err)
+	}
+	p.manager.SetParameters(providerParameters)
+
+	pipelineResult, err := p.manager.Configure(ctx, p.projectConfig.Name, infra)
 	if err != nil {
 		return nil, err
 	}

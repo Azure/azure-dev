@@ -14,6 +14,7 @@ interface InitCommandOptions {
     useExistingSource?: boolean;
     environmentName?: string;
     suppressReadme?: boolean;
+    up?: boolean;
 }
 
 /**
@@ -66,6 +67,10 @@ export async function init(context: IActionContext, selectedFile?: vscode.Uri, a
 
     if (options?.environmentName) {
         command.withNamedArg('-e', {value: options.environmentName, quoting: vscode.ShellQuoting.Strong});
+    }
+
+    if (options?.up) {
+        command.withArg('--up');
     }
 
     // Don't wait

@@ -21,6 +21,7 @@ import (
 
 // TaskListOptions represents the options for the TaskList component.
 type TaskListOptions struct {
+	ContinueOnError bool
 	// The writer to use for output (default: os.Stdout)
 	Writer             io.Writer
 	MaxConcurrentAsync int
@@ -33,6 +34,7 @@ type TaskListOptions struct {
 }
 
 var DefaultTaskListOptions TaskListOptions = TaskListOptions{
+	ContinueOnError:    false,
 	Writer:             os.Stdout,
 	MaxConcurrentAsync: 5,
 
@@ -270,12 +272,20 @@ func (t *TaskList) Render(printer Printer) error {
 		case Success:
 			printer.Fprintf("%s %s  %s\n", output.WithSuccessFormat(t.options.SuccessStyle), task.Title, elapsedText)
 		case Skipped:
-			printer.Fprintf(
-				"%s %s %s\n",
-				output.WithGrayFormat(t.options.SkippedStyle),
-				task.Title,
-				output.WithErrorFormat("(%s)", errorDescription),
-			)
+			if errorDescription == "" {
+				printer.Fprintf(
+					"%s %s\n",
+					output.WithGrayFormat(t.options.SkippedStyle),
+					task.Title,
+				)
+			} else {
+				printer.Fprintf(
+					"%s %s %s\n",
+					output.WithGrayFormat(t.options.SkippedStyle),
+					task.Title,
+					output.WithErrorFormat("(%s)", errorDescription),
+				)
+			}
 		}
 	}
 
@@ -295,6 +305,12 @@ func (t *TaskList) runSyncTasks() {
 	defer t.syncMutex.Unlock()
 
 	for _, task := range t.syncTasks {
+		if len(t.errors) > 0 && !t.options.ContinueOnError {
+			task.State = Skipped
+			atomic.AddInt32(&t.completed, 1)
+			continue
+		}
+
 		task.startTime = Ptr(time.Now())
 		task.State = Running
 

@@ -142,6 +142,10 @@ type Project struct {
 	// Experimental: Database dependencies inferred through heuristics while scanning dependencies in the project.
 	DatabaseDeps []DatabaseDep
 
+	// The root/workspace directory for languages that support multiple projects.
+	// This may be used for example, to configure the correct context of the build for multiple projects.
+	RootPath string
+
 	// The path to the project directory.
 	Path string
 

@@ -166,11 +166,11 @@ func (p *DefaultPrompter) PromptResourceGroupFrom(
 	canCreateOverride := 0
 	if canCreateNeResourceGroup {
 		choices = make([]string, len(groups)+1)
-		choices[0] = "Create a new resource group"
+		choices[0] = "1. Create a new resource group"
 		canCreateOverride = 1
 	}
 	for idx, group := range groups {
-		choices[idx+canCreateOverride] = fmt.Sprintf("%d. %s", idx+1, group.Name)
+		choices[idx+canCreateOverride] = fmt.Sprintf("%d. %s", idx+canCreateOverride+1, group.Name)
 	}
 
 	choice, err := p.console.Select(ctx, input.ConsoleOptions{
@@ -188,6 +188,14 @@ func (p *DefaultPrompter) PromptResourceGroupFrom(
 
 	if choice > 0 {
 		return groups[choice-1].Name, nil
+	}
+
+	if location == "" {
+		loc, err := p.PromptLocation(ctx, subscriptionId, "Select a location to create the resource group in:", nil, nil)
+		if err != nil {
+			return "", fmt.Errorf("prompting for location: %w", err)
+		}
+		location = loc
 	}
 
 	name, err := p.console.Prompt(ctx, input.ConsoleOptions{

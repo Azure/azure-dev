@@ -40,6 +40,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						Name:    "dotnet",
 						Port:    8080,
 						Backend: &scaffold.Backend{},
+						Host:    "containerapp",
 					},
 				},
 			},
@@ -64,6 +65,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						Name:     "js",
 						Port:     80,
 						Frontend: &scaffold.Frontend{},
+						Host:     "containerapp",
 					},
 				},
 			},
@@ -92,6 +94,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						Name:    "dotnet",
 						Port:    1234,
 						Backend: &scaffold.Backend{},
+						Host:    "containerapp",
 					},
 				},
 			},
@@ -126,6 +129,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 								},
 							},
 						},
+						Host: "containerapp",
 					},
 					{
 						Name: "js",
@@ -137,6 +141,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 								},
 							},
 						},
+						Host: "containerapp",
 					},
 				},
 			},
@@ -175,6 +180,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				DbPostgres: &scaffold.DatabasePostgres{
 					DatabaseName: "myappdb",
 				},
+				KeyVault: &scaffold.KeyVault{},
 				Services: []scaffold.ServiceSpec{
 					{
 						Name: "py",
@@ -189,6 +195,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						DbPostgres: &scaffold.DatabaseReference{
 							DatabaseName: "myappdb",
 						},
+						Host: "containerapp",
 					},
 					{
 						Name: "js",
@@ -200,6 +207,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 								},
 							},
 						},
+						Host: "containerapp",
 					},
 				},
 			},

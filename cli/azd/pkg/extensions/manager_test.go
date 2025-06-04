@@ -281,6 +281,132 @@ func Test_Install_With_SemverConstraints(t *testing.T) {
 	}
 }
 
+func Test_DownloadArtifact_Remote(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	// Mock the HTTP client to simulate a remote download
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == "https://example.com/artifact.zip"
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("artifact content"))
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	tempFilePath, err := manager.downloadArtifact(*mockContext.Context, "https://example.com/artifact.zip")
+	require.NoError(t, err)
+	require.FileExists(t, tempFilePath)
+
+	// Clean up the temp file
+	defer os.Remove(tempFilePath)
+}
+
+func Test_DownloadArtifact_Local(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	// Create a temporary file to simulate a local artifact
+	content := []byte("local artifact content")
+	tempFile, err := os.CreateTemp(t.TempDir(), "artifact")
+	require.NoError(t, err)
+	defer os.Remove(tempFile.Name())
+
+	_, err = tempFile.Write(content)
+	require.NoError(t, err)
+	tempFile.Close()
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	tempFilePath, err := manager.downloadArtifact(*mockContext.Context, tempFile.Name())
+	require.NoError(t, err)
+	require.FileExists(t, tempFilePath)
+
+	// Clean up the temp file
+	defer os.Remove(tempFilePath)
+}
+
+func Test_DownloadArtifact_Local_Error(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	// Provide an invalid local file path
+	invalidFilePath := "non-existent-file.txt"
+
+	tempFilePath, err := manager.downloadArtifact(*mockContext.Context, invalidFilePath)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "file does not exist at path")
+	require.Empty(t, tempFilePath)
+}
+
+func Test_DownloadArtifact_Remote_Error(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	// Mock the HTTP client to simulate a failed remote download
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == "https://example.com/invalid-artifact.zip"
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(request, http.StatusNotFound)
+	})
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	tempFilePath, err := manager.downloadArtifact(*mockContext.Context, "https://example.com/invalid-artifact.zip")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to download file")
+	require.Empty(t, tempFilePath)
+}
+
+func Test_ValidateChecksum_Error_InvalidFile(t *testing.T) {
+	// Create a non-existent file path
+	nonExistentFilePath := "non-existent-file.txt"
+
+	// Create the checksum struct
+	checksum := ExtensionChecksum{
+		Algorithm: "sha256",
+		Value:     "dummychecksum",
+	}
+
+	// Validate the checksum
+	err := validateChecksum(nonExistentFilePath, checksum)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to open file for checksum validation")
+}
+
+func Test_ValidateChecksum_Error_UnsupportedAlgorithm(t *testing.T) {
+	// Create a temporary file with known content
+	content := []byte("test data")
+	tempFile, err := os.CreateTemp(t.TempDir(), "testfile")
+	require.NoError(t, err)
+	defer os.Remove(tempFile.Name())
+
+	_, err = tempFile.Write(content)
+	require.NoError(t, err)
+	tempFile.Close()
+
+	// Create the checksum struct with an unsupported algorithm
+	checksum := ExtensionChecksum{
+		Algorithm: "unsupported",
+		Value:     "dummychecksum",
+	}
+
+	// Validate the checksum
+	err = validateChecksum(tempFile.Name(), checksum)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported checksum algorithm")
+}
+
 func createRegistryMocks(mockContext *mocks.MockContext) {
 	// Create a mock source
 	mockContext.HttpClient.When(func(request *http.Request) bool {

@@ -1,0 +1,116 @@
+parameters:
+  - name: NameSuffix
+    type: string
+  - name: Pool
+    type: string
+  - name: ImageKey
+    type: string
+    default: image
+  - name: OSVmImage
+    type: string
+  - name: OS
+    type: string
+  - name: Variables
+    type: object
+    default: {}
+  - name: AzdExtensionDirectory
+    type: string
+  - name: ValidateCrossCompile
+    type: boolean
+    default: false
+  - name: ValidateVm
+    type: object
+    default: {}
+  - name: ValidationTask
+    type: string
+    default: script
+  - name: ValidationScript
+    type: string
+    default: echo "validation script goes here"; exit 1;
+
+jobs:
+  - job: CrossBuildCLI_${{ parameters.NameSuffix }}
+    displayName: CrossBuildCLI ${{ parameters.NameSuffix }}
+
+    variables:
+      ${{ insert }}: ${{ parameters.Variables }}
+
+    pool:
+      name: ${{ parameters.Pool }}
+      ${{ parameters.ImageKey }}: ${{ parameters.OSVmImage }}
+      os: ${{ parameters.OS }}
+
+    timeoutInMinutes: 20
+
+    steps:
+      - checkout: self
+
+      - template: /eng/pipelines/templates/steps/setup-go.yml
+        parameters:
+          Condition: false
+
+      - task: PowerShell@2
+        displayName: Set extension version variable
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: eng/scripts/Set-ExtensionVersionVariable.ps1
+          arguments: >-
+            -ExtensionDirectory ${{ parameters.AzdExtensionDirectory }}
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: ${{ parameters.AzdExtensionDirectory }}/ci-build.ps1
+          arguments: >-
+            -Version $(EXT_VERSION)
+            -SourceVersion $(Build.SourceVersion)
+            -OutputFileName $(BuildTarget)
+          workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        displayName: Build Go Binary (cross compile)
+
+      - pwsh: file $(BuildTarget)
+        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        displayName: Get file info
+
+      - bash: chmod +x $(BuildTarget)
+        condition: and(succeeded(), eq(variables['SetExecutableBit'], 'true'))
+        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        displayName: Set executable bit for non-Windows binaries
+
+      - pwsh: |
+          New-Item -ItemType Directory -Path $(Build.ArtifactStagingDirectory)/build-output -Force
+          Copy-Item $(BuildTarget) $(Build.ArtifactStagingDirectory)/build-output
+        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        displayName: Copy binary to artifact staging directory
+
+    templateContext:
+      outputs:
+        - output: pipelineArtifact
+          path: $(Build.ArtifactStagingDirectory)/build-output
+          artifact: $(BuildTarget)
+          condition: succeeded()
+          displayName: Upload azd extension binary to artifact store
+
+  - ${{ if eq('true', parameters.ValidateCrossCompile) }}:
+    - job: ValidateCrossCompile_${{ parameters.NameSuffix }}
+      displayName: ValidateCrossCompile ${{ parameters.NameSuffix }}
+      dependsOn: CrossBuildCLI_${{ parameters.NameSuffix }}
+      condition: and(succeeded(), ne('true', variables['Skip.CrossCompileValidation']))
+
+      pool:
+        name: ${{ parameters.ValidateVm.PoolName }}
+        image: ${{ parameters.ValidateVm.ImageName }}
+        os: ${{ parameters.ValidateVm.Os }}
+
+      steps:
+        - checkout: none
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: ${{ parameters.Variables.BuildTarget }}
+            targetPath: $(Build.SourcesDirectory)
+          
+        - ${{ parameters.ValidationTask }}: ${{ parameters.ValidationScript }}
+          displayName: Validate cross-compiled binary

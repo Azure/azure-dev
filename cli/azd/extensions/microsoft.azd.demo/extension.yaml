@@ -5,6 +5,7 @@ displayName: Demo Extension
 description: This extension provides examples of the AZD extension framework.
 usage: azd demo <command> [options]
 version: 0.2.0
+language: go
 capabilities:
   - custom-commands
   - lifecycle-events

@@ -12,11 +12,6 @@ param location string
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
-@metadata({azd: {
-  type: 'needForDeploy'
-  config: {}
-  }
-})
 param goversion string = '1.22'
 
 var tags = {
@@ -60,4 +55,5 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.output
 output STORAGE_BLOBENDPOINT string = storage.outputs.blobEndpoint
 output STORAGE_QUEUEENDPOINT string = storage.outputs.queueEndpoint
 output STORAGE_TABLEENDPOINT string = storage.outputs.tableEndpoint
+output AZURE_GOVERSION string = goversion
 

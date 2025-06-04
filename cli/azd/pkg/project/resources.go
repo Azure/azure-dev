@@ -18,6 +18,7 @@ func AllResourceTypes() []ResourceType {
 		ResourceTypeDbMySql,
 		ResourceTypeDbMongo,
 		ResourceTypeDbCosmos,
+		ResourceTypeHostAppService,
 		ResourceTypeHostContainerApp,
 		ResourceTypeOpenAiModel,
 		ResourceTypeMessagingEventHubs,
@@ -36,6 +37,7 @@ const (
 	ResourceTypeDbMongo             ResourceType = "db.mongo"
 	ResourceTypeDbCosmos            ResourceType = "db.cosmos"
 	ResourceTypeHostContainerApp    ResourceType = "host.containerapp"
+	ResourceTypeHostAppService      ResourceType = "host.appservice"
 	ResourceTypeOpenAiModel         ResourceType = "ai.openai.model"
 	ResourceTypeMessagingEventHubs  ResourceType = "messaging.eventhubs"
 	ResourceTypeMessagingServiceBus ResourceType = "messaging.servicebus"
@@ -57,6 +59,8 @@ func (r ResourceType) String() string {
 		return "MongoDB"
 	case ResourceTypeDbCosmos:
 		return "CosmosDB"
+	case ResourceTypeHostAppService:
+		return "App Service"
 	case ResourceTypeHostContainerApp:
 		return "Container App"
 	case ResourceTypeOpenAiModel:
@@ -86,6 +90,8 @@ func (r ResourceType) AzureResourceType() string {
 	// Alongside this, the resource type should be updated in the scaffold/resource_meta.go
 	// See notes there on how to easily obtain the resource type for new AVM modules.
 	switch r {
+	case ResourceTypeHostAppService:
+		return "Microsoft.Web/sites"
 	case ResourceTypeHostContainerApp:
 		return "Microsoft.App/containerApps"
 	case ResourceTypeDbRedis:
@@ -109,7 +115,7 @@ func (r ResourceType) AzureResourceType() string {
 	case ResourceTypeKeyVault:
 		return "Microsoft.KeyVault/vaults"
 	case ResourceTypeAiProject:
-		return "Microsoft.MachineLearningServices/workspaces"
+		return "Microsoft.CognitiveServices/accounts/projects"
 	case ResourceTypeAiSearch:
 		return "Microsoft.Search/searchServices"
 	}
@@ -129,6 +135,11 @@ type ResourceConfig struct {
 	Props    interface{}          `yaml:"-"`
 	// Relationships to other resources
 	Uses []string `yaml:"uses,omitempty"`
+	// Existing indicates whether the resource is an existing resource.
+	Existing bool `yaml:"existing,omitempty"`
+	// Resource ID in the project.
+	// This is a virtual field. It is stored as environment state.
+	ResourceId string `yaml:"-"`
 
 	// IncludeName indicates whether the `name` field should be included upon serialization.
 	IncludeName bool `yaml:"-"`
@@ -156,26 +167,30 @@ func (r *ResourceConfig) MarshalYAML() (interface{}, error) {
 		return nil
 	}
 
-	var errMarshal error
-	switch raw.Type {
-	case ResourceTypeOpenAiModel:
-		errMarshal = marshalRawProps(raw.Props.(AIModelProps))
-	case ResourceTypeHostContainerApp:
-		errMarshal = marshalRawProps(raw.Props.(ContainerAppProps))
-	case ResourceTypeDbCosmos:
-		errMarshal = marshalRawProps(raw.Props.(CosmosDBProps))
-	case ResourceTypeMessagingEventHubs:
-		errMarshal = marshalRawProps(raw.Props.(EventHubsProps))
-	case ResourceTypeMessagingServiceBus:
-		errMarshal = marshalRawProps(raw.Props.(ServiceBusProps))
-	case ResourceTypeStorage:
-		errMarshal = marshalRawProps(raw.Props.(StorageProps))
-	case ResourceTypeAiProject:
-		errMarshal = marshalRawProps(raw.Props.(AiFoundryModelProps))
-	}
+	if raw.Props != nil {
+		var errMarshal error
+		switch raw.Type {
+		case ResourceTypeOpenAiModel:
+			errMarshal = marshalRawProps(raw.Props.(AIModelProps))
+		case ResourceTypeHostAppService:
+			errMarshal = marshalRawProps(raw.Props.(AppServiceProps))
+		case ResourceTypeHostContainerApp:
+			errMarshal = marshalRawProps(raw.Props.(ContainerAppProps))
+		case ResourceTypeDbCosmos:
+			errMarshal = marshalRawProps(raw.Props.(CosmosDBProps))
+		case ResourceTypeMessagingEventHubs:
+			errMarshal = marshalRawProps(raw.Props.(EventHubsProps))
+		case ResourceTypeMessagingServiceBus:
+			errMarshal = marshalRawProps(raw.Props.(ServiceBusProps))
+		case ResourceTypeStorage:
+			errMarshal = marshalRawProps(raw.Props.(StorageProps))
+		case ResourceTypeAiProject:
+			errMarshal = marshalRawProps(raw.Props.(AiFoundryModelProps))
+		}
 
-	if errMarshal != nil {
-		return nil, errMarshal
+		if errMarshal != nil {
+			return nil, errMarshal
+		}
 	}
 
 	return raw, nil
@@ -209,6 +224,12 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 			return err
 		}
 		raw.Props = amp
+	case ResourceTypeHostAppService:
+		asp := AppServiceProps{}
+		if err := unmarshalProps(&asp); err != nil {
+			return err
+		}
+		raw.Props = asp
 	case ResourceTypeHostContainerApp:
 		cap := ContainerAppProps{}
 		if err := unmarshalProps(&cap); err != nil {
@@ -254,6 +275,25 @@ func (r *ResourceConfig) UnmarshalYAML(value *yaml.Node) error {
 type ContainerAppProps struct {
 	Port int             `yaml:"port,omitempty"`
 	Env  []ServiceEnvVar `yaml:"env,omitempty"`
+}
+
+type AppServiceProps struct {
+	Port           int               `yaml:"port,omitempty"`
+	Env            []ServiceEnvVar   `yaml:"env,omitempty"`
+	Runtime        AppServiceRuntime `yaml:"runtime,omitempty"`
+	StartupCommand string            `yaml:"startupCommand,omitempty"`
+}
+
+type AppServiceRuntimeStack string
+
+const (
+	AppServiceRuntimeStackPython AppServiceRuntimeStack = "python"
+	AppServiceRuntimeStackNode   AppServiceRuntimeStack = "node"
+)
+
+type AppServiceRuntime struct {
+	Stack   AppServiceRuntimeStack `yaml:"stack,omitempty"`
+	Version string                 `yaml:"version,omitempty"`
 }
 
 type ServiceEnvVar struct {

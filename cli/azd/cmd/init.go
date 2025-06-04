@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -29,7 +30,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/fatih/color"
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -56,6 +59,7 @@ type initFlags struct {
 	location       string
 	global         *internal.GlobalCommandOptions
 	fromCode       bool
+	up             bool
 	internal.EnvFlag
 }
 
@@ -95,6 +99,13 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		false,
 		"Initializes a new application from your existing code.",
 	)
+	local.BoolVarP(
+		&i.up,
+		"up",
+		"",
+		false,
+		"Provision and deploy to Azure after initializing the project from a template.",
+	)
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
 	i.EnvFlag.Bind(local, global)
 
@@ -112,6 +123,7 @@ type initAction struct {
 	templateManager   *templates.TemplateManager
 	featuresManager   *alpha.FeatureManager
 	extensionsManager *extensions.Manager
+	azd               workflow.AzdCommandRunner
 }
 
 func newInitAction(
@@ -125,6 +137,7 @@ func newInitAction(
 	templateManager *templates.TemplateManager,
 	featuresManager *alpha.FeatureManager,
 	extensionsManager *extensions.Manager,
+	azd workflow.AzdCommandRunner,
 ) actions.Action {
 	return &initAction{
 		lazyAzdCtx:        lazyAzdCtx,
@@ -137,6 +150,7 @@ func newInitAction(
 		templateManager:   templateManager,
 		featuresManager:   featuresManager,
 		extensionsManager: extensionsManager,
+		azd:               azd,
 	}
 }
 
@@ -164,6 +178,24 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Initializing an app to run on Azure (azd init)",
 	})
+
+	// AZD supports having .env at the root of the project directory as the initial environment file.
+	// godotenv.Load() -> add all the values from the .env file in the process environment
+	// If AZURE_ENV_NAME is set in the .env file, it will be used to name the environment during env initialize.
+	if err := godotenv.Overload(); err != nil {
+		// ignore the error if the file does not exist
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("reading .env file: %w", err)
+		}
+	}
+	if i.flags.EnvFlag.EnvironmentName == "" ||
+		(i.flags.EnvFlag.EnvironmentName != "" && !i.flags.EnvFlag.FromArg()) {
+		// only azd init supports using .env to influence the command. The `-e` flag is linked to the
+		// env var AZURE_ENV_NAME, which means it could've be set either from ENV or from arg.
+		// re-setting the value here after loading the .env file overrides any value coming from the system env but
+		// doest not override the value coming from the arg.
+		i.flags.EnvFlag.EnvironmentName = os.Getenv(environment.EnvNameEnvVarName)
+	}
 
 	var existingProject bool
 	if _, err := os.Stat(azdCtx.ProjectPath()); err == nil {
@@ -217,13 +249,41 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if _, err := i.initializeEnv(ctx, azdCtx, template.Metadata); err != nil {
 			return nil, err
 		}
+
+		if i.flags.up {
+			// Prompt to deploy to Azure
+			deploy, err := i.console.Confirm(ctx, input.ConsoleOptions{
+				Message:      "Do you want to run " + output.WithHighLightFormat("azd up") + " now?",
+				DefaultValue: true,
+				Help: "Template files have been initialized in your local directory. " +
+					"If you want to provision and deploy now without making changes, select Y. If not, select N.",
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			if deploy {
+				// Call azd up
+				startTime := time.Now()
+				i.azd.SetArgs([]string{"up", "--cwd", azdCtx.ProjectDirectory()})
+				err := i.azd.ExecuteContext(ctx)
+				header = "New project initialized! Provision and deploy to Azure was completed in " +
+					ux.DurationAsText(since(startTime)) + "."
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+
 	case initFromApp:
 		tracing.SetUsageAttributes(fields.InitMethod.String("app"))
 
 		header = "Your app is ready for the cloud!"
-		followUp = "You can provision and deploy your app to Azure by running the " + output.WithHighLightFormat("azd up") +
-			" command in this directory. For more information on configuring your app, see " +
-			output.WithHighLightFormat("./next-steps.md")
+		followUp = "Run " + output.WithHighLightFormat("azd up") + " to provision and deploy your app to Azure.\n" +
+			"Run " + output.WithHighLightFormat("azd infra synth") + " to write infrastructure as code files to disk " +
+			"so you can customize and manage.\n" +
+			"Run " + output.WithHighLightFormat("azd add") + " to add new Azure components to your project.\n" +
+			"See " + output.WithHighLightFormat("./next-steps.md") + " for more information on configuring your app."
 		entries, err := os.ReadDir(azdCtx.ProjectDirectory())
 		if err != nil {
 			return nil, fmt.Errorf("reading current directory: %w", err)
@@ -239,9 +299,14 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 		}
 
-		err = i.repoInitializer.InitFromApp(ctx, azdCtx, func() (*environment.Environment, error) {
-			return i.initializeEnv(ctx, azdCtx, templates.Metadata{})
-		})
+		err = i.repoInitializer.InitFromApp(
+			ctx,
+			azdCtx,
+			func() (*environment.Environment, error) {
+				return i.initializeEnv(ctx, azdCtx, templates.Metadata{})
+			},
+			i.flags.EnvironmentName != "",
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -256,54 +321,21 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	case initProject:
 		tracing.SetUsageAttributes(fields.InitMethod.String("project"))
 
-		composeAlphaEnabled := i.featuresManager.IsEnabled(composeFeature)
-		if !composeAlphaEnabled {
-			err = i.repoInitializer.InitializeMinimal(ctx, azdCtx)
-			if err != nil {
-				return nil, err
-			}
+		err = i.repoInitializer.InitializeMinimal(ctx, azdCtx)
+		if err != nil {
+			return nil, err
+		}
 
+		// Create env upfront only if the environment name is passed in.
+		if i.flags.EnvironmentName != "" {
 			_, err := i.initializeEnv(ctx, azdCtx, templates.Metadata{})
 			if err != nil {
 				return nil, err
 			}
-
-			followUp = ""
-		} else {
-			fi, err := os.Stat(azdCtx.ProjectPath())
-			if err != nil && !errors.Is(err, os.ErrNotExist) {
-				return nil, err
-			}
-
-			if fi != nil {
-				return nil, fmt.Errorf("project already initialized")
-			}
-
-			name, err := i.console.Prompt(ctx, input.ConsoleOptions{
-				Message:      "What is the name of your project?",
-				DefaultValue: azdcontext.ProjectName(azdCtx.ProjectDirectory()),
-			})
-			if err != nil {
-				return nil, err
-			}
-
-			prjConfig := project.ProjectConfig{
-				Name: name,
-			}
-
-			if composeAlphaEnabled {
-				prjConfig.MetaSchemaVersion = "alpha"
-			}
-
-			err = project.Save(ctx, &prjConfig, azdCtx.ProjectPath())
-			if err != nil {
-				return nil, fmt.Errorf("saving project config: %w", err)
-			}
-
-			followUp = "Run " + output.WithHighLightFormat("azd add") + " to add new Azure components to your project."
 		}
 
 		header = "Generated azure.yaml project file."
+		followUp = "Run " + output.WithHighLightFormat("azd add") + " to add new Azure components to your project."
 	default:
 		panic("unhandled init type")
 	}
@@ -319,8 +351,6 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		},
 	}, nil
 }
-
-var composeFeature = alpha.MustFeatureKey("compose")
 
 type initType int
 
@@ -453,6 +483,14 @@ func (i *initAction) initializeEnv(
 		if err := env.Config.Set(key, value); err != nil {
 			return nil, fmt.Errorf("setting environment config: %w", err)
 		}
+	}
+
+	initialValuesFromEnv, err := repository.InitEnvFileValues()
+	if err != nil {
+		return nil, fmt.Errorf("loading initial env file values: %w", err)
+	}
+	for key, value := range initialValuesFromEnv {
+		env.DotenvSet(key, value)
 	}
 
 	if err := envManager.Save(ctx, env); err != nil {

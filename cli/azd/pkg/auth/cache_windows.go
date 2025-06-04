@@ -85,6 +85,7 @@ func (c *encryptedCache) Read(key string) ([]byte, error) {
 		// to the new format.
 
 		encryptedBlob = windows.DataBlob{
+			//nolint:gosec // G115: integer overflow conversion int -> uint32
 			Size: uint32(len(val)),
 			Data: &val[0],
 		}
@@ -100,6 +101,7 @@ func (c *encryptedCache) Read(key string) ([]byte, error) {
 		}
 
 		encryptedBlob = windows.DataBlob{
+			//nolint:gosec // G115: integer overflow conversion int -> uint32
 			Size: uint32(len(data)),
 			Data: &data[0],
 		}
@@ -111,11 +113,13 @@ func (c *encryptedCache) Read(key string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to decrypt data: %w", err)
 	}
 
+	// #nosec G103
 	decryptedSlice := unsafe.Slice(plaintext.Data, plaintext.Size)
 
 	cs := make([]byte, plaintext.Size)
 	copy(cs, decryptedSlice)
 
+	// #nosec G103
 	if _, err := windows.LocalFree(windows.Handle(unsafe.Pointer(plaintext.Data))); err != nil {
 		return nil, fmt.Errorf("failed to free encrypted data: %w", err)
 	}
@@ -128,6 +132,7 @@ func (c *encryptedCache) Set(key string, val []byte) error {
 		return c.inner.Set(key, val)
 	}
 
+	// #nosec G115 // integer overflow conversion int -> uint32
 	plaintext := windows.DataBlob{
 		Size: uint32(len(val)),
 		Data: &val[0],
@@ -138,11 +143,13 @@ func (c *encryptedCache) Set(key string, val []byte) error {
 		return fmt.Errorf("failed to encrypt data: %w", err)
 	}
 
+	// #nosec G103
 	encryptedSlice := unsafe.Slice(encrypted.Data, encrypted.Size)
 
 	cs := make([]byte, encrypted.Size)
 	copy(cs, encryptedSlice)
 
+	// #nosec G103
 	if _, err := windows.LocalFree(windows.Handle(unsafe.Pointer(encrypted.Data))); err != nil {
 		return fmt.Errorf("failed to free encrypted data: %w", err)
 	}

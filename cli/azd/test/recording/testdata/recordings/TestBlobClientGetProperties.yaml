@@ -20,7 +20,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-azblob/v1.3.1 (go1.23.0; darwin)
+                - azsdk-go-azblob/v1.3.1 (go1.24.0; darwin)
             X-Ms-Version:
                 - "2023-11-03"
         url: http://127.0.0.1:80/test.txt

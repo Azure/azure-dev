@@ -34,8 +34,17 @@ func (a *AddAction) selectSearch(
 func (a *AddAction) selectOpenAi(
 	console input.Console,
 	ctx context.Context,
-	_ PromptOptions) (r *project.ResourceConfig, err error) {
-	resourceToAdd := &project.ResourceConfig{}
+	_ PromptOptions) (*project.ResourceConfig, error) {
+	r := &project.ResourceConfig{}
+	r.Type = project.ResourceTypeOpenAiModel
+	return r, nil
+}
+
+func (a *AddAction) promptOpenAi(
+	console input.Console,
+	ctx context.Context,
+	r *project.ResourceConfig,
+	_ PromptOptions) (*project.ResourceConfig, error) {
 	aiOption, err := console.Select(ctx, input.ConsoleOptions{
 		Message: "Which type of Azure OpenAI service?",
 		Options: []string{
@@ -45,8 +54,6 @@ func (a *AddAction) selectOpenAi(
 	if err != nil {
 		return nil, err
 	}
-
-	resourceToAdd.Type = project.ResourceTypeOpenAiModel
 
 	var allModels []ModelList
 	for {
@@ -138,14 +145,14 @@ func (a *AddAction) selectOpenAi(
 		return nil, err
 	}
 
-	resourceToAdd.Props = project.AIModelProps{
+	r.Props = project.AIModelProps{
 		Model: project.AIModelPropsModel{
 			Name:    models[sel].Name,
 			Version: models[sel].Version,
 		},
 	}
 
-	return resourceToAdd, nil
+	return r, nil
 }
 
 func (a *AddAction) supportedModelsInLocation(ctx context.Context, subId, location string) ([]ModelList, error) {
@@ -227,11 +234,18 @@ func (a *AddAction) selectAiModel(
 	p PromptOptions) (*project.ResourceConfig, error) {
 	r := &project.ResourceConfig{}
 	r.Type = project.ResourceTypeAiProject
+	return r, nil
+}
 
+func (a *AddAction) promptAiModel(
+	console input.Console,
+	ctx context.Context,
+	r *project.ResourceConfig,
+	p PromptOptions) (*project.ResourceConfig, error) {
 	// check if there are models in the project already
 	aiProject := project.AiFoundryModelProps{}
 	for _, resource := range p.PrjConfig.Resources {
-		if resource.Type == project.ResourceTypeAiProject {
+		if resource.Type == project.ResourceTypeAiProject && resource.Name == "ai-project" {
 			em, castOk := resource.Props.(project.AiFoundryModelProps)
 			if !castOk {
 				return nil, fmt.Errorf("invalid resource properties")
@@ -342,6 +356,9 @@ func (a *AddAction) aiDeploymentCatalog(
 
 	var sharedResults sync.Map
 	var wg sync.WaitGroup
+
+	a.console.ShowSpinner(ctx, "Retrieving available models...", input.Step)
+
 	for _, location := range allLocations {
 		wg.Add(1)
 		go func(location string) {
@@ -373,6 +390,7 @@ func (a *AddAction) aiDeploymentCatalog(
 		}(location.Name)
 	}
 	wg.Wait()
+	a.console.StopSpinner(ctx, "", input.StepDone)
 
 	combinedResults := map[string]ModelCatalogKind{}
 	sharedResults.Range(func(key, value any) bool {

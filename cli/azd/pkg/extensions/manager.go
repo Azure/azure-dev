@@ -563,41 +563,67 @@ func findArtifactForCurrentOS(version *ExtensionVersion) (*ExtensionArtifact, er
 
 // downloadFile downloads a file from the given URL and saves it to a temporary directory using the filename from the URL.
 func (m *Manager) downloadArtifact(ctx context.Context, artifactUrl string) (string, error) {
+	if strings.HasPrefix(artifactUrl, "http://") || strings.HasPrefix(artifactUrl, "https://") {
+		return m.downloadFromRemote(ctx, artifactUrl)
+	}
+	return m.copyFromLocalPath(artifactUrl)
+}
+
+// Handles downloading artifacts from HTTP/HTTPS URLs
+func (m *Manager) downloadFromRemote(ctx context.Context, artifactUrl string) (string, error) {
 	req, err := azruntime.NewRequest(ctx, http.MethodGet, artifactUrl)
 	if err != nil {
 		return "", err
 	}
 
-	// Perform HTTP GET request
 	resp, err := m.pipeline.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to download file: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Check for successful response
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("failed to download file, status code: %d", resp.StatusCode)
 	}
 
-	// Extract the filename from the URL
 	filename := filepath.Base(artifactUrl)
+	tempFilePath := filepath.Join(os.TempDir(), filename)
 
-	// Create a temporary file in the system's temp directory with the same filename
-	tempDir := os.TempDir()
-	tempFilePath := filepath.Join(tempDir, filename)
-
-	// Create the file at the desired location
 	tempFile, err := os.Create(tempFilePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary file: %w", err)
 	}
 	defer tempFile.Close()
 
-	// Write the response body to the file
 	_, err = io.Copy(tempFile, resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to write to temporary file: %w", err)
+	}
+
+	return tempFilePath, nil
+}
+
+// Handles copying artifacts from local or network file paths
+func (m *Manager) copyFromLocalPath(artifactPath string) (string, error) {
+	// If the path is relative, resolve it against the userConfigDir
+	if !filepath.IsAbs(artifactPath) {
+		userConfigDir, err := config.GetUserConfigDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get user config directory: %w", err)
+		}
+
+		artifactPath = filepath.Join(userConfigDir, artifactPath)
+	}
+
+	if _, err := os.Stat(artifactPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("file does not exist at path: %s", artifactPath)
+	}
+
+	filename := filepath.Base(artifactPath)
+	tempFilePath := filepath.Join(os.TempDir(), filename)
+
+	if err := copyFile(artifactPath, tempFilePath); err != nil {
+		return "", fmt.Errorf("failed to copy file to temporary location: %w", err)
 	}
 
 	return tempFilePath, nil

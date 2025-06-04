@@ -1,199 +1,119 @@
 {{define "ai-project.bicep" -}}
-{{- if .AiFoundryProject }}
-{{- range .AiFoundryProject.Models }}
-param {{bicepName .Name}}{{bicepName .Version}}Location string
-{{- end }}
-{{- end }}
-
 @description('Tags that will be applied to all resources')
 param tags object = {}
 
 @description('Main location for the resources')
 param location string
 
-var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = uniqueString(subscription().id, resourceGroup().id, location)
 
 @description('The name of the environment')
 param envName string
 
-module keyVault 'br/public:avm/res/key-vault/vault:0.6.1' = {
-  name: 'keyvaultForHub'
-  params: {
-    name: '${abbrs.keyVaultVaults}hub${resourceToken}'
-    location: location
-    tags: tags
-    enableRbacAuthorization: false
-  }
-}
+param deployments deploymentsType
 
-module storage 'br/public:avm/res/storage/storage-account:0.17.2' = {
-  name: 'storageAccountForHub'
-  params: {
-    tags: tags
-    name: '${abbrs.storageStorageAccounts}hub${resourceToken}'
-    allowSharedKeyAccess: true
-    allowBlobPublicAccess: true
-    allowCrossTenantReplication: true
-    largeFileSharesState: 'Disabled'
-    publicNetworkAccess: 'Enabled'
-    location: location
-    blobServices: {
-      containers: [
-        {
-          name: 'default'
-        }
-      ]
-    }
-    fileServices: {
-      shares: [
-        {
-          name: 'default'
-        }
-      ]
-    }
-    queueServices: {
-      queues: [
-        {
-          name: 'default'
-        }
-      ]
-    }
-    tableServices: {
-      tables: [
-        {
-          name: 'default'
-        }
-      ]
-    }
-    networkAcls: {
-      bypass: 'AzureServices'
-      defaultAction: 'Allow'
-    }
-  }
-}
+@description('Id of the user or app to assign application roles')
+param principalId string
 
-{{- if .AiFoundryProject }}
-{{- range .AiFoundryProject.Models }}
-resource {{bicepName .Name}}{{bicepName .Version}}Deploy 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
-  name: '{{bicepName .Name}}{{bicepName .Version}}${resourceToken}'
-  location: {{bicepName .Name}}{{bicepName .Version}}Location
+resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
+  name: 'ai-account-${resourceToken}'
+  location: location
   tags: tags
   sku: {
     name: 'S0'
   }
   kind: 'AIServices'
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
-    apiProperties: {
-      statisticsEnabled: false
+    allowProjectManagement: true
+    customSubDomainName: 'ai-account-${resourceToken}'
+    networkAcls: {
+      defaultAction: 'Allow'
+      virtualNetworkRules: []
+      ipRules: []
     }
+    publicNetworkAccess: 'Enabled'
+    disableLocalAuth: false
   }
   
-  resource deployment 'deployments' = {
-    name: '{{ .Name }}'
-    properties: {
-      model: {
-        name: '{{ .Name }}'
-        format: '{{ .Format }}'
-        version: '{{ .Version }}'
+  @batchSize(1)
+  resource seqDeployments 'deployments' = [
+    for dep in (deployments??[]): {
+      name: dep.name
+      properties: {
+        model: dep.model
       }
+      sku: dep.sku
     }
-    sku: {
-      name: '{{ .Sku.Name }}'
-      capacity: {{ .Sku.Capacity }}
+  ]
+
+  resource project 'projects' = {
+    name: envName
+    location: location
+    identity: {
+      type: 'SystemAssigned'
     }
+    properties: {
+      description: '${envName} Project'
+      displayName: '${envName}Project'
+    }
+    dependsOn: [
+      seqDeployments
+    ]
   }
 }
-{{- end }}
-{{- end }}
 
-resource hub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
-  name: take('${envName}${resourceToken}',32)
-  location: location
-  tags: tags
-  kind: 'Hub'
-  identity: {
-    type: 'SystemAssigned'
-  }
+resource localUserAiDeveloperRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: resourceGroup()
+  name: guid(subscription().id, resourceGroup().id, 'localUser', '64702f94-c441-49e6-a78b-ef80e0188fee')
   properties: {
-    friendlyName: envName
-    storageAccount: storage.outputs.resourceId
-    keyVault: keyVault.outputs.resourceId
-    hbiWorkspace: false
-    managedNetwork: {
-      isolationMode: 'Disabled'
-    }
-    v1LegacyMode: false
-    publicNetworkAccess: 'Enabled'
+    principalId: principalId
+    principalType: 'User'
+    roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', '64702f94-c441-49e6-a78b-ef80e0188fee')
   }
-
-{{- if .AiFoundryProject }}
-{{- range .AiFoundryProject.Models }}
-  resource {{bicepName .Name}}{{bicepName .Version}}connection 'connections' = {
-    name: '{{bicepName .Name}}{{bicepName .Version}}-connection'
-    properties: {
-      category: 'AIServices'
-      target: {{bicepName .Name}}{{bicepName .Version}}Deploy.properties.endpoint
-      authType: 'ApiKey'
-      isSharedToAll: true
-      credentials: {
-        key: {{bicepName .Name}}{{bicepName .Version}}Deploy.listKeys().key1
-      }
-      metadata: {
-        ApiType: 'Azure'
-        ResourceId: {{bicepName .Name}}{{bicepName .Version}}Deploy.id
-      }
-    }
-  }
-{{- end }}
-{{- end }}
 }
 
-resource project 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = {
-  name: envName
-  location: location
-  tags: tags
+resource localUserCognitiveServicesUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: resourceGroup()
+  name: guid(subscription().id, resourceGroup().id, 'localUser', 'a97b65f3-24c7-4388-baec-2e87135dc908')
+  properties: {
+    principalId: principalId
+    principalType: 'User'
+    roleDefinitionId: resourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-4388-baec-2e87135dc908')
+  }
+}
+
+output ENDPOINT string = aiAccount::project.properties.endpoints['AI Foundry API']
+output projectId string = aiAccount::project.id
+output aiServicesAccountName string = aiAccount.name
+output aiServicesProjectName string = aiAccount::project.name
+
+type deploymentsType = {
+  @description('Specify the name of cognitive service account deployment.')
+  name: string
+
+  @description('Required. Properties of Cognitive Services account deployment model.')
+  model: {
+    @description('Required. The name of Cognitive Services account deployment model.')
+    name: string
+
+    @description('Required. The format of Cognitive Services account deployment model.')
+    format: string
+
+    @description('Required. The version of Cognitive Services account deployment model.')
+    version: string
+  }
+
+  @description('The resource model definition representing SKU.')
   sku: {
-    name: 'Basic'
-    tier: 'Basic'
-  }
-  kind: 'Project'
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    friendlyName: '${envName}Proj'
-    hbiWorkspace: false
-    v1LegacyMode: false
-    publicNetworkAccess: 'Enabled'
-    hubResourceId: hub.id
-  }
-}
+    @description('Required. The name of the resource model definition representing SKU.')
+    name: string
 
-resource mlServiceRoleDataScientist 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
-  name: guid(subscription().id, resourceGroup().id, project.id, 'mlServiceRoleDataScientist', 'f6c7c914-8db3-469d-8ca1-694a8f32e121')
-  scope: resourceGroup()
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f6c7c914-8db3-469d-8ca1-694a8f32e121')
-    principalId: project.identity.principalId
-    principalType: 'ServicePrincipal'
+    @description('The capacity of the resource model definition representing SKU.')
+    capacity: int
   }
-}
-
-resource mlServiceRoleSecretsReader 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
-  name: guid(subscription().id, resourceGroup().id, project.id, 'mlServiceRoleSecretsReader','ea01e6af-a1c1-4350-9563-ad00f8c72ec5')
-  scope: resourceGroup()
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ea01e6af-a1c1-4350-9563-ad00f8c72ec5') 
-    principalId: project.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-output hubName string = hub.name
-output projectDiscoveryUrl string = project.properties.discoveryUrl
-output projectId string = project.id
-output projectName string = project.name
-output aiFoundryProjectConnectionString string = '${split(project.properties.discoveryUrl, '/')[2]};${subscription().subscriptionId};${resourceGroup().name};${project.name}'
+}[]?
 
 {{ end}}

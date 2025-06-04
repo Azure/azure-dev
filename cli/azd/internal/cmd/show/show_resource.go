@@ -86,7 +86,11 @@ func (s *showResource) showResourceGeneric(
 	}
 
 	// Convert to environment variables
-	envValues := scaffold.EnvVars(resourceMeta.StandardVarPrefix, values)
+	prefix := resourceMeta.StandardVarPrefix
+	if opts.resourceSpec != nil && opts.resourceSpec.Existing {
+		prefix += "_" + environment.Key(id.Name)
+	}
+	envValues := scaffold.EnvVars(prefix, values)
 
 	display := id.ResourceType.String()
 	if translated := azapi.GetResourceTypeDisplayName(azapi.AzureResourceType(display)); translated != "" {
@@ -97,6 +101,10 @@ func (s *showResource) showResourceGeneric(
 		Name:        id.Name,
 		TypeDisplay: display,
 		Variables:   envValues,
+	}
+
+	if opts.resourceSpec != nil {
+		showRes.Name = opts.resourceSpec.Name
 	}
 
 	return &showRes, nil
@@ -112,13 +120,15 @@ func getResourceMeta(id arm.ResourceID) (*scaffold.ResourceMeta, arm.ResourceID)
 				// find the parent resource
 				parentId := &id
 				for {
-					if parentId.Parent != nil {
-						parentId = parentId.Parent
+					if parentId == nil {
+						panic(fmt.Sprintf("'%s' was not found as a parent of '%s'", res.ParentForEval, resourceType))
 					}
 
-					if parentId.ResourceType.Type == res.ParentForEval {
+					if parentId.ResourceType.String() == res.ParentForEval {
 						break
 					}
+
+					parentId = parentId.Parent
 				}
 
 				return &res, *parentId

@@ -137,6 +137,10 @@ func (p *MultiSelect) Ask(ctx context.Context) ([]*MultiSelectChoice, error) {
 		p.cursor.HideCursor()
 	}
 
+	defer func() {
+		p.cursor.ShowCursor()
+	}()
+
 	if err := p.canvas.Run(); err != nil {
 		return nil, err
 	}
@@ -262,7 +266,10 @@ func (p *MultiSelect) applyFilter() {
 			}
 		}
 
-		if strings.Contains(strings.ToLower(option.Label), strings.ToLower(p.filter)) {
+		containsValue := strings.Contains(strings.ToLower(option.Value), strings.ToLower(p.filter))
+		containsLabel := strings.Contains(strings.ToLower(option.Label), strings.ToLower(p.filter))
+
+		if containsValue || containsLabel {
 			p.filteredChoices = append(p.filteredChoices, option)
 		}
 	}
@@ -313,8 +320,8 @@ func (p *MultiSelect) renderOptions(printer Printer, indent string) {
 				displayValue = fmt.Sprintf("%s%s%s",
 					displayValue[:matchIndex], // Start of the string
 					//nolint:govet
-					output.WithUnderline(displayValue[matchIndex:matchIndex+len(p.filter)]), // Highlighted filter
-					displayValue[matchIndex+len(p.filter):],                                 // End of the string
+					output.WithUnderline("%s", displayValue[matchIndex:matchIndex+len(p.filter)]), // Highlighted filter
+					displayValue[matchIndex+len(p.filter):],                                       // End of the string
 				)
 			}
 		}

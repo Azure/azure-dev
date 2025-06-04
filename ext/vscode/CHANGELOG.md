@@ -1,6 +1,6 @@
 # Release History
 
-## 0.9.0-alpha.1 (Unreleased)
+## 0.10.0-alpha.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,16 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 0.9.0 (2025-04-10)
+
+### Features Added
+
+ - [[#4995]](https://github.com/Azure/azure-dev/pull/4995) Add Up Flag for Init
+
+### Other Changes
+
+ - updating npm packages
 
 ## 0.8.4 (2024-10-28)
 

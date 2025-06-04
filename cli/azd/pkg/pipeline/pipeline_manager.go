@@ -5,7 +5,6 @@ package pipeline
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -96,6 +95,8 @@ type PipelineManager struct {
 	infra             *project.Infra
 	userConfigManager config.UserConfigManager
 	keyVaultService   keyvault.KeyVaultService
+	prjConfig         *project.ProjectConfig
+	ciProviderType    ciProviderType
 }
 
 func NewPipelineManager(
@@ -224,7 +225,10 @@ func servicePrincipal(
 
 // Configure is the main function from the pipeline manager which takes care
 // of creating or setting up the git project, the ci pipeline and the Azure connection.
-func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (result *PipelineConfigResult, err error) {
+func (pm *PipelineManager) Configure(
+	ctx context.Context, projectName string, infra *project.Infra) (result *PipelineConfigResult, err error) {
+	pm.infra = infra
+
 	// check all required tools are installed
 	requiredTools, err := pm.requiredTools(ctx)
 	if err != nil {
@@ -233,6 +237,9 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return result, err
 	}
+
+	// pipeline definition files
+	pm.ensurePipelineDefinition(ctx)
 
 	userConfig, err := pm.userConfigManager.Load()
 	if err != nil {
@@ -245,7 +252,6 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 		}
 	}
 
-	infra := pm.infra
 	// run pre-config validations.
 	rootPath := pm.azdCtx.ProjectDirectory()
 	updatedConfig, errorsFromPreConfig := pm.preConfigureCheck(ctx, infra.Options, rootPath)
@@ -388,18 +394,7 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 		return result, err
 	}
 
-	// Adding environment.AzdInitialEnvironmentConfigName as a secret to the pipeline as the base configuration for
-	// whenever a new environment is created. This means loading the local environment config into a pipeline secret which
-	// azd will use to restore the the config on CI
-	localEnvConfig, err := json.Marshal(pm.env.Config.ResolvedRaw())
-	if err != nil {
-		return result, fmt.Errorf("failed to marshal environment config: %w", err)
-	}
-
-	defaultAzdSecrets := map[string]string{
-		environment.AzdInitialEnvironmentConfigName: string(localEnvConfig),
-	}
-
+	defaultAzdSecrets := map[string]string{}
 	defaultAzdVariables := map[string]string{}
 	// If the user has set the resource group name as an environment variable, we need to pass it to the pipeline
 	// as this likely means rg-deployment
@@ -408,9 +403,12 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 	}
 
 	// Merge azd default variables and secrets with the ones defined on azure.yaml
-	pm.configOptions.variables, pm.configOptions.secrets = mergeProjectVariablesAndSecrets(
+	pm.configOptions.variables, pm.configOptions.secrets, err = mergeProjectVariablesAndSecrets(
 		pm.configOptions.projectVariables, pm.configOptions.projectSecrets,
-		defaultAzdVariables, defaultAzdSecrets, pm.env.Dotenv())
+		defaultAzdVariables, defaultAzdSecrets, pm.configOptions.providerParameters, pm.env.Dotenv())
+	if err != nil {
+		return result, fmt.Errorf("failed to merge variables and secrets: %w", err)
+	}
 
 	// resolve akvs secrets
 	// For each akvs in the secrets array:
@@ -790,57 +788,13 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 		}
 		pipelineProvider = p
 	}
+	pm.ciProviderType = pipelineProvider
 
 	prjConfig, err := project.Load(ctx, projectPath)
 	if err != nil {
 		return fmt.Errorf("Loading project configuration: %w", err)
 	}
-
-	infra, err := pm.importManager.ProjectInfrastructure(ctx, prjConfig)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = infra.Cleanup() }()
-	pm.infra = infra
-
-	hasAppHost := pm.importManager.HasAppHost(ctx, prjConfig)
-
-	infraProvider, err := toInfraProviderType(string(pm.infra.Options.Provider))
-	if err != nil {
-		return err
-	}
-
-	// There are 2 possible options, for the git branch name, when running azd pipeline config:
-	// - There is not a git repo, so the branch name is empty. In this case, we default to "main".
-	// - There is a git repo and we can get the name of the current branch.
-	branchName := "main"
-	customBranchName, err := pm.gitCli.GetCurrentBranch(ctx, repoRoot)
-	// It is fine if we can't get the branch name, we will default to "main"
-	if err == nil {
-		branchName = customBranchName
-	}
-
-	// default auth type for all providers
-	authType := AuthTypeFederated
-	if pm.args.PipelineAuthTypeName == "" && infraProvider == infraProviderTerraform {
-		// empty arg for auth and terraform forces client credentials, otherwise, it will be federated
-		authType = AuthTypeClientCredentials
-	}
-
-	// Check and prompt for missing CI/CD files
-	if err := pm.checkAndPromptForProviderFiles(
-		ctx, projectProperties{
-			CiProvider:    pipelineProvider,
-			RepoRoot:      repoRoot,
-			InfraProvider: infraProvider,
-			HasAppHost:    hasAppHost,
-			BranchName:    branchName,
-			AuthType:      authType,
-			Variables:     prjConfig.Pipeline.Variables,
-			Secrets:       prjConfig.Pipeline.Secrets,
-		}); err != nil {
-		return err
-	}
+	pm.prjConfig = prjConfig
 
 	// Save the provider to the environment
 	if err := pm.savePipelineProviderToEnv(ctx, pipelineProvider, pm.env); err != nil {
@@ -871,12 +825,6 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 
 	pm.scmProvider = scmProvider
 	pm.ciProvider = ciProvider
-
-	pm.configOptions = &configurePipelineOptions{
-		projectVariables:     slices.Clone(prjConfig.Pipeline.Variables),
-		projectSecrets:       slices.Clone(prjConfig.Pipeline.Secrets),
-		provisioningProvider: &pm.infra.Options,
-	}
 
 	return nil
 }
@@ -1043,19 +991,34 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		return fmt.Errorf("parsing embedded file %s: %w", embedFilePath, err)
 	}
 	builder := strings.Builder{}
-	err = tmpl.Execute(&builder, struct {
+	tmplContext := struct {
 		BranchName             string
 		FedCredLogIn           bool
 		InstallDotNetForAspire bool
 		Variables              []string
 		Secrets                []string
+		AlphaFeatures          []string
 	}{
 		BranchName:             props.BranchName,
 		FedCredLogIn:           props.AuthType == AuthTypeFederated,
 		InstallDotNetForAspire: props.HasAppHost,
 		Variables:              props.Variables,
 		Secrets:                props.Secrets,
-	})
+		AlphaFeatures:          props.RequiredAlphaFeatures,
+	}
+
+	// Apply provider parameters
+	for _, param := range props.providerParameters {
+		for _, envVarName := range param.EnvVarMapping {
+			if param.Secret {
+				tmplContext.Secrets = append(tmplContext.Secrets, envVarName)
+			} else {
+				tmplContext.Variables = append(tmplContext.Variables, envVarName)
+			}
+		}
+	}
+
+	err = tmpl.Execute(&builder, tmplContext)
 	if err != nil {
 		return fmt.Errorf("executing template: %w", err)
 	}
@@ -1158,5 +1121,76 @@ func resolveSmr(smrArg string, projectConfig config.Config, userConfig config.Co
 		return smr
 	}
 	// no smr configuration
+	return nil
+}
+
+// SetParameters adds parameter configuration for the manager to use during pipeline config.
+// Parameters passed here are automatically defined as variables or secrets in the pipeline without user explicitly
+// defining them in the azure.yaml -> pipeline file.
+// This is useful for provisioning providers to define a list of parameters that are required for the pipeline.
+// If parameters is nil, it means that the pipeline manager should not set up any parameters automatically.
+func (pm *PipelineManager) SetParameters(parameters []provisioning.Parameter) {
+	if pm.configOptions == nil {
+		pm.configOptions = &configurePipelineOptions{}
+	}
+	pm.configOptions.providerParameters = parameters
+}
+
+func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
+	// pipeline definition files
+	hasAppHost := pm.importManager.HasAppHost(ctx, pm.prjConfig)
+
+	infraProvider, err := toInfraProviderType(string(pm.infra.Options.Provider))
+	if err != nil {
+		return err
+	}
+
+	var requiredAlphaFeatures []string
+	if pm.infra.IsCompose {
+		requiredAlphaFeatures = append(requiredAlphaFeatures, "compose")
+	}
+	// There are 2 possible options, for the git branch name, when running azd pipeline config:
+	// - There is not a git repo, so the branch name is empty. In this case, we default to "main".
+	// - There is a git repo and we can get the name of the current branch.
+	branchName := "main"
+	projectDir := pm.azdCtx.ProjectDirectory()
+	repoRoot, err := pm.gitCli.GetRepoRoot(ctx, projectDir)
+	if err != nil {
+		repoRoot = projectDir
+		log.Printf("using project root as repo root, since git repo wasn't available: %s", err)
+	}
+	customBranchName, err := pm.gitCli.GetCurrentBranch(ctx, repoRoot)
+	// It is fine if we can't get the branch name, we will default to "main"
+	if err == nil {
+		branchName = customBranchName
+	}
+
+	// default auth type for all providers
+	authType := AuthTypeFederated
+	if pm.args.PipelineAuthTypeName == "" && infraProvider == infraProviderTerraform {
+		// empty arg for auth and terraform forces client credentials, otherwise, it will be federated
+		authType = AuthTypeClientCredentials
+	}
+
+	// Check and prompt for missing CI/CD files
+	err = pm.checkAndPromptForProviderFiles(
+		ctx, projectProperties{
+			CiProvider:            pm.ciProviderType,
+			RepoRoot:              repoRoot,
+			InfraProvider:         infraProvider,
+			HasAppHost:            hasAppHost,
+			BranchName:            branchName,
+			AuthType:              authType,
+			Variables:             pm.prjConfig.Pipeline.Variables,
+			Secrets:               pm.prjConfig.Pipeline.Secrets,
+			RequiredAlphaFeatures: requiredAlphaFeatures,
+			providerParameters:    pm.configOptions.providerParameters,
+		})
+	if err != nil {
+		return err
+	}
+	pm.configOptions.projectSecrets = slices.Clone(pm.prjConfig.Pipeline.Secrets)
+	pm.configOptions.projectVariables = slices.Clone(pm.prjConfig.Pipeline.Variables)
+	pm.configOptions.provisioningProvider = &pm.infra.Options
 	return nil
 }

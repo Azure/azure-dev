@@ -11,13 +11,14 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
@@ -35,12 +36,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
-
-var composeFeature = alpha.MustFeatureKey("compose")
 
 type showFlags struct {
 	global      *internal.GlobalCommandOptions
@@ -68,7 +66,8 @@ func NewShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *sh
 
 func NewShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Short: "Display information about your app and its resources.",
+		Use:   "show [resource name or ID]",
+		Short: "Display information about your project and its resources.",
 	}
 
 	return cmd
@@ -204,7 +203,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 			envName := env.Name()
 
-			if s.featureManager.IsEnabled(composeFeature) && len(s.args) > 0 {
+			if len(s.args) > 0 {
 				name := s.args[0]
 				err := s.showResource(ctx, name, env)
 				if err != nil {
@@ -308,13 +307,13 @@ func (s *showAction) showResource(ctx context.Context, name string, env *environ
 	resType := id.ResourceType.Namespace + "/" + id.ResourceType.Type
 	var item ux.UxItem
 	switch {
-	case strings.EqualFold(resType, "Microsoft.App/containerApps"):
+	case strings.EqualFold(resType, string(azapi.AzureResourceTypeContainerApp)):
 		item, err = showContainerApp(ctx, credential, id, resourceOptions)
 		if err != nil {
 			return err
 		}
-	case strings.EqualFold(resType, "Microsoft.CognitiveServices/accounts/deployments"):
-		err = showModelDeployment(ctx, s.console, credential, id.Parent, resourceOptions)
+	case strings.EqualFold(resType, string(azapi.AzureResourceTypeWebSite)):
+		item, err = showAppService(ctx, credential, id, resourceOptions)
 		if err != nil {
 			return err
 		}
@@ -344,14 +343,78 @@ type showResourceOptions struct {
 	clientOpts   *arm.ClientOptions
 }
 
+func showAppService(
+	ctx context.Context,
+	cred azcore.TokenCredential,
+	id *arm.ResourceID,
+	opts showResourceOptions,
+) (*ux.ShowService, error) {
+	service := &ux.ShowService{
+		Name:        id.Name,
+		Env:         make(map[string]string),
+		DisplayType: "App Service",
+	}
+
+	client, err := armappservice.NewWebAppsClient(id.SubscriptionID, cred, opts.clientOpts)
+	if err != nil {
+		return nil, fmt.Errorf("creating web-apps client: %w", err)
+	}
+
+	site, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting web app: %w", err)
+	}
+
+	if site.Properties != nil && site.Properties.DefaultHostName != nil {
+		service.IngresUrl = fmt.Sprintf("https://%s", *site.Properties.DefaultHostName)
+	}
+
+	settings, err := client.ListApplicationSettings(ctx, id.ResourceGroupName, id.Name, nil)
+	if err != nil {
+		return nil, fmt.Errorf("listing application settings: %w", err)
+	}
+
+	// App Service settings don't distinguish between secrets and non-secrets, so maintain list of known
+	// secret keys to mask. In the future, we may want to use Key Vault secret references for Postgres, MySQL,
+	// and other DBs where they take a user-provided password.
+	knownSecretKeys := []string{
+		"MONGODB_URL",
+		"POSTGRES_PASSWORD",
+		"POSTGRES_URL",
+		"MYSQL_PASSWORD",
+		"MYSQL_URL",
+		"REDIS_PASSWORD",
+		"REDIS_URL",
+	}
+
+	for key, val := range settings.Properties {
+		if val == nil {
+			continue
+		}
+
+		value := *val
+		// TODO(azure/azure-dev#5174): Resolve the actual secret value from the AKV secret ref @Microsoft.KeyVault(...)
+		isSecret := strings.HasPrefix(value, "@Microsoft.KeyVault(") || slices.Contains(knownSecretKeys, key)
+
+		if isSecret && !opts.showSecrets {
+			service.Env[key] = "*******"
+		} else {
+			service.Env[key] = value
+		}
+	}
+
+	return service, nil
+}
+
 func showContainerApp(
 	ctx context.Context,
 	cred azcore.TokenCredential,
 	id *arm.ResourceID,
 	opts showResourceOptions) (*ux.ShowService, error) {
 	service := &ux.ShowService{
-		Name: id.Name,
-		Env:  make(map[string]string),
+		Name:        id.Name,
+		Env:         make(map[string]string),
+		DisplayType: "Container App",
 	}
 	client, err := armappcontainers.NewContainerAppsClient(id.SubscriptionID, cred, opts.clientOpts)
 	if err != nil {
@@ -422,43 +485,6 @@ func showContainerApp(
 	}
 
 	return service, nil
-}
-
-func showModelDeployment(
-	ctx context.Context,
-	console input.Console,
-	cred azcore.TokenCredential,
-	id *arm.ResourceID,
-	opts showResourceOptions) error {
-	client, err := armcognitiveservices.NewAccountsClient(id.SubscriptionID, cred, opts.clientOpts)
-	if err != nil {
-		return fmt.Errorf("creating accounts client: %w", err)
-	}
-
-	account, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
-	if err != nil {
-		return fmt.Errorf("getting account: %w", err)
-	}
-
-	if account.Properties.Endpoint != nil {
-		console.Message(ctx, color.HiMagentaString("%s (Azure AI Services Model Deployment)", id.Name))
-		console.Message(ctx, "  Endpoint:")
-		console.Message(ctx,
-			output.WithHighLightFormat(fmt.Sprintf("    AZURE_OPENAI_ENDPOINT=%s", *account.Properties.Endpoint)))
-		console.Message(ctx, "  Access:")
-		console.Message(ctx, "    Keyless (Microsoft Entra ID)")
-		//nolint:lll
-		console.Message(
-			ctx,
-			output.WithGrayFormat(
-				"        Hint: To access locally, use DefaultAzureCredential. To learn more, visit https://learn.microsoft.com/en-us/azure/ai-services/openai/supported-languages",
-			),
-		)
-
-		console.Message(ctx, "")
-	}
-
-	return nil
 }
 
 func (s *showAction) serviceEndpoint(

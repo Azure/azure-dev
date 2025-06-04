@@ -10,7 +10,13 @@ import (
 
 type InfraSpec struct {
 	Parameters []Parameter
-	Services   []ServiceSpec
+
+	Services []ServiceSpec
+
+	// Existing resources for declaration purposes.
+	// These are resources that are already created and should be used by the
+	// current deployment for referencing
+	Existing []ExistingResource
 
 	// Databases to create
 	DbPostgres    *DatabasePostgres
@@ -124,8 +130,13 @@ type StorageAccount struct {
 type ServiceSpec struct {
 	Name string
 	Port int
+	Host HostKind
 
 	Env map[string]string
+
+	// App Service specific configuration
+	Runtime        *RuntimeInfo
+	StartupCommand string
 
 	// Front-end properties.
 	Frontend *Frontend
@@ -152,9 +163,24 @@ type ServiceSpec struct {
 	ServiceBus *ServiceBus
 	EventHubs  *EventHubs
 
-	HasAiFoundryProject *AiFoundrySpec
+	AiFoundryProject *AiFoundrySpec
 
 	AISearch *AISearchReference
+
+	// Existing resource bindings
+	Existing []*ExistingResource
+}
+
+type HostKind string
+
+const (
+	AppServiceKind   HostKind = "appservice"
+	ContainerAppKind HostKind = "containerapp"
+)
+
+type RuntimeInfo struct {
+	Type    string
+	Version string
 }
 
 type Frontend struct {
@@ -186,51 +212,24 @@ type AISearchReference struct {
 type KeyVaultReference struct {
 }
 
+type ExistingResource struct {
+	// The unique logical name of the existing resource in the infra scope.
+	Name string
+	// The resource ID of the resource.
+	ResourceIdEnvVar string
+	// The resource type of the resource. This should match the type contained in the resource ID.
+	ResourceType string
+	// The API version of the resource to look up values.
+	ApiVersion string
+	// Role assignment
+	RoleAssignments []RoleAssignment
+}
+
 func containerAppExistsParameter(serviceName string) Parameter {
 	return Parameter{
 		Name: BicepName(serviceName) + "Exists",
 		Value: fmt.Sprintf("${SERVICE_%s_RESOURCE_EXISTS=false}",
 			strings.ReplaceAll(strings.ToUpper(serviceName), "-", "_")),
 		Type: "bool",
-	}
-}
-
-type serviceDef struct {
-	Settings []serviceDefSettings `json:"settings"`
-}
-
-type serviceDefSettings struct {
-	Name         string `json:"name"`
-	Value        string `json:"value"`
-	Secret       bool   `json:"secret,omitempty"`
-	SecretRef    string `json:"secretRef,omitempty"`
-	CommentName  string `json:"_comment_name,omitempty"`
-	CommentValue string `json:"_comment_value,omitempty"`
-}
-
-func serviceDefPlaceholder(serviceName string) Parameter {
-	return Parameter{
-		Name: BicepName(serviceName) + "Definition",
-		Value: serviceDef{
-			Settings: []serviceDefSettings{
-				{
-					Name:        "",
-					Value:       "${VAR}",
-					CommentName: "The name of the environment variable when running in Azure. If empty, ignored.",
-					//nolint:lll
-					CommentValue: "The value to provide. This can be a fixed literal, or an expression like ${VAR} to use the value of 'VAR' from the current environment.",
-				},
-				{
-					Name:        "",
-					Value:       "${VAR_S}",
-					Secret:      true,
-					CommentName: "The name of the environment variable when running in Azure. If empty, ignored.",
-					//nolint:lll
-					CommentValue: "The value to provide. This can be a fixed literal, or an expression like ${VAR_S} to use the value of 'VAR_S' from the current environment.",
-				},
-			},
-		},
-		Type:   "object",
-		Secret: true,
 	}
 }

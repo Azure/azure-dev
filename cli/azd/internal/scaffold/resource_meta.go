@@ -25,6 +25,39 @@ type ResourceMeta struct {
 	//
 	// To evaluate the actual values, see [Eval].
 	Variables map[string]string
+
+	// RoleAssignments are related role assignments the resource.
+	RoleAssignments RoleAssignments
+}
+
+type RoleAssignments struct {
+	Read  []RoleAssignment
+	Write []RoleAssignment
+}
+
+type RoleAssignmentScope int32
+
+const (
+	RoleAssignmentScopeResource RoleAssignmentScope = iota
+	RoleAssignmentScopeGroup
+)
+
+type RoleAssignment struct {
+	// A name for the role assignment that is unique within the resource.
+	// This should be a Bicep-friendly name.
+	Name string
+
+	// The Microsoft defined role definition ID.
+	// See https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles
+	RoleDefinitionId string
+
+	// Friendly name for display purposes.
+	RoleDefinitionName string
+
+	// The Scope of the role assignment.
+	// This is the resource ID of the resource to which the role assignment applies.
+	// When empty, the scope is the resource itself.
+	Scope RoleAssignmentScope
 }
 
 // List of resources that are supported by scaffold.
@@ -58,16 +91,51 @@ var Resources = []ResourceMeta{
 	},
 	{
 		ResourceType: "Microsoft.CognitiveServices/accounts",
-		ApiVersion:   "2023-05-01",
+		ApiVersion:   "2025-04-01-preview",
+	},
+	{
+		ResourceType:      "Microsoft.CognitiveServices/accounts/deployments",
+		ApiVersion:        "2025-04-01-preview",
+		ParentForEval:     "Microsoft.CognitiveServices/accounts",
+		StandardVarPrefix: "AZURE_OPENAI",
+		Variables: map[string]string{
+			"endpoint": "${.properties.endpoint}",
+		},
+	},
+	{
+		ResourceType:      "Microsoft.CognitiveServices/accounts/projects",
+		ResourceKind:      "AIServices",
+		ApiVersion:        "2025-04-01-preview",
+		StandardVarPrefix: "AZURE_AI_PROJECT",
+		Variables: map[string]string{
+			"endpoint": "${aiProjectEndpoint .properties.endpoints}",
+		},
+		RoleAssignments: RoleAssignments{
+			Write: []RoleAssignment{
+				{
+					Name:               "AzureAIDeveloper",
+					RoleDefinitionName: "Azure AI Developer",
+					RoleDefinitionId:   "64702f94-c441-49e6-a78b-ef80e0188fee",
+					Scope:              RoleAssignmentScopeGroup,
+				},
+				{
+					Name:               "CognitiveServicesUser",
+					RoleDefinitionName: "Cognitive Services User",
+					RoleDefinitionId:   "a97b65f3-24c7-4388-baec-2e87135dc908",
+					Scope:              RoleAssignmentScopeGroup,
+				},
+			},
+		},
 	},
 	{
 		ResourceType: "Microsoft.ContainerRegistry/registries",
 		ApiVersion:   "2023-06-01-preview",
 	},
 	{
-		ResourceType:      "Microsoft.DBforMySQL/flexibleServers",
+		ResourceType:      "Microsoft.DBforMySQL/flexibleServers/databases",
 		ApiVersion:        "2023-12-30",
 		StandardVarPrefix: "MYSQL",
+		ParentForEval:     "Microsoft.DBforMySQL/flexibleServers",
 		Variables: map[string]string{
 			"database": "${spec.name}",
 			"host":     "${.properties.fullyQualifiedDomainName}",
@@ -78,9 +146,10 @@ var Resources = []ResourceMeta{
 		},
 	},
 	{
-		ResourceType:      "Microsoft.DBforPostgreSQL/flexibleServers",
+		ResourceType:      "Microsoft.DBforPostgreSQL/flexibleServers/databases",
 		ApiVersion:        "2022-12-01",
 		StandardVarPrefix: "POSTGRES",
+		ParentForEval:     "Microsoft.DBforPostgreSQL/flexibleServers",
 		Variables: map[string]string{
 			"database": "${spec.name}",
 			"host":     "${.properties.fullyQualifiedDomainName}",
@@ -115,6 +184,15 @@ var Resources = []ResourceMeta{
 			"name": "${.name}",
 			"host": "${host .properties.serviceBusEndpoint}",
 		},
+		RoleAssignments: RoleAssignments{
+			Write: []RoleAssignment{
+				{
+					Name:               "HubDataOwner",
+					RoleDefinitionName: "Azure Event Hubs Data Owner",
+					RoleDefinitionId:   "f526a384-b230-433a-b45c-95f59c4a2dec",
+				},
+			},
+		},
 	},
 	{
 		ResourceType:      "Microsoft.KeyVault/vaults",
@@ -123,6 +201,15 @@ var Resources = []ResourceMeta{
 		Variables: map[string]string{
 			"name":     "${.name}",
 			"endpoint": "${.properties.vaultUri}",
+		},
+		RoleAssignments: RoleAssignments{
+			Read: []RoleAssignment{
+				{
+					Name:               "Reader",
+					RoleDefinitionName: "Key Vault Secrets User",
+					RoleDefinitionId:   "4633458b-17de-408a-b874-0445c86b69e6",
+				},
+			},
 		},
 	},
 	{
@@ -137,32 +224,61 @@ var Resources = []ResourceMeta{
 			"name": "${.name}",
 			"host": "${host .properties.serviceBusEndpoint}",
 		},
+		RoleAssignments: RoleAssignments{
+			Write: []RoleAssignment{
+				{
+					Name:               "BusDataOwner",
+					RoleDefinitionName: "Azure Service Bus Data Owner",
+					RoleDefinitionId:   "090c5cfd-751d-490a-894a-3ce6f1109419",
+				},
+			},
+		},
 	},
 	{
 		ResourceType:      "Microsoft.Storage/storageAccounts",
 		ApiVersion:        "2023-05-01",
 		StandardVarPrefix: "AZURE_STORAGE",
+		RoleAssignments: RoleAssignments{
+			Read: []RoleAssignment{
+				{
+					Name:               "Reader",
+					RoleDefinitionName: "Storage Blob Data Reader",
+					RoleDefinitionId:   "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1",
+				},
+			},
+			Write: []RoleAssignment{
+				{
+					Name:               "Contributor",
+					RoleDefinitionName: "Storage Blob Data Contributor",
+					RoleDefinitionId:   "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
+				},
+			},
+		},
 		Variables: map[string]string{
 			"accountName":  "${.name}",
 			"blobEndpoint": "${.properties.primaryEndpoints.blob}",
 		},
 	},
 	{
-		ResourceType:      "Microsoft.MachineLearningServices/workspaces",
-		ResourceKind:      "Project",
-		ApiVersion:        "2024-10-01",
-		StandardVarPrefix: "AZURE_AI_PROJECT",
-		Variables: map[string]string{
-			"connectionString": "${aiProjectConnectionString .id .properties.discoveryUrl}",
-		},
-	},
-	{
-		ResourceType: "Microsoft.Search/searchServices",
-		// TODO: Switch to 2025-02-01-preview once available, which has a new 'endpoint' property
-		ApiVersion:        "2024-06-01-preview",
+		ResourceType:      "Microsoft.Search/searchServices",
+		ApiVersion:        "2025-02-01-preview",
 		StandardVarPrefix: "AZURE_AI_SEARCH",
 		Variables: map[string]string{
-			"endpoint": "https://${.name}.search.windows.net",
+			"endpoint": "${.properties.endpoint}",
+		},
+		RoleAssignments: RoleAssignments{
+			Write: []RoleAssignment{
+				{
+					Name:               "IdxContributor",
+					RoleDefinitionName: "Search Index Data Contributor",
+					RoleDefinitionId:   "8ebe5a00-799e-43f5-93ac-243d3dce84a7",
+				},
+				{
+					Name:               "SvcContributor",
+					RoleDefinitionName: "Search Service Contributor",
+					RoleDefinitionId:   "7ca78c08-252a-4471-8644-bb5ff32d4ba0",
+				},
+			},
 		},
 	},
 }
@@ -182,4 +298,13 @@ func EnvVarName(prefix string, varName string) string {
 		return AlphaSnakeUpperFromCasing(varName)
 	}
 	return prefix + "_" + AlphaSnakeUpperFromCasing(varName)
+}
+
+func ResourceMetaFromType(resourceType string) (ResourceMeta, bool) {
+	for _, resource := range Resources {
+		if resource.ResourceType == resourceType {
+			return resource, true
+		}
+	}
+	return ResourceMeta{}, false
 }

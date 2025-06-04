@@ -6,19 +6,18 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
-	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -29,18 +28,58 @@ func bindExtension(
 	root *actions.ActionDescriptor,
 	extension *extensions.Extension,
 ) error {
+	// Split the namespace by dots to support nested namespaces
+	namespaceParts := strings.Split(extension.Namespace, ".")
+
+	// Start with the root command
+	current := root
+
+	// For each part except the last one, create or find a command in the hierarchy
+	for i := 0; i < len(namespaceParts)-1; i++ {
+		part := namespaceParts[i]
+
+		// Check if a command with this name already exists
+		found := false
+		for _, child := range current.Children() {
+			if child.Name == part {
+				current = child
+				found = true
+				break
+			}
+		}
+
+		// If not found, create a new command
+		if !found {
+			cmd := &cobra.Command{
+				Use:   part,
+				Short: extension.Description,
+			}
+
+			current = current.Add(part, &actions.ActionDescriptorOptions{
+				Command: cmd,
+				GroupingOptions: actions.CommandGroupOptions{
+					RootLevelHelp: actions.CmdGroupExtensions,
+				},
+			})
+		}
+	}
+
+	// The last part of the namespace is the actual command
+	lastPart := namespaceParts[len(namespaceParts)-1]
+
 	cmd := &cobra.Command{
-		Use:                extension.Namespace,
+		Use:                lastPart,
 		Short:              extension.Description,
 		Long:               extension.Description,
 		DisableFlagParsing: true,
+		// Add extension metadata as annotations for faster lookup later during invocation.
+		Annotations: map[string]string{
+			"extension.id":        extension.Id,
+			"extension.namespace": extension.Namespace,
+		},
 	}
 
-	cmd.SetHelpFunc(func(c *cobra.Command, s []string) {
-		_ = serviceLocator.Invoke(invokeExtensionHelp)
-	})
-
-	root.Add(extension.Namespace, &actions.ActionDescriptorOptions{
+	current.Add(lastPart, &actions.ActionDescriptorOptions{
 		Command:        cmd,
 		ActionResolver: newExtensionAction,
 		GroupingOptions: actions.CommandGroupOptions{
@@ -49,35 +88,6 @@ func bindExtension(
 	})
 
 	return nil
-}
-
-// invokeExtensionHelp invokes the help for the extension
-func invokeExtensionHelp(console input.Console, commandRunner exec.CommandRunner, extensionManager *extensions.Manager) {
-	extensionNamespace := os.Args[1]
-	extension, err := extensionManager.GetInstalled(extensions.LookupOptions{
-		Namespace: extensionNamespace,
-	})
-	if err != nil {
-		fmt.Println("Failed running help")
-	}
-
-	homeDir, err := config.GetUserConfigDir()
-	if err != nil {
-		fmt.Println("Failed running help")
-	}
-
-	extensionPath := filepath.Join(homeDir, extension.Path)
-
-	runArgs := exec.
-		NewRunArgs(extensionPath, os.Args[2:]...).
-		WithStdIn(console.Handles().Stdin).
-		WithStdOut(console.Handles().Stdout).
-		WithStdErr(console.Handles().Stderr)
-
-	_, err = commandRunner.Run(context.Background(), runArgs)
-	if err != nil {
-		fmt.Println("Failed running help")
-	}
 }
 
 type extensionAction struct {
@@ -112,13 +122,16 @@ func newExtensionAction(
 }
 
 func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	extensionNamespace := a.cmd.Use
+	extensionId, has := a.cmd.Annotations["extension.id"]
+	if !has {
+		return nil, fmt.Errorf("extension id not found")
+	}
 
 	extension, err := a.extensionManager.GetInstalled(extensions.LookupOptions{
-		Namespace: extensionNamespace,
+		Id: extensionId,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get extension %s: %w", extensionNamespace, err)
+		return nil, fmt.Errorf("failed to get extension %s: %w", extensionId, err)
 	}
 
 	allEnv := []string{}
@@ -127,6 +140,13 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	forceColor := !color.NoColor
 	if forceColor {
 		allEnv = append(allEnv, "FORCE_COLOR=1")
+	}
+
+	// Pass the console width down to the child process
+	// COLUMNS is a semi-standard environment variable used by many Unix programs to determine the width of the terminal.
+	width := ux.ConsoleWidth()
+	if width > 0 {
+		allEnv = append(allEnv, fmt.Sprintf("COLUMNS=%d", width))
 	}
 
 	env, err := a.lazyEnv.GetValue()
@@ -138,6 +158,8 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to start gRPC server: %w", err)
 	}
+
+	defer a.azdServer.Stop()
 
 	jwtToken, err := grpcserver.GenerateExtensionToken(extension, serverInfo)
 	if err != nil {
@@ -159,11 +181,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	_, err = a.extensionRunner.Invoke(ctx, extension, options)
 	if err != nil {
-		log.Printf("Failed to invoke extension %s: %v\n", extensionNamespace, err)
-	}
-
-	if err = a.azdServer.Stop(); err != nil {
-		log.Printf("Failed to stop gRPC server: %v\n", err)
+		os.Exit(1)
 	}
 
 	return nil, nil

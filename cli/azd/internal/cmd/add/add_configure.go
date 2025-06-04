@@ -28,6 +28,38 @@ var DbMap = map[appdetect.DatabaseDep]project.ResourceType{
 type PromptOptions struct {
 	// PrjConfig is the current project configuration.
 	PrjConfig *project.ProjectConfig
+
+	// ExistingId is the ID of an existing resource.
+	// This is only used to configure the resource with an existing resource.
+	ExistingId string
+}
+
+// ConfigureLive fills in the fields for a resource by first querying live Azure for information.
+//
+// This is used in addition to Configure currently.
+func (a *AddAction) ConfigureLive(
+	ctx context.Context,
+	r *project.ResourceConfig,
+	console input.Console,
+	p PromptOptions) (*project.ResourceConfig, error) {
+	if r.Existing {
+		return r, nil
+	}
+
+	var err error
+
+	switch r.Type {
+	case project.ResourceTypeAiProject:
+		r, err = a.promptAiModel(console, ctx, r, p)
+	case project.ResourceTypeOpenAiModel:
+		r, err = a.promptOpenAi(console, ctx, r, p)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return r, nil
 }
 
 // Configure fills in the fields for a resource.
@@ -36,8 +68,13 @@ func Configure(
 	r *project.ResourceConfig,
 	console input.Console,
 	p PromptOptions) (*project.ResourceConfig, error) {
+	if r.Existing {
+		return ConfigureExisting(ctx, r, console, p)
+	}
+
 	switch r.Type {
-	case project.ResourceTypeHostContainerApp:
+	case project.ResourceTypeHostAppService,
+		project.ResourceTypeHostContainerApp:
 		return fillUses(ctx, r, console, p)
 	case project.ResourceTypeOpenAiModel:
 		return fillOpenAiModelName(ctx, r, console, p)
@@ -203,13 +240,19 @@ func fillUses(
 		Display  string
 	}
 	res := make([]resourceDisplay, 0, len(p.PrjConfig.Resources))
-	for _, r := range p.PrjConfig.Resources {
+	isHost := strings.HasPrefix(string(r.Type), "host.")
+	for _, other := range p.PrjConfig.Resources {
+		otherIsHost := strings.HasPrefix(string(other.Type), "host.")
+		// Linking between different host types is not supported yet
+		if isHost && otherIsHost && r.Type != other.Type {
+			continue
+		}
 		res = append(res, resourceDisplay{
-			Resource: r,
+			Resource: other,
 			Display: fmt.Sprintf(
 				"[%s]\t%s",
-				r.Type.String(),
-				r.Name),
+				other.Type.String(),
+				other.Name),
 		})
 	}
 	slices.SortFunc(res, func(a, b resourceDisplay) int {
@@ -261,8 +304,14 @@ func promptUsedBy(
 	console input.Console,
 	p PromptOptions) ([]string, error) {
 	svc := []string{}
+	isHost := strings.HasPrefix(string(r.Type), "host.")
 	for _, other := range p.PrjConfig.Resources {
-		if strings.HasPrefix(string(other.Type), "host.") && !slices.Contains(r.Uses, other.Name) {
+		otherIsHost := strings.HasPrefix(string(other.Type), "host.")
+		// Linking between different host types is not supported yet
+		if isHost && otherIsHost && r.Type != other.Type {
+			continue
+		}
+		if otherIsHost && !slices.Contains(other.Uses, r.Name) {
 			svc = append(svc, other.Name)
 		}
 	}

@@ -33,6 +33,10 @@ func Load() (*template.Template, error) {
 		"lower":            strings.ToLower,
 		"alphaSnakeUpper":  AlphaSnakeUpper,
 		"formatParam":      FormatParameter,
+		"hasACA":           HasACA,
+		"hasAppService":    HasAppService,
+		"isACA":            IsACA,
+		"isAppService":     IsAppService,
 	}
 
 	t, err := template.New("templates").
@@ -71,8 +75,14 @@ func Execute(
 func supportingFiles(spec InfraSpec) []string {
 	files := []string{"/abbreviations.json"}
 
-	if len(spec.Services) > 0 {
+	if HasACA(spec.Services) {
 		files = append(files, "/modules/fetch-container-image.bicep")
+	}
+
+	if len(spec.Existing) > 0 {
+		files = append(files,
+			"/modules/role-assignment.bicep",
+			"/modules/role-assignment.json")
 	}
 
 	if spec.AiFoundryProject != nil && spec.AISearch != nil {
@@ -113,7 +123,7 @@ func ExecInfra(
 			return err
 		}
 
-		return os.WriteFile(target, contents, d.Type().Perm())
+		return os.WriteFile(target, contents, osutil.PermissionFile)
 	})
 	if err != nil {
 		return fmt.Errorf("writing infrastructure: %w", err)
@@ -232,10 +242,21 @@ func preExecExpand(spec *InfraSpec) {
 	}
 
 	for _, svc := range spec.Services {
-		// containerapp requires a global '_exist' parameter for each service
-		spec.Parameters = append(spec.Parameters,
-			containerAppExistsParameter(svc.Name))
-		spec.Parameters = append(spec.Parameters,
-			serviceDefPlaceholder(svc.Name))
+		if svc.Host == ContainerAppKind {
+			// containerapp requires a global '_exist' parameter for each service
+			spec.Parameters = append(spec.Parameters,
+				containerAppExistsParameter(svc.Name))
+		}
 	}
+
+	for _, res := range spec.Existing {
+		// each existing resource adds a parameter declaration input for its resource id
+		spec.Parameters = append(spec.Parameters,
+			Parameter{
+				Name:  res.Name + "Id",
+				Value: fmt.Sprintf("${%s}", res.ResourceIdEnvVar),
+				Type:  "string",
+			})
+	}
+
 }

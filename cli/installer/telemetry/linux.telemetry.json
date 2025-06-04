@@ -1,6 +1,6 @@
 {
     "os": "ubuntu",
-    "osVersion": "20.04",
+    "osVersion": "22.04",
     "isWsl": "False",
     "terminal": "bash"
 }

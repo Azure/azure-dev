@@ -5,6 +5,7 @@ package add
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -37,7 +38,7 @@ import (
 func NewAddCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "add",
-		Short: fmt.Sprintf("Add a component to your project. %s", output.WithWarningFormat("(Alpha)")),
+		Short: "Add a component to your project.",
 	}
 }
 
@@ -50,6 +51,7 @@ type AddAction struct {
 	alphaManager     *alpha.FeatureManager
 	creds            account.SubscriptionCredentialProvider
 	rm               infra.ResourceManager
+	resourceService  *azapi.ResourceService
 	armClientOptions *arm.ClientOptions
 	prompter         prompt.Prompter
 	console          input.Console
@@ -57,16 +59,7 @@ type AddAction struct {
 	azureClient      *azapi.AzureClient
 }
 
-var composeFeature = alpha.MustFeatureKey("compose")
-
 func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if !a.alphaManager.IsEnabled(composeFeature) {
-		return nil, fmt.Errorf(
-			"compose is currently under alpha support and must be explicitly enabled."+
-				" Run `%s` to enable this feature", alpha.GetEnableCommand(composeFeature),
-		)
-	}
-
 	prjConfig, err := project.Load(ctx, a.azdCtx.ProjectPath())
 	if err != nil {
 		return nil, err
@@ -74,6 +67,11 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	// Having a subscription is required for any azd compose (add)
 	err = provisioning.EnsureSubscription(ctx, a.envManager, a.env, a.prompter)
+	if err != nil {
+		return nil, err
+	}
+
+	err = ensureCompatibleProject(prjConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -101,21 +99,24 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	var serviceToAdd *project.ServiceConfig
 
 	promptOpts := PromptOptions{PrjConfig: prjConfig}
+	r, err := selected.SelectResource(a.console, ctx, promptOpts)
+	if err != nil {
+		return nil, err
+	}
+	resourceToAdd = r
+
 	if strings.EqualFold(selected.Namespace, "host") {
-		svc, r, err := a.configureHost(a.console, ctx, promptOpts)
+		svc, r, err := a.configureHost(a.console, ctx, promptOpts, r.Type)
 		if err != nil {
 			return nil, err
 		}
-
-		resourceToAdd = r
 		serviceToAdd = svc
-	} else {
-		r, err := selected.SelectResource(a.console, ctx, promptOpts)
-		if err != nil {
-			return nil, err
-		}
-
 		resourceToAdd = r
+	}
+
+	resourceToAdd, err = a.ConfigureLive(ctx, resourceToAdd, a.console, promptOpts)
+	if err != nil {
+		return nil, err
 	}
 
 	resourceToAdd, err = Configure(ctx, resourceToAdd, a.console, promptOpts)
@@ -193,6 +194,9 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	for _, svc := range usedBy {
+		if slices.Contains(prjConfig.Resources[svc].Uses, resourceToAdd.Name) {
+			continue
+		}
 		err = yamlnode.Append(&doc, fmt.Sprintf("resources.%s.uses[]?", svc), &yaml.Node{
 			Kind:  yaml.ScalarNode,
 			Value: resourceToAdd.Name,
@@ -257,6 +261,21 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	err = file.Close()
 	if err != nil {
 		return nil, fmt.Errorf("closing file: %w", err)
+	}
+
+	envModified := false
+	for _, resource := range resourcesToAdd {
+		if resource.ResourceId != "" {
+			a.env.DotenvSet(infra.ResourceIdName(resource.Name), resource.ResourceId)
+			envModified = true
+		}
+	}
+
+	if envModified {
+		err = a.envManager.Save(ctx, a.env)
+		if err != nil {
+			return nil, fmt.Errorf("saving environment: %w", err)
+		}
 	}
 
 	a.console.MessageUxItem(ctx, &ux.ActionResult{
@@ -368,6 +387,34 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}, err
 }
 
+// ensureCompatibleProject checks if the project is compatible with the add command.
+// A project is incompatible if the project has an infra module (e.g. infra/main.bicep)
+// but no 'resources' node in the azure.yaml file.
+func ensureCompatibleProject(
+	prjConfig *project.ProjectConfig,
+) error {
+	infraRoot := prjConfig.Infra.Path
+	if !filepath.IsAbs(infraRoot) {
+		infraRoot = filepath.Join(prjConfig.Path, infraRoot)
+	}
+
+	hasResources := len(prjConfig.Resources) > 0
+	hasInfra, err := pathHasInfraModule(infraRoot, prjConfig.Infra.Module)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			hasInfra = false
+		} else {
+			return err
+		}
+	}
+
+	if hasInfra && !hasResources {
+		return fmt.Errorf("incompatible project: found infra directory with no resources defined in azure.yaml")
+	}
+
+	return nil
+}
+
 type provisionSelection int
 
 const (
@@ -414,6 +461,7 @@ func NewAddAction(
 	creds account.SubscriptionCredentialProvider,
 	prompter prompt.Prompter,
 	rm infra.ResourceManager,
+	resourceService *azapi.ResourceService,
 	armClientOptions *arm.ClientOptions,
 	azd workflow.AzdCommandRunner,
 	accountManager account.Manager,
@@ -428,6 +476,7 @@ func NewAddAction(
 		env:              env,
 		prompter:         prompter,
 		rm:               rm,
+		resourceService:  resourceService,
 		armClientOptions: armClientOptions,
 		creds:            creds,
 		azd:              azd,

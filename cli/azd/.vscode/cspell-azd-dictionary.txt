@@ -110,6 +110,7 @@ eventhubs
 executil
 flexconsumption
 Frontends
+fsnotify
 funcapp
 functestapp
 functionapp
@@ -195,6 +196,7 @@ requirepass
 resourcegraph
 restoreapp
 retriable
+runtimes
 rzip
 secureobject
 securestring

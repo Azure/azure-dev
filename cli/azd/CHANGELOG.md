@@ -1,14 +1,94 @@
 # Release History
 
-## 1.14.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.16.1 (2025-05-15)
 
 ### Bugs Fixed
 
+- [[5198]](https://github.com/Azure/azure-dev/issues/5198) Fixes error messages surfaced to users that contain internal implementation details.
+
 ### Other Changes
+
+## 1.16.0 (2025-05-14)
+
+### Features Added
+- [[5173]](https://github.com/Azure/azure-dev/pull/5173) `azd show` support for Azure App Service.
+- [[5158]](https://github.com/Azure/azure-dev/pull/5158) Configure Azure AI Foundry hub to use identity-based storage access for compose.
+- [[5143]](https://github.com/Azure/azure-dev/pull/5143), [[5183]](https://github.com/Azure/azure-dev/pull/5183), [[5185]](https://github.com/Azure/azure-dev/pull/5185) Update `azd pipeline config` to auto-detect required variables and secrets from infra provider parameters.
+- [[5190]](https://github.com/Azure/azure-dev/pull/5190) Add interactive controls for managing existing GitHub Actions variables and secrets during `azd pipeline config`.
+- [[5155]](https://github.com/Azure/azure-dev/pull/5155) Adds support for nested extension namespaces
+
+### Bugs Fixed
+
+- [[5176]](https://github.com/Azure/azure-dev/pull/5176) Prevent same resource being added under 'uses' multiple times with `azd add`.
+- [[5176]](https://github.com/Azure/azure-dev/pull/5176) Fix `azd add` preview for MySQL and Postgres and other UX improvements.
+- [[5192]](https://github.com/Azure/azure-dev/pull/5192) Fix Bicep generation for compose projects with implicit Key Vault dependency.
+
+### Other Changes
+
+- [[5194]](https://github.com/Azure/azure-dev/pull/5194) Reorganize `azd` help text with updated command sections (Getting started, Azure resources, Settings, Beta, Alpha, Extensions).
+- [[5189]](https://github.com/Azure/azure-dev/pull/5189) Clarify in environment prompt that the name must be unique.
+- [[5187]](https://github.com/Azure/azure-dev/pull/5187) Improve confirmation UX when declining to initialize template in non-empty directory.
+- [[5159]](https://github.com/Azure/azure-dev/pull/5159) Update Aspire detection message to not specifically mention ACA.
+- [[5138]](https://github.com/Azure/azure-dev/pull/5138) Update Bicep CLI to v0.35.1.
+
+## 1.15.1 (2025-05-07)
+
+### Bugs Fixed
+
+- [[5151]](https://github.com/Azure/azure-dev/issues/5151) Fix bicep provisioning failure with array parameters in `main.parameters.json`. Thanks @Mstiekema for the contribution!
+
+## 1.15.0 (2025-05-01)
+
+### Features Added
+
+- [[5073]](https://github.com/Azure/azure-dev/pull/5073) Support generate CI definition for alpha feature composability mode.
+- [[5077]](https://github.com/Azure/azure-dev/pull/5077) `azd add` support for Azure App Service (Node and Python).
+
+### Bugs Fixed
+
+- [[5061]](https://github.com/Azure/azure-dev/pull/5061) Fix location no longer prompted error for targetScope resource group. 
+- [[5117]](https://github.com/Azure/azure-dev/pull/5117) Fix template list filter empty result due to `awesome-azd` source breaking change.
+- [[5102]](https://github.com/Azure/azure-dev/pull/5102) Fix AKS cluster deployment with Microsoft Entra ID authentication and Azure RBAC enabled. Thanks @pauldotyu for the contribution!
+
+### Other Changes
+
+- [[4885]](https://github.com/Azure/azure-dev/pull/4885) Pack build to support multi-module projects. Thanks @haoozhang for the contribution!
+- [[5081]](https://github.com/Azure/azure-dev/pull/5081) Bump up dependency to fix component governance alert.
+
+## 1.14.0 (2025-04-02)
+
+### Features Added
+
+- [[4939]](https://github.com/Azure/azure-dev/pull/4939) Automatically load environment values from root .env on `azd init`.
+- [[4939]](https://github.com/Azure/azure-dev/pull/4939) Introduce `AZD_ALLOW_NON_EMPTY_FOLDER` variable that bypasses warning about initializing template in non-empty directory.
+- [[4977]](https://github.com/Azure/azure-dev/pull/4977), [[4995]](https://github.com/Azure/azure-dev/pull/4995) New `azd init --up` flag that runs `azd up` after initializing from a template. Thanks @LianwMS for the contribution!
+- [[4943]](https://github.com/Azure/azure-dev/pull/4943) `azd add` support for existing resources (AI models, AI Search, Key Vault, Event Hubs, Service Bus, Storage).
+- [[4931]](https://github.com/Azure/azure-dev/pull/4931) `azd add` support for Azure AI Search.
+- [[4914]](https://github.com/Azure/azure-dev/pull/4914) `azd show` support for all resources supported by `azd add`.
+- [[4874]](https://github.com/Azure/azure-dev/pull/4874) Provide shortcuts for `azd env set-secrets` to directly use Key Vault created with `azd add`.
+- [[4957]](https://github.com/Azure/azure-dev/pull/4957), [[4959]](https://github.com/Azure/azure-dev/pull/4959), [[4979]](https://github.com/Azure/azure-dev/pull/4979), [[4999]](https://github.com/Azure/azure-dev/pull/4999), [[5008]](https://github.com/Azure/azure-dev/pull/5008) Support .NET Aspire 9.1.
+- [[4953]](https://github.com/Azure/azure-dev/pull/4953) Support array of model usage names for quota validation.
+- [[5010]](https://github.com/Azure/azure-dev/pull/5010) Support model usage name metadata for main `location` Bicep parameter.
+
+### Bugs Fixed
+
+- [[4966]](https://github.com/Azure/azure-dev/pull/4966) Fix `AZURE_OPENAI_ENDPOINT` not showing in `azd add` preview.
+- [[4561]](https://github.com/Azure/azure-dev/pull/4561) Fix `azd up -e <env>` so it uses the specified environment.
+- [[4960]](https://github.com/Azure/azure-dev/pull/4960) Fix simplified init failing to provision with detected databases and `alpha.compose` off.
+- [[4929]](https://github.com/Azure/azure-dev/pull/4929), [[5010]](https://github.com/Azure/azure-dev/pull/5010) Improve location and quota validation for Azure AI Services resources.
+
+### Other Changes
+
+- [[4794]](https://github.com/Azure/azure-dev/pull/4794) Upgrade to Go 1.24.
+- [[4960]](https://github.com/Azure/azure-dev/pull/4960) Use Standard SKU for Azure Service Bus.
+- [[4960]](https://github.com/Azure/azure-dev/pull/4960) Remove passing host settings through `main.parameters.json`.
+- [[4972]](https://github.com/Azure/azure-dev/pull/4972) Remove unused core Bicep modules.
+
+## 1.13.2 (2025-03-25)
+
+### Bugs Fixed
+
+- [[4937]](https://github.com/Azure/azure-dev/pull/4937) Security fix (GHSA-qxp5-gwg8-xv66). golang.org/x/net.
 
 ## 1.13.1 (2025-03-11)
 

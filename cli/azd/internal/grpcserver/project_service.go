@@ -18,11 +18,6 @@ type projectService struct {
 
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]
 	lazyEnvManager *lazy.Lazy[environment.Manager]
-
-	azdContext *azdcontext.AzdContext
-	envManager environment.Manager
-
-	initialized bool
 }
 
 func NewProjectService(
@@ -36,11 +31,12 @@ func NewProjectService(
 }
 
 func (s *projectService) Get(ctx context.Context, req *azdext.EmptyRequest) (*azdext.GetProjectResponse, error) {
-	if err := s.initialize(); err != nil {
+	azdContext, err := s.lazyAzdContext.GetValue()
+	if err != nil {
 		return nil, err
 	}
 
-	projectConfig, err := project.Load(ctx, s.azdContext.ProjectPath())
+	projectConfig, err := project.Load(ctx, azdContext.ProjectPath())
 	if err != nil {
 		return nil, err
 	}
@@ -49,13 +45,18 @@ func (s *projectService) Get(ctx context.Context, req *azdext.EmptyRequest) (*az
 		return ""
 	}
 
-	defaultEnvironment, err := s.azdContext.GetDefaultEnvironmentName()
+	defaultEnvironment, err := azdContext.GetDefaultEnvironmentName()
+	if err != nil {
+		return nil, err
+	}
+
+	envManager, err := s.lazyEnvManager.GetValue()
 	if err != nil {
 		return nil, err
 	}
 
 	if defaultEnvironment != "" {
-		env, err := s.envManager.Get(ctx, defaultEnvironment)
+		env, err := envManager.Get(ctx, defaultEnvironment)
 		if err == nil && env != nil {
 			envKeyMapper = env.Getenv
 		}
@@ -98,24 +99,33 @@ func (s *projectService) Get(ctx context.Context, req *azdext.EmptyRequest) (*az
 	}, nil
 }
 
-func (s *projectService) initialize() error {
-	if s.initialized {
-		return nil
-	}
-
+func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceRequest) (*azdext.EmptyResponse, error) {
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	envManager, err := s.lazyEnvManager.GetValue()
+	projectConfig, err := project.Load(ctx, azdContext.ProjectPath())
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	s.azdContext = azdContext
-	s.envManager = envManager
-	s.initialized = true
+	serviceConfig := &project.ServiceConfig{
+		Project:      projectConfig,
+		Name:         req.Service.Name,
+		RelativePath: req.Service.RelativePath,
+		Language:     project.ServiceLanguageKind(req.Service.Language),
+		Host:         project.ServiceTargetKind(req.Service.Host),
+	}
 
-	return nil
+	if projectConfig.Services == nil {
+		projectConfig.Services = map[string]*project.ServiceConfig{}
+	}
+
+	projectConfig.Services[req.Service.Name] = serviceConfig
+	if err := project.Save(ctx, projectConfig, azdContext.ProjectPath()); err != nil {
+		return nil, err
+	}
+
+	return &azdext.EmptyResponse{}, nil
 }

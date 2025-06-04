@@ -90,8 +90,8 @@ func Test_CLI_VsServerExternalAuth(t *testing.T) {
 			return
 		}
 
-		_, err := w.Write([]byte(fmt.Sprintf(`{"status": "success", "token": "%s", "expiresOn": "%s"}`,
-			resultToken, time.Now().Add(1*time.Hour).Format(time.RFC3339))))
+		_, err := fmt.Fprintf(w, `{"status": "success", "token": "%s", "expiresOn": "%s"}`,
+			resultToken, time.Now().Add(1*time.Hour).Format(time.RFC3339))
 		require.NoError(t, err)
 	}))
 

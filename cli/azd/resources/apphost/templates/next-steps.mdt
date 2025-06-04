@@ -36,7 +36,7 @@ To describe the infrastructure and application, an `azure.yaml` was added with t
 
 This file contains a single service, which references your project's App Host. When needed, `azd` generates the required infrastructure as code in memory and uses it.
 
-If you would like to see or modify the infrastructure that `azd` uses, run `azd infra gen` to persist it to disk.
+If you would like to see or modify the infrastructure that `azd` uses, run `azd infra gen` to generate it to disk.
 
 If you do this, some additional directories will be created:
 
@@ -48,7 +48,7 @@ If you do this, some additional directories will be created:
 
 In addition, for each project resource referenced by your app host, a `containerApp.tmpl.yaml` file will be created in a directory named `manifests` next the project file. This file contains the infrastructure as code for running the project on Azure Container Apps.
 
-*Note*: Once you have written your infrastructure to disk, changes made to your App Host will not be reflected in the infrastructure. You can re-generate the infrastructure by running `azd infra gen` again. It will prompt you before overwriting files. You can pass `--force` to force `azd infra gen` to overwrite the files without prompting.
+*Note*: Once you have generated your infrastructure to disk, those files are the source of truth for azd. Any changes made to `azure.yaml` or your App Host will not be reflected in the infrastructure until you regenerate it with `azd infra gen` again. It will prompt you before overwriting files. You can pass `--force` to force `azd infra gen` to overwrite the files without prompting.
 
 ## Billing
 

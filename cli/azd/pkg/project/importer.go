@@ -201,7 +201,7 @@ func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectC
 		return infraFsForProject(ctx, projectConfig)
 	}
 
-	return nil, fmt.Errorf("this project does not contain any infrastructure to write")
+	return nil, fmt.Errorf("this project does not contain any infrastructure to generate")
 }
 
 // Infra represents the (possibly temporarily generated) infrastructure. Call [Cleanup] when done with infrastructure,

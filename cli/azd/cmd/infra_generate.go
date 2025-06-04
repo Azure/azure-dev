@@ -50,7 +50,7 @@ func newInfraGenerateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "generate",
 		Aliases: []string{"gen", "synth"},
-		Short:   "Write IaC for your project to disk, allowing you to manage it by hand.",
+		Short:   "Write IaC for your project to disk, allowing you to manually manage it.",
 	}
 }
 

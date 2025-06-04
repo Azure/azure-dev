@@ -13,7 +13,7 @@ import (
 func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("infra", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Short: "Manage your Azure infrastructure.",
+			Short: "Manage your Infrastructure as Code (IaC).",
 		},
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupBeta,

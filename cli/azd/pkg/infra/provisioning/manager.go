@@ -445,38 +445,41 @@ func NewManager(
 }
 
 func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
-	var err error
-	m.options.Provider, err = ParseProvider(m.options.Provider)
-	if err != nil {
-		return nil, err
-	}
+	   var err error
+	   m.options.Provider, err = ParseProvider(m.options.Provider)
+	   if err != nil {
+			   return nil, err
+	   }
 
-	if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(m.options.Provider)); isAlphaFeature {
-		if !m.alphaFeatureManager.IsEnabled(alphaFeatureId) {
-			return nil, fmt.Errorf("provider '%s' is alpha feature and it is not enabled. Run `%s` to enable it.",
-				m.options.Provider,
-				alpha.GetEnableCommand(alphaFeatureId),
-			)
-		}
+	   // DEBUG: Print the provider key before resolving
+	   fmt.Printf("[azd debug] Provisioning manager using provider: '%s'\n", m.options.Provider)
 
-		m.console.WarnForFeature(ctx, alphaFeatureId)
-	}
+	   if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(m.options.Provider)); isAlphaFeature {
+			   if !m.alphaFeatureManager.IsEnabled(alphaFeatureId) {
+					   return nil, fmt.Errorf("provider '%s' is alpha feature and it is not enabled. Run `%s` to enable it.",
+							   m.options.Provider,
+							   alpha.GetEnableCommand(alphaFeatureId),
+					   )
+			   }
 
-	providerKey := m.options.Provider
-	if providerKey == NotSpecified {
-		defaultProvider, err := m.defaultProvider()
-		if err != nil {
-			return nil, err
-		}
+			   m.console.WarnForFeature(ctx, alphaFeatureId)
+	   }
 
-		providerKey = defaultProvider
-	}
+	   providerKey := m.options.Provider
+	   if providerKey == NotSpecified {
+			   defaultProvider, err := m.defaultProvider()
+			   if err != nil {
+					   return nil, err
+			   }
 
-	var provider Provider
-	err = m.serviceLocator.ResolveNamed(string(providerKey), &provider)
-	if err != nil {
-		return nil, fmt.Errorf("failed resolving IaC provider '%s': %w", providerKey, err)
-	}
+			   providerKey = defaultProvider
+	   }
 
-	return provider, nil
+	   var provider Provider
+	   err = m.serviceLocator.ResolveNamed(string(providerKey), &provider)
+	   if err != nil {
+			   return nil, fmt.Errorf("failed resolving IaC provider '%s': %w", providerKey, err)
+	   }
+
+	   return provider, nil
 }

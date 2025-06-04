@@ -137,7 +137,7 @@ func newInitCmd() *cobra.Command {
 
 type initFlags struct {
 	   // TypeScript Provider flag
-	   tsp bool
+	tsp bool
 	templatePath   string
 	templateBranch string
 	templateTags   []string
@@ -150,12 +150,12 @@ type initFlags struct {
 }
 
 func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	   local.BoolVar(
-			   &i.tsp,
-			   "tsp",
-			   false,
-			   "Use the TypeScript infrastructure provider (deploy.ts) instead of Bicep.",
-	   )
+	local.BoolVar(
+			&i.tsp,
+			"tsp",
+			false,
+			"Use the TypeScript infrastructure provider (deploy.ts) instead of Bicep.",
+	)
 	local.StringVarP(
 		&i.templatePath,
 		"template",

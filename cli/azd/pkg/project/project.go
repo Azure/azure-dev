@@ -71,9 +71,14 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 	}
 
 	var err error
-	projectConfig.Infra.Provider, err = provisioning.ParseProvider(projectConfig.Infra.Provider)
-	if err != nil {
-		return nil, fmt.Errorf("parsing project %s: %w", projectConfig.Name, err)
+	// Only parse provider if not typescript, otherwise skip error for missing bicep
+	if strings.ToLower(string(projectConfig.Infra.Provider)) == "typescript" {
+		projectConfig.Infra.Provider = provisioning.TypeScript
+	} else {
+		projectConfig.Infra.Provider, err = provisioning.ParseProvider(projectConfig.Infra.Provider)
+		if err != nil {
+			return nil, fmt.Errorf("parsing project %s: %w", projectConfig.Name, err)
+		}
 	}
 
 	if projectConfig.Infra.Path == "" {

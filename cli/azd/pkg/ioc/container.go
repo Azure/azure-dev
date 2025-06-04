@@ -226,11 +226,13 @@ func (c *NestedContainer) Resolve(instance any) error {
 // Resolves a named instance for the specified type
 // Returns an error if the resolution fails
 func (c *NestedContainer) ResolveNamed(name string, instance any) error {
-	if err := c.inner.NamedResolve(instance, name); err != nil {
-		return inspectResolveError(err)
-	}
+	   if err := c.inner.NamedResolve(instance, name); err != nil {
+			   // DEBUG: Print the type and name being resolved, and the error
+			   fmt.Printf("[azd debug] ResolveNamed failed: name='%s', instance type='%T', error='%v'\n", name, instance, err)
+			   return inspectResolveError(err)
+	   }
 
-	return nil
+	   return nil
 }
 
 // Invokes the specified function and resolves any arguments specified

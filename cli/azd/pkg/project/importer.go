@@ -139,13 +139,24 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		infraRoot = filepath.Join(projectConfig.Path, infraRoot)
 	}
 
-	// Allow overriding the infrastructure only when path and module exists.
-	if moduleExists, err := pathHasModule(infraRoot, projectConfig.Infra.Module); err == nil && moduleExists {
-		log.Printf("using infrastructure from %s directory", infraRoot)
-		return &Infra{
-			Options: projectConfig.Infra,
-		}, nil
-	}
+   // Provider-aware module existence check
+   var moduleFile string
+   switch strings.ToLower(string(projectConfig.Infra.Provider)) {
+   case "bicep":
+	   moduleFile = filepath.Join(infraRoot, projectConfig.Infra.Module+".bicep")
+   case "typescript":
+	   moduleFile = filepath.Join(infraRoot, "deploy.ts")
+   case "terraform":
+	   moduleFile = filepath.Join(infraRoot, projectConfig.Infra.Module+".tf")
+   default:
+	   moduleFile = filepath.Join(infraRoot, projectConfig.Infra.Module)
+   }
+   if _, err := os.Stat(moduleFile); err == nil {
+	   log.Printf("using infrastructure from %s directory", infraRoot)
+	   return &Infra{
+		   Options: projectConfig.Infra,
+	   }, nil
+   }
 
 	for _, svcConfig := range projectConfig.Services {
 		if svcConfig.Language == ServiceLanguageDotNet {

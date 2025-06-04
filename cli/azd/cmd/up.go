@@ -91,17 +91,21 @@ func newUpAction(
 	importManager *project.ImportManager,
 	workflowRunner *workflow.Runner,
 ) actions.Action {
-	return &upAction{
-		flags:               flags,
-		console:             console,
-		env:                 env,
-		projectConfig:       projectConfig,
-		provisioningManager: provisioningManager,
-		envManager:          envManager,
-		prompters:           prompters,
-		importManager:       importManager,
-		workflowRunner:      workflowRunner,
-	}
+	   // DEBUG: Print the types of all arguments received by newUpAction
+	   fmt.Printf("[azd debug] newUpAction args: flags=%T, console=%T, env=%T, projectConfig=%T, provisioningManager=%T, envManager=%T, prompters=%T, importManager=%T, workflowRunner=%T\n",
+			   flags, console, env, projectConfig, provisioningManager, envManager, prompters, importManager, workflowRunner)
+
+	   return &upAction{
+			   flags:               flags,
+			   console:             console,
+			   env:                 env,
+			   projectConfig:       projectConfig,
+			   provisioningManager: provisioningManager,
+			   envManager:          envManager,
+			   prompters:           prompters,
+			   importManager:       importManager,
+			   workflowRunner:      workflowRunner,
+	   }
 }
 
 func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -113,16 +117,24 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	// TODO(weilim): remove this once we have decided if it's okay to not set AZURE_SUBSCRIPTION_ID and AZURE_LOCATION
 	// early in the up workflow in #3745
-	err = u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options)
-	if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
-		// If bicep is not available, we continue to prompt for subscription and location unfiltered
-		err = provisioning.EnsureSubscriptionAndLocation(
-			ctx, u.envManager, u.env, u.prompters, provisioning.EnsureSubscriptionAndLocationOptions{})
+	// Only handle Bicep-specific error if the provider is Bicep, otherwise skip
+	if infra.Options.Provider == provisioning.Bicep {
+		err = u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options)
+		if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
+			// If bicep is not available, we continue to prompt for subscription and location unfiltered
+			err = provisioning.EnsureSubscriptionAndLocation(
+				ctx, u.envManager, u.env, u.prompters, provisioning.EnsureSubscriptionAndLocationOptions{})
+			if err != nil {
+				return nil, err
+			}
+		} else if err != nil {
+			return nil, err
+		}
+	} else {
+		err = u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options)
 		if err != nil {
 			return nil, err
 		}
-	} else if err != nil {
-		return nil, err
 	}
 
 	startTime := time.Now()
@@ -163,9 +175,9 @@ func getCmdUpHelpDescription(c *cobra.Command) string {
 			%s
 			workflows:
 			  up:
-			    - azd: provision
-			    - azd: package --all
-			    - azd: deploy --all
+				- azd: provision
+				- azd: package --all
+				- azd: deploy --all
 			-------------------------
 
 			Any azd command and flags are supported in the workflow steps.`,

@@ -33,7 +33,7 @@ type TypeScriptProvider struct {
 
 // Name gets the name of the infra provider
 func (p *TypeScriptProvider) Name() string {
-	return "TypeScript"
+	return "typescript"
 }
 
 func (p *TypeScriptProvider) RequiredExternalTools() []tools.ExternalTool {

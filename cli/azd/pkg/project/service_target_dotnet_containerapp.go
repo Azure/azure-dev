@@ -117,14 +117,6 @@ func (at *dotnetContainerAppTarget) Deploy(
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
-	progress.SetProgress(NewServiceProgress("Logging in to registry"))
-
-	// Login, tag & push container image to ACR
-	dockerCreds, err := at.containerHelper.Credentials(ctx, serviceConfig, targetResource)
-	if err != nil {
-		return nil, fmt.Errorf("logging in to registry: %w", err)
-	}
-
 	progress.SetProgress(NewServiceProgress("Pushing container image"))
 
 	var remoteImageName string
@@ -157,6 +149,14 @@ func (at *dotnetContainerAppTarget) Deploy(
 	} else if serviceConfig.DotNetContainerApp.ContainerImage != "" {
 		remoteImageName = serviceConfig.DotNetContainerApp.ContainerImage
 	} else {
+		progress.SetProgress(NewServiceProgress("Logging in to registry"))
+
+		// Login, tag & push container image to ACR
+		dockerCreds, err := at.containerHelper.Credentials(ctx, serviceConfig, targetResource)
+		if err != nil {
+			return nil, fmt.Errorf("logging in to registry: %w", err)
+		}
+
 		imageName := fmt.Sprintf("%s:%s",
 			at.containerHelper.DefaultImageName(serviceConfig),
 			at.containerHelper.DefaultImageTag())

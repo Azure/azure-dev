@@ -58,6 +58,7 @@ type AddAction struct {
 	console          input.Console
 	accountManager   account.Manager
 	azureClient      *azapi.AzureClient
+	importManager    *project.ImportManager
 }
 
 func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -72,7 +73,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	err = ensureCompatibleProject(prjConfig)
+	err = ensureCompatibleProject(ctx, a.importManager, prjConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -392,8 +393,18 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 // A project is incompatible if the project has an infra module (e.g. infra/main.bicep)
 // but no 'resources' node in the azure.yaml file.
 func ensureCompatibleProject(
+	ctx context.Context,
+	importManager *project.ImportManager,
 	prjConfig *project.ProjectConfig,
 ) error {
+	if hasAppHost := importManager.HasAppHost(ctx, prjConfig); hasAppHost {
+		return &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("incompatible project: found Aspire app host"),
+			Suggestion: fmt.Sprintf("%s does not support .NET Aspire projects.",
+				output.WithHighLightFormat("azd add")),
+		}
+	}
+
 	infraRoot := prjConfig.Infra.Path
 	if !filepath.IsAbs(infraRoot) {
 		infraRoot = filepath.Join(prjConfig.Path, infraRoot)
@@ -411,8 +422,9 @@ func ensureCompatibleProject(
 
 	if hasInfra && !hasResources {
 		return &internal.ErrorWithSuggestion{
-			Err:        fmt.Errorf("incompatible project: found infra directory and resourceless azure.yaml"),
-			Suggestion: "'azd add' does not support .NET Aspire projects and most Awesome azd templates.",
+			Err: fmt.Errorf("incompatible project: found infra directory and resourceless azure.yaml"),
+			Suggestion: fmt.Sprintf("%s does not support most azd templates.",
+				output.WithHighLightFormat("azd add")),
 		}
 	}
 
@@ -470,7 +482,8 @@ func NewAddAction(
 	azd workflow.AzdCommandRunner,
 	accountManager account.Manager,
 	console input.Console,
-	azureClient *azapi.AzureClient) actions.Action {
+	azureClient *azapi.AzureClient,
+	importManager *project.ImportManager) actions.Action {
 	return &AddAction{
 		azdCtx:           azdCtx,
 		console:          console,
@@ -486,5 +499,6 @@ func NewAddAction(
 		azd:              azd,
 		accountManager:   accountManager,
 		azureClient:      azureClient,
+		importManager:    importManager,
 	}
 }

@@ -243,9 +243,6 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		tracing.SetUsageAttributes(fields.InitMethod.String("template"))
 		template, err := i.initializeTemplate(ctx, azdCtx)
 		if err != nil {
-			if err.Error() == "confirmation declined" {
-				return nil, nil
-			}
 			return nil, err
 		}
 

@@ -89,7 +89,7 @@ func (a *infraGenerateAction) Run(ctx context.Context) (*actions.ActionResult, e
 		fmt.Fprintln(
 			a.console.Handles().Stderr,
 			output.WithWarningFormat(
-				"WARNING: `azd infra synth` is deprecated and may be removed in a future release."))
+				"WARNING: `azd infra synth` has been renamed and may be removed in a future release."))
 		fmt.Fprintf(
 			a.console.Handles().Stderr,
 			"Next time use %s or %s.\n",

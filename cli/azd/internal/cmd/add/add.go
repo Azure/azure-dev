@@ -423,7 +423,7 @@ func ensureCompatibleProject(
 
 	if hasInfra && !hasResources {
 		return &internal.ErrorWithSuggestion{
-			Err: fmt.Errorf("incompatible project: found infra directory and resourceless azure.yaml"),
+			Err: fmt.Errorf("incompatible project: found infra directory and azure.yaml without resources"),
 			Suggestion: fmt.Sprintf("%s does not support most azd templates.",
 				output.WithHighLightFormat("azd add")),
 		}

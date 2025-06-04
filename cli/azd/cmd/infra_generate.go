@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/otiai10/copy"
@@ -60,6 +61,7 @@ type infraGenerateAction struct {
 	azdCtx        *azdcontext.AzdContext
 	flags         *infraGenerateFlags
 	alphaManager  *alpha.FeatureManager
+	calledAs      CmdCalledAs
 }
 
 func newInfraGenerateAction(
@@ -69,6 +71,7 @@ func newInfraGenerateAction(
 	console input.Console,
 	azdCtx *azdcontext.AzdContext,
 	alphaManager *alpha.FeatureManager,
+	calledAs CmdCalledAs,
 ) actions.Action {
 	return &infraGenerateAction{
 		projectConfig: projectConfig,
@@ -77,10 +80,23 @@ func newInfraGenerateAction(
 		console:       console,
 		azdCtx:        azdCtx,
 		alphaManager:  alphaManager,
+		calledAs:      calledAs,
 	}
 }
 
 func (a *infraGenerateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if a.calledAs == "synth" {
+		fmt.Fprintln(
+			a.console.Handles().Stderr,
+			output.WithWarningFormat(
+				"WARNING: `azd infra synth` is deprecated and may be removed in a future release."))
+		fmt.Fprintf(
+			a.console.Handles().Stderr,
+			"Next time use %s or %s.\n",
+			output.WithHighLightFormat("azd infra gen"),
+			output.WithHighLightFormat("azd infra generate"))
+	}
+
 	spinnerMessage := "Generating infrastructure"
 
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)

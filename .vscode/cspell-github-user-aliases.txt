@@ -11,6 +11,7 @@ briandowns
 buger
 cobey
 dnaeon
+eerhardt
 ellismg
 envsubst
 fatih

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -126,9 +127,8 @@ type CiProvider interface {
 		ctx context.Context,
 		gitRepo *gitRepositoryDetails,
 		provisioningProvider provisioning.Options,
-		servicePrincipal *graphsdk.ServicePrincipal,
+		authConfig *authConfiguration,
 		credentialOptions *CredentialOptions,
-		credentials *entraid.AzureCredentials,
 	) error
 	// Gets the credential options that should be configured for the provider
 	credentialOptions(
@@ -330,4 +330,10 @@ type projectProperties struct {
 	Secrets               []string
 	RequiredAlphaFeatures []string
 	providerParameters    []provisioning.Parameter
+}
+
+type authConfiguration struct {
+	*entraid.AzureCredentials
+	sp  *graphsdk.ServicePrincipal
+	msi *armmsi.Identity
 }

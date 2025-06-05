@@ -459,19 +459,18 @@ func (p *GitHubCiProvider) configureConnection(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 	infraOptions provisioning.Options,
-	servicePrincipal *graphsdk.ServicePrincipal,
+	authConfig *authConfiguration,
 	credentialOptions *CredentialOptions,
-	credentials *entraid.AzureCredentials,
 ) error {
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
 	if credentialOptions.EnableClientCredentials {
-		err := p.configureClientCredentialsAuth(ctx, infraOptions, repoSlug, credentials)
+		err := p.configureClientCredentialsAuth(ctx, infraOptions, repoSlug, authConfig.AzureCredentials)
 		if err != nil {
 			return fmt.Errorf("configuring client credentials auth: %w", err)
 		}
 	}
 
-	if err := p.setPipelineVariables(ctx, repoSlug, infraOptions, servicePrincipal); err != nil {
+	if err := p.setPipelineVariables(ctx, repoSlug, infraOptions, authConfig.TenantId, authConfig.ClientId); err != nil {
 		return fmt.Errorf("failed setting pipeline variables: %w", err)
 	}
 
@@ -486,14 +485,14 @@ func (p *GitHubCiProvider) setPipelineVariables(
 	ctx context.Context,
 	repoSlug string,
 	infraOptions provisioning.Options,
-	servicePrincipal *graphsdk.ServicePrincipal,
+	tenantId, clientId string,
 ) error {
 	for name, value := range map[string]string{
 		environment.EnvNameEnvVarName:        p.env.Name(),
 		environment.LocationEnvVarName:       p.env.GetLocation(),
 		environment.SubscriptionIdEnvVarName: p.env.GetSubscriptionId(),
-		environment.TenantIdEnvVarName:       *servicePrincipal.AppOwnerOrganizationId,
-		"AZURE_CLIENT_ID":                    servicePrincipal.AppId,
+		environment.TenantIdEnvVarName:       tenantId,
+		"AZURE_CLIENT_ID":                    clientId,
 	} {
 		if err := p.ghCli.SetVariable(ctx, repoSlug, name, value); err != nil {
 			return fmt.Errorf("failed setting %s variable: %w", name, err)

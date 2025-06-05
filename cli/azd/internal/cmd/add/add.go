@@ -16,6 +16,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -57,6 +58,7 @@ type AddAction struct {
 	console          input.Console
 	accountManager   account.Manager
 	azureClient      *azapi.AzureClient
+	importManager    *project.ImportManager
 }
 
 func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -71,7 +73,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	err = ensureCompatibleProject(prjConfig)
+	err = ensureCompatibleProject(ctx, a.importManager, prjConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -305,9 +307,9 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	if _, err := pathHasInfraModule(infraRoot, prjConfig.Infra.Module); err == nil {
 		followUpMessage = fmt.Sprintf(
-			"Run '%s' to re-synthesize the infrastructure, "+
+			"Run '%s' to re-generate the infrastructure, "+
 				"then run '%s' to provision these changes anytime later.",
-			output.WithHighLightFormat("azd infra synth"),
+			output.WithHighLightFormat("azd infra gen"),
 			output.WithHighLightFormat("azd provision"))
 		if addedKeyVault {
 			followUpMessage += keyVaultFollowUpMessage
@@ -388,11 +390,22 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 // ensureCompatibleProject checks if the project is compatible with the add command.
-// A project is incompatible if the project has an infra module (e.g. infra/main.bicep)
-// but no 'resources' node in the azure.yaml file.
+// A project is incompatible if:
+// - It has an Aspire app host
+// - It appears to be a non-compose template (has infra files but no resources defined in azure.yaml)
 func ensureCompatibleProject(
+	ctx context.Context,
+	importManager *project.ImportManager,
 	prjConfig *project.ProjectConfig,
 ) error {
+	if hasAppHost := importManager.HasAppHost(ctx, prjConfig); hasAppHost {
+		return &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("incompatible project: found Aspire app host"),
+			Suggestion: fmt.Sprintf("%s does not support .NET Aspire projects.",
+				output.WithHighLightFormat("azd add")),
+		}
+	}
+
 	infraRoot := prjConfig.Infra.Path
 	if !filepath.IsAbs(infraRoot) {
 		infraRoot = filepath.Join(prjConfig.Path, infraRoot)
@@ -409,7 +422,11 @@ func ensureCompatibleProject(
 	}
 
 	if hasInfra && !hasResources {
-		return fmt.Errorf("incompatible project: found infra directory with no resources defined in azure.yaml")
+		return &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("incompatible project: found infra directory and azure.yaml without resources"),
+			Suggestion: fmt.Sprintf("%s does not support most azd templates.",
+				output.WithHighLightFormat("azd add")),
+		}
 	}
 
 	return nil
@@ -466,7 +483,8 @@ func NewAddAction(
 	azd workflow.AzdCommandRunner,
 	accountManager account.Manager,
 	console input.Console,
-	azureClient *azapi.AzureClient) actions.Action {
+	azureClient *azapi.AzureClient,
+	importManager *project.ImportManager) actions.Action {
 	return &AddAction{
 		azdCtx:           azdCtx,
 		console:          console,
@@ -482,5 +500,6 @@ func NewAddAction(
 		azd:              azd,
 		accountManager:   accountManager,
 		azureClient:      azureClient,
+		importManager:    importManager,
 	}
 }

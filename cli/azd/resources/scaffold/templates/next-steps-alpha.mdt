@@ -26,7 +26,7 @@ To add new services or resources, run `azd add`. You may also edit the `azure.ya
 
 ### Getting to production-ready
 
-When needed, `azd` generates the required infrastructure as code in memory and uses it. If you would like to see or modify the infrastructure that `azd` uses, run `azd infra synth` to persist it to disk.
+When needed, `azd` generates the required infrastructure as code in memory and uses it. If you would like to see or modify the infrastructure that `azd` uses, run `azd infra gen` to persist it to disk.
 
 If you do this, some additional directories will be created:
 
@@ -37,9 +37,7 @@ If you do this, some additional directories will be created:
   - modules/        # Library modules
 ```
 
-*Note*: Once you have synthesized your infrastructure to disk, changes made to `azure.yaml` will not be reflected in the infrastructure. You can re-generate the infrastructure by running `azd infra synth` again. It will prompt you before overwriting files. You can pass `--force` to force `azd infra synth` to overwrite the files without prompting.
-
-*Note*: `azd infra synth` is currently an alpha feature and must be explicitly enabled by running `azd config set alpha.infraSynth on`. You only need to do this once.
+*Note*: Once you have generated your infrastructure to disk, those files are the source of truth for azd. Any changes made to `azure.yaml` (such as through `azd add`) will not be reflected in the infrastructure until you regenerate it with `azd infra gen` again. It will prompt you before overwriting files. You can pass `--force` to force `azd infra gen` to overwrite the files without prompting.
 
 Finally, run `azd pipeline config` to configure a CI/CD deployment pipeline.
 

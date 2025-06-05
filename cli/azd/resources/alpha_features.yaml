@@ -1,5 +1,3 @@
-- id: infraSynth
-  description: "Enable the `infra synth` command to write generated infrastructure to disk."
 - id: aks.helm
   description: "Enable Helm support for AKS deployments."
 - id: aks.kustomize

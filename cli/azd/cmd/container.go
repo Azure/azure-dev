@@ -195,6 +195,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return cmd.Annotations
 	})
 
+	container.MustRegisterSingleton(func(cmd *cobra.Command) CmdCalledAs {
+		return CmdCalledAs(cmd.CalledAs())
+	})
+
 	// Azd Context
 	// Scoped registration is required since the value of the azd context can change through the lifetime of a command
 	// Example: Within extensions multiple workflows can be dispatched which can cause the azd context to be updated.

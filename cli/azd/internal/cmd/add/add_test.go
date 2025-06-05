@@ -4,6 +4,7 @@
 package add
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -204,9 +205,15 @@ func TestEnsureCompatibleProject(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
 			prjConfig := tt.setupFunc(t)
 
-			err := ensureCompatibleProject(prjConfig)
+			// Create a mock ImportManager with minimal setup
+			// For this test, we don't need the ImportManager to do anything special
+			// as the ensureCompatibleProject function primarily checks infra compatibility
+			importManager := project.NewImportManager(project.NewDotNetImporter(nil, nil, nil, nil, nil))
+
+			err := ensureCompatibleProject(ctx, importManager, prjConfig)
 
 			if tt.expectError {
 				require.Error(t, err)

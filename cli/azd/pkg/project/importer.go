@@ -184,16 +184,16 @@ func pathHasModule(path, module string) (bool, error) {
 
 }
 
-// SynthAllInfrastructure returns a file system containing all infrastructure for the project,
+// GenerateAllInfrastructure returns a file system containing all infrastructure for the project,
 // rooted at the project directory.
-func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
+func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
 	for _, svcConfig := range projectConfig.Services {
 		if svcConfig.Language == ServiceLanguageDotNet {
 			if len(projectConfig.Services) != 1 {
 				return nil, errNoMultipleServicesWithAppHost
 			}
 
-			return im.dotNetImporter.SynthAllInfrastructure(ctx, projectConfig, svcConfig)
+			return im.dotNetImporter.GenerateAllInfrastructure(ctx, projectConfig, svcConfig)
 		}
 	}
 
@@ -201,7 +201,7 @@ func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConf
 		return infraFsForProject(ctx, projectConfig)
 	}
 
-	return nil, fmt.Errorf("this project does not contain any infrastructure to synthesize")
+	return nil, fmt.Errorf("this project does not contain any infrastructure to generate")
 }
 
 // Infra represents the (possibly temporarily generated) infrastructure. Call [Cleanup] when done with infrastructure,

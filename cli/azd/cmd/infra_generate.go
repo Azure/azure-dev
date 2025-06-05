@@ -25,14 +25,14 @@ import (
 	"github.com/spf13/pflag"
 )
 
-type infraSynthFlags struct {
+type infraGenerateFlags struct {
 	global *internal.GlobalCommandOptions
 	*internal.EnvFlag
 	force bool
 }
 
-func newInfraSynthFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *infraSynthFlags {
-	flags := &infraSynthFlags{
+func newInfraGenerateFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *infraGenerateFlags {
+	flags := &infraGenerateFlags{
 		EnvFlag: &internal.EnvFlag{},
 	}
 	flags.Bind(cmd.Flags(), global)
@@ -40,71 +40,74 @@ func newInfraSynthFlags(cmd *cobra.Command, global *internal.GlobalCommandOption
 	return flags
 }
 
-func (f *infraSynthFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (f *infraGenerateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	f.global = global
 	f.EnvFlag.Bind(local, global)
 	local.BoolVar(&f.force, "force", false, "Overwrite any existing files without prompting")
 }
 
-func newInfraSynthCmd() *cobra.Command {
+func newInfraGenerateCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "synth",
-		Short: fmt.Sprintf(
-			"Write IaC for your project to disk, allowing you to manage it by hand. %s",
-			output.WithWarningFormat("(Alpha)")),
+		Use:     "generate",
+		Aliases: []string{"gen", "synth"},
+		Short:   "Write IaC for your project to disk, allowing you to manually manage it.",
 	}
 }
 
-type infraSynthAction struct {
+type infraGenerateAction struct {
 	projectConfig *project.ProjectConfig
 	importManager *project.ImportManager
 	console       input.Console
 	azdCtx        *azdcontext.AzdContext
-	flags         *infraSynthFlags
+	flags         *infraGenerateFlags
 	alphaManager  *alpha.FeatureManager
+	calledAs      CmdCalledAs
 }
 
-func newInfraSynthAction(
+func newInfraGenerateAction(
 	projectConfig *project.ProjectConfig,
 	importManager *project.ImportManager,
-	flags *infraSynthFlags,
+	flags *infraGenerateFlags,
 	console input.Console,
 	azdCtx *azdcontext.AzdContext,
 	alphaManager *alpha.FeatureManager,
+	calledAs CmdCalledAs,
 ) actions.Action {
-	return &infraSynthAction{
+	return &infraGenerateAction{
 		projectConfig: projectConfig,
 		importManager: importManager,
 		flags:         flags,
 		console:       console,
 		azdCtx:        azdCtx,
 		alphaManager:  alphaManager,
+		calledAs:      calledAs,
 	}
 }
 
-var infraSynthFeature = alpha.MustFeatureKey("infraSynth")
-
-func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if !a.alphaManager.IsEnabled(infraSynthFeature) {
-		return nil, fmt.Errorf(
-			"infrastructure synthesis is currently under alpha support and must be explicitly enabled."+
-				" Run `%s` to enable this feature", alpha.GetEnableCommand(infraSynthFeature),
-		)
+func (a *infraGenerateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if a.calledAs == "synth" {
+		fmt.Fprintln(
+			a.console.Handles().Stderr,
+			output.WithWarningFormat(
+				"WARNING: `azd infra synth` has been renamed and may be removed in a future release."))
+		fmt.Fprintf(
+			a.console.Handles().Stderr,
+			"Next time use %s or %s.\n",
+			output.WithHighLightFormat("azd infra gen"),
+			output.WithHighLightFormat("azd infra generate"))
 	}
 
-	a.console.WarnForFeature(ctx, infraSynthFeature)
-
-	spinnerMessage := "Synthesizing infrastructure"
+	spinnerMessage := "Generating infrastructure"
 
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
-	synthFS, err := a.importManager.SynthAllInfrastructure(ctx, a.projectConfig)
+	synthFS, err := a.importManager.GenerateAllInfrastructure(ctx, a.projectConfig)
 	if err != nil {
 		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 		return nil, err
 	}
 	a.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
 
-	staging, err := os.MkdirTemp("", "infra-synth")
+	staging, err := os.MkdirTemp("", "infra-generate")
 	if err != nil {
 		return nil, err
 	}
@@ -163,10 +166,10 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	return nil, nil
 }
 
-func (a *infraSynthAction) promptForDuplicates(
+func (a *infraGenerateAction) promptForDuplicates(
 	ctx context.Context, staging string, target string) (skipSourceFiles map[string]struct{}, err error) {
 	log.Printf(
-		"infrastructure synth, checking for duplicates. source: %s target: %s",
+		"infrastructure generate, checking for duplicates. source: %s target: %s",
 		staging,
 		target,
 	)
@@ -179,7 +182,7 @@ func (a *infraSynthAction) promptForDuplicates(
 	if len(duplicateFiles) > 0 {
 		a.console.StopSpinner(ctx, "", input.StepDone)
 		a.console.MessageUxItem(ctx, &ux.WarningMessage{
-			Description: "The following files would be overwritten by synthesized versions:",
+			Description: "The following files would be overwritten by generated versions:",
 		})
 
 		for _, file := range duplicateFiles {
@@ -189,7 +192,7 @@ func (a *infraSynthAction) promptForDuplicates(
 		selection, err := a.console.Select(ctx, input.ConsoleOptions{
 			Message: "What would you like to do with these files?",
 			Options: []string{
-				"Overwrite with the synthesized versions",
+				"Overwrite with the generated versions",
 				"Keep my existing files unchanged",
 			},
 		})

@@ -508,7 +508,6 @@
         "requiredVersions": {
             "type": "object",
             "additionalProperties": false,
-            "description": "Optional. Provides additional configuration for required versions of `azd` and extensions.",
             "properties": {
                 "azd": {
                     "type": "string",
@@ -517,21 +516,6 @@
                     "examples": [
                         ">= 0.6.0-beta.3"
                     ]
-                },
-                "extensions": {
-                    "type": "object",
-                    "title": "A map of required extensions and version constraints for this project.",
-                    "description": "A map of required extensions and version constraints for this project. Supports semver constraints. If version is omitted the latest version will be installed.",
-                    "additionalProperties": {
-                        "type": "string",
-                        "examples": [
-                            "latest",
-                            ">=1.0.0",
-                            "~2.0.0",
-                            "=3.1.2",
-                            ">= 1.0.0 < 2.0.0"
-                        ]
-                    }
                 }
             }
         },
@@ -1170,89 +1154,6 @@
             "required": [
                 "deployment"
             ]
-        },
-        "deploymentStacksConfig": {
-            "type": "object",
-            "title": "The deployment stack configuration used for the project.",
-            "additionalProperties": false,
-            "oneOf": [
-                {
-                    "required": [
-                        "actionOnUnmanage"
-                    ]
-                },
-                {
-                    "required": [
-                        "denySettings"
-                    ]
-                }
-            ],
-            "properties": {
-                "actionOnUnmanage": {
-                    "type": "object",
-                    "title": "The action to take when when resources become unmanaged",
-                    "description": "Defines the behavior of resources that are no longer managed after the Deployment stack is updated or deleted. Defaults to 'delete' for all resource scopes.",
-                    "required": [
-                        "resourceGroups",
-                        "resources"
-                    ],
-                    "properties": {
-                        "resourceGroups": {
-                            "type": "string",
-                            "title": "Required. The action on unmanage setting for resource groups",
-                            "description": "Specifies an action for a newly unmanaged resource. Delete will attempt to delete the resource from Azure. Detach will leave the resource in it's current state.",
-                            "default": "delete",
-                            "enum": [
-                                "delete",
-                                "detach"
-                            ]
-                        },
-                        "resources": {
-                            "type": "string",
-                            "title": "Required. The action on unmanage setting for resources",
-                            "description": "Specifies an action for a newly unmanaged resource. Delete will attempt to delete the resource from Azure. Detach will leave the resource in it's current state.",
-                            "default": "delete",
-                            "enum": [
-                                "delete",
-                                "detach"
-                            ]
-                        }
-                    }
-                },
-                "denySettings": {
-                    "type": "object",
-                    "title": "The deny settings for the deployment stack",
-                    "description": "Defines how resources deployed by the stack are locked. Defaults to 'none'.",
-                    "required": [
-                        "mode"
-                    ],
-                    "properties": {
-                        "mode": {
-                            "type": "string",
-                            "title": "Required. Mode that defines denied actions.",
-                            "default": "none",
-                            "enum": [
-                                "none",
-                                "denyDelete",
-                                "denyWriteAndDelete"
-                            ]
-                        },
-                        "applyToChildScopes": {
-                            "type": "boolean",
-                            "title": "Whether the deny settings apply to child scopes.",
-                            "description": "DenySettings will be applied to child resource scopes of every managed resource with a deny assignment."
-                        },
-                        "excludedActions": {
-                            "type": "array",
-                            "title": "List of role-based management operations that are excluded from the denySettings."
-                        },
-                        "excludedPrincipals": {
-                            "type": "array",
-                            "title": "List of Entra ID principal IDs excluded from the lock. Up to 5 principals are permitted."
-                        }
-                    }
-                }
-            }
         },
         "appServiceResource": {
             "type": "object",

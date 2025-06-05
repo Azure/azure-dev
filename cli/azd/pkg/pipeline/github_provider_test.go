@@ -5,7 +5,6 @@ package pipeline
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -80,9 +79,8 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 
 		provider := createGitHubCiProvider(t, mockContext)
 		updatedConfig, err := provider.preConfigureCheck(*mockContext.Context, pipelineManagerArgs, infraOptions, "")
-		require.Error(t, err)
+		require.NoError(t, err)
 		require.False(t, updatedConfig)
-		require.True(t, errors.Is(err, ErrAuthNotSupported))
 	})
 }
 

@@ -8,6 +8,8 @@
 - [[5157]](https://github.com/Azure/azure-dev/pull/5157) Update `azd add` integration with AI Foundry to use simplified 1RP setup with all models under a single AI Services account.
 - [[5214]](https://github.com/Azure/azure-dev/pull/5214) Add Linux to Homebrew formulae. Thanks @heaths for the contribution!
 - [[5204]](https://github.com/Azure/azure-dev/pull/5204) Add login guard middleware to auto-prompt for user login in key commands if unauthenticated.
+- [[5248]](https://github.com/Azure/azure-dev/pull/5248) `azd pipeline config` support for configuring CI/CD using Managed Identities.
+- [[5200]](https://github.com/Azure/azure-dev/pull/5200) Update Bicep param prompting to support a default selected option, allowing azd to auto-select it with `--no-prompt`.
 - [[5242]](https://github.com/Azure/azure-dev/pull/5242) Promote `azd add` and composability features to Beta.
   - Remove `alpha.compose` alpha feature.
   - Use `azd add` to add Azure components to your project. `azd add` does not currently support Aspire projects or most azd templates.
@@ -24,6 +26,7 @@
 
 ### Bugs Fixed
 
+- [[5187]](https://github.com/Azure/azure-dev/pull/5187) Improve UX of `azd init` by displaying neutral message when user declines initializing in a non-empty directory.
 - [[5255]](https://github.com/Azure/azure-dev/pull/5255) Fix vs-server crash when telemetry is disabled.
 - [[5199]](https://github.com/Azure/azure-dev/pull/5199) Avoid unnecessary ACR login for Aspire projects using only public images.
 - [[5246]](https://github.com/Azure/azure-dev/pull/5246) Remove explicit ACA Environment Contributor role assignment for Aspire projects. Thanks @eerhardt for the contribution!

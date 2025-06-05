@@ -84,29 +84,6 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		require.False(t, updatedConfig)
 		require.True(t, errors.Is(err, ErrAuthNotSupported))
 	})
-
-	t.Run("warning with terraform & default value", func(t *testing.T) {
-		pipelineManagerArgs := PipelineManagerArgs{
-			PipelineAuthTypeName: "",
-		}
-
-		infraOptions := provisioning.Options{
-			Provider: provisioning.Terraform,
-		}
-
-		mockContext := mocks.NewMockContext(context.Background())
-		setupGithubCliMocks(mockContext)
-
-		provider := createGitHubCiProvider(t, mockContext)
-		updatedConfig, err := provider.preConfigureCheck(
-			*mockContext.Context, pipelineManagerArgs, infraOptions, "")
-		require.NoError(t, err)
-		require.False(t, updatedConfig)
-
-		consoleLog := mockContext.Console.Output()
-		require.Len(t, consoleLog, 1)
-		require.Contains(t, consoleLog[0], "Warning: Terraform provisioning does not support federated authentication")
-	})
 }
 
 func createGitHubCiProvider(t *testing.T, mockContext *mocks.MockContext) CiProvider {

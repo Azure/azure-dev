@@ -355,11 +355,11 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
-	t.Setenv("AZD_ALPHA_ENABLE_INFRASYNTH", "true")
+	t.Setenv("AZD_ALPHA_ENABLE_EXTENSIONS", "true")
 	t.Setenv("AZD_ALPHA_ENABLE_AKS_HELM", "false")
 
-	infraSyncEnabled := mockContext.AlphaFeaturesManager.IsEnabled("infraSynth")
-	require.True(t, infraSyncEnabled)
+	extensionsEnabled := mockContext.AlphaFeaturesManager.IsEnabled("extensions")
+	require.True(t, extensionsEnabled)
 
 	helmEnabled := mockContext.AlphaFeaturesManager.IsEnabled("aks.helm")
 	require.False(t, helmEnabled)
@@ -381,7 +381,7 @@ func Test_Telemetry_AlphaFeatures_Enabled(t *testing.T) {
 	values := alphaFeaturesAttribute.Value.AsStringSlice()
 
 	require.Len(t, values, 1)
-	require.Contains(t, values, "infraSynth")
+	require.Contains(t, values, "extensions")
 	require.NotContains(t, values, "aks.helm")
 }
 

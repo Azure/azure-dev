@@ -163,9 +163,9 @@ func (kvs *keyVaultService) GetKeyVaultSecret(
 	}
 
 	return &Secret{
-		Id:    response.SecretBundle.ID.Version(),
-		Name:  response.SecretBundle.ID.Name(),
-		Value: *response.SecretBundle.Value,
+		Id:    response.ID.Version(),
+		Name:  response.ID.Name(),
+		Value: *response.Value,
 	}, nil
 }
 
@@ -179,7 +179,7 @@ func (kvs *keyVaultService) ListKeyVaultSecrets(
 		return nil, nil
 	}
 
-	secretsPager := client.NewListSecretsPager(nil)
+	secretsPager := client.NewListSecretPropertiesPager(nil)
 	result := []string{}
 	for secretsPager.More() {
 		secretsPage, err := secretsPager.NextPage(ctx)

@@ -26,6 +26,7 @@ armcognitiveservices
 armcosmos
 armdeploymentstacks
 armmachinelearning
+armmsi
 armresourcegraph
 armsql
 aspnet
@@ -60,8 +61,8 @@ azuretools
 azureutil
 azureyaml
 Backticks
-bicept
 bicepparam
+bicept
 blockblob
 BOOLSLICE
 buildargs
@@ -167,9 +168,9 @@ mockarmresources
 mockazcli
 mongojs
 mvnw
+mysqladmin
 mysqlclient
 mysqldb
-mysqladmin
 nobanner
 nodeapp
 nolint
@@ -213,6 +214,7 @@ requirepass
 resourcegraph
 restoreapp
 retriable
+runtimes
 rzip
 secureobject
 securestring
@@ -221,6 +223,7 @@ serverfarms
 servicebus
 setenvs
 skus
+SliceOfPtrs
 snapshotter
 springapp
 sqlserver

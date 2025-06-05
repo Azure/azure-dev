@@ -1,5 +1,53 @@
 # Release History
 
+## 1.18.0-beta.1 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
+## 1.17.0 (2025-06-05)
+
+### Features Added
+
+- [[5249]](https://github.com/Azure/azure-dev/pull/5249) Add support for deploying a single service in .NET Aspire projects via vs-server.
+- [[5157]](https://github.com/Azure/azure-dev/pull/5157) Update `azd add` integration with AI Foundry to use simplified 1RP setup with all models under a single AI Services account.
+- [[5214]](https://github.com/Azure/azure-dev/pull/5214) Add Linux to Homebrew formulae. Thanks @heaths for the contribution!
+- [[5204]](https://github.com/Azure/azure-dev/pull/5204) Add login guard middleware to auto-prompt for user login in key commands if unauthenticated.
+- [[5248]](https://github.com/Azure/azure-dev/pull/5248) `azd pipeline config` support for configuring CI/CD using Managed Identities.
+- [[5200]](https://github.com/Azure/azure-dev/pull/5200) Update Bicep param prompting to support a default selected option, allowing azd to auto-select it with `--no-prompt`.
+- [[5242]](https://github.com/Azure/azure-dev/pull/5242) Promote `azd add` and composability features to Beta.
+  - Remove `alpha.compose` alpha feature.
+  - Use `azd add` to add Azure components to your project. `azd add` does not currently support Aspire projects or most azd templates.
+  - Use `azd show <resource name>` or `azd show <Azure resource ID>` to view details about a specific resource.
+- [[5260]](https://github.com/Azure/azure-dev/pull/5260) Rename `azd infra synth` to `azd infra generate` (`azd infra gen` for short) and promote to Beta.
+  - Remove `alpha.infraSynth` alpha feature.
+  - `azd infra synth` will continue to work as an alias of `azd infra generate`, but users are encouraged to use the new command names as `azd infra synth` may be removed in a future release.
+
+### Breaking Changes
+
+- [[5242]](https://github.com/Azure/azure-dev/pull/5242), [[5260]](https://github.com/Azure/azure-dev/pull/5260) When initializing from app code or minimal project, the `infra/` folder is no longer generated. azd now manages infrastructure in-memory by default, but you can still generate IaC to disk to manually manage your infrastructure using `azd infra generate` (or `azd infra gen` for short).
+- [[5242]](https://github.com/Azure/azure-dev/pull/5242) When initializing from app code or minimal project, environment initialization is now deferred to provision time (e.g. `azd up`), unless the `--environment <env name>` flag is passed to the `azd init` command or the `AZURE_ENV_NAME` environment variable is set.
+- [[5157]](https://github.com/Azure/azure-dev/pull/5157) AI Services models added through `azd add` require an updated version of the Azure AI Foundry SDK client library that supports project endpoints (`AZURE_AI_PROJECT_ENDPOINT=https://<account-name>.services.ai.azure.com/api/projects/<project-name>`) instead of project connection strings (`AZURE_AI_PROJECT_CONNECTION_STRING=eastus.api.azureml.ms;<subscription id>;<resource group>;<project name>`).
+
+### Bugs Fixed
+
+- [[5187]](https://github.com/Azure/azure-dev/pull/5187) Improve UX of `azd init` by displaying neutral message when user declines initializing in a non-empty directory.
+- [[5255]](https://github.com/Azure/azure-dev/pull/5255) Fix vs-server crash when telemetry is disabled.
+- [[5199]](https://github.com/Azure/azure-dev/pull/5199) Avoid unnecessary ACR login for Aspire projects using only public images.
+- [[5246]](https://github.com/Azure/azure-dev/pull/5246) Remove explicit ACA Environment Contributor role assignment for Aspire projects. Thanks @eerhardt for the contribution!
+
+### Other Changes
+
+- [[5261]](https://github.com/Azure/azure-dev/pull/5261) Update dependencies to mitigate CVE-2025-30204.
+- [[5245]](https://github.com/Azure/azure-dev/pull/5245) Update Bicep CLI to v0.36.1.
+- [[5212]](https://github.com/Azure/azure-dev/pull/5212) Update changelog casing in developer extension release pipelines.
+- [[5209]](https://github.com/Azure/azure-dev/pull/5209) Deprecate internal registry extension in favor of azd developer extension.
+
 ## 1.16.1 (2025-05-15)
 
 ### Bugs Fixed

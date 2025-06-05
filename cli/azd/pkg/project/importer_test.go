@@ -399,9 +399,6 @@ resources:
 `
 
 func Test_ImportManager_ProjectInfrastructure_FromResources(t *testing.T) {
-	alpha.SetDefaultEnablement(string(featureCompose), true)
-	t.Cleanup(func() { alpha.SetDefaultEnablement(string(featureCompose), false) })
-
 	im := &ImportManager{
 		dotNetImporter: &DotNetImporter{
 			alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
@@ -421,18 +418,9 @@ func Test_ImportManager_ProjectInfrastructure_FromResources(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dir, "main.bicep"))
 	assert.FileExists(t, filepath.Join(dir, "main.parameters.json"))
 	assert.FileExists(t, filepath.Join(dir, "resources.bicep"))
-
-	// Disable the alpha feature and check that an error is returned
-	alpha.SetDefaultEnablement(string(featureCompose), false)
-
-	_, err = im.ProjectInfrastructure(context.Background(), prjConfig)
-	assert.Error(t, err)
 }
 
-func TestImportManager_SynthAllInfrastructure_FromResources(t *testing.T) {
-	alpha.SetDefaultEnablement(string(featureCompose), true)
-	t.Cleanup(func() { alpha.SetDefaultEnablement(string(featureCompose), false) })
-
+func TestImportManager_GenerateAllInfrastructure_FromResources(t *testing.T) {
 	im := &ImportManager{
 		dotNetImporter: &DotNetImporter{
 			alphaFeatureManager: alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
@@ -443,7 +431,7 @@ func TestImportManager_SynthAllInfrastructure_FromResources(t *testing.T) {
 	err := yaml.Unmarshal([]byte(prjWithResources), prjConfig)
 	require.NoError(t, err)
 
-	projectFs, err := im.SynthAllInfrastructure(context.Background(), prjConfig)
+	projectFs, err := im.GenerateAllInfrastructure(context.Background(), prjConfig)
 	require.NoError(t, err)
 
 	files := []string{
@@ -455,12 +443,6 @@ func TestImportManager_SynthAllInfrastructure_FromResources(t *testing.T) {
 		_, err := projectFs.Open(filepath.Join(DefaultPath, f))
 		assert.NoError(t, err, "file %s should exist", f)
 	}
-
-	// Disable the alpha feature
-	alpha.SetDefaultEnablement(string(featureCompose), false)
-
-	_, err = im.SynthAllInfrastructure(context.Background(), prjConfig)
-	assert.Error(t, err)
 }
 
 // aspireAppHostSniffResult is mock data that would be returned by `dotnet msbuild` when fetching information about an

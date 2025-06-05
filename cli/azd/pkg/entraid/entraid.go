@@ -61,6 +61,12 @@ type EntraIdService interface {
 		federatedCredentials []*graphsdk.FederatedIdentityCredential,
 	) ([]*graphsdk.FederatedIdentityCredential, error)
 	CreateRbac(ctx context.Context, subscriptionId string, scope, roleId, principalId string) error
+	EnsureRoleAssignments(
+		ctx context.Context,
+		subscriptionId string,
+		roleNames []string,
+		servicePrincipal *graphsdk.ServicePrincipal,
+	) error
 }
 
 type entraIdService struct {
@@ -132,7 +138,7 @@ func (ad *entraIdService) CreateOrUpdateServicePrincipal(
 	}
 
 	// Apply specified role assignments
-	err = ad.ensureRoleAssignments(ctx, subscriptionId, options.RolesToAssign, servicePrincipal)
+	err = ad.EnsureRoleAssignments(ctx, subscriptionId, options.RolesToAssign, servicePrincipal)
 	if err != nil {
 		return nil, fmt.Errorf("failed applying role assignment: %w", err)
 	}
@@ -440,7 +446,7 @@ func (ad *entraIdService) ensureFederatedCredential(
 }
 
 // Applies the Azure selected RBAC role assignments to the specified service principal
-func (ad *entraIdService) ensureRoleAssignments(
+func (ad *entraIdService) EnsureRoleAssignments(
 	ctx context.Context,
 	subscriptionId string,
 	roleNames []string,
@@ -480,7 +486,7 @@ func (ad *entraIdService) ensureRoleAssignment(
 }
 
 func (ad *entraIdService) CreateRbac(
-	ctx context.Context, subscriptionId string, scope, roleId, principalId string) error {
+	ctx context.Context, subscriptionId, scope, roleId, principalId string) error {
 	fullRoleId := fmt.Sprintf("/subscriptions/%s%s", subscriptionId, roleId)
 	return ad.applyRoleAssignmentWithRetryImpl(
 		ctx,

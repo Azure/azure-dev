@@ -770,15 +770,14 @@ func (p *AzdoCiProvider) configureConnection(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
-	servicePrincipal *graphsdk.ServicePrincipal,
+	authConfig *authConfiguration,
 	credentialOptions *CredentialOptions,
-	credentials *entraid.AzureCredentials,
 ) error {
 	if credentialOptions.EnableFederatedCredentials {
 		// default and federated credentials are set up in credentialOptions
 		return nil
 	}
-	p.credentials = credentials
+	p.credentials = authConfig.AzureCredentials
 	// create service connection for client credentials
 	details := repoDetails.details.(*AzdoRepositoryDetails)
 	org, _, err := azdo.EnsureOrgNameExists(ctx, p.envManager, p.Env, p.console)

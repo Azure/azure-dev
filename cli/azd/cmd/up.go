@@ -13,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
@@ -83,7 +82,6 @@ func newUpAction(
 	flags *upFlags,
 	console input.Console,
 	env *environment.Environment,
-	_ auth.LoggedInGuard,
 	projectConfig *project.ProjectConfig,
 	provisioningManager *provisioning.Manager,
 	envManager environment.Manager,

@@ -238,6 +238,7 @@ func NewRootCmd(
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupAzure,
 			},
+			RequireLogin: true,
 		}).
 		UseMiddlewareWhen("hooks", middleware.NewHooksMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			if onPreview, _ := descriptor.Options.Command.Flags().GetBool("preview"); onPreview {
@@ -286,6 +287,7 @@ func NewRootCmd(
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupAzure,
 			},
+			RequireLogin: true,
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware).
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
@@ -303,6 +305,7 @@ func NewRootCmd(
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupStart,
 			},
+			RequireLogin: true,
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware).
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
@@ -334,6 +337,7 @@ func NewRootCmd(
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupAzure,
 			},
+			RequireLogin: true,
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware).
 		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
@@ -341,6 +345,9 @@ func NewRootCmd(
 		Add("add", &actions.ActionDescriptorOptions{
 			Command:        add.NewAddCmd(),
 			ActionResolver: add.NewAddAction,
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupBeta,
+			},
 		})
 
 	// Register any global middleware defined by the caller
@@ -356,6 +363,19 @@ func NewRootCmd(
 		UseMiddleware("ux", middleware.NewUxMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
+		}).
+		UseMiddlewareWhen("loginGuard", middleware.NewLoginGuardMiddleware, func(descriptor *actions.ActionDescriptor) bool {
+			// Check if the command or any of its parents require login
+			current := descriptor
+			for current != nil {
+				if current.Options != nil && current.Options.RequireLogin {
+					return true
+				}
+
+				current = current.Parent()
+			}
+
+			return false
 		})
 
 	// Register common dependencies for the IoC rootContainer

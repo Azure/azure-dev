@@ -564,7 +564,9 @@ func (i *Initializer) PromptIfNonEmpty(ctx context.Context, azdCtx *azdcontext.A
 		}
 
 		if !confirm {
-			return fmt.Errorf("confirmation declined")
+			successMessage := "\n\nconfirmation declined; app was not initialized"
+			i.console.Message(ctx, successMessage)
+			os.Exit(1)
 		}
 	}
 

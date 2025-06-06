@@ -213,6 +213,9 @@ func (p *TypeScriptProvider) Deploy(ctx context.Context) (*provisioning.DeployRe
 		if strings.Contains(out, "AuthorizationFailed") {
 			return nil, fmt.Errorf("authorization failed, please check your credentials with 'azd auth login': %w", err)
 		}
+		if strings.Contains(out, "InvalidResourceGroupLocation") {
+			return nil, fmt.Errorf("resource group location conflict. The deploy.ts script has been updated to handle this automatically. Please try again: %w", err)
+		}
 		
 		// Provide detailed error information to help with debugging
 		return nil, fmt.Errorf("failed to run deploy.js: %w\nOutput: %s", err, out)

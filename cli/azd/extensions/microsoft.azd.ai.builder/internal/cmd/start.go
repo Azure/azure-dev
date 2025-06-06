@@ -347,7 +347,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 		}
 
 		resourceId := ""
-		if 0 < len(a.scenarioData.AppResourceIds) && len(a.scenarioData.AppResourceIds) <= (i+1) {
+		if 0 <= len(a.scenarioData.AppResourceIds) && len(a.scenarioData.AppResourceIds) >= (i+1) {
 			resourceId = a.scenarioData.AppResourceIds[i]
 		}
 		appResource := &azdext.ComposedResource{
@@ -432,6 +432,7 @@ func (a *startAction) Run(ctx context.Context, args []string) error {
 					resourceUseMap[dependentResource.Type] = struct{}{}
 				}
 			}
+			// Existing resources that are already in azure.yaml
 			for _, existingResource := range a.composedResources {
 				// Skip if the resource type is already added.
 				if _, has := resourceUseMap[existingResource.Type]; has {

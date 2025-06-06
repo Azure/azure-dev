@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -185,7 +186,7 @@ main().catch(err => { console.error(err); process.exit(1); });
 		fmt.Printf("Warning: compiled deploy.js not found at %s after npm build. Attempting recovery...\n", deployJsPath)
 		
 		// Run tsc directly as a last resort
-		tscCmd := exec.CommandContext(ctx, "npx", "tsc", "-p", filepath.Join(infraDir, "tsconfig.build.json"))
+		tscCmd := osexec.CommandContext(ctx, "npx", "tsc", "-p", filepath.Join(infraDir, "tsconfig.build.json"))
 		tscCmd.Dir = infraDir
 		if tscOutput, tscErr := tscCmd.CombinedOutput(); tscErr != nil {
 			fmt.Printf("TypeScript compilation failed: %s\n%s\n", tscErr, string(tscOutput))

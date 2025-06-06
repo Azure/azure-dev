@@ -31,4 +31,4 @@ jobs:
           jsonschema2md schemas/v1.0/azure.yaml.json ignoreV1.md
       - name: Ensure alpha schema is valid for doc gen
         run: |
-          jsonschema2md schemas/v1.0/azure.yaml.json ignoreAlpha.md
+          jsonschema2md schemas/alpha/azure.yaml.json ignoreAlpha.md

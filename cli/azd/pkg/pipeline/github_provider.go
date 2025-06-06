@@ -355,30 +355,6 @@ func (p *GitHubCiProvider) preConfigureCheck(
 		return updated, err
 	}
 
-	authType := PipelineAuthType(pipelineManagerArgs.PipelineAuthTypeName)
-
-	// Federated Auth + Terraform is not a supported combination
-	if infraOptions.Provider == provisioning.Terraform {
-		// Throw error if Federated auth is explicitly requested
-		if authType == AuthTypeFederated {
-			return false, fmt.Errorf(
-				//nolint:lll
-				"Terraform does not support federated authentication. To explicitly use client credentials set the %s flag. %w",
-				output.WithBackticks("--auth-type client-credentials"),
-				ErrAuthNotSupported,
-			)
-		} else if authType == "" {
-			// If not explicitly set, show warning
-			p.console.MessageUxItem(
-				ctx,
-				&ux.WarningMessage{
-					//nolint:lll
-					Description: "Terraform provisioning does not support federated authentication, defaulting to Service Principal with client ID and client secret.\n",
-				},
-			)
-		}
-	}
-
 	return updated, nil
 }
 
@@ -394,11 +370,6 @@ func (p *GitHubCiProvider) credentialOptions(
 	authType PipelineAuthType,
 	credentials *entraid.AzureCredentials,
 ) (*CredentialOptions, error) {
-	// Default auth type to client-credentials for terraform
-	if infraOptions.Provider == provisioning.Terraform && authType == "" {
-		authType = AuthTypeClientCredentials
-	}
-
 	if authType == AuthTypeClientCredentials {
 		return &CredentialOptions{
 			EnableClientCredentials: true,

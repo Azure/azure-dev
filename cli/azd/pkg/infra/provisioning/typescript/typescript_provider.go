@@ -15,12 +15,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-)
-
-const (
-	defaultModule = "main"
-	defaultPath   = "infra"
 )
 
 // TypeScriptProvider exposes infrastructure provisioning using TypeScript configuration
@@ -31,12 +27,14 @@ type TypeScriptProvider struct {
 	options     provisioning.Options
 	console     input.Console
 	configPath  string
+	prompters   prompt.Prompter // Added prompter for interactive subscription/location selection
 }
 
 func NewTypeScriptProvider(
 	envManager environment.Manager,
 	env *environment.Environment,
 	console input.Console,
+	prompters prompt.Prompter,
 ) provisioning.Provider {
 	if envManager == nil {
 		panic("NewTypeScriptProvider: envManager must not be nil")
@@ -46,6 +44,7 @@ func NewTypeScriptProvider(
 		envManager: envManager,
 		env:        env, // can be nil – handle this in methods
 		console:    console,
+		prompters:  prompters,
 	}
 }
 
@@ -87,11 +86,12 @@ func (p *TypeScriptProvider) EnsureEnv(ctx context.Context) error {
 		return fmt.Errorf("env is nil")
 	}
 
+	// Pass the prompter to ensure proper interactive selection of subscription and location
 	return provisioning.EnsureSubscriptionAndLocation(
 		ctx,
 		p.envManager,
 		p.env,
-		nil,
+		p.prompters,
 		provisioning.EnsureSubscriptionAndLocationOptions{},
 	)
 }
@@ -110,6 +110,11 @@ func (p *TypeScriptProvider) State(ctx context.Context, options *provisioning.St
 func (p *TypeScriptProvider) Deploy(ctx context.Context) (*provisioning.DeployResult, error) {
 	if p.env == nil {
 		return nil, fmt.Errorf("environment is not yet initialized; cannot deploy")
+	}
+	
+	// Make sure we have subscription and location before proceeding
+	if err := p.EnsureEnv(ctx); err != nil {
+		return nil, fmt.Errorf("failed to ensure environment: %w", err)
 	}
 	
 	// Add clear logging about the execution context
@@ -198,7 +203,19 @@ func (p *TypeScriptProvider) Deploy(ctx context.Context) (*provisioning.DeployRe
 
 	out, err := tools.RunCommand(ctx, cmd, args, envVars, p.getInfraPath())
 	if err != nil {
-		return nil, fmt.Errorf("failed to run deploy.js: %w", err)
+		// Check for common errors in the output
+		if strings.Contains(out, "InvalidSubscriptionId") {
+			return nil, fmt.Errorf("invalid or missing subscription ID, please run 'azd auth login' and try again: %w", err)
+		}
+		if strings.Contains(out, "MissingSubscriptionRegistration") {
+			return nil, fmt.Errorf("Azure subscription is not registered for the required resource providers: %w", err)
+		}
+		if strings.Contains(out, "AuthorizationFailed") {
+			return nil, fmt.Errorf("authorization failed, please check your credentials with 'azd auth login': %w", err)
+		}
+		
+		// Provide detailed error information to help with debugging
+		return nil, fmt.Errorf("failed to run deploy.js: %w\nOutput: %s", err, out)
 	}
 
 	var outputs map[string]provisioning.OutputParameter
@@ -224,6 +241,11 @@ func (p *TypeScriptProvider) Deploy(ctx context.Context) (*provisioning.DeployRe
 func (p *TypeScriptProvider) Preview(ctx context.Context) (*provisioning.DeployPreviewResult, error) {
 	if p.env == nil {
 		return nil, fmt.Errorf("environment is not yet initialized; cannot preview")
+	}
+	
+	// Make sure we have subscription and location before proceeding
+	if err := p.EnsureEnv(ctx); err != nil {
+		return nil, fmt.Errorf("failed to ensure environment: %w", err)
 	}
 
 	cmd := "npx"
@@ -273,6 +295,11 @@ func (p *TypeScriptProvider) Preview(ctx context.Context) (*provisioning.DeployP
 func (p *TypeScriptProvider) Destroy(ctx context.Context, options provisioning.DestroyOptions) (*provisioning.DestroyResult, error) {
 	if p.env == nil {
 		return nil, fmt.Errorf("environment is not yet initialized; cannot destroy")
+	}
+	
+	// Make sure we have subscription and location before proceeding
+	if err := p.EnsureEnv(ctx); err != nil {
+		return nil, fmt.Errorf("failed to ensure environment: %w", err)
 	}
 
 	cmd := "npx"

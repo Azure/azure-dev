@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/typescript"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 )
 
 const PlatformKindDefault platform.PlatformKind = "default"
@@ -89,6 +90,7 @@ container.MustRegisterNamedTransient(string(provisioning.TypeScript), func(servi
     var envManager environment.Manager
     var env *environment.Environment
     var console input.Console
+    var prompters prompt.Prompter
     if err := serviceLocator.Resolve(&envManager); err != nil {
         return nil, err
     }
@@ -98,9 +100,12 @@ container.MustRegisterNamedTransient(string(provisioning.TypeScript), func(servi
     if err := serviceLocator.Resolve(&console); err != nil {
         return nil, err
     }
+    if err := serviceLocator.Resolve(&prompters); err != nil {
+        return nil, err
+    }
     log.Printf("Resolved envManager: %#v", envManager)
     log.Printf("Resolved env: %#v", env)
-    return typescript.NewTypeScriptProvider(envManager, env, console), nil
+    return typescript.NewTypeScriptProvider(envManager, env, console, prompters), nil
 })
 
 	// Function to determine the default IaC provider when provisioning

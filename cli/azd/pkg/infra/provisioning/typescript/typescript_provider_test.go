@@ -10,7 +10,9 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -22,8 +24,9 @@ func createTypeScriptProvider(t *testing.T, mockContext *mocks.MockContext) *Typ
 		environment.EnvNameEnvVarName:        "test-env",
 	})
 	envManager := &mockEnvManager{}
-	provider := NewTypeScriptProvider(envManager, env, mockContext.Console)
-	require.NoError(t, provider.Initialize(*mockContext.Context, ".", struct{}{}))
+	mockPrompter := &mockPrompter{}
+	provider := NewTypeScriptProvider(envManager, env, mockContext.Console, mockPrompter)
+	require.NoError(t, provider.Initialize(*mockContext.Context, ".", provisioning.Options{}))
 	return provider.(*TypeScriptProvider)
 }
 
@@ -31,6 +34,58 @@ type mockEnvManager struct{}
 
 func (m *mockEnvManager) Save(ctx context.Context, env *environment.Environment) error {
 	return nil
+}
+
+func (m *mockEnvManager) SaveWithOptions(ctx context.Context, env *environment.Environment, options *environment.SaveOptions) error {
+	return nil
+}
+
+func (m *mockEnvManager) Get(ctx context.Context, name string) (*environment.Environment, error) {
+	return environment.NewWithValues(name, nil), nil
+}
+
+func (m *mockEnvManager) Reload(ctx context.Context, env *environment.Environment) error {
+	return nil
+}
+
+func (m *mockEnvManager) EnvPath(env *environment.Environment) string {
+	return ""
+}
+
+func (m *mockEnvManager) ConfigPath(env *environment.Environment) string {
+	return ""
+}
+
+func (m *mockEnvManager) List(ctx context.Context) ([]*environment.Description, error) {
+	return nil, nil
+}
+
+func (m *mockEnvManager) Delete(ctx context.Context, name string) error {
+	return nil
+}
+
+func (m *mockEnvManager) Create(ctx context.Context, spec environment.Spec) (*environment.Environment, error) {
+	return environment.NewWithValues(spec.Name, nil), nil
+}
+
+func (m *mockEnvManager) LoadOrInitInteractive(ctx context.Context, name string) (*environment.Environment, error) {
+	return environment.NewWithValues(name, nil), nil
+}
+
+type mockPrompter struct{}
+
+func (m *mockPrompter) PromptSubscription(ctx context.Context, message string) (string, error) {
+	return "00000000-0000-0000-0000-000000000000", nil
+}
+
+func (m *mockPrompter) PromptLocation(
+	ctx context.Context,
+	subscriptionId string,
+	message string,
+	locationFilter func(string) bool,
+	selectDefault bool,
+) (string, error) {
+	return "westus2", nil
 }
 
 func TestTypeScriptProvider_Initialize(t *testing.T) {

@@ -9,7 +9,9 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"google.golang.org/grpc/codes"
@@ -19,15 +21,20 @@ import (
 // composeService exposes features of the AZD composability model to the Extensions Framework layer.
 type composeService struct {
 	azdext.UnimplementedComposeServiceServer
-
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]
+	lazyEnv        *lazy.Lazy[*environment.Environment]
+	lazyEnvManger  *lazy.Lazy[environment.Manager]
 }
 
 func NewComposeService(
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
+	lazyEnv *lazy.Lazy[*environment.Environment],
+	lazyEnvManger *lazy.Lazy[environment.Manager],
 ) azdext.ComposeServiceServer {
 	return &composeService{
 		lazyAzdContext: lazyAzdContext,
+		lazyEnv:        lazyEnv,
+		lazyEnvManger:  lazyEnvManger,
 	}
 }
 
@@ -37,6 +44,16 @@ func (c *composeService) AddResource(
 	req *azdext.AddResourceRequest,
 ) (*azdext.AddResourceResponse, error) {
 	azdContext, err := c.lazyAzdContext.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	env, err := c.lazyEnv.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	envManager, err := c.lazyEnvManger.GetValue()
 	if err != nil {
 		return nil, err
 	}
@@ -55,11 +72,27 @@ func (c *composeService) AddResource(
 		return nil, fmt.Errorf("creating resource props: %w", err)
 	}
 
+	resourceId := req.Resource.ResourceId
 	projectConfig.Resources[req.Resource.Name] = &project.ResourceConfig{
-		Name:  req.Resource.Name,
-		Type:  project.ResourceType(req.Resource.Type),
-		Props: resourceProps,
-		Uses:  req.Resource.Uses,
+		Name:       req.Resource.Name,
+		Type:       project.ResourceType(req.Resource.Type),
+		Props:      resourceProps,
+		Uses:       req.Resource.Uses,
+		ResourceId: resourceId,
+	}
+
+	if resourceId != "" {
+		// add existing:true to azure.yaml
+		if resource, exists := projectConfig.Resources[req.Resource.Name]; exists {
+			resource.Existing = true
+		}
+		// save resource id to env
+		env.DotenvSet(infra.ResourceIdName(req.Resource.Name), resourceId)
+
+		err = envManager.Save(ctx, env)
+		if err != nil {
+			return nil, fmt.Errorf("saving environment: %w", err)
+		}
 	}
 
 	if err := project.Save(ctx, projectConfig, azdContext.ProjectPath()); err != nil {
@@ -162,10 +195,11 @@ func (c *composeService) ListResources(
 			return nil, fmt.Errorf("marshaling resource config: %w", err)
 		}
 		composedResource := &azdext.ComposedResource{
-			Name:   resource.Name,
-			Type:   string(resource.Type),
-			Config: resourceConfigBytes,
-			Uses:   resource.Uses,
+			Name:       resource.Name,
+			Type:       string(resource.Type),
+			Config:     resourceConfigBytes,
+			Uses:       resource.Uses,
+			ResourceId: resource.ResourceId,
 		}
 		composedResources = append(composedResources, composedResource)
 	}

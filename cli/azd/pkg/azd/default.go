@@ -23,8 +23,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
-"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/typescript"
-"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/typescript"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
 const PlatformKindDefault platform.PlatformKind = "default"
@@ -85,7 +85,7 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
    container.MustRegisterNamedTransient(string(provisioning.Terraform), infraTerraform.NewTerraformProvider)
 
    // Register TypeScript provider with explicit dependency resolution, using lazy envManager/env
-container.MustRegisterNamedTransient("typescript", func(serviceLocator ioc.ServiceLocator) (provisioning.Provider, error) {
+container.MustRegisterNamedTransient(string(provisioning.TypeScript), func(serviceLocator ioc.ServiceLocator) (provisioning.Provider, error) {
     var envManager environment.Manager
     var env *environment.Environment
     var console input.Console

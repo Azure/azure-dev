@@ -165,7 +165,38 @@ main().catch(err => { console.error(err); process.exit(1); });
 		return fmt.Errorf("failed to run npm install: %w", err)
 	}
 
-	   // Update azure.yaml to use TypeScript provider, or add an infra section if missing
+	// Create dist directory
+	distDir := filepath.Join(infraDir, "dist")
+	if err := os.MkdirAll(distDir, 0755); err != nil {
+		return fmt.Errorf("failed to create dist directory: %w", err)
+	}
+
+	// Compile TypeScript to JavaScript with better error handling
+	fmt.Printf("Compiling TypeScript in %s...\n", infraDir)
+	if err := npmCli.RunScript(ctx, infraDir, "build"); err != nil {
+		fmt.Printf("Error compiling TypeScript: %s\n", err)
+		return fmt.Errorf("failed to compile TypeScript: %w", err)
+	}
+	
+	// Check if dist/deploy.js was created successfully
+	deployJsPath := filepath.Join(distDir, "deploy.js")
+	if _, err := os.Stat(deployJsPath); os.IsNotExist(err) {
+		// If compilation failed silently, create the dist directory and try to install dependencies again
+		fmt.Printf("Warning: compiled deploy.js not found at %s after npm build. Attempting recovery...\n", deployJsPath)
+		
+		// Run tsc directly as a last resort
+		tscCmd := exec.CommandContext(ctx, "npx", "tsc", "-p", filepath.Join(infraDir, "tsconfig.build.json"))
+		tscCmd.Dir = infraDir
+		if tscOutput, tscErr := tscCmd.CombinedOutput(); tscErr != nil {
+			fmt.Printf("TypeScript compilation failed: %s\n%s\n", tscErr, string(tscOutput))
+		} else {
+			fmt.Printf("TypeScript compilation completed via npx tsc\n")
+		}
+	} else {
+		fmt.Printf("Successfully compiled TypeScript to %s\n", deployJsPath)
+	}
+
+	 	// Update azure.yaml to use TypeScript provider, or add an infra section if missing
 	   azureYamlPath := filepath.Join(azdCtx.ProjectDirectory(), "azure.yaml")
 	   if _, err := os.Stat(azureYamlPath); err == nil {
 			   azureYaml, err := os.ReadFile(azureYamlPath)
@@ -176,15 +207,27 @@ main().catch(err => { console.error(err); process.exit(1); });
 			   if !strings.Contains(newYaml, "infra:") {
 					   // Prepend an infra section if missing
 					   newYaml = "infra:\n  provider: typescript\n  path: infra\n  module: main\n\n" + newYaml
+					   fmt.Printf("Adding TypeScript infrastructure configuration to azure.yaml\n")
 			   } else {
 					   // Replace 'provider: bicep' with 'provider: typescript' if present
+					   oldYaml := newYaml
 					   newYaml = replaceInfraProvider(newYaml, "typescript")
+					   if oldYaml != newYaml {
+							   fmt.Printf("Updated provider in azure.yaml from bicep to typescript\n")
+					   } else {
+							   fmt.Printf("Infrastructure provider already configured in azure.yaml\n")
+					   }
 			   }
 			   if err := os.WriteFile(azureYamlPath, []byte(newYaml), 0644); err != nil {
 					   return fmt.Errorf("failed to update azure.yaml: %w", err)
 			   }
 	   } else if os.IsNotExist(err) {
-			   // Do not create a new azure.yaml, just skip
+			   // Create a minimal azure.yaml with TypeScript configuration
+			   fmt.Printf("Creating new azure.yaml with TypeScript provider\n")
+			   minimalYaml := "infra:\n  provider: typescript\n  path: infra\n  module: main\n"
+			   if err := os.WriteFile(azureYamlPath, []byte(minimalYaml), 0644); err != nil {
+					   return fmt.Errorf("failed to create azure.yaml: %w", err)
+			   }
 	   } else if err != nil {
 			   return fmt.Errorf("failed to stat azure.yaml: %w", err)
 	   }
@@ -415,7 +458,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			   if i.flags.templatePath != "" || len(i.flags.templateTags) > 0 {
 					   // 1. Download template code
 					   template, err := i.initializeTemplate(ctx, azdCtx)
-					   if err != nil {
+					   if (err != nil) {
 							   return nil, err
 					   }
 					   if _, err := i.initializeEnv(ctx, azdCtx, template.Metadata); err != nil {

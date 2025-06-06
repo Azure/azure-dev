@@ -7,13 +7,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/joho/godotenv"
 )
 
 const (
@@ -21,17 +23,15 @@ const (
 	defaultPath   = "infra"
 )
 
-
 // TypeScriptProvider exposes infrastructure provisioning using TypeScript configuration
 type TypeScriptProvider struct {
-	   envManager  environment.Manager
-	   env         *environment.Environment
-	   projectPath string
-	   options     provisioning.Options
-	   console     input.Console
-	   configPath  string
+	envManager  environment.Manager
+	env         *environment.Environment
+	projectPath string
+	options     provisioning.Options
+	console     input.Console
+	configPath  string
 }
-
 
 func NewTypeScriptProvider(
 	envManager environment.Manager,
@@ -49,7 +49,6 @@ func NewTypeScriptProvider(
 	}
 }
 
-
 // Name gets the name of the infra provider
 func (p *TypeScriptProvider) Name() string {
 	return "typescript"
@@ -60,68 +59,25 @@ func (p *TypeScriptProvider) RequiredExternalTools() []tools.ExternalTool {
 }
 
 // Initialize initializes provider state from the options
-func (p *TypeScriptProvider) Initialize(ctx context.Context, envName string, config provisioning.Options) error {
-    if p.env == nil {
-        // First check if environment name is provided
-        if envName == "" {
-            // Try to get from OS environment variables
-            envName = os.Getenv(environment.EnvNameEnvVarName)
-            
-            // If still not found, check project directory for .env file
-            if envName == "" && config.Path != "" {
-                dotEnvPath := fmt.Sprintf("%s/.env", config.Path)
-                if info, err := os.Stat(dotEnvPath); err == nil && !info.IsDir() {
-                    if envVars, err := godotenv.Read(dotEnvPath); err == nil {
-                        if name, found := envVars[environment.EnvNameEnvVarName]; found && name != "" {
-                            envName = name
-                        }
-                    }
-                }
-            }
-        }
-        
-        if envName == "" {
-            return fmt.Errorf("environment name is required but was empty. Set %s in environment or .env file", environment.EnvNameEnvVarName)
-        }
+func (p *TypeScriptProvider) Initialize(ctx context.Context, projectPath string, options provisioning.Options) error {
+	// Store project path for later use
+	p.projectPath = projectPath
+	log.Printf("TypeScript provider initialized with path: %s", p.projectPath)
+	
+	// Normalize path separators for cross-platform compatibility
+	if filepath.Base(p.projectPath) == "infra" {
+		// If the path already ends with the infra directory, use it as is
+		log.Printf("Using project path as infra directory")
+		p.configPath = filepath.Join(p.projectPath, "deploy.ts")
+	} else {
+		// Otherwise, this is the project root, so use the infra subdirectory
+		log.Printf("Using infra subdirectory")
+		p.configPath = filepath.Join(p.projectPath, "infra", "deploy.ts")
+	}
+	p.options = options
 
-        env, err := p.envManager.Get(ctx, envName)
-        if err != nil {
-            if err == environment.ErrNotFound {
-                // Environment doesn't exist, attempt to create it
-                spec := environment.Spec{
-                    Name: envName,
-                }
-                
-                // Try to get location and subscription from environment variables
-                if loc := os.Getenv(environment.LocationEnvVarName); loc != "" {
-                    spec.Location = loc
-                }
-                
-                if sub := os.Getenv(environment.SubscriptionIdEnvVarName); sub != "" {
-                    spec.Subscription = sub
-                }
-                
-                p.console.Message(ctx, fmt.Sprintf("Creating new environment: %s", envName))
-                env, err = p.envManager.Create(ctx, spec)
-                if err != nil {
-                    return fmt.Errorf("failed to create environment '%s': %w", envName, err)
-                }
-            } else {
-                return fmt.Errorf("failed to load environment '%s': %w", envName, err)
-            }
-        }
-
-        p.env = env
-    }
-    
-    // Store project path for later use
-    p.projectPath = config.Path
-    p.configPath = fmt.Sprintf("%s/deploy.ts", config.Path)  // Default to deploy.ts in the path directory
-    p.options = config
-
-    return nil
+	return nil
 }
-
 
 func (p *TypeScriptProvider) EnsureEnv(ctx context.Context) error {
 	if p.envManager == nil {
@@ -155,31 +111,94 @@ func (p *TypeScriptProvider) Deploy(ctx context.Context) (*provisioning.DeployRe
 	if p.env == nil {
 		return nil, fmt.Errorf("environment is not yet initialized; cannot deploy")
 	}
-
-	cmd := "npx"
-	args := []string{"ts-node", p.configPath}
+	
+	// Add clear logging about the execution context
+	log.Printf("TypeScript Provider - Deploy starting with projectPath: %s configPath: %s", p.projectPath, p.configPath)
 
 	// Get environment variables from the environment object first
 	envVars := p.env.Environ()
-	
+
 	// Add the current OS environment variables
 	envVars = append(envVars, os.Environ()...)
-	
+
 	// Ensure critical variables are set correctly
 	envVars = append(envVars,
 		"AZURE_SUBSCRIPTION_ID="+p.env.GetSubscriptionId(),
 		"AZURE_ENV_NAME="+p.env.Name(),
 		"AZURE_LOCATION="+p.env.GetLocation(),
 	)
-	
+
 	// Add cloud configuration if tenant ID is available
 	if tenantID := p.env.GetTenantId(); tenantID != "" {
 		envVars = append(envVars, "AZURE_TENANT_ID="+tenantID)
 	}
+	
+	// First, check if TypeScript compilation is needed
+	compileCmd := "npm"
+	compileArgs := []string{"run", "build"}
+	
+	// Add clear logging of environment variables for debugging
+	log.Printf("Environment Variables for deployment:")
+	for _, envVar := range envVars {
+		if strings.HasPrefix(envVar, "AZURE_") {
+			log.Printf("  %s", envVar)
+		}
+	}
 
-	out, err := tools.RunCommand(ctx, cmd, args, envVars, p.projectPath)
+	// Compile TypeScript to JavaScript - use infraPath to build in the right directory
+	infraPath := p.getInfraPath()
+	_, err := tools.RunCommand(ctx, compileCmd, compileArgs, envVars, infraPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to run deploy.ts: %w", err)
+		return nil, fmt.Errorf("failed to compile TypeScript in %s: %w", infraPath, err)
+	}
+
+	// Check if the compiled JavaScript file exists - use helper methods for consistent paths
+	compiledJsPath := p.getCompiledJsPath()
+	
+	// Log paths for debugging
+	log.Printf("Infrastructure path: %s", infraPath)
+	log.Printf("Dist folder: %s", p.getDistPath())
+	
+	// Log the paths for debugging
+	log.Printf("Project path: %s", p.projectPath)
+	log.Printf("Looking for compiled JavaScript at: %s", compiledJsPath)
+	
+	if _, err := os.Stat(compiledJsPath); os.IsNotExist(err) {
+		// If not found, try building it now
+		buildCmd := "npm"
+		buildArgs := []string{"run", "build"}
+		
+		// We can use the infraPath that was already calculated correctly
+		log.Printf("Running build command in: %s", p.getInfraPath())
+		// Verify directory exists before trying to run npm
+		if _, statErr := os.Stat(p.getInfraPath()); os.IsNotExist(statErr) {
+			return nil, fmt.Errorf("build directory %s does not exist", p.getInfraPath())
+		}
+		_, buildErr := tools.RunCommand(ctx, buildCmd, buildArgs, envVars, p.getInfraPath())
+		if buildErr != nil {
+			return nil, fmt.Errorf("failed to compile TypeScript at deploy time in %s: %w", p.getInfraPath(), buildErr)
+		}
+		
+		// Check again after building
+		if _, checkErr := os.Stat(compiledJsPath); checkErr != nil {
+			return nil, fmt.Errorf("compiled deploy.js not found at %s after build: %w", compiledJsPath, checkErr)
+		}
+	}
+
+	// Run the compiled JavaScript file instead of using ts-node
+	cmd := "node"
+	args := []string{compiledJsPath}
+	
+	// Now we already have infraPath calculated correctly, so we can use it directly for execution
+	log.Printf("Executing Node.js in directory: %s", p.getInfraPath())
+	// Verify directory exists before trying to execute
+	if _, statErr := os.Stat(p.getInfraPath()); os.IsNotExist(statErr) {
+		return nil, fmt.Errorf("execution directory %s does not exist", p.getInfraPath())
+	}
+
+	out, err := tools.RunCommand(ctx, cmd, args, envVars, p.getInfraPath())
+	if err != nil {
+		return nil, fmt.Errorf("failed to run deploy.js: %w", err)
 	}
 
 	var outputs map[string]provisioning.OutputParameter
@@ -190,7 +209,7 @@ func (p *TypeScriptProvider) Deploy(ctx context.Context) (*provisioning.DeployRe
 		if err2 := json.Unmarshal([]byte(out), &wrapper); err2 == nil {
 			outputs = wrapper.Outputs
 		} else {
-			return nil, fmt.Errorf("failed to parse deploy.ts output: %w", err)
+			return nil, fmt.Errorf("failed to parse deploy.js output: %w", err)
 		}
 	}
 
@@ -201,7 +220,6 @@ func (p *TypeScriptProvider) Deploy(ctx context.Context) (*provisioning.DeployRe
 	}, nil
 }
 
-
 // Preview shows a preview of the changes
 func (p *TypeScriptProvider) Preview(ctx context.Context) (*provisioning.DeployPreviewResult, error) {
 	if p.env == nil {
@@ -210,20 +228,20 @@ func (p *TypeScriptProvider) Preview(ctx context.Context) (*provisioning.DeployP
 
 	cmd := "npx"
 	args := []string{"ts-node", p.configPath, "--preview"}
-	
+
 	// Get environment variables from the environment object first
 	envVars := p.env.Environ()
-	
+
 	// Add the current OS environment variables
 	envVars = append(envVars, os.Environ()...)
-	
+
 	// Ensure critical variables are set correctly
 	envVars = append(envVars,
 		"AZURE_SUBSCRIPTION_ID="+p.env.GetSubscriptionId(),
 		"AZURE_ENV_NAME="+p.env.Name(),
 		"AZURE_LOCATION="+p.env.GetLocation(),
 	)
-	
+
 	// Add cloud configuration if tenant ID is available
 	if tenantID := p.env.GetTenantId(); tenantID != "" {
 		envVars = append(envVars, "AZURE_TENANT_ID="+tenantID)
@@ -251,7 +269,6 @@ func (p *TypeScriptProvider) Preview(ctx context.Context) (*provisioning.DeployP
 	}, nil
 }
 
-
 // Destroy destroys the infrastructure
 func (p *TypeScriptProvider) Destroy(ctx context.Context, options provisioning.DestroyOptions) (*provisioning.DestroyResult, error) {
 	if p.env == nil {
@@ -260,20 +277,20 @@ func (p *TypeScriptProvider) Destroy(ctx context.Context, options provisioning.D
 
 	cmd := "npx"
 	args := []string{"ts-node", p.configPath, "--destroy"}
-	
+
 	// Get environment variables from the environment object first
 	envVars := p.env.Environ()
-	
+
 	// Add the current OS environment variables
 	envVars = append(envVars, os.Environ()...)
-	
+
 	// Ensure critical variables are set correctly
 	envVars = append(envVars,
 		"AZURE_SUBSCRIPTION_ID="+p.env.GetSubscriptionId(),
 		"AZURE_ENV_NAME="+p.env.Name(),
 		"AZURE_LOCATION="+p.env.GetLocation(),
 	)
-	
+
 	// Add cloud configuration if tenant ID is available
 	if tenantID := p.env.GetTenantId(); tenantID != "" {
 		envVars = append(envVars, "AZURE_TENANT_ID="+tenantID)
@@ -289,39 +306,58 @@ func (p *TypeScriptProvider) Destroy(ctx context.Context, options provisioning.D
 	return &result, nil
 }
 
-
 // Parameters returns the parameters for the infrastructure
 func (p *TypeScriptProvider) Parameters(ctx context.Context) ([]provisioning.Parameter, error) {
-// Optionally, run `npx ts-node deploy.ts --parameters` if supported
-cmd := "npx"
-args := []string{"ts-node", p.configPath, "--parameters"}
+	// Optionally, run `npx ts-node deploy.ts --parameters` if supported
+	cmd := "npx"
+	args := []string{"ts-node", p.configPath, "--parameters"}
 
-// Get environment variables from the environment object first
-envVars := p.env.Environ()
+	// Get environment variables from the environment object first
+	envVars := p.env.Environ()
 
-// Add the current OS environment variables
-envVars = append(envVars, os.Environ()...)
+	// Add the current OS environment variables
+	envVars = append(envVars, os.Environ()...)
 
-// Ensure critical variables are set correctly
-envVars = append(envVars,
-	"AZURE_SUBSCRIPTION_ID="+p.env.GetSubscriptionId(),
-	"AZURE_ENV_NAME="+p.env.Name(),
-	"AZURE_LOCATION="+p.env.GetLocation(),
-)
+	// Ensure critical variables are set correctly
+	envVars = append(envVars,
+		"AZURE_SUBSCRIPTION_ID="+p.env.GetSubscriptionId(),
+		"AZURE_ENV_NAME="+p.env.Name(),
+		"AZURE_LOCATION="+p.env.GetLocation(),
+	)
 
-// Add cloud configuration if tenant ID is available
-if tenantID := p.env.GetTenantId(); tenantID != "" {
-	envVars = append(envVars, "AZURE_TENANT_ID="+tenantID)
+	// Add cloud configuration if tenant ID is available
+	if tenantID := p.env.GetTenantId(); tenantID != "" {
+		envVars = append(envVars, "AZURE_TENANT_ID="+tenantID)
+	}
+	out, err := tools.RunCommand(ctx, cmd, args, envVars, p.projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to run deploy.ts parameters: %w", err)
+	}
+	var params []provisioning.Parameter
+
+	if err := json.Unmarshal([]byte(out), &params); err != nil {
+		return nil, fmt.Errorf("failed to parse parameters output: %w", err)
+	}
+	return params, nil
 }
-out, err := tools.RunCommand(ctx, cmd, args, envVars, p.projectPath)
-if err != nil {
-	return nil, fmt.Errorf("failed to run deploy.ts parameters: %w", err)
-}
-var params []provisioning.Parameter
 
-if err := json.Unmarshal([]byte(out), &params); err != nil {
-	   return nil, fmt.Errorf("failed to parse parameters output: %w", err)
+// getInfraPath returns the correct infrastructure directory path
+// If the project path already ends with "/infra", it returns the project path as is
+// Otherwise, it appends "/infra" to the project path
+func (p *TypeScriptProvider) getInfraPath() string {
+	// Use filepath.Base for cross-platform path handling
+	if filepath.Base(p.projectPath) == "infra" {
+		return p.projectPath
+	}
+	return filepath.Join(p.projectPath, "infra")
 }
-return params, nil
+
+// getDistPath returns the path to the dist directory containing compiled JS
+func (p *TypeScriptProvider) getDistPath() string {
+	return filepath.Join(p.getInfraPath(), "dist")
 }
-// (removed duplicate NewTypeScriptProvider definition)
+
+// getCompiledJsPath returns the path to the compiled deploy.js file
+func (p *TypeScriptProvider) getCompiledJsPath() string {
+	return filepath.Join(p.getDistPath(), "deploy.js")
+}

@@ -83,7 +83,7 @@ func New(name string) *Environment {
 		name:        name,
 		dotenv:      make(map[string]string),
 		deletedKeys: make(map[string]struct{}),
-		Config:      getInitialConfig(),
+		Config:      GetInitialConfig(),
 	}
 
 	env.DotenvSet(EnvNameEnvVarName, name)
@@ -91,7 +91,7 @@ func New(name string) *Environment {
 	return env
 }
 
-func getInitialConfig() config.Config {
+func GetInitialConfig() config.Config {
 	initialConfig := os.Getenv(AzdInitialEnvironmentConfigName)
 	if initialConfig == "" {
 		return config.NewEmptyConfig()

@@ -20,7 +20,7 @@ func Test_WorkflowService_Run_Success(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		testRunner := &TestWorkflowRunner{}
-		runner := workflow.NewRunner(testRunner, mockContext.Console)
+			   runner := workflow.NewRunner(testRunner, mockContext.Console, workflow.RunnerConfig{ProjectRoot: ""})
 		testRunner.On("SetArgs", mock.Anything)
 		testRunner.On("ExecuteContext", *mockContext.Context).Return(nil)
 
@@ -55,7 +55,7 @@ func Test_WorkflowService_Run_Success(t *testing.T) {
 	t.Run("Failure", func(t *testing.T) {
 		expectedErr := errors.New("execution failed")
 		testRunner := &TestWorkflowRunner{}
-		runner := workflow.NewRunner(testRunner, mockContext.Console)
+			   runner := workflow.NewRunner(testRunner, mockContext.Console, workflow.RunnerConfig{ProjectRoot: ""})
 		testRunner.On("SetArgs", mock.Anything)
 		testRunner.On("ExecuteContext", *mockContext.Context).Return(expectedErr)
 

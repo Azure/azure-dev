@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
+	"log"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/cosmosdb"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -23,7 +23,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/typescript"
+"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/typescript"
+"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
 const PlatformKindDefault platform.PlatformKind = "default"
@@ -79,16 +80,28 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 
 	// Provisioning Providers
 
-   // Register TypeScript provider under a string key, since ProviderKind does not have TypeScript
-   provisionProviderMap := map[string]any{
-		   string(provisioning.Bicep):     infraBicep.NewBicepProvider,
-		   string(provisioning.Terraform): infraTerraform.NewTerraformProvider,
-		   "typescript": typescript.NewTypeScriptProvider,
-   }
+   // Register Bicep and Terraform providers as before
+   container.MustRegisterNamedTransient(string(provisioning.Bicep), infraBicep.NewBicepProvider)
+   container.MustRegisterNamedTransient(string(provisioning.Terraform), infraTerraform.NewTerraformProvider)
 
-   for provider, constructor := range provisionProviderMap {
-		   container.MustRegisterNamedTransient(provider, constructor)
-   }
+   // Register TypeScript provider with explicit dependency resolution, using lazy envManager/env
+container.MustRegisterNamedTransient("typescript", func(serviceLocator ioc.ServiceLocator) (provisioning.Provider, error) {
+    var envManager environment.Manager
+    var env *environment.Environment
+    var console input.Console
+    if err := serviceLocator.Resolve(&envManager); err != nil {
+        return nil, err
+    }
+    if err := serviceLocator.Resolve(&env); err != nil {
+        return nil, err
+    }
+    if err := serviceLocator.Resolve(&console); err != nil {
+        return nil, err
+    }
+    log.Printf("Resolved envManager: %#v", envManager)
+    log.Printf("Resolved env: %#v", env)
+    return typescript.NewTypeScriptProvider(envManager, env, console), nil
+})
 
 	// Function to determine the default IaC provider when provisioning
 	container.MustRegisterSingleton(func() provisioning.DefaultProviderResolver {
@@ -155,5 +168,6 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 		}
 	})
 
-return nil
+
+   return nil
 }

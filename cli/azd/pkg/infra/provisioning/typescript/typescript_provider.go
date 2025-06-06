@@ -8,12 +8,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/joho/godotenv"
 )
 
 const (
@@ -21,15 +21,34 @@ const (
 	defaultPath   = "infra"
 )
 
+
 // TypeScriptProvider exposes infrastructure provisioning using TypeScript configuration
 type TypeScriptProvider struct {
-	envManager  environment.Manager
-	env         *environment.Environment
-	projectPath string
-	options     provisioning.Options
-	console     input.Console
-	configPath  string
+	   envManager  environment.Manager
+	   env         *environment.Environment
+	   projectPath string
+	   options     provisioning.Options
+	   console     input.Console
+	   configPath  string
 }
+
+
+func NewTypeScriptProvider(
+	envManager environment.Manager,
+	env *environment.Environment,
+	console input.Console,
+) provisioning.Provider {
+	if envManager == nil {
+		panic("NewTypeScriptProvider: envManager must not be nil")
+	}
+
+	return &TypeScriptProvider{
+		envManager: envManager,
+		env:        env, // can be nil – handle this in methods
+		console:    console,
+	}
+}
+
 
 // Name gets the name of the infra provider
 func (p *TypeScriptProvider) Name() string {
@@ -41,30 +60,77 @@ func (p *TypeScriptProvider) RequiredExternalTools() []tools.ExternalTool {
 }
 
 // Initialize initializes provider state from the options
-func (p *TypeScriptProvider) Initialize(ctx context.Context, projectPath string, options provisioning.Options) error {
-	p.projectPath = projectPath
-	p.options = options
-	
-	if p.options.Module == "" {
-		p.options.Module = defaultModule
-	}
-	if p.options.Path == "" {
-		p.options.Path = defaultPath
-	}
+func (p *TypeScriptProvider) Initialize(ctx context.Context, envName string, config provisioning.Options) error {
+    if p.env == nil {
+        // First check if environment name is provided
+        if envName == "" {
+            // Try to get from OS environment variables
+            envName = os.Getenv(environment.EnvNameEnvVarName)
+            
+            // If still not found, check project directory for .env file
+            if envName == "" && config.Path != "" {
+                dotEnvPath := fmt.Sprintf("%s/.env", config.Path)
+                if info, err := os.Stat(dotEnvPath); err == nil && !info.IsDir() {
+                    if envVars, err := godotenv.Read(dotEnvPath); err == nil {
+                        if name, found := envVars[environment.EnvNameEnvVarName]; found && name != "" {
+                            envName = name
+                        }
+                    }
+                }
+            }
+        }
+        
+        if envName == "" {
+            return fmt.Errorf("environment name is required but was empty. Set %s in environment or .env file", environment.EnvNameEnvVarName)
+        }
 
-	// Check for TypeScript config file
-	configPath := filepath.Join(projectPath, p.options.Path, "deploy.ts")
-	if _, err := os.Stat(configPath); err == nil {
-		p.configPath = configPath
-	} else {
-		return fmt.Errorf("TypeScript configuration file not found at %s", configPath)
-	}
+        env, err := p.envManager.Get(ctx, envName)
+        if err != nil {
+            if err == environment.ErrNotFound {
+                // Environment doesn't exist, attempt to create it
+                spec := environment.Spec{
+                    Name: envName,
+                }
+                
+                // Try to get location and subscription from environment variables
+                if loc := os.Getenv(environment.LocationEnvVarName); loc != "" {
+                    spec.Location = loc
+                }
+                
+                if sub := os.Getenv(environment.SubscriptionIdEnvVarName); sub != "" {
+                    spec.Subscription = sub
+                }
+                
+                p.console.Message(ctx, fmt.Sprintf("Creating new environment: %s", envName))
+                env, err = p.envManager.Create(ctx, spec)
+                if err != nil {
+                    return fmt.Errorf("failed to create environment '%s': %w", envName, err)
+                }
+            } else {
+                return fmt.Errorf("failed to load environment '%s': %w", envName, err)
+            }
+        }
 
-	return p.EnsureEnv(ctx)
+        p.env = env
+    }
+    
+    // Store project path for later use
+    p.projectPath = config.Path
+    p.configPath = fmt.Sprintf("%s/deploy.ts", config.Path)  // Default to deploy.ts in the path directory
+    p.options = config
+
+    return nil
 }
 
-// EnsureEnv ensures that the environment is in a provision-ready state
+
 func (p *TypeScriptProvider) EnsureEnv(ctx context.Context) error {
+	if p.envManager == nil {
+		return fmt.Errorf("envManager is nil")
+	}
+	if p.env == nil {
+		return fmt.Errorf("env is nil")
+	}
+
 	return provisioning.EnsureSubscriptionAndLocation(
 		ctx,
 		p.envManager,
@@ -86,136 +152,176 @@ func (p *TypeScriptProvider) State(ctx context.Context, options *provisioning.St
 
 // Deploy deploys the infrastructure
 func (p *TypeScriptProvider) Deploy(ctx context.Context) (*provisioning.DeployResult, error) {
-// Run `npx ts-node deploy.ts` and parse outputs
-cmd := "npx"
-args := []string{"ts-node", p.configPath}
-
-// Set up environment variables for the script
-envVars := os.Environ()
-envVars = append(envVars,
-	"AZURE_SUBSCRIPTION_ID="+p.env.GetSubscriptionId(),
-	"AZURE_ENV_NAME="+p.env.Name(),
-	"AZURE_LOCATION="+p.env.GetLocation(),
-)
-
-out, err := tools.RunCommand(ctx, cmd, args, envVars, p.projectPath)
-if err != nil {
-	return nil, fmt.Errorf("failed to run deploy.ts: %w", err)
-}
-
-// Expect the script to print a JSON object with outputs
-var outputs map[string]provisioning.OutputParameter
-if err := json.Unmarshal([]byte(out), &outputs); err != nil {
-	// fallback: try to parse as { outputs: { ... } }
-	var wrapper struct {
-		Outputs map[string]provisioning.OutputParameter `json:"outputs"`
+	if p.env == nil {
+		return nil, fmt.Errorf("environment is not yet initialized; cannot deploy")
 	}
-	if err2 := json.Unmarshal([]byte(out), &wrapper); err2 == nil {
-		outputs = wrapper.Outputs
-	} else {
-		return nil, fmt.Errorf("failed to parse deploy.ts output: %w", err)
+
+	cmd := "npx"
+	args := []string{"ts-node", p.configPath}
+
+	// Get environment variables from the environment object first
+	envVars := p.env.Environ()
+	
+	// Add the current OS environment variables
+	envVars = append(envVars, os.Environ()...)
+	
+	// Ensure critical variables are set correctly
+	envVars = append(envVars,
+		"AZURE_SUBSCRIPTION_ID="+p.env.GetSubscriptionId(),
+		"AZURE_ENV_NAME="+p.env.Name(),
+		"AZURE_LOCATION="+p.env.GetLocation(),
+	)
+	
+	// Add cloud configuration if tenant ID is available
+	if tenantID := p.env.GetTenantId(); tenantID != "" {
+		envVars = append(envVars, "AZURE_TENANT_ID="+tenantID)
 	}
+
+	out, err := tools.RunCommand(ctx, cmd, args, envVars, p.projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to run deploy.ts: %w", err)
+	}
+
+	var outputs map[string]provisioning.OutputParameter
+	if err := json.Unmarshal([]byte(out), &outputs); err != nil {
+		var wrapper struct {
+			Outputs map[string]provisioning.OutputParameter `json:"outputs"`
+		}
+		if err2 := json.Unmarshal([]byte(out), &wrapper); err2 == nil {
+			outputs = wrapper.Outputs
+		} else {
+			return nil, fmt.Errorf("failed to parse deploy.ts output: %w", err)
+		}
+	}
+
+	return &provisioning.DeployResult{
+		Deployment: &provisioning.Deployment{
+			Outputs: outputs,
+		},
+	}, nil
 }
 
-return &provisioning.DeployResult{
-	Deployment: &provisioning.Deployment{
-		Outputs: outputs,
-	},
-}, nil
-}
 
 // Preview shows a preview of the changes
 func (p *TypeScriptProvider) Preview(ctx context.Context) (*provisioning.DeployPreviewResult, error) {
-	   // Optionally, run `npx ts-node deploy.ts --preview` if supported
-	   cmd := "npx"
-	   args := []string{"ts-node", p.configPath, "--preview"}
-	   envVars := os.Environ()
-	   envVars = append(envVars,
-			   "AZURE_SUBSCRIPTION_ID="+p.env.GetSubscriptionId(),
-			   "AZURE_ENV_NAME="+p.env.Name(),
-			   "AZURE_LOCATION="+p.env.GetLocation(),
-	   )
-	   out, err := tools.RunCommand(ctx, cmd, args, envVars, p.projectPath)
-	   if err != nil {
-			   return nil, fmt.Errorf("failed to run deploy.ts preview: %w", err)
-	   }
+	if p.env == nil {
+		return nil, fmt.Errorf("environment is not yet initialized; cannot preview")
+	}
 
-	   // Try to parse as a map of outputs (legacy shape, not supported for preview)
-	   // (No Outputs field in DeploymentPreview)
-	   // fallback: try to parse as { preview: { ... } }
+	cmd := "npx"
+	args := []string{"ts-node", p.configPath, "--preview"}
+	
+	// Get environment variables from the environment object first
+	envVars := p.env.Environ()
+	
+	// Add the current OS environment variables
+	envVars = append(envVars, os.Environ()...)
+	
+	// Ensure critical variables are set correctly
+	envVars = append(envVars,
+		"AZURE_SUBSCRIPTION_ID="+p.env.GetSubscriptionId(),
+		"AZURE_ENV_NAME="+p.env.Name(),
+		"AZURE_LOCATION="+p.env.GetLocation(),
+	)
+	
+	// Add cloud configuration if tenant ID is available
+	if tenantID := p.env.GetTenantId(); tenantID != "" {
+		envVars = append(envVars, "AZURE_TENANT_ID="+tenantID)
+	}
+	out, err := tools.RunCommand(ctx, cmd, args, envVars, p.projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to run deploy.ts preview: %w", err)
+	}
 
-	   var wrapper struct {
-			   Preview provisioning.DeploymentPreview `json:"preview"`
-	   }
-	   if err := json.Unmarshal([]byte(out), &wrapper); err == nil {
-			   return &provisioning.DeployPreviewResult{
-					   Preview: &wrapper.Preview,
-			   }, nil
-	   }
+	var wrapper struct {
+		Preview provisioning.DeploymentPreview `json:"preview"`
+	}
+	if err := json.Unmarshal([]byte(out), &wrapper); err == nil {
+		return &provisioning.DeployPreviewResult{
+			Preview: &wrapper.Preview,
+		}, nil
+	}
 
-	   // fallback: try to parse as full DeploymentPreview struct
-	   var preview provisioning.DeploymentPreview
-	   if err := json.Unmarshal([]byte(out), &preview); err != nil {
-			   return nil, fmt.Errorf("failed to parse preview output: %w", err)
-	   }
-	   return &provisioning.DeployPreviewResult{
-			   Preview: &preview,
-	   }, nil
+	var preview provisioning.DeploymentPreview
+	if err := json.Unmarshal([]byte(out), &preview); err != nil {
+		return nil, fmt.Errorf("failed to parse preview output: %w", err)
+	}
+	return &provisioning.DeployPreviewResult{
+		Preview: &preview,
+	}, nil
 }
+
 
 // Destroy destroys the infrastructure
 func (p *TypeScriptProvider) Destroy(ctx context.Context, options provisioning.DestroyOptions) (*provisioning.DestroyResult, error) {
-// Optionally, run `npx ts-node deploy.ts --destroy` if supported
-cmd := "npx"
-args := []string{"ts-node", p.configPath, "--destroy"}
-envVars := os.Environ()
-envVars = append(envVars,
-	"AZURE_SUBSCRIPTION_ID="+p.env.GetSubscriptionId(),
-	"AZURE_ENV_NAME="+p.env.Name(),
-	"AZURE_LOCATION="+p.env.GetLocation(),
-)
-out, err := tools.RunCommand(ctx, cmd, args, envVars, p.projectPath)
-if err != nil {
-	return nil, fmt.Errorf("failed to run deploy.ts destroy: %w", err)
+	if p.env == nil {
+		return nil, fmt.Errorf("environment is not yet initialized; cannot destroy")
+	}
+
+	cmd := "npx"
+	args := []string{"ts-node", p.configPath, "--destroy"}
+	
+	// Get environment variables from the environment object first
+	envVars := p.env.Environ()
+	
+	// Add the current OS environment variables
+	envVars = append(envVars, os.Environ()...)
+	
+	// Ensure critical variables are set correctly
+	envVars = append(envVars,
+		"AZURE_SUBSCRIPTION_ID="+p.env.GetSubscriptionId(),
+		"AZURE_ENV_NAME="+p.env.Name(),
+		"AZURE_LOCATION="+p.env.GetLocation(),
+	)
+	
+	// Add cloud configuration if tenant ID is available
+	if tenantID := p.env.GetTenantId(); tenantID != "" {
+		envVars = append(envVars, "AZURE_TENANT_ID="+tenantID)
+	}
+	out, err := tools.RunCommand(ctx, cmd, args, envVars, p.projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to run deploy.ts destroy: %w", err)
+	}
+	var result provisioning.DestroyResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse destroy output: %w", err)
+	}
+	return &result, nil
 }
-var result provisioning.DestroyResult
-if err := json.Unmarshal([]byte(out), &result); err != nil {
-	return nil, fmt.Errorf("failed to parse destroy output: %w", err)
-}
-return &result, nil
-}
+
 
 // Parameters returns the parameters for the infrastructure
 func (p *TypeScriptProvider) Parameters(ctx context.Context) ([]provisioning.Parameter, error) {
 // Optionally, run `npx ts-node deploy.ts --parameters` if supported
 cmd := "npx"
 args := []string{"ts-node", p.configPath, "--parameters"}
-envVars := os.Environ()
+
+// Get environment variables from the environment object first
+envVars := p.env.Environ()
+
+// Add the current OS environment variables
+envVars = append(envVars, os.Environ()...)
+
+// Ensure critical variables are set correctly
 envVars = append(envVars,
 	"AZURE_SUBSCRIPTION_ID="+p.env.GetSubscriptionId(),
 	"AZURE_ENV_NAME="+p.env.Name(),
 	"AZURE_LOCATION="+p.env.GetLocation(),
 )
+
+// Add cloud configuration if tenant ID is available
+if tenantID := p.env.GetTenantId(); tenantID != "" {
+	envVars = append(envVars, "AZURE_TENANT_ID="+tenantID)
+}
 out, err := tools.RunCommand(ctx, cmd, args, envVars, p.projectPath)
 if err != nil {
 	return nil, fmt.Errorf("failed to run deploy.ts parameters: %w", err)
 }
 var params []provisioning.Parameter
-if err := json.Unmarshal([]byte(out), &params); err != nil {
-	return nil, fmt.Errorf("failed to parse parameters output: %w", err)
-}
-	return params, nil
-}
 
-// NewTypeScriptProvider creates a new instance of a TypeScript Infra provider
-func NewTypeScriptProvider(
-	envManager environment.Manager,
-	env *environment.Environment,
-	console input.Console,
-) provisioning.Provider {
-	return &TypeScriptProvider{
-		envManager: envManager,
-		env:        env,
-		console:    console,
-	}
+if err := json.Unmarshal([]byte(out), &params); err != nil {
+	   return nil, fmt.Errorf("failed to parse parameters output: %w", err)
 }
+return params, nil
+}
+// (removed duplicate NewTypeScriptProvider definition)

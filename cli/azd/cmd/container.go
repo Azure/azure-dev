@@ -801,7 +801,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return &workflowCmdAdapter{cmd: rootCmd}, nil
 
 	})
-	container.MustRegisterSingleton(workflow.NewRunner)
+// Register workflow.Runner with config struct, not raw string
+container.MustRegisterSingleton(func(azdRunner workflow.AzdCommandRunner, console input.Console, projectConfig *project.ProjectConfig) *workflow.Runner {
+	   projectRoot := ""
+	   if projectConfig != nil {
+			   projectRoot = projectConfig.Path
+	   }
+	   return workflow.NewRunner(azdRunner, console, workflow.RunnerConfig{ProjectRoot: projectRoot})
+})
 
 	container.MustRegisterScoped(func(authManager *auth.Manager) prompt.AuthManager {
 		return authManager

@@ -51,6 +51,7 @@ test-results/
 .DS_Store
 
 *demo*
-demotest/
-demo/
-demot*
+/d1/
+/d2/
+/d3/
+/d4/

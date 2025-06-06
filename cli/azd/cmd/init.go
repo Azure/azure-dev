@@ -28,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/fatih/color"
 	"github.com/joho/godotenv"
@@ -85,6 +86,85 @@ main().catch(err => { console.error(err); process.exit(1); });
 	   } else if err != nil {
 			   return fmt.Errorf("failed to stat deploy.ts: %w", err)
 	   }
+
+	// Create package.json
+	packageJsonPath := filepath.Join(infraDir, "package.json")
+	if _, err := os.Stat(packageJsonPath); os.IsNotExist(err) {
+		packageJsonContent := `{
+			"name": "infra",
+			"version": "1.0.0",
+			"main": "index.js",
+			"scripts": {
+				"build": "tsc -p tsconfig.build.json",
+				"start": "node dist/deploy.js"
+			},
+			"author": "",
+			"license": "ISC",
+			"description": "",
+			"dependencies": {
+				"@azure/arm-resources": "^6.1.0",
+				"@azure/identity": "^4.10.0",
+				"typescript": "^5.8.3"
+			},
+			"devDependencies": {
+				"@types/node": "^22.15.29"
+			}
+		}`
+		if err := os.WriteFile(packageJsonPath, []byte(packageJsonContent), 0644); err != nil {
+			return fmt.Errorf("failed to write package.json: %w", err)
+		}
+	}
+
+	// Create tsconfig.json
+	tsconfigJsonPath := filepath.Join(infraDir, "tsconfig.json")
+	if _, err := os.Stat(tsconfigJsonPath); os.IsNotExist(err) {
+		tsconfigJsonContent := `{
+			"compilerOptions": {
+				"target": "ES2020",
+				"module": "CommonJS",
+				"strict": true,
+				"esModuleInterop": true,
+				"allowSyntheticDefaultImports": true,
+				"skipLibCheck": true,
+				"forceConsistentCasingInFileNames": true,
+				"outDir": "dist",
+				"paths": {
+					"http": ["./node_modules/@types/node"],
+					"https": ["./node_modules/@types/node"]
+				}
+			},
+			"include": ["deploy.ts"],
+			"exclude": ["node_modules"]
+		}`
+		if err := os.WriteFile(tsconfigJsonPath, []byte(tsconfigJsonContent), 0644); err != nil {
+			return fmt.Errorf("failed to write tsconfig.json: %w", err)
+		}
+	}
+
+	// Create tsconfig.build.json
+	tsconfigBuildJsonPath := filepath.Join(infraDir, "tsconfig.build.json")
+	if _, err := os.Stat(tsconfigBuildJsonPath); os.IsNotExist(err) {
+		tsconfigBuildJsonContent := `{
+			"extends": "./tsconfig.json",
+			"compilerOptions": {
+				"noEmitOnError": false,
+				"skipLibCheck": true
+			},
+			"include": ["deploy.ts"],
+			"exclude": ["node_modules"]
+		}`
+		if err := os.WriteFile(tsconfigBuildJsonPath, []byte(tsconfigBuildJsonContent), 0644); err != nil {
+			return fmt.Errorf("failed to write tsconfig.build.json: %w", err)
+		}
+	}
+
+	// Use npm.Cli with CommandRunner to run npm install
+	runnerOptions := &exec.RunnerOptions{}
+	npmCli := npm.NewCli(exec.NewCommandRunner(runnerOptions))
+	if err := npmCli.Install(ctx, infraDir); err != nil {
+		return fmt.Errorf("failed to run npm install: %w", err)
+	}
+
 	   // Update azure.yaml to use TypeScript provider, or add an infra section if missing
 	   azureYamlPath := filepath.Join(azdCtx.ProjectDirectory(), "azure.yaml")
 	   if _, err := os.Stat(azureYamlPath); err == nil {

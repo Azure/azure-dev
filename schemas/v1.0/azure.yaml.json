@@ -364,7 +364,8 @@
                     "existing": {
                         "type": "boolean",
                         "title": "An existing resource for referencing purposes",
-                        "description": "Optional. When set to true, this resource will not be created and instead be used for referencing purposes. (Default: false)"
+                        "description": "Optional. When set to true, this resource will not be created and instead be used for referencing purposes. (Default: false)",
+                        "default": false
                     }
                 },
                 "allOf": [
@@ -372,16 +373,16 @@
                     { "if": { "properties": { "type": { "const": "host.containerapp" }}}, "then": { "$ref": "#/definitions/containerAppResource" } },
                     { "if": { "properties": { "type": { "const": "ai.openai.model" }}}, "then": { "$ref": "#/definitions/aiModelResource" } },
                     { "if": { "properties": { "type": { "const": "ai.project" }}}, "then": { "$ref": "#/definitions/aiProjectResource" } },
-                    { "if": { "properties": { "type": { "const": "ai.search" }}}, "then": { "$ref": "#/definitions/resource" } },
-                    { "if": { "properties": { "type": { "const": "db.postgres"  }}}, "then": { "$ref": "#/definitions/resource"} },
-                    { "if": { "properties": { "type": { "const": "db.mysql"  }}}, "then": { "$ref": "#/definitions/resource"} },
-                    { "if": { "properties": { "type": { "const": "db.redis"  }}}, "then": { "$ref": "#/definitions/resource"} },
-                    { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/resource"} },
+                    { "if": { "properties": { "type": { "const": "ai.search" }}}, "then": { "$ref": "#/definitions/aiSearchResource" } },
+                    { "if": { "properties": { "type": { "const": "db.postgres"  }}}, "then": { "$ref": "#/definitions/genericDbResource"} },
+                    { "if": { "properties": { "type": { "const": "db.mysql"  }}}, "then": { "$ref": "#/definitions/genericDbResource"} },
+                    { "if": { "properties": { "type": { "const": "db.redis"  }}}, "then": { "$ref": "#/definitions/genericDbResource"} },
+                    { "if": { "properties": { "type": { "const": "db.mongo"  }}}, "then": { "$ref": "#/definitions/genericDbResource"} },
                     { "if": { "properties": { "type": { "const": "db.cosmos" }}}, "then": { "$ref": "#/definitions/cosmosDbResource"} },
                     { "if": { "properties": { "type": { "const": "messaging.eventhubs" }}}, "then": { "$ref": "#/definitions/eventHubsResource" } },
                     { "if": { "properties": { "type": { "const": "messaging.servicebus" }}}, "then": { "$ref": "#/definitions/serviceBusResource" } },
                     { "if": { "properties": { "type": { "const": "storage"  }}}, "then": { "$ref": "#/definitions/storageAccountResource"} },
-                    { "if": { "properties": { "type": { "const": "keyvault" }}}, "then": { "$ref": "#/definitions/resource"} }
+                    { "if": { "properties": { "type": { "const": "keyvault" }}}, "then": { "$ref": "#/definitions/keyVaultResource"} }
                 ]
             }
         },
@@ -1154,282 +1155,6 @@
                 "deployment"
             ]
         },
-        "resource": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "type": {
-                    "type": "string",
-                    "title": "Type of resource",
-                    "description": "The type of resource to be created. (Example: db.postgres)",
-                    "enum": [
-                        "db.postgres",
-                        "db.redis",
-                        "db.mysql",
-                        "db.mongo",
-                        "db.cosmos",
-                        "host.appservice",
-                        "host.containerapp",
-                        "ai.openai.model",
-                        "ai.project",
-                        "ai.search",
-                        "keyvault"
-                    ]
-                },
-                "uses": {
-                    "type": "array",
-                    "title": "Other resources that this resource uses",
-                    "items": {
-                        "type": "string"
-                    },
-                    "uniqueItems": true
-                },
-                "existing": {
-                    "type": "boolean",
-                    "title": "An existing resource for referencing purposes",
-                    "description": "Optional. When set to true, this resource will not be created and instead be used for referencing purposes. (Default: false)"
-                }
-            }
-        },
-        "containerAppResource": {
-            "type": "object",
-            "description": "A Docker-based container app.",
-            "additionalProperties": false,
-            "required": [
-                "port"
-            ],
-            "properties": {
-                "type": true,
-                "uses": true,
-                "port": {
-                    "type": "integer",
-                    "title": "Port that the container app listens on",
-                    "description": "Optional. The port that the container app listens on. (Default: 80)"
-                },
-                "env": {
-                    "type": "array",
-                    "title": "Environment variables to set for the container app",
-                    "items": {
-                        "type": "object",
-                        "required": [
-                            "name"
-                        ],
-                        "additionalProperties": false,
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "title": "Name of the environment variable"
-                            },
-                            "value": {
-                                "type": "string",
-                                "title": "Value of the environment variable. Supports environment variable substitution."
-                            },
-                            "secret": {
-                                "type": "string",
-                                "title": "Secret value of the environment variable. Supports environment variable substitution."
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "aiModelResource": {
-            "type": "object",
-            "description": "A deployed, ready-to-use AI model.",
-            "additionalProperties": false,
-            "required": [
-                "model"
-            ],
-            "properties": {
-                "type": true,
-                "uses": true,
-                "model": {
-                    "type": "object",
-                    "description": "The underlying AI model.",
-                    "additionalProperties": false,
-                    "required": [
-                        "name",
-                        "version"
-                    ],
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "title": "The name of the AI model.",
-                            "description": "Required. The name of the AI model."
-                        },
-                        "version": {
-                            "type": "string",
-                            "title": "The version of the AI model.",
-                            "description": "Required. The version of the AI model."
-                        }
-                    }
-                }
-            }
-        },
-        "cosmosDbResource": {
-            "type": "object",
-            "description": "A deployed, ready-to-use Azure Cosmos DB for NoSQL database.",
-            "additionalProperties": false,
-            "properties": {
-                "type": true,
-                "uses": true,
-                "containers": {
-                    "type": "array",
-                    "title": "Containers",
-                    "description": "Containers to be created to store data. Each container stores a collection of items.",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "title": "Container name.",
-                                "description": "Required. The name of the container."
-                            },
-                            "partitionKeys": {
-                                "type": "array",
-                                "title": "Partition keys.",
-                                "description": "Required. The partition key(s) used to distribute data across partitions. The ordering of keys matters. By default, a single partition key '/id' is naturally a great choice for most applications.",
-                                "minLength": 1,
-                                "maxLength": 3,
-                                "items": {
-                                    "type": "string"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "eventHubsResource": {
-            "type": "object",
-            "description": "An Azure Event Hubs namespace.",
-            "additionalProperties": false,
-            "properties": {
-                "type": true,
-                "uses": true,
-                "existing": true,
-                "hubs": {
-                    "type": "array",
-                    "title": "Hubs to create in the Event Hubs namespace",
-                    "additionalProperties": false,
-                    "items": {
-                        "type": "string"
-                    },
-                    "uniqueItems": true
-                }
-            }
-        },
-        "serviceBusResource": {
-            "type": "object",
-            "description": "An Azure Service Bus namespace.",
-            "additionalProperties": false,
-            "properties": {
-                "type": true,
-                "uses": true,
-                "existing": true,
-                "queues": {
-                    "type": "array",
-                    "title": "Queues to create in the Service Bus namespace",
-                    "additionalProperties": false,
-                    "items": {
-                        "type": "string"
-                    },
-                    "uniqueItems": true
-                },
-                "topics": {
-                    "type": "array",
-                    "title": "Topics to create in the Service Bus namespace",
-                    "additionalProperties": false,
-                    "items": {
-                        "type": "string"
-                    },
-                    "uniqueItems": true
-                }
-            }
-        },
-        "storageAccountResource": {
-            "type": "object",
-            "description": "A deployed, ready-to-use Azure Storage Account.",
-            "additionalProperties": false,
-            "properties": {
-                "type": true,
-                "uses": true,
-                "existing": true,
-                "containers": {
-                    "type": "array",
-                    "title": "Azure Storage Account container names.",
-                    "description": "The container names of Azure Storage Account.",
-                    "items": {
-                        "type": "string",
-                        "title": "Azure Storage Account container name",
-                        "description": "The container name of Azure Storage Account."
-                    }
-                }
-            }
-        },
-        "aiProjectResource": {
-            "type": "object",
-            "description": "An Azure AI Foundry project with models.",
-            "additionalProperties": false,
-            "properties": {
-                "type": true,
-                "uses": true,
-                "existing": true,
-                "models": {
-                    "type": "array",
-                    "title": "AI models to deploy",
-                    "description": "Optional. The AI models to be deployed as part of the AI project.",
-                    "minItems": 1,
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": ["name", "version", "format", "sku"],
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "title": "The name of the AI model.",
-                                "description": "Required. The name of the AI model."
-                            },
-                            "version": {
-                                "type": "string",
-                                "title": "The version of the AI model.",
-                                "description": "Required. The version of the AI model."
-                            },
-                            "format": {
-                                "type": "string",
-                                "title": "The format of the AI model.",
-                                "description": "Required. The format of the AI model. (Example: Microsoft, OpenAI)"
-                            },
-                            "sku": {
-                                "type": "object",
-                                "title": "The SKU configuration for the AI model.",
-                                "description": "Required. The SKU details for the AI model.",
-                                "additionalProperties": false,
-                                "required": ["name", "usageName", "capacity"],
-                                "properties": {
-                                    "name": {
-                                        "type": "string",
-                                        "title": "The name of the SKU.",
-                                        "description": "Required. The name of the SKU. (Example: GlobalStandard)"
-                                    },
-                                    "usageName": {
-                                        "type": "string",
-                                        "title": "The usage name of the SKU.",
-                                        "description": "Required. The usage name of the SKU for billing purposes. (Example: AIServices.GlobalStandard.MaaS, OpenAI.GlobalStandard.gpt-4o-mini)"
-                                    },
-                                    "capacity": {
-                                        "type": "integer",
-                                        "title": "The capacity of the SKU.",
-                                        "description": "Required. The capacity of the SKU."
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "appServiceResource": {
             "type": "object",
             "description": "An Azure App Service web app.",
@@ -1439,8 +1164,18 @@
                 "runtime"
             ],
             "properties": {
-                "type": true,
-                "uses": true,
+                "type": {
+                    "type": "string",
+                    "const": "host.appservice"
+                },
+                "uses": {
+                    "type": "array",
+                    "title": "Other resources that this resource uses",
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
+                },
                 "port": {
                     "type": "integer",
                     "title": "Port that the web app listens on",
@@ -1500,6 +1235,355 @@
                     "type": "string",
                     "title": "Startup command",
                     "description": "Optional. Startup command that will be run as part of web app startup."
+                }
+            }
+        },
+        "containerAppResource": {
+            "type": "object",
+            "description": "A Docker-based container app.",
+            "additionalProperties": false,
+            "required": [
+                "port"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "host.containerapp"
+                },
+                "uses": {
+                    "type": "array",
+                    "title": "Other resources that this resource uses",
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
+                },
+                "port": {
+                    "type": "integer",
+                    "title": "Port that the container app listens on",
+                    "description": "Optional. The port that the container app listens on. (Default: 80)"
+                },
+                "env": {
+                    "type": "array",
+                    "title": "Environment variables to set for the container app",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "name"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "title": "Name of the environment variable"
+                            },
+                            "value": {
+                                "type": "string",
+                                "title": "Value of the environment variable. Supports environment variable substitution."
+                            },
+                            "secret": {
+                                "type": "string",
+                                "title": "Secret value of the environment variable. Supports environment variable substitution."
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "aiModelResource": {
+            "type": "object",
+            "description": "A deployed, ready-to-use AI model.",
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "ai.openai.model"
+                },
+                "existing": {
+                    "type": "boolean",
+                    "title": "An existing resource for referencing purposes",
+                    "description": "Optional. When set to true, this resource will not be created and instead be used for referencing purposes. (Default: false)",
+                    "default": false
+                },
+                "model": {
+                    "type": "object",
+                    "description": "The underlying AI model.",
+                    "additionalProperties": false,
+                    "required": [
+                        "name",
+                        "version"
+                    ],
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "title": "The name of the AI model.",
+                            "description": "Required. The name of the AI model."
+                        },
+                        "version": {
+                            "type": "string",
+                            "title": "The version of the AI model.",
+                            "description": "Required. The version of the AI model."
+                        }
+                    }
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "existing": {
+                                "const": false
+                            }
+                        }
+                    },
+                    "then": {
+                        "required": [
+                            "model"
+                        ]
+                    }
+                }
+            ]
+        },
+        "aiProjectResource": {
+            "type": "object",
+            "description": "An Azure AI Foundry project with models.",
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "ai.project"
+                },
+                "existing": {
+                    "type": "boolean",
+                    "title": "An existing resource for referencing purposes",
+                    "description": "Optional. When set to true, this resource will not be created and instead be used for referencing purposes. (Default: false)",
+                    "default": false
+                },
+                "models": {
+                    "type": "array",
+                    "title": "AI models to deploy",
+                    "description": "Optional. The AI models to be deployed as part of the AI project.",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["name", "version", "format", "sku"],
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "title": "The name of the AI model.",
+                                "description": "Required. The name of the AI model."
+                            },
+                            "version": {
+                                "type": "string",
+                                "title": "The version of the AI model.",
+                                "description": "Required. The version of the AI model."
+                            },
+                            "format": {
+                                "type": "string",
+                                "title": "The format of the AI model.",
+                                "description": "Required. The format of the AI model. (Example: Microsoft, OpenAI)"
+                            },
+                            "sku": {
+                                "type": "object",
+                                "title": "The SKU configuration for the AI model.",
+                                "description": "Required. The SKU details for the AI model.",
+                                "additionalProperties": false,
+                                "required": ["name", "usageName", "capacity"],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "title": "The name of the SKU.",
+                                        "description": "Required. The name of the SKU. (Example: GlobalStandard)"
+                                    },
+                                    "usageName": {
+                                        "type": "string",
+                                        "title": "The usage name of the SKU.",
+                                        "description": "Required. The usage name of the SKU for billing purposes. (Example: AIServices.GlobalStandard.MaaS, OpenAI.GlobalStandard.gpt-4o-mini)"
+                                    },
+                                    "capacity": {
+                                        "type": "integer",
+                                        "title": "The capacity of the SKU.",
+                                        "description": "Required. The capacity of the SKU."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "aiSearchResource": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "ai.search"
+                },
+                "existing": {
+                    "type": "boolean",
+                    "title": "An existing resource for referencing purposes",
+                    "description": "Optional. When set to true, this resource will not be created and instead be used for referencing purposes. (Default: false)",
+                    "default": false
+                }
+            }
+        },
+        "genericDbResource": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "title": "Type of resource",
+                    "description": "The type of resource to be created. (Example: db.postgres)",
+                    "enum": [
+                        "db.postgres",
+                        "db.redis",
+                        "db.mysql",
+                        "db.mongo"
+                    ]
+                }
+            }
+        },
+        "cosmosDbResource": {
+            "type": "object",
+            "description": "A deployed, ready-to-use Azure Cosmos DB for NoSQL database.",
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "db.cosmos"
+                },
+                "containers": {
+                    "type": "array",
+                    "title": "Containers",
+                    "description": "Containers to be created to store data. Each container stores a collection of items.",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "title": "Container name.",
+                                "description": "Required. The name of the container."
+                            },
+                            "partitionKeys": {
+                                "type": "array",
+                                "title": "Partition keys.",
+                                "description": "Required. The partition key(s) used to distribute data across partitions. The ordering of keys matters. By default, a single partition key '/id' is naturally a great choice for most applications.",
+                                "minLength": 1,
+                                "maxLength": 3,
+                                "items": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "eventHubsResource": {
+            "type": "object",
+            "description": "An Azure Event Hubs namespace.",
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "messaging.eventhubs"
+                },
+                "existing": {
+                    "type": "boolean",
+                    "title": "An existing resource for referencing purposes",
+                    "description": "Optional. When set to true, this resource will not be created and instead be used for referencing purposes. (Default: false)",
+                    "default": false
+                },
+                "hubs": {
+                    "type": "array",
+                    "title": "Hubs to create in the Event Hubs namespace",
+                    "additionalProperties": false,
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
+                }
+            }
+        },
+        "serviceBusResource": {
+            "type": "object",
+            "description": "An Azure Service Bus namespace.",
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "messaging.servicebus"
+                },
+                "existing": {
+                    "type": "boolean",
+                    "title": "An existing resource for referencing purposes",
+                    "description": "Optional. When set to true, this resource will not be created and instead be used for referencing purposes. (Default: false)",
+                    "default": false
+                },
+                "queues": {
+                    "type": "array",
+                    "title": "Queues to create in the Service Bus namespace",
+                    "additionalProperties": false,
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
+                },
+                "topics": {
+                    "type": "array",
+                    "title": "Topics to create in the Service Bus namespace",
+                    "additionalProperties": false,
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
+                }
+            }
+        },
+        "storageAccountResource": {
+            "type": "object",
+            "description": "A deployed, ready-to-use Azure Storage Account.",
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "storage"
+                },
+                "existing": {
+                    "type": "boolean",
+                    "title": "An existing resource for referencing purposes",
+                    "description": "Optional. When set to true, this resource will not be created and instead be used for referencing purposes. (Default: false)",
+                    "default": false
+                },
+                "containers": {
+                    "type": "array",
+                    "title": "Azure Storage Account container names.",
+                    "description": "The container names of Azure Storage Account.",
+                    "items": {
+                        "type": "string",
+                        "title": "Azure Storage Account container name",
+                        "description": "The container name of Azure Storage Account."
+                    }
+                }
+            }
+        },
+        "keyVaultResource": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "const": "keyvault"
+                },
+                "existing": {
+                    "type": "boolean",
+                    "title": "An existing resource for referencing purposes",
+                    "description": "Optional. When set to true, this resource will not be created and instead be used for referencing purposes. (Default: false)",
+                    "default": false
                 }
             }
         }

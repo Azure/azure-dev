@@ -69,6 +69,7 @@ message ComposedResource {
   string type = 2;
   bytes config = 3;
   repeated string uses = 4;
+  string resource_id = 5;
 }
 
 // ComposedResourceType represents a type of composability resource.

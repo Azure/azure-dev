@@ -113,7 +113,6 @@ flexconsumption
 Frontends
 fsnotify
 funcapp
-functestapp
 functionapp
 gjson
 go-imath
@@ -180,6 +179,7 @@ pflag
 pgadmin
 posix
 preinit
+protogen
 proxying
 psanford
 psycopg

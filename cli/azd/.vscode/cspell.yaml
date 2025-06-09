@@ -163,3 +163,4 @@ overrides:
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"
+  - "**/*.pb.go"

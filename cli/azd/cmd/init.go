@@ -31,7 +31,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
-	"github.com/fatih/color"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -214,38 +213,35 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("checking if project exists: %w", err)
 	}
 
-	var initTypeSelect initType
+	var initTypeSelect initType = initUnknown
 	initTypeCount := 0
 	if i.flags.templatePath != "" || len(i.flags.templateTags) > 0 {
 		initTypeCount++
+		initTypeSelect = initAppTemplate
 	}
 	if i.flags.fromCode {
 		initTypeCount++
+		initTypeSelect = initFromApp
 	}
 	if i.flags.minimal {
 		initTypeCount++
+		initTypeSelect = initFromApp // Minimal now also uses initFromApp path
 	}
 
 	if initTypeCount > 1 {
 		return nil, errors.New("only one of init modes: --template, --from-code, or --minimal should be set")
 	}
 
-	if i.flags.templatePath != "" || len(i.flags.templateTags) > 0 {
-		// an explicit --template passed, always initialize from app template
-		initTypeSelect = initAppTemplate
-	} else if i.flags.fromCode {
-		initTypeSelect = initFromApp
-	} else if i.flags.minimal {
-		initTypeSelect = initProject
-	} else if existingProject {
-		// only initialize environment when no mode is set explicitly
-		initTypeSelect = initEnvironment
-	}
-
 	if initTypeSelect == initUnknown {
-		initTypeSelect, err = promptInitType(i.console, ctx)
-		if err != nil {
-			return nil, err
+		if existingProject {
+			// only initialize environment when no mode is set explicitly
+			initTypeSelect = initEnvironment
+		} else {
+			// Prompt for init type for new projects
+			initTypeSelect, err = promptInitType(i.console, ctx)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -295,36 +291,48 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	case initFromApp:
 		tracing.SetUsageAttributes(fields.InitMethod.String("app"))
-
 		header = "Your app is ready for the cloud!"
 		followUp = "Run " + output.WithHighLightFormat("azd up") + " to provision and deploy your app to Azure.\n" +
 			"Run " + output.WithHighLightFormat("azd add") + " to add new Azure components to your project.\n" +
 			"Run " + output.WithHighLightFormat("azd infra gen") + " to generate IaC for your project to disk, " +
 			"allowing you to manually manage it.\n" +
 			"See " + output.WithHighLightFormat("./next-steps.md") + " for more information on configuring your app."
-		entries, err := os.ReadDir(azdCtx.ProjectDirectory())
-		if err != nil {
-			return nil, fmt.Errorf("reading current directory: %w", err)
-		}
 
-		if len(entries) == 0 {
-			return nil, &internal.ErrorWithSuggestion{
-				Err: errors.New("no files found in the current directory"),
-				Suggestion: "Ensure you're in the directory where your app code is located and try again." +
-					" If you do not have code and would like to start with an app template, run '" +
-					output.WithHighLightFormat("azd init") + "' and select the option to " +
-					color.MagentaString("Use a template") + ".",
+		envSpecified := i.flags.EnvironmentName != ""
+		initializeEnv := func() (*environment.Environment, error) {
+			return i.initializeEnv(ctx, azdCtx, templates.Metadata{})
+		}
+		initializeMinimal := func() error {
+			tracing.SetUsageAttributes(fields.InitMethod.String("project"))
+			err := i.repoInitializer.InitializeMinimal(ctx, azdCtx)
+			if err != nil {
+				return err
 			}
+
+			// Create env upfront only if the environment name is passed in.
+			if envSpecified {
+				_, err := initializeEnv()
+				if err != nil {
+					return err
+				}
+			}
+
+			header = "Generated azure.yaml project file."
+			followUp = "Run " + output.WithHighLightFormat("azd add") + " to add new Azure components to your project."
+			return nil
 		}
 
-		err = i.repoInitializer.InitFromApp(
-			ctx,
-			azdCtx,
-			func() (*environment.Environment, error) {
-				return i.initializeEnv(ctx, azdCtx, templates.Metadata{})
-			},
-			i.flags.EnvironmentName != "",
-		)
+		if i.flags.minimal {
+			err = initializeMinimal()
+		} else {
+			err = i.repoInitializer.InitFromApp(
+				ctx,
+				azdCtx,
+				initializeEnv,
+				initializeMinimal,
+				envSpecified,
+			)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -336,24 +344,6 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		header = fmt.Sprintf("Initialized environment %s.", env.Name())
 		followUp = ""
-	case initProject:
-		tracing.SetUsageAttributes(fields.InitMethod.String("project"))
-
-		err = i.repoInitializer.InitializeMinimal(ctx, azdCtx)
-		if err != nil {
-			return nil, err
-		}
-
-		// Create env upfront only if the environment name is passed in.
-		if i.flags.EnvironmentName != "" {
-			_, err := i.initializeEnv(ctx, azdCtx, templates.Metadata{})
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		header = "Generated azure.yaml project file."
-		followUp = "Run " + output.WithHighLightFormat("azd add") + " to add new Azure components to your project."
 	default:
 		panic("unhandled init type")
 	}
@@ -376,7 +366,6 @@ const (
 	initUnknown = iota
 	initFromApp
 	initAppTemplate
-	initProject
 	initEnvironment
 )
 
@@ -384,9 +373,8 @@ func promptInitType(console input.Console, ctx context.Context) (initType, error
 	selection, err := console.Select(ctx, input.ConsoleOptions{
 		Message: "How do you want to initialize your app?",
 		Options: []string{
-			"Use code in the current directory",
+			"Use code in the current directory", // This now covers minimal project creation too
 			"Select a template",
-			"Create a minimal project",
 		},
 	})
 	if err != nil {
@@ -398,8 +386,6 @@ func promptInitType(console input.Console, ctx context.Context) (initType, error
 		return initFromApp, nil
 	case 1:
 		return initAppTemplate, nil
-	case 2:
-		return initProject, nil
 	default:
 		panic("unhandled selection")
 	}

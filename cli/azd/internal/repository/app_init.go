@@ -35,6 +35,7 @@ func (i *Initializer) InitFromApp(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
 	initializeEnv func() (*environment.Environment, error),
+	initializeMinimal func() error,
 	envSpecified bool) error {
 	i.console.Message(ctx, "")
 	title := "Scanning app code in current directory"
@@ -234,6 +235,10 @@ func (i *Initializer) InitFromApp(
 
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("config"))
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("generate"))
+
+	if len(detect.Services) == 0 && len(detect.Databases) == 0 {
+		return initializeMinimal()
+	}
 
 	// Defer env initialization until 'azd up', except cases where user explicitly specifies the env name
 	if envSpecified {

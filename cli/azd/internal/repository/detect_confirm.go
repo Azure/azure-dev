@@ -106,69 +106,75 @@ func (d *detectConfirm) captureUsage(
 // Confirm prompts the user to confirm the detected services and databases,
 // providing modifications to the detected services and databases.
 func (d *detectConfirm) Confirm(ctx context.Context) error {
+	const (
+		optionConfirmAndContinue = "Confirm and continue initializing my app"
+		optionRemoveService      = "Remove a detected service"
+		optionAddService         = "Add an undetected service"
+	)
+
 	for {
 		if err := d.render(ctx); err != nil {
 			return err
 		}
 
+		var selectedOptionIndex int
+		var err error
+
 		if len(d.Services) == 0 && !d.modified {
-			confirmAdd, err := d.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "Add an undetected service?",
-				DefaultValue: true,
+			options := []string{
+				optionConfirmAndContinue,
+				optionAddService,
+			}
+			selectedOptionIndex, err = d.console.Select(ctx, input.ConsoleOptions{
+				Message: "Select an option",
+				Options: options,
 			})
 			if err != nil {
 				return err
 			}
-
-			if !confirmAdd {
-				return fmt.Errorf("cancelled")
+			// Adjust index for the switch statement below
+			if selectedOptionIndex == 0 { // Confirm and continue
+				// This corresponds to case 0 in the main switch
+			} else { // Add an undetected service
+				selectedOptionIndex = 2 // This corresponds to case 2 in the main switch
 			}
-
-			if err := d.add(ctx); err != nil {
+		} else {
+			d.modified = false
+			options := []string{
+				optionConfirmAndContinue,
+				optionRemoveService,
+				optionAddService,
+			}
+			selectedOptionIndex, err = d.console.Select(ctx, input.ConsoleOptions{
+				Message: "Select an option",
+				Options: options,
+			})
+			if err != nil {
 				return err
 			}
-
-			tracing.IncrementUsageAttribute(fields.AppInitModifyAddCount.Int(1))
-			continue
 		}
 
-		d.modified = false
-
-		continueOption, err := d.console.Select(ctx, input.ConsoleOptions{
-			Message: "Select an option",
-			Options: []string{
-				"Confirm and continue initializing my app",
-				"Remove a detected service",
-				"Add an undetected service",
-			},
-		})
-		if err != nil {
-			return err
-		}
-
-		switch continueOption {
-		case 0:
+		switch selectedOptionIndex {
+		case 0: // Confirm and continue initializing my app
 			d.captureUsage(
 				fields.AppInitConfirmedDatabases,
 				fields.AppInitConfirmedServices)
 			return nil
-		case 1:
+		case 1: // Remove a detected service
 			if err := d.remove(ctx); err != nil {
 				if errors.Is(err, terminal.InterruptErr) {
 					continue
 				}
 				return err
 			}
-
 			tracing.IncrementUsageAttribute(fields.AppInitModifyRemoveCount.Int(1))
-		case 2:
+		case 2: // Add an undetected service
 			if err := d.add(ctx); err != nil {
 				if errors.Is(err, terminal.InterruptErr) {
 					continue
 				}
 				return err
 			}
-
 			tracing.IncrementUsageAttribute(fields.AppInitModifyAddCount.Int(1))
 		}
 	}

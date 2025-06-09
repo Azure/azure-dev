@@ -59,6 +59,7 @@ type initFlags struct {
 	location       string
 	global         *internal.GlobalCommandOptions
 	fromCode       bool
+	minimal        bool
 	up             bool
 	internal.EnvFlag
 }
@@ -98,6 +99,13 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"",
 		false,
 		"Initializes a new application from your existing code.",
+	)
+	local.BoolVarP(
+		&i.minimal,
+		"minimal",
+		"m",
+		false,
+		"Initializes a new application with minimal configuration.",
 	)
 	local.BoolVarP(
 		&i.up,
@@ -207,19 +215,29 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	var initTypeSelect initType
+	initTypeCount := 0
+	if i.flags.templatePath != "" || len(i.flags.templateTags) > 0 {
+		initTypeCount++
+	}
+	if i.flags.fromCode {
+		initTypeCount++
+	}
+	if i.flags.minimal {
+		initTypeCount++
+	}
+
+	if initTypeCount > 1 {
+		return nil, errors.New("only one of init modes: --template, --from-code, or --minimal should be set")
+	}
+
 	if i.flags.templatePath != "" || len(i.flags.templateTags) > 0 {
 		// an explicit --template passed, always initialize from app template
 		initTypeSelect = initAppTemplate
-	}
-
-	if i.flags.fromCode {
-		if i.flags.templatePath != "" {
-			return nil, errors.New("only one of init modes: --template, or --from-code should be set")
-		}
+	} else if i.flags.fromCode {
 		initTypeSelect = initFromApp
-	}
-
-	if i.flags.templatePath == "" && !i.flags.fromCode && existingProject {
+	} else if i.flags.minimal {
+		initTypeSelect = initProject
+	} else if existingProject {
 		// only initialize environment when no mode is set explicitly
 		initTypeSelect = initEnvironment
 	}

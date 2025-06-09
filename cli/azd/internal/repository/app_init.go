@@ -263,8 +263,7 @@ func (i *Initializer) InitFromApp(
 		return fmt.Errorf("loading scaffold templates: %w", err)
 	}
 
-	// TODO: Merge next-steps.md and next-steps-alpha.md
-	err = scaffold.Execute(t, "next-steps-alpha.md", nil, filepath.Join(azdCtx.ProjectDirectory(), "next-steps.md"))
+	err = scaffold.Execute(t, "next-steps.md", nil, filepath.Join(azdCtx.ProjectDirectory(), "next-steps.md"))
 	if err != nil {
 		return err
 	}

@@ -117,49 +117,29 @@ func (d *detectConfirm) Confirm(ctx context.Context) error {
 			return err
 		}
 
-		var selectedOptionIndex int
-		var err error
+		options := []string{optionConfirmAndContinue}
+		if len(d.Services) > 0 || len(d.Databases) > 0 {
+			options = append(options, optionRemoveService)
+		}
+		options = append(options, optionAddService)
 
-		if len(d.Services) == 0 && len(d.Databases) == 0 {
-			options := []string{
-				optionConfirmAndContinue,
-				optionAddService,
-			}
-			selectedOptionIndex, err = d.console.Select(ctx, input.ConsoleOptions{
-				Message: "Select an option",
-				Options: options,
-			})
-			if err != nil {
-				return err
-			}
-			// Adjust index for the switch statement below, because the same switch is used for
-			// when there are 3 options
-			if selectedOptionIndex == 1 {
-				selectedOptionIndex = 2
-			}
-		} else {
-			d.modified = false
-			options := []string{
-				optionConfirmAndContinue,
-				optionRemoveService,
-				optionAddService,
-			}
-			selectedOptionIndex, err = d.console.Select(ctx, input.ConsoleOptions{
-				Message: "Select an option",
-				Options: options,
-			})
-			if err != nil {
-				return err
-			}
+		selectedOptionIndex, err := d.console.Select(ctx, input.ConsoleOptions{
+			Message: "Select an option",
+			Options: options,
+		})
+		if err != nil {
+			return err
 		}
 
-		switch selectedOptionIndex {
-		case 0: // Confirm and continue initializing my app
+		selectedOption := options[selectedOptionIndex]
+
+		switch selectedOption {
+		case optionConfirmAndContinue:
 			d.captureUsage(
 				fields.AppInitConfirmedDatabases,
 				fields.AppInitConfirmedServices)
 			return nil
-		case 1: // Remove a detected service
+		case optionRemoveService:
 			if err := d.remove(ctx); err != nil {
 				if errors.Is(err, terminal.InterruptErr) {
 					continue
@@ -167,7 +147,7 @@ func (d *detectConfirm) Confirm(ctx context.Context) error {
 				return err
 			}
 			tracing.IncrementUsageAttribute(fields.AppInitModifyRemoveCount.Int(1))
-		case 2: // Add an undetected service
+		case optionAddService:
 			if err := d.add(ctx); err != nil {
 				if errors.Is(err, terminal.InterruptErr) {
 					continue

@@ -107,7 +107,11 @@ func Test_CLI_Init_Minimal_With_Existing_Infra_Variations(t *testing.T) {
 		stdIn string
 	}{
 		{name: "minimal flag", args: []string{"init", "-m"}, stdIn: "\n"},
-		{name: "interactive", args: []string{"init"}, stdIn: "Scan current directory\nConfirm and continue initializing my app\n\n"},
+		{
+			name:  "interactive",
+			args:  []string{"init"},
+			stdIn: "Scan current directory\nConfirm and continue initializing my app\n\n",
+		},
 	}
 
 	for _, tt := range tests {
@@ -125,8 +129,10 @@ func Test_CLI_Init_Minimal_With_Existing_Infra_Variations(t *testing.T) {
 			originalBicep := "param location string = 'eastus2'"
 			originalParameters := "{\"parameters\": {\"location\": {\"value\": \"eastus2\"}}}"
 
-			require.NoError(t, os.WriteFile(filepath.Join(infraDir, "main.bicep"), []byte(originalBicep), osutil.PermissionFile))
-			require.NoError(t, os.WriteFile(filepath.Join(infraDir, "main.parameters.json"), []byte(originalParameters), osutil.PermissionFile))
+			bicepPath := filepath.Join(infraDir, "main.bicep")
+			parametersPath := filepath.Join(infraDir, "main.parameters.json")
+			require.NoError(t, os.WriteFile(bicepPath, []byte(originalBicep), osutil.PermissionFile))
+			require.NoError(t, os.WriteFile(parametersPath, []byte(originalParameters), osutil.PermissionFile))
 
 			_, err := cli.RunCommandWithStdIn(ctx, tt.stdIn, tt.args...)
 			require.NoError(t, err)
@@ -274,7 +280,8 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over in the new git repository.
+	// While `init` uses git behind the scenes to pull a template, we don't want to bring
+	// the history over in the new git repository.
 	cmdRun := exec.NewCommandRunner(nil)
 	cmdRes, err := cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "log", "--oneline", "-n", "1"))
 	require.Error(t, err)

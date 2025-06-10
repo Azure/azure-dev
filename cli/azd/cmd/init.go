@@ -104,7 +104,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"minimal",
 		"m",
 		false,
-		"Initializes a new application with minimal configuration.",
+		"Initializes a minimal project.",
 	)
 	local.BoolVarP(
 		&i.up,

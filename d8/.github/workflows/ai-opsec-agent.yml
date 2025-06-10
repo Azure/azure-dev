@@ -1,0 +1,42 @@
+name: AI OpSec Agent
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: 
+    - "**/*.py"
+    - "**/*.js"
+    - "**/*.ts"
+    - "**/*.java"
+    - "**/*.cs" 
+    - "**/*.bicep"
+    - "**/*.yml"
+    - "**/*.yaml"
+    - "**/*.json"
+
+
+permissions:
+  contents: read
+  pull-requests: write # so we can comment on PRs
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    name: "Audit Codebase"
+    steps:
+      - name: Checkout code 
+        uses: actions/checkout@v4
+      - name: Audit Codebase
+        uses: Azure-Samples/azure-ai-travel-agents/.github/actions/ai-opsec-agent@main
+        with:
+            AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+            AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            output: security-audit.md
+        
+      - name: Upload as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-audit
+          path: security-audit.md
+

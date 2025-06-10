@@ -53,8 +53,51 @@ func (p *TypeScriptProvider) Name() string {
 	return "typescript"
 }
 
+// SimpleTool implements the tools.ExternalTool interface for basic commands
+type SimpleTool struct {
+	command string
+	args    []string
+	name    string
+	installUrl string
+}
+
+func (t *SimpleTool) CheckInstalled(ctx context.Context) error {
+	err := tools.ToolInPath(t.command)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *SimpleTool) InstallUrl() string {
+	return t.installUrl
+}
+
+func (t *SimpleTool) Name() string {
+	return t.name
+}
+
 func (p *TypeScriptProvider) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{}
+	return []tools.ExternalTool{
+		&SimpleTool{
+			command: "node",
+			args:    []string{"--version"},
+			name:    "Node.js",
+			installUrl: "https://nodejs.org/",
+		},
+		&SimpleTool{
+			command: "npm",
+			args:    []string{"--version"},
+			name:    "npm",
+			installUrl: "https://www.npmjs.com/",
+		},
+		&SimpleTool{
+			command: "docker",
+			args:    []string{"--version"},
+			name:    "Docker",
+			installUrl: "https://docs.docker.com/get-docker/",
+		},
+	}
 }
 
 // Initialize initializes provider state from the options
@@ -369,6 +412,84 @@ func (p *TypeScriptProvider) Parameters(ctx context.Context) ([]provisioning.Par
 		return nil, fmt.Errorf("failed to parse parameters output: %w", err)
 	}
 	return params, nil
+}
+
+// DeployContainer deploys the container app
+func (p *TypeScriptProvider) DeployContainer(ctx context.Context) (*provisioning.DeployResult, error) {
+	if p.env == nil {
+		return nil, fmt.Errorf("environment is not yet initialized; cannot deploy container")
+	}
+
+	// Make sure we have subscription and location before proceeding
+	if err := p.EnsureEnv(ctx); err != nil {
+		return nil, fmt.Errorf("failed to ensure environment: %w", err)
+	}
+
+	// Add clear logging about the execution context
+	log.Printf("TypeScript Provider - Deploy Container starting for projectPath: %s", p.projectPath)
+
+	// Check for build-and-deploy.ts file
+	buildDeployPath := filepath.Join(p.getInfraPath(), "build-and-deploy.ts")
+	if _, err := os.Stat(buildDeployPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("build-and-deploy.ts file not found at %s", buildDeployPath)
+	}
+
+	// Get environment variables from the environment object first
+	envVars := p.env.Environ()
+
+	// Add the current OS environment variables
+	envVars = append(envVars, os.Environ()...)
+
+	// Ensure critical variables are set correctly
+	envVars = append(envVars,
+		"AZURE_SUBSCRIPTION_ID="+p.env.GetSubscriptionId(),
+		"AZURE_ENV_NAME="+p.env.Name(),
+		"AZURE_LOCATION="+p.env.GetLocation(),
+	)
+
+	// Add cloud configuration if tenant ID is available
+	if tenantID := p.env.GetTenantId(); tenantID != "" {
+		envVars = append(envVars, "AZURE_TENANT_ID="+tenantID)
+	}
+
+	// First compile the TypeScript build-and-deploy file
+	compileCmd := "npm"
+	compileArgs := []string{"run", "build"}
+
+	// Compile TypeScript to JavaScript
+	_, err := tools.RunCommand(ctx, compileCmd, compileArgs, envVars, p.getInfraPath())
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile build-and-deploy.ts: %w", err)
+	}
+
+	// Run the build-and-deploy script
+	buildDeployJsPath := filepath.Join(p.getDistPath(), "build-and-deploy.js")
+	cmd := "node"
+	args := []string{buildDeployJsPath}
+
+	log.Printf("Executing build-and-deploy.js in directory: %s", p.getInfraPath())
+	out, err := tools.RunCommand(ctx, cmd, args, envVars, p.getInfraPath())
+	if err != nil {
+		return nil, fmt.Errorf("failed to run build-and-deploy.js: %w\nOutput: %s", err, out)
+	}
+
+	var outputs map[string]provisioning.OutputParameter
+	if err := json.Unmarshal([]byte(out), &outputs); err != nil {
+		var wrapper struct {
+			Outputs map[string]provisioning.OutputParameter `json:"outputs"`
+		}
+		if err2 := json.Unmarshal([]byte(out), &wrapper); err2 == nil {
+			outputs = wrapper.Outputs
+		} else {
+			return nil, fmt.Errorf("failed to parse build-and-deploy.js output: %w", err)
+		}
+	}
+
+	return &provisioning.DeployResult{
+		Deployment: &provisioning.Deployment{
+			Outputs: outputs,
+		},
+	}, nil
 }
 
 // getInfraPath returns the correct infrastructure directory path

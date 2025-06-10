@@ -37,29 +37,13 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// --- Helper functions for TypeScript provider initialization ---
-func initializeTypeScriptInfra(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
-	   infraDir := filepath.Join(azdCtx.ProjectDirectory(), "infra")
-	   // Ensure infra directory exists
-	   if err := os.MkdirAll(infraDir, 0755); err != nil {
-			   return fmt.Errorf("failed to create infra directory: %w", err)
-	   }
-	   // Remove Bicep files if present
-	   entries, err := os.ReadDir(infraDir)
-	   if err == nil {
-			   for _, entry := range entries {
-					   if filepath.Ext(entry.Name()) == ".bicep" || filepath.Ext(entry.Name()) == ".json" {
-							   os.Remove(filepath.Join(infraDir, entry.Name()))
-					   }
-			   }
-	   }
-	   // Only create deploy.ts if it does not exist (do not overwrite template-provided file)
-	   deployTsPath := filepath.Join(infraDir, "deploy.ts")
-	   if _, err := os.Stat(deployTsPath); err == nil {
-			   // File exists, do not overwrite
-	   } else if os.IsNotExist(err) {
-			   deployTsContent := `import { DefaultAzureCredential } from "@azure/identity";
+// TypeScript infrastructure template definitions
+const (
+	// Shared deploy.ts template content to use across the codebase
+	deployTsTemplate = `import { DefaultAzureCredential } from "@azure/identity";
 import { ResourceManagementClient } from "@azure/arm-resources";
+import { ContainerAppsAPIClient } from "@azure/arm-appcontainers";
+import { ContainerRegistryManagementClient } from "@azure/arm-containerregistry";
 import * as fs from "fs";
 
 const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID!;
@@ -67,51 +51,197 @@ const resourceGroupName = process.env.AZURE_ENV_NAME!;
 const location = process.env.AZURE_LOCATION!;
 
 async function main() {
+	// Create a DefaultAzureCredential
 	const credential = new DefaultAzureCredential();
-	const client = new ResourceManagementClient(credential, subscriptionId);
-	await client.resourceGroups.createOrUpdate(resourceGroupName, { location });
-	// Add more resources here as needed
+	
+	// Create clients using the credential with type assertion to handle SDK compatibility
+	const client = new ResourceManagementClient(credential as any, subscriptionId);
+	const containerAppsClient = new ContainerAppsAPIClient(credential as any, subscriptionId);
+	const acrClient = new ContainerRegistryManagementClient(credential as any, subscriptionId);
+
+	// Create resource group with required azd tags and naming convention
+	const rgName = "rg-" + resourceGroupName;
+	await client.resourceGroups.createOrUpdate(rgName, {
+		location,
+		tags: {
+			'azd-env-name': resourceGroupName
+		}
+	});
+
+	// Create Container App Environment
+	const envName = "env-" + resourceGroupName;
+	const env = await containerAppsClient.managedEnvironments.beginCreateOrUpdateAndWait(
+		rgName,
+		envName,
+		{
+			location,
+			tags: {
+				'azd-env-name': resourceGroupName
+			}
+		}
+	);
+
+	// Create Azure Container Registry
+	const acrName = "acr" + resourceGroupName.replace(/-/g, "").toLowerCase();
+	// Using create() instead of beginCreateAndWait() for compatibility with all SDK versions
+	const acr = await acrClient.registries.create(
+		rgName,
+		acrName,
+		{
+			location,
+			sku: { name: "Basic" },
+			adminUserEnabled: true
+		}
+	);
+
+	// Get ACR credentials
+	const acrCredentials = await acrClient.registries.listCredentials(rgName, acrName);
+	const acrUsername = acrCredentials.username;
+	const acrPassword = acrCredentials.passwords?.[0]?.value;
+
+	if (!acrPassword) {
+		throw new Error("Failed to get ACR password");
+	}
+
+	// Create Container App
+	const appName = "app-" + resourceGroupName;
+	await containerAppsClient.containerApps.beginCreateOrUpdateAndWait(
+		rgName,
+		appName,
+		{
+			location,
+			managedEnvironmentId: env.id,
+			configuration: {
+				ingress: {
+					external: true,
+					targetPort: 3000
+				},
+				registries: [{
+					server: acr.loginServer,
+					username: acrUsername,
+					passwordSecretRef: "registry-password"
+				}]
+			},
+			template: {
+				containers: [
+					{
+						name: "app",
+						image: "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest",
+						resources: {
+							cpu: 0.5,
+							memory: "1Gi"
+						}
+					}
+				]
+			},
+			tags: {
+				'azd-env-name': resourceGroupName,
+				'azd-service-name': 'llama-index-javascript'
+			}
+		}
+	);
+
 	const outputs = {
-		resourceGroupName: { value: resourceGroupName },
-		location: { value: location },
+		resourceGroupName: { value: rgName },
+		AZURE_LOCATION: { value: location },
+		containerAppName: { value: appName },
+		containerAppUrl: { value: "https://" + appName + "." + env.defaultDomain },
+		AZURE_CONTAINER_REGISTRY_ENDPOINT: { value: acr.loginServer },
+		AZURE_CONTAINER_REGISTRY_USERNAME: { value: acrUsername },
+		AZURE_CONTAINER_REGISTRY_PASSWORD: { value: acrPassword }
 	};
 	fs.writeFileSync("outputs.json", JSON.stringify(outputs, null, 2));
 	console.log(JSON.stringify(outputs));
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
-`
-			   if err := os.WriteFile(deployTsPath, []byte(deployTsContent), 0644); err != nil {
-					   return fmt.Errorf("failed to write deploy.ts: %w", err)
-			   }
-	   } else if err != nil {
-			   return fmt.Errorf("failed to stat deploy.ts: %w", err)
-	   }
+main().catch(err => { console.error(err); process.exit(1); });`
+
+	// Shared package.json template content to use across the codebase
+	packageJsonTemplate = `{
+	"name": "infra",
+	"version": "1.0.0",
+	"main": "index.js",
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"start": "node dist/deploy.js"
+	},
+	"author": "",
+	"license": "ISC",
+	"description": "",
+	"dependencies": {
+		"@azure/arm-resources": "^6.1.0",
+		"@azure/arm-appcontainers": "^1.0.0",
+		"@azure/arm-containerregistry": "^5.0.0",
+		"@azure/identity": "^4.0.0",
+		"typescript": "^5.1.3"
+	},
+	"devDependencies": {
+		"@types/node": "^20.4.2"
+	}
+}`
+
+	// Shared tsconfig.json template content to use across the codebase
+	tsconfigJsonTemplate = `{
+	"compilerOptions": {
+		"target": "ES2020",
+		"module": "CommonJS",
+		"strict": true,
+		"esModuleInterop": true,
+		"allowSyntheticDefaultImports": true,
+		"skipLibCheck": true,
+		"forceConsistentCasingInFileNames": true,
+		"outDir": "dist",
+		"paths": {
+			"http": ["./node_modules/@types/node"],
+			"https": ["./node_modules/@types/node"]
+		}
+	},
+	"include": ["deploy.ts"],
+	"exclude": ["node_modules"]
+}`
+
+	// Shared tsconfig.build.json template content to use across the codebase
+	tsconfigBuildJsonTemplate = `{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"noEmitOnError": false,
+		"skipLibCheck": true
+	},
+	"include": ["deploy.ts"],
+	"exclude": ["node_modules"]
+}`
+)
+
+// --- Helper functions for TypeScript provider initialization ---
+func initializeTypeScriptInfra(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
+	infraDir := filepath.Join(azdCtx.ProjectDirectory(), "infra")
+	// Ensure infra directory exists
+	if err := os.MkdirAll(infraDir, 0755); err != nil {
+		return fmt.Errorf("failed to create infra directory: %w", err)
+	}
+	// Remove Bicep files if present
+	entries, err := os.ReadDir(infraDir)
+	if err == nil {
+		for _, entry := range entries {
+			if filepath.Ext(entry.Name()) == ".bicep" || filepath.Ext(entry.Name()) == ".json" {
+				os.Remove(filepath.Join(infraDir, entry.Name()))
+			}
+		}
+	}
+	// Only create deploy.ts if it does not exist (do not overwrite template-provided file)
+	deployTsPath := filepath.Join(infraDir, "deploy.ts")
+	if _, err := os.Stat(deployTsPath); err == nil {
+		// File exists, do not overwrite
+	} else if os.IsNotExist(err) {
+		if err := os.WriteFile(deployTsPath, []byte(deployTsTemplate), 0644); err != nil {
+			return fmt.Errorf("failed to write deploy.ts: %w", err)
+		}
+	}
 
 	// Create package.json
 	packageJsonPath := filepath.Join(infraDir, "package.json")
 	if _, err := os.Stat(packageJsonPath); os.IsNotExist(err) {
-		packageJsonContent := `{
-			"name": "infra",
-			"version": "1.0.0",
-			"main": "index.js",
-			"scripts": {
-				"build": "tsc -p tsconfig.build.json",
-				"start": "node dist/deploy.js"
-			},
-			"author": "",
-			"license": "ISC",
-			"description": "",
-			"dependencies": {
-				"@azure/arm-resources": "^6.1.0",
-				"@azure/identity": "^4.10.0",
-				"typescript": "^5.8.3"
-			},
-			"devDependencies": {
-				"@types/node": "^22.15.29"
-			}
-		}`
-		if err := os.WriteFile(packageJsonPath, []byte(packageJsonContent), 0644); err != nil {
+		if err := os.WriteFile(packageJsonPath, []byte(packageJsonTemplate), 0644); err != nil {
 			return fmt.Errorf("failed to write package.json: %w", err)
 		}
 	}
@@ -119,25 +249,7 @@ main().catch(err => { console.error(err); process.exit(1); });
 	// Create tsconfig.json
 	tsconfigJsonPath := filepath.Join(infraDir, "tsconfig.json")
 	if _, err := os.Stat(tsconfigJsonPath); os.IsNotExist(err) {
-		tsconfigJsonContent := `{
-			"compilerOptions": {
-				"target": "ES2020",
-				"module": "CommonJS",
-				"strict": true,
-				"esModuleInterop": true,
-				"allowSyntheticDefaultImports": true,
-				"skipLibCheck": true,
-				"forceConsistentCasingInFileNames": true,
-				"outDir": "dist",
-				"paths": {
-					"http": ["./node_modules/@types/node"],
-					"https": ["./node_modules/@types/node"]
-				}
-			},
-			"include": ["deploy.ts"],
-			"exclude": ["node_modules"]
-		}`
-		if err := os.WriteFile(tsconfigJsonPath, []byte(tsconfigJsonContent), 0644); err != nil {
+		if err := os.WriteFile(tsconfigJsonPath, []byte(tsconfigJsonTemplate), 0644); err != nil {
 			return fmt.Errorf("failed to write tsconfig.json: %w", err)
 		}
 	}
@@ -145,16 +257,7 @@ main().catch(err => { console.error(err); process.exit(1); });
 	// Create tsconfig.build.json
 	tsconfigBuildJsonPath := filepath.Join(infraDir, "tsconfig.build.json")
 	if _, err := os.Stat(tsconfigBuildJsonPath); os.IsNotExist(err) {
-		tsconfigBuildJsonContent := `{
-			"extends": "./tsconfig.json",
-			"compilerOptions": {
-				"noEmitOnError": false,
-				"skipLibCheck": true
-			},
-			"include": ["deploy.ts"],
-			"exclude": ["node_modules"]
-		}`
-		if err := os.WriteFile(tsconfigBuildJsonPath, []byte(tsconfigBuildJsonContent), 0644); err != nil {
+		if err := os.WriteFile(tsconfigBuildJsonPath, []byte(tsconfigBuildJsonTemplate), 0644); err != nil {
 			return fmt.Errorf("failed to write tsconfig.build.json: %w", err)
 		}
 	}
@@ -178,13 +281,13 @@ main().catch(err => { console.error(err); process.exit(1); });
 		fmt.Printf("Error compiling TypeScript: %s\n", err)
 		return fmt.Errorf("failed to compile TypeScript: %w", err)
 	}
-	
+
 	// Check if dist/deploy.js was created successfully
 	deployJsPath := filepath.Join(distDir, "deploy.js")
 	if _, err := os.Stat(deployJsPath); os.IsNotExist(err) {
 		// If compilation failed silently, create the dist directory and try to install dependencies again
 		fmt.Printf("Warning: compiled deploy.js not found at %s after npm build. Attempting recovery...\n", deployJsPath)
-		
+
 		// Run tsc directly as a last resort
 		tscCmd := osexec.CommandContext(ctx, "npx", "tsc", "-p", filepath.Join(infraDir, "tsconfig.build.json"))
 		tscCmd.Dir = infraDir
@@ -197,42 +300,42 @@ main().catch(err => { console.error(err); process.exit(1); });
 		fmt.Printf("Successfully compiled TypeScript to %s\n", deployJsPath)
 	}
 
-	 	// Update azure.yaml to use TypeScript provider, or add an infra section if missing
-	   azureYamlPath := filepath.Join(azdCtx.ProjectDirectory(), "azure.yaml")
-	   if _, err := os.Stat(azureYamlPath); err == nil {
-			   azureYaml, err := os.ReadFile(azureYamlPath)
-			   if err != nil {
-					   return fmt.Errorf("failed to read azure.yaml: %w", err)
-			   }
-			   newYaml := string(azureYaml)
-			   if !strings.Contains(newYaml, "infra:") {
-					   // Prepend an infra section if missing
-					   newYaml = "infra:\n  provider: typescript\n  path: infra\n  module: main\n\n" + newYaml
-					   fmt.Printf("Adding TypeScript infrastructure configuration to azure.yaml\n")
-			   } else {
-					   // Replace 'provider: bicep' with 'provider: typescript' if present
-					   oldYaml := newYaml
-					   newYaml = replaceInfraProvider(newYaml, "typescript")
-					   if oldYaml != newYaml {
-							   fmt.Printf("Updated provider in azure.yaml from bicep to typescript\n")
-					   } else {
-							   fmt.Printf("Infrastructure provider already configured in azure.yaml\n")
-					   }
-			   }
-			   if err := os.WriteFile(azureYamlPath, []byte(newYaml), 0644); err != nil {
-					   return fmt.Errorf("failed to update azure.yaml: %w", err)
-			   }
-	   } else if os.IsNotExist(err) {
-			   // Create a minimal azure.yaml with TypeScript configuration
-			   fmt.Printf("Creating new azure.yaml with TypeScript provider\n")
-			   minimalYaml := "infra:\n  provider: typescript\n  path: infra\n  module: main\n"
-			   if err := os.WriteFile(azureYamlPath, []byte(minimalYaml), 0644); err != nil {
-					   return fmt.Errorf("failed to create azure.yaml: %w", err)
-			   }
-	   } else if err != nil {
-			   return fmt.Errorf("failed to stat azure.yaml: %w", err)
-	   }
-	   return nil
+	// Update azure.yaml to use TypeScript provider, or add an infra section if missing
+	azureYamlPath := filepath.Join(azdCtx.ProjectDirectory(), "azure.yaml")
+	if _, err := os.Stat(azureYamlPath); err == nil {
+		azureYaml, err := os.ReadFile(azureYamlPath)
+		if err != nil {
+			return fmt.Errorf("failed to read azure.yaml: %w", err)
+		}
+		newYaml := string(azureYaml)
+		if !strings.Contains(newYaml, "infra:") {
+			// Prepend an infra section if missing
+			newYaml = "infra:\n  provider: typescript\n  path: infra\n  module: main\n\n" + newYaml
+			fmt.Printf("Adding TypeScript infrastructure configuration to azure.yaml\n")
+		} else {
+			// Replace 'provider: bicep' with 'provider: typescript' if present
+			oldYaml := newYaml
+			newYaml = replaceInfraProvider(newYaml, "typescript")
+			if oldYaml != newYaml {
+				fmt.Printf("Updated provider in azure.yaml from bicep to typescript\n")
+			} else {
+				fmt.Printf("Infrastructure provider already configured in azure.yaml\n")
+			}
+		}
+		if err := os.WriteFile(azureYamlPath, []byte(newYaml), 0644); err != nil {
+			return fmt.Errorf("failed to update azure.yaml: %w", err)
+		}
+	} else if os.IsNotExist(err) {
+		// Create a minimal azure.yaml with TypeScript configuration
+		fmt.Printf("Creating new azure.yaml with TypeScript provider\n")
+		minimalYaml := "infra:\n  provider: typescript\n  path: infra\n  module: main\n"
+		if err := os.WriteFile(azureYamlPath, []byte(minimalYaml), 0644); err != nil {
+			return fmt.Errorf("failed to create azure.yaml: %w", err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("failed to stat azure.yaml: %w", err)
+	}
+	return nil
 }
 
 // replaceInfraProvider replaces the provider in the infra section of azure.yaml
@@ -243,7 +346,6 @@ func replaceInfraProvider(yamlContent string, provider string) string {
 	out = strings.ReplaceAll(out, "provider: \"bicep\"", "provider: \""+provider+"\"")
 	return out
 }
-
 
 func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *initFlags {
 	flags := &initFlags{}
@@ -260,8 +362,8 @@ func newInitCmd() *cobra.Command {
 }
 
 type initFlags struct {
-	   // TypeScript Provider flag
-	tsp bool
+	// TypeScript Provider flag
+	tsp            bool
 	templatePath   string
 	templateBranch string
 	templateTags   []string
@@ -275,10 +377,10 @@ type initFlags struct {
 
 func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(
-			&i.tsp,
-			"tsp",
-			false,
-			"Use the TypeScript infrastructure provider (deploy.ts) instead of Bicep.",
+		&i.tsp,
+		"tsp",
+		false,
+		"Use the TypeScript infrastructure provider (deploy.ts) instead of Bicep.",
 	)
 	local.StringVarP(
 		&i.templatePath,
@@ -454,93 +556,70 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		output.WithLinkFormat("%s", wd),
 		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
 
-	   // If --tsp is set, ensure template is initialized first (if provided), then setup TypeScript infra
-	   if i.flags.tsp {
-			   if i.flags.templatePath != "" || len(i.flags.templateTags) > 0 {
-					   // 1. Download template code
-					   template, err := i.initializeTemplate(ctx, azdCtx)
-					   if (err != nil) {
-							   return nil, err
-					   }
-					   if _, err := i.initializeEnv(ctx, azdCtx, template.Metadata); err != nil {
-							   return nil, err
-					   }
+	// If --tsp is set, ensure template is initialized first (if provided), then setup TypeScript infra
+	if i.flags.tsp {
+		if i.flags.templatePath != "" || len(i.flags.templateTags) > 0 {
+			// 1. Download template code
+			template, err := i.initializeTemplate(ctx, azdCtx)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := i.initializeEnv(ctx, azdCtx, template.Metadata); err != nil {
+				return nil, err
+			}
 
-					   // 2. If Bicep config exists, create deploy.ts in infra folder
-					   infraDir := filepath.Join(azdCtx.ProjectDirectory(), "infra")
-					   mainBicepPath := filepath.Join(infraDir, "main.bicep")
-					   if _, err := os.Stat(mainBicepPath); err == nil {
-							   deployTsPath := filepath.Join(infraDir, "deploy.ts")
-							   if _, err := os.Stat(deployTsPath); os.IsNotExist(err) {
-									   // Generate a default deploy.ts (could be improved to parse Bicep in future)
-									   deployTsContent := `import { DefaultAzureCredential } from "@azure/identity";
-import { ResourceManagementClient } from "@azure/arm-resources";
-import * as fs from "fs";
+			// 2. If Bicep config exists, create deploy.ts in infra folder
+			infraDir := filepath.Join(azdCtx.ProjectDirectory(), "infra")
+			mainBicepPath := filepath.Join(infraDir, "main.bicep")
+			if _, err := os.Stat(mainBicepPath); err == nil {
+				deployTsPath := filepath.Join(infraDir, "deploy.ts")
+				if _, err := os.Stat(deployTsPath); os.IsNotExist(err) {
+					// Generate a default deploy.ts (could be improved to parse Bicep in future)
+					if err := os.WriteFile(deployTsPath, []byte(deployTsTemplate), 0644); err != nil {
+						return nil, fmt.Errorf("failed to write deploy.ts: %w", err)
+					}
+				}
 
-const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID!;
-const resourceGroupName = process.env.AZURE_ENV_NAME!;
-const location = process.env.AZURE_LOCATION!;
+				// 3. Delete all files in infra except deploy.ts
+				entries, err := os.ReadDir(infraDir)
+				if err == nil {
+					for _, entry := range entries {
+						if entry.Name() != "deploy.ts" {
+							os.RemoveAll(filepath.Join(infraDir, entry.Name()))
+						}
+					}
+				}
+			}
+		}
+		// 4. Now setup TypeScript infra (updates azure.yaml, etc.)
+		err := initializeTypeScriptInfra(ctx, azdCtx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize TypeScript infra: %w", err)
+		}
+		header = "Initialized project with TypeScript infrastructure provider."
+		followUp = "You can now use azd with deploy.ts for infrastructure as code."
+		if i.flags.up {
+			// Optionally run azd up
+			startTime := time.Now()
+			i.azd.SetArgs([]string{"up", "--cwd", azdCtx.ProjectDirectory()})
+			err := i.azd.ExecuteContext(ctx)
+			header = "Project initialized and deployed with TypeScript provider in " + ux.DurationAsText(since(startTime)) + "."
+			if err != nil {
+				return nil, err
+			}
+		}
+		if err := i.initializeExtensions(ctx, azdCtx); err != nil {
+			return nil, fmt.Errorf("initializing project extensions: %w", err)
+		}
+		return &actions.ActionResult{
+			Message: &actions.ResultMessage{
+				Header:   header,
+				FollowUp: followUp,
+			},
+		}, nil
+	}
 
-async function main() {
-	const credential = new DefaultAzureCredential();
-	const client = new ResourceManagementClient(credential, subscriptionId);
-	await client.resourceGroups.createOrUpdate(resourceGroupName, { location });
-	// Add more resources here as needed
-	const outputs = {
-		resourceGroupName: { value: resourceGroupName },
-		location: { value: location },
-	};
-	fs.writeFileSync("outputs.json", JSON.stringify(outputs, null, 2));
-	console.log(JSON.stringify(outputs));
-}
-
-main().catch(err => { console.error(err); process.exit(1); });
-`
-									   if err := os.WriteFile(deployTsPath, []byte(deployTsContent), 0644); err != nil {
-											   return nil, fmt.Errorf("failed to write deploy.ts: %w", err)
-									   }
-							   }
-
-							   // 3. Delete all files in infra except deploy.ts
-							   entries, err := os.ReadDir(infraDir)
-							   if err == nil {
-									   for _, entry := range entries {
-											   if entry.Name() != "deploy.ts" {
-													   os.RemoveAll(filepath.Join(infraDir, entry.Name()))
-											   }
-									   }
-							   }
-					   }
-			   }
-			   // 4. Now setup TypeScript infra (updates azure.yaml, etc.)
-			   err := initializeTypeScriptInfra(ctx, azdCtx)
-			   if err != nil {
-					   return nil, fmt.Errorf("failed to initialize TypeScript infra: %w", err)
-			   }
-			   header = "Initialized project with TypeScript infrastructure provider."
-			   followUp = "You can now use azd with deploy.ts for infrastructure as code."
-			   if i.flags.up {
-					   // Optionally run azd up
-					   startTime := time.Now()
-					   i.azd.SetArgs([]string{"up", "--cwd", azdCtx.ProjectDirectory()})
-					   err := i.azd.ExecuteContext(ctx)
-					   header = "Project initialized and deployed with TypeScript provider in " + ux.DurationAsText(since(startTime)) + "."
-					   if err != nil {
-							   return nil, err
-					   }
-			   }
-			   if err := i.initializeExtensions(ctx, azdCtx); err != nil {
-					   return nil, fmt.Errorf("initializing project extensions: %w", err)
-			   }
-			   return &actions.ActionResult{
-					   Message: &actions.ResultMessage{
-							   Header:   header,
-							   FollowUp: followUp,
-					   },
-			   }, nil
-	   }
-
-	   switch initTypeSelect {
+	switch initTypeSelect {
 	case initAppTemplate:
 		tracing.SetUsageAttributes(fields.InitMethod.String("template"))
 		template, err := i.initializeTemplate(ctx, azdCtx)
@@ -913,4 +992,3 @@ func getCmdInitHelpFooter(*cobra.Command) string {
 		),
 	})
 }
-

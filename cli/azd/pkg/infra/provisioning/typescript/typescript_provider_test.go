@@ -11,7 +11,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -82,10 +81,14 @@ func (m *mockPrompter) PromptLocation(
 	ctx context.Context,
 	subscriptionId string,
 	message string,
-	locationFilter func(string) bool,
-	selectDefault bool,
+	filter prompt.LocationFilterPredicate,
+	defaultValue *string,
 ) (string, error) {
 	return "westus2", nil
+}
+
+func (m *mockPrompter) PromptResourceGroup(ctx context.Context, options prompt.PromptResourceOptions) (string, error) {
+	return "test-rg", nil
 }
 
 func TestTypeScriptProvider_Initialize(t *testing.T) {
@@ -128,25 +131,25 @@ func TestTypeScriptProvider_Parameters(t *testing.T) {
 
 func TestPathHandlingLogic(t *testing.T) {
 	tests := []struct {
-		name           string
-		projectPath    string
+		name            string
+		projectPath     string
 		expectInfraPath string
-		expectDistPath string
+		expectDistPath  string
 	}{
 		{
-			name:           "Project root path",
-			projectPath:    "/path/to/project",
+			name:            "Project root path",
+			projectPath:     "/path/to/project",
 			expectInfraPath: "/path/to/project/infra",
-			expectDistPath: "/path/to/project/infra/dist",
+			expectDistPath:  "/path/to/project/infra/dist",
 		},
 		{
-			name:           "Infra directory path",
-			projectPath:    "/path/to/project/infra",
+			name:            "Infra directory path",
+			projectPath:     "/path/to/project/infra",
 			expectInfraPath: "/path/to/project/infra",
-			expectDistPath: "/path/to/project/infra/dist",
+			expectDistPath:  "/path/to/project/infra/dist",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test infrastructure path calculation
@@ -157,7 +160,7 @@ func TestPathHandlingLogic(t *testing.T) {
 				infraPath = fmt.Sprintf("%s/infra", tt.projectPath)
 			}
 			require.Equal(t, tt.expectInfraPath, infraPath)
-			
+
 			// Test dist path calculation
 			distPath := fmt.Sprintf("%s/dist", infraPath)
 			require.Equal(t, tt.expectDistPath, distPath)

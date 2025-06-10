@@ -120,7 +120,7 @@ func (d *detectConfirm) Confirm(ctx context.Context) error {
 		var selectedOptionIndex int
 		var err error
 
-		if len(d.Services) == 0 && !d.modified {
+		if len(d.Services) == 0 && len(d.Databases) == 0 {
 			options := []string{
 				optionConfirmAndContinue,
 				optionAddService,
@@ -132,11 +132,10 @@ func (d *detectConfirm) Confirm(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			// Adjust index for the switch statement below
-			if selectedOptionIndex == 0 { // Confirm and continue
-				// This corresponds to case 0 in the main switch
-			} else { // Add an undetected service
-				selectedOptionIndex = 2 // This corresponds to case 2 in the main switch
+			// Adjust index for the switch statement below, because the same switch is used for
+			// when there are 3 options
+			if selectedOptionIndex == 1 {
+				selectedOptionIndex = 2
 			}
 		} else {
 			d.modified = false

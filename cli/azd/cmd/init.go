@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/typescript"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -40,176 +42,16 @@ import (
 // TypeScript infrastructure template definitions
 const (
 	// Shared deploy.ts template content to use across the codebase
-	deployTsTemplate = `import { DefaultAzureCredential } from "@azure/identity";
-import { ResourceManagementClient } from "@azure/arm-resources";
-import { ContainerAppsAPIClient } from "@azure/arm-appcontainers";
-import { ContainerRegistryManagementClient } from "@azure/arm-containerregistry";
-import * as fs from "fs";
-
-const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID!;
-const resourceGroupName = process.env.AZURE_ENV_NAME!;
-const location = process.env.AZURE_LOCATION!;
-
-async function main() {
-	// Create a DefaultAzureCredential
-	const credential = new DefaultAzureCredential();
-	
-	// Create clients using the credential with type assertion to handle SDK compatibility
-	const client = new ResourceManagementClient(credential as any, subscriptionId);
-	const containerAppsClient = new ContainerAppsAPIClient(credential as any, subscriptionId);
-	const acrClient = new ContainerRegistryManagementClient(credential as any, subscriptionId);
-
-	// Create resource group with required azd tags and naming convention
-	const rgName = "rg-" + resourceGroupName;
-	await client.resourceGroups.createOrUpdate(rgName, {
-		location,
-		tags: {
-			'azd-env-name': resourceGroupName
-		}
-	});
-
-	// Create Container App Environment
-	const envName = "env-" + resourceGroupName;
-	const env = await containerAppsClient.managedEnvironments.beginCreateOrUpdateAndWait(
-		rgName,
-		envName,
-		{
-			location,
-			tags: {
-				'azd-env-name': resourceGroupName
-			}
-		}
-	);
-
-	// Create Azure Container Registry
-	const acrName = "acr" + resourceGroupName.replace(/-/g, "").toLowerCase();
-	// Using create() instead of beginCreateAndWait() for compatibility with all SDK versions
-	const acr = await acrClient.registries.create(
-		rgName,
-		acrName,
-		{
-			location,
-			sku: { name: "Basic" },
-			adminUserEnabled: true
-		}
-	);
-
-	// Get ACR credentials
-	const acrCredentials = await acrClient.registries.listCredentials(rgName, acrName);
-	const acrUsername = acrCredentials.username;
-	const acrPassword = acrCredentials.passwords?.[0]?.value;
-
-	if (!acrPassword) {
-		throw new Error("Failed to get ACR password");
-	}
-
-	// Create Container App
-	const appName = "app-" + resourceGroupName;
-	await containerAppsClient.containerApps.beginCreateOrUpdateAndWait(
-		rgName,
-		appName,
-		{
-			location,
-			managedEnvironmentId: env.id,
-			configuration: {
-				ingress: {
-					external: true,
-					targetPort: 3000
-				},
-				registries: [{
-					server: acr.loginServer,
-					username: acrUsername,
-					passwordSecretRef: "registry-password"
-				}]
-			},
-			template: {
-				containers: [
-					{
-						name: "app",
-						image: "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest",
-						resources: {
-							cpu: 0.5,
-							memory: "1Gi"
-						}
-					}
-				]
-			},
-			tags: {
-				'azd-env-name': resourceGroupName,
-				'azd-service-name': 'llama-index-javascript'
-			}
-		}
-	);
-
-	const outputs = {
-		resourceGroupName: { value: rgName },
-		AZURE_LOCATION: { value: location },
-		containerAppName: { value: appName },
-		containerAppUrl: { value: "https://" + appName + "." + env.defaultDomain },
-		AZURE_CONTAINER_REGISTRY_ENDPOINT: { value: acr.loginServer },
-		AZURE_CONTAINER_REGISTRY_USERNAME: { value: acrUsername },
-		AZURE_CONTAINER_REGISTRY_PASSWORD: { value: acrPassword }
-	};
-	fs.writeFileSync("outputs.json", JSON.stringify(outputs, null, 2));
-	console.log(JSON.stringify(outputs));
-}
-
-main().catch(err => { console.error(err); process.exit(1); });`
+	deployTsTemplate = typescript.DeployTsTemplate
 
 	// Shared package.json template content to use across the codebase
-	packageJsonTemplate = `{
-	"name": "infra",
-	"version": "1.0.0",
-	"main": "index.js",
-	"scripts": {
-		"build": "tsc -p tsconfig.build.json",
-		"start": "node dist/deploy.js"
-	},
-	"author": "",
-	"license": "ISC",
-	"description": "",
-	"dependencies": {
-		"@azure/arm-resources": "^6.1.0",
-		"@azure/arm-appcontainers": "^1.0.0",
-		"@azure/arm-containerregistry": "^5.0.0",
-		"@azure/identity": "^4.0.0",
-		"typescript": "^5.1.3"
-	},
-	"devDependencies": {
-		"@types/node": "^20.4.2"
-	}
-}`
+	packageJsonTemplate = typescript.PackageJsonTemplate
 
 	// Shared tsconfig.json template content to use across the codebase
-	tsconfigJsonTemplate = `{
-	"compilerOptions": {
-		"target": "ES2020",
-		"module": "CommonJS",
-		"strict": true,
-		"esModuleInterop": true,
-		"allowSyntheticDefaultImports": true,
-		"skipLibCheck": true,
-		"forceConsistentCasingInFileNames": true,
-		"outDir": "dist",
-		"paths": {
-			"http": ["./node_modules/@types/node"],
-			"https": ["./node_modules/@types/node"]
-		}
-	},
-	"include": ["deploy.ts"],
-	"exclude": ["node_modules"]
-}`
+	tsconfigJsonTemplate = typescript.TsconfigJsonTemplate
 
 	// Shared tsconfig.build.json template content to use across the codebase
-	tsconfigBuildJsonTemplate = `{
-	"extends": "./tsconfig.json",
-	"compilerOptions": {
-		"noEmitOnError": false,
-		"skipLibCheck": true
-	},
-	"include": ["deploy.ts"],
-	"exclude": ["node_modules"]
-}`
+	tsconfigBuildJsonTemplate = typescript.TsconfigBuildJsonTemplate
 )
 
 // --- Helper functions for TypeScript provider initialization ---

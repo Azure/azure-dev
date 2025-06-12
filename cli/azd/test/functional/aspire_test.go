@@ -113,7 +113,7 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		cli.WorkingDirectory = dir
 
 		initResponses := []string{
-			"Use code in the current directory",        // Initialize from code
+			"Scan current directory",                   // Initialize from code
 			"Confirm and continue initializing my app", // Confirm everything looks good.
 			"n",     // Don't expose 'apiservice' service.
 			"y",     // Expose 'webfrontend' service.

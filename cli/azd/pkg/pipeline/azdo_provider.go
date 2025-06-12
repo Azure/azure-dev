@@ -712,11 +712,6 @@ func (p *AzdoCiProvider) credentialOptions(
 	authType PipelineAuthType,
 	credentials *entraid.AzureCredentials,
 ) (*CredentialOptions, error) {
-	// Default auth type to client-credentials for terraform
-	if infraOptions.Provider == provisioning.Terraform && authType == "" {
-		authType = AuthTypeClientCredentials
-	}
-
 	if authType == AuthTypeClientCredentials {
 		return &CredentialOptions{
 			EnableClientCredentials: true,

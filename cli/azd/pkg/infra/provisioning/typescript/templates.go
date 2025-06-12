@@ -103,9 +103,7 @@ async function main() {
   const envParams = {
     location: location,
     tags: tags,
-    properties: {
-      zoneRedundant: false
-    }
+	appLogsConfiguration: {},
   };
 
   const env = await containerAppsClient.managedEnvironments.beginCreateOrUpdateAndWait(rgName, envName, envParams);
@@ -127,13 +125,21 @@ async function main() {
     location: location,
     managedEnvironmentId: env.id,
     configuration: {
-      ingress: { external: true, targetPort: 3000 },
-      registries: [{
-        server: acr.loginServer,
-        username: acrUsername,
-        passwordSecretRef: "registry-password"
-      }]
-    },
+  		ingress: { external: true, targetPort: 3000 },
+		secrets: [
+			{
+			name: "registry-password",
+			value: acrPassword
+			}
+		],
+		registries: [
+			{
+			server: acr.loginServer,
+			username: acrUsername,
+			passwordSecretRef: "registry-password"
+			}
+		]
+	},
     template: {
       containers: [{
         name: "app",
@@ -162,23 +168,30 @@ async function main() {
   const token = (await credential.getToken("https://management.azure.com/.default"))?.token;
   if (!token) throw new Error("Failed to get token");
 
-  async function deployModel(
+    async function deployModel(
     deployment: string,
     model: string,
     version: string,
     capacity: number
   ) {
-    const url = "https://management.azure.com/subscriptions/" + subscriptionId +
-                "/resourceGroups/" + rgName +
-                "/providers/Microsoft.CognitiveServices/accounts/" + aoaiName +
-                "/deployments/" + deployment +
-                "?api-version=2023-10-01-preview";
+    const urlParts = [
+      "https://management.azure.com",
+      "subscriptions", subscriptionId,
+      "resourceGroups", rgName,
+      "providers", "Microsoft.CognitiveServices",
+      "accounts", aoaiName,
+      "deployments", deployment
+    ];
+    const url = urlParts.join("/") + "?api-version=2023-10-01-preview";
 
     const body = {
-      sku: { name: "Standard" },
+      sku: { name: "Standard", capacity: capacity },
       properties: {
-        model: { format: "OpenAI", name: model, version: version },
-        scaleSettings: { scaleType: "Manual", capacity: capacity }
+        model: {
+          format: "OpenAI",
+          name: model,
+          version: version
+        }
       }
     };
 

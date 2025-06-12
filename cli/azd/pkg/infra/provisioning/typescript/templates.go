@@ -34,29 +34,7 @@ const environmentName = process.env.AZURE_ENV_NAME!;
 const location = process.env.AZURE_LOCATION!;
 const principalId = process.env.AZURE_PRINCIPAL_ID!;
 
-const llamaIndexConfig = {
-  chat: {
-    model: "gpt-4o-mini",
-    deployment: "gpt-4o-mini",
-    version: "2024-07-18",
-    capacity: 10
-  },
-  embedding: {
-    model: "text-embedding-3-large",
-    deployment: "text-embedding-3-large",
-    version: "1",
-    dim: "1024",
-    capacity: 10
-  },
-  model_provider: "openai",
-  openai_api_key: "",
-  llm_temperature: "0.7",
-  llm_max_tokens: "100",
-  openai_api_version: "2024-02-15-preview",
-  top_k: "3",
-  fileserver_url_prefix: "http://localhost/api/files",
-  system_prompt: "You are a helpful assistant who helps users with their questions."
-};
+const llamaIndexConfig = require('./config/llamaIndexConfig.json');
 
 async function waitForManagedEnvReady(rgName: string, envName: string, containerAppsClient: ContainerAppsAPIClient) {
   const maxRetries = 30;
@@ -243,6 +221,11 @@ async function main() {
 
   fs.writeFileSync("outputs.json", JSON.stringify(outputs, null, 2));
   console.log(JSON.stringify(outputs, null, 2));
+
+  const envFilePath = ".azure/" + environmentName + "/.env";
+  const envVariables = Object.entries(outputs).map(([key, value]) => key=value.value).join("\n");
+  fs.writeFileSync(envFilePath, envVariables);
+  console.log("Environment variables written to" + envFilePath);
 }
 
 main().catch(err => {
@@ -292,7 +275,7 @@ const TsconfigJsonTemplate = `{
 			"https": ["./node_modules/@types/node"]
 		}
 	},
-	"include": ["deploy.ts"],
+	"include": ["deploy.ts", "llamaIndexConfig.json"],
 	"exclude": ["node_modules"]
 }`
 
@@ -304,6 +287,31 @@ const TsconfigBuildJsonTemplate = `{
 		"skipLibCheck": true,
 		"skipDefaultLibCheck": true
 	},
-	"include": ["deploy.ts"],
+	"include": ["deploy.ts", "llamaIndexConfig.json"],
 	"exclude": ["node_modules"]
 }`
+
+// Added llamaIndexConfig as a separate variable to ensure it is included in the template folder during the init phase.
+const LlamaIndexConfigTemplate = `{
+  "chat": {
+    "model": "gpt-4o-mini",
+    "deployment": "gpt-4o-mini",
+    "version": "2024-07-18",
+    "capacity": 10
+  },
+  "embedding": {
+    "model": "text-embedding-3-large",
+    "deployment": "text-embedding-3-large",
+    "version": "1",
+    "dim": "1024",
+    "capacity": 10
+  },
+  "model_provider": "openai",
+  "openai_api_key": "",
+  "llm_temperature": "0.7",
+  "llm_max_tokens": "100",
+  "openai_api_version": "2024-02-15-preview",
+  "top_k": "3",
+  "fileserver_url_prefix": "http://localhost/api/files",
+  "system_prompt": "You are a helpful assistant who helps users with their questions."
+}`;

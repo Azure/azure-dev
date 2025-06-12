@@ -104,6 +104,14 @@ func initializeTypeScriptInfra(ctx context.Context, azdCtx *azdcontext.AzdContex
 		}
 	}
 
+	// Create llamaIndexConfig.json directly in the infra directory
+	llamaIndexConfigPath := filepath.Join(infraDir, "llamaIndexConfig.json")
+	if _, err := os.Stat(llamaIndexConfigPath); os.IsNotExist(err) {
+		if err := os.WriteFile(llamaIndexConfigPath, []byte(typescript.LlamaIndexConfigTemplate), 0644); err != nil {
+			return fmt.Errorf("failed to write llamaIndexConfig.json: %w", err)
+		}
+	}
+
 	// Use npm.Cli with CommandRunner to run npm install
 	runnerOptions := &exec.RunnerOptions{}
 	npmCli := npm.NewCli(exec.NewCommandRunner(runnerOptions))
@@ -115,6 +123,18 @@ func initializeTypeScriptInfra(ctx context.Context, azdCtx *azdcontext.AzdContex
 	distDir := filepath.Join(infraDir, "dist")
 	if err := os.MkdirAll(distDir, 0755); err != nil {
 		return fmt.Errorf("failed to create dist directory: %w", err)
+	}
+
+	// Ensure dist/config directory exists
+	configDistDir := filepath.Join(distDir, "config")
+	if err := os.MkdirAll(configDistDir, 0755); err != nil {
+		return fmt.Errorf("failed to create dist/config directory: %w", err)
+	}
+
+	// Move llamaIndexConfig.json to dist/config directory
+	llamaIndexConfigDistPath := filepath.Join(configDistDir, "llamaIndexConfig.json")
+	if err := os.Rename(filepath.Join(infraDir, "llamaIndexConfig.json"), llamaIndexConfigDistPath); err != nil {
+		return fmt.Errorf("failed to move llamaIndexConfig.json to dist/config directory: %w", err)
 	}
 
 	// Compile TypeScript to JavaScript with better error handling

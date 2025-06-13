@@ -241,12 +241,12 @@ async function main() {
 
   for (const [key, val] of Object.entries(outputs)) {
     const value = val.value;
-    if (value === null || value === undefined) {
+    if (value === null || value === undefined || value === "") {
         console.log("Skipping AZD env var: " + key + " as its value is " + value);
         continue;
     }
     console.log("Setting AZD env var: " + key + "=" + value);
-    execSync("azd env set " + key + " " + value, { stdio: "inherit" });
+    execSync("azd env set " + key + " \"" + value.replace(/"/g, '\\"') + "\"", { stdio: "inherit" });
   }
 }
 
@@ -336,4 +336,23 @@ const LlamaIndexConfigTemplate = `{
   "top_k": "3",
   "fileserver_url_prefix": "http://localhost/api/files",
   "system_prompt": "You are a helpful assistant who helps users with their questions."
-}`;
+}`
+
+// Add Dockerfile template
+const DockerfileTemplate = `FROM node:20-alpine as build
+
+WORKDIR /app
+
+COPY package.json package-lock.* ./
+RUN npm install
+
+# Build the application
+COPY . .
+RUN npm run build
+
+# ====================================
+FROM build as release
+
+EXPOSE 3000
+
+CMD ["npm", "run", "start"]`

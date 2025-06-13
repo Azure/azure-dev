@@ -112,6 +112,12 @@ func initializeTypeScriptInfra(ctx context.Context, azdCtx *azdcontext.AzdContex
 		}
 	}
 
+	// Overwrite Dockerfile with the new template content
+	DockerfilePath := filepath.Join(azdCtx.ProjectDirectory(), "Dockerfile")
+	if err := os.WriteFile(DockerfilePath, []byte(typescript.DockerfileTemplate), 0644); err != nil {
+		return fmt.Errorf("failed to write Dockerfile: %w", err)
+	}
+
 	// Use npm.Cli with CommandRunner to run npm install
 	runnerOptions := &exec.RunnerOptions{}
 	npmCli := npm.NewCli(exec.NewCommandRunner(runnerOptions))

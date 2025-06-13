@@ -268,8 +268,10 @@ func TestExecInfra(t *testing.T) {
 					continue
 				}
 
-				if strings.Contains(lintErr, "no-unused-params: Parameter \"principalId\" ") { // suppress this error
-					// we always set principalId regardless of whether it's used
+				// suppress these errors
+				if strings.Contains(lintErr, "no-unused-params: Parameter \"principalId\" ") ||
+					strings.Contains(lintErr, "no-unused-params: Parameter \"principalType\" ") {
+					// we always set principalId and principalType regardless of whether they are used
 					// in the current implementation
 					continue
 				}

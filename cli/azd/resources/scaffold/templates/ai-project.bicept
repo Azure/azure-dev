@@ -15,6 +15,9 @@ param deployments deploymentsType
 @description('Id of the user or app to assign application roles')
 param principalId string
 
+@description('Principal type of user or app')
+param principalType string
+
 resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
   name: 'ai-account-${resourceToken}'
   location: location
@@ -65,7 +68,7 @@ resource aiAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview' = {
   }
 }
 
-resource localUserAiDeveloperRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource localUserAiDeveloperRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (principalType == 'User') {
   scope: resourceGroup()
   name: guid(subscription().id, resourceGroup().id, 'localUser', '64702f94-c441-49e6-a78b-ef80e0188fee')
   properties: {
@@ -75,7 +78,7 @@ resource localUserAiDeveloperRoleAssignment 'Microsoft.Authorization/roleAssignm
   }
 }
 
-resource localUserCognitiveServicesUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource localUserCognitiveServicesUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (principalType == 'User') {
   scope: resourceGroup()
   name: guid(subscription().id, resourceGroup().id, 'localUser', 'a97b65f3-24c7-4388-baec-2e87135dc908')
   properties: {

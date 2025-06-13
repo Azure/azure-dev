@@ -30,6 +30,9 @@ const SubscriptionIdEnvVarName = "AZURE_SUBSCRIPTION_ID"
 // PrincipalIdEnvVarName is the name of they key used to store the id of a principal in the environment.
 const PrincipalIdEnvVarName = "AZURE_PRINCIPAL_ID"
 
+// PrincipalTypeEnvVarName is the name of they key used to store the type of a principal in the environment.
+const PrincipalTypeEnvVarName = "AZURE_PRINCIPAL_TYPE"
+
 // TenantIdEnvVarName is the tenant that owns the subscription
 const TenantIdEnvVarName = "AZURE_TENANT_ID"
 

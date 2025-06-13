@@ -31,6 +31,9 @@ param {{.Name}} {{.Type}}
 @description('Id of the user or app to assign application roles')
 param principalId string
 
+@description('Principal type of user or app')
+param principalType string
+
 // Tags that should be applied to all resources.
 // 
 // Note that 'azd-service-name' tags should be applied separately to service host resources.
@@ -54,6 +57,7 @@ module resources 'resources.bicep' = {
     location: location
     tags: tags
     principalId: principalId
+    principalType: principalType
 {{- range .Parameters}}
     {{.Name}}: {{.Name}}
 {{- end }}
@@ -73,6 +77,7 @@ module aiModelsDeploy 'ai-project.bicep' = {
     location: aiDeploymentsLocation
     envName: environmentName
     principalId: principalId
+    principalType: principalType
 {{- if .AiFoundryProject.Models }}
     deployments: [
       {{- range .AiFoundryProject.Models }}

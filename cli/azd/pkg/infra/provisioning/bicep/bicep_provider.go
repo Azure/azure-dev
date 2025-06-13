@@ -1561,6 +1561,11 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResul
 		return loadParametersResult{}, fmt.Errorf("fetching current principal id: %w", err)
 	}
 
+	principalType, err := p.curPrincipal.CurrentPrincipalType(ctx)
+	if err != nil {
+		return loadParametersResult{}, fmt.Errorf("fetching current principal type: %w", err)
+	}
+
 	var decodedParamsFile azure.ArmParameterFile
 	if err := json.Unmarshal(parametersBytes, &decodedParamsFile); err != nil {
 		return loadParametersResult{}, fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
@@ -1586,6 +1591,9 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResul
 		replaced, err := envsubst.Eval(string(paramBytes), func(name string) string {
 			if name == environment.PrincipalIdEnvVarName {
 				return principalId
+			}
+			if name == environment.PrincipalTypeEnvVarName {
+				return string(principalType)
 			}
 			if name == environment.LocationEnvVarName {
 				parametersMappedToAzureLocation = append(parametersMappedToAzureLocation, paramName)

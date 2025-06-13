@@ -19,6 +19,7 @@ const EnvironmentDirectoryName = ".azure"
 const DotEnvFileName = ".env"
 const ConfigFileName = "config.json"
 const ConfigFileVersion = 1
+const EnvironmentInfraDirectoryName = "infra"
 
 type AzdContext struct {
 	projectDirectory string
@@ -51,6 +52,26 @@ func (c *AzdContext) EnvironmentRoot(name string) string {
 
 func (c *AzdContext) GetEnvironmentWorkDirectory(name string) string {
 	return filepath.Join(c.EnvironmentRoot(name), "wd")
+}
+
+func (c *AzdContext) GetEnvironmentInfraDirectory(name string) string {
+	return filepath.Join(c.EnvironmentRoot(name), EnvironmentInfraDirectoryName)
+}
+
+func (c *AzdContext) GetEnvironmentInfraFiles(name string) []string {
+	var files []string
+	infraDir := c.GetEnvironmentInfraDirectory(name)
+
+	entries, err := os.ReadDir(infraDir)
+	if err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				files = append(files, filepath.Join(infraDir, entry.Name()))
+			}
+		}
+	}
+
+	return files
 }
 
 // GetDefaultEnvironmentName returns the name of the default environment. Returns

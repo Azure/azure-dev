@@ -66,7 +66,7 @@ type PrincipalType string
 func (p *principalIDProvider) CurrentPrincipalType(ctx context.Context) (PrincipalType, error) {
 	loginDetails, err := p.authManager.LogInDetails(ctx)
 	if err != nil {
-		return "", nil
+		return "", fmt.Errorf("fetching login details: %w", err)
 	}
 
 	principalType := UserType

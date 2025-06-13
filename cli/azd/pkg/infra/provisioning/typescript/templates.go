@@ -216,6 +216,8 @@ async function main() {
     llamaIndexConfig.embedding.capacity
   );
 
+  const escapedPrompt = llamaIndexConfig.system_prompt.replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+
   const outputs = {
     AZURE_CONTAINER_REGISTRY_ENDPOINT: { value: acr.loginServer },
     AZURE_RESOURCE_LLAMA_INDEX_JAVASCRIPT_ID: { value: "" },
@@ -231,8 +233,7 @@ async function main() {
     LLM_MAX_TOKENS: { value: llamaIndexConfig.llm_max_tokens },
     TOP_K: { value: llamaIndexConfig.top_k },
     FILESERVER_URL_PREFIX: { value: llamaIndexConfig.fileserver_url_prefix },
-    SYSTEM_PROMPT: { value: llamaIndexConfig.system_prompt },
-    OPENAI_API_TYPE: { value: "AzureOpenAI" },
+    SYSTEM_PROMPT: { value: escapedPrompt },
     STORAGE_CACHE_DIR: { value: "./cache" }
   };
 
@@ -242,10 +243,8 @@ async function main() {
   for (const [key, val] of Object.entries(outputs)) {
     const value = val.value;
     if (value === null || value === undefined || value === "") {
-        console.log("Skipping AZD env var: " + key + " as its value is " + value);
         continue;
     }
-    console.log("Setting AZD env var: " + key + "=" + value);
     execSync("azd env set " + key + " \"" + value.replace(/"/g, '\\"') + "\"", { stdio: "inherit" });
   }
 }

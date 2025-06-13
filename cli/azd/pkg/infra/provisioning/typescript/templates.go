@@ -37,6 +37,7 @@ const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID!;
 const environmentName = process.env.AZURE_ENV_NAME!;
 const location = process.env.AZURE_LOCATION!;
 const principalId = process.env.AZURE_PRINCIPAL_ID!;
+const serviceName = process.env.AZURE_SERVICE_NAME || "llama-index-javascript";
 
 const llamaIndexConfig = require('./llamaIndexConfig.json');
 
@@ -153,7 +154,7 @@ async function main() {
     },
     tags: {
       ...tags,
-      "azd-service-name": "app"
+      "azd-service-name": serviceName
     }
   });
 
@@ -220,7 +221,7 @@ async function main() {
 
   const outputs = {
     AZURE_CONTAINER_REGISTRY_ENDPOINT: { value: acr.loginServer },
-    AZURE_RESOURCE_LLAMA_INDEX_JAVASCRIPT_ID: { value: "" },
+    AZURE_RESOURCE_LLAMA_INDEX_JAVASCRIPT_ID: { value: llamaIndexConfig.serviceName },
     AZURE_OPENAI_ENDPOINT: { value: openAiEndpoint },
     AZURE_DEPLOYMENT_NAME: { value: llamaIndexConfig.chat.deployment },
     AZURE_OPENAI_API_VERSION: { value: llamaIndexConfig.openai_api_version },
@@ -328,6 +329,7 @@ const LlamaIndexConfigTemplate = `{
     "capacity": 10
   },
   "model_provider": "openai",
+  "serviceName": "llama-index-javascript",
   "openai_api_key": "",
   "llm_temperature": "0.7",
   "llm_max_tokens": "100",

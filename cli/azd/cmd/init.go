@@ -115,9 +115,12 @@ func initializeTypeScriptInfra(ctx context.Context, azdCtx *azdcontext.AzdContex
 	// Use npm.Cli with CommandRunner to run npm install
 	runnerOptions := &exec.RunnerOptions{}
 	npmCli := npm.NewCli(exec.NewCommandRunner(runnerOptions))
+	fmt.Printf("[DEBUG] Running npm install\n")
 	if err := npmCli.Install(ctx, infraDir); err != nil {
+		fmt.Printf("[DEBUG] npm install failed: %v\n", err)
 		return fmt.Errorf("failed to run npm install: %w", err)
 	}
+	fmt.Printf("[DEBUG] npm install completed successfully\n")
 
 	// Create dist directory
 	distDir := filepath.Join(infraDir, "dist")
@@ -125,24 +128,20 @@ func initializeTypeScriptInfra(ctx context.Context, azdCtx *azdcontext.AzdContex
 		return fmt.Errorf("failed to create dist directory: %w", err)
 	}
 
-	// Ensure dist/config directory exists
-	configDistDir := filepath.Join(distDir, "config")
-	if err := os.MkdirAll(configDistDir, 0755); err != nil {
-		return fmt.Errorf("failed to create dist/config directory: %w", err)
-	}
-
-	// Move llamaIndexConfig.json to dist/config directory
-	llamaIndexConfigDistPath := filepath.Join(configDistDir, "llamaIndexConfig.json")
-	if err := os.Rename(filepath.Join(infraDir, "llamaIndexConfig.json"), llamaIndexConfigDistPath); err != nil {
-		return fmt.Errorf("failed to move llamaIndexConfig.json to dist/config directory: %w", err)
+	// Ensure llamaIndexConfig.json is copied to dist for runtime
+	distLlamaIndexConfigPath := filepath.Join(distDir, "llamaIndexConfig.json")
+	if err := os.WriteFile(distLlamaIndexConfigPath, []byte(typescript.LlamaIndexConfigTemplate), 0644); err != nil {
+		return fmt.Errorf("failed to copy llamaIndexConfig.json to dist: %w", err)
 	}
 
 	// Compile TypeScript to JavaScript with better error handling
 	fmt.Printf("Compiling TypeScript in %s...\n", infraDir)
+	fmt.Printf("[DEBUG] Starting npm build in directory: %s\n", infraDir)
 	if err := npmCli.RunScript(ctx, infraDir, "build"); err != nil {
-		fmt.Printf("Error compiling TypeScript: %s\n", err)
+		fmt.Printf("[DEBUG] npm build failed: %v\n", err)
 		return fmt.Errorf("failed to compile TypeScript: %w", err)
 	}
+	fmt.Printf("[DEBUG] npm build completed successfully\n")
 
 	// Check if dist/deploy.js was created successfully
 	deployJsPath := filepath.Join(distDir, "deploy.js")
@@ -701,12 +700,17 @@ func (i *initAction) initializeEnv(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
 	templateMetadata templates.Metadata) (*environment.Environment, error) {
+	fmt.Printf("[DEBUG-INIT] Starting initializeEnv in init.go\n")
+	
 	envName, err := azdCtx.GetDefaultEnvironmentName()
 	if err != nil {
+		fmt.Printf("[DEBUG-INIT] Error getting default environment name: %v\n", err)
 		return nil, fmt.Errorf("retrieving default environment name: %w", err)
 	}
+	fmt.Printf("[DEBUG-INIT] Default environment name: '%s'\n", envName)
 
 	if envName != "" {
+		fmt.Printf("[DEBUG-INIT] Environment '%s' already exists, returning error\n", envName)
 		return nil, environment.NewEnvironmentInitError(envName)
 	}
 

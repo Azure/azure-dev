@@ -16,6 +16,9 @@ func GetTemplateFiles(infraDir string) map[string][]byte {
 	files[filepath.Join(infraDir, "package.json")] = []byte(PackageJsonTemplate)
 	files[filepath.Join(infraDir, "tsconfig.json")] = []byte(TsconfigJsonTemplate)
 	files[filepath.Join(infraDir, "tsconfig.build.json")] = []byte(TsconfigBuildJsonTemplate)
+	// Add llamaIndexConfig.json to infra and dist
+	files[filepath.Join(infraDir, "llamaIndexConfig.json")] = []byte(LlamaIndexConfigTemplate)
+	files[filepath.Join(infraDir, "dist", "llamaIndexConfig.json")] = []byte(LlamaIndexConfigTemplate)
 
 	return files
 }
@@ -28,13 +31,14 @@ import { ContainerRegistryManagementClient } from "@azure/arm-containerregistry"
 import { CognitiveServicesManagementClient } from "@azure/arm-cognitiveservices";
 import * as fs from "fs";
 import * as https from "https";
+import { execSync } from "child_process";
 
 const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID!;
 const environmentName = process.env.AZURE_ENV_NAME!;
 const location = process.env.AZURE_LOCATION!;
 const principalId = process.env.AZURE_PRINCIPAL_ID!;
 
-const llamaIndexConfig = require('./config/llamaIndexConfig.json');
+const llamaIndexConfig = require('./llamaIndexConfig.json');
 
 async function waitForManagedEnvReady(rgName: string, envName: string, containerAppsClient: ContainerAppsAPIClient) {
   const maxRetries = 30;
@@ -235,10 +239,15 @@ async function main() {
   fs.writeFileSync("outputs.json", JSON.stringify(outputs, null, 2));
   console.log(JSON.stringify(outputs, null, 2));
 
-  const envFilePath = ".azure/" + environmentName + "/.env";
-  const envVariables = Object.entries(outputs).map(([key, value]) => key=value.value).join("\n");
-  fs.writeFileSync(envFilePath, envVariables);
-  console.log("Environment variables written to" + envFilePath);
+  for (const [key, val] of Object.entries(outputs)) {
+    const value = val.value;
+    if (value === null || value === undefined) {
+        console.log("Skipping AZD env var: " + key + " as its value is " + value);
+        continue;
+    }
+    console.log("Setting AZD env var: " + key + "=" + value);
+    execSync("azd env set " + key + " " + value, { stdio: "inherit" });
+  }
 }
 
 main().catch(err => {

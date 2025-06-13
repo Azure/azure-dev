@@ -127,40 +127,55 @@ func NewManager(
 }
 
 func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
+	fmt.Printf("[DEBUG] Entering Create() with name='%s', subscription='%s', location='%s'\n", spec.Name, spec.Subscription, spec.Location)
+	
 	if spec.Name != "" && !IsValidEnvironmentName(spec.Name) {
 		errMsg := invalidEnvironmentNameMsg(spec.Name)
 		m.console.Message(ctx, errMsg)
+		fmt.Printf("[DEBUG] Invalid environment name provided: '%s'\n", spec.Name)
 		return nil, errors.New(errMsg)
 	}
 
 	if err := m.ensureValidEnvironmentName(ctx, &spec); err != nil {
+		fmt.Printf("[DEBUG] Error ensuring valid environment name: %v\n", err)
 		return nil, err
 	}
+	fmt.Printf("[DEBUG] After ensureValidEnvironmentName, name='%s'\n", spec.Name)
 
 	// Ensure the environment does not already exist:
+	fmt.Printf("[DEBUG] Ensuring environment does not already exist\n")
 	_, err := m.Get(ctx, spec.Name)
 	switch {
 	case errors.Is(err, ErrNotFound):
+		fmt.Printf("[DEBUG] Environment '%s' does not exist, proceeding\n", spec.Name)
 	case err != nil:
+		fmt.Printf("[DEBUG] Error checking for existing environment: %v\n", err)
 		return nil, fmt.Errorf("checking for existing environment: %w", err)
 	default:
+		fmt.Printf("[DEBUG] Environment '%s' already exists\n", spec.Name)
 		return nil, fmt.Errorf("environment '%s' already exists", spec.Name)
 	}
 
+	fmt.Printf("[DEBUG] Creating new environment instance\n")
 	env := New(spec.Name)
 
 	if spec.Subscription != "" {
+		fmt.Printf("[DEBUG] Setting subscription ID: '%s'\n", spec.Subscription)
 		env.SetSubscriptionId(spec.Subscription)
 	}
 
 	if spec.Location != "" {
+		fmt.Printf("[DEBUG] Setting location: '%s'\n", spec.Location)
 		env.SetLocation(spec.Location)
 	}
 
+	fmt.Printf("[DEBUG] Saving environment instance\n")
 	if err := m.SaveWithOptions(ctx, env, &SaveOptions{IsNew: true}); err != nil {
+		fmt.Printf("[DEBUG] Error saving environment: %v\n", err)
 		return nil, err
 	}
 
+	fmt.Printf("[DEBUG] Environment creation completed successfully\n")
 	return env, nil
 }
 
@@ -454,6 +469,7 @@ func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) er
 	}
 
 	for !IsValidEnvironmentName(spec.Name) {
+		fmt.Printf("[DEBUG] About to prompt for environment name, current value: '%s'\n", spec.Name)
 		userInput, err := m.console.Prompt(ctx, input.ConsoleOptions{
 			Message: "Enter a unique environment name:",
 			Help: heredoc.Doc(`
@@ -466,16 +482,22 @@ func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) er
 		})
 
 		if err != nil {
+			fmt.Printf("[DEBUG] Error reading environment name: %v\n", err)
 			return fmt.Errorf("reading environment name: %w", err)
 		}
 
+		fmt.Printf("[DEBUG] Received environment name input: '%s'\n", userInput)
 		spec.Name = userInput
 
 		if !IsValidEnvironmentName(spec.Name) {
+			fmt.Printf("[DEBUG] Invalid environment name: '%s'\n", spec.Name)
 			m.console.Message(ctx, invalidEnvironmentNameMsg(spec.Name))
+		} else {
+			fmt.Printf("[DEBUG] Valid environment name received: '%s'\n", spec.Name)
 		}
 	}
 
+	fmt.Printf("[DEBUG] Final environment name: '%s'\n", spec.Name)
 	return nil
 }
 

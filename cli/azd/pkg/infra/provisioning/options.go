@@ -34,6 +34,8 @@ type DestroyOptions struct {
 	force bool
 	// Whether or not to purge any key vaults associated with the deployment
 	purge bool
+	// Whether or not to start the deletion and return immediately without waiting for completion
+	noWait bool
 }
 
 type StateOptions struct {
@@ -55,14 +57,19 @@ func (o *DestroyOptions) Purge() bool {
 	return o.purge
 }
 
+func (o *DestroyOptions) NoWait() bool {
+	return o.noWait
+}
+
 func (o *DestroyOptions) Force() bool {
 	return o.force
 }
 
-func NewDestroyOptions(force bool, purge bool) DestroyOptions {
+func NewDestroyOptions(force bool, purge bool, noWait bool) DestroyOptions {
 	return DestroyOptions{
-		force: force,
-		purge: purge,
+		force:  force,
+		purge:  purge,
+		noWait: noWait,
 	}
 }
 

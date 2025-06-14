@@ -109,6 +109,22 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		a.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
 	}
 
+	if !a.flags.forceDelete {
+		confirmed, err := a.console.Confirm(ctx, input.ConsoleOptions{
+			Message:      "Are you sure you want to delete all resources? This action cannot be undone.",
+			DefaultValue: false,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("prompting for confirmation: %w", err)
+		}
+		if !confirmed {
+			a.console.Message(ctx, "WARNING: Deletion cancelled by user.")
+
+			return nil, nil
+		}
+	}
+
+
 	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
 	if _, err := a.provisionManager.Destroy(ctx, destroyOptions); err != nil {
 		return nil, fmt.Errorf("deleting infrastructure: %w", err)

@@ -112,6 +112,14 @@ func initializeTypeScriptInfra(ctx context.Context, azdCtx *azdcontext.AzdContex
 		}
 	}
 
+	// Use the DestroyTsTemplate from templates.go
+	destroyTsPath := filepath.Join(infraDir, "destroy.ts")
+	if _, err := os.Stat(destroyTsPath); os.IsNotExist(err) {
+		if err := os.WriteFile(destroyTsPath, []byte(typescript.DestroyTsTemplate), 0644); err != nil {
+			return fmt.Errorf("failed to write destroy.ts: %w", err)
+		}
+	}
+
 	// Overwrite Dockerfile with the new template content
 	DockerfilePath := filepath.Join(azdCtx.ProjectDirectory(), "Dockerfile")
 	if err := os.WriteFile(DockerfilePath, []byte(typescript.DockerfileTemplate), 0644); err != nil {

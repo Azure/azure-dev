@@ -391,24 +391,26 @@ EXPOSE 3000
 CMD ["npm", "run", "start"]`
 
 // DestroyTsTemplate contains the destroy.ts for TypeScript infrastructure
-const DestroyTsTemplate = "import { DefaultAzureCredential } from \"@azure/identity\";\n" +
-"import { ResourceManagementClient } from \"@azure/arm-resources\";\n\n" +
-"const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID!;\n" +
-"const resourceGroupName = \"rg-\" + process.env.AZURE_ENV_NAME;\n\n" +
-"async function main() {\n" +
-"  const credential = new DefaultAzureCredential();\n" +
-"  const resourceClient = new ResourceManagementClient(credential, subscriptionId);\n\n" +
-"  console.error(`[destroy] Deleting resource group: ${resourceGroupName}`);\n\n" +
-"  let resourceCount = 0;\n" +
-"  for await (const _ of resourceClient.resources.listByResourceGroup(resourceGroupName)) {\n" +
-"    resourceCount++;\n" +
-"  }\n\n" +
-"  console.error(`[destroy] Found ${resourceCount} resources. Proceeding to delete...`);\n\n" +
-"  await resourceClient.resourceGroups.beginDeleteAndWait(resourceGroupName);\n\n" +
-"  console.error(`[destroy] Resource group ${resourceGroupName} deleted.`);\n" +
-"  console.log(JSON.stringify({ success: true }));\n" +
-"}\n\n" +
-"main().catch(err => {\n" +
-"  console.error(\"Error during resource deletion:\", err);\n" +
-"  process.exit(1);\n" +
-"});\n"
+const DestroyTsTemplate = 
+  "import { DefaultAzureCredential } from \"@azure/identity\";\n" +
+  "import { ResourceManagementClient } from \"@azure/arm-resources\";\n\n" +
+  "const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID!;\n" +
+  "const resourceGroupName = \"rg-\" + process.env.AZURE_ENV_NAME;\n\n" +
+  "async function main() {\n" +
+  "  const credential = new DefaultAzureCredential();\n" +
+  "  const resourceClient = new ResourceManagementClient(credential, subscriptionId);\n\n" +
+  "  console.error(\"[destroy] Deleting resource group: \" + resourceGroupName);\n\n" +
+  "  let resourceCount = 0;\n" +
+  "  for await (const _ of resourceClient.resources.listByResourceGroup(resourceGroupName)) {\n" +
+  "    resourceCount++;\n" +
+  "  }\n\n" +
+  "  console.error(\"[destroy] Found \" + resourceCount + \" resources. Proceeding to delete...\");\n\n" +
+  "  await resourceClient.resourceGroups.beginDeleteAndWait(resourceGroupName);\n\n" +
+  "  console.error(\"[destroy] Resource group \" + resourceGroupName + \" deleted.\");\n" +
+  "  console.log(JSON.stringify({ success: true }));\n" +
+  "}\n\n" +
+  "main().catch(err => {\n" +
+  "  console.error(\"Error during resource deletion:\", err);\n" +
+  "  process.exit(1);\n" +
+  "});\n"
+

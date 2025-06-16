@@ -29,6 +29,8 @@ import { ResourceManagementClient } from "@azure/arm-resources";
 import { ContainerAppsAPIClient } from "@azure/arm-appcontainers";
 import { ContainerRegistryManagementClient } from "@azure/arm-containerregistry";
 import { CognitiveServicesManagementClient } from "@azure/arm-cognitiveservices";
+import { OperationalInsightsManagementClient } from "@azure/arm-operationalinsights";
+import { ApplicationInsightsManagementClient } from "@azure/arm-appinsights";
 import * as fs from "fs";
 import * as https from "https";
 import { execSync } from "child_process";
@@ -44,7 +46,6 @@ const llamaIndexConfig = require('./llamaIndexConfig.json');
 async function waitForManagedEnvReady(rgName: string, envName: string, containerAppsClient: ContainerAppsAPIClient) {
   const maxRetries = 30;
   const delayMs = 5000;
-
   for (let i = 0; i < maxRetries; i++) {
     const envStatus = await containerAppsClient.managedEnvironments.get(rgName, envName);
     if (envStatus.provisioningState === "Succeeded" || envStatus.provisioningState === "Ready") {
@@ -89,12 +90,43 @@ async function httpsPut(url: string, token: string, body: any): Promise<void> {
   });
 }
 
+async function deployModel(deployment: string, model: string, version: string, capacity: number) {
+  const aoaiName = "aoai-" + environmentName;
+  const rgName = "rg-" + environmentName;
+  const token = (await new DefaultAzureCredential().getToken("https://management.azure.com/.default"))?.token;
+  if (!token) throw new Error("Failed to get token");
+
+  const url = [
+    "https://management.azure.com",
+    "subscriptions", subscriptionId,
+    "resourceGroups", rgName,
+    "providers", "Microsoft.CognitiveServices",
+    "accounts", aoaiName,
+    "deployments", deployment
+  ].join("/") + "?api-version=2023-10-01-preview";
+
+  const body = {
+    sku: { name: "Standard", capacity },
+    properties: {
+      model: {
+        format: "OpenAI",
+        name: model,
+        version
+      }
+    }
+  };
+
+  await httpsPut(url, token, body);
+}
+
 async function main() {
   const credential = new DefaultAzureCredential();
-  const resourceClient = new ResourceManagementClient(credential as any, subscriptionId);
-  const containerAppsClient = new ContainerAppsAPIClient(credential as any, subscriptionId);
-  const acrClient = new ContainerRegistryManagementClient(credential as any, subscriptionId);
-  const cognitiveClient = new CognitiveServicesManagementClient(credential as any, subscriptionId);
+  const resourceClient = new ResourceManagementClient(credential, subscriptionId);
+  const containerAppsClient = new ContainerAppsAPIClient(credential, subscriptionId);
+  const acrClient = new ContainerRegistryManagementClient(credential, subscriptionId);
+  const cognitiveClient = new CognitiveServicesManagementClient(credential, subscriptionId);
+  const insightsClient = new ApplicationInsightsManagementClient(credential, subscriptionId);
+  const workspaceClient = new OperationalInsightsManagementClient(credential, subscriptionId);
 
   const tags = { "azd-env-name": environmentName };
   const rgName = "rg-" + environmentName;
@@ -102,21 +134,57 @@ async function main() {
   const acrName = "acr" + environmentName.replace(/-/g, "").toLowerCase();
   const appName = "app-" + environmentName;
   const aoaiName = "aoai-" + environmentName;
+  const workspaceName = "log-" + environmentName;
+  const appInsightsName = "appi-" + environmentName;
+  const identityName = "id-" + environmentName;
+  const identityId = "/subscriptions/" + subscriptionId + "/resourceGroups/" + rgName +
+    "/providers/Microsoft.ManagedIdentity/userAssignedIdentities/" + identityName;
 
-  await resourceClient.resourceGroups.createOrUpdate(rgName, { location: location, tags: tags });
+  // ✅ Ensure Resource Group is created first
+  await resourceClient.resourceGroups.createOrUpdate(rgName, {
+    location,
+    tags
+  });
 
-  const envParams = {
-    location: location,
-    tags: tags,
-	appLogsConfiguration: {},
-  };
+  // Managed Identity
+  await resourceClient.resources.beginCreateOrUpdateByIdAndWait(identityId, "2023-01-31", {
+    location,
+    tags
+  });
 
-  const env = await containerAppsClient.managedEnvironments.beginCreateOrUpdateAndWait(rgName, envName, envParams);
+  // Log Analytics Workspace
+  const workspace = await workspaceClient.workspaces.beginCreateOrUpdateAndWait(rgName, workspaceName, {
+    location,
+    sku: { name: "PerGB2018" },
+    retentionInDays: 30
+  });
+
+  // App Insights (classic mode linked to workspace)
+  await insightsClient.components.createOrUpdate(rgName, appInsightsName, {
+    kind: "web",
+    applicationType: "web",
+    location,
+    workspaceResourceId: workspace.id
+  } as any);
+
+  // Container App Environment
+  const sharedKeys = await workspaceClient.sharedKeysOperations.getSharedKeys(rgName, workspaceName);
+  const env = await containerAppsClient.managedEnvironments.beginCreateOrUpdateAndWait(rgName, envName, {
+    location,
+    tags,
+    appLogsConfiguration: {
+      destination: "log-analytics",
+      logAnalyticsConfiguration: {
+        customerId: workspace.customerId!,
+        sharedKey: sharedKeys.primarySharedKey!
+      }
+    }
+  });
 
   await waitForManagedEnvReady(rgName, envName, containerAppsClient);
 
   const acr = await acrClient.registries.beginCreateAndWait(rgName, acrName, {
-    location: location,
+    location,
     sku: { name: "Basic" },
     adminUserEnabled: true
   });
@@ -127,24 +195,21 @@ async function main() {
   if (!acrPassword) throw new Error("ACR password not available");
 
   await containerAppsClient.containerApps.beginCreateOrUpdateAndWait(rgName, appName, {
-    location: location,
+    location,
     managedEnvironmentId: env.id,
     configuration: {
-  		ingress: { external: true, targetPort: 3000 },
-		secrets: [
-			{
-			name: "registry-password",
-			value: acrPassword
-			}
-		],
-		registries: [
-			{
-			server: acr.loginServer,
-			username: acrUsername,
-			passwordSecretRef: "registry-password"
-			}
-		]
-	},
+      ingress: { external: true, targetPort: 3000 },
+      secrets: [
+        { name: "registry-password", value: acrPassword }
+      ],
+      registries: [
+        {
+          server: acr.loginServer,
+          username: acrUsername,
+          passwordSecretRef: "registry-password"
+        }
+      ]
+    },
     template: {
       containers: [{
         name: "app",
@@ -159,49 +224,15 @@ async function main() {
   });
 
   await cognitiveClient.accounts.beginCreateAndWait(rgName, aoaiName, {
-    location: location,
+    location,
     kind: "OpenAI",
     sku: { name: "S0" },
     properties: {
       customSubDomainName: aoaiName,
       publicNetworkAccess: "Enabled"
     },
-    tags: tags
+    tags
   });
-
-  const openAiEndpoint = "https://" + aoaiName + ".openai.azure.com";
-  const token = (await credential.getToken("https://management.azure.com/.default"))?.token;
-  if (!token) throw new Error("Failed to get token");
-
-    async function deployModel(
-    deployment: string,
-    model: string,
-    version: string,
-    capacity: number
-  ) {
-    const urlParts = [
-      "https://management.azure.com",
-      "subscriptions", subscriptionId,
-      "resourceGroups", rgName,
-      "providers", "Microsoft.CognitiveServices",
-      "accounts", aoaiName,
-      "deployments", deployment
-    ];
-    const url = urlParts.join("/") + "?api-version=2023-10-01-preview";
-
-    const body = {
-      sku: { name: "Standard", capacity: capacity },
-      properties: {
-        model: {
-          format: "OpenAI",
-          name: model,
-          version: version
-        }
-      }
-    };
-
-    await httpsPut(url, token, body);
-  }
 
   await deployModel(
     llamaIndexConfig.chat.deployment,
@@ -221,8 +252,8 @@ async function main() {
 
   const outputs = {
     AZURE_CONTAINER_REGISTRY_ENDPOINT: { value: acr.loginServer },
-    AZURE_RESOURCE_LLAMA_INDEX_JAVASCRIPT_ID: { value: llamaIndexConfig.serviceName },
-    AZURE_OPENAI_ENDPOINT: { value: openAiEndpoint },
+    AZURE_RESOURCE_LLAMA_INDEX_JAVASCRIPT_ID: { value: "/subscriptions/" + subscriptionId + "/resourceGroups/rg-" + environmentName + "/providers/Microsoft.App/containerApps/" + llamaIndexConfig.serviceName },
+    AZURE_OPENAI_ENDPOINT: { value: "https://" + aoaiName + ".openai.azure.com" },
     AZURE_DEPLOYMENT_NAME: { value: llamaIndexConfig.chat.deployment },
     AZURE_OPENAI_API_VERSION: { value: llamaIndexConfig.openai_api_version },
     MODEL_PROVIDER: { value: llamaIndexConfig.model_provider },
@@ -243,9 +274,7 @@ async function main() {
 
   for (const [key, val] of Object.entries(outputs)) {
     const value = val.value;
-    if (value === null || value === undefined || value === "") {
-        continue;
-    }
+    if (value === null || value === undefined || value === "") continue;
     execSync("azd env set " + key + " \"" + value.replace(/"/g, '\\"') + "\"", { stdio: "inherit" });
   }
 }
@@ -254,6 +283,7 @@ main().catch(err => {
   console.error(err);
   process.exit(1);
 });
+
 `
 
 // PackageJsonTemplate contains the package.json for TypeScript infrastructure
@@ -273,6 +303,8 @@ const PackageJsonTemplate = `{
 		"@azure/arm-appcontainers": "latest",
 		"@azure/arm-containerregistry": "latest",
 		"@azure/arm-cognitiveservices": "latest",
+		"@azure/arm-operationalinsights": "latest",
+		"@azure/arm-appinsights": "latest",
 		"@azure/identity": "latest",
 		"typescript": "^5.4.2"
 	},
@@ -297,7 +329,7 @@ const TsconfigJsonTemplate = `{
 			"https": ["./node_modules/@types/node"]
 		}
 	},
-	"include": ["deploy.ts", "llamaIndexConfig.json"],
+	"include": ["deploy.ts", "destroy.ts", "llamaIndexConfig.json"],
 	"exclude": ["node_modules"]
 }`
 
@@ -309,7 +341,7 @@ const TsconfigBuildJsonTemplate = `{
 		"skipLibCheck": true,
 		"skipDefaultLibCheck": true
 	},
-	"include": ["deploy.ts", "llamaIndexConfig.json"],
+	"include": ["deploy.ts", "destroy.ts", "llamaIndexConfig.json"],
 	"exclude": ["node_modules"]
 }`
 
@@ -357,3 +389,26 @@ FROM build as release
 EXPOSE 3000
 
 CMD ["npm", "run", "start"]`
+
+// DestroyTsTemplate contains the destroy.ts for TypeScript infrastructure
+const DestroyTsTemplate = "import { DefaultAzureCredential } from \"@azure/identity\";\n" +
+"import { ResourceManagementClient } from \"@azure/arm-resources\";\n\n" +
+"const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID!;\n" +
+"const resourceGroupName = \"rg-\" + process.env.AZURE_ENV_NAME;\n\n" +
+"async function main() {\n" +
+"  const credential = new DefaultAzureCredential();\n" +
+"  const resourceClient = new ResourceManagementClient(credential, subscriptionId);\n\n" +
+"  console.error(`[destroy] Deleting resource group: ${resourceGroupName}`);\n\n" +
+"  let resourceCount = 0;\n" +
+"  for await (const _ of resourceClient.resources.listByResourceGroup(resourceGroupName)) {\n" +
+"    resourceCount++;\n" +
+"  }\n\n" +
+"  console.error(`[destroy] Found ${resourceCount} resources. Proceeding to delete...`);\n\n" +
+"  await resourceClient.resourceGroups.beginDeleteAndWait(resourceGroupName);\n\n" +
+"  console.error(`[destroy] Resource group ${resourceGroupName} deleted.`);\n" +
+"  console.log(JSON.stringify({ success: true }));\n" +
+"}\n\n" +
+"main().catch(err => {\n" +
+"  console.error(\"Error during resource deletion:\", err);\n" +
+"  process.exit(1);\n" +
+"});\n"

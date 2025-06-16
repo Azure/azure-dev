@@ -348,8 +348,10 @@ func (p *TypeScriptProvider) Destroy(ctx context.Context, options provisioning.D
 		return nil, fmt.Errorf("failed to ensure environment: %w", err)
 	}
 
-	cmd := "npx"
-	args := []string{"ts-node", p.configPath, "--destroy"}
+	compiledDestroyJsPath := filepath.Join(p.getDistPath(), "destroy.js")
+
+	cmd := "node"
+	args := []string{compiledDestroyJsPath}
 
 	// Get environment variables from the environment object first
 	envVars := p.env.Environ()
@@ -370,7 +372,7 @@ func (p *TypeScriptProvider) Destroy(ctx context.Context, options provisioning.D
 	}
 	out, err := tools.RunCommand(ctx, cmd, args, envVars, p.projectPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to run deploy.ts destroy: %w", err)
+		return nil, fmt.Errorf("failed to run destroy.ts: %w", err)
 	}
 	var result provisioning.DestroyResult
 	if err := json.Unmarshal([]byte(out), &result); err != nil {

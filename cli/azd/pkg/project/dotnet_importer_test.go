@@ -144,3 +144,127 @@ func TestBuildArgsArrayAndEnv(t *testing.T) {
 	assert.ElementsMatch(t, expectedArgs, args)
 	assert.ElementsMatch(t, expectedEnv, env)
 }
+
+func TestMapToExpandableStringSliceWithHyphenConversion(t *testing.T) {
+	// Test that build args with infra.parameters. prefix get hyphens converted to underscores
+	buildArgs := map[string]string{
+		"ARG1": "value1",
+		"ARG2": "{infra.parameters.param-name}",
+		"ARG3": "{infra.parameters.another-param-name}",
+		"ARG4": "{some.other.param-name}",             // Should NOT be converted (no infra.parameters. prefix)
+		"ARG5": "regular-value-with-hyphens",          // Should NOT be converted (not a parameter reference)
+		"ARG6": "{infra.parameters.param_underscore}", // Should remain unchanged (already has underscore)
+		"ARG7": "{infra.parameters.param-name-with-suffix}",
+		"ARG8": "",
+	}
+
+	result := mapToExpandableStringSliceWithHyphenConversion(buildArgs, "=")
+
+	// Convert result to strings for easier comparison using identity mapping
+	resultStrings := make([]string, len(result))
+	for i, item := range result {
+		resultStrings[i] = item.MustEnvsubst(func(name string) string { return "${" + name + "}" })
+	}
+
+	expected := []string{
+		"ARG1=value1",
+		"ARG2={infra.parameters.param_name}",             // Hyphen converted to underscore
+		"ARG3={infra.parameters.another_param_name}",     // Hyphens converted to underscores
+		"ARG4={some.other.param-name}",                   // NOT converted (wrong prefix)
+		"ARG5=regular-value-with-hyphens",                // NOT converted (not a parameter reference)
+		"ARG6={infra.parameters.param_underscore}",       // Unchanged (already has underscore)
+		"ARG7={infra.parameters.param_name_with_suffix}", // All hyphens converted
+		"ARG8", // Empty value
+	}
+
+	assert.ElementsMatch(t, expected, resultStrings)
+}
+
+func TestEvaluateArgsWithConfigHyphenHandling(t *testing.T) {
+	// Test integration with evaluateArgsWithConfig to ensure hyphens in parameter names
+	// get converted to underscores in infra.parameters references
+	manifest := apphost.Manifest{
+		Resources: map[string]*apphost.Resource{
+			"param-with-hyphens": {
+				Type:  "parameter.v0",
+				Value: "{param-with-hyphens.inputs.inputParam}",
+				Inputs: map[string]apphost.Input{
+					"inputParam": {
+						Type: "string",
+					},
+				},
+			},
+		},
+	}
+
+	args := map[string]string{
+		"BUILD_ARG1": "{param-with-hyphens.value}",
+		"BUILD_ARG2": "constant-value",
+	}
+
+	// Evaluate args first (this should produce {infra.parameters.param-with-hyphens})
+	evaluatedArgs, err := evaluateArgsWithConfig(manifest, args)
+	require.NoError(t, err)
+
+	// Now apply hyphen conversion when creating expandable strings
+	result := mapToExpandableStringSliceWithHyphenConversion(evaluatedArgs, "=")
+
+	// Convert to strings for verification
+	resultStrings := make([]string, len(result))
+	for i, item := range result {
+		resultStrings[i] = item.MustEnvsubst(func(name string) string { return "${" + name + "}" })
+	}
+
+	expected := []string{
+		"BUILD_ARG1={infra.parameters.param_with_hyphens}", // Hyphen converted to underscore
+		"BUILD_ARG2=constant-value",                        // Unchanged (not a parameter reference)
+	}
+
+	assert.ElementsMatch(t, expected, resultStrings)
+}
+
+func TestConvertHyphensInInfraParameters(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "infra.parameters with hyphens",
+			input:    "{infra.parameters.my-param-name}",
+			expected: "{infra.parameters.my_param_name}",
+		},
+		{
+			name:     "infra.parameters with underscores",
+			input:    "{infra.parameters.my_param_name}",
+			expected: "{infra.parameters.my_param_name}",
+		},
+		{
+			name:     "non-infra parameter reference",
+			input:    "{some.other.param-name}",
+			expected: "{some.other.param-name}",
+		},
+		{
+			name:     "regular string with hyphens",
+			input:    "regular-string-with-hyphens",
+			expected: "regular-string-with-hyphens",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "malformed parameter reference",
+			input:    "{infra.parameters.param-name",
+			expected: "{infra.parameters.param-name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := convertHyphensInInfraParameters(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}

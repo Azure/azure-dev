@@ -197,6 +197,56 @@ func mapToExpandableStringSlice(m map[string]string, separator string) []osutil.
 	return result
 }
 
+// mapToExpandableStringSliceWithHyphenConversion converts a map of strings to a slice of expandable strings,
+// with special handling for build arg values that contain infra.parameters. references.
+// For values that match the pattern "{infra.parameters.param-name}", hyphens in the parameter name
+// are converted to underscores to match the expected Azure parameter naming convention.
+// Each key-value pair in the map is converted to a string in the format "key:value",
+// where the separator is specified by the `separator` parameter.
+// If the value is an empty string, only the key is included in the resulting slice.
+func mapToExpandableStringSliceWithHyphenConversion(m map[string]string, separator string) []osutil.ExpandableString {
+	var result []osutil.ExpandableString
+	for key, value := range m {
+		processedValue := value
+		if value != "" {
+			processedValue = convertHyphensInInfraParameters(value)
+		}
+
+		if processedValue == "" {
+			result = append(result, osutil.NewExpandableString(key))
+		} else {
+			result = append(result, osutil.NewExpandableString(key+separator+processedValue))
+		}
+	}
+	return result
+}
+
+// convertHyphensInInfraParameters converts hyphens to underscores in parameter names
+// within {infra.parameters.*} references to match Azure parameter naming conventions.
+func convertHyphensInInfraParameters(value string) string {
+	const infraParametersPrefix = "{infra.parameters."
+
+	// Only process values that start with the infra.parameters. prefix
+	if !strings.HasPrefix(value, infraParametersPrefix) {
+		return value
+	}
+
+	// Find the closing brace
+	closeIndex := strings.Index(value, "}")
+	if closeIndex == -1 {
+		return value
+	}
+
+	// Extract the parameter name part after "infra.parameters."
+	parameterPart := value[len(infraParametersPrefix):closeIndex]
+
+	// Convert hyphens to underscores in the parameter name
+	convertedParameterPart := strings.ReplaceAll(parameterPart, "-", "_")
+
+	// Reconstruct the value with the converted parameter name
+	return infraParametersPrefix + convertedParameterPart + value[closeIndex:]
+}
+
 func (ai *DotNetImporter) Services(
 	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
 ) (map[string]*ServiceConfig, error) {
@@ -334,7 +384,7 @@ func (ai *DotNetImporter) Services(
 			dOptions = DockerProjectOptions{
 				Path:         bContainer.Build.Dockerfile,
 				Context:      bContainer.Build.Context,
-				BuildArgs:    mapToExpandableStringSlice(bArgs, "="),
+				BuildArgs:    mapToExpandableStringSliceWithHyphenConversion(bArgs, "="),
 				BuildSecrets: bArgsArray,
 				BuildEnv:     reqEnv,
 			}

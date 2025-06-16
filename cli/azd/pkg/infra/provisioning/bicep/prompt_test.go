@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -323,4 +324,8 @@ type mockCurrentPrincipal struct{}
 
 func (m *mockCurrentPrincipal) CurrentPrincipalId(_ context.Context) (string, error) {
 	return "11111111-1111-1111-1111-111111111111", nil
+}
+
+func (m *mockCurrentPrincipal) CurrentPrincipalType(_ context.Context) (provisioning.PrincipalType, error) {
+	return provisioning.UserType, nil
 }

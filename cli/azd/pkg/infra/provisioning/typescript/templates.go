@@ -42,7 +42,7 @@ const location = process.env.AZURE_LOCATION!;
 const principalId = process.env.AZURE_PRINCIPAL_ID!;
 const serviceName = process.env.AZURE_SERVICE_NAME || "llama-index-javascript";
 
-const azdConfig = require('../config/azd.config.json');
+const azdConfig = require('./config/azd.config.json');
 
 async function waitForManagedEnvReady(rgName: string, envName: string, containerAppsClient: ContainerAppsAPIClient) {
   const maxRetries = 30;

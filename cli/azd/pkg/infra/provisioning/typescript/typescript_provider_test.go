@@ -91,6 +91,10 @@ func (m *mockPrompter) PromptResourceGroup(ctx context.Context, options prompt.P
 	return "test-rg", nil
 }
 
+func (m *mockPrompter) PromptResourceGroupFrom(ctx context.Context, subscriptionId string, message string, options prompt.PromptResourceGroupFromOptions) (string, error) {
+	return "test-rg", nil
+}
+
 func TestTypeScriptProvider_Initialize(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	provider := createTypeScriptProvider(t, mockContext)
@@ -116,7 +120,7 @@ func TestTypeScriptProvider_Preview(t *testing.T) {
 func TestTypeScriptProvider_Destroy(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	provider := createTypeScriptProvider(t, mockContext)
-	result, err := provider.Destroy(*mockContext.Context, struct{}{})
+	result, err := provider.Destroy(*mockContext.Context, provisioning.DestroyOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }

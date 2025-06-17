@@ -12,13 +12,14 @@ func GetTemplateFiles(infraDir string) map[string][]byte {
 	files := make(map[string][]byte)
 
 	// Add all template files
-	files[filepath.Join(infraDir, "deploy.ts")] = []byte(DeployTsTemplate)
+	files[filepath.Join(infraDir, "src", "deploy.ts")] = []byte(DeployTsTemplate)
+  files[filepath.Join(infraDir, "src", "destroy.ts")] = []byte(DestroyTsTemplate)
 	files[filepath.Join(infraDir, "package.json")] = []byte(PackageJsonTemplate)
 	files[filepath.Join(infraDir, "tsconfig.json")] = []byte(TsconfigJsonTemplate)
 	files[filepath.Join(infraDir, "tsconfig.build.json")] = []byte(TsconfigBuildJsonTemplate)
-	// Add llamaIndexConfig.json to infra and dist
-	files[filepath.Join(infraDir, "llamaIndexConfig.json")] = []byte(LlamaIndexConfigTemplate)
-	files[filepath.Join(infraDir, "dist", "llamaIndexConfig.json")] = []byte(LlamaIndexConfigTemplate)
+	// Add azdConfig.json to infra and dist
+	files[filepath.Join(infraDir, "config", "azd.config.json")] = []byte(AzdConfigTemplate)
+	files[filepath.Join(infraDir, "dist", "config", "azd.config.json")] = []byte(AzdConfigTemplate)
 
 	return files
 }
@@ -41,7 +42,7 @@ const location = process.env.AZURE_LOCATION!;
 const principalId = process.env.AZURE_PRINCIPAL_ID!;
 const serviceName = process.env.AZURE_SERVICE_NAME || "llama-index-javascript";
 
-const llamaIndexConfig = require('./llamaIndexConfig.json');
+const azdConfig = require('../config/azd.config.json');
 
 async function waitForManagedEnvReady(rgName: string, envName: string, containerAppsClient: ContainerAppsAPIClient) {
   const maxRetries = 30;
@@ -140,7 +141,6 @@ async function main() {
   const identityId = "/subscriptions/" + subscriptionId + "/resourceGroups/" + rgName +
     "/providers/Microsoft.ManagedIdentity/userAssignedIdentities/" + identityName;
 
-  // ✅ Ensure Resource Group is created first
   await resourceClient.resourceGroups.createOrUpdate(rgName, {
     location,
     tags
@@ -235,36 +235,36 @@ async function main() {
   });
 
   await deployModel(
-    llamaIndexConfig.chat.deployment,
-    llamaIndexConfig.chat.model,
-    llamaIndexConfig.chat.version,
-    llamaIndexConfig.chat.capacity
+    azdConfig.chat.deployment,
+    azdConfig.chat.model,
+    azdConfig.chat.version,
+    azdConfig.chat.capacity
   );
 
   await deployModel(
-    llamaIndexConfig.embedding.deployment,
-    llamaIndexConfig.embedding.model,
-    llamaIndexConfig.embedding.version,
-    llamaIndexConfig.embedding.capacity
+    azdConfig.embedding.deployment,
+    azdConfig.embedding.model,
+    azdConfig.embedding.version,
+    azdConfig.embedding.capacity
   );
 
-  const escapedPrompt = llamaIndexConfig.system_prompt.replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+  const escapedPrompt = azdConfig.system_prompt.replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
 
   const outputs = {
     AZURE_CONTAINER_REGISTRY_ENDPOINT: { value: acr.loginServer },
-    AZURE_RESOURCE_LLAMA_INDEX_JAVASCRIPT_ID: { value: "/subscriptions/" + subscriptionId + "/resourceGroups/rg-" + environmentName + "/providers/Microsoft.App/containerApps/" + llamaIndexConfig.serviceName },
+    AZURE_RESOURCE_LLAMA_INDEX_JAVASCRIPT_ID: { value: "/subscriptions/" + subscriptionId + "/resourceGroups/rg-" + environmentName + "/providers/Microsoft.App/containerApps/" + azdConfig.serviceName },
     AZURE_OPENAI_ENDPOINT: { value: "https://" + aoaiName + ".openai.azure.com" },
-    AZURE_DEPLOYMENT_NAME: { value: llamaIndexConfig.chat.deployment },
-    AZURE_OPENAI_API_VERSION: { value: llamaIndexConfig.openai_api_version },
-    MODEL_PROVIDER: { value: llamaIndexConfig.model_provider },
-    MODEL: { value: llamaIndexConfig.chat.model },
-    EMBEDDING_MODEL: { value: llamaIndexConfig.embedding.model },
-    EMBEDDING_DIM: { value: llamaIndexConfig.embedding.dim },
-    OPENAI_API_KEY: { value: llamaIndexConfig.openai_api_key },
-    LLM_TEMPERATURE: { value: llamaIndexConfig.llm_temperature },
-    LLM_MAX_TOKENS: { value: llamaIndexConfig.llm_max_tokens },
-    TOP_K: { value: llamaIndexConfig.top_k },
-    FILESERVER_URL_PREFIX: { value: llamaIndexConfig.fileserver_url_prefix },
+    AZURE_DEPLOYMENT_NAME: { value: azdConfig.chat.deployment },
+    AZURE_OPENAI_API_VERSION: { value: azdConfig.openai_api_version },
+    MODEL_PROVIDER: { value: azdConfig.model_provider },
+    MODEL: { value: azdConfig.chat.model },
+    EMBEDDING_MODEL: { value: azdConfig.embedding.model },
+    EMBEDDING_DIM: { value: azdConfig.embedding.dim },
+    OPENAI_API_KEY: { value: azdConfig.openai_api_key },
+    LLM_TEMPERATURE: { value: azdConfig.llm_temperature },
+    LLM_MAX_TOKENS: { value: azdConfig.llm_max_tokens },
+    TOP_K: { value: azdConfig.top_k },
+    FILESERVER_URL_PREFIX: { value: azdConfig.fileserver_url_prefix },
     SYSTEM_PROMPT: { value: escapedPrompt },
     STORAGE_CACHE_DIR: { value: "./cache" }
   };
@@ -329,7 +329,7 @@ const TsconfigJsonTemplate = `{
 			"https": ["./node_modules/@types/node"]
 		}
 	},
-	"include": ["deploy.ts", "destroy.ts", "llamaIndexConfig.json"],
+	"include": ["src/**/*.ts", "config/**/*.ts", "azd.config.json"],
 	"exclude": ["node_modules"]
 }`
 
@@ -341,12 +341,12 @@ const TsconfigBuildJsonTemplate = `{
 		"skipLibCheck": true,
 		"skipDefaultLibCheck": true
 	},
-	"include": ["deploy.ts", "destroy.ts", "llamaIndexConfig.json"],
+	"include": ["src/**/*.ts", "config/**/*.ts", "azd.config.json"],
 	"exclude": ["node_modules"]
 }`
 
-// Added llamaIndexConfig as a separate variable to ensure it is included in the template folder during the init phase.
-const LlamaIndexConfigTemplate = `{
+// Added azdConfig as a separate variable to ensure it is included in the template folder during the init phase.
+const AzdConfigTemplate = `{
   "chat": {
     "model": "gpt-4o-mini",
     "deployment": "gpt-4o-mini",

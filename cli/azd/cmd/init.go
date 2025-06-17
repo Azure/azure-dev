@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	
+
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/typescript"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -44,6 +44,9 @@ const (
 	// Shared deploy.ts template content to use across the codebase
 	deployTsTemplate = typescript.DeployTsTemplate
 
+	// Shared destroy.ts template content to use across the codebase
+	destroyTsTemplate = typescript.DestroyTsTemplate
+
 	// Shared package.json template content to use across the codebase
 	packageJsonTemplate = typescript.PackageJsonTemplate
 
@@ -52,15 +55,25 @@ const (
 
 	// Shared tsconfig.build.json template content to use across the codebase
 	tsconfigBuildJsonTemplate = typescript.TsconfigBuildJsonTemplate
+
+	// Shared azd.config.json template content to use across the codebase
+	azdConfigTemplate = typescript.AzdConfigTemplate
 )
 
 // --- Helper functions for TypeScript provider initialization ---
 func initializeTypeScriptInfra(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
 	infraDir := filepath.Join(azdCtx.ProjectDirectory(), "infra")
-	// Ensure infra directory exists
-	if err := os.MkdirAll(infraDir, 0755); err != nil {
-		return fmt.Errorf("failed to create infra directory: %w", err)
+
+	// Create dist directory
+	srcDir := filepath.Join(infraDir, "src")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		return fmt.Errorf("failed to create src directory: %w", err)
 	}
+	configDir := filepath.Join(srcDir, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
 	// Remove Bicep files if present
 	entries, err := os.ReadDir(infraDir)
 	if err == nil {
@@ -70,13 +83,20 @@ func initializeTypeScriptInfra(ctx context.Context, azdCtx *azdcontext.AzdContex
 			}
 		}
 	}
-	// Only create deploy.ts if it does not exist (do not overwrite template-provided file)
-	deployTsPath := filepath.Join(infraDir, "deploy.ts")
-	if _, err := os.Stat(deployTsPath); err == nil {
-		// File exists, do not overwrite
-	} else if os.IsNotExist(err) {
+
+	// Create deploy.ts under ./infra/src
+	deployTsPath := filepath.Join(srcDir, "deploy.ts")
+	if _, err := os.Stat(deployTsPath); os.IsNotExist(err) {
 		if err := os.WriteFile(deployTsPath, []byte(deployTsTemplate), 0644); err != nil {
 			return fmt.Errorf("failed to write deploy.ts: %w", err)
+		}
+	}
+
+	// Use the DestroyTsTemplate from templates.go
+	destroyTsPath := filepath.Join(srcDir, "destroy.ts")
+	if _, err := os.Stat(destroyTsPath); os.IsNotExist(err) {
+		if err := os.WriteFile(destroyTsPath, []byte(typescript.DestroyTsTemplate), 0644); err != nil {
+			return fmt.Errorf("failed to write destroy.ts: %w", err)
 		}
 	}
 
@@ -104,19 +124,11 @@ func initializeTypeScriptInfra(ctx context.Context, azdCtx *azdcontext.AzdContex
 		}
 	}
 
-	// Create llamaIndexConfig.json directly in the infra directory
-	llamaIndexConfigPath := filepath.Join(infraDir, "llamaIndexConfig.json")
-	if _, err := os.Stat(llamaIndexConfigPath); os.IsNotExist(err) {
-		if err := os.WriteFile(llamaIndexConfigPath, []byte(typescript.LlamaIndexConfigTemplate), 0644); err != nil {
-			return fmt.Errorf("failed to write llamaIndexConfig.json: %w", err)
-		}
-	}
-
-	// Use the DestroyTsTemplate from templates.go
-	destroyTsPath := filepath.Join(infraDir, "destroy.ts")
-	if _, err := os.Stat(destroyTsPath); os.IsNotExist(err) {
-		if err := os.WriteFile(destroyTsPath, []byte(typescript.DestroyTsTemplate), 0644); err != nil {
-			return fmt.Errorf("failed to write destroy.ts: %w", err)
+	// Create azd.config.json directly in the infra directory
+	azdConfigPath := filepath.Join(configDir, "azd.config.json")
+	if _, err := os.Stat(azdConfigPath); os.IsNotExist(err) {
+		if err := os.WriteFile(azdConfigPath, []byte(azdConfigTemplate), 0644); err != nil {
+			return fmt.Errorf("failed to write azd.config.json: %w", err)
 		}
 	}
 
@@ -142,10 +154,19 @@ func initializeTypeScriptInfra(ctx context.Context, azdCtx *azdcontext.AzdContex
 		return fmt.Errorf("failed to create dist directory: %w", err)
 	}
 
-	// Ensure llamaIndexConfig.json is copied to dist for runtime
-	distLlamaIndexConfigPath := filepath.Join(distDir, "llamaIndexConfig.json")
-	if err := os.WriteFile(distLlamaIndexConfigPath, []byte(typescript.LlamaIndexConfigTemplate), 0644); err != nil {
-		return fmt.Errorf("failed to copy llamaIndexConfig.json to dist: %w", err)
+	configDist := filepath.Join(infraDir, "dist", "config")
+
+	// Ensure dist/config directory exists
+	if err := os.MkdirAll(configDist, 0755); err != nil {
+		return fmt.Errorf("failed to create dist/config directory: %w", err)
+	}
+
+	// Ensure azd.config.json is copied to dist for runtime
+	azdConfigDistPath := filepath.Join(configDist, "azd.config.json")
+	if _, err := os.Stat(azdConfigDistPath); os.IsNotExist(err) {
+		if err := os.WriteFile(azdConfigDistPath, []byte(azdConfigTemplate), 0644); err != nil {
+			return fmt.Errorf("failed to copy azd.config.json to dist/config: %w", err)
+		}
 	}
 
 	// Compile TypeScript to JavaScript with better error handling
@@ -715,7 +736,7 @@ func (i *initAction) initializeEnv(
 	azdCtx *azdcontext.AzdContext,
 	templateMetadata templates.Metadata) (*environment.Environment, error) {
 	fmt.Printf("[DEBUG-INIT] Starting initializeEnv in init.go\n")
-	
+
 	envName, err := azdCtx.GetDefaultEnvironmentName()
 	if err != nil {
 		fmt.Printf("[DEBUG-INIT] Error getting default environment name: %v\n", err)
@@ -810,34 +831,37 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 		return fmt.Errorf("listing installed extensions: %w", err)
 	}
 
-	i.console.Message(ctx, "\nInstalling required extensions...")
+	// Map installed extension IDs for quick lookup
+	installedMap := make(map[string]struct{})
+	for _, ext := range installedExtensions {
+		installedMap[ext.Id] = struct{}{}
+	}
 
-	for extensionId, versionConstraint := range projectConfig.RequiredVersions.Extensions {
-		stepMessage := fmt.Sprintf("Installing %s extension", output.WithHighLightFormat(extensionId))
-		i.console.ShowSpinner(ctx, stepMessage, input.Step)
+	var toInstall []extensions.Extension
 
-		installed, isInstalled := installedExtensions[extensionId]
-		if isInstalled {
-			stepMessage += output.WithGrayFormat(" (version %s already installed)", installed.Version)
-			i.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+	// Check each required extension
+	for _, req := range projectConfig.RequiredVersions.Extensions {
+		// Convert req to extensions.Extension
+		ext := extensions.Extension{
+			Id: *req, // Assuming req is a pointer to string
+		}
+
+		// Already installed and up-to-date
+		if _, ok := installedMap[ext.Id]; ok {
 			continue
-		} else {
-			installConstraint := "latest"
-			if versionConstraint != nil {
-				installConstraint = *versionConstraint
-			}
+		}
 
-			filterOptions := &extensions.FilterOptions{
-				Version: installConstraint,
-			}
-			extensionVersion, err := i.extensionsManager.Install(ctx, extensionId, filterOptions)
-			if err != nil {
-				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return fmt.Errorf("installing extension %s: %w", extensionId, err)
-			}
+		// Not installed, mark for installation
+		toInstall = append(toInstall, ext)
+	}
 
-			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
-			i.console.StopSpinner(ctx, stepMessage, input.StepDone)
+	// Install missing extensions
+	if len(toInstall) > 0 {
+		fmt.Printf("Installing required extensions: %v\n", toInstall)
+		for _, ext := range toInstall {
+			if _, err := i.extensionsManager.Install(ctx, ext.Id, nil); err != nil {
+				return fmt.Errorf("installing extension %s: %w", ext.Id, err)
+			}
 		}
 	}
 
@@ -851,10 +875,12 @@ func getCmdInitHelpDescription(*cobra.Command) string {
 				fmt.Sprintf("Running %s without flags specified will prompt "+
 					"you to initialize using your existing code, or from a template.",
 					output.WithHighLightFormat("init"),
-				)),
+				),
+			),
 			formatHelpNote(
 				"To view all available sample templates, including those submitted by the azd community, visit: " +
-					output.WithLinkFormat("https://azure.github.io/awesome-azd") + "."),
+					output.WithLinkFormat("https://azure.github.io/awesome-azd") + ".",
+			),
 		})
 }
 

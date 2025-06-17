@@ -431,7 +431,7 @@ func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandR
 	if err != nil {
 		// An error here means VSCode is not installed or found, or something else.
 		// At any case, we know VSCode is not within a webBrowser
-		log.Printf("error running code --status: %s", err.Error())
+		log.Printf("error running code --status: %v", err)
 		return false
 	}
 

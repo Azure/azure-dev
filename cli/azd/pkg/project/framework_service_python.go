@@ -112,58 +112,19 @@ func (pp *pythonProject) Package(
 	buildOutput *ServiceBuildResult,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	packageDest, err := os.MkdirTemp("", "azd")
-	if err != nil {
-		return nil, fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err)
+	packagePath := buildOutput.BuildOutputPath
+	if packagePath == "" {
+		packagePath = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
 	}
 
-	packageSource := buildOutput.BuildOutputPath
-	if packageSource == "" {
-		packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
-	}
-
-	if entries, err := os.ReadDir(packageSource); err != nil || len(entries) == 0 {
-		return nil, fmt.Errorf("package source '%s' is empty or does not exist", packageSource)
-	}
-
-	progress.SetProgress(NewServiceProgress("Copying deployment package"))
-	if err := buildForZip(
-		packageSource,
-		packageDest,
-		buildForZipOptions{
-			excludeConditions: []excludeDirEntryCondition{
-				excludeVirtualEnv,
-				excludePyCache,
-			},
-		}); err != nil {
-
-		return nil, fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err)
-	}
-
-	if err := validatePackageOutput(packageDest); err != nil {
-		return nil, err
+	if entries, err := os.ReadDir(packagePath); err != nil || len(entries) == 0 {
+		return nil, fmt.Errorf("package source '%s' is empty or does not exist", packagePath)
 	}
 
 	return &ServicePackageResult{
 		Build:       buildOutput,
-		PackagePath: packageDest,
+		PackagePath: packagePath,
 	}, nil
-}
-
-func isPythonVirtualEnv(path string) bool {
-	// check if `pyvenv.cfg` is within the folder
-	if _, err := os.Stat(filepath.Join(path, "pyvenv.cfg")); err == nil {
-		return true
-	}
-	return false
-}
-
-func excludeVirtualEnv(path string, file os.FileInfo) bool {
-	return file.IsDir() && isPythonVirtualEnv(path)
-}
-
-func excludePyCache(path string, file os.FileInfo) bool {
-	return file.IsDir() && strings.ToLower(file.Name()) == "__pycache__"
 }
 
 func (pp *pythonProject) getVenvName(serviceConfig *ServiceConfig) string {

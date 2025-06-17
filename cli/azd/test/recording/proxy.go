@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"syscall"
 
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 )
@@ -217,9 +218,14 @@ func (p *connectHandler) connectThenServe(clientConn net.Conn, connectReq *http.
 		// Read an HTTP request from the client; the request is sent over TLS that
 		// connReader is configured to serve.
 		req, err := http.ReadRequest(connReader)
-		if errors.Is(err, io.EOF) {
-			break
-		} else if err != nil {
+
+		var errno syscall.Errno
+		if errors.Is(err, io.EOF) ||
+			errors.As(err, &errno) && errno == 10054 { // errno 10054: WSAECONNRESET on Windows
+			return
+		}
+
+		if err != nil {
 			// Terminate the connection if we fail to read the request.
 			p.Log.Error("connectHandler failed to read HTTP request", "error", err.Error())
 			return

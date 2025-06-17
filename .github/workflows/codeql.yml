@@ -1,6 +1,8 @@
 name: "CodeQL"
 
 on:
+  push:
+    branches: [main]
   pull_request:
     paths:
       - "**/*.go"
@@ -28,10 +30,10 @@ jobs:
           languages: go
           source-root: cli/azd
 
-      - name: Build
-        uses: github/codeql-action/autobuild@v3
-        with:
-          source-directory: cli/azd
+      - name: "Build application"
+        run: |
+          cd cli/azd
+          go build ./...
           
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3

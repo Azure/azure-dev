@@ -255,7 +255,10 @@ func (pm *PipelineManager) Configure(
 	}
 
 	// pipeline definition files
-	pm.ensurePipelineDefinition(ctx)
+	err = pm.ensurePipelineDefinition(ctx)
+	if err != nil {
+		return result, fmt.Errorf("ensuring pipeline definition: %w", err)
+	}
 
 	// ServiceManagementReference can be set as user config (~/.azd/config.json)
 	userConfig, err := pm.userConfigManager.Load()
@@ -1138,6 +1141,7 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, p
 			pipelineProviderFiles[props.CiProvider].DisplayName,
 			strings.Join(pipelineProviderFiles[props.CiProvider].PipelineDirectories, "\n"))
 		log.Println("Error:", message)
+		// Azdo needs a pipeline definition to create a pipeline. Not finding one is an error.
 		return errors.New(message)
 	}
 
@@ -1250,6 +1254,7 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		Variables              []string
 		Secrets                []string
 		AlphaFeatures          []string
+		IsTerraform            bool
 	}{
 		BranchName:             props.BranchName,
 		FedCredLogIn:           props.AuthType == AuthTypeFederated,
@@ -1257,6 +1262,7 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		Variables:              props.Variables,
 		Secrets:                props.Secrets,
 		AlphaFeatures:          props.RequiredAlphaFeatures,
+		IsTerraform:            props.InfraProvider == infraProviderTerraform,
 	}
 
 	// Apply provider parameters
@@ -1267,6 +1273,16 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 			} else {
 				tmplContext.Variables = append(tmplContext.Variables, envVarName)
 			}
+		}
+	}
+
+	if props.InfraProvider == infraProviderTerraform {
+		// terraform provider does not resolve this variables automatically, AZD needs to define them
+		tmplContext.Variables = append(tmplContext.Variables, "AZURE_LOCATION")
+		tmplContext.Variables = append(tmplContext.Variables, "AZURE_ENV_NAME")
+
+		if props.AuthType == AuthTypeClientCredentials {
+			tmplContext.Secrets = append(tmplContext.Secrets, "AZURE_CLIENT_SECRET")
 		}
 	}
 
@@ -1419,10 +1435,6 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 
 	// default auth type for all providers
 	authType := AuthTypeFederated
-	if pm.args.PipelineAuthTypeName == "" && infraProvider == infraProviderTerraform {
-		// empty arg for auth and terraform forces client credentials, otherwise, it will be federated
-		authType = AuthTypeClientCredentials
-	}
 
 	// Check and prompt for missing CI/CD files
 	err = pm.checkAndPromptForProviderFiles(

@@ -4,102 +4,42 @@
 ## Table of Contents
 
 1. [Next Steps](#next-steps)
-2. [What was added](#what-was-added)
-3. [Billing](#billing)
-4. [Troubleshooting](#troubleshooting)
+   1. [Provision infrastructure](#provision-infrastructure-and-deploy-application-code)
+   2. [Modify infrastructure](#modify-infrastructure)
+   3. [Getting to production-ready](#getting-to-production-ready)
+2. [Billing](#billing)
+3. [Troubleshooting](#troubleshooting)
 
 ## Next Steps
 
 ### Provision infrastructure and deploy application code
 
-Run `azd up` to provision your infrastructure and deploy to Azure (or run `azd provision` then `azd deploy` to accomplish the tasks separately). Visit the service endpoints listed to see your application up-and-running!
+Run `azd up` to provision your infrastructure and deploy to Azure in one step (or run `azd provision` then `azd deploy` to accomplish the tasks separately). Visit the service endpoints listed to see your application up-and-running!
 
 To troubleshoot any issues, see [troubleshooting](#troubleshooting).
 
-### Configure environment variables for running services
+### Modify infrastructure
 
-Environment variables can be configured by modifying the `env` settings in [resources.bicep](./infra/resources.bicep).
-To define a secret, add the variable as a `secretRef` pointing to a `secrets` entry or a stored KeyVault secret.
+To describe the infrastructure and application, `azure.yaml` was added. This file contains all services and resources that describe your application.
 
-{{- range .Services}}
-{{- if or .DbPostgres .DbCosmosMongo .DbRedis }}
+To add new services or resources, run `azd add`. You may also edit the `azure.yaml` file directly if needed.
 
-#### Database connections for `{{.Name}}`
+### Getting to production-ready
 
-The following environment variables are set for `{{.Name}}` in [resources.bicep](./infra/resources.bicep).
-They allow connection to the database instances, and can be modified or adapted to your service's needs:
-{{ end}}
-{{- if .DbPostgres }}
-- `POSTGRES_URL` - The URL of the Azure Postgres Flexible Server database instance.
-Individual components are also available as: `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DATABASE`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`.
-{{- end}}
-{{- if .DbCosmosMongo }}
-- `MONGODB_URL` - The URL of the Azure Cosmos DB (MongoDB) instance.
-{{- end}}
-{{- if .DbRedis }}
-- `REDIS_URL` - The URL of the Azure Cache for Redis instance.
-Individual components are also available as: `REDIS_HOST`, `REDIS_PASSWORD`, and `REDIS_PORT`.
-{{- end}}
-{{- end}}
+When needed, `azd` generates the required infrastructure as code in memory and uses it. If you would like to see or modify the infrastructure that `azd` uses, run `azd infra gen` to persist it to disk.
 
-### Configure CI/CD pipeline
-
-Run `azd pipeline config` to configure the deployment pipeline to connect securely to Azure. 
-
-- Deploying with `GitHub Actions`: Select `GitHub` when prompted for a provider. If your project lacks the `azure-dev.yml` file, accept the prompt to add it and proceed with pipeline configuration.
-
-- Deploying with `Azure DevOps Pipeline`: Select `Azure DevOps` when prompted for a provider. If your project lacks the `azure-dev.yml` file, accept the prompt to add it and proceed with pipeline configuration.
-
-## What was added
-
-### Infrastructure configuration
-
-To describe the infrastructure and application, `azure.yaml` along with Infrastructure as Code files using Bicep were added with the following directory structure:
+If you do this, some additional directories will be created:
 
 ```yaml
-- azure.yaml        # azd project configuration
-- infra/            # Infrastructure-as-code Bicep files
-  - main.bicep      # Subscription level resources
-  - resources.bicep # Primary resource group resources
+- infra/            # Infrastructure as Code (bicep) files
+  - main.bicep      # main deployment module
+  - resources.bicep # resources shared across your application's services
   - modules/        # Library modules
 ```
 
-The resources declared in [resources.bicep](./infra/resources.bicep) are provisioned when running `azd up` or `azd provision`.
-This includes:
+*Note*: Once you have generated your infrastructure to disk, those files are the source of truth for azd. Any changes made to `azure.yaml` (such as through `azd add`) will not be reflected in the infrastructure until you regenerate it with `azd infra gen` again. It will prompt you before overwriting files. You can pass `--force` to force `azd infra gen` to overwrite the files without prompting.
 
-{{range .Services}}
-- Azure Container App to host the '{{.Name}}' service.
-{{- end}}
-{{- if .DbPostgres}}
-- Azure Postgres Flexible Server to host the '{{.DbPostgres.DatabaseName}}' database.
-{{- end}}
-{{- if .DbCosmosMongo}}
-- Azure Cosmos DB (MongoDB) to host the '{{.DbCosmosMongo.DatabaseName}}' database.
-{{- end}}
-{{- if .DbRedis}}
-- Azure Cache for Redis to host the redis database.
-{{- end}}
-
-More information about [Bicep](https://aka.ms/bicep) language.
-
-### Build from source (no Dockerfile)
-
-#### Build with Buildpacks using Oryx
-
-If your project does not contain a Dockerfile, we will use [Buildpacks](https://buildpacks.io/) using [Oryx](https://github.com/microsoft/Oryx/blob/main/doc/README.md) to create an image for the services in `azure.yaml` and get your containerized app onto Azure.
-
-To produce and run the docker image locally:
-
-1. Run `azd package` to build the image.
-2. Copy the *Image Tag* shown.
-3. Run `docker run -it <Image Tag>` to run the image locally.
-
-#### Exposed port
-
-Oryx will automatically set `PORT` to a default value of `80` (port `8080` for Java). Additionally, it will auto-configure supported web servers such as `gunicorn` and `ASP .NET Core` to listen to the target `PORT`. If your application already listens to the port specified by the `PORT` variable, the application will work out-of-the-box. Otherwise, you may need to perform one of the steps below:
-
-1. Update your application code or configuration to listen to the port specified by the `PORT` variable
-1. (Alternatively) Search for `targetPort` in a .bicep file under the `infra/app` folder, and update the variable to match the port used by the application.
+Finally, run `azd pipeline config` to configure a CI/CD deployment pipeline.
 
 ## Billing
 

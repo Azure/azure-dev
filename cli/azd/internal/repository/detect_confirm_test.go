@@ -47,7 +47,7 @@ func Test_detectConfirm_confirm(t *testing.T) {
 			name:      "add from empty",
 			detection: []appdetect.Project{},
 			interactions: []string{
-				"y",
+				"Add an undetected service",
 				fmt.Sprintf("%s\t%s", appdetect.Java.Display(), "[Language]"),
 				"java-dir",
 				"Confirm and continue initializing my app",

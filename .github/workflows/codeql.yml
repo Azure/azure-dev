@@ -26,13 +26,12 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: go
+          source-root: cli/azd
 
       - name: Build
         uses: github/codeql-action/autobuild@v3
         with:
-          working-directory: cli/azd
-
+          source-directory: cli/azd
+          
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
-        with:
-          working-directory: cli/azd

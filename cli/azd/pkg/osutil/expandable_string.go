@@ -40,6 +40,11 @@ func (e ExpandableString) MustEnvsubst(mapping func(string) string) string {
 	}
 }
 
+// String returns the raw template string.
+func (e ExpandableString) String() string {
+	return e.template
+}
+
 func (e ExpandableString) MarshalYAML() (interface{}, error) {
 	return e.template, nil
 }

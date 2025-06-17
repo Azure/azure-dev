@@ -158,7 +158,7 @@ func TestMapToExpandableStringSliceWithHyphenConversion(t *testing.T) {
 		"ARG8": "",
 	}
 
-	result := mapToExpandableStringSliceWithHyphenConversion(buildArgs, "=")
+	result := handleBuildArgsNames(mapToExpandableStringSlice(buildArgs, "="))
 
 	// Convert result to strings for easier comparison using identity mapping
 	resultStrings := make([]string, len(result))
@@ -207,7 +207,7 @@ func TestEvaluateArgsWithConfigHyphenHandling(t *testing.T) {
 	require.NoError(t, err)
 
 	// Now apply hyphen conversion when creating expandable strings
-	result := mapToExpandableStringSliceWithHyphenConversion(evaluatedArgs, "=")
+	result := handleBuildArgsNames(mapToExpandableStringSlice(evaluatedArgs, "="))
 
 	// Convert to strings for verification
 	resultStrings := make([]string, len(result))

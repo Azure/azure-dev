@@ -197,25 +197,26 @@ func mapToExpandableStringSlice(m map[string]string, separator string) []osutil.
 	return result
 }
 
-// mapToExpandableStringSliceWithHyphenConversion converts a map of strings to a slice of expandable strings,
-// with special handling for build arg values that contain infra.parameters. references.
-// For values that match the pattern "{infra.parameters.param-name}", hyphens in the parameter name
-// are converted to underscores to match the expected Azure parameter naming convention.
-// Each key-value pair in the map is converted to a string in the format "key:value",
-// where the separator is specified by the `separator` parameter.
-// If the value is an empty string, only the key is included in the resulting slice.
-func mapToExpandableStringSliceWithHyphenConversion(m map[string]string, separator string) []osutil.ExpandableString {
+// handleBuildArgsNames processes build argument names by converting hyphens to underscores
+// in infra.parameters references to match Azure parameter naming conventions.
+// It takes a slice of expandable strings in "key=value" format and processes the values
+// to convert hyphens to underscores for infra.parameters references.
+func handleBuildArgsNames(buildArgs []osutil.ExpandableString) []osutil.ExpandableString {
 	var result []osutil.ExpandableString
-	for key, value := range m {
-		processedValue := value
-		if value != "" {
-			processedValue = convertHyphensInInfraParameters(value)
-		}
-
-		if processedValue == "" {
-			result = append(result, osutil.NewExpandableString(key))
+	for _, arg := range buildArgs {
+		argStr := arg.String()
+		
+		// Split on the first "=" to separate key and value
+		parts := strings.SplitN(argStr, "=", 2)
+		if len(parts) == 1 {
+			// No value part, just add the key as-is
+			result = append(result, arg)
 		} else {
-			result = append(result, osutil.NewExpandableString(key+separator+processedValue))
+			// Process the value part for hyphen conversion
+			key := parts[0]
+			value := parts[1]
+			processedValue := convertHyphensInInfraParameters(value)
+			result = append(result, osutil.NewExpandableString(key+"="+processedValue))
 		}
 	}
 	return result
@@ -304,7 +305,7 @@ func (ai *DotNetImporter) Services(
 			Docker: DockerProjectOptions{
 				Path:      dockerfile.Path,
 				Context:   dockerfile.Context,
-				BuildArgs: mapToExpandableStringSlice(dockerfile.BuildArgs, "="),
+				BuildArgs: handleBuildArgsNames(mapToExpandableStringSlice(dockerfile.BuildArgs, "=")),
 			},
 		}
 
@@ -384,7 +385,7 @@ func (ai *DotNetImporter) Services(
 			dOptions = DockerProjectOptions{
 				Path:         bContainer.Build.Dockerfile,
 				Context:      bContainer.Build.Context,
-				BuildArgs:    mapToExpandableStringSliceWithHyphenConversion(bArgs, "="),
+				BuildArgs:    handleBuildArgsNames(mapToExpandableStringSlice(bArgs, "=")),
 				BuildSecrets: bArgsArray,
 				BuildEnv:     reqEnv,
 			}

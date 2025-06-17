@@ -113,6 +113,7 @@ flexconsumption
 Frontends
 fsnotify
 funcapp
+funcignore
 functionapp
 gjson
 go-imath
@@ -244,6 +245,7 @@ utsname
 vite
 vsrpc
 vuejs
+webappignore
 webfrontend
 westus2
 wireinject

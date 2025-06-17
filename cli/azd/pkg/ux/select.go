@@ -147,7 +147,7 @@ func (p *Select) Ask(ctx context.Context) (*int, error) {
 
 	done := func() {
 		if err := p.canvas.Update(); err != nil {
-			log.Printf("Error updating canvas: %s\n", err.Error())
+			log.Printf("Error updating canvas: %v", err)
 		}
 	}
 

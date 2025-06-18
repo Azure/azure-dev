@@ -1,31 +1,4 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-
-package typescript
-
-import (
-	"path/filepath"
-)
-
-// GetTemplateFiles returns all template files needed for TypeScript infrastructure
-func GetTemplateFiles(infraDir string) map[string][]byte {
-	files := make(map[string][]byte)
-
-	// Add all template files
-	files[filepath.Join(infraDir, "src", "deploy.ts")] = []byte(DeployTsTemplate)
-  files[filepath.Join(infraDir, "src", "destroy.ts")] = []byte(DestroyTsTemplate)
-	files[filepath.Join(infraDir, "package.json")] = []byte(PackageJsonTemplate)
-	files[filepath.Join(infraDir, "tsconfig.json")] = []byte(TsconfigJsonTemplate)
-	files[filepath.Join(infraDir, "tsconfig.build.json")] = []byte(TsconfigBuildJsonTemplate)
-	// Add azdConfig.json to infra and dist
-	files[filepath.Join(infraDir, "config", "azd.config.json")] = []byte(AzdConfigTemplate)
-	files[filepath.Join(infraDir, "dist", "config", "azd.config.json")] = []byte(AzdConfigTemplate)
-
-	return files
-}
-
-// DeployTsTemplate is the main TypeScript infrastructure template
-const DeployTsTemplate = `import { DefaultAzureCredential } from "@azure/identity";
+import { DefaultAzureCredential } from "@azure/identity";
 import { setLogLevel } from "@azure/logger";
 import { ResourceManagementClient } from "@azure/arm-resources";
 import { ContainerAppsAPIClient, ContainerApp } from "@azure/arm-appcontainers";
@@ -204,10 +177,6 @@ async function main() {
   await containerAppsClient.containerApps.beginCreateOrUpdateAndWait(rgName, appName, {
     location,
     managedEnvironmentId: env.id,
-    tags: {
-      ...tags,
-      "azd-service-name": serviceName
-    },
     configuration: {
       ingress: { external: true, targetPort: 3000 },
       secrets: [
@@ -238,11 +207,14 @@ async function main() {
           { name: "LLM_MAX_TOKENS", value: azdConfig.llm_max_tokens },
           { name: "TOP_K", value: azdConfig.top_k },
           { name: "FILESERVER_URL_PREFIX", value: azdConfig.fileserver_url_prefix },
-          { name: "AZURE_OPENAI_ENDPOINT", value: "https://" + aoaiName + ".openai.azure.com" },
           { name: "SYSTEM_PROMPT", value: escapedPrompt },
           { name: "STORAGE_CACHE_DIR", value: "./cache" },
       ],
-    }]}
+    },
+    tags: {
+      ...tags,
+      "azd-service-name": serviceName
+    }
   });
 
   await cognitiveClient.accounts.beginCreateAndWait(rgName, aoaiName, {
@@ -305,137 +277,3 @@ main().catch(err => {
   console.error(err);
   process.exit(1);
 });
-
-`
-
-// PackageJsonTemplate contains the package.json for TypeScript infrastructure
-const PackageJsonTemplate = `{
-	"name": "infra",
-	"version": "1.0.0",
-	"main": "index.js",
-	"scripts": {
-		"build": "tsc -p tsconfig.build.json",
-		"start": "node dist/deploy.js"
-	},
-	"author": "",
-	"license": "ISC",
-	"description": "",
-	"dependencies": {
-		"@azure/arm-resources": "latest",
-		"@azure/arm-appcontainers": "latest",
-		"@azure/arm-containerregistry": "latest",
-		"@azure/arm-cognitiveservices": "latest",
-		"@azure/arm-operationalinsights": "latest",
-		"@azure/arm-appinsights": "latest",
-		"@azure/identity": "latest",
-		"typescript": "^5.4.2"
-	},
-	"devDependencies": {
-		"@types/node": "^20.4.2"
-	}
-}`
-
-// TsconfigJsonTemplate contains the tsconfig.json for TypeScript infrastructure
-const TsconfigJsonTemplate = `{
-	"compilerOptions": {
-		"target": "ES2020",
-		"module": "CommonJS",
-		"strict": true,
-		"esModuleInterop": true,
-		"allowSyntheticDefaultImports": true,
-		"skipLibCheck": true,
-		"forceConsistentCasingInFileNames": true,
-		"outDir": "dist",
-		"paths": {
-			"http": ["./node_modules/@types/node"],
-			"https": ["./node_modules/@types/node"]
-		}
-	},
-	"include": ["src/**/*.ts", "config/**/*.ts", "azd.config.json"],
-	"exclude": ["node_modules"]
-}`
-
-// TsconfigBuildJsonTemplate contains the tsconfig.build.json for TypeScript infrastructure
-const TsconfigBuildJsonTemplate = `{
-	"extends": "./tsconfig.json",
-	"compilerOptions": {
-		"noEmitOnError": false,
-		"skipLibCheck": true,
-		"skipDefaultLibCheck": true
-	},
-	"include": ["src/**/*.ts", "config/**/*.ts", "azd.config.json"],
-	"exclude": ["node_modules"]
-}`
-
-// Added azdConfig as a separate variable to ensure it is included in the template folder during the init phase.
-const AzdConfigTemplate = `{
-  "chat": {
-    "model": "gpt-4o-mini",
-    "deployment": "gpt-4o-mini",
-    "version": "2024-07-18",
-    "capacity": 10
-  },
-  "embedding": {
-    "model": "text-embedding-3-large",
-    "deployment": "text-embedding-3-large",
-    "version": "1",
-    "dim": "1024",
-    "capacity": 10
-  },
-  "model_provider": "openai",
-  "serviceName": "llama-index-javascript",
-  "openai_api_key": "",
-  "llm_temperature": "0.7",
-  "llm_max_tokens": "100",
-  "openai_api_version": "2024-02-15-preview",
-  "top_k": "3",
-  "fileserver_url_prefix": "http://localhost/api/files",
-  "system_prompt": "You are a helpful assistant who helps users with their questions."
-}`
-
-// Add Dockerfile template
-const DockerfileTemplate = `FROM node:20-alpine as build
-
-WORKDIR /app
-
-COPY package.json package-lock.* ./
-RUN npm install
-
-# Build the application
-COPY . .
-RUN npm run build
-
-# ====================================
-FROM build as release
-
-EXPOSE 3000
-
-CMD ["npm", "run", "start"]`
-
-// DestroyTsTemplate contains the destroy.ts for TypeScript infrastructure
-const DestroyTsTemplate = 
-  "import { DefaultAzureCredential } from \"@azure/identity\";\n" +
-  "import { setLogLevel } from \"@azure/logger\";\n" +
-  "setLogLevel(\"info\");\n" +
-  "\n" +
-  "import { ResourceManagementClient } from \"@azure/arm-resources\";\n\n" +
-  "const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID!;\n" +
-  "const resourceGroupName = \"rg-\" + process.env.AZURE_ENV_NAME;\n\n" +
-  "async function main() {\n" +
-  "  const credential = new DefaultAzureCredential();\n" +
-  "  const resourceClient = new ResourceManagementClient(credential, subscriptionId);\n\n" +
-  "  console.error(\"[destroy] Deleting resource group: \" + resourceGroupName);\n\n" +
-  "  let resourceCount = 0;\n" +
-  "  for await (const _ of resourceClient.resources.listByResourceGroup(resourceGroupName)) {\n" +
-  "    resourceCount++;\n" +
-  "  }\n\n" +
-  "  console.error(\"[destroy] Found \" + resourceCount + \" resources. Proceeding to delete...\");\n\n" +
-  "  await resourceClient.resourceGroups.beginDeleteAndWait(resourceGroupName);\n\n" +
-  "  console.error(\"[destroy] Resource group \" + resourceGroupName + \" deleted.\");\n" +
-  "  console.log(JSON.stringify({ success: true }));\n" +
-  "}\n\n" +
-  "main().catch(err => {\n" +
-  "  console.error(\"Error during resource deletion:\", err);\n" +
-  "  process.exit(1);\n" +
-  "});\n"
-

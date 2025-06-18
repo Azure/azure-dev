@@ -95,7 +95,7 @@ func initializeTypeScriptInfra(ctx context.Context, azdCtx *azdcontext.AzdContex
 	// Use the DestroyTsTemplate from templates.go
 	destroyTsPath := filepath.Join(srcDir, "destroy.ts")
 	if _, err := os.Stat(destroyTsPath); os.IsNotExist(err) {
-		if err := os.WriteFile(destroyTsPath, []byte(typescript.DestroyTsTemplate), 0644); err != nil {
+		if err := os.WriteFile(destroyTsPath, []byte(destroyTsTemplate), 0644); err != nil {
 			return fmt.Errorf("failed to write destroy.ts: %w", err)
 		}
 	}
@@ -493,7 +493,11 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, fmt.Errorf("failed to initialize TypeScript infra: %w", err)
 		}
 		header = "Initialized project with TypeScript infrastructure provider."
-		followUp = "You can now use azd with deploy.ts for infrastructure as code."
+			followUp := heredoc.Docf(`
+			You can view the template code in your directory: %s
+			Learn more about running 3rd party code on our DevHub: %s`,
+				output.WithLinkFormat("%s", wd),
+				output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
 		if i.flags.up {
 			// Optionally run azd up
 			startTime := time.Now()

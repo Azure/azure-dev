@@ -116,9 +116,12 @@ func (p *TypeScriptProvider) Initialize(ctx context.Context, projectPath string,
 		log.Printf("Using infra subdirectory")
 		p.configPath = filepath.Join(p.projectPath, "infra", "deploy.ts")
 	}
+	p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
+	err := p.EnsureEnv(ctx)
+	p.console.StopSpinner(ctx, "", input.Step)
 	p.options = options
 
-	return nil
+	return err
 }
 
 func (p *TypeScriptProvider) EnsureEnv(ctx context.Context) error {

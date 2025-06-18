@@ -37,6 +37,7 @@ type Spec struct {
 	Name         string
 	Subscription string
 	Location     string
+	Type         string
 	// suggest is the name that is offered as a suggestion if we need to prompt the user for an environment name.
 	Examples []string
 }
@@ -155,6 +156,10 @@ func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
 
 	if spec.Location != "" {
 		env.SetLocation(spec.Location)
+	}
+
+	if spec.Type != "" {
+		env.Config.Set(EnvironmentTypeConfigKeyPath, spec.Type)
 	}
 
 	if err := m.SaveWithOptions(ctx, env, &SaveOptions{IsNew: true}); err != nil {

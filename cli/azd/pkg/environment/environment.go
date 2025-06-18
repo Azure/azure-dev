@@ -53,6 +53,9 @@ const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 // PlatformTypeEnvVarName is the name of the key used to store the current azd platform type
 const PlatformTypeEnvVarName = "AZD_PLATFORM_TYPE"
 
+// EnvironmentTypeConfigKeyPath is the name of the config key used to store the environment type (e.g., dev, prod)
+const EnvironmentTypeConfigKeyPath = "environmentType"
+
 // The zero value of an Environment is not valid. Use [New] to create one. When writing tests,
 // [Ephemeral] and [EphemeralWithValues] are useful to create environments which are not persisted to disk.
 type Environment struct {
@@ -231,6 +234,14 @@ func (e *Environment) GetLocation() string {
 // SetLocation is shorthand for DotenvSet(LocationEnvVarName, location)
 func (e *Environment) SetLocation(location string) {
 	e.DotenvSet(LocationEnvVarName, location)
+}
+
+func (e *Environment) GetEnvironmentType() string {
+	value, _ := e.Config.Get(EnvironmentTypeConfigKeyPath)
+	if str, ok := value.(string); ok {
+		return str
+	}
+	return ""
 }
 
 // Key returns the environment key name for the given name.

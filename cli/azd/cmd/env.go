@@ -808,6 +808,7 @@ func (e *envListAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 type envNewFlags struct {
 	subscription string
 	location     string
+	envType      string
 	global       *internal.GlobalCommandOptions
 }
 
@@ -819,6 +820,7 @@ func (f *envNewFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"Name or ID of an Azure subscription to use for the new environment",
 	)
 	local.StringVarP(&f.location, "location", "l", "", "Azure location for the new environment")
+	local.StringVarP(&f.envType, "type", "t", "", "Type of environment ('dev' or 'prod')")
 
 	f.global = global
 }
@@ -870,10 +872,43 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		environmentName = en.args[0]
 	}
 
+	// Validate environment type if specified
+	envType := en.flags.envType
+	if envType != "" {
+		// Get allowed environment types
+		envTypes, err := en.azdCtx.GetEnvironmentTypes()
+		if err != nil {
+			return nil, fmt.Errorf("getting environment types: %w", err)
+		}
+
+		// If no environment types exist yet, set up the default ones
+		if len(envTypes) == 0 {
+			envTypes = []string{"dev", "prod"}
+			err = en.azdCtx.SetProjectState(azdcontext.ProjectState{EnvironmentTypes: envTypes})
+			if err != nil {
+				return nil, fmt.Errorf("initializing environment types: %w", err)
+			}
+		}
+
+		// Check if the specified type is valid
+		validType := false
+		for _, t := range envTypes {
+			if t == envType {
+				validType = true
+				break
+			}
+		}
+
+		if !validType {
+			return nil, fmt.Errorf("environment type '%s' is not valid. Valid types are: %s", envType, strings.Join(envTypes, ", "))
+		}
+	}
+
 	envSpec := environment.Spec{
 		Name:         environmentName,
 		Subscription: en.flags.subscription,
 		Location:     en.flags.location,
+		Type:         envType,
 	}
 
 	env, err := en.envManager.Create(ctx, envSpec)
@@ -881,7 +916,18 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
 
-	if err := en.azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
+	// Set the default environment in project state
+	state := azdcontext.ProjectState{
+		DefaultEnvironment: env.Name(),
+	}
+
+	// Keep existing environment types
+	existingTypes, err := en.azdCtx.GetEnvironmentTypes()
+	if err == nil && existingTypes != nil && len(existingTypes) > 0 {
+		state.EnvironmentTypes = existingTypes
+	}
+
+	if err := en.azdCtx.SetProjectState(state); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 

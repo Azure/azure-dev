@@ -18,10 +18,27 @@ const ProjectFileName = "azure.yaml"
 const EnvironmentDirectoryName = ".azure"
 const DotEnvFileName = ".env"
 const ConfigFileName = "config.json"
-const ConfigFileVersion = 1
+const ConfigFileVersion = 2
 
 type AzdContext struct {
 	projectDirectory string
+}
+
+func (c *AzdContext) ProjectFileName() string {
+	defaultEnvType, err := c.GetDefaultEnvironmentType()
+	if err != nil {
+		fmt.Printf("Error getting default environment type: %v\n", err)
+		fmt.Println("Falling back to default project file name 'azure.yaml'.")
+		return "azure.yaml"
+	}
+
+	if defaultEnvType == "" {
+		fmt.Println("defaultEnvType was empty. Using 'azure.yaml' as the project file name.")
+		return "azure.yaml"
+	}
+
+	fmt.Println("Using environment type:", defaultEnvType)
+	return fmt.Sprintf("azure.%s.yaml", defaultEnvType)
 }
 
 func (c *AzdContext) ProjectDirectory() string {
@@ -33,7 +50,9 @@ func (c *AzdContext) SetProjectDirectory(dir string) {
 }
 
 func (c *AzdContext) ProjectPath() string {
-	return filepath.Join(c.ProjectDirectory(), ProjectFileName)
+	projectPath := filepath.Join(c.ProjectDirectory(), c.ProjectFileName())
+	fmt.Println("Using project path:", projectPath)
+	return projectPath
 }
 
 func (c *AzdContext) EnvironmentDirectory() string {
@@ -73,17 +92,80 @@ func (c *AzdContext) GetDefaultEnvironmentName() (string, error) {
 	return config.DefaultEnvironment, nil
 }
 
+// GetEnvironmentTypes returns the defined environment types for the project.
+func (c *AzdContext) GetEnvironmentTypes() ([]string, error) {
+	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
+	file, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return nil, nil
+	case err != nil:
+		return nil, fmt.Errorf("reading config file: %w", err)
+	}
+
+	var config configFile
+	if err := json.Unmarshal(file, &config); err != nil {
+		return nil, fmt.Errorf("deserializing config file: %w", err)
+	}
+
+	return config.EnvironmentTypes, nil
+}
+
+func (c *AzdContext) GetDefaultEnvironmentType() (string, error) {
+	defaultEnvName, err := c.GetDefaultEnvironmentName()
+	if err != nil {
+		return "", fmt.Errorf("getting default environment name: %w", err)
+	}
+
+	if defaultEnvName == "" {
+		return "", nil
+	}
+
+	// Read the environment's config.json file
+	envConfigPath := filepath.Join(c.EnvironmentRoot(defaultEnvName), ConfigFileName)
+	file, err := os.ReadFile(envConfigPath)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return "", nil
+	case err != nil:
+		return "", fmt.Errorf("reading environment config file: %w", err)
+	}
+
+	// Parse the JSON to extract environmentType
+	var envConfig map[string]interface{}
+	if err := json.Unmarshal(file, &envConfig); err != nil {
+		return "", fmt.Errorf("deserializing environment config file: %w", err)
+	}
+
+	if envType, exists := envConfig["environmentType"]; exists {
+		if envTypeStr, ok := envType.(string); ok {
+			return envTypeStr, nil
+		}
+	}
+
+	return "", nil
+}
+
 // ProjectState represents the state of the project.
 type ProjectState struct {
 	DefaultEnvironment string
+	EnvironmentTypes   []string
 }
 
 // SetProjectState persists the state of the project to the file system, like the default environment.
 func (c *AzdContext) SetProjectState(state ProjectState) error {
 	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
+
+	// Use provided environment types or fallback to defaults
+	envTypes := state.EnvironmentTypes
+	if len(envTypes) == 0 {
+		envTypes = []string{"dev", "prod"}
+	}
+
 	config := configFile{
 		Version:            ConfigFileVersion,
 		DefaultEnvironment: state.DefaultEnvironment,
+		EnvironmentTypes:   envTypes,
 	}
 
 	if err := writeConfig(path, config); err != nil {
@@ -153,8 +235,9 @@ func NewAzdContextFromWd(wd string) (*AzdContext, error) {
 }
 
 type configFile struct {
-	Version            int    `json:"version"`
-	DefaultEnvironment string `json:"defaultEnvironment,omitempty"`
+	Version            int      `json:"version"`
+	DefaultEnvironment string   `json:"defaultEnvironment,omitempty"`
+	EnvironmentTypes   []string `json:"environmentTypes,omitempty"`
 }
 
 func writeConfig(path string, config configFile) error {

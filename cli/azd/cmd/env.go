@@ -674,7 +674,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		)
 	} else {
 		// Ask the user if they want to set the new environment as the default environment
-		msg := fmt.Sprintf("Would you like to set the new environment '%s' as default environment?", env.Name())
+		msg := fmt.Sprintf("Set new environment '%s' as default environment?", env.Name())
 		shouldSetDefault, promptErr := en.console.Confirm(ctx, input.ConsoleOptions{
 			Message:      msg,
 			DefaultValue: true,

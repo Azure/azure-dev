@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -276,6 +277,11 @@ func (sm *serviceManager) Package(
 ) (*ServicePackageResult, error) {
 	if options == nil {
 		options = &PackageOptions{}
+	}
+
+	// Check if the application name is valid.
+	if err := validateAppName(serviceConfig.Project.Name); err != nil {
+		return nil, err
 	}
 
 	cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventPackage))
@@ -683,5 +689,19 @@ func moveFile(sourcePath string, destinationPath string) error {
 	// Remove the source file (optional)
 	defer os.Remove(sourcePath)
 
+	return nil
+}
+
+func validateAppName(name string) error {
+	if len(name) < 2 {
+		return fmt.Errorf("invalid application name '%s': must be at least 2 characters", name)
+	}
+	matched, err := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, name)
+	if err != nil {
+		return err
+	}
+	if !matched {
+		return fmt.Errorf("invalid application name '%s': only letters, numbers, underscores (_), and hyphens (-) are allowed", name)
+	}
 	return nil
 }

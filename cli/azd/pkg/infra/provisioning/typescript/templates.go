@@ -26,6 +26,7 @@ func GetTemplateFiles(infraDir string) map[string][]byte {
 
 // DeployTsTemplate is the main TypeScript infrastructure template
 const DeployTsTemplate = `import { DefaultAzureCredential } from "@azure/identity";
+import { ManagedServiceIdentityClient } from "@azure/arm-msi";
 import { setLogLevel } from "@azure/logger";
 import { ResourceManagementClient } from "@azure/arm-resources";
 import { ContainerAppsAPIClient, ContainerApp } from "@azure/arm-appcontainers";
@@ -155,6 +156,18 @@ async function main() {
     tags
   });
 
+  const managedIdentityClient = new ManagedServiceIdentityClient(credential, subscriptionId);
+
+  const identity = await managedIdentityClient.userAssignedIdentities.get(rgName, identityName);
+  if (!identity) {
+    throw new Error("Managed Identity not found: " + identityId);
+  }
+
+  const principalId = identity.principalId;
+  const clientId = identity.clientId;
+  const tenantId = identity.tenantId;
+  
+
   // Log Analytics Workspace
   const workspace = await workspaceClient.workspaces.beginCreateOrUpdateAndWait(rgName, workspaceName, {
     location,
@@ -241,6 +254,8 @@ async function main() {
           { name: "AZURE_OPENAI_ENDPOINT", value: "https://" + aoaiName + ".openai.azure.com" },
           { name: "SYSTEM_PROMPT", value: escapedPrompt },
           { name: "STORAGE_CACHE_DIR", value: "./cache" },
+          { name: "APPLICATION_INSIGHTS_CONNECTION_STRING", value: "InstrumentationKey=" + workspace.customerId + ";IngestionEndpoint=" + workspace.customerId + "/v2/track" },
+          { name: "AZURE_CLIENT_ID", value: clientId || "" },
       ],
     }]}
   });
@@ -272,7 +287,7 @@ async function main() {
 
   const outputs = {
     AZURE_CONTAINER_REGISTRY_ENDPOINT: { value: acr.loginServer },
-    AZURE_CLIENT_ID: { value: principalId || "" },
+    AZURE_CLIENT_ID: { value: clientId || "" },
     APPLICATION_INSIGHTS_CONNECTION_STRING: { value: "InstrumentationKey=" + workspace.customerId + ";IngestionEndpoint=" + workspace.customerId + "/v2/track" },
     AZURE_RESOURCE_LLAMA_INDEX_JAVASCRIPT_ID: { value: "/subscriptions/" + subscriptionId + "/resourceGroups/rg-" + environmentName + "/providers/Microsoft.App/containerApps/" + azdConfig.serviceName },
     AZURE_OPENAI_ENDPOINT: { value: "https://" + aoaiName + ".openai.azure.com" },
@@ -327,6 +342,7 @@ const PackageJsonTemplate = `{
 		"@azure/arm-cognitiveservices": "latest",
 		"@azure/arm-operationalinsights": "latest",
 		"@azure/arm-appinsights": "latest",
+    "@azure/arm-msi": "latest",
 		"@azure/identity": "latest",
 		"typescript": "^5.4.2"
 	},

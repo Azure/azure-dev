@@ -18,12 +18,17 @@ const (
 )
 
 type CreatedRepoValue struct {
-	Name string
-	Kind GitHubValueKind
+	Name   string
+	Kind   GitHubValueKind
+	Action string
 }
 
 func (cr *CreatedRepoValue) ToString(currentIndentation string) string {
-	return fmt.Sprintf("%s%s Setting %s repo %s", currentIndentation, donePrefix, cr.Name, cr.Kind)
+	action := cr.Action
+	if action == "" {
+		action = "Setting"
+	}
+	return fmt.Sprintf("%s%s %s %s repo %s", currentIndentation, donePrefix, action, cr.Name, cr.Kind)
 }
 
 func (cr *CreatedRepoValue) MarshalJSON() ([]byte, error) {

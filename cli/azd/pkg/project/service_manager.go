@@ -432,7 +432,9 @@ func (sm *serviceManager) Deploy(
 
 	if serviceConfig.Host == DotNetContainerAppTarget {
 		containerEnvName := sm.env.GetServiceProperty(serviceConfig.Name, "CONTAINER_ENVIRONMENT_NAME")
-		if containerEnvName == "" {
+		// AZURE_CONTAINER_APPS_ENVIRONMENT_ID is not required for Aspire (serviceConfig.DotNetContainerApp != nil)
+		// because it uses a bicep deployment.
+		if containerEnvName == "" && serviceConfig.DotNetContainerApp == nil {
 			containerEnvName = sm.env.Getenv("AZURE_CONTAINER_APPS_ENVIRONMENT_ID")
 			if containerEnvName == "" {
 				return nil, fmt.Errorf(

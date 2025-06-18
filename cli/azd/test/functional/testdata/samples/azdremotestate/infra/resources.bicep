@@ -13,6 +13,9 @@ resource storage 'Microsoft.Storage/storageAccounts@2022-05-01' = {
   sku: {
     name: 'Standard_LRS'
   }
+  properties: {
+    allowSharedKeyAccess: false
+  }
 }
 
 var storageBlobDataContributorRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')

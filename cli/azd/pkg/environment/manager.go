@@ -493,13 +493,14 @@ func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) er
 
 	for !IsValidEnvironmentName(spec.Name) {
 		userInput, err := m.console.Prompt(ctx, input.ConsoleOptions{
-			Message: "Enter a new environment name:",
+			Message: "Enter a unique environment name:",
 			Help: heredoc.Doc(`
 			A unique string that can be used to differentiate copies of your application in Azure.
 
-			This value is typically used by the infrastructure as code templates to name the resource group that contains
-			the infrastructure for your application and to generate a unique suffix that is applied to resources to prevent
-			naming collisions.`) + exampleText,
+			This value is typically used:
+			  - to generate a unique suffix (hash) to automatically name resources in Azure
+			  - by "azd down" to find all resource groups to be deleted (those with the tag "azd-env-name: environment-name")
+			More info: https://aka.ms/azd`) + exampleText,
 		})
 
 		if err != nil {

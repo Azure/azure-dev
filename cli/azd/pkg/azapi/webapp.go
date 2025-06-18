@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -110,8 +111,14 @@ func resumeDeployment(err error, progressLog func(msg string)) bool {
 	}
 
 	var httpErr *azcore.ResponseError
-	if errors.As(err, &httpErr) && httpErr.StatusCode == 404 {
+	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
 		progressLog("Resource not found. Failed to enable tracking runtime status." +
+			"Resuming deployment without tracking status.")
+		return true
+	}
+
+	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusInternalServerError {
+		progressLog("Internal server error. Failed to enable tracking runtime status. " +
 			"Resuming deployment without tracking status.")
 		return true
 	}

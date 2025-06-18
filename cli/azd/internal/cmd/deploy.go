@@ -30,7 +30,7 @@ import (
 )
 
 type DeployFlags struct {
-	serviceName string
+	ServiceName string
 	All         bool
 	fromPackage string
 	global      *internal.GlobalCommandOptions
@@ -46,7 +46,7 @@ func (d *DeployFlags) BindNonCommon(
 	local *pflag.FlagSet,
 	global *internal.GlobalCommandOptions) {
 	local.StringVar(
-		&d.serviceName,
+		&d.ServiceName,
 		"service",
 		"",
 		//nolint:lll
@@ -97,7 +97,7 @@ func NewDeployFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *internal
 func NewDeployCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy <service>",
-		Short: "Deploy the application's code to Azure.",
+		Short: "Deploy your project code to Azure.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 
@@ -170,12 +170,10 @@ type DeploymentResult struct {
 }
 
 func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	targetServiceName := da.flags.serviceName
+	targetServiceName := da.flags.ServiceName
 	if len(da.args) == 1 {
 		targetServiceName = da.args[0]
 	}
-
-	serviceNameWarningCheck(da.console, da.flags.serviceName, "deploy")
 
 	if da.env.GetSubscriptionId() == "" {
 		return nil, errors.New(

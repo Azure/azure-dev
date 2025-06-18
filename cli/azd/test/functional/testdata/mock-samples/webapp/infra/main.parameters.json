@@ -15,6 +15,26 @@
         },
         "secretName": "secretName"
       }
+    },
+    "regularString": {
+      "value": "test"
+    },
+    "emptyString": {
+      "value": null
+    },
+    "regularObject": {
+      "value": {
+        "test": "test"
+      }
+    },
+    "emptyObject": {
+      "value": {}
+    },
+    "regularArray": {
+      "value": ["test"]
+    },
+    "emptyArray": {
+      "value": []
     }
   }
 }

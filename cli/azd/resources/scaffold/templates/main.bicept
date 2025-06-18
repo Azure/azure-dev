@@ -9,15 +9,30 @@ param environmentName string
 @minLength(1)
 @description('Primary location for all resources')
 param location string
-{{range .Parameters}}
+
+{{ if .AiFoundryProject -}}
+@metadata({azd: {
+  type: 'location'
+  usageName: [
+  {{- range .AiFoundryProject.Models }}
+    '{{ .Sku.UsageName }},{{ .Sku.Capacity }}'
+  {{- end }}
+  ]}
+})
+param aiDeploymentsLocation string
+{{- end }}
+{{- range .Parameters}}
 {{- if .Secret}}
 @secure()
-{{- end}}
+{{- end }}
 param {{.Name}} {{.Type}}
-{{- end}}
+{{- end }}
 
 @description('Id of the user or app to assign application roles')
 param principalId string
+
+@description('Principal type of user or app')
+param principalType string
 
 // Tags that should be applied to all resources.
 // 
@@ -42,19 +57,73 @@ module resources 'resources.bicep' = {
     location: location
     tags: tags
     principalId: principalId
+    principalType: principalType
 {{- range .Parameters}}
     {{.Name}}: {{.Name}}
+{{- end }}
+{{- if .AiFoundryProject }}
+    aiFoundryProjectEndpoint: aiModelsDeploy.outputs.ENDPOINT
+{{- end}}
+  }
+}
+
+{{- if .AiFoundryProject }}
+
+module aiModelsDeploy 'ai-project.bicep' = {
+  scope: rg
+  name: '{{.AiFoundryProject.Name}}'
+  params: {
+    tags: tags
+    location: aiDeploymentsLocation
+    envName: environmentName
+    principalId: principalId
+    principalType: principalType
+{{- if .AiFoundryProject.Models }}
+    deployments: [
+      {{- range .AiFoundryProject.Models }}
+      {
+        name: '{{bicepName .Name }}Deployment'
+        model: {
+          name: '{{ .Name }}'
+          format: '{{ .Format }}'
+          version: '{{ .Version }}'
+        }
+        sku: {
+          name: '{{ .Sku.Name }}'
+          capacity: {{ .Sku.Capacity }}
+        }
+      }
+      {{- end }}
+    ]
 {{- end }}
   }
 }
 
+{{- if .AISearch }}
+module aiSearchConnection 'modules/ai-search-conn.bicep' = {
+  scope: rg
+  name: 'ai-search-connection'
+  params: {
+    aiServicesName: aiModelsDeploy.outputs.aiServicesAccountName
+    aiServicesProjectName: aiModelsDeploy.outputs.aiServicesProjectName
+    aiSearchName: resources.outputs.aiSearchName
+  }
+}
+{{- end}}
+{{- end}}
+
 {{- if .Services}}
+{{- if hasACA .Services}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
-output AZURE_KEY_VAULT_ENDPOINT string = resources.outputs.AZURE_KEY_VAULT_ENDPOINT
-output AZURE_KEY_VAULT_NAME string = resources.outputs.AZURE_KEY_VAULT_NAME
+{{- end}}
 {{- range .Services}}
 output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID
 {{- end}}
+{{- end}}
+{{- if .KeyVault}}
+output AZURE_KEY_VAULT_ENDPOINT string = resources.outputs.AZURE_KEY_VAULT_ENDPOINT
+output AZURE_KEY_VAULT_NAME string = resources.outputs.AZURE_KEY_VAULT_NAME
+output AZURE_RESOURCE_VAULT_ID string = resources.outputs.AZURE_RESOURCE_VAULT_ID
 {{- end}}
 {{- if  .AIModels}}
 {{- range .AIModels}}
@@ -67,6 +136,12 @@ output AZURE_RESOURCE_REDIS_ID string = resources.outputs.AZURE_RESOURCE_REDIS_I
 {{- if .DbPostgres}}
 output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID
 {{- end}}
+{{- if .DbCosmos }}
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmos.DatabaseName}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmos.DatabaseName}}_ID
+{{- end}}
+{{- if .DbMySql}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbMySql.DatabaseName}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbMySql.DatabaseName}}_ID
+{{- end}}
 {{- if .StorageAccount }}
 output AZURE_RESOURCE_STORAGE_ID string = resources.outputs.AZURE_RESOURCE_STORAGE_ID
 {{- end}}
@@ -75,5 +150,13 @@ output AZURE_RESOURCE_EVENT_HUBS_ID string = resources.outputs.AZURE_RESOURCE_EV
 {{- end}}
 {{- if .ServiceBus}}
 output AZURE_RESOURCE_SERVICE_BUS_ID string = resources.outputs.AZURE_RESOURCE_SERVICE_BUS_ID
+{{- end}}
+{{- if .AiFoundryProject }}
+output AZURE_AI_PROJECT_ENDPOINT string = aiModelsDeploy.outputs.ENDPOINT
+output AZURE_RESOURCE_AI_PROJECT_ID string = aiModelsDeploy.outputs.projectId
+{{- end}}
+{{- if .AISearch }}
+output AZURE_AI_SEARCH_ENDPOINT string = resources.outputs.AZURE_AI_SEARCH_ENDPOINT
+output AZURE_RESOURCE_SEARCH_ID string = resources.outputs.AZURE_RESOURCE_SEARCH_ID
 {{- end}}
 {{ end}}

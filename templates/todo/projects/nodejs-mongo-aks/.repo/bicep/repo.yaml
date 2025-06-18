@@ -16,28 +16,10 @@ repo:
 
   rewrite:
     rules:
-      - from: ../../../../../../common/infra/bicep/core
-        to: ./core
-        patterns:
-          - "**/*.bicep"
-
       - from: ../../../../../common/infra/bicep/app
         to: ./app
         patterns:
           - "**/*.bicep"
-
-      - from: ../../../../../common/infra/bicep/core
-        to: ../core
-        patterns:
-          - "**/*.bicep"
-
-      # app service modules
-      - from: ../../../../../../common/infra/bicep
-        to: ../
-        patterns:
-          - "**/*.bicep"
-        ignore:
-          - "**/main.bicep"
 
       # main.bicep
       - from: ../../../../../../common/infra/bicep
@@ -55,25 +37,10 @@ repo:
         patterns:
           - "**/azure.@(yml|yaml)"
 
-      - from: web-appservice.bicep
-        to: web.bicep
+      - from: cosmos-mongo-db-avm.bicep
+        to: db-avm.bicep
         patterns:
           - "**/main.bicep"
-
-      - from: api-appservice-node.bicep
-        to: api.bicep
-        patterns:
-          - "**/main.bicep"
-
-      - from: cosmos-mongo-db.bicep
-        to: db.bicep
-        patterns:
-          - "**/main.bicep"
-
-      - from: ../../../../api/common/openapi.yaml
-        to: ../../src/api/openapi.yaml
-        patterns:
-          - "apim-api.bicep"
 
   assets:
     # Common assets
@@ -82,8 +49,11 @@ repo:
     - from: ./infra/
       to: ./infra
 
-    - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
-      to: ./infra/app/db.bicep
+    - from: ../../../../../common/infra/bicep/abbreviations.json
+      to: ./infra/abbreviations.json
+
+    - from: ../../../../common/infra/bicep/app/cosmos-mongo-db-avm.bicep
+      to: ./infra/app/db-avm.bicep
 
     - from: ./../../
       to: ./
@@ -120,10 +90,6 @@ repo:
     # Github workflows for nodejs/aks
     - from: ../../../../../common/.github/workflows/nodejs/aks
       to: ./.github/workflows
-
-    # azd core modules
-    - from: ../../../../../common/infra/bicep
-      to: ./infra
 
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/aks/nodejs/devcontainer.json

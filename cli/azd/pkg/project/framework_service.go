@@ -43,7 +43,7 @@ func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error)
 		ServiceLanguagePython,
 		ServiceLanguageJava,
 		ServiceLanguageDocker:
-		// Excluding ServiceLanguageDocker and ServiceLanguageSwa since it is implicitly derived currently,
+		// Excluding ServiceLanguageSwa since it is implicitly derived currently,
 		// and not an actual language
 		return kind, nil
 	}

@@ -281,6 +281,10 @@ func (c *ZipDeployClient) DeployTrackStatus(
 			return err
 		}
 
+		if resp.StatusCode == http.StatusInternalServerError {
+			return runtime.NewResponseError(resp)
+		}
+
 		if err := runtime.UnmarshalAsJSON(resp, &response); err != nil {
 			return err
 		}

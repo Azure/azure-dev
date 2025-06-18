@@ -106,69 +106,54 @@ func (d *detectConfirm) captureUsage(
 // Confirm prompts the user to confirm the detected services and databases,
 // providing modifications to the detected services and databases.
 func (d *detectConfirm) Confirm(ctx context.Context) error {
+	const (
+		optionConfirmAndContinue = "Confirm and continue initializing my app"
+		optionRemoveService      = "Remove a detected service"
+		optionAddService         = "Add an undetected service"
+	)
+
 	for {
 		if err := d.render(ctx); err != nil {
 			return err
 		}
 
-		if len(d.Services) == 0 && !d.modified {
-			confirmAdd, err := d.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "Add an undetected service?",
-				DefaultValue: true,
-			})
-			if err != nil {
-				return err
-			}
-
-			if !confirmAdd {
-				return fmt.Errorf("cancelled")
-			}
-
-			if err := d.add(ctx); err != nil {
-				return err
-			}
-
-			tracing.IncrementUsageAttribute(fields.AppInitModifyAddCount.Int(1))
-			continue
+		options := []string{optionConfirmAndContinue}
+		if len(d.Services) > 0 || len(d.Databases) > 0 {
+			options = append(options, optionRemoveService)
 		}
+		options = append(options, optionAddService)
 
-		d.modified = false
-
-		continueOption, err := d.console.Select(ctx, input.ConsoleOptions{
+		selectedOptionIndex, err := d.console.Select(ctx, input.ConsoleOptions{
 			Message: "Select an option",
-			Options: []string{
-				"Confirm and continue initializing my app",
-				"Remove a detected service",
-				"Add an undetected service",
-			},
+			Options: options,
 		})
 		if err != nil {
 			return err
 		}
 
-		switch continueOption {
-		case 0:
+		selectedOption := options[selectedOptionIndex]
+
+		switch selectedOption {
+		case optionConfirmAndContinue:
 			d.captureUsage(
 				fields.AppInitConfirmedDatabases,
 				fields.AppInitConfirmedServices)
 			return nil
-		case 1:
+		case optionRemoveService:
 			if err := d.remove(ctx); err != nil {
 				if errors.Is(err, terminal.InterruptErr) {
 					continue
 				}
 				return err
 			}
-
 			tracing.IncrementUsageAttribute(fields.AppInitModifyRemoveCount.Int(1))
-		case 2:
+		case optionAddService:
 			if err := d.add(ctx); err != nil {
 				if errors.Is(err, terminal.InterruptErr) {
 					continue
 				}
 				return err
 			}
-
 			tracing.IncrementUsageAttribute(fields.AppInitModifyAddCount.Int(1))
 		}
 	}
@@ -198,7 +183,7 @@ func (d *detectConfirm) render(ctx context.Context) error {
 			status = " " + output.WithSuccessFormat("[Added]")
 		}
 
-		d.console.Message(ctx, "  "+color.BlueString(projectDisplayName(svc))+status)
+		d.console.Message(ctx, "  "+output.WithHighLightFormat(projectDisplayName(svc))+status)
 		d.console.Message(ctx, "  "+"Detected in: "+output.WithHighLightFormat(relSafe(d.root, svc.Path)))
 		d.console.Message(ctx, "")
 
@@ -211,6 +196,8 @@ func (d *detectConfirm) render(ctx context.Context) error {
 		switch db {
 		case appdetect.DbPostgres:
 			recommendedServices = append(recommendedServices, "Azure Database for PostgreSQL flexible server")
+		case appdetect.DbMySql:
+			recommendedServices = append(recommendedServices, "Azure Database for MySQL flexible server")
 		case appdetect.DbMongo:
 			recommendedServices = append(recommendedServices, "Azure CosmosDB API for MongoDB")
 		case appdetect.DbRedis:
@@ -224,7 +211,7 @@ func (d *detectConfirm) render(ctx context.Context) error {
 			status = " " + output.WithSuccessFormat("[Added]")
 		}
 
-		d.console.Message(ctx, "  "+color.BlueString(db.Display())+status)
+		d.console.Message(ctx, "  "+output.WithHighLightFormat(db.Display())+status)
 		d.console.Message(ctx, "")
 	}
 

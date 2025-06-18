@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
 
@@ -120,8 +119,6 @@ const (
 	DefaultPath   = "infra"
 )
 
-var featureCompose = alpha.MustFeatureKey("compose")
-
 // ProjectInfrastructure parses the project configuration and returns the infrastructure configuration.
 // The configuration can be explicitly defined on azure.yaml using path and module, or in case these values
 // are not explicitly defined, the project importer uses default values to find the infrastructure.
@@ -165,15 +162,8 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		}
 	}
 
-	composeEnabled := im.dotNetImporter.alphaFeatureManager.IsEnabled(featureCompose)
-	if composeEnabled && len(projectConfig.Resources) > 0 {
+	if len(projectConfig.Resources) > 0 {
 		return tempInfra(ctx, projectConfig)
-	}
-
-	if !composeEnabled && len(projectConfig.Resources) > 0 {
-		return nil, fmt.Errorf(
-			"compose is currently under alpha support and must be explicitly enabled."+
-				" Run `%s` to enable this feature", alpha.GetEnableCommand(featureCompose))
 	}
 
 	return &Infra{}, nil
@@ -194,31 +184,24 @@ func pathHasModule(path, module string) (bool, error) {
 
 }
 
-// SynthAllInfrastructure returns a file system containing all infrastructure for the project,
+// GenerateAllInfrastructure returns a file system containing all infrastructure for the project,
 // rooted at the project directory.
-func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
+func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
 	for _, svcConfig := range projectConfig.Services {
 		if svcConfig.Language == ServiceLanguageDotNet {
 			if len(projectConfig.Services) != 1 {
 				return nil, errNoMultipleServicesWithAppHost
 			}
 
-			return im.dotNetImporter.SynthAllInfrastructure(ctx, projectConfig, svcConfig)
+			return im.dotNetImporter.GenerateAllInfrastructure(ctx, projectConfig, svcConfig)
 		}
 	}
 
-	composeEnabled := im.dotNetImporter.alphaFeatureManager.IsEnabled(featureCompose)
-	if composeEnabled && len(projectConfig.Resources) > 0 {
+	if len(projectConfig.Resources) > 0 {
 		return infraFsForProject(ctx, projectConfig)
 	}
 
-	if !composeEnabled && len(projectConfig.Resources) > 0 {
-		return nil, fmt.Errorf(
-			"compose is currently under alpha support and must be explicitly enabled."+
-				" Run `%s` to enable this feature", alpha.GetEnableCommand(featureCompose))
-	}
-
-	return nil, fmt.Errorf("this project does not contain any infrastructure to synthesize")
+	return nil, fmt.Errorf("this project does not contain any infrastructure to generate")
 }
 
 // Infra represents the (possibly temporarily generated) infrastructure. Call [Cleanup] when done with infrastructure,
@@ -226,6 +209,7 @@ func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConf
 type Infra struct {
 	Options    provisioning.Options
 	cleanupDir string
+	IsCompose  bool
 }
 
 func (i *Infra) Cleanup() error {

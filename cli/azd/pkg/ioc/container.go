@@ -301,6 +301,12 @@ func (c *NestedContainer) NewScopeRegistrationsOnly() (*NestedContainer, error) 
 // developer container registration error or an error that was
 // returned while instantiating a dependency.
 func inspectResolveError(err error) error {
+	// Unwrap the current error
+	if unwrapped := errors.Unwrap(err); unwrapped != nil {
+		err = unwrapped
+	}
+
+	// If the unwrapped error is still a container error then return ErrResolveInstance
 	if containerErrorRegex.Match([]byte(err.Error())) {
 		return fmt.Errorf("%w: %w", ErrResolveInstance, err)
 	}

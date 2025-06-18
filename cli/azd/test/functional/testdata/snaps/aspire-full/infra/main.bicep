@@ -12,11 +12,6 @@ param location string
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
-@metadata({azd: {
-  type: 'needForDeploy'
-  config: {}
-  }
-})
 param goversion string = '1.22'
 
 var tags = {
@@ -28,7 +23,6 @@ resource rg 'Microsoft.Resources/resourceGroups@2022-09-01' = {
   location: location
   tags: tags
 }
-
 module resources 'resources.bicep' = {
   scope: rg
   name: 'resources'
@@ -48,6 +42,7 @@ module storage 'storage/storage.module.bicep' = {
     principalType: 'ServicePrincipal'
   }
 }
+
 output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
 output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
@@ -60,4 +55,5 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.output
 output STORAGE_BLOBENDPOINT string = storage.outputs.blobEndpoint
 output STORAGE_QUEUEENDPOINT string = storage.outputs.queueEndpoint
 output STORAGE_TABLEENDPOINT string = storage.outputs.tableEndpoint
+output AZURE_GOVERSION string = goversion
 

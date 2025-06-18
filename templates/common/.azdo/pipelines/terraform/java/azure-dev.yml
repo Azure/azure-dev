@@ -13,7 +13,7 @@ pool:
   vmImage: ubuntu-latest
 
 steps:
-  - task: setup-azd@0
+  - task: setup-azd@1
     displayName: Install azd
 
   # If you can't install above task in your organization, you can comment it and uncomment below task to install azd
@@ -53,7 +53,6 @@ steps:
       RS_RESOURCE_GROUP: $(RS_RESOURCE_GROUP)
       RS_STORAGE_ACCOUNT: $(RS_STORAGE_ACCOUNT)
       RS_CONTAINER_NAME: $(RS_CONTAINER_NAME)
-      AZD_INITIAL_ENVIRONMENT_CONFIG: $(secrets.AZD_INITIAL_ENVIRONMENT_CONFIG)
 
   - task: AzureCLI@2
     displayName: Deploy Application

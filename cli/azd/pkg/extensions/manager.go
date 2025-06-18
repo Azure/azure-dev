@@ -26,12 +26,12 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 )
 
 const (
-	registryCacheFilePath = "registry.cache"
-	extensionRegistryUrl  = "https://aka.ms/azd/extensions/registry"
+	extensionRegistryUrl = "https://aka.ms/azd/extensions/registry"
 )
 
 var (
@@ -43,17 +43,38 @@ var (
 	FeatureExtensions = alpha.MustFeatureKey("extensions")
 )
 
+// ListOptions is used to filter extensions by source and tags
 type ListOptions struct {
+	// Source is used to specify the source of the extension to install
 	Source string
-	Tags   []string
+	// Tags is used to specify the tags of the extension to install
+	Tags []string
+}
+
+// FilterOptions is used to filter extensions by version and source
+type FilterOptions struct {
+	// Version is used to specify the version of the extension to install
+	Version string
+	// Source is used to specify the source of the extension to install
+	Source string
+}
+
+// LookupOptions is used to lookup extensions by id or namespace
+type LookupOptions struct {
+	// Id is used to specify the id of the extension to install
+	Id string
+	// Namespace is used to specify the namespace of the extension to install
+	Namespace string
 }
 
 type sourceFilterPredicate func(config *SourceConfig) bool
 type extensionFilterPredicate func(extension *ExtensionMetadata) bool
 
+// Manager is responsible for managing extensions
 type Manager struct {
 	sourceManager *SourceManager
 	sources       []Source
+	installed     map[string]*Extension
 
 	configManager config.UserConfigManager
 	userConfig    config.Config
@@ -87,25 +108,31 @@ func NewManager(
 func (m *Manager) ListInstalled() (map[string]*Extension, error) {
 	var extensions map[string]*Extension
 
+	if m.installed != nil {
+		return m.installed, nil
+	}
+
 	ok, err := m.userConfig.GetSection(installedConfigKey, &extensions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extensions section: %w", err)
 	}
 
 	if !ok || extensions == nil {
-		return map[string]*Extension{}, nil
+		extensions = map[string]*Extension{}
 	}
 
-	return extensions, nil
-}
+	// Initialize the extensions since this are instantiated from JSON unmarshalling.
+	for _, extension := range extensions {
+		extension.init()
+	}
 
-type GetInstalledOptions struct {
-	Id        string
-	Namespace string
+	m.installed = extensions
+
+	return m.installed, nil
 }
 
 // GetInstalled retrieves an installed extension by name
-func (m *Manager) GetInstalled(options GetInstalledOptions) (*Extension, error) {
+func (m *Manager) GetInstalled(options LookupOptions) (*Extension, error) {
 	extensions, err := m.ListInstalled()
 	if err != nil {
 		return nil, err
@@ -132,8 +159,24 @@ func (m *Manager) GetInstalled(options GetInstalledOptions) (*Extension, error) 
 }
 
 // GetFromRegistry retrieves an extension from the registry by name
-func (m *Manager) GetFromRegistry(ctx context.Context, name string) (*ExtensionMetadata, error) {
-	sources, err := m.getSources(ctx, nil)
+func (m *Manager) GetFromRegistry(
+	ctx context.Context,
+	extensionId string,
+	options *FilterOptions,
+) (*ExtensionMetadata, error) {
+	if options == nil {
+		options = &FilterOptions{}
+	}
+
+	filterPredicate := func(config *SourceConfig) bool {
+		if options.Source == "" {
+			return true
+		}
+
+		return strings.EqualFold(config.Name, options.Source)
+	}
+
+	sources, err := m.getSources(ctx, filterPredicate)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting extension sources: %w", err)
 	}
@@ -142,11 +185,11 @@ func (m *Manager) GetFromRegistry(ctx context.Context, name string) (*ExtensionM
 	var sourceErr error
 
 	for _, source := range sources {
-		template, err := source.GetExtension(ctx, name)
+		extension, err := source.GetExtension(ctx, extensionId)
 		if err != nil {
 			sourceErr = err
-		} else if template != nil {
-			match = template
+		} else if extension != nil {
+			match = extension
 			break
 		}
 	}
@@ -156,10 +199,10 @@ func (m *Manager) GetFromRegistry(ctx context.Context, name string) (*ExtensionM
 	}
 
 	if sourceErr != nil {
-		return nil, fmt.Errorf("failed getting template: %w", sourceErr)
+		return nil, fmt.Errorf("failed getting extension: %w", sourceErr)
 	}
 
-	return nil, fmt.Errorf("%s %w", name, ErrRegistryExtensionNotFound)
+	return nil, fmt.Errorf("%s %w", extensionId, ErrRegistryExtensionNotFound)
 }
 
 func (m *Manager) ListFromRegistry(ctx context.Context, options *ListOptions) ([]*ExtensionMetadata, error) {
@@ -178,7 +221,7 @@ func (m *Manager) ListFromRegistry(ctx context.Context, options *ListOptions) ([
 
 	var extensionFilterPredicate extensionFilterPredicate
 	if len(options.Tags) > 0 {
-		// Find templates that match all the incoming tags
+		// Find extensions that match all the incoming tags
 		extensionFilterPredicate = func(extension *ExtensionMetadata) bool {
 			match := false
 			for _, optionTag := range options.Tags {
@@ -204,12 +247,12 @@ func (m *Manager) ListFromRegistry(ctx context.Context, options *ListOptions) ([
 		filteredExtensions := []*ExtensionMetadata{}
 		sourceExtensions, err := source.ListExtensions(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("unable to list templates: %w", err)
+			return nil, fmt.Errorf("unable to list extension: %w", err)
 		}
 
-		for _, template := range sourceExtensions {
-			if extensionFilterPredicate == nil || extensionFilterPredicate(template) {
-				filteredExtensions = append(filteredExtensions, template)
+		for _, extension := range sourceExtensions {
+			if extensionFilterPredicate == nil || extensionFilterPredicate(extension) {
+				filteredExtensions = append(filteredExtensions, extension)
 			}
 		}
 
@@ -231,14 +274,18 @@ func (m *Manager) ListFromRegistry(ctx context.Context, options *ListOptions) ([
 // Install an extension by name and optional version
 // If no version is provided, the latest version is installed
 // Latest version is determined by the last element in the Versions slice
-func (m *Manager) Install(ctx context.Context, id string, versionConstraint string) (*ExtensionVersion, error) {
-	installed, err := m.GetInstalled(GetInstalledOptions{Id: id})
+func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions) (*ExtensionVersion, error) {
+	if options == nil {
+		options = &FilterOptions{}
+	}
+
+	installed, err := m.GetInstalled(LookupOptions{Id: id})
 	if err == nil && installed != nil {
 		return nil, fmt.Errorf("%s %w", id, ErrExtensionInstalled)
 	}
 
 	// Step 1: Find the extension by name
-	extension, err := m.GetFromRegistry(ctx, id)
+	extension, err := m.GetFromRegistry(ctx, id, options)
 	if err != nil {
 		return nil, err
 	}
@@ -263,12 +310,12 @@ func (m *Manager) Install(ctx context.Context, id string, versionConstraint stri
 
 	sort.Sort(semver.Collection(availableVersions))
 
-	if versionConstraint == "" || versionConstraint == "latest" {
+	if options.Version == "" || options.Version == "latest" {
 		latestVersion := availableVersions[len(availableVersions)-1]
 		selectedVersion = availableVersionMap[latestVersion]
 	} else {
 		// Find the best match for the version constraint
-		constraint, err := semver.NewConstraint(versionConstraint)
+		constraint, err := semver.NewConstraint(options.Version)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse version constraint: %w", err)
 		}
@@ -282,7 +329,10 @@ func (m *Manager) Install(ctx context.Context, id string, versionConstraint stri
 		}
 
 		if bestMatch == nil {
-			return nil, fmt.Errorf("no matching version found for extension: %s and constraint: %s", id, versionConstraint)
+			return nil, fmt.Errorf(
+				"no matching version found for extension: %s and constraint: %s",
+				id, options.Version,
+			)
 		}
 
 		selectedVersion = availableVersionMap[bestMatch]
@@ -301,7 +351,11 @@ func (m *Manager) Install(ctx context.Context, id string, versionConstraint stri
 	// Install dependencies
 	if len(selectedVersion.Dependencies) > 0 {
 		for _, dependency := range selectedVersion.Dependencies {
-			if _, err := m.Install(ctx, dependency.Id, dependency.Version); err != nil {
+			dependencyInstallOptions := &FilterOptions{
+				Version: dependency.Version,
+				Source:  options.Source,
+			}
+			if _, err := m.Install(ctx, dependency.Id, dependencyInstallOptions); err != nil {
 				if !errors.Is(err, ErrExtensionInstalled) {
 					return nil, fmt.Errorf("failed to install dependency: %w", err)
 				}
@@ -333,11 +387,6 @@ func (m *Manager) Install(ctx context.Context, id string, versionConstraint stri
 		// Step 5: Validate the checksum if provided
 		if err := validateChecksum(tempFilePath, artifact.Checksum); err != nil {
 			return nil, fmt.Errorf("checksum validation failed: %w", err)
-		}
-
-		userHomeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get user's home directory: %w", err)
 		}
 
 		userConfigDir, err := config.GetUserConfigDir()
@@ -378,7 +427,13 @@ func (m *Manager) Install(ctx context.Context, id string, versionConstraint stri
 
 		targetPath := filepath.Join(targetDir, entryPoint)
 
-		relativeExtensionPath, err = filepath.Rel(userHomeDir, targetPath)
+		// Need to set the executable permission for the binary
+		// This change is specifically required for Linux but will apply consistently across all platforms
+		if err := os.Chmod(targetPath, osutil.PermissionExecutableFile); err != nil {
+			return nil, fmt.Errorf("failed to set executable permission: %w", err)
+		}
+
+		relativeExtensionPath, err = filepath.Rel(userConfigDir, targetPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get relative path: %w", err)
 		}
@@ -391,14 +446,15 @@ func (m *Manager) Install(ctx context.Context, id string, versionConstraint stri
 	}
 
 	extensions[id] = &Extension{
-		Id:          id,
-		Namespace:   extension.Namespace,
-		DisplayName: extension.DisplayName,
-		Description: extension.Description,
-		Version:     selectedVersion.Version,
-		Usage:       selectedVersion.Usage,
-		Path:        relativeExtensionPath,
-		Source:      extension.Source,
+		Id:           id,
+		Capabilities: selectedVersion.Capabilities,
+		Namespace:    extension.Namespace,
+		DisplayName:  extension.DisplayName,
+		Description:  extension.Description,
+		Version:      selectedVersion.Version,
+		Usage:        selectedVersion.Usage,
+		Path:         relativeExtensionPath,
+		Source:       extension.Source,
 	}
 
 	if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {
@@ -417,7 +473,7 @@ func (m *Manager) Install(ctx context.Context, id string, versionConstraint stri
 // Uninstall an extension by name
 func (m *Manager) Uninstall(id string) error {
 	// Get the installed extension
-	extension, err := m.GetInstalled(GetInstalledOptions{Id: id})
+	extension, err := m.GetInstalled(LookupOptions{Id: id})
 	if err != nil {
 		return fmt.Errorf("failed to get installed extension: %w", err)
 	}
@@ -463,12 +519,16 @@ func (m *Manager) Uninstall(id string) error {
 // Upgrade upgrades the extension to the specified version
 // This is a convenience method that uninstalls the existing extension and installs the new version
 // If the version is not specified, the latest version is installed
-func (m *Manager) Upgrade(ctx context.Context, name string, version string) (*ExtensionVersion, error) {
-	if err := m.Uninstall(name); err != nil {
+func (m *Manager) Upgrade(ctx context.Context, extensionId string, options *FilterOptions) (*ExtensionVersion, error) {
+	if options == nil {
+		options = &FilterOptions{}
+	}
+
+	if err := m.Uninstall(extensionId); err != nil {
 		return nil, fmt.Errorf("failed to uninstall extension: %w", err)
 	}
 
-	extensionVersion, err := m.Install(ctx, name, version)
+	extensionVersion, err := m.Install(ctx, extensionId, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to install extension: %w", err)
 	}
@@ -503,41 +563,67 @@ func findArtifactForCurrentOS(version *ExtensionVersion) (*ExtensionArtifact, er
 
 // downloadFile downloads a file from the given URL and saves it to a temporary directory using the filename from the URL.
 func (m *Manager) downloadArtifact(ctx context.Context, artifactUrl string) (string, error) {
+	if strings.HasPrefix(artifactUrl, "http://") || strings.HasPrefix(artifactUrl, "https://") {
+		return m.downloadFromRemote(ctx, artifactUrl)
+	}
+	return m.copyFromLocalPath(artifactUrl)
+}
+
+// Handles downloading artifacts from HTTP/HTTPS URLs
+func (m *Manager) downloadFromRemote(ctx context.Context, artifactUrl string) (string, error) {
 	req, err := azruntime.NewRequest(ctx, http.MethodGet, artifactUrl)
 	if err != nil {
 		return "", err
 	}
 
-	// Perform HTTP GET request
 	resp, err := m.pipeline.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to download file: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Check for successful response
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("failed to download file, status code: %d", resp.StatusCode)
 	}
 
-	// Extract the filename from the URL
 	filename := filepath.Base(artifactUrl)
+	tempFilePath := filepath.Join(os.TempDir(), filename)
 
-	// Create a temporary file in the system's temp directory with the same filename
-	tempDir := os.TempDir()
-	tempFilePath := filepath.Join(tempDir, filename)
-
-	// Create the file at the desired location
 	tempFile, err := os.Create(tempFilePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary file: %w", err)
 	}
 	defer tempFile.Close()
 
-	// Write the response body to the file
 	_, err = io.Copy(tempFile, resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to write to temporary file: %w", err)
+	}
+
+	return tempFilePath, nil
+}
+
+// Handles copying artifacts from local or network file paths
+func (m *Manager) copyFromLocalPath(artifactPath string) (string, error) {
+	// If the path is relative, resolve it against the userConfigDir
+	if !filepath.IsAbs(artifactPath) {
+		userConfigDir, err := config.GetUserConfigDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get user config directory: %w", err)
+		}
+
+		artifactPath = filepath.Join(userConfigDir, artifactPath)
+	}
+
+	if _, err := os.Stat(artifactPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("file does not exist at path: %s", artifactPath)
+	}
+
+	filename := filepath.Base(artifactPath)
+	tempFilePath := filepath.Join(os.TempDir(), filename)
+
+	if err := copyFile(artifactPath, tempFilePath); err != nil {
+		return "", fmt.Errorf("failed to copy file to temporary location: %w", err)
 	}
 
 	return tempFilePath, nil
@@ -550,12 +636,12 @@ func (tm *Manager) getSources(ctx context.Context, filter sourceFilterPredicate)
 
 	configs, err := tm.sourceManager.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed parsing template sources: %w", err)
+		return nil, fmt.Errorf("failed parsing extension sources: %w", err)
 	}
 
 	sources, err := tm.createSourcesFromConfig(ctx, configs, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed initializing template sources: %w", err)
+		return nil, fmt.Errorf("failed initializing extension sources: %w", err)
 	}
 
 	tm.sources = sources

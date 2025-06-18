@@ -6,10 +6,10 @@ pool:
   vmImage: ubuntu-latest
 
 steps:
-  # setup-azd@0 needs to be manually installed in your organization
+  # setup-azd@1 needs to be manually installed in your organization
   # if you can't install it, you can use the below bash script to install azd
   # and remove this step
-  - task: setup-azd@0
+  - task: setup-azd@1
     displayName: Install azd
 
   # If you can't install above task in your organization, you can comment it and uncomment below task to install azd
@@ -44,9 +44,6 @@ steps:
         azd provision --no-prompt
     env:
       AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
-      AZURE_ENV_NAME: $(AZURE_ENV_NAME)
-      AZURE_LOCATION: $(AZURE_LOCATION)
-      AZD_INITIAL_ENVIRONMENT_CONFIG: $(AZD_INITIAL_ENVIRONMENT_CONFIG)
 
   - task: AzureCLI@2
     displayName: Deploy Application
@@ -59,7 +56,5 @@ steps:
         azd deploy --no-prompt
     env:
       AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
-      AZURE_ENV_NAME: $(AZURE_ENV_NAME)
-      AZURE_LOCATION: $(AZURE_LOCATION)
 
 

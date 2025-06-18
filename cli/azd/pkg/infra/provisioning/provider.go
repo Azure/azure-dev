@@ -51,6 +51,16 @@ type StateResult struct {
 	State *State
 }
 
+type Parameter struct {
+	Name          string
+	Secret        bool
+	Value         any
+	EnvVarMapping []string
+	// true when the parameter value was set by the user from the command line (prompt)
+	LocalPrompt        bool
+	UsingEnvVarMapping bool
+}
+
 type Provider interface {
 	Name() string
 	Initialize(ctx context.Context, projectPath string, options Options) error
@@ -59,4 +69,5 @@ type Provider interface {
 	Preview(ctx context.Context) (*DeployPreviewResult, error)
 	Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error)
 	EnsureEnv(ctx context.Context) error
+	Parameters(ctx context.Context) ([]Parameter, error)
 }

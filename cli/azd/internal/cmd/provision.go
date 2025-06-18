@@ -93,7 +93,7 @@ func NewProvisionFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *inter
 func NewProvisionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "provision",
-		Short: "Provision the Azure resources for an application.",
+		Short: "Provision Azure resources for your project.",
 	}
 }
 

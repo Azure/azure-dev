@@ -1,8 +1,8 @@
 
-Display information about your app and its resources.
+Display information about your project and its resources.
 
 Usage
-  azd show [flags]
+  azd show [resource name or ID] [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.

@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -67,7 +68,7 @@ func TestPromptForParameter(t *testing.T) {
 
 			value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 				Type: tc.paramType,
-			})
+			}, nil)
 
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, value)
@@ -191,7 +192,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 				return ret, nil
 			})
 
-			value, err := p.promptForParameter(*mockContext.Context, "testParam", tc.param)
+			value, err := p.promptForParameter(*mockContext.Context, "testParam", tc.param, nil)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, value)
 
@@ -227,7 +228,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 	value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "string",
 		AllowedValues: to.Ptr([]any{"three", "good", "choices"}),
-	})
+	}, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "good", value)
@@ -235,7 +236,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 	value, err = p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "int",
 		AllowedValues: to.Ptr([]any{10, 20, 30}),
-	})
+	}, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, 20, value)
@@ -295,7 +296,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 		Metadata: map[string]json.RawMessage{
 			"azd": json.RawMessage(`{"type": "location"}`),
 		},
-	})
+	}, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "eastus2", value)
@@ -313,7 +314,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 			"azd": json.RawMessage(`{"type": "location"}`),
 		},
 		AllowedValues: &[]any{"westus"},
-	})
+	}, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "westus", value)
@@ -323,4 +324,8 @@ type mockCurrentPrincipal struct{}
 
 func (m *mockCurrentPrincipal) CurrentPrincipalId(_ context.Context) (string, error) {
 	return "11111111-1111-1111-1111-111111111111", nil
+}
+
+func (m *mockCurrentPrincipal) CurrentPrincipalType(_ context.Context) (provisioning.PrincipalType, error) {
+	return provisioning.UserType, nil
 }

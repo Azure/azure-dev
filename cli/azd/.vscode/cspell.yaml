@@ -26,9 +26,11 @@ words:
   - Retryable
   - runcontext
   - unmarshals
+  - unmarshaling
   - unsetting
   - usgovcloudapi
   - jdbc
+  - springframework
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -112,6 +114,10 @@ overrides:
     words:
       - kustomization
       - templating
+  - filename: pkg/project/scaffold_gen.go
+    words:
+      - GUNICORN
+      - MULTIWORKERS
   - filename: CHANGELOG.md
     words:
       - aistudio
@@ -149,6 +155,12 @@ overrides:
       - getenv
       - errorf
       - println
+  - filename: extensions/microsoft.azd.ai.builder/internal/cmd/start.go
+    words:
+      - dall
+      - datasource
+      - vectorizing
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"
+  - "**/*.pb.go"

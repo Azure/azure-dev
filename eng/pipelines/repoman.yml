@@ -1,10 +1,10 @@
 trigger:
   paths:
-    include: 
+    include:
       - generators/
       - templates/
       - eng/pipelines/repoman.yml
-  branches: 
+  branches:
     include:
       - main
 
@@ -15,7 +15,7 @@ pr:
       - templates/
       - eng/pipelines/repoman.yml
 
-extends: 
+extends:
   template: /eng/pipelines/templates/stages/1es-redirect.yml
   parameters:
     stages:
@@ -23,6 +23,7 @@ extends:
 
         variables:
           - template: /eng/pipelines/templates/variables/globals.yml
+          - template: /eng/pipelines/templates/variables/image.yml
           - name: StagingRemoteName
             value: azure-samples-staging
 
@@ -40,8 +41,8 @@ extends:
                 )
               )
             pool:
-              name: azsdk-pool-mms-ubuntu-2004-general
-              image: azsdk-pool-mms-ubuntu-2004-1espt
+              name: $(LINUXPOOL)
+              image: $(LINUXVMIMAGE)
               os: linux
 
             variables:
@@ -121,8 +122,8 @@ extends:
                   ne(dependencies.Generate_Repos_For_PR.outputs['DetermineChanged.TemplateList'] , '')
                 )
               JobDependsOn: Generate_Repos_For_PR
-              Pool: azsdk-pool-mms-ubuntu-2004-general
-              Image: azsdk-pool-mms-ubuntu-2004-1espt
+              Pool: $(LINUXPOOL)
+              Image: $(LINUXVMIMAGE)
 
           - job: Publish_Staging
             condition: >-
@@ -137,8 +138,8 @@ extends:
                 )
               )
             pool:
-              name: azsdk-pool-mms-ubuntu-2004-general
-              image: azsdk-pool-mms-ubuntu-2004-1espt
+              name: $(LINUXPOOL)
+              image: $(LINUXVMIMAGE)
               os: linux
 
             steps:
@@ -175,33 +176,50 @@ extends:
           - template: /eng/pipelines/templates/variables/globals.yml
 
         jobs:
-        - deployment: Publish_Repos
-          environment: azure-dev
+        - deployment: Release_Gate
+          environment: package-publish
 
           pool:
-            name: azsdk-pool-mms-ubuntu-2004-general
-            image: azsdk-pool-mms-ubuntu-2004-1espt
+            name: azsdk-pool
+            image: ubuntu-22.04
+            os: linux
+
+          templateContext:
+            type: releaseJob
+            isProduction: true
+
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - pwsh: Write-Host "Release gate passed. Dependant jobs will run."
+                    displayName: Release gate passed
+
+        - job: Publish_Repos
+          dependsOn: Release_Gate
+
+          pool:
+            name: azsdk-pool
+            image: ubuntu-22.04
             os: linux
 
           templateContext:
             inputs:
               - input: checkout
                 repository: self
+                path: s
 
-          strategy:
-            runOnce:
-              deploy:
-                steps:
-                  - pwsh: |
-                      $targetBranchName = ''
-                      if ($env:TARGETBRANCHNAMEOVERRIDE) {
-                        Write-Host "Target branch override $($env:TARGETBRANCHNAMEOVERRIDE)"
-                        $targetBranchName = $env:TARGETBRANCHNAMEOVERRIDE
-                      }
-                      Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
-                    displayName: Set TargetBranchName
+          steps:
+            - pwsh: |
+                $targetBranchName = ''
+                if ($env:TARGETBRANCHNAMEOVERRIDE) {
+                  Write-Host "Target branch override $($env:TARGETBRANCHNAMEOVERRIDE)"
+                  $targetBranchName = $env:TARGETBRANCHNAMEOVERRIDE
+                }
+                Write-Host "##vso[task.setvariable variable=TargetBranchName]$targetBranchName"
+              displayName: Set TargetBranchName
 
-                  - template: /eng/pipelines/templates/steps/repoman-generate.yml
-                    parameters:
-                      TargetBranchName: $(TargetBranchName)
-                      RemoteName: azure-samples-main
+            - template: /eng/pipelines/templates/steps/repoman-generate.yml
+              parameters:
+                TargetBranchName: $(TargetBranchName)
+                RemoteName: azure-samples-main

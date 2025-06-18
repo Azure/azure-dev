@@ -13,7 +13,10 @@ import (
 func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("infra", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Short: "Manage your Azure infrastructure.",
+			Short: "Manage your Infrastructure as Code (IaC).",
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupBeta,
 		},
 	})
 
@@ -25,7 +28,8 @@ func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	group.
 		Add("delete", &actions.ActionDescriptorOptions{
@@ -35,13 +39,14 @@ func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	group.
-		Add("synth", &actions.ActionDescriptorOptions{
-			Command:        newInfraSynthCmd(),
-			FlagsResolver:  newInfraSynthFlags,
-			ActionResolver: newInfraSynthAction,
+		Add("generate", &actions.ActionDescriptorOptions{
+			Command:        newInfraGenerateCmd(),
+			FlagsResolver:  newInfraGenerateFlags,
+			ActionResolver: newInfraGenerateAction,
 			OutputFormats:  []output.Format{output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		})

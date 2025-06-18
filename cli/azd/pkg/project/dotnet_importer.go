@@ -147,7 +147,7 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 			return err
 		}
 
-		return os.WriteFile(target, contents, d.Type().Perm())
+		return os.WriteFile(target, contents, osutil.PermissionFile)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("writing infrastructure: %w", err)
@@ -462,7 +462,7 @@ func evaluateSingleExpressionMatch(
 	return fmt.Sprintf("{%s%s}", infraParametersKey, resourceName), nil
 }
 
-func (ai *DotNetImporter) SynthAllInfrastructure(ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
+func (ai *DotNetImporter) GenerateAllInfrastructure(ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
 ) (fs.FS, error) {
 	manifest, err := ai.ReadManifest(ctx, svcConfig)
 	if err != nil {

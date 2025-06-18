@@ -25,12 +25,14 @@ armcognitiveservices
 armcosmos
 armdeploymentstacks
 armmachinelearning
+armmsi
 armresourcegraph
 armsql
 aspnet
 aspnetcore
 asyncmy
 asyncpg
+avmres
 azapi
 azblob
 AZCLI
@@ -58,6 +60,7 @@ azureutil
 azureyaml
 Backticks
 bicepparam
+bicept
 blockblob
 BOOLSLICE
 buildargs
@@ -108,9 +111,10 @@ eventhubs
 executil
 flexconsumption
 Frontends
+fsnotify
 funcapp
-functestapp
 functionapp
+gjson
 go-imath
 GOARCH
 GOCOVERDIR
@@ -120,6 +124,7 @@ gosec
 goterm
 gotest
 gotestsum
+govet
 grpcserver
 hotspot
 ignorefile
@@ -146,6 +151,7 @@ mockarmresources
 mockazcli
 mongojs
 mvnw
+mysqladmin
 mysqlclient
 mysqldb
 nobanner
@@ -173,6 +179,7 @@ pflag
 pgadmin
 posix
 preinit
+protogen
 proxying
 psanford
 psycopg
@@ -190,6 +197,7 @@ requirepass
 resourcegraph
 restoreapp
 retriable
+runtimes
 rzip
 secureobject
 securestring
@@ -198,6 +206,7 @@ serverfarms
 servicebus
 setenvs
 skus
+SliceOfPtrs
 snapshotter
 springapp
 sqlserver

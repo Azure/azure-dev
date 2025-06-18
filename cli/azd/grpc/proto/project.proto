@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package azdext;
 
-option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext/gen;azdext";
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext";
 
 import "models.proto";
 
@@ -10,16 +10,9 @@ import "models.proto";
 service ProjectService {
   // Gets the current project.
   rpc Get(EmptyRequest) returns (GetProjectResponse);
-}
 
-// ProjectConfig message definition
-message ProjectConfig {
-  string name = 1;
-  string resource_group_name = 2;
-  string path = 3;
-  ProjectMetadata metadata = 4;
-  map<string, ServiceConfig> services = 5;
-  InfraOptions infra = 6;
+  // AddService adds a new service to the project.
+  rpc AddService(AddServiceRequest) returns (EmptyResponse);
 }
 
 // GetProjectResponse message definition
@@ -27,32 +20,7 @@ message GetProjectResponse {
   ProjectConfig project = 1;
 }
 
-// RequiredVersions message definition
-message RequiredVersions {
-  string azd = 1;
-}
-
-// ProjectMetadata message definition
-message ProjectMetadata {
-  string template = 1;
-}
-
-// ServiceConfig message definition
-message ServiceConfig {
-  string name = 1;
-  string resource_group_name = 2;
-  string resource_name = 3;
-  string api_version = 4;
-  string relative_path = 5;
-  string host = 6;
-  string language = 7;
-  string output_path = 8;
-  string image = 9;
-}
-
-// InfraOptions message definition
-message InfraOptions {
-  string provider = 1;
-  string path = 2;
-  string module = 3;
+// AddServiceRequest message definition
+message AddServiceRequest {
+  ServiceConfig service = 1;
 }

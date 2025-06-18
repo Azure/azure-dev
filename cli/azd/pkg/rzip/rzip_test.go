@@ -60,7 +60,10 @@ func TestCreateFromDirectory(t *testing.T) {
 	err = os.Symlink(filepath.Join(".", "file1.txt"), filepath.Join(tempDir, "symlink_to_file1.txt"))
 	require.NoError(err)
 	//nolint:lll
-	err = os.Symlink(filepath.Join(tempDir, "symlink_to_file1.txt"), filepath.Join(tempDir, "symlink_to_symlink_to_file1.txt"))
+	err = os.Symlink(
+		filepath.Join(tempDir, "symlink_to_file1.txt"),
+		filepath.Join(tempDir, "symlink_to_symlink_to_file1.txt"),
+	)
 	require.NoError(err)
 	err = os.Symlink(filepath.Join(".", "subdir"), filepath.Join(tempDir, "symlink_to_subdir"))
 	require.NoError(err)

@@ -113,7 +113,7 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		cli.WorkingDirectory = dir
 
 		initResponses := []string{
-			"Use code in the current directory",        // Initialize from code
+			"Scan current directory",                   // Initialize from code
 			"Confirm and continue initializing my app", // Confirm everything looks good.
 			"n",     // Don't expose 'apiservice' service.
 			"y",     // Expose 'webfrontend' service.
@@ -166,10 +166,60 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		cli := azdcli.NewCLI(t)
 		cli.WorkingDirectory = dir
 		cli.Env = append(cli.Env, os.Environ()...)
-		//nolint:lll
-		cli.Env = append(cli.Env, "AZD_ALPHA_ENABLE_INFRASYNTH=true")
 
 		_, err = cli.RunCommand(ctx, "infra", "synth")
+		require.NoError(t, err)
+
+		bicepCli, err := bicep.NewCli(ctx, mockinput.NewMockConsole(), exec.NewCommandRunner(nil))
+		require.NoError(t, err)
+
+		// Validate bicep builds without errors
+		// cdk lint errors are expected
+		_, err = bicepCli.Build(ctx, filepath.Join(dir, "infra", "main.bicep"))
+		require.NoError(t, err)
+
+		// Snapshot everything under infra and manifests
+		err = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			parentDir := filepath.Base(filepath.Dir(path))
+			fileExt := filepath.Ext(path)
+			if !d.IsDir() && parentDir == "infra" || parentDir == "manifests" || fileExt == ".bicep" {
+				return snapshotFile(sn, snRoot, dir, path)
+			}
+
+			return nil
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("InfraGenerate", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := newTestContext(t)
+		defer cancel()
+
+		dir := tempDirWithDiagnostics(t)
+		t.Logf("DIR: %s", dir)
+
+		// create subdirectory with a known name
+		dir = filepath.Join(dir, "AspireAzdTests")
+		err := os.MkdirAll(dir, 0755)
+		require.NoError(t, err, "failed creating temp dir")
+		t.Logf("DIR: %s", dir)
+
+		envName := randomEnvName()
+		t.Logf("AZURE_ENV_NAME: %s", envName)
+
+		err = copySample(dir, "aspire-full")
+		require.NoError(t, err, "failed expanding sample")
+
+		cli := azdcli.NewCLI(t)
+		cli.WorkingDirectory = dir
+		cli.Env = append(cli.Env, os.Environ()...)
+
+		_, err = cli.RunCommand(ctx, "infra", "generate")
 		require.NoError(t, err)
 
 		bicepCli, err := bicep.NewCli(ctx, mockinput.NewMockConsole(), exec.NewCommandRunner(nil))

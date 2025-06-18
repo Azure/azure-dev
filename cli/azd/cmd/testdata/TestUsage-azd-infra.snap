@@ -1,11 +1,11 @@
 
-Manage your Azure infrastructure.
+Manage your Infrastructure as Code (IaC).
 
 Usage
   azd infra [command]
 
 Available Commands
-  synth	: Write IaC for your project to disk, allowing you to manage it by hand. (Alpha)
+  generate	: Write IaC for your project to disk, allowing you to manually manage it.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

@@ -204,5 +204,6 @@ func (s *environmentService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"DeleteEnvironmentAsync":     NewHandler(s.DeleteEnvironmentAsync),
 		"RefreshEnvironmentAsync":    NewHandler(s.RefreshEnvironmentAsync),
 		"DeployAsync":                NewHandler(s.DeployAsync),
+		"DeployServiceAsync":         NewHandler(s.DeployServiceAsync),
 	})
 }

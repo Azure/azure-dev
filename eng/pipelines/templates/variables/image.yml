@@ -2,7 +2,7 @@
 
 variables:
   - name: LINUXPOOL
-    value: azsdk-pool-mms-ubuntu-2004-general
+    value: azsdk-pool
   - name: WINDOWSPOOL
     value: azsdk-pool-mms-win-2022-general
   - name: MACPOOL
@@ -11,7 +11,7 @@ variables:
     value: azsdk-pool-arm64
 
   - name: LINUXVMIMAGE
-    value: azsdk-pool-mms-ubuntu-2004-1espt
+    value: ubuntu-22.04
   - name: LINUXNEXTVMIMAGE
     value: azsdk-pool-mms-ubuntu-2204-1espt
   - name: LINUXARMVMIMAGE
@@ -27,7 +27,7 @@ variables:
   - name: MACVMIMAGEM1
     value: macos-13-arm64
 
-  # Values required for pool.os field in 1es pipeline templates. Variable form 
+  # Values required for pool.os field in 1es pipeline templates. Variable form
   # cannot be used, instead those values must be written directly into pool.os.
   - name: LINUXOS
     value: linux

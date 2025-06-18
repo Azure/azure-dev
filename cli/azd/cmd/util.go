@@ -24,18 +24,10 @@ import (
 // CmdAnnotations on a command
 type CmdAnnotations map[string]string
 
-type Asker func(p survey.Prompt, response interface{}) error
+// CmdCalledAs provides access to the cmd.CalledAs() value through dependency injection
+type CmdCalledAs string
 
-func azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName string) string {
-	if subscriptionId == "" || resourceGroupName == "" {
-		return ""
-	}
-	return output.WithLinkFormat(fmt.Sprintf(
-		"%s/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-		portalUrlBase,
-		subscriptionId,
-		resourceGroupName))
-}
+type Asker func(p survey.Prompt, response interface{}) error
 
 func serviceNameWarningCheck(console input.Console, serviceNameFlag string, commandName string) {
 	if serviceNameFlag == "" {
@@ -171,5 +163,10 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 	log.Printf("warning: failed to use manual launch: %s\n", err.Error())
 	console.Message(ctx, fmt.Sprintf("Azd was unable to open the next url. Please try it manually: %s", url))
 }
+
+type envFlagKey string
+
+// envFlagCtxKey is the context key for internal.EnvFlag
+var envFlagCtxKey envFlagKey = "envFlag"
 
 const referenceDocumentationUrl = "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#"

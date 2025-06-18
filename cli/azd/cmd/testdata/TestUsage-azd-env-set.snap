@@ -5,6 +5,7 @@ Usage
   azd env set [<key> <value>] | [<key>=<value> ...] | [--file <filepath>] [flags]
 
 Flags
+        --env-type string    	: The type of the environment (e.g., dev, test, prod). (Experimental)
     -e, --environment string 	: The name of the environment to use.
         --file string        	: Path to .env formatted file to load environment values from.
 

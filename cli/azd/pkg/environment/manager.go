@@ -37,6 +37,7 @@ type Spec struct {
 	Name         string
 	Subscription string
 	Location     string
+	Type         string
 	// suggest is the name that is offered as a suggestion if we need to prompt the user for an environment name.
 	Examples []string
 }
@@ -66,6 +67,11 @@ type Manager interface {
 	// If the name is empty, the user is prompted to select or create an environment.
 	// If the environment does not exist, the user is prompted to create it.
 	LoadOrInitInteractive(ctx context.Context, name string) (*Environment, error)
+
+	// Loads the environment with the given name, with optional environment type for creation.
+	// If the name is empty, the user is prompted to select or create an environment.
+	// If the environment does not exist, the user is prompted to create it with the specified type.
+	LoadOrInitInteractiveWithType(ctx context.Context, name, envType string) (*Environment, error)
 	List(ctx context.Context) ([]*Description, error)
 
 	// Get returns the existing environment with the given name.
@@ -137,6 +143,10 @@ func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
 		return nil, err
 	}
 
+	if err := m.ensureValidEnvironmentType(ctx, spec.Type); err != nil {
+		return nil, err
+	}
+
 	// Ensure the environment does not already exist:
 	_, err := m.Get(ctx, spec.Name)
 	switch {
@@ -157,6 +167,10 @@ func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
 		env.SetLocation(spec.Location)
 	}
 
+	if spec.Type != "" {
+		env.SetEnvironmentType(spec.Type)
+	}
+
 	if err := m.SaveWithOptions(ctx, env, &SaveOptions{IsNew: true}); err != nil {
 		return nil, err
 	}
@@ -165,7 +179,11 @@ func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
 }
 
 func (m *manager) LoadOrInitInteractive(ctx context.Context, environmentName string) (*Environment, error) {
-	env, isNew, err := m.loadOrInitEnvironment(ctx, environmentName)
+	return m.LoadOrInitInteractiveWithType(ctx, environmentName, "")
+}
+
+func (m *manager) LoadOrInitInteractiveWithType(ctx context.Context, environmentName, envType string) (*Environment, error) {
+	env, isNew, err := m.loadOrInitEnvironmentWithType(ctx, environmentName, envType)
 	switch {
 	case errors.Is(err, ErrNotFound):
 		return nil, fmt.Errorf("environment %s does not exist", environmentName)
@@ -224,7 +242,11 @@ func (m *manager) LoadOrInitInteractive(ctx context.Context, environmentName str
 	return env, nil
 }
 
-func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName string) (*Environment, bool, error) {
+func (m *manager) loadOrInitEnvironmentWithType(
+	ctx context.Context,
+	environmentName,
+	envType string,
+) (*Environment, bool, error) {
 	// If there's a default environment, use that
 	if environmentName == "" {
 		var err error
@@ -313,13 +335,23 @@ func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName str
 	// Create the environment
 	spec := &Spec{
 		Name: environmentName,
+		Type: envType,
 	}
 
 	if err := m.ensureValidEnvironmentName(ctx, spec); err != nil {
 		return nil, false, err
 	}
 
-	return New(spec.Name), true, nil
+	if err := m.ensureValidEnvironmentType(ctx, envType); err != nil {
+		return nil, false, err
+	}
+
+	env := New(spec.Name)
+	if envType != "" {
+		env.SetEnvironmentType(envType)
+	}
+
+	return env, true, nil
 }
 
 // ConfigPath returns the path to the environment config file
@@ -519,7 +551,29 @@ func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) er
 
 func invalidEnvironmentNameMsg(environmentName string) string {
 	return fmt.Sprintf(
-		"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
+		"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)",
 		environmentName,
 	)
+}
+
+func invalidEnvironmentTypeMsg(environmentType string) string {
+	return fmt.Sprintf(
+		"environment type '%s' is invalid (it should contain only alphanumeric characters)",
+		environmentType,
+	)
+}
+
+// ensureValidEnvironmentType validates environment type and outputs error message to console if invalid
+func (m *manager) ensureValidEnvironmentType(ctx context.Context, envType string) error {
+	if envType == "" {
+		return nil // Empty environment type is allowed
+	}
+
+	if !IsValidEnvironmentType(envType) {
+		errMsg := invalidEnvironmentTypeMsg(envType)
+		m.console.Message(ctx, errMsg)
+		return errors.New(errMsg)
+	}
+
+	return nil
 }

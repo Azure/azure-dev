@@ -5,6 +5,7 @@ Usage
   azd monitor [flags]
 
 Flags
+        --env-type string    	: The type of the environment (e.g., dev, test, prod). (Experimental)
     -e, --environment string 	: The name of the environment to use.
         --live               	: Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python apps.
         --logs               	: Open a browser to Application Insights Logs.

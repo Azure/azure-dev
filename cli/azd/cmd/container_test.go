@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,6 +19,13 @@ func Test_Lazy_Project_Config_Resolution(t *testing.T) {
 	ctx := context.Background()
 	container := ioc.NewNestedContainer(nil)
 	ioc.RegisterInstance(container, ctx)
+
+	// Register a mock cobra command for testing
+	mockCmd := &cobra.Command{}
+	mockCmd.SetContext(ctx)
+	// Add the environment flag to avoid the "envFlag was not included in cmd.Flags()" error
+	mockCmd.Flags().StringP("environment", "e", "", "Environment name")
+	ioc.RegisterInstance(container, mockCmd)
 
 	registerCommonDependencies(container)
 
@@ -87,6 +95,13 @@ func Test_Lazy_AzdContext_Resolution(t *testing.T) {
 	ctx := context.Background()
 	container := ioc.NewNestedContainer(nil)
 	ioc.RegisterInstance(container, ctx)
+
+	// Register a mock cobra command for testing
+	mockCmd := &cobra.Command{}
+	mockCmd.SetContext(ctx)
+	// Add the environment flag to avoid the "envFlag was not included in cmd.Flags()" error
+	mockCmd.Flags().StringP("environment", "e", "", "Environment name")
+	ioc.RegisterInstance(container, mockCmd)
 
 	registerCommonDependencies(container)
 

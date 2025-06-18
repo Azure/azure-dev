@@ -7,11 +7,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/names"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/joho/godotenv"
 )
 
 const ProjectFileName = "azure.yaml"
@@ -20,8 +24,39 @@ const DotEnvFileName = ".env"
 const ConfigFileName = "config.json"
 const ConfigFileVersion = 1
 
+// Environment types should only contain alphanumeric characters
+var environmentTypeRegexp = regexp.MustCompile(`^[a-zA-Z0-9]{1,32}$`)
+
 type AzdContext struct {
 	projectDirectory string
+}
+
+func (c *AzdContext) ProjectFileName() string {
+	return c.ProjectFileNameForEnvironment("")
+}
+
+// ProjectFileNameForEnvironment returns the project file name for a specific environment.
+// If environmentName is empty, uses the default environment.
+func (c *AzdContext) ProjectFileNameForEnvironment(environmentName string) string {
+	// Get environment type for the specified environment (or default if empty)
+	envType, err := c.GetEnvironmentType(environmentName)
+	if err != nil {
+		log.Printf("getting env type: %v", err)
+		envType = ""
+	}
+
+	return ProjectFileNameForEnvironmentType(envType)
+}
+
+// ProjectFileNameForEnvironmentType returns the project file name for a specific environment type.
+// If environmentType is empty, returns the default project file name.
+func ProjectFileNameForEnvironmentType(environmentType string) string {
+	if environmentType == "" {
+		return "azure.yaml"
+	}
+
+	projectFileName := fmt.Sprintf("azure.%s.yaml", environmentType)
+	return projectFileName
 }
 
 func (c *AzdContext) ProjectDirectory() string {
@@ -33,7 +68,17 @@ func (c *AzdContext) SetProjectDirectory(dir string) {
 }
 
 func (c *AzdContext) ProjectPath() string {
-	return filepath.Join(c.ProjectDirectory(), ProjectFileName)
+	fileName := c.ProjectFileName()
+	projectPath := filepath.Join(c.ProjectDirectory(), fileName)
+	return projectPath
+}
+
+// ProjectPathForEnvironment returns the project path for a specific environment.
+// If environmentName is empty, uses the default environment.
+func (c *AzdContext) ProjectPathForEnvironment(environmentName string) string {
+	fileName := c.ProjectFileNameForEnvironment(environmentName)
+	projectPath := filepath.Join(c.ProjectDirectory(), fileName)
+	return projectPath
 }
 
 func (c *AzdContext) EnvironmentDirectory() string {
@@ -47,10 +92,6 @@ func ProjectName(projectDirectory string) string {
 
 func (c *AzdContext) EnvironmentRoot(name string) string {
 	return filepath.Join(c.EnvironmentDirectory(), name)
-}
-
-func (c *AzdContext) GetEnvironmentWorkDirectory(name string) string {
-	return filepath.Join(c.EnvironmentRoot(name), "wd")
 }
 
 // GetDefaultEnvironmentName returns the name of the default environment. Returns
@@ -73,6 +114,42 @@ func (c *AzdContext) GetDefaultEnvironmentName() (string, error) {
 	return config.DefaultEnvironment, nil
 }
 
+// GetEnvironmentType returns the environment type for a specific environment.
+// If environmentName is empty, returns the type for the default environment.
+func (c *AzdContext) GetEnvironmentType(environmentName string) (string, error) {
+	targetEnvName := environmentName
+
+	if environmentName == "" {
+		defaultEnvName, err := c.GetDefaultEnvironmentName()
+		if err != nil {
+			return "", fmt.Errorf("getting default environment name: %w", err)
+		}
+
+		if defaultEnvName == "" {
+			return "", nil
+		}
+
+		targetEnvName = defaultEnvName
+	}
+
+	// Read the environment's .env file
+	envFilePath := filepath.Join(c.EnvironmentRoot(targetEnvName), DotEnvFileName)
+	envVars, err := godotenv.Read(envFilePath)
+
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return "", nil
+	case err != nil:
+		return "", fmt.Errorf("reading environment .env file: %w", err)
+	}
+
+	if envType, exists := envVars["AZURE_ENV_TYPE"]; exists {
+		return envType, nil
+	}
+
+	return "", nil
+}
+
 // ProjectState represents the state of the project.
 type ProjectState struct {
 	DefaultEnvironment string
@@ -81,6 +158,7 @@ type ProjectState struct {
 // SetProjectState persists the state of the project to the file system, like the default environment.
 func (c *AzdContext) SetProjectState(state ProjectState) error {
 	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
+
 	config := configFile{
 		Version:            ConfigFileVersion,
 		DefaultEnvironment: state.DefaultEnvironment,
@@ -117,10 +195,52 @@ func NewAzdContext() (*AzdContext, error) {
 	return NewAzdContextFromWd(wd)
 }
 
+// hasValidProjectFile checks if a valid project file exists in the given directory.
+// It looks for azure.yaml first, then checks for azure.{envType}.yaml files where envType is valid.
+// Returns true if a valid project file is found, false otherwise.
+func hasValidProjectFile(searchDir string) bool {
+	// First check for the default azure.yaml (matching original logic exactly)
+	defaultProjectPath := filepath.Join(searchDir, ProjectFileName)
+	stat, err := os.Stat(defaultProjectPath)
+	if err == nil && !stat.IsDir() {
+		// Found azure.yaml and it's a file
+		return true
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return false
+	}
+
+	// Then check for azure.{envType}.yaml files
+	entries, err := os.ReadDir(searchDir)
+	if err != nil {
+		return false
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		filename := entry.Name()
+		// Check if filename matches azure.{envType}.yaml pattern
+		if strings.HasPrefix(filename, "azure.") && strings.HasSuffix(filename, ".yaml") {
+			envType := strings.TrimPrefix(filename, "azure.")
+			envType = strings.TrimSuffix(envType, ".yaml")
+
+			if envType != "" && environmentTypeRegexp.MatchString(envType) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 // Creates context with project directory set to the nearest project file found.
 //
 // The project file is first searched for in the working directory, if not found, the parent directory is searched
-// recursively up to root. If no project file is found, errNoProject is returned.
+// recursively up to root. The search looks for azure.yaml first, then for azure.{envType}.yaml files where envType
+// is a valid environment type. If no project file is found, errNoProject is returned.
 func NewAzdContextFromWd(wd string) (*AzdContext, error) {
 	// Walk up from the wd to the root, looking for a project file. If we find one, that's
 	// the root project directory.
@@ -130,26 +250,18 @@ func NewAzdContextFromWd(wd string) (*AzdContext, error) {
 	}
 
 	for {
-		projectFilePath := filepath.Join(searchDir, ProjectFileName)
-		stat, err := os.Stat(projectFilePath)
-		if os.IsNotExist(err) || (err == nil && stat.IsDir()) {
-			parent := filepath.Dir(searchDir)
-			if parent == searchDir {
-				return nil, ErrNoProject
-			}
-			searchDir = parent
-		} else if err == nil {
-			// We found our azure.yaml file, and searchDir is the directory
-			// that contains it.
-			break
-		} else {
-			return nil, fmt.Errorf("searching for project file: %w", err)
+		if hasValidProjectFile(searchDir) {
+			return &AzdContext{
+				projectDirectory: searchDir,
+			}, nil
 		}
-	}
 
-	return &AzdContext{
-		projectDirectory: searchDir,
-	}, nil
+		parent := filepath.Dir(searchDir)
+		if parent == searchDir {
+			return nil, ErrNoProject
+		}
+		searchDir = parent
+	}
 }
 
 type configFile struct {

@@ -10,6 +10,7 @@ Usage
 
 Flags
         --all                	: Packages all services that are listed in azure.yaml
+        --env-type string    	: The type of the environment (e.g., dev, test, prod). (Experimental)
     -e, --environment string 	: The name of the environment to use.
         --output-path string 	: File or folder path where the generated packages will be saved.
 

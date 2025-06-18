@@ -207,7 +207,7 @@ func (m *manager) LoadOrInitInteractive(ctx context.Context, environmentName str
 					return nil, fmt.Errorf("saving default environment: %w", err)
 				}
 				m.console.Message(ctx,
-					fmt.Sprintf("\nThe new environment '%s' has been set as the default environment.", env.Name()),
+					fmt.Sprintf("\nNew environment '%s' created and set as default.", env.Name()),
 				)
 			} else {
 				defaultEnvironment, err := m.azdContext.GetDefaultEnvironmentName()

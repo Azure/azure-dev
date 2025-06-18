@@ -689,7 +689,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				return nil, fmt.Errorf("saving default environment: %w", err)
 			}
 			en.console.Message(ctx,
-				fmt.Sprintf("\nThe new environment '%s' has been set as the default environment.", env.Name()),
+				fmt.Sprintf("\nNew environment '%s' created and set as default", env.Name()),
 			)
 		} else {
 			defaultEnvironment, err := en.azdCtx.GetDefaultEnvironmentName()

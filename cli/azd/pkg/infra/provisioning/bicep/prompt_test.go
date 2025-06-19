@@ -35,8 +35,8 @@ func TestPromptForParameter(t *testing.T) {
 		{"emptyString", "string", "", ""},
 		{"int", "int", "1", 1},
 		{"intNegative", "int", "-1", -1},
-		{"boolTrue", "bool", 0, false},
-		{"boolFalse", "bool", 1, true},
+		{"boolTrue", "bool", true, true},
+		{"boolFalse", "bool", false, false},
 		{"arrayParam", "array", `["hello", "world"]`, []any{"hello", "world"}},
 		{"objectParam", "object", `{"hello": "world"}`, map[string]any{"hello": "world"}},
 		{"secureObject", "secureObject", `{"hello": "world"}`, map[string]any{"hello": "world"}},
@@ -52,19 +52,16 @@ func TestPromptForParameter(t *testing.T) {
 
 			p := createBicepProvider(t, mockContext)
 
-			if _, ok := tc.provided.(int); ok {
-				mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-					return strings.Contains(options.Message, "for the 'testParam' infrastructure parameter")
+			switch tc.paramType {
+			case "bool":
+				mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+					return strings.Contains(options.Message, "testParam")
 				}).Respond(tc.provided)
-			} else {
+			default:
 				mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
-					return strings.Contains(options.Message, "for the 'testParam' infrastructure parameter")
+					return strings.Contains(options.Message, "testParam")
 				}).Respond(tc.provided)
 			}
-
-			mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
-				return true
-			}).Respond(tc.provided)
 
 			value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 				Type: tc.paramType,

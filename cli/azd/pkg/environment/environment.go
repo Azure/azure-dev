@@ -236,10 +236,11 @@ func (e *Environment) SetLocation(location string) {
 	e.DotenvSet(LocationEnvVarName, location)
 }
 
+// GetEnvironmentType returns the environment type (e.g., dev, prod) from the
+// environment configuration, or an empty string if not set.
 func (e *Environment) GetEnvironmentType() string {
-	value, _ := e.Config.Get(EnvironmentTypeConfigKeyPath)
-	if str, ok := value.(string); ok {
-		return str
+	if value, ok := e.Config.GetString(EnvironmentTypeConfigKeyPath); ok {
+		return value
 	}
 	return ""
 }

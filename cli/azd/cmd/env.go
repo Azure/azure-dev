@@ -891,15 +891,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 
 		// Check if the specified type is valid
-		validType := false
-		for _, t := range envTypes {
-			if t == envType {
-				validType = true
-				break
-			}
-		}
-
-		if !validType {
+		if !slices.Contains(envTypes, envType) {
 			return nil, fmt.Errorf("environment type '%s' is not valid. Valid types are: %s", envType, strings.Join(envTypes, ", "))
 		}
 	}

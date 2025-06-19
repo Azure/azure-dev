@@ -701,7 +701,11 @@ func validateAppName(name string) error {
 		return err
 	}
 	if !matched {
-		return fmt.Errorf("invalid application name '%s': only letters, numbers, underscores (_), and hyphens (-) are allowed", name)
+		return fmt.Errorf(
+			"invalid application name '%s': only letters, numbers, underscores (_), and hyphens (-) are allowed",
+			name,
+		)
+
 	}
 	return nil
 }

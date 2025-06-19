@@ -195,6 +195,15 @@ func NewRootCmd(
 		},
 	})
 
+	root.Add("create", &actions.ActionDescriptorOptions{
+		Command: NewCreateCmd(),
+		OutputFormats: []output.Format{output.NoneFormat},
+		DefaultFormat: output.NoneFormat,
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupStart,
+		},
+	})
+
 	root.
 		Add("restore", &actions.ActionDescriptorOptions{
 			Command:        newRestoreCmd(),

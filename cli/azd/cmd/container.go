@@ -381,6 +381,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		func(
 			ctx context.Context,
 			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
+			envFlags internal.EnvFlag,
 		) *lazy.Lazy[*project.ProjectConfig] {
 			return lazy.NewLazy(func() (*project.ProjectConfig, error) {
 				azdCtx, err := lazyAzdContext.GetValue()
@@ -388,7 +389,15 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					return nil, err
 				}
 
-				projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
+				// Use environment-specific project path when an environment is specified
+				var projectPath string
+				if envFlags.EnvironmentName != "" {
+					projectPath = azdCtx.ProjectPathForEnvironment(envFlags.EnvironmentName)
+				} else {
+					projectPath = azdCtx.ProjectPath()
+				}
+
+				projectConfig, err := project.Load(ctx, projectPath)
 				if err != nil {
 					return nil, err
 				}
@@ -404,6 +413,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
 		lazyLocalEnvStore *lazy.Lazy[environment.LocalDataStore],
+		envFlags internal.EnvFlag,
 	) (*cloud.Cloud, error) {
 
 		// Precedence for cloud configuration:
@@ -423,8 +433,15 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		localEnvStore, _ := lazyLocalEnvStore.GetValue()
 		if azdCtx, err := lazyAzdContext.GetValue(); err == nil {
 			if azdCtx != nil && localEnvStore != nil {
-				if defaultEnvName, err := azdCtx.GetDefaultEnvironmentName(); err == nil {
-					if env, err := localEnvStore.Get(ctx, defaultEnvName); err == nil {
+				var envName string
+				if envFlags.EnvironmentName != "" {
+					envName = envFlags.EnvironmentName
+				} else if defaultEnvName, err := azdCtx.GetDefaultEnvironmentName(); err == nil {
+					envName = defaultEnvName
+				}
+
+				if envName != "" {
+					if env, err := localEnvStore.Get(ctx, envName); err == nil {
 						if cloudConfigurationNode, exists := env.Config.Get(cloud.ConfigPath); exists {
 							if value, err := cloud.ParseCloudConfig(cloudConfigurationNode); err == nil {
 								cloudConfig, err := cloud.NewCloud(value)
@@ -437,7 +454,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 									Suggestion: fmt.Sprintf(
 										"Set the cloud configuration by editing the 'cloud' node in the config.json "+
 											"file for the %s environment\n%s",
-										defaultEnvName,
+										envName,
 										validClouds,
 									),
 								}

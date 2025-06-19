@@ -25,20 +25,28 @@ type AzdContext struct {
 }
 
 func (c *AzdContext) ProjectFileName() string {
-	defaultEnvType, err := c.GetDefaultEnvironmentType()
+	return c.ProjectFileNameForEnvironment("")
+}
+
+// ProjectFileNameForEnvironment returns the project file name for a specific environment.
+// If environmentName is empty, uses the default environment.
+func (c *AzdContext) ProjectFileNameForEnvironment(environmentName string) string {
+	fmt.Printf("[DEBUG] ProjectFileNameForEnvironment called with environmentName: '%s'\n", environmentName)
+
+	// Get environment type for the specified environment (or default if empty)
+	envType, err := c.GetEnvironmentType(environmentName)
 	if err != nil {
-		fmt.Printf("Error getting default environment type: %v\n", err)
-		fmt.Println("Falling back to default project file name 'azure.yaml'.")
+		fmt.Printf("[DEBUG] Error getting environment type for '%s': %v, falling back to 'azure.yaml'\n", environmentName, err)
 		return "azure.yaml"
 	}
 
-	if defaultEnvType == "" {
-		fmt.Println("defaultEnvType was empty. Using 'azure.yaml' as the project file name.")
+	if envType == "" {
 		return "azure.yaml"
 	}
 
-	fmt.Println("Using environment type:", defaultEnvType)
-	return fmt.Sprintf("azure.%s.yaml", defaultEnvType)
+	projectFileName := fmt.Sprintf("azure.%s.yaml", envType)
+	fmt.Printf("[DEBUG] Project file name resolved to: '%s'\n", projectFileName)
+	return projectFileName
 }
 
 func (c *AzdContext) ProjectDirectory() string {
@@ -50,8 +58,18 @@ func (c *AzdContext) SetProjectDirectory(dir string) {
 }
 
 func (c *AzdContext) ProjectPath() string {
-	projectPath := filepath.Join(c.ProjectDirectory(), c.ProjectFileName())
-	fmt.Println("Using project path:", projectPath)
+	fileName := c.ProjectFileName()
+	projectPath := filepath.Join(c.ProjectDirectory(), fileName)
+	fmt.Printf("[DEBUG] ProjectPath resolved to: '%s'\n", projectPath)
+	return projectPath
+}
+
+// ProjectPathForEnvironment returns the project path for a specific environment.
+// If environmentName is empty, uses the default environment.
+func (c *AzdContext) ProjectPathForEnvironment(environmentName string) string {
+	fileName := c.ProjectFileNameForEnvironment(environmentName)
+	projectPath := filepath.Join(c.ProjectDirectory(), fileName)
+	fmt.Printf("[DEBUG] ProjectPathForEnvironment resolved to: '%s'\n", projectPath)
 	return projectPath
 }
 
@@ -89,6 +107,7 @@ func (c *AzdContext) GetDefaultEnvironmentName() (string, error) {
 		return "", fmt.Errorf("deserializing config file: %w", err)
 	}
 
+	fmt.Printf("[DEBUG] Config file parsed, defaultEnvironment: '%s'\n", config.DefaultEnvironment)
 	return config.DefaultEnvironment, nil
 }
 
@@ -111,18 +130,34 @@ func (c *AzdContext) GetEnvironmentTypes() ([]string, error) {
 	return config.EnvironmentTypes, nil
 }
 
-func (c *AzdContext) GetDefaultEnvironmentType() (string, error) {
-	defaultEnvName, err := c.GetDefaultEnvironmentName()
-	if err != nil {
-		return "", fmt.Errorf("getting default environment name: %w", err)
-	}
+// GetEnvironmentType returns the environment type for a specific environment.
+// If environmentName is empty, returns the type for the default environment.
+func (c *AzdContext) GetEnvironmentType(environmentName string) (string, error) {
+	var targetEnvName string
 
-	if defaultEnvName == "" {
-		return "", nil
+	if environmentName == "" {
+		fmt.Println("[DEBUG] No environment name provided, getting default environment name")
+		defaultEnvName, err := c.GetDefaultEnvironmentName()
+		if err != nil {
+			return "", fmt.Errorf("getting default environment name: %w", err)
+		}
+
+		fmt.Printf("[DEBUG] Default environment name: '%s'\n", defaultEnvName)
+
+		if defaultEnvName == "" {
+			fmt.Println("[DEBUG] No default environment name found")
+			return "", nil
+		}
+
+		targetEnvName = defaultEnvName
+	} else {
+		targetEnvName = environmentName
 	}
 
 	// Read the environment's config.json file
-	envConfigPath := filepath.Join(c.EnvironmentRoot(defaultEnvName), ConfigFileName)
+	envConfigPath := filepath.Join(c.EnvironmentRoot(targetEnvName), ConfigFileName)
+	fmt.Printf("[DEBUG] Reading environment config from: '%s'\n", envConfigPath)
+
 	file, err := os.ReadFile(envConfigPath)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
@@ -137,10 +172,16 @@ func (c *AzdContext) GetDefaultEnvironmentType() (string, error) {
 		return "", fmt.Errorf("deserializing environment config file: %w", err)
 	}
 
+	fmt.Printf("[DEBUG] Environment config parsed: %+v\n", envConfig)
+
 	if envType, exists := envConfig["environmentType"]; exists {
 		if envTypeStr, ok := envType.(string); ok {
+			fmt.Printf("[DEBUG] Found environment type: '%s'\n", envTypeStr)
 			return envTypeStr, nil
 		}
+		fmt.Printf("[DEBUG] Environment type exists but is not a string: %v\n", envType)
+	} else {
+		fmt.Println("[DEBUG] No 'environmentType' field found in config")
 	}
 
 	return "", nil

@@ -919,7 +919,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				return nil, fmt.Errorf("get default environment: %w", err)
 			}
 			en.console.Message(ctx,
-				fmt.Sprintf("\nNew env '%s' created, default environment remails '%s'", env.Name(), defaultEnvironment),
+				fmt.Sprintf("\nNew env '%s' created, default environment remains '%s'", env.Name(), defaultEnvironment),
 			)
 		}
 	}

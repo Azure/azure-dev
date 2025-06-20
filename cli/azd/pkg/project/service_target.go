@@ -133,6 +133,19 @@ func resourceTypeMismatchError(
 	)
 }
 
+// IgnoreFile returns the ignore file associated with the service target.
+// Returns an empty string if no ignore file is used.
+func (st ServiceTargetKind) IgnoreFile() string {
+	switch st {
+	case AppServiceTarget:
+		return ".webappignore"
+	case AzureFunctionTarget:
+		return ".funcignore"
+	default:
+		return ""
+	}
+}
+
 // SupportsDelayedProvisioning returns true if the service target kind
 // supports delayed provisioning resources at deployment time, otherwise false.
 //

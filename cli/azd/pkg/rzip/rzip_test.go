@@ -77,16 +77,8 @@ func TestCreateFromDirectory(t *testing.T) {
 	defer zipFile.Close()
 
 	// zip the directory
-	err = rzip.CreateFromDirectory(tempDir, zipFile)
+	err = rzip.CreateFromDirectory(tempDir, zipFile, nil)
 	require.NoError(err)
-
-	// Reopen the zip file for reading
-	_, err = zipFile.Seek(0, 0)
-	require.NoError(err, "failed to seek to start of zip file")
-	zipInfo, err := zipFile.Stat()
-	require.NoError(err, "failed to get zip file info")
-	zipReader, err := zip.NewReader(zipFile, zipInfo.Size())
-	require.NoError(err, "failed to open zip for reading")
 
 	// Check zip contents
 	expectedFiles := map[string]string{
@@ -101,6 +93,65 @@ func TestCreateFromDirectory(t *testing.T) {
 		"symlink_to_symlink_to_subdir/file2.txt": "Content of file2",
 		"symlink_to_symlink_to_subdir/file3.txt": "Content of file3",
 	}
+
+	checkFiles(t, expectedFiles, zipFile)
+
+	// skip specific files and directories
+	onZip := func(src string, info os.FileInfo) (bool, error) {
+		name := info.Name()
+		isDir := info.IsDir()
+
+		// resolve symlink if needed
+		if info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Stat(src)
+			if err != nil {
+				return false, err
+			}
+			isDir = target.IsDir()
+		}
+
+		// exclude a file
+		if !isDir && name == "deep.txt" {
+			return false, nil
+		}
+
+		// exclude a directory
+		if isDir && name == "symlink_to_subdir" {
+			return false, nil
+		}
+
+		return true, nil
+	}
+
+	zipFile.Truncate(0)
+	zipFile.Seek(0, 0)
+	err = rzip.CreateFromDirectory(tempDir, zipFile, onZip)
+	require.NoError(err)
+
+	// Check zip contents
+	expectedFiles = map[string]string{
+		"file1.txt":                              "Content of file1",
+		"subdir/file2.txt":                       "Content of file2",
+		"subdir/file3.txt":                       "Content of file3",
+		"symlink_to_file1.txt":                   "Content of file1",
+		"symlink_to_symlink_to_file1.txt":        "Content of file1",
+		"symlink_to_symlink_to_subdir/file2.txt": "Content of file2",
+		"symlink_to_symlink_to_subdir/file3.txt": "Content of file3",
+	}
+
+	checkFiles(t, expectedFiles, zipFile)
+}
+
+func checkFiles(
+	t *testing.T,
+	expectedFiles map[string]string,
+	zipFile *os.File) {
+	_, err := zipFile.Seek(0, 0)
+	require.NoError(t, err, "failed to seek to start of zip file")
+	zipInfo, err := zipFile.Stat()
+	require.NoError(t, err, "failed to get zip file info")
+	zipReader, err := zip.NewReader(zipFile, zipInfo.Size())
+	require.NoError(t, err, "failed to open zip for reading")
 
 	for _, zipFile := range zipReader.File {
 		expectedContent, exists := expectedFiles[zipFile.Name]
@@ -148,7 +199,7 @@ func TestCreateFromDirectory_SymlinkRecursive(t *testing.T) {
 	defer zipFile.Close()
 
 	// zip the directory
-	err = rzip.CreateFromDirectory(tmp, zipFile)
+	err = rzip.CreateFromDirectory(tmp, zipFile, nil)
 	require.NoError(t, err)
 }
 

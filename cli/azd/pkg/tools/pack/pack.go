@@ -190,13 +190,15 @@ func (cli *Cli) enableExperimental(ctx context.Context) error {
 	return nil
 }
 
-func (cli *Cli) Build(
+// BuildWithContainerdSupport builds with additional options for containerd compatibility
+func (cli *Cli) BuildWithContainerdSupport(
 	ctx context.Context,
 	cwd string,
 	builder string,
 	imageName string,
 	environ []string,
 	progressWriter io.Writer,
+	isContainerdEnabled bool,
 ) error {
 	err := cli.enableExperimental(ctx)
 	if err != nil {
@@ -210,6 +212,13 @@ func (cli *Cli) Build(
 
 	runArgs := exec.NewRunArgs(cli.path, "build", imageName, "--builder", builder, "--path", cwd)
 	runArgs.Args = append(runArgs.Args, envArgs...)
+	
+	// When containerd is enabled, set environment variables to improve compatibility
+	if isContainerdEnabled {
+		// Force pack to use Docker daemon directly instead of relying on containerd image store
+		runArgs = runArgs.WithEnv([]string{"DOCKER_BUILDKIT=0"})
+	}
+	
 	if progressWriter != nil {
 		runArgs = runArgs.WithStdOut(progressWriter).WithStdErr(progressWriter)
 	}
@@ -220,6 +229,18 @@ func (cli *Cli) Build(
 	}
 
 	return nil
+}
+
+func (cli *Cli) Build(
+	ctx context.Context,
+	cwd string,
+	builder string,
+	imageName string,
+	environ []string,
+	progressWriter io.Writer,
+) error {
+	// Use the new method with containerd detection disabled by default for backward compatibility
+	return cli.BuildWithContainerdSupport(ctx, cwd, builder, imageName, environ, progressWriter, false)
 }
 
 func wrapStatusCodeErr(err error, res exec.RunResult) error {

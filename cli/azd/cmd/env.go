@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -30,6 +31,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -118,19 +120,26 @@ func newEnvSetFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 
 func newEnvSetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "set <key> <value>",
-		Short: "Manage your environment settings.",
-		Args:  cobra.ExactArgs(2),
+		Use:   "set [<key> <value>] | [<key>=<value> ...] | [--file <filepath>]",
+		Short: "Set one or more environment values.",
+		Long:  "Set one or more environment values using key-value pairs or by loading from a .env formatted file.",
+		Args:  cobra.ArbitraryArgs,
+		// Sample arguments used in tests
+		Annotations: map[string]string{
+			"azdtest.use": "set key value",
+		},
 	}
 }
 
 type envSetFlags struct {
 	internal.EnvFlag
 	global *internal.GlobalCommandOptions
+	file   string
 }
 
 func (f *envSetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	f.EnvFlag.Bind(local, global)
+	local.StringVar(&f.file, "file", "", "Path to .env formatted file to load environment values from.")
 	f.global = global
 }
 
@@ -162,19 +171,74 @@ func newEnvSetAction(
 }
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	key := e.args[0]
-	value := e.args[1]
-
+	// To track case conflicts
 	dotEnv := e.env.Dotenv()
-	warnKeyCaseConflicts(ctx, e.console, dotEnv, key)
+	keyValues := make(map[string]string)
 
-	e.env.DotenvSet(key, value)
+	// Handle file input if specified
+	if e.flags.file != "" {
+		if len(e.args) > 0 {
+			return nil, fmt.Errorf("cannot combine --file flag with key-value arguments")
+		}
+		filename := e.flags.file
+		file, err := os.Open(filename)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open file %s: %w", filename, err)
+		}
+		defer file.Close()
+
+		keyValues, err = godotenv.Parse(file)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse file %s: %w", filename, err)
+		}
+	} else if len(e.args) == 0 {
+		//nolint:lll
+		return nil, fmt.Errorf("no environment values provided. Use '<key> <value>', '<key>=<value>', or '--file <filepath>'")
+	} else if len(e.args) == 2 && !strings.Contains(e.args[0], "=") {
+		// Handle single key-value pair format: azd env set key value
+		key := e.args[0]
+		value := e.args[1]
+		keyValues[key] = value
+	} else {
+		// Handle key=value format: azd env set key=value [key2=value2 ...]
+		for _, arg := range e.args {
+			key, value, err := parseKeyValue(arg)
+			if err != nil {
+				return nil, err
+			}
+			keyValues[key] = value
+		}
+	}
+
+	// No environment values to set
+	if len(keyValues) == 0 {
+		return nil, fmt.Errorf("no environment values to set")
+	}
+
+	// Apply the values
+	for key, value := range keyValues {
+		warnKeyCaseConflicts(ctx, e.console, dotEnv, key)
+		e.env.DotenvSet(key, value)
+		// Update to check case conflicts in subsequent keys
+		dotEnv[key] = value
+	}
 
 	if err := e.envManager.Save(ctx, e.env); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
 	return nil, nil
+}
+
+// parseKeyValue parses a key=value string and returns the key and value parts
+func parseKeyValue(arg string) (string, string, error) {
+	parts := strings.SplitN(arg, "=", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid key=value format: %s", arg)
+	}
+	key := parts[0]
+	value := parts[1]
+	return key, value, nil
 }
 
 // Prints a warning message if there are any case-insensitive conflicts with the provided key

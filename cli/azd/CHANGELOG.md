@@ -1,14 +1,19 @@
 # Release History
 
-## 1.18.0-beta.1 (Unreleased)
+## 1.17.1 (2025-06-20)
 
 ### Features Added
 
-### Breaking Changes
+- [[5203]](https://github.com/Azure/azure-dev/pull/5203) Make sure to always use latest static-web-apps CLI npm package.
+- [[5270]](https://github.com/Azure/azure-dev/pull/5270) Add support for Terraform+OIDC in pipeline config.
+- [[5280]](https://github.com/Azure/azure-dev/pull/5280) Combine "Create a minimal project" with "Scan current directory" option and add --minimal flag.
+- [[5285]](https://github.com/Azure/azure-dev/pull/5285) [compose + CI/CD] - Introduce AZURE_PRINCIPAL_TYPE to conditionally set user-only role assignments
+- [[4942]](https://github.com/Azure/azure-dev/pull/4942) Update env set to accept multiple key-value pairs.
+- [[4969]](https://github.com/Azure/azure-dev/pull/4969) Case-insensitive sorting for subscriptions.
 
 ### Bugs Fixed
 
-### Other Changes
+- [[5386]](https://github.com/Azure/azure-dev/pull/5386) Fix regression, prompting for bool or int without default.
 
 ## 1.17.0 (2025-06-05)
 

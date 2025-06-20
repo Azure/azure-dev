@@ -627,19 +627,36 @@ func Test_IsContainerdEnabled(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		docker := NewCli(mockContext.CommandRunner)
 
+		callCount := 0
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "docker system info")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			require.Equal(t, "docker", args.Cmd)
-			require.Equal(t, []string{
-				"system", "info", "--format", "{{.Driver}}",
-			}, args.Args)
-
-			return exec.RunResult{
-				Stdout:   "overlay2",
-				Stderr:   "",
-				ExitCode: 0,
-			}, nil
+			
+			callCount++
+			if callCount == 1 {
+				// First call checks driver
+				require.Equal(t, []string{
+					"system", "info", "--format", "{{.Driver}}",
+				}, args.Args)
+				return exec.RunResult{
+					Stdout:   "overlay2",
+					Stderr:   "",
+					ExitCode: 0,
+				}, nil
+			} else if callCount == 2 {
+				// Second call checks for containerd info
+				require.Equal(t, []string{
+					"system", "info", "--format", "{{.Containerd}}",
+				}, args.Args)
+				return exec.RunResult{
+					Stdout:   "<no value>",
+					Stderr:   "",
+					ExitCode: 0,
+				}, nil
+			}
+			
+			return exec.RunResult{}, errors.New("unexpected call")
 		})
 
 		isContainerd, err := docker.IsContainerdEnabled(context.Background())

@@ -19,6 +19,9 @@ param aiFoundryProjectEndpoint string
 @description('Id of the user or app to assign application roles')
 param principalId string
 
+@description('Principal type of user or app')
+param principalType string
+
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = uniqueString(subscription().id, resourceGroup().id, location)
 
@@ -261,20 +264,24 @@ module storageAccount 'br/public:avm/res/storage/storage-account:0.17.2' = {
       {{- end }}
     }
     location: location
-    roleAssignments: [
-      {  
-        principalId: principalId
-        principalType: 'User'
-        roleDefinitionIdOrName: 'Storage Blob Data Contributor'  
-      }
-      {{- range .Services}}
-      {
-        principalId: {{bicepName .Name}}Identity.outputs.principalId
-        principalType: 'ServicePrincipal'
-        roleDefinitionIdOrName: 'Storage Blob Data Contributor'
-      }
-      {{- end}}
-    ]
+    roleAssignments: concat(
+      principalType == 'User' ? [
+        {  
+          principalId: principalId
+          principalType: 'User'
+          roleDefinitionIdOrName: 'Storage Blob Data Contributor'  
+        }
+      ] : [],
+      [
+        {{- range .Services}}
+        {
+          principalId: {{bicepName .Name}}Identity.outputs.principalId
+          principalType: 'ServicePrincipal'
+          roleDefinitionIdOrName: 'Storage Blob Data Contributor'
+        }
+        {{- end}}
+      ]
+    )
     networkAcls: {
       defaultAction: 'Allow'
     }
@@ -313,7 +320,7 @@ module account 'br/public:avm/res/cognitive-services/account:0.7.0' = {
   }
 }
 
-resource localUserOpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource localUserOpenAIIdentity 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (principalType == 'User') {
   name: guid(subscription().id, resourceGroup().id, 'localUser', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
   properties: {
     principalId: principalId
@@ -335,30 +342,34 @@ module search 'br/public:avm/res/search/search-service:0.10.0' = {
     managedIdentities: {
       systemAssigned: true
     }
-    roleAssignments: [
-      {  
-        principalId: principalId
-        principalType: 'User'
-        roleDefinitionIdOrName: 'Search Index Data Contributor'  
-      }
-      {  
-        principalId: principalId
-        principalType: 'User'
-        roleDefinitionIdOrName: 'Search Service Contributor'  
-      }
-      {{- range .Services}}
-      {
-        principalId: {{bicepName .Name}}Identity.outputs.principalId
-        principalType: 'ServicePrincipal'
-        roleDefinitionIdOrName: 'Search Index Data Contributor'
-      }
-      {
-        principalId: {{bicepName .Name}}Identity.outputs.principalId
-        principalType: 'ServicePrincipal'
-        roleDefinitionIdOrName: 'Search Service Contributor'
-      }
-      {{- end}}
-    ]
+    roleAssignments: concat(
+      principalType == 'User' ? [
+        {  
+          principalId: principalId
+          principalType: 'User'
+          roleDefinitionIdOrName: 'Search Index Data Contributor'  
+        }
+        {  
+          principalId: principalId
+          principalType: 'User'
+          roleDefinitionIdOrName: 'Search Service Contributor'  
+        }
+      ] : [],
+      [
+        {{- range .Services}}
+        {
+          principalId: {{bicepName .Name}}Identity.outputs.principalId
+          principalType: 'ServicePrincipal'
+          roleDefinitionIdOrName: 'Search Index Data Contributor'
+        }
+        {
+          principalId: {{bicepName .Name}}Identity.outputs.principalId
+          principalType: 'ServicePrincipal'
+          roleDefinitionIdOrName: 'Search Service Contributor'
+        }
+        {{- end}}
+      ]
+    )
     disableLocalAuth: false
     authOptions: {
       aadOrApiKey: {
@@ -376,20 +387,24 @@ module eventHubNamespace 'br/public:avm/res/event-hub/namespace:0.8.0' = {
   params: {
     name: '${abbrs.eventHubNamespaces}${resourceToken}'
     location: location
-    roleAssignments: [
-      {{- range .Services}}
-      {
-        principalId: {{bicepName .Name}}Identity.outputs.principalId
-        principalType: 'ServicePrincipal'
-        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f526a384-b230-433a-b45c-95f59c4a2dec')
-      }
-      {{- end}}
-      {
-        principalId: principalId
-        principalType: 'User'
-        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f526a384-b230-433a-b45c-95f59c4a2dec')
-      }
-    ]
+    roleAssignments: concat(
+      principalType == 'User' ? [
+        {
+          principalId: principalId
+          principalType: 'User'
+          roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f526a384-b230-433a-b45c-95f59c4a2dec')
+        }
+      ] : [],
+      [
+        {{- range .Services}}
+        {
+          principalId: {{bicepName .Name}}Identity.outputs.principalId
+          principalType: 'ServicePrincipal'
+          roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'f526a384-b230-433a-b45c-95f59c4a2dec')
+        }
+        {{- end}}
+      ]
+    )
     disableLocalAuth: true
     eventhubs: [
       {{- range $hub := .EventHubs.Hubs}}
@@ -411,20 +426,24 @@ module serviceBusNamespace 'br/public:avm/res/service-bus/namespace:0.11.2' = {
     skuObject: {
       name: 'Standard'
     }
-    roleAssignments: [
-      {{- range .Services}}
-      {
-        principalId: {{bicepName .Name}}Identity.outputs.principalId
-        principalType: 'ServicePrincipal'
-        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '090c5cfd-751d-490a-894a-3ce6f1109419')
-      }
-      {{- end}}
-      {
-        principalId: principalId
-        principalType: 'User'
-        roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '090c5cfd-751d-490a-894a-3ce6f1109419')
-      }
-    ]
+    roleAssignments: concat(
+      principalType == 'User' ? [
+        {
+          principalId: principalId
+          principalType: 'User'
+          roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '090c5cfd-751d-490a-894a-3ce6f1109419')
+        }
+      ] : [],
+      [
+        {{- range .Services}}
+        {
+          principalId: {{bicepName .Name}}Identity.outputs.principalId
+          principalType: 'ServicePrincipal'
+          roleDefinitionIdOrName: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '090c5cfd-751d-490a-894a-3ce6f1109419')
+        }
+        {{- end}}
+      ]
+    )
     disableLocalAuth: true
     queues: [
       {{- range $queue := .ServiceBus.Queues}}

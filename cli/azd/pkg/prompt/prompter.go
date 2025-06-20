@@ -94,7 +94,7 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 
 	if !p.accountManager.HasDefaultSubscription() {
 		if _, err := p.accountManager.SetDefaultSubscription(ctx, subscriptionId); err != nil {
-			log.Printf("failed setting default subscription. %s\n", err.Error())
+			log.Printf("failed setting default subscription. %v\n", err)
 		}
 	}
 
@@ -115,7 +115,7 @@ func (p *DefaultPrompter) PromptLocation(
 
 	if !p.accountManager.HasDefaultLocation() {
 		if _, err := p.accountManager.SetDefaultLocation(ctx, subId, loc); err != nil {
-			log.Printf("failed setting default location. %s\n", err.Error())
+			log.Printf("failed setting default location. %v\n", err)
 		}
 	}
 

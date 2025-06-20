@@ -81,7 +81,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 
 	defer func() {
 		if err := grpcServer.Stop(); err != nil {
-			log.Printf("failed to stop gRPC server: %s\n", err.Error())
+			log.Printf("failed to stop gRPC server: %v\n", err)
 		}
 	}()
 
@@ -127,7 +127,7 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 			readyCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			defer cancel()
 			if err := extension.WaitUntilReady(readyCtx); err != nil {
-				log.Printf("extension '%s' failed to become ready: %s\n", extension.Id, err.Error())
+				log.Printf("extension '%s' failed to become ready: %v\n", extension.Id, err)
 			}
 		}(extension, jwtToken)
 	}

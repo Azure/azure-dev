@@ -124,7 +124,7 @@ func (p *Confirm) Ask(ctx context.Context) (*bool, error) {
 
 	done := func() {
 		if err := p.canvas.Update(); err != nil {
-			log.Printf("Error updating canvas: %s\n", err.Error())
+			log.Printf("Error updating canvas: %v\n", err)
 		}
 	}
 

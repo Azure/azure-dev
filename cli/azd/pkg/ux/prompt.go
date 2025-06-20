@@ -138,7 +138,7 @@ func (p *Prompt) Ask(ctx context.Context) (string, error) {
 
 	done := func() {
 		if err := p.canvas.Update(); err != nil {
-			log.Printf("Error updating canvas: %s\n", err.Error())
+			log.Printf("Error updating canvas: %v\n", err)
 		}
 	}
 

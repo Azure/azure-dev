@@ -48,4 +48,4 @@ test-results/
 *.terraform*
 
 # Finder state files
-.DS_Store
+.DS_Storeazd

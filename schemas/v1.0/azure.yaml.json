@@ -10,7 +10,9 @@
         "name": {
             "type": "string",
             "minLength": 2,
-            "title": "Name of the application"
+            "title": "Name of the application",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "description": "The application name. Only letters, numbers, underscores, and hyphens are allowed. Characters like /, \\, spaces, or other special symbols are not permitted."
         },
         "resourceGroup": {
             "type": "string",

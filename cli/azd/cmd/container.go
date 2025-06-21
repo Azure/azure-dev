@@ -53,6 +53,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
 	"github.com/azure/azure-dev/cli/azd/pkg/kustomize"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
@@ -544,6 +545,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return serviceManager, err
 		})
 	})
+	container.MustRegisterSingleton(llm.NewManager)
 	container.MustRegisterSingleton(repository.NewInitializer)
 	container.MustRegisterSingleton(alpha.NewFeaturesManager)
 	container.MustRegisterSingleton(config.NewUserConfigManager)

@@ -136,10 +136,12 @@ jmes
 jquery
 keychain
 kubelogin
+langchaingo
 LASTEXITCODE
 ldflags
 lechnerc77
 libc
+llms
 memfs
 mergo
 mgmt

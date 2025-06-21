@@ -354,11 +354,12 @@ func (p *BicepProvider) promptForParameter(
 		defaultOption := options[0]
 		// user can override the default value with azd metadata
 		if azdMetadata.Default != nil {
-			if !slices.Contains(options, *azdMetadata.Default) {
+			defaultValStr := fmt.Sprintf("%v", azdMetadata.Default)
+			if !slices.Contains(options, defaultValStr) {
 				return nil, fmt.Errorf(
-					"default value '%s' is not in the allowed values for parameter '%s'", *azdMetadata.Default, key)
+					"default value '%s' is not in the allowed values for parameter '%s'", defaultValStr, key)
 			}
-			defaultOption = *azdMetadata.Default
+			defaultOption = defaultValStr
 		}
 
 		choice, err := p.console.Select(ctx, input.ConsoleOptions{
@@ -378,17 +379,32 @@ func (p *BicepProvider) promptForParameter(
 		}
 		switch paramType {
 		case provisioning.ParameterTypeBoolean:
-			options := []string{"False", "True"}
-			choice, err := p.console.Select(ctx, input.ConsoleOptions{
+			defaultBool := true
+			if azdMetadata.Default != nil {
+				switch v := azdMetadata.Default.(type) {
+				case bool:
+					defaultBool = v
+				case string:
+					defaultBool = strings.EqualFold(v, "true")
+				default:
+					strVal := fmt.Sprintf("%v", v)
+					defaultBool = strings.EqualFold(strVal, "true")
+				}
+			}
+			msg := fmt.Sprintf("Would you like to set the '%s' infrastructure %s to %t?", key, securedParam, defaultBool)
+			confirmValue, err := p.console.Confirm(ctx, input.ConsoleOptions{
 				Message:      msg,
 				Help:         help,
-				Options:      options,
-				DefaultValue: defaultValueForPrompt,
+				DefaultValue: true,
 			})
 			if err != nil {
 				return nil, err
 			}
-			value = (options[choice] == "True")
+			if confirmValue {
+				value = defaultBool
+			} else {
+				value = !defaultBool
+			}
 		case provisioning.ParameterTypeNumber:
 			userValue, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
 				Message:      msg,

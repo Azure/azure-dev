@@ -282,6 +282,34 @@ func (d *Cli) Name() string {
 	return "Docker"
 }
 
+// IsContainerdEnabled checks if Docker is using containerd as the image store
+func (d *Cli) IsContainerdEnabled(ctx context.Context) (bool, error) {
+	// First, try to check for containerd-specific features
+	result, err := d.executeCommand(ctx, "", "system", "info", "--format", "{{.Driver}}")
+	if err != nil {
+		return false, fmt.Errorf("checking docker driver: %w", err)
+	}
+	
+	driver := strings.TrimSpace(result.Stdout)
+	
+	// Check for containerd-based storage drivers
+	if driver == "containerd" || strings.Contains(driver, "containerd") {
+		return true, nil
+	}
+	
+	// Additional check: Look for containerd namespace information which is present when containerd image store is used
+	result, err = d.executeCommand(ctx, "", "system", "info", "--format", "{{.Containerd}}")
+	if err == nil && strings.TrimSpace(result.Stdout) != "<no value>" && strings.TrimSpace(result.Stdout) != "" {
+		// If there's containerd info with namespaces, it's likely using containerd image store
+		infoResult, infoErr := d.executeCommand(ctx, "", "system", "info", "--format", "{{.Containerd.Namespaces}}")
+		if infoErr == nil && strings.Contains(strings.TrimSpace(infoResult.Stdout), "moby") {
+			return true, nil
+		}
+	}
+	
+	return false, nil
+}
+
 func (d *Cli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
 	runArgs := exec.NewRunArgs("docker", args...).
 		WithCwd(cwd)

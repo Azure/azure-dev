@@ -246,3 +246,66 @@ func TestNewPackCliUpgrade(t *testing.T) {
 
 	require.Equal(t, "pack cli", string(contents))
 }
+
+
+func Test_PackCli_BuildWithContainerdSupport(t *testing.T) {
+	tests := []struct {
+		name                string
+		isContainerdEnabled bool
+	}{
+		{
+			name:                "Without containerd",
+			isContainerdEnabled: false,
+		},
+		{
+			name:                "With containerd",
+			isContainerdEnabled: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+
+			// Mock the pack config experimental call
+			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "pack config experimental")
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				return exec.RunResult{ExitCode: 0}, nil
+			})
+
+			// Mock the pack build call
+			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "pack build")
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				// Verify the DOCKER_BUILDKIT=0 environment variable is set when containerd is enabled
+				buildkitDisabled := false
+				for _, envVar := range args.Env {
+					if envVar == "DOCKER_BUILDKIT=0" {
+						buildkitDisabled = true
+						break
+					}
+				}
+
+				require.Equal(t, tt.isContainerdEnabled, buildkitDisabled, 
+					"Expected DOCKER_BUILDKIT=0 environment variable to be %v", tt.isContainerdEnabled)
+
+				return exec.RunResult{ExitCode: 0}, nil
+			})
+
+			cli := NewPackCliWithPath(mockContext.CommandRunner, "pack")
+
+			err := cli.BuildWithContainerdSupport(
+				*mockContext.Context,
+				"/path/to/app",
+				"builder",
+				"image:tag",
+				[]string{},
+				nil,
+				tt.isContainerdEnabled,
+			)
+
+			require.NoError(t, err)
+		})
+	}
+}

@@ -537,14 +537,53 @@ func (p *dockerProject) packBuild(
 		)
 	}
 
-	err = packCli.Build(
+	// Check if containerd is enabled to adjust pack CLI behavior
+	isContainerdEnabled, err := p.docker.IsContainerdEnabled(ctx)
+	if err != nil {
+		log.Printf("warning: failed to detect containerd status: %v", err)
+		isContainerdEnabled = false
+	}
+
+	err = packCli.BuildWithContainerdSupport(
 		ctx,
 		buildContext,
 		builder,
 		imageName,
 		environ,
-		previewer)
+		previewer,
+		isContainerdEnabled)
 	p.console.StopPreviewer(ctx, false)
+	
+	// If build fails and it looks like a containerd issue, try again with containerd workarounds
+	if err != nil {
+		if strings.Contains(err.Error(), "failed to write image") && strings.Contains(err.Error(), "No such image") {
+			p.console.Message(ctx, "Detected potential containerd compatibility issue, retrying with workarounds...")
+			
+			// Start previewer again for retry
+			previewer = p.console.ShowPreviewer(ctx,
+				&input.ShowPreviewerOptions{
+					Prefix:       "  ",
+					MaxLineCount: 8,
+					Title:        "Docker (pack) Output - Retry",
+				})
+			
+			// Force containerd compatibility mode
+			retryErr := packCli.BuildWithContainerdSupport(
+				ctx,
+				buildContext,
+				builder,
+				imageName,
+				environ,
+				previewer,
+				true) // Force containerd compatibility
+			p.console.StopPreviewer(ctx, false)
+			
+			if retryErr == nil {
+				err = nil // Success on retry
+			}
+		}
+	}
+	
 	if err != nil {
 		span.EndWithStatus(err)
 
@@ -556,6 +595,16 @@ func (p *dockerProject) packBuild(
 					fmt.Sprintf(
 						"\nSuggested action: Author a Dockerfile and save it as %s",
 						filepath.Join(svc.Path(), dockerOptions.Path)),
+			}
+		}
+
+		// Provide better error message for containerd-related issues
+		if strings.Contains(err.Error(), "failed to write image") && strings.Contains(err.Error(), "No such image") {
+			return nil, &internal.ErrorWithSuggestion{
+				Err: err,
+				Suggestion: "This error typically occurs when Docker is configured to use containerd image store, which may cause compatibility issues with pack CLI. " +
+					"Consider disabling 'Use containerd for pulling and storing images' in Docker Desktop settings, " +
+					"or try running the command again as this may be a transient issue.",
 			}
 		}
 

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -36,9 +37,12 @@ func Test_CLI_EnvCommandsWorkWhenLoggedOut(t *testing.T) {
 	envNew(ctx, t, cli, "env1", true)
 	envNew(ctx, t, cli, "env2", true)
 
-	// set a private config dir, this well ensure we are logged out.
+	// set a private config dir, this will ensure we are logged out.
 	configDir := t.TempDir()
-	t.Setenv("AZD_CONFIG_DIR", configDir)
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+configDir)
+	// disable telemetry that would write to the temporary directory we create here
+	cli.Env = append(cli.Env, "AZURE_DEV_COLLECT_TELEMETRY=no")
 
 	// check to make sure we are logged out as expected.
 	res, err := cli.RunCommand(ctx, "auth", "login", "--check-status", "--output", "json")

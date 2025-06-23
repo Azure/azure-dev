@@ -380,11 +380,22 @@ func (p *BicepProvider) promptForParameter(
 		switch paramType {
 		case provisioning.ParameterTypeBoolean:
 			options := []string{"False", "True"}
-			if str, ok := defaultValueForPrompt.(string); ok {
-				if strings.EqualFold(str, "false") {
-					defaultValueForPrompt = "False"
-				} else if strings.EqualFold(str, "true") {
-					defaultValueForPrompt = "True"
+			if defaultValueForPrompt != nil {
+				switch v := defaultValueForPrompt.(type) {
+				case bool:
+					if v {
+						defaultValueForPrompt = "True"
+					} else {
+						defaultValueForPrompt = "False"
+					}
+				case string:
+					if strings.EqualFold(v, "true") {
+						defaultValueForPrompt = "True"
+					} else if strings.EqualFold(v, "false") {
+						defaultValueForPrompt = "False"
+					}
+				default:
+					return nil, fmt.Errorf("unsupported default value type %T for bool parameter: %v", v, key)
 				}
 			}
 			choice, err := p.console.Select(ctx, input.ConsoleOptions{
@@ -398,6 +409,17 @@ func (p *BicepProvider) promptForParameter(
 			}
 			value = (options[choice] == "True")
 		case provisioning.ParameterTypeNumber:
+			if defaultValueForPrompt != nil {
+				switch v := defaultValueForPrompt.(type) {
+				case int:
+					defaultValueForPrompt = fmt.Sprintf("%d", v)
+				case float64:
+					defaultValueForPrompt = fmt.Sprintf("%d", int(v))
+				case string:
+				default:
+					return nil, fmt.Errorf("unsupported default value type %T for number parameter: %v", v, key)
+				}
+			}
 			userValue, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
 				Message:      msg,
 				Help:         help,

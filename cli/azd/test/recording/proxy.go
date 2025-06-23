@@ -221,7 +221,8 @@ func (p *connectHandler) connectThenServe(clientConn net.Conn, connectReq *http.
 
 		var errno syscall.Errno
 		if errors.Is(err, io.EOF) ||
-			errors.As(err, &errno) && errno == 10054 { // errno 10054: WSAECONNRESET on Windows, client forcibly closes connection
+			// errno 10054: WSAECONNRESET on Windows, client forcibly closes connection
+			errors.As(err, &errno) && errno == 10054 {
 			return
 		}
 

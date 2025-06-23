@@ -375,36 +375,28 @@ func (p *BicepProvider) promptForParameter(
 	} else {
 		var defaultValueForPrompt any
 		if azdMetadata.Default != nil {
-			defaultValueForPrompt = fmt.Sprintf("%v", *azdMetadata.Default)
+			defaultValueForPrompt = azdMetadata.Default
 		}
 		switch paramType {
 		case provisioning.ParameterTypeBoolean:
-			defaultBool := true
-			if azdMetadata.Default != nil {
-				switch v := azdMetadata.Default.(type) {
-				case bool:
-					defaultBool = v
-				case string:
-					defaultBool = strings.EqualFold(v, "true")
-				default:
-					strVal := fmt.Sprintf("%v", v)
-					defaultBool = strings.EqualFold(strVal, "true")
+			options := []string{"False", "True"}
+			if str, ok := defaultValueForPrompt.(string); ok {
+				if strings.EqualFold(str, "false") {
+					defaultValueForPrompt = "False"
+				} else if strings.EqualFold(str, "true") {
+					defaultValueForPrompt = "True"
 				}
 			}
-			msg := fmt.Sprintf("Would you like to set the '%s' infrastructure %s to %t?", key, securedParam, defaultBool)
-			confirmValue, err := p.console.Confirm(ctx, input.ConsoleOptions{
+			choice, err := p.console.Select(ctx, input.ConsoleOptions{
 				Message:      msg,
 				Help:         help,
-				DefaultValue: true,
+				Options:      options,
+				DefaultValue: defaultValueForPrompt,
 			})
 			if err != nil {
 				return nil, err
 			}
-			if confirmValue {
-				value = defaultBool
-			} else {
-				value = !defaultBool
-			}
+			value = (options[choice] == "True")
 		case provisioning.ParameterTypeNumber:
 			userValue, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
 				Message:      msg,

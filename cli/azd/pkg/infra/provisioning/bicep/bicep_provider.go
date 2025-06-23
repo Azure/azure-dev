@@ -192,8 +192,7 @@ func defaultPromptValue(locationParam azure.ArmTemplateParameterDefinition) *str
 		azdMetadata.Default != nil {
 		// Metadata using location type and a default location. This is the highest priority.
 		defaultStr := fmt.Sprintf("%v", azdMetadata.Default)
-		tmp := defaultStr
-		return &tmp
+		return &defaultStr
 	}
 
 	if locationParam.AllowedValues != nil {

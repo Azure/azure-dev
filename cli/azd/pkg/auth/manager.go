@@ -1156,7 +1156,10 @@ type LogInDetails struct {
 	Account   string
 }
 
-// LogInDetails method for Manager to return login details
+// LogInDetails contains information about the currently logged in user.
+// It provides details about the type of login (email-based or client ID-based)
+// and the account identifier. When legacy authentication is used, it will
+// return the account name from the az CLI.
 func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 	userConfig, err := m.userConfigManager.Load()
 	if err != nil {

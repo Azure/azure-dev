@@ -388,12 +388,6 @@ func (p *BicepProvider) promptForParameter(
 					} else {
 						defaultValueForPrompt = "False"
 					}
-				case string:
-					if strings.EqualFold(v, "true") {
-						defaultValueForPrompt = "True"
-					} else if strings.EqualFold(v, "false") {
-						defaultValueForPrompt = "False"
-					}
 				default:
 					return nil, fmt.Errorf("unsupported default value type %T for bool parameter: %v", v, key)
 				}
@@ -415,7 +409,6 @@ func (p *BicepProvider) promptForParameter(
 					defaultValueForPrompt = fmt.Sprintf("%d", v)
 				case float64:
 					defaultValueForPrompt = fmt.Sprintf("%d", int(v))
-				case string:
 				default:
 					return nil, fmt.Errorf("unsupported default value type %T for number parameter: %v", v, key)
 				}

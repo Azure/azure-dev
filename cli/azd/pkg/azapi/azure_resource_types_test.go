@@ -18,7 +18,7 @@ func TestGetResourceTypeDisplayName(t *testing.T) {
 		{
 			name:         "AutomationAccount",
 			resourceType: AzureResourceTypeAutomationAccount,
-			expected:     "Automation Accounts",
+			expected:     "Automation account",
 		},
 		{
 			name:         "StorageAccount",

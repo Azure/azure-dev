@@ -71,7 +71,7 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 	case AzureResourceTypeAppInsightComponent:
 		return "Application Insights"
 	case AzureResourceTypeAutomationAccount:
-		return "Automation Accounts"
+		return "Automation account"
 	case AzureResourceTypeLogAnalyticsWorkspace:
 		return "Log Analytics workspace"
 	case AzureResourceTypeWebSite:

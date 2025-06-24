@@ -27,7 +27,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -95,7 +94,6 @@ type Manager struct {
 	configManager       config.FileConfigManager
 	userConfigManager   config.UserConfigManager
 	credentialCache     Cache
-	ghClient            *github.FederatedTokenClient
 	httpClient          HttpClient
 	console             input.Console
 	externalAuthCfg     ExternalAuthConfiguration
@@ -148,8 +146,6 @@ func NewManager(
 		return nil, fmt.Errorf("creating msal client: %w", err)
 	}
 
-	ghClient := github.NewFederatedTokenClient(nil)
-
 	return &Manager{
 		publicClient:        &msalPublicClientAdapter{client: &publicClientApp},
 		publicClientOptions: options,
@@ -157,7 +153,6 @@ func NewManager(
 		configManager:       configManager,
 		userConfigManager:   userConfigManager,
 		credentialCache:     newCredentialCache(authRoot),
-		ghClient:            ghClient,
 		httpClient:          httpClient,
 		console:             console,
 		externalAuthCfg:     externalAuthCfg,
@@ -548,11 +543,22 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 
 	switch provider {
 	case gitHubFederatedTokenProvider:
+		token, has := os.LookupEnv("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+		if !has {
+			return nil, errors.New("no ACTIONS_ID_TOKEN_REQUEST_TOKEN set in environment.")
+		}
+
+		tokenUrl, has := os.LookupEnv("ACTIONS_ID_TOKEN_REQUEST_URL")
+		if !has {
+			return nil, errors.New("no ACTIONS_ID_TOKEN_REQUEST_URL set in the environment")
+		}
+
+		federatedTokenClient := NewFederatedTokenClient(tokenUrl, token, clientOptions)
 		cred, err := azidentity.NewClientAssertionCredential(
 			tenantID,
 			clientID,
 			func(ctx context.Context) (string, error) {
-				federatedToken, err := m.ghClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
+				federatedToken, err := federatedTokenClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
 				if err != nil {
 					return "", fmt.Errorf("fetching federated token: %w", err)
 				}
@@ -590,6 +596,62 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 		}
 
 		return cred, nil
+	case oidcFederatedTokenProvider:
+		idToken, idTokenHas := os.LookupEnv("AZURE_OIDC_TOKEN")
+		if idTokenHas {
+			cred, err := azidentity.NewClientAssertionCredential(
+				tenantID,
+				clientID,
+				func(ctx context.Context) (string, error) {
+					return idToken, nil
+				},
+				&azidentity.ClientAssertionCredentialOptions{
+					ClientOptions: clientOptions,
+				})
+			if err != nil {
+				return nil, fmt.Errorf("creating credential: %w", err)
+			}
+
+			return cred, nil
+		}
+
+		token, tokenHas := os.LookupEnv("AZURE_OIDC_REQUEST_TOKEN")
+		tokenUrl, tokenUrlHas := os.LookupEnv("AZURE_OIDC_REQUEST_URL")
+
+		if !idTokenHas && !tokenHas && !tokenUrlHas {
+			//nolint:lll
+			return nil, errors.New(`missing required values. Please set either:
+- AZURE_OIDC_TOKEN (most common in typical setups; provide your ID token directly), OR
+- Both AZURE_OIDC_REQUEST_TOKEN and AZURE_OIDC_REQUEST_URL (used when your CI provider requires an additional token exchange; less common)`)
+		}
+		if !tokenHas {
+			return nil, errors.New("missing required environment variable: AZURE_OIDC_REQUEST_TOKEN")
+		}
+		if !tokenUrlHas {
+			return nil, errors.New("missing required environment variable: AZURE_OIDC_REQUEST_URL")
+		}
+
+		federatedTokenClient := NewFederatedTokenClient(tokenUrl, token, clientOptions)
+		cred, err := azidentity.NewClientAssertionCredential(
+			tenantID,
+			clientID,
+			func(ctx context.Context) (string, error) {
+				federatedToken, err := federatedTokenClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
+				if err != nil {
+					return "", fmt.Errorf("fetching federated token: %w", err)
+				}
+
+				return federatedToken, nil
+			},
+			&azidentity.ClientAssertionCredentialOptions{
+				ClientOptions: clientOptions,
+			})
+		if err != nil {
+			return nil, fmt.Errorf("creating credential: %w", err)
+		}
+
+		return cred, nil
+
 	default:
 		return nil, fmt.Errorf("unsupported federated token provider: '%s'", string(provider))
 	}
@@ -859,6 +921,29 @@ func (m *Manager) LoginWithAzurePipelinesFederatedTokenProvider(
 	return cred, nil
 }
 
+func (m *Manager) LoginWithOidcFederatedTokenProvider(
+	ctx context.Context, tenantId, clientId string,
+) (azcore.TokenCredential, error) {
+	cred, err := m.newCredentialFromFederatedTokenProvider(tenantId, clientId, oidcFederatedTokenProvider, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := m.saveLoginForServicePrincipal(
+		tenantId,
+		clientId,
+		&persistedSecret{
+			FederatedAuth: &federatedAuth{
+				TokenProvider: &oidcFederatedTokenProvider,
+			},
+		},
+	); err != nil {
+		return nil, err
+	}
+
+	return cred, nil
+}
+
 // Logout signs out the current user and removes any cached authentication information
 func (m *Manager) Logout(ctx context.Context) error {
 	act, err := m.getSignedInAccount(ctx)
@@ -1100,6 +1185,7 @@ type persistedSecret struct {
 var (
 	gitHubFederatedTokenProvider         federatedTokenProvider = "github"
 	azurePipelinesFederatedTokenProvider federatedTokenProvider = "azure-pipelines"
+	oidcFederatedTokenProvider           federatedTokenProvider = "oidc"
 )
 
 // token provider for federated auth

@@ -161,6 +161,7 @@ nodeapp
 nolint
 nologo
 notrail
+ollama
 omitempty
 oneauth
 oneline

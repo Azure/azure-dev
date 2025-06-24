@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -60,11 +61,13 @@ func newVersionAction(
 func (v *versionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	switch v.formatter.Kind() {
 	case output.NoneFormat:
-		llmInfo, err := v.llmManager.Info()
+		fmt.Fprintf(v.console.Handles().Stdout, "azd version %s\n", internal.Version)
+		time.Sleep(500 * time.Millisecond)
+		_, err := v.llmManager.Info(v.console.Handles().Stdout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get LLM info: %w", err)
 		}
-		fmt.Fprintf(v.console.Handles().Stdout, "azd version %s\n%s\n", internal.Version, llmInfo)
+		fmt.Fprintf(v.console.Handles().Stdout, "\n")
 	case output.JsonFormat:
 		var result contracts.VersionResult
 		versionSpec := internal.VersionInfo()

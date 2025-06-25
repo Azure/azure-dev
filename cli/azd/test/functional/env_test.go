@@ -125,7 +125,7 @@ func Test_CLI_Env_Management(t *testing.T) {
 	envName3 := randomEnvName()
 	_, _ = cli.RunCommandWithStdIn(
 		ctx,
-		"Create a new environment\n"+envName3+"\n",
+		"Create a new environment\n"+envName3+"\ny\n",
 		cmdNeedingEnv...)
 	environmentList = envList(ctx, t, cli)
 	require.Len(t, environmentList, 3)
@@ -333,10 +333,10 @@ func envNew(ctx context.Context, t *testing.T, cli *azdcli.CLI, envName string, 
 
 	if usePrompt {
 		runArgs := append(defaultArgs, args...)
-		_, err := cli.RunCommandWithStdIn(ctx, envName+"\n", runArgs...)
+		_, err := cli.RunCommandWithStdIn(ctx, envName+"\ny\n", runArgs...)
 		require.NoError(t, err)
 	} else {
-		runArgs := append(defaultArgs, envName, "--subscription", cfg.SubscriptionID, "-l", cfg.Location)
+		runArgs := append(defaultArgs, envName, "--no-prompt", "--subscription", cfg.SubscriptionID, "-l", cfg.Location)
 		runArgs = append(runArgs, args...)
 		_, err := cli.RunCommand(ctx, runArgs...)
 		require.NoError(t, err)

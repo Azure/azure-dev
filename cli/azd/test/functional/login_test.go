@@ -32,6 +32,11 @@ func Test_CLI_LoginStatus(t *testing.T) {
 		require.Fail(t, "User isn't currently logged in. Rerun this test with a logged in user to pass the test.")
 	case contracts.LoginStatusSuccess:
 		require.NotNil(t, loginResult.ExpiresOn)
+		// When authenticated, account information should be present
+		require.NotNil(t, loginResult.Account, "Account should be present when authenticated")
+		require.NotEmpty(t, *loginResult.Account, "Account should not be empty when authenticated")
+		require.NotNil(t, loginResult.LoginType, "LoginType should be present when authenticated")
+		require.NotEmpty(t, *loginResult.LoginType, "LoginType should not be empty when authenticated")
 	default:
 		require.Fail(t, "Unexpected login status: %s", loginResult.Status)
 	}
@@ -51,6 +56,11 @@ func Test_CLI_AuthLoginStatus(t *testing.T) {
 		require.Fail(t, "User isn't currently logged in. Rerun this test with a logged in user to pass the test.")
 	case contracts.LoginStatusSuccess:
 		require.NotNil(t, loginResult.ExpiresOn)
+		// When authenticated, account information should be present
+		require.NotNil(t, loginResult.Account, "Account should be present when authenticated")
+		require.NotEmpty(t, *loginResult.Account, "Account should not be empty when authenticated")
+		require.NotNil(t, loginResult.LoginType, "LoginType should be present when authenticated")
+		require.NotEmpty(t, *loginResult.LoginType, "LoginType should not be empty when authenticated")
 	default:
 		require.Fail(t, "Unexpected login status: %s", loginResult.Status)
 	}

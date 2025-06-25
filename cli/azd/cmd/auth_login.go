@@ -311,6 +311,14 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		} else {
 			res.Status = contracts.LoginStatusSuccess
 			res.ExpiresOn = &token.ExpiresOn
+
+			// Get user account information for both JSON and non-JSON output
+			details, detailsErr := la.authManager.LogInDetails(ctx)
+			if detailsErr == nil {
+				res.Account = &details.Account
+				loginType := string(details.LoginType)
+				res.LoginType = &loginType
+			}
 		}
 
 		if la.formatter.Kind() != output.NoneFormat {
@@ -326,12 +334,24 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				panic("Unhandled login status")
 			}
 
-			// get user account information - login --check-status
-			details, err := la.authManager.LogInDetails(ctx)
+			// Get user account information - login --check-status
+			// If we already have account details from above, use them, otherwise try to get them again
+			var details *auth.LogInDetails
+			var detailsErr error
+			if res.Account != nil && res.LoginType != nil {
+				details = &auth.LogInDetails{
+					Account:   *res.Account,
+					LoginType: auth.LoginType(*res.LoginType),
+				}
+			} else {
+				details, detailsErr = la.authManager.LogInDetails(ctx)
+			}
 
 			// error getting user account or not logged in
-			if err != nil {
-				log.Printf("error: getting signed in account: %v", err)
+			if detailsErr != nil || details == nil {
+				if detailsErr != nil {
+					log.Printf("error: getting signed in account: %v", detailsErr)
+				}
 				fmt.Fprintln(la.console.Handles().Stdout, msg)
 				return nil, nil
 			}

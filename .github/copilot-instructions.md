@@ -16,12 +16,6 @@ This is the Azure Developer CLI - a Go-based CLI tool for managing Azure applica
   ```
 
 ### Development flow
-**Prerequisites:**
-- [Go](https://go.dev/dl/) 1.24
-- [cspell](https://github.com/streetsidesoftware/cspell)
-- [golangci-lint](https://golangci-lint.run/)
-
-If any of these tools aren't installed, install them first before proceeding.
 
 **Build `azd` binary:**
 ```bash
@@ -61,11 +55,6 @@ When preparing a new release changelog, update `cli/azd/CHANGELOG.md` and `cli/v
 Rename any existing `## 1.x.x-beta.1 (Unreleased)` section to the version being released, without the `-beta.1` and `Unreleased` parts. Do the same for `cli/version.txt`.
 
 ### Step 2: Gather commits
-**IMPORTANT**: Ensure you have the latest commits from main by first running these `git fetch` commands:
-```bash
-git fetch --unshallow origin && git fetch origin main:refs/remotes/origin/main
-```
-
 **Find cutoff commit**: 
 ```bash
 git --no-pager log --grep="Increment CLI version" --invert-grep -n 3 --follow -p -- cli/azd/CHANGELOG.md

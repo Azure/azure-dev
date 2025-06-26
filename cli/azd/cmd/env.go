@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -872,30 +874,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		environmentName = en.args[0]
 	}
 
-	// Validate environment type if specified
 	envType := en.flags.envType
-	if envType != "" {
-		// Get allowed environment types
-		envTypes, err := en.azdCtx.GetEnvironmentTypes()
-		if err != nil {
-			return nil, fmt.Errorf("getting environment types: %w", err)
-		}
-
-		// If no environment types exist yet, set up the default ones
-		if len(envTypes) == 0 {
-			envTypes = []string{"dev", "prod"}
-			err = en.azdCtx.SetProjectState(azdcontext.ProjectState{EnvironmentTypes: envTypes})
-			if err != nil {
-				return nil, fmt.Errorf("initializing environment types: %w", err)
-			}
-		}
-
-		// Check if the specified type is valid
-		if !slices.Contains(envTypes, envType) {
-			return nil, fmt.Errorf("environment type '%s' is not valid. Valid types are: %s", envType, strings.Join(envTypes, ", "))
-		}
-	}
-
 	envSpec := environment.Spec{
 		Name:         environmentName,
 		Subscription: en.flags.subscription,
@@ -908,15 +887,58 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
 
-	// Set the default environment in project state
-	state := azdcontext.ProjectState{
-		DefaultEnvironment: env.Name(),
+	// Create environment-specific project file if environment type is specified
+	if envType != "" {
+		envProjectFileName := azdcontext.ProjectFileNameForEnvironmentType(envType)
+		envProjectPath := filepath.Join(en.azdCtx.ProjectDirectory(), envProjectFileName)
+
+		if _, err := os.Stat(envProjectPath); os.IsNotExist(err) {
+			// Check for current project file to copy from
+			currentProjectFileName := en.azdCtx.ProjectFileName()
+			currentProjectPath := en.azdCtx.ProjectPath()
+			shouldCopy := false
+
+			if _, err := os.Stat(currentProjectPath); err == nil {
+				// Prompt user if they want to copy content from azure.yaml
+				shouldCopy, err = en.console.Confirm(ctx, input.ConsoleOptions{
+					Message:      fmt.Sprintf("Copy contents of %s to %s?", currentProjectFileName, envProjectFileName),
+					DefaultValue: true,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("prompting to copy azure.yaml content: %w", err)
+				}
+			} else {
+				fmt.Printf("Error checking for %s: %v\n", currentProjectFileName, err)
+			}
+
+			if shouldCopy {
+				content, err := os.ReadFile(currentProjectPath)
+				if err != nil {
+					return nil, fmt.Errorf("reading main project file: %w", err)
+				}
+
+				if err := os.WriteFile(envProjectPath, content, osutil.PermissionFile); err != nil {
+					return nil, fmt.Errorf("creating environment project file: %w", err)
+				}
+
+				en.console.MessageUxItem(ctx, &ux.DoneMessage{
+					Message: fmt.Sprintf("Created %s", envProjectFileName),
+				})
+			} else {
+				_, err = project.New(ctx, envProjectPath, azdcontext.ProjectName(en.azdCtx.ProjectDirectory()))
+				if err != nil {
+					return nil, fmt.Errorf("creating empty project file: %w", err)
+				}
+
+				en.console.MessageUxItem(ctx, &ux.DoneMessage{
+					Message: fmt.Sprintf("Created empty %s", envProjectFileName),
+				})
+			}
+		}
 	}
 
-	// Keep existing environment types
-	existingTypes, err := en.azdCtx.GetEnvironmentTypes()
-	if err == nil && existingTypes != nil && len(existingTypes) > 0 {
-		state.EnvironmentTypes = existingTypes
+	state := azdcontext.ProjectState{
+		DefaultEnvironment: env.Name(),
 	}
 
 	if err := en.azdCtx.SetProjectState(state); err != nil {

@@ -12,103 +12,210 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProjectFileNameForEnvironment(t *testing.T) {
-	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("", "azd-test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+// setupTestEnv creates a test environment with the given name and environment type
+func setupTestEnv(t *testing.T, azdDir, envName, envType string) {
+	t.Helper()
 
-	// Create azd context
-	azdCtx := &AzdContext{
-		projectDirectory: tempDir,
+	envDir := filepath.Join(azdDir, envName)
+	require.NoError(t, os.MkdirAll(envDir, 0755))
+
+	envPath := filepath.Join(envDir, DotEnvFileName)
+	content := "AZURE_ENV_NAME=" + envName + "\n"
+	if envType != "" {
+		content += "AZURE_ENV_TYPE=" + envType + "\n"
+	}
+	require.NoError(t, os.WriteFile(envPath, []byte(content), 0644))
+}
+
+// setupDefaultEnv sets up the default environment configuration
+func setupDefaultEnv(t *testing.T, azdDir, defaultEnvName string) {
+	t.Helper()
+
+	configPath := filepath.Join(azdDir, ConfigFileName)
+	config := `{"version": 1, "defaultEnvironment": "` + defaultEnvName + `"}`
+	require.NoError(t, os.WriteFile(configPath, []byte(config), 0644))
+}
+
+func TestProjectFileNameForEnvironment(t *testing.T) {
+	tests := []struct {
+		name       string
+		envName    string
+		envType    string
+		defaultEnv string
+		expected   string
+	}{
+		{
+			name:     "no default environment",
+			envName:  "",
+			expected: "azure.yaml",
+		},
+		{
+			name:     "dev type",
+			envName:  "TESTENV",
+			envType:  "dev",
+			expected: "azure.dev.yaml",
+		},
+		{
+			name:     "prod type",
+			envName:  "TESTENV",
+			envType:  "prod",
+			expected: "azure.prod.yaml",
+		},
+		{
+			name:     "non-existent environment",
+			envName:  "nonexistent",
+			expected: "azure.yaml",
+		},
+		{
+			name:     "existing environment without type",
+			envName:  "TESTENV",
+			envType:  "", // explicitly no type
+			expected: "azure.yaml",
+		},
+		{
+			name:       "default environment set",
+			envName:    "",
+			envType:    "dev",
+			defaultEnv: "TESTENV1",
+			expected:   "azure.dev.yaml",
+		},
+		{
+			name:       "default environment without type",
+			envName:    "",
+			envType:    "", // default env has no type
+			defaultEnv: "TESTENV",
+			expected:   "azure.yaml",
+		},
 	}
 
-	// Create .azure directory and environment configs
-	azdDir := filepath.Join(tempDir, EnvironmentDirectoryName)
-	require.NoError(t, os.MkdirAll(azdDir, 0755))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			azdCtx := NewAzdContextWithDirectory(t.TempDir())
+			azdDir := filepath.Join(azdCtx.ProjectDirectory(), EnvironmentDirectoryName)
+			require.NoError(t, os.MkdirAll(azdDir, 0755))
 
-	// Test default environment behavior (should use azure.yaml when no default environment)
-	t.Run("no default environment", func(t *testing.T) {
-		fileName := azdCtx.ProjectFileNameForEnvironment("")
-		assert.Equal(t, "azure.yaml", fileName)
-	})
+			// Setup test environment if specified
+			if tt.envName != "" {
+				setupTestEnv(t, azdDir, tt.envName, tt.envType)
+			}
+			if tt.defaultEnv != "" && tt.envName == "" {
+				setupTestEnv(t, azdDir, tt.defaultEnv, tt.envType)
+				setupDefaultEnv(t, azdDir, tt.defaultEnv)
+			}
 
-	// Create a dev environment with type
-	devEnvDir := filepath.Join(azdDir, "dev")
-	require.NoError(t, os.MkdirAll(devEnvDir, 0755))
-	devConfigPath := filepath.Join(devEnvDir, ConfigFileName)
-	devConfig := `{"version": 1, "environmentType": "dev"}`
-	require.NoError(t, os.WriteFile(devConfigPath, []byte(devConfig), 0644))
-
-	// Create a prod environment with type
-	prodEnvDir := filepath.Join(azdDir, "prod")
-	require.NoError(t, os.MkdirAll(prodEnvDir, 0755))
-	prodConfigPath := filepath.Join(prodEnvDir, ConfigFileName)
-	prodConfig := `{"version": 1, "environmentType": "prod"}`
-	require.NoError(t, os.WriteFile(prodConfigPath, []byte(prodConfig), 0644))
-
-	// Test dev environment
-	t.Run("dev environment", func(t *testing.T) {
-		fileName := azdCtx.ProjectFileNameForEnvironment("dev")
-		assert.Equal(t, "azure.dev.yaml", fileName)
-	})
-
-	// Test prod environment
-	t.Run("prod environment", func(t *testing.T) {
-		fileName := azdCtx.ProjectFileNameForEnvironment("prod")
-		assert.Equal(t, "azure.prod.yaml", fileName)
-	})
-
-	// Test non-existent environment
-	t.Run("non-existent environment", func(t *testing.T) {
-		fileName := azdCtx.ProjectFileNameForEnvironment("nonexistent")
-		assert.Equal(t, "azure.yaml", fileName)
-	})
-
-	// Test with default environment set
-	configPath := filepath.Join(azdDir, ConfigFileName)
-	config := `{"version": 2, "defaultEnvironment": "dev"}`
-	require.NoError(t, os.WriteFile(configPath, []byte(config), 0644))
-
-	t.Run("default environment set", func(t *testing.T) {
-		fileName := azdCtx.ProjectFileNameForEnvironment("")
-		assert.Equal(t, "azure.dev.yaml", fileName)
-	})
+			fileName := azdCtx.ProjectFileNameForEnvironment(tt.envName)
+			assert.Equal(t, tt.expected, fileName)
+		})
+	}
 }
 
 func TestProjectPathForEnvironment(t *testing.T) {
-	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("", "azd-test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
-	// Create azd context
-	azdCtx := &AzdContext{
-		projectDirectory: tempDir,
+	tests := []struct {
+		name     string
+		envName  string
+		envType  string
+		expected string
+	}{
+		{
+			name:     "environment with type",
+			envName:  "TESTENV1",
+			envType:  "prod",
+			expected: "azure.prod.yaml",
+		},
+		{
+			name:     "default project path",
+			envName:  "",
+			expected: "azure.yaml",
+		},
 	}
 
-	// Create .azure directory and environment configs
-	azdDir := filepath.Join(tempDir, EnvironmentDirectoryName)
-	require.NoError(t, os.MkdirAll(azdDir, 0755))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			azdCtx := NewAzdContextWithDirectory(t.TempDir())
+			azdDir := filepath.Join(azdCtx.ProjectDirectory(), EnvironmentDirectoryName)
+			require.NoError(t, os.MkdirAll(azdDir, 0755))
 
-	// Create a prod environment with type
-	prodEnvDir := filepath.Join(azdDir, "prod")
-	require.NoError(t, os.MkdirAll(prodEnvDir, 0755))
-	prodConfigPath := filepath.Join(prodEnvDir, ConfigFileName)
-	prodConfig := `{"version": 1, "environmentType": "prod"}`
-	require.NoError(t, os.WriteFile(prodConfigPath, []byte(prodConfig), 0644))
+			if tt.envType != "" {
+				setupTestEnv(t, azdDir, tt.envName, tt.envType)
+			}
 
-	// Test environment-specific project path
-	t.Run("prod environment path", func(t *testing.T) {
-		projectPath := azdCtx.ProjectPathForEnvironment("prod")
-		expectedPath := filepath.Join(tempDir, "azure.prod.yaml")
-		assert.Equal(t, expectedPath, projectPath)
-	})
+			var projectPath string
+			if tt.envName == "" {
+				projectPath = azdCtx.ProjectPath()
+			} else {
+				projectPath = azdCtx.ProjectPathForEnvironment(tt.envName)
+			}
 
-	// Test default project path
-	t.Run("default project path", func(t *testing.T) {
-		projectPath := azdCtx.ProjectPath()
-		expectedPath := filepath.Join(tempDir, "azure.yaml")
-		assert.Equal(t, expectedPath, projectPath)
-	})
+			expectedPath := filepath.Join(azdCtx.ProjectDirectory(), tt.expected)
+			assert.Equal(t, expectedPath, projectPath)
+		})
+	}
+}
+
+func TestGetEnvironmentType(t *testing.T) {
+	tests := []struct {
+		name           string
+		envName        string
+		envType        string
+		setupDefault   bool
+		defaultEnvName string
+		expected       string
+	}{
+		{
+			name:     "non-existent environment",
+			envName:  "nonexistent",
+			expected: "",
+		},
+		{
+			name:     "existing environment with type",
+			envName:  "TESTENV",
+			envType:  "dev",
+			expected: "dev",
+		},
+		{
+			name:     "existing environment without type",
+			envName:  "TESTENV",
+			envType:  "",
+			expected: "",
+		},
+		{
+			name:           "default environment with type",
+			envName:        "",
+			envType:        "dev",
+			setupDefault:   true,
+			defaultEnvName: "TESTENV",
+			expected:       "dev",
+		},
+		{
+			name:     "no default environment",
+			envName:  "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			azdCtx := NewAzdContextWithDirectory(t.TempDir())
+			azdDir := filepath.Join(azdCtx.ProjectDirectory(), EnvironmentDirectoryName)
+			require.NoError(t, os.MkdirAll(azdDir, 0755))
+
+			// Setup environment if needed
+			if tt.envName != "" || tt.defaultEnvName != "" {
+				envName := tt.envName
+				if envName == "" {
+					envName = tt.defaultEnvName
+				}
+				setupTestEnv(t, azdDir, envName, tt.envType)
+			}
+
+			// Setup default environment if needed
+			if tt.setupDefault {
+				setupDefaultEnv(t, azdDir, tt.defaultEnvName)
+			}
+
+			envType, err := azdCtx.GetEnvironmentType(tt.envName)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, envType)
+		})
+	}
 }

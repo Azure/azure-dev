@@ -138,6 +138,10 @@ func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
 		return nil, err
 	}
 
+	if err := m.ensureValidEnvironmentType(ctx, spec.Type); err != nil {
+		return nil, err
+	}
+
 	// Ensure the environment does not already exist:
 	_, err := m.Get(ctx, spec.Name)
 	switch {
@@ -159,7 +163,7 @@ func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
 	}
 
 	if spec.Type != "" {
-		env.Config.Set(EnvironmentTypeConfigKeyPath, spec.Type)
+		env.SetEnvironmentType(spec.Type)
 	}
 
 	if err := m.SaveWithOptions(ctx, env, &SaveOptions{IsNew: true}); err != nil {
@@ -486,7 +490,29 @@ func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) er
 
 func invalidEnvironmentNameMsg(environmentName string) string {
 	return fmt.Sprintf(
-		"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
+		"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)",
 		environmentName,
 	)
+}
+
+func invalidEnvironmentTypeMsg(environmentType string) string {
+	return fmt.Sprintf(
+		"environment type '%s' is invalid (it should contain only alphanumeric characters)",
+		environmentType,
+	)
+}
+
+// ensureValidEnvironmentType validates environment type and outputs error message to console if invalid
+func (m *manager) ensureValidEnvironmentType(ctx context.Context, envType string) error {
+	if envType == "" {
+		return nil // Empty environment type is allowed
+	}
+
+	if !IsValidEnvironmentType(envType) {
+		errMsg := invalidEnvironmentTypeMsg(envType)
+		m.console.Message(ctx, errMsg)
+		return errors.New(errMsg)
+	}
+
+	return nil
 }

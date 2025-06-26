@@ -53,8 +53,8 @@ const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 // PlatformTypeEnvVarName is the name of the key used to store the current azd platform type
 const PlatformTypeEnvVarName = "AZD_PLATFORM_TYPE"
 
-// EnvironmentTypeConfigKeyPath is the name of the config key used to store the environment type (e.g., dev, prod)
-const EnvironmentTypeConfigKeyPath = "environmentType"
+// EnvironmentTypeEnvVarName is the name of the key used to store the environment type (e.g., dev, prod) in the .env file
+const EnvironmentTypeEnvVarName = "AZURE_ENV_TYPE"
 
 // The zero value of an Environment is not valid. Use [New] to create one. When writing tests,
 // [Ephemeral] and [EphemeralWithValues] are useful to create environments which are not persisted to disk.
@@ -132,11 +132,18 @@ type EnvironmentResolver func(ctx context.Context) (*Environment, error)
 // https://docs.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftresources)
 var EnvironmentNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9-\(\)_\.]{1,64}$`)
 
+// Environment types should only contain alphanumeric characters
+var EnvironmentTypeRegexp = regexp.MustCompile(`^[a-zA-Z0-9]{1,32}$`)
+
 // The maximum length of an environment name.
 var EnvironmentNameMaxLength = 64
 
 func IsValidEnvironmentName(name string) bool {
 	return EnvironmentNameRegexp.MatchString(name)
+}
+
+func IsValidEnvironmentType(envType string) bool {
+	return EnvironmentTypeRegexp.MatchString(envType)
 }
 
 // CleanName returns a version of [name] where all characters not allowed in an environment name have been replaced
@@ -237,12 +244,14 @@ func (e *Environment) SetLocation(location string) {
 }
 
 // GetEnvironmentType returns the environment type (e.g., dev, prod) from the
-// environment configuration, or an empty string if not set.
+// .env file, or an empty string if not set.
 func (e *Environment) GetEnvironmentType() string {
-	if value, ok := e.Config.GetString(EnvironmentTypeConfigKeyPath); ok {
-		return value
-	}
-	return ""
+	return e.Getenv(EnvironmentTypeEnvVarName)
+}
+
+// SetEnvironmentType sets the environment type (e.g., dev, prod) in the .env file.
+func (e *Environment) SetEnvironmentType(envType string) {
+	e.DotenvSet(EnvironmentTypeEnvVarName, envType)
 }
 
 // Key returns the environment key name for the given name.

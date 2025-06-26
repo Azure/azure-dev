@@ -356,6 +356,32 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 	})
 }
 
+func Test_EnvManager_CreateWithType(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		envManager := createEnvManagerForManagerTest(t, mockContext)
+
+		spec := Spec{
+			Name:         "test-env",
+			Subscription: "test-subscription",
+			Location:     "eastus",
+			Type:         "development",
+		}
+
+		env, err := envManager.Create(*mockContext.Context, spec)
+		require.NoError(t, err)
+		require.NotNil(t, env)
+		require.Equal(t, "test-env", env.Name())
+		require.Equal(t, "test-subscription", env.GetSubscriptionId())
+		require.Equal(t, "eastus", env.GetLocation())
+		require.Equal(t, "development", env.GetEnvironmentType())
+
+		// Verify it's in the dotenv
+		dotenv := env.Dotenv()
+		require.Equal(t, "development", dotenv["AZURE_ENV_TYPE"])
+	})
+}
+
 func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	mockContext.Container.MustRegisterSingleton(func() context.Context {
 		return *mockContext.Context

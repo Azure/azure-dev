@@ -1,5 +1,11 @@
 # Release History
 
+## 1.17.2 (2025-06-23)
+
+### Bugs Fixed
+
+- [[5391]](https://github.com/Azure/azure-dev/pull/5391) Fix getting principal type when using legacy auth (az auth).
+
 ## 1.17.1 (2025-06-20)
 
 ### Features Added

@@ -553,12 +553,12 @@ func (p *dockerProject) packBuild(
 		previewer,
 		isContainerdEnabled)
 	p.console.StopPreviewer(ctx, false)
-	
+
 	// If build fails and it looks like a containerd issue, try again with containerd workarounds
 	if err != nil {
 		if strings.Contains(err.Error(), "failed to write image") && strings.Contains(err.Error(), "No such image") {
 			p.console.Message(ctx, "Detected potential containerd compatibility issue, retrying with workarounds...")
-			
+
 			// Start previewer again for retry
 			previewer = p.console.ShowPreviewer(ctx,
 				&input.ShowPreviewerOptions{
@@ -566,7 +566,7 @@ func (p *dockerProject) packBuild(
 					MaxLineCount: 8,
 					Title:        "Docker (pack) Output - Retry",
 				})
-			
+
 			// Force containerd compatibility mode
 			retryErr := packCli.BuildWithContainerdSupport(
 				ctx,
@@ -577,13 +577,13 @@ func (p *dockerProject) packBuild(
 				previewer,
 				true) // Force containerd compatibility
 			p.console.StopPreviewer(ctx, false)
-			
+
 			if retryErr == nil {
 				err = nil // Success on retry
 			}
 		}
 	}
-	
+
 	if err != nil {
 		span.EndWithStatus(err)
 
@@ -602,7 +602,8 @@ func (p *dockerProject) packBuild(
 		if strings.Contains(err.Error(), "failed to write image") && strings.Contains(err.Error(), "No such image") {
 			return nil, &internal.ErrorWithSuggestion{
 				Err: err,
-				Suggestion: "This error typically occurs when Docker is configured to use containerd image store, which may cause compatibility issues with pack CLI. " +
+				Suggestion: "This error typically occurs when Docker is configured to use containerd image store, " +
+					"which may cause compatibility issues with pack CLI. " +
 					"Consider disabling 'Use containerd for pulling and storing images' in Docker Desktop settings, " +
 					"or try running the command again as this may be a transient issue.",
 			}

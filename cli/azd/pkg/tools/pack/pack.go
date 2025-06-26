@@ -212,13 +212,13 @@ func (cli *Cli) BuildWithContainerdSupport(
 
 	runArgs := exec.NewRunArgs(cli.path, "build", imageName, "--builder", builder, "--path", cwd)
 	runArgs.Args = append(runArgs.Args, envArgs...)
-	
+
 	// When containerd is enabled, set environment variables to improve compatibility
 	if isContainerdEnabled {
 		// Force pack to use Docker daemon directly instead of relying on containerd image store
 		runArgs = runArgs.WithEnv([]string{"DOCKER_BUILDKIT=0"})
 	}
-	
+
 	if progressWriter != nil {
 		runArgs = runArgs.WithStdOut(progressWriter).WithStdErr(progressWriter)
 	}

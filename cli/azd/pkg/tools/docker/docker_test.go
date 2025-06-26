@@ -607,11 +607,11 @@ func Test_IsContainerdEnabled(t *testing.T) {
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			require.Equal(t, "docker", args.Cmd)
 			require.Equal(t, []string{
-				"system", "info", "--format", "{{.Driver}}",
+				"system", "info", "--format", "{{.DriverStatus}}",
 			}, args.Args)
 
 			return exec.RunResult{
-				Stdout:   "containerd",
+				Stdout:   "[[driver-type io.containerd.snapshotter.v1]]",
 				Stderr:   "",
 				ExitCode: 0,
 			}, nil
@@ -627,36 +627,20 @@ func Test_IsContainerdEnabled(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		docker := NewCli(mockContext.CommandRunner)
 
-		callCount := 0
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "docker system info")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			require.Equal(t, "docker", args.Cmd)
-			
-			callCount++
-			if callCount == 1 {
-				// First call checks driver
-				require.Equal(t, []string{
-					"system", "info", "--format", "{{.Driver}}",
-				}, args.Args)
-				return exec.RunResult{
-					Stdout:   "overlay2",
-					Stderr:   "",
-					ExitCode: 0,
-				}, nil
-			} else if callCount == 2 {
-				// Second call checks for containerd info
-				require.Equal(t, []string{
-					"system", "info", "--format", "{{.Containerd}}",
-				}, args.Args)
-				return exec.RunResult{
-					Stdout:   "<no value>",
-					Stderr:   "",
-					ExitCode: 0,
-				}, nil
-			}
-			
-			return exec.RunResult{}, errors.New("unexpected call")
+			require.Equal(t, []string{
+				"system", "info", "--format", "{{.DriverStatus}}",
+			}, args.Args)
+
+			return exec.RunResult{
+				Stdout: "[[Backing Filesystem extfs] [Supports d_type true] [Using metacopy false] " +
+					"[Native Overlay Diff true] [userxattr false]]",
+				Stderr:   "",
+				ExitCode: 0,
+			}, nil
 		})
 
 		isContainerd, err := docker.IsContainerdEnabled(context.Background())
@@ -683,6 +667,6 @@ func Test_IsContainerdEnabled(t *testing.T) {
 
 		require.Error(t, err)
 		require.False(t, isContainerd)
-		require.Contains(t, err.Error(), "checking docker driver")
+		require.Contains(t, err.Error(), "checking docker driver status")
 	})
 }

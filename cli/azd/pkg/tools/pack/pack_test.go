@@ -247,7 +247,6 @@ func TestNewPackCliUpgrade(t *testing.T) {
 	require.Equal(t, "pack cli", string(contents))
 }
 
-
 func Test_PackCli_BuildWithContainerdSupport(t *testing.T) {
 	tests := []struct {
 		name                string
@@ -287,7 +286,7 @@ func Test_PackCli_BuildWithContainerdSupport(t *testing.T) {
 					}
 				}
 
-				require.Equal(t, tt.isContainerdEnabled, buildkitDisabled, 
+				require.Equal(t, tt.isContainerdEnabled, buildkitDisabled,
 					"Expected DOCKER_BUILDKIT=0 environment variable to be %v", tt.isContainerdEnabled)
 
 				return exec.RunResult{ExitCode: 0}, nil

@@ -247,64 +247,33 @@ func TestNewPackCliUpgrade(t *testing.T) {
 	require.Equal(t, "pack cli", string(contents))
 }
 
-func Test_PackCli_BuildWithContainerdSupport(t *testing.T) {
-	tests := []struct {
-		name                string
-		isContainerdEnabled bool
-	}{
-		{
-			name:                "Without containerd",
-			isContainerdEnabled: false,
-		},
-		{
-			name:                "With containerd",
-			isContainerdEnabled: true,
-		},
-	}
+func Test_PackCli_Build(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockContext := mocks.NewMockContext(context.Background())
+	// Mock the pack config experimental call
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "pack config experimental")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 0}, nil
+	})
 
-			// Mock the pack config experimental call
-			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-				return strings.Contains(command, "pack config experimental")
-			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				return exec.RunResult{ExitCode: 0}, nil
-			})
+	// Mock the pack build call
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "pack build")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 0}, nil
+	})
 
-			// Mock the pack build call
-			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-				return strings.Contains(command, "pack build")
-			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				// Verify that DOCKER_BUILDKIT=0 environment variable is NOT set
-				buildkitDisabled := false
-				for _, envVar := range args.Env {
-					if envVar == "DOCKER_BUILDKIT=0" {
-						buildkitDisabled = true
-						break
-					}
-				}
+	cli := NewPackCliWithPath(mockContext.CommandRunner, "pack")
 
-				require.False(t, buildkitDisabled,
-					"DOCKER_BUILDKIT=0 environment variable should not be set")
+	err := cli.Build(
+		*mockContext.Context,
+		"/path/to/app",
+		"builder",
+		"image:tag",
+		[]string{},
+		nil,
+	)
 
-				return exec.RunResult{ExitCode: 0}, nil
-			})
-
-			cli := NewPackCliWithPath(mockContext.CommandRunner, "pack")
-
-			err := cli.BuildWithContainerdSupport(
-				*mockContext.Context,
-				"/path/to/app",
-				"builder",
-				"image:tag",
-				[]string{},
-				nil,
-				tt.isContainerdEnabled,
-			)
-
-			require.NoError(t, err)
-		})
-	}
+	require.NoError(t, err)
 }

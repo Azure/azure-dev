@@ -190,15 +190,13 @@ func (cli *Cli) enableExperimental(ctx context.Context) error {
 	return nil
 }
 
-// BuildWithContainerdSupport builds with additional options for containerd compatibility
-func (cli *Cli) BuildWithContainerdSupport(
+func (cli *Cli) Build(
 	ctx context.Context,
 	cwd string,
 	builder string,
 	imageName string,
 	environ []string,
 	progressWriter io.Writer,
-	isContainerdEnabled bool,
 ) error {
 	err := cli.enableExperimental(ctx)
 	if err != nil {
@@ -223,18 +221,6 @@ func (cli *Cli) BuildWithContainerdSupport(
 	}
 
 	return nil
-}
-
-func (cli *Cli) Build(
-	ctx context.Context,
-	cwd string,
-	builder string,
-	imageName string,
-	environ []string,
-	progressWriter io.Writer,
-) error {
-	// Use the new method with containerd detection disabled by default for backward compatibility
-	return cli.BuildWithContainerdSupport(ctx, cwd, builder, imageName, environ, progressWriter, false)
 }
 
 func wrapStatusCodeErr(err error, res exec.RunResult) error {

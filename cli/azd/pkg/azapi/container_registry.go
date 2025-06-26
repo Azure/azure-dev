@@ -134,7 +134,7 @@ func (crs *containerRegistryService) Credentials(
 			}
 		}
 
-		log.Printf("failed getting ACR token credentials: %s\n", tokenErr.Error())
+		log.Printf("failed getting ACR token credentials: %v\n", tokenErr)
 		// If that fails, attempt to get ACR credentials from the admin user
 		adminCreds, adminErr := crs.getAdminUserCredentials(ctx, subscriptionId, loginServer)
 		if adminErr != nil {

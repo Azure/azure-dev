@@ -105,7 +105,7 @@ func (i *Input) ReadInput(ctx context.Context, config *InputConfig, handler KeyP
 	go func() {
 		defer func() {
 			if err := keyboard.Close(); err != nil {
-				log.Printf("Error closing keyboard: %s\n", err.Error())
+				log.Printf("Error closing keyboard: %v\n", err)
 			}
 		}()
 

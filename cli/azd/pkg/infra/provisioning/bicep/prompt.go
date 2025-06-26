@@ -372,9 +372,9 @@ func (p *BicepProvider) promptForParameter(
 		}
 		value = (*param.AllowedValues)[choice]
 	} else {
-		var defaultValueForPrompt *string
+		var defaultValueForPrompt any
 		if azdMetadata.Default != nil {
-			defaultValueForPrompt = azdMetadata.Default
+			defaultValueForPrompt = fmt.Sprintf("%v", *azdMetadata.Default)
 		}
 		switch paramType {
 		case provisioning.ParameterTypeBoolean:

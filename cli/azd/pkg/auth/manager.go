@@ -33,6 +33,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/az"
 	"github.com/cli/browser"
 )
 
@@ -98,6 +99,7 @@ type Manager struct {
 	httpClient          HttpClient
 	console             input.Console
 	externalAuthCfg     ExternalAuthConfiguration
+	azCli               az.AzCli
 }
 
 type ExternalAuthConfiguration struct {
@@ -113,6 +115,7 @@ func NewManager(
 	httpClient HttpClient,
 	console input.Console,
 	externalAuthCfg ExternalAuthConfiguration,
+	azCli az.AzCli,
 ) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
@@ -158,6 +161,7 @@ func NewManager(
 		httpClient:          httpClient,
 		console:             console,
 		externalAuthCfg:     externalAuthCfg,
+		azCli:               azCli,
 	}, nil
 }
 
@@ -1152,8 +1156,37 @@ type LogInDetails struct {
 	Account   string
 }
 
-// LogInDetails method for Manager to return login details
+// LogInDetails contains information about the currently logged in user.
+// It provides details about the type of login (email-based or client ID-based)
+// and the account identifier. When legacy authentication is used, it will
+// return the account name from the az CLI.
 func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
+	userConfig, err := m.userConfigManager.Load()
+	if err != nil {
+		return nil, fmt.Errorf("reading user config: %w", err)
+	}
+
+	if shouldUseLegacyAuth(userConfig) {
+		log.Printf("delegating auth to az since %s is set to true", useAzCliAuthKey)
+
+		if err := m.azCli.CheckInstalled(); err != nil {
+			return nil, fmt.Errorf("checking az cli installation (using legacy auth): %w", err)
+		}
+
+		logInType := EmailLoginType
+		azAccount, err := m.azCli.Account(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("fetching az cli account: %w", err)
+		}
+		if azAccount.User.Type != "user" {
+			logInType = ClientIdLoginType
+		}
+		return &LogInDetails{
+			LoginType: logInType,
+			Account:   azAccount.User.Name,
+		}, nil
+	}
+
 	cfg, err := m.readAuthConfig()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)

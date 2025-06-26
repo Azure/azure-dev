@@ -282,6 +282,10 @@ func (d *StackDeployments) stackFromArmForResourceGroup(
 	tags map[string]*string,
 	options map[string]any,
 ) (armdeploymentstacks.DeploymentStack, error) {
+	if tags == nil {
+		tags = map[string]*string{}
+	}
+
 	templateHash, err := d.CalculateTemplateHash(ctx, subscriptionId, armTemplate)
 	if err != nil {
 		return armdeploymentstacks.DeploymentStack{}, fmt.Errorf("failed to calculate template hash: %w", err)
@@ -812,6 +816,10 @@ func (d *StackDeployments) stackFromArmForSubscription(
 	tags map[string]*string,
 	options map[string]any,
 ) (armdeploymentstacks.DeploymentStack, error) {
+	if tags == nil {
+		tags = map[string]*string{}
+	}
+
 	templateHash, err := d.CalculateTemplateHash(ctx, subscriptionId, armTemplate)
 	if err != nil {
 		return armdeploymentstacks.DeploymentStack{}, fmt.Errorf("failed to calculate template hash: %w", err)

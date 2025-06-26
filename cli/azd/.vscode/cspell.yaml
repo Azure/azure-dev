@@ -132,6 +132,9 @@ overrides:
   - filename: test/recording/recording.go
     words:
       - oidctoken
+  - filename: test/recording/proxy.go
+    words:
+      - WSAECONNRESET
   - filename: test/functional/testdata/samples/funcapp/getting_started.md
     words:
       - funcignore

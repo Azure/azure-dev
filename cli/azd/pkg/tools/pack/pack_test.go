@@ -277,7 +277,7 @@ func Test_PackCli_BuildWithContainerdSupport(t *testing.T) {
 			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 				return strings.Contains(command, "pack build")
 			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				// Verify the DOCKER_BUILDKIT=0 environment variable is set when containerd is enabled
+				// Verify that DOCKER_BUILDKIT=0 environment variable is NOT set
 				buildkitDisabled := false
 				for _, envVar := range args.Env {
 					if envVar == "DOCKER_BUILDKIT=0" {
@@ -286,8 +286,8 @@ func Test_PackCli_BuildWithContainerdSupport(t *testing.T) {
 					}
 				}
 
-				require.Equal(t, tt.isContainerdEnabled, buildkitDisabled,
-					"Expected DOCKER_BUILDKIT=0 environment variable to be %v", tt.isContainerdEnabled)
+				require.False(t, buildkitDisabled,
+					"DOCKER_BUILDKIT=0 environment variable should not be set")
 
 				return exec.RunResult{ExitCode: 0}, nil
 			})

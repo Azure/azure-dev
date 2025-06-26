@@ -554,36 +554,6 @@ func (p *dockerProject) packBuild(
 		isContainerdEnabled)
 	p.console.StopPreviewer(ctx, false)
 
-	// If build fails and it looks like a containerd issue, try again with containerd workarounds
-	if err != nil {
-		if strings.Contains(err.Error(), "failed to write image") && strings.Contains(err.Error(), "No such image") {
-			p.console.Message(ctx, "Detected potential containerd compatibility issue, retrying with workarounds...")
-
-			// Start previewer again for retry
-			previewer = p.console.ShowPreviewer(ctx,
-				&input.ShowPreviewerOptions{
-					Prefix:       "  ",
-					MaxLineCount: 8,
-					Title:        "Docker (pack) Output - Retry",
-				})
-
-			// Force containerd compatibility mode
-			retryErr := packCli.BuildWithContainerdSupport(
-				ctx,
-				buildContext,
-				builder,
-				imageName,
-				environ,
-				previewer,
-				true) // Force containerd compatibility
-			p.console.StopPreviewer(ctx, false)
-
-			if retryErr == nil {
-				err = nil // Success on retry
-			}
-		}
-	}
-
 	if err != nil {
 		span.EndWithStatus(err)
 

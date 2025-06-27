@@ -204,7 +204,11 @@ func (m *manager) LoadOrInitInteractiveWithType(ctx context.Context, environment
 	return env, nil
 }
 
-func (m *manager) loadOrInitEnvironmentWithType(ctx context.Context, environmentName, envType string) (*Environment, bool, error) {
+func (m *manager) loadOrInitEnvironmentWithType(
+	ctx context.Context,
+	environmentName,
+	envType string,
+) (*Environment, bool, error) {
 	// If there's a default environment, use that
 	if environmentName == "" {
 		var err error

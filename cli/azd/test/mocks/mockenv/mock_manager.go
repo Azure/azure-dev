@@ -24,7 +24,11 @@ func (m *MockEnvManager) LoadOrInitInteractive(ctx context.Context, name string)
 	return args.Get(0).(*environment.Environment), args.Error(1)
 }
 
-func (m *MockEnvManager) LoadOrInitInteractiveWithType(ctx context.Context, name, envType string) (*environment.Environment, error) {
+func (m *MockEnvManager) LoadOrInitInteractiveWithType(
+	ctx context.Context,
+	name,
+	envType string,
+) (*environment.Environment, error) {
 	args := m.Called(ctx, name, envType)
 	return args.Get(0).(*environment.Environment), args.Error(1)
 }

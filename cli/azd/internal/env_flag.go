@@ -9,8 +9,8 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// EnvFlag is a flag that represents the environment name and type. Actions which inject an environment should also use this flag
-// so the user can control what environment is loaded in a uniform way across all our commands.
+// EnvFlag is a flag that represents the environment name and type. Actions which inject an environment
+// should also use this flag so the user can control what environment is loaded in a uniform way across all our commands.
 type EnvFlag struct {
 	EnvironmentName     string
 	EnvironmentType     string

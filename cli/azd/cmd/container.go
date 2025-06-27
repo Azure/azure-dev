@@ -182,7 +182,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 		envTypeValue, err := cmd.Flags().GetString(internal.EnvironmentTypeFlagName)
 		if err != nil {
-			log.Printf("'%s' command asked for envTypeFlag, but envTypeFlag was not included in cmd.Flags().", cmd.CommandPath())
+			log.Printf(
+				"'%s' command asked for envTypeFlag, but envTypeFlag was not included in cmd.Flags().",
+				cmd.CommandPath(),
+			)
 			envTypeValue = ""
 		}
 

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -17,14 +18,14 @@ func setupTestEnv(t *testing.T, azdDir, envName, envType string) {
 	t.Helper()
 
 	envDir := filepath.Join(azdDir, envName)
-	require.NoError(t, os.MkdirAll(envDir, 0755))
+	require.NoError(t, os.MkdirAll(envDir, osutil.PermissionDirectory))
 
 	envPath := filepath.Join(envDir, DotEnvFileName)
 	content := "AZURE_ENV_NAME=" + envName + "\n"
 	if envType != "" {
 		content += "AZURE_ENV_TYPE=" + envType + "\n"
 	}
-	require.NoError(t, os.WriteFile(envPath, []byte(content), 0644))
+	require.NoError(t, os.WriteFile(envPath, []byte(content), osutil.PermissionFileOwnerOnly))
 }
 
 // setupDefaultEnv sets up the default environment configuration
@@ -33,7 +34,7 @@ func setupDefaultEnv(t *testing.T, azdDir, defaultEnvName string) {
 
 	configPath := filepath.Join(azdDir, ConfigFileName)
 	config := `{"version": 1, "defaultEnvironment": "` + defaultEnvName + `"}`
-	require.NoError(t, os.WriteFile(configPath, []byte(config), 0644))
+	require.NoError(t, os.WriteFile(configPath, []byte(config), osutil.PermissionFileOwnerOnly))
 }
 
 func TestProjectFileNameForEnvironment(t *testing.T) {
@@ -92,7 +93,7 @@ func TestProjectFileNameForEnvironment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			azdCtx := NewAzdContextWithDirectory(t.TempDir())
 			azdDir := filepath.Join(azdCtx.ProjectDirectory(), EnvironmentDirectoryName)
-			require.NoError(t, os.MkdirAll(azdDir, 0755))
+			require.NoError(t, os.MkdirAll(azdDir, osutil.PermissionDirectory))
 
 			// Setup test environment if specified
 			if tt.envName != "" {
@@ -133,7 +134,7 @@ func TestProjectPathForEnvironment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			azdCtx := NewAzdContextWithDirectory(t.TempDir())
 			azdDir := filepath.Join(azdCtx.ProjectDirectory(), EnvironmentDirectoryName)
-			require.NoError(t, os.MkdirAll(azdDir, 0755))
+			require.NoError(t, os.MkdirAll(azdDir, osutil.PermissionDirectory))
 
 			if tt.envType != "" {
 				setupTestEnv(t, azdDir, tt.envName, tt.envType)
@@ -197,7 +198,7 @@ func TestGetEnvironmentType(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			azdCtx := NewAzdContextWithDirectory(t.TempDir())
 			azdDir := filepath.Join(azdCtx.ProjectDirectory(), EnvironmentDirectoryName)
-			require.NoError(t, os.MkdirAll(azdDir, 0755))
+			require.NoError(t, os.MkdirAll(azdDir, osutil.PermissionDirectory))
 
 			// Setup environment if needed
 			if tt.envName != "" || tt.defaultEnvName != "" {

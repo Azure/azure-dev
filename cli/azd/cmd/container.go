@@ -176,8 +176,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		// semantics to follow.
 		envValue, err := cmd.Flags().GetString(internal.EnvironmentNameFlagName)
 		if err != nil {
-			log.Printf("'%s'command asked for envFlag, but envFlag was not included in cmd.Flags().", cmd.CommandPath())
+			log.Printf("'%s' command asked for envFlag, but envFlag was not included in cmd.Flags().", cmd.CommandPath())
 			envValue = ""
+		}
+
+		envTypeValue, err := cmd.Flags().GetString(internal.EnvironmentTypeFlagName)
+		if err != nil {
+			log.Printf("'%s' command asked for envTypeFlag, but envTypeFlag was not included in cmd.Flags().", cmd.CommandPath())
+			envTypeValue = ""
 		}
 
 		if envValue == "" {
@@ -189,7 +195,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			}
 		}
 
-		return internal.EnvFlag{EnvironmentName: envValue}
+		return internal.EnvFlag{
+			EnvironmentName: envValue,
+			EnvironmentType: envTypeValue,
+		}
 	})
 
 	container.MustRegisterSingleton(func(cmd *cobra.Command) CmdAnnotations {
@@ -228,9 +237,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			}
 
 			environmentName := envFlags.EnvironmentName
+			environmentType := envFlags.EnvironmentType
 			var err error
 
-			env, err := envManager.LoadOrInitInteractive(ctx, environmentName)
+			env, err := envManager.LoadOrInitInteractiveWithType(ctx, environmentName, environmentType)
 			if err != nil {
 				return nil, fmt.Errorf("loading environment: %w", err)
 			}

@@ -1277,7 +1277,7 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 	}
 
 	// Determines which azure.<type>.yaml file azd uses to provision in pipeline
-	if !slices.Contains(tmplContext.Variables, "AZURE_ENV_TYPE") {
+	if props.EnvType != "" && !slices.Contains(tmplContext.Variables, "AZURE_ENV_TYPE") {
 		tmplContext.Variables = append(tmplContext.Variables, "AZURE_ENV_TYPE")
 	}
 
@@ -1454,6 +1454,7 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 			Secrets:               pm.prjConfig.Pipeline.Secrets,
 			RequiredAlphaFeatures: requiredAlphaFeatures,
 			providerParameters:    pm.configOptions.providerParameters,
+			EnvType:               pm.env.GetEnvironmentType(),
 		})
 	if err != nil {
 		return err

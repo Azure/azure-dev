@@ -330,6 +330,7 @@ type projectProperties struct {
 	Secrets               []string
 	RequiredAlphaFeatures []string
 	providerParameters    []provisioning.Parameter
+	EnvType               string
 }
 
 type authConfiguration struct {

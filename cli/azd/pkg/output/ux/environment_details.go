@@ -13,6 +13,7 @@ import (
 type EnvironmentDetails struct {
 	Subscription string
 	Location     string
+	Stage        string
 }
 
 func (t *EnvironmentDetails) ToString(currentIndentation string) string {
@@ -20,10 +21,17 @@ func (t *EnvironmentDetails) ToString(currentIndentation string) string {
 	if t.Location != "" {
 		location = fmt.Sprintf("\nLocation: %s", output.WithHighLightFormat(t.Location))
 	}
+
+	var stage string
+	if t.Stage != "" {
+		stage = fmt.Sprintf("\nStage: %s", output.WithHighLightFormat(t.Stage))
+	}
+
 	return fmt.Sprintf(
-		"Subscription: %s%s\n",
+		"Subscription: %s%s%s\n",
 		output.WithHighLightFormat(t.Subscription),
 		location,
+		stage,
 	)
 }
 

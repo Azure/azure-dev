@@ -5,7 +5,9 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -13,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	inf "github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -25,6 +28,7 @@ import (
 type downFlags struct {
 	forceDelete bool
 	purgeDelete bool
+	stage       string
 	global      *internal.GlobalCommandOptions
 	internal.EnvFlag
 }
@@ -37,6 +41,12 @@ func (i *downFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		false,
 		//nolint:lll
 		"Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).",
+	)
+	local.StringVar(
+		&i.stage,
+		"stage",
+		"",
+		"Provisioning stage to delete resources for.",
 	)
 	i.EnvFlag.Bind(local, global)
 	i.global = global
@@ -101,17 +111,41 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, infra.Options); err != nil {
-		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
-	}
-
 	if a.alphaFeatureManager.IsEnabled(azapi.FeatureDeploymentStacks) {
 		a.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
 	}
 
-	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
-	if _, err := a.provisionManager.Destroy(ctx, destroyOptions); err != nil {
-		return nil, fmt.Errorf("deleting infrastructure: %w", err)
+	stages := []provisioning.Options{infra.Options}
+	stages = append(stages, infra.Options.Stages...)
+
+	slices.Reverse(stages)
+
+	if a.flags.stage != "" {
+		stageOptions, err := infra.Options.GetStage(a.flags.stage)
+		if err != nil {
+			return nil, err
+		}
+		stages = []provisioning.Options{stageOptions}
+	}
+
+	for _, stage := range stages {
+		if a.flags.stage != "" || len(stages) > 1 {
+			a.console.EnsureBlankLine(ctx)
+			a.console.Message(ctx, fmt.Sprintf("Stage: %s", output.WithHighLightFormat(stage.Name)))
+			a.console.Message(ctx, "")
+		}
+
+		if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, stage); err != nil {
+			return nil, fmt.Errorf("initializing provisioning manager: %w", err)
+		}
+
+		destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
+		_, err := a.provisionManager.Destroy(ctx, destroyOptions)
+		if errors.Is(err, inf.ErrDeploymentsNotFound) || errors.Is(err, inf.ErrDeploymentResourcesNotFound) {
+			a.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "No Azure resources were found."})
+		} else if err != nil {
+			return nil, fmt.Errorf("deleting infrastructure: %w", err)
+		}
 	}
 
 	return &actions.ActionResult{

@@ -62,6 +62,7 @@ type BicepProvider struct {
 	options               provisioning.Options
 	projectPath           string
 	path                  string
+	stage                 string
 	mode                  bicepFileMode
 	ignoreDeploymentState bool
 
@@ -117,6 +118,7 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opt 
 	}
 
 	p.projectPath = projectPath
+	p.stage = opt.Name
 	p.options = opt
 	p.ignoreDeploymentState = opt.IgnoreDeploymentState
 
@@ -278,7 +280,7 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 
 	var deployment *azapi.ResourceDeployment
 
-	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), options.Hint())
+	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), p.stage, options.Hint())
 	p.console.StopSpinner(ctx, "", input.StepDone)
 
 	if err != nil {
@@ -409,7 +411,12 @@ func (p *BicepProvider) plan(ctx context.Context) (*compileBicepResult, error) {
 
 // generateDeploymentObject generates an [infra.Deployment] object from the given plan with a unique name.
 func (p *BicepProvider) generateDeploymentObject(plan *compileBicepResult) (infra.Deployment, error) {
-	uniqueName := p.deploymentManager.GenerateDeploymentName(p.env.Name())
+	baseName := p.env.Name()
+	if p.stage != provisioning.StageEmpty && p.stage != "" {
+		baseName += "-" + p.stage
+	}
+
+	uniqueName := p.deploymentManager.GenerateDeploymentName(baseName)
 	scope, err := plan.Template.TargetScope()
 	if err != nil {
 		return nil, err
@@ -477,7 +484,7 @@ func (p *BicepProvider) latestDeploymentResult(
 	ctx context.Context,
 	scope infra.Scope,
 ) (*azapi.ResourceDeployment, error) {
-	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), "")
+	deployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), p.stage, "")
 	// findCompletedDeployments returns error if no deployments are found
 	// No need to check for empty list
 	if err != nil {
@@ -598,7 +605,8 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	}
 
 	deploymentTags := map[string]*string{
-		azure.TagKeyAzdEnvName: to.Ptr(p.env.Name()),
+		azure.TagKeyAzdEnvName:   to.Ptr(p.env.Name()),
+		azure.TagKeyAzdStageName: &p.stage,
 	}
 	if parametersHashErr == nil {
 		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
@@ -800,7 +808,7 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
 	}
 
-	completedDeployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), "")
+	completedDeployments, err := p.deploymentManager.CompletedDeployments(ctx, scope, p.env.Name(), p.stage, "")
 	if err != nil {
 		return nil, fmt.Errorf("finding completed deployments: %w", err)
 	}

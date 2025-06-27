@@ -5,6 +5,9 @@ package provisioning
 
 import (
 	"context"
+	"fmt"
+
+	"cuelang.org/go/pkg/strings"
 )
 
 type ProviderKind string
@@ -22,9 +25,48 @@ type Options struct {
 	Provider         ProviderKind   `yaml:"provider,omitempty"`
 	Path             string         `yaml:"path,omitempty"`
 	Module           string         `yaml:"module,omitempty"`
+	Name             string         `yaml:"name,omitempty"`
 	DeploymentStacks map[string]any `yaml:"deploymentStacks,omitempty"`
 	// Not expected to be defined at azure.yaml
 	IgnoreDeploymentState bool `yaml:"-"`
+
+	Stages []Options `yaml:"stages,omitempty"`
+}
+
+func (o *Options) GetStage(name string) (*Options, error) {
+	stageNames := make([]string, 0, len(o.Stages)+1)
+	stageNames = append(stageNames, o.Name)
+
+	for _, stage := range o.Stages {
+		stageNames = append(stageNames, stage.Name)
+		if stage.Name == name {
+			return &stage, nil
+		}
+	}
+
+	return nil, fmt.Errorf("stage '%s' not found in azure.yaml. available stages: %s", strings.Join(stageNames, ", "))
+}
+
+func (o *Options) Validate() error {
+	errWrap := func(err string) error {
+		return fmt.Errorf("validating infra.stages: %s", err)
+	}
+
+	for _, stage := range o.Stages {
+		if stage.Name == "" {
+			return errWrap("name must be specified for each provisioning stage")
+		}
+
+		if stage.Name == "infra" {
+			return errWrap("stage name 'infra' is reserved as the default stage and cannot be used")
+		}
+
+		if stage.Path == "" {
+			return errWrap(fmt.Sprintf("%s: path must be specified", stage.Name))
+		}
+	}
+
+	return nil
 }
 
 type SkippedReasonType string

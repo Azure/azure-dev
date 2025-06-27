@@ -70,6 +70,10 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		}
 	}
 
+	if err := projectConfig.Infra.Validate(); err != nil {
+		return nil, err
+	}
+
 	var err error
 	projectConfig.Infra.Provider, err = provisioning.ParseProvider(projectConfig.Infra.Provider)
 	if err != nil {
@@ -82,6 +86,10 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 
 	if projectConfig.Infra.Module == "" {
 		projectConfig.Infra.Module = DefaultModule
+	}
+
+	if projectConfig.Infra.Name == "" {
+		projectConfig.Infra.Name = "infra"
 	}
 
 	if strings.Contains(projectConfig.Infra.Path, "\\") && !strings.Contains(projectConfig.Infra.Path, "/") {

@@ -3,6 +3,11 @@
 
 package provisioning
 
+import (
+	"maps"
+	"slices"
+)
+
 type Deployment struct {
 	Parameters map[string]InputParameter
 	Outputs    map[string]OutputParameter
@@ -37,6 +42,24 @@ type State struct {
 	Outputs map[string]OutputParameter
 	// The resources that make up the application.
 	Resources []Resource
+}
+
+// MergeInto merges other on top of s, i.e. if a key exists in both s and other, the value from other will be used.
+func (s *State) MergeInto(other State) {
+	if s.Outputs == nil {
+		s.Outputs = make(map[string]OutputParameter)
+	}
+
+	maps.Copy(s.Outputs, other.Outputs)
+
+	for _, res := range other.Resources {
+		if i := slices.IndexFunc(s.Resources, func(r Resource) bool { return r.Id == res.Id }); i != -1 {
+			s.Resources[i] = res
+			continue
+		}
+
+		s.Resources = append(s.Resources, res)
+	}
 }
 
 type Resource struct {

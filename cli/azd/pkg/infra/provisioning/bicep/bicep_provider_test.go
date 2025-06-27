@@ -52,8 +52,7 @@ func TestBicepPlan(t *testing.T) {
 
 	require.Nil(t, err)
 
-	require.IsType(t, &deploymentDetails{}, deploymentPlan)
-	configuredParameters := deploymentPlan.CompiledBicep.Parameters
+	configuredParameters := deploymentPlan.Parameters
 
 	require.Equal(t, infraProvider.env.GetLocation(), configuredParameters["location"].Value)
 	require.Equal(
@@ -72,8 +71,7 @@ func TestBicepPlanKeyVaultRef(t *testing.T) {
 
 	require.Nil(t, err)
 
-	require.IsType(t, &deploymentDetails{}, deploymentPlan)
-	configuredParameters := deploymentPlan.CompiledBicep.Parameters
+	configuredParameters := deploymentPlan.Parameters
 
 	require.NotEmpty(t, configuredParameters["kvSecret"])
 	require.NotNil(t, configuredParameters["kvSecret"].KeyVaultReference)
@@ -90,8 +88,7 @@ func TestBicepPlanParameterTypes(t *testing.T) {
 
 	require.Nil(t, err)
 
-	require.IsType(t, &deploymentDetails{}, deploymentPlan)
-	configuredParameters := deploymentPlan.CompiledBicep.Parameters
+	configuredParameters := deploymentPlan.Parameters
 
 	require.NotEmpty(t, configuredParameters["regularString"])
 	require.Equal(t, configuredParameters["regularString"].Value, "test")
@@ -153,7 +150,7 @@ func TestBicepPlanPrompt(t *testing.T) {
 
 	require.NoError(t, err)
 
-	require.Equal(t, "value", plan.CompiledBicep.Parameters["stringParam"].Value)
+	require.Equal(t, "value", plan.Parameters["stringParam"].Value)
 }
 
 func TestBicepState(t *testing.T) {

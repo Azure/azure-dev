@@ -40,7 +40,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/drone/envsubst"
 )
@@ -50,33 +49,39 @@ const (
 	defaultPath   = "infra"
 )
 
-type deploymentDetails struct {
-	CompiledBicep *compileBicepResult
-	// Target is the unique resource in azure that represents the deployment that will happen. A target can be scoped to
-	// either subscriptions, or resource groups.
-	Target infra.Deployment
-}
+type bicepFileMode int
+
+const (
+	bicepMode bicepFileMode = iota
+	bicepparamMode
+)
 
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
-	env                   *environment.Environment
-	envManager            environment.Manager
-	projectPath           string
+	// Options that are available after Initialize()
 	options               provisioning.Options
-	console               input.Console
-	bicepCli              *bicep.Cli
-	azapi                 *azapi.AzureClient
-	resourceService       *azapi.ResourceService
-	deploymentManager     *infra.DeploymentManager
-	prompters             prompt.Prompter
-	curPrincipal          provisioning.CurrentPrincipalIdProvider
+	projectPath           string
+	path                  string
+	mode                  bicepFileMode
 	ignoreDeploymentState bool
+
+	// Dependencies
+	envManager          environment.Manager
+	env                 *environment.Environment
+	console             input.Console
+	bicepCli            *bicep.Cli
+	azapi               *azapi.AzureClient
+	resourceService     *azapi.ResourceService
+	deploymentManager   *infra.DeploymentManager
+	prompters           prompt.Prompter
+	curPrincipal        provisioning.CurrentPrincipalIdProvider
+	portalUrlBase       string
+	keyvaultService     keyvault.KeyVaultService
+	subscriptionManager *account.SubscriptionsManager
+
+	// Internal state
 	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
 	compileBicepMemoryCache *compileBicepResult
-	keyvaultService         keyvault.KeyVaultService
-	portalUrlBase           string
-	subscriptionManager     *account.SubscriptionsManager
-	azureClient             *azapi.AzureClient
 }
 
 // Name gets the name of the infra provider
@@ -84,27 +89,35 @@ func (p *BicepProvider) Name() string {
 	return "Bicep"
 }
 
-func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{}
-}
-
 // Initialize initializes provider state from the options.
 // It also calls EnsureEnv, which ensures the client-side state is ready for provisioning.
-func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, options provisioning.Options) error {
-	p.projectPath = projectPath
-	p.options = options
-	if p.options.Module == "" {
-		p.options.Module = defaultModule
-	}
-	if p.options.Path == "" {
-		p.options.Path = defaultPath
+func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opt provisioning.Options) error {
+	if opt.Module == "" {
+		opt.Module = defaultModule
 	}
 
-	requiredTools := p.RequiredExternalTools()
-	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
-		return err
+	if opt.Path == "" {
+		opt.Path = defaultPath
 	}
-	p.ignoreDeploymentState = options.IgnoreDeploymentState
+
+	if !filepath.IsAbs(opt.Path) {
+		opt.Path = filepath.Join(projectPath, opt.Path)
+	}
+
+	bicepparam := opt.Module + ".bicepparam"
+	bicepFile := opt.Module + ".bicep"
+
+	// Check if there's a <moduleName>.bicepparam first. It will be preferred over a <moduleName>.bicep
+	if _, err := os.Stat(filepath.Join(opt.Path, bicepparam)); err == nil {
+		p.path = filepath.Join(opt.Path, bicepparam)
+		p.mode = bicepparamMode
+	} else {
+		p.path = filepath.Join(opt.Path, bicepFile)
+		p.mode = bicepMode
+	}
+
+	p.projectPath = projectPath
+	p.options = opt
 
 	p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
 	err := p.EnsureEnv(ctx)
@@ -117,25 +130,23 @@ var ErrEnsureEnvPreReqBicepCompileFailed = errors.New("")
 // EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
 // values are unset. This also requires that the Bicep module can be compiled.
 func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
-	modulePath := p.modulePath()
-
 	// for .bicepparam, we first prompt for environment values before calling compiling bicepparam file
 	// which can reference these values
-	if isBicepParamFile(modulePath) {
+	if p.mode == bicepparamMode {
 		if err := provisioning.EnsureSubscriptionAndLocation(
 			ctx, p.envManager, p.env, p.prompters, provisioning.EnsureSubscriptionAndLocationOptions{}); err != nil {
 			return err
 		}
 	}
 
-	compileResult, compileErr := p.compileBicep(ctx, modulePath)
+	compileResult, compileErr := p.compileBicep(ctx)
 	if compileErr != nil {
 		return fmt.Errorf("%w%w", ErrEnsureEnvPreReqBicepCompileFailed, compileErr)
 	}
 
 	// for .bicep, azd must load a parameters.json file and create the ArmParameters so we know if the are filters
 	// to apply for location (using the allowedValues or the location azd metadata)
-	if isBicepFile(modulePath) {
+	if p.mode == bicepMode {
 		err := provisioning.EnsureSubscription(
 			ctx, p.envManager, p.env, p.prompters)
 		if err != nil {
@@ -205,8 +216,7 @@ func defaultPromptValue(locationParam azure.ArmTemplateParameterDefinition) *str
 }
 
 func (p *BicepProvider) LastDeployment(ctx context.Context) (*azapi.ResourceDeployment, error) {
-	modulePath := p.modulePath()
-	compileResult, err := p.compileBicep(ctx, modulePath)
+	compileResult, err := p.compileBicep(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("compiling bicep template: %w", err)
 	}
@@ -238,9 +248,8 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 	var outputs azure.ArmTemplateOutputs
 	var scopeErr error
 
-	modulePath := p.modulePath()
-	if _, err := os.Stat(modulePath); err == nil {
-		compileResult, err := p.compileBicep(ctx, modulePath)
+	if _, err := os.Stat(p.path); err == nil {
+		compileResult, err := p.compileBicep(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("compiling bicep template: %w", err)
 		}
@@ -357,81 +366,83 @@ func (p *BicepProvider) createDeploymentFromArmDeployment(
 	return nil, errors.New("unsupported deployment scope")
 }
 
-const bicepFileExtension = ".bicep"
-const bicepparamFileExtension = ".bicepparam"
-
-func isBicepFile(modulePath string) bool {
-	return filepath.Ext(modulePath) == bicepFileExtension
-}
-
-func isBicepParamFile(modulePath string) bool {
-	return filepath.Ext(modulePath) == bicepparamFileExtension
-}
-
-// Plans the infrastructure provisioning
-func (p *BicepProvider) plan(ctx context.Context) (*deploymentDetails, error) {
+// plan creates an execution plan that can be executed for previewing, or deploying these changes.
+//
+// It ensures that all parameters are filled in and is ready for execution.
+func (p *BicepProvider) plan(ctx context.Context) (*compileBicepResult, error) {
 	p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 
-	modulePath := p.modulePath()
-	compileResult, err := p.compileBicep(ctx, modulePath)
-	if err != nil {
-		return nil, fmt.Errorf("creating template: %w", err)
-	}
+	switch p.mode {
+	case bicepMode:
+		compileResult, err := p.compileBicep(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("compiling bicep template: %w", err)
+		}
 
-	// for .bicep, azd must load a parameters.json file and create the ArmParameters
-	if isBicepFile(modulePath) {
+		// prompt for any missing parameters
 		configuredParameters, err := p.ensureParameters(ctx, compileResult.Template)
 		if err != nil {
 			return nil, err
 		}
+
 		compileResult.Parameters = configuredParameters
+		return compileResult, nil
+
+	case bicepparamMode:
+		// To ensure any compile-time bicepparam parameters such as `readEnvironmentVariable()`
+		// are resolved correctly right before deployment occurs, we clear the cache
+		// and trigger full compilation here.
+		p.compileBicepMemoryCache = nil
+
+		compileResult, err := p.compileBicep(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("compiling bicep template: %w", err)
+		}
+
+		return compileResult, nil
 	}
 
-	deploymentScope, err := compileResult.Template.TargetScope()
-	if err != nil {
-		return nil, err
-	}
-
-	target, err := p.deploymentFromScopeType(deploymentScope)
-	if err != nil {
-		return nil, err
-	}
-
-	return &deploymentDetails{
-		CompiledBicep: compileResult,
-		Target:        target,
-	}, nil
+	return nil, errors.New("unsupported bicep mode")
 }
 
-func (p *BicepProvider) deploymentFromScopeType(deploymentScopeType azure.DeploymentScope) (infra.Deployment, error) {
-	deploymentName := p.deploymentManager.GenerateDeploymentName(p.env.Name())
+// generateDeploymentObject generates an [infra.Deployment] object from the given plan with a unique name.
+func (p *BicepProvider) generateDeploymentObject(plan *compileBicepResult) (infra.Deployment, error) {
+	uniqueName := p.deploymentManager.GenerateDeploymentName(p.env.Name())
+	scope, err := plan.Template.TargetScope()
+	if err != nil {
+		return nil, err
+	}
 
-	if deploymentScopeType == azure.DeploymentScopeSubscription {
+	switch scope {
+	case azure.DeploymentScopeSubscription:
 		scope := p.deploymentManager.SubscriptionScope(p.env.GetSubscriptionId(), p.env.GetLocation())
 		return infra.NewSubscriptionDeployment(
 			scope,
-			deploymentName,
+			uniqueName,
 		), nil
-	} else if deploymentScopeType == azure.DeploymentScopeResourceGroup {
+
+	case azure.DeploymentScopeResourceGroup:
 		scope := p.deploymentManager.ResourceGroupScope(
 			p.env.GetSubscriptionId(),
 			p.env.Getenv(environment.ResourceGroupEnvVarName),
 		)
-		return infra.NewResourceGroupDeployment(scope, deploymentName), nil
+		return infra.NewResourceGroupDeployment(scope, uniqueName), nil
+
+	default:
+		return nil, fmt.Errorf("unsupported scope: %s", scope)
 	}
-	return nil, fmt.Errorf("unsupported scope: %s", deploymentScopeType)
 }
 
 // deploymentState returns the latests deployment if it is the same as the deployment within deploymentData or an error
 // otherwise.
 func (p *BicepProvider) deploymentState(
 	ctx context.Context,
-	deploymentData *deploymentDetails,
+	planned *compileBicepResult,
+	scope infra.Scope,
 	currentParamsHash string,
 ) (*azapi.ResourceDeployment, error) {
-
 	p.console.ShowSpinner(ctx, "Comparing deployment state", input.Step)
-	prevDeploymentResult, err := p.latestDeploymentResult(ctx, deploymentData.Target)
+	prevDeploymentResult, err := p.latestDeploymentResult(ctx, scope)
 	if err != nil {
 		return nil, fmt.Errorf("deployment state error: %w", err)
 	}
@@ -445,7 +456,7 @@ func (p *BicepProvider) deploymentState(
 
 	templateHash, err := p.deploymentManager.CalculateTemplateHash(
 		ctx, p.env.GetSubscriptionId(),
-		deploymentData.CompiledBicep.RawArmTemplate,
+		planned.RawArmTemplate,
 	)
 
 	if err != nil {
@@ -548,35 +559,36 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		logDS("Azure Deployment State is disabled by --no-state arg.")
 	}
 
-	bicepDeploymentData, err := p.plan(ctx)
+	planned, err := p.plan(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	deployment, err := p.convertToDeployment(bicepDeploymentData.CompiledBicep.Template)
+	deployment, err := p.generateDeploymentObject(planned)
 	if err != nil {
 		return nil, err
 	}
+
+	result := p.convertToDeployment(planned.Template)
 
 	// parameters hash is required for doing deployment state validation check but also to set the hash
 	// after a successful deployment.
-	currentParamsHash, parametersHashErr := parametersHash(
-		bicepDeploymentData.CompiledBicep.Template.Parameters, bicepDeploymentData.CompiledBicep.Parameters)
+	currentParamsHash, parametersHashErr := parametersHash(planned.Template.Parameters, planned.Parameters)
 	if parametersHashErr != nil {
 		// fail to hash parameters won't stop the operation. It only disables deployment state and recording parameters hash
 		logDS("%s", parametersHashErr.Error())
 	}
 
 	if !p.ignoreDeploymentState && parametersHashErr == nil {
-		deploymentState, err := p.deploymentState(ctx, bicepDeploymentData, currentParamsHash)
+		deploymentState, err := p.deploymentState(ctx, planned, deployment, currentParamsHash)
 		if err == nil {
-			deployment.Outputs = p.createOutputParameters(
-				bicepDeploymentData.CompiledBicep.Template.Outputs,
+			result.Outputs = p.createOutputParameters(
+				planned.Template.Outputs,
 				azapi.CreateDeploymentOutput(deploymentState.Outputs),
 			)
 
 			return &provisioning.DeployResult{
-				Deployment:    deployment,
+				Deployment:    &result,
 				SkippedReason: provisioning.DeploymentStateSkipped,
 			}, nil
 		}
@@ -597,9 +609,9 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 
 	err = p.validatePreflight(
 		ctx,
-		bicepDeploymentData.Target,
-		bicepDeploymentData.CompiledBicep.RawArmTemplate,
-		bicepDeploymentData.CompiledBicep.Parameters,
+		deployment,
+		planned.RawArmTemplate,
+		planned.Parameters,
 		deploymentTags,
 		optionsMap,
 	)
@@ -618,7 +630,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		}
 
 		// Report incremental progress
-		progressDisplay := p.deploymentManager.ProgressDisplay(bicepDeploymentData.Target)
+		progressDisplay := p.deploymentManager.ProgressDisplay(deployment)
 		// Make initial delay shorter to be more responsive in displaying initial progress
 		initialDelay := 3 * time.Second
 		regularDelay := 10 * time.Second
@@ -646,9 +658,9 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 
 	deployResult, err := p.deployModule(
 		ctx,
-		bicepDeploymentData.Target,
-		bicepDeploymentData.CompiledBicep.RawArmTemplate,
-		bicepDeploymentData.CompiledBicep.Parameters,
+		deployment,
+		planned.RawArmTemplate,
+		planned.Parameters,
 		deploymentTags,
 		optionsMap,
 	)
@@ -656,30 +668,34 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		return nil, err
 	}
 
-	deployment.Outputs = p.createOutputParameters(
-		bicepDeploymentData.CompiledBicep.Template.Outputs,
+	result.Outputs = p.createOutputParameters(
+		planned.Template.Outputs,
 		azapi.CreateDeploymentOutput(deployResult.Outputs),
 	)
 
 	return &provisioning.DeployResult{
-		Deployment: deployment,
+		Deployment: &result,
 	}, nil
 }
 
 // Preview runs deploy using the what-if argument
 func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPreviewResult, error) {
-	bicepDeploymentData, err := p.plan(ctx)
+	planned, err := p.plan(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	p.console.ShowSpinner(ctx, "Generating infrastructure preview", input.Step)
 
-	targetScope := bicepDeploymentData.Target
-	deployPreviewResult, err := targetScope.DeployPreview(
+	deployment, err := p.generateDeploymentObject(planned)
+	if err != nil {
+		return nil, err
+	}
+
+	deployPreviewResult, err := deployment.DeployPreview(
 		ctx,
-		bicepDeploymentData.CompiledBicep.RawArmTemplate,
-		bicepDeploymentData.CompiledBicep.Parameters,
+		planned.RawArmTemplate,
+		planned.Parameters,
 	)
 	if err != nil {
 		return nil, err
@@ -770,10 +786,9 @@ func (p *BicepProvider) Destroy(
 	ctx context.Context,
 	options provisioning.DestroyOptions,
 ) (*provisioning.DestroyResult, error) {
-	modulePath := p.modulePath()
 	p.console.ShowSpinner(ctx, "Discovering resources to delete...", input.Step)
 	defer p.console.StopSpinner(ctx, "", input.StepDone)
-	compileResult, err := p.compileBicep(ctx, modulePath)
+	compileResult, err := p.compileBicep(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("creating template: %w", err)
 	}
@@ -1673,9 +1688,7 @@ type compileBicepResult struct {
 
 // compileBicep compiles the bicep module at the given path and returns the compiled ARM template and parameters.
 // The results of the compilation are cached in memory.
-func (p *BicepProvider) compileBicep(
-	ctx context.Context, modulePath string,
-) (*compileBicepResult, error) {
+func (p *BicepProvider) compileBicep(ctx context.Context) (*compileBicepResult, error) {
 	if p.compileBicepMemoryCache != nil {
 		return p.compileBicepMemoryCache, nil
 	}
@@ -1683,7 +1696,7 @@ func (p *BicepProvider) compileBicep(
 	var compiled string
 	var parameters azure.ArmParameters
 
-	if isBicepParamFile(modulePath) {
+	if p.mode == bicepparamMode {
 		azdEnv := p.env.Environ()
 		// append principalID (not stored to .env by default). For non-bicepparam, principalId is resolved
 		// without looking at .env
@@ -1694,7 +1707,7 @@ func (p *BicepProvider) compileBicep(
 			}
 			azdEnv = append(azdEnv, fmt.Sprintf("%s=%s", environment.PrincipalIdEnvVarName, currentPrincipalId))
 		}
-		compiledResult, err := p.bicepCli.BuildBicepParam(ctx, modulePath, azdEnv)
+		compiledResult, err := p.bicepCli.BuildBicepParam(ctx, p.path, azdEnv)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compile bicepparam template: %w", err)
 		}
@@ -1713,7 +1726,7 @@ func (p *BicepProvider) compileBicep(
 		}
 		parameters = params.Parameters
 	} else {
-		res, err := p.bicepCli.Build(ctx, modulePath)
+		res, err := p.bicepCli.Build(ctx, p.path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compile bicep template: %w", err)
 		}
@@ -1821,9 +1834,9 @@ func definitionName(typeDefinitionRef string) (string, error) {
 	return definitionKeyNameTokens[definitionKeyNameTokensLen-1], nil
 }
 
-// Converts a Bicep parameters file to a generic provisioning template
-func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) (*provisioning.Deployment, error) {
-	template := provisioning.Deployment{}
+// Converts a Bicep parameters file to a generic [provisioning.Deployment].
+func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) provisioning.Deployment {
+	result := provisioning.Deployment{}
 	parameters := make(map[string]provisioning.InputParameter)
 	outputs := make(map[string]provisioning.OutputParameter)
 
@@ -1841,10 +1854,10 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) (*p
 		}
 	}
 
-	template.Parameters = parameters
-	template.Outputs = outputs
+	result.Parameters = parameters
+	result.Outputs = outputs
 
-	return &template, nil
+	return result
 }
 
 func (p *BicepProvider) validatePreflight(
@@ -1868,28 +1881,6 @@ func (p *BicepProvider) deployModule(
 	options map[string]any,
 ) (*azapi.ResourceDeployment, error) {
 	return target.Deploy(ctx, armTemplate, armParameters, tags, options)
-}
-
-// Returns either the bicep or bicepparam module file located in the infrastructure root.
-// The bicepparam file is preferred over bicep file.
-func (p *BicepProvider) modulePath() string {
-	infraRoot := p.options.Path
-	moduleName := p.options.Module
-
-	if !filepath.IsAbs(infraRoot) {
-		infraRoot = filepath.Join(p.projectPath, infraRoot)
-	}
-
-	// Check if there's a <moduleName>.bicepparam first. It will be preferred over a <moduleName>.bicep
-	moduleFilename := moduleName + bicepparamFileExtension
-	moduleFilePath := filepath.Join(infraRoot, moduleFilename)
-	if _, err := os.Stat(moduleFilePath); err == nil {
-		return moduleFilePath
-	}
-
-	// fallback to .bicep
-	moduleFilename = moduleName + bicepFileExtension
-	return filepath.Join(infraRoot, moduleFilename)
 }
 
 // inputsParameter generates and updates input parameters for the Azure Resource Manager (ARM) template.
@@ -2281,7 +2272,6 @@ func NewBicepProvider(
 	keyvaultService keyvault.KeyVaultService,
 	cloud *cloud.Cloud,
 	subscriptionManager *account.SubscriptionsManager,
-	azureClient *azapi.AzureClient,
 ) provisioning.Provider {
 	return &BicepProvider{
 		envManager:          envManager,
@@ -2296,13 +2286,11 @@ func NewBicepProvider(
 		keyvaultService:     keyvaultService,
 		portalUrlBase:       cloud.PortalUrlBase,
 		subscriptionManager: subscriptionManager,
-		azureClient:         azureClient,
 	}
 }
 
 func (p *BicepProvider) Parameters(ctx context.Context) ([]provisioning.Parameter, error) {
-	modulePath := p.modulePath()
-	compileResult, err := p.compileBicep(ctx, modulePath)
+	compileResult, err := p.compileBicep(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("creating template: %w", err)
 	}

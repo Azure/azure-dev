@@ -105,7 +105,7 @@ func (a *BicepProvider) locationsWithQuotaFor(
 	var sharedResults sync.Map
 	var wg sync.WaitGroup
 
-	azureAiServicesLocations, err := a.azureClient.GetResourceSkuLocations(
+	azureAiServicesLocations, err := a.azapi.GetResourceSkuLocations(
 		ctx, subId, "AIServices", "S0", "Standard", "accounts")
 	if err != nil {
 		return nil, fmt.Errorf("getting Azure AI Services locations: %w", err)
@@ -124,7 +124,7 @@ func (a *BicepProvider) locationsWithQuotaFor(
 		wg.Add(1)
 		go func(location string) {
 			defer wg.Done()
-			results, err := a.azureClient.GetAiUsages(ctx, subId, location)
+			results, err := a.azapi.GetAiUsages(ctx, subId, location)
 			if err != nil {
 				// log the error but don't return it
 				log.Println("error getting usage for location", location, ":", err)

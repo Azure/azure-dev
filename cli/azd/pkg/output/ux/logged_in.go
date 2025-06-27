@@ -12,8 +12,8 @@ import (
 
 const cLoginSuccessMessage = "Logged in to Azure"
 const (
-	EmailLoginType    LoginType = "email"
-	ClientIdLoginType LoginType = "clientId"
+	EmailLoginType    LoginType = "User"
+	ClientIdLoginType LoginType = "ServicePrincipal"
 )
 
 type LoginType string

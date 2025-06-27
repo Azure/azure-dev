@@ -219,6 +219,6 @@ func (m *mockCurrentPrincipal) CurrentPrincipalId(_ context.Context) (string, er
 	return "11111111-1111-1111-1111-111111111111", nil
 }
 
-func (m *mockCurrentPrincipal) CurrentPrincipalType(_ context.Context) (provisioning.PrincipalType, error) {
-	return provisioning.UserType, nil
+func (m *mockCurrentPrincipal) CurrentPrincipalType(_ context.Context) (string, error) {
+	return "User", nil
 }

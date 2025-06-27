@@ -1145,8 +1145,8 @@ func readUserProperties(cfg config.Config) (*userProperties, error) {
 }
 
 const (
-	EmailLoginType    LoginType = "email"
-	ClientIdLoginType LoginType = "clientId"
+	EmailLoginType    LoginType = "User"
+	ClientIdLoginType LoginType = "ServicePrincipal"
 )
 
 type LoginType string

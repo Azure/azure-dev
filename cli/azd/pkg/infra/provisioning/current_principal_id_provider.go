@@ -18,7 +18,7 @@ type CurrentPrincipalIdProvider interface {
 	// CurrentPrincipalId returns the object id of the current logged in principal, or an error if it can not be
 	// determined.
 	CurrentPrincipalId(ctx context.Context) (string, error)
-	CurrentPrincipalType(ctx context.Context) (PrincipalType, error)
+	CurrentPrincipalType(ctx context.Context) (string, error)
 }
 
 func NewPrincipalIdProvider(
@@ -56,23 +56,11 @@ func (p *principalIDProvider) CurrentPrincipalId(ctx context.Context) (string, e
 	return principalId, nil
 }
 
-const (
-	UserType             PrincipalType = "User"
-	ServicePrincipalType PrincipalType = "ServicePrincipal"
-)
-
-type PrincipalType string
-
-func (p *principalIDProvider) CurrentPrincipalType(ctx context.Context) (PrincipalType, error) {
+func (p *principalIDProvider) CurrentPrincipalType(ctx context.Context) (string, error) {
 	loginDetails, err := p.authManager.LogInDetails(ctx)
 	if err != nil {
 		return "", fmt.Errorf("fetching login details: %w", err)
 	}
 
-	principalType := UserType
-	if loginDetails.LoginType == auth.ClientIdLoginType {
-		principalType = ServicePrincipalType
-	}
-
-	return principalType, nil
+	return string(loginDetails.LoginType), nil
 }

@@ -118,6 +118,7 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opt 
 
 	p.projectPath = projectPath
 	p.options = opt
+	p.ignoreDeploymentState = opt.IgnoreDeploymentState
 
 	p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
 	err := p.EnsureEnv(ctx)
@@ -1552,13 +1553,7 @@ type loadParametersResult struct {
 // doing environment and command substitutions, and returns the values.
 func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResult, error) {
 	parametersFilename := fmt.Sprintf("%s.parameters.json", p.options.Module)
-	parametersRoot := p.options.Path
-
-	if !filepath.IsAbs(parametersRoot) {
-		parametersRoot = filepath.Join(p.projectPath, parametersRoot)
-	}
-
-	paramFilePath := filepath.Join(parametersRoot, parametersFilename)
+	paramFilePath := filepath.Join(filepath.Dir(p.path), parametersFilename)
 	parametersBytes, err := os.ReadFile(paramFilePath)
 	// if the file does not exist, we return an empty parameters map
 	// This makes AZD to support deploying bicep modules without parameters file, assuming AZD prompts for all required

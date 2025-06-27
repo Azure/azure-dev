@@ -21,6 +21,9 @@ import (
 // EnvNameEnvVarName is the name of the key used to store the envname property in the environment.
 const EnvNameEnvVarName = "AZURE_ENV_NAME"
 
+// EnvTypeEnvVarName is the name of the key used to store the environment type (e.g., dev, prod) in the .env file
+const EnvTypeEnvVarName = "AZURE_ENV_TYPE"
+
 // LocationEnvVarName is the name of the key used to store the location property in the environment.
 const LocationEnvVarName = "AZURE_LOCATION"
 
@@ -52,9 +55,6 @@ const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 
 // PlatformTypeEnvVarName is the name of the key used to store the current azd platform type
 const PlatformTypeEnvVarName = "AZD_PLATFORM_TYPE"
-
-// EnvironmentTypeEnvVarName is the name of the key used to store the environment type (e.g., dev, prod) in the .env file
-const EnvironmentTypeEnvVarName = "AZURE_ENV_TYPE"
 
 // The zero value of an Environment is not valid. Use [New] to create one. When writing tests,
 // [Ephemeral] and [EphemeralWithValues] are useful to create environments which are not persisted to disk.
@@ -246,12 +246,12 @@ func (e *Environment) SetLocation(location string) {
 // GetEnvironmentType returns the environment type (e.g., dev, prod) from the
 // .env file, or an empty string if not set.
 func (e *Environment) GetEnvironmentType() string {
-	return e.Getenv(EnvironmentTypeEnvVarName)
+	return e.Getenv(EnvTypeEnvVarName)
 }
 
 // SetEnvironmentType sets the environment type (e.g., dev, prod) in the .env file.
 func (e *Environment) SetEnvironmentType(envType string) {
-	e.DotenvSet(EnvironmentTypeEnvVarName, envType)
+	e.DotenvSet(EnvTypeEnvVarName, envType)
 }
 
 // Key returns the environment key name for the given name.

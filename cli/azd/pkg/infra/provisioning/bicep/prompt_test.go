@@ -11,6 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -325,6 +326,6 @@ func (m *mockCurrentPrincipal) CurrentPrincipalId(_ context.Context) (string, er
 	return "11111111-1111-1111-1111-111111111111", nil
 }
 
-func (m *mockCurrentPrincipal) CurrentPrincipalType(_ context.Context) (string, error) {
-	return "User", nil
+func (m *mockCurrentPrincipal) CurrentPrincipalType(_ context.Context) (auth.LoginType, error) {
+	return auth.UserLoginType, nil
 }

@@ -24,4 +24,8 @@ type LoginResult struct {
 	// When status is `LoginStatusSuccess`, the time at which the access token
 	// expires.
 	ExpiresOn *time.Time `json:"expiresOn,omitempty"`
+	// When status is `LoginStatusSuccess`, the account name the user is logged in as.
+	Account *string `json:"account,omitempty"`
+	// When status is `LoginStatusSuccess`, the type of login (email or clientId).
+	LoginType *string `json:"loginType,omitempty"`
 }

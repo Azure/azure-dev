@@ -314,6 +314,20 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			res.ExpiresOn = &token.ExpiresOn
 		}
 
+		// Get user account information for both JSON and non-JSON output
+		var details *auth.LogInDetails
+		var detailsErr error
+		if res.Status == contracts.LoginStatusSuccess {
+			details, detailsErr = la.authManager.LogInDetails(ctx)
+			if detailsErr == nil {
+				res.Account = &details.Account
+				loginType := string(details.LoginType)
+				res.LoginType = &loginType
+			} else {
+				log.Printf("error: getting signed in account: %v", detailsErr)
+			}
+		}
+
 		if la.formatter.Kind() != output.NoneFormat {
 			return nil, la.formatter.Format(res, la.writer, nil)
 		} else {
@@ -327,12 +341,8 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				panic("Unhandled login status")
 			}
 
-			// get user account information - login --check-status
-			details, err := la.authManager.LogInDetails(ctx)
-
 			// error getting user account or not logged in
-			if err != nil {
-				log.Printf("error: getting signed in account: %v", err)
+			if detailsErr != nil {
 				fmt.Fprintln(la.console.Handles().Stdout, msg)
 				return nil, nil
 			}

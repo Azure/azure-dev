@@ -1231,8 +1231,8 @@ func readUserProperties(cfg config.Config) (*userProperties, error) {
 }
 
 const (
-	EmailLoginType    LoginType = "email"
-	ClientIdLoginType LoginType = "clientId"
+	UserLoginType             LoginType = "User"
+	ServicePrincipalLoginType LoginType = "ServicePrincipal"
 )
 
 type LoginType string
@@ -1259,13 +1259,13 @@ func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 			return nil, fmt.Errorf("checking az cli installation (using legacy auth): %w", err)
 		}
 
-		logInType := EmailLoginType
+		logInType := UserLoginType
 		azAccount, err := m.azCli.Account(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("fetching az cli account: %w", err)
 		}
 		if azAccount.User.Type != "user" {
-			logInType = ClientIdLoginType
+			logInType = ServicePrincipalLoginType
 		}
 		return &LogInDetails{
 			LoginType: logInType,
@@ -1291,14 +1291,14 @@ func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 		for _, account := range accounts {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
 				return &LogInDetails{
-					LoginType: EmailLoginType,
+					LoginType: UserLoginType,
 					Account:   account.PreferredUsername,
 				}, nil
 			}
 		}
 	} else if currentUser.ClientID != nil {
 		return &LogInDetails{
-			LoginType: ClientIdLoginType,
+			LoginType: ServicePrincipalLoginType,
 			Account:   *currentUser.ClientID,
 		}, nil
 	}

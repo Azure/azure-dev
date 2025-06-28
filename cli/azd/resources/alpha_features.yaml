@@ -12,3 +12,6 @@
   description: "Enables Azure deployment stacks for ARM/Bicep based deployments."
 - id: extensions
   description: "Enables the use of `azd` extension packages."
+- id: llm
+  description: "Enables the use of LLMs in the CLI."
+  

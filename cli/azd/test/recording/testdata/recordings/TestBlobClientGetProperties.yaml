@@ -20,7 +20,7 @@ interactions:
             Authorization:
                 - SANITIZED
             User-Agent:
-                - azsdk-go-azblob/v1.3.1 (go1.24.0; darwin)
+                - azsdk-go-azblob/v1.3.1 (go1.24.4; linux)
             X-Ms-Version:
                 - "2023-11-03"
         url: http://127.0.0.1:80/test.txt
@@ -40,9 +40,9 @@ interactions:
             Content-Type:
                 - text/plain; charset=utf-8
             Date:
-                - Fri, 23 Aug 2024 22:33:36 GMT
+                - Mon, 30 Jun 2025 19:07:21 GMT
         status: 200 OK
         code: 200
-        duration: 277.625µs
+        duration: 1.044718ms
 ---
-time: "1724452415"
+time: "1751310440"

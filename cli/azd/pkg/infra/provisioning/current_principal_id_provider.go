@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 )
 
@@ -18,7 +19,7 @@ type CurrentPrincipalIdProvider interface {
 	// CurrentPrincipalId returns the object id of the current logged in principal, or an error if it can not be
 	// determined.
 	CurrentPrincipalId(ctx context.Context) (string, error)
-	CurrentPrincipalType(ctx context.Context) (auth.LoginType, error)
+	CurrentPrincipalType(ctx context.Context) (contracts.LoginType, error)
 }
 
 func NewPrincipalIdProvider(
@@ -56,7 +57,7 @@ func (p *principalIDProvider) CurrentPrincipalId(ctx context.Context) (string, e
 	return principalId, nil
 }
 
-func (p *principalIDProvider) CurrentPrincipalType(ctx context.Context) (auth.LoginType, error) {
+func (p *principalIDProvider) CurrentPrincipalType(ctx context.Context) (contracts.LoginType, error) {
 	loginDetails, err := p.authManager.LogInDetails(ctx)
 	if err != nil {
 		return "", fmt.Errorf("fetching login details: %w", err)

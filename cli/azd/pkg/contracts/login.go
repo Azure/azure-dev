@@ -5,6 +5,14 @@ package contracts
 
 import "time"
 
+// LoginType represents the type of authentication used
+type LoginType string
+
+const (
+	UserLoginType             LoginType = "User"
+	ServicePrincipalLoginType LoginType = "ServicePrincipal"
+)
+
 // LoginStatus are the values of the "status" property of a LoginResult
 type LoginStatus string
 
@@ -26,6 +34,6 @@ type LoginResult struct {
 	ExpiresOn *time.Time `json:"expiresOn,omitempty"`
 	// When status is `LoginStatusSuccess`, the account name the user is logged in as.
 	Account *string `json:"account,omitempty"`
-	// When status is `LoginStatusSuccess`, the type of login (email or clientId).
-	LoginType *string `json:"loginType,omitempty"`
+	// When status is `LoginStatusSuccess`, the type of login (User or ServicePrincipal).
+	LoginType *LoginType `json:"loginType,omitempty"`
 }

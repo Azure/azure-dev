@@ -27,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
@@ -1144,15 +1145,8 @@ func readUserProperties(cfg config.Config) (*userProperties, error) {
 	return &user, nil
 }
 
-const (
-	UserLoginType             LoginType = "User"
-	ServicePrincipalLoginType LoginType = "ServicePrincipal"
-)
-
-type LoginType string
-
 type LogInDetails struct {
-	LoginType LoginType
+	LoginType contracts.LoginType
 	Account   string
 }
 
@@ -1173,13 +1167,13 @@ func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 			return nil, fmt.Errorf("checking az cli installation (using legacy auth): %w", err)
 		}
 
-		logInType := UserLoginType
+		logInType := contracts.UserLoginType
 		azAccount, err := m.azCli.Account(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("fetching az cli account: %w", err)
 		}
 		if azAccount.User.Type != "user" {
-			logInType = ServicePrincipalLoginType
+			logInType = contracts.ServicePrincipalLoginType
 		}
 		return &LogInDetails{
 			LoginType: logInType,
@@ -1205,14 +1199,14 @@ func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 		for _, account := range accounts {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
 				return &LogInDetails{
-					LoginType: UserLoginType,
+					LoginType: contracts.UserLoginType,
 					Account:   account.PreferredUsername,
 				}, nil
 			}
 		}
 	} else if currentUser.ClientID != nil {
 		return &LogInDetails{
-			LoginType: ServicePrincipalLoginType,
+			LoginType: contracts.ServicePrincipalLoginType,
 			Account:   *currentUser.ClientID,
 		}, nil
 	}

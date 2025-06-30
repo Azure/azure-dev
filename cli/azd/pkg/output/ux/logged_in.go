@@ -7,31 +7,26 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 const cLoginSuccessMessage = "Logged in to Azure"
-const (
-	UserLoginType             LoginType = "User"
-	ServicePrincipalLoginType LoginType = "ServicePrincipal"
-)
-
-type LoginType string
 
 type LoggedIn struct {
 	LoggedInAs string
-	LoginType  LoginType
+	LoginType  contracts.LoginType
 }
 
 func (cr *LoggedIn) ToString(currentIndentation string) string {
 	switch cr.LoginType {
-	case UserLoginType:
+	case contracts.UserLoginType:
 		return fmt.Sprintf(
 			"%s%s as %s",
 			currentIndentation,
 			cLoginSuccessMessage,
 			output.WithBold("%s", cr.LoggedInAs))
-	case ServicePrincipalLoginType:
+	case contracts.ServicePrincipalLoginType:
 		return fmt.Sprintf(
 			"%s%s as (%s)",
 			currentIndentation,

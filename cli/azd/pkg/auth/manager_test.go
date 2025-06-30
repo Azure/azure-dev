@@ -22,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/az"
@@ -324,7 +325,7 @@ func TestLogInDetails(t *testing.T) {
 
 		details, err := m.LogInDetails(context.Background())
 		require.NoError(t, err)
-		require.Equal(t, UserLoginType, details.LoginType)
+		require.Equal(t, contracts.UserLoginType, details.LoginType)
 		require.Equal(t, "test@example.com", details.Account)
 	})
 
@@ -354,7 +355,7 @@ func TestLogInDetails(t *testing.T) {
 
 		details, err := m.LogInDetails(context.Background())
 		require.NoError(t, err)
-		require.Equal(t, ServicePrincipalLoginType, details.LoginType)
+		require.Equal(t, contracts.ServicePrincipalLoginType, details.LoginType)
 		require.Equal(t, "12345678-1234-1234-1234-123456789012", details.Account)
 	})
 }

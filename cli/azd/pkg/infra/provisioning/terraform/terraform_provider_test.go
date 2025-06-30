@@ -12,9 +12,9 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -220,6 +220,6 @@ func (m *mockCurrentPrincipal) CurrentPrincipalId(_ context.Context) (string, er
 	return "11111111-1111-1111-1111-111111111111", nil
 }
 
-func (m *mockCurrentPrincipal) CurrentPrincipalType(_ context.Context) (auth.LoginType, error) {
-	return auth.UserLoginType, nil
+func (m *mockCurrentPrincipal) CurrentPrincipalType(_ context.Context) (contracts.LoginType, error) {
+	return contracts.UserLoginType, nil
 }

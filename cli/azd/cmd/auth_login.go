@@ -320,8 +320,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			details, detailsErr = la.authManager.LogInDetails(ctx)
 			if detailsErr == nil {
 				res.Account = &details.Account
-				loginType := string(details.LoginType)
-				res.LoginType = &loginType
+				res.LoginType = &details.LoginType
 			} else {
 				log.Printf("error: getting signed in account: %v", detailsErr)
 			}
@@ -349,7 +348,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			// only print the message if the user is logged in
 			la.console.MessageUxItem(ctx, &ux.LoggedIn{
 				LoggedInAs: details.Account,
-				LoginType:  ux.LoginType(details.LoginType),
+				LoginType:  details.LoginType,
 			})
 			return nil, nil
 		}
@@ -389,7 +388,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	la.console.MessageUxItem(ctx, &ux.LoggedIn{
 		LoggedInAs: details.Account,
-		LoginType:  ux.LoginType(details.LoginType),
+		LoginType:  details.LoginType,
 	})
 	return nil, nil
 }

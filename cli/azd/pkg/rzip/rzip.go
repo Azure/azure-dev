@@ -12,14 +12,21 @@ import (
 	"strings"
 )
 
+// OnZipFn is a function that is invoked on each file or directory,
+// returning a bool to indicate whether the entry should be included in the final zip.
+type OnZipFn func(src string, info os.FileInfo) (bool, error)
+
 // CreateFromDirectory creates a zip archive from the given directory recursively,
 // that is suitable for transporting across machines.
 //
 // It resolves any symlinks it encounters.
-func CreateFromDirectory(source string, buf *os.File) error {
+//
+// An optional function callback onZip can be passed to observe files being included,
+// or simply to exclude files.
+func CreateFromDirectory(source string, buf *os.File, onZip OnZipFn) error {
 	w := zip.NewWriter(buf)
 
-	err := addDirRoot(w, source)
+	err := addDirRoot(w, source, onZip)
 	if err != nil {
 		return err
 	}
@@ -29,14 +36,16 @@ func CreateFromDirectory(source string, buf *os.File) error {
 
 func addDirRoot(
 	w *zip.Writer,
-	src string) error {
-	return addDir(w, "", src, 0)
+	src string,
+	onZip OnZipFn) error {
+	return addDir(w, "", src, onZip, 0)
 }
 
 func addDir(
 	w *zip.Writer,
 	destRoot,
 	src string,
+	onZip OnZipFn,
 	symlinkDepth int) error {
 	if symlinkDepth > 40 {
 		// too deep, bail out similarly to the 'zip' tool
@@ -56,12 +65,22 @@ func addDir(
 			return err
 		}
 
+		if onZip != nil {
+			include, err := onZip(s, info)
+			if err != nil {
+				return err
+			}
+			if !include {
+				continue
+			}
+		}
+
 		switch {
 		case info.Mode()&os.ModeSymlink != 0:
-			err = onSymlink(w, destRoot, s, info, symlinkDepth)
+			err = onSymlink(w, destRoot, s, info, onZip, symlinkDepth)
 		case info.IsDir():
 			root := filepath.Join(destRoot, info.Name())
-			err = addDir(w, root, s, symlinkDepth)
+			err = addDir(w, root, s, onZip, symlinkDepth)
 		default:
 			err = addFile(w, destRoot, s, info.Name(), info)
 		}
@@ -110,6 +129,7 @@ func onSymlink(
 	destRoot,
 	src string,
 	link os.FileInfo,
+	onZip OnZipFn,
 	symlinkDepth int) error {
 	target, err := filepath.EvalSymlinks(src)
 	if err != nil {
@@ -125,7 +145,7 @@ func onSymlink(
 	case info.IsDir():
 		symlinkDepth++
 		root := filepath.Join(destRoot, link.Name())
-		return addDir(w, root, target, symlinkDepth)
+		return addDir(w, root, target, onZip, symlinkDepth)
 	default:
 		return addFile(w, destRoot, target, link.Name(), info)
 	}

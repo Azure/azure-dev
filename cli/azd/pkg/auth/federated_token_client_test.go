@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package github
+package auth
 
 import (
 	"bytes"
@@ -16,9 +16,6 @@ import (
 )
 
 func TestTokenForAudience(t *testing.T) {
-	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "http://localhost/api/token")
-	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "fake-token")
-
 	mockContext := mocks.NewMockContext(context.Background())
 
 	var req http.Request
@@ -30,9 +27,12 @@ func TestTokenForAudience(t *testing.T) {
 		Body:       io.NopCloser(bytes.NewBufferString(`{ "value": "abc" }`)),
 	})
 
-	client := NewFederatedTokenClient(&azcore.ClientOptions{
-		Transport: mockContext.HttpClient,
-	})
+	client := NewFederatedTokenClient(
+		"http://localhost/api/token",
+		"fake-token",
+		azcore.ClientOptions{
+			Transport: mockContext.HttpClient,
+		})
 
 	token, err := client.TokenForAudience(context.Background(), "api://AzureADTokenExchange")
 	require.NoError(t, err)
@@ -43,9 +43,6 @@ func TestTokenForAudience(t *testing.T) {
 }
 
 func TestTokenForAudienceDefault(t *testing.T) {
-	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "http://localhost/api/token")
-	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "fake-token")
-
 	mockContext := mocks.NewMockContext(context.Background())
 
 	var req http.Request
@@ -57,9 +54,12 @@ func TestTokenForAudienceDefault(t *testing.T) {
 		Body:       io.NopCloser(bytes.NewBufferString(`{ "value": "abc" }`)),
 	})
 
-	client := NewFederatedTokenClient(&azcore.ClientOptions{
-		Transport: mockContext.HttpClient,
-	})
+	client := NewFederatedTokenClient(
+		"http://localhost/api/token",
+		"fake-token",
+		azcore.ClientOptions{
+			Transport: mockContext.HttpClient,
+		})
 
 	token, err := client.TokenForAudience(context.Background(), "")
 	require.NoError(t, err)
@@ -70,9 +70,6 @@ func TestTokenForAudienceDefault(t *testing.T) {
 }
 
 func TestTokenForAudienceFailure(t *testing.T) {
-	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "http://localhost/api/token")
-	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "fake-token")
-
 	mockContext := mocks.NewMockContext(context.Background())
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -82,9 +79,12 @@ func TestTokenForAudienceFailure(t *testing.T) {
 		Body:       io.NopCloser(bytes.NewBufferString("")),
 	})
 
-	client := NewFederatedTokenClient(&azcore.ClientOptions{
-		Transport: mockContext.HttpClient,
-	})
+	client := NewFederatedTokenClient(
+		"http://localhost/api/token",
+		"fake-token",
+		azcore.ClientOptions{
+			Transport: mockContext.HttpClient,
+		})
 
 	_, err := client.TokenForAudience(context.Background(), "api://AzureADTokenExchange")
 	require.Error(t, err)

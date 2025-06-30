@@ -9,6 +9,7 @@ const (
 	AzureResourceTypeApim                      AzureResourceType = "Microsoft.ApiManagement/service"
 	AzureResourceTypeAppConfig                 AzureResourceType = "Microsoft.AppConfiguration/configurationStores"
 	AzureResourceTypeAppInsightComponent       AzureResourceType = "Microsoft.Insights/components"
+	AzureResourceTypeAutomationAccount         AzureResourceType = "Microsoft.Automation/automationAccounts"
 	AzureResourceTypeCacheForRedis             AzureResourceType = "Microsoft.Cache/redis"
 	AzureResourceTypeCDNProfile                AzureResourceType = "Microsoft.Cdn/profiles"
 	AzureResourceTypeCosmosDb                  AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
@@ -69,6 +70,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Portal dashboard"
 	case AzureResourceTypeAppInsightComponent:
 		return "Application Insights"
+	case AzureResourceTypeAutomationAccount:
+		return "Automation account"
 	case AzureResourceTypeLogAnalyticsWorkspace:
 		return "Log Analytics workspace"
 	case AzureResourceTypeWebSite:

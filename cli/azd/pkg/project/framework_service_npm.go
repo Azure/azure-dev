@@ -94,11 +94,6 @@ func (np *npmProject) Package(
 	buildOutput *ServiceBuildResult,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	packageDest, err := os.MkdirTemp("", "azd")
-	if err != nil {
-		return nil, fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err)
-	}
-
 	progress.SetProgress(NewServiceProgress("Running NPM package script"))
 
 	// Long term this script we call should better align with our inner-loop scenarios
@@ -109,45 +104,24 @@ func (np *npmProject) Package(
 	}
 
 	// Copy directory rooted by dist to package root.
-	packageSource := buildOutput.BuildOutputPath
-	if packageSource == "" {
-		packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
+	packagePath := buildOutput.BuildOutputPath
+	if packagePath == "" {
+		packagePath = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
 	}
 
-	if entries, err := os.ReadDir(packageSource); err != nil || len(entries) == 0 {
+	if entries, err := os.ReadDir(packagePath); err != nil || len(entries) == 0 {
 		return nil, fmt.Errorf(
 			//nolint:lll
 			"package source '%s' is empty or does not exist. If your service has custom packaging requirements create "+
 				"an NPM script named 'build' within your package.json and ensure your package artifacts are written to "+
 				"the '%s' directory",
-			packageSource,
-			packageSource,
+			packagePath,
+			packagePath,
 		)
-	}
-
-	progress.SetProgress(NewServiceProgress("Copying deployment package"))
-
-	if err := buildForZip(
-		packageSource,
-		packageDest,
-		buildForZipOptions{
-			excludeConditions: []excludeDirEntryCondition{
-				excludeNodeModules,
-			},
-		}); err != nil {
-		return nil, fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err)
-	}
-
-	if err := validatePackageOutput(packageDest); err != nil {
-		return nil, err
 	}
 
 	return &ServicePackageResult{
 		Build:       buildOutput,
-		PackagePath: packageDest,
+		PackagePath: packagePath,
 	}, nil
-}
-
-func excludeNodeModules(path string, file os.FileInfo) bool {
-	return file.IsDir() && file.Name() == "node_modules"
 }

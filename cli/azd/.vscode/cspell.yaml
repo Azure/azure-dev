@@ -70,7 +70,7 @@ overrides:
   - filename: pkg/spin/run.go
     words:
       - errored
-  - filename: pkg/project/framework_service_python.go
+  - filename: pkg/project/project_utils.go
     words:
       - __pycache__
       - Venv
@@ -132,6 +132,9 @@ overrides:
   - filename: test/recording/recording.go
     words:
       - oidctoken
+  - filename: test/recording/proxy.go
+    words:
+      - WSAECONNRESET
   - filename: test/functional/testdata/samples/funcapp/getting_started.md
     words:
       - funcignore

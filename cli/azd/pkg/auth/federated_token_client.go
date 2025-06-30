@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package github
+package auth
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -17,14 +16,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
-// TokenForAudience gets the federated token from GitHub Actions. It follows the same strategy as the
-// as the getIDToken function from `@actions/core`.
+// TokenForAudience fetches the federated token from the federated token provider.
 func (c *FederatedTokenClient) TokenForAudience(ctx context.Context, audience string) (string, error) {
-	idTokenUrl, has := os.LookupEnv("ACTIONS_ID_TOKEN_REQUEST_URL")
-	if !has {
-		return "", errors.New("no ACTIONS_ID_TOKEN_REQUEST_URL set in the environment")
-	}
-
+	idTokenUrl := c.idTokenUrl
 	if audience != "" {
 		idTokenUrl = fmt.Sprintf("%s&audience=%s", idTokenUrl, url.QueryEscape(audience))
 	}
@@ -60,33 +54,34 @@ type tokenResponse struct {
 	Value string `json:"value"`
 }
 
-type bearerTokenAuthPolicy struct{}
+type bearerTokenAuthPolicy struct {
+	token string
+}
 
 // Do authorizes a request with a bearer token
 func (b *bearerTokenAuthPolicy) Do(req *policy.Request) (*http.Response, error) {
-	token, has := os.LookupEnv("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
-	if !has {
-		return nil, errors.New("no ACTIONS_ID_TOKEN_REQUEST_TOKEN set in environment.")
+	if b.token != "" {
+		req.Raw().Header.Set("Authorization", fmt.Sprintf("Bearer %s", b.token))
 	}
-
-	req.Raw().Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 	return req.Next()
 }
 
-// FederatedTokenClient is a client that can be used to fetch federated access tokens when running in GitHub actions.
-// It provides similar behavior to logic in the `@actions/core` JavaScript package that actions can use.
+// FederatedTokenClient is a client that can be used to fetch federated access tokens from a federated provider.
 type FederatedTokenClient struct {
+	idTokenUrl string
+
 	pipeline runtime.Pipeline
 }
 
-func NewFederatedTokenClient(options *azcore.ClientOptions) *FederatedTokenClient {
+func NewFederatedTokenClient(idTokenUrl string, token string, options azcore.ClientOptions) *FederatedTokenClient {
 	pipeline := runtime.NewPipeline("github", "1.0.0", runtime.PipelineOptions{
 		PerRetry: []policy.Policy{
-			&bearerTokenAuthPolicy{},
+			&bearerTokenAuthPolicy{token: token},
 		},
-	}, options)
+	}, &options)
 
 	return &FederatedTokenClient{
-		pipeline: pipeline,
+		pipeline:   pipeline,
+		idTokenUrl: idTokenUrl,
 	}
 }

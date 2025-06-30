@@ -64,7 +64,7 @@ func (i *ProvisionFlags) bindCommon(local *pflag.FlagSet, global *internal.Globa
 		&i.ignoreDeploymentState,
 		"no-state",
 		false,
-		"Do not use latest Deployment State (bicep only).")
+		"(Bicep only) Forces a fresh deployment based on current Bicep template files, ignoring any stored deployment state.")
 
 	i.EnvFlag = &internal.EnvFlag{}
 	i.EnvFlag.Bind(local, global)

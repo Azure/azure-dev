@@ -193,7 +193,7 @@ func TestBicepDestroy(t *testing.T) {
 
 		infraProvider := createBicepProvider(t, mockContext)
 
-		destroyOptions := provisioning.NewDestroyOptions(false, false, false)
+		destroyOptions := provisioning.NewDestroyOptions(false, false)
 		destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 		require.Nil(t, err)
@@ -212,7 +212,7 @@ func TestBicepDestroy(t *testing.T) {
 
 		infraProvider := createBicepProvider(t, mockContext)
 
-		destroyOptions := provisioning.NewDestroyOptions(true, true, false)
+		destroyOptions := provisioning.NewDestroyOptions(true, true)
 		destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 		require.Nil(t, err)

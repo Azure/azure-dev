@@ -66,7 +66,7 @@ func TestTerraformDestroy(t *testing.T) {
 	prepareDestroyMocks(mockContext.CommandRunner)
 
 	infraProvider := createTerraformProvider(t, mockContext)
-	destroyOptions := provisioning.NewDestroyOptions(false, false, false)
+	destroyOptions := provisioning.NewDestroyOptions(false, false)
 	destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 	require.Nil(t, err)

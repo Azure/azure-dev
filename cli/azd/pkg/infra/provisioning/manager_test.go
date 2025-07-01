@@ -178,7 +178,7 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"})
 	require.NoError(t, err)
 
-	destroyOptions := provisioning.NewDestroyOptions(false, false, false)
+	destroyOptions := provisioning.NewDestroyOptions(false, false)
 	destroyResult, err := mgr.Destroy(*mockContext.Context, destroyOptions)
 
 	require.NotNil(t, destroyResult)
@@ -214,7 +214,7 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 	err := mgr.Initialize(*mockContext.Context, "", provisioning.Options{Provider: "test"})
 	require.NoError(t, err)
 
-	destroyOptions := provisioning.NewDestroyOptions(false, false, false)
+	destroyOptions := provisioning.NewDestroyOptions(false, false)
 	destroyResult, err := mgr.Destroy(*mockContext.Context, destroyOptions)
 
 	require.Nil(t, destroyResult)

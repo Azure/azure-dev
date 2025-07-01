@@ -135,12 +135,12 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 func expectedVersionInstalled(ctx context.Context, commandRunner exec.CommandRunner, binaryPath string) bool {
 	ghVersion, err := tools.ExecuteCommand(ctx, commandRunner, binaryPath, "--version")
 	if err != nil {
-		log.Printf("checking GitHub CLI version: %s", err.Error())
+		log.Printf("checking GitHub CLI version: %v", err)
 		return false
 	}
 	ghSemver, err := tools.ExtractVersion(ghVersion)
 	if err != nil {
-		log.Printf("converting to semver version fails: %s", err.Error())
+		log.Printf("converting to semver version fails: %v", err)
 		return false
 	}
 	if ghSemver.LT(Version) {

@@ -319,8 +319,10 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if res.Status == contracts.LoginStatusSuccess {
 			details, detailsErr = la.authManager.LogInDetails(ctx)
 			if detailsErr == nil {
-				res.Account = &details.Account
-				res.LoginType = &details.LoginType
+				res.Principal = &contracts.PrincipalInfo{
+					Name: details.Account,
+					Type: details.LoginType,
+				}
 			} else {
 				log.Printf("error: getting signed in account: %v", detailsErr)
 			}

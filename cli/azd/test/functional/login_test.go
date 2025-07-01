@@ -33,10 +33,9 @@ func Test_CLI_LoginStatus(t *testing.T) {
 	case contracts.LoginStatusSuccess:
 		require.NotNil(t, loginResult.ExpiresOn)
 		// When authenticated, account information should be present
-		require.NotNil(t, loginResult.Account, "Account should be present when authenticated")
-		require.NotEmpty(t, *loginResult.Account, "Account should not be empty when authenticated")
-		require.NotNil(t, loginResult.LoginType, "LoginType should be present when authenticated")
-		require.NotEmpty(t, *loginResult.LoginType, "LoginType should not be empty when authenticated")
+		require.NotNil(t, loginResult.Principal, "Principal should be present when authenticated")
+		require.NotEmpty(t, loginResult.Principal.Name, "Principal name should not be empty when authenticated")
+		require.NotEmpty(t, loginResult.Principal.Type, "Principal type should not be empty when authenticated")
 	default:
 		require.Fail(t, "Unexpected login status: %s", loginResult.Status)
 	}
@@ -57,10 +56,9 @@ func Test_CLI_AuthLoginStatus(t *testing.T) {
 	case contracts.LoginStatusSuccess:
 		require.NotNil(t, loginResult.ExpiresOn)
 		// When authenticated, account information should be present
-		require.NotNil(t, loginResult.Account, "Account should be present when authenticated")
-		require.NotEmpty(t, *loginResult.Account, "Account should not be empty when authenticated")
-		require.NotNil(t, loginResult.LoginType, "LoginType should be present when authenticated")
-		require.NotEmpty(t, *loginResult.LoginType, "LoginType should not be empty when authenticated")
+		require.NotNil(t, loginResult.Principal, "Principal should be present when authenticated")
+		require.NotEmpty(t, loginResult.Principal.Name, "Principal name should not be empty when authenticated")
+		require.NotEmpty(t, loginResult.Principal.Type, "Principal type should not be empty when authenticated")
 	default:
 		require.Fail(t, "Unexpected login status: %s", loginResult.Status)
 	}

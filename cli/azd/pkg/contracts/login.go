@@ -25,6 +25,14 @@ const (
 	LoginStatusUnauthenticated LoginStatus = "unauthenticated"
 )
 
+// PrincipalInfo contains information about the authenticated principal
+type PrincipalInfo struct {
+	// The name/identifier of the principal
+	Name string `json:"name"`
+	// The type of principal (User or ServicePrincipal)
+	Type PrincipalType `json:"type"`
+}
+
 // LoginResult is the contract for the output of `azd auth login`.
 type LoginResult struct {
 	// The result of checking for a valid access token.
@@ -32,8 +40,6 @@ type LoginResult struct {
 	// When status is `LoginStatusSuccess`, the time at which the access token
 	// expires.
 	ExpiresOn *time.Time `json:"expiresOn,omitempty"`
-	// When status is `LoginStatusSuccess`, the account name the user is logged in as.
-	Account *string `json:"account,omitempty"`
-	// When status is `LoginStatusSuccess`, the type of login (User or ServicePrincipal).
-	LoginType *PrincipalType `json:"loginType,omitempty"`
+	// When status is `LoginStatusSuccess`, information about the authenticated principal.
+	Principal *PrincipalInfo `json:"principal,omitempty"`
 }

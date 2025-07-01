@@ -1146,7 +1146,7 @@ func readUserProperties(cfg config.Config) (*userProperties, error) {
 }
 
 type LogInDetails struct {
-	LoginType contracts.LoginType
+	LoginType contracts.PrincipalType
 	Account   string
 }
 
@@ -1167,13 +1167,13 @@ func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 			return nil, fmt.Errorf("checking az cli installation (using legacy auth): %w", err)
 		}
 
-		logInType := contracts.UserLoginType
+		logInType := contracts.UserPrincipalType
 		azAccount, err := m.azCli.Account(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("fetching az cli account: %w", err)
 		}
 		if azAccount.User.Type != "user" {
-			logInType = contracts.ServicePrincipalLoginType
+			logInType = contracts.ServicePrincipalPrincipalType
 		}
 		return &LogInDetails{
 			LoginType: logInType,
@@ -1199,14 +1199,14 @@ func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 		for _, account := range accounts {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
 				return &LogInDetails{
-					LoginType: contracts.UserLoginType,
+					LoginType: contracts.UserPrincipalType,
 					Account:   account.PreferredUsername,
 				}, nil
 			}
 		}
 	} else if currentUser.ClientID != nil {
 		return &LogInDetails{
-			LoginType: contracts.ServicePrincipalLoginType,
+			LoginType: contracts.ServicePrincipalPrincipalType,
 			Account:   *currentUser.ClientID,
 		}, nil
 	}

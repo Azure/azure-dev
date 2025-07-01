@@ -325,7 +325,7 @@ func TestLogInDetails(t *testing.T) {
 
 		details, err := m.LogInDetails(context.Background())
 		require.NoError(t, err)
-		require.Equal(t, contracts.UserLoginType, details.LoginType)
+		require.Equal(t, contracts.UserPrincipalType, details.LoginType)
 		require.Equal(t, "test@example.com", details.Account)
 	})
 
@@ -355,7 +355,7 @@ func TestLogInDetails(t *testing.T) {
 
 		details, err := m.LogInDetails(context.Background())
 		require.NoError(t, err)
-		require.Equal(t, contracts.ServicePrincipalLoginType, details.LoginType)
+		require.Equal(t, contracts.ServicePrincipalPrincipalType, details.LoginType)
 		require.Equal(t, "12345678-1234-1234-1234-123456789012", details.Account)
 	})
 }

@@ -5,12 +5,12 @@ package contracts
 
 import "time"
 
-// LoginType represents the type of authentication used
-type LoginType string
+// PrincipalType represents the type of principal
+type PrincipalType string
 
 const (
-	UserLoginType             LoginType = "User"
-	ServicePrincipalLoginType LoginType = "ServicePrincipal"
+	UserPrincipalType             PrincipalType = "User"
+	ServicePrincipalPrincipalType PrincipalType = "ServicePrincipal"
 )
 
 // LoginStatus are the values of the "status" property of a LoginResult
@@ -35,5 +35,5 @@ type LoginResult struct {
 	// When status is `LoginStatusSuccess`, the account name the user is logged in as.
 	Account *string `json:"account,omitempty"`
 	// When status is `LoginStatusSuccess`, the type of login (User or ServicePrincipal).
-	LoginType *LoginType `json:"loginType,omitempty"`
+	LoginType *PrincipalType `json:"loginType,omitempty"`
 }

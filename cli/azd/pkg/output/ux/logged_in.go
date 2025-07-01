@@ -15,18 +15,18 @@ const cLoginSuccessMessage = "Logged in to Azure"
 
 type LoggedIn struct {
 	LoggedInAs string
-	LoginType  contracts.LoginType
+	LoginType  contracts.PrincipalType
 }
 
 func (cr *LoggedIn) ToString(currentIndentation string) string {
 	switch cr.LoginType {
-	case contracts.UserLoginType:
+	case contracts.UserPrincipalType:
 		return fmt.Sprintf(
 			"%s%s as %s",
 			currentIndentation,
 			cLoginSuccessMessage,
 			output.WithBold("%s", cr.LoggedInAs))
-	case contracts.ServicePrincipalLoginType:
+	case contracts.ServicePrincipalPrincipalType:
 		return fmt.Sprintf(
 			"%s%s as (%s)",
 			currentIndentation,

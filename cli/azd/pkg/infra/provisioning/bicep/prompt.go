@@ -381,15 +381,11 @@ func (p *BicepProvider) promptForParameter(
 		case provisioning.ParameterTypeBoolean:
 			options := []string{"False", "True"}
 			if defaultValueForPrompt != nil {
-				switch v := defaultValueForPrompt.(type) {
-				case bool:
-					if v {
-						defaultValueForPrompt = "True"
-					} else {
-						defaultValueForPrompt = "False"
-					}
-				default:
-					return nil, fmt.Errorf("unsupported default value type %T for bool parameter: %v", v, key)
+				strVal := fmt.Sprintf("%v", defaultValueForPrompt)
+				if strings.ToLower(strVal) == "true" {
+					defaultValueForPrompt = "True"
+				} else {
+					defaultValueForPrompt = "False"
 				}
 			}
 			choice, err := p.console.Select(ctx, input.ConsoleOptions{

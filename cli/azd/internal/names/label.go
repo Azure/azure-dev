@@ -51,7 +51,8 @@ func ValidateProjectName(name string) error {
 	}
 	if !matched {
 		return fmt.Errorf(
-			"invalid project name '%s': only lowercase letters, numbers, and hyphens (-) are allowed, and must start and end with a letter or number",
+			"invalid project name '%s': only lowercase letters, numbers, and hyphens (-) are allowed, "+
+				"and must start and end with a letter or number",
 			name,
 		)
 	}

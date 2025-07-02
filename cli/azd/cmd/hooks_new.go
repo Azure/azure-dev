@@ -21,6 +21,8 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/chains"
+	"github.com/tmc/langchaingo/llms"
+	"github.com/tmc/langchaingo/schema"
 	"github.com/tmc/langchaingo/tools"
 )
 
@@ -90,13 +92,20 @@ func (hna *hooksNewAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		return nil, fmt.Errorf("failed to create LLM client: %w", err)
 	}
 
+	// Create a callback handler to log agent steps
+	callbackHandler := &agentLogHandler{console: hna.console}
+
 	agent := agents.NewOneShotAgent(llClient, []tools.Tool{
 		tools.Calculator{},
 		hookResolverTool{},
 		osResolverTool{},
 		saveHookTool{},
-	})
+	}, agents.WithCallbacksHandler(callbackHandler))
+
 	executor := agents.NewExecutor(agent)
+
+	fmt.Println("🤖 Starting AI agent execution...")
+
 	answer, err := chains.Run(ctx, executor, `
 You are an expert in creating hooks for the Azure Dev CLI.
 Your task is to create a new hook for linux bash or windows powershell, depending on the user's platform.
@@ -105,7 +114,7 @@ or a bash script if the user is on linux.
 Start by resolving the type of the hook based on the input.
 The hook should start with a comment on the top that describes the hook type.
 Then use the next prompt to create the hook code:
-Ask user for their age and prints how many days they have lived.
+Print the env variables that are available to the hook and then print a short description of the hook.
 
 Use the save hook tool to save the generated hook to a file.
 `,
@@ -114,6 +123,7 @@ Use the save hook tool to save the generated hook to a file.
 	if err != nil {
 		return nil, fmt.Errorf("failed to exe: %w", err)
 	}
+	fmt.Println("✅ AI agent execution completed")
 	fmt.Println(answer)
 
 	return &actions.ActionResult{
@@ -193,4 +203,98 @@ func (h saveHookTool) Call(ctx context.Context, input string) (string, error) {
 	}
 
 	return "Hook saved successfully", nil
+}
+
+// agentLogHandler implements callbacks.Handler to log agent execution steps
+type agentLogHandler struct {
+	console input.Console
+	step    int
+}
+
+// HandleLLMGenerateContentStart implements callbacks.Handler.
+func (h *agentLogHandler) HandleLLMGenerateContentStart(ctx context.Context, ms []llms.MessageContent) {
+}
+
+// HandleRetrieverEnd implements callbacks.Handler.
+func (h *agentLogHandler) HandleRetrieverEnd(ctx context.Context, query string, documents []schema.Document) {
+}
+
+// HandleRetrieverStart implements callbacks.Handler.
+func (h *agentLogHandler) HandleRetrieverStart(ctx context.Context, query string) {
+}
+
+// HandleStreamingFunc implements callbacks.Handler.
+func (h *agentLogHandler) HandleStreamingFunc(ctx context.Context, chunk []byte) {
+	// use console to stream output
+	if len(chunk) > 0 {
+		// Print the chunk to the console
+		fmt.Print(string(chunk))
+	}
+}
+
+func (h *agentLogHandler) HandleLLMStart(ctx context.Context, prompts []string) {
+	h.step++
+	fmt.Printf("🧠 Step %d: LLM processing...\n", h.step)
+	if len(prompts) > 0 && len(prompts[0]) < 200 {
+		fmt.Printf("   Prompt: %s\n", prompts[0])
+	}
+}
+
+func (h *agentLogHandler) HandleLLMError(ctx context.Context, err error) {
+	fmt.Printf("❌ Step %d: LLM error: %v\n", h.step, err)
+}
+
+func (h *agentLogHandler) HandleChainStart(ctx context.Context, inputs map[string]any) {
+	fmt.Println("🚀 Agent chain started")
+}
+
+func (h *agentLogHandler) HandleChainEnd(ctx context.Context, outputs map[string]any) {
+	fmt.Println("🏁 Agent chain completed")
+}
+
+func (h *agentLogHandler) HandleChainError(ctx context.Context, err error) {
+	fmt.Printf("💥 Agent chain error: %v\n", err)
+}
+
+func (h *agentLogHandler) HandleToolStart(ctx context.Context, input string) {
+	fmt.Printf("🔧 Using tool: %s\n")
+	if input != "" && len(input) < 100 {
+		fmt.Printf("   Input: %s\n", input)
+	}
+}
+
+func (h *agentLogHandler) HandleToolEnd(ctx context.Context, output string) {
+	if output != "" && len(output) < 150 {
+		fmt.Printf("   Output: %s\n", output)
+	} else {
+		fmt.Println("   Tool completed")
+	}
+}
+
+func (h *agentLogHandler) HandleToolError(ctx context.Context, err error) {
+	fmt.Printf("   ❌ Tool error: %v\n", err)
+}
+
+func (h *agentLogHandler) HandleText(ctx context.Context, text string) {
+	if text != "" && len(text) < 200 {
+		fmt.Printf("💭 Agent thinking: %s\n", text)
+	}
+}
+
+func (h *agentLogHandler) HandleAgentAction(ctx context.Context, action schema.AgentAction) {
+	fmt.Printf("🎯 Agent action: %s\n", action.Tool)
+	if action.ToolInput != "" && len(action.ToolInput) < 100 {
+		fmt.Printf("   Tool input: %s\n", action.ToolInput)
+	}
+}
+
+func (h *agentLogHandler) HandleAgentFinish(ctx context.Context, finish schema.AgentFinish) {
+	fmt.Println("🏆 Agent finished successfully")
+	if finish.ReturnValues != nil {
+		fmt.Printf("   Final output: %v\n", finish.ReturnValues)
+	}
+}
+
+func (h *agentLogHandler) HandleLLMGenerateContentEnd(ctx context.Context, response *llms.ContentResponse) {
+	fmt.Println("✨ LLM content generation completed")
 }

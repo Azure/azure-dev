@@ -39,7 +39,7 @@ func ValidateLabelName(name string) error {
 
 // ValidateProjectName checks if the given name is a valid project name.
 // Only lowercase letters, numbers, and - are allowed.
-// And the first and last characters must be letters or numbers
+// And the first and last characters must be letters or numbers.
 func ValidateProjectName(name string) error {
 	if l := len(name); l < 2 || l > 63 {
 		return fmt.Errorf("invalid project name '%s': length must be between 2 and 63 characters", name)

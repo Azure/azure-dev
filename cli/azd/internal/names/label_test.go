@@ -103,4 +103,50 @@ func TestValidateLabelName(t *testing.T) {
 	}
 }
 
+func TestValidateProjectName(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		// Valid cases
+		{"ValidLowercase", "myproject", false},
+		{"ValidWithHyphen", "my-project", false},
+		{"ValidNumberStart", "1myproject", false},
+		{"ValidNumberEnd", "myproject2", false},
+		{"ValidNumbersAndHyphens", "my2-project3", false},
+		{"ValidLongestLength", "a2345678901234567890123456789012345678901234567890123456789012", false},
+		{"ValidMinLength", "ab", false},
+		{"ValidAllDigits", "12345", false},
+
+		// Invalid cases
+		{"TooShort", "a", true},
+		{"TooLong", strings.Repeat("a", 64), true},
+		{"UppercaseLetter", "MyProject", true},
+		{"MixedCase", "myProject", true},
+		{"Underscore", "my_project", true},
+		{"Period", "my.project", true},
+		{"Space", "my project", true},
+		{"InvalidChar", "my#project", true},
+		{"StartsWithHyphen", "-myproject", true},
+		{"EndsWithHyphen", "myproject-", true},
+		{"OnlyHyphens", "-----", true},
+		{"HyphenAtBothEnds", "-myproject-", true},
+		{"ConsecutiveHyphens", "my--project", false},
+		{"EmptyString", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateProjectName(tt.input)
+			if tt.wantErr && err == nil {
+				t.Errorf("ValidateProjectName(%q): expected error, got nil", tt.input)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("ValidateProjectName(%q): expected no error, got %v", tt.input, err)
+			}
+		})
+	}
+}
+
 //cspell:enable

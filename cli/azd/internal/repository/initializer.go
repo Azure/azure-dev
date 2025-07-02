@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/names"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -340,6 +341,11 @@ func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.
 		DefaultValue: azdcontext.ProjectName(projectDir),
 	})
 	if err != nil {
+		return err
+	}
+
+	// Check if the project name is valid.
+	if err := names.ValidateProjectName(name); err != nil {
 		return err
 	}
 

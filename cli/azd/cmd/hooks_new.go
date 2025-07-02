@@ -6,6 +6,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"runtime"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -88,14 +90,21 @@ func (hna *hooksNewAction) Run(ctx context.Context) (*actions.ActionResult, erro
 
 	agent := agents.NewOneShotAgent(llClient, []tools.Tool{
 		tools.Calculator{},
+		hookResolverTool{},
+		osResolverTool{},
 	})
 	executor := agents.NewExecutor(agent)
-	answer, err := chains.Run(ctx, executor, "If I have 4 apples and I give 2 to my friend, how many apples do I have left?",
+	answer, err := chains.Run(ctx, executor, `
+You are an expert in creating hooks for the Azure Dev CLI.
+Your task is to create a new hook for linux bash or windows powershell, depending on the user's platform.
+Use the os resolver tool to determine the user's platform. You will write a powershell script if the user is on windows,
+or a bash script if the user is on linux.
+Start by resolving the type of the hook based on the input.
+The hook should start with a comment on the top that describes the hook type.
+Then use the next prompt to create the hook code.
+This is a script that ask user for their age and prints how many days they have lived.
+`,
 		chains.WithTemperature(0.0),
-		chains.WithStreamingFunc(func(ctx context.Context, chunk []byte) error {
-			fmt.Fprintf(hna.console.GetWriter(), "%s", chunk)
-			return nil
-		}),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exe: %w", err)
@@ -107,4 +116,41 @@ func (hna *hooksNewAction) Run(ctx context.Context) (*actions.ActionResult, erro
 			Header: "Done",
 		},
 	}, nil
+}
+
+type hookResolverTool struct {
+}
+
+func (h hookResolverTool) Name() string {
+	return "Hook Resolver"
+}
+
+func (h hookResolverTool) Description() string {
+	return `Useful for resolving the type of the hook based on the input.
+	The input to this tool should be a string that contains the prompt that creates the hook.`
+}
+
+func (h hookResolverTool) Call(ctx context.Context, input string) (string, error) {
+	validHookTypes := []string{"preprovision", "postprovision", "predeploy", "postdeploy"}
+	for _, hookType := range validHookTypes {
+		if strings.Contains(input, hookType) {
+			return hookType, nil
+		}
+	}
+	return "preprovision", nil
+}
+
+type osResolverTool struct {
+}
+
+func (h osResolverTool) Name() string {
+	return "Os Resolver"
+}
+
+func (h osResolverTool) Description() string {
+	return "Useful for resolving what is the user's operating system."
+}
+
+func (h osResolverTool) Call(ctx context.Context, input string) (string, error) {
+	return runtime.GOOS, nil
 }

@@ -236,14 +236,23 @@ func (hra *hooksRunAction) execHook(
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager, hra.commandRunner, hra.envManager, hra.console, cwd, hooksMap, hra.env, hra.serviceLocator)
 
-	previewer := hra.console.ShowPreviewer(ctx, &input.ShowPreviewerOptions{
-		Prefix:       "  ",
-		Title:        previewMessage,
-		MaxLineCount: 8,
-	})
-	defer hra.console.StopPreviewer(ctx, false)
+	// For interactive hooks, let the hooks runner handle the output directly
+	// For non-interactive hooks, use the previewer
+	var runOptions *tools.ExecOptions
+	if hook.Interactive {
+		// Interactive hooks should use the real TTY, not the previewer
+		runOptions = &tools.ExecOptions{}
+	} else {
+		// Non-interactive hooks use the previewer
+		previewer := hra.console.ShowPreviewer(ctx, &input.ShowPreviewerOptions{
+			Prefix:       "  ",
+			Title:        previewMessage,
+			MaxLineCount: 8,
+		})
+		defer hra.console.StopPreviewer(ctx, false)
+		runOptions = &tools.ExecOptions{StdOut: previewer}
+	}
 
-	runOptions := &tools.ExecOptions{StdOut: previewer}
 	err := hooksRunner.RunHooks(ctx, hookType, runOptions, commandName)
 	if err != nil {
 		return err
@@ -276,19 +285,6 @@ func (hra *hooksRunAction) prepareHook(name string, hook *ext.HookConfig) error 
 	}
 
 	hook.Name = name
-	hook.Interactive = false
-
-	// Don't display the 'Executing hook...' messages
-	hra.configureHookFlags(hook.Windows)
-	hra.configureHookFlags(hook.Posix)
 
 	return nil
-}
-
-func (hra *hooksRunAction) configureHookFlags(hook *ext.HookConfig) {
-	if hook == nil {
-		return
-	}
-
-	hook.Interactive = false
 }

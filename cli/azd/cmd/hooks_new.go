@@ -5,7 +5,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 
@@ -92,6 +94,7 @@ func (hna *hooksNewAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		tools.Calculator{},
 		hookResolverTool{},
 		osResolverTool{},
+		saveHookTool{},
 	})
 	executor := agents.NewExecutor(agent)
 	answer, err := chains.Run(ctx, executor, `
@@ -101,8 +104,10 @@ Use the os resolver tool to determine the user's platform. You will write a powe
 or a bash script if the user is on linux.
 Start by resolving the type of the hook based on the input.
 The hook should start with a comment on the top that describes the hook type.
-Then use the next prompt to create the hook code.
-This is a script that ask user for their age and prints how many days they have lived.
+Then use the next prompt to create the hook code:
+Ask user for their age and prints how many days they have lived.
+
+Use the save hook tool to save the generated hook to a file.
 `,
 		chains.WithTemperature(0.0),
 	)
@@ -153,4 +158,39 @@ func (h osResolverTool) Description() string {
 
 func (h osResolverTool) Call(ctx context.Context, input string) (string, error) {
 	return runtime.GOOS, nil
+}
+
+type saveHookTool struct {
+}
+
+func (h saveHookTool) Name() string {
+	return "Save Hook"
+}
+
+func (h saveHookTool) Description() string {
+	return `Useful for saving the generated hook to a file.
+    The input to this tool should be a JSON string with the following format:
+	{
+		"hookType": "<hook type>",
+		"hookCode": "<hook code>"
+	}.
+	The input must be just the JSON string, without any additional text.`
+}
+
+func (h saveHookTool) Call(ctx context.Context, input string) (string, error) {
+	// Parse the input JSON string
+	var hookData struct {
+		HookType string `json:"hookType"`
+		HookCode string `json:"hookCode"`
+	}
+	if err := json.Unmarshal([]byte(input), &hookData); err != nil {
+		return "", fmt.Errorf("failed to parse input JSON: %w", err)
+	}
+
+	// Save the hook code to a file
+	if err := os.WriteFile(fmt.Sprintf("%s_hook.sh", hookData.HookType), []byte(hookData.HookCode), 0755); err != nil {
+		return "", fmt.Errorf("failed to save hook file: %w", err)
+	}
+
+	return "Hook saved successfully", nil
 }

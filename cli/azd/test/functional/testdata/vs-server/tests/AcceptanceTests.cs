@@ -207,10 +207,7 @@ public class AcceptanceTests : TestBase
         var context = new Context{ Session = session, HostProjectPath = _projects[0] };
         var result = await asSvc.GetAspireHostAsync(context, "Production", observer, CancellationToken.None);
 
-        // Create a new environment for the service deployment. The suffix "-service" is used to differentiate it
-        // from the LiveDeployRefresh test which uses the same environment name and can cause conflicts when running 
-        // tests in parallel.
-        Environment e = new Environment(_envName+ "-service") {
+        Environment e = new Environment(_envName) {
             Properties = new Dictionary<string, string>() {
                 { "ASPIRE_ENVIRONMENT", "Production" },
                 { "Subscription", _subscriptionId },

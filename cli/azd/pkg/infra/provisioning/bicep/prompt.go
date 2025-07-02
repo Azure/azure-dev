@@ -354,11 +354,12 @@ func (p *BicepProvider) promptForParameter(
 		defaultOption := options[0]
 		// user can override the default value with azd metadata
 		if azdMetadata.Default != nil {
-			if !slices.Contains(options, *azdMetadata.Default) {
+			defaultValStr := fmt.Sprintf("%v", azdMetadata.Default)
+			if !slices.Contains(options, defaultValStr) {
 				return nil, fmt.Errorf(
-					"default value '%s' is not in the allowed values for parameter '%s'", *azdMetadata.Default, key)
+					"default value '%s' is not in the allowed values for parameter '%s'", defaultValStr, key)
 			}
-			defaultOption = *azdMetadata.Default
+			defaultOption = defaultValStr
 		}
 
 		choice, err := p.console.Select(ctx, input.ConsoleOptions{
@@ -374,11 +375,19 @@ func (p *BicepProvider) promptForParameter(
 	} else {
 		var defaultValueForPrompt any
 		if azdMetadata.Default != nil {
-			defaultValueForPrompt = fmt.Sprintf("%v", *azdMetadata.Default)
+			defaultValueForPrompt = azdMetadata.Default
 		}
 		switch paramType {
 		case provisioning.ParameterTypeBoolean:
 			options := []string{"False", "True"}
+			if defaultValueForPrompt != nil {
+				strVal := fmt.Sprintf("%v", defaultValueForPrompt)
+				if strings.ToLower(strVal) == "true" {
+					defaultValueForPrompt = "True"
+				} else {
+					defaultValueForPrompt = "False"
+				}
+			}
 			choice, err := p.console.Select(ctx, input.ConsoleOptions{
 				Message:      msg,
 				Help:         help,
@@ -390,6 +399,16 @@ func (p *BicepProvider) promptForParameter(
 			}
 			value = (options[choice] == "True")
 		case provisioning.ParameterTypeNumber:
+			if defaultValueForPrompt != nil {
+				switch v := defaultValueForPrompt.(type) {
+				case int:
+					defaultValueForPrompt = fmt.Sprintf("%d", v)
+				case float64:
+					defaultValueForPrompt = fmt.Sprintf("%d", int(v))
+				default:
+					return nil, fmt.Errorf("unsupported default value type %T for number parameter: %v", v, key)
+				}
+			}
 			userValue, err := promptWithValidation(ctx, p.console, input.ConsoleOptions{
 				Message:      msg,
 				Help:         help,

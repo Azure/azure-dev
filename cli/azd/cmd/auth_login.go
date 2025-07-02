@@ -163,7 +163,8 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		&lf.federatedTokenProvider,
 		cFederatedCredentialProviderFlagName,
 		"",
-		"The provider to use to acquire a federated token to authenticate with.")
+		"The provider to use to acquire a federated token to authenticate with. "+
+			"Supported values: github, azure-pipelines, oidc")
 	local.StringVar(
 		&lf.tenantID,
 		"tenant-id",
@@ -529,6 +530,12 @@ func (la *loginAction) login(ctx context.Context) error {
 
 			if _, err := la.authManager.LoginWithAzurePipelinesFederatedTokenProvider(
 				ctx, la.flags.tenantID, la.flags.clientID, serviceConnectionID,
+			); err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+		case la.flags.federatedTokenProvider == "oidc": // generic oidc provider
+			if _, err := la.authManager.LoginWithOidcFederatedTokenProvider(
+				ctx, la.flags.tenantID, la.flags.clientID,
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}

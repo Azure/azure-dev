@@ -143,7 +143,7 @@ type AzdMetadata struct {
 	Type               *AzdMetadataType `json:"type,omitempty"`
 	AutoGenerateConfig *AutoGenInput    `json:"config,omitempty"`
 	DefaultValueExpr   *string          `json:"defaultValueExpr,omitempty"`
-	Default            *string          `json:"default,omitempty"`
+	Default            any              `json:"default,omitempty"`
 	UsageName          usageName        `json:"usageName,omitempty"`
 }
 

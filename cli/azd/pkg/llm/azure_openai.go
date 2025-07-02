@@ -35,23 +35,19 @@ var requiredEnvVars = map[string]requiredEnvVar{
 func loadAzureOpenAi() (InfoResponse, error) {
 
 	envVars := maps.Clone(requiredEnvVars)
-	hasMissing := false
+	missingEnvVars := []string{}
 	for name, envVar := range envVars {
-		if value, isDefined := os.LookupEnv(envVar.name); isDefined {
-			envVar.value = value
-			envVar.isDefined = true
-		} else {
-			hasMissing = true
+		value, isDefined := os.LookupEnv(envVar.name)
+		if !isDefined {
+			missingEnvVars = append(missingEnvVars, envVar.name)
+			continue
 		}
+
+		envVar.value = value
+		envVar.isDefined = true
 		envVars[name] = envVar
 	}
-	if hasMissing {
-		missingEnvVars := []string{}
-		for _, ev := range envVars {
-			if !ev.isDefined {
-				missingEnvVars = append(missingEnvVars, ev.name)
-			}
-		}
+	if len(missingEnvVars) > 0 {
 		return InfoResponse{}, fmt.Errorf(
 			"missing required environment variable(s): %s", ux.ListAsText(missingEnvVars))
 	}

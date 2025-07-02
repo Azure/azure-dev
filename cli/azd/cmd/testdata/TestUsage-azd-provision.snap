@@ -11,7 +11,7 @@ Usage
 
 Flags
     -e, --environment string 	: The name of the environment to use.
-        --no-state           	: Do not use latest Deployment State (bicep only).
+        --no-state           	: (Bicep only) Forces a fresh deployment based on current Bicep template files, ignoring any stored deployment state.
         --preview            	: Preview changes to Azure resources.
 
 Global Flags

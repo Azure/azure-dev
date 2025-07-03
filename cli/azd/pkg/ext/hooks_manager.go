@@ -95,10 +95,11 @@ func (h *HooksManager) filterConfigs(
 			}
 
 			// If the hook config includes an OS specific configuration use that instead
+			// but preserve precedence for Interactive and ContinueOnError settings
 			if runtime.GOOS == "windows" && hook.Windows != nil {
-				hook = hook.Windows
+				hook = MergeHookConfig(hook, hook.Windows)
 			} else if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && hook.Posix != nil {
-				hook = hook.Posix
+				hook = MergeHookConfig(hook, hook.Posix)
 			}
 
 			hook.Name = scriptName

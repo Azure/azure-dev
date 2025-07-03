@@ -239,7 +239,7 @@ func (hra *hooksRunAction) execHook(
 	// For interactive hooks, let the hooks runner handle the output directly
 	// For non-interactive hooks, use the previewer
 	var runOptions *tools.ExecOptions
-	if hook.Interactive {
+	if ext.GetBoolValue(hook.Interactive, false) {
 		// Interactive hooks should use the real TTY, not the previewer
 		runOptions = &tools.ExecOptions{}
 	} else {

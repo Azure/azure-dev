@@ -461,7 +461,8 @@ func evaluateSingleBuildArg(
 	exp := match
 	resourceAndPath := strings.SplitN(exp, ".", 2)
 	if len(resourceAndPath) != 2 {
-		return match, fmt.Errorf("invalid expression %q. Expecting the form of: resource.value", exp)
+		log.Println("malformed binding expression, expected <resource>.<property> but was:", v)
+		return "", apphost.UnrecognizedExpressionError{}
 	}
 	resourceName := resourceAndPath[0]
 	resource, has := manifest.Resources[resourceName]

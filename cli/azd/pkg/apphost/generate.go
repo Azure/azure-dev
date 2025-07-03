@@ -1471,7 +1471,8 @@ const inputEmitTypeYaml inputEmitType = "yaml"
 func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string, error) {
 	parts := strings.SplitN(v, ".", 2)
 	if len(parts) != 2 {
-		return "", fmt.Errorf("malformed binding expression, expected <resourceName>.<propertyPath> but was: %s", v)
+		log.Println("malformed binding expression, expected <resource>.<property> but was:", v)
+		return "", UnrecognizedExpressionError{}
 	}
 
 	resource, prop := parts[0], parts[1]

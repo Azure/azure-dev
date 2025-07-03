@@ -66,9 +66,9 @@ type HookConfig struct {
 	// The inline script to execute or path to existing file
 	Run string `yaml:"run,omitempty"`
 	// When set to true will not halt command execution even when a script error occurs.
-	ContinueOnError bool `yaml:"continueOnError,omitempty"`
+	ContinueOnError *bool `yaml:"continueOnError,omitempty"`
 	// When set to true will bind the stdin, stdout & stderr to the running console
-	Interactive bool `yaml:"interactive,omitempty"`
+	Interactive *bool `yaml:"interactive,omitempty"`
 	// When running on windows use this override config
 	Windows *HookConfig `yaml:"windows,omitempty"`
 	// When running on linux/macos use this override config
@@ -223,4 +223,35 @@ func createTempScript(hookConfig *HookConfig) (string, error) {
 	}
 
 	return file.Name(), nil
+}
+
+// BoolPtr returns a pointer to the given bool value
+func BoolPtr(b bool) *bool {
+	return &b
+}
+
+// GetBoolValue returns the value of a *bool, or the default value if the pointer is nil
+func GetBoolValue(ptr *bool, defaultValue bool) bool {
+	if ptr == nil {
+		return defaultValue
+	}
+	return *ptr
+}
+
+// MergeHookConfig merges an OS-specific hook config with its parent, handling precedence properly
+func MergeHookConfig(parent *HookConfig, osSpecific *HookConfig) *HookConfig {
+	// Start with a copy of the OS-specific config
+	merged := *osSpecific
+
+	// For Interactive: OS-specific takes precedence if set, otherwise inherit from parent
+	if osSpecific.Interactive == nil && parent.Interactive != nil {
+		merged.Interactive = parent.Interactive
+	}
+
+	// For ContinueOnError: OS-specific takes precedence if set, otherwise inherit from parent
+	if osSpecific.ContinueOnError == nil && parent.ContinueOnError != nil {
+		merged.ContinueOnError = parent.ContinueOnError
+	}
+
+	return &merged
 }

@@ -2,7 +2,6 @@
 azd.exe
 azd-record
 azd-record.exe
-azd_test
 build
 resource.syso
 versioninfo.json

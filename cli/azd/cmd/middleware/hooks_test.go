@@ -168,7 +168,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 				{
 					Run:             "exit 1",
 					Shell:           ext.ShellTypeBash,
-					ContinueOnError: true,
+					ContinueOnError: ext.BoolPtr(true),
 				},
 			},
 		},

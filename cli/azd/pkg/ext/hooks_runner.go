@@ -173,7 +173,7 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 
 	formatter := h.console.GetFormatter()
 	consoleInteractive := (formatter == nil || formatter.Kind() == output.NoneFormat)
-	scriptInteractive := consoleInteractive && hookConfig.Interactive
+	scriptInteractive := consoleInteractive && GetBoolValue(hookConfig.Interactive, false)
 
 	if options.Interactive == nil {
 		options.Interactive = &scriptInteractive
@@ -204,7 +204,7 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 		)
 
 		// If an error occurred log the failure but continue
-		if hookConfig.ContinueOnError {
+		if GetBoolValue(hookConfig.ContinueOnError, false) {
 			h.console.Message(ctx, output.WithBold("%s", output.WithWarningFormat("WARNING: %s", execErr.Error())))
 			h.console.Message(
 				ctx,

@@ -436,6 +436,13 @@ func Test_DockerProject_Build(t *testing.T) {
 				return exec.NewRunResult(0, "3.0.0", ""), nil
 			})
 
+			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "docker system info")
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				// Return a response that indicates containerd is not enabled
+				return exec.NewRunResult(0, "[[Backing Filesystem extfs] [Supports d_type true]]", ""), nil
+			})
+
 			if tt.init != nil {
 				err := tt.init(t)
 				require.NoError(t, err)

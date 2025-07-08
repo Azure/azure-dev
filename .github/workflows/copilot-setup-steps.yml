@@ -51,15 +51,11 @@ jobs:
       - name: Install cspell
         run: npm install -g cspell@8.13.1
 
-      - name: Install Bicep CLI
-        run: |
-          # Install Bicep CLI to support infrastructure tests
-          curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
-          chmod +x ./bicep
-          sudo mv ./bicep /usr/local/bin/bicep
-          bicep --version
-
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.5.0"
+
+      - name: Upgrade bicep
+        run: |
+          which bicep
+          sudo curl -o $(which bicep) -L https://github.com/Azure/bicep/releases/download/v0.36.177/bicep-linux-x64
+          sudo chmod +x $(which bicep)

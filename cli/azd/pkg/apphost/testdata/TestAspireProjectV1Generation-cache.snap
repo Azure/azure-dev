@@ -1,5 +1,6 @@
 using './cache.module.bicep'
 
+param REVERSEPROXY__ROUTES__route1__MATCH__PATH = '/external-service/{**catchall}'
 param cache_volumes_0_storage = '{{ .Env.SERVICE_CACHE_VOLUME_AZURECONTAINERAPPSAPPHOST8F235654EDCACHEDATA_NAME }}'
 param complex = 'tcp:cache/foo'
 param host = 'cache'

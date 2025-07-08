@@ -61,6 +61,7 @@ func (st *appServiceTarget) Package(
 	return &ServicePackageResult{
 		Build:       packageOutput.Build,
 		PackagePath: zipFilePath,
+		IsTemporary: true, // Zip file created by AZD should be cleaned up after deployment
 	}, nil
 }
 
@@ -81,7 +82,10 @@ func (st *appServiceTarget) Deploy(
 		return nil, fmt.Errorf("failed reading deployment zip file: %w", err)
 	}
 
-	defer os.Remove(packageOutput.PackagePath)
+	// Only clean up the package if it was created temporarily by AZD
+	if packageOutput.IsTemporary {
+		defer os.Remove(packageOutput.PackagePath)
+	}
 	defer zipFile.Close()
 
 	progress.SetProgress(NewServiceProgress("Uploading deployment package"))

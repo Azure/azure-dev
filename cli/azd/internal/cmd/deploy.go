@@ -252,6 +252,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			// --from-package set, skip packaging
 			packageResult = &project.ServicePackageResult{
 				PackagePath: da.flags.fromPackage,
+				IsTemporary: false, // User-provided package should not be deleted
 			}
 		} else {
 			//  --from-package not set, package the application

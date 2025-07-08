@@ -89,6 +89,12 @@ func (ed *EventDispatcher[T]) RaiseEvent(ctx context.Context, name Event, eventA
 
 	// Build final error string if their are any failures
 	if len(handlerErrors) > 0 {
+		// If there's only one error, return it directly to preserve error types like ErrorWithSuggestion
+		if len(handlerErrors) == 1 {
+			return handlerErrors[0]
+		}
+
+		// For multiple errors, join them as before
 		lines := make([]string, len(handlerErrors))
 		for i, err := range handlerErrors {
 			lines[i] = err.Error()

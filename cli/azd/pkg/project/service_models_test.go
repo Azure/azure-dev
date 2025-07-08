@@ -28,6 +28,7 @@ func Test_ServiceResults_Json_Marshal(t *testing.T) {
 				},
 			},
 			PackagePath: "package/path/project.zip",
+			IsTemporary: true, // Test the new field
 			Details: &dockerPackageResult{
 				ImageHash:   "image-hash",
 				TargetImage: "image-tag",
@@ -38,4 +39,21 @@ func Test_ServiceResults_Json_Marshal(t *testing.T) {
 	jsonBytes, err := json.Marshal(deployResult)
 	require.NoError(t, err)
 	require.NotEmpty(t, string(jsonBytes))
+
+	// Verify IsTemporary field is serialized
+	require.Contains(t, string(jsonBytes), `"isTemporary":true`)
+}
+
+func Test_ServicePackageResult_IsTemporary(t *testing.T) {
+	// Test that IsTemporary defaults to false for zero value
+	packageResult := &ServicePackageResult{}
+	require.False(t, packageResult.IsTemporary)
+
+	// Test that IsTemporary can be set to true
+	packageResult.IsTemporary = true
+	require.True(t, packageResult.IsTemporary)
+
+	// Test that IsTemporary can be set to false explicitly
+	packageResult.IsTemporary = false
+	require.False(t, packageResult.IsTemporary)
 }

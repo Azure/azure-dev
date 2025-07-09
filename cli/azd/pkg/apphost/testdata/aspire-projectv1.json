@@ -27,7 +27,8 @@
           "protocol": "{cache.bindings.tcp.protocol}",
           "complex": "{cache.bindings.tcp.protocol}:{cache.bindings.tcp.host}/foo",
           "inputFromBicepModuleOutput": "{storage.outputs.thisIsAnOutput}",
-          "secretInputFromBicepModuleOutput": "{storage.secretOutputs.thisIsSecretOutput}"
+          "secretInputFromBicepModuleOutput": "{storage.secretOutputs.thisIsSecretOutput}",
+          "REVERSEPROXY__ROUTES__route1__MATCH__PATH": "/external-service/{**catchall}"
         }
       },
       "args": [

@@ -141,6 +141,12 @@ jobs:
           # Code Coverage: Generate junit report to publish results
           GOTESTSUM_JUNITFILE: junitTestReport.xml
           SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+          # Disable MSBuild node reuse for Aspire-related tests.
+          # MSBuild node reuse is a pure performance optimization that is generally recommended to be disabled on CI environments
+          # that deal with short-lived processes.
+          #
+          # Without this disabled, we often see tests failing due to MSBuild worker processes being shared across concurrent tests.
+          MSBUILDDISABLENODEREUSE: 1
 
       - task: PublishTestResults@2
         inputs:

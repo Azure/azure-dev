@@ -51,8 +51,7 @@ func (st *appServiceTarget) Package(
 ) (*ServicePackageResult, error) {
 	progress.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
 	zipFilePath, err := createDeployableZip(
-		serviceConfig.Project.Name,
-		serviceConfig.Name,
+		serviceConfig,
 		packageOutput.PackagePath,
 	)
 	if err != nil {

@@ -322,7 +322,7 @@ func (ai *DotNetImporter) Services(
 			}
 			relativePath = relPath
 
-			bArgs, err := evaluateArgsWithConfig(*manifest, bContainer.Build.Args)
+			bArgs, err := evaluateBuildArgs(*manifest, bContainer.Build.Args)
 			if err != nil {
 				return nil, fmt.Errorf("evaluating build args for service %s: %w", name, err)
 			}
@@ -392,7 +392,7 @@ func buildArgsArrayAndEnv(
 			if bArg.Value == nil {
 				return nil, nil, fmt.Errorf("missing value for env secret %q", bArgKey)
 			}
-			bArgValue, err := evaluateExpressions(*bArg.Value, manifest)
+			bArgValue, err := evaluateExpressionsFromArg(*bArg.Value, manifest)
 			if err != nil {
 				return nil, nil, fmt.Errorf("evaluating value for env secret %q: %w", bArgKey, err)
 			}
@@ -404,11 +404,19 @@ func buildArgsArrayAndEnv(
 	return result, reqEnv, nil
 }
 
-func evaluateArgsWithConfig(
+// evaluateBuildArgs evaluates the build args in the manifest, replacing any expressions with their evaluated values.
+// If the expression cannot be evaluated at this time, it will be replaced with a placeholder that
+// indicates that the value will be resolved later, such as during the container build process.
+// The placeholder is in the form of "{infra.parameters.parameterName}".
+// If the expression can be evaluated, it will be replaced with the evaluated value.
+// If the expression references an environment variable, it will be replaced with the value of that environment
+// variable, if it exists. If the environment variable does not exist, the expression will be
+// replaced with a placeholder that indicates it will be resolved later.
+func evaluateBuildArgs(
 	manifest apphost.Manifest, args map[string]string) (map[string]string, error) {
 	result := make(map[string]string, len(args))
 	for argKey, argValue := range args {
-		evaluatedValue, err := evaluateExpressions(argValue, manifest)
+		evaluatedValue, err := evaluateExpressionsFromArg(argValue, manifest)
 		if err != nil {
 			return nil, err
 		}
@@ -418,19 +426,43 @@ func evaluateArgsWithConfig(
 	return result, nil
 }
 
-func evaluateExpressions(source string, manifest apphost.Manifest) (string, error) {
+// evaluateExpressionsFromArg evaluates the expressions in the given source string.
+// It uses the manifest to resolve the expressions, which are expected to be in the form of
+// "{resourceName.value}" where resourceName is the name of a resource in the manifest.
+// If the expression cannot be resolved, it will return an error.
+// If the expression references an environment variable, it will be replaced with the value of that environment
+// variable, if it exists. If the environment variable does not exist, the expression will be
+// replaced with a placeholder that indicates it will be resolved later.
+func evaluateExpressionsFromArg(source string, manifest apphost.Manifest) (string, error) {
 	return apphost.EvalString(source, func(match string) (string, error) {
-		return evaluateSingleExpressionMatch(match, manifest)
+		return evaluateSingleBuildArg(match, manifest)
 	})
 }
 
-func evaluateSingleExpressionMatch(
+// evaluateSingleBuildArg processes a single build argument expression from a manifest.
+// It attempts to resolve the value for a parameter-type resource by checking:
+// 1. The manifest's resource value (if it's a constant)
+// 2. Environment variables
+// 3. Infrastructure parameters
+//
+// Parameters:
+//   - match: The expression string to evaluate in format "resource.value"
+//   - manifest: The application host manifest containing resource definitions
+//
+// Returns:
+//   - string: The resolved value or a parameter reference in format "{infra.parameter_name}"
+//   - error: An error if the expression is invalid, resource not found, or resource type is unsupported
+//
+// The function supports parameter names with hyphens, which are converted to underscores
+// for compatibility with Bicep parameter naming conventions.
+func evaluateSingleBuildArg(
 	match string, manifest apphost.Manifest) (string, error) {
 
 	exp := match
 	resourceAndPath := strings.SplitN(exp, ".", 2)
 	if len(resourceAndPath) != 2 {
-		return match, fmt.Errorf("invalid expression %q. Expecting the form of: resource.value", exp)
+		log.Println("malformed binding expression, expected <resource>.<property> but was:", match)
+		return "", apphost.UnrecognizedExpressionError{}
 	}
 	resourceName := resourceAndPath[0]
 	resource, has := manifest.Resources[resourceName]
@@ -455,11 +487,16 @@ func evaluateSingleExpressionMatch(
 		log.Println("Using value from environment variable", fromEnvVar, "for parameter", resourceName)
 		return valueInEnv, nil
 	}
+
+	// handle parameters renaming. Hyphens are supported in the manifest, but renamed to underscores for bicep parameters.
+	// If the arg is not resolved at this point, the name must be updated considering the renaming.
+	finalParamName := strings.ReplaceAll(resourceName, "-", "_")
+
 	// can't resolve the parameter here yet, best we can do is resolve the name of the parameter, removing the path
 	// of the resource from the expression, keeping only the name of the expected parameter.
 	// The parameter might not be requested at this point, because it could be
 	// the first time azd is running for the project.
-	return fmt.Sprintf("{%s%s}", infraParametersKey, resourceName), nil
+	return fmt.Sprintf("{%s%s}", infraParametersKey, finalParamName), nil
 }
 
 func (ai *DotNetImporter) GenerateAllInfrastructure(ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,

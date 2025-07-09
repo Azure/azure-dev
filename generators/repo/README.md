@@ -26,14 +26,6 @@ Options:
   -h, --help                    display help for command
 ```
 
-## Examples
-
-The following are examples of repo templates
-
-[Node JS / React / Mongo](../../templates/todo/projects/nodejs-mongo/repo.yaml)
-
-[Python / React / Mongo](../../templates/todo/projects/python-mongo/repo.yaml)
-
 ## Developing
 
 ### Install prerequisites

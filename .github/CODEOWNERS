@@ -23,9 +23,4 @@
 
 /schemas/          @wbreza @vhvb1989 @tg-msft @rajeshkamal5050
 
-/templates/        @jongio @wbreza @vhvb1989 @tg-msft @rajeshkamal5050
-
-# Exclude @jongio from version bump PRs opened by dependabot
-/templates/**/package-lock.json     @wbreza @vhvb1989 @tg-msft @rajeshkamal5050
-
 /.github/CODEOWNERS   @rajeshkamal5050 @Azure/azure-sdk-eng

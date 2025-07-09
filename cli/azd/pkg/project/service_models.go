@@ -76,8 +76,6 @@ type ServicePackageResult struct {
 	Build       *ServiceBuildResult `json:"build"`
 	PackagePath string              `json:"packagePath"`
 	Details     interface{}         `json:"details"`
-	// IsTemporary indicates if the package was created temporarily by AZD and should be cleaned up after deployment
-	IsTemporary bool `json:"isTemporary"`
 }
 
 // Supports rendering messages for UX items

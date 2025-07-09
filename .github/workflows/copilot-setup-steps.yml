@@ -53,9 +53,3 @@ jobs:
 
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
-
-      - name: Upgrade bicep
-        run: |
-          which bicep
-          sudo curl -o $(which bicep) -L https://github.com/Azure/bicep/releases/download/v0.36.177/bicep-linux-x64
-          sudo chmod +x $(which bicep)

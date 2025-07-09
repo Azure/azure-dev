@@ -183,7 +183,6 @@ func (dp *dotnetProject) Package(
 	return &ServicePackageResult{
 		Build:       buildOutput,
 		PackagePath: packageDest,
-		IsTemporary: true, // Temp directory created by AZD should be cleaned up
 	}, nil
 }
 

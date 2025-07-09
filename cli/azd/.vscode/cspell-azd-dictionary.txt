@@ -255,4 +255,9 @@ wireinject
 yacspin
 yamlnode
 ymlt
+CODEOWNERS
+eeef
+ffaa
+kristenwomack
+Reprioritize
 zerr

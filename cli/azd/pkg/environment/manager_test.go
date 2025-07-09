@@ -364,6 +364,143 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 	})
 }
 
+func Test_EnvManager_CreateWithType(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		envManager := createEnvManagerForManagerTest(t, mockContext)
+
+		spec := Spec{
+			Name:         "test-env",
+			Subscription: "test-subscription",
+			Location:     "eastus",
+			Type:         "development",
+		}
+
+		env, err := envManager.Create(*mockContext.Context, spec)
+		require.NoError(t, err)
+		require.NotNil(t, env)
+		require.Equal(t, "test-env", env.Name())
+		require.Equal(t, "test-subscription", env.GetSubscriptionId())
+		require.Equal(t, "eastus", env.GetLocation())
+		require.Equal(t, "development", env.GetEnvironmentType())
+
+		// Verify it's in the dotenv
+		dotenv := env.Dotenv()
+		require.Equal(t, "development", dotenv["AZURE_ENV_TYPE"])
+	})
+}
+
+func Test_EnvManager_LoadOrInitInteractiveWithType(t *testing.T) {
+	t.Run("creates new environment with type when not exists", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "would you like to create it?")
+		}).Respond(true)
+
+		envManager := createEnvManagerForManagerTest(t, mockContext)
+
+		// Test creating new environment with type
+		envName := "new-test-env"
+		envType := "production"
+
+		env, err := envManager.LoadOrInitInteractiveWithType(*mockContext.Context, envName, envType)
+		require.NoError(t, err)
+		require.NotNil(t, env)
+		require.Equal(t, envName, env.Name())
+		require.Equal(t, envType, env.GetEnvironmentType())
+
+		// Verify it's in the dotenv
+		dotenv := env.Dotenv()
+		require.Equal(t, envType, dotenv["AZURE_ENV_TYPE"])
+	})
+
+	t.Run("loads existing environment ignoring type parameter", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		envManager := createEnvManagerForManagerTest(t, mockContext)
+
+		// First create an environment with one type
+		originalType := "development"
+		envName := "existing-env"
+
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "would you like to create it?")
+		}).Respond(true)
+
+		env1, err := envManager.LoadOrInitInteractiveWithType(*mockContext.Context, envName, originalType)
+		require.NoError(t, err)
+		require.Equal(t, originalType, env1.GetEnvironmentType())
+
+		// Now try to load the same environment with a different type - should ignore the new type
+		differentType := "production"
+		env2, err := envManager.LoadOrInitInteractiveWithType(*mockContext.Context, envName, differentType)
+		require.NoError(t, err)
+		require.Equal(t, envName, env2.Name())
+		// Should still have the original type, not the new one
+		require.Equal(t, originalType, env2.GetEnvironmentType())
+	})
+
+	t.Run("creates new environment without type when empty type provided", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "would you like to create it?")
+		}).Respond(true)
+
+		envManager := createEnvManagerForManagerTest(t, mockContext)
+
+		envName := "no-type-env"
+
+		env, err := envManager.LoadOrInitInteractiveWithType(*mockContext.Context, envName, "")
+		require.NoError(t, err)
+		require.NotNil(t, env)
+		require.Equal(t, envName, env.Name())
+		require.Equal(t, "", env.GetEnvironmentType())
+
+		// Verify AZURE_ENV_TYPE is not set in dotenv when no type specified
+		dotenv := env.Dotenv()
+		require.NotContains(t, dotenv, "AZURE_ENV_TYPE")
+	})
+
+	t.Run("delegates to LoadOrInitInteractive when no type specified", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "would you like to create it?")
+		}).Respond(true)
+
+		envManager := createEnvManagerForManagerTest(t, mockContext)
+
+		envName := "delegate-test-env"
+
+		// Both methods should produce the same result when no type is specified
+		env1, err1 := envManager.LoadOrInitInteractive(*mockContext.Context, envName)
+		require.NoError(t, err1)
+
+		// Create another environment with the new method but empty type
+		envName2 := "delegate-test-env-2"
+		env2, err2 := envManager.LoadOrInitInteractiveWithType(*mockContext.Context, envName2, "")
+		require.NoError(t, err2)
+
+		// Both should have empty environment type
+		require.Equal(t, "", env1.GetEnvironmentType())
+		require.Equal(t, "", env2.GetEnvironmentType())
+	})
+
+	t.Run("validates environment type and returns error for invalid type", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "would you like to create it?")
+		}).Respond(true)
+
+		envManager := createEnvManagerForManagerTest(t, mockContext)
+
+		envName := "test-env"
+		invalidEnvType := "invalid-type-with-hyphens" // hyphens not allowed in environment type
+
+		_, err := envManager.LoadOrInitInteractiveWithType(*mockContext.Context, envName, invalidEnvType)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "environment type 'invalid-type-with-hyphens' is invalid")
+	})
+}
+
 func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	mockContext.Container.MustRegisterSingleton(func() context.Context {
 		return *mockContext.Context

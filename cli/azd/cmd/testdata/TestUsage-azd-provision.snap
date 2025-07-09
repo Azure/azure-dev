@@ -10,6 +10,7 @@ Usage
   azd provision [flags]
 
 Flags
+        --env-type string    	: The type of the environment (e.g., dev, test, prod). (Experimental)
     -e, --environment string 	: The name of the environment to use.
         --no-state           	: (Bicep only) Forces a fresh deployment based on current Bicep template files, ignoring any stored deployment state.
         --preview            	: Preview changes to Azure resources.

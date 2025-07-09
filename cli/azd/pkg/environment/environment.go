@@ -21,6 +21,9 @@ import (
 // EnvNameEnvVarName is the name of the key used to store the envname property in the environment.
 const EnvNameEnvVarName = "AZURE_ENV_NAME"
 
+// EnvTypeEnvVarName is the name of the key used to store the environment type (e.g., dev, prod) in the .env file
+const EnvTypeEnvVarName = "AZURE_ENV_TYPE"
+
 // LocationEnvVarName is the name of the key used to store the location property in the environment.
 const LocationEnvVarName = "AZURE_LOCATION"
 
@@ -129,11 +132,18 @@ type EnvironmentResolver func(ctx context.Context) (*Environment, error)
 // https://docs.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftresources)
 var EnvironmentNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9-\(\)_\.]{1,64}$`)
 
+// Environment types should only contain alphanumeric characters
+var EnvironmentTypeRegexp = regexp.MustCompile(`^[a-zA-Z0-9]{1,32}$`)
+
 // The maximum length of an environment name.
 var EnvironmentNameMaxLength = 64
 
 func IsValidEnvironmentName(name string) bool {
 	return EnvironmentNameRegexp.MatchString(name)
+}
+
+func IsValidEnvironmentType(envType string) bool {
+	return EnvironmentTypeRegexp.MatchString(envType)
 }
 
 // CleanName returns a version of [name] where all characters not allowed in an environment name have been replaced
@@ -231,6 +241,17 @@ func (e *Environment) GetLocation() string {
 // SetLocation is shorthand for DotenvSet(LocationEnvVarName, location)
 func (e *Environment) SetLocation(location string) {
 	e.DotenvSet(LocationEnvVarName, location)
+}
+
+// GetEnvironmentType returns the environment type (e.g., dev, prod) from the
+// .env file, or an empty string if not set.
+func (e *Environment) GetEnvironmentType() string {
+	return e.Getenv(EnvTypeEnvVarName)
+}
+
+// SetEnvironmentType sets the environment type (e.g., dev, prod) in the .env file.
+func (e *Environment) SetEnvironmentType(envType string) {
+	e.DotenvSet(EnvTypeEnvVarName, envType)
 }
 
 // Key returns the environment key name for the given name.

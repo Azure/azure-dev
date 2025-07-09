@@ -10,16 +10,16 @@ steps:
   # setup-azd@1 needs to be manually installed in your organization
   # if you can't install it, you can use the below bash script to install azd
   # and remove this step
-  - task: setup-azd@1
-    displayName: Install azd
+  # - task: setup-azd@1
+  #   displayName: Install azd
 
   # If you can't install above task in your organization, you can comment it and uncomment below task to install azd
-  # - task: Bash@3
-  #   displayName: Install azd
-  #   inputs:
-  #     targetType: 'inline'
-  #     script: |
-  #       curl -fsSL https://aka.ms/install-azd.sh | bash
+  - task: Bash@3
+    displayName: Install azd
+    inputs:
+      targetType: 'inline'
+      script: |
+        curl -fsSL https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/pr/5412/install-azd.sh | bash -s -- --base-url https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/pr/5412 --version '' --verbose --skip-verify
 
   # azd delegate auth to az to use service connection with AzureCLI@2
   - pwsh: |

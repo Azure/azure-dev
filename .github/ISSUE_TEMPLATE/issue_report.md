@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-- [ ] Make sure you've installed the latest version using [instructions in the wiki](../wiki/install)
+- [ ] Make sure you've installed the latest version using [instructions](https://github.com/Azure/azure-dev?tab=readme-ov-file#installupgrade-azure-developer-cli)
 
 **Output from `azd version`**
 Run `azd version` and copy and paste the output here:

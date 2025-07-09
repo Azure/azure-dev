@@ -255,7 +255,6 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			packageResult = &project.ServicePackageResult{
 				PackagePath: da.flags.fromPackage,
 			}
-			packageWasCreatedByAzd = false
 		} else {
 			//  --from-package not set, package the application
 			packageResult, err = async.RunWithProgress(

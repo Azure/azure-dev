@@ -70,4 +70,53 @@ Builds all templates discovered under `./templates/todo/projects/python-mongo`.
 
 ## Testing
 
+### Manual Testing
+
 Manual testing can be done by simply running `azd` commands in the generated template folders under `.output/<project>/generated`. Once you are happy with all the changes, submit a PR with your changes.
+
+### Automated Testing
+
+The repository includes comprehensive automated testing infrastructure for validating templates end-to-end. The testing system is located in [`templates/tests/`](../templates/tests/) and provides scripts for:
+
+- **Full deployment testing**: Tests template initialization, provisioning, deployment, and cleanup
+- **Playwright validation**: Runs automated smoke tests against deployed applications
+- **Parallel execution**: Efficiently tests multiple templates simultaneously
+- **Cleanup automation**: Automatically removes Azure resources and local files
+
+#### Running Template Tests
+
+To test a specific template:
+
+```bash
+cd templates/tests
+./test-templates.sh -t "Azure-Samples/todo-nodejs-mongo"
+```
+
+To test all available templates:
+
+```bash
+cd templates/tests
+./test-templates.sh
+```
+
+#### Test Configuration
+
+The test scripts support various configuration options including:
+- Custom Azure subscriptions and locations
+- Different template branches
+- Test-only mode (skip deployment)
+- Custom environment naming
+- Playwright test configuration
+
+For detailed usage instructions, parameters, and examples, see the [Template Testing Documentation](../templates/tests/README.md).
+
+#### Prerequisites for Automated Testing
+
+- Azure CLI authenticated (`az login`)
+- Azure Developer CLI installed (`azd`)
+- Node.js for Playwright tests
+- Valid Azure subscription with sufficient permissions
+
+#### Adding Tests to New Templates
+
+When creating new templates, include Playwright tests in a `/tests` directory within your template. See [`templates/todo/common/tests/README.md`](../templates/todo/common/tests/README.md) for an example of how to structure template tests.

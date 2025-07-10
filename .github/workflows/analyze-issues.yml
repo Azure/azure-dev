@@ -1,0 +1,88 @@
+name: GitHub Issues Analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      state:
+        description: 'Issue state to analyze'
+        required: false
+        default: 'open'
+        type: choice
+        options:
+        - open
+        - closed
+        - all
+      output_format:
+        description: 'Output format'
+        required: false
+        default: 'console'
+        type: choice
+        options:
+        - console
+        - json
+  schedule:
+    # Run analysis monthly on the 1st at 9:00 AM UTC
+    - cron: '0 9 1 * *'
+
+permissions:
+  issues: read
+  contents: read
+
+jobs:
+  analyze-issues:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup PowerShell
+      uses: microsoft/setup-powershell@v1
+      
+    - name: Run Issues Analysis
+      shell: pwsh
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        $state = "${{ github.event.inputs.state || 'open' }}"
+        $format = "${{ github.event.inputs.output_format || 'console' }}"
+        
+        Write-Host "Running GitHub Issues Analysis..."
+        Write-Host "State: $state"
+        Write-Host "Format: $format"
+        
+        # Run the analysis
+        try {
+          if ($format -eq "json") {
+            $outputFile = "issues-analysis-$(Get-Date -Format 'yyyy-MM-dd').json"
+            .\eng\scripts\Analyze-GitHubIssues.ps1 -AuthToken $env:GITHUB_TOKEN -State $state -OutputFormat $format -OutputFile $outputFile
+            
+            # Upload artifact
+            Write-Host "::notice::Analysis saved to $outputFile"
+          } else {
+            .\eng\scripts\Analyze-GitHubIssues.ps1 -AuthToken $env:GITHUB_TOKEN -State $state -OutputFormat $format
+          }
+        } catch {
+          Write-Host "::error::Analysis failed: $_"
+          exit 1
+        }
+    
+    - name: Upload Analysis Results
+      if: github.event.inputs.output_format == 'json'
+      uses: actions/upload-artifact@v4
+      with:
+        name: issues-analysis-${{ github.event.inputs.state || 'open' }}-${{ github.run_number }}
+        path: "*.json"
+        retention-days: 30
+    
+    - name: Comment on Issue (if triggered by issue comment)
+      if: github.event_name == 'issue_comment'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: '✅ GitHub Issues Analysis completed! Check the workflow run for results.'
+          });

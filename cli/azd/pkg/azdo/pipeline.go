@@ -158,7 +158,10 @@ func getDefinitionVariables(
 		"AZURE_LOCATION":           createBuildDefinitionVariable(env.GetLocation(), false, false),
 		"AZURE_ENV_NAME":           createBuildDefinitionVariable(env.Name(), false, false),
 		"AZURE_SERVICE_CONNECTION": createBuildDefinitionVariable(ServiceConnectionName, false, false),
-		"AZURE_SUBSCRIPTION_ID":    createBuildDefinitionVariable(credentials.SubscriptionId, false, false),
+	}
+
+	if credentials != nil {
+		variables["AZURE_SUBSCRIPTION_ID"] = createBuildDefinitionVariable(credentials.SubscriptionId, false, false)
 	}
 
 	if provisioningProvider.Provider == provisioning.Bicep {
@@ -168,9 +171,11 @@ func getDefinitionVariables(
 	}
 
 	if provisioningProvider.Provider == provisioning.Terraform {
-		variables["ARM_TENANT_ID"] = createBuildDefinitionVariable(credentials.TenantId, false, false)
-		variables["ARM_CLIENT_ID"] = createBuildDefinitionVariable(credentials.ClientId, true, false)
-		variables["ARM_CLIENT_SECRET"] = createBuildDefinitionVariable(credentials.ClientSecret, true, false)
+		if credentials != nil {
+			variables["ARM_TENANT_ID"] = createBuildDefinitionVariable(credentials.TenantId, false, false)
+			variables["ARM_CLIENT_ID"] = createBuildDefinitionVariable(credentials.ClientId, true, false)
+			variables["ARM_CLIENT_SECRET"] = createBuildDefinitionVariable(credentials.ClientSecret, true, false)
+		}
 
 		// Sets the terraform remote state environment variables in azure devops
 		remoteStateKeys := []string{"RS_RESOURCE_GROUP", "RS_STORAGE_ACCOUNT", "RS_CONTAINER_NAME"}

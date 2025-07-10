@@ -50,6 +50,7 @@ go build
 ```bash
 go test ./... -short
 ```
+**IMPORTANT**: Allow up to 10 minutes for all the tests to complete.
 
 ## Repository structure
 - `cli/azd/`: Main CLI application and command definitions

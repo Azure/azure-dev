@@ -5,8 +5,10 @@ package ext
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/stretchr/testify/require"
 )
 
@@ -57,6 +59,41 @@ func Test_Invalid_Event_Names(t *testing.T) {
 			require.ErrorIs(t, err, ErrInvalidEvent)
 		})
 	}
+}
+
+func Test_Multiple_Errors_With_Suggestions(t *testing.T) {
+	handler1 := func(ctx context.Context, args testEventArgs) error {
+		return &internal.ErrorWithSuggestion{
+			Err:        errors.New("Error1 for test"),
+			Suggestion: "Suggestion1",
+		}
+	}
+	handler2 := func(ctx context.Context, args testEventArgs) error {
+		return &internal.ErrorWithSuggestion{
+			Err:        errors.New("Error2 for test"),
+			Suggestion: "Suggestion2",
+		}
+	}
+
+	ed := NewEventDispatcher[testEventArgs](testEvent)
+	err := ed.AddHandler(testEvent, handler1)
+	require.NoError(t, err)
+	err = ed.AddHandler(testEvent, handler2)
+	require.NoError(t, err)
+
+	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	require.Error(t, err)
+
+	var errWithSuggestion *internal.ErrorWithSuggestion
+	ok := errors.As(err, &errWithSuggestion)
+	require.True(t, ok)
+
+	require.Contains(t, errWithSuggestion.Error(), "Error1 for test")
+	require.Contains(t, errWithSuggestion.Error(), "Error2 for test")
+
+	suggestion := errWithSuggestion.Suggestion
+	require.Contains(t, suggestion, "Suggestion1")
+	require.Contains(t, suggestion, "Suggestion2")
 }
 
 type testEventArgs struct{}

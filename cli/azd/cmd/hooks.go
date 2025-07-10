@@ -201,7 +201,9 @@ func (hra *hooksRunAction) processHooks(
 
 	for idx, hook := range hooks {
 		if idx > 0 {
-			hra.console.Message(ctx, output.WithBold("\nRunning next %s ", output.WithHighLightFormat(hookName))+output.WithBold("hook"))
+			hra.console.Message(ctx,
+				output.WithBold("\nRunning next %s ", output.WithHighLightFormat(hookName))+
+					output.WithBold("hook"))
 		}
 
 		if err := hra.prepareHook(hookName, hook); err != nil {
@@ -240,9 +242,8 @@ func (hra *hooksRunAction) execHook(
 		hooksManager, hra.commandRunner, hra.envManager, hra.console, cwd, hooksMap, hra.env, hra.serviceLocator)
 
 	// Always run in interactive mode for 'azd hooks run', to help with testing/debugging
-	interactive := true
 	runOptions := &tools.ExecOptions{
-		Interactive: &interactive,
+		Interactive: ext.BoolPtr(true),
 	}
 
 	err := hooksRunner.RunHooks(ctx, hookType, runOptions, commandName)

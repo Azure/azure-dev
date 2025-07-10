@@ -1,0 +1,22 @@
+# Binaries
+issues-analysis
+issues-analysis.exe
+
+# Go build artifacts
+*.out
+
+# Dependency directories
+vendor/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Reports
+*.json
+*.md
+!README.md

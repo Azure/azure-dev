@@ -210,6 +210,7 @@ func (cli *Cli) Build(
 
 	runArgs := exec.NewRunArgs(cli.path, "build", imageName, "--builder", builder, "--path", cwd)
 	runArgs.Args = append(runArgs.Args, envArgs...)
+
 	if progressWriter != nil {
 		runArgs = runArgs.WithStdOut(progressWriter).WithStdErr(progressWriter)
 	}

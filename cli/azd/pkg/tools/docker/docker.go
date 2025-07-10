@@ -282,6 +282,19 @@ func (d *Cli) Name() string {
 	return "Docker"
 }
 
+// IsContainerdEnabled checks if Docker is using containerd as the image store
+func (d *Cli) IsContainerdEnabled(ctx context.Context) (bool, error) {
+	result, err := d.executeCommand(ctx, "", "system", "info", "--format", "{{.DriverStatus}}")
+	if err != nil {
+		return false, fmt.Errorf("checking docker driver status: %w", err)
+	}
+
+	driverStatus := strings.TrimSpace(result.Stdout)
+
+	// Check for containerd snapshotter which indicates containerd image store is enabled
+	return strings.Contains(driverStatus, "io.containerd.snapshotter.v1"), nil
+}
+
 func (d *Cli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
 	runArgs := exec.NewRunArgs("docker", args...).
 		WithCwd(cwd)

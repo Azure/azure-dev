@@ -246,3 +246,34 @@ func TestNewPackCliUpgrade(t *testing.T) {
 
 	require.Equal(t, "pack cli", string(contents))
 }
+
+func Test_PackCli_Build(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	// Mock the pack config experimental call
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "pack config experimental")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	// Mock the pack build call
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "pack build")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.RunResult{ExitCode: 0}, nil
+	})
+
+	cli := NewPackCliWithPath(mockContext.CommandRunner, "pack")
+
+	err := cli.Build(
+		*mockContext.Context,
+		"/path/to/app",
+		"builder",
+		"image:tag",
+		[]string{},
+		nil,
+	)
+
+	require.NoError(t, err)
+}

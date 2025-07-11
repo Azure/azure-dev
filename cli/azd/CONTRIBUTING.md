@@ -1,108 +1,76 @@
-# Contributing to `azd`
+# Contributing to [project-title]
 
-Hi there 👋! Thank you for showing interest in contributing to `azd`.
+This project welcomes contributions and suggestions.  Most contributions require you to agree to a
+Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
+the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
 
-In general, to make contributions a smooth and easy experience, we encourage the following:
+When you submit a pull request, a CLA bot will automatically determine whether you need to provide
+a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
+provided by the bot. You will only need to do this once across all repos using our CLA.
 
-- Check existing issues for [bugs][bug issues] or [enhancements][enhancement issues].
-- Open an issue if things aren't working as expected, or if an enhancement is being proposed.
-- Start a conversation on the issue if you are thinking of submitting a pull request.
-- Submit a pull request. The `azd` team will work with you to review the changes and provide feedback. Once the pull request is accepted, a member will merge the changes. Thank you for taking time out of your day to help improve our community!
+This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
+For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
+contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
 
-## Building `azd`
+ - [Code of Conduct](#coc)
+ - [Issues and Bugs](#issue)
+ - [Feature Requests](#feature)
+ - [Submission Guidelines](#submit)
 
-Prerequisites:
+## <a name="coc"></a> Code of Conduct
+Help us keep this project open and inclusive. Please read and follow our [Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
 
-- [Go](https://go.dev/dl/) 1.24
+## <a name="issue"></a> Found an Issue?
+If you find a bug in the source code or a mistake in the documentation, you can help us by
+[submitting an issue](#submit-issue) to the GitHub Repository. Even better, you can
+[submit a Pull Request](#submit-pr) with a fix.
 
-Build:
+## <a name="feature"></a> Want a Feature?
+You can *request* a new feature by [submitting an issue](#submit-issue) to the GitHub
+Repository. If you would like to *implement* a new feature, please submit an issue with
+a proposal for your work first, to be sure that we can use it.
 
-```bash
-cd cli/azd
-go build
-```
+* **Small Features** can be crafted and directly [submitted as a Pull Request](#submit-pr).
 
-Run the newly produced `azd` or `azd.exe` binary:
+## <a name="submit"></a> Submission Guidelines
 
-- Unix-like systems: `./azd`
-- Windows: `.\azd.exe`
+### <a name="submit-issue"></a> Submitting an Issue
+Before you submit an issue, search the archive, maybe your question was already answered.
 
-Run tests:
+If your issue appears to be a bug, and hasn't been reported, open a new issue.
+Help us to maximize the effort we can spend fixing issues and adding new
+features, by not reporting duplicate issues.  Providing the following information will increase the
+chances of your issue being dealt with quickly:
 
-```bash
-go test ./... -short
-```
+* **Overview of the Issue** - if an error is being thrown a non-minified stack trace helps
+* **Version** - what version is affected (e.g. 0.1.2)
+* **Motivation for or Use Case** - explain what are you trying to do and why the current behavior is a bug for you
+* **Browsers and Operating System** - is this a problem with all browsers?
+* **Reproduce the Error** - provide a live example or a unambiguous set of steps
+* **Related Issues** - has a similar issue been reported before?
+* **Suggest a Fix** - if you can't fix the bug yourself, perhaps you can point to what might be
+  causing the problem (line of code or commit)
 
-Run tests (including end-to-end [functional][functional tests] tests)
+You can file new issues by providing the above information at the corresponding repository's issues link: https://github.com/[organization-name]/[repository-name]/issues/new].
 
-```bash
-go test ./...
-```
+### <a name="submit-pr"></a> Submitting a Pull Request (PR)
+Before you submit your Pull Request (PR) consider the following guidelines:
 
-Run cspell (install [cspell](https://cspell.org/)):
+* Search the repository (https://github.com/[organization-name]/[repository-name]/pulls) for an open or closed PR
+  that relates to your submission. You don't want to duplicate effort.
 
-```bash
-cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml
-```
+* Make your changes in a new git fork:
 
-Run linter (install [golangci-lint](https://golangci-lint.run/welcome/install/#local-installation)):
+* Commit your changes using a descriptive commit message
+* Push your fork to GitHub:
+* In GitHub, create a pull request
+* If we suggest changes then:
+  * Make the required updates.
+  * Rebase your fork and force push to your GitHub repository (this will update your Pull Request):
 
-```bash
-golangci-lint run ./...
-```
+    ```shell
+    git rebase master -i
+    git push -f
+    ```
 
-> Note: On Windows you may need to add `C:\Program Files\Git\usr\bin` to `%PATH%`
-
-### Debugging (with VSCode)
-
-If you don't have a preferred editor for Go code, we recommend [Visual Studio Code](https://code.visualstudio.com/Download).
-
-Launch and debug:
-
-1. Open VSCode in either `cli/azd` (preferred) or in the root directory.
-1. In VSCode, put a breakpoint on the line of code you would like to debug.
-1. Press F5. Alternatively: Select the "Run and Debug" side pane. With the launch task set to "Debug azd cli", click on the launch button.
-1. An interactive VSCode prompt should appear. Provide the args for running `azd` in this prompt window. Press enter when you're done.
-1. `azd` should now be running inside the VSCode terminal with the debugger attached.
-
-Launch `azd` separately, then attach:
-
-1. Set `AZD_DEBUG=true` in your shell. If this environment variable is set, `azd` will pause early in its startup process and allow you to attach to it.
-1. In VSCode, run the launch task "Attach to process".
-1. Select `azd` and press enter.
-1. VSCode debugger should now be attached to the running `azd` process.
-1. In the shell with `azd` running, press enter to resume execution.
-
-> Tip: Use the VSCode terminal to perform all `azd` build and run commands.
-
-## Submitting a change
-
-1. Create a new branch: `git checkout -b my-branch-name`
-1. Make your change, add tests, and ensure tests pass
-1. Submit a pull request: `gh pr create --web` (install [gh cli][gh cli] if needed). Select "Create a fork" to set up a fork for the first time if prompted for.
-
-## Troubleshooting
-
-### Access is denied
-
-Windows Security may block execution of unsigned .exe files. This may happen when validating unsigned .exe files produced in
-a PR build.
-
-```bash
-> azd version
-Access is denied.
-```
-
-To fix:
-
-1. Run `where azd` (cmd) or `(Get-Command azd).Source` (PowerShell) to get the command path
-1. Click the Start button and type `Windows Security`, select and launch the "Windows Security" application
-1. Select `Virus & threat protection` tab on the left side of the window
-1. Click the `Manage settings` link under `Virus & threat protection settings`
-1. Scroll down in the window to the `Exclusions` heading and click the `Add or remove exclusions link`
-1. Select `Add an exclusion` and add the path to the exe from step 1
-
-[bug issues]: https://github.com/Azure/azure-dev/issues?q=is%3Aopen+is%3Aissue+label%3Abug
-[enhancement issues]: https://github.com/Azure/azure-dev/issues?q=is%3Aopen+is%3Aissue+label%3Aenhancement
-[functional tests]: https://github.com/Azure/azure-dev/tree/main/cli/azd/test/functional
-[gh cli]: https://github.com/cli/cli?tab=readme-ov-file#installation
+That's it! Thank you for your contribution!

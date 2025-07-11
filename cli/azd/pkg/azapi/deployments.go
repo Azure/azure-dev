@@ -287,6 +287,10 @@ type AzCliDeploymentOutput struct {
 	Value interface{} `json:"value"`
 }
 
+func (o AzCliDeploymentOutput) Secured() bool {
+	return azure.IsSecuredARMType(o.Type)
+}
+
 type AzCliDeploymentResult struct {
 	Properties AzCliDeploymentResultProperties `json:"properties"`
 }

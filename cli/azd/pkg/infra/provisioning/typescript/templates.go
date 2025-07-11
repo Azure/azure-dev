@@ -25,7 +25,7 @@ func GetTemplateFiles(infraDir string) map[string][]byte {
 }
 
 // DeployTsTemplate is the main TypeScript infrastructure template
-const DeployTsTemplate = `import { DefaultAzureCredential } from "@azure/identity";
+const DeployTsTemplateAll = `import { DefaultAzureCredential } from "@azure/identity";
 import { ManagedServiceIdentityClient } from "@azure/arm-msi";
 import { setLogLevel } from "@azure/logger";
 import { ResourceManagementClient } from "@azure/arm-resources";
@@ -322,6 +322,46 @@ main().catch(err => {
 });
 
 `
+
+const DeployTsTemplate = "import { DefaultAzureCredential } from \"@azure/identity\";\n" +
+"import { setLogLevel } from \"@azure/logger\";\n" +
+"import { ResourceManagementClient } from \"@azure/arm-resources\";\n" +
+"import { ContainerAppsAPIClient } from \"@azure/arm-appcontainers\";\n" +
+"import * as fs from \"fs\";\n" +
+"import { execSync } from \"child_process\";\n" +
+"\n" +
+"{{AOAI_IMPORTS}}\n" +
+"\n" +
+"setLogLevel(\"info\");\n" +
+"\n" +
+"const subscriptionId = process.env.AZURE_SUBSCRIPTION_ID!;\n" +
+"const environmentName = process.env.AZURE_ENV_NAME!;\n" +
+"const location = process.env.AZURE_LOCATION!;\n" +
+"const serviceName = process.env.AZURE_SERVICE_NAME || \"my-app\";\n" +
+"const azdConfig = require('./config/azd.config.json');\n" +
+"\n" +
+"{{AOAI_HELPERS}}\n" +
+"\n" +
+"async function main() {\n" +
+"  const credential = new DefaultAzureCredential();\n" +
+"  const resourceClient = new ResourceManagementClient(credential, subscriptionId);\n" +
+"  const containerAppsClient = new ContainerAppsAPIClient(credential, subscriptionId);\n" +
+"\n" +
+"  const rgName = \"rg-\" + environmentName;\n" +
+"  const envName = \"env-\" + environmentName;\n" +
+"  const appName = \"app-\" + environmentName;\n" +
+"\n" +
+"  await resourceClient.resourceGroups.createOrUpdate(rgName, { location });\n" +
+"\n" +
+"{{AOAI_PROVISION}}\n" +
+"{{DB_PROVISION}}\n" +
+"\n" +
+"  // TODO: Add container app provisioning\n" +
+"\n" +
+"  console.log(\"Deployment complete.\");\n" +
+"}\n" +
+"\n" +
+"main().catch(console.error);\n"
 
 // PackageJsonTemplate contains the package.json for TypeScript infrastructure
 const PackageJsonTemplate = `{

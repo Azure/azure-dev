@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"runtime"
 	"strings"
@@ -229,11 +228,16 @@ func (h *agentLogHandler) HandleStreamingFunc(ctx context.Context, chunk []byte)
 	// use console to stream output
 	if len(chunk) > 0 {
 		// Print the chunk to the console
-		log.Print(string(chunk))
+		fmt.Print(string(chunk))
 	}
 }
 
 func (h *agentLogHandler) HandleLLMStart(ctx context.Context, prompts []string) {
+	h.step++
+	fmt.Printf("🧠 Step %d: LLM processing...\n", h.step)
+	if len(prompts) > 0 && len(prompts[0]) < 200 {
+		fmt.Printf("   Prompt: %s\n", prompts[0])
+	}
 }
 
 func (h *agentLogHandler) HandleLLMError(ctx context.Context, err error) {
@@ -241,25 +245,30 @@ func (h *agentLogHandler) HandleLLMError(ctx context.Context, err error) {
 }
 
 func (h *agentLogHandler) HandleChainStart(ctx context.Context, inputs map[string]any) {
-	log.Println("🚀 Agent chain started")
+	fmt.Println("🚀 Agent chain started")
 }
 
 func (h *agentLogHandler) HandleChainEnd(ctx context.Context, outputs map[string]any) {
-	log.Println("🏁 Agent chain completed")
+	fmt.Println("🏁 Agent chain completed")
 }
 
 func (h *agentLogHandler) HandleChainError(ctx context.Context, err error) {
-	log.Printf("💥 Agent chain error: %v\n", err)
+	fmt.Printf("💥 Agent chain error: %v\n", err)
 }
 
 func (h *agentLogHandler) HandleToolStart(ctx context.Context, input string) {
-	log.Printf("🔧 Using tool: %s\n", input)
+	fmt.Printf("🔧 Using tool: %s\n")
 	if input != "" && len(input) < 100 {
-		log.Printf("   Input: %s\n", input)
+		fmt.Printf("   Input: %s\n", input)
 	}
 }
 
 func (h *agentLogHandler) HandleToolEnd(ctx context.Context, output string) {
+	if output != "" && len(output) < 150 {
+		fmt.Printf("   Output: %s\n", output)
+	} else {
+		fmt.Println("   Tool completed")
+	}
 }
 
 func (h *agentLogHandler) HandleToolError(ctx context.Context, err error) {

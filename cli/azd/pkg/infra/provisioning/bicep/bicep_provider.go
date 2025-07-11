@@ -1518,6 +1518,12 @@ func (p *BicepProvider) createOutputParameters(
 	outputParams := make(map[string]provisioning.OutputParameter, len(azureOutputParams))
 
 	for key, azureParam := range azureOutputParams {
+		if azureParam.Secured() {
+			// Secured output can't be retrieved, so we skip it.
+			// https://learn.microsoft.com/azure/azure-resource-manager/bicep/outputs?tabs=azure-powershell#secure-outputs
+			log.Println("Skipping secured output parameter:", key)
+			continue
+		}
 		var paramName string
 		canonicalCasing, found := canonicalOutputCasings[strings.ToLower(key)]
 		if found {

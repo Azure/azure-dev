@@ -116,7 +116,11 @@ type ArmTemplateParameterDefinition struct {
 }
 
 func (d *ArmTemplateParameterDefinition) Secure() bool {
-	lowerCase := strings.ToLower(d.Type)
+	return IsSecuredARMType(d.Type)
+}
+
+func IsSecuredARMType(t string) bool {
+	lowerCase := strings.ToLower(t)
 	return lowerCase == "secureobject" || lowerCase == "securestring"
 }
 

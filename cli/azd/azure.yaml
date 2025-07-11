@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: spring-petclinic-appservice-ai
+services:
+  petclinic:
+    project: .
+    dist: target
+    language: java
+    host: appservice

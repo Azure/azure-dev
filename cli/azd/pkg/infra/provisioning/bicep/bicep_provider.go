@@ -191,7 +191,8 @@ func defaultPromptValue(locationParam azure.ArmTemplateParameterDefinition) *str
 		azdMetadata.Type != nil && *azdMetadata.Type == azure.AzdMetadataTypeLocation &&
 		azdMetadata.Default != nil {
 		// Metadata using location type and a default location. This is the highest priority.
-		return azdMetadata.Default
+		defaultStr := fmt.Sprintf("%v", azdMetadata.Default)
+		return &defaultStr
 	}
 
 	if locationParam.AllowedValues != nil {
@@ -633,7 +634,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 			case <-timer.C:
 				if err := progressDisplay.ReportProgress(ctx, &queryStartTime); err != nil {
 					// We don't want to fail the whole deployment if a progress reporting error occurs
-					log.Printf("error while reporting progress: %s", err.Error())
+					log.Printf("error while reporting progress: %v", err)
 				}
 
 				timer.Reset(regularDelay)

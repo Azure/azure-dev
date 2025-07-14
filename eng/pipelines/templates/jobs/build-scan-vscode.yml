@@ -4,8 +4,8 @@ parameters:
     default:
       # Disable Windows build until packaging fixed on Windows https://github.com/Azure/azure-dev/issues/1336
       # Windows:
-      #   Pool: azsdk-pool-mms-win-2022-general
-      #   OSVmImage: MMS2022
+      #   Pool: azsdk-pool
+      #   OSVmImage: windows-2022
       Linux:
         Pool: azsdk-pool
         OSVmImage:  ubuntu-22.04

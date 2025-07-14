@@ -21,7 +21,7 @@ public class AcceptanceTests : TestBase
         var environments = (await esSvc.GetEnvironmentsAsync(context, observer, CancellationToken.None)).ToList();
         environments.ShouldBeEmpty();
 
-        Environment e = new Environment("env1")
+        Environment e = new Environment(_envName + "1")
         {
             Properties = new Dictionary<string, string>() {
                 { "ASPIRE_ENVIRONMENT", "Production" },
@@ -54,7 +54,7 @@ public class AcceptanceTests : TestBase
         environments[0].IsCurrent.ShouldBeTrue();
         environments[0].DotEnvPath.ShouldNotBeEmpty();
 
-        Environment e2 = new Environment("env2")
+        Environment e2 = new Environment(_envName + "2")
         {
             Properties = new Dictionary<string, string>() {
                 { "ASPIRE_ENVIRONMENT", "Production" },

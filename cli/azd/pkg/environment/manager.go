@@ -178,8 +178,46 @@ func (m *manager) LoadOrInitInteractive(ctx context.Context, environmentName str
 			return nil, err
 		}
 
-		if err := m.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
-			return nil, fmt.Errorf("saving default environment: %w", err)
+		envs, err := m.List(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing environments: %w", err)
+		}
+		// If this is the only environment, set it as the default environment
+		if len(envs) == 1 {
+			if err := m.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
+				return nil, fmt.Errorf("saving default environment: %w", err)
+			}
+			m.console.Message(ctx,
+				fmt.Sprintf("\nNew environment '%s' created and set as default", env.Name()),
+			)
+		} else {
+			// Ask the user if they want to set the new environment as the default environment
+			msg := fmt.Sprintf("Set new environment '%s' as default environment?", env.Name())
+			shouldSetDefault, promptErr := m.console.Confirm(ctx, input.ConsoleOptions{
+				Message:      msg,
+				DefaultValue: true,
+			})
+
+			if promptErr != nil {
+				return nil, fmt.Errorf("prompting to set environment '%s' as default environment: %w", env.Name(), promptErr)
+			}
+
+			if shouldSetDefault {
+				if err := m.azdContext.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
+					return nil, fmt.Errorf("saving default environment: %w", err)
+				}
+				m.console.Message(ctx,
+					fmt.Sprintf("\nNew environment '%s' created and set as default.", env.Name()),
+				)
+			} else {
+				defaultEnvironment, err := m.azdContext.GetDefaultEnvironmentName()
+				if err != nil {
+					return nil, fmt.Errorf("get default environment: %w", err)
+				}
+				m.console.Message(ctx,
+					fmt.Sprintf("\nNew env '%s' created, default environment remains '%s'.", env.Name(), defaultEnvironment),
+				)
+			}
 		}
 	}
 

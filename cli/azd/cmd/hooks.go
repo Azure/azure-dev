@@ -135,13 +135,14 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	// Project level hooks
 	projectHooks := hra.projectConfig.Hooks[hookName]
 
+	hra.console.Message(ctx, output.WithHighLightFormat("Project"))
 	if err := hra.processHooks(
 		ctx,
 		hra.projectConfig.Path,
 		hookName,
-		fmt.Sprintf("Running %d %s command hook(s) for project", len(projectHooks), output.WithHighLightFormat(hookName)),
 		projectHooks,
 		false,
+		true, // isProject = true
 	); err != nil {
 		return nil, err
 	}
@@ -156,15 +157,14 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		serviceHooks := service.Hooks[hookName]
 		skip := hra.flags.service != "" && service.Name != hra.flags.service
 
-		hra.console.Message(ctx, "")
+		hra.console.Message(ctx, "\n"+output.WithHighLightFormat(service.Name))
 		if err := hra.processHooks(
 			ctx,
 			service.RelativePath,
 			hookName,
-			fmt.Sprintf("Running %d %s service hook(s) for %s", len(serviceHooks),
-				output.WithHighLightFormat(hookName), output.WithHighLightFormat(service.Name)),
 			serviceHooks,
 			skip,
+			false, // isProject = false
 		); err != nil {
 			return nil, err
 		}
@@ -181,44 +181,54 @@ func (hra *hooksRunAction) processHooks(
 	ctx context.Context,
 	cwd string,
 	hookName string,
-	spinnerMessage string,
 	hooks []*ext.HookConfig,
 	skip bool,
+	isProject bool,
 ) error {
 	if skip {
-		hra.console.MessageUxItem(ctx, &ux.SkippedMessage{Message: spinnerMessage})
+		// When skipping, show individual skip messages for each hook that would have run
+		for i := 0; i < len(hooks); i++ {
+			hra.console.MessageUxItem(ctx, &ux.SkippedMessage{
+				Message: fmt.Sprintf("service hook %d/%d", i+1, len(hooks)),
+			})
+		}
 		return nil
 	}
 
 	if len(hooks) == 0 {
-		hra.console.MessageUxItem(ctx, &ux.WarningAltMessage{Message: spinnerMessage + noHookFoundMessage})
+		hra.console.MessageUxItem(ctx, &ux.WarningAltMessage{Message: "No hooks found"})
 		return nil
 	}
-
-	hra.console.Message(ctx, output.WithBold("%s", spinnerMessage))
 
 	hookType, commandName := ext.InferHookType(hookName)
 
 	for idx, hook := range hooks {
-		if idx > 0 {
-			hra.console.Message(ctx,
-				output.WithBold("\nRunning next %s ", output.WithHighLightFormat(hookName))+
-					output.WithBold("hook"))
-		}
-
 		if err := hra.prepareHook(hookName, hook); err != nil {
 			return err
 		}
+
+		// Determine hook type string based on context
+		hookTypeStr := "service hook"
+		if isProject {
+			hookTypeStr = "command hook"
+		}
+
+		hra.console.Message(ctx, fmt.Sprintf("%s %d/%d:", hookTypeStr, idx+1, len(hooks)))
+		hra.console.Message(ctx, "[insert hook details]")
 
 		err := hra.execHook(ctx, cwd, hookType, commandName, hook)
 		if err != nil {
 			return fmt.Errorf("failed running hook %s, %w", hookName, err)
 		}
 
-		hra.console.Message(ctx, "")
 		hra.console.MessageUxItem(ctx, &ux.DoneMessage{
-			Message: fmt.Sprintf("Successfully executed %s hook", output.WithHighLightFormat(hookName)),
+			Message: "Successfully executed hook",
 		})
+
+		// Add blank line after each hook except the last one
+		if idx < len(hooks)-1 {
+			hra.console.Message(ctx, "")
+		}
 	}
 
 	return nil

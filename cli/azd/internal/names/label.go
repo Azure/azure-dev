@@ -42,7 +42,7 @@ func ValidateLabelName(name string) error {
 // And the first and last characters must be letters or numbers.
 func ValidateProjectName(name string) error {
 	if l := len(name); l < 2 || l > 63 {
-		return fmt.Errorf("invalid project name '%s': length must be between 2 and 63 characters", name)
+		return fmt.Errorf("invalid project name '%s': length must be between 2 and 63 characters.", name)
 	}
 
 	matched, err := regexp.MatchString(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`, name)
@@ -52,7 +52,7 @@ func ValidateProjectName(name string) error {
 	if !matched {
 		return fmt.Errorf(
 			"invalid project name '%s': only lowercase letters, numbers, and hyphens (-) are allowed, "+
-				"and must start and end with a letter or number",
+				"and must start and end with a letter or number.",
 			name,
 		)
 	}
@@ -163,5 +163,5 @@ func labelNameFromSeparators(name string) string {
 		}
 	}
 
-	return result.String()
+	return strings.Trim(result.String(), "-")
 }

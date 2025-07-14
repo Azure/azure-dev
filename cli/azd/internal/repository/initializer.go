@@ -336,17 +336,21 @@ func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.
 		return fmt.Errorf("project already initialized")
 	}
 
-	name, err := i.console.Prompt(ctx, input.ConsoleOptions{
-		Message:      "What is the name of your project?",
-		DefaultValue: azdcontext.ProjectName(projectDir),
-	})
-	if err != nil {
-		return err
-	}
-
-	// Check if the project name is valid.
-	if err := names.ValidateProjectName(name); err != nil {
-		return err
+	var name string
+	for {
+		name, err = i.console.Prompt(ctx, input.ConsoleOptions{
+			Message:      "What is the name of your project?",
+			DefaultValue: azdcontext.ProjectName(projectDir),
+		})
+		if err != nil {
+			return err
+		}
+		// Check if the project name is valid.
+		if err := names.ValidateProjectName(name); err != nil {
+			i.console.Message(ctx, fmt.Sprintf("%v Please enter a valid name.", err))
+			continue
+		}
+		break
 	}
 
 	prjConfig := project.ProjectConfig{

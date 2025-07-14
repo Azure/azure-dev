@@ -108,7 +108,12 @@ func newHooksRunAction(
 	}
 }
 
-const noHookFoundMessage = " (No hook found)"
+type hookContextType string
+
+const (
+	hookContextProject hookContextType = "command"
+	hookContextService hookContextType = "service"
+)
 
 func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	hookName := hra.args[0]
@@ -141,8 +146,8 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		hra.projectConfig.Path,
 		hookName,
 		projectHooks,
+		hookContextProject,
 		false,
-		true, // isProject = true
 	); err != nil {
 		return nil, err
 	}
@@ -163,8 +168,8 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 			service.RelativePath,
 			hookName,
 			serviceHooks,
+			hookContextService,
 			skip,
-			false, // isProject = false
 		); err != nil {
 			return nil, err
 		}
@@ -182,21 +187,22 @@ func (hra *hooksRunAction) processHooks(
 	cwd string,
 	hookName string,
 	hooks []*ext.HookConfig,
+	contextType hookContextType,
 	skip bool,
-	isProject bool,
 ) error {
+	if len(hooks) == 0 {
+		hra.console.MessageUxItem(ctx, &ux.WarningAltMessage{Message: "No hooks found"})
+		return nil
+	}
+
 	if skip {
 		// When skipping, show individual skip messages for each hook that would have run
-		for i := 0; i < len(hooks); i++ {
+		for i := range hooks {
 			hra.console.MessageUxItem(ctx, &ux.SkippedMessage{
 				Message: fmt.Sprintf("service hook %d/%d", i+1, len(hooks)),
 			})
 		}
-		return nil
-	}
 
-	if len(hooks) == 0 {
-		hra.console.MessageUxItem(ctx, &ux.WarningAltMessage{Message: "No hooks found"})
 		return nil
 	}
 
@@ -207,14 +213,7 @@ func (hra *hooksRunAction) processHooks(
 			return err
 		}
 
-		// Determine hook type string based on context
-		hookTypeStr := "service hook"
-		if isProject {
-			hookTypeStr = "command hook"
-		}
-
-		hra.console.Message(ctx, fmt.Sprintf("%s %d/%d:", hookTypeStr, idx+1, len(hooks)))
-		hra.console.Message(ctx, "[insert hook details]")
+		hra.console.Message(ctx, output.WithBold("%s hook %d/%d:", contextType, idx+1, len(hooks)))
 
 		err := hra.execHook(ctx, cwd, hookType, commandName, hook)
 		if err != nil {

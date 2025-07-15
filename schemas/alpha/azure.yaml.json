@@ -761,27 +761,64 @@
                     ]
                 }
             },
-            "if": {
-                "not": {
-                    "anyOf": [
-                        {
-                            "required": [
-                                "windows"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "posix"
-                            ]
+            "allOf": [
+                {
+                    "if": {
+                        "allOf": [
+                            {
+                                "required": [
+                                    "windows"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "posix"
+                                ]
+                            }
+                        ]
+                    },
+                    "then": {
+                        "properties": {
+                            "run": false,
+                            "shell": false,
+                            "interactive": false,
+                            "continueOnError": false,
+                            "secrets": false
                         }
-                    ]
+                    }
+                },
+                {
+                    "if": {
+                        "anyOf": [
+                            {
+                                "required": [
+                                    "interactive"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "continueOnError"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "secrets"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "shell"
+                                ]
+                            }
+                        ]
+                    },
+                    "then": {
+                        "required": [
+                            "run"
+                        ]
+                    }
                 }
-            },
-            "then": {
-                "required": [
-                    "run"
-                ]
-            }
+            ]
         },
         "docker": {
             "type": "object",

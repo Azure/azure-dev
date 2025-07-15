@@ -189,11 +189,20 @@ func pathHasModule(path, module string) (bool, error) {
 func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
 	for _, svcConfig := range projectConfig.Services {
 		if svcConfig.Language == ServiceLanguageDotNet {
-			if len(projectConfig.Services) != 1 {
-				return nil, errNoMultipleServicesWithAppHost
+			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
+				if len(projectConfig.Services) != 1 {
+					return nil, errNoMultipleServicesWithAppHost
+				}
+
+				if svcConfig.Host != ContainerAppTarget {
+					return nil, errAppHostMustTargetContainerApp
+				}
+
+				return im.dotNetImporter.GenerateAllInfrastructure(ctx, projectConfig, svcConfig)
+			} else if err != nil {
+				log.Printf("error checking if %s is an app host project: %v", svcConfig.Path(), err)
 			}
 
-			return im.dotNetImporter.GenerateAllInfrastructure(ctx, projectConfig, svcConfig)
 		}
 	}
 

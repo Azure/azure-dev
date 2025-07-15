@@ -54,7 +54,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			{
 				Shell:       ShellTypeBash,
 				Run:         "scripts/preinteractive.sh",
-				Interactive: BoolPtr(true),
+				Interactive: true,
 			},
 		},
 	}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -252,7 +253,7 @@ func (hra *hooksRunAction) execHook(
 
 	// Always run in interactive mode for 'azd hooks run', to help with testing/debugging
 	runOptions := &tools.ExecOptions{
-		Interactive: ext.BoolPtr(true),
+		Interactive: to.Ptr(true),
 	}
 
 	err := hooksRunner.RunHooks(ctx, hookType, runOptions, commandName)

@@ -189,7 +189,7 @@ stages:
             inputs:
               versionSpec: 3.x
 
-          - pwsh: pip install jsonschema2md
+          - pwsh: pip install jsonschema2md==1.5.2
             displayName: Install jsonschema2md
 
           - pwsh: jsonschema2md schemas/v1.0/azure.yaml.json $(Pipeline.Workspace)/docs/azure.yaml.schema.md

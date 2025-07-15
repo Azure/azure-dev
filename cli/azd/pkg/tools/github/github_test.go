@@ -148,6 +148,13 @@ func TestNewGitHubCli(t *testing.T) {
 func TestGetAuthStatus(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && request.URL.Host == "github.com"
+	}).Respond(&http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewBufferString("this is github cli")),
+	})
+
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "gh") && len(args.Args) == 1 && args.Args[0] == "--version"
 	}).Respond(exec.NewRunResult(

@@ -5,6 +5,7 @@ package names
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -33,6 +34,28 @@ func ValidateLabelName(name string) error {
 		return errors.New("name must contain only lower-cased alphanumeric characters or '-', i.e. a-z, 0-9, or '-'")
 	}
 
+	return nil
+}
+
+// ValidateProjectName checks if the given name is a valid project name.
+// Only lowercase letters, numbers, and - are allowed.
+// And the first and last characters must be letters or numbers.
+func ValidateProjectName(name string) error {
+	if l := len(name); l < 2 || l > 63 {
+		return fmt.Errorf("invalid project name '%s': length must be between 2 and 63 characters.", name)
+	}
+
+	matched, err := regexp.MatchString(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`, name)
+	if err != nil {
+		return err
+	}
+	if !matched {
+		return fmt.Errorf(
+			"invalid project name '%s': only lowercase letters, numbers, and hyphens (-) are allowed, "+
+				"and must start and end with a letter or number.",
+			name,
+		)
+	}
 	return nil
 }
 
@@ -140,5 +163,5 @@ func labelNameFromSeparators(name string) string {
 		}
 	}
 
-	return result.String()
+	return strings.Trim(result.String(), "-")
 }

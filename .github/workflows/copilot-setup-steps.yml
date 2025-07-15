@@ -50,3 +50,6 @@ jobs:
 
       - name: Install cspell
         run: npm install -g cspell@8.13.1
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3

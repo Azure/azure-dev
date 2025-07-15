@@ -797,11 +797,11 @@ func (d *StackDeployments) ValidatePreflightToResourceGroup(
 
 	validateResult, err := client.BeginValidateStackAtResourceGroup(ctx, resourceGroup, deploymentName, stack, nil)
 	if err != nil {
-		return validatePreflightError(rawResponse, err, "resource group")
+		return fmt.Errorf("validating deployment to resource group:\n\nValidation Error Details:\n%w", err)
 	}
 	_, err = validateResult.PollUntilDone(ctx, nil)
 	if err != nil {
-		return validatePreflightError(rawResponse, err, "resource group")
+		return fmt.Errorf("validating deployment to resource group:\n\nValidation Error Details:\n%w", err)
 	}
 
 	return nil
@@ -876,11 +876,11 @@ func (d *StackDeployments) ValidatePreflightToSubscription(
 
 	validateResult, err := client.BeginValidateStackAtSubscription(ctx, deploymentName, stack, nil)
 	if err != nil {
-		return validatePreflightError(rawResponse, err, "subscription")
+		return fmt.Errorf("validating deployment to subscription:\n\nValidation Error Details:\n%w", err)
 	}
 	_, err = validateResult.PollUntilDone(ctx, nil)
 	if err != nil {
-		return validatePreflightError(rawResponse, err, "subscription")
+		return fmt.Errorf("validating deployment to subscription:\n\nValidation Error Details:\n%w", err)
 	}
 
 	return nil

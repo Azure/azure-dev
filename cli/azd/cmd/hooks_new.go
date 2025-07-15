@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"runtime"
 	"strings"
@@ -17,13 +18,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
+	langchaingo_mcp_adapter "github.com/i2y/langchaingo-mcp-adapter"
+	"github.com/mark3labs/mcp-go/client"
+	"github.com/mark3labs/mcp-go/client/transport"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/chains"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/schema"
-	"github.com/tmc/langchaingo/tools"
 )
 
 func newHooksNewCmd() *cobra.Command {
@@ -64,6 +68,107 @@ type hooksNewAction struct {
 	llmManager     llm.Manager
 }
 
+type samplingHandler struct {
+	llmClient llms.Model
+	console   input.Console
+}
+
+func (s *samplingHandler) CreateMessage(
+	ctx context.Context, request mcp.CreateMessageRequest) (*mcp.CreateMessageResult, error) {
+	// Enhanced logging for debugging
+	fmt.Printf("🔬 MCP Sampling Request received!\n")
+	fmt.Printf("   Request ID: %v\n", ctx.Value("requestId"))
+	fmt.Printf("   Max tokens: %d\n", request.MaxTokens)
+	fmt.Printf("   Temperature: %f\n", request.Temperature)
+	fmt.Printf("   Model preferences: %v\n", request.ModelPreferences)
+	fmt.Printf("   Number of messages: %d\n", len(request.Messages))
+
+	// Debug: Print message details
+	for i, msg := range request.Messages {
+		fmt.Printf("   Message %d: Role=%s, Content=%v\n", i, msg.Role, msg.Content)
+	}
+
+	// Convert MCP messages to LLM format
+	var llmMessages []llms.MessageContent
+	for _, msg := range request.Messages {
+		var content []llms.ContentPart
+
+		// Handle the Content field which can be different types
+		switch contentType := msg.Content.(type) {
+		case mcp.TextContent:
+			fmt.Printf("   Processing TextContent: %s\n", contentType.Text)
+			content = append(content, llms.TextPart(contentType.Text))
+		case string:
+			fmt.Printf("   Processing string content: %s\n", contentType)
+			content = append(content, llms.TextPart(contentType))
+		default:
+			// Try to convert to string as fallback
+			contentStr := fmt.Sprintf("%v", msg.Content)
+			fmt.Printf("   Processing unknown content type: %s\n", contentStr)
+			content = append(content, llms.TextPart(contentStr))
+		}
+
+		// Map MCP roles to LLM roles
+		var role llms.ChatMessageType
+		switch msg.Role {
+		case mcp.RoleUser:
+			role = llms.ChatMessageTypeHuman
+		case mcp.RoleAssistant:
+			role = llms.ChatMessageTypeAI
+		default:
+			role = llms.ChatMessageTypeSystem
+		}
+
+		llmMessages = append(llmMessages, llms.MessageContent{
+			Role:  role,
+			Parts: content,
+		})
+	}
+
+	// Generate response using the LLM
+	fmt.Printf("🧠 Generating response with LLM (messages: %d)...\n", len(llmMessages))
+	response, err := s.llmClient.GenerateContent(ctx, llmMessages)
+	if err != nil {
+		fmt.Printf("❌ LLM generation error: %v\n", err)
+		return nil, fmt.Errorf("failed to generate LLM response: %w", err)
+	}
+
+	// Extract text from the response
+	var responseText string
+	if len(response.Choices) > 0 && len(response.Choices[0].Content) > 0 {
+		// Convert the response content to string
+		responseText = string(response.Choices[0].Content)
+		fmt.Printf("📝 Raw LLM response: %s\n", responseText)
+	}
+
+	if responseText == "" {
+		responseText = "No response generated"
+		fmt.Printf("⚠️  Using fallback response\n")
+	}
+
+	fmt.Printf("✅ LLM response generated (length: %d): %s\n", len(responseText), responseText[:min(100, len(responseText))])
+
+	// Return the MCP result using the same format as the MCP server
+	result := &mcp.CreateMessageResult{
+		SamplingMessage: mcp.SamplingMessage{
+			Role:    mcp.RoleAssistant,
+			Content: responseText,
+		},
+		Model: "llm-delegated",
+	}
+
+	fmt.Printf("🎯 Returning sampling result with model: %s\n", result.Model)
+	return result, nil
+}
+
+// Helper function for min
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func newHooksNewAction(
 	commandRunner exec.CommandRunner,
 	console input.Console,
@@ -95,28 +200,51 @@ func (hna *hooksNewAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	// Create a callback handler to log agent steps
 	callbackHandler := &agentLogHandler{console: hna.console}
 
-	agent := agents.NewOneShotAgent(llClient, []tools.Tool{
-		tools.Calculator{},
-		hookResolverTool{},
-		osResolverTool{},
-		saveHookTool{},
-	}, agents.WithCallbacksHandler(callbackHandler))
+	// // Connect to MCP server via stdio
+	// mcpClient, err := client.NewStdioMCPClient("/home/vivazqu/workspace/azure-dev/cli/azd/tools/mcp/mcp", nil)
+	// if err != nil {
+	// 	log.Fatalf("Failed to create MCP client: %v", err)
+	// }
+
+	// defer mcpClient.Close()
+	t := transport.NewStdioWithOptions("/home/vivazqu/workspace/azure-dev/cli/azd/tools/mcp/mcp", nil, nil)
+	// Create sampling handler with LLM client
+	samplingHandler := &samplingHandler{
+		llmClient: llClient,
+		console:   hna.console,
+	}
+
+	mcpClient := client.NewClient(t, client.WithSamplingHandler(samplingHandler))
+	if err := mcpClient.Start(ctx); err != nil {
+		return nil, fmt.Errorf("failed to start MCP client: %w", err)
+	}
+	defer mcpClient.Close()
+
+	fmt.Println("🔌 MCP client created with sampling handler")
+
+	// Create adapter
+	adapter, err := langchaingo_mcp_adapter.New(mcpClient)
+
+	if err != nil {
+		log.Fatalf("Failed to create adapter: %v", err)
+	}
+
+	// Load tools from MCP server
+	tools, err := adapter.Tools()
+	if err != nil {
+		log.Fatalf("Failed to get tools: %v", err)
+	}
+
+	agent := agents.NewOneShotAgent(llClient, tools, agents.WithCallbacksHandler(callbackHandler))
 
 	executor := agents.NewExecutor(agent)
 
 	fmt.Println("🤖 Starting AI agent execution...")
+	fmt.Printf("   Agent has %d tools available from MCP server\n", len(tools))
+	fmt.Println("   Sampling handler is configured for MCP tool requests")
 
 	answer, err := chains.Run(ctx, executor, `
-You are an expert in creating hooks for the Azure Dev CLI.
-Your task is to create a new hook for linux bash or windows powershell, depending on the user's platform.
-Use the os resolver tool to determine the user's platform. You will write a powershell script if the user is on windows,
-or a bash script if the user is on linux.
-Start by resolving the type of the hook based on the input.
-The hook should start with a comment on the top that describes the hook type.
-Then use the next prompt to create the hook code:
-Print the env variables that are available to the hook and then print a short description of the hook.
-
-Use the save hook tool to save the generated hook to a file.
+Say hello to Raul using the exact result from a tool to say hello to someone.
 `,
 		chains.WithTemperature(0.0),
 	)
@@ -257,7 +385,7 @@ func (h *agentLogHandler) HandleChainError(ctx context.Context, err error) {
 }
 
 func (h *agentLogHandler) HandleToolStart(ctx context.Context, input string) {
-	fmt.Printf("🔧 Using tool: %s\n")
+	fmt.Printf("🔧 Using tool with input: %s\n", input)
 	if input != "" && len(input) < 100 {
 		fmt.Printf("   Input: %s\n", input)
 	}

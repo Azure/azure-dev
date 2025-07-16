@@ -1,20 +1,20 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
-  - aiohttp
   - azcloud
   - azdext
   - azurefd
   - backoff
   - Canonicalize
   - chinacloudapi
-  - CODEOWNERS
   - Codespace
   - Codespaces
+  - CODEOWNERS
   - devcontainers
   - extendee
   - eiannone
   # CDN host name
   - gfgac2cmf7b8cuay
+  - gofmt
   - goversioninfo
   - nosec
   - oneof
@@ -30,7 +30,6 @@ words:
   - unmarshals
   - unmarshaling
   - unsetting
-  - vsserver
   - usgovcloudapi
   - jdbc
   - springframework

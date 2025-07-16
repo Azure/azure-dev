@@ -226,6 +226,14 @@ Increase `-20` if needed to find the cutoff commit. `git log` shows commits in r
     - **Format**: `- [[PR#]](https://github.com/Azure/azure-dev/pull/PR#) User-friendly description.`
     - **Guidelines**: Be brief. Start with action verbs (Add, Fix, Update, etc.) and describe user impact. Follow existing changelog entries for style.
     - **Attribution**: For PRs from contributors outside the core team, append: " Thanks @handle for the contribution!"
+7. **Exclude the following types of changes** from the changelog:
+    - Test-related changes (test fixes, test updates, test infrastructure)
+    - Documentation updates (README.md, .md files, CODEOWNERS)
+    - Dependency updates (automated dependency bumps, CVE fixes that are purely dependency updates)
+    - Engineering/SDK tooling changes (eng/common syncs, build pool migrations, CI/CD infrastructure)
+    - Internal refactoring without user impact (code cleanup, variable renames, internal restructuring)
+    - Build/release infrastructure changes (version increments, tooling updates, pipeline changes)
+    - Development environment setup (copilot setup files, development tooling)
 
 ### Step 4: Organize and finalize
 1. **Remove empty categories** and **validate formatting**

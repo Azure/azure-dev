@@ -4,24 +4,22 @@
 
 ### Features Added
 
-- [[5380]](https://github.com/Azure/azure-dev/pull/5380) Add schema validation for `name` in azure.yaml and add name validity check in AZD.
-- [[5411]](https://github.com/Azure/azure-dev/pull/5411) Add llm package - first step for AI functionality.
-- [[5397]](https://github.com/Azure/azure-dev/pull/5397) Add support for generic OIDC authentication.
-- [[4832]](https://github.com/Azure/azure-dev/pull/4832) Confirm before automatically setting a new environment as the default.
-- [[5384]](https://github.com/Azure/azure-dev/pull/5384) Update the `default` azd metadata field's type to `any`.
-- [[5213]](https://github.com/Azure/azure-dev/pull/5213) Add initial azd extensions support.
-
-### Breaking Changes
+- [[5380]](https://github.com/Azure/azure-dev/pull/5380) Fix project name validation to prevent service packaging failures with invalid characters.
+- [[5411]](https://github.com/Azure/azure-dev/pull/5411) Add LLM package for AI functionality with auto-detection of LLM configuration.
+- [[5397]](https://github.com/Azure/azure-dev/pull/5397) Add support for generic OIDC authentication with any CI provider.
+- [[4832]](https://github.com/Azure/azure-dev/pull/4832) Improve user experience by prompting for confirmation before setting a new environment as the default.
+- [[5384]](https://github.com/Azure/azure-dev/pull/5384) Add support for boolean and integer default values in azd metadata fields.
+- [[5383]](https://github.com/Azure/azure-dev/pull/5383) Add support for `.webappignore` and `.funcignore` files in zip deployment packaging.
 
 ### Bugs Fixed
 
-- [[5478]](https://github.com/Azure/azure-dev/pull/5478) Handle deployments with output parameters.
+- [[5478]](https://github.com/Azure/azure-dev/pull/5478) Fix panic when encountering Bicep secure output parameters.
 - [[5468]](https://github.com/Azure/azure-dev/pull/5468) Fix PowerShell 7 suggestion text not showing for service-level hooks.
 - [[5470]](https://github.com/Azure/azure-dev/pull/5470) Update preflight error handling for deployment stack.
 - [[5446]](https://github.com/Azure/azure-dev/pull/5446) Bicep: cleanup + fix bicepparam evaluation.
 - [[5459]](https://github.com/Azure/azure-dev/pull/5459) Check credential for nil before using it.
 - [[5434]](https://github.com/Azure/azure-dev/pull/5434) Handle unrecognized expressions in Aspire Manifest.
-- [[5383]](https://github.com/Azure/azure-dev/pull/5383) Package: support ignore files, fix function packaging.
+
 - [[5372]](https://github.com/Azure/azure-dev/pull/5372) Deployment-stack: fix null tags handling.
 
 ### Other Changes

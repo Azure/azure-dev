@@ -15,12 +15,12 @@
 
 - [[5478]](https://github.com/Azure/azure-dev/pull/5478) Fix panic when encountering Bicep secure output parameters.
 - [[5468]](https://github.com/Azure/azure-dev/pull/5468) Fix PowerShell 7 suggestion text not showing for service-level hooks.
-- [[5470]](https://github.com/Azure/azure-dev/pull/5470) Update preflight error handling for deployment stack.
-- [[5446]](https://github.com/Azure/azure-dev/pull/5446) Bicep: cleanup + fix bicepparam evaluation.
-- [[5459]](https://github.com/Azure/azure-dev/pull/5459) Check credential for nil before using it.
-- [[5434]](https://github.com/Azure/azure-dev/pull/5434) Handle unrecognized expressions in Aspire Manifest.
+- [[5470]](https://github.com/Azure/azure-dev/pull/5470) Fix preflight error handling for deployment stack validation.
+- [[5446]](https://github.com/Azure/azure-dev/pull/5446) Fix Bicep parameter evaluation to properly inject environment variables before deployment.
+- [[5459]](https://github.com/Azure/azure-dev/pull/5459) Fix nil pointer error when checking credentials for Azure DevOps authentication.
+- [[5434]](https://github.com/Azure/azure-dev/pull/5434) Improve handling of unrecognized expressions in Aspire manifest files.
 
-- [[5372]](https://github.com/Azure/azure-dev/pull/5372) Deployment-stack: fix null tags handling.
+- [[5372]](https://github.com/Azure/azure-dev/pull/5372) Fix null tags handling in deployment stack operations.
 
 ### Other Changes
 

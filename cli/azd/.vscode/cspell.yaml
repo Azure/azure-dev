@@ -8,13 +8,11 @@ words:
   - chinacloudapi
   - Codespace
   - Codespaces
-  - CODEOWNERS
   - devcontainers
   - extendee
   - eiannone
   # CDN host name
   - gfgac2cmf7b8cuay
-  - gofmt
   - goversioninfo
   - nosec
   - oneof

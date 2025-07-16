@@ -1,14 +1,61 @@
 # Release History
 
-## 1.18.0-beta.1 (Unreleased)
+## 1.18.0
 
 ### Features Added
+
+- [[5380]](https://github.com/Azure/azure-dev/pull/5380) Add schema validation for `name` in azure.yaml and add name validity check in AZD.
+- [[5411]](https://github.com/Azure/azure-dev/pull/5411) Add llm package - first step for AI functionality.
+- [[5397]](https://github.com/Azure/azure-dev/pull/5397) Add support for generic OIDC authentication.
+- [[4832]](https://github.com/Azure/azure-dev/pull/4832) Confirm before automatically setting a new environment as the default.
+- [[5384]](https://github.com/Azure/azure-dev/pull/5384) Update the `default` azd metadata field's type to `any`.
+- [[5213]](https://github.com/Azure/azure-dev/pull/5213) Add initial azd extensions support.
 
 ### Breaking Changes
 
 ### Bugs Fixed
 
+- [[5478]](https://github.com/Azure/azure-dev/pull/5478) Handle deployments with output parameters.
+- [[5468]](https://github.com/Azure/azure-dev/pull/5468) Fix PowerShell 7 suggestion text not showing for service-level hooks.
+- [[5456]](https://github.com/Azure/azure-dev/pull/5456) Fix test failures in GitHub Copilot coding agent environment.
+- [[5470]](https://github.com/Azure/azure-dev/pull/5470) Update preflight error handling for deployment stack.
+- [[5446]](https://github.com/Azure/azure-dev/pull/5446) Bicep: cleanup + fix bicepparam evaluation.
+- [[5459]](https://github.com/Azure/azure-dev/pull/5459) Check credential for nil before using it.
+- [[5434]](https://github.com/Azure/azure-dev/pull/5434) Handle unrecognized expressions in Aspire Manifest.
+- [[5383]](https://github.com/Azure/azure-dev/pull/5383) Package: support ignore files, fix function packaging.
+- [[5372]](https://github.com/Azure/azure-dev/pull/5372) Deployment-stack: fix null tags handling.
+- [[5370]](https://github.com/Azure/azure-dev/pull/5370) Update dependencies for CVE-2024-48924.
+
 ### Other Changes
+
+- [[5485]](https://github.com/Azure/azure-dev/pull/5485) Pin jsonschema2md to version 1.5.2 to fix GenerateReleaseArtifacts installation failures.
+- [[5461]](https://github.com/Azure/azure-dev/pull/5461) Update GitHub CLI version to 2.75.1.
+- [[5481]](https://github.com/Azure/azure-dev/pull/5481) Update aiohttp from 3.11.18 to 3.12.14.
+- [[5449]](https://github.com/Azure/azure-dev/pull/5449) Disconnect todo templates.
+- [[5471]](https://github.com/Azure/azure-dev/pull/5471) Cancel CI workflow that becomes obsolete after a new commit is pushed in an open PR. Thanks @kitsiosk for the contribution!
+- [[5467]](https://github.com/Azure/azure-dev/pull/5467) Update CODEOWNERS.
+- [[5441]](https://github.com/Azure/azure-dev/pull/5441) Update README.md.
+- [[5443]](https://github.com/Azure/azure-dev/pull/5443) Update Bicep CLI version to v0.36.177.
+- [[5437]](https://github.com/Azure/azure-dev/pull/5437) Update GitHub CLI version from 2.55.0 to 2.74.2.
+- [[5429]](https://github.com/Azure/azure-dev/pull/5429) Update test broken test case and recording.
+- [[5423]](https://github.com/Azure/azure-dev/pull/5423) Enhance GitHub Copilot instructions with detailed architecture overview and coding standards.
+- [[5419]](https://github.com/Azure/azure-dev/pull/5419) Test: ManageEnvironment with unique envs.
+- [[5420]](https://github.com/Azure/azure-dev/pull/5420) Improve help description for `azd provision --no-state`.
+- [[5413]](https://github.com/Azure/azure-dev/pull/5413) Sync eng/common directory with azure-sdk-tools repository.
+- [[5405]](https://github.com/Azure/azure-dev/pull/5405) Migrate to azsdk-pool*.
+- [[5378]](https://github.com/Azure/azure-dev/pull/5378) Add Microsoft.Automation/automationAccounts to resources for output.
+- [[5403]](https://github.com/Azure/azure-dev/pull/5403) Update brace-expansion in /generators/repo.
+- [[5401]](https://github.com/Azure/azure-dev/pull/5401) Add `copilot-setup-steps.yml` to preinstall tools for the Copilot coding agent.
+- [[5398]](https://github.com/Azure/azure-dev/pull/5398) Task update StreamJsonRpc.
+- [[5399]](https://github.com/Azure/azure-dev/pull/5399) Welcome tg-msft joining azd team.
+- [[5395]](https://github.com/Azure/azure-dev/pull/5395) Add copilot-instructions.md.
+- [[5368]](https://github.com/Azure/azure-dev/pull/5368) Refactor: Use %v to log errors instead of %s + error.Error().
+- [[5369]](https://github.com/Azure/azure-dev/pull/5369) Refactor: rename evaluateArgsWithConfig to evaluateBuildArgs for clarity.
+- [[5393]](https://github.com/Azure/azure-dev/pull/5393) Test: parallelize vs tests.
+- [[5373]](https://github.com/Azure/azure-dev/pull/5373) Test: omit socket reset errors in recording proxy.
+- [[5387]](https://github.com/Azure/azure-dev/pull/5387) Skip unreliable deployment stack tests.
+- [[5379]](https://github.com/Azure/azure-dev/pull/5379) Update recordings for vsserver test.
+- [[5265]](https://github.com/Azure/azure-dev/pull/5265) Fix parallel tests for vsserver.
 
 ## 1.17.2 (2025-06-23)
 

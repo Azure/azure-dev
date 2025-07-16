@@ -1,11 +1,13 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - aiohttp
   - azcloud
   - azdext
   - azurefd
   - backoff
   - Canonicalize
   - chinacloudapi
+  - CODEOWNERS
   - Codespace
   - Codespaces
   - devcontainers
@@ -28,6 +30,7 @@ words:
   - unmarshals
   - unmarshaling
   - unsetting
+  - vsserver
   - usgovcloudapi
   - jdbc
   - springframework

@@ -10,6 +10,7 @@
 - [[4832]](https://github.com/Azure/azure-dev/pull/4832) Improve user experience by prompting for confirmation before setting a new environment as the default.
 - [[5384]](https://github.com/Azure/azure-dev/pull/5384) Add support for boolean and integer default values in azd metadata fields.
 - [[5383]](https://github.com/Azure/azure-dev/pull/5383) Add support for `.webappignore` and `.funcignore` files in zip deployment packaging.
+- [[5430]](https://github.com/Azure/azure-dev/pull/5430) Fix `azd hooks run` to always run hooks in interactive mode and improve schema validation for platform-specific configurations.
 
 ### Bugs Fixed
 
@@ -28,6 +29,8 @@
 - [[5471]](https://github.com/Azure/azure-dev/pull/5471) Cancel CI workflow that becomes obsolete after a new commit is pushed in an open PR. Thanks @kitsiosk for the contribution!
 - [[5420]](https://github.com/Azure/azure-dev/pull/5420) Improve help description for `azd provision --no-state`.
 - [[5378]](https://github.com/Azure/azure-dev/pull/5378) Add Microsoft.Automation/automationAccounts to resources for output.
+- [[5461]](https://github.com/Azure/azure-dev/pull/5461) Update GitHub CLI version to 2.75.1.
+- [[5443]](https://github.com/Azure/azure-dev/pull/5443) Update Bicep CLI version to v0.36.177.
 
 ## 1.17.2 (2025-06-23)
 

@@ -214,7 +214,7 @@ git --no-pager log --oneline --pretty=format:"%h (%ad) %s" --date=short -20 orig
 Increase `-20` if needed to find the cutoff commit. `git log` shows commits in reverse chronological order (newest first). You must identify the cutoff commit and only take commits newer than (above) it.
 
 ### Step 3: Gather context and write changelog entry
-**IMPORTANT: For EACH commit collected, do the following:**
+**IMPORTANT: For EACH commit collected, do the following systematically and exhaustively:**
 
 1. **Extract PR number**: Look for `(#XXXX)` pattern in commit message
 2. **Fetch PR details** using GitHub tools: owner: `Azure`, repo: `azure-dev`, pullNumber: `PR#`
@@ -222,11 +222,14 @@ Increase `-20` if needed to find the cutoff commit. `git log` shows commits in r
 3. **Identify linked issues**: Scan PR details for GitHub issue references
 4. **Fetch linked issue details** using GitHub tools: owner: `Azure`, repo: `azure-dev`, issue_number: `XXXX`
 5. **Categorize change**: Features Added, Bugs Fixed, Other Changes
-6. **Write changelog entry**:
+6. **Write changelog entry systematically**:
     - **Format**: `- [[PR#]](https://github.com/Azure/azure-dev/pull/PR#) User-friendly description.`
+    - **Process**: Read PR description and linked issue carefully to understand the user impact
     - **Guidelines**: Be brief. Start with action verbs (Add, Fix, Update, etc.) and describe user impact. Follow existing changelog entries for style.
+    - **Enhancement**: For bugs, phrase the changelog entry in terms of the issue that was fixed when possible. E.g. "Fix PowerShell 7 suggestion text not showing for service-level hooks" is better than just describing the technical change.
     - **Attribution**: For PRs from contributors outside the core team, append: " Thanks @handle for the contribution!"
-7. **Exclude the following types of changes** from the changelog:
+7. **Process each PR one at a time**: Do not batch process or skip any PRs. Be exhaustive and do not cut the task short due to time constraints.
+8. **Exclude the following types of changes** from the changelog:
     - Test-related changes (test fixes, test updates, test infrastructure)
     - Documentation updates (README.md, .md files, CODEOWNERS)
     - Dependency updates (automated dependency bumps, CVE fixes that are purely dependency updates)

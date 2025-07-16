@@ -9,6 +9,7 @@ Usage
 
 Flags
     -b, --branch string       	: The template branch to initialize from. Must be used with a template argument (--template or -t).
+        --env-type string     	: The type of the environment (e.g., dev, test, prod). (Experimental)
     -e, --environment string  	: The name of the environment to use.
     -f, --filter strings      	: The tag(s) used to filter template results. Supports comma-separated values.
         --from-code           	: Initializes a new application from your existing code.

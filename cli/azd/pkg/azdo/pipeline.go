@@ -164,6 +164,10 @@ func getDefinitionVariables(
 		variables["AZURE_SUBSCRIPTION_ID"] = createBuildDefinitionVariable(credentials.SubscriptionId, false, false)
 	}
 
+	if env.GetEnvironmentType() != "" {
+		variables[environment.EnvTypeEnvVarName] = createBuildDefinitionVariable(env.GetEnvironmentType(), false, false)
+	}
+
 	if provisioningProvider.Provider == provisioning.Bicep {
 		if rgName, has := env.LookupEnv(environment.ResourceGroupEnvVarName); has {
 			variables[environment.ResourceGroupEnvVarName] = createBuildDefinitionVariable(rgName, false, false)

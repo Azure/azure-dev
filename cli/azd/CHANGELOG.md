@@ -4,7 +4,7 @@
 
 ### Features Added
 
-- [[5380]](https://github.com/Azure/azure-dev/pull/5380) Fix project name validation to prevent service packaging failures with invalid characters.
+- [[5380]](https://github.com/Azure/azure-dev/pull/5380) Improve project name validation to prevent service packaging failures with invalid characters.
 - [[5411]](https://github.com/Azure/azure-dev/pull/5411) Add LLM package for AI functionality with auto-detection of LLM configuration.
 - [[5397]](https://github.com/Azure/azure-dev/pull/5397) Add support for generic OIDC authentication with any CI provider.
 - [[4832]](https://github.com/Azure/azure-dev/pull/4832) Improve user experience by prompting for confirmation before setting a new environment as the default.

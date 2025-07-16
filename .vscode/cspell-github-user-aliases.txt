@@ -22,6 +22,7 @@ haoozhang
 isatty
 joho
 karolz
+kitsiosk
 LianwMS
 Lunatico9
 mattn

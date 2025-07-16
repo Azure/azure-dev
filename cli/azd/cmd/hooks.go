@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -108,7 +109,12 @@ func newHooksRunAction(
 	}
 }
 
-const noHookFoundMessage = " (No hook found)"
+type hookContextType string
+
+const (
+	hookContextProject hookContextType = "command"
+	hookContextService hookContextType = "service"
+)
 
 func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	hookName := hra.args[0]
@@ -135,13 +141,13 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	// Project level hooks
 	projectHooks := hra.projectConfig.Hooks[hookName]
 
+	hra.console.Message(ctx, output.WithHighLightFormat("Project"))
 	if err := hra.processHooks(
 		ctx,
 		hra.projectConfig.Path,
 		hookName,
-		fmt.Sprintf("Running %d %s command hook(s) for project", len(projectHooks), hookName),
-		fmt.Sprintf("Project: %s Hook Output", hookName),
 		projectHooks,
+		hookContextProject,
 		false,
 	); err != nil {
 		return nil, err
@@ -157,13 +163,13 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		serviceHooks := service.Hooks[hookName]
 		skip := hra.flags.service != "" && service.Name != hra.flags.service
 
+		hra.console.Message(ctx, "\n"+output.WithHighLightFormat(service.Name))
 		if err := hra.processHooks(
 			ctx,
 			service.RelativePath,
 			hookName,
-			fmt.Sprintf("Running %d %s service hook(s) for %s", len(serviceHooks), hookName, service.Name),
-			fmt.Sprintf("%s: %s hook output", service.Name, hookName),
 			serviceHooks,
+			hookContextService,
 			skip,
 		); err != nil {
 			return nil, err
@@ -181,38 +187,48 @@ func (hra *hooksRunAction) processHooks(
 	ctx context.Context,
 	cwd string,
 	hookName string,
-	spinnerMessage string,
-	previewMessage string,
 	hooks []*ext.HookConfig,
+	contextType hookContextType,
 	skip bool,
 ) error {
-	hra.console.ShowSpinner(ctx, spinnerMessage, input.Step)
-
-	if skip {
-		hra.console.StopSpinner(ctx, spinnerMessage, input.StepSkipped)
+	if len(hooks) == 0 {
+		hra.console.MessageUxItem(ctx, &ux.WarningAltMessage{Message: "No hooks found"})
 		return nil
 	}
 
-	if len(hooks) == 0 {
-		hra.console.StopSpinner(ctx, spinnerMessage+noHookFoundMessage, input.StepWarning)
+	if skip {
+		// When skipping, show individual skip messages for each hook that would have run
+		for i := range hooks {
+			hra.console.MessageUxItem(ctx, &ux.SkippedMessage{
+				Message: fmt.Sprintf("service hook %d/%d", i+1, len(hooks)),
+			})
+		}
+
 		return nil
 	}
 
 	hookType, commandName := ext.InferHookType(hookName)
 
-	for _, hook := range hooks {
+	for idx, hook := range hooks {
 		if err := hra.prepareHook(hookName, hook); err != nil {
 			return err
 		}
 
-		err := hra.execHook(ctx, previewMessage, cwd, hookType, commandName, hook)
+		hra.console.Message(ctx, output.WithBold("%s hook %d/%d:", contextType, idx+1, len(hooks)))
+
+		err := hra.execHook(ctx, cwd, hookType, commandName, hook)
 		if err != nil {
-			hra.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 			return fmt.Errorf("failed running hook %s, %w", hookName, err)
 		}
 
-		// The previewer cancels the previous spinner so we need to restart/show it again.
-		hra.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
+		hra.console.MessageUxItem(ctx, &ux.DoneMessage{
+			Message: "Successfully executed hook",
+		})
+
+		// Add blank line after each hook except the last one
+		if idx < len(hooks)-1 {
+			hra.console.Message(ctx, "")
+		}
 	}
 
 	return nil
@@ -220,7 +236,6 @@ func (hra *hooksRunAction) processHooks(
 
 func (hra *hooksRunAction) execHook(
 	ctx context.Context,
-	previewMessage string,
 	cwd string,
 	hookType ext.HookType,
 	commandName string,
@@ -236,14 +251,11 @@ func (hra *hooksRunAction) execHook(
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager, hra.commandRunner, hra.envManager, hra.console, cwd, hooksMap, hra.env, hra.serviceLocator)
 
-	previewer := hra.console.ShowPreviewer(ctx, &input.ShowPreviewerOptions{
-		Prefix:       "  ",
-		Title:        previewMessage,
-		MaxLineCount: 8,
-	})
-	defer hra.console.StopPreviewer(ctx, false)
+	// Always run in interactive mode for 'azd hooks run', to help with testing/debugging
+	runOptions := &tools.ExecOptions{
+		Interactive: to.Ptr(true),
+	}
 
-	runOptions := &tools.ExecOptions{StdOut: previewer}
 	err := hooksRunner.RunHooks(ctx, hookType, runOptions, commandName)
 	if err != nil {
 		return err
@@ -276,19 +288,6 @@ func (hra *hooksRunAction) prepareHook(name string, hook *ext.HookConfig) error 
 	}
 
 	hook.Name = name
-	hook.Interactive = false
-
-	// Don't display the 'Executing hook...' messages
-	hra.configureHookFlags(hook.Windows)
-	hra.configureHookFlags(hook.Posix)
 
 	return nil
-}
-
-func (hra *hooksRunAction) configureHookFlags(hook *ext.HookConfig) {
-	if hook == nil {
-		return
-	}
-
-	hook.Interactive = false
 }

@@ -67,6 +67,7 @@ buildargs
 BUILDID
 BUILDNUMBER
 buildpacks
+BUILDKIT
 byoi
 cflags
 circleci
@@ -77,6 +78,8 @@ conditionalize
 consolesize
 containerapp
 containerapps
+containerd
+Containerd
 contoso
 createdby
 csharpapp

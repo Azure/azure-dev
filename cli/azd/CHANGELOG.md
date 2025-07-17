@@ -10,6 +10,36 @@
 
 ### Other Changes
 
+## 1.18.0 (2025-07-17)
+
+### Features Added
+
+- [[5380]](https://github.com/Azure/azure-dev/pull/5380) Improve project name validation to prevent service packaging failures with invalid characters.
+- [[5411]](https://github.com/Azure/azure-dev/pull/5411) Add LLM package for AI functionality with auto-detection of LLM configuration.
+- [[5397]](https://github.com/Azure/azure-dev/pull/5397) Add support for generic OIDC authentication with any CI provider.
+- [[4832]](https://github.com/Azure/azure-dev/pull/4832) Improve user experience by prompting for confirmation before setting a new environment as the default.
+- [[5384]](https://github.com/Azure/azure-dev/pull/5384) Add support for boolean and integer default values in azd metadata fields.
+- [[5383]](https://github.com/Azure/azure-dev/pull/5383) Add support for `.webappignore` and `.funcignore` files in zip deployment packaging.
+- [[5430]](https://github.com/Azure/azure-dev/pull/5430) Update `azd hooks run` to always run hooks in interactive mode and improve schema validation.
+
+### Bugs Fixed
+
+- [[5478]](https://github.com/Azure/azure-dev/pull/5478) Fix panic when encountering Bicep secure output parameters.
+- [[5468]](https://github.com/Azure/azure-dev/pull/5468) Fix PowerShell 7 suggestion text not showing for service-level hooks.
+- [[5470]](https://github.com/Azure/azure-dev/pull/5470) Fix preflight error handling for deployment stack validation.
+- [[5446]](https://github.com/Azure/azure-dev/pull/5446) Fix Bicep parameter evaluation to properly inject environment variables before deployment.
+- [[5459]](https://github.com/Azure/azure-dev/pull/5459) Fix nil pointer error when checking credentials for Azure DevOps authentication.
+- [[5434]](https://github.com/Azure/azure-dev/pull/5434) Improve handling of unrecognized expressions in Aspire manifest files.
+- [[5372]](https://github.com/Azure/azure-dev/pull/5372) Fix null tags handling in deployment stack operations.
+
+### Other Changes
+
+- [[5471]](https://github.com/Azure/azure-dev/pull/5471) Cancel CI workflow that becomes obsolete after a new commit is pushed in an open PR. Thanks @kitsiosk for the contribution!
+- [[5420]](https://github.com/Azure/azure-dev/pull/5420) Improve help description for `azd provision --no-state`.
+- [[5378]](https://github.com/Azure/azure-dev/pull/5378) Add Microsoft.Automation/automationAccounts to resources for output.
+- [[5461]](https://github.com/Azure/azure-dev/pull/5461) Update GitHub CLI version to 2.75.1.
+- [[5443]](https://github.com/Azure/azure-dev/pull/5443) Update Bicep CLI version to 0.36.177.
+
 ## 1.17.2 (2025-06-23)
 
 ### Bugs Fixed

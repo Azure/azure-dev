@@ -7,11 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
@@ -80,6 +82,7 @@ func (dm *DeploymentManager) CompletedDeployments(
 	ctx context.Context,
 	scope Scope,
 	envName string,
+	stageName string,
 	hint string,
 ) ([]*azapi.ResourceDeployment, error) {
 	deployments, err := scope.ListDeployments(ctx)
@@ -91,13 +94,17 @@ func (dm *DeploymentManager) CompletedDeployments(
 		return y.Timestamp.Compare(x.Timestamp)
 	})
 
-	// If hint is not provided, use the environment name as the hint
 	if hint == "" {
+		// default hint for partial matches
 		hint = envName
+
+		if stageName != provisioning.StageEmpty && stageName != "" {
+			hint = fmt.Sprintf("%s-%s", envName, stageName)
+		}
 	}
 
 	// Environment matching strategy
-	// 1. Deployment with azd tagged env name
+	// 1. Deployment with azd tagged env name + stage name
 	// 2. Exact match on environment name to deployment name (old azd strategy)
 	// 3. Multiple matching names based on specified hint (show user prompt)
 	matchingDeployments := []*azapi.ResourceDeployment{}
@@ -109,19 +116,36 @@ func (dm *DeploymentManager) CompletedDeployments(
 			continue
 		}
 
-		// Match on current azd strategy (tags) or old azd strategy (deployment name)
-		if v, has := deployment.Tags[azure.TagKeyAzdEnvName]; has && *v == envName || deployment.Name == envName {
+		// Match on current azd strategy (tags)
+		envTag, envTagHas := deployment.Tags[azure.TagKeyAzdEnvName]
+		stageTag, stageTagHas := deployment.Tags[azure.TagKeyAzdStageName]
+
+		if envTagHas && *envTag == envName {
+			if stageTagHas && *stageTag == stageName {
+				log.Printf("completedDeployments: matched deployment '%s' using stageName: %s", deployment.Name, stageName)
+				return []*azapi.ResourceDeployment{deployment}, nil
+			}
+
+			// If stageName is empty, we can match on the envName alone
+			if (stageName == provisioning.StageEmpty || stageName == "") && !stageTagHas {
+				log.Printf("completedDeployments: matched deployment '%s' using envName", deployment.Name)
+				return []*azapi.ResourceDeployment{deployment}, nil
+			}
+		}
+
+		// LEGACY: match on deployment name
+		if deployment.Name == envName {
 			return []*azapi.ResourceDeployment{deployment}, nil
 		}
 
 		// Fallback: Match on hint
-		if hint != "" && strings.Contains(deployment.Name, hint) {
+		if strings.Contains(deployment.Name, hint) {
 			matchingDeployments = append(matchingDeployments, deployment)
 		}
 	}
 
 	if len(matchingDeployments) == 0 {
-		return nil, fmt.Errorf("'%s': %w", envName, ErrDeploymentsNotFound)
+		return nil, fmt.Errorf("'%s': %w", hint, ErrDeploymentsNotFound)
 	}
 
 	return matchingDeployments, nil

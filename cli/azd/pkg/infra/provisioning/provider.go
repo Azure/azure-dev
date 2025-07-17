@@ -5,6 +5,8 @@ package provisioning
 
 import (
 	"context"
+	"fmt"
+	"strings"
 )
 
 type ProviderKind string
@@ -18,13 +20,64 @@ const (
 	Test         ProviderKind = "test"
 )
 
+// Sentinel value representing the unnamed, root-level provisioning stage.
+//
+// Backend for deployment states treats this identically to empty string (preserving legacy behavior).
+// "infra" is reserved and rejected during input validation.
+const StageEmpty = "infra"
+
 type Options struct {
 	Provider         ProviderKind   `yaml:"provider,omitempty"`
 	Path             string         `yaml:"path,omitempty"`
 	Module           string         `yaml:"module,omitempty"`
+	Name             string         `yaml:"name,omitempty"`
 	DeploymentStacks map[string]any `yaml:"deploymentStacks,omitempty"`
 	// Not expected to be defined at azure.yaml
 	IgnoreDeploymentState bool `yaml:"-"`
+
+	Stages []Options `yaml:"stages,omitempty"`
+}
+
+func (o *Options) GetStage(name string) (Options, error) {
+	stages := []Options{*o}
+	stages = append(stages, o.Stages...)
+
+	names := make([]string, 0, len(stages))
+	for _, stage := range stages {
+		if stage.Name == name {
+			return stage, nil
+		}
+
+		names = append(names, stage.Name)
+	}
+
+	return Options{}, fmt.Errorf(
+		"stage '%s' not found in azure.yaml. available stages: %s", name, strings.Join(names, ", "))
+}
+
+func (o *Options) Validate() error {
+	errWrap := func(err string) error {
+		return fmt.Errorf("validating infra.stages: %s", err)
+	}
+
+	for _, stage := range o.Stages {
+		if stage.Name == "" {
+			return errWrap("name must be specified for each provisioning stage")
+		}
+
+		if stage.Name == StageEmpty {
+			return errWrap(
+				fmt.Sprintf(
+					"stage name '%s' is reserved as the default stage and cannot be used",
+					StageEmpty))
+		}
+
+		if stage.Path == "" {
+			return errWrap(fmt.Sprintf("%s: path must be specified", stage.Name))
+		}
+	}
+
+	return nil
 }
 
 type SkippedReasonType string

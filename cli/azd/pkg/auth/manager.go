@@ -697,6 +697,25 @@ func (m *Manager) LoginInteractive(
 		acquireTokenOptions = append(acquireTokenOptions, public.WithOpenURL(options.WithOpenUrl))
 	}
 
+	claimsFile, err := claimsFilePath()
+	if err != nil {
+		return nil, err
+	}
+
+	bytes, err := os.ReadFile(claimsFile)
+	if err != nil {
+		return nil, fmt.Errorf("reading claims file: %w", err)
+	} else if errors.Is(err, os.ErrNotExist) {
+		// do nothing, no claims to add
+	} else {
+		var validJson map[string]any
+		if err := json.Unmarshal(bytes, &validJson); err == nil {
+			acquireTokenOptions = append(acquireTokenOptions, public.WithClaims(string(bytes)))
+		} else if err := os.Remove(claimsFile); err != nil { // remove file immediately if it's not valid json
+			return nil, fmt.Errorf("removing claims file '%s': %w. Remove this file manually to recover", claimsFile, err)
+		}
+	}
+
 	res, err := m.publicClient.AcquireTokenInteractive(ctx, scopes, acquireTokenOptions...)
 	if err != nil {
 		return nil, err
@@ -706,6 +725,7 @@ func (m *Manager) LoginInteractive(
 		return nil, err
 	}
 
+	_ = os.Remove(claimsFile)
 	return newAzdCredential(m.publicClient, &res.Account, m.cloud), nil
 }
 

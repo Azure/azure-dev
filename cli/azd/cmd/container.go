@@ -509,6 +509,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 				PerCallPolicies: []policy.Policy{
 					azsdk.NewMsCorrelationPolicy(),
 					azsdk.NewUserAgentPolicy(internal.UserAgent()),
+					auth.NewMfaChallengePolicy(cloud.Configuration),
 				},
 				Transport: transport,
 			},

@@ -235,11 +235,7 @@ func (ds *StandardDeployments) DeployToSubscription(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		deploymentError := createDeploymentError(err)
-		return nil, fmt.Errorf(
-			"deploying to subscription:\n\nDeployment Error Details:\n%w",
-			deploymentError,
-		)
+		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err))
 	}
 
 	return ds.convertFromArmDeployment(&deployResult.DeploymentExtended), nil
@@ -275,11 +271,7 @@ func (ds *StandardDeployments) DeployToResourceGroup(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		deploymentError := createDeploymentError(err)
-		return nil, fmt.Errorf(
-			"deploying to resource group:\n\nDeployment Error Details:\n%w",
-			deploymentError,
-		)
+		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err))
 	}
 
 	return ds.convertFromArmDeployment(&deployResult.DeploymentExtended), nil
@@ -566,11 +558,7 @@ func (ds *StandardDeployments) WhatIfDeployToSubscription(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		deploymentError := createDeploymentError(err)
-		return nil, fmt.Errorf(
-			"deploying to subscription:\n\nDeployment Error Details:\n%w",
-			deploymentError,
-		)
+		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err))
 	}
 
 	return &deployResult.WhatIfOperationResult, nil
@@ -603,11 +591,7 @@ func (ds *StandardDeployments) WhatIfDeployToResourceGroup(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		deploymentError := createDeploymentError(err)
-		return nil, fmt.Errorf(
-			"deploying to resource group:\n\nDeployment Error Details:\n%w",
-			deploymentError,
-		)
+		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err))
 	}
 
 	return &deployResult.WhatIfOperationResult, nil
@@ -742,9 +726,10 @@ func validatePreflightError(
 	err error,
 	typeMessage string,
 ) error {
+	title := "Validation Error Details"
 	var respErr *azcore.ResponseError
 	if errors.As(err, &respErr) {
-		err = createDeploymentError(err)
+		err = responseToDeploymentError(title, respErr)
 	} else if err != nil {
 		// Error returned from azure sdk go bug: we receive a 400 Bad Request from the API,
 		// but the client-handling in azure sdk fails internally with a different error
@@ -758,11 +743,11 @@ func validatePreflightError(
 					typeMessage, errOnRawResponse)
 			}
 
-			err = NewAzureDeploymentError(string(body))
+			err = NewAzureDeploymentError(title, string(body))
 		}
 	}
 	return fmt.Errorf(
-		"validating deployment to %s:\n\nValidation Error Details:\n%w",
+		"validating deployment to %s: %w",
 		typeMessage,
 		err,
 	)

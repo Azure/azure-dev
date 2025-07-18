@@ -264,11 +264,7 @@ func (d *StackDeployments) DeployToSubscription(
 
 	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
-		deploymentError := createDeploymentError(err)
-		return nil, fmt.Errorf(
-			"deploying to subscription:\n\nDeployment Error Details:\n%w",
-			deploymentError,
-		)
+		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err))
 	}
 
 	return d.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
@@ -342,11 +338,7 @@ func (d *StackDeployments) DeployToResourceGroup(
 
 	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
-		deploymentError := createDeploymentError(err)
-		return nil, fmt.Errorf(
-			"deploying to resource group:\n\nDeployment Error Details:\n%w",
-			deploymentError,
-		)
+		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err))
 	}
 
 	return d.GetResourceGroupDeployment(ctx, subscriptionId, resourceGroup, deploymentName)

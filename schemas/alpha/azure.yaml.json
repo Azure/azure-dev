@@ -14,6 +14,11 @@
             "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
             "description": "The application name. Only lowercase letters, numbers, and hyphens (-) are allowed. The name must start and end with a letter or number."
         },
+        "tracking_id": {
+            "type": "string",
+            "title": "Template version tracking ID",
+            "description": "The template version in format YYYY-MM-DD-<short-git-hash>. This is used to track the version of the template being used."
+        },
         "resourceGroup": {
             "type": "string",
             "minLength": 3,

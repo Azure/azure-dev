@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -412,6 +413,30 @@ func NewRootCmd(
 
 	if err != nil {
 		panic(err)
+	}
+
+	if err := rootContainer.Invoke(func(alphaFeatureManager *alpha.FeatureManager) error {
+		llmEnabledError := llm.IsLlmFeatureEnabled(alphaFeatureManager)
+		if llmEnabledError != nil {
+			return llmEnabledError
+		}
+
+		root.Add("mcp", &actions.ActionDescriptorOptions{
+			Command:        newMcpCmd(),
+			FlagsResolver:  newMcpFlags,
+			ActionResolver: newMcpAction,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdMcpHelpDescription,
+				Footer:      getCmdMcpHelpFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupAlpha,
+			},
+		})
+
+		return nil
+	}); err != nil {
+		panic(fmt.Errorf("Failed to initialize LLM feature: %w", err))
 	}
 
 	// Initialize the platform specific components for the IoC container

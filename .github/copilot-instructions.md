@@ -205,7 +205,7 @@ Rename any existing `## 1.x.x-beta.1 (Unreleased)` section to the version being 
 ```bash
 git --no-pager log --grep="Increment CLI version" --invert-grep -n 3 --follow -p -- cli/azd/CHANGELOG.md
 ```
-Look at the commit messages and diff output to identify the commit that added the previous version's changelog.
+Review the diff output to find the most recent commit that added the previous version's changelog - this is the cutoff commit. Focus on the actual changelog changes in the diff instead of the commit messages themselves.
 
 **Get commits to process**:
 ```bash
@@ -214,7 +214,7 @@ git --no-pager log --oneline --pretty=format:"%h (%ad) %s" --date=short -20 orig
 Increase `-20` if needed to find the cutoff commit. `git log` shows commits in reverse chronological order (newest first). You must identify the cutoff commit and only take commits newer than (above) it.
 
 ### Step 3: Gather context and write changelog entry
-**IMPORTANT: For EACH commit collected, do the following:**
+**CRITICAL INSTRUCTION: Process each commit individually and sequentially. Complete the full workflow (extract PR, fetch details, categorize, write entry, save) one entry at a time. DO NOT batch process multiple commits/PRs, skip PRs, or cut the process short due to time constraints.**
 
 1. **Extract PR number**: Look for `(#XXXX)` pattern in commit message
 2. **Fetch PR details** using GitHub tools: owner: `Azure`, repo: `azure-dev`, pullNumber: `PR#`
@@ -222,10 +222,19 @@ Increase `-20` if needed to find the cutoff commit. `git log` shows commits in r
 3. **Identify linked issues**: Scan PR details for GitHub issue references
 4. **Fetch linked issue details** using GitHub tools: owner: `Azure`, repo: `azure-dev`, issue_number: `XXXX`
 5. **Categorize change**: Features Added, Bugs Fixed, Other Changes
-6. **Write changelog entry**:
+6. **Add changelog entry to CHANGELOG.md**:
     - **Format**: `- [[PR#]](https://github.com/Azure/azure-dev/pull/PR#) User-friendly description.`
-    - **Guidelines**: Be brief. Start with action verbs (Add, Fix, Update, etc.) and describe user impact. Follow existing changelog entries for style.
+    - **Process**: Read PR description and linked issue carefully to understand the user impact
+    - **Guidelines**:
+        - Be brief. Start with action verbs (Add, Fix, Update, etc.) and describe user impact. Follow existing changelog entries for style.
+        - For bugs, phrase the changelog entry in terms of the issue that was fixed when possible. Example: "Fix PowerShell 7 suggestion text not showing for service-level hooks."
     - **Attribution**: For PRs from contributors outside the core team, append: " Thanks @handle for the contribution!"
+7. **Exclude the following types of changes** from the changelog:
+    - Test-related changes and test infrastructure updates
+    - Documentation updates (README.md, .md files, CODEOWNERS)
+    - Automated dependency bumps and CVE fixes that are purely dependency updates (updates to tools like Bicep CLI, GitHub CLI should remain in the changelog)
+    - Internal refactoring, code cleanup, and variable renames without user impact
+    - Build/release infrastructure and CI/CD pipeline changes
 
 ### Step 4: Organize and finalize
 1. **Remove empty categories** and **validate formatting**

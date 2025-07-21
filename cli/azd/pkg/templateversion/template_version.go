@@ -107,10 +107,12 @@ func (m *Manager) CreateVersionFile(ctx context.Context, projectPath string) (st
 
 	// Create the file path
 	filePath := filepath.Join(projectPath, VersionFileName)
+	m.console.Message(ctx, fmt.Sprintf("DEBUG: Creating version file at: %s with content: %s", filePath, versionString))
 
 	// Check if the file already exists and remove it if needed
 	if _, err := os.Stat(filePath); err == nil {
 		// File exists, try to make it writable before removing
+		m.console.Message(ctx, "DEBUG: File already exists, attempting to make writable before removing")
 		err = os.Chmod(filePath, 0666)
 		if err != nil {
 			m.console.Message(ctx, fmt.Sprintf("WARNING: Failed to change file permissions: %v", err))
@@ -119,11 +121,13 @@ func (m *Manager) CreateVersionFile(ctx context.Context, projectPath string) (st
 
 		err = os.Remove(filePath)
 		if err != nil {
+			m.console.Message(ctx, fmt.Sprintf("ERROR: Failed to remove existing version file: %v", err))
 			return "", fmt.Errorf("failed to remove existing version file %s: %w", filePath, err)
 		}
 	}
 
 	// Write the file with read-only permissions
+	m.console.Message(ctx, "DEBUG: Writing version file with read-only permissions")
 	err = os.WriteFile(filePath, []byte(versionString), ReadOnlyFilePerms)
 	if err != nil {
 		// Check if the error is due to permissions
@@ -132,7 +136,15 @@ func (m *Manager) CreateVersionFile(ctx context.Context, projectPath string) (st
 			return "", fmt.Errorf("permission denied creating version file %s: %w", filePath, err)
 		}
 
+		m.console.Message(ctx, fmt.Sprintf("ERROR: Failed to write version file: %v", err))
 		return "", fmt.Errorf("failed to create version file %s: %w", filePath, err)
+	}
+
+	// Verify the file was created
+	if _, statErr := os.Stat(filePath); statErr != nil {
+		m.console.Message(ctx, fmt.Sprintf("ERROR: File creation verification failed: %v", statErr))
+	} else {
+		m.console.Message(ctx, "DEBUG: File creation verification succeeded")
 	}
 
 	m.console.Message(ctx, fmt.Sprintf("Created template version file at %s: %s", filePath, versionString))
@@ -223,7 +235,23 @@ func (m *Manager) EnsureTemplateVersion(ctx context.Context, projectPath string)
 		return "", fmt.Errorf("failed to access project path: %w", err)
 	}
 
+	// Check if the project path is a git repository
+	checkArgs := exec.RunArgs{
+		Cmd:  "git",
+		Args: []string{"rev-parse", "--is-inside-work-tree"},
+		Cwd:  projectPath,
+	}
+	_, checkErr := m.runner.Run(ctx, checkArgs)
+	if checkErr != nil {
+		m.console.Message(ctx, fmt.Sprintf("DEBUG: Not a git repository or git error: %v", checkErr))
+	} else {
+		m.console.Message(ctx, "DEBUG: Confirmed path is a git repository")
+	}
+
 	// Try to read the version file
+	versionFilePath := filepath.Join(projectPath, VersionFileName)
+	m.console.Message(ctx, fmt.Sprintf("DEBUG: Checking for version file at: %s", versionFilePath))
+	
 	version, err := m.ReadVersionFile(projectPath)
 	if err != nil {
 		// Log the error but continue with creating a new file
@@ -233,11 +261,16 @@ func (m *Manager) EnsureTemplateVersion(ctx context.Context, projectPath string)
 
 	// If the file doesn't exist or is empty, create it
 	if version == "" {
+		m.console.Message(ctx, "DEBUG: Version file doesn't exist or is empty, creating it now")
 		createdVersion, err := m.CreateVersionFile(ctx, projectPath)
 		if err != nil {
+			m.console.Message(ctx, fmt.Sprintf("ERROR: Failed to create version file: %v", err))
 			return "", fmt.Errorf("failed to create template version file: %w", err)
 		}
+		m.console.Message(ctx, fmt.Sprintf("DEBUG: Successfully created version file with: %s", createdVersion))
 		return createdVersion, nil
+	} else {
+		m.console.Message(ctx, fmt.Sprintf("DEBUG: Found existing version: %s", version))
 	}
 
 	// Validate the existing version format
@@ -251,11 +284,14 @@ func (m *Manager) EnsureTemplateVersion(ctx context.Context, projectPath string)
 		backupPath := filepath.Join(projectPath, VersionFileName+".bak")
 
 		// Try to rename, but continue even if it fails
-		_ = os.Rename(oldPath, backupPath)
+		if renameErr := os.Rename(oldPath, backupPath); renameErr != nil {
+			m.console.Message(ctx, fmt.Sprintf("DEBUG: Failed to rename old version file: %v", renameErr))
+		}
 
 		// Create a new file with the correct format
 		createdVersion, err := m.CreateVersionFile(ctx, projectPath)
 		if err != nil {
+			m.console.Message(ctx, fmt.Sprintf("ERROR: Failed to create version file with correct format: %v", err))
 			return "", fmt.Errorf("failed to create template version file: %w", err)
 		}
 		return createdVersion, nil

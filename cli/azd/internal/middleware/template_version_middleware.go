@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -78,15 +79,34 @@ func (m *templateVersionMiddleware) Run(ctx context.Context, next middleware.Nex
 	}
 
 	// Get template version manager
-	var versionManager *templateversion.Manager
-	if err = m.container.Resolve(&versionManager); err != nil {
-		// Version manager not available, continue with the command
-		span.SetStatus(1, "Template version manager not available")
+	var runner exec.CommandRunner
+	if err = m.container.Resolve(&runner); err != nil {
+		// Runner not available, continue with the command
+		if console != nil {
+			console.Message(ctx, fmt.Sprintf("DEBUG: Failed to resolve command runner: %v", err))
+		}
+		span.SetStatus(1, "Command runner not available")
 		return next(ctx)
+	}
+	
+	// Create version manager directly instead of using IoC container
+	versionManager := templateversion.NewManager(console, runner)
+	
+	if console != nil {
+		console.Message(ctx, "DEBUG: Successfully created version manager directly")
 	}
 
 	// Ensure template version file exists - errors are handled within the EnsureTemplateVersion method
+	if console != nil {
+		console.Message(ctx, fmt.Sprintf("DEBUG: Calling EnsureTemplateVersion with projectPath: %s", projectPath))
+	}
+	
 	version, err := versionManager.EnsureTemplateVersion(ctx, projectPath)
+	
+	if console != nil {
+		console.Message(ctx, fmt.Sprintf("DEBUG: EnsureTemplateVersion returned version: %s, err: %v", version, err))
+	}
+	
 	if err != nil {
 		// Log error but continue with the command
 		span.SetStatus(1, "Failed to ensure template version")
@@ -95,6 +115,10 @@ func (m *templateVersionMiddleware) Run(ctx context.Context, next middleware.Nex
 		}
 	} else if version != "" {
 		// Only update azure.yaml if we successfully got a version
+		if console != nil {
+			console.Message(ctx, fmt.Sprintf("DEBUG: Updating azure.yaml with version: %s", version))
+		}
+		
 		err = updateAzureYamlVersion(ctx, projectPath, version)
 		if err != nil {
 			// Log error but continue with the command
@@ -102,6 +126,8 @@ func (m *templateVersionMiddleware) Run(ctx context.Context, next middleware.Nex
 			if console != nil {
 				console.Message(ctx, fmt.Sprintf("DEBUG: Failed to update azure.yaml with template version: %v", err))
 			}
+		} else if console != nil {
+			console.Message(ctx, "DEBUG: Successfully updated azure.yaml with version")
 		}
 	}
 

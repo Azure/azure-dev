@@ -87,9 +87,7 @@ func (f *functionAppTarget) Deploy(
 	defer zipFile.Close()
 
 	progress.SetProgress(NewServiceProgress("Uploading deployment package"))
-	remoteBuild := serviceConfig.Language == ServiceLanguageJavaScript ||
-		serviceConfig.Language == ServiceLanguageTypeScript ||
-		serviceConfig.Language == ServiceLanguagePython
+	remoteBuild := serviceConfig.Language == ServiceLanguagePython
 	res, err := f.cli.DeployFunctionAppUsingZipFile(
 		ctx,
 		targetResource.SubscriptionId(),

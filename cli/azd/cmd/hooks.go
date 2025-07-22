@@ -40,12 +40,6 @@ func hooksActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		ActionResolver: newHooksRunAction,
 	})
 
-	group.Add("new", &actions.ActionDescriptorOptions{
-		Command:        newHooksNewCmd(),
-		FlagsResolver:  newHooksNewFlags,
-		ActionResolver: newHooksNewAction,
-	})
-
 	return group
 }
 

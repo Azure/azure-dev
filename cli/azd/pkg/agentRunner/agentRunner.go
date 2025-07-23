@@ -283,3 +283,50 @@ func (h *agentLogHandler) HandleAgentFinish(ctx context.Context, finish schema.A
 func (h *agentLogHandler) HandleLLMGenerateContentEnd(ctx context.Context, response *llms.ContentResponse) {
 	log.Println("✨ LLM content generation completed")
 }
+
+func promptingWithDifferentErrors(err error) string {
+	var respErr *azcore.ResponseError
+	var armDeployErr *azapi.AzureDeploymentError
+	var authFailedErr *auth.AuthFailedError
+	if errors.As(err, &respErr) {
+		return fmt.Sprintf(`I'm using Azure Developer CLI (azd) and encountered an Azure HTTP response error: %s
+
+This appears to be an Azure REST API error with status code %d and error code '%s'. Please:
+
+1. Explain what this specific error means and why it occurred
+2. Provide step-by-step troubleshooting instructions without az cli command and instructions with az cli command
+3. Suggest specific fixes for Bicep files and Terraform files if this is infrastructure provisioning related
+4. If this involves Azure resource permissions, quotas, or configuration issues, provide the exact azure portal instructions and az cli commands to verify the changes from bicep or terraform files works 
+5. Provide suggestions only if this requires changes to Azure subscription settings, resource group permissions, or service principal setup
+
+Focus on actionable solutions rather than general advice.`,
+			err.Error(), respErr.StatusCode, respErr.ErrorCode)
+	} else if errors.As(err, &armDeployErr) {
+		return fmt.Sprintf(`I'm using Azure Developer CLI (azd) and encountered an Azure deployment error: %s
+
+This is a deployment validation or provisioning failure. Please:
+
+1. Explain what this specific error means and why it occurred
+2. Provide step-by-step troubleshooting instructions  without az cli command and instructions with az cli command
+3. Suggest specific fixes for Bicep files and Terraform files
+4. Provide the exact azure portal instructions and az cli commands to verify the suggested changes from bicep or terraform files works
+
+Focus on actionable solutions rather than general advice.`,
+			err.Error())
+	} else if errors.As(err, &authFailedErr) {
+		// We should move this part under azd auth command
+		return fmt.Sprintf(`I'm using Azure Developer CLI (azd) and encountered an authentication error: %s. Please:
+
+1. Explain what this specific Azure authentication error means and common causes.
+2. Identify which auth method is failing (device code, service principal, managed identity, interactive) and what should I do to fix it.
+3. Provide specific azd auth commands to re-authenticate:
+   - azd auth logout
+   - azd auth login
+4. Ensure correct tenant and subscription are selected
+5. Verify Azure-related environment variables are correct
+
+Focus on actionable solutions rather than general advice.`, err.Error())
+	}
+
+	return fmt.Sprintf("I'm using Azure Developer CLI (azd) and I encountered an error: %s. Explain the error and what should I do next to fix it. Focus on actionable solutions rather than general advice.", err.Error())
+}

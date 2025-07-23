@@ -95,6 +95,11 @@
                     "host"
                 ],
                 "properties": {
+                    "apiVersion": {
+                        "type": "string",
+                        "title": "Resource provider API version for deployments",
+                        "description": "Optional. The resource provider API version to use for the service. If not specified, the default SDK API version is used. Only valid when host is 'containerapp'."
+                    },
                     "resourceGroup": {
                         "type": "string",
                         "title": "Name of the Azure resource group that contains the resource",
@@ -341,6 +346,22 @@
                                     "type": "string",
                                     "description": "Optional. The path to the directory containing a single Java archive file (.jar/.ear/.war), or the path to the specific Java archive file to be included in the deployment artifact. If omitted, the CLI will detect the output directory based on the build system in-use. For maven, the default output directory 'target' is assumed."
                                 }
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "not": {
+                                "properties": {
+                                    "host": {
+                                        "const": "containerapp"
+                                    }
+                                }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "apiVersion": false
                             }
                         }
                     },

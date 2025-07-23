@@ -616,11 +616,12 @@ func createApiVersionPolicy(options *ContainerAppOptions) *containerAppCustomApi
 }
 
 func withApiVersionSuggestion(err error) error {
-	suggestion := `Suggestion: consider setting 'apiVersion' on your service in azure.yaml to match the API version in your IaC.
-Example:
-services:
-  your-service:
-    apiVersion: 2025-02-02-preview`
+	suggestion := "Suggestion: consider setting 'apiVersion' on your service in azure.yaml to match the API version " +
+		"in your IaC.\n" +
+		"Example:\n" +
+		"services:\n" +
+		"  your-service:\n" +
+		"    apiVersion: 2025-02-02-preview"
 
 	return &internal.ErrorWithSuggestion{
 		Err:        err,

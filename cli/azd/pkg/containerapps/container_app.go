@@ -7,10 +7,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -18,6 +20,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -148,6 +151,10 @@ func (cas *containerAppService) persistSettings(
 
 	aca, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName, options)
 	if err != nil {
+		var errWithSuggestion *internal.ErrorWithSuggestion
+		if errors.As(err, &errWithSuggestion) {
+			return nil, err
+		}
 		log.Printf("failed getting current aca settings: %v. No settings will be persisted.", err)
 		// if the container app doesn't exist, there's nothing for us to update in the desired state,
 		// so we can just return the existing state as is.
@@ -249,7 +256,7 @@ func (cas *containerAppService) DeployYaml(
 
 		var containerApp armappcontainers.ContainerApp
 		if err := json.Unmarshal(containerAppJson, &containerApp); err != nil {
-			return fmt.Errorf("converting to container app type: %w", err)
+			return withApiVersionSuggestion(fmt.Errorf("converting to container app type: %w", err))
 		}
 
 		p, err := appClient.BeginCreateOrUpdate(ctx, resourceGroupName, appName, containerApp, nil)
@@ -458,7 +465,11 @@ func (cas *containerAppService) getContainerApp(
 
 	_, err = appClient.Get(ctx, resourceGroupName, appName, nil)
 	if err != nil {
-		return nil, fmt.Errorf("getting container app: %w", err)
+		err = fmt.Errorf("getting container app: %w", err)
+		if strings.Contains(err.Error(), "unmarshalling type") {
+			err = withApiVersionSuggestion(err)
+		}
+		return nil, err
 	}
 
 	var containAppMap map[string]any
@@ -499,7 +510,7 @@ func (cas *containerAppService) updateContainerApp(
 	var containerAppResource armappcontainers.ContainerApp
 	if apiVersionPolicy == nil {
 		if err := json.Unmarshal(containerAppJson, &containerAppResource); err != nil {
-			return fmt.Errorf("failed to unmarshal container app: %w", err)
+			return withApiVersionSuggestion(fmt.Errorf("failed to unmarshal container app: %w", err))
 		}
 	}
 
@@ -601,5 +612,18 @@ func createApiVersionPolicy(options *ContainerAppOptions) *containerAppCustomApi
 
 	return &containerAppCustomApiVersionAndBodyPolicy{
 		apiVersion: options.ApiVersion,
+	}
+}
+
+func withApiVersionSuggestion(err error) error {
+	suggestion := `Suggestion: consider setting 'apiVersion' on your service in azure.yaml to match the API version in your IaC.
+Example:
+services:
+  your-service:
+    apiVersion: 2025-02-02-preview`
+
+	return &internal.ErrorWithSuggestion{
+		Err:        err,
+		Suggestion: suggestion,
 	}
 }

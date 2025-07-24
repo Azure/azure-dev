@@ -54,24 +54,22 @@ func newReLoginRequiredError(
 	case "invalid_grant",
 		"interaction_required":
 		err := ReLoginRequiredError{}
-		err.init(response, scopes, cloud)
-		suggestion := fmt.Sprintf("Suggestion: %s, run `%s` to acquire a new token.", err.scenario, err.loginCmd)
-		if err.helpLink != "" {
-			suggestion += fmt.Sprintf(" See %s for more info.", err.helpLink)
-		}
-		return &internal.ErrorWithSuggestion{
-			Err:        &err,
-			Suggestion: suggestion,
-		}, true
+		err.initDefault()
+		err.fromAadResponse(response, scopes, cloud)
+		return &err, true
 	}
 
 	return nil, false
 }
 
-func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string, cloud *cloud.Cloud) {
-	e.errText = response.ErrorDescription
+func (e *ReLoginRequiredError) initDefault() {
 	e.scenario = "reauthentication required"
 	e.loginCmd = "azd auth login"
+}
+
+func (e *ReLoginRequiredError) fromAadResponse(response *AadErrorResponse, scopes []string, cloud *cloud.Cloud) {
+	e.errText = response.ErrorDescription
+
 	if !matchesLoginScopes(scopes, cloud) { // if matching default login scopes, no scopes need to be specified
 		for _, scope := range scopes {
 			e.loginCmd += fmt.Sprintf(" --scope %s", scope)
@@ -89,6 +87,24 @@ func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string,
 		e.loginCmd += " --use-device-code=false"
 		e.helpLink = "https://aka.ms/azd/troubleshoot/conditional-access-policy"
 	}
+}
+
+func (e *ReLoginRequiredError) As(a any) bool {
+	errSuggest, ok := a.(**internal.ErrorWithSuggestion)
+	if !ok {
+		return false
+	}
+
+	suggestion := fmt.Sprintf("Suggestion: %s, run `%s` to acquire a new token.", e.scenario, e.loginCmd)
+	if e.helpLink != "" {
+		suggestion += fmt.Sprintf(" See %s for more info.", e.helpLink)
+	}
+
+	*errSuggest = &internal.ErrorWithSuggestion{
+		Err:        e,
+		Suggestion: suggestion,
+	}
+	return true
 }
 
 func (e *ReLoginRequiredError) Error() string {

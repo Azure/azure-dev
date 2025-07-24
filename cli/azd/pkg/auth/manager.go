@@ -703,10 +703,10 @@ func (m *Manager) LoginInteractive(
 	}
 
 	bytes, err := os.ReadFile(claimsFile)
-	if err != nil {
-		return nil, fmt.Errorf("reading claims file: %w", err)
-	} else if errors.Is(err, os.ErrNotExist) {
+	if errors.Is(err, os.ErrNotExist) {
 		// do nothing, no claims to add
+	} else if err != nil {
+		return nil, fmt.Errorf("reading claims file: %w", err)
 	} else {
 		var validJson map[string]any
 		if err := json.Unmarshal(bytes, &validJson); err == nil {

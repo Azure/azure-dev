@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	msal "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/stretchr/testify/require"
 )
@@ -131,7 +132,17 @@ func TestReLoginRequiredError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err, _ := newReLoginRequiredError(tt.resp, LoginScopes(cloud.AzurePublic()), cloud.AzurePublic())
 			got := err.Error()
+
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestReLoginRequiredSuggestion(t *testing.T) {
+	err := &ReLoginRequiredError{}
+	err.initDefault()
+
+	var errSuggest *internal.ErrorWithSuggestion
+	require.True(t, errors.As(err, &errSuggest))
+	require.Contains(t, errSuggest.Suggestion, "Suggestion:")
 }

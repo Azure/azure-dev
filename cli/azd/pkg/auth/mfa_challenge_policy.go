@@ -14,11 +14,11 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
+// mfaChallengePolicy handles auth challenges issued by ARM.
 type mfaChallengePolicy struct {
 	cloud cloud.Configuration
 }
@@ -43,19 +43,10 @@ func (p *mfaChallengePolicy) Do(req *policy.Request) (*http.Response, error) {
 							return resp, err
 						}
 
-						err := ReLoginRequiredError{
-							scenario: "reauthentication required",
-							errText:  "mfa challenge",
-							loginCmd: "azd auth login",
-						}
-						suggestion := fmt.Sprintf("Suggestion: %s, run `%s` to acquire a new token.", err.scenario, err.loginCmd)
-						if err.helpLink != "" {
-							suggestion += fmt.Sprintf(" See %s for more info.", err.helpLink)
-						}
-						return resp, &internal.ErrorWithSuggestion{
-							Err:        &err,
-							Suggestion: suggestion,
-						}
+						err := ReLoginRequiredError{}
+						err.initDefault()
+						err.errText = "reauthentication required by Azure policies"
+						return resp, &err
 					}
 				}
 			}

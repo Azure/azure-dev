@@ -95,5 +95,5 @@ func helloHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallTo
 	}
 
 	// Fallback to simple greeting
-	return mcp.NewToolResultText(fmt.Sprintf("This is the MCP tool - Helloooo, %s!", name)), nil
+	return mcp.NewToolResultText(fmt.Sprintf("This is the MCP tool - Hello, %s!", name)), nil
 }

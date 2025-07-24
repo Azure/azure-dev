@@ -418,22 +418,27 @@ func NewRootCmd(
 	if err := rootContainer.Invoke(func(alphaFeatureManager *alpha.FeatureManager) error {
 		llmEnabledError := llm.IsLlmFeatureEnabled(alphaFeatureManager)
 		if llmEnabledError != nil {
-			return llmEnabledError
+			root.Add("mcp", &actions.ActionDescriptorOptions{
+				Command: &cobra.Command{
+					RunE: func(cmd *cobra.Command, args []string) error {
+						return llmEnabledError
+					},
+				},
+			})
+		} else {
+			root.Add("mcp", &actions.ActionDescriptorOptions{
+				Command:        newMcpCmd(),
+				FlagsResolver:  newMcpFlags,
+				ActionResolver: newMcpAction,
+				HelpOptions: actions.ActionHelpOptions{
+					Description: getCmdMcpHelpDescription,
+					Footer:      getCmdMcpHelpFooter,
+				},
+				GroupingOptions: actions.CommandGroupOptions{
+					RootLevelHelp: actions.CmdGroupAlpha,
+				},
+			})
 		}
-
-		root.Add("mcp", &actions.ActionDescriptorOptions{
-			Command:        newMcpCmd(),
-			FlagsResolver:  newMcpFlags,
-			ActionResolver: newMcpAction,
-			HelpOptions: actions.ActionHelpOptions{
-				Description: getCmdMcpHelpDescription,
-				Footer:      getCmdMcpHelpFooter,
-			},
-			GroupingOptions: actions.CommandGroupOptions{
-				RootLevelHelp: actions.CmdGroupAlpha,
-			},
-		})
-
 		return nil
 	}); err != nil {
 		panic(fmt.Errorf("Failed to initialize LLM feature: %w", err))

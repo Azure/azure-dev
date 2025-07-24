@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -151,10 +150,6 @@ func (cas *containerAppService) persistSettings(
 
 	aca, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName, options)
 	if err != nil {
-		var errWithSuggestion *internal.ErrorWithSuggestion
-		if errors.As(err, &errWithSuggestion) {
-			return nil, err
-		}
 		log.Printf("failed getting current aca settings: %v. No settings will be persisted.", err)
 		// if the container app doesn't exist, there's nothing for us to update in the desired state,
 		// so we can just return the existing state as is.
@@ -256,7 +251,7 @@ func (cas *containerAppService) DeployYaml(
 
 		var containerApp armappcontainers.ContainerApp
 		if err := json.Unmarshal(containerAppJson, &containerApp); err != nil {
-			return withApiVersionSuggestion(fmt.Errorf("converting to container app type: %w", err))
+			return fmt.Errorf("converting to container app type: %w", err)
 		}
 
 		p, err := appClient.BeginCreateOrUpdate(ctx, resourceGroupName, appName, containerApp, nil)

@@ -63,7 +63,8 @@ func helloHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallTo
 		samplingResponse, err := samplingSession.RequestSampling(ctx, samplingRequest)
 		if err != nil {
 			// If sampling fails, fall back to a simple greeting
-			return mcp.NewToolResultText(fmt.Sprintf("This is the MCP tool - Helloooo, %s! (sampling failed: %v)", name, err)), nil
+			return mcp.NewToolResultText(
+				fmt.Sprintf("This is the MCP tool - Hello, %s! (sampling failed: %v)", name, err)), nil
 		}
 
 		// Extract the generated greeting from the sampling response

@@ -537,6 +537,13 @@ func (p *dockerProject) packBuild(
 		)
 	}
 
+	// Check if containerd is enabled for error messaging
+	isContainerdEnabled, err := p.docker.IsContainerdEnabled(ctx)
+	if err != nil {
+		log.Printf("warning: failed to detect containerd status: %v", err)
+		isContainerdEnabled = false
+	}
+
 	err = packCli.Build(
 		ctx,
 		buildContext,
@@ -545,6 +552,7 @@ func (p *dockerProject) packBuild(
 		environ,
 		previewer)
 	p.console.StopPreviewer(ctx, false)
+
 	if err != nil {
 		span.EndWithStatus(err)
 
@@ -556,6 +564,19 @@ func (p *dockerProject) packBuild(
 					fmt.Sprintf(
 						"\nSuggested action: Author a Dockerfile and save it as %s",
 						filepath.Join(svc.Path(), dockerOptions.Path)),
+			}
+		}
+
+		// Provide better error message for containerd-related issues
+		if strings.Contains(err.Error(), "failed to write image") && strings.Contains(err.Error(), "No such image") {
+			suggestion := "Pack CLI build failed. This may be due to Docker configuration."
+			if isContainerdEnabled {
+				suggestion = "Pack CLI build failed. Consider disabling 'Use containerd for pulling and storing images' " +
+					"in Docker Desktop settings."
+			}
+			return nil, &internal.ErrorWithSuggestion{
+				Err:        err,
+				Suggestion: suggestion,
 			}
 		}
 

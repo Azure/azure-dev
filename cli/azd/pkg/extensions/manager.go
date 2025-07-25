@@ -558,7 +558,7 @@ func findArtifactForCurrentOS(version *ExtensionVersion) (*ExtensionArtifact, er
 		}
 	}
 
-	return nil, fmt.Errorf("no artifact available for platform: %s", artifactVersions)
+	return nil, fmt.Errorf("no artifact available for platform: %s", strings.Join(artifactVersions, ", "))
 }
 
 // downloadFile downloads a file from the given URL and saves it to a temporary directory using the filename from the URL.

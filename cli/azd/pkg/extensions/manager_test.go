@@ -496,3 +496,38 @@ var testRegistry = Registry{
 		},
 	},
 }
+
+func Test_FindArtifactForCurrentOS_ErrorMessage_Format(t *testing.T) {
+	// Create a version with artifacts that don't match current OS/architecture
+	// For this test, we'll use artificial platform names that definitely won't match
+	version := &ExtensionVersion{
+		Artifacts: map[string]ExtensionArtifact{
+			"fakeos": {
+				URL: "https://example.com/fakeos-binary",
+			},
+			"anotherfakeos/fakearch": {
+				URL: "https://example.com/anotherfakeos-binary",
+			},
+		},
+	}
+
+	// Call the function and verify it returns an error with proper formatting
+	artifact, err := findArtifactForCurrentOS(version)
+
+	// Should return an error since no artifacts match current OS
+	require.Error(t, err)
+	require.Nil(t, artifact)
+
+	// Verify the error message format is user-friendly (comma-separated, not slice format)
+	require.Contains(t, err.Error(), "no artifact available for platform:")
+	require.NotContains(t, err.Error(), "[") // Should not contain slice brackets
+	require.NotContains(t, err.Error(), "]") // Should not contain slice brackets
+
+	// Verify the error contains comma-separated list of tried platforms
+	// The platforms tried are: runtime.GOOS+"/"+runtime.GOARCH, runtime.GOOS
+	require.Contains(t, err.Error(), ", ") // Should contain comma separator
+
+	// Error message should contain the platforms in a readable format
+	// The exact platforms depend on runtime.GOOS and runtime.GOARCH
+	// We just verify it doesn't contain the ugly slice format
+}

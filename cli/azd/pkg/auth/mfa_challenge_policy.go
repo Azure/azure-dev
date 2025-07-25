@@ -5,6 +5,7 @@ package auth
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -18,7 +19,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
-// mfaChallengePolicy handles auth challenges issued by ARM.
+// mfaChallengePolicy handles MFA authentication challenges issued by ARM.
+//
+// When ARM returns a 401 with WWW-Authenticate header containing claims challenge,
+// this policy extracts the claims, persists it to disk in the config directory,
+// and triggers an returns a [ReLoginRequiredError].
 type mfaChallengePolicy struct {
 	cloud cloud.Configuration
 }
@@ -40,7 +45,7 @@ func (p *mfaChallengePolicy) Do(req *policy.Request) (*http.Response, error) {
 				for _, challenge := range challenges {
 					if isEntraBearerChallenge(challenge, p.cloud.ActiveDirectoryAuthorityHost) {
 						if err := saveClaims(challenge); err != nil {
-							return resp, err
+							return resp, fmt.Errorf("saving claims from mfa challenge: %w", err)
 						}
 
 						err := ReLoginRequiredError{}
@@ -77,6 +82,10 @@ func claimsFilePath() (string, error) {
 
 func saveClaims(challenge AuthChallenge) error {
 	claims := challenge.AuthParams["claims"]
+	if claims == "" {
+		return errors.New("missing claims")
+	}
+
 	claimsJson, err := base64.StdEncoding.DecodeString(claims)
 	if err != nil {
 		return fmt.Errorf("decoding claims: %w", err)

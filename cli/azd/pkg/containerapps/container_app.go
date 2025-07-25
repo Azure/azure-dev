@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -18,10 +19,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/benbjohnson/clock"
 	"github.com/braydonk/yaml"
 )
@@ -458,7 +461,11 @@ func (cas *containerAppService) getContainerApp(
 
 	_, err = appClient.Get(ctx, resourceGroupName, appName, nil)
 	if err != nil {
-		return nil, fmt.Errorf("getting container app: %w", err)
+		err = fmt.Errorf("getting container app: %w", err)
+		if strings.Contains(err.Error(), "unmarshalling type") {
+			err = withApiVersionSuggestion(err)
+		}
+		return nil, err
 	}
 
 	var containAppMap map[string]any
@@ -499,7 +506,7 @@ func (cas *containerAppService) updateContainerApp(
 	var containerAppResource armappcontainers.ContainerApp
 	if apiVersionPolicy == nil {
 		if err := json.Unmarshal(containerAppJson, &containerAppResource); err != nil {
-			return fmt.Errorf("failed to unmarshal container app: %w", err)
+			return withApiVersionSuggestion(fmt.Errorf("failed to unmarshal container app: %w", err))
 		}
 	}
 
@@ -601,5 +608,18 @@ func createApiVersionPolicy(options *ContainerAppOptions) *containerAppCustomApi
 
 	return &containerAppCustomApiVersionAndBodyPolicy{
 		apiVersion: options.ApiVersion,
+	}
+}
+
+func withApiVersionSuggestion(err error) error {
+	suggestion := "Suggestion: set 'apiVersion' on your service in azure.yaml to match the API version " +
+		"in your IaC:\n\n" +
+		"services:\n" +
+		"  your-service:\n" +
+		output.WithSuccessFormat("    apiVersion: 2025-02-02-preview")
+
+	return &internal.ErrorWithSuggestion{
+		Err:        err,
+		Suggestion: suggestion,
 	}
 }

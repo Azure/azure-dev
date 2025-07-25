@@ -312,7 +312,7 @@ type envSetSecretAction struct {
 func (e *envSetSecretAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(e.args) < 1 {
 		return nil, fmt.Errorf(
-			"no <name> provided. Please provide a name as argument like: 'azd env set-secret `<name>`'")
+			"no <name> provided. Please provide a name as argument like: 'azd env set-secret <name>'")
 	}
 	secretName := e.args[0]
 

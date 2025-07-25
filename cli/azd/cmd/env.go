@@ -929,12 +929,14 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 type envRefreshFlags struct {
 	hint   string
+	stage  string
 	global *internal.GlobalCommandOptions
 	internal.EnvFlag
 }
 
 func (er *envRefreshFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(&er.hint, "hint", "", "", "Hint to help identify the environment to refresh")
+	local.StringVarP(&er.stage, "stage", "", "", "Stage to refresh the environment from.")
 
 	er.EnvFlag.Bind(local, global)
 	er.global = global
@@ -950,7 +952,7 @@ func newEnvRefreshFlags(cmd *cobra.Command, global *internal.GlobalCommandOption
 func newEnvRefreshCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "refresh <environment>",
-		Short: "Refresh environment settings by using information from a previous infrastructure provision.",
+		Short: "Refresh environment values by using information from a previous infrastructure provision.",
 
 		// We want to support the usual -e / --environment arguments as all our commands which take environments do, but for
 		// ergonomics, we'd also like you to be able to run `azd env refresh some-environment-name` to behave the same way as
@@ -1045,18 +1047,17 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	// env refresh supports "BYOI" infrastructure where bicep isn't available
-	err = ef.provisionManager.Initialize(ctx, ef.projectConfig.Path, infra.Options)
-	if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
-		// If bicep is not available, we continue to prompt for subscription and location unfiltered
-		err = provisioning.EnsureSubscriptionAndLocation(ctx, ef.envManager, ef.env, ef.prompters,
-			provisioning.EnsureSubscriptionAndLocationOptions{})
+	stages := []provisioning.Options{infra.Options}
+	stages = append(stages, infra.Options.Stages...)
+
+	if ef.flags.stage != "" {
+		stageOption, err := infra.Options.GetStage(ef.flags.stage)
 		if err != nil {
 			return nil, err
 		}
-	} else if err != nil {
-		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
+		stages = []provisioning.Options{stageOption}
 	}
+
 	// If resource group is defined within the project but not in the environment then
 	// add it to the environment to support BYOI lookup scenarios like ADE
 	// Infra providers do not currently have access to project configuration
@@ -1065,18 +1066,42 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		ef.env.DotenvSet(environment.ResourceGroupEnvVarName, projectResourceGroup)
 	}
 
-	stateOptions := provisioning.NewStateOptions(ef.flags.hint)
-	getStateResult, err := ef.provisionManager.State(ctx, stateOptions)
-	if err != nil {
-		return nil, fmt.Errorf("getting deployment: %w", err)
-	}
+	var state provisioning.State
+	for _, stage := range stages {
+		if ef.flags.stage != "" || len(stages) > 1 {
+			ef.console.EnsureBlankLine(ctx)
+			ef.console.Message(ctx, fmt.Sprintf("Stage: %s", output.WithHighLightFormat(stage.Name)))
+			ef.console.Message(ctx, "")
+		}
 
-	if err := ef.provisionManager.UpdateEnvironment(ctx, getStateResult.State.Outputs); err != nil {
-		return nil, err
+		// env refresh supports "BYOI" infrastructure where bicep isn't available
+		err = ef.provisionManager.Initialize(ctx, ef.projectConfig.Path, stage)
+		if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
+			// If bicep is not available, we continue to prompt for subscription and location unfiltered
+			err = provisioning.EnsureSubscriptionAndLocation(ctx, ef.envManager, ef.env, ef.prompters,
+				provisioning.EnsureSubscriptionAndLocationOptions{})
+			if err != nil {
+				return nil, err
+			}
+		} else if err != nil {
+			return nil, fmt.Errorf("initializing provisioning manager: %w", err)
+		}
+
+		stateOptions := provisioning.NewStateOptions(ef.flags.hint)
+		result, err := ef.provisionManager.State(ctx, stateOptions)
+		if err != nil {
+			return nil, fmt.Errorf("getting deployment: %w", err)
+		}
+
+		if err := provisioning.UpdateEnvironment(ctx, result.State.Outputs, ef.env, ef.envManager); err != nil {
+			return nil, err
+		}
+
+		state.MergeInto(*result.State)
 	}
 
 	if ef.formatter.Kind() == output.JsonFormat {
-		err = ef.formatter.Format(provisioning.NewEnvRefreshResultFromState(getStateResult.State), ef.writer, nil)
+		err = ef.formatter.Format(provisioning.NewEnvRefreshResultFromState(&state), ef.writer, nil)
 		if err != nil {
 			return nil, fmt.Errorf("writing deployment result in JSON format: %w", err)
 		}
@@ -1092,7 +1117,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 			Project: ef.projectConfig,
 			Service: svc,
 			Args: map[string]any{
-				"bicepOutput": getStateResult.State.Outputs,
+				"bicepOutput": state.Outputs,
 			},
 		}
 

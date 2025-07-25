@@ -92,13 +92,17 @@ func NewProvisionFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *inter
 }
 
 func NewProvisionCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "provision",
+	cmd := &cobra.Command{
+		Use:   "provision [stage]",
 		Short: "Provision Azure resources for your project.",
 	}
+	cmd.Args = cobra.MaximumNArgs(1)
+
+	return cmd
 }
 
 type ProvisionAction struct {
+	args                []string
 	flags               *ProvisionFlags
 	provisionManager    *provisioning.Manager
 	projectManager      project.ProjectManager
@@ -116,6 +120,7 @@ type ProvisionAction struct {
 }
 
 func NewProvisionAction(
+	args []string,
 	flags *ProvisionFlags,
 	provisionManager *provisioning.Manager,
 	projectManager project.ProjectManager,
@@ -132,6 +137,7 @@ func NewProvisionAction(
 	cloud *cloud.Cloud,
 ) actions.Action {
 	return &ProvisionAction{
+		args:                args,
 		flags:               flags,
 		provisionManager:    provisionManager,
 		projectManager:      projectManager,
@@ -199,7 +205,26 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 	defer func() { _ = infra.Cleanup() }()
 
+	stage := ""
+	if len(p.args) > 0 {
+		stage = p.args[0]
+	}
+
 	infraOptions := infra.Options
+	if stage != "" {
+		stageOption, err := infraOptions.GetStage(stage)
+		if err != nil {
+			return nil, err
+		}
+
+		infraOptions = stageOption
+	}
+
+	if stage != "" || len(infraOptions.Stages) > 0 {
+		// Display if an explicit stage is passed, or if multiple stages are enabled
+		p.console.Message(ctx, fmt.Sprintf("Stage: %s", output.WithHighLightFormat(infraOptions.Name)))
+	}
+
 	infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
 	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, infraOptions); err != nil {
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)

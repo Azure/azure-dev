@@ -105,6 +105,8 @@ func matchesLoginScopes(scopes []string, cloud *cloud.Cloud) bool {
 	}
 
 	return true
+// Marker method to indicate this as non-retriable when executed within an armruntime pipeline
+func (e *ReLoginRequiredError) NonRetriable() {
 }
 
 const authFailedPrefix string = "failed to authenticate"
@@ -169,6 +171,10 @@ func (e *AuthFailedError) parseResponse() {
 	}
 
 	e.Parsed = &er
+}
+
+// Marker method to indicate this as non-retriable when executed within an armruntime pipeline
+func (e *AuthFailedError) NonRetriable() {
 }
 
 func (e *AuthFailedError) Unwrap() error {

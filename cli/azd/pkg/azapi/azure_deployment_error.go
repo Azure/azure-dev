@@ -29,13 +29,15 @@ func newErrorLine(code string, message string, inner []*DeploymentErrorLine) *De
 }
 
 type AzureDeploymentError struct {
-	Json string
+	Json  string
+	Inner error
+	Title string
 
 	Details *DeploymentErrorLine
 }
 
-func NewAzureDeploymentError(jsonErrorResponse string) *AzureDeploymentError {
-	err := &AzureDeploymentError{Json: jsonErrorResponse}
+func NewAzureDeploymentError(title string, jsonErrorResponse string) *AzureDeploymentError {
+	err := &AzureDeploymentError{Title: title, Json: jsonErrorResponse}
 	err.init()
 	return err
 }
@@ -48,15 +50,16 @@ func (e *AzureDeploymentError) init() {
 }
 
 func (e *AzureDeploymentError) Error() string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("\n\n%s:\n", e.Title))
+
 	// Return the original error string if we can't parse the JSON
 	if e.Details == nil {
-		return e.Json
+		sb.WriteString(e.Json)
+		return sb.String()
 	}
 
 	lines := generateErrorOutput(e.Details)
-
-	var sb strings.Builder
-
 	for _, line := range lines {
 		sb.WriteString(fmt.Sprintln(output.WithErrorFormat(line)))
 	}

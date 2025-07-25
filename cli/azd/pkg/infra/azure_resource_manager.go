@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/compare"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 type AzureResourceManager struct {
@@ -198,7 +199,7 @@ func (rm *AzureResourceManager) FindResourceGroupForEnvironment(
 		"# or for a specific service\n" +
 		"services:\n" +
 		"  your-service:\n" +
-		"    resourceGroup: your-resource-group"
+		output.WithSuccessFormat("    resourceGroup: your-resource-group")
 
 	return "", &internal.ErrorWithSuggestion{
 		Err:        findErr,

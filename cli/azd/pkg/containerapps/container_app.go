@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/benbjohnson/clock"
 	"github.com/braydonk/yaml"
 )
@@ -615,7 +616,7 @@ func withApiVersionSuggestion(err error) error {
 		"in your IaC:\n\n" +
 		"services:\n" +
 		"  your-service:\n" +
-		"    apiVersion: 2025-02-02-preview"
+		output.WithSuccessFormat("    apiVersion: 2025-02-02-preview")
 
 	return &internal.ErrorWithSuggestion{
 		Err:        err,

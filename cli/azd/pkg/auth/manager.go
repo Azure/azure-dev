@@ -160,11 +160,20 @@ func NewManager(
 	}, nil
 }
 
-// LoginScopes returns the scopes that we request an access token for when checking if a user is signed in.
+// LoginScopes returns the default scopes requested when logging in.
 func LoginScopes(cloud *cloud.Cloud) []string {
-	resourceManagerUrl := cloud.Configuration.Services[azcloud.ResourceManager].Endpoint
+	arm := cloud.Configuration.Services[azcloud.ResourceManager]
 	return []string{
-		fmt.Sprintf("%s//.default", resourceManagerUrl),
+		fmt.Sprintf("%s//.default", arm.Endpoint),
+	}
+}
+
+// LoginScopesFull returns LoginScopes and any additional equivalent scopes.
+func LoginScopesFull(cloud *cloud.Cloud) []string {
+	arm := cloud.Configuration.Services[azcloud.ResourceManager]
+	return []string{
+		fmt.Sprintf("%s//.default", arm.Endpoint),
+		fmt.Sprintf("%s//.default", strings.TrimSuffix(arm.Audience, "/")), // handle possible trailing slashes
 	}
 }
 
@@ -175,12 +184,6 @@ func (m *Manager) LoginScopes() []string {
 // Cloud returns the cloud that the manager is configured to use.
 func (m *Manager) Cloud() *cloud.Cloud {
 	return m.cloud
-}
-
-func loginScopesMap(cloud *cloud.Cloud) map[string]struct{} {
-	resourceManagerUrl := cloud.Configuration.Services[azcloud.ResourceManager].Endpoint
-
-	return map[string]struct{}{resourceManagerUrl: {}}
 }
 
 // EnsureLoggedInCredential uses the credential's GetToken method to ensure an access token can be fetched.

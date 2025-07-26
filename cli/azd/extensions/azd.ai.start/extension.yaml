@@ -1,0 +1,9 @@
+capabilities:
+    - custom-commands
+description: Enables interactive AI agent through AZD
+displayName: AZD AI Agent
+id: azd.ai.start
+language: go
+namespace: ai.chat
+usage: azd ai.chat <command> [options]
+version: 0.0.1

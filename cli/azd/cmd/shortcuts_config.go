@@ -4,8 +4,12 @@
 package cmd
 
 import (
-	"os"
-	"strconv"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
+)
+
+const (
+	// Configuration path for command shortcuts
+	CommandShortcutsConfigPath = "command.shortcuts"
 )
 
 // ShortcutConfig holds configuration for command shortcuts
@@ -14,22 +18,32 @@ type ShortcutConfig struct {
 	MinPrefixOverrides map[string]int
 }
 
-// GetShortcutConfig reads shortcut configuration from environment
+// GetShortcutConfig reads shortcut configuration from azd user config
 func GetShortcutConfig() *ShortcutConfig {
-	config := &ShortcutConfig{
-		Enabled:            true,
+	shortcutConfig := &ShortcutConfig{
+		Enabled:            false, // Disabled by default
 		MinPrefixOverrides: make(map[string]int),
 	}
 
-	// Check if shortcuts are disabled
-	if disabled := os.Getenv("AZD_DISABLE_SHORTCUTS"); disabled != "" {
-		if val, err := strconv.ParseBool(disabled); err == nil && val {
-			config.Enabled = false
+	// Load azd user configuration
+	manager := config.NewManager()
+	fileConfigManager := config.NewFileConfigManager(manager)
+	userConfigManager := config.NewUserConfigManager(fileConfigManager)
+	azdConfig, err := userConfigManager.Load()
+	if err != nil {
+		// If config can't be loaded, shortcuts remain disabled
+		return shortcutConfig
+	}
+
+	// Check if shortcuts are enabled in user config
+	if value, ok := azdConfig.Get(CommandShortcutsConfigPath); ok {
+		if enabledStr, ok := value.(string); ok {
+			shortcutConfig.Enabled = (enabledStr == "on" || enabledStr == "true")
 		}
 	}
 
 	// Additional configuration can be added here
-	return config
+	return shortcutConfig
 }
 
 // Apply applies configuration to a command matcher

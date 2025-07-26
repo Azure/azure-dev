@@ -1,6 +1,24 @@
 # Command Shortcuts Feature
 
-Azure Developer CLI (azd) now supports command shortcuts to make common operations faster and more convenient.
+Azure Developer CLI (azd) supports command shortcuts to make common operations faster and more convenient.
+
+**Note:** Shortcuts are disabled by default. To enable them, run `azd config set command.shortcuts on`.
+
+## Quick Start
+
+To start using shortcuts:
+
+1. Enable the feature:
+   ```bash
+   azd config set command.shortcuts on
+   ```
+
+2. Try some shortcuts:
+   ```bash
+   azd b           # azd build
+   azd u           # azd up
+   azd pi c        # azd pipeline config
+   ```
 
 ## How It Works
 
@@ -89,13 +107,24 @@ For infra subcommands:
 
 ## Configuration
 
-### Disabling Shortcuts
+### Enabling Shortcuts
 
-You can disable shortcuts by setting an environment variable:
+Shortcuts are disabled by default. To enable them, use the following command:
 
 ```bash
-export AZD_DISABLE_SHORTCUTS=true
-azd pipeline config  # Full commands required when disabled
+azd config set command.shortcuts on
+```
+
+To disable shortcuts:
+
+```bash
+azd config set command.shortcuts off
+```
+
+You can check if shortcuts are enabled by viewing your configuration:
+
+```bash
+azd config show
 ```
 
 ### Skip Commands

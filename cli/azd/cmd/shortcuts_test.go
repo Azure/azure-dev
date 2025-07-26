@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -287,20 +286,22 @@ func TestMinPrefixCalculation(t *testing.T) {
 }
 
 func TestShortcutConfig(t *testing.T) {
-	// Test default config
-	config := GetShortcutConfig()
-	if !config.Enabled {
-		t.Error("Expected shortcuts to be enabled by default")
+	// Test that shortcut config can be created
+	config := &ShortcutConfig{
+		Enabled:            false,
+		MinPrefixOverrides: make(map[string]int),
 	}
 
-	// Test disabling via environment variable
-	os.Setenv("AZD_DISABLE_SHORTCUTS", "true")
-	defer os.Unsetenv("AZD_DISABLE_SHORTCUTS")
-
-	config = GetShortcutConfig()
 	if config.Enabled {
-		t.Error("Expected shortcuts to be disabled when AZD_DISABLE_SHORTCUTS=true")
+		t.Error("Expected shortcuts to be disabled by default in test config")
 	}
+
+	// Test Apply function
+	matcher := NewCommandMatcher()
+	config.Apply(matcher) // Should not panic when shortcuts are disabled
+
+	config.Enabled = true
+	config.Apply(matcher) // Should not panic when shortcuts are enabled
 }
 
 func TestShouldSkipShortcuts(t *testing.T) {

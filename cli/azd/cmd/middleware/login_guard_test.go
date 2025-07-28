@@ -5,6 +5,7 @@ package middleware
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -62,6 +63,59 @@ func Test_LoginGuard_Run(t *testing.T) {
 		result, err := middleware.Run(*mockContext.Context, next)
 		require.Error(t, err)
 		require.Nil(t, result)
+	})
+	t.Run("NotLoggedInCI", func(t *testing.T) {
+		// Test with different CI environment variables
+		testCases := []struct {
+			envVar   string
+			envValue string
+			testName string
+		}{
+			{"GITHUB_ACTIONS", "true", "GitHub Actions"},
+			{"TF_BUILD", "True", "Azure Pipelines"},
+			{"CI", "true", "Generic CI"},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.testName, func(t *testing.T) {
+				// Set up CI environment variable to simulate CI/CD
+				originalValue := os.Getenv(tc.envVar)
+				os.Setenv(tc.envVar, tc.envValue)
+				defer func() {
+					if originalValue == "" {
+						os.Unsetenv(tc.envVar)
+					} else {
+						os.Setenv(tc.envVar, originalValue)
+					}
+				}()
+
+				mockContext := mocks.NewMockContext(context.Background())
+				// In CI, we should NOT get a console confirmation prompt
+				// The test will fail if console.Confirm is called
+				mockContext.Console.
+					WhenConfirm(func(options input.ConsoleOptions) bool {
+						t.Fatal("Console.Confirm should not be called in CI/CD environment")
+						return false
+					})
+
+				mockAuthManager := &mockCurrentUserAuthManager{}
+				mockAuthManager.On("Cloud").Return(cloud.AzurePublic())
+				mockAuthManager.
+					On("CredentialForCurrentUser", *mockContext.Context, mock.Anything).
+					Return(nil, auth.ErrNoCurrentUser)
+
+				middleware := LoginGuardMiddleware{
+					console:        mockContext.Console,
+					authManager:    mockAuthManager,
+					workflowRunner: &workflow.Runner{},
+				}
+
+				result, err := middleware.Run(*mockContext.Context, next)
+				require.Error(t, err)
+				require.Nil(t, result)
+				require.Equal(t, auth.ErrNoCurrentUser, err)
+			})
+		}
 	})
 }
 

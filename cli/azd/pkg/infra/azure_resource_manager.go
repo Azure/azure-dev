@@ -15,10 +15,12 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/compare"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 type AzureResourceManager struct {
@@ -182,20 +184,27 @@ func (rm *AzureResourceManager) FindResourceGroupForEnvironment(
 		return rgs[0].Name, nil
 	}
 
-	var msg string
-
+	var findErr error
 	if len(rgs) > 1 {
 		// We found more than one RG
-		msg = "more than one possible resource group was found."
+		findErr = errors.New("more than one possible resource group was found")
 	} else {
 		// We didn't find any RGs
-		msg = "unable to find the environment resource group."
+		findErr = errors.New("unable to find the environment resource group")
 	}
 
-	return "", fmt.Errorf(
-		"%s explicitly specify your resource group in azure.yaml or the AZURE_RESOURCE_GROUP environment variable",
-		msg,
-	)
+	suggestion := "Suggestion: explicitly set the AZURE_RESOURCE_GROUP environment variable or specify " +
+		"your resource group in azure.yaml:\n\n" +
+		"resourceGroup: your-resource-group\n" +
+		"# or for a specific service\n" +
+		"services:\n" +
+		"  your-service:\n" +
+		output.WithSuccessFormat("    resourceGroup: your-resource-group")
+
+	return "", &internal.ErrorWithSuggestion{
+		Err:        findErr,
+		Suggestion: suggestion,
+	}
 }
 
 func (rm *AzureResourceManager) GetResourceTypeDisplayName(

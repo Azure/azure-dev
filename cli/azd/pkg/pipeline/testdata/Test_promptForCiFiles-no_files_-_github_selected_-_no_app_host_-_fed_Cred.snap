@@ -24,8 +24,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      # - name: Install azd
+      #   uses: Azure/setup-azd@v2
       - name: Install azd
-        uses: Azure/setup-azd@v2
+        run: curl -fsSL https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/pr/5412/install-azd.sh | bash -s -- --base-url https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/pr/5412 --version '' --verbose --skip-verify
       - name: Log in with Azure (Federated Credentials)
         run: |
           azd auth login `

@@ -273,3 +273,67 @@ func createEnvManager(mockContext *mocks.MockContext, root string) (Manager, *az
 
 	return newManagerForTest(azdCtx, mockContext.Console, localDataStore, nil), azdCtx
 }
+
+func TestEnvironmentType(t *testing.T) {
+	t.Parallel()
+
+	t.Run("GetEnvironmentType_FromDotEnv", func(t *testing.T) {
+		env := NewWithValues("test", map[string]string{
+			"AZURE_ENV_NAME": "test",
+			"AZURE_ENV_TYPE": "development",
+		})
+
+		envType := env.GetEnvironmentType()
+		assert.Equal(t, "development", envType)
+	})
+
+	t.Run("GetEnvironmentType_Empty", func(t *testing.T) {
+		env := New("test")
+
+		envType := env.GetEnvironmentType()
+		assert.Equal(t, "", envType)
+	})
+
+	t.Run("SetEnvironmentType", func(t *testing.T) {
+		env := New("test")
+
+		env.SetEnvironmentType("production")
+		envType := env.GetEnvironmentType()
+		assert.Equal(t, "production", envType)
+
+		// Verify it's also in the dotenv map
+		dotenv := env.Dotenv()
+		assert.Equal(t, "production", dotenv["AZURE_ENV_TYPE"])
+	})
+
+	t.Run("SetEnvironmentType_Override", func(t *testing.T) {
+		env := NewWithValues("test", map[string]string{
+			"AZURE_ENV_NAME": "test",
+			"AZURE_ENV_TYPE": "development",
+		})
+
+		// Change the environment type
+		env.SetEnvironmentType("staging")
+		envType := env.GetEnvironmentType()
+		assert.Equal(t, "staging", envType)
+	})
+}
+
+func TestIsValidEnvironmentType(t *testing.T) {
+	t.Parallel()
+
+	assert.True(t, IsValidEnvironmentType("dev"))
+	assert.True(t, IsValidEnvironmentType("development"))
+	assert.True(t, IsValidEnvironmentType("prod"))
+	assert.True(t, IsValidEnvironmentType("production"))
+	assert.True(t, IsValidEnvironmentType("staging"))
+	assert.True(t, IsValidEnvironmentType("test123"))
+	assert.True(t, IsValidEnvironmentType("TEST"))
+
+	assert.False(t, IsValidEnvironmentType(""))
+	assert.False(t, IsValidEnvironmentType("dev-env"))                           // hyphen not allowed
+	assert.False(t, IsValidEnvironmentType("dev_env"))                           // underscore not allowed
+	assert.False(t, IsValidEnvironmentType("dev env"))                           // space not allowed
+	assert.False(t, IsValidEnvironmentType("dev.env"))                           // dot not allowed
+	assert.False(t, IsValidEnvironmentType("123456789012345678901234567890123")) // too long
+}

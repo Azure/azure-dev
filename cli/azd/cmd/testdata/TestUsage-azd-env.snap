@@ -17,7 +17,7 @@ Available Commands
   refresh   	: Refresh environment settings by using information from a previous infrastructure provision.
   select    	: Set the default environment.
   set       	: Set one or more environment values.
-  set-secret	: Set a `<name>` as a reference to a Key Vault secret in the environment.
+  set-secret	: Set a <name> as a reference to a Key Vault secret in the environment.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

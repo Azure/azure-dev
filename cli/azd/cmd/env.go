@@ -59,8 +59,8 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 
 	group.Add("set-secret", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "set-secret <name>",
-			Short: "Set a `<name>` as a reference to a Key Vault secret in the environment.",
+			Use:   "set-secret " + output.WithBackticks("name") + "",
+			Short: "Set a " + output.WithBackticks("name") + " as a reference to a Key Vault secret in the environment.",
 			Long: "You can either create a new Key Vault secret or select an existing one.\n" +
 				"The provided name is the key for the .env file which holds the secret reference to the Key Vault secret.",
 		},

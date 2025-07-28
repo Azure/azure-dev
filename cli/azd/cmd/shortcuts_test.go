@@ -253,6 +253,10 @@ func TestCommandMatcher_GetSuggestions(t *testing.T) {
 
 func TestMinPrefixCalculation(t *testing.T) {
 	matcher := NewCommandMatcher()
+	
+	// Initialize with test Cobra command tree
+	testCmd := createTestCobraCommand()
+	matcher.InitializeFromCobraCommand(testCmd)
 
 	testCases := []struct {
 		command   string
@@ -267,7 +271,7 @@ func TestMinPrefixCalculation(t *testing.T) {
 		{"up", 1},        // "u" is unique
 		{"down", 2},      // "do" to distinguish from "deploy"
 		{"deploy", 2},    // "de" to distinguish from "down"
-		{"version", 2},   // "ve" to distinguish from "vs-server"
+		{"version", 1},   // "v" is unique in our test setup
 		{"monitor", 1},   // "m" is unique
 	}
 
@@ -363,6 +367,14 @@ func TestShouldSkipShortcuts(t *testing.T) {
 }
 
 func TestValidateShortcut(t *testing.T) {
+	// Set up the global command matcher for testing
+	oldCommandMatcher := commandMatcher
+	defer func() { commandMatcher = oldCommandMatcher }()
+	
+	commandMatcher = NewCommandMatcher()
+	testCmd := createTestCobraCommand()
+	commandMatcher.InitializeFromCobraCommand(testCmd)
+
 	testCases := []struct {
 		name        string
 		shortcut    string

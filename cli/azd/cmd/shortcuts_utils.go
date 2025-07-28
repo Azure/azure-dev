@@ -66,10 +66,23 @@ func getConflictingCommands(target string, matcher *CommandMatcher) string {
 
 // ValidateShortcut checks if a shortcut is valid and unambiguous
 func ValidateShortcut(shortcut string) (string, error) {
-	matcher := NewCommandMatcher()
+	// Use the global command matcher if available, otherwise create a new one
+	var matcher *CommandMatcher
+	if commandMatcher != nil {
+		matcher = commandMatcher
+	} else {
+		// For testing or when global matcher is not initialized
+		matcher = NewCommandMatcher()
+		// Note: In a real scenario, this would need to be initialized with the actual command tree
+		// For testing, this will only work with mocked scenarios
+	}
+	
 	expanded, err := matcher.ResolveCommand([]string{shortcut})
 	if err != nil {
 		return "", err
+	}
+	if len(expanded) == 0 {
+		return shortcut, nil // Return original if no expansion
 	}
 	return expanded[0], nil
 }

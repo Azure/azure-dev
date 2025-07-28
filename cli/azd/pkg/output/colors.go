@@ -59,7 +59,6 @@ func WithAngleBrackets(text string) string {
 	return "&lt;" + text + "&gt;"
 }
 
-
 // WithHyperlink wraps text with the colored hyperlink format escape sequence.
 func WithHyperlink(url string, text string) string {
 	return WithLinkFormat(fmt.Sprintf("\033]8;;%s\007%s\033]8;;\007", url, text))

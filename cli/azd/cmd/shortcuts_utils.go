@@ -76,7 +76,7 @@ func ValidateShortcut(shortcut string) (string, error) {
 		// Note: In a real scenario, this would need to be initialized with the actual command tree
 		// For testing, this will only work with mocked scenarios
 	}
-	
+
 	expanded, err := matcher.ResolveCommand([]string{shortcut})
 	if err != nil {
 		return "", err

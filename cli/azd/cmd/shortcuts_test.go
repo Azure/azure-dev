@@ -253,7 +253,7 @@ func TestCommandMatcher_GetSuggestions(t *testing.T) {
 
 func TestMinPrefixCalculation(t *testing.T) {
 	matcher := NewCommandMatcher()
-	
+
 	// Initialize with test Cobra command tree
 	testCmd := createTestCobraCommand()
 	matcher.InitializeFromCobraCommand(testCmd)
@@ -370,7 +370,7 @@ func TestValidateShortcut(t *testing.T) {
 	// Set up the global command matcher for testing
 	oldCommandMatcher := commandMatcher
 	defer func() { commandMatcher = oldCommandMatcher }()
-	
+
 	commandMatcher = NewCommandMatcher()
 	testCmd := createTestCobraCommand()
 	commandMatcher.InitializeFromCobraCommand(testCmd)

@@ -18,10 +18,9 @@ import (
 // RunEnhancedAzureAgent runs the enhanced Azure AI agent with full capabilities
 func RunEnhancedAzureAgent(ctx context.Context, llm *openai.LLM, args []string) error {
 	// Create the enhanced agent
-	azureAgent := agent.CreateAzureAIAgent(llm)
+	azureAgent := agent.NewAzureAIAgent(llm)
 
 	fmt.Println("🤖 Enhanced Azure AI Agent - Interactive Mode")
-	fmt.Println("Features: Action Tracking | Intent Validation | Smart Memory")
 	fmt.Println("═══════════════════════════════════════════════════════════")
 
 	// Handle initial query if provided
@@ -57,31 +56,7 @@ func RunEnhancedAzureAgent(ctx context.Context, llm *openai.LLM, args []string) 
 			break
 		}
 
-		// Special commands
-		if strings.ToLower(userInput) == "clear" {
-			err := azureAgent.ClearMemory(ctx)
-			if err != nil {
-				fmt.Printf("❌ Failed to clear memory: %s\n", err.Error())
-			} else {
-				fmt.Println("🧹 Memory cleared!")
-			}
-			continue
-		}
-
-		if strings.ToLower(userInput) == "stats" {
-			stats := azureAgent.GetSessionStats()
-			fmt.Printf("📊 Session Stats:\n")
-			fmt.Printf("   Total Actions: %d\n", stats.TotalActions)
-			fmt.Printf("   Successful: %d\n", stats.SuccessfulActions)
-			fmt.Printf("   Failed: %d\n", stats.FailedActions)
-			if stats.TotalDuration > 0 {
-				fmt.Printf("   Duration: %v\n", stats.TotalDuration)
-			}
-			continue
-		}
-
 		// Process the query with the enhanced agent
-		fmt.Printf("\n🤖 Enhanced AI Agent:\n")
 		response, err := azureAgent.ProcessQuery(ctx, userInput)
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
@@ -89,7 +64,7 @@ func RunEnhancedAzureAgent(ctx context.Context, llm *openai.LLM, args []string) 
 		}
 
 		// Display the final response
-		fmt.Printf("\n💬 Final Response:\n%s\n", response.Output)
+		fmt.Printf("\n💬 Agent:\n%s\n", response)
 	}
 
 	if err := scanner.Err(); err != nil {

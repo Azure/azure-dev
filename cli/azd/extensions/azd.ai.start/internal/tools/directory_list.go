@@ -6,10 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/tmc/langchaingo/callbacks"
 )
 
 // DirectoryListTool implements the Tool interface for listing directory contents
-type DirectoryListTool struct{}
+type DirectoryListTool struct {
+	CallbacksHandler callbacks.Handler
+}
 
 func (t DirectoryListTool) Name() string {
 	return "list_directory"
@@ -20,6 +24,11 @@ func (t DirectoryListTool) Description() string {
 }
 
 func (t DirectoryListTool) Call(ctx context.Context, input string) (string, error) {
+	// Invoke callback for tool start
+	if t.CallbacksHandler != nil {
+		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("list_directory: %s", input))
+	}
+
 	path := strings.TrimSpace(input)
 	if path == "" {
 		path = "."
@@ -28,21 +37,33 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 	// Get absolute path for clarity
 	absPath, err := filepath.Abs(path)
 	if err != nil {
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("failed to get absolute path for %s: %w", path, err))
+		}
 		return "", fmt.Errorf("failed to get absolute path for %s: %w", path, err)
 	}
 
 	// Check if directory exists
 	info, err := os.Stat(absPath)
 	if err != nil {
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("failed to access %s: %w", absPath, err))
+		}
 		return "", fmt.Errorf("failed to access %s: %w", absPath, err)
 	}
 	if !info.IsDir() {
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("%s is not a directory", absPath))
+		}
 		return "", fmt.Errorf("%s is not a directory", absPath)
 	}
 
 	// List directory contents
 	files, err := os.ReadDir(absPath)
 	if err != nil {
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("failed to read directory %s: %w", absPath, err))
+		}
 		return "", fmt.Errorf("failed to read directory %s: %w", absPath, err)
 	}
 
@@ -88,5 +109,12 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 		result.WriteString("Directory is empty.\n")
 	}
 
-	return result.String(), nil
+	output := result.String()
+
+	// Invoke callback for tool end
+	if t.CallbacksHandler != nil {
+		t.CallbacksHandler.HandleToolEnd(ctx, output)
+	}
+
+	return output, nil
 }

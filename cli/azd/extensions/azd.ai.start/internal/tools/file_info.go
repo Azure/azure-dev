@@ -4,64 +4,59 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"time"
+
+	"github.com/tmc/langchaingo/callbacks"
 )
 
-// FileInfoTool implements the Tool interface for getting detailed file information
-type FileInfoTool struct{}
+// FileInfoTool implements the Tool interface for getting file information
+type FileInfoTool struct {
+	CallbacksHandler callbacks.Handler
+}
 
 func (t FileInfoTool) Name() string {
 	return "file_info"
 }
 
 func (t FileInfoTool) Description() string {
-	return "Get detailed information about a file or directory. Input: file or directory path (e.g., 'README.md' or './docs')"
+	return "Get information about a file (size, modification time, permissions). Input: file path (e.g., 'data.txt' or './docs/readme.md')"
 }
 
 func (t FileInfoTool) Call(ctx context.Context, input string) (string, error) {
+	if t.CallbacksHandler != nil {
+		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("file_info: %s", input))
+	}
+
 	if input == "" {
-		return "", fmt.Errorf("file or directory path is required")
+		err := fmt.Errorf("file path is required")
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, err)
+		}
+		return "", err
 	}
 
 	info, err := os.Stat(input)
 	if err != nil {
-		return "", fmt.Errorf("failed to get info for %s: %w", input, err)
+		toolErr := fmt.Errorf("failed to get info for %s: %w", input, err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
 	}
 
-	var result strings.Builder
-	result.WriteString(fmt.Sprintf("Information for: %s\n", input))
-	result.WriteString("═══════════════════════════════════\n")
-
-	// Type
+	var fileType string
 	if info.IsDir() {
-		result.WriteString("Type: Directory\n")
-
-		// Count contents if it's a directory
-		if files, err := os.ReadDir(input); err == nil {
-			result.WriteString(fmt.Sprintf("Contents: %d items\n", len(files)))
-		}
+		fileType = "Directory"
 	} else {
-		result.WriteString("Type: File\n")
-		result.WriteString(fmt.Sprintf("Size: %d bytes\n", info.Size()))
+		fileType = "File"
 	}
 
-	// Permissions
-	result.WriteString(fmt.Sprintf("Permissions: %s\n", info.Mode().String()))
+	output := fmt.Sprintf("%s: %s\nSize: %d bytes\nModified: %s\nPermissions: %s",
+		fileType, input, info.Size(), info.ModTime().Format(time.RFC3339), info.Mode().String())
 
-	// Timestamps
-	result.WriteString(fmt.Sprintf("Modified: %s\n", info.ModTime().Format(time.RFC3339)))
-
-	// Additional file details
-	if !info.IsDir() {
-		if info.Size() == 0 {
-			result.WriteString("Note: File is empty\n")
-		} else if info.Size() > 1024*1024 {
-			result.WriteString(fmt.Sprintf("Size (human): %.2f MB\n", float64(info.Size())/(1024*1024)))
-		} else if info.Size() > 1024 {
-			result.WriteString(fmt.Sprintf("Size (human): %.2f KB\n", float64(info.Size())/1024))
-		}
+	if t.CallbacksHandler != nil {
+		t.CallbacksHandler.HandleToolEnd(ctx, output)
 	}
 
-	return result.String(), nil
+	return output, nil
 }

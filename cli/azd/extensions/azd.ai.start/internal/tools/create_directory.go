@@ -4,10 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+
+	"github.com/tmc/langchaingo/callbacks"
 )
 
 // CreateDirectoryTool implements the Tool interface for creating directories
-type CreateDirectoryTool struct{}
+type CreateDirectoryTool struct {
+	CallbacksHandler callbacks.Handler
+}
 
 func (t CreateDirectoryTool) Name() string {
 	return "create_directory"
@@ -18,24 +22,52 @@ func (t CreateDirectoryTool) Description() string {
 }
 
 func (t CreateDirectoryTool) Call(ctx context.Context, input string) (string, error) {
+	// Invoke callback for tool start
+	if t.CallbacksHandler != nil {
+		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("create_directory: %s", input))
+	}
+
 	if input == "" {
-		return "", fmt.Errorf("directory path is required")
+		err := fmt.Errorf("directory path is required")
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, err)
+		}
+		return "", err
 	}
 
 	err := os.MkdirAll(input, 0755)
 	if err != nil {
-		return "", fmt.Errorf("failed to create directory %s: %w", input, err)
+		toolErr := fmt.Errorf("failed to create directory %s: %w", input, err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
 	}
 
 	// Check if directory already existed or was newly created
 	info, err := os.Stat(input)
 	if err != nil {
-		return "", fmt.Errorf("failed to verify directory creation: %w", err)
+		toolErr := fmt.Errorf("failed to verify directory creation: %w", err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
 	}
 
 	if !info.IsDir() {
-		return "", fmt.Errorf("%s exists but is not a directory", input)
+		toolErr := fmt.Errorf("%s exists but is not a directory", input)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
 	}
 
-	return fmt.Sprintf("Successfully created directory: %s", input), nil
+	output := fmt.Sprintf("Successfully created directory: %s", input)
+
+	// Invoke callback for tool end
+	if t.CallbacksHandler != nil {
+		t.CallbacksHandler.HandleToolEnd(ctx, output)
+	}
+
+	return output, nil
 }

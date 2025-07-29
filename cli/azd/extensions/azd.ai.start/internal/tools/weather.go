@@ -6,10 +6,14 @@ import (
 	"math/rand"
 	"strings"
 	"time"
+
+	"github.com/tmc/langchaingo/callbacks"
 )
 
 // WeatherTool implements the Tool interface for getting weather information
-type WeatherTool struct{}
+type WeatherTool struct {
+	CallbacksHandler callbacks.Handler
+}
 
 func (t WeatherTool) Name() string {
 	return "weather"
@@ -20,9 +24,17 @@ func (t WeatherTool) Description() string {
 }
 
 func (t WeatherTool) Call(ctx context.Context, input string) (string, error) {
+	if t.CallbacksHandler != nil {
+		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("weather: %s", input))
+	}
+
 	city := strings.TrimSpace(input)
 	if city == "" {
-		return "", fmt.Errorf("city name is required")
+		err := fmt.Errorf("city name is required")
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, err)
+		}
+		return "", err
 	}
 
 	// Initialize random seed based on current time
@@ -99,6 +111,10 @@ func (t WeatherTool) Call(ctx context.Context, input string) (string, error) {
 		}
 		extra := extras[rand.Intn(len(extras))]
 		response += ". " + extra
+	}
+
+	if t.CallbacksHandler != nil {
+		t.CallbacksHandler.HandleToolEnd(ctx, response)
 	}
 
 	return response, nil

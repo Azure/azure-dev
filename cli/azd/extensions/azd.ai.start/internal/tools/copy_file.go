@@ -6,10 +6,14 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/tmc/langchaingo/callbacks"
 )
 
 // CopyFileTool implements the Tool interface for copying files
-type CopyFileTool struct{}
+type CopyFileTool struct {
+	CallbacksHandler callbacks.Handler
+}
 
 func (t CopyFileTool) Name() string {
 	return "copy_file"
@@ -20,52 +24,93 @@ func (t CopyFileTool) Description() string {
 }
 
 func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
+	if t.CallbacksHandler != nil {
+		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("copy_file: %s", input))
+	}
+
 	if input == "" {
-		return "", fmt.Errorf("input is required in format 'source|destination'")
+		err := fmt.Errorf("input is required in format 'source|destination'")
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, err)
+		}
+		return "", err
 	}
 
 	// Split on first occurrence of '|' to separate source from destination
 	parts := strings.SplitN(input, "|", 2)
 	if len(parts) != 2 {
-		return "", fmt.Errorf("invalid input format. Use 'source|destination'")
+		err := fmt.Errorf("invalid input format. Use 'source|destination'")
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, err)
+		}
+		return "", err
 	}
 
 	source := strings.TrimSpace(parts[0])
 	destination := strings.TrimSpace(parts[1])
 
 	if source == "" || destination == "" {
-		return "", fmt.Errorf("both source and destination paths are required")
+		err := fmt.Errorf("both source and destination paths are required")
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, err)
+		}
+		return "", err
 	}
 
 	// Check if source file exists
 	sourceInfo, err := os.Stat(source)
 	if err != nil {
-		return "", fmt.Errorf("source file %s does not exist: %w", source, err)
+		toolErr := fmt.Errorf("source file %s does not exist: %w", source, err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
 	}
 
 	if sourceInfo.IsDir() {
-		return "", fmt.Errorf("source %s is a directory. Use copy_directory for directories", source)
+		err := fmt.Errorf("source %s is a directory. Use copy_directory for directories", source)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, err)
+		}
+		return "", err
 	}
 
 	// Open source file
 	sourceFile, err := os.Open(source)
 	if err != nil {
-		return "", fmt.Errorf("failed to open source file %s: %w", source, err)
+		toolErr := fmt.Errorf("failed to open source file %s: %w", source, err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
 	}
 	defer sourceFile.Close()
 
 	// Create destination file
 	destFile, err := os.Create(destination)
 	if err != nil {
-		return "", fmt.Errorf("failed to create destination file %s: %w", destination, err)
+		toolErr := fmt.Errorf("failed to create destination file %s: %w", destination, err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
 	}
 	defer destFile.Close()
 
 	// Copy contents
 	bytesWritten, err := io.Copy(destFile, sourceFile)
 	if err != nil {
-		return "", fmt.Errorf("failed to copy file: %w", err)
+		toolErr := fmt.Errorf("failed to copy file: %w", err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
 	}
 
-	return fmt.Sprintf("Successfully copied %s to %s (%d bytes)", source, destination, bytesWritten), nil
+	output := fmt.Sprintf("Successfully copied %s to %s (%d bytes)", source, destination, bytesWritten)
+	if t.CallbacksHandler != nil {
+		t.CallbacksHandler.HandleToolEnd(ctx, output)
+	}
+
+	return output, nil
 }

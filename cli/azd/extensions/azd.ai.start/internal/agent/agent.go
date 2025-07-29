@@ -23,6 +23,12 @@ import (
 //go:embed prompts/default_agent_prefix.txt
 var _defaultAgentPrefix string
 
+//go:embed prompts/default_agent_format_instructions.txt
+var _defaultAgentFormatInstructions string
+
+//go:embed prompts/default_agent_suffix.txt
+var _defaultAgentSuffix string
+
 // AzureAIAgent represents an enhanced Azure AI agent with action tracking, intent validation, and conversation memory
 type AzureAIAgent struct {
 	agent          *agents.ConversationalAgent
@@ -78,9 +84,18 @@ func NewAzureAIAgent(llm *openai.LLM) *AzureAIAgent {
 		mytools.FileInfoTool{
 			CallbacksHandler: llm.CallbacksHandler,
 		},
+		mytools.FileSearchTool{
+			CallbacksHandler: llm.CallbacksHandler,
+		},
 
 		// Other tools
+		mytools.CommandExecutorTool{
+			CallbacksHandler: llm.CallbacksHandler,
+		},
 		mytools.HTTPFetcherTool{
+			CallbacksHandler: llm.CallbacksHandler,
+		},
+		mytools.CommandExecutorTool{
 			CallbacksHandler: llm.CallbacksHandler,
 		},
 		mytools.WeatherTool{
@@ -94,13 +109,16 @@ func NewAzureAIAgent(llm *openai.LLM) *AzureAIAgent {
 	// 4. Create agent with memory directly integrated
 	agent := agents.NewConversationalAgent(llm, tools,
 		agents.WithPromptPrefix(_defaultAgentPrefix),
+		agents.WithPromptSuffix(_defaultAgentSuffix),
+		agents.WithPromptFormatInstructions(_defaultAgentFormatInstructions),
 		agents.WithMemory(smartMemory),
 		agents.WithCallbacksHandler(llm.CallbacksHandler),
+		agents.WithReturnIntermediateSteps(),
 	)
 
 	// 5. Create executor without separate memory configuration since agent already has it
 	executor := agents.NewExecutor(agent,
-		agents.WithMaxIterations(1000), // Much higher limit for complex multi-step processes
+		agents.WithMaxIterations(100), // Much higher limit for complex multi-step processes
 		agents.WithMemory(smartMemory),
 		agents.WithCallbacksHandler(llm.CallbacksHandler),
 		agents.WithReturnIntermediateSteps(),

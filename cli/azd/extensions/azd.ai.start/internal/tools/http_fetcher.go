@@ -60,6 +60,7 @@ func (t HTTPFetcherTool) Call(ctx context.Context, input string) (string, error)
 		output = fmt.Sprintf("Content (first 5000 chars): %s...\n[Content truncated]", string(body[:5000]))
 	} else {
 		output = string(body)
+		output += "\n"
 	}
 
 	if t.CallbacksHandler != nil {

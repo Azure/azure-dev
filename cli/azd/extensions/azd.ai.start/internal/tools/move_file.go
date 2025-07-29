@@ -90,7 +90,7 @@ func (t MoveFileTool) Call(ctx context.Context, input string) (string, error) {
 		fileType = "directory"
 	}
 
-	output := fmt.Sprintf("Successfully moved %s from %s to %s (%d bytes)", fileType, source, destination, sourceInfo.Size())
+	output := fmt.Sprintf("Successfully moved %s from %s to %s (%d bytes)\n", fileType, source, destination, sourceInfo.Size())
 	if t.CallbacksHandler != nil {
 		t.CallbacksHandler.HandleToolEnd(ctx, output)
 	}

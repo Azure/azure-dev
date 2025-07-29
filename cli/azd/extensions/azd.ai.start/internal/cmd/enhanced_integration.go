@@ -56,6 +56,8 @@ func RunEnhancedAzureAgent(ctx context.Context, llm *openai.LLM, args []string) 
 			break
 		}
 
+		fmt.Println("\n💬 Agent:")
+
 		// Process the query with the enhanced agent
 		response, err := azureAgent.ProcessQuery(ctx, userInput)
 		if err != nil {
@@ -64,7 +66,7 @@ func RunEnhancedAzureAgent(ctx context.Context, llm *openai.LLM, args []string) 
 		}
 
 		// Display the final response
-		fmt.Printf("\n💬 Agent:\n%s\n", response)
+		fmt.Print(response)
 	}
 
 	if err := scanner.Err(); err != nil {

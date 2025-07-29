@@ -24,11 +24,6 @@ func (t DirectoryListTool) Description() string {
 }
 
 func (t DirectoryListTool) Call(ctx context.Context, input string) (string, error) {
-	// Invoke callback for tool start
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("list_directory: %s", input))
-	}
-
 	path := strings.TrimSpace(input)
 	if path == "" {
 		path = "."
@@ -41,6 +36,11 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("failed to get absolute path for %s: %w", path, err))
 		}
 		return "", fmt.Errorf("failed to get absolute path for %s: %w", path, err)
+	}
+
+	// Invoke callback for tool start
+	if t.CallbacksHandler != nil {
+		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("Reading directory %s\n", input))
 	}
 
 	// Check if directory exists
@@ -109,11 +109,12 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 		result.WriteString("Directory is empty.\n")
 	}
 
+	result.WriteString("\n")
 	output := result.String()
 
 	// Invoke callback for tool end
 	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolEnd(ctx, output)
+		t.CallbacksHandler.HandleToolEnd(ctx, "")
 	}
 
 	return output, nil

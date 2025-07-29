@@ -4,6 +4,7 @@ go 1.24.1
 
 require (
 	github.com/azure/azure-dev v0.0.0-20250725230316-fffc1a6a410c
+	github.com/bmatcuk/doublestar/v4 v4.8.1
 	github.com/fatih/color v1.18.0
 	github.com/spf13/cobra v1.9.1
 	github.com/tmc/langchaingo v0.1.13

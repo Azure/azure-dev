@@ -63,7 +63,7 @@ func (t DeleteFileTool) Call(ctx context.Context, input string) (string, error) 
 		return "", toolErr
 	}
 
-	output := fmt.Sprintf("Successfully deleted file: %s (%d bytes)", input, info.Size())
+	output := fmt.Sprintf("Deleted file %s (%d bytes)", input, info.Size())
 	if t.CallbacksHandler != nil {
 		t.CallbacksHandler.HandleToolEnd(ctx, output)
 	}

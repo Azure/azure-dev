@@ -62,7 +62,7 @@ func (t CreateDirectoryTool) Call(ctx context.Context, input string) (string, er
 		return "", toolErr
 	}
 
-	output := fmt.Sprintf("Successfully created directory: %s", input)
+	output := fmt.Sprintf("Created directory: %s\n", input)
 
 	// Invoke callback for tool end
 	if t.CallbacksHandler != nil {

@@ -36,9 +36,6 @@ func (t ChangeDirectoryTool) Call(ctx context.Context, input string) (string, er
 		return "", err
 	}
 
-	// Get current directory for reference
-	currentDir, _ := os.Getwd()
-
 	// Convert to absolute path
 	absPath, err := filepath.Abs(input)
 	if err != nil {
@@ -76,7 +73,7 @@ func (t ChangeDirectoryTool) Call(ctx context.Context, input string) (string, er
 		return "", toolErr
 	}
 
-	output := fmt.Sprintf("Changed directory from %s to %s", currentDir, absPath)
+	output := fmt.Sprintf("Changed directory to %s\n", absPath)
 
 	// Invoke callback for tool end
 	if t.CallbacksHandler != nil {

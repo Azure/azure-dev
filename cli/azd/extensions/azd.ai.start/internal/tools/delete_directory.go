@@ -73,9 +73,9 @@ func (t DeleteDirectoryTool) Call(ctx context.Context, input string) (string, er
 
 	var output string
 	if fileCount > 0 {
-		output = fmt.Sprintf("Successfully deleted directory: %s (contained %d items)", input, fileCount)
+		output = fmt.Sprintf("Deleted directory: %s (contained %d items)", input, fileCount)
 	} else {
-		output = fmt.Sprintf("Successfully deleted empty directory: %s", input)
+		output = fmt.Sprintf("Deleted empty directory: %s", input)
 	}
 
 	// Invoke callback for tool end

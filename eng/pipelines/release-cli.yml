@@ -78,7 +78,7 @@ extends:
               # CodeQL on macOS not supported by the Azure DevOps task as-of current.
               # Codeql.BuildIdentifier: cli_darwin
 
-          ${{ if in(variables['Build.Reason'], 'Schedule', 'Manual') }}:
+          ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
             # Only run this build during scheduled pipeline executions
             MacAppleSilicon:
               Pool: Azure Pipelines

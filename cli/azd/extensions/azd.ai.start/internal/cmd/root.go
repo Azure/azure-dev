@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"azd.ai.start/internal/logging"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 	"github.com/tmc/langchaingo/llms/openai"
@@ -73,12 +74,17 @@ func runAIAgent(ctx context.Context, args []string) error {
 		// Use Azure OpenAI with proper configuration
 		fmt.Printf("🔵 Trying Azure OpenAI with deployment: %s\n", aiConfig.DeploymentName)
 
+		actionLogger := logging.NewActionLogger(
+			logging.WithDebug(false),
+		)
+
 		llm, err = openai.New(
 			openai.WithToken(aiConfig.ApiKey),
 			openai.WithBaseURL(aiConfig.Endpoint+"/"),
 			openai.WithAPIType(openai.APITypeAzure),
 			openai.WithAPIVersion(azureAPIVersion),
 			openai.WithModel(aiConfig.DeploymentName),
+			openai.WithCallback(actionLogger),
 		)
 
 		if err == nil {

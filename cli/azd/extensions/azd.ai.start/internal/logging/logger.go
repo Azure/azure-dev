@@ -6,78 +6,126 @@ package logging
 import (
 	"context"
 	"fmt"
-	"time"
 
+	"github.com/tmc/langchaingo/callbacks"
+	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/schema"
-
-	"azd.ai.start/internal/session"
-	"azd.ai.start/internal/utils"
 )
+
+// Compile-time check to ensure ActionLogger implements callbacks.Handler
+var _ callbacks.Handler = &ActionLogger{}
 
 // ActionLogger tracks and logs all agent actions
 type ActionLogger struct {
-	actions []session.ActionLog
-	current *session.ActionLog
+	debugEnabled bool
+}
+
+// ActionLoggerOption represents an option for configuring ActionLogger
+type ActionLoggerOption func(*ActionLogger)
+
+// WithDebug enables debug mode for verbose logging
+func WithDebug(enabled bool) ActionLoggerOption {
+	return func(al *ActionLogger) {
+		al.debugEnabled = enabled
+	}
 }
 
 // NewActionLogger creates a new action logger
-func NewActionLogger() *ActionLogger {
-	return &ActionLogger{
-		actions: make([]session.ActionLog, 0),
+func NewActionLogger(opts ...ActionLoggerOption) *ActionLogger {
+	al := &ActionLogger{}
+
+	for _, opt := range opts {
+		opt(al)
+	}
+
+	return al
+}
+
+// HandleText is called when text is processed
+func (al *ActionLogger) HandleText(ctx context.Context, text string) {
+	if al.debugEnabled {
+		fmt.Printf("📝 Text (full): %s\n", text)
+	}
+}
+
+// HandleLLMGenerateContentStart is called when LLM content generation starts
+func (al *ActionLogger) HandleLLMGenerateContentStart(ctx context.Context, ms []llms.MessageContent) {
+	if al.debugEnabled {
+		for i, msg := range ms {
+			fmt.Printf("🤖 Debug - Message %d: %+v\n", i, msg)
+		}
+	}
+}
+
+// HandleLLMGenerateContentEnd is called when LLM content generation ends
+func (al *ActionLogger) HandleLLMGenerateContentEnd(ctx context.Context, res *llms.ContentResponse) {
+	if al.debugEnabled && res != nil {
+		fmt.Printf("🤖 Debug - Response: %+v\n", res)
+	}
+}
+
+// HandleRetrieverStart is called when retrieval starts
+func (al *ActionLogger) HandleRetrieverStart(ctx context.Context, query string) {
+	if al.debugEnabled {
+		fmt.Printf("🔍 Retrieval starting for query (full): %s\n", query)
+	}
+}
+
+// HandleRetrieverEnd is called when retrieval ends
+func (al *ActionLogger) HandleRetrieverEnd(ctx context.Context, query string, documents []schema.Document) {
+	fmt.Printf("🔍 Retrieval completed: found %d documents\n", len(documents))
+	if al.debugEnabled {
+		fmt.Printf("🔍 Debug - Query (full): %s\n", query)
+		for i, doc := range documents {
+			fmt.Printf("🔍 Debug - Document %d: %+v\n", i, doc)
+		}
 	}
 }
 
 // HandleToolStart is called when a tool execution starts
 func (al *ActionLogger) HandleToolStart(ctx context.Context, input string) {
-	al.current = &session.ActionLog{
-		Timestamp: time.Now(),
-		Input:     input,
+	if al.debugEnabled {
+		fmt.Printf("🔧 Executing Tool: %s\n", input)
 	}
-	fmt.Printf("🔧 Executing: %s\n", input)
 }
 
 // HandleToolEnd is called when a tool execution ends
 func (al *ActionLogger) HandleToolEnd(ctx context.Context, output string) {
-	if al.current != nil {
-		al.current.Output = output
-		al.current.Success = true
-		al.current.Duration = time.Since(al.current.Timestamp)
-		al.actions = append(al.actions, *al.current)
-		fmt.Printf("✅ Result: %s\n", utils.TruncateString(output, 100))
+	if al.debugEnabled {
+		fmt.Printf("✅ Tool Result (full): %s\n", output)
 	}
 }
 
 // HandleToolError is called when a tool execution fails
 func (al *ActionLogger) HandleToolError(ctx context.Context, err error) {
-	if al.current != nil {
-		al.current.Output = err.Error()
-		al.current.Success = false
-		al.current.Duration = time.Since(al.current.Timestamp)
-		al.actions = append(al.actions, *al.current)
-		fmt.Printf("❌ Error: %s\n", err.Error())
-	}
+	fmt.Printf("❌ Tool Error: %s\n", err.Error())
 }
 
-// HandleAgentStart is called when agent planning starts
-func (al *ActionLogger) HandleAgentStart(ctx context.Context, input map[string]any) {
-	if userInput, ok := input["input"].(string); ok {
-		fmt.Printf("🎯 Processing: %s\n", userInput)
+// HandleLLMStart is called when LLM call starts
+func (al *ActionLogger) HandleLLMStart(ctx context.Context, prompts []string) {
+	for i, prompt := range prompts {
+		if al.debugEnabled {
+			fmt.Printf("🤖 Prompt %d (full): %s\n", i, prompt)
+		}
 	}
-}
-
-// HandleAgentEnd is called when agent planning ends
-func (al *ActionLogger) HandleAgentEnd(ctx context.Context, output schema.AgentFinish) {
-	fmt.Printf("🏁 Agent completed planning\n")
 }
 
 // HandleChainStart is called when chain execution starts
-func (al *ActionLogger) HandleChainStart(ctx context.Context, input map[string]any) {
-	fmt.Printf("🔗 Starting chain execution\n")
+func (al *ActionLogger) HandleChainStart(ctx context.Context, inputs map[string]any) {
+	for key, value := range inputs {
+		if al.debugEnabled {
+			fmt.Printf("🔗 Input [%s]: %v\n", key, value)
+		}
+	}
 }
 
 // HandleChainEnd is called when chain execution ends
-func (al *ActionLogger) HandleChainEnd(ctx context.Context, output map[string]any) {
-	fmt.Printf("🔗 Chain execution completed\n")
+func (al *ActionLogger) HandleChainEnd(ctx context.Context, outputs map[string]any) {
+	for key, value := range outputs {
+		if al.debugEnabled {
+			fmt.Printf("🔗 Output [%s]: %v\n", key, value)
+		}
+	}
 }
 
 // HandleChainError is called when chain execution fails
@@ -85,30 +133,20 @@ func (al *ActionLogger) HandleChainError(ctx context.Context, err error) {
 	fmt.Printf("🔗 Chain execution failed: %s\n", err.Error())
 }
 
-// HandleLLMStart is called when LLM call starts
-func (al *ActionLogger) HandleLLMStart(ctx context.Context, prompts []string) {
-	fmt.Printf("🤖 LLM thinking...\n")
-}
-
-// HandleLLMEnd is called when LLM call ends
-func (al *ActionLogger) HandleLLMEnd(ctx context.Context, result string) {
-	fmt.Printf("🤖 LLM response received\n")
-}
-
 // HandleAgentAction is called when an agent action is planned
 func (al *ActionLogger) HandleAgentAction(ctx context.Context, action schema.AgentAction) {
-	al.current = &session.ActionLog{
-		Timestamp: time.Now(),
-		Action:    action.Tool,
-		Tool:      action.Tool,
-		Input:     action.ToolInput,
+	fmt.Printf("Calling %s tool\n", action.Tool)
+
+	if al.debugEnabled {
+		fmt.Printf("🎯 Agent planned action (debug): %+v\n", action)
 	}
-	fmt.Printf("🎯 Agent planned action: %s with input: %s\n", action.Tool, action.ToolInput)
 }
 
 // HandleAgentFinish is called when the agent finishes
 func (al *ActionLogger) HandleAgentFinish(ctx context.Context, finish schema.AgentFinish) {
-	fmt.Printf("🏁 Agent finished with result\n")
+	if al.debugEnabled {
+		fmt.Printf("🏁 Agent finished (debug): %+v\n", finish)
+	}
 }
 
 // HandleLLMError is called when LLM call fails
@@ -117,18 +155,6 @@ func (al *ActionLogger) HandleLLMError(ctx context.Context, err error) {
 }
 
 // HandleStreamingFunc handles streaming responses
-func (al *ActionLogger) HandleStreamingFunc(ctx context.Context, chunk []byte) error {
-	// Optional: Handle streaming output
-	return nil
-}
+func (al *ActionLogger) HandleStreamingFunc(ctx context.Context, chunk []byte) {
 
-// GetActions returns all logged actions
-func (al *ActionLogger) GetActions() []session.ActionLog {
-	return al.actions
-}
-
-// Clear clears all logged actions
-func (al *ActionLogger) Clear() {
-	al.actions = al.actions[:0]
-	al.current = nil
 }

@@ -2,79 +2,102 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/tmc/langchaingo/callbacks"
 )
 
 // WriteFileTool implements the Tool interface for writing file contents
-type WriteFileTool struct{}
+type WriteFileTool struct {
+	CallbacksHandler callbacks.Handler
+}
+
+// WriteFileRequest represents the JSON input for the write_file tool
+type WriteFileRequest struct {
+	Filename string `json:"filename"`
+	Content  string `json:"content"`
+}
 
 func (t WriteFileTool) Name() string {
 	return "write_file"
 }
 
 func (t WriteFileTool) Description() string {
-	return `Write content to a file. Input format: 'filepath|content'
-
-For multi-line content, use literal \n for newlines:
-- Single line: 'test.txt|Hello World'  
-- Multi-line: 'script.bicep|param name string\nparam location string\nresource myResource...'
-
-Example Bicep file:
-'main.bicep|param name string\nparam location string\n\nresource appService ''Microsoft.Web/sites@2022-03-01'' = {\n  name: name\n  location: location\n  kind: ''app''\n  properties: {\n    serverFarmId: serverFarmId\n  }\n}\n\noutput appServiceId string = appService.id'
-
-The tool will convert \n to actual newlines automatically.`
+	return "Writes content to a file.  Format input as a single line JSON payload with a 'filename' and 'content' parameters."
 }
 
 func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
+	if t.CallbacksHandler != nil {
+		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("write_file: %s", input))
+	}
+
 	if input == "" {
-		return "", fmt.Errorf("input is required in format 'filepath|content'")
+		err := fmt.Errorf("input is required as JSON object with filename and content fields")
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, err)
+		}
+		return "", err
 	}
 
-	// Split on first occurrence of '|' to separate path from content
-	parts := strings.SplitN(input, "|", 2)
-	if len(parts) != 2 {
-		return "", fmt.Errorf("invalid input format. Use 'filepath|content'")
+	// Parse JSON input
+	var req WriteFileRequest
+	if err := json.Unmarshal([]byte(input), &req); err != nil {
+		toolErr := fmt.Errorf("invalid JSON input: %w", err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
 	}
 
-	filePath := strings.TrimSpace(parts[0])
-	content := parts[1]
+	if req.Filename == "" {
+		err := fmt.Errorf("filename cannot be empty")
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, err)
+		}
+		return "", err
+	}
+
+	filePath := strings.TrimSpace(req.Filename)
+	content := req.Content
 
 	// Convert literal \n sequences to actual newlines (for agents that escape newlines)
 	content = strings.ReplaceAll(content, "\\n", "\n")
 	content = strings.ReplaceAll(content, "\\t", "\t")
 
-	// Clean up any trailing quotes that might have been added during formatting
-	content = strings.TrimSuffix(content, "'")
-	content = strings.TrimSuffix(content, "\")")
-
-	// Clean up any quotes around the filepath (from agent formatting)
-	filePath = strings.Trim(filePath, "\"'")
-
-	if filePath == "" {
-		return "", fmt.Errorf("filepath cannot be empty")
-	}
-
 	// Ensure the directory exists
 	dir := filepath.Dir(filePath)
 	if dir != "." && dir != "" {
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return "", fmt.Errorf("failed to create directory %s: %w", dir, err)
+			toolErr := fmt.Errorf("failed to create directory %s: %w", dir, err)
+			if t.CallbacksHandler != nil {
+				t.CallbacksHandler.HandleToolError(ctx, toolErr)
+			}
+			return "", toolErr
 		}
 	}
 
 	// Write the file
 	err := os.WriteFile(filePath, []byte(content), 0644)
 	if err != nil {
-		return "", fmt.Errorf("failed to write file %s: %w", filePath, err)
+		toolErr := fmt.Errorf("failed to write file %s: %w", filePath, err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
 	}
 
 	// Verify the file was written correctly
 	writtenContent, err := os.ReadFile(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to verify written file %s: %w", filePath, err)
+		toolErr := fmt.Errorf("failed to verify written file %s: %w", filePath, err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
 	}
 
 	lineCount := strings.Count(string(writtenContent), "\n") + 1
@@ -82,8 +105,14 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 		lineCount = strings.Count(content, "\n") + 1
 	}
 
-	return fmt.Sprintf("Successfully wrote %d bytes (%d lines) to %s. Content preview:\n%s",
-		len(content), lineCount, filePath, getContentPreview(content)), nil
+	output := fmt.Sprintf("Successfully wrote %d bytes (%d lines) to %s. Content preview:\n%s",
+		len(content), lineCount, filePath, getContentPreview(content))
+
+	if t.CallbacksHandler != nil {
+		t.CallbacksHandler.HandleToolEnd(ctx, output)
+	}
+
+	return output, nil
 }
 
 // getContentPreview returns a preview of the content for verification

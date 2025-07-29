@@ -51,7 +51,7 @@ func (t FileInfoTool) Call(ctx context.Context, input string) (string, error) {
 		fileType = "File"
 	}
 
-	output := fmt.Sprintf("%s: %s\nSize: %d bytes\nModified: %s\nPermissions: %s",
+	output := fmt.Sprintf("%s: %s\nSize: %d bytes\nModified: %s\nPermissions: %s\n\n",
 		fileType, input, info.Size(), info.ModTime().Format(time.RFC3339), info.Mode().String())
 
 	if t.CallbacksHandler != nil {

@@ -35,5 +35,7 @@ func (t CurrentDirectoryTool) Call(ctx context.Context, input string) (string, e
 		t.CallbacksHandler.HandleToolEnd(ctx, dir)
 	}
 
-	return dir, nil
+	output := fmt.Sprintf("Current directory is %s\n", dir)
+
+	return output, nil
 }

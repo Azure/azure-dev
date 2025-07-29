@@ -107,7 +107,7 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 		return "", toolErr
 	}
 
-	output := fmt.Sprintf("Successfully copied %s to %s (%d bytes)", source, destination, bytesWritten)
+	output := fmt.Sprintf("Copied %s to %s (%d bytes)\n", source, destination, bytesWritten)
 	if t.CallbacksHandler != nil {
 		t.CallbacksHandler.HandleToolEnd(ctx, output)
 	}

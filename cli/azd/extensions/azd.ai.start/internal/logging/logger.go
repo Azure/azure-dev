@@ -135,7 +135,7 @@ func (al *ActionLogger) HandleChainError(ctx context.Context, err error) {
 
 // HandleAgentAction is called when an agent action is planned
 func (al *ActionLogger) HandleAgentAction(ctx context.Context, action schema.AgentAction) {
-	fmt.Printf("Calling %s tool\n", action.Tool)
+	fmt.Printf("%s\n\n", action.Log)
 
 	if al.debugEnabled {
 		fmt.Printf("🎯 Agent planned action (debug): %+v\n", action)
@@ -144,6 +144,8 @@ func (al *ActionLogger) HandleAgentAction(ctx context.Context, action schema.Age
 
 // HandleAgentFinish is called when the agent finishes
 func (al *ActionLogger) HandleAgentFinish(ctx context.Context, finish schema.AgentFinish) {
+	fmt.Printf("%s\n\n", finish.Log)
+
 	if al.debugEnabled {
 		fmt.Printf("🏁 Agent finished (debug): %+v\n", finish)
 	}
@@ -156,5 +158,7 @@ func (al *ActionLogger) HandleLLMError(ctx context.Context, err error) {
 
 // HandleStreamingFunc handles streaming responses
 func (al *ActionLogger) HandleStreamingFunc(ctx context.Context, chunk []byte) {
-
+	// if len(chunk) > 0 {
+	// 	fmt.Print(string(chunk))
+	// }
 }

@@ -11,15 +11,18 @@ import (
 	"github.com/tmc/langchaingo/callbacks"
 )
 
-// WriteFileTool implements the Tool interface for writing file contents
+// WriteFileTool implements a comprehensive file writing tool that handles all scenarios
 type WriteFileTool struct {
 	CallbacksHandler callbacks.Handler
 }
 
 // WriteFileRequest represents the JSON input for the write_file tool
 type WriteFileRequest struct {
-	Filename string `json:"filename"`
-	Content  string `json:"content"`
+	Filename    string `json:"filename"`
+	Content     string `json:"content"`
+	Mode        string `json:"mode,omitempty"`         // "write" (default), "append", "create"
+	ChunkNum    int    `json:"chunk_num,omitempty"`    // For chunked writing: 1-based chunk number
+	TotalChunks int    `json:"total_chunks,omitempty"` // For chunked writing: total expected chunks
 }
 
 func (t WriteFileTool) Name() string {
@@ -27,34 +30,118 @@ func (t WriteFileTool) Name() string {
 }
 
 func (t WriteFileTool) Description() string {
-	return "Writes content to a file.  Format input as a single line JSON payload with a 'filename' and 'content' parameters."
+	return `Comprehensive file writing tool that handles small and large files intelligently.
+
+Input: JSON payload with the following structure:
+{
+  "filename": "path/to/file.txt",
+  "content": "file content here",
+  "mode": "write",
+  "chunk_num": 1,
+  "total_chunks": 3
+}
+
+Field descriptions:
+- mode: "write" (default), "append", or "create"  
+- chunk_num: for chunked writing (1-based)
+- total_chunks: total number of chunks
+
+MODES:
+- "write" (default): Overwrite/create file
+- "append": Add content to end of existing file
+- "create": Create file only if it doesn't exist
+
+CHUNKED WRITING (for large files):
+Use chunk_num and total_chunks for files that might be too large:
+- chunk_num: 1-based chunk number (1, 2, 3...)
+- total_chunks: Total number of chunks you'll send
+
+EXAMPLES:
+
+Simple write:
+{"filename": "./main.bicep", "content": "param location string = 'eastus'"}
+
+Append to file:
+{"filename": "./log.txt", "content": "\nNew log entry", "mode": "append"}
+
+Large file (chunked):
+{"filename": "./large.bicep", "content": "first part...", "chunk_num": 1, "total_chunks": 3}
+{"filename": "./large.bicep", "content": "middle part...", "chunk_num": 2, "total_chunks": 3}
+{"filename": "./large.bicep", "content": "final part...", "chunk_num": 3, "total_chunks": 3}
+
+The input must be formatted as a single line valid JSON string.`
 }
 
 func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("write_file: %s", input))
+		logInput := input
+		if len(input) > 200 {
+			logInput = input[:200] + "... (truncated)"
+		}
+		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("write_file: %s", logInput))
 	}
 
 	if input == "" {
-		err := fmt.Errorf("input is required as JSON object with filename and content fields")
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-		}
-		return "", err
-	}
+		output := "❌ No input provided\n\n"
+		output += "📝 Expected JSON format:\n"
+		output += `{"filename": "path/to/file.txt", "content": "file content here"}`
 
-	// Parse JSON input
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("empty input"))
+			t.CallbacksHandler.HandleToolEnd(ctx, output)
+		}
+		return output, nil
+	} // Parse JSON input
 	var req WriteFileRequest
 	if err := json.Unmarshal([]byte(input), &req); err != nil {
-		toolErr := fmt.Errorf("invalid JSON input: %w", err)
+		output := "❌ Invalid JSON input: " + err.Error() + "\n\n"
+		output += "📝 Expected format:\n"
+		output += `{"filename": "path/to/file.txt", "content": "file content here"}` + "\n\n"
+		output += "💡 Common JSON issues:\n"
+		output += "- Use double quotes for strings\n"
+		output += "- Escape backslashes: \\$ should be \\\\$\n"
+		output += "- Remove trailing commas\n"
+		output += "- No comments allowed in JSON"
+
 		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+			t.CallbacksHandler.HandleToolError(ctx, err)
+			t.CallbacksHandler.HandleToolEnd(ctx, output)
 		}
-		return "", toolErr
+		return output, nil
 	}
 
+	// Validate required fields
 	if req.Filename == "" {
-		err := fmt.Errorf("filename cannot be empty")
+		output := "❌ Missing required field: filename cannot be empty\n\n"
+		output += "📝 Example: " + `{"filename": "infra/main.bicep", "content": "param location string = 'eastus'"}`
+
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("missing filename"))
+			t.CallbacksHandler.HandleToolEnd(ctx, output)
+		}
+		return output, nil
+	}
+
+	// Determine mode and operation
+	mode := req.Mode
+	if mode == "" {
+		mode = "write"
+	}
+
+	// Handle chunked writing
+	isChunked := req.ChunkNum > 0 && req.TotalChunks > 0
+	if isChunked {
+		return t.handleChunkedWrite(ctx, req)
+	}
+
+	// Handle regular writing
+	return t.handleRegularWrite(ctx, req, mode)
+}
+
+// handleChunkedWrite handles writing files in chunks
+func (t WriteFileTool) handleChunkedWrite(ctx context.Context, req WriteFileRequest) (string, error) {
+	if req.ChunkNum < 1 || req.TotalChunks < 1 || req.ChunkNum > req.TotalChunks {
+		err := fmt.Errorf("invalid chunk numbers: chunk_num=%d, total_chunks=%d", req.ChunkNum, req.TotalChunks)
 		if t.CallbacksHandler != nil {
 			t.CallbacksHandler.HandleToolError(ctx, err)
 		}
@@ -62,51 +149,67 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 	}
 
 	filePath := strings.TrimSpace(req.Filename)
-	content := req.Content
+	content := t.processContent(req.Content)
 
-	// Convert literal \n sequences to actual newlines (for agents that escape newlines)
-	content = strings.ReplaceAll(content, "\\n", "\n")
-	content = strings.ReplaceAll(content, "\\t", "\t")
+	// Ensure directory exists
+	if err := t.ensureDirectory(filePath); err != nil {
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, err)
+		}
+		return "", err
+	}
 
-	// Ensure the directory exists
-	dir := filepath.Dir(filePath)
-	if dir != "." && dir != "" {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			toolErr := fmt.Errorf("failed to create directory %s: %w", dir, err)
+	var err error
+	var operation string
+
+	if req.ChunkNum == 1 {
+		// First chunk - create/overwrite file
+		err = os.WriteFile(filePath, []byte(content), 0644)
+		operation = fmt.Sprintf("Started writing chunk %d/%d", req.ChunkNum, req.TotalChunks)
+	} else {
+		// Subsequent chunks - append
+		file, openErr := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
+		if openErr != nil {
+			err = fmt.Errorf("failed to open file for append %s: %w", filePath, openErr)
 			if t.CallbacksHandler != nil {
-				t.CallbacksHandler.HandleToolError(ctx, toolErr)
+				t.CallbacksHandler.HandleToolError(ctx, err)
 			}
-			return "", toolErr
+			return "", err
+		}
+		defer file.Close()
+
+		_, err = file.WriteString(content)
+		if req.ChunkNum == req.TotalChunks {
+			operation = fmt.Sprintf("Completed writing chunk %d/%d (final)", req.ChunkNum, req.TotalChunks)
+		} else {
+			operation = fmt.Sprintf("Wrote chunk %d/%d", req.ChunkNum, req.TotalChunks)
 		}
 	}
 
-	// Write the file
-	err := os.WriteFile(filePath, []byte(content), 0644)
 	if err != nil {
-		toolErr := fmt.Errorf("failed to write file %s: %w", filePath, err)
+		toolErr := fmt.Errorf("failed to write chunk to file %s: %w", filePath, err)
 		if t.CallbacksHandler != nil {
 			t.CallbacksHandler.HandleToolError(ctx, toolErr)
 		}
 		return "", toolErr
 	}
 
-	// Verify the file was written correctly
-	writtenContent, err := os.ReadFile(filePath)
+	// Get file size
+	fileInfo, err := os.Stat(filePath)
 	if err != nil {
-		toolErr := fmt.Errorf("failed to verify written file %s: %w", filePath, err)
+		toolErr := fmt.Errorf("failed to verify file %s: %w", filePath, err)
 		if t.CallbacksHandler != nil {
 			t.CallbacksHandler.HandleToolError(ctx, toolErr)
 		}
 		return "", toolErr
 	}
 
-	lineCount := strings.Count(string(writtenContent), "\n") + 1
-	if content != "" && !strings.HasSuffix(content, "\n") {
-		lineCount = strings.Count(content, "\n") + 1
-	}
+	output := fmt.Sprintf("%s to %s. Chunk size: %d bytes, Total file size: %d bytes",
+		operation, filePath, len(content), fileInfo.Size())
 
-	output := fmt.Sprintf("Successfully wrote %d bytes (%d lines) to %s. Content preview:\n%s",
-		len(content), lineCount, filePath, getContentPreview(content))
+	if req.ChunkNum == req.TotalChunks {
+		output += "\n✅ File writing completed successfully!"
+	}
 
 	if t.CallbacksHandler != nil {
 		t.CallbacksHandler.HandleToolEnd(ctx, output)
@@ -115,16 +218,98 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 	return output, nil
 }
 
-// getContentPreview returns a preview of the content for verification
-func getContentPreview(content string) string {
-	lines := strings.Split(content, "\n")
-	if len(lines) <= 5 {
-		return content
+// handleRegularWrite handles normal file writing
+func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequest, mode string) (string, error) {
+	filePath := strings.TrimSpace(req.Filename)
+	content := t.processContent(req.Content)
+
+	// Provide feedback for large content
+	if len(content) > 10000 {
+		fmt.Printf("📝 Large content detected (%d chars). Consider using chunked writing for better reliability.\n", len(content))
 	}
 
-	preview := strings.Join(lines[:3], "\n")
-	preview += fmt.Sprintf("\n... (%d more lines) ...\n", len(lines)-5)
-	preview += strings.Join(lines[len(lines)-2:], "\n")
+	// Ensure directory exists
+	if err := t.ensureDirectory(filePath); err != nil {
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, err)
+		}
+		return "", err
+	}
 
-	return preview
+	var err error
+	var operation string
+
+	switch mode {
+	case "create":
+		if _, err := os.Stat(filePath); err == nil {
+			toolErr := fmt.Errorf("file %s already exists (create mode)", filePath)
+			if t.CallbacksHandler != nil {
+				t.CallbacksHandler.HandleToolError(ctx, toolErr)
+			}
+			return "", toolErr
+		}
+		err = os.WriteFile(filePath, []byte(content), 0644)
+		operation = "Created"
+
+	case "append":
+		file, openErr := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if openErr != nil {
+			toolErr := fmt.Errorf("failed to open file for append %s: %w", filePath, openErr)
+			if t.CallbacksHandler != nil {
+				t.CallbacksHandler.HandleToolError(ctx, toolErr)
+			}
+			return "", toolErr
+		}
+		defer file.Close()
+		_, err = file.WriteString(content)
+		operation = "Appended to"
+
+	default: // "write"
+		err = os.WriteFile(filePath, []byte(content), 0644)
+		operation = "Wrote"
+	}
+
+	if err != nil {
+		toolErr := fmt.Errorf("failed to %s file %s: %w", strings.ToLower(operation), filePath, err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
+	}
+
+	// Get file size for verification
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		toolErr := fmt.Errorf("failed to verify file %s: %w", filePath, err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
+	}
+
+	output := fmt.Sprintf("%s %d bytes to %s successfully", operation, fileInfo.Size(), filePath)
+
+	if t.CallbacksHandler != nil {
+		t.CallbacksHandler.HandleToolEnd(ctx, output)
+	}
+
+	return output, nil
+}
+
+// processContent handles escape sequences
+func (t WriteFileTool) processContent(content string) string {
+	content = strings.ReplaceAll(content, "\\n", "\n")
+	content = strings.ReplaceAll(content, "\\t", "\t")
+	return content
+}
+
+// ensureDirectory creates the directory if it doesn't exist
+func (t WriteFileTool) ensureDirectory(filePath string) error {
+	dir := filepath.Dir(filePath)
+	if dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+		}
+	}
+	return nil
 }

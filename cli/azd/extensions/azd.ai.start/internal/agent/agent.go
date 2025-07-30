@@ -6,7 +6,6 @@ package agent
 import (
 	"context"
 	_ "embed"
-	"fmt"
 
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/chains"
@@ -86,7 +85,6 @@ func (aai *AzureAIAgent) ProcessQuery(ctx context.Context, userInput string) err
 		chains.WithTemperature(0.3),
 	)
 	if err != nil {
-		fmt.Printf("❌ Execution failed: %s\n", err.Error())
 		return err
 	}
 

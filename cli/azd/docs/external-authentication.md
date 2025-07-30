@@ -39,6 +39,7 @@ The body of the request maps to the data passed to `GetToken` via the GetTokenOp
 {
     "scopes": [ "scope1" /*, "scope2", ... */ ],
     "tenantId": "<string>", // optional, used to override the default tenant.
+    "claims": "<base64-encoded string>", // optional, additional claims required to satisfy a conditional access policy. The claims are encoded in standard base64 encoding, as defined in RFC 4648.
 }
 ```
 
@@ -77,8 +78,6 @@ The `azd` CLI implements the client side of this feature in the [`pkg/auth/remot
 The VS Code implementation of the server is in [src/utils/authServer.ts](../../../ext/vscode/src/utils/).
 
 ## Open Issues
-
-- [ ] As of `azcore@1.8.0`, there are now new additional properties on `TokenRequestOptions`: `EnableCAE` and `Claims` which are not yet supported by the external authentication flow. We need to support these properties in the external authentication flow (to do so we should bump the api-version and add the new parameters. They are both optional).
 
 - [ ] Perhaps we should allow the host to respond to an OPTIONS request to `/token` to discover the API versions that the server supports, so we can call the latest version that the server supports, or fail if there server does not support some minimum version.
 

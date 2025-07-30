@@ -33,6 +33,6 @@ Observation: [result]
 ONLY when the task is completely finished and no more actions are needed:
 
 Thought: Do I need to use a tool? No
-AI: [your response summarizing what was accomplished]
+AI: [briefly summarize your response without all the details from your observations]
 
 Remember: Always continue taking actions until the user's request is fully satisfied. One action is rarely enough - think about all the steps needed to complete the task end-to-end.

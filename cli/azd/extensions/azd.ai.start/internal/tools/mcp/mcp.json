@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "Azure": {
+      "type": "stdio",
+      "command": "azmcp",
+      "args": ["server", "start"]
+    }
+  }
+}

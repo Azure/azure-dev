@@ -64,6 +64,12 @@ func runAIAgent(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed to unmarshal AI model configuration: %w", err)
 	}
 
+	_, _ = azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
+			Message: "Ready?",
+		},
+	})
+
 	// Common deployment names to try
 	azureAPIVersion := "2024-02-15-preview"
 

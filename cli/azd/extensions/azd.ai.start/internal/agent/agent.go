@@ -9,15 +9,13 @@ import (
 	"fmt"
 
 	"github.com/tmc/langchaingo/agents"
-	"github.com/tmc/langchaingo/callbacks"
 	"github.com/tmc/langchaingo/chains"
 	"github.com/tmc/langchaingo/llms/openai"
 	"github.com/tmc/langchaingo/memory"
-	"github.com/tmc/langchaingo/schema"
 	"github.com/tmc/langchaingo/tools"
 
-	"azd.ai.start/internal/session"
-	mytools "azd.ai.start/internal/tools"
+	localtools "azd.ai.start/internal/tools"
+	mcptools "azd.ai.start/internal/tools/mcp"
 )
 
 //go:embed prompts/default_agent_prefix.txt
@@ -31,15 +29,10 @@ var _defaultAgentSuffix string
 
 // AzureAIAgent represents an enhanced Azure AI agent with action tracking, intent validation, and conversation memory
 type AzureAIAgent struct {
-	agent          *agents.ConversationalAgent
-	executor       *agents.Executor
-	memory         schema.Memory // Maintains conversation history for context-aware responses
-	tools          []tools.Tool
-	actionLogger   callbacks.Handler
-	currentSession *session.ActionSession
+	executor *agents.Executor
 }
 
-func NewAzureAIAgent(llm *openai.LLM) *AzureAIAgent {
+func NewAzureAIAgent(llm *openai.LLM) (*AzureAIAgent, error) {
 	smartMemory := memory.NewConversationBuffer(
 		memory.WithInputKey("input"),
 		memory.WithOutputKey("output"),
@@ -47,67 +40,23 @@ func NewAzureAIAgent(llm *openai.LLM) *AzureAIAgent {
 		memory.WithAIPrefix("AI"),
 	)
 
-	tools := []tools.Tool{
-		// Directory operations
-		mytools.DirectoryListTool{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
-		mytools.CreateDirectoryTool{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
-		mytools.DeleteDirectoryTool{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
-		mytools.ChangeDirectoryTool{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
-		mytools.CurrentDirectoryTool{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
+	toolLoaders := []localtools.ToolLoader{
+		localtools.NewLocalToolsLoader(llm.CallbacksHandler),
+		mcptools.NewMcpToolsLoader(llm.CallbacksHandler),
+	}
 
-		// File operations
-		mytools.ReadFileTool{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
-		mytools.WriteFileTool{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
-		mytools.CopyFileTool{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
-		mytools.MoveFileTool{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
-		mytools.DeleteFileTool{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
-		mytools.FileInfoTool{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
-		mytools.FileSearchTool{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
+	allTools := []tools.Tool{}
 
-		// Other tools
-		mytools.CommandExecutorTool{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
-		mytools.HTTPFetcherTool{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
-		mytools.CommandExecutorTool{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
-		mytools.WeatherTool{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
-		tools.Calculator{
-			CallbacksHandler: llm.CallbacksHandler,
-		},
+	for _, toolLoader := range toolLoaders {
+		categoryTools, err := toolLoader.LoadTools()
+		if err != nil {
+			return nil, err
+		}
+		allTools = append(allTools, categoryTools...)
 	}
 
 	// 4. Create agent with memory directly integrated
-	agent := agents.NewConversationalAgent(llm, tools,
+	agent := agents.NewConversationalAgent(llm, allTools,
 		agents.WithPromptPrefix(_defaultAgentPrefix),
 		agents.WithPromptSuffix(_defaultAgentSuffix),
 		agents.WithPromptFormatInstructions(_defaultAgentFormatInstructions),
@@ -125,22 +74,21 @@ func NewAzureAIAgent(llm *openai.LLM) *AzureAIAgent {
 	)
 
 	return &AzureAIAgent{
-		agent:        agent,
-		executor:     executor,
-		memory:       smartMemory,
-		tools:        tools,
-		actionLogger: llm.CallbacksHandler,
-	}
+		executor: executor,
+	}, nil
 }
 
 // ProcessQuery processes a user query with full action tracking and validation
-func (aai *AzureAIAgent) ProcessQuery(ctx context.Context, userInput string) (string, error) {
+func (aai *AzureAIAgent) ProcessQuery(ctx context.Context, userInput string) error {
 	// Execute with enhanced input - agent should automatically handle memory
-	output, err := chains.Run(ctx, aai.executor, userInput)
+	_, err := chains.Run(ctx, aai.executor, userInput,
+		chains.WithMaxTokens(800),
+		chains.WithTemperature(0.3),
+	)
 	if err != nil {
 		fmt.Printf("❌ Execution failed: %s\n", err.Error())
-		return "", err
+		return err
 	}
 
-	return output, nil
+	return nil
 }

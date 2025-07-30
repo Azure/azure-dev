@@ -18,7 +18,10 @@ import (
 // RunEnhancedAzureAgent runs the enhanced Azure AI agent with full capabilities
 func RunEnhancedAzureAgent(ctx context.Context, llm *openai.LLM, args []string) error {
 	// Create the enhanced agent
-	azureAgent := agent.NewAzureAIAgent(llm)
+	azureAgent, err := agent.NewAzureAIAgent(llm)
+	if err != nil {
+		return err
+	}
 
 	fmt.Println("🤖 Enhanced Azure AI Agent - Interactive Mode")
 	fmt.Println("═══════════════════════════════════════════════════════════")
@@ -56,17 +59,16 @@ func RunEnhancedAzureAgent(ctx context.Context, llm *openai.LLM, args []string) 
 			break
 		}
 
-		fmt.Println("\n💬 Agent:")
+		fmt.Printf("\n-------------------------------------------\n")
 
 		// Process the query with the enhanced agent
-		response, err := azureAgent.ProcessQuery(ctx, userInput)
+		err := azureAgent.ProcessQuery(ctx, userInput)
 		if err != nil {
 			fmt.Printf("❌ Error: %v\n", err)
 			continue
 		}
 
-		// Display the final response
-		fmt.Print(response)
+		fmt.Printf("\n-------------------------------------------\n")
 	}
 
 	if err := scanner.Err(); err != nil {

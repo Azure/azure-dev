@@ -1,0 +1,75 @@
+package mcp
+
+import (
+	"encoding/json"
+	"fmt"
+
+	_ "embed"
+
+	langchaingo_mcp_adapter "github.com/i2y/langchaingo-mcp-adapter"
+	"github.com/mark3labs/mcp-go/client"
+	"github.com/tmc/langchaingo/callbacks"
+	"github.com/tmc/langchaingo/tools"
+)
+
+//go:embed mcp.json
+var _mcpJson string
+
+// McpConfig represents the overall MCP configuration structure
+type McpConfig struct {
+	Servers map[string]ServerConfig `json:"servers"`
+}
+
+// ServerConfig represents an individual server configuration
+type ServerConfig struct {
+	Type    string   `json:"type"`
+	Command string   `json:"command"`
+	Args    []string `json:"args,omitempty"`
+	Env     []string `json:"env,omitempty"`
+}
+
+type McpToolsLoader struct {
+	callbackHandler callbacks.Handler
+}
+
+func NewMcpToolsLoader(callbackHandler callbacks.Handler) *McpToolsLoader {
+	return &McpToolsLoader{
+		callbackHandler: callbackHandler,
+	}
+}
+
+func (l *McpToolsLoader) LoadTools() ([]tools.Tool, error) {
+	// Deserialize the embedded mcp.json configuration
+	var config McpConfig
+	if err := json.Unmarshal([]byte(_mcpJson), &config); err != nil {
+		return nil, fmt.Errorf("failed to parse mcp.json: %w", err)
+	}
+
+	var allTools []tools.Tool
+
+	// Iterate through each server configuration
+	for serverName, serverConfig := range config.Servers {
+		// Create MCP client for the server using stdio
+		mcpClient, err := client.NewStdioMCPClient(serverConfig.Command, serverConfig.Env, serverConfig.Args...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create MCP client for server %s: %w", serverName, err)
+		}
+
+		// Create the adapter
+		adapter, err := langchaingo_mcp_adapter.New(mcpClient)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create adapter for server %s: %w", serverName, err)
+		}
+
+		// Get all tools from MCP server
+		mcpTools, err := adapter.Tools()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get tools from server %s: %w", serverName, err)
+		}
+
+		// Add the tools to our collection
+		allTools = append(allTools, mcpTools...)
+	}
+
+	return allTools, nil
+}

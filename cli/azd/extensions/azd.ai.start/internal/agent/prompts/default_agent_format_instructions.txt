@@ -16,6 +16,7 @@ After each Observation, you MUST continue the cycle:
 Thought: [Evaluate the result and determine if the task is complete or if more actions are needed]
 
 If the task is NOT complete:
+
 Thought: Do I need to use a tool? Yes
 Action: [next action to take]
 Action Input: [input for the next action]
@@ -23,6 +24,7 @@ Observation: [result of the next action]
 ... (continue this cycle until the task is fully complete)
 
 If there are errors:
+
 Thought: [Analyze the error and determine how to fix it]
 Thought: Do I need to use a tool? Yes
 Action: [corrective action]
@@ -30,9 +32,9 @@ Action Input: [corrected input]
 Observation: [result]
 ... (retry up to 3 times with different approaches if needed)
 
-ONLY when the task is completely finished and no more actions are needed:
+Remember: Always continue taking actions until the user's request is fully satisfied. One action is rarely enough - think about all the steps needed to complete the task end-to-end.
+
+When you are done answering the questions and performing all your tasks you MUST use the following format:
 
 Thought: Do I need to use a tool? No
 AI: [briefly summarize your response without all the details from your observations]
-
-Remember: Always continue taking actions until the user's request is fully satisfied. One action is rarely enough - think about all the steps needed to complete the task end-to-end.

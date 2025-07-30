@@ -1,9 +1,19 @@
 {
   "servers": {
-    "Azure": {
+    "bestpractices": {
       "type": "stdio",
       "command": "azmcp",
-      "args": ["server", "start"]
+      "args": ["server", "start", "--namespace", "bestpractices"]
+    },
+    "subscription": {
+      "type": "stdio",
+      "command": "azmcp",
+      "args": ["server", "start", "--namespace", "subscription"]
+    },
+    "deploy": {
+      "type": "stdio",
+      "command": "azmcp",
+      "args": ["server", "start", "--namespace", "deploy"]
     }
   }
 }

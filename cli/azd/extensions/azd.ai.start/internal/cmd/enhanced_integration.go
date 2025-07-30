@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/fatih/color"
 	"github.com/tmc/langchaingo/llms/openai"
 
 	"azd.ai.start/internal/agent"
@@ -40,13 +41,16 @@ func RunEnhancedAzureAgent(ctx context.Context, llm *openai.LLM, args []string) 
 		if initialQuery != "" {
 			userInput = initialQuery
 			initialQuery = "" // Clear after first use
-			fmt.Printf("💬 You: %s\n", userInput)
+			color.Cyan("💬 You: %s\n", userInput)
 		} else {
-			fmt.Print("\n💬 You: ")
+			fmt.Print(color.CyanString("\n💬 You: "))
+			color.Set(color.FgCyan) // Set blue color for user input
 			if !scanner.Scan() {
-				break // EOF or error
+				color.Unset() // Reset color
+				break         // EOF or error
 			}
 			userInput = strings.TrimSpace(scanner.Text())
+			color.Unset() // Reset color after input
 		}
 
 		// Check for exit commands
@@ -59,16 +63,11 @@ func RunEnhancedAzureAgent(ctx context.Context, llm *openai.LLM, args []string) 
 			break
 		}
 
-		fmt.Printf("\n-------------------------------------------\n")
-
 		// Process the query with the enhanced agent
 		err := azureAgent.ProcessQuery(ctx, userInput)
 		if err != nil {
-			fmt.Printf("❌ Error: %v\n", err)
-			continue
+			return err
 		}
-
-		fmt.Printf("\n-------------------------------------------\n")
 	}
 
 	if err := scanner.Err(); err != nil {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/tmc/langchaingo/callbacks"
 )
@@ -20,9 +21,35 @@ type WriteFileTool struct {
 type WriteFileRequest struct {
 	Filename    string `json:"filename"`
 	Content     string `json:"content"`
-	Mode        string `json:"mode,omitempty"`         // "write" (default), "append", "create"
-	ChunkNum    int    `json:"chunk_num,omitempty"`    // For chunked writing: 1-based chunk number
-	TotalChunks int    `json:"total_chunks,omitempty"` // For chunked writing: total expected chunks
+	Mode        string `json:"mode,omitempty"`        // "write" (default), "append", "create"
+	ChunkNum    int    `json:"chunkNum,omitempty"`    // For chunked writing: 1-based chunk number
+	TotalChunks int    `json:"totalChunks,omitempty"` // For chunked writing: total expected chunks
+}
+
+// WriteFileResponse represents the JSON output for the write_file tool
+type WriteFileResponse struct {
+	Success      bool            `json:"success"`
+	Operation    string          `json:"operation"`
+	FilePath     string          `json:"filePath"`
+	BytesWritten int             `json:"bytesWritten"`
+	IsChunked    bool            `json:"isChunked"`
+	ChunkInfo    *ChunkInfo      `json:"chunkInfo,omitempty"`
+	FileInfo     FileInfoDetails `json:"fileInfo"`
+	Message      string          `json:"message,omitempty"`
+}
+
+// ChunkInfo represents chunked writing details
+type ChunkInfo struct {
+	ChunkNumber int  `json:"chunkNumber"`
+	TotalChunks int  `json:"totalChunks"`
+	IsComplete  bool `json:"isComplete"`
+}
+
+// FileInfoDetails represents file metadata
+type FileInfoDetails struct {
+	Size         int64     `json:"size"`
+	ModifiedTime time.Time `json:"modifiedTime"`
+	Permissions  string    `json:"permissions"`
 }
 
 func (t WriteFileTool) Name() string {
@@ -30,21 +57,21 @@ func (t WriteFileTool) Name() string {
 }
 
 func (t WriteFileTool) Description() string {
-	return `Comprehensive file writing tool that handles small and large files intelligently.
+	return `Comprehensive file writing tool that handles small and large files intelligently. Returns JSON response with operation details.
 
 Input: JSON payload with the following structure:
 {
   "filename": "path/to/file.txt",
   "content": "file content here",
   "mode": "write",
-  "chunk_num": 1,
-  "total_chunks": 3
+  "chunkNum": 1,
+  "totalChunks": 3
 }
 
 Field descriptions:
 - mode: "write" (default), "append", or "create"  
-- chunk_num: for chunked writing (1-based)
-- total_chunks: total number of chunks
+- chunkNum: for chunked writing (1-based)
+- totalChunks: total number of chunks
 
 MODES:
 - "write" (default): Overwrite/create file
@@ -52,9 +79,9 @@ MODES:
 - "create": Create file only if it doesn't exist
 
 CHUNKED WRITING (for large files):
-Use chunk_num and total_chunks for files that might be too large:
-- chunk_num: 1-based chunk number (1, 2, 3...)
-- total_chunks: Total number of chunks you'll send
+Use chunkNum and totalChunks for files that might be too large:
+- chunkNum: 1-based chunk number (1, 2, 3...)
+- totalChunks: Total number of chunks you'll send
 
 EXAMPLES:
 
@@ -65,9 +92,9 @@ Append to file:
 {"filename": "./log.txt", "content": "\nNew log entry", "mode": "append"}
 
 Large file (chunked):
-{"filename": "./large.bicep", "content": "first part...", "chunk_num": 1, "total_chunks": 3}
-{"filename": "./large.bicep", "content": "middle part...", "chunk_num": 2, "total_chunks": 3}
-{"filename": "./large.bicep", "content": "final part...", "chunk_num": 3, "total_chunks": 3}
+{"filename": "./large.bicep", "content": "first part...", "chunkNum": 1, "totalChunks": 3}
+{"filename": "./large.bicep", "content": "middle part...", "chunkNum": 2, "totalChunks": 3}
+{"filename": "./large.bicep", "content": "final part...", "chunkNum": 3, "totalChunks": 3}
 
 The input must be formatted as a single line valid JSON string.`
 }
@@ -141,7 +168,7 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 // handleChunkedWrite handles writing files in chunks
 func (t WriteFileTool) handleChunkedWrite(ctx context.Context, req WriteFileRequest) (string, error) {
 	if req.ChunkNum < 1 || req.TotalChunks < 1 || req.ChunkNum > req.TotalChunks {
-		err := fmt.Errorf("invalid chunk numbers: chunk_num=%d, total_chunks=%d", req.ChunkNum, req.TotalChunks)
+		err := fmt.Errorf("invalid chunk numbers: chunkNum=%d, totalChunks=%d", req.ChunkNum, req.TotalChunks)
 		if t.CallbacksHandler != nil {
 			t.CallbacksHandler.HandleToolError(ctx, err)
 		}
@@ -165,7 +192,7 @@ func (t WriteFileTool) handleChunkedWrite(ctx context.Context, req WriteFileRequ
 	if req.ChunkNum == 1 {
 		// First chunk - create/overwrite file
 		err = os.WriteFile(filePath, []byte(content), 0644)
-		operation = fmt.Sprintf("Started writing chunk %d/%d", req.ChunkNum, req.TotalChunks)
+		operation = "write"
 	} else {
 		// Subsequent chunks - append
 		file, openErr := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
@@ -179,11 +206,7 @@ func (t WriteFileTool) handleChunkedWrite(ctx context.Context, req WriteFileRequ
 		defer file.Close()
 
 		_, err = file.WriteString(content)
-		if req.ChunkNum == req.TotalChunks {
-			operation = fmt.Sprintf("Completed writing chunk %d/%d (final)", req.ChunkNum, req.TotalChunks)
-		} else {
-			operation = fmt.Sprintf("Wrote chunk %d/%d", req.ChunkNum, req.TotalChunks)
-		}
+		operation = "append"
 	}
 
 	if err != nil {
@@ -194,7 +217,7 @@ func (t WriteFileTool) handleChunkedWrite(ctx context.Context, req WriteFileRequ
 		return "", toolErr
 	}
 
-	// Get file size
+	// Get file info
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
 		toolErr := fmt.Errorf("failed to verify file %s: %w", filePath, err)
@@ -204,12 +227,42 @@ func (t WriteFileTool) handleChunkedWrite(ctx context.Context, req WriteFileRequ
 		return "", toolErr
 	}
 
-	output := fmt.Sprintf("%s to %s. Chunk size: %d bytes, Total file size: %d bytes",
-		operation, filePath, len(content), fileInfo.Size())
+	// Create JSON response
+	response := WriteFileResponse{
+		Success:      true,
+		Operation:    operation,
+		FilePath:     filePath,
+		BytesWritten: len(content),
+		IsChunked:    true,
+		ChunkInfo: &ChunkInfo{
+			ChunkNumber: req.ChunkNum,
+			TotalChunks: req.TotalChunks,
+			IsComplete:  req.ChunkNum == req.TotalChunks,
+		},
+		FileInfo: FileInfoDetails{
+			Size:         fileInfo.Size(),
+			ModifiedTime: fileInfo.ModTime(),
+			Permissions:  fileInfo.Mode().String(),
+		},
+	}
 
 	if req.ChunkNum == req.TotalChunks {
-		output += "\n✅ File writing completed successfully!"
+		response.Message = "File writing completed successfully"
+	} else {
+		response.Message = fmt.Sprintf("Chunk %d/%d written successfully", req.ChunkNum, req.TotalChunks)
 	}
+
+	// Convert to JSON
+	jsonData, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		toolErr := fmt.Errorf("failed to marshal JSON response: %w", err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
+	}
+
+	output := string(jsonData)
 
 	if t.CallbacksHandler != nil {
 		t.CallbacksHandler.HandleToolEnd(ctx, output)
@@ -287,7 +340,32 @@ func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequ
 		return "", toolErr
 	}
 
-	output := fmt.Sprintf("%s %d bytes to %s successfully", operation, fileInfo.Size(), filePath)
+	// Create JSON response
+	response := WriteFileResponse{
+		Success:      true,
+		Operation:    operation,
+		FilePath:     filePath,
+		BytesWritten: len(content),
+		IsChunked:    false,
+		FileInfo: FileInfoDetails{
+			Size:         fileInfo.Size(),
+			ModifiedTime: fileInfo.ModTime(),
+			Permissions:  fileInfo.Mode().String(),
+		},
+		Message: fmt.Sprintf("File %s successfully", strings.ToLower(operation)),
+	}
+
+	// Convert to JSON
+	jsonData, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		toolErr := fmt.Errorf("failed to marshal JSON response: %w", err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
+	}
+
+	output := string(jsonData)
 
 	if t.CallbacksHandler != nil {
 		t.CallbacksHandler.HandleToolEnd(ctx, output)

@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/tmc/langchaingo/callbacks"
@@ -36,6 +35,8 @@ Input: JSON payload with the following structure:
   "pattern": "*.go",
   "maxResults": 50        // optional: max files to return (default: 100)
 }
+
+Returns JSON with search results and metadata.
 
 SUPPORTED GLOB PATTERNS (using github.com/bmatcuk/doublestar/v4):
 - *.go - all Go files in current directory only
@@ -132,8 +133,15 @@ func (t FileSearchTool) Call(ctx context.Context, input string) (string, error) 
 		return "", err
 	}
 
-	// Format output
-	output := t.formatResults(searchPath, req.Pattern, matches, req.MaxResults)
+	// Format output as JSON
+	output, err := t.formatResults(searchPath, req.Pattern, matches, req.MaxResults)
+	if err != nil {
+		toolErr := fmt.Errorf("failed to format results: %w", err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
+	}
 
 	if t.CallbacksHandler != nil {
 		t.CallbacksHandler.HandleToolEnd(ctx, output)
@@ -185,33 +193,32 @@ func (t FileSearchTool) searchFiles(searchPath, pattern string, maxResults int) 
 	return matches, nil
 }
 
-// formatResults formats the search results into a readable output
-func (t FileSearchTool) formatResults(searchPath, pattern string, matches []string, maxResults int) string {
-	var output strings.Builder
-
-	output.WriteString("File search results:\n")
-	output.WriteString(fmt.Sprintf("Current directory: %s\n", searchPath))
-	output.WriteString(fmt.Sprintf("Pattern: %s\n", pattern))
-	output.WriteString(fmt.Sprintf("Found %d file(s)", len(matches)))
-
-	if len(matches) >= maxResults {
-		output.WriteString(fmt.Sprintf(" (limited to %d results)", maxResults))
-	}
-	output.WriteString("\n\n")
-
-	if len(matches) == 0 {
-		output.WriteString("No files found matching the pattern.\n")
-		return output.String()
+// formatResults formats the search results into a JSON response
+func (t FileSearchTool) formatResults(searchPath, pattern string, matches []string, maxResults int) (string, error) {
+	// Prepare JSON response structure
+	type FileSearchResponse struct {
+		CurrentDirectory string   `json:"currentDirectory"`
+		Pattern          string   `json:"pattern"`
+		TotalFound       int      `json:"totalFound"`
+		MaxResults       int      `json:"maxResults"`
+		ResultsLimited   bool     `json:"resultsLimited"`
+		Matches          []string `json:"matches"`
 	}
 
-	output.WriteString("Matching files:\n")
-	for i, match := range matches {
-		output.WriteString(fmt.Sprintf("%3d. %s\n", i+1, match))
+	response := FileSearchResponse{
+		CurrentDirectory: searchPath,
+		Pattern:          pattern,
+		TotalFound:       len(matches),
+		MaxResults:       maxResults,
+		ResultsLimited:   len(matches) >= maxResults,
+		Matches:          matches,
 	}
 
-	if len(matches) >= maxResults {
-		output.WriteString(fmt.Sprintf("\n⚠️  Results limited to %d files. Use maxResults parameter to adjust limit.\n", maxResults))
+	// Convert to JSON
+	jsonData, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal JSON response: %w", err)
 	}
 
-	return output.String()
+	return string(jsonData), nil
 }

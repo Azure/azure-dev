@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"azd.ai.start/internal/logging"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -15,6 +16,8 @@ import (
 )
 
 func NewRootCommand() *cobra.Command {
+	var debug bool
+
 	rootCmd := &cobra.Command{
 		Use:           "azd ai.chat <command> [options]",
 		Short:         "Enables interactive AI agent through AZD",
@@ -24,9 +27,11 @@ func NewRootCommand() *cobra.Command {
 			DisableDefaultCmd: true,
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAIAgent(cmd.Context(), args)
+			return runAIAgent(cmd.Context(), args, debug)
 		},
 	}
+
+	rootCmd.Flags().BoolVar(&debug, "debug", false, "Enable debug logging")
 
 	return rootCmd
 }
@@ -38,7 +43,7 @@ type AiModelConfig struct {
 }
 
 // runAIAgent creates and runs the enhanced AI agent using LangChain Go
-func runAIAgent(ctx context.Context, args []string) error {
+func runAIAgent(ctx context.Context, args []string, debug bool) error {
 	// Create a new context that includes the AZD access token
 	ctx = azdext.WithAccessToken(ctx)
 
@@ -64,11 +69,16 @@ func runAIAgent(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed to unmarshal AI model configuration: %w", err)
 	}
 
-	_, _ = azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-		Options: &azdext.ConfirmOptions{
-			Message: "Ready?",
-		},
-	})
+	if debug {
+		defaultValue := true
+
+		_, _ = azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+			Options: &azdext.ConfirmOptions{
+				Message:      fmt.Sprintf("Ready? (PID: %d - You can attach a debugger now)", os.Getpid()),
+				DefaultValue: &defaultValue,
+			},
+		})
+	}
 
 	// Common deployment names to try
 	azureAPIVersion := "2024-02-15-preview"
@@ -81,7 +91,7 @@ func runAIAgent(ctx context.Context, args []string) error {
 		fmt.Printf("🔵 Trying Azure OpenAI with deployment: %s\n", aiConfig.DeploymentName)
 
 		actionLogger := logging.NewActionLogger(
-			logging.WithDebug(false),
+			logging.WithDebug(debug),
 		)
 
 		llm, err = openai.New(

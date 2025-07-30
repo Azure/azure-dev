@@ -2,6 +2,7 @@ package io
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -19,7 +20,7 @@ func (t FileInfoTool) Name() string {
 }
 
 func (t FileInfoTool) Description() string {
-	return "Get information about a file (size, modification time, permissions). Input: file path (e.g., 'data.txt' or './docs/readme.md')"
+	return "Get information about a file (size, modification time, permissions). Input: file path (e.g., 'data.txt' or './docs/readme.md'). Returns JSON with file information."
 }
 
 func (t FileInfoTool) Call(ctx context.Context, input string) (string, error) {
@@ -44,15 +45,45 @@ func (t FileInfoTool) Call(ctx context.Context, input string) (string, error) {
 		return "", toolErr
 	}
 
-	var fileType string
-	if info.IsDir() {
-		fileType = "Directory"
-	} else {
-		fileType = "File"
+	// Prepare JSON response structure
+	type FileInfoResponse struct {
+		Path         string    `json:"path"`
+		Name         string    `json:"name"`
+		Type         string    `json:"type"`
+		IsDirectory  bool      `json:"isDirectory"`
+		Size         int64     `json:"size"`
+		ModifiedTime time.Time `json:"modifiedTime"`
+		Permissions  string    `json:"permissions"`
 	}
 
-	output := fmt.Sprintf("%s: %s\nSize: %d bytes\nModified: %s\nPermissions: %s\n\n",
-		fileType, input, info.Size(), info.ModTime().Format(time.RFC3339), info.Mode().String())
+	var fileType string
+	if info.IsDir() {
+		fileType = "directory"
+	} else {
+		fileType = "file"
+	}
+
+	response := FileInfoResponse{
+		Path:         input,
+		Name:         info.Name(),
+		Type:         fileType,
+		IsDirectory:  info.IsDir(),
+		Size:         info.Size(),
+		ModifiedTime: info.ModTime(),
+		Permissions:  info.Mode().String(),
+	}
+
+	// Convert to JSON
+	jsonData, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		toolErr := fmt.Errorf("failed to marshal JSON response: %w", err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		}
+		return "", toolErr
+	}
+
+	output := string(jsonData)
 
 	if t.CallbacksHandler != nil {
 		t.CallbacksHandler.HandleToolEnd(ctx, output)

@@ -2,6 +2,7 @@ package io
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,102 +16,204 @@ type DirectoryListTool struct {
 	CallbacksHandler callbacks.Handler
 }
 
+// ErrorResponse represents a JSON error response structure that can be reused across all tools
+type ErrorResponse struct {
+	Error   bool   `json:"error"`
+	Message string `json:"message"`
+}
+
 func (t DirectoryListTool) Name() string {
 	return "list_directory"
 }
 
 func (t DirectoryListTool) Description() string {
-	return "List files and folders in a directory. Input: directory path (use '.' for current directory)"
+	return `List files and folders in a directory. 
+Input: JSON object with required 'path' field: {"path": ".", "includeHidden": false}
+Returns: JSON with directory contents including file names, types, and sizes.
+The input must be formatted as a single line valid JSON string.`
 }
 
 func (t DirectoryListTool) Call(ctx context.Context, input string) (string, error) {
-	path := strings.TrimSpace(input)
-	if path == "" {
-		path = "."
+	// Parse JSON input
+	type InputParams struct {
+		Path          string `json:"path"`
+		IncludeHidden bool   `json:"includeHidden,omitempty"`
 	}
 
-	// Get absolute path for clarity
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("failed to get absolute path for %s: %w", path, err))
+	var params InputParams
+
+	// Clean the input first
+	cleanInput := strings.TrimSpace(input)
+
+	// Parse as JSON - this is now required
+	if err := json.Unmarshal([]byte(cleanInput), &params); err != nil {
+		errorResponse := ErrorResponse{
+			Error:   true,
+			Message: fmt.Sprintf("Invalid JSON input: %s. Expected format: {\"path\": \".\", \"include_hidden\": false}", err.Error()),
 		}
-		return "", fmt.Errorf("failed to get absolute path for %s: %w", path, err)
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("failed to parse JSON input: %w", err))
+		}
+		jsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
+		return string(jsonData), nil
 	}
 
-	// Invoke callback for tool start
+	// Validate required path field
+	if params.Path == "" {
+		params.Path = "."
+	}
+
+	path := strings.TrimSpace(params.Path)
+
+	// Add debug logging
 	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("Reading directory %s\n", input))
+		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("Processing JSON input: path='%s', include_hidden=%v", path, params.IncludeHidden))
+	}
+
+	// Get absolute path for clarity - handle "." explicitly to avoid potential issues
+	var absPath string
+	var err error
+
+	if path == "." {
+		// Explicitly get current working directory instead of relying on filepath.Abs(".")
+		absPath, err = os.Getwd()
+		if err != nil {
+			errorResponse := ErrorResponse{
+				Error:   true,
+				Message: fmt.Sprintf("Failed to get current working directory: %s", err.Error()),
+			}
+			if t.CallbacksHandler != nil {
+				t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("failed to get current working directory: %w", err))
+			}
+			jsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
+			return string(jsonData), nil
+		}
+	} else {
+		absPath, err = filepath.Abs(path)
+		if err != nil {
+			errorResponse := ErrorResponse{
+				Error:   true,
+				Message: fmt.Sprintf("Failed to get absolute path for %s: %s", path, err.Error()),
+			}
+			if t.CallbacksHandler != nil {
+				t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("failed to get absolute path for %s: %w", path, err))
+			}
+			jsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
+			return string(jsonData), nil
+		}
+	}
+
+	// Invoke callback for tool execution start
+	if t.CallbacksHandler != nil {
+		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("Reading directory %s (absolute: %s)", path, absPath))
 	}
 
 	// Check if directory exists
+	if t.CallbacksHandler != nil {
+		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("Checking if directory exists: '%s'", absPath))
+	}
+
 	info, err := os.Stat(absPath)
 	if err != nil {
+		var message string
+		if os.IsNotExist(err) {
+			message = fmt.Sprintf("Directory does not exist: %s", absPath)
+		} else {
+			message = fmt.Sprintf("Failed to access %s: %s (original input: '%s', cleaned path: '%s')", absPath, err.Error(), input, path)
+		}
+
+		errorResponse := ErrorResponse{
+			Error:   true,
+			Message: message,
+		}
 		if t.CallbacksHandler != nil {
 			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("failed to access %s: %w", absPath, err))
 		}
-		return "", fmt.Errorf("failed to access %s: %w", absPath, err)
+		jsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
+		return string(jsonData), nil
 	}
+
 	if !info.IsDir() {
+		errorResponse := ErrorResponse{
+			Error:   true,
+			Message: fmt.Sprintf("Path is not a directory: %s", absPath),
+		}
 		if t.CallbacksHandler != nil {
 			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("%s is not a directory", absPath))
 		}
-		return "", fmt.Errorf("%s is not a directory", absPath)
+		jsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
+		return string(jsonData), nil
 	}
 
 	// List directory contents
 	files, err := os.ReadDir(absPath)
 	if err != nil {
+		errorResponse := ErrorResponse{
+			Error:   true,
+			Message: fmt.Sprintf("Failed to read directory %s: %s", absPath, err.Error()),
+		}
 		if t.CallbacksHandler != nil {
 			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("failed to read directory %s: %w", absPath, err))
 		}
-		return "", fmt.Errorf("failed to read directory %s: %w", absPath, err)
+		jsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
+		return string(jsonData), nil
 	}
 
-	var result strings.Builder
-	result.WriteString(fmt.Sprintf("Contents of %s:\n", absPath))
-	result.WriteString(fmt.Sprintf("Total items: %d\n\n", len(files)))
+	// Prepare JSON response structure
+	type FileInfo struct {
+		Name  string `json:"name"`
+		Type  string `json:"type"`
+		Size  int64  `json:"size,omitempty"`
+		IsDir bool   `json:"isDirectory"`
+	}
 
-	// Separate directories and files
-	var dirs []string
-	var regularFiles []string
+	type DirectoryResponse struct {
+		Path       string     `json:"path"`
+		TotalItems int        `json:"totalItems"`
+		Items      []FileInfo `json:"items"`
+	}
+
+	var items []FileInfo
 
 	for _, file := range files {
+		fileInfo := FileInfo{
+			Name:  file.Name(),
+			IsDir: file.IsDir(),
+		}
+
 		if file.IsDir() {
-			dirs = append(dirs, file.Name()+"/")
+			fileInfo.Type = "directory"
 		} else {
-			info, err := file.Info()
-			if err != nil {
-				regularFiles = append(regularFiles, file.Name())
-			} else {
-				regularFiles = append(regularFiles, fmt.Sprintf("%s (%d bytes)", file.Name(), info.Size()))
+			fileInfo.Type = "file"
+			if info, err := file.Info(); err == nil {
+				fileInfo.Size = info.Size()
 			}
 		}
+
+		items = append(items, fileInfo)
 	}
 
-	// Display directories first
-	if len(dirs) > 0 {
-		result.WriteString("Directories:\n")
-		for _, dir := range dirs {
-			result.WriteString(fmt.Sprintf("  📁 %s\n", dir))
+	response := DirectoryResponse{
+		Path:       absPath,
+		TotalItems: len(files),
+		Items:      items,
+	}
+
+	// Convert to JSON
+	jsonData, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		errorResponse := ErrorResponse{
+			Error:   true,
+			Message: fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()),
 		}
-		result.WriteString("\n")
-	}
-
-	// Then display files
-	if len(regularFiles) > 0 {
-		result.WriteString("Files:\n")
-		for _, file := range regularFiles {
-			result.WriteString(fmt.Sprintf("  📄 %s\n", file))
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("failed to marshal JSON response: %w", err))
 		}
+		errorJsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
+		return string(errorJsonData), nil
 	}
 
-	if len(dirs) == 0 && len(regularFiles) == 0 {
-		result.WriteString("Directory is empty.\n")
-	}
-
-	result.WriteString("\n")
-	output := result.String()
+	output := string(jsonData)
 
 	// Invoke callback for tool end
 	if t.CallbacksHandler != nil {

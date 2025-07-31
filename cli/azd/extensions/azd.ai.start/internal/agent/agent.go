@@ -39,9 +39,12 @@ func NewAzureAIAgent(llm *openai.LLM) (*AzureAIAgent, error) {
 		memory.WithAIPrefix("AI"),
 	)
 
+	// Create sampling handler for MCP
+	samplingHandler := mcptools.NewMcpSamplingHandler(llm)
+
 	toolLoaders := []localtools.ToolLoader{
 		localtools.NewLocalToolsLoader(llm.CallbacksHandler),
-		mcptools.NewMcpToolsLoader(llm.CallbacksHandler),
+		mcptools.NewMcpToolsLoader(llm.CallbacksHandler, samplingHandler),
 	}
 
 	allTools := []tools.Tool{}

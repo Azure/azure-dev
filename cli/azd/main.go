@@ -62,7 +62,9 @@ func main() {
 
 	rootContainer := ioc.NewNestedContainer(nil)
 	ioc.RegisterInstance(rootContainer, ctx)
-	cmdErr := cmd.NewRootCmd(false, nil, rootContainer).ExecuteContext(ctx)
+
+	// Execute with shortcut preprocessing support
+	cmdErr := cmd.ExecuteRootCmdWithShortcuts(ctx, false, nil, rootContainer)
 
 	oneauth.Shutdown()
 

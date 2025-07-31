@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -8,6 +9,8 @@ import (
 
 	langchaingo_mcp_adapter "github.com/i2y/langchaingo-mcp-adapter"
 	"github.com/mark3labs/mcp-go/client"
+	"github.com/mark3labs/mcp-go/client/transport"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/tmc/langchaingo/callbacks"
 	"github.com/tmc/langchaingo/tools"
 )
@@ -26,6 +29,14 @@ type ServerConfig struct {
 	Command string   `json:"command"`
 	Args    []string `json:"args,omitempty"`
 	Env     []string `json:"env,omitempty"`
+}
+
+type McpSamplingHandler struct {
+}
+
+func (h *McpSamplingHandler) CreateMessage(ctx context.Context, request mcp.CreateMessageRequest) (*mcp.CreateMessageResult, error) {
+	// TODO: implement sampling handler
+	return &mcp.CreateMessageResult{}, nil
 }
 
 type McpToolsLoader struct {
@@ -50,9 +61,29 @@ func (l *McpToolsLoader) LoadTools() ([]tools.Tool, error) {
 	// Iterate through each server configuration
 	for serverName, serverConfig := range config.Servers {
 		// Create MCP client for the server using stdio
-		mcpClient, err := client.NewStdioMCPClient(serverConfig.Command, serverConfig.Env, serverConfig.Args...)
+		samplingHandler := &McpSamplingHandler{}
+		stdioTransport := transport.NewStdio(serverConfig.Command, serverConfig.Env, serverConfig.Args...)
+		mcpClient := client.NewClient(stdioTransport, client.WithSamplingHandler(samplingHandler))
+
+		ctx := context.Background()
+
+		if err := mcpClient.Start(ctx); err != nil {
+			return nil, err
+		}
+
+		// Initialize the connection
+		_, err := mcpClient.Initialize(ctx, mcp.InitializeRequest{
+			Params: mcp.InitializeParams{
+				ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
+				ClientInfo: mcp.Implementation{
+					Name:    "azd-agent-host",
+					Version: "1.0.0",
+				},
+				Capabilities: mcp.ClientCapabilities{},
+			},
+		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to create MCP client for server %s: %w", serverName, err)
+			return nil, err
 		}
 
 		// Create the adapter

@@ -155,12 +155,29 @@ func (al *ActionLogger) HandleAgentAction(ctx context.Context, action schema.Age
 			var valueStr string
 			switch v := value.(type) {
 			case []interface{}:
+				// Skip empty arrays
+				if len(v) == 0 {
+					continue
+				}
 				// Handle arrays by joining with spaces
 				var strSlice []string
 				for _, item := range v {
 					strSlice = append(strSlice, strings.TrimSpace(string(fmt.Sprintf("%v", item))))
 				}
 				valueStr = strings.Join(strSlice, " ")
+			case map[string]interface{}:
+				// Skip empty maps
+				if len(v) == 0 {
+					continue
+				}
+				valueStr = strings.TrimSpace(fmt.Sprintf("%v", v))
+			case string:
+				// Skip empty strings
+				trimmed := strings.TrimSpace(v)
+				if trimmed == "" {
+					continue
+				}
+				valueStr = trimmed
 			default:
 				valueStr = strings.TrimSpace(fmt.Sprintf("%v", v))
 			}
@@ -173,17 +190,23 @@ func (al *ActionLogger) HandleAgentAction(ctx context.Context, action schema.Age
 		var paramStr string
 		if len(params) > 0 {
 			paramStr = strings.Join(params, ", ")
+			paramStr = truncateString(paramStr, 100)
+			output := fmt.Sprintf("\n🤖 Agent: Calling %s tool with %s\n", action.Tool, paramStr)
+			color.Green(output)
 		} else {
-			paramStr = "tool"
+			output := fmt.Sprintf("\n🤖 Agent: Calling %s tool\n", action.Tool)
+			color.Green(output)
 		}
-
-		paramStr = truncateString(paramStr, 100)
-		output := fmt.Sprintf("\n🤖 Agent: Calling %s tool with %s\n", action.Tool, paramStr)
-		color.Green(output)
 	} else {
 		// JSON parsing failed, show the input as text with truncation
-		toolInput := truncateString(action.ToolInput, 100)
-		color.Green("\n🤖 Agent: Calling %s tool with %s\n", action.Tool, toolInput)
+		toolInput := strings.TrimSpace(action.ToolInput)
+		if toolInput == "" {
+			output := fmt.Sprintf("\n🤖 Agent: Calling %s tool\n", action.Tool)
+			color.Green(output)
+		} else {
+			toolInput = truncateString(toolInput, 100)
+			color.Green("\n🤖 Agent: Calling %s tool with %s\n", action.Tool, toolInput)
+		}
 	}
 }
 

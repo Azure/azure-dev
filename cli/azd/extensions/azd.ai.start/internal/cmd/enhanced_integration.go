@@ -66,7 +66,7 @@ func RunEnhancedAzureAgent(ctx context.Context, llm *openai.LLM, args []string) 
 		// Process the query with the enhanced agent
 		err := azureAgent.ProcessQuery(ctx, userInput)
 		if err != nil {
-			return err
+			continue
 		}
 	}
 

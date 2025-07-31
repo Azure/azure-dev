@@ -27,6 +27,9 @@ func (t MoveFileTool) Call(ctx context.Context, input string) (string, error) {
 		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("move_file: %s", input))
 	}
 
+	input = strings.TrimPrefix(input, `"`)
+	input = strings.TrimSuffix(input, `"`)
+
 	if input == "" {
 		err := fmt.Errorf("input is required in format 'source|destination'")
 		if t.CallbacksHandler != nil {

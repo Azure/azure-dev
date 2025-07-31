@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/tmc/langchaingo/callbacks"
 )
@@ -26,6 +27,9 @@ func (t CreateDirectoryTool) Call(ctx context.Context, input string) (string, er
 	if t.CallbacksHandler != nil {
 		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("create_directory: %s", input))
 	}
+
+	input = strings.TrimPrefix(input, `"`)
+	input = strings.TrimSuffix(input, `"`)
 
 	if input == "" {
 		err := fmt.Errorf("directory path is required")

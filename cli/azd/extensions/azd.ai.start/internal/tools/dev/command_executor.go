@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 
+	"azd.ai.start/internal/tools/common"
 	"github.com/tmc/langchaingo/callbacks"
 )
 
@@ -20,7 +23,7 @@ func (t CommandExecutorTool) Name() string {
 }
 
 func (t CommandExecutorTool) Description() string {
-	return `Execute any command with arguments. Simple command execution without inference.
+	return `Execute any command with arguments through the system shell for better compatibility.
 
 Input should be a JSON object with these fields:
 {
@@ -34,10 +37,19 @@ Required fields:
 Optional fields:
 - args: Array of arguments to pass (default: [])
 
+Returns a JSON response with execution details:
+- Success responses include: command, fullCommand, exitCode, success, stdout, stderr
+- Error responses include: error (true), message
+
+The tool automatically uses the appropriate shell:
+- Windows: cmd.exe /C for built-in commands and proper path resolution
+- Unix/Linux/macOS: sh -c for POSIX compatibility
+
 Examples:
 - {"command": "git", "args": ["status"]}
 - {"command": "npm", "args": ["install"]}
-- {"command": "bash", "args": ["./build.sh", "--env", "prod"]}
+- {"command": "dir"} (Windows built-in command)
+- {"command": "ls", "args": ["-la"]} (Unix command)
 - {"command": "powershell", "args": ["-ExecutionPolicy", "Bypass", "-File", "deploy.ps1"]}
 - {"command": "python", "args": ["main.py", "--debug"]}
 - {"command": "node", "args": ["server.js", "--port", "3000"]}
@@ -51,6 +63,15 @@ type CommandRequest struct {
 	Args    []string `json:"args,omitempty"`
 }
 
+type CommandResponse struct {
+	Command     string `json:"command"`
+	FullCommand string `json:"fullCommand"`
+	ExitCode    int    `json:"exitCode"`
+	Success     bool   `json:"success"`
+	Stdout      string `json:"stdout,omitempty"`
+	Stderr      string `json:"stderr,omitempty"`
+}
+
 func (t CommandExecutorTool) Call(ctx context.Context, input string) (string, error) {
 	// Invoke callback for tool start
 	if t.CallbacksHandler != nil {
@@ -58,30 +79,42 @@ func (t CommandExecutorTool) Call(ctx context.Context, input string) (string, er
 	}
 
 	if input == "" {
-		err := fmt.Errorf("command execution request is required")
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
+		errorResponse := common.ErrorResponse{
+			Error:   true,
+			Message: "command execution request is required",
 		}
-		return "", err
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("command execution request is required"))
+		}
+		jsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
+		return string(jsonData), nil
 	}
 
 	// Parse the JSON request
 	var req CommandRequest
 	if err := json.Unmarshal([]byte(input), &req); err != nil {
-		toolErr := fmt.Errorf("failed to parse command request: %w", err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		errorResponse := common.ErrorResponse{
+			Error:   true,
+			Message: fmt.Sprintf("failed to parse command request: %s", err.Error()),
 		}
-		return "", toolErr
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("failed to parse command request: %w", err))
+		}
+		jsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
+		return string(jsonData), nil
 	}
 
 	// Validate required fields
 	if req.Command == "" {
-		err := fmt.Errorf("command is required")
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
+		errorResponse := common.ErrorResponse{
+			Error:   true,
+			Message: "command is required",
 		}
-		return "", err
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("command is required"))
+		}
+		jsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
+		return string(jsonData), nil
 	}
 
 	// Set defaults
@@ -92,28 +125,66 @@ func (t CommandExecutorTool) Call(ctx context.Context, input string) (string, er
 	// Execute the command (runs in current working directory)
 	result, err := t.executeCommand(ctx, req.Command, req.Args)
 	if err != nil {
-		toolErr := fmt.Errorf("execution failed: %w", err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		errorResponse := common.ErrorResponse{
+			Error:   true,
+			Message: fmt.Sprintf("execution failed: %s", err.Error()),
 		}
-		return "", toolErr
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("execution failed: %w", err))
+		}
+		jsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
+		return string(jsonData), nil
 	}
 
-	// Format the output
-	output := t.formatOutput(req.Command, req.Args, result)
+	// Create the success response (even if command had non-zero exit code)
+	response := t.createSuccessResponse(req.Command, req.Args, result)
+
+	// Convert to JSON
+	jsonData, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		errorResponse := common.ErrorResponse{
+			Error:   true,
+			Message: fmt.Sprintf("failed to marshal JSON response: %s", err.Error()),
+		}
+		if t.CallbacksHandler != nil {
+			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("failed to marshal JSON response: %w", err))
+		}
+		errorJsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
+		return string(errorJsonData), nil
+	}
 
 	// Invoke callback for tool end
 	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolEnd(ctx, output)
+		t.CallbacksHandler.HandleToolEnd(ctx, string(jsonData))
 	}
 
-	return output, nil
+	return string(jsonData), nil
 }
 
 func (t CommandExecutorTool) executeCommand(ctx context.Context, command string, args []string) (*executionResult, error) {
-	cmd := exec.CommandContext(ctx, command, args...)
-	// cmd.Dir is not set, so it uses the current working directory
-	// cmd.Env is not set, so it inherits the current environment
+	// Handle shell-specific command execution for better compatibility
+	var cmd *exec.Cmd
+
+	if runtime.GOOS == "windows" {
+		// On Windows, use cmd.exe to handle built-in commands and path resolution
+		allArgs := append([]string{"/C", command}, args...)
+		cmd = exec.CommandContext(ctx, "cmd", allArgs...)
+	} else {
+		// On Unix-like systems, use sh for better command resolution
+		fullCommand := command
+		if len(args) > 0 {
+			fullCommand += " " + strings.Join(args, " ")
+		}
+		cmd = exec.CommandContext(ctx, "sh", "-c", fullCommand)
+	}
+
+	// Set working directory explicitly to current directory
+	if wd, err := os.Getwd(); err == nil {
+		cmd.Dir = wd
+	}
+
+	// Inherit environment variables
+	cmd.Env = os.Environ()
 
 	var stdout, stderr strings.Builder
 
@@ -122,11 +193,18 @@ func (t CommandExecutorTool) executeCommand(ctx context.Context, command string,
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 
-	// Get exit code
+	// Get exit code and determine if this is a system error vs command error
 	exitCode := 0
+	var cmdError error
+
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
+			// Command ran but exited with non-zero code - this is normal
 			exitCode = exitError.ExitCode()
+			cmdError = nil // Don't treat non-zero exit as a system error
+		} else {
+			// System error (command not found, permission denied, etc.)
+			cmdError = err
 		}
 	}
 
@@ -134,8 +212,36 @@ func (t CommandExecutorTool) executeCommand(ctx context.Context, command string,
 		ExitCode: exitCode,
 		Stdout:   stdout.String(),
 		Stderr:   stderr.String(),
-		Error:    err,
-	}, nil
+		Error:    cmdError, // Only system errors, not command exit codes
+	}, cmdError // Return system errors to caller
+}
+
+func (t CommandExecutorTool) createSuccessResponse(command string, args []string, result *executionResult) CommandResponse {
+	// Create full command string
+	fullCommand := command
+	if len(args) > 0 {
+		fullCommand += " " + strings.Join(args, " ")
+	}
+
+	// Limit output to prevent overwhelming the response
+	stdout := result.Stdout
+	if len(stdout) > 2000 {
+		stdout = stdout[:2000] + "\n... (output truncated)"
+	}
+
+	stderr := result.Stderr
+	if len(stderr) > 1000 {
+		stderr = stderr[:1000] + "\n... (error output truncated)"
+	}
+
+	return CommandResponse{
+		Command:     command,
+		FullCommand: fullCommand,
+		ExitCode:    result.ExitCode,
+		Success:     result.ExitCode == 0,
+		Stdout:      stdout,
+		Stderr:      stderr,
+	}
 }
 
 type executionResult struct {
@@ -143,51 +249,4 @@ type executionResult struct {
 	Stdout   string
 	Stderr   string
 	Error    error
-}
-
-func (t CommandExecutorTool) formatOutput(command string, args []string, result *executionResult) string {
-	var output strings.Builder
-
-	// Show the full command that was executed
-	fullCommand := command
-	if len(args) > 0 {
-		fullCommand += " " + strings.Join(args, " ")
-	}
-
-	output.WriteString(fmt.Sprintf("Executed: %s\n", fullCommand))
-	output.WriteString(fmt.Sprintf("Exit code: %d\n", result.ExitCode))
-
-	if result.ExitCode == 0 {
-		output.WriteString("Status: ✅ Success\n")
-	} else {
-		output.WriteString("Status: ❌ Failed\n")
-	}
-
-	if result.Stdout != "" {
-		output.WriteString("\n--- Standard Output ---\n")
-		// Limit output to prevent overwhelming the LLM
-		stdout := result.Stdout
-		if len(stdout) > 2000 {
-			stdout = stdout[:2000] + "\n... (output truncated)"
-		}
-		output.WriteString(stdout)
-		output.WriteString("\n")
-	}
-
-	if result.Stderr != "" {
-		output.WriteString("\n--- Standard Error ---\n")
-		// Limit error output
-		stderr := result.Stderr
-		if len(stderr) > 1000 {
-			stderr = stderr[:1000] + "\n... (error output truncated)"
-		}
-		output.WriteString(stderr)
-		output.WriteString("\n")
-	}
-
-	if result.Error != nil && result.ExitCode != 0 {
-		output.WriteString(fmt.Sprintf("\nError details: %s\n", result.Error.Error()))
-	}
-
-	return output.String()
 }

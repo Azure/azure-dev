@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/tmc/langchaingo/callbacks"
@@ -27,6 +28,9 @@ func (t FileInfoTool) Call(ctx context.Context, input string) (string, error) {
 	if t.CallbacksHandler != nil {
 		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("file_info: %s", input))
 	}
+
+	input = strings.TrimPrefix(input, `"`)
+	input = strings.TrimSuffix(input, `"`)
 
 	if input == "" {
 		err := fmt.Errorf("file path is required")

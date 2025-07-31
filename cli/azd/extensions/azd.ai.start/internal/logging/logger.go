@@ -6,6 +6,7 @@ package logging
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -65,7 +66,9 @@ func (al *ActionLogger) HandleLLMGenerateContentEnd(ctx context.Context, res *ll
 		}
 
 		// Find all "Thought:" patterns and extract the content that follows
-		thoughtRegex := regexp.MustCompile(`(?i)thought:\s*(.*)`)
+		// (?is) flags: i=case insensitive, s=dot matches newlines
+		// .*? is non-greedy to stop at the first occurrence of next pattern or end
+		thoughtRegex := regexp.MustCompile(`(?is)thought:\s*(.*?)(?:\n\s*(?:action|final answer|observation|ai):|$)`)
 		matches := thoughtRegex.FindAllStringSubmatch(content, -1)
 
 		for _, match := range matches {
@@ -120,6 +123,14 @@ func (al *ActionLogger) HandleChainError(ctx context.Context, err error) {
 	color.Red("\n%s\n", err.Error())
 }
 
+// truncateString truncates a string to maxLen characters and adds "..." if truncated
+func truncateString(s string, maxLen int) string {
+	if len(s) > maxLen {
+		return s[:maxLen-3] + "..."
+	}
+	return s
+}
+
 // HandleAgentAction is called when an agent action is planned
 func (al *ActionLogger) HandleAgentAction(ctx context.Context, action schema.AgentAction) {
 	// Print "Calling <action>"
@@ -132,18 +143,47 @@ func (al *ActionLogger) HandleAgentAction(ctx context.Context, action schema.Age
 
 	var toolInput map[string]interface{}
 	if err := json.Unmarshal([]byte(action.ToolInput), &toolInput); err == nil {
-		// Successfully parsed JSON, check for filename parameter
-		if filename, ok := toolInput["filename"]; ok {
-			if filenameStr, ok := filename.(string); ok {
-				color.Green("\n🤖 Agent: Calling %s %s\n", action.Tool, filenameStr)
-				return
+		// Successfully parsed JSON, create comma-delimited key-value pairs
+		excludedKeys := map[string]bool{"content": true}
+		var params []string
+
+		for key, value := range toolInput {
+			if excludedKeys[key] {
+				continue
+			}
+
+			var valueStr string
+			switch v := value.(type) {
+			case []interface{}:
+				// Handle arrays by joining with spaces
+				var strSlice []string
+				for _, item := range v {
+					strSlice = append(strSlice, strings.TrimSpace(string(fmt.Sprintf("%v", item))))
+				}
+				valueStr = strings.Join(strSlice, " ")
+			default:
+				valueStr = strings.TrimSpace(fmt.Sprintf("%v", v))
+			}
+
+			if valueStr != "" {
+				params = append(params, fmt.Sprintf("%s: %s", key, valueStr))
 			}
 		}
-		// JSON parsed but no filename found, use fallback format
-		color.Green("\n🤖 Agent: Calling %s tool\n", action.Tool)
+
+		var paramStr string
+		if len(params) > 0 {
+			paramStr = strings.Join(params, ", ")
+		} else {
+			paramStr = "tool"
+		}
+
+		paramStr = truncateString(paramStr, 100)
+		output := fmt.Sprintf("\n🤖 Agent: Calling %s tool with %s\n", action.Tool, paramStr)
+		color.Green(output)
 	} else {
-		// JSON parsing failed, show the input as text
-		color.Green("\n🤖 Agent: Calling %s tool with %s\n", action.Tool, action.ToolInput)
+		// JSON parsing failed, show the input as text with truncation
+		toolInput := truncateString(action.ToolInput, 100)
+		color.Green("\n🤖 Agent: Calling %s tool with %s\n", action.Tool, toolInput)
 	}
 }
 

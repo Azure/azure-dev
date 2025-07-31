@@ -1,0 +1,28 @@
+package azd
+
+import (
+	"context"
+
+	"azd.ai.start/internal/tools/azd/prompts"
+	"github.com/tmc/langchaingo/tools"
+)
+
+var _ tools.Tool = &AzdIacGenerationRulesTool{}
+
+type AzdIacGenerationRulesTool struct {
+}
+
+func (t *AzdIacGenerationRulesTool) Name() string {
+	return "azd_iac_generation_rules"
+}
+
+func (t *AzdIacGenerationRulesTool) Description() string {
+	return `
+		Gets the infrastructure as code (IaC) rules and best practices and patterns to use when generating bicep files and modules for use within AZD.
+		Input: empty string
+	`
+}
+
+func (t *AzdIacGenerationRulesTool) Call(ctx context.Context, input string) (string, error) {
+	return prompts.AzdIacRulesPrompt, nil
+}

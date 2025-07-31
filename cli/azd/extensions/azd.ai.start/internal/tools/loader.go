@@ -4,6 +4,7 @@ import (
 	"github.com/tmc/langchaingo/callbacks"
 	"github.com/tmc/langchaingo/tools"
 
+	"azd.ai.start/internal/tools/azd"
 	"azd.ai.start/internal/tools/dev"
 	"azd.ai.start/internal/tools/io"
 )
@@ -21,6 +22,7 @@ type LocalToolsLoader struct {
 func NewLocalToolsLoader(callbackHandler callbacks.Handler) *LocalToolsLoader {
 	return &LocalToolsLoader{
 		loaders: []ToolLoader{
+			azd.NewAzdToolsLoader(callbackHandler),
 			dev.NewDevToolsLoader(callbackHandler),
 			io.NewIoToolsLoader(callbackHandler),
 		},

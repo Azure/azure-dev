@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd/add"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd/show"
+	internalMiddleware "github.com/azure/azure-dev/cli/azd/internal/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -361,6 +362,7 @@ func NewRootCmd(
 	root.
 		UseMiddleware("debug", middleware.NewDebugMiddleware).
 		UseMiddleware("ux", middleware.NewUxMiddleware).
+		UseMiddleware("template-version", internalMiddleware.NewTemplateVersionMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
 		}).

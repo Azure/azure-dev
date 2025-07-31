@@ -1,6 +1,6 @@
 {
   "name": "setup-azd",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -10,7 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "azure-pipelines-task-lib": "^4.4.0"
+    "azure-pipelines-task-lib": "^5.2.1"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.9",

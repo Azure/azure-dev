@@ -43,5 +43,6 @@ From `setupAzd` folder, run `npm test`
 
 - Update `setupAzd/task.json` with the `version` number.
 - Update `vss-extension.json` with the `version` to release.
+- Update `setupAzd/package.json` with the `version` to release.
 - Run the `build` steps to produce the `vsix` release artifact.
 - Follow [publish steps](https://learn.microsoft.com/azure/devops/extend/develop/add-build-task?view=azure-devops#5-publish-your-extension) to update the Marketplace.

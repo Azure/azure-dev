@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/tmc/langchaingo/callbacks"
 )
@@ -25,6 +26,9 @@ func (t DeleteFileTool) Call(ctx context.Context, input string) (string, error) 
 	if t.CallbacksHandler != nil {
 		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("delete_file: %s", input))
 	}
+
+	input = strings.TrimPrefix(input, `"`)
+	input = strings.TrimSuffix(input, `"`)
 
 	if input == "" {
 		err := fmt.Errorf("file path is required")

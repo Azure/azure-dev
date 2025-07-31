@@ -8,18 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azd.ai.start/internal/tools/common"
 	"github.com/tmc/langchaingo/callbacks"
 )
 
 // DirectoryListTool implements the Tool interface for listing directory contents
 type DirectoryListTool struct {
 	CallbacksHandler callbacks.Handler
-}
-
-// ErrorResponse represents a JSON error response structure that can be reused across all tools
-type ErrorResponse struct {
-	Error   bool   `json:"error"`
-	Message string `json:"message"`
 }
 
 func (t DirectoryListTool) Name() string {
@@ -47,7 +42,7 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 
 	// Parse as JSON - this is now required
 	if err := json.Unmarshal([]byte(cleanInput), &params); err != nil {
-		errorResponse := ErrorResponse{
+		errorResponse := common.ErrorResponse{
 			Error:   true,
 			Message: fmt.Sprintf("Invalid JSON input: %s. Expected format: {\"path\": \".\", \"include_hidden\": false}", err.Error()),
 		}
@@ -78,7 +73,7 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 		// Explicitly get current working directory instead of relying on filepath.Abs(".")
 		absPath, err = os.Getwd()
 		if err != nil {
-			errorResponse := ErrorResponse{
+			errorResponse := common.ErrorResponse{
 				Error:   true,
 				Message: fmt.Sprintf("Failed to get current working directory: %s", err.Error()),
 			}
@@ -91,7 +86,7 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 	} else {
 		absPath, err = filepath.Abs(path)
 		if err != nil {
-			errorResponse := ErrorResponse{
+			errorResponse := common.ErrorResponse{
 				Error:   true,
 				Message: fmt.Sprintf("Failed to get absolute path for %s: %s", path, err.Error()),
 			}
@@ -122,7 +117,7 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 			message = fmt.Sprintf("Failed to access %s: %s (original input: '%s', cleaned path: '%s')", absPath, err.Error(), input, path)
 		}
 
-		errorResponse := ErrorResponse{
+		errorResponse := common.ErrorResponse{
 			Error:   true,
 			Message: message,
 		}
@@ -134,7 +129,7 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 	}
 
 	if !info.IsDir() {
-		errorResponse := ErrorResponse{
+		errorResponse := common.ErrorResponse{
 			Error:   true,
 			Message: fmt.Sprintf("Path is not a directory: %s", absPath),
 		}
@@ -148,7 +143,7 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 	// List directory contents
 	files, err := os.ReadDir(absPath)
 	if err != nil {
-		errorResponse := ErrorResponse{
+		errorResponse := common.ErrorResponse{
 			Error:   true,
 			Message: fmt.Sprintf("Failed to read directory %s: %s", absPath, err.Error()),
 		}
@@ -202,7 +197,7 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 	// Convert to JSON
 	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		errorResponse := ErrorResponse{
+		errorResponse := common.ErrorResponse{
 			Error:   true,
 			Message: fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()),
 		}

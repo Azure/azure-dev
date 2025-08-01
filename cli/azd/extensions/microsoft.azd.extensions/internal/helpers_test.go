@@ -140,38 +140,43 @@ func TestGlobArtifacts(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		pattern  string
+		patterns []string
 		expected []string
 		wantErr  bool
 	}{
 		{
 			name:     "Concrete file path - zip",
-			pattern:  zipFile,
+			patterns: []string{zipFile},
 			expected: []string{zipFile},
 			wantErr:  false,
 		},
 		{
 			name:     "Concrete file path - tar.gz",
-			pattern:  tarGzFile,
+			patterns: []string{tarGzFile},
 			expected: []string{tarGzFile},
 			wantErr:  false,
 		},
 		{
 			name:     "Concrete file path - non-existent",
-			pattern:  filepath.Join(tempDir, "nonexistent.zip"),
+			patterns: []string{filepath.Join(tempDir, "nonexistent.zip")},
 			expected: []string{},
 			wantErr:  false,
 		},
 		{
-			name:     "Glob pattern",
-			pattern:  filepath.Join(tempDir, "*"),
+			name:     "Multiple patterns",
+			patterns: []string{filepath.Join(tempDir, "*.zip"), filepath.Join(tempDir, "*.tar.gz")},
 			expected: []string{zipFile, tarGzFile},
 			wantErr:  false,
 		},
 		{
-			name:    "Glob pattern with extension",
-			pattern: filepath.Join(tempDir, "*.zip"),
-			// Both files should be found since GlobArtifacts looks for both .zip and .tar.gz
+			name:     "Single glob pattern",
+			patterns: []string{filepath.Join(tempDir, "*.zip")},
+			expected: []string{zipFile},
+			wantErr:  false,
+		},
+		{
+			name:     "Mixed concrete and pattern",
+			patterns: []string{zipFile, filepath.Join(tempDir, "*.tar.gz")},
 			expected: []string{zipFile, tarGzFile},
 			wantErr:  false,
 		},
@@ -179,7 +184,7 @@ func TestGlobArtifacts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := GlobArtifacts(tt.pattern)
+			result, err := GlobArtifacts(tt.patterns)
 			if tt.wantErr {
 				require.Error(t, err)
 				return

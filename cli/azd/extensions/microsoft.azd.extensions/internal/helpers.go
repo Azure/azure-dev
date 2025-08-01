@@ -265,47 +265,28 @@ func AzdConfigDir() (string, error) {
 	return azdConfigDir, nil
 }
 
-// GlobArtifacts finds both .zip and .tar.gz artifacts in the given path pattern
-func GlobArtifacts(pattern string) ([]string, error) {
+// GlobArtifacts finds artifacts matching the given patterns
+func GlobArtifacts(patterns []string) ([]string, error) {
 	var allFiles []string
 
-	// Check if the pattern is a concrete file path (no wildcards)
-	if !strings.Contains(pattern, "*") && !strings.Contains(pattern, "?") && !strings.Contains(pattern, "[") {
-		// It's a concrete file path, check if it exists
-		if _, err := os.Stat(pattern); err == nil {
-			return []string{pattern}, nil
+	for _, pattern := range patterns {
+		// Check if the pattern is a concrete file path (no wildcards)
+		if !strings.Contains(pattern, "*") && !strings.Contains(pattern, "?") && !strings.Contains(pattern, "[") {
+			// It's a concrete file path, check if it exists
+			if _, err := os.Stat(pattern); err == nil {
+				allFiles = append(allFiles, pattern)
+			}
+			// If the file doesn't exist, skip it (no error to match glob behavior)
+			continue
 		}
-		// If the file doesn't exist, return an empty list (no error to match glob behavior)
-		return []string{}, nil
-	}
 
-	// Replace the file extension with .zip if the pattern contains an extension
-	basePath := strings.TrimSuffix(pattern, filepath.Ext(pattern))
-	if basePath == pattern {
-		// No extension in pattern, assume it's a directory path
-		basePath = pattern
+		// Use filepath.Glob for pattern matching
+		files, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, err
+		}
+		allFiles = append(allFiles, files...)
 	}
-
-	// Try .zip files
-	zipPattern := basePath
-	if !strings.HasSuffix(zipPattern, "*") {
-		zipPattern = filepath.Join(basePath, "*")
-	}
-	zipPattern = strings.TrimSuffix(zipPattern, "*") + "*.zip"
-
-	zipFiles, err := filepath.Glob(zipPattern)
-	if err != nil {
-		return nil, err
-	}
-	allFiles = append(allFiles, zipFiles...)
-
-	// Try .tar.gz files
-	tarGzPattern := strings.TrimSuffix(zipPattern, ".zip") + ".tar.gz"
-	tarGzFiles, err := filepath.Glob(tarGzPattern)
-	if err != nil {
-		return nil, err
-	}
-	allFiles = append(allFiles, tarGzFiles...)
 
 	return allFiles, nil
 }

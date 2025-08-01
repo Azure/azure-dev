@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 )
@@ -124,12 +123,12 @@ func (at *staticWebAppTarget) Deploy(
 			cwd == serviceConfig.Project.Path {
 			return nil, &internal.ErrorWithSuggestion{
 				Err: fmt.Errorf("service source and output folder cannot be at the root: %s", serviceConfig.RelativePath),
-				Suggestion: (&ux.MultilineMessage{Lines: []string{
+				Suggestion: strings.Join([]string{
 					"If your service is at the root of your project, next to azure.yaml, move your service to a subfolder.",
 					"Azure Static Web Apps does not support deploying from a folder that is for both the service" +
 						" source and the output folder.",
 					"Update the path of the service in azure.yaml to point to the subfolder and try deploying again.",
-				}}).ToString(""),
+				}, "\n"),
 			}
 		}
 

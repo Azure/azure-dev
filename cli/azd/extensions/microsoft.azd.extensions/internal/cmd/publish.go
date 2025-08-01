@@ -74,7 +74,7 @@ func newPublishCommand() *cobra.Command {
 	publishCmd.Flags().StringVar(
 		&flags.artifacts,
 		"artifacts", flags.artifacts,
-		"Path to the artifacts to upload to the release (e.g. ./artifacts/*.zip)",
+		"Path to the artifacts to upload to the release (e.g. ./artifacts/*.zip, ./artifacts/*.tar.gz)",
 	)
 
 	return publishCmd
@@ -101,7 +101,7 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 			return err
 		}
 
-		flags.artifacts = filepath.Join(localRegistryArtifactsPath, extensionMetadata.Id, flags.version, "*.zip")
+		flags.artifacts = filepath.Join(localRegistryArtifactsPath, extensionMetadata.Id, flags.version, "*")
 	}
 
 	// Setting remote repository overrides local artifacts
@@ -185,7 +185,16 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 					return ux.Skipped, nil
 				}
 
-				files, err := filepath.Glob(flags.artifacts)
+				// Determine patterns to use
+				patterns, err := internal.DetermineArtifactPatterns(flags.artifacts, extensionMetadata.Id, flags.version)
+				if err != nil {
+					return ux.Error, common.NewDetailedError(
+						"Failed to get registry path",
+						err,
+					)
+				}
+
+				files, err := internal.GlobArtifacts(patterns)
 				if err != nil {
 					return ux.Error, common.NewDetailedError(
 						"Failed to list artifacts",

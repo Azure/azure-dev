@@ -63,7 +63,7 @@ func newReleaseCommand() *cobra.Command {
 	releaseCmd.Flags().StringVar(
 		&flags.artifacts,
 		"artifacts", flags.artifacts,
-		"Path to the artifacts to upload to the release (e.g. ./artifacts/*.zip)",
+		"Path to the artifacts to upload to the release (e.g. ./artifacts/*.zip, ./artifacts/*.tar.gz)",
 	)
 	releaseCmd.Flags().StringVarP(
 		&flags.title,
@@ -142,7 +142,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 			return err
 		}
 
-		flags.artifacts = filepath.Join(localRegistryArtifactsPath, extensionMetadata.Id, flags.version, "*.zip")
+		flags.artifacts = filepath.Join(localRegistryArtifactsPath, extensionMetadata.Id, flags.version, "*")
 	}
 
 	if flags.notes != "" && flags.notesFile != "" {
@@ -232,7 +232,27 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 		AddTask(ux.TaskOptions{
 			Title: "Validating artifacts",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-				files, err := filepath.Glob(flags.artifacts)
+				// Determine patterns to use
+				var patterns []string
+				if flags.artifacts == "" {
+					// Default patterns for both .zip and .tar.gz files
+					localRegistryArtifactsPath, err := internal.LocalRegistryArtifactsPath()
+					if err != nil {
+						return ux.Error, common.NewDetailedError("Failed to get registry path",
+							fmt.Errorf("failed to get registry artifacts path: %w", err),
+						)
+					}
+					basePattern := filepath.Join(localRegistryArtifactsPath, extensionMetadata.Id, flags.version)
+					patterns = []string{
+						filepath.Join(basePattern, "*.zip"),
+						filepath.Join(basePattern, "*.tar.gz"),
+					}
+				} else {
+					// Use explicitly provided pattern or concrete file path
+					patterns = []string{flags.artifacts}
+				}
+
+				files, err := internal.GlobArtifacts(patterns)
 				if err != nil {
 					return ux.Error, common.NewDetailedError("Artifacts not found",
 						fmt.Errorf("failed to find artifacts: %w", err),
@@ -254,8 +274,14 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 			ux.TaskOptions{
 				Title: "Creating Github release",
 				Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+					// Determine patterns to use
+					patterns, err := internal.DetermineArtifactPatterns(flags.artifacts, extensionMetadata.Id, flags.version)
+					if err != nil {
+						return ux.Error, common.NewDetailedError("Failed to get registry path", err)
+					}
+
 					// Get the artifact files
-					files, err := filepath.Glob(flags.artifacts)
+					files, err := internal.GlobArtifacts(patterns)
 					if err != nil {
 						return ux.Error, common.NewDetailedError("Artifacts not found",
 							fmt.Errorf("failed to find artifacts: %w", err),

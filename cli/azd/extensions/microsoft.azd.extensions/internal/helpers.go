@@ -4,7 +4,9 @@
 package internal
 
 import (
+	"archive/tar"
 	"archive/zip"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -93,9 +95,15 @@ func InferOSArch(filename string) (string, error) {
 	}
 
 	// Extract OS and ARCH from the filename
-	osPart := parts[len(parts)-2]                                   // Second-to-last part is the OS
-	archPart := parts[len(parts)-1]                                 // Last part is the ARCH (with optional extension)
-	archPart = strings.TrimSuffix(archPart, filepath.Ext(archPart)) // Remove extension
+	osPart := parts[len(parts)-2]   // Second-to-last part is the OS
+	archPart := parts[len(parts)-1] // Last part is the ARCH (with optional extension)
+
+	// Remove extension, handling both .tar.gz and single extensions
+	if strings.HasSuffix(archPart, ".tar.gz") {
+		archPart = strings.TrimSuffix(archPart, ".tar.gz")
+	} else {
+		archPart = strings.TrimSuffix(archPart, filepath.Ext(archPart))
+	}
 
 	return fmt.Sprintf("%s/%s", osPart, archPart), nil
 }
@@ -183,6 +191,51 @@ func ZipSource(files []string, target string) error {
 	return nil
 }
 
+func TarGzSource(files []string, target string) error {
+	outputFile, err := os.Create(target)
+	if err != nil {
+		return err
+	}
+	defer outputFile.Close()
+
+	gzipWriter := gzip.NewWriter(outputFile)
+	defer gzipWriter.Close()
+
+	tarWriter := tar.NewWriter(gzipWriter)
+	defer tarWriter.Close()
+
+	for _, file := range files {
+		fileInfo, err := os.Stat(file)
+		if err != nil {
+			return err
+		}
+
+		header := &tar.Header{
+			Name:    filepath.Base(file),
+			Mode:    int64(fileInfo.Mode()),
+			Size:    fileInfo.Size(),
+			ModTime: fileInfo.ModTime(),
+		}
+
+		if err := tarWriter.WriteHeader(header); err != nil {
+			return err
+		}
+
+		file, err := os.Open(file)
+		if err != nil {
+			return err
+		}
+
+		_, err = io.Copy(tarWriter, file)
+		file.Close()
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func LocalRegistryArtifactsPath() (string, error) {
 	azdConfigDir, err := AzdConfigDir()
 	if err != nil {
@@ -210,4 +263,38 @@ func AzdConfigDir() (string, error) {
 	}
 
 	return azdConfigDir, nil
+}
+
+// DetermineArtifactPatterns creates the patterns to use for finding artifacts
+func DetermineArtifactPatterns(artifactsFlag, extensionId, version string) ([]string, error) {
+	if artifactsFlag == "" {
+		// Default patterns for both .zip and .tar.gz files
+		localRegistryArtifactsPath, err := LocalRegistryArtifactsPath()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get registry artifacts path: %w", err)
+		}
+		basePattern := filepath.Join(localRegistryArtifactsPath, extensionId, version)
+		return []string{
+			filepath.Join(basePattern, "*.zip"),
+			filepath.Join(basePattern, "*.tar.gz"),
+		}, nil
+	}
+	// Use explicitly provided pattern or concrete file path
+	return []string{artifactsFlag}, nil
+}
+
+// GlobArtifacts finds artifacts matching the given patterns
+func GlobArtifacts(patterns []string) ([]string, error) {
+	var allFiles []string
+
+	for _, pattern := range patterns {
+		// Use filepath.Glob for both patterns and concrete file paths
+		files, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, err
+		}
+		allFiles = append(allFiles, files...)
+	}
+
+	return allFiles, nil
 }

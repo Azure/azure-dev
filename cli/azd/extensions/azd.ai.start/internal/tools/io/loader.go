@@ -24,7 +24,7 @@ func (l *IoToolsLoader) LoadTools() ([]tools.Tool, error) {
 		&CreateDirectoryTool{CallbacksHandler: l.callbackHandler},
 		&DeleteDirectoryTool{CallbacksHandler: l.callbackHandler},
 		&ReadFileTool{CallbacksHandler: l.callbackHandler},
-		&WriteFileTool{CallbacksHandler: l.callbackHandler},
+		&WriteFileTool{},
 		&CopyFileTool{CallbacksHandler: l.callbackHandler},
 		&MoveFileTool{CallbacksHandler: l.callbackHandler},
 		&DeleteFileTool{CallbacksHandler: l.callbackHandler},

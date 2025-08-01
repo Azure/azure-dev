@@ -19,7 +19,8 @@ func (t *AzdIacGenerationRulesTool) Name() string {
 func (t *AzdIacGenerationRulesTool) Description() string {
 	return `
 		Gets the infrastructure as code (IaC) rules and best practices and patterns to use when generating bicep files and modules for use within AZD.
-		Input: empty string
+
+		Input: "./azd-arch-plan.md"
 	`
 }
 

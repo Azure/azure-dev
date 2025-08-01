@@ -232,7 +232,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 		AddTask(ux.TaskOptions{
 			Title: "Validating artifacts",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-				files, err := globArtifacts(flags.artifacts)
+				files, err := internal.GlobArtifacts(flags.artifacts)
 				if err != nil {
 					return ux.Error, common.NewDetailedError("Artifacts not found",
 						fmt.Errorf("failed to find artifacts: %w", err),
@@ -255,7 +255,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 				Title: "Creating Github release",
 				Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 					// Get the artifact files
-					files, err := globArtifacts(flags.artifacts)
+					files, err := internal.GlobArtifacts(flags.artifacts)
 					if err != nil {
 						return ux.Error, common.NewDetailedError("Artifacts not found",
 							fmt.Errorf("failed to find artifacts: %w", err),

@@ -236,6 +236,11 @@ func getFileNameWithoutExt(filePath string) string {
 	// Get the base filename
 	fileName := filepath.Base(filePath)
 
+	// Remove extension, handling both .tar.gz and single extensions
+	if strings.HasSuffix(fileName, ".tar.gz") {
+		return strings.TrimSuffix(fileName, ".tar.gz")
+	}
+
 	// Remove the extension
 	return strings.TrimSuffix(fileName, filepath.Ext(fileName))
 }

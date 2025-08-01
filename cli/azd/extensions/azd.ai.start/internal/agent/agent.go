@@ -13,10 +13,10 @@ import (
 	"github.com/tmc/langchaingo/memory"
 	"github.com/tmc/langchaingo/tools"
 
-	"azd.ai.start/internal/logging"
-	localtools "azd.ai.start/internal/tools"
-	"azd.ai.start/internal/tools/mcp"
-	mcptools "azd.ai.start/internal/tools/mcp"
+	"azd.ai.start/internal/agent/logging"
+	localtools "azd.ai.start/internal/agent/tools"
+	"azd.ai.start/internal/agent/tools/mcp"
+	mcptools "azd.ai.start/internal/agent/tools/mcp"
 )
 
 //go:embed prompts/default_agent_prefix.txt

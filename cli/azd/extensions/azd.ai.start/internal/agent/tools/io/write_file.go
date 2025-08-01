@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"azd.ai.start/internal/tools/common"
+	"azd.ai.start/internal/agent/tools/common"
 )
 
 // WriteFileTool implements a comprehensive file writing tool that handles all scenarios

@@ -4,7 +4,9 @@
 package internal
 
 import (
+	"archive/tar"
 	"archive/zip"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -175,6 +177,51 @@ func ZipSource(files []string, target string) error {
 		}
 
 		_, err = io.Copy(headerWriter, file)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func TarGzSource(files []string, target string) error {
+	outputFile, err := os.Create(target)
+	if err != nil {
+		return err
+	}
+	defer outputFile.Close()
+
+	gzipWriter := gzip.NewWriter(outputFile)
+	defer gzipWriter.Close()
+
+	tarWriter := tar.NewWriter(gzipWriter)
+	defer tarWriter.Close()
+
+	for _, file := range files {
+		fileInfo, err := os.Stat(file)
+		if err != nil {
+			return err
+		}
+
+		header := &tar.Header{
+			Name:    filepath.Base(file),
+			Mode:    int64(fileInfo.Mode()),
+			Size:    fileInfo.Size(),
+			ModTime: fileInfo.ModTime(),
+		}
+
+		if err := tarWriter.WriteHeader(header); err != nil {
+			return err
+		}
+
+		file, err := os.Open(file)
+		if err != nil {
+			return err
+		}
+
+		_, err = io.Copy(tarWriter, file)
+		file.Close()
 		if err != nil {
 			return err
 		}

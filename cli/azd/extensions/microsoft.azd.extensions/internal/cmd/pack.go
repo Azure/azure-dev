@@ -202,15 +202,29 @@ func packExtensionBinaries(
 		}
 
 		fileWithoutExt := getFileNameWithoutExt(artifactName)
-		zipFileName := fmt.Sprintf("%s.zip", fileWithoutExt)
-		targetFilePath := filepath.Join(outputPath, zipFileName)
-
-		// Create a ZIP archive for the artifact
 		artifactSourcePath := filepath.Join(buildPath, entry.Name())
 		zipFiles := []string{extensionYamlSourcePath, artifactSourcePath}
 
-		if err := internal.ZipSource(zipFiles, targetFilePath); err != nil {
-			return fmt.Errorf("failed to create archive for %s: %w", entry.Name(), err)
+		// Determine if this is a Linux binary by checking if the filename contains "linux"
+		isLinuxBinary := strings.Contains(artifactName, "linux")
+
+		var targetFilePath string
+		var archiveErr error
+
+		if isLinuxBinary {
+			// Create a tar.gz archive for Linux binaries
+			tarGzFileName := fmt.Sprintf("%s.tar.gz", fileWithoutExt)
+			targetFilePath = filepath.Join(outputPath, tarGzFileName)
+			archiveErr = internal.TarGzSource(zipFiles, targetFilePath)
+		} else {
+			// Create a ZIP archive for non-Linux binaries (Windows, macOS)
+			zipFileName := fmt.Sprintf("%s.zip", fileWithoutExt)
+			targetFilePath = filepath.Join(outputPath, zipFileName)
+			archiveErr = internal.ZipSource(zipFiles, targetFilePath)
+		}
+
+		if archiveErr != nil {
+			return fmt.Errorf("failed to create archive for %s: %w", entry.Name(), archiveErr)
 		}
 	}
 

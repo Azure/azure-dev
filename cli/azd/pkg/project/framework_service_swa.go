@@ -124,6 +124,7 @@ func (p *swaProject) Package(
 	_ *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	return &ServicePackageResult{
-		Build: buildOutput,
+		Build:   buildOutput,
+		Details: "using swa-cli.config.json",
 	}, nil
 }

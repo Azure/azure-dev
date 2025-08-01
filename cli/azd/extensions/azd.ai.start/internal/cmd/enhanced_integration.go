@@ -11,20 +11,13 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
-	"github.com/tmc/langchaingo/llms/openai"
 
 	"azd.ai.start/internal/agent"
 )
 
-// RunEnhancedAzureAgent runs the enhanced Azure AI agent with full capabilities
-func RunEnhancedAzureAgent(ctx context.Context, llm *openai.LLM, args []string) error {
-	// Create the enhanced agent
-	azureAgent, err := agent.NewAzureAIAgent(llm)
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("🤖 Enhanced Azure AI Agent - Interactive Mode")
+// RunEnhancedAgentLoop runs the enhanced AZD Copilot agent with full capabilities
+func RunEnhancedAgentLoop(ctx context.Context, agent *agent.AzdAiAgent, args []string) error {
+	fmt.Println("🤖 AZD Copilot - Interactive Mode")
 	fmt.Println("═══════════════════════════════════════════════════════════")
 
 	// Handle initial query if provided
@@ -59,12 +52,12 @@ func RunEnhancedAzureAgent(ctx context.Context, llm *openai.LLM, args []string) 
 		}
 
 		if strings.ToLower(userInput) == "exit" || strings.ToLower(userInput) == "quit" {
-			fmt.Println("👋 Goodbye! Thanks for using the Enhanced Azure AI Agent!")
+			fmt.Println("👋 Goodbye! Thanks for using AZD Copilot!")
 			break
 		}
 
 		// Process the query with the enhanced agent
-		err := azureAgent.ProcessQuery(ctx, userInput)
+		err := agent.ProcessQuery(ctx, userInput)
 		if err != nil {
 			continue
 		}

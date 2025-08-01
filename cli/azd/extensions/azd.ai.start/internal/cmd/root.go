@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 
+	"azd.ai.start/internal/agent"
 	"azd.ai.start/internal/logging"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -83,18 +84,17 @@ func runAIAgent(ctx context.Context, args []string, debug bool) error {
 	// Common deployment names to try
 	azureAPIVersion := "2024-02-15-preview"
 
-	var llm *openai.LLM
+	var defaultModel *openai.LLM
+	var samplingModel *openai.LLM
+
+	actionLogger := logging.NewActionLogger(logging.WithDebug(debug))
 
 	// Try different deployment names
 	if aiConfig.Endpoint != "" && aiConfig.ApiKey != "" {
 		// Use Azure OpenAI with proper configuration
 		fmt.Printf("🔵 Trying Azure OpenAI with deployment: %s\n", aiConfig.DeploymentName)
 
-		actionLogger := logging.NewActionLogger(
-			logging.WithDebug(debug),
-		)
-
-		llm, err = openai.New(
+		defaultModel, err = openai.New(
 			openai.WithToken(aiConfig.ApiKey),
 			openai.WithBaseURL(aiConfig.Endpoint+"/"),
 			openai.WithAPIType(openai.APITypeAzure),
@@ -108,12 +108,33 @@ func runAIAgent(ctx context.Context, args []string, debug bool) error {
 		} else {
 			fmt.Printf("❌ Failed with deployment %s: %v\n", aiConfig.DeploymentName, err)
 		}
+
+		samplingModel, err = openai.New(
+			openai.WithToken(aiConfig.ApiKey),
+			openai.WithBaseURL(aiConfig.Endpoint+"/"),
+			openai.WithAPIType(openai.APITypeAzure),
+			openai.WithAPIVersion(azureAPIVersion),
+			openai.WithModel(aiConfig.DeploymentName),
+		)
+
+		if err != nil {
+			return err
+		}
 	}
 
-	if llm == nil {
+	// Create the enhanced agent
+	azdAgent, err := agent.NewAzdAiAgent(defaultModel,
+		agent.WithSamplingModel(samplingModel),
+		agent.WithDebug(debug),
+	)
+	if err != nil {
+		return err
+	}
+
+	if defaultModel == nil {
 		return fmt.Errorf("failed to connect to any Azure OpenAI deployment")
 	}
 
-	// Use the enhanced Azure AI agent with full capabilities
-	return RunEnhancedAzureAgent(ctx, llm, args)
+	// Use the enhanced AZD Copilot agent with full capabilities
+	return RunEnhancedAgentLoop(ctx, azdAgent, args)
 }

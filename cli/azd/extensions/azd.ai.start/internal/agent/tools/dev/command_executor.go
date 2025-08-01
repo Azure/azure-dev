@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"azd.ai.start/internal/tools/common"
+	"azd.ai.start/internal/agent/tools/common"
 	"github.com/tmc/langchaingo/callbacks"
 )
 

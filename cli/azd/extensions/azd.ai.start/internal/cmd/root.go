@@ -10,7 +10,7 @@ import (
 	"os"
 
 	"azd.ai.start/internal/agent"
-	"azd.ai.start/internal/logging"
+	"azd.ai.start/internal/agent/logging"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 	"github.com/tmc/langchaingo/llms/openai"

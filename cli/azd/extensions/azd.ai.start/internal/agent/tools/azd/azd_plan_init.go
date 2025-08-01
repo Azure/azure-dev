@@ -3,7 +3,7 @@ package azd
 import (
 	"context"
 
-	"azd.ai.start/internal/tools/azd/prompts"
+	"azd.ai.start/internal/agent/tools/azd/prompts"
 	"github.com/tmc/langchaingo/tools"
 )
 

@@ -9,13 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/langchaingo/callbacks"
+	"azd.ai.start/internal/tools/common"
 )
 
 // WriteFileTool implements a comprehensive file writing tool that handles all scenarios
-type WriteFileTool struct {
-	CallbacksHandler callbacks.Handler
-}
+type WriteFileTool struct{}
 
 // WriteFileRequest represents the JSON input for the write_file tool
 type WriteFileRequest struct {
@@ -99,54 +97,44 @@ Large file (chunked):
 The input must be formatted as a single line valid JSON string.`
 }
 
-func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
-	if t.CallbacksHandler != nil {
-		logInput := input
-		if len(input) > 200 {
-			logInput = input[:200] + "... (truncated)"
-		}
-		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("write_file: %s", logInput))
+// createErrorResponse creates a JSON error response
+func (t WriteFileTool) createErrorResponse(err error, message string) (string, error) {
+	if message == "" {
+		message = err.Error()
 	}
 
-	if input == "" {
-		output := "❌ No input provided\n\n"
-		output += "📝 Expected JSON format:\n"
-		output += `{"filename": "path/to/file.txt", "content": "file content here"}`
+	errorResp := common.ErrorResponse{
+		Error:   true,
+		Message: message,
+	}
 
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("empty input"))
-			t.CallbacksHandler.HandleToolEnd(ctx, output)
-		}
-		return output, nil
-	} // Parse JSON input
+	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
+	if jsonErr != nil {
+		// Fallback to simple error message if JSON marshalling fails
+		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
+
+		return fallbackMsg, nil
+	}
+
+	output := string(jsonData)
+
+	return output, nil
+}
+
+func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
+	if input == "" {
+		return t.createErrorResponse(fmt.Errorf("empty input"), "No input provided.")
+	}
+
+	// Parse JSON input
 	var req WriteFileRequest
 	if err := json.Unmarshal([]byte(input), &req); err != nil {
-		output := "❌ Invalid JSON input: " + err.Error() + "\n\n"
-		output += "📝 Expected format:\n"
-		output += `{"filename": "path/to/file.txt", "content": "file content here"}` + "\n\n"
-		output += "💡 Common JSON issues:\n"
-		output += "- Use double quotes for strings\n"
-		output += "- Escape backslashes: \\$ should be \\\\$\n"
-		output += "- Remove trailing commas\n"
-		output += "- No comments allowed in JSON"
-
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-			t.CallbacksHandler.HandleToolEnd(ctx, output)
-		}
-		return output, nil
+		return t.createErrorResponse(err, "Invalid JSON input")
 	}
 
 	// Validate required fields
 	if req.Filename == "" {
-		output := "❌ Missing required field: filename cannot be empty\n\n"
-		output += "📝 Example: " + `{"filename": "infra/main.bicep", "content": "param location string = 'eastus'"}`
-
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("missing filename"))
-			t.CallbacksHandler.HandleToolEnd(ctx, output)
-		}
-		return output, nil
+		return t.createErrorResponse(fmt.Errorf("missing filename"), "Missing required field: filename cannot be empty.")
 	}
 
 	// Determine mode and operation
@@ -168,11 +156,7 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 // handleChunkedWrite handles writing files in chunks
 func (t WriteFileTool) handleChunkedWrite(ctx context.Context, req WriteFileRequest) (string, error) {
 	if req.ChunkNum < 1 || req.TotalChunks < 1 || req.ChunkNum > req.TotalChunks {
-		err := fmt.Errorf("invalid chunk numbers: chunkNum=%d, totalChunks=%d", req.ChunkNum, req.TotalChunks)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-		}
-		return "", err
+		return t.createErrorResponse(fmt.Errorf("invalid chunk numbers: chunkNum=%d, totalChunks=%d", req.ChunkNum, req.TotalChunks), fmt.Sprintf("Invalid chunk numbers: chunkNum=%d, totalChunks=%d. ChunkNum must be between 1 and totalChunks", req.ChunkNum, req.TotalChunks))
 	}
 
 	filePath := strings.TrimSpace(req.Filename)
@@ -180,10 +164,7 @@ func (t WriteFileTool) handleChunkedWrite(ctx context.Context, req WriteFileRequ
 
 	// Ensure directory exists
 	if err := t.ensureDirectory(filePath); err != nil {
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-		}
-		return "", err
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to create directory for file %s: %s", filePath, err.Error()))
 	}
 
 	var err error
@@ -197,11 +178,7 @@ func (t WriteFileTool) handleChunkedWrite(ctx context.Context, req WriteFileRequ
 		// Subsequent chunks - append
 		file, openErr := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
 		if openErr != nil {
-			err = fmt.Errorf("failed to open file for append %s: %w", filePath, openErr)
-			if t.CallbacksHandler != nil {
-				t.CallbacksHandler.HandleToolError(ctx, err)
-			}
-			return "", err
+			return t.createErrorResponse(openErr, fmt.Sprintf("Failed to open file for append %s: %s", filePath, openErr.Error()))
 		}
 		defer file.Close()
 
@@ -210,21 +187,13 @@ func (t WriteFileTool) handleChunkedWrite(ctx context.Context, req WriteFileRequ
 	}
 
 	if err != nil {
-		toolErr := fmt.Errorf("failed to write chunk to file %s: %w", filePath, err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to write chunk to file %s: %s", filePath, err.Error()))
 	}
 
 	// Get file info
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
-		toolErr := fmt.Errorf("failed to verify file %s: %w", filePath, err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to verify file %s: %s", filePath, err.Error()))
 	}
 
 	// Create JSON response
@@ -255,18 +224,10 @@ func (t WriteFileTool) handleChunkedWrite(ctx context.Context, req WriteFileRequ
 	// Convert to JSON
 	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		toolErr := fmt.Errorf("failed to marshal JSON response: %w", err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
 	}
 
 	output := string(jsonData)
-
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolEnd(ctx, output)
-	}
 
 	return output, nil
 }
@@ -283,10 +244,7 @@ func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequ
 
 	// Ensure directory exists
 	if err := t.ensureDirectory(filePath); err != nil {
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-		}
-		return "", err
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to create directory for file %s: %s", filePath, err.Error()))
 	}
 
 	var err error
@@ -295,11 +253,7 @@ func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequ
 	switch mode {
 	case "create":
 		if _, err := os.Stat(filePath); err == nil {
-			toolErr := fmt.Errorf("file %s already exists (create mode)", filePath)
-			if t.CallbacksHandler != nil {
-				t.CallbacksHandler.HandleToolError(ctx, toolErr)
-			}
-			return "", toolErr
+			return t.createErrorResponse(fmt.Errorf("file %s already exists (create mode)", filePath), fmt.Sprintf("File %s already exists. Cannot create file in 'create' mode when file already exists", filePath))
 		}
 		err = os.WriteFile(filePath, []byte(content), 0644)
 		operation = "Created"
@@ -307,11 +261,7 @@ func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequ
 	case "append":
 		file, openErr := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if openErr != nil {
-			toolErr := fmt.Errorf("failed to open file for append %s: %w", filePath, openErr)
-			if t.CallbacksHandler != nil {
-				t.CallbacksHandler.HandleToolError(ctx, toolErr)
-			}
-			return "", toolErr
+			return t.createErrorResponse(openErr, fmt.Sprintf("Failed to open file for append %s: %s", filePath, openErr.Error()))
 		}
 		defer file.Close()
 		_, err = file.WriteString(content)
@@ -323,21 +273,13 @@ func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequ
 	}
 
 	if err != nil {
-		toolErr := fmt.Errorf("failed to %s file %s: %w", strings.ToLower(operation), filePath, err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to %s file %s: %s", strings.ToLower(operation), filePath, err.Error()))
 	}
 
 	// Get file size for verification
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
-		toolErr := fmt.Errorf("failed to verify file %s: %w", filePath, err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to verify file %s: %s", filePath, err.Error()))
 	}
 
 	// Create JSON response
@@ -358,18 +300,10 @@ func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequ
 	// Convert to JSON
 	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		toolErr := fmt.Errorf("failed to marshal JSON response: %w", err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
 	}
 
 	output := string(jsonData)
-
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolEnd(ctx, output)
-	}
 
 	return output, nil
 }

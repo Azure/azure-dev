@@ -19,7 +19,8 @@ func (t *AzdYamlSchemaTool) Name() string {
 func (t *AzdYamlSchemaTool) Description() string {
 	return `
 		Gets the Azure YAML JSON schema file specification and structure for azure.yaml configuration files used in AZD.
-		Input: empty string
+
+		Input: <Relative path to azure.yaml>
 	`
 }
 

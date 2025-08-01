@@ -68,7 +68,7 @@ func (al *ActionLogger) HandleLLMGenerateContentEnd(ctx context.Context, res *ll
 		// Find all "Thought:" patterns and extract the content that follows
 		// (?is) flags: i=case insensitive, s=dot matches newlines
 		// .*? is non-greedy to stop at the first occurrence of next pattern or end
-		thoughtRegex := regexp.MustCompile(`(?is)thought:\s*(.*?)(?:\n\s*(?:action|final answer|observation|ai):|$)`)
+		thoughtRegex := regexp.MustCompile(`(?is)thought:\s*(.*?)(?:\n\s*(?:action|final answer|observation|ai|thought):|$)`)
 		matches := thoughtRegex.FindAllStringSubmatch(content, -1)
 
 		for _, match := range matches {

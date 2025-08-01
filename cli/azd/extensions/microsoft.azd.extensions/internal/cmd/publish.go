@@ -74,7 +74,7 @@ func newPublishCommand() *cobra.Command {
 	publishCmd.Flags().StringVar(
 		&flags.artifacts,
 		"artifacts", flags.artifacts,
-		"Path to the artifacts to upload to the release (e.g. ./artifacts/*.zip)",
+		"Path to the artifacts to upload to the release (e.g. ./artifacts/*.zip, ./artifacts/*.tar.gz)",
 	)
 
 	return publishCmd
@@ -101,7 +101,7 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 			return err
 		}
 
-		flags.artifacts = filepath.Join(localRegistryArtifactsPath, extensionMetadata.Id, flags.version, "*.zip")
+		flags.artifacts = filepath.Join(localRegistryArtifactsPath, extensionMetadata.Id, flags.version, "*")
 	}
 
 	// Setting remote repository overrides local artifacts
@@ -185,7 +185,7 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 					return ux.Skipped, nil
 				}
 
-				files, err := filepath.Glob(flags.artifacts)
+				files, err := globArtifacts(flags.artifacts)
 				if err != nil {
 					return ux.Error, common.NewDetailedError(
 						"Failed to list artifacts",
@@ -429,6 +429,41 @@ func createPlatformMetadata(
 	}
 
 	return platformMetadata, nil
+}
+
+// globArtifacts finds both .zip and .tar.gz artifacts in the given path pattern
+func globArtifacts(pattern string) ([]string, error) {
+	var allFiles []string
+
+	// Replace the file extension with .zip if the pattern contains an extension
+	basePath := strings.TrimSuffix(pattern, filepath.Ext(pattern))
+	if basePath == pattern {
+		// No extension in pattern, assume it's a directory path
+		basePath = pattern
+	}
+
+	// Try .zip files
+	zipPattern := basePath
+	if !strings.HasSuffix(zipPattern, "*") {
+		zipPattern = filepath.Join(basePath, "*")
+	}
+	zipPattern = strings.TrimSuffix(zipPattern, "*") + "*.zip"
+
+	zipFiles, err := filepath.Glob(zipPattern)
+	if err != nil {
+		return nil, err
+	}
+	allFiles = append(allFiles, zipFiles...)
+
+	// Try .tar.gz files
+	tarGzPattern := strings.TrimSuffix(zipPattern, ".zip") + ".tar.gz"
+	tarGzFiles, err := filepath.Glob(tarGzPattern)
+	if err != nil {
+		return nil, err
+	}
+	allFiles = append(allFiles, tarGzFiles...)
+
+	return allFiles, nil
 }
 
 func defaultPublishFlags(flags *publishFlags) error {

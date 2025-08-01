@@ -63,7 +63,7 @@ func newReleaseCommand() *cobra.Command {
 	releaseCmd.Flags().StringVar(
 		&flags.artifacts,
 		"artifacts", flags.artifacts,
-		"Path to the artifacts to upload to the release (e.g. ./artifacts/*.zip)",
+		"Path to the artifacts to upload to the release (e.g. ./artifacts/*.zip, ./artifacts/*.tar.gz)",
 	)
 	releaseCmd.Flags().StringVarP(
 		&flags.title,
@@ -142,7 +142,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 			return err
 		}
 
-		flags.artifacts = filepath.Join(localRegistryArtifactsPath, extensionMetadata.Id, flags.version, "*.zip")
+		flags.artifacts = filepath.Join(localRegistryArtifactsPath, extensionMetadata.Id, flags.version, "*")
 	}
 
 	if flags.notes != "" && flags.notesFile != "" {
@@ -232,7 +232,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 		AddTask(ux.TaskOptions{
 			Title: "Validating artifacts",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-				files, err := filepath.Glob(flags.artifacts)
+				files, err := globArtifacts(flags.artifacts)
 				if err != nil {
 					return ux.Error, common.NewDetailedError("Artifacts not found",
 						fmt.Errorf("failed to find artifacts: %w", err),
@@ -255,7 +255,7 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 				Title: "Creating Github release",
 				Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 					// Get the artifact files
-					files, err := filepath.Glob(flags.artifacts)
+					files, err := globArtifacts(flags.artifacts)
 					if err != nil {
 						return ux.Error, common.NewDetailedError("Artifacts not found",
 							fmt.Errorf("failed to find artifacts: %w", err),

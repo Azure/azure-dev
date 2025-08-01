@@ -8,6 +8,7 @@ This document provides comprehensive rules and guidelines for generating Bicep I
 
 - **REQUIRED**: Place all IaC files in the `./infra` folder within an AZD project
 - **REQUIRED**: Name the main deployment file `main.bicep` - this is the primary deployment target
+- **REQUIRED**: Create a `main.parameters.json` file alongside `main.bicep` containing all parameter defaults for the Bicep deployment
 - **REQUIRED**: The root level `main.bicep` must be a subscription level deployment using `targetScope = 'subscription'`
 - **REQUIRED**: The main.bicep file must create a resource group as the primary container for all resources
 - **REQUIRED**: Pass the resource group scope to all child modules that deploy resources
@@ -156,6 +157,26 @@ module appService 'modules/app-service.bicep' = {
 }
 ```
 
+### Main.parameters.json Structure Template
+
+```json
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "tags": {
+      "value": {}
+    }
+  }
+}
+```
+
 ### Child Module Structure Template
 
 ```bicep
@@ -183,6 +204,7 @@ Before completing code generation, verify:
 
 - [ ] All files are in `./infra` folder
 - [ ] `main.bicep` exists as primary deployment file with subscription scope
+- [ ] `main.parameters.json` exists alongside `main.bicep` with parameter defaults
 - [ ] Resource group is created in `main.bicep` and properly tagged
 - [ ] All child modules use `targetScope = 'resourceGroup'` and receive resource group scope
 - [ ] All resources use consistent naming convention

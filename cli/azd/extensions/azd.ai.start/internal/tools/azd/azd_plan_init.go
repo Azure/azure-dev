@@ -19,7 +19,8 @@ func (t *AzdPlanInitTool) Name() string {
 func (t *AzdPlanInitTool) Description() string {
 	return `
 		Gets the required workflow steps and best practices and patterns for initializing or migrating an application to use AZD.
-		Input: empty string
+
+		Input: "./azd-arch-plan.md"
 	`
 }
 

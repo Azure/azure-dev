@@ -34,7 +34,7 @@ Observation: [result]
 
 Remember: Always continue taking actions until the user's request is fully satisfied. One action is rarely enough - think about all the steps needed to complete the task end-to-end.
 
-When you are done answering the questions and performing all your tasks you MUST ALWAYS use the following format:
+When you are done or handing control back to the user you MUST ALWAYS use the following format:
 
 Thought: Do I need to use a tool? No
 AI: [briefly summarize your response without all the details from your observations]

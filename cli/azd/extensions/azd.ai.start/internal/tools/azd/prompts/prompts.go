@@ -12,3 +12,18 @@ var AzdIacRulesPrompt string
 
 //go:embed azure.yaml.json
 var AzdYamlSchemaPrompt string
+
+//go:embed azd_discovery_analysis.md
+var AzdDiscoveryAnalysisPrompt string
+
+//go:embed azd_architecture_planning.md
+var AzdArchitecturePlanningPrompt string
+
+//go:embed azd_azure_yaml_generation.md
+var AzdAzureYamlGenerationPrompt string
+
+//go:embed azd_infrastructure_generation.md
+var AzdInfrastructureGenerationPrompt string
+
+//go:embed azd_docker_generation.md
+var AzdDockerGenerationPrompt string

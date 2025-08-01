@@ -196,3 +196,49 @@ func TestGlobArtifacts(t *testing.T) {
 		})
 	}
 }
+
+func TestDetermineArtifactPatterns(t *testing.T) {
+	tests := []struct {
+		name           string
+		artifactsFlag  string
+		extensionId    string
+		version        string
+		expectedCount  int
+		expectedSuffix []string
+	}{
+		{
+			name:           "Empty artifacts flag uses default patterns",
+			artifactsFlag:  "",
+			extensionId:    "test.extension",
+			version:        "1.0.0",
+			expectedCount:  2,
+			expectedSuffix: []string{"*.zip", "*.tar.gz"},
+		},
+		{
+			name:           "Explicit artifacts flag returns single pattern",
+			artifactsFlag:  "./out/test.zip",
+			extensionId:    "test.extension",
+			version:        "1.0.0",
+			expectedCount:  1,
+			expectedSuffix: []string{"./out/test.zip"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			patterns, err := DetermineArtifactPatterns(tt.artifactsFlag, tt.extensionId, tt.version)
+			require.NoError(t, err)
+			require.Len(t, patterns, tt.expectedCount)
+
+			if tt.artifactsFlag == "" {
+				// For default patterns, check they end with the expected suffixes
+				for i, suffix := range tt.expectedSuffix {
+					require.Contains(t, patterns[i], suffix)
+				}
+			} else {
+				// For explicit pattern, should match exactly
+				require.Equal(t, tt.expectedSuffix[0], patterns[0])
+			}
+		})
+	}
+}

@@ -265,22 +265,30 @@ func AzdConfigDir() (string, error) {
 	return azdConfigDir, nil
 }
 
+// DetermineArtifactPatterns creates the patterns to use for finding artifacts
+func DetermineArtifactPatterns(artifactsFlag, extensionId, version string) ([]string, error) {
+	if artifactsFlag == "" {
+		// Default patterns for both .zip and .tar.gz files
+		localRegistryArtifactsPath, err := LocalRegistryArtifactsPath()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get registry artifacts path: %w", err)
+		}
+		basePattern := filepath.Join(localRegistryArtifactsPath, extensionId, version)
+		return []string{
+			filepath.Join(basePattern, "*.zip"),
+			filepath.Join(basePattern, "*.tar.gz"),
+		}, nil
+	}
+	// Use explicitly provided pattern or concrete file path
+	return []string{artifactsFlag}, nil
+}
+
 // GlobArtifacts finds artifacts matching the given patterns
 func GlobArtifacts(patterns []string) ([]string, error) {
 	var allFiles []string
 
 	for _, pattern := range patterns {
-		// Check if the pattern is a concrete file path (no wildcards)
-		if !strings.Contains(pattern, "*") && !strings.Contains(pattern, "?") && !strings.Contains(pattern, "[") {
-			// It's a concrete file path, check if it exists
-			if _, err := os.Stat(pattern); err == nil {
-				allFiles = append(allFiles, pattern)
-			}
-			// If the file doesn't exist, skip it (no error to match glob behavior)
-			continue
-		}
-
-		// Use filepath.Glob for pattern matching
+		// Use filepath.Glob for both patterns and concrete file paths
 		files, err := filepath.Glob(pattern)
 		if err != nil {
 			return nil, err

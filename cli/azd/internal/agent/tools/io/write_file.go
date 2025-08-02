@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"azd.ai.start/internal/agent/tools/common"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 )
 
 // WriteFileTool implements a comprehensive file writing tool that handles all scenarios

@@ -14,6 +14,8 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/agent"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/logging"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -24,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -131,6 +134,7 @@ type initAction struct {
 	featuresManager   *alpha.FeatureManager
 	extensionsManager *extensions.Manager
 	azd               workflow.AzdCommandRunner
+	llmManager        *llm.Manager
 }
 
 func newInitAction(
@@ -145,6 +149,7 @@ func newInitAction(
 	featuresManager *alpha.FeatureManager,
 	extensionsManager *extensions.Manager,
 	azd workflow.AzdCommandRunner,
+	llmManager *llm.Manager,
 ) actions.Action {
 	return &initAction{
 		lazyAzdCtx:        lazyAzdCtx,
@@ -158,6 +163,7 @@ func newInitAction(
 		featuresManager:   featuresManager,
 		extensionsManager: extensionsManager,
 		azd:               azd,
+		llmManager:        llmManager,
 	}
 }
 
@@ -344,6 +350,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		header = fmt.Sprintf("Initialized environment %s.", env.Name())
 		followUp = ""
+	case initWithCopilot:
+		if err := i.initAppWithCopilot(ctx); err != nil {
+			return nil, err
+		}
 	default:
 		panic("unhandled init type")
 	}
@@ -360,6 +370,37 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}, nil
 }
 
+func (i *initAction) initAppWithCopilot(ctx context.Context) error {
+	defaultModelContainer, err := i.llmManager.GetDefaultModel()
+	if err != nil {
+		return err
+	}
+
+	actionLogger := logging.NewActionLogger()
+	samplingModelContainer, err := i.llmManager.GetDefaultModel(llm.WithLogger(actionLogger))
+
+	azdAgent, err := agent.NewAzdAiAgent(
+		defaultModelContainer.Model,
+		agent.WithSamplingModel(samplingModelContainer.Model),
+	)
+	if err != nil {
+		return err
+	}
+
+	initPrompt := `Goal: Initialize or migrate the AZD project from the current working directory.
+
+Read and review the 'azd-arch-plan.md' file if it exists to get current status
+Run the 'azd_plan_init' tool and follow the steps
+Finally - run the 'azd_project_validation' tool to ensure the process is fully completed
+	`
+
+	if err := azdAgent.RunConversationLoop(ctx, []string{initPrompt}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 type initType int
 
 const (
@@ -367,6 +408,7 @@ const (
 	initFromApp
 	initAppTemplate
 	initEnvironment
+	initWithCopilot
 )
 
 func promptInitType(console input.Console, ctx context.Context) (initType, error) {
@@ -375,6 +417,7 @@ func promptInitType(console input.Console, ctx context.Context) (initType, error
 		Options: []string{
 			"Scan current directory", // This now covers minimal project creation too
 			"Select a template",
+			"AZD Copilot",
 		},
 	})
 	if err != nil {
@@ -386,6 +429,8 @@ func promptInitType(console input.Console, ctx context.Context) (initType, error
 		return initFromApp, nil
 	case 1:
 		return initAppTemplate, nil
+	case 2:
+		return initWithCopilot, nil
 	default:
 		panic("unhandled selection")
 	}

@@ -4,33 +4,64 @@
 package llm
 
 import (
-	"log"
-	"os"
-
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/tmc/langchaingo/llms/ollama"
 )
 
-func loadOllama() (InfoResponse, error) {
+type OllamaModelConfig struct {
+	Model string `json:"model"`
+}
+
+type OllamaModelProvider struct {
+	userConfigManager config.UserConfigManager
+}
+
+func NewOllamaModelProvider(userConfigManager config.UserConfigManager) ModelProvider {
+	return &OllamaModelProvider{
+		userConfigManager: userConfigManager,
+	}
+}
+
+func (p *OllamaModelProvider) CreateModelContainer(opts ...ModelOption) (*ModelContainer, error) {
+	userConfig, err := p.userConfigManager.Load()
+	if err != nil {
+		return nil, err
+	}
+
 	defaultLlamaVersion := "llama3"
 
-	if value, isDefined := os.LookupEnv("AZD_OLLAMA_MODEL"); isDefined {
-		log.Printf("Found AZD_OLLAMA_MODEL with %s. Using this model", value)
-		defaultLlamaVersion = value
-	}
-
-	_, err := ollama.New(
-		ollama.WithModel(defaultLlamaVersion),
-	)
+	var modelConfig OllamaModelConfig
+	ok, err := userConfig.GetSection("ai.agent.model.ollama", &modelConfig)
 	if err != nil {
-		return InfoResponse{}, err
+		return nil, err
 	}
 
-	return InfoResponse{
+	if ok {
+		defaultLlamaVersion = modelConfig.Model
+	}
+
+	modelContainer := &ModelContainer{
 		Type:    LlmTypeOllama,
 		IsLocal: true,
-		Model: LlmModel{
+		Metadata: ModelMetadata{
 			Name:    defaultLlamaVersion,
 			Version: "latest",
 		},
-	}, nil
+	}
+
+	for _, opt := range opts {
+		opt(modelContainer)
+	}
+
+	model, err := ollama.New(
+		ollama.WithModel(defaultLlamaVersion),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	model.CallbacksHandler = modelContainer.logger
+	modelContainer.Model = model
+
+	return modelContainer, nil
 }

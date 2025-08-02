@@ -4,9 +4,9 @@ import (
 	"github.com/tmc/langchaingo/callbacks"
 	"github.com/tmc/langchaingo/tools"
 
-	"azd.ai.start/internal/agent/tools/azd"
-	"azd.ai.start/internal/agent/tools/dev"
-	"azd.ai.start/internal/agent/tools/io"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/azd"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/dev"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/io"
 )
 
 // ToolLoader provides an interface for loading tools from different categories

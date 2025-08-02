@@ -546,7 +546,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return serviceManager, err
 		})
 	})
+
+	// AI & LLM components
 	container.MustRegisterSingleton(llm.NewManager)
+	container.MustRegisterSingleton(llm.NewModelFactory)
+	container.MustRegisterNamedSingleton("ollama", llm.NewOllamaModelProvider)
+	container.MustRegisterNamedSingleton("azure", llm.NewAzureOpenAiModelProvider)
+
 	container.MustRegisterSingleton(repository.NewInitializer)
 	container.MustRegisterSingleton(alpha.NewFeaturesManager)
 	container.MustRegisterSingleton(config.NewUserConfigManager)

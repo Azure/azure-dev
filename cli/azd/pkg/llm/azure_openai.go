@@ -5,70 +5,67 @@ package llm
 
 import (
 	"fmt"
-	"maps"
-	"os"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/tmc/langchaingo/llms/openai"
 )
 
-const (
-	modelEnvVar   = "AZD_AZURE_OPENAI_MODEL"
-	versionEnvVar = "AZD_AZURE_OPENAI_VERSION"
-	urlEnvVar     = "AZD_AZURE_OPENAI_URL"
-	keyEnvVar     = "OPENAI_API_KEY"
-)
-
-type requiredEnvVar struct {
-	name      string
-	value     string
-	isDefined bool
+type AzureOpenAiModelConfig struct {
+	Model      string `json:"model"`
+	Version    string `json:"version"`
+	Endpoint   string `json:"endpoint"`
+	Token      string `json:"token"`
+	ApiVersion string `json:"apiVersion"`
 }
 
-var requiredEnvVars = map[string]requiredEnvVar{
-	modelEnvVar:   {name: modelEnvVar},
-	versionEnvVar: {name: versionEnvVar},
-	urlEnvVar:     {name: urlEnvVar},
-	keyEnvVar:     {name: keyEnvVar},
+type AzureOpenAiModelProvider struct {
+	userConfigManager config.UserConfigManager
 }
 
-func loadAzureOpenAi() (InfoResponse, error) {
-
-	envVars := maps.Clone(requiredEnvVars)
-	missingEnvVars := []string{}
-	for name, envVar := range envVars {
-		value, isDefined := os.LookupEnv(envVar.name)
-		if !isDefined {
-			missingEnvVars = append(missingEnvVars, envVar.name)
-			continue
-		}
-
-		envVar.value = value
-		envVar.isDefined = true
-		envVars[name] = envVar
+func NewAzureOpenAiModelProvider(userConfigManager config.UserConfigManager) ModelProvider {
+	return &AzureOpenAiModelProvider{
+		userConfigManager: userConfigManager,
 	}
-	if len(missingEnvVars) > 0 {
-		return InfoResponse{}, fmt.Errorf(
-			"missing required environment variable(s): %s", ux.ListAsText(missingEnvVars))
-	}
+}
 
-	_, err := openai.New(
-		openai.WithModel(envVars[modelEnvVar].value),
-		openai.WithAPIType(openai.APITypeAzure),
-		openai.WithAPIVersion(envVars[versionEnvVar].value),
-		openai.WithBaseURL(envVars[urlEnvVar].value),
-	)
+func (p *AzureOpenAiModelProvider) CreateModelContainer(opts ...ModelOption) (*ModelContainer, error) {
+	userConfig, err := p.userConfigManager.Load()
 	if err != nil {
-		return InfoResponse{}, fmt.Errorf("failed to create LLM: %w", err)
+		return nil, err
 	}
 
-	return InfoResponse{
+	var modelConfig AzureOpenAiModelConfig
+	if ok, err := userConfig.GetSection("ai.agent.model.azure", &modelConfig); !ok || err != nil {
+		return nil, err
+	}
+
+	modelContainer := &ModelContainer{
 		Type:    LlmTypeOpenAIAzure,
 		IsLocal: false,
-		Model: LlmModel{
-			Name:    envVars[modelEnvVar].value,
-			Version: envVars[versionEnvVar].value,
+		Metadata: ModelMetadata{
+			Name:    modelConfig.Model,
+			Version: modelConfig.Version,
 		},
-		Url: envVars[urlEnvVar].value,
-	}, nil
+		Url: modelConfig.Endpoint,
+	}
+
+	for _, opt := range opts {
+		opt(modelContainer)
+	}
+
+	model, err := openai.New(
+		openai.WithModel(modelConfig.Model),
+		openai.WithAPIType(openai.APITypeAzure),
+		openai.WithAPIVersion(modelConfig.ApiVersion),
+		openai.WithBaseURL(modelConfig.Endpoint),
+		openai.WithToken(modelConfig.Token),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create LLM: %w", err)
+	}
+
+	model.CallbacksHandler = modelContainer.logger
+	modelContainer.Model = model
+
+	return modelContainer, nil
 }

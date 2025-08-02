@@ -4,19 +4,24 @@
 package agent
 
 import (
+	"bufio"
 	"context"
 	_ "embed"
+	"fmt"
+	"os"
+	"strings"
 
+	"github.com/fatih/color"
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/chains"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/memory"
 	"github.com/tmc/langchaingo/tools"
 
-	"azd.ai.start/internal/agent/logging"
-	localtools "azd.ai.start/internal/agent/tools"
-	"azd.ai.start/internal/agent/tools/mcp"
-	mcptools "azd.ai.start/internal/agent/tools/mcp"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/logging"
+	localtools "github.com/azure/azure-dev/cli/azd/internal/agent/tools"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/mcp"
+	mcptools "github.com/azure/azure-dev/cli/azd/internal/agent/tools/mcp"
 )
 
 //go:embed prompts/default_agent_prefix.txt
@@ -127,8 +132,63 @@ func NewAzdAiAgent(llm llms.Model, opts ...AgentOption) (*AzdAiAgent, error) {
 	return azdAgent, nil
 }
 
+// RunConversationLoop runs the enhanced AZD Copilot agent with full capabilities
+func (aai *AzdAiAgent) RunConversationLoop(ctx context.Context, args []string) error {
+	fmt.Println("🤖 AZD Copilot - Interactive Mode")
+	fmt.Println("═══════════════════════════════════════════════════════════")
+
+	// Handle initial query if provided
+	var initialQuery string
+	if len(args) > 0 {
+		initialQuery = strings.Join(args, " ")
+	}
+
+	scanner := bufio.NewScanner(os.Stdin)
+
+	for {
+		var userInput string
+
+		if initialQuery != "" {
+			userInput = initialQuery
+			initialQuery = "" // Clear after first use
+			color.Cyan("💬 You: %s\n", userInput)
+		} else {
+			fmt.Print(color.CyanString("\n💬 You: "))
+			color.Set(color.FgCyan) // Set blue color for user input
+			if !scanner.Scan() {
+				color.Unset() // Reset color
+				break         // EOF or error
+			}
+			userInput = strings.TrimSpace(scanner.Text())
+			color.Unset() // Reset color after input
+		}
+
+		// Check for exit commands
+		if userInput == "" {
+			continue
+		}
+
+		if strings.ToLower(userInput) == "exit" || strings.ToLower(userInput) == "quit" {
+			fmt.Println("👋 Goodbye! Thanks for using AZD Copilot!")
+			break
+		}
+
+		// Process the query with the enhanced agent
+		err := aai.runChain(ctx, userInput)
+		if err != nil {
+			continue
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading input: %w", err)
+	}
+
+	return nil
+}
+
 // ProcessQuery processes a user query with full action tracking and validation
-func (aai *AzdAiAgent) ProcessQuery(ctx context.Context, userInput string) error {
+func (aai *AzdAiAgent) runChain(ctx context.Context, userInput string) error {
 	// Execute with enhanced input - agent should automatically handle memory
 	_, err := chains.Run(ctx, aai.executor, userInput,
 		chains.WithMaxTokens(800),

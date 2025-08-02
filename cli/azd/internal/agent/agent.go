@@ -83,8 +83,8 @@ func NewAzdAiAgent(llm llms.Model, opts ...AgentOption) (*AzdAiAgent, error) {
 	)
 
 	toolLoaders := []localtools.ToolLoader{
-		localtools.NewLocalToolsLoader(actionLogger),
-		mcptools.NewMcpToolsLoader(actionLogger, samplingHandler),
+		localtools.NewLocalToolsLoader(),
+		mcptools.NewMcpToolsLoader(samplingHandler),
 	}
 
 	allTools := []tools.Tool{}

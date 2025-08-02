@@ -2,17 +2,16 @@ package io
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/tmc/langchaingo/callbacks"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 )
 
 // CreateDirectoryTool implements the Tool interface for creating directories
-type CreateDirectoryTool struct {
-	CallbacksHandler callbacks.Handler
-}
+type CreateDirectoryTool struct{}
 
 func (t CreateDirectoryTool) Name() string {
 	return "create_directory"
@@ -22,56 +21,69 @@ func (t CreateDirectoryTool) Description() string {
 	return "Create a directory (and any necessary parent directories). Input: directory path (e.g., 'docs' or './src/components')"
 }
 
-func (t CreateDirectoryTool) Call(ctx context.Context, input string) (string, error) {
-	// Invoke callback for tool start
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("create_directory: %s", input))
+// createErrorResponse creates a JSON error response
+func (t CreateDirectoryTool) createErrorResponse(err error, message string) (string, error) {
+	if message == "" {
+		message = err.Error()
 	}
 
+	errorResp := common.ErrorResponse{
+		Error:   true,
+		Message: message,
+	}
+
+	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
+	if jsonErr != nil {
+		// Fallback to simple error message if JSON marshalling fails
+		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
+		return fallbackMsg, nil
+	}
+
+	return string(jsonData), nil
+}
+
+func (t CreateDirectoryTool) Call(ctx context.Context, input string) (string, error) {
 	input = strings.TrimPrefix(input, `"`)
 	input = strings.TrimSuffix(input, `"`)
+	input = strings.TrimSpace(input)
 
 	if input == "" {
-		err := fmt.Errorf("directory path is required")
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-		}
-		return "", err
+		return t.createErrorResponse(fmt.Errorf("directory path is required"), "Directory path is required")
 	}
 
 	err := os.MkdirAll(input, 0755)
 	if err != nil {
-		toolErr := fmt.Errorf("failed to create directory %s: %w", input, err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to create directory %s: %s", input, err.Error()))
 	}
 
 	// Check if directory already existed or was newly created
 	info, err := os.Stat(input)
 	if err != nil {
-		toolErr := fmt.Errorf("failed to verify directory creation: %w", err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to verify directory creation: %s", err.Error()))
 	}
 
 	if !info.IsDir() {
-		toolErr := fmt.Errorf("%s exists but is not a directory", input)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(fmt.Errorf("%s exists but is not a directory", input), fmt.Sprintf("%s exists but is not a directory", input))
 	}
 
-	output := fmt.Sprintf("Created directory: %s\n", input)
-
-	// Invoke callback for tool end
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolEnd(ctx, output)
+	// Create success response
+	type CreateDirectoryResponse struct {
+		Success bool   `json:"success"`
+		Path    string `json:"path"`
+		Message string `json:"message"`
 	}
 
-	return output, nil
+	response := CreateDirectoryResponse{
+		Success: true,
+		Path:    input,
+		Message: fmt.Sprintf("Successfully created directory: %s", input),
+	}
+
+	// Convert to JSON
+	jsonData, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
+	}
+
+	return string(jsonData), nil
 }

@@ -10,7 +10,6 @@ import (
 	langchaingo_mcp_adapter "github.com/i2y/langchaingo-mcp-adapter"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
-	"github.com/tmc/langchaingo/callbacks"
 	"github.com/tmc/langchaingo/tools"
 )
 
@@ -31,13 +30,11 @@ type ServerConfig struct {
 }
 
 type McpToolsLoader struct {
-	callbackHandler callbacks.Handler
 	samplingHandler client.SamplingHandler
 }
 
-func NewMcpToolsLoader(callbackHandler callbacks.Handler, samplingHandler client.SamplingHandler) *McpToolsLoader {
+func NewMcpToolsLoader(samplingHandler client.SamplingHandler) *McpToolsLoader {
 	return &McpToolsLoader{
-		callbackHandler: callbackHandler,
 		samplingHandler: samplingHandler,
 	}
 }

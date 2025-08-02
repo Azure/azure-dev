@@ -8,13 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/langchaingo/callbacks"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 )
 
 // FileInfoTool implements the Tool interface for getting file information
-type FileInfoTool struct {
-	CallbacksHandler callbacks.Handler
-}
+type FileInfoTool struct{}
 
 func (t FileInfoTool) Name() string {
 	return "file_info"
@@ -24,33 +22,47 @@ func (t FileInfoTool) Description() string {
 	return "Get information about a file (size, modification time, permissions). Input: file path (e.g., 'data.txt' or './docs/readme.md'). Returns JSON with file information."
 }
 
-func (t FileInfoTool) Call(ctx context.Context, input string) (string, error) {
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("file_info: %s", input))
+// createErrorResponse creates a JSON error response
+func (t FileInfoTool) createErrorResponse(err error, message string) (string, error) {
+	if message == "" {
+		message = err.Error()
 	}
 
+	errorResp := common.ErrorResponse{
+		Error:   true,
+		Message: message,
+	}
+
+	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
+	if jsonErr != nil {
+		// Fallback to simple error message if JSON marshalling fails
+		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
+		return fallbackMsg, nil
+	}
+
+	return string(jsonData), nil
+}
+
+func (t FileInfoTool) Call(ctx context.Context, input string) (string, error) {
 	input = strings.TrimPrefix(input, `"`)
 	input = strings.TrimSuffix(input, `"`)
+	input = strings.TrimSpace(input)
 
 	if input == "" {
-		err := fmt.Errorf("file path is required")
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-		}
-		return "", err
+		return t.createErrorResponse(fmt.Errorf("file path is required"), "File path is required")
 	}
 
 	info, err := os.Stat(input)
 	if err != nil {
-		toolErr := fmt.Errorf("failed to get info for %s: %w", input, err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		if os.IsNotExist(err) {
+			return t.createErrorResponse(err, fmt.Sprintf("File or directory %s does not exist", input))
 		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to get info for %s: %s", input, err.Error()))
 	}
 
 	// Prepare JSON response structure
 	type FileInfoResponse struct {
+		Success      bool      `json:"success"`
 		Path         string    `json:"path"`
 		Name         string    `json:"name"`
 		Type         string    `json:"type"`
@@ -58,6 +70,7 @@ func (t FileInfoTool) Call(ctx context.Context, input string) (string, error) {
 		Size         int64     `json:"size"`
 		ModifiedTime time.Time `json:"modifiedTime"`
 		Permissions  string    `json:"permissions"`
+		Message      string    `json:"message"`
 	}
 
 	var fileType string
@@ -68,6 +81,7 @@ func (t FileInfoTool) Call(ctx context.Context, input string) (string, error) {
 	}
 
 	response := FileInfoResponse{
+		Success:      true,
 		Path:         input,
 		Name:         info.Name(),
 		Type:         fileType,
@@ -75,23 +89,14 @@ func (t FileInfoTool) Call(ctx context.Context, input string) (string, error) {
 		Size:         info.Size(),
 		ModifiedTime: info.ModTime(),
 		Permissions:  info.Mode().String(),
+		Message:      fmt.Sprintf("Successfully retrieved information for %s", input),
 	}
 
 	// Convert to JSON
 	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		toolErr := fmt.Errorf("failed to marshal JSON response: %w", err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
 	}
 
-	output := string(jsonData)
-
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolEnd(ctx, output)
-	}
-
-	return output, nil
+	return string(jsonData), nil
 }

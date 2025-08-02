@@ -1,0 +1,29 @@
+package prompts
+
+import (
+	_ "embed"
+)
+
+//go:embed azd_plan_init.md
+var AzdPlanInitPrompt string
+
+//go:embed azd_iac_generation_rules.md
+var AzdIacRulesPrompt string
+
+//go:embed azure.yaml.json
+var AzdYamlSchemaPrompt string
+
+//go:embed azd_discovery_analysis.md
+var AzdDiscoveryAnalysisPrompt string
+
+//go:embed azd_architecture_planning.md
+var AzdArchitecturePlanningPrompt string
+
+//go:embed azd_azure_yaml_generation.md
+var AzdAzureYamlGenerationPrompt string
+
+//go:embed azd_infrastructure_generation.md
+var AzdInfrastructureGenerationPrompt string
+
+//go:embed azd_docker_generation.md
+var AzdDockerGenerationPrompt string

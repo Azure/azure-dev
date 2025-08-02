@@ -2,16 +2,15 @@ package io
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
-	"github.com/tmc/langchaingo/callbacks"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 )
 
 // CurrentDirectoryTool implements the Tool interface for getting current directory
-type CurrentDirectoryTool struct {
-	CallbacksHandler callbacks.Handler
-}
+type CurrentDirectoryTool struct{}
 
 func (t CurrentDirectoryTool) Name() string {
 	return "cwd"
@@ -21,21 +20,51 @@ func (t CurrentDirectoryTool) Description() string {
 	return "Get the current working directory to understand the project context. Input: use 'current' or '.' (any input works)"
 }
 
-func (t CurrentDirectoryTool) Call(ctx context.Context, input string) (string, error) {
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolStart(ctx, input)
+// createErrorResponse creates a JSON error response
+func (t CurrentDirectoryTool) createErrorResponse(err error, message string) (string, error) {
+	if message == "" {
+		message = err.Error()
 	}
 
+	errorResp := common.ErrorResponse{
+		Error:   true,
+		Message: message,
+	}
+
+	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
+	if jsonErr != nil {
+		// Fallback to simple error message if JSON marshalling fails
+		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
+		return fallbackMsg, nil
+	}
+
+	return string(jsonData), nil
+}
+
+func (t CurrentDirectoryTool) Call(ctx context.Context, input string) (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("failed to get current directory: %w", err)
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to get current directory: %s", err.Error()))
 	}
 
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolEnd(ctx, dir)
+	// Create success response
+	type CurrentDirectoryResponse struct {
+		Success          bool   `json:"success"`
+		CurrentDirectory string `json:"currentDirectory"`
+		Message          string `json:"message"`
 	}
 
-	output := fmt.Sprintf("Current directory is %s\n", dir)
+	response := CurrentDirectoryResponse{
+		Success:          true,
+		CurrentDirectory: dir,
+		Message:          fmt.Sprintf("Current directory is %s", dir),
+	}
 
-	return output, nil
+	// Convert to JSON
+	jsonData, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
+	}
+
+	return string(jsonData), nil
 }

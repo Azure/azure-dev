@@ -2,17 +2,16 @@ package io
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/tmc/langchaingo/callbacks"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 )
 
 // DeleteFileTool implements the Tool interface for deleting files
-type DeleteFileTool struct {
-	CallbacksHandler callbacks.Handler
-}
+type DeleteFileTool struct{}
 
 func (t DeleteFileTool) Name() string {
 	return "delete_file"
@@ -22,55 +21,78 @@ func (t DeleteFileTool) Description() string {
 	return "Delete a file. Input: file path (e.g., 'temp.txt' or './docs/old-file.md')"
 }
 
-func (t DeleteFileTool) Call(ctx context.Context, input string) (string, error) {
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("delete_file: %s", input))
+// createErrorResponse creates a JSON error response
+func (t DeleteFileTool) createErrorResponse(err error, message string) (string, error) {
+	if message == "" {
+		message = err.Error()
 	}
 
+	errorResp := common.ErrorResponse{
+		Error:   true,
+		Message: message,
+	}
+
+	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
+	if jsonErr != nil {
+		// Fallback to simple error message if JSON marshalling fails
+		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
+		return fallbackMsg, nil
+	}
+
+	return string(jsonData), nil
+}
+
+func (t DeleteFileTool) Call(ctx context.Context, input string) (string, error) {
 	input = strings.TrimPrefix(input, `"`)
 	input = strings.TrimSuffix(input, `"`)
+	input = strings.TrimSpace(input)
 
 	if input == "" {
-		err := fmt.Errorf("file path is required")
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-		}
-		return "", err
+		return t.createErrorResponse(fmt.Errorf("file path is required"), "File path is required")
 	}
 
 	// Check if file exists and get info
 	info, err := os.Stat(input)
 	if err != nil {
-		toolErr := fmt.Errorf("file %s does not exist: %w", input, err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		if os.IsNotExist(err) {
+			return t.createErrorResponse(err, fmt.Sprintf("File %s does not exist", input))
 		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Cannot access file %s: %s", input, err.Error()))
 	}
 
 	// Make sure it's a file, not a directory
 	if info.IsDir() {
-		err := fmt.Errorf("%s is a directory, not a file. Use delete_directory to remove directories", input)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-		}
-		return "", err
+		return t.createErrorResponse(fmt.Errorf("%s is a directory, not a file", input), fmt.Sprintf("%s is a directory, not a file. Use delete_directory to remove directories", input))
 	}
+
+	fileSize := info.Size()
 
 	// Delete the file
 	err = os.Remove(input)
 	if err != nil {
-		toolErr := fmt.Errorf("failed to delete file %s: %w", input, err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to delete file %s: %s", input, err.Error()))
 	}
 
-	output := fmt.Sprintf("Deleted file %s (%d bytes)", input, info.Size())
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolEnd(ctx, output)
+	// Create success response
+	type DeleteFileResponse struct {
+		Success     bool   `json:"success"`
+		FilePath    string `json:"filePath"`
+		SizeDeleted int64  `json:"sizeDeleted"`
+		Message     string `json:"message"`
 	}
 
-	return output, nil
+	response := DeleteFileResponse{
+		Success:     true,
+		FilePath:    input,
+		SizeDeleted: fileSize,
+		Message:     fmt.Sprintf("Successfully deleted file %s (%d bytes)", input, fileSize),
+	}
+
+	// Convert to JSON
+	jsonData, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
+	}
+
+	return string(jsonData), nil
 }

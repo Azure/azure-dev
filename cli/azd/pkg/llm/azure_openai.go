@@ -54,11 +54,11 @@ func (p *AzureOpenAiModelProvider) CreateModelContainer(opts ...ModelOption) (*M
 	}
 
 	model, err := openai.New(
-		openai.WithModel(modelConfig.Model),
+		openai.WithToken(modelConfig.Token),
+		openai.WithBaseURL(modelConfig.Endpoint),
 		openai.WithAPIType(openai.APITypeAzure),
 		openai.WithAPIVersion(modelConfig.ApiVersion),
-		openai.WithBaseURL(modelConfig.Endpoint),
-		openai.WithToken(modelConfig.Token),
+		openai.WithModel(modelConfig.Model),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create LLM: %w", err)

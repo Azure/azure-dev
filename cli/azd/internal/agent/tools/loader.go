@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"github.com/tmc/langchaingo/callbacks"
 	"github.com/tmc/langchaingo/tools"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/azd"
@@ -15,18 +14,16 @@ type ToolLoader interface {
 }
 
 type LocalToolsLoader struct {
-	loaders         []ToolLoader
-	callbackHandler callbacks.Handler
+	loaders []ToolLoader
 }
 
-func NewLocalToolsLoader(callbackHandler callbacks.Handler) *LocalToolsLoader {
+func NewLocalToolsLoader() *LocalToolsLoader {
 	return &LocalToolsLoader{
 		loaders: []ToolLoader{
-			azd.NewAzdToolsLoader(callbackHandler),
-			dev.NewDevToolsLoader(callbackHandler),
-			io.NewIoToolsLoader(callbackHandler),
+			azd.NewAzdToolsLoader(),
+			dev.NewDevToolsLoader(),
+			io.NewIoToolsLoader(),
 		},
-		callbackHandler: callbackHandler,
 	}
 }
 

@@ -1,6 +1,7 @@
 package io
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,13 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tmc/langchaingo/callbacks"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 )
 
 // ReadFileTool implements the Tool interface for reading file contents
-type ReadFileTool struct {
-	CallbacksHandler callbacks.Handler
-}
+type ReadFileTool struct{}
 
 // ReadFileRequest represents the JSON payload for file read requests
 type ReadFileRequest struct {
@@ -80,279 +79,170 @@ Examples:
 5. Read single line:
    {"filePath": "package.json", "startLine": 42, "endLine": 42}
 
-Files larger than 10KB are automatically truncated. Files over 1MB show size info only unless specific line range is requested.
+Files larger than 100KB are automatically truncated. Files over 1MB show size info only unless specific line range is requested.
 The input must be formatted as a single line valid JSON string.`
 }
 
-func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("read_file: %s", input))
+// createErrorResponse creates a JSON error response
+func (t ReadFileTool) createErrorResponse(err error, message string) (string, error) {
+	if message == "" {
+		message = err.Error()
 	}
 
-	if input == "" {
-		output := "❌ No input provided\n\n"
-		output += "📝 Expected JSON format:\n"
-		output += `{"filePath": "path/to/file.txt"}`
+	errorResp := common.ErrorResponse{
+		Error:   true,
+		Message: message,
+	}
 
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("empty input"))
-			t.CallbacksHandler.HandleToolEnd(ctx, output)
-		}
-		return output, nil
+	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
+	if jsonErr != nil {
+		// Fallback to simple error message if JSON marshalling fails
+		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
+		return fallbackMsg, nil
+	}
+
+	return string(jsonData), nil
+}
+
+func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
+	if input == "" {
+		return t.createErrorResponse(fmt.Errorf("empty input"), "No input provided. Expected JSON format: {\"filePath\": \"path/to/file.txt\"}")
 	}
 
 	// Parse JSON input
 	var req ReadFileRequest
 	if err := json.Unmarshal([]byte(input), &req); err != nil {
-		output := fmt.Sprintf("❌ Invalid JSON input: %s\n\n", err.Error())
-		output += "📝 Expected format:\n"
-		output += `{"filePath": "path/to/file.txt", "startLine": 1, "endLine": 50}`
-		output += "\n\n💡 Tips:\n"
-		output += "- Use double quotes for strings\n"
-		output += "- Remove any trailing commas\n"
-		output += "- Escape backslashes: use \\\\ instead of \\"
-
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-			t.CallbacksHandler.HandleToolEnd(ctx, output)
-		}
-		return output, nil
+		return t.createErrorResponse(err, fmt.Sprintf("Invalid JSON input: %s. Expected format: {\"filePath\": \"path/to/file.txt\", \"startLine\": 1, \"endLine\": 50}", err.Error()))
 	}
 
 	// Validate required fields
 	if req.FilePath == "" {
-		output := "❌ Missing required field: filePath cannot be empty\n\n"
-		output += "📝 Example: " + `{"filePath": "README.md"}`
-
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("missing filePath"))
-			t.CallbacksHandler.HandleToolEnd(ctx, output)
-		}
-		return output, nil
+		return t.createErrorResponse(fmt.Errorf("missing filePath"), "Missing required field: filePath cannot be empty")
 	}
 
 	// Get file info first to check size
 	fileInfo, err := os.Stat(req.FilePath)
 	if err != nil {
-		output := fmt.Sprintf("❌ Cannot access file: %s\n\n", req.FilePath)
 		if os.IsNotExist(err) {
-			output += "📁 File does not exist. Please check:\n"
-			output += "- File path spelling and case sensitivity\n"
-			output += "- File location relative to current directory\n"
-			output += "- File permissions\n"
-		} else {
-			output += fmt.Sprintf("Error details: %s\n", err.Error())
+			return t.createErrorResponse(err, fmt.Sprintf("File does not exist: %s. Please check file path spelling and location", req.FilePath))
 		}
-
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-			t.CallbacksHandler.HandleToolEnd(ctx, output)
-		}
-		return output, nil
+		return t.createErrorResponse(err, fmt.Sprintf("Cannot access file %s: %s", req.FilePath, err.Error()))
 	}
 
-	fileSize := fileInfo.Size()
-
-	// Handle very large files differently (unless specific line range requested)
-	if fileSize > 1024*1024 && req.StartLine == 0 && req.EndLine == 0 { // 1MB+
-		response := ReadFileResponse{
-			Success:     false,
-			FilePath:    req.FilePath,
-			Content:     "",
-			IsTruncated: false,
-			IsPartial:   false,
-			FileInfo: ReadFileInfo{
-				Size:         fileSize,
-				ModifiedTime: fileInfo.ModTime(),
-				Permissions:  fileInfo.Mode().String(),
-			},
-			Message: fmt.Sprintf("File is very large (%.2f MB). Use startLine and endLine parameters for specific sections.", float64(fileSize)/(1024*1024)),
-		}
-
-		jsonData, err := json.MarshalIndent(response, "", "  ")
-		if err != nil {
-			toolErr := fmt.Errorf("failed to marshal JSON response: %w", err)
-			if t.CallbacksHandler != nil {
-				t.CallbacksHandler.HandleToolError(ctx, toolErr)
-			}
-			return "", toolErr
-		}
-
-		output := string(jsonData)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolEnd(ctx, output)
-		}
-		return output, nil
+	if fileInfo.IsDir() {
+		return t.createErrorResponse(fmt.Errorf("path is a directory"), fmt.Sprintf("%s is a directory, not a file. Use directory_list tool for directories", req.FilePath))
 	}
 
-	content, err := os.ReadFile(req.FilePath)
+	// Handle very large files (>1MB) - require line range
+	const maxFileSize = 1024 * 1024 // 1MB
+	if fileInfo.Size() > maxFileSize && req.StartLine == 0 && req.EndLine == 0 {
+		return t.createErrorResponse(fmt.Errorf("file too large"), fmt.Sprintf("File %s is too large (%d bytes). Please specify startLine and endLine to read specific sections", req.FilePath, fileInfo.Size()))
+	}
+
+	// Read file content
+	file, err := os.Open(req.FilePath)
 	if err != nil {
-		output := fmt.Sprintf("❌ Cannot read file: %s\n", req.FilePath)
-		output += fmt.Sprintf("Error: %s\n\n", err.Error())
-		output += "💡 This might be due to:\n"
-		output += "- Insufficient permissions\n"
-		output += "- File is locked by another process\n"
-		output += "- File is binary or corrupted\n"
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to open file %s: %s", req.FilePath, err.Error()))
+	}
+	defer file.Close()
 
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-			t.CallbacksHandler.HandleToolEnd(ctx, output)
-		}
-		return output, nil
+	// Read lines
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
 	}
 
-	lines := strings.Split(string(content), "\n")
+	if err := scanner.Err(); err != nil {
+		return t.createErrorResponse(err, fmt.Sprintf("Error reading file %s: %s", req.FilePath, err.Error()))
+	}
+
 	totalLines := len(lines)
-
-	// Handle partial reads based on line range
-	if req.StartLine > 0 || req.EndLine > 0 {
-		return t.handlePartialRead(ctx, req.FilePath, lines, req.StartLine, req.EndLine, totalLines, fileInfo)
-	}
-
-	var finalContent string
+	var content string
+	var isPartial bool
 	var isTruncated bool
-	var message string
+	var lineRange *LineRange
 
-	// Improved truncation with better limits for full file reads
-	if len(content) > 10000 { // 10KB limit
-		// Show first 50 lines and last 10 lines
-		preview := strings.Join(lines[:50], "\n")
-		if totalLines > 60 {
-			preview += fmt.Sprintf("\n\n... [%d lines omitted] ...\n\n", totalLines-60)
-			preview += strings.Join(lines[totalLines-10:], "\n")
+	// Determine what to read
+	if req.StartLine > 0 || req.EndLine > 0 {
+		// Reading specific line range
+		startLine := req.StartLine
+		endLine := req.EndLine
+
+		if startLine == 0 {
+			startLine = 1
 		}
-		finalContent = preview
-		isTruncated = true
-		message = "Large file truncated - showing first 50 and last 10 lines"
-	} else {
-		finalContent = string(content)
-		isTruncated = false
-		message = "File read successfully"
-	}
-
-	response := ReadFileResponse{
-		Success:     true,
-		FilePath:    req.FilePath,
-		Content:     finalContent,
-		IsTruncated: isTruncated,
-		IsPartial:   false,
-		FileInfo: ReadFileInfo{
-			Size:         fileSize,
-			ModifiedTime: fileInfo.ModTime(),
-			Permissions:  fileInfo.Mode().String(),
-		},
-		Message: message,
-	}
-
-	jsonData, err := json.MarshalIndent(response, "", "  ")
-	if err != nil {
-		toolErr := fmt.Errorf("failed to marshal JSON response: %w", err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
-	}
-
-	output := string(jsonData)
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolEnd(ctx, output)
-	}
-
-	return output, nil
-}
-
-// handlePartialRead handles reading specific line ranges from a file
-func (t ReadFileTool) handlePartialRead(ctx context.Context, filePath string, lines []string, startLine, endLine, totalLines int, fileInfo os.FileInfo) (string, error) {
-	// Validate and adjust line numbers (1-based to 0-based)
-	if startLine == 0 {
-		startLine = 1 // Default to start of file
-	}
-	if endLine == 0 {
-		endLine = totalLines // Default to end of file
-	}
-
-	// Validate line numbers
-	if startLine < 1 {
-		startLine = 1
-	}
-	if endLine > totalLines {
-		endLine = totalLines
-	}
-	if startLine > endLine {
-		response := ReadFileResponse{
-			Success:     false,
-			FilePath:    filePath,
-			Content:     "",
-			IsTruncated: false,
-			IsPartial:   false,
-			FileInfo: ReadFileInfo{
-				Size:         fileInfo.Size(),
-				ModifiedTime: fileInfo.ModTime(),
-				Permissions:  fileInfo.Mode().String(),
-			},
-			Message: fmt.Sprintf("Invalid line range: start line (%d) cannot be greater than end line (%d)", startLine, endLine),
+		if endLine == 0 {
+			endLine = totalLines
 		}
 
-		jsonData, err := json.MarshalIndent(response, "", "  ")
-		if err != nil {
-			toolErr := fmt.Errorf("failed to marshal JSON response: %w", err)
-			if t.CallbacksHandler != nil {
-				t.CallbacksHandler.HandleToolError(ctx, toolErr)
-			}
-			return "", toolErr
+		// Validate line range
+		if startLine > totalLines {
+			return t.createErrorResponse(fmt.Errorf("start line out of range"), fmt.Sprintf("Start line %d is greater than total lines %d in file", startLine, totalLines))
+		}
+		if startLine > endLine {
+			return t.createErrorResponse(fmt.Errorf("invalid line range"), fmt.Sprintf("Start line %d is greater than end line %d", startLine, endLine))
 		}
 
-		output := string(jsonData)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("invalid line range: start %d > end %d", startLine, endLine))
-			t.CallbacksHandler.HandleToolEnd(ctx, output)
+		// Adjust endLine if it exceeds total lines
+		if endLine > totalLines {
+			endLine = totalLines
 		}
-		return output, nil
-	}
 
-	// Convert to 0-based indexing
-	startIdx := startLine - 1
-	endIdx := endLine
+		// Convert to 0-based indexing and extract lines
+		startIdx := startLine - 1
+		endIdx := endLine
+		selectedLines := lines[startIdx:endIdx]
+		content = strings.Join(selectedLines, "\n")
+		isPartial = true
 
-	// Extract the requested lines
-	selectedLines := lines[startIdx:endIdx]
-	content := strings.Join(selectedLines, "\n")
-
-	linesRead := endLine - startLine + 1
-
-	response := ReadFileResponse{
-		Success:     true,
-		FilePath:    filePath,
-		Content:     content,
-		IsTruncated: false,
-		IsPartial:   true,
-		LineRange: &LineRange{
+		lineRange = &LineRange{
 			StartLine:  startLine,
 			EndLine:    endLine,
 			TotalLines: totalLines,
-			LinesRead:  linesRead,
-		},
+			LinesRead:  endLine - startLine + 1,
+		}
+	} else {
+		// Reading entire file
+		content = strings.Join(lines, "\n")
+
+		// Truncate if content is too large (>100KB)
+		const maxContentSize = 100 * 1024 // 100KB
+		if len(content) > maxContentSize {
+			content = content[:maxContentSize] + "\n... [content truncated]"
+			isTruncated = true
+		}
+	}
+
+	// Create success response
+	response := ReadFileResponse{
+		Success:     true,
+		FilePath:    req.FilePath,
+		Content:     content,
+		IsTruncated: isTruncated,
+		IsPartial:   isPartial,
+		LineRange:   lineRange,
 		FileInfo: ReadFileInfo{
 			Size:         fileInfo.Size(),
 			ModifiedTime: fileInfo.ModTime(),
 			Permissions:  fileInfo.Mode().String(),
 		},
-		Message: fmt.Sprintf("Successfully read %d lines (%d-%d) from file", linesRead, startLine, endLine),
 	}
 
+	// Set appropriate message
+	if isPartial && lineRange != nil {
+		response.Message = fmt.Sprintf("Successfully read %d lines (%d-%d) from file", lineRange.LinesRead, lineRange.StartLine, lineRange.EndLine)
+	} else if isTruncated {
+		response.Message = fmt.Sprintf("Successfully read file (content truncated due to size)")
+	} else {
+		response.Message = fmt.Sprintf("Successfully read entire file (%d lines)", totalLines)
+	}
+
+	// Convert to JSON
 	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		toolErr := fmt.Errorf("failed to marshal JSON response: %w", err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
 	}
 
-	output := string(jsonData)
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolEnd(ctx, output)
-	}
-
-	return output, nil
+	return string(jsonData), nil
 }

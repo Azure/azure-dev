@@ -4,18 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/tmc/langchaingo/callbacks"
 )
 
 // FileSearchTool implements a tool for searching files using glob patterns
-type FileSearchTool struct {
-	CallbacksHandler callbacks.Handler
-}
+type FileSearchTool struct{}
 
 // FileSearchRequest represents the JSON payload for file search requests
 type FileSearchRequest struct {
@@ -77,147 +73,100 @@ Returns a sorted list of matching file paths relative to the current working dir
 The input must be formatted as a single line valid JSON string.`
 }
 
-func (t FileSearchTool) Call(ctx context.Context, input string) (string, error) {
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("file_search: %s", input))
+// createErrorResponse creates a JSON error response
+func (t FileSearchTool) createErrorResponse(err error, message string) (string, error) {
+	if message == "" {
+		message = err.Error()
 	}
 
+	errorResp := common.ErrorResponse{
+		Error:   true,
+		Message: message,
+	}
+
+	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
+	if jsonErr != nil {
+		// Fallback to simple error message if JSON marshalling fails
+		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
+		return fallbackMsg, nil
+	}
+
+	return string(jsonData), nil
+}
+
+func (t FileSearchTool) Call(ctx context.Context, input string) (string, error) {
 	if input == "" {
-		err := fmt.Errorf("input is required")
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-		}
-		return "", err
+		return t.createErrorResponse(fmt.Errorf("input is required"), "Input is required. Expected JSON format: {\"pattern\": \"*.go\"}")
 	}
 
 	// Parse JSON input
 	var req FileSearchRequest
 	if err := json.Unmarshal([]byte(input), &req); err != nil {
-		toolErr := fmt.Errorf("invalid JSON input: %w", err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Invalid JSON input: %s. Expected format: {\"pattern\": \"*.go\", \"maxResults\": 50}", err.Error()))
 	}
 
 	// Validate required fields
 	if req.Pattern == "" {
-		err := fmt.Errorf("pattern is required")
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-		}
-		return "", err
+		return t.createErrorResponse(fmt.Errorf("pattern is required"), "Pattern is required in the JSON input")
 	}
 
-	// Set defaults
-	if req.MaxResults == 0 {
-		req.MaxResults = 100
+	// Set default max results
+	maxResults := req.MaxResults
+	if maxResults <= 0 {
+		maxResults = 100
 	}
 
-	// Get current working directory
-	searchPath, err := os.Getwd()
+	// Use doublestar to find matching files
+	matches, err := doublestar.FilepathGlob(req.Pattern)
 	if err != nil {
-		toolErr := fmt.Errorf("failed to get current working directory: %w", err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Invalid glob pattern '%s': %s", req.Pattern, err.Error()))
 	}
 
-	// Perform the search
-	matches, err := t.searchFiles(searchPath, req.Pattern, req.MaxResults)
-	if err != nil {
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-		}
-		return "", err
-	}
-
-	// Format output as JSON
-	output, err := t.formatResults(searchPath, req.Pattern, matches, req.MaxResults)
-	if err != nil {
-		toolErr := fmt.Errorf("failed to format results: %w", err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
-	}
-
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolEnd(ctx, output)
-	}
-
-	return output, nil
-}
-
-// searchFiles performs the actual file search using doublestar for comprehensive glob matching
-func (t FileSearchTool) searchFiles(searchPath, pattern string, maxResults int) ([]string, error) {
-	var matches []string
-	searchPath = filepath.Clean(searchPath)
-
-	// Use doublestar.Glob which handles all advanced patterns including recursion via **
-	globPattern := filepath.Join(searchPath, pattern)
-	// Convert to forward slashes for cross-platform compatibility
-	globPattern = filepath.ToSlash(globPattern)
-
-	globMatches, err := doublestar.FilepathGlob(globPattern)
-	if err != nil {
-		return nil, fmt.Errorf("error in glob pattern matching: %w", err)
-	}
-
-	// Convert to relative paths and limit results
-	for _, match := range globMatches {
-		if len(matches) >= maxResults {
-			break
-		}
-
-		// Check if it's a file (not directory)
-		info, err := os.Stat(match)
-		if err != nil || info.IsDir() {
-			continue
-		}
-
-		relPath, err := filepath.Rel(searchPath, match)
-		if err != nil {
-			continue // Skip files we can't get relative path for
-		}
-
-		// Convert to forward slashes for consistent output
-		relPath = filepath.ToSlash(relPath)
-		matches = append(matches, relPath)
-	}
-
-	// Sort the results for consistent output
+	// Sort results for consistent output
 	sort.Strings(matches)
 
-	return matches, nil
-}
+	// Limit results if needed
+	if len(matches) > maxResults {
+		matches = matches[:maxResults]
+	}
 
-// formatResults formats the search results into a JSON response
-func (t FileSearchTool) formatResults(searchPath, pattern string, matches []string, maxResults int) (string, error) {
-	// Prepare JSON response structure
+	// Create response structure
 	type FileSearchResponse struct {
-		CurrentDirectory string   `json:"currentDirectory"`
-		Pattern          string   `json:"pattern"`
-		TotalFound       int      `json:"totalFound"`
-		MaxResults       int      `json:"maxResults"`
-		ResultsLimited   bool     `json:"resultsLimited"`
-		Matches          []string `json:"matches"`
+		Success    bool     `json:"success"`
+		Pattern    string   `json:"pattern"`
+		TotalFound int      `json:"totalFound"`
+		Returned   int      `json:"returned"`
+		MaxResults int      `json:"maxResults"`
+		Files      []string `json:"files"`
+		Message    string   `json:"message"`
+	}
+
+	totalFound := len(matches)
+	returned := len(matches)
+
+	var message string
+	if totalFound == 0 {
+		message = fmt.Sprintf("No files found matching pattern '%s'", req.Pattern)
+	} else if totalFound == returned {
+		message = fmt.Sprintf("Found %d files matching pattern '%s'", totalFound, req.Pattern)
+	} else {
+		message = fmt.Sprintf("Found %d files matching pattern '%s', returning first %d", totalFound, req.Pattern, returned)
 	}
 
 	response := FileSearchResponse{
-		CurrentDirectory: searchPath,
-		Pattern:          pattern,
-		TotalFound:       len(matches),
-		MaxResults:       maxResults,
-		ResultsLimited:   len(matches) >= maxResults,
-		Matches:          matches,
+		Success:    true,
+		Pattern:    req.Pattern,
+		TotalFound: totalFound,
+		Returned:   returned,
+		MaxResults: maxResults,
+		Files:      matches,
+		Message:    message,
 	}
 
 	// Convert to JSON
 	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal JSON response: %w", err)
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
 	}
 
 	return string(jsonData), nil

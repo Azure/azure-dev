@@ -1,23 +1,18 @@
 package weather
 
 import (
-	"github.com/tmc/langchaingo/callbacks"
 	"github.com/tmc/langchaingo/tools"
 )
 
 // WeatherToolsLoader loads weather-related tools
-type WeatherToolsLoader struct {
-	callbackHandler callbacks.Handler
-}
+type WeatherToolsLoader struct{}
 
-func NewWeatherToolsLoader(callbackHandler callbacks.Handler) *WeatherToolsLoader {
-	return &WeatherToolsLoader{
-		callbackHandler: callbackHandler,
-	}
+func NewWeatherToolsLoader() *WeatherToolsLoader {
+	return &WeatherToolsLoader{}
 }
 
 func (l *WeatherToolsLoader) LoadTools() ([]tools.Tool, error) {
 	return []tools.Tool{
-		&WeatherTool{CallbacksHandler: l.callbackHandler},
+		&WeatherTool{},
 	}, nil
 }

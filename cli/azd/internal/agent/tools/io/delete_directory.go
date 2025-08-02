@@ -2,17 +2,16 @@ package io
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/tmc/langchaingo/callbacks"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 )
 
 // DeleteDirectoryTool implements the Tool interface for deleting directories
-type DeleteDirectoryTool struct {
-	CallbacksHandler callbacks.Handler
-}
+type DeleteDirectoryTool struct{}
 
 func (t DeleteDirectoryTool) Name() string {
 	return "delete_directory"
@@ -22,40 +21,48 @@ func (t DeleteDirectoryTool) Description() string {
 	return "Delete a directory and all its contents. Input: directory path (e.g., 'temp-folder' or './old-docs')"
 }
 
-func (t DeleteDirectoryTool) Call(ctx context.Context, input string) (string, error) {
-	// Invoke callback for tool start
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("delete_directory: %s", input))
+// createErrorResponse creates a JSON error response
+func (t DeleteDirectoryTool) createErrorResponse(err error, message string) (string, error) {
+	if message == "" {
+		message = err.Error()
 	}
 
+	errorResp := common.ErrorResponse{
+		Error:   true,
+		Message: message,
+	}
+
+	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
+	if jsonErr != nil {
+		// Fallback to simple error message if JSON marshalling fails
+		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
+		return fallbackMsg, nil
+	}
+
+	return string(jsonData), nil
+}
+
+func (t DeleteDirectoryTool) Call(ctx context.Context, input string) (string, error) {
 	input = strings.TrimPrefix(input, `"`)
 	input = strings.TrimSuffix(input, `"`)
+	input = strings.TrimSpace(input)
 
 	if input == "" {
-		err := fmt.Errorf("directory path is required")
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-		}
-		return "", err
+		return t.createErrorResponse(fmt.Errorf("directory path is required"), "Directory path is required")
 	}
 
 	// Check if directory exists
 	info, err := os.Stat(input)
 	if err != nil {
-		toolErr := fmt.Errorf("directory %s does not exist: %w", input, err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
+		if os.IsNotExist(err) {
+			return t.createErrorResponse(err, fmt.Sprintf("Directory %s does not exist", input))
 		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Cannot access directory %s: %s", input, err.Error()))
 	}
 
 	// Make sure it's a directory, not a file
 	if !info.IsDir() {
-		toolErr := fmt.Errorf("%s is a file, not a directory. Use delete_file to remove files", input)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(fmt.Errorf("%s is a file, not a directory", input), fmt.Sprintf("%s is a file, not a directory. Use delete_file to remove files", input))
 	}
 
 	// Count contents before deletion for reporting
@@ -68,24 +75,36 @@ func (t DeleteDirectoryTool) Call(ctx context.Context, input string) (string, er
 	// Delete the directory and all contents
 	err = os.RemoveAll(input)
 	if err != nil {
-		toolErr := fmt.Errorf("failed to delete directory %s: %w", input, err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to delete directory %s: %s", input, err.Error()))
 	}
 
-	var output string
+	// Create success response
+	type DeleteDirectoryResponse struct {
+		Success      bool   `json:"success"`
+		Path         string `json:"path"`
+		ItemsDeleted int    `json:"itemsDeleted"`
+		Message      string `json:"message"`
+	}
+
+	var message string
 	if fileCount > 0 {
-		output = fmt.Sprintf("Deleted directory: %s (contained %d items)", input, fileCount)
+		message = fmt.Sprintf("Successfully deleted directory %s (contained %d items)", input, fileCount)
 	} else {
-		output = fmt.Sprintf("Deleted empty directory: %s", input)
+		message = fmt.Sprintf("Successfully deleted empty directory %s", input)
 	}
 
-	// Invoke callback for tool end
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolEnd(ctx, output)
+	response := DeleteDirectoryResponse{
+		Success:      true,
+		Path:         input,
+		ItemsDeleted: fileCount,
+		Message:      message,
 	}
 
-	return output, nil
+	// Convert to JSON
+	jsonData, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
+	}
+
+	return string(jsonData), nil
 }

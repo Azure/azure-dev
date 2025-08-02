@@ -371,13 +371,13 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 func (i *initAction) initAppWithCopilot(ctx context.Context) error {
-	defaultModelContainer, err := i.llmManager.GetDefaultModel()
+	actionLogger := logging.NewActionLogger()
+	defaultModelContainer, err := i.llmManager.GetDefaultModel(llm.WithLogger(actionLogger))
 	if err != nil {
 		return err
 	}
 
-	actionLogger := logging.NewActionLogger()
-	samplingModelContainer, err := i.llmManager.GetDefaultModel(llm.WithLogger(actionLogger))
+	samplingModelContainer, err := i.llmManager.GetDefaultModel()
 
 	azdAgent, err := agent.NewAzdAiAgent(
 		defaultModelContainer.Model,
@@ -392,6 +392,8 @@ func (i *initAction) initAppWithCopilot(ctx context.Context) error {
 Read and review the 'azd-arch-plan.md' file if it exists to get current status
 Run the 'azd_plan_init' tool and follow the steps
 Finally - run the 'azd_project_validation' tool to ensure the process is fully completed
+Be very short, terse and to the point during planning and action execution.
+Provide verbose output for the final summary when you are complete.
 	`
 
 	if err := azdAgent.RunConversationLoop(ctx, []string{initPrompt}); err != nil {

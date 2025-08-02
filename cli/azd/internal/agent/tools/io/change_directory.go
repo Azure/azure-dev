@@ -2,17 +2,17 @@ package io
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
-	"github.com/tmc/langchaingo/callbacks"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 )
 
 // ChangeDirectoryTool implements the Tool interface for changing the current working directory
-type ChangeDirectoryTool struct {
-	CallbacksHandler callbacks.Handler
-}
+type ChangeDirectoryTool struct{}
 
 func (t ChangeDirectoryTool) Name() string {
 	return "change_directory"
@@ -22,63 +22,75 @@ func (t ChangeDirectoryTool) Description() string {
 	return "Change the current working directory. Input: directory path (e.g., '../parent' or './subfolder' or absolute path)"
 }
 
-func (t ChangeDirectoryTool) Call(ctx context.Context, input string) (string, error) {
-	// Invoke callback for tool start
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("change_directory: %s", input))
+// createErrorResponse creates a JSON error response
+func (t ChangeDirectoryTool) createErrorResponse(err error, message string) (string, error) {
+	if message == "" {
+		message = err.Error()
 	}
 
+	errorResp := common.ErrorResponse{
+		Error:   true,
+		Message: message,
+	}
+
+	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
+	if jsonErr != nil {
+		// Fallback to simple error message if JSON marshalling fails
+		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
+		return fallbackMsg, nil
+	}
+
+	return string(jsonData), nil
+}
+
+func (t ChangeDirectoryTool) Call(ctx context.Context, input string) (string, error) {
+	input = strings.TrimSpace(input)
+	input = strings.Trim(input, `"`)
+
 	if input == "" {
-		err := fmt.Errorf("directory path is required")
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-		}
-		return "", err
+		return t.createErrorResponse(fmt.Errorf("directory path is required"), "Directory path is required")
 	}
 
 	// Convert to absolute path
 	absPath, err := filepath.Abs(input)
 	if err != nil {
-		toolErr := fmt.Errorf("failed to resolve path %s: %w", input, err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to resolve path %s: %s", input, err.Error()))
 	}
 
 	// Check if directory exists
 	info, err := os.Stat(absPath)
 	if err != nil {
-		toolErr := fmt.Errorf("directory %s does not exist: %w", absPath, err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Directory %s does not exist: %s", absPath, err.Error()))
 	}
 	if !info.IsDir() {
-		toolErr := fmt.Errorf("%s is not a directory", absPath)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(fmt.Errorf("%s is not a directory", absPath), fmt.Sprintf("%s is not a directory", absPath))
 	}
 
 	// Change directory
 	err = os.Chdir(absPath)
 	if err != nil {
-		toolErr := fmt.Errorf("failed to change directory to %s: %w", absPath, err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to change directory to %s: %s", absPath, err.Error()))
 	}
 
-	output := fmt.Sprintf("Changed directory to %s\n", absPath)
-
-	// Invoke callback for tool end
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolEnd(ctx, output)
+	// Create success response
+	type ChangeDirectoryResponse struct {
+		Success bool   `json:"success"`
+		OldPath string `json:"oldPath,omitempty"`
+		NewPath string `json:"newPath"`
+		Message string `json:"message"`
 	}
 
-	return output, nil
+	response := ChangeDirectoryResponse{
+		Success: true,
+		NewPath: absPath,
+		Message: fmt.Sprintf("Successfully changed directory to %s", absPath),
+	}
+
+	// Convert to JSON
+	jsonData, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
+	}
+
+	return string(jsonData), nil
 }

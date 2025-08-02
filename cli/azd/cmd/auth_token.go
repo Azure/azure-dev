@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -26,6 +27,7 @@ import (
 type authTokenFlags struct {
 	tenantID string
 	scopes   []string
+	claims   string
 	global   *internal.GlobalCommandOptions
 }
 
@@ -47,6 +49,7 @@ func (f *authTokenFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComma
 	f.global = global
 	local.StringArrayVar(&f.scopes, "scope", nil, "The scope to use when requesting an access token")
 	local.StringVar(&f.tenantID, "tenant-id", "", "The tenant id to use when requesting an access token.")
+	local.StringVar(&f.claims, "claims", "", "Additional claims to include when requesting an access token.")
 }
 
 type CredentialProviderFn func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error)
@@ -162,8 +165,19 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, err
 	}
 
+	claims := ""
+	if a.flags.claims != "" {
+		c, err := base64.StdEncoding.DecodeString(a.flags.claims)
+		if err != nil {
+			return nil, fmt.Errorf("invalid claims '%s': expected a base64-encoded string", a.flags.claims)
+		}
+
+		claims = string(c)
+	}
+
 	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: a.flags.scopes,
+		Claims: claims,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("fetching token: %w", err)

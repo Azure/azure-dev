@@ -6,12 +6,15 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
+	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 type azdCredential struct {
@@ -29,12 +32,29 @@ func newAzdCredential(client publicClient, account *public.Account, cloud *cloud
 }
 
 func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	res, err := c.client.AcquireTokenSilent(ctx, options.Scopes, public.WithSilentAccount(*c.account))
+	res, err := c.client.AcquireTokenSilent(ctx,
+		options.Scopes,
+		public.WithSilentAccount(*c.account),
+		public.WithClaims(options.Claims))
+
 	if err != nil {
 		var authFailed *AuthFailedError
 		if errors.As(err, &authFailed) {
 			if loginErr, ok := newReLoginRequiredError(authFailed.Parsed, options.Scopes, c.cloud); ok {
 				log.Println(authFailed.httpErrorDetails())
+
+				if options.Claims != "" {
+					claimsFile, err := claimsFilePath()
+					if err != nil {
+						return azcore.AccessToken{}, fmt.Errorf("getting claims path: %w", err)
+					}
+
+					err = os.WriteFile(claimsFile, []byte(options.Claims), osutil.PermissionFile)
+					if err != nil {
+						return azcore.AccessToken{}, fmt.Errorf("saving claims: %w", err)
+					}
+				}
+
 				return azcore.AccessToken{}, loginErr
 			}
 

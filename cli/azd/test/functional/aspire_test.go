@@ -165,7 +165,7 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 
 		cli := azdcli.NewCLI(t)
 		cli.WorkingDirectory = dir
-		cli.Env = append(cli.Env, os.Environ()...)
+		cli.Env = os.Environ()
 
 		_, err = cli.RunCommand(ctx, "infra", "synth")
 		require.NoError(t, err)
@@ -217,7 +217,7 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 
 		cli := azdcli.NewCLI(t)
 		cli.WorkingDirectory = dir
-		cli.Env = append(cli.Env, os.Environ()...)
+		cli.Env = os.Environ()
 
 		_, err = cli.RunCommand(ctx, "infra", "generate")
 		require.NoError(t, err)
@@ -279,8 +279,7 @@ func Test_CLI_Aspire_Deploy(t *testing.T) {
 
 	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
-	cli.Env = append(cli.Env, os.Environ()...)
-	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
 	defer cleanupDeployments(ctx, t, cli, session, envName)
 

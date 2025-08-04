@@ -89,7 +89,7 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 	}
 
 	if projectConfig.Infra.Name == "" {
-		projectConfig.Infra.Name = "infra"
+		projectConfig.Infra.Name = provisioning.LayerEmpty
 	}
 
 	if strings.Contains(projectConfig.Infra.Path, "\\") && !strings.Contains(projectConfig.Infra.Path, "/") {

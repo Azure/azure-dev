@@ -23,8 +23,8 @@ const (
 // Sentinel value representing the unnamed, root-level provisioning layer.
 //
 // Backend for deployment states treats this identically to empty string (preserving legacy behavior).
-// "infra" is reserved and rejected during input validation.
-const LayerEmpty = "infra"
+// "base" is reserved and rejected during input validation.
+const LayerEmpty = "base"
 
 type Options struct {
 	Provider         ProviderKind   `yaml:"provider,omitempty"`

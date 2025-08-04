@@ -222,7 +222,7 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	if layer != "" || len(infraOptions.Layers) > 0 {
 		// Display if an explicit layer is passed, or if multiple layer are enabled
-		p.console.Message(ctx, fmt.Sprintf("layer: %s", output.WithHighLightFormat(infraOptions.Name)))
+		p.console.Message(ctx, fmt.Sprintf("Layer: %s", output.WithHighLightFormat(infraOptions.Name)))
 	}
 
 	infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState

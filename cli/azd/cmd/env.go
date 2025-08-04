@@ -929,14 +929,14 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 type envRefreshFlags struct {
 	hint   string
-	stage  string
+	layer  string
 	global *internal.GlobalCommandOptions
 	internal.EnvFlag
 }
 
 func (er *envRefreshFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(&er.hint, "hint", "", "", "Hint to help identify the environment to refresh")
-	local.StringVarP(&er.stage, "stage", "", "", "Stage to refresh the environment from.")
+	local.StringVarP(&er.layer, "layer", "", "", "Layer to refresh the environment from.")
 
 	er.EnvFlag.Bind(local, global)
 	er.global = global
@@ -1047,15 +1047,15 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	stages := []provisioning.Options{infra.Options}
-	stages = append(stages, infra.Options.Stages...)
+	layers := []provisioning.Options{infra.Options}
+	layers = append(layers, infra.Options.Layers...)
 
-	if ef.flags.stage != "" {
-		stageOption, err := infra.Options.GetStage(ef.flags.stage)
+	if ef.flags.layer != "" {
+		layerOpt, err := infra.Options.GetLayer(ef.flags.layer)
 		if err != nil {
 			return nil, err
 		}
-		stages = []provisioning.Options{stageOption}
+		layers = []provisioning.Options{layerOpt}
 	}
 
 	// If resource group is defined within the project but not in the environment then
@@ -1067,15 +1067,15 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 
 	var state provisioning.State
-	for _, stage := range stages {
-		if ef.flags.stage != "" || len(stages) > 1 {
+	for _, layer := range layers {
+		if ef.flags.layer != "" || len(layers) > 1 {
 			ef.console.EnsureBlankLine(ctx)
-			ef.console.Message(ctx, fmt.Sprintf("Stage: %s", output.WithHighLightFormat(stage.Name)))
+			ef.console.Message(ctx, fmt.Sprintf("Layer: %s", output.WithHighLightFormat(layer.Name)))
 			ef.console.Message(ctx, "")
 		}
 
 		// env refresh supports "BYOI" infrastructure where bicep isn't available
-		err = ef.provisionManager.Initialize(ctx, ef.projectConfig.Path, stage)
+		err = ef.provisionManager.Initialize(ctx, ef.projectConfig.Path, layer)
 		if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
 			// If bicep is not available, we continue to prompt for subscription and location unfiltered
 			err = provisioning.EnsureSubscriptionAndLocation(ctx, ef.envManager, ef.env, ef.prompters,

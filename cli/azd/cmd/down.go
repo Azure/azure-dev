@@ -28,7 +28,7 @@ import (
 type downFlags struct {
 	forceDelete bool
 	purgeDelete bool
-	stage       string
+	layer       string
 	global      *internal.GlobalCommandOptions
 	internal.EnvFlag
 }
@@ -43,10 +43,10 @@ func (i *downFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).",
 	)
 	local.StringVar(
-		&i.stage,
-		"stage",
+		&i.layer,
+		"layer",
 		"",
-		"Provisioning stage to delete resources for.",
+		"Provisioning layer to delete resources for.",
 	)
 	i.EnvFlag.Bind(local, global)
 	i.global = global
@@ -115,27 +115,27 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		a.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
 	}
 
-	stages := []provisioning.Options{infra.Options}
-	stages = append(stages, infra.Options.Stages...)
+	layers := []provisioning.Options{infra.Options}
+	layers = append(layers, infra.Options.Layers...)
 
-	slices.Reverse(stages)
+	slices.Reverse(layers)
 
-	if a.flags.stage != "" {
-		stageOptions, err := infra.Options.GetStage(a.flags.stage)
+	if a.flags.layer != "" {
+		layerOpt, err := infra.Options.GetLayer(a.flags.layer)
 		if err != nil {
 			return nil, err
 		}
-		stages = []provisioning.Options{stageOptions}
+		layers = []provisioning.Options{layerOpt}
 	}
 
-	for _, stage := range stages {
-		if a.flags.stage != "" || len(stages) > 1 {
+	for _, layer := range layers {
+		if a.flags.layer != "" || len(layers) > 1 {
 			a.console.EnsureBlankLine(ctx)
-			a.console.Message(ctx, fmt.Sprintf("Stage: %s", output.WithHighLightFormat(stage.Name)))
+			a.console.Message(ctx, fmt.Sprintf("Layer: %s", output.WithHighLightFormat(layer.Name)))
 			a.console.Message(ctx, "")
 		}
 
-		if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, stage); err != nil {
+		if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, layer); err != nil {
 			return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 		}
 

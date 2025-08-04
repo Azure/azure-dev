@@ -82,7 +82,7 @@ func (dm *DeploymentManager) CompletedDeployments(
 	ctx context.Context,
 	scope Scope,
 	envName string,
-	stageName string,
+	layerName string,
 	hint string,
 ) ([]*azapi.ResourceDeployment, error) {
 	deployments, err := scope.ListDeployments(ctx)
@@ -98,13 +98,13 @@ func (dm *DeploymentManager) CompletedDeployments(
 		// default hint for partial matches
 		hint = envName
 
-		if stageName != provisioning.StageEmpty && stageName != "" {
-			hint = fmt.Sprintf("%s-%s", envName, stageName)
+		if layerName != provisioning.LayerEmpty && layerName != "" {
+			hint = fmt.Sprintf("%s-%s", envName, layerName)
 		}
 	}
 
 	// Environment matching strategy
-	// 1. Deployment with azd tagged env name + stage name
+	// 1. Deployment with azd tagged env name + layer name
 	// 2. Exact match on environment name to deployment name (old azd strategy)
 	// 3. Multiple matching names based on specified hint (show user prompt)
 	matchingDeployments := []*azapi.ResourceDeployment{}
@@ -118,16 +118,16 @@ func (dm *DeploymentManager) CompletedDeployments(
 
 		// Match on current azd strategy (tags)
 		envTag, envTagHas := deployment.Tags[azure.TagKeyAzdEnvName]
-		stageTag, stageTagHas := deployment.Tags[azure.TagKeyAzdStageName]
+		layerTag, layerTagHas := deployment.Tags[azure.TagKeyAzdLayerName]
 
 		if envTagHas && *envTag == envName {
-			if stageTagHas && *stageTag == stageName {
-				log.Printf("completedDeployments: matched deployment '%s' using stageName: %s", deployment.Name, stageName)
+			if layerTagHas && *layerTag == layerName {
+				log.Printf("completedDeployments: matched deployment '%s' using layerName: %s", deployment.Name, layerName)
 				return []*azapi.ResourceDeployment{deployment}, nil
 			}
 
-			// If stageName is empty, we can match on the envName alone
-			if (stageName == provisioning.StageEmpty || stageName == "") && !stageTagHas {
+			// If layerName is empty, we can match on the envName alone
+			if (layerName == provisioning.LayerEmpty || layerName == "") && !layerTagHas {
 				log.Printf("completedDeployments: matched deployment '%s' using envName", deployment.Name)
 				return []*azapi.ResourceDeployment{deployment}, nil
 			}

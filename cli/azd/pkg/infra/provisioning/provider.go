@@ -6,8 +6,7 @@ package provisioning
 import (
 	"context"
 	"fmt"
-
-	"cuelang.org/go/pkg/strings"
+	"strings"
 )
 
 type ProviderKind string
@@ -21,6 +20,12 @@ const (
 	Test         ProviderKind = "test"
 )
 
+// Sentinel value representing the unnamed, root-level provisioning layer.
+//
+// Backend for deployment states treats this identically to empty string (preserving legacy behavior).
+// "infra" is reserved and rejected during input validation.
+const LayerEmpty = "infra"
+
 type Options struct {
 	Provider         ProviderKind   `yaml:"provider,omitempty"`
 	Path             string         `yaml:"path,omitempty"`
@@ -30,39 +35,45 @@ type Options struct {
 	// Not expected to be defined at azure.yaml
 	IgnoreDeploymentState bool `yaml:"-"`
 
-	Stages []Options `yaml:"stages,omitempty"`
+	Layers []Options `yaml:"layers,omitempty"`
 }
 
-func (o *Options) GetStage(name string) (*Options, error) {
-	stageNames := make([]string, 0, len(o.Stages)+1)
-	stageNames = append(stageNames, o.Name)
+func (o *Options) GetLayer(name string) (Options, error) {
+	layers := []Options{*o}
+	layers = append(layers, o.Layers...)
 
-	for _, stage := range o.Stages {
-		stageNames = append(stageNames, stage.Name)
-		if stage.Name == name {
-			return &stage, nil
+	names := make([]string, 0, len(layers))
+	for _, layer := range layers {
+		if layer.Name == name {
+			return layer, nil
 		}
+
+		names = append(names, layer.Name)
 	}
 
-	return nil, fmt.Errorf("stage '%s' not found in azure.yaml. available stages: %s", strings.Join(stageNames, ", "))
+	return Options{}, fmt.Errorf(
+		"layer '%s' not found in azure.yaml. available layers: %s", name, strings.Join(names, ", "))
 }
 
 func (o *Options) Validate() error {
 	errWrap := func(err string) error {
-		return fmt.Errorf("validating infra.stages: %s", err)
+		return fmt.Errorf("validating infra.layers: %s", err)
 	}
 
-	for _, stage := range o.Stages {
-		if stage.Name == "" {
-			return errWrap("name must be specified for each provisioning stage")
+	for _, layer := range o.Layers {
+		if layer.Name == "" {
+			return errWrap("name must be specified for each provisioning layer")
 		}
 
-		if stage.Name == "infra" {
-			return errWrap("stage name 'infra' is reserved as the default stage and cannot be used")
+		if layer.Name == LayerEmpty {
+			return errWrap(
+				fmt.Sprintf(
+					"layer name '%s' is reserved as the default layer and cannot be used",
+					LayerEmpty))
 		}
 
-		if stage.Path == "" {
-			return errWrap(fmt.Sprintf("%s: path must be specified", stage.Name))
+		if layer.Path == "" {
+			return errWrap(fmt.Sprintf("%s: path must be specified", layer.Name))
 		}
 	}
 

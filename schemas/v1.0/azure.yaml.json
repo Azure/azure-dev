@@ -41,8 +41,8 @@
             "properties": {
                 "name": {
                     "type": "string",
-                    "title": "The name of the provisioning stage",
-                    "description": "The name of the provisioning stage"
+                    "title": "The name of the provisioning layer",
+                    "description": "The name of the provisioning layer"
                 },
                 "provider": {
                     "type": "string",
@@ -63,15 +63,15 @@
                     "title": "Name of the default module within the Azure provisioning templates",
                     "description": "Optional. The name of the Azure provisioning module used when provisioning resources. (Default: main)"
                 },
-                "stages": {
+                "layers": {
                     "type": "array",
-                    "title": "Additional provisioning stages.",
-                    "description": "Optional. Additional stages for Azure infrastructure provisioning.",
+                    "title": "Additional provisioning layers.",
+                    "description": "Optional. Additional layers for Azure infrastructure provisioning.",
                     "additionalProperties": false,
                     "uniqueItems": true,
                     "items": {
                         "type": "object",
-                        "title": "A provisioning stage.",
+                        "title": "A provisioning layer.",
                         "additionalProperties": false,
                         "required": [
                             "name",
@@ -80,8 +80,8 @@
                         "properties": {
                             "name": {
                                 "type": "string",
-                                "title": "The name of the provisioning stage",
-                                "description": "The name of the provisioning stage"
+                                "title": "The name of the provisioning layer",
+                                "description": "The name of the provisioning layer"
                             },
                             "provider": {
                                 "type": "string",

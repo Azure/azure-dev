@@ -7,8 +7,8 @@ Usage
 Flags
     -e, --environment string 	: The name of the environment to use.
         --force              	: Does not require confirmation before it deletes resources.
+        --layer string       	: Provisioning layer to delete resources for.
         --purge              	: Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).
-        --stage string       	: Provisioning stage to delete resources for.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

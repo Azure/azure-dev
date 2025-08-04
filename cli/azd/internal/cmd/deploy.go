@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -249,7 +248,6 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 
 		var packageResult *project.ServicePackageResult
-		var packageWasCreatedByAzd bool
 		if da.flags.fromPackage != "" {
 			// --from-package set, skip packaging
 			packageResult = &project.ServicePackageResult{
@@ -272,7 +270,6 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, err
 			}
-			packageWasCreatedByAzd = true
 		}
 
 		deployResult, err := async.RunWithProgress(
@@ -284,12 +281,6 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				return da.serviceManager.Deploy(ctx, svc, packageResult, progress)
 			},
 		)
-
-		// Clean up package if it was created by AZD (not user-provided)
-		if packageWasCreatedByAzd && packageResult.PackagePath != "" {
-			// Best effort cleanup - don't fail deployment if cleanup fails
-			os.Remove(packageResult.PackagePath)
-		}
 
 		da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 		if err != nil {

@@ -197,50 +197,74 @@ func TestFindFiles(t *testing.T) {
 	}
 }
 
-func TestArtifactPatterns(t *testing.T) {
+func TestParseArtifactPatterns(t *testing.T) {
 	tests := []struct {
 		name           string
-		artifactsFlag  string
+		patterns       []string
 		extensionId    string
 		version        string
 		expectedCount  int
 		expectedSuffix []string
 	}{
 		{
-			name:           "Empty artifacts flag uses default patterns",
-			artifactsFlag:  "",
+			name:           "Empty patterns uses default patterns",
+			patterns:       []string{},
 			extensionId:    "test.extension",
 			version:        "1.0.0",
 			expectedCount:  2,
 			expectedSuffix: []string{"*.zip", "*.tar.gz"},
 		},
 		{
-			name:           "Explicit artifacts flag returns single pattern",
-			artifactsFlag:  "./out/test.zip",
+			name:           "Nil patterns uses default patterns",
+			patterns:       nil,
+			extensionId:    "test.extension",
+			version:        "1.0.0",
+			expectedCount:  2,
+			expectedSuffix: []string{"*.zip", "*.tar.gz"},
+		},
+		{
+			name:           "Custom pattern is returned as-is",
+			patterns:       []string{"./dist/*.zip"},
 			extensionId:    "test.extension",
 			version:        "1.0.0",
 			expectedCount:  1,
-			expectedSuffix: []string{"./out/test.zip"},
+			expectedSuffix: []string{"./dist/*.zip"},
+		},
+		{
+			name:           "Multiple custom patterns are returned as-is",
+			patterns:       []string{"./dist/*.zip", "./dist/*.tar.gz"},
+			extensionId:    "test.extension",
+			version:        "1.0.0",
+			expectedCount:  2,
+			expectedSuffix: []string{"./dist/*.zip", "./dist/*.tar.gz"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			patterns, err := ArtifactPatterns(tt.artifactsFlag, tt.extensionId, tt.version)
+			patterns, err := ParseArtifactPatterns(tt.patterns, tt.extensionId, tt.version)
 			require.NoError(t, err)
 			require.Len(t, patterns, tt.expectedCount)
 
-			if tt.artifactsFlag == "" {
+			if len(tt.patterns) == 0 {
 				// For default patterns, check they end with the expected suffixes
 				for i, suffix := range tt.expectedSuffix {
 					require.Contains(t, patterns[i], suffix)
 				}
 			} else {
-				// For explicit pattern, should match exactly
-				require.Equal(t, tt.expectedSuffix[0], patterns[0])
+				// For explicit patterns, should match exactly
+				require.Equal(t, tt.expectedSuffix, patterns)
 			}
 		})
 	}
+}
+
+func TestDefaultArtifactPatterns(t *testing.T) {
+	patterns, err := DefaultArtifactPatterns("test.extension", "1.0.0")
+	require.NoError(t, err)
+	require.Len(t, patterns, 2)
+	require.Contains(t, patterns[0], "*.zip")
+	require.Contains(t, patterns[1], "*.tar.gz")
 }
 
 func TestGetFileNameWithoutExt(t *testing.T) {

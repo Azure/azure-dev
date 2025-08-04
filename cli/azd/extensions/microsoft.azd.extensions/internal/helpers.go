@@ -266,27 +266,30 @@ func AzdConfigDir() (string, error) {
 	return azdConfigDir, nil
 }
 
-// ArtifactPatterns returns glob patterns for finding extension artifacts.
-// Uses local registry path if artifactsFlag is empty, otherwise returns the provided flag.
-func ArtifactPatterns(artifactsFlag, extensionId, version string) ([]string, error) {
-	if artifactsFlag == "" {
-		localRegistryArtifactsPath, err := LocalRegistryArtifactsPath()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get registry artifacts path: %w", err)
-		}
-		basePattern := filepath.Join(localRegistryArtifactsPath, extensionId, version)
-		return []string{
-			filepath.Join(basePattern, "*.zip"),
-			filepath.Join(basePattern, "*.tar.gz"),
-		}, nil
+// DefaultArtifactPatterns returns the default glob patterns for finding extension artifacts
+// in the local registry.
+func DefaultArtifactPatterns(extensionId, version string) ([]string, error) {
+	localRegistryArtifactsPath, err := LocalRegistryArtifactsPath()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get registry artifacts path: %w", err)
 	}
-	return []string{artifactsFlag}, nil
+	basePattern := filepath.Join(localRegistryArtifactsPath, extensionId, version)
+	return []string{
+		filepath.Join(basePattern, "*.zip"),
+		filepath.Join(basePattern, "*.tar.gz"),
+	}, nil
 }
 
-// FindFiles returns all files matching the given glob patterns.
-func FindFiles(patterns []string) ([]string, error) {
+// FindArtifacts finds all artifact files for an extension using the provided patterns or defaults.
+func FindArtifacts(patterns []string, extensionId, version string) ([]string, error) {
+	if len(patterns) == 0 {
+		var err error
+		patterns, err = DefaultArtifactPatterns(extensionId, version)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var allFiles []string
-
 	for _, pattern := range patterns {
 		files, err := filepath.Glob(pattern)
 		if err != nil {
@@ -294,7 +297,6 @@ func FindFiles(patterns []string) ([]string, error) {
 		}
 		allFiles = append(allFiles, files...)
 	}
-
 	return allFiles, nil
 }
 

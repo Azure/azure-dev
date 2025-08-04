@@ -62,7 +62,8 @@ func newReleaseCommand() *cobra.Command {
 	releaseCmd.Flags().StringSliceVar(
 		&flags.artifacts,
 		"artifacts", nil,
-		"Path to artifacts to upload to the release (comma-separated glob patterns, e.g. ./artifacts/*.zip,./artifacts/*.tar.gz)",
+		"Path to artifacts to upload to the release "+
+			"(comma-separated glob patterns, e.g. ./artifacts/*.zip,./artifacts/*.tar.gz)",
 	)
 	releaseCmd.Flags().StringVarP(
 		&flags.title,

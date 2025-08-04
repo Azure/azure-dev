@@ -123,7 +123,7 @@ func TestInferOSArch(t *testing.T) {
 	}
 }
 
-func TestFindFiles(t *testing.T) {
+func TestFindArtifacts(t *testing.T) {
 	// Create a temporary directory for the test
 	tempDir, err := os.MkdirTemp("", "test-glob-*")
 	require.NoError(t, err)
@@ -139,52 +139,74 @@ func TestFindFiles(t *testing.T) {
 	require.NoError(t, os.WriteFile(otherFile, []byte("other content"), 0600))
 
 	tests := []struct {
-		name     string
-		patterns []string
-		expected []string
-		wantErr  bool
+		name        string
+		patterns    []string
+		extensionId string
+		version     string
+		expected    []string
+		wantErr     bool
 	}{
 		{
-			name:     "Concrete file path - zip",
-			patterns: []string{zipFile},
-			expected: []string{zipFile},
-			wantErr:  false,
+			name:        "Concrete file path - zip",
+			patterns:    []string{zipFile},
+			extensionId: "test.extension",
+			version:     "1.0.0",
+			expected:    []string{zipFile},
+			wantErr:     false,
 		},
 		{
-			name:     "Concrete file path - tar.gz",
-			patterns: []string{tarGzFile},
-			expected: []string{tarGzFile},
-			wantErr:  false,
+			name:        "Concrete file path - tar.gz",
+			patterns:    []string{tarGzFile},
+			extensionId: "test.extension",
+			version:     "1.0.0",
+			expected:    []string{tarGzFile},
+			wantErr:     false,
 		},
 		{
-			name:     "Concrete file path - non-existent",
-			patterns: []string{filepath.Join(tempDir, "nonexistent.zip")},
-			expected: []string{},
-			wantErr:  false,
+			name:        "Concrete file path - non-existent",
+			patterns:    []string{filepath.Join(tempDir, "nonexistent.zip")},
+			extensionId: "test.extension",
+			version:     "1.0.0",
+			expected:    []string{},
+			wantErr:     false,
 		},
 		{
-			name:     "Multiple patterns",
-			patterns: []string{filepath.Join(tempDir, "*.zip"), filepath.Join(tempDir, "*.tar.gz")},
-			expected: []string{zipFile, tarGzFile},
-			wantErr:  false,
+			name:        "Multiple patterns",
+			patterns:    []string{filepath.Join(tempDir, "*.zip"), filepath.Join(tempDir, "*.tar.gz")},
+			extensionId: "test.extension",
+			version:     "1.0.0",
+			expected:    []string{zipFile, tarGzFile},
+			wantErr:     false,
 		},
 		{
-			name:     "Single glob pattern",
-			patterns: []string{filepath.Join(tempDir, "*.zip")},
-			expected: []string{zipFile},
-			wantErr:  false,
+			name:        "Single glob pattern",
+			patterns:    []string{filepath.Join(tempDir, "*.zip")},
+			extensionId: "test.extension",
+			version:     "1.0.0",
+			expected:    []string{zipFile},
+			wantErr:     false,
 		},
 		{
-			name:     "Mixed concrete and pattern",
-			patterns: []string{zipFile, filepath.Join(tempDir, "*.tar.gz")},
-			expected: []string{zipFile, tarGzFile},
-			wantErr:  false,
+			name:        "Mixed concrete and pattern",
+			patterns:    []string{zipFile, filepath.Join(tempDir, "*.tar.gz")},
+			extensionId: "test.extension",
+			version:     "1.0.0",
+			expected:    []string{zipFile, tarGzFile},
+			wantErr:     false,
+		},
+		{
+			name:        "Empty patterns uses defaults",
+			patterns:    []string{},
+			extensionId: "test.extension",
+			version:     "1.0.0",
+			expected:    []string{}, // No files in default registry location
+			wantErr:     false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := FindFiles(tt.patterns)
+			result, err := FindArtifacts(tt.patterns, tt.extensionId, tt.version)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -193,68 +215,6 @@ func TestFindFiles(t *testing.T) {
 
 			// Sort both slices for comparison since order might vary
 			require.ElementsMatch(t, tt.expected, result)
-		})
-	}
-}
-
-func TestParseArtifactPatterns(t *testing.T) {
-	tests := []struct {
-		name           string
-		patterns       []string
-		extensionId    string
-		version        string
-		expectedCount  int
-		expectedSuffix []string
-	}{
-		{
-			name:           "Empty patterns uses default patterns",
-			patterns:       []string{},
-			extensionId:    "test.extension",
-			version:        "1.0.0",
-			expectedCount:  2,
-			expectedSuffix: []string{"*.zip", "*.tar.gz"},
-		},
-		{
-			name:           "Nil patterns uses default patterns",
-			patterns:       nil,
-			extensionId:    "test.extension",
-			version:        "1.0.0",
-			expectedCount:  2,
-			expectedSuffix: []string{"*.zip", "*.tar.gz"},
-		},
-		{
-			name:           "Custom pattern is returned as-is",
-			patterns:       []string{"./dist/*.zip"},
-			extensionId:    "test.extension",
-			version:        "1.0.0",
-			expectedCount:  1,
-			expectedSuffix: []string{"./dist/*.zip"},
-		},
-		{
-			name:           "Multiple custom patterns are returned as-is",
-			patterns:       []string{"./dist/*.zip", "./dist/*.tar.gz"},
-			extensionId:    "test.extension",
-			version:        "1.0.0",
-			expectedCount:  2,
-			expectedSuffix: []string{"./dist/*.zip", "./dist/*.tar.gz"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			patterns, err := ParseArtifactPatterns(tt.patterns, tt.extensionId, tt.version)
-			require.NoError(t, err)
-			require.Len(t, patterns, tt.expectedCount)
-
-			if len(tt.patterns) == 0 {
-				// For default patterns, check they end with the expected suffixes
-				for i, suffix := range tt.expectedSuffix {
-					require.Contains(t, patterns[i], suffix)
-				}
-			} else {
-				// For explicit patterns, should match exactly
-				require.Equal(t, tt.expectedSuffix, patterns)
-			}
 		})
 	}
 }

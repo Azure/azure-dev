@@ -107,6 +107,11 @@ jobs:
           SYSTEM_ACCESSTOKEN: $(System.AccessToken)
           AZD_DEBUG_LOGIN_FORCE_SUBSCRIPTION_REFRESH: true
         displayName: AZD Login
+      
+      - task: UseDotNet@2
+        inputs:
+          version: '9.x'
+        displayName: Set up .NET 9
 
       - task: AzureCLI@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))

@@ -123,7 +123,7 @@ func TestInferOSArch(t *testing.T) {
 	}
 }
 
-func TestGlobArtifacts(t *testing.T) {
+func TestFindFiles(t *testing.T) {
 	// Create a temporary directory for the test
 	tempDir, err := os.MkdirTemp("", "test-glob-*")
 	require.NoError(t, err)
@@ -184,7 +184,7 @@ func TestGlobArtifacts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := GlobArtifacts(tt.patterns)
+			result, err := FindFiles(tt.patterns)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -197,7 +197,7 @@ func TestGlobArtifacts(t *testing.T) {
 	}
 }
 
-func TestDetermineArtifactPatterns(t *testing.T) {
+func TestArtifactPatterns(t *testing.T) {
 	tests := []struct {
 		name           string
 		artifactsFlag  string
@@ -226,7 +226,7 @@ func TestDetermineArtifactPatterns(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			patterns, err := DetermineArtifactPatterns(tt.artifactsFlag, tt.extensionId, tt.version)
+			patterns, err := ArtifactPatterns(tt.artifactsFlag, tt.extensionId, tt.version)
 			require.NoError(t, err)
 			require.Len(t, patterns, tt.expectedCount)
 
@@ -239,6 +239,72 @@ func TestDetermineArtifactPatterns(t *testing.T) {
 				// For explicit pattern, should match exactly
 				require.Equal(t, tt.expectedSuffix[0], patterns[0])
 			}
+		})
+	}
+}
+
+func TestGetFileNameWithoutExt(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     ".exe file",
+			input:    "program.exe",
+			expected: "program",
+		},
+		{
+			name:     "tar.gz archive",
+			input:    "azd-ext-ai-linux-amd64.tar.gz",
+			expected: "azd-ext-ai-linux-amd64",
+		},
+		{
+			name:     ".zip archive",
+			input:    "azd-ext-ai-windows-amd64.zip",
+			expected: "azd-ext-ai-windows-amd64",
+		},
+		{
+			name:     "File with no extension",
+			input:    "binary",
+			expected: "binary",
+		},
+		{
+			name:     "File with multiple dots but not .tar.gz",
+			input:    "my.config.json",
+			expected: "my.config",
+		},
+		{
+			name:     "Full path with .tar.gz",
+			input:    "/path/to/file.tar.gz",
+			expected: "file",
+		},
+		{
+			name:     "Full path with single extension",
+			input:    "/path/to/file.txt",
+			expected: "file",
+		},
+		{
+			name:     "Windows path with extension",
+			input:    "C:\\path\\to\\file.exe",
+			expected: "C:\\path\\to\\file", // On Unix systems, backslashes are not treated as path separators
+		},
+		{
+			name:     "Empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "Just an extension",
+			input:    ".gitignore",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := GetFileNameWithoutExt(tt.input)
+			require.Equal(t, tt.expected, result)
 		})
 	}
 }

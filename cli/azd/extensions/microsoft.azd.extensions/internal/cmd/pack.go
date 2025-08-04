@@ -201,52 +201,47 @@ func packExtensionBinaries(
 			continue
 		}
 
-		fileWithoutExt := getFileNameWithoutExt(artifactName)
+		fileWithoutExt := internal.GetFileNameWithoutExt(artifactName)
 		artifactSourcePath := filepath.Join(buildPath, entry.Name())
-		zipFiles := []string{extensionYamlSourcePath, artifactSourcePath}
+		sourceFiles := []string{extensionYamlSourcePath, artifactSourcePath}
 
-		// Determine if this is a Linux binary by checking if the filename contains "linux"
-		isLinuxBinary := strings.Contains(artifactName, "linux")
-
-		var targetFilePath string
-		var archiveErr error
-
-		if isLinuxBinary {
-			// Create a tar.gz archive for Linux binaries
-			tarGzFileName := fmt.Sprintf("%s.tar.gz", fileWithoutExt)
-			targetFilePath = filepath.Join(outputPath, tarGzFileName)
-			archiveErr = internal.TarGzSource(zipFiles, targetFilePath)
-		} else {
-			// Create a ZIP archive for non-Linux binaries (Windows, macOS)
-			zipFileName := fmt.Sprintf("%s.zip", fileWithoutExt)
-			targetFilePath = filepath.Join(outputPath, zipFileName)
-			archiveErr = internal.ZipSource(zipFiles, targetFilePath)
-		}
-
-		if archiveErr != nil {
-			return fmt.Errorf("failed to create archive for %s: %w", entry.Name(), archiveErr)
+		_, err := createArchive(artifactName, fileWithoutExt, outputPath, sourceFiles)
+		if err != nil {
+			return fmt.Errorf("failed to create archive for %s: %w", entry.Name(), err)
 		}
 	}
 
 	return nil
 }
 
-// getFileNameWithoutExt extracts the filename without its extension
-func getFileNameWithoutExt(filePath string) string {
-	// Get the base filename
-	fileName := filepath.Base(filePath)
-
-	// Remove extension, handling both .tar.gz and single extensions
-	if strings.HasSuffix(fileName, ".tar.gz") {
-		return strings.TrimSuffix(fileName, ".tar.gz")
-	}
-
-	// Remove the extension
-	return strings.TrimSuffix(fileName, filepath.Ext(fileName))
-}
-
 func defaultPackageFlags(flags *packageFlags) {
 	if flags.inputPath == "" {
 		flags.inputPath = "bin"
 	}
+}
+
+// getArchiveType determines the appropriate archive format based on the artifact name
+func getArchiveType(artifactName string) string {
+	if strings.Contains(artifactName, "linux") {
+		return "tar.gz"
+	}
+	return "zip"
+}
+
+// createArchive creates an archive file using the appropriate format for the given artifact
+func createArchive(artifactName, fileWithoutExt, outputPath string, sourceFiles []string) (string, error) {
+	archiveType := getArchiveType(artifactName)
+	targetFilePath := filepath.Join(outputPath, fmt.Sprintf("%s.%s", fileWithoutExt, archiveType))
+
+	var archiveFunc func([]string, string) error
+	switch archiveType {
+	case "tar.gz":
+		archiveFunc = internal.TarGzSource
+	case "zip":
+		archiveFunc = internal.ZipSource
+	default:
+		return "", fmt.Errorf("unsupported archive type: %s", archiveType)
+	}
+
+	return targetFilePath, archiveFunc(sourceFiles, targetFilePath)
 }

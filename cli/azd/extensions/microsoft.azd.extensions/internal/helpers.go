@@ -98,8 +98,9 @@ func InferOSArch(filename string) (string, error) {
 	osPart := parts[len(parts)-2]   // Second-to-last part is the OS
 	archPart := parts[len(parts)-1] // Last part is the ARCH (with optional extension)
 
-	// Remove extension, handling both .tar.gz and single extensions
+	// Remove extension
 	if strings.HasSuffix(archPart, ".tar.gz") {
+		// Special handling for .tar.gz since filepath.Ext only removes the last extension (.gz)
 		archPart = strings.TrimSuffix(archPart, ".tar.gz")
 	} else {
 		archPart = strings.TrimSuffix(archPart, filepath.Ext(archPart))
@@ -265,10 +266,10 @@ func AzdConfigDir() (string, error) {
 	return azdConfigDir, nil
 }
 
-// DetermineArtifactPatterns creates the patterns to use for finding artifacts
-func DetermineArtifactPatterns(artifactsFlag, extensionId, version string) ([]string, error) {
+// ArtifactPatterns returns glob patterns for finding extension artifacts.
+// Uses local registry path if artifactsFlag is empty, otherwise returns the provided flag.
+func ArtifactPatterns(artifactsFlag, extensionId, version string) ([]string, error) {
 	if artifactsFlag == "" {
-		// Default patterns for both .zip and .tar.gz files
 		localRegistryArtifactsPath, err := LocalRegistryArtifactsPath()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get registry artifacts path: %w", err)
@@ -279,16 +280,14 @@ func DetermineArtifactPatterns(artifactsFlag, extensionId, version string) ([]st
 			filepath.Join(basePattern, "*.tar.gz"),
 		}, nil
 	}
-	// Use explicitly provided pattern or concrete file path
 	return []string{artifactsFlag}, nil
 }
 
-// GlobArtifacts finds artifacts matching the given patterns
-func GlobArtifacts(patterns []string) ([]string, error) {
+// FindFiles returns all files matching the given glob patterns.
+func FindFiles(patterns []string) ([]string, error) {
 	var allFiles []string
 
 	for _, pattern := range patterns {
-		// Use filepath.Glob for both patterns and concrete file paths
 		files, err := filepath.Glob(pattern)
 		if err != nil {
 			return nil, err
@@ -297,4 +296,18 @@ func GlobArtifacts(patterns []string) ([]string, error) {
 	}
 
 	return allFiles, nil
+}
+
+// GetFileNameWithoutExt extracts the filename without its extension
+func GetFileNameWithoutExt(filePath string) string {
+	// Get the base filename
+	fileName := filepath.Base(filePath)
+
+	// Special handling for .tar.gz since filepath.Ext only removes the last extension (.gz)
+	if strings.HasSuffix(fileName, ".tar.gz") {
+		return strings.TrimSuffix(fileName, ".tar.gz")
+	}
+
+	// Remove the extension
+	return strings.TrimSuffix(fileName, filepath.Ext(fileName))
 }

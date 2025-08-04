@@ -233,26 +233,13 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 			Title: "Validating artifacts",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 				// Determine patterns to use
-				var patterns []string
-				if flags.artifacts == "" {
-					// Default patterns for both .zip and .tar.gz files
-					localRegistryArtifactsPath, err := internal.LocalRegistryArtifactsPath()
-					if err != nil {
-						return ux.Error, common.NewDetailedError("Failed to get registry path",
-							fmt.Errorf("failed to get registry artifacts path: %w", err),
-						)
-					}
-					basePattern := filepath.Join(localRegistryArtifactsPath, extensionMetadata.Id, flags.version)
-					patterns = []string{
-						filepath.Join(basePattern, "*.zip"),
-						filepath.Join(basePattern, "*.tar.gz"),
-					}
-				} else {
-					// Use explicitly provided pattern or concrete file path
-					patterns = []string{flags.artifacts}
+				patterns, err := internal.ArtifactPatterns(flags.artifacts, extensionMetadata.Id, flags.version)
+				if err != nil {
+					return ux.Error, common.NewDetailedError("Failed to get registry path", err)
 				}
 
-				files, err := internal.GlobArtifacts(patterns)
+				// Get the artifact files
+				files, err := internal.FindFiles(patterns)
 				if err != nil {
 					return ux.Error, common.NewDetailedError("Artifacts not found",
 						fmt.Errorf("failed to find artifacts: %w", err),
@@ -275,13 +262,13 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 				Title: "Creating Github release",
 				Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 					// Determine patterns to use
-					patterns, err := internal.DetermineArtifactPatterns(flags.artifacts, extensionMetadata.Id, flags.version)
+					patterns, err := internal.ArtifactPatterns(flags.artifacts, extensionMetadata.Id, flags.version)
 					if err != nil {
 						return ux.Error, common.NewDetailedError("Failed to get registry path", err)
 					}
 
 					// Get the artifact files
-					files, err := internal.GlobArtifacts(patterns)
+					files, err := internal.FindFiles(patterns)
 					if err != nil {
 						return ux.Error, common.NewDetailedError("Artifacts not found",
 							fmt.Errorf("failed to find artifacts: %w", err),

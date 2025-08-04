@@ -186,7 +186,7 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 				}
 
 				// Determine patterns to use
-				patterns, err := internal.DetermineArtifactPatterns(flags.artifacts, extensionMetadata.Id, flags.version)
+				patterns, err := internal.ArtifactPatterns(flags.artifacts, extensionMetadata.Id, flags.version)
 				if err != nil {
 					return ux.Error, common.NewDetailedError(
 						"Failed to get registry path",
@@ -194,7 +194,8 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 					)
 				}
 
-				files, err := internal.GlobArtifacts(patterns)
+				// Get the artifact files
+				files, err := internal.FindFiles(patterns)
 				if err != nil {
 					return ux.Error, common.NewDetailedError(
 						"Failed to list artifacts",
@@ -412,7 +413,7 @@ func createPlatformMetadata(
 	osArch string,
 	assetName string,
 ) (map[string]any, error) {
-	binaryFileName := getFileNameWithoutExt(assetName)
+	binaryFileName := internal.GetFileNameWithoutExt(assetName)
 	if strings.Contains(binaryFileName, "windows") {
 		binaryFileName += ".exe"
 	}

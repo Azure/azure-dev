@@ -7,6 +7,7 @@ Usage
 Flags
     -l, --location string     	: Azure location for the new environment
         --subscription string 	: Name or ID of an Azure subscription to use for the new environment
+    -t, --type string         	: The type of the environment (e.g., dev, test, prod). (Experimental)
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

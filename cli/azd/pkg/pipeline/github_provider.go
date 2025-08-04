@@ -458,13 +458,22 @@ func (p *GitHubCiProvider) setPipelineVariables(
 	infraOptions provisioning.Options,
 	tenantId, clientId string,
 ) error {
-	for name, value := range map[string]string{
+	vars := map[string]string{
 		environment.EnvNameEnvVarName:        p.env.Name(),
 		environment.LocationEnvVarName:       p.env.GetLocation(),
 		environment.SubscriptionIdEnvVarName: p.env.GetSubscriptionId(),
 		environment.TenantIdEnvVarName:       tenantId,
 		"AZURE_CLIENT_ID":                    clientId,
-	} {
+	}
+
+	if envType := p.env.GetEnvironmentType(); envType != "" {
+		vars[environment.EnvTypeEnvVarName] = envType
+	}
+
+	for name, value := range vars {
+		if value == "" {
+			continue
+		}
 		if err := p.ghCli.SetVariable(ctx, repoSlug, name, value); err != nil {
 			return fmt.Errorf("failed setting %s variable: %w", name, err)
 		}

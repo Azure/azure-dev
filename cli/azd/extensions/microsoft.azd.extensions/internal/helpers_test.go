@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -269,11 +270,6 @@ func TestGetFileNameWithoutExt(t *testing.T) {
 			expected: "file",
 		},
 		{
-			name:     "Windows path with extension",
-			input:    "C:\\path\\to\\file.exe",
-			expected: "C:\\path\\to\\file", // On Unix systems, backslashes are not treated as path separators
-		},
-		{
 			name:     "Empty string",
 			input:    "",
 			expected: "",
@@ -283,6 +279,18 @@ func TestGetFileNameWithoutExt(t *testing.T) {
 			input:    ".gitignore",
 			expected: "",
 		},
+	}
+
+	if runtime.GOOS == "windows" {
+		tests = append(tests, struct {
+			name     string
+			input    string
+			expected string
+		}{
+			name:     "Windows path with extension",
+			input:    "C:\\path\\to\\file.exe",
+			expected: "file",
+		})
 	}
 
 	for _, tt := range tests {

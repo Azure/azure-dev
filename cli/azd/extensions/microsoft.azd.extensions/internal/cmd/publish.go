@@ -189,7 +189,6 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 					return ux.Skipped, nil
 				}
 
-				// Find artifacts using the new consolidated function
 				files, err := internal.FindArtifacts(artifactPatterns, extensionMetadata.Id, flags.version)
 				if err != nil {
 					return ux.Error, common.NewDetailedError(

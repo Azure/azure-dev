@@ -398,8 +398,9 @@ func (p *GitHubCiProvider) credentialOptions(
 		}
 
 		for _, branch := range branches {
+			safeBranchName := regexp.MustCompile(`[^A-Za-z0-9-]`).ReplaceAllString(branch, "-")
 			branchCredentials := &graphsdk.FederatedIdentityCredential{
-				Name:        url.PathEscape(fmt.Sprintf("%s-%s", credentialSafeName, branch)),
+				Name:        url.PathEscape(fmt.Sprintf("%s-%s", credentialSafeName, safeBranchName)),
 				Issuer:      federatedIdentityIssuer,
 				Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/%s", repoSlug, branch),
 				Description: to.Ptr("Created by Azure Developer CLI"),

@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -128,7 +129,12 @@ func (h *HooksRunner) GetScript(hookConfig *HookConfig, envVars []string) (tools
 	case ShellTypeBash:
 		return bash.NewBashScript(h.commandRunner, h.cwd, envVars), nil
 	case ShellTypePowershell:
-		return powershell.NewPowershellScript(h.commandRunner, h.cwd, envVars), nil
+		var alphaFeaturesManager *alpha.FeatureManager
+		if err := h.serviceLocator.Resolve(&alphaFeaturesManager); err != nil {
+			// If we can't resolve the alpha features manager, continue without it
+			alphaFeaturesManager = nil
+		}
+		return powershell.NewPowershellScript(h.commandRunner, h.cwd, envVars, alphaFeaturesManager), nil
 	default:
 		return nil, fmt.Errorf(
 			"shell type '%s' is not a valid option. Only 'sh' and 'pwsh' are supported",

@@ -14,4 +14,6 @@
   description: "Enables the use of `azd` extension packages."
 - id: llm
   description: "Enables the use of LLMs in the CLI."
+- id: powershell.fallback5
+  description: "Enable fallback to PowerShell 5 when PowerShell 7 is not available."
   

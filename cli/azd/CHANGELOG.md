@@ -1,14 +1,11 @@
 # Release History
 
-## 1.19.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.18.1 (2025-08-06)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[5501]](https://github.com/Azure/azure-dev/pull/5501) infra gen when dotnet project is present.
+- [[5566]](https://github.com/Azure/azure-dev/pull/5566) [VSServer] Ignoring projects.v1.
 
 ## 1.18.0 (2025-07-17)
 

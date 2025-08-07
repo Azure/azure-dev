@@ -19,6 +19,7 @@ words:
   - idxs
   # Looks like the protogen has a spelling error for panics
   - pancis
+  - proto
   - protobuf
   - protoc
   - protoreflect

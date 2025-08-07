@@ -20,14 +20,14 @@ import (
 	"github.com/tmc/langchaingo/tools"
 
 	localtools "github.com/azure/azure-dev/cli/azd/internal/agent/tools"
-	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/mcp"
 	mcptools "github.com/azure/azure-dev/cli/azd/internal/agent/tools/mcp"
 )
 
 //go:embed prompts/conversational.txt
 var conversational_prompt_template string
 
-// ConversationalAzdAiAgent represents an enhanced AZD Copilot agent with action tracking, intent validation, and conversation memory
+// ConversationalAzdAiAgent represents an enhanced AZD Copilot agent with action tracking,
+// intent validation, and conversation memory
 type ConversationalAzdAiAgent struct {
 	*Agent
 }
@@ -55,7 +55,7 @@ func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentOption) (*Conversa
 	// Create sampling handler for MCP
 	samplingHandler := mcptools.NewMcpSamplingHandler(
 		azdAgent.samplingModel,
-		mcp.WithDebug(azdAgent.debug),
+		mcptools.WithDebug(azdAgent.debug),
 	)
 
 	toolLoaders := []localtools.ToolLoader{

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package http
 
 import (
@@ -27,6 +30,7 @@ func (t HTTPFetcherTool) Call(ctx context.Context, input string) (string, error)
 		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("http_fetcher: %s", input))
 	}
 
+	// #nosec G107 - HTTP requests with variable URLs are the intended functionality of this tool
 	resp, err := http.Get(input)
 	if err != nil {
 		toolErr := fmt.Errorf("failed to fetch URL %s: %w", input, err)

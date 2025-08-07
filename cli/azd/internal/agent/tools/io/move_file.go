@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package io
 
 import (
@@ -18,7 +21,8 @@ func (t MoveFileTool) Name() string {
 }
 
 func (t MoveFileTool) Description() string {
-	return "Move or rename a file. Input format: 'source|destination' (e.g., 'old.txt|new.txt' or './file.txt|./folder/file.txt')"
+	return "Move or rename a file.\n" +
+		"Input format: 'source|destination' (e.g., 'old.txt|new.txt' or './file.txt|./folder/file.txt')"
 }
 
 // createErrorResponse creates a JSON error response
@@ -48,7 +52,10 @@ func (t MoveFileTool) Call(ctx context.Context, input string) (string, error) {
 	input = strings.TrimSpace(input)
 
 	if input == "" {
-		return t.createErrorResponse(fmt.Errorf("input is required in format 'source|destination'"), "Input is required in format 'source|destination'")
+		return t.createErrorResponse(
+			fmt.Errorf("input is required in format 'source|destination'"),
+			"Input is required in format 'source|destination'",
+		)
 	}
 
 	// Split on first occurrence of '|' to separate source from destination
@@ -61,7 +68,10 @@ func (t MoveFileTool) Call(ctx context.Context, input string) (string, error) {
 	destination := strings.TrimSpace(parts[1])
 
 	if source == "" || destination == "" {
-		return t.createErrorResponse(fmt.Errorf("both source and destination paths are required"), "Both source and destination paths are required")
+		return t.createErrorResponse(
+			fmt.Errorf("both source and destination paths are required"),
+			"Both source and destination paths are required",
+		)
 	}
 
 	// Check if source exists
@@ -75,7 +85,10 @@ func (t MoveFileTool) Call(ctx context.Context, input string) (string, error) {
 
 	// Check if destination already exists
 	if _, err := os.Stat(destination); err == nil {
-		return t.createErrorResponse(fmt.Errorf("destination %s already exists", destination), fmt.Sprintf("Destination %s already exists", destination))
+		return t.createErrorResponse(
+			fmt.Errorf("destination %s already exists", destination),
+			fmt.Sprintf("Destination %s already exists", destination),
+		)
 	}
 
 	// Move/rename the file
@@ -105,7 +118,13 @@ func (t MoveFileTool) Call(ctx context.Context, input string) (string, error) {
 		Destination: destination,
 		Type:        fileType,
 		Size:        sourceInfo.Size(),
-		Message:     fmt.Sprintf("Successfully moved %s from %s to %s (%d bytes)", fileType, source, destination, sourceInfo.Size()),
+		Message: fmt.Sprintf(
+			"Successfully moved %s from %s to %s (%d bytes)",
+			fileType,
+			source,
+			destination,
+			sourceInfo.Size(),
+		),
 	}
 
 	// Convert to JSON

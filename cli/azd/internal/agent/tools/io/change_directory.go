@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package io
 
 import (
@@ -19,7 +22,8 @@ func (t ChangeDirectoryTool) Name() string {
 }
 
 func (t ChangeDirectoryTool) Description() string {
-	return "Change the current working directory. Input: directory path (e.g., '../parent' or './subfolder' or absolute path)"
+	return "Change the current working directory. " +
+		"Input: directory path (e.g., '../parent' or './subfolder' or absolute path)"
 }
 
 // createErrorResponse creates a JSON error response
@@ -63,7 +67,10 @@ func (t ChangeDirectoryTool) Call(ctx context.Context, input string) (string, er
 		return t.createErrorResponse(err, fmt.Sprintf("Directory %s does not exist: %s", absPath, err.Error()))
 	}
 	if !info.IsDir() {
-		return t.createErrorResponse(fmt.Errorf("%s is not a directory", absPath), fmt.Sprintf("%s is not a directory", absPath))
+		return t.createErrorResponse(
+			fmt.Errorf("%s is not a directory", absPath),
+			fmt.Sprintf("%s is not a directory", absPath),
+		)
 	}
 
 	// Change directory

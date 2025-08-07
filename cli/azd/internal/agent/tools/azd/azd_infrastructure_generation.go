@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azd
 
 import (
@@ -17,7 +20,10 @@ func (t *AzdInfrastructureGenerationTool) Name() string {
 }
 
 func (t *AzdInfrastructureGenerationTool) Description() string {
-	return `Returns instructions for generating modular Bicep infrastructure templates following Azure security and operational best practices for AZD projects. The LLM agent should execute these instructions using available tools.
+	return `Returns instructions for generating modular Bicep infrastructure templates following Azure security and 
+operational best practices for AZD projects. 
+
+The LLM agent should execute these instructions using available tools.
 
 Use this tool when:
 - Architecture planning completed with Azure services selected

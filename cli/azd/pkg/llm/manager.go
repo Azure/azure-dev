@@ -12,7 +12,7 @@ import (
 	"github.com/tmc/langchaingo/llms"
 )
 
-var featureLlm = alpha.MustFeatureKey("llm")
+var FeatureLlm = alpha.MustFeatureKey("llm")
 
 func IsLlmFeatureEnabled(alphaManager *alpha.FeatureManager) error {
 	if alphaManager == nil {
@@ -99,7 +99,7 @@ type NotEnabledError struct {
 
 func (e NotEnabledError) Error() string {
 	return fmt.Sprintf("LLM feature is not enabled. Run '%s' to enable",
-		alpha.GetEnableCommand(featureLlm))
+		alpha.GetEnableCommand(FeatureLlm))
 }
 
 // InvalidLlmConfiguration represents an error that occurs when the LLM (Large Language Model)

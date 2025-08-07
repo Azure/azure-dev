@@ -17,13 +17,14 @@ func (t *AzdInfrastructureGenerationTool) Name() string {
 }
 
 func (t *AzdInfrastructureGenerationTool) Description() string {
-	return `
-		Generates Bicep infrastructure templates for Azure Developer CLI (AZD) projects.
-		This specialized tool focuses on creating modular Bicep templates, parameter files,
-		and implementing Azure security and operational best practices for infrastructure as code.
+	return `Returns instructions for generating modular Bicep infrastructure templates following Azure security and operational best practices for AZD projects. The LLM agent should execute these instructions using available tools.
 
-		Input: "./azd-arch-plan.md"
-	`
+Use this tool when:
+- Architecture planning completed with Azure services selected
+- Need to create Bicep infrastructure templates
+- Ready to implement infrastructure as code for deployment
+
+Input: "./azd-arch-plan.md"`
 }
 
 func (t *AzdInfrastructureGenerationTool) Call(ctx context.Context, input string) (string, error) {

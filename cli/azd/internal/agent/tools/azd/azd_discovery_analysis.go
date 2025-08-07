@@ -17,13 +17,15 @@ func (t *AzdDiscoveryAnalysisTool) Name() string {
 }
 
 func (t *AzdDiscoveryAnalysisTool) Description() string {
-	return `
-		Performs comprehensive discovery and analysis of applications to prepare them for Azure Developer CLI (AZD) initialization. 
-		This is Phase 1 of the AZD migration process that analyzes codebase, identifies components and dependencies, 
-		and creates a foundation for architecture planning.
+	return `Returns instructions for performing comprehensive discovery and analysis of application components to prepare for Azure Developer CLI (AZD) initialization. The LLM agent should execute these instructions using available tools.
 
-		Input: "./azd-arch-plan.md"
-	`
+Use this tool when:
+- Starting Phase 1 of AZD migration process
+- Need to identify all application components and dependencies
+- Codebase analysis required before architecture planning
+- azd-arch-plan.md does not exist or needs updating
+
+Input: "./azd-arch-plan.md"`
 }
 
 func (t *AzdDiscoveryAnalysisTool) Call(ctx context.Context, input string) (string, error) {

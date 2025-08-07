@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -33,6 +34,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/fatih/color"
 	"github.com/joho/godotenv"
@@ -412,27 +414,27 @@ Do not stop until all tasks are complete and fully resolved.
 	initSteps := []initStep{
 		{
 			Name:        "Running Discovery & Analysis",
-			Description: "Run a deep discovery and analysis on the current working directory. Provide a detailed summary of work performed.",
+			Description: "Run a deep discovery and analysis on the current working directory.",
 		},
 		{
 			Name:        "Generating Architecture Plan",
-			Description: "Create a high-level architecture plan for the application. Provide a detailed summary of work performed.",
+			Description: "Create a high-level architecture plan for the application.",
 		},
 		{
 			Name:        "Generating Dockerfile(s)",
-			Description: "Generate a Dockerfile for the application components as needed. Provide a detailed summary of work performed.",
+			Description: "Generate a Dockerfile for the application components as needed.",
 		},
 		{
 			Name:        "Generating infrastructure",
-			Description: "Generate infrastructure as code (IaC) for the application. Provide a detailed summary of work performed.",
+			Description: "Generate infrastructure as code (IaC) for the application.",
 		},
 		{
 			Name:        "Generating azure.yaml file",
-			Description: "Generate an azure.yaml file for the application. Provide a detailed summary of work performed.",
+			Description: "Generate an azure.yaml file for the application.",
 		},
 		{
 			Name:        "Validating project",
-			Description: "Validate the project structure and configuration. Provide a detailed summary of work performed.",
+			Description: "Validate the project structure and configuration.",
 		},
 	}
 
@@ -446,7 +448,11 @@ Do not stop until all tasks are complete and fully resolved.
 
 		// Run Step
 		i.console.ShowSpinner(ctx, step.Name, input.Step)
-		fullTaskInput := fmt.Sprintf(taskInput, step.Description)
+		fullTaskInput := fmt.Sprintf(taskInput, strings.Join([]string{
+			step.Description,
+			"Provide a very brief summary in markdown format that includes any files generated during this step.",
+		}, "\n"))
+
 		agentOutput, err := azdAgent.SendMessage(ctx, fullTaskInput)
 		if err != nil {
 			i.console.StopSpinner(ctx, fmt.Sprintf("%s (With errors)", step.Name), input.StepWarning)
@@ -459,8 +465,8 @@ Do not stop until all tasks are complete and fully resolved.
 
 		i.console.StopSpinner(ctx, step.Name, input.StepDone)
 		i.console.Message(ctx, "")
-		finalOutput := fmt.Sprintf("%s %s", color.MagentaString("🤖 AZD Copilot:"), output.WithMarkdown(agentOutput))
-		i.console.Message(ctx, finalOutput)
+		i.console.Message(ctx, color.MagentaString("🤖 AZD Copilot:"))
+		i.console.Message(ctx, output.WithMarkdown(agentOutput))
 		i.console.Message(ctx, "")
 	}
 
@@ -474,29 +480,37 @@ Do not stop until all tasks are complete and fully resolved.
 
 // collectAndApplyFeedback prompts for user feedback and applies it using the agent in a loop
 func (i *initAction) collectAndApplyFeedback(ctx context.Context, azdAgent *agent.ConversationalAzdAiAgent, promptMessage string) error {
-	hasFeedback, err := i.console.Confirm(ctx, input.ConsoleOptions{
-		Message:      promptMessage,
-		DefaultValue: false,
-	})
-	if err != nil {
-		return err
-	}
-
-	if !hasFeedback {
-		i.console.Message(ctx, "")
-		return nil
-	}
-
 	// Loop to allow multiple rounds of feedback
 	for {
-		userInput, err := i.console.Prompt(ctx, input.ConsoleOptions{
-			Message:      "💭 You:",
-			DefaultValue: "",
-			Help:         "Additional context will be provided to AZD Copilot",
+		confirmFeedback := uxlib.NewConfirm(&uxlib.ConfirmOptions{
+			Message:      promptMessage,
+			DefaultValue: uxlib.Ptr(false),
+			HelpMessage:  "You will be able to provide and feedback or changes after each step.",
 		})
+
+		hasFeedback, err := confirmFeedback.Ask(ctx)
+		if err != nil {
+			return err
+		}
+
+		if !*hasFeedback {
+			i.console.Message(ctx, "")
+			break
+		}
+
+		userInputPrompt := uxlib.NewPrompt(&uxlib.PromptOptions{
+			Message:        "💭 You",
+			PlaceHolder:    "Provide feedback or changes to the project",
+			Required:       true,
+			IgnoreHintKeys: true,
+		})
+
+		userInput, err := userInputPrompt.Ask(ctx)
 		if err != nil {
 			return fmt.Errorf("error collecting feedback during azd init, %w", err)
 		}
+
+		i.console.Message(ctx, "")
 
 		if userInput != "" {
 			i.console.ShowSpinner(ctx, "Submitting feedback", input.Step)
@@ -511,22 +525,9 @@ func (i *initAction) collectAndApplyFeedback(ctx context.Context, azdAgent *agen
 
 			i.console.StopSpinner(ctx, "Submitting feedback", input.StepDone)
 			i.console.Message(ctx, "")
-			agentOutput := fmt.Sprintf("%s %s", color.MagentaString("🤖 AZD Copilot:"), output.WithMarkdown(feedbackOutput))
-			i.console.Message(ctx, agentOutput)
+			i.console.Message(ctx, color.MagentaString("🤖 AZD Copilot:"))
+			i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
 			i.console.Message(ctx, "")
-		}
-
-		// Check if user wants to provide more feedback
-		moreFeedback, err := i.console.Confirm(ctx, input.ConsoleOptions{
-			Message:      "Do you have any more feedback or changes?",
-			DefaultValue: false,
-		})
-		if err != nil {
-			return err
-		}
-
-		if !moreFeedback {
-			break
 		}
 	}
 

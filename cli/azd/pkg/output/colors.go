@@ -62,6 +62,10 @@ func WithBackticks(s string) string {
 // WithMarkdown converts markdown to terminal-friendly colorized output using glamour.
 // This provides rich markdown rendering including bold, italic, code blocks, headers, etc.
 func WithMarkdown(markdownText string) string {
+	markdownText = strings.Trim(markdownText, "\n")
+	markdownText = strings.TrimPrefix(markdownText, "```markdown")
+	markdownText = strings.TrimSuffix(markdownText, "```")
+
 	// Get dynamic console width with fallback to 120
 	consoleWidth := getConsoleWidth()
 

@@ -6,8 +6,8 @@
 2. Execute azure.yaml against azd schema using available tool
 3. Compile and validate all Bicep templates in ./infra directory
 4. Verify AZD environment exists and is properly configured
-5. Run `azd package` to validate service packaging
-6. Execute `azd provision --preview` to test infrastructure deployment
+5. Run `azd package --no-prompt` to validate service packaging
+6. Execute `azd provision --preview --no-prompt` to test infrastructure deployment
 7. Resolve ALL issues found in each validation step before proceeding
 8. Update existing `azd-arch-plan.md` with validation results by adding/updating validation section while preserving existing content
 
@@ -63,7 +63,7 @@
 
 **4. Package Validation:**
 
-- Execute `azd package` command and monitor output
+- Execute `azd package --no-prompt` command and monitor output
 - Verify all service source paths are valid
 - Check Docker builds complete successfully for containerized services
 - Ensure all build artifacts are created correctly
@@ -71,7 +71,7 @@
 
 **5. Deployment Preview Validation:**
 
-- Execute `azd provision --preview` command
+- Execute `azd provision --preview --no-prompt` command
 - Verify Azure authentication is working
 - Check resource group creation plan and Bicep module deployment
 - Ensure parameter values are properly resolved

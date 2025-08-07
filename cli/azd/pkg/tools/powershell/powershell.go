@@ -84,14 +84,16 @@ func checkPath(options tools.ExecOptions, enableFallback bool) (command string, 
 
 	// If pwsh is not available and fallback is enabled, try powershell (PowerShell 5)
 	if enableFallback {
-		err = tools.ToolInPath("powershell")
-		if err == nil {
+		ps5Err := tools.ToolInPath("powershell")
+		if ps5Err == nil {
 			return "powershell", nil
 		}
+		// Both failed, return a descriptive error
+		return "", fmt.Errorf("neither PowerShell 7 (%s) nor PowerShell 5 (powershell) found in PATH", pwshCommand)
 	}
 
-	// Return original error if no fallback or both failed
-	return "", tools.ToolInPath(pwshCommand)
+	// Return original error if no fallback
+	return "", err
 }
 
 // Executes the specified powershell script

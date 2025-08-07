@@ -253,7 +253,7 @@ func Test_Powershell_Fallback_To_PowerShell5(t *testing.T) {
 			func(options tools.ExecOptions, enableFallback bool) (string, error) {
 				// Simulate both pwsh and powershell not available
 				require.True(t, enableFallback)
-				return "", errors.New("neither pwsh nor powershell found")
+				return "", errors.New("neither PowerShell 7 (pwsh) nor PowerShell 5 (powershell) found in PATH")
 			},
 			alphaManager)
 
@@ -264,7 +264,7 @@ func Test_Powershell_Fallback_To_PowerShell5(t *testing.T) {
 		)
 
 		require.Error(t, execErr)
-		require.Contains(t, execErr.Error(), "neither pwsh nor powershell found")
+		require.Contains(t, execErr.Error(), "neither PowerShell 7 (pwsh) nor PowerShell 5 (powershell) found in PATH")
 	})
 }
 
@@ -279,7 +279,7 @@ func Test_Powershell_Integration_CheckPathFunction(t *testing.T) {
 		}
 		// If pwsh is not available, the function should return an error
 	})
-
+	
 	t.Run("FallbackEnabled_BothAvailable_ShouldPreferPwsh", func(t *testing.T) {
 		options := tools.ExecOptions{UserPwsh: "pwsh"}
 		// This may fail in environments where pwsh is not installed
@@ -288,5 +288,17 @@ func Test_Powershell_Integration_CheckPathFunction(t *testing.T) {
 			require.Equal(t, "pwsh", command)
 		}
 		// If neither is available, the function should return an error
+	})
+	
+	t.Run("FallbackEnabled_ErrorMessage_ShouldMentionBoth", func(t *testing.T) {
+		options := tools.ExecOptions{UserPwsh: "nonexistent-pwsh-command"}
+		// Use a command that definitely doesn't exist
+		_, err := checkPath(options, true)
+		if err != nil {
+			// When fallback is enabled and both fail, error should mention both
+			require.Contains(t, err.Error(), "neither PowerShell 7")
+			require.Contains(t, err.Error(), "PowerShell 5")
+			require.Contains(t, err.Error(), "PATH")
+		}
 	})
 }

@@ -18,10 +18,12 @@ func TestUserAgentStringScenarios(t *testing.T) {
 	azDevIdentifier := fmt.Sprintf("azdev/%s %s", version, runtimeInfo())
 
 	t.Run("default", func(t *testing.T) {
+		t.Setenv("GITHUB_ACTIONS", "")
 		require.Equal(t, azDevIdentifier, UserAgent())
 	})
 
 	t.Run("withUserAgent", func(t *testing.T) {
+		t.Setenv("GITHUB_ACTIONS", "")
 		t.Setenv(AzdUserAgentEnvVar, "dev_user_agent")
 		require.Equal(t, fmt.Sprintf("%s dev_user_agent", azDevIdentifier), UserAgent())
 	})

@@ -2,7 +2,7 @@
     "name": "azure-dev",
     "displayName": "Azure Developer CLI",
     "description": "Makes it easy to run, provision, and deploy Azure applications using the Azure Developer CLI",
-    "version": "0.9.0-alpha.1",
+    "version": "0.10.0-alpha.1",
     "license": "MIT",
     "icon": "resources/icon.png",
     "preview": true,
@@ -37,6 +37,11 @@
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.cli.init",
                 "title": "%azure-dev.commands.cli.init.title%"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.initFromPom",
+                "title": "%azure-dev.commands.cli.initFromPom.title%"
             },
             {
                 "category": "%azure-dev.commands_category%",
@@ -166,6 +171,10 @@
         "menus": {
             "commandPalette": [
                 {
+                    "command": "azure-dev.commands.cli.initFromPom",
+                    "when": "false"
+                },
+                {
                     "command": "azure-dev.commands.getDotEnvFilePath",
                     "when": "false"
                 },
@@ -185,11 +194,16 @@
             "explorer/context": [
                 {
                     "submenu": "azure-dev.explorer.submenu",
-                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "when": "resourceFilename =~ /(azure.yaml|pom.xml)/i",
                     "group": "azure-dev"
                 }
             ],
             "azure-dev.explorer.submenu": [
+                {
+                    "when": "resourceFilename =~ /pom.xml/i",
+                    "command": "azure-dev.commands.cli.initFromPom",
+                    "group": "10provision@10"
+                },
                 {
                     "when": "resourceFilename =~ /azure.yaml/i",
                     "command": "azure-dev.commands.cli.provision",

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -250,9 +252,39 @@ func (d *StackDeployments) DeployToSubscription(
 		return nil, err
 	}
 
+	stack, err := d.stackFromArmForSubscription(ctx, subscriptionId, location, armTemplate, parameters, tags, options)
+	if err != nil {
+		return nil, err
+	}
+
+	poller, err := client.BeginCreateOrUpdateAtSubscription(ctx, deploymentName, stack, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err))
+	}
+
+	return d.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
+}
+
+func (d *StackDeployments) stackFromArmForResourceGroup(
+	ctx context.Context,
+	subscriptionId string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) (armdeploymentstacks.DeploymentStack, error) {
+	if tags == nil {
+		tags = map[string]*string{}
+	}
+
 	templateHash, err := d.CalculateTemplateHash(ctx, subscriptionId, armTemplate)
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate template hash: %w", err)
+		return armdeploymentstacks.DeploymentStack{}, fmt.Errorf("failed to calculate template hash: %w", err)
 	}
 
 	clonedTags := maps.Clone(tags)
@@ -262,12 +294,11 @@ func (d *StackDeployments) DeployToSubscription(
 
 	deploymentStackOptions, err := parseDeploymentStackOptions(options)
 	if err != nil {
-		return nil, err
+		return armdeploymentstacks.DeploymentStack{}, err
 	}
 
 	stack := armdeploymentstacks.DeploymentStack{
-		Location: &location,
-		Tags:     clonedTags,
+		Tags: clonedTags,
 		Properties: &armdeploymentstacks.DeploymentStackProperties{
 			BypassStackOutOfSyncError: deploymentStackOptions.BypassStackOutOfSyncError,
 			ActionOnUnmanage:          deploymentStackOptions.ActionOnUnmanage,
@@ -276,21 +307,8 @@ func (d *StackDeployments) DeployToSubscription(
 			Template:                  armTemplate,
 		},
 	}
-	poller, err := client.BeginCreateOrUpdateAtSubscription(ctx, deploymentName, stack, nil)
-	if err != nil {
-		return nil, err
-	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
-	if err != nil {
-		deploymentError := createDeploymentError(err)
-		return nil, fmt.Errorf(
-			"deploying to subscription:\n\nDeployment Error Details:\n%w",
-			deploymentError,
-		)
-	}
-
-	return d.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
+	return stack, nil
 }
 
 func (d *StackDeployments) DeployToResourceGroup(
@@ -308,31 +326,11 @@ func (d *StackDeployments) DeployToResourceGroup(
 		return nil, err
 	}
 
-	templateHash, err := d.CalculateTemplateHash(ctx, subscriptionId, armTemplate)
-	if err != nil {
-		return nil, fmt.Errorf("failed to calculate template hash: %w", err)
-	}
-
-	clonedTags := maps.Clone(tags)
-	clonedTags[azure.TagKeyAzdDeploymentTemplateHashName] = &templateHash
-
-	stackParams := convertToStackParams(parameters)
-
-	deploymentStackOptions, err := parseDeploymentStackOptions(options)
+	stack, err := d.stackFromArmForResourceGroup(ctx, subscriptionId, armTemplate, parameters, tags, options)
 	if err != nil {
 		return nil, err
 	}
 
-	stack := armdeploymentstacks.DeploymentStack{
-		Tags: clonedTags,
-		Properties: &armdeploymentstacks.DeploymentStackProperties{
-			BypassStackOutOfSyncError: deploymentStackOptions.BypassStackOutOfSyncError,
-			ActionOnUnmanage:          deploymentStackOptions.ActionOnUnmanage,
-			DenySettings:              deploymentStackOptions.DenySettings,
-			Parameters:                stackParams,
-			Template:                  armTemplate,
-		},
-	}
 	poller, err := client.BeginCreateOrUpdateAtResourceGroup(ctx, resourceGroup, deploymentName, stack, nil)
 	if err != nil {
 		return nil, err
@@ -340,11 +338,7 @@ func (d *StackDeployments) DeployToResourceGroup(
 
 	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
-		deploymentError := createDeploymentError(err)
-		return nil, fmt.Errorf(
-			"deploying to resource group:\n\nDeployment Error Details:\n%w",
-			deploymentError,
-		)
+		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err))
 	}
 
 	return d.GetResourceGroupDeployment(ctx, subscriptionId, resourceGroup, deploymentName)
@@ -766,4 +760,120 @@ func convertToStackParams(parameters azure.ArmParameters) map[string]*armdeploym
 		}
 	}
 	return stackParams
+}
+
+// Preflight API validates whether the specified template is syntactically correct
+// and will be accepted by Azure Resource Manager.
+func (d *StackDeployments) ValidatePreflightToResourceGroup(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) error {
+	client, err := d.createClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	stack, err := d.stackFromArmForResourceGroup(ctx, subscriptionId, armTemplate, parameters, tags, options)
+	if err != nil {
+		return err
+	}
+
+	var rawResponse *http.Response
+	ctx = policy.WithCaptureResponse(ctx, &rawResponse)
+
+	validateResult, err := client.BeginValidateStackAtResourceGroup(ctx, resourceGroup, deploymentName, stack, nil)
+	if err != nil {
+		return fmt.Errorf("validating deployment to resource group:\n\nValidation Error Details:\n%w", err)
+	}
+	_, err = validateResult.PollUntilDone(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("validating deployment to resource group:\n\nValidation Error Details:\n%w", err)
+	}
+
+	return nil
+}
+
+func (d *StackDeployments) stackFromArmForSubscription(
+	ctx context.Context,
+	subscriptionId string,
+	location string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) (armdeploymentstacks.DeploymentStack, error) {
+	if tags == nil {
+		tags = map[string]*string{}
+	}
+
+	templateHash, err := d.CalculateTemplateHash(ctx, subscriptionId, armTemplate)
+	if err != nil {
+		return armdeploymentstacks.DeploymentStack{}, fmt.Errorf("failed to calculate template hash: %w", err)
+	}
+
+	clonedTags := maps.Clone(tags)
+	clonedTags[azure.TagKeyAzdDeploymentTemplateHashName] = &templateHash
+
+	stackParams := convertToStackParams(parameters)
+
+	deploymentStackOptions, err := parseDeploymentStackOptions(options)
+	if err != nil {
+		return armdeploymentstacks.DeploymentStack{}, err
+	}
+
+	stack := armdeploymentstacks.DeploymentStack{
+		Location: &location,
+		Tags:     clonedTags,
+		Properties: &armdeploymentstacks.DeploymentStackProperties{
+			BypassStackOutOfSyncError: deploymentStackOptions.BypassStackOutOfSyncError,
+			ActionOnUnmanage:          deploymentStackOptions.ActionOnUnmanage,
+			DenySettings:              deploymentStackOptions.DenySettings,
+			Parameters:                stackParams,
+			Template:                  armTemplate,
+		},
+	}
+	return stack, nil
+}
+
+// Preflight API validates whether the specified template is syntactically correct
+// and will be accepted by Azure Resource Manager.
+func (d *StackDeployments) ValidatePreflightToSubscription(
+	ctx context.Context,
+	subscriptionId string,
+	location string,
+	deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) error {
+	client, err := d.createClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	stack, err := d.stackFromArmForSubscription(ctx, subscriptionId, location, armTemplate, parameters, tags, options)
+	if err != nil {
+		return err
+	}
+
+	var rawResponse *http.Response
+	ctx = policy.WithCaptureResponse(ctx, &rawResponse)
+
+	validateResult, err := client.BeginValidateStackAtSubscription(ctx, deploymentName, stack, nil)
+	if err != nil {
+		return fmt.Errorf("validating deployment to subscription:\n\nValidation Error Details:\n%w", err)
+	}
+	_, err = validateResult.PollUntilDone(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("validating deployment to subscription:\n\nValidation Error Details:\n%w", err)
+	}
+
+	return nil
 }

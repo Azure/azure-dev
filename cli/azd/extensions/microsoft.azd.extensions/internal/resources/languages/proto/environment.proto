@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext";
+option csharp_namespace = "Microsoft.Azd";
+
+import "models.proto";
+
+// EnvironmentService defines methods for managing environments and their key-value pairs.
+service EnvironmentService {
+  // Gets the current environment.
+  rpc GetCurrent(EmptyRequest) returns (EnvironmentResponse);
+
+  // List retrieves all azd environments.
+  rpc List(EmptyRequest) returns (EnvironmentListResponse);
+
+  // Get retrieves an environment by its name.
+  rpc Get (GetEnvironmentRequest) returns (EnvironmentResponse);
+
+  // Select sets the current environment to the specified environment.
+  rpc Select (SelectEnvironmentRequest) returns (EmptyResponse);
+
+  // GetValues retrieves all key-value pairs in the specified environment.
+  rpc GetValues (GetEnvironmentRequest) returns (KeyValueListResponse);
+
+  // GetValue retrieves the value of a specific key in the specified environment.
+  rpc GetValue (GetEnvRequest) returns (KeyValueResponse);
+
+  // SetValue sets the value of a key in the specified environment.
+  rpc SetValue (SetEnvRequest) returns (EmptyResponse);
+
+  // GetConfig retrieves a config value by path
+  rpc GetConfig (GetConfigRequest) returns (GetConfigResponse);
+
+  // GetConfigString retrieves a config value by path and returns it as a string
+  rpc GetConfigString (GetConfigStringRequest) returns (GetConfigStringResponse);
+
+  // GetConfigSection retrieves a config section by path
+  rpc GetConfigSection (GetConfigSectionRequest) returns (GetConfigSectionResponse);
+
+  // SetConfig sets a config value at a given path
+  rpc SetConfig (SetConfigRequest) returns (EmptyResponse);
+
+  // UnsetConfig removes a config value at a given path
+  rpc UnsetConfig (UnsetConfigRequest) returns (EmptyResponse);
+}
+
+// Request to retrieve an environment by name.
+message GetEnvironmentRequest {
+  string name = 1; // Name of the environment.
+}
+
+message SelectEnvironmentRequest {
+  string name = 1; // Name of the environment.
+}
+
+// Request to retrieve a specific key-value pair.
+message GetEnvRequest {
+  string env_name = 1; // Name of the environment.
+  string key = 2;      // Key to retrieve.
+}
+
+// Request to set a key-value pair.
+message SetEnvRequest {
+  string env_name = 1; // Name of the environment.
+  string key = 2;      // Key to set.
+  string value = 3;    // Value to set for the key.
+}
+
+// Response containing details of an environment.
+message EnvironmentResponse {
+  Environment environment = 1; // Environment details.
+}
+
+message EnvironmentListResponse {
+  repeated EnvironmentDescription environments = 1; // List of environments.
+}
+
+// Response containing a list of key-value pairs.
+message KeyValueListResponse {
+  repeated KeyValue key_values = 1; // List of key-value pairs.
+}
+
+// Response containing a single key-value pair.
+message KeyValueResponse {
+  string key = 1;   // Key name.
+  string value = 2; // Value associated with the key.
+}
+
+// Environment object definition.
+message Environment {
+  string name = 1; // Name of the environment.
+}
+
+message EnvironmentDescription {
+  string name = 1; // Name of the environment.
+  bool local = 2; // Whether the environment is local.
+  bool remote = 3; // Whether the environment is remote.
+  bool default = 4; // Whether the environment is the default.
+}
+
+// Key-value pair definition.
+message KeyValue {
+  string key = 1;   // Key name.
+  string value = 2; // Value associated with the key.
+}
+
+// Request message for Get
+message GetConfigRequest {
+  string path = 1;
+}
+
+// Response message for Get
+message GetConfigResponse {
+  bytes value = 1;
+  bool found = 2;
+}
+
+// Request message for GetString
+message GetConfigStringRequest {
+  string path = 1;
+}
+
+// Response message for GetString
+message GetConfigStringResponse {
+  string value = 1;
+  bool found = 2;
+}
+
+// Request message for GetSection
+message GetConfigSectionRequest {
+  string path = 1;
+}
+
+// Response message for GetSection
+message GetConfigSectionResponse {
+  bytes section = 1;
+  bool found = 2;
+}
+
+// Request message for Set
+message SetConfigRequest {
+  string path = 1;
+  bytes value = 2;
+}
+
+// Request message for Unset
+message UnsetConfigRequest {
+  string path = 1;
+}

@@ -9,9 +9,11 @@ const (
 	AzureResourceTypeApim                      AzureResourceType = "Microsoft.ApiManagement/service"
 	AzureResourceTypeAppConfig                 AzureResourceType = "Microsoft.AppConfiguration/configurationStores"
 	AzureResourceTypeAppInsightComponent       AzureResourceType = "Microsoft.Insights/components"
+	AzureResourceTypeAutomationAccount         AzureResourceType = "Microsoft.Automation/automationAccounts"
 	AzureResourceTypeCacheForRedis             AzureResourceType = "Microsoft.Cache/redis"
 	AzureResourceTypeCDNProfile                AzureResourceType = "Microsoft.Cdn/profiles"
 	AzureResourceTypeCosmosDb                  AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
+	AzureResourceTypeEventHubsNamespace        AzureResourceType = "Microsoft.EventHub/namespaces"
 	AzureResourceTypeContainerApp              AzureResourceType = "Microsoft.App/containerApps"
 	AzureResourceTypeSpringApp                 AzureResourceType = "Microsoft.AppPlatform/Spring"
 	AzureResourceTypeContainerAppEnvironment   AzureResourceType = "Microsoft.App/managedEnvironments"
@@ -42,6 +44,7 @@ const (
 	AzureResourceTypeDevCenterProject          AzureResourceType = "Microsoft.DevCenter/projects"
 	AzureResourceTypeMachineLearningWorkspace  AzureResourceType = "Microsoft.MachineLearningServices/workspaces"
 	AzureResourceTypeMachineLearningConnection AzureResourceType = "Microsoft.MachineLearningServices/workspaces/connections"
+	AzureResourceTypeRoleAssignment            AzureResourceType = "Microsoft.Authorization/roleAssignments"
 
 	//nolint:lll
 	AzureResourceTypeMachineLearningEndpoint           AzureResourceType = "Microsoft.MachineLearningServices/workspaces/onlineEndpoints"
@@ -67,6 +70,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Portal dashboard"
 	case AzureResourceTypeAppInsightComponent:
 		return "Application Insights"
+	case AzureResourceTypeAutomationAccount:
+		return "Automation account"
 	case AzureResourceTypeLogAnalyticsWorkspace:
 		return "Log Analytics workspace"
 	case AzureResourceTypeWebSite:
@@ -79,6 +84,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Container Apps Environment"
 	case AzureResourceTypeServiceBusNamespace:
 		return "Service Bus Namespace"
+	case AzureResourceTypeEventHubsNamespace:
+		return "Event Hubs Namespace"
 	case AzureResourceTypeServicePlan:
 		return "App Service plan"
 	case AzureResourceTypeCosmosDb:

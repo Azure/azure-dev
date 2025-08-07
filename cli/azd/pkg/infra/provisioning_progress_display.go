@@ -53,7 +53,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 		_, err := display.deployment.Get(ctx)
 		if err != nil {
 			// Return default progress
-			log.Printf("error while reporting progress: %s", err.Error())
+			log.Printf("error while reporting progress: %v", err)
 			return nil
 		}
 

@@ -52,8 +52,7 @@ func TestBicepPlan(t *testing.T) {
 
 	require.Nil(t, err)
 
-	require.IsType(t, &deploymentDetails{}, deploymentPlan)
-	configuredParameters := deploymentPlan.CompiledBicep.Parameters
+	configuredParameters := deploymentPlan.Parameters
 
 	require.Equal(t, infraProvider.env.GetLocation(), configuredParameters["location"].Value)
 	require.Equal(
@@ -72,13 +71,38 @@ func TestBicepPlanKeyVaultRef(t *testing.T) {
 
 	require.Nil(t, err)
 
-	require.IsType(t, &deploymentDetails{}, deploymentPlan)
-	configuredParameters := deploymentPlan.CompiledBicep.Parameters
+	configuredParameters := deploymentPlan.Parameters
 
 	require.NotEmpty(t, configuredParameters["kvSecret"])
 	require.NotNil(t, configuredParameters["kvSecret"].KeyVaultReference)
 	require.Nil(t, configuredParameters["kvSecret"].Value)
 	require.Equal(t, "secretName", configuredParameters["kvSecret"].KeyVaultReference.SecretName)
+}
+
+func TestBicepPlanParameterTypes(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	prepareBicepMocks(mockContext)
+	infraProvider := createBicepProvider(t, mockContext)
+
+	deploymentPlan, err := infraProvider.plan(*mockContext.Context)
+
+	require.Nil(t, err)
+
+	configuredParameters := deploymentPlan.Parameters
+
+	require.NotEmpty(t, configuredParameters["regularString"])
+	require.Equal(t, configuredParameters["regularString"].Value, "test")
+	require.Empty(t, configuredParameters["emptyString"])
+	require.Nil(t, configuredParameters["emptyString"].Value)
+
+	require.NotEmpty(t, configuredParameters["regularObject"])
+	require.Equal(t, configuredParameters["regularObject"].Value, map[string]any{"test": "test"})
+	require.Equal(t, configuredParameters["emptyObject"].Value, map[string]any{})
+
+	require.NotEmpty(t, configuredParameters["regularArray"])
+	require.Equal(t, configuredParameters["regularArray"].Value, []any{"test"})
+	require.NotEmpty(t, configuredParameters["emptyArray"])
+	require.Equal(t, configuredParameters["emptyArray"].Value, []any{})
 }
 
 const paramsArmJson = `{
@@ -126,7 +150,7 @@ func TestBicepPlanPrompt(t *testing.T) {
 
 	require.NoError(t, err)
 
-	require.Equal(t, "value", plan.CompiledBicep.Parameters["stringParam"].Value)
+	require.Equal(t, "value", plan.Parameters["stringParam"].Value)
 }
 
 func TestBicepState(t *testing.T) {
@@ -199,7 +223,7 @@ func TestBicepDestroy(t *testing.T) {
 	})
 }
 
-func TestPlanForResourceGroup(t *testing.T) {
+func TestDeploymentForResourceGroup(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -289,9 +313,9 @@ func TestPlanForResourceGroup(t *testing.T) {
 		return options.Message == "Pick a resource group to use:"
 	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 		require.Len(t, options.Options, 3)
-		require.Equal(t, "Create a new resource group", options.Options[0])
-		require.Equal(t, "1. existingGroup1", options.Options[1])
-		require.Equal(t, "2. existingGroup2", options.Options[2])
+		require.Equal(t, "1. Create a new resource group", options.Options[0])
+		require.Equal(t, "2. existingGroup1", options.Options[1])
+		require.Equal(t, "3. existingGroup2", options.Options[2])
 
 		return 0, nil
 	})
@@ -311,8 +335,11 @@ func TestPlanForResourceGroup(t *testing.T) {
 	planResult, err := infraProvider.plan(*mockContext.Context)
 	require.Nil(t, err)
 	require.NotNil(t, planResult)
+
+	deployment, err := infraProvider.generateDeploymentObject(planResult)
+	require.NoError(t, err)
 	require.Equal(t, "rg-test-env",
-		planResult.Target.(*infra.ResourceGroupDeployment).ResourceGroupName())
+		deployment.(*infra.ResourceGroupDeployment).ResourceGroupName())
 }
 
 func TestIsValueAssignableToParameterType(t *testing.T) {
@@ -401,6 +428,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 			cloud.AzurePublic(),
 		),
 		cloud.AzurePublic(),
+		nil,
 	)
 
 	err = provider.Initialize(*mockContext.Context, projectDir, options)
@@ -419,6 +447,12 @@ func prepareBicepMocks(
 			"environmentName": {Type: "string"},
 			"location":        {Type: "string"},
 			"kvSecret":        {Type: "securestring"},
+			"regularString":   {Type: "string", DefaultValue: ""},
+			"emptyString":     {Type: "string", DefaultValue: ""},
+			"regularObject":   {Type: "array", DefaultValue: make([]string, 0)},
+			"emptyObject":     {Type: "array", DefaultValue: make([]string, 0)},
+			"regularArray":    {Type: "object", DefaultValue: make(map[string]int)},
+			"emptyArray":      {Type: "object", DefaultValue: make(map[string]int)},
 		},
 		Outputs: azure.ArmTemplateOutputs{
 			"WEBSITE_URL": {Type: "string"},
@@ -987,11 +1021,12 @@ func TestUserDefinedTypes(t *testing.T) {
 			cloud.AzurePublic(),
 		),
 		cloud.AzurePublic(),
+		nil,
 	)
 	bicepProvider, gooCast := provider.(*BicepProvider)
 	require.True(t, gooCast)
 
-	compiled, err := bicepProvider.compileBicep(*mockContext.Context, "user-defined-types")
+	compiled, err := bicepProvider.compileBicep(*mockContext.Context)
 
 	require.NoError(t, err)
 	require.NotNil(t, compiled)

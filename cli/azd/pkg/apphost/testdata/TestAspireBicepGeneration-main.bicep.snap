@@ -32,7 +32,6 @@ resource rg 'Microsoft.Resources/resourceGroups@2022-09-01' = {
   location: location
   tags: tags
 }
-
 module resources 'resources.bicep' = {
   scope: rg
   name: 'resources'
@@ -50,6 +49,14 @@ module ai 'ai/aspire.hosting.azure.bicep.appinsights.bicep' = {
     appInsightsName: 'ai'
     location: location
     logAnalyticsWorkspaceId: resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID
+    userPrincipalId: 'fixed-value-to-test-userPrincipalId-convention'
+  }
+}
+module kv 'kv/kv.bicep' = {
+  name: 'kv'
+  scope: rg
+  params: {
+    location: location
   }
 }
 module postgres_2 'postgres-2/aspire.hosting.azure.bicep.postgres.bicep' = {
@@ -100,6 +107,7 @@ module test 'test/test.bicep' = {
     values: ['one','two']
   }
 }
+
 output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
 output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
@@ -112,6 +120,7 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.output
 output SERVICE_BINDING_KV854251F1_ENDPOINT string = resources.outputs.SERVICE_BINDING_KV854251F1_ENDPOINT
 output SERVICE_BINDING_KV854251F1_NAME string = resources.outputs.SERVICE_BINDING_KV854251F1_NAME
 output AI_APPINSIGHTSCONNECTIONSTRING string = ai.outputs.appInsightsConnectionString
+output KV_KVURI string = kv.outputs.kvUri
 output S_B_SERVICEBUSENDPOINT string = s_b.outputs.serviceBusEndpoint
 output SQL_SQLSERVERFQDN string = sql.outputs.sqlServerFqdn
 output TEST_TEST string = test.outputs.test

@@ -58,11 +58,8 @@ func (pf *packageFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 
 func newPackageCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "package <service>",
-		Short: fmt.Sprintf(
-			"Packages the application's code to be deployed to Azure. %s",
-			output.WithWarningFormat("(Beta)"),
-		),
+		Use:   "package <service>",
+		Short: "Packages the project's code to be deployed to Azure.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 	return cmd

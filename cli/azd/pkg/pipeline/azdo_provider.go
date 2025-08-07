@@ -564,7 +564,7 @@ func (p *AzdoScmProvider) preventGitPush(
 func azdoPat(ctx context.Context, env *environment.Environment, console input.Console) string {
 	pat, _, err := azdo.EnsurePatExists(ctx, env, console)
 	if err != nil {
-		log.Printf("Error getting PAT when it should be found: %s", err.Error())
+		log.Printf("Error getting PAT when it should be found: %v", err)
 	}
 	return pat
 }
@@ -609,7 +609,7 @@ func (p *AzdoScmProvider) GitPush(
 	).WithInteractive(true)
 	if _, err := p.commandRunner.Run(ctx, runArgs); err != nil {
 		// this error should not fail the operation
-		log.Printf("Error setting git config: insteadOf url: %s", err.Error())
+		log.Printf("Error setting git config: insteadOf url: %v", err)
 	}
 
 	// *** Queue pipeline
@@ -712,11 +712,6 @@ func (p *AzdoCiProvider) credentialOptions(
 	authType PipelineAuthType,
 	credentials *entraid.AzureCredentials,
 ) (*CredentialOptions, error) {
-	// Default auth type to client-credentials for terraform
-	if infraOptions.Provider == provisioning.Terraform && authType == "" {
-		authType = AuthTypeClientCredentials
-	}
-
 	if authType == AuthTypeClientCredentials {
 		return &CredentialOptions{
 			EnableClientCredentials: true,
@@ -770,15 +765,14 @@ func (p *AzdoCiProvider) configureConnection(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
-	servicePrincipal *graphsdk.ServicePrincipal,
+	authConfig *authConfiguration,
 	credentialOptions *CredentialOptions,
-	credentials *entraid.AzureCredentials,
 ) error {
 	if credentialOptions.EnableFederatedCredentials {
 		// default and federated credentials are set up in credentialOptions
 		return nil
 	}
-	p.credentials = credentials
+	p.credentials = authConfig.AzureCredentials
 	// create service connection for client credentials
 	details := repoDetails.details.(*AzdoRepositoryDetails)
 	org, _, err := azdo.EnsureOrgNameExists(ctx, p.envManager, p.Env, p.console)

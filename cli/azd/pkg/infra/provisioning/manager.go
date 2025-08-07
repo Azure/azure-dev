@@ -69,6 +69,14 @@ func (m *Manager) Initialize(ctx context.Context, projectPath string, options Op
 	return m.provider.Initialize(ctx, projectPath, options)
 }
 
+// Parameters gets the list of parameters and its value which will be used to provision the infrastructure.
+func (m *Manager) Parameters(ctx context.Context) ([]Parameter, error) {
+	if m.provider == nil {
+		panic("called parameters() with provider not initialized. Make sure to call manager.Initialize() first.")
+	}
+	return m.provider.Parameters(ctx)
+}
+
 // Gets the latest deployment details for the specified scope
 func (m *Manager) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
 	result, err := m.provider.State(ctx, options)
@@ -384,6 +392,32 @@ func EnsureSubscriptionAndLocation(
 
 	// Same as before, this make sure the location is persisted in the .env file.
 	env.SetLocation(location)
+	return envManager.Save(ctx, env)
+}
+
+func EnsureSubscription(
+	ctx context.Context,
+	envManager environment.Manager,
+	env *environment.Environment,
+	prompter prompt.Prompter,
+) error {
+	subId := env.GetSubscriptionId()
+	if subId == "" {
+		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")
+		if err != nil {
+			return err
+		}
+		subId = subscriptionId
+	}
+	// GetSubscriptionId() can get the value from the .env file or from system environment.
+	// We want to ensure that, if the value came from the system environment, it is persisted in the .env file.
+	// By doing this, we ensure that any command depending on .env values does not need to read system env.
+	// For example, on CI, when running `azd provision`, we want the .env to have the subscription id and location
+	// so that `azd deploy` can just use the values from .env w/o checking os-env again.
+	env.SetSubscriptionId(subId)
+	if err := envManager.Save(ctx, env); err != nil {
+		return err
+	}
 	return envManager.Save(ctx, env)
 }
 

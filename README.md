@@ -13,7 +13,7 @@ The Azure Developer CLI (`azd`) is a developer-centric command-line interface (C
 - demonstrate opinionated best practices for Azure development
 - help developers understand core Azure development constructs
 
-To take full advantage of the CLI, code repositories need to conform to a well defined set of conventions that will be recognized by the tooling. Please checkout the [wiki](https://github.com/Azure/azure-dev/wiki) for more information and to get started. Use [discussions](https://github.com/Azure/azure-dev/discussions) to participate in the conversation, ask questions, and see the latest announcements.
+To take full advantage of the CLI, code repositories need to conform to a well defined set of conventions that will be recognized by the tooling. Please checkout the [docs](https://aka.ms/azd) for more information and to get started. Use [discussions](https://github.com/Azure/azure-dev/discussions) to participate in the conversation, ask questions, and see the latest announcements.
 
 ## Install/Upgrade Azure Developer CLI
 

@@ -20,3 +20,15 @@ jobs:
       - run: npm install -g jsonlint
       - name: Validate schemas JSON
         run: jsonlint schemas/**/*.json -c
+# NOTE: Using jsonschema2md here to ensure the schemas are valid for documentation generation.
+#       Since we use jsonschema2md for CI pipelines, any changes to the schemas should make sure to keep the tool happy.
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - run: pip install jsonschema2md==1.5.2
+      - name: Ensure v1 schema is valid for doc gen
+        run: |
+          jsonschema2md schemas/v1.0/azure.yaml.json ignoreV1.md
+      - name: Ensure alpha schema is valid for doc gen
+        run: |
+          jsonschema2md schemas/alpha/azure.yaml.json ignoreAlpha.md

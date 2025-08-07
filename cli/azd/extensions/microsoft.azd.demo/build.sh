@@ -6,31 +6,43 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Change to the script directory
 cd "$SCRIPT_DIR" || exit
 
-# Define application name
-APP_NAME="azd-ext-demo"
+# Parse named input parameters: --app-name and --version
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+    --app-name)
+        APP_NAME="$2"
+        shift 2
+        ;;
+    --version)
+        VERSION="$2"
+        shift 2
+        ;;
+    *)
+        echo "Unknown parameter passed: $1"
+        exit 1
+        ;;
+    esac
+done
+
+if [ -z "$APP_NAME" ]; then
+    echo "Error: --app-name parameter is required"
+    exit 1
+fi
+
+if [ -z "$VERSION" ]; then
+    echo "Error: --version parameter is required"
+    exit 1
+fi
+
+# Create a safe version of APP_NAME replacing dots with dashes
+APP_NAME_SAFE="${APP_NAME//./-}"
 
 # Define output directory
 OUTPUT_DIR="$SCRIPT_DIR/bin"
 
-# Define target directory in the user's home
-TARGET_DIR="$HOME/.azd/extensions/microsoft.azd.demo"
-
 # Create output and target directories if they don't exist
 mkdir -p "$OUTPUT_DIR"
-mkdir -p "$TARGET_DIR"
-
-# Check if version.txt exists
-if [ ! -f "$SCRIPT_DIR/version.txt" ]; then
-    echo "Error: version.txt file not found!"
-    exit 1
-fi
-
-# Read version from version.txt
-VERSION=$(cat "$SCRIPT_DIR/version.txt")
-if [ -z "$VERSION" ]; then
-    echo "Error: version.txt is empty"
-    exit 1
-fi
+mkdir -p "$HOME/.azd/extensions/$APP_NAME" # new: create destination directory
 
 # Get Git commit hash and build date
 COMMIT=$(git rev-parse HEAD)
@@ -39,26 +51,24 @@ BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # List of OS and architecture combinations
 PLATFORMS=(
     "windows/amd64"
-    # "windows/arm64"
-    # "darwin/amd64"
-    # "darwin/arm64"
-    # "linux/amd64"
-    # "linux/arm64"
+    "windows/arm64"
+    "darwin/amd64"
+    "darwin/arm64"
+    "linux/amd64"
+    "linux/arm64"
 )
 
-APP_PATH="github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.demo/internal/cmd"
+APP_PATH="github.com/azure/azure-dev/cli/azd/extensions/$APP_NAME/internal/cmd"
 
 # Loop through platforms and build
 for PLATFORM in "${PLATFORMS[@]}"; do
     OS=$(echo "$PLATFORM" | cut -d'/' -f1)
     ARCH=$(echo "$PLATFORM" | cut -d'/' -f2)
 
-    OUTPUT_NAME="$OUTPUT_DIR/$APP_NAME-$OS-$ARCH"
-    TARGET_NAME="$TARGET_DIR/$APP_NAME-$OS-$ARCH"
+    OUTPUT_NAME="$OUTPUT_DIR/$APP_NAME_SAFE-$OS-$ARCH"
 
     if [ "$OS" = "windows" ]; then
         OUTPUT_NAME+='.exe'
-        TARGET_NAME+='.exe'
     fi
 
     echo "Building for $OS/$ARCH..."
@@ -71,10 +81,9 @@ for PLATFORM in "${PLATFORMS[@]}"; do
         exit 1
     fi
 
-    # Copy the build to the target directory
-    cp "$OUTPUT_NAME" "$TARGET_NAME"
-    echo "Copied $OUTPUT_NAME to $TARGET_NAME"
+    # new: copy built binary to extensions folder
+    cp "$OUTPUT_NAME" "$HOME/.azd/extensions/$APP_NAME"
 done
 
 echo "Build completed successfully!"
-echo "Binaries are located in the $OUTPUT_DIR directory and copied to $TARGET_DIR."
+echo "Binaries are located in the $OUTPUT_DIR directory."

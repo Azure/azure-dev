@@ -4,14 +4,16 @@
 package ux
 
 import (
+	"context"
 	"io"
+	"log"
 	"os"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
 
 	"dario.cat/mergo"
 	"github.com/eiannone/keyboard"
-	"github.com/fatih/color"
 )
 
 // PromptOptions represents the options for the Prompt component.
@@ -120,60 +122,58 @@ func (p *Prompt) WithCanvas(canvas Canvas) Visual {
 }
 
 // Ask prompts the user for input.
-func (p *Prompt) Ask() (string, error) {
+func (p *Prompt) Ask(ctx context.Context) (string, error) {
 	if p.canvas == nil {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
-	}
-
-	if err := p.canvas.Run(); err != nil {
-		return "", err
 	}
 
 	inputOptions := &internal.InputConfig{
 		InitialValue:   p.options.DefaultValue,
 		IgnoreHintKeys: p.options.IgnoreHintKeys,
 	}
-	input, done, err := p.input.ReadInput(inputOptions)
+
+	if err := p.canvas.Run(); err != nil {
+		return "", err
+	}
+
+	done := func() {
+		if err := p.canvas.Update(); err != nil {
+			log.Printf("Error updating canvas: %v\n", err)
+		}
+	}
+
+	err := p.input.ReadInput(ctx, inputOptions, func(args *internal.KeyPressEventArgs) (bool, error) {
+		defer done()
+
+		if args.Cancelled {
+			p.cancelled = true
+			return false, nil
+		}
+
+		p.showHelp = args.Hint
+		p.value = args.Value
+		p.validate()
+
+		if args.Key == keyboard.KeyEnter {
+			p.submitted = true
+
+			if !p.hasValidationError {
+				p.complete = true
+			}
+		}
+
+		if p.complete {
+			return false, nil
+		}
+
+		return true, nil
+	})
+
 	if err != nil {
 		return "", err
 	}
 
-	for {
-		select {
-		case <-p.input.SigChan:
-			p.cancelled = true
-			done()
-			if err := p.canvas.Update(); err != nil {
-				return "", err
-			}
-
-			return "", ErrCancelled
-
-		case msg := <-input:
-			p.showHelp = msg.Hint
-			p.value = msg.Value
-
-			p.validate()
-
-			if msg.Key == keyboard.KeyEnter {
-				p.submitted = true
-
-				if !p.hasValidationError {
-					p.complete = true
-				}
-			}
-
-			if err := p.canvas.Update(); err != nil {
-				done()
-				return "", err
-			}
-
-			if p.complete {
-				done()
-				return p.value, nil
-			}
-		}
-	}
+	return p.value, nil
 }
 
 // Render renders the prompt.
@@ -182,26 +182,26 @@ func (p *Prompt) Render(printer Printer) error {
 		return nil
 	}
 
-	printer.Fprintf(color.CyanString("? "))
+	printer.Fprintf(output.WithHighLightFormat("? "))
 
 	// Message
 	printer.Fprintf(BoldString("%s: ", p.options.Message))
 
 	// Cancelled
 	if p.cancelled {
-		printer.Fprintln(color.HiRedString("(Cancelled)"))
+		printer.Fprintln(output.WithErrorFormat("(Cancelled)"))
 		return nil
 	}
 
 	// Hint (Only show when a help message has been defined)
 	if !p.complete && p.options.Hint != "" && p.options.HelpMessage != "" {
-		printer.Fprintf("%s ", color.CyanString(p.options.Hint))
+		printer.Fprintf("%s ", output.WithHighLightFormat(p.options.Hint))
 	}
 
 	// Placeholder
 	if p.value == "" && p.options.PlaceHolder != "" {
 		p.cursorPosition = Ptr(printer.CursorPosition())
-		printer.Fprintf(color.HiBlackString(p.options.PlaceHolder))
+		printer.Fprintf(output.WithGrayFormat(p.options.PlaceHolder))
 	}
 
 	// Value
@@ -209,7 +209,7 @@ func (p *Prompt) Render(printer Printer) error {
 		valueOutput := p.value
 
 		if p.complete || p.value == p.options.DefaultValue {
-			valueOutput = color.CyanString(p.value)
+			valueOutput = output.WithHighLightFormat(p.value)
 		}
 
 		printer.Fprintf(valueOutput)
@@ -225,17 +225,16 @@ func (p *Prompt) Render(printer Printer) error {
 	// Validation error
 	if !p.showHelp && p.submitted && p.hasValidationError {
 		printer.Fprintln()
-		printer.Fprintln(color.YellowString(p.validationMessage))
+		printer.Fprintln(output.WithWarningFormat(p.validationMessage))
 	}
 
 	// Hint
 	if p.showHelp && p.options.HelpMessage != "" {
 		printer.Fprintln()
 		printer.Fprintf(
-			color.HiMagentaString("%s %s\n",
-				BoldString("Hint:"),
-				p.options.HelpMessage,
-			),
+			"%s %s\n",
+			output.WithHintFormat(BoldString("Hint:")),
+			output.WithHintFormat(p.options.HelpMessage),
 		)
 	}
 

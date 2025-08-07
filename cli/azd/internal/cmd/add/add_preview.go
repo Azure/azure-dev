@@ -9,9 +9,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
+	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -19,68 +23,47 @@ import (
 	"github.com/fatih/color"
 )
 
-// resourceMeta contains metadata of the resource
-type resourceMeta struct {
-	// The underlying resource type.
-	AzureResourceType string
-	// UseEnvVars is the list of environment variable names that would be populated when this resource is used
-	UseEnvVars []string
+type metaDisplay struct {
+	ResourceType string
+	Variables    []string
 }
 
-func Metadata(r *project.ResourceConfig) resourceMeta {
-	res := resourceMeta{}
+func Metadata(r *project.ResourceConfig) metaDisplay {
+	azureResType := r.Type.AzureResourceType()
 
-	// These are currently duplicated, static values maintained separately from the backend generation files
-	// If updating resources.bicep, these values should also be updated.
-	switch r.Type {
-	case project.ResourceTypeHostContainerApp:
-		res.AzureResourceType = "Microsoft.App/containerApps"
-		res.UseEnvVars = []string{
-			strings.ToUpper(r.Name) + "_BASE_URL",
-		}
-	case project.ResourceTypeDbRedis:
-		res.AzureResourceType = "Microsoft.Cache/redis"
-		res.UseEnvVars = []string{
-			"REDIS_HOST",
-			"REDIS_PORT",
-			"REDIS_ENDPOINT",
-			"REDIS_PASSWORD",
-			"REDIS_URL",
-		}
-	case project.ResourceTypeDbPostgres:
-		res.AzureResourceType = "Microsoft.DBforPostgreSQL/flexibleServers/databases"
-		res.UseEnvVars = []string{
-			"POSTGRES_HOST",
-			"POSTGRES_USERNAME",
-			"POSTGRES_DATABASE",
-			"POSTGRES_PASSWORD",
-			"POSTGRES_PORT",
-			"POSTGRES_URL",
-		}
-	case project.ResourceTypeDbMongo:
-		res.AzureResourceType = "Microsoft.DocumentDB/databaseAccounts/mongodbDatabases"
-		res.UseEnvVars = []string{
-			"MONGODB_URL",
-		}
-	case project.ResourceTypeOpenAiModel:
-		res.AzureResourceType = "Microsoft.CognitiveServices/accounts/deployments"
-		res.UseEnvVars = []string{
-			"AZURE_OPENAI_ENDPOINT",
-		}
-	case project.ResourceTypeStorage:
-		res.AzureResourceType = "Microsoft.Storage/storageAccounts"
-		res.UseEnvVars = []string{
-			"AZURE_STORAGE_ACCOUNT_NAME",
-			"AZURE_STORAGE_BLOB_ENDPOINT",
+	for _, res := range scaffold.Resources {
+		if res.ResourceType == azureResType {
+			// transform to standard variables
+			prefix := res.StandardVarPrefix
+
+			if r.Existing {
+				prefix += "_" + environment.Key(r.Name)
+			}
+
+			// host resources are special and prefixed with the name
+			if strings.HasPrefix(string(r.Type), "host.") {
+				prefix = strings.ToUpper(r.Name)
+			}
+
+			variables := scaffold.EnvVars(prefix, res.Variables)
+			displayVariables := slices.Sorted(maps.Keys(variables))
+
+			display := metaDisplay{
+				ResourceType: res.ResourceType,
+				Variables:    displayVariables,
+			}
+
+			return display
 		}
 	}
-	return res
+
+	return metaDisplay{}
 }
 
 func (a *AddAction) previewProvision(
 	ctx context.Context,
 	prjConfig *project.ProjectConfig,
-	resourceToAdd *project.ResourceConfig,
+	resourcesToAdd []*project.ResourceConfig,
 	usedBy []string,
 ) error {
 	a.console.ShowSpinner(ctx, "Previewing changes....", input.Step)
@@ -96,7 +79,7 @@ func (a *AddAction) previewProvision(
 	}
 
 	a.console.Message(ctx, fmt.Sprintf("\n%s\n", output.WithBold("Previewing Azure resource changes")))
-	a.console.Message(ctx, "Environment: "+color.BlueString(a.env.Name()))
+	a.console.Message(ctx, "Environment: "+output.WithHighLightFormat(a.env.Name()))
 
 	if environmentDetails.Subscription != "" {
 		a.console.MessageUxItem(ctx, &environmentDetails)
@@ -110,36 +93,45 @@ func (a *AddAction) previewProvision(
 	w := tabwriter.NewWriter(&previewWriter, 0, 0, 5, ' ', 0)
 
 	fmt.Fprintln(w, "b  Name\tResource type")
-	meta := Metadata(resourceToAdd)
-	fmt.Fprintf(w, "+  %s\t%s\n", resourceToAdd.Name, meta.AzureResourceType)
+	for _, res := range resourcesToAdd {
+		meta := Metadata(res)
+		status := ""
+		if res.Existing {
+			status = " (existing)"
+		}
+
+		fmt.Fprintf(w, "+  %s\t%s%s\n", res.Name, meta.ResourceType, status)
+	}
 
 	w.Flush()
-	a.console.Message(ctx, fmt.Sprintf("\n%s\n", output.WithBold("Environment variables")))
+	a.console.Message(ctx, fmt.Sprintf("\n%s\n", output.WithBold("Variables")))
 
-	if strings.HasPrefix(string(resourceToAdd.Type), "host.") {
-		for _, use := range resourceToAdd.Uses {
-			if res, ok := prjConfig.Resources[use]; ok {
-				fmt.Fprintf(w, "   %s -> %s\n", resourceToAdd.Name, output.WithBold("%s", use))
+	for _, res := range resourcesToAdd {
+		if strings.HasPrefix(string(res.Type), "host.") {
+			for _, use := range res.Uses {
+				if usingRes, ok := prjConfig.Resources[use]; ok {
+					fmt.Fprintf(w, "   %s -> %s\n", res.Name, output.WithBold("%s", use))
 
-				meta := Metadata(res)
-				for _, envVar := range meta.UseEnvVars {
+					meta := Metadata(usingRes)
+					for _, envVar := range meta.Variables {
+						fmt.Fprintf(w, "g   + %s\n", envVar)
+					}
+
+					fmt.Fprintln(w)
+				}
+			}
+		} else {
+			meta := Metadata(res)
+
+			for _, usedBy := range usedBy {
+				fmt.Fprintf(w, "   %s -> %s\n", usedBy, output.WithBold("%s", res.Name))
+
+				for _, envVar := range meta.Variables {
 					fmt.Fprintf(w, "g   + %s\n", envVar)
 				}
 
 				fmt.Fprintln(w)
 			}
-		}
-	} else {
-		meta := Metadata(resourceToAdd)
-
-		for _, usedBy := range usedBy {
-			fmt.Fprintf(w, "   %s -> %s\n", usedBy, output.WithBold("%s", resourceToAdd.Name))
-
-			for _, envVar := range meta.UseEnvVars {
-				fmt.Fprintf(w, "g   + %s\n", envVar)
-			}
-
-			fmt.Fprintln(w)
 		}
 	}
 

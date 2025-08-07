@@ -1,1 +1,0 @@
-# Csharp Azure Functions API

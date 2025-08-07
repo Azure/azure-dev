@@ -26,9 +26,11 @@ words:
   - Retryable
   - runcontext
   - unmarshals
+  - unmarshaling
   - unsetting
   - usgovcloudapi
   - jdbc
+  - springframework
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -68,7 +70,7 @@ overrides:
   - filename: pkg/spin/run.go
     words:
       - errored
-  - filename: pkg/project/framework_service_python.go
+  - filename: pkg/project/project_utils.go
     words:
       - __pycache__
       - Venv
@@ -112,6 +114,10 @@ overrides:
     words:
       - kustomization
       - templating
+  - filename: pkg/project/scaffold_gen.go
+    words:
+      - GUNICORN
+      - MULTIWORKERS
   - filename: CHANGELOG.md
     words:
       - aistudio
@@ -126,6 +132,9 @@ overrides:
   - filename: test/recording/recording.go
     words:
       - oidctoken
+  - filename: test/recording/proxy.go
+    words:
+      - WSAECONNRESET
   - filename: test/functional/testdata/samples/funcapp/getting_started.md
     words:
       - funcignore
@@ -144,6 +153,17 @@ overrides:
   - filename: pkg/apphost/generate.go
     words:
       - alue
+  - filename: docs/extension-framework.md
+    words:
+      - getenv
+      - errorf
+      - println
+  - filename: extensions/microsoft.azd.ai.builder/internal/cmd/start.go
+    words:
+      - dall
+      - datasource
+      - vectorizing
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"
+  - "**/*.pb.go"

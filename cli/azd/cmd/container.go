@@ -27,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
@@ -52,6 +53,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
 	"github.com/azure/azure-dev/cli/azd/pkg/kustomize"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
@@ -59,6 +61,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/az"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -152,7 +155,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	ioc.RegisterInstance[auth.HttpClient](container, client)
 
 	// Auth
-	container.MustRegisterSingleton(auth.NewLoggedInGuard)
 	container.MustRegisterSingleton(auth.NewMultiTenantCredentialProvider)
 	container.MustRegisterSingleton(func(mgr *auth.Manager) CredentialProviderFn {
 		return mgr.CredentialForCurrentUser
@@ -180,6 +182,15 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			envValue = ""
 		}
 
+		if envValue == "" {
+			// If no explicit environment flag was set, but one was provided
+			// in the context, use that instead.
+			// This is used in workflow execution (in `up`) to influence the environment used.
+			if envFlag, ok := cmd.Context().Value(envFlagCtxKey).(internal.EnvFlag); ok {
+				return envFlag
+			}
+		}
+
 		return internal.EnvFlag{EnvironmentName: envValue}
 	})
 
@@ -187,13 +198,20 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return cmd.Annotations
 	})
 
+	container.MustRegisterSingleton(func(cmd *cobra.Command) CmdCalledAs {
+		return CmdCalledAs(cmd.CalledAs())
+	})
+
 	// Azd Context
-	container.MustRegisterSingleton(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
+	// Scoped registration is required since the value of the azd context can change through the lifetime of a command
+	// Example: Within extensions multiple workflows can be dispatched which can cause the azd context to be updated.
+	// A specific example is within AI builder. It invokes `init` command when project is not found.
+	container.MustRegisterScoped(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
 		return lazyAzdContext.GetValue()
 	})
 
 	// Lazy loads the Azd context after the azure.yaml file becomes available
-	container.MustRegisterSingleton(func() *lazy.Lazy[*azdcontext.AzdContext] {
+	container.MustRegisterScoped(func() *lazy.Lazy[*azdcontext.AzdContext] {
 		return lazy.NewLazy(azdcontext.NewAzdContext)
 	})
 
@@ -528,6 +546,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return serviceManager, err
 		})
 	})
+	container.MustRegisterSingleton(llm.NewManager)
 	container.MustRegisterSingleton(repository.NewInitializer)
 	container.MustRegisterSingleton(alpha.NewFeaturesManager)
 	container.MustRegisterSingleton(config.NewUserConfigManager)
@@ -567,12 +586,16 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 	container.MustRegisterScoped(auth.NewManager)
 	container.MustRegisterSingleton(azapi.NewUserProfileService)
+	container.MustRegisterScoped(func(authManager *auth.Manager) middleware.CurrentUserAuthManager {
+		return authManager
+	})
 	container.MustRegisterSingleton(account.NewSubscriptionsService)
 	container.MustRegisterSingleton(account.NewManager)
 	container.MustRegisterSingleton(account.NewSubscriptionsManager)
 	container.MustRegisterSingleton(account.NewSubscriptionCredentialProvider)
 	container.MustRegisterSingleton(azapi.NewManagedClustersService)
 	container.MustRegisterSingleton(entraid.NewEntraIdService)
+	container.MustRegisterSingleton(armmsi.NewArmMsiService)
 	container.MustRegisterSingleton(azapi.NewContainerRegistryService)
 	container.MustRegisterSingleton(containerapps.NewContainerAppService)
 	container.MustRegisterSingleton(containerregistry.NewRemoteBuildManager)
@@ -605,6 +628,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(swa.NewCli)
 	container.MustRegisterScoped(ai.NewPythonBridge)
 	container.MustRegisterScoped(project.NewAiHelper)
+	container.MustRegisterSingleton(az.NewCli)
 
 	// Provisioning
 	container.MustRegisterSingleton(func(
@@ -805,6 +829,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Extensions
 	container.MustRegisterSingleton(extensions.NewManager)
+	container.MustRegisterSingleton(extensions.NewRunner)
 	container.MustRegisterSingleton(extensions.NewSourceManager)
 
 	// gRPC Server
@@ -813,7 +838,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(grpcserver.NewEnvironmentService)
 	container.MustRegisterScoped(grpcserver.NewPromptService)
 	container.MustRegisterScoped(grpcserver.NewDeploymentService)
+	container.MustRegisterScoped(grpcserver.NewEventService)
 	container.MustRegisterSingleton(grpcserver.NewUserConfigService)
+	container.MustRegisterSingleton(grpcserver.NewComposeService)
+	container.MustRegisterSingleton(grpcserver.NewWorkflowService)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")

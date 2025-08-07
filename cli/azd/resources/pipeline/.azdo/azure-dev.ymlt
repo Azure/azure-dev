@@ -7,10 +7,10 @@ pool:
   vmImage: ubuntu-latest
 
 steps:
-  # setup-azd@0 needs to be manually installed in your organization
+  # setup-azd@1 needs to be manually installed in your organization
   # if you can't install it, you can use the below bash script to install azd
   # and remove this step
-  - task: setup-azd@0
+  - task: setup-azd@1
     displayName: Install azd
 
   # If you can't install above task in your organization, you can comment it and uncomment below task to install azd
@@ -24,7 +24,14 @@ steps:
   # azd delegate auth to az to use service connection with AzureCLI@2
   - pwsh: |
       azd config set auth.useAzCliAuth "true"
-    displayName: Configure AZD to Use AZ CLI Authentication.  
+    displayName: Configure AZD to Use AZ CLI Authentication.
+{{- if .AlphaFeatures }}
+  - pwsh: |
+{{- range $feature := .AlphaFeatures }}
+      azd config set alpha.{{ $feature }} on
+{{- end }}
+    displayName: Enabled required alpha features
+{{ end }}    
 {{- if .InstallDotNetForAspire}}
   - task: UseDotNet@2
     inputs:
@@ -46,9 +53,6 @@ steps:
         azd provision --no-prompt
     env:
       AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
-      AZURE_ENV_NAME: $(AZURE_ENV_NAME)
-      AZURE_LOCATION: $(AZURE_LOCATION)
-      AZD_INITIAL_ENVIRONMENT_CONFIG: $(AZD_INITIAL_ENVIRONMENT_CONFIG)
 {{- range $variable := .Variables }}
       {{ $variable }}: $({{ $variable }})
 {{- end}}
@@ -67,8 +71,6 @@ steps:
         azd deploy --no-prompt
     env:
       AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
-      AZURE_ENV_NAME: $(AZURE_ENV_NAME)
-      AZURE_LOCATION: $(AZURE_LOCATION)
 {{- range $variable := .Variables }}
       {{ $variable }}: $({{ $variable }})
 {{- end}}

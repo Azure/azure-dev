@@ -25,10 +25,10 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		Command: &cobra.Command{
 			Use:     "extension",
 			Aliases: []string{"ext"},
-			Short:   fmt.Sprintf("Manage azd extensions. %s", output.WithWarningFormat("(Alpha)")),
+			Short:   "Manage azd extensions.",
 		},
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupConfig,
+			RootLevelHelp: actions.CmdGroupAlpha,
 		},
 	})
 
@@ -204,13 +204,15 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 	extensionRows := []extensionListItem{}
 
 	for _, extension := range registryExtensions {
-		installedExtension, installed := installedExtensions[extension.Id]
+		installedExtension, has := installedExtensions[extension.Id]
+		installed := has && installedExtension.Source == extension.Source
+
 		if a.flags.installed && !installed {
 			continue
 		}
 
 		var version string
-		if installed {
+		if has {
 			version = installedExtension.Version
 		} else {
 			version = extension.Versions[len(extension.Versions)-1].Version
@@ -222,7 +224,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			Namespace: extension.Namespace,
 			Version:   version,
 			Source:    extension.Source,
-			Installed: installedExtensions[extension.Id] != nil,
+			Installed: installed,
 		})
 	}
 
@@ -349,7 +351,7 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 
 func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	extensionId := a.args[0]
-	registryExtension, err := a.extensionManager.GetFromRegistry(ctx, extensionId)
+	registryExtension, err := a.extensionManager.GetFromRegistry(ctx, extensionId, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extension details: %w", err)
 	}
@@ -368,7 +370,7 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 	}
 
 	installedExtension, err := a.extensionManager.GetInstalled(
-		extensions.GetInstalledOptions{Id: extensionId},
+		extensions.LookupOptions{Id: extensionId},
 	)
 	if err == nil {
 		extensionDetails.InstalledVersion = installedExtension.Version
@@ -387,10 +389,12 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 type extensionInstallFlags struct {
 	version string
+	source  string
 }
 
 func newExtensionInstallFlags(cmd *cobra.Command) *extensionInstallFlags {
 	flags := &extensionInstallFlags{}
+	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use for installs")
 	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to install")
 
 	return flags
@@ -441,7 +445,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 		stepMessage := fmt.Sprintf("Installing %s extension", output.WithHighLightFormat(extensionId))
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
-		installed, err := a.extensionManager.GetInstalled(extensions.GetInstalledOptions{
+		installed, err := a.extensionManager.GetInstalled(extensions.LookupOptions{
 			Id: extensionId,
 		})
 		if err == nil {
@@ -450,7 +454,11 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			continue
 		}
 
-		extensionVersion, err := a.extensionManager.Install(ctx, extensionId, a.flags.version)
+		filterOptions := &extensions.FilterOptions{
+			Source:  a.flags.source,
+			Version: a.flags.version,
+		}
+		extensionVersion, err := a.extensionManager.Install(ctx, extensionId, filterOptions)
 		if err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, fmt.Errorf("failed to install extension: %w", err)
@@ -541,7 +549,7 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 	for _, extensionId := range extensionIds {
 		stepMessage := fmt.Sprintf("Uninstalling %s extension", output.WithHighLightFormat(extensionId))
 
-		installed, err := a.extensionManager.GetInstalled(extensions.GetInstalledOptions{
+		installed, err := a.extensionManager.GetInstalled(extensions.LookupOptions{
 			Id: extensionId,
 		})
 		if err != nil {
@@ -571,12 +579,14 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 
 type extensionUpgradeFlags struct {
 	version string
+	source  string
 	all     bool
 }
 
 func newExtensionUpgradeFlags(cmd *cobra.Command) *extensionUpgradeFlags {
 	flags := &extensionUpgradeFlags{}
 	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to upgrade to")
+	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use for upgrades")
 	cmd.Flags().BoolVar(&flags.all, "all", false, "Upgrade all installed extensions")
 
 	return flags
@@ -647,7 +657,7 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 		stepMessage := fmt.Sprintf("Upgrading %s extension", output.WithHighLightFormat(extensionId))
 		a.console.ShowSpinner(ctx, stepMessage, input.Step)
 
-		installed, err := a.extensionManager.GetInstalled(extensions.GetInstalledOptions{
+		installed, err := a.extensionManager.GetInstalled(extensions.LookupOptions{
 			Id: extensionId,
 		})
 		if err != nil {
@@ -655,7 +665,11 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			return nil, fmt.Errorf("failed to get installed extension: %w", err)
 		}
 
-		extension, err := a.extensionManager.GetFromRegistry(ctx, extensionId)
+		filterOptions := &extensions.FilterOptions{
+			Source:  a.flags.source,
+			Version: a.flags.version,
+		}
+		extension, err := a.extensionManager.GetFromRegistry(ctx, extensionId, filterOptions)
 		if err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, fmt.Errorf("failed to get extension %s: %w", extensionId, err)
@@ -666,7 +680,7 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			stepMessage += output.WithGrayFormat(" (No upgrade available)")
 			a.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 		} else {
-			extensionVersion, err := a.extensionManager.Upgrade(ctx, extensionId, a.flags.version)
+			extensionVersion, err := a.extensionManager.Upgrade(ctx, extensionId, filterOptions)
 			if err != nil {
 				return nil, fmt.Errorf("failed to upgrade extension: %w", err)
 			}

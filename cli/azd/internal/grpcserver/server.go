@@ -6,7 +6,6 @@ package grpcserver
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
@@ -19,9 +18,9 @@ import (
 )
 
 type ServerInfo struct {
-	Address     string
-	Port        int
-	AccessToken string
+	Address    string
+	Port       int
+	SigningKey []byte
 }
 
 type Server struct {
@@ -31,6 +30,9 @@ type Server struct {
 	promptService      azdext.PromptServiceServer
 	userConfigService  azdext.UserConfigServiceServer
 	deploymentService  azdext.DeploymentServiceServer
+	eventService       azdext.EventServiceServer
+	composeService     azdext.ComposeServiceServer
+	workflowService    azdext.WorkflowServiceServer
 }
 
 func NewServer(
@@ -39,6 +41,9 @@ func NewServer(
 	promptService azdext.PromptServiceServer,
 	userConfigService azdext.UserConfigServiceServer,
 	deploymentService azdext.DeploymentServiceServer,
+	eventService azdext.EventServiceServer,
+	composeService azdext.ComposeServiceServer,
+	workflowService azdext.WorkflowServiceServer,
 ) *Server {
 	return &Server{
 		projectService:     projectService,
@@ -46,17 +51,22 @@ func NewServer(
 		promptService:      promptService,
 		userConfigService:  userConfigService,
 		deploymentService:  deploymentService,
+		eventService:       eventService,
+		composeService:     composeService,
+		workflowService:    workflowService,
 	}
 }
 
 func (s *Server) Start() (*ServerInfo, error) {
-	accessToken, err := generateToken()
+	signingKey, err := generateSigningKey()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
 	}
 
+	var serverInfo ServerInfo
+
 	s.grpcServer = grpc.NewServer(
-		grpc.UnaryInterceptor(tokenAuthInterceptor(accessToken)),
+		grpc.UnaryInterceptor(s.tokenAuthInterceptor(&serverInfo)),
 	)
 
 	// Use ":0" to let the system assign an available random port
@@ -68,12 +78,19 @@ func (s *Server) Start() (*ServerInfo, error) {
 	// Get the assigned random port
 	randomPort := listener.Addr().(*net.TCPAddr).Port
 
-	// Register the Greeter service with the gRPC server
+	// Register the azd services with the gRPC server
 	azdext.RegisterProjectServiceServer(s.grpcServer, s.projectService)
 	azdext.RegisterEnvironmentServiceServer(s.grpcServer, s.environmentService)
 	azdext.RegisterPromptServiceServer(s.grpcServer, s.promptService)
 	azdext.RegisterUserConfigServiceServer(s.grpcServer, s.userConfigService)
 	azdext.RegisterDeploymentServiceServer(s.grpcServer, s.deploymentService)
+	azdext.RegisterEventServiceServer(s.grpcServer, s.eventService)
+	azdext.RegisterComposeServiceServer(s.grpcServer, s.composeService)
+	azdext.RegisterWorkflowServiceServer(s.grpcServer, s.workflowService)
+
+	serverInfo.Address = fmt.Sprintf("localhost:%d", randomPort)
+	serverInfo.Port = randomPort
+	serverInfo.SigningKey = signingKey
 
 	go func() {
 		// Start the gRPC server
@@ -85,9 +102,9 @@ func (s *Server) Start() (*ServerInfo, error) {
 	log.Printf("AZD Server listening on port %d", randomPort)
 
 	return &ServerInfo{
-		Address:     fmt.Sprintf("localhost:%d", randomPort),
-		Port:        randomPort,
-		AccessToken: accessToken,
+		Address:    fmt.Sprintf("localhost:%d", randomPort),
+		Port:       randomPort,
+		SigningKey: signingKey,
 	}, nil
 }
 
@@ -102,7 +119,7 @@ func (s *Server) Stop() error {
 	return nil
 }
 
-func tokenAuthInterceptor(expectedToken string) grpc.UnaryServerInterceptor {
+func (s *Server) tokenAuthInterceptor(serverInfo *ServerInfo) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
 		req interface{},
@@ -116,7 +133,12 @@ func tokenAuthInterceptor(expectedToken string) grpc.UnaryServerInterceptor {
 
 		// Extract the authorization token from metadata
 		token := md["authorization"]
-		if len(token) == 0 || token[0] != expectedToken {
+		if len(token) == 0 {
+			return nil, status.Error(codes.Unauthenticated, "invalid token")
+		}
+
+		_, err := ParseExtensionToken(token[0], serverInfo)
+		if err != nil {
 			return nil, status.Error(codes.Unauthenticated, "invalid token")
 		}
 
@@ -125,10 +147,10 @@ func tokenAuthInterceptor(expectedToken string) grpc.UnaryServerInterceptor {
 	}
 }
 
-func generateToken() (string, error) {
+func generateSigningKey() ([]byte, error) {
 	bytes := make([]byte, 16) // 128-bit token
 	if _, err := rand.Read(bytes); err != nil {
-		return "", err
+		return nil, err
 	}
-	return hex.EncodeToString(bytes), nil
+	return bytes, nil
 }

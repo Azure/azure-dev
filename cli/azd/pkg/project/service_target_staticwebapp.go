@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -85,7 +86,7 @@ func (at *staticWebAppTarget) Package(
 func usingSwaConfig(packageResult *ServicePackageResult) bool {
 	// The swa framework service does not set a packageOutput.PackagePath during package b/c the output
 	// is governed by the swa-cli.config.json file.
-	return packageResult.PackagePath == ""
+	return packageResult.PackagePath == "" && packageResult.Details != nil
 }
 
 // Deploys the packaged build output using the SWA CLI
@@ -117,6 +118,20 @@ func (at *staticWebAppTarget) Deploy(
 	dOptions := swa.DeployOptions{}
 	cwd := serviceConfig.Path()
 	if !usingSwaConfig(packageOutput) {
+
+		if (packageOutput.PackagePath == "" || cwd == packageOutput.PackagePath) &&
+			cwd == serviceConfig.Project.Path {
+			return nil, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf("service source and output folder cannot be at the root: %s", serviceConfig.RelativePath),
+				Suggestion: strings.Join([]string{
+					"If your service is at the root of your project, next to azure.yaml, move your service to a subfolder.",
+					"Azure Static Web Apps does not support deploying from a folder that is for both the service" +
+						" source and the output folder.",
+					"Update the path of the service in azure.yaml to point to the subfolder and try deploying again.",
+				}, "\n"),
+			}
+		}
+
 		dOptions.AppFolderPath = serviceConfig.RelativePath
 		dOptions.OutputRelativeFolderPath = packageOutput.PackagePath
 		cwd = serviceConfig.Project.Path

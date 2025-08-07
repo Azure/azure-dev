@@ -29,10 +29,10 @@ func Test_Parse_Azure_ARM_Deploy_Error_04(t *testing.T) {
 
 func Test_Not_Json_Error(t *testing.T) {
 	nonJsonError := "I'm just a regular error message"
-	deploymentError := AzureDeploymentError{Json: nonJsonError}
+	deploymentError := AzureDeploymentError{Title: "Title", Json: nonJsonError}
 	errorString := deploymentError.Error()
 
-	require.Equal(t, nonJsonError, errorString)
+	require.Equal(t, "\n\nTitle:\n"+nonJsonError, errorString)
 }
 
 func assertOutputsMatch(t *testing.T, jsonPath string, expectedOutputPath string) {
@@ -47,11 +47,18 @@ func assertOutputsMatch(t *testing.T, jsonPath string, expectedOutputPath string
 	}
 
 	errorJson := string(data)
-	deploymentError := NewAzureDeploymentError(errorJson)
+	deploymentError := NewAzureDeploymentError("Title", errorJson)
 	errorString := deploymentError.Error()
 
 	actualLines := strings.Split(errorString, "\n")
 	expectedLines := strings.Split(string(expected), "\n")
+
+	titleLines := actualLines[:3]
+	actualLines = actualLines[3:]
+
+	require.Empty(t, titleLines[0])
+	require.Empty(t, titleLines[1])
+	require.Equal(t, "Title:", titleLines[2])
 
 	require.Equal(t, len(expectedLines), len(actualLines))
 

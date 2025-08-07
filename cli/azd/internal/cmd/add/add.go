@@ -5,6 +5,7 @@ package add
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -15,11 +16,14 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -29,14 +33,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/azure/azure-dev/cli/azd/pkg/yamlnode"
 	"github.com/braydonk/yaml"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
 func NewAddCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "add",
-		Short: fmt.Sprintf("Add a component to your project. %s", output.WithWarningFormat("(Alpha)")),
+		Short: "Add a component to your project.",
 	}
 }
 
@@ -49,22 +52,28 @@ type AddAction struct {
 	alphaManager     *alpha.FeatureManager
 	creds            account.SubscriptionCredentialProvider
 	rm               infra.ResourceManager
+	resourceService  *azapi.ResourceService
 	armClientOptions *arm.ClientOptions
 	prompter         prompt.Prompter
 	console          input.Console
+	accountManager   account.Manager
+	azureClient      *azapi.AzureClient
+	importManager    *project.ImportManager
 }
 
-var composeFeature = alpha.MustFeatureKey("compose")
-
 func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if !a.alphaManager.IsEnabled(composeFeature) {
-		return nil, fmt.Errorf(
-			"compose is currently under alpha support and must be explicitly enabled."+
-				" Run `%s` to enable this feature", alpha.GetEnableCommand(composeFeature),
-		)
+	prjConfig, err := project.Load(ctx, a.azdCtx.ProjectPath())
+	if err != nil {
+		return nil, err
 	}
 
-	prjConfig, err := project.Load(ctx, a.azdCtx.ProjectPath())
+	// Having a subscription is required for any azd compose (add)
+	err = provisioning.EnsureSubscription(ctx, a.envManager, a.env, a.prompter)
+	if err != nil {
+		return nil, err
+	}
+
+	err = ensureCompatibleProject(ctx, a.importManager, prjConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -92,21 +101,24 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	var serviceToAdd *project.ServiceConfig
 
 	promptOpts := PromptOptions{PrjConfig: prjConfig}
+	r, err := selected.SelectResource(a.console, ctx, promptOpts)
+	if err != nil {
+		return nil, err
+	}
+	resourceToAdd = r
+
 	if strings.EqualFold(selected.Namespace, "host") {
-		svc, r, err := a.configureHost(a.console, ctx, promptOpts)
+		svc, r, err := a.configureHost(a.console, ctx, promptOpts, r.Type)
 		if err != nil {
 			return nil, err
 		}
-
-		resourceToAdd = r
 		serviceToAdd = svc
-	} else {
-		r, err := selected.SelectResource(a.console, ctx, promptOpts)
-		if err != nil {
-			return nil, err
-		}
-
 		resourceToAdd = r
+	}
+
+	resourceToAdd, err = a.ConfigureLive(ctx, resourceToAdd, a.console, promptOpts)
+	if err != nil {
+		return nil, err
 	}
 
 	resourceToAdd, err = Configure(ctx, resourceToAdd, a.console, promptOpts)
@@ -119,7 +131,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	if _, exists := prjConfig.Resources[resourceToAdd.Name]; exists {
+	if r, exists := prjConfig.Resources[resourceToAdd.Name]; exists && r.Type != project.ResourceTypeAiProject {
 		log.Panicf("unhandled validation: resource with name %s already exists", resourceToAdd.Name)
 	}
 
@@ -156,17 +168,37 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	resourceNode, err := yamlnode.Encode(resourceToAdd)
-	if err != nil {
-		panic(fmt.Sprintf("encoding yaml node: %v", err))
+	resourcesToAdd := []*project.ResourceConfig{resourceToAdd}
+	dependentResources := project.DependentResourcesOf(resourceToAdd)
+	requiredByMessages := make([]string, 0)
+	// Find any dependent resources that are not already in the project
+	for _, dep := range dependentResources {
+		if prjConfig.Resources[dep.Name] == nil {
+			resourcesToAdd = append(resourcesToAdd, dep)
+			requiredByMessages = append(requiredByMessages,
+				fmt.Sprintf("(%s is required by %s)",
+					output.WithHighLightFormat(dep.Name),
+					output.WithHighLightFormat(resourceToAdd.Name)))
+		}
 	}
 
-	err = yamlnode.Set(&doc, fmt.Sprintf("resources?.%s", resourceToAdd.Name), resourceNode)
-	if err != nil {
-		return nil, fmt.Errorf("setting resource: %w", err)
+	// Add resource and any non-existing dependent resources
+	for _, resource := range resourcesToAdd {
+		resourceNode, err := yamlnode.Encode(resource)
+		if err != nil {
+			panic(fmt.Sprintf("encoding resource yaml node: %v", err))
+		}
+
+		err = yamlnode.Set(&doc, fmt.Sprintf("resources?.%s", resource.Name), resourceNode)
+		if err != nil {
+			return nil, fmt.Errorf("setting resource: %w", err)
+		}
 	}
 
 	for _, svc := range usedBy {
+		if slices.Contains(prjConfig.Resources[svc].Uses, resourceToAdd.Name) {
+			continue
+		}
 		err = yamlnode.Append(&doc, fmt.Sprintf("resources.%s.uses[]?", svc), &yaml.Node{
 			Kind:  yaml.ScalarNode,
 			Value: resourceToAdd.Name,
@@ -186,13 +218,19 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("re-parsing yaml: %w", err)
 	}
 
-	a.console.Message(ctx, fmt.Sprintf("\nPreviewing changes to %s:\n", color.BlueString("azure.yaml")))
+	a.console.Message(ctx, fmt.Sprintf("\nPreviewing changes to %s:\n", output.WithHighLightFormat("azure.yaml")))
 	diffString, diffErr := DiffBlocks(prjConfig.Resources, newCfg.Resources)
 	if diffErr != nil {
 		a.console.Message(ctx, "Preview unavailable. Pass --debug for more details.\n")
 		log.Printf("add-diff: preview failed: %v", diffErr)
 	} else {
 		a.console.Message(ctx, diffString)
+		if len(requiredByMessages) > 0 {
+			for _, msg := range requiredByMessages {
+				a.console.Message(ctx, msg)
+			}
+			a.console.Message(ctx, "")
+		}
 	}
 
 	confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
@@ -227,6 +265,21 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("closing file: %w", err)
 	}
 
+	envModified := false
+	for _, resource := range resourcesToAdd {
+		if resource.ResourceId != "" {
+			a.env.DotenvSet(infra.ResourceIdName(resource.Name), resource.ResourceId)
+			envModified = true
+		}
+	}
+
+	if envModified {
+		err = a.envManager.Save(ctx, a.env)
+		if err != nil {
+			return nil, fmt.Errorf("saving environment: %w", err)
+		}
+	}
+
 	a.console.MessageUxItem(ctx, &ux.ActionResult{
 		SuccessMessage: "azure.yaml updated.",
 	})
@@ -244,11 +297,26 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		infraRoot = filepath.Join(prjConfig.Path, infraRoot)
 	}
 
+	var followUpMessage string
+	addedKeyVault := slices.ContainsFunc(resourcesToAdd, func(resource *project.ResourceConfig) bool {
+		return strings.EqualFold(resource.Name, "vault")
+	})
+	keyVaultFollowUpMessage := fmt.Sprintf(
+		"\nRun '%s' to add a secret to the key vault.",
+		output.WithHighLightFormat("azd env set-secret <name>"))
+
 	if _, err := pathHasInfraModule(infraRoot, prjConfig.Infra.Module); err == nil {
+		followUpMessage = fmt.Sprintf(
+			"Run '%s' to re-generate the infrastructure, "+
+				"then run '%s' to provision these changes anytime later.",
+			output.WithHighLightFormat("azd infra gen"),
+			output.WithHighLightFormat("azd provision"))
+		if addedKeyVault {
+			followUpMessage += keyVaultFollowUpMessage
+		}
 		return &actions.ActionResult{
 			Message: &actions.ResultMessage{
-				FollowUp: "Run '" + color.BlueString("azd infra synth") + "' to re-synthesize the infrastructure, " +
-					"then run '" + color.BlueString("azd provision") + "' to provision these changes anytime later.",
+				FollowUp: followUpMessage,
 			},
 		}, err
 	}
@@ -273,7 +341,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if provisionOption == provisionPreview {
-		err = a.previewProvision(ctx, prjConfig, resourceToAdd, usedBy)
+		err = a.previewProvision(ctx, prjConfig, resourcesToAdd, usedBy)
 		if err != nil {
 			return nil, err
 		}
@@ -300,23 +368,68 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 
-		return &actions.ActionResult{
-			Message: &actions.ResultMessage{
-				FollowUp: "Run '" +
-					color.BlueString(fmt.Sprintf("azd show %s", resourceToAdd.Name)) +
-					"' to show details about the newly provisioned resource.",
-			},
-		}, nil
+		followUpMessage = "Run '" +
+			output.WithHighLightFormat("azd show %s", resourceToAdd.Name) +
+			"' to show details about the newly provisioned resource."
+	} else {
+		followUpMessage = fmt.Sprintf(
+			"Run '%s' to %s these changes anytime later.",
+			output.WithHighLightFormat("azd %s", followUpCmd),
+			verb)
+	}
+
+	if addedKeyVault {
+		followUpMessage += keyVaultFollowUpMessage
 	}
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			FollowUp: fmt.Sprintf(
-				"Run '%s' to %s these changes anytime later.",
-				color.BlueString("azd %s", followUpCmd),
-				verb),
+			FollowUp: followUpMessage,
 		},
 	}, err
+}
+
+// ensureCompatibleProject checks if the project is compatible with the add command.
+// A project is incompatible if:
+// - It has an Aspire app host
+// - It appears to be a non-compose template (has infra files but no resources defined in azure.yaml)
+func ensureCompatibleProject(
+	ctx context.Context,
+	importManager *project.ImportManager,
+	prjConfig *project.ProjectConfig,
+) error {
+	if hasAppHost := importManager.HasAppHost(ctx, prjConfig); hasAppHost {
+		return &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("incompatible project: found Aspire app host"),
+			Suggestion: fmt.Sprintf("%s does not support .NET Aspire projects.",
+				output.WithHighLightFormat("azd add")),
+		}
+	}
+
+	infraRoot := prjConfig.Infra.Path
+	if !filepath.IsAbs(infraRoot) {
+		infraRoot = filepath.Join(prjConfig.Path, infraRoot)
+	}
+
+	hasResources := len(prjConfig.Resources) > 0
+	hasInfra, err := pathHasInfraModule(infraRoot, prjConfig.Infra.Module)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			hasInfra = false
+		} else {
+			return err
+		}
+	}
+
+	if hasInfra && !hasResources {
+		return &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("incompatible project: found infra directory and azure.yaml without resources"),
+			Suggestion: fmt.Sprintf("%s does not support most azd templates.",
+				output.WithHighLightFormat("azd add")),
+		}
+	}
+
+	return nil
 }
 
 type provisionSelection int
@@ -365,9 +478,13 @@ func NewAddAction(
 	creds account.SubscriptionCredentialProvider,
 	prompter prompt.Prompter,
 	rm infra.ResourceManager,
+	resourceService *azapi.ResourceService,
 	armClientOptions *arm.ClientOptions,
 	azd workflow.AzdCommandRunner,
-	console input.Console) actions.Action {
+	accountManager account.Manager,
+	console input.Console,
+	azureClient *azapi.AzureClient,
+	importManager *project.ImportManager) actions.Action {
 	return &AddAction{
 		azdCtx:           azdCtx,
 		console:          console,
@@ -377,8 +494,12 @@ func NewAddAction(
 		env:              env,
 		prompter:         prompter,
 		rm:               rm,
+		resourceService:  resourceService,
 		armClientOptions: armClientOptions,
 		creds:            creds,
 		azd:              azd,
+		accountManager:   accountManager,
+		azureClient:      azureClient,
+		importManager:    importManager,
 	}
 }

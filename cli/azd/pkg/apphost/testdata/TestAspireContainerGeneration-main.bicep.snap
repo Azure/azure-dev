@@ -54,17 +54,7 @@ param noVolume_pas_sw_ord string
 })
 @secure()
 param noVolume_password string
-@metadata({azd: {
-  type: 'needForDeploy'
-  config: {}
-  }
-})
 param param_with_empty_value string = ''
-@metadata({azd: {
-  type: 'needForDeploy'
-  config: {}
-  }
-})
 param param_with_value string = 'default value for param'
 
 var tags = {
@@ -76,7 +66,6 @@ resource rg 'Microsoft.Resources/resourceGroups@2022-09-01' = {
   location: location
   tags: tags
 }
-
 module resources 'resources.bicep' = {
   scope: rg
   name: 'resources'
@@ -86,6 +75,7 @@ module resources 'resources.bicep' = {
     principalId: principalId
   }
 }
+
 
 output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
 output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
@@ -100,4 +90,6 @@ output SERVICE_NOVOLUME_FILE_SHARE_BM0_NAME string = resources.outputs.SERVICE_N
 output SERVICE_NOVOLUME_VOLUME_BM1_NAME string = resources.outputs.SERVICE_NOVOLUME_VOLUME_BM1_NAME
 output SERVICE_NOVOLUME_FILE_SHARE_BM1_NAME string = resources.outputs.SERVICE_NOVOLUME_FILE_SHARE_BM1_NAME
 output AZURE_VOLUMES_STORAGE_ACCOUNT string = resources.outputs.AZURE_VOLUMES_STORAGE_ACCOUNT
+output AZURE_PARAM_WITH_EMPTY_VALUE string = param-with-empty-value
+output AZURE_PARAM_WITH_VALUE string = param-with-value
 

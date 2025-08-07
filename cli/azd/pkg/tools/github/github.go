@@ -37,7 +37,7 @@ func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec
 
 // Version is the minimum version of GitHub cli that we require (and the one we fetch when we fetch gh on
 // behalf of a user).
-var Version semver.Version = semver.MustParse("2.55.0")
+var Version semver.Version = semver.MustParse("2.75.1")
 
 // newGitHubCliImplementation is like NewGitHubCli but allows providing a custom transport to use when downloading the
 // GitHub CLI, for testing purposes.
@@ -135,12 +135,12 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 func expectedVersionInstalled(ctx context.Context, commandRunner exec.CommandRunner, binaryPath string) bool {
 	ghVersion, err := tools.ExecuteCommand(ctx, commandRunner, binaryPath, "--version")
 	if err != nil {
-		log.Printf("checking GitHub CLI version: %s", err.Error())
+		log.Printf("checking GitHub CLI version: %v", err)
 		return false
 	}
 	ghSemver, err := tools.ExtractVersion(ghVersion)
 	if err != nil {
-		log.Printf("converting to semver version fails: %s", err.Error())
+		log.Printf("converting to semver version fails: %v", err)
 		return false
 	}
 	if ghSemver.LT(Version) {
@@ -232,6 +232,22 @@ func ghOutputToList(output string) []string {
 	return result
 }
 
+func ghOutputToMap(output string) (map[string]string, error) {
+	lines := strings.Split(output, "\n")
+	result := map[string]string{}
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		valueParts := strings.Split(line, "\t")
+		if len(valueParts) < 2 {
+			return nil, fmt.Errorf("unexpected format to parse string to map: %s", line)
+		}
+		result[valueParts[0]] = valueParts[1]
+	}
+	return result, nil
+}
+
 func (cli *Cli) ListSecrets(ctx context.Context, repoSlug string) ([]string, error) {
 	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "list")
 	output, err := cli.run(ctx, runArgs)
@@ -241,13 +257,13 @@ func (cli *Cli) ListSecrets(ctx context.Context, repoSlug string) ([]string, err
 	return ghOutputToList(output.Stdout), nil
 }
 
-func (cli *Cli) ListVariables(ctx context.Context, repoSlug string) ([]string, error) {
+func (cli *Cli) ListVariables(ctx context.Context, repoSlug string) (map[string]string, error) {
 	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "list")
 	output, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed running gh secret list: %w", err)
 	}
-	return ghOutputToList(output.Stdout), nil
+	return ghOutputToMap(output.Stdout)
 }
 
 func (cli *Cli) SetSecret(ctx context.Context, repoSlug string, name string, value string) error {
@@ -585,7 +601,7 @@ func downloadGh(
 		return fmt.Errorf("unsupported platform")
 	}
 
-	// example: https://github.com/cli/cli/releases/download/v2.55.0/gh_2.55.0_linux_arm64.rpm
+	// example: https://github.com/cli/cli/releases/download/v2.75.1/gh_2.75.1_linux_arm64.rpm
 	ghReleaseUrl := fmt.Sprintf("https://github.com/cli/cli/releases/download/v%s/%s", ghVersion, releaseName)
 
 	log.Printf("downloading github cli release %s -> %s", ghReleaseUrl, releaseName)

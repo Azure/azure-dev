@@ -56,7 +56,7 @@ func newMonitorFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func newMonitorCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "monitor",
-		Short: fmt.Sprintf("Monitor a deployed application. %s", output.WithWarningFormat("(Beta)")),
+		Short: "Monitor a deployed project.",
 	}
 }
 

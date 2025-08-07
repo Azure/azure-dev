@@ -116,7 +116,11 @@ type ArmTemplateParameterDefinition struct {
 }
 
 func (d *ArmTemplateParameterDefinition) Secure() bool {
-	lowerCase := strings.ToLower(d.Type)
+	return IsSecuredARMType(d.Type)
+}
+
+func IsSecuredARMType(t string) bool {
+	lowerCase := strings.ToLower(t)
 	return lowerCase == "secureobject" || lowerCase == "securestring"
 }
 
@@ -137,14 +141,35 @@ type AzdMetadataType string
 const AzdMetadataTypeLocation AzdMetadataType = "location"
 const AzdMetadataTypeGenerate AzdMetadataType = "generate"
 const AzdMetadataTypeGenerateOrManual AzdMetadataType = "generateOrManual"
-const AzdMetadataTypeNeedForDeploy AzdMetadataType = "needForDeploy"
 const AzdMetadataTypeResourceGroup AzdMetadataType = "resourceGroup"
 
 type AzdMetadata struct {
 	Type               *AzdMetadataType `json:"type,omitempty"`
 	AutoGenerateConfig *AutoGenInput    `json:"config,omitempty"`
 	DefaultValueExpr   *string          `json:"defaultValueExpr,omitempty"`
-	Default            *string          `json:"default,omitempty"`
+	Default            any              `json:"default,omitempty"`
+	UsageName          usageName        `json:"usageName,omitempty"`
+}
+
+// usageName is a custom type that can be either a single string or an array of strings.
+// Enables unmarshalling from both formats, so user can set one only usageName like usageName: "foo" or
+// multiple usageNames like usageName: ["foo", "bar"].
+type usageName []string
+
+func (u *usageName) UnmarshalJSON(data []byte) error {
+	var single string
+	if err := json.Unmarshal(data, &single); err == nil {
+		*u = usageName{single}
+		return nil
+	}
+
+	var multiple []string
+	if err := json.Unmarshal(data, &multiple); err != nil {
+		return err
+	}
+
+	*u = usageName(multiple)
+	return nil
 }
 
 // Description returns the value of the "Description" string metadata for this parameter or empty if it can not be found.

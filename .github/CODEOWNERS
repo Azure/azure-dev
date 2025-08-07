@@ -1,23 +1,26 @@
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-syntax
 
-/**               @wbreza
+/**                @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050
 
-/cli/             @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA
-/cli/installer/   @danieljurek
+/cli/              @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050
+/cli/installer/    @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
 
-/ext/             @karolz-ms
+/ext/              @karolz-ms @vhvb1989 @tg-msft @rajeshkamal5050
 
-/generators/repo/ @wbreza @danieljurek
+/ext/azuredevops/  @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
 
-/.github/         @danieljurek
+/ext/devcontainer/ @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
 
-/.config/1espt/   @danieljurek @benbp @weshaggard
+/ext/vscode/       @bwateratmsft @vhvb1989 @tg-msft @rajeshkamal5050 @karolz-ms
 
-/eng/             @danieljurek
+/generators/repo/  @wbreza @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
 
-/schemas/         @karolz-ms @wbreza
+/.github/          @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
 
-/templates/       @jongio @wbreza
+/.config/1espt/    @Azure/azure-sdk-eng
 
-# Exclude @jongio from version bump PRs opened by dependabot
-/templates/**/package-lock.json     @wbreza
+/eng/              @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
+
+/schemas/          @wbreza @vhvb1989 @tg-msft @rajeshkamal5050
+
+/.github/CODEOWNERS   @rajeshkamal5050 @Azure/azure-sdk-eng

@@ -1,14 +1,235 @@
 # Release History
 
-## 1.13.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.18.1 (2025-08-06)
 
 ### Bugs Fixed
 
+- [[5501]](https://github.com/Azure/azure-dev/pull/5501) infra gen when dotnet project is present.
+- [[5566]](https://github.com/Azure/azure-dev/pull/5566) [VSServer] Ignoring projects.v1.
+- [[5518]](https://github.com/Azure/azure-dev/pull/5518) [VSServer] Add suggestion text for resource group and Container App un-marshall errors during azd deploy.
+- [[5528]](https://github.com/Azure/azure-dev/pull/5528) Fix login guard to skip interactive prompts in CI/CD environments.
+
+## 1.18.0 (2025-07-17)
+
+### Features Added
+
+- [[5380]](https://github.com/Azure/azure-dev/pull/5380) Improve project name validation to prevent service packaging failures with invalid characters.
+- [[5411]](https://github.com/Azure/azure-dev/pull/5411) Add LLM package for AI functionality with auto-detection of LLM configuration.
+- [[5397]](https://github.com/Azure/azure-dev/pull/5397) Add support for generic OIDC authentication with any CI provider.
+- [[4832]](https://github.com/Azure/azure-dev/pull/4832) Improve user experience by prompting for confirmation before setting a new environment as the default.
+- [[5384]](https://github.com/Azure/azure-dev/pull/5384) Add support for boolean and integer default values in azd metadata fields.
+- [[5383]](https://github.com/Azure/azure-dev/pull/5383) Add support for `.webappignore` and `.funcignore` files in zip deployment packaging.
+- [[5430]](https://github.com/Azure/azure-dev/pull/5430) Update `azd hooks run` to always run hooks in interactive mode and improve schema validation.
+
+### Bugs Fixed
+
+- [[5478]](https://github.com/Azure/azure-dev/pull/5478) Fix panic when encountering Bicep secure output parameters.
+- [[5468]](https://github.com/Azure/azure-dev/pull/5468) Fix PowerShell 7 suggestion text not showing for service-level hooks.
+- [[5470]](https://github.com/Azure/azure-dev/pull/5470) Fix preflight error handling for deployment stack validation.
+- [[5446]](https://github.com/Azure/azure-dev/pull/5446) Fix Bicep parameter evaluation to properly inject environment variables before deployment.
+- [[5459]](https://github.com/Azure/azure-dev/pull/5459) Fix nil pointer error when checking credentials for Azure DevOps authentication.
+- [[5434]](https://github.com/Azure/azure-dev/pull/5434) Improve handling of unrecognized expressions in Aspire manifest files.
+- [[5372]](https://github.com/Azure/azure-dev/pull/5372) Fix null tags handling in deployment stack operations.
+
 ### Other Changes
+
+- [[5471]](https://github.com/Azure/azure-dev/pull/5471) Cancel CI workflow that becomes obsolete after a new commit is pushed in an open PR. Thanks @kitsiosk for the contribution!
+- [[5420]](https://github.com/Azure/azure-dev/pull/5420) Improve help description for `azd provision --no-state`.
+- [[5378]](https://github.com/Azure/azure-dev/pull/5378) Add Microsoft.Automation/automationAccounts to resources for output.
+- [[5461]](https://github.com/Azure/azure-dev/pull/5461) Update GitHub CLI version to 2.75.1.
+- [[5443]](https://github.com/Azure/azure-dev/pull/5443) Update Bicep CLI version to 0.36.177.
+
+## 1.17.2 (2025-06-23)
+
+### Bugs Fixed
+
+- [[5391]](https://github.com/Azure/azure-dev/pull/5391) Fix getting principal type when using legacy auth (az auth).
+
+## 1.17.1 (2025-06-20)
+
+### Features Added
+
+- [[5203]](https://github.com/Azure/azure-dev/pull/5203) Make sure to always use latest static-web-apps CLI npm package.
+- [[5270]](https://github.com/Azure/azure-dev/pull/5270) Add support for Terraform+OIDC in pipeline config.
+- [[5280]](https://github.com/Azure/azure-dev/pull/5280) Combine "Create a minimal project" with "Scan current directory" option and add --minimal flag.
+- [[5285]](https://github.com/Azure/azure-dev/pull/5285) [compose + CI/CD] - Introduce AZURE_PRINCIPAL_TYPE to conditionally set user-only role assignments
+- [[4942]](https://github.com/Azure/azure-dev/pull/4942) Update env set to accept multiple key-value pairs.
+- [[4969]](https://github.com/Azure/azure-dev/pull/4969) Case-insensitive sorting for subscriptions.
+
+### Bugs Fixed
+
+- [[5386]](https://github.com/Azure/azure-dev/pull/5386) Fix regression, prompting for bool or int without default.
+
+## 1.17.0 (2025-06-05)
+
+### Features Added
+
+- [[5249]](https://github.com/Azure/azure-dev/pull/5249) Add support for deploying a single service in .NET Aspire projects via vs-server.
+- [[5157]](https://github.com/Azure/azure-dev/pull/5157) Update `azd add` integration with AI Foundry to use simplified 1RP setup with all models under a single AI Services account.
+- [[5214]](https://github.com/Azure/azure-dev/pull/5214) Add Linux to Homebrew formulae. Thanks @heaths for the contribution!
+- [[5204]](https://github.com/Azure/azure-dev/pull/5204) Add login guard middleware to auto-prompt for user login in key commands if unauthenticated.
+- [[5248]](https://github.com/Azure/azure-dev/pull/5248) `azd pipeline config` support for configuring CI/CD using Managed Identities.
+- [[5200]](https://github.com/Azure/azure-dev/pull/5200) Update Bicep param prompting to support a default selected option, allowing azd to auto-select it with `--no-prompt`.
+- [[5242]](https://github.com/Azure/azure-dev/pull/5242) Promote `azd add` and composability features to Beta.
+  - Remove `alpha.compose` alpha feature.
+  - Use `azd add` to add Azure components to your project. `azd add` does not currently support Aspire projects or most azd templates.
+  - Use `azd show <resource name>` or `azd show <Azure resource ID>` to view details about a specific resource.
+- [[5260]](https://github.com/Azure/azure-dev/pull/5260) Rename `azd infra synth` to `azd infra generate` (`azd infra gen` for short) and promote to Beta.
+  - Remove `alpha.infraSynth` alpha feature.
+  - `azd infra synth` will continue to work as an alias of `azd infra generate`, but users are encouraged to use the new command names as `azd infra synth` may be removed in a future release.
+
+### Breaking Changes
+
+- [[5242]](https://github.com/Azure/azure-dev/pull/5242), [[5260]](https://github.com/Azure/azure-dev/pull/5260) When initializing from app code or minimal project, the `infra/` folder is no longer generated. azd now manages infrastructure in-memory by default, but you can still generate IaC to disk to manually manage your infrastructure using `azd infra generate` (or `azd infra gen` for short).
+- [[5242]](https://github.com/Azure/azure-dev/pull/5242) When initializing from app code or minimal project, environment initialization is now deferred to provision time (e.g. `azd up`), unless the `--environment <env name>` flag is passed to the `azd init` command or the `AZURE_ENV_NAME` environment variable is set.
+- [[5157]](https://github.com/Azure/azure-dev/pull/5157) AI Services models added through `azd add` require an updated version of the Azure AI Foundry SDK client library that supports project endpoints (`AZURE_AI_PROJECT_ENDPOINT=https://<account-name>.services.ai.azure.com/api/projects/<project-name>`) instead of project connection strings (`AZURE_AI_PROJECT_CONNECTION_STRING=eastus.api.azureml.ms;<subscription id>;<resource group>;<project name>`).
+
+### Bugs Fixed
+
+- [[5187]](https://github.com/Azure/azure-dev/pull/5187) Improve UX of `azd init` by displaying neutral message when user declines initializing in a non-empty directory.
+- [[5255]](https://github.com/Azure/azure-dev/pull/5255) Fix vs-server crash when telemetry is disabled.
+- [[5199]](https://github.com/Azure/azure-dev/pull/5199) Avoid unnecessary ACR login for Aspire projects using only public images.
+- [[5246]](https://github.com/Azure/azure-dev/pull/5246) Remove explicit ACA Environment Contributor role assignment for Aspire projects. Thanks @eerhardt for the contribution!
+
+### Other Changes
+
+- [[5261]](https://github.com/Azure/azure-dev/pull/5261) Update dependencies to mitigate CVE-2025-30204.
+- [[5245]](https://github.com/Azure/azure-dev/pull/5245) Update Bicep CLI to v0.36.1.
+- [[5212]](https://github.com/Azure/azure-dev/pull/5212) Update changelog casing in developer extension release pipelines.
+- [[5209]](https://github.com/Azure/azure-dev/pull/5209) Deprecate internal registry extension in favor of azd developer extension.
+
+## 1.16.1 (2025-05-15)
+
+### Bugs Fixed
+
+- [[5198]](https://github.com/Azure/azure-dev/issues/5198) Fixes error messages surfaced to users that contain internal implementation details.
+
+### Other Changes
+
+## 1.16.0 (2025-05-14)
+
+### Features Added
+- [[5173]](https://github.com/Azure/azure-dev/pull/5173) `azd show` support for Azure App Service.
+- [[5158]](https://github.com/Azure/azure-dev/pull/5158) Configure Azure AI Foundry hub to use identity-based storage access for compose.
+- [[5143]](https://github.com/Azure/azure-dev/pull/5143), [[5183]](https://github.com/Azure/azure-dev/pull/5183), [[5185]](https://github.com/Azure/azure-dev/pull/5185) Update `azd pipeline config` to auto-detect required variables and secrets from infra provider parameters.
+- [[5190]](https://github.com/Azure/azure-dev/pull/5190) Add interactive controls for managing existing GitHub Actions variables and secrets during `azd pipeline config`.
+- [[5155]](https://github.com/Azure/azure-dev/pull/5155) Adds support for nested extension namespaces
+
+### Bugs Fixed
+
+- [[5176]](https://github.com/Azure/azure-dev/pull/5176) Prevent same resource being added under 'uses' multiple times with `azd add`.
+- [[5176]](https://github.com/Azure/azure-dev/pull/5176) Fix `azd add` preview for MySQL and Postgres and other UX improvements.
+- [[5192]](https://github.com/Azure/azure-dev/pull/5192) Fix Bicep generation for compose projects with implicit Key Vault dependency.
+
+### Other Changes
+
+- [[5194]](https://github.com/Azure/azure-dev/pull/5194) Reorganize `azd` help text with updated command sections (Getting started, Azure resources, Settings, Beta, Alpha, Extensions).
+- [[5189]](https://github.com/Azure/azure-dev/pull/5189) Clarify in environment prompt that the name must be unique.
+- [[5187]](https://github.com/Azure/azure-dev/pull/5187) Improve confirmation UX when declining to initialize template in non-empty directory.
+- [[5159]](https://github.com/Azure/azure-dev/pull/5159) Update Aspire detection message to not specifically mention ACA.
+- [[5138]](https://github.com/Azure/azure-dev/pull/5138) Update Bicep CLI to v0.35.1.
+
+## 1.15.1 (2025-05-07)
+
+### Bugs Fixed
+
+- [[5151]](https://github.com/Azure/azure-dev/issues/5151) Fix bicep provisioning failure with array parameters in `main.parameters.json`. Thanks @Mstiekema for the contribution!
+
+## 1.15.0 (2025-05-01)
+
+### Features Added
+
+- [[5073]](https://github.com/Azure/azure-dev/pull/5073) Support generate CI definition for alpha feature composability mode.
+- [[5077]](https://github.com/Azure/azure-dev/pull/5077) `azd add` support for Azure App Service (Node and Python).
+
+### Bugs Fixed
+
+- [[5061]](https://github.com/Azure/azure-dev/pull/5061) Fix location no longer prompted error for targetScope resource group. 
+- [[5117]](https://github.com/Azure/azure-dev/pull/5117) Fix template list filter empty result due to `awesome-azd` source breaking change.
+- [[5102]](https://github.com/Azure/azure-dev/pull/5102) Fix AKS cluster deployment with Microsoft Entra ID authentication and Azure RBAC enabled. Thanks @pauldotyu for the contribution!
+
+### Other Changes
+
+- [[4885]](https://github.com/Azure/azure-dev/pull/4885) Pack build to support multi-module projects. Thanks @haoozhang for the contribution!
+- [[5081]](https://github.com/Azure/azure-dev/pull/5081) Bump up dependency to fix component governance alert.
+
+## 1.14.0 (2025-04-02)
+
+### Features Added
+
+- [[4939]](https://github.com/Azure/azure-dev/pull/4939) Automatically load environment values from root .env on `azd init`.
+- [[4939]](https://github.com/Azure/azure-dev/pull/4939) Introduce `AZD_ALLOW_NON_EMPTY_FOLDER` variable that bypasses warning about initializing template in non-empty directory.
+- [[4977]](https://github.com/Azure/azure-dev/pull/4977), [[4995]](https://github.com/Azure/azure-dev/pull/4995) New `azd init --up` flag that runs `azd up` after initializing from a template. Thanks @LianwMS for the contribution!
+- [[4943]](https://github.com/Azure/azure-dev/pull/4943) `azd add` support for existing resources (AI models, AI Search, Key Vault, Event Hubs, Service Bus, Storage).
+- [[4931]](https://github.com/Azure/azure-dev/pull/4931) `azd add` support for Azure AI Search.
+- [[4914]](https://github.com/Azure/azure-dev/pull/4914) `azd show` support for all resources supported by `azd add`.
+- [[4874]](https://github.com/Azure/azure-dev/pull/4874) Provide shortcuts for `azd env set-secrets` to directly use Key Vault created with `azd add`.
+- [[4957]](https://github.com/Azure/azure-dev/pull/4957), [[4959]](https://github.com/Azure/azure-dev/pull/4959), [[4979]](https://github.com/Azure/azure-dev/pull/4979), [[4999]](https://github.com/Azure/azure-dev/pull/4999), [[5008]](https://github.com/Azure/azure-dev/pull/5008) Support .NET Aspire 9.1.
+- [[4953]](https://github.com/Azure/azure-dev/pull/4953) Support array of model usage names for quota validation.
+- [[5010]](https://github.com/Azure/azure-dev/pull/5010) Support model usage name metadata for main `location` Bicep parameter.
+
+### Bugs Fixed
+
+- [[4966]](https://github.com/Azure/azure-dev/pull/4966) Fix `AZURE_OPENAI_ENDPOINT` not showing in `azd add` preview.
+- [[4561]](https://github.com/Azure/azure-dev/pull/4561) Fix `azd up -e <env>` so it uses the specified environment.
+- [[4960]](https://github.com/Azure/azure-dev/pull/4960) Fix simplified init failing to provision with detected databases and `alpha.compose` off.
+- [[4929]](https://github.com/Azure/azure-dev/pull/4929), [[5010]](https://github.com/Azure/azure-dev/pull/5010) Improve location and quota validation for Azure AI Services resources.
+
+### Other Changes
+
+- [[4794]](https://github.com/Azure/azure-dev/pull/4794) Upgrade to Go 1.24.
+- [[4960]](https://github.com/Azure/azure-dev/pull/4960) Use Standard SKU for Azure Service Bus.
+- [[4960]](https://github.com/Azure/azure-dev/pull/4960) Remove passing host settings through `main.parameters.json`.
+- [[4972]](https://github.com/Azure/azure-dev/pull/4972) Remove unused core Bicep modules.
+
+## 1.13.2 (2025-03-25)
+
+### Bugs Fixed
+
+- [[4937]](https://github.com/Azure/azure-dev/pull/4937) Security fix (GHSA-qxp5-gwg8-xv66). golang.org/x/net.
+
+## 1.13.1 (2025-03-11)
+
+### Features Added
+
+- [[4886]](https://github.com/Azure/azure-dev/pull/4886) Improve database dependency detection for Maven projects. Thanks @rujche for the contribution!
+
+### Bugs Fixed
+
+- [[4917]](https://github.com/Azure/azure-dev/pull/4917) Allow Linux App Service deployments to resume on 500 deployment status response.
+- [[4924]](https://github.com/Azure/azure-dev/pull/4924) Fix cast error when parsing usage name Bicep param metadata.
+
+## 1.13.0 (2025-03-06)
+
+### Features Added
+
+- [[4841]](https://github.com/Azure/azure-dev/pull/4841) `azd add` support for Azure AI Services models and Azure AI Foundry resources. Also add intelligent filtering support for location Bicep parameter based on AI model quota and usage info.
+- [[4780]](https://github.com/Azure/azure-dev/pull/4780) `azd add` support for Azure Cosmos DB. Thanks @saragluna for the contribution!
+- [[4783]](https://github.com/Azure/azure-dev/pull/4783) `azd add` support for Azure Database for MySQL. Thanks @saragluna for the contribution!
+- [[4842]](https://github.com/Azure/azure-dev/pull/4842) `azd add` support for Azure Key Vault.
+- [[4743]](https://github.com/Azure/azure-dev/pull/4743) `azd add` support for Azure Service Bus and Azure Event Hubs.
+- [[4765]](https://github.com/Azure/azure-dev/pull/4765) `azd add` support for Azure Storage (blob service).
+- [[4859]](https://github.com/Azure/azure-dev/pull/4859) Add `docker` language type to support containerized applications written in languages like Go without native support in azd.
+- [[4770]](https://github.com/Azure/azure-dev/pull/4770) Add support for environment secrets in pipeline configuration.
+- [[4547]](https://github.com/Azure/azure-dev/pull/4547) Add warning to `azd env set` when setting a key that already exists in a different casing.
+- [[4872]](https://github.com/Azure/azure-dev/pull/4872) Improve error message when running `pwsh` hooks without PowerShell 7 installed.
+
+### Bugs Fixed
+
+- [[4806]](https://github.com/Azure/azure-dev/pull/4806) Fix error retrieving effective POM for multi-module Maven projects. Thanks @rujche for the contribution!
+- [[4773]](https://github.com/Azure/azure-dev/pull/4773) Fix error packaging app code with directory symlinks.
+- [[4807]](https://github.com/Azure/azure-dev/pull/4807) Fix YAML parsing to better handle nested structures.
+- [[4847]](https://github.com/Azure/azure-dev/pull/4847) Improve color consistency to align with design guidelines.
+- [[4801]](https://github.com/Azure/azure-dev/pull/4801), [[4782]](https://github.com/Azure/azure-dev/pull/4782) Fix Aspire bind mounts on Windows paths outside of C: drive and add support for single file binding.
+- [[4789]](https://github.com/Azure/azure-dev/pull/4789) Fix container entrypoints not being respected for Aspire.
+- [[4849]](https://github.com/Azure/azure-dev/pull/4849) Restrict password generation character set to be compatible with Aspire.
+- [[4850]](https://github.com/Azure/azure-dev/pull/4850) Support `azd init --from-code --no-prompt` in CI to initialize and deploy Aspire apps without prompting.
+
+### Other Changes
+
+- [[3976]](https://github.com/Azure/azure-dev/pull/3976) Convert azd templates to use AVM instead of infra/core.
+- [[4797]](https://github.com/Azure/azure-dev/pull/4797) Add GitHub Copilot for Azure telemetry user agent type.
+- [[4784]](https://github.com/Azure/azure-dev/pull/4784) Correct links in `CONTRIBUTING.md`. Thanks @Lunatico9 for the contribution!
 
 ## 1.12.0 (2025-02-05)
 

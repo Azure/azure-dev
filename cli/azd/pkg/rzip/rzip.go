@@ -6,55 +6,149 @@ package rzip
 import (
 	"archive/zip"
 	"io"
-	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-func CreateFromDirectory(source string, buf *os.File) error {
+// OnZipFn is a function that is invoked on each file or directory,
+// returning a bool to indicate whether the entry should be included in the final zip.
+type OnZipFn func(src string, info os.FileInfo) (bool, error)
+
+// CreateFromDirectory creates a zip archive from the given directory recursively,
+// that is suitable for transporting across machines.
+//
+// It resolves any symlinks it encounters.
+//
+// An optional function callback onZip can be passed to observe files being included,
+// or simply to exclude files.
+func CreateFromDirectory(source string, buf *os.File, onZip OnZipFn) error {
 	w := zip.NewWriter(buf)
-	err := filepath.WalkDir(source, func(path string, info fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
 
-		if info.IsDir() {
-			return nil
-		}
-		fileInfo, err := info.Info()
-		if err != nil {
-			return err
-		}
-
-		header := &zip.FileHeader{
-			Name: strings.Replace(
-				strings.TrimPrefix(
-					strings.TrimPrefix(path, source),
-					string(filepath.Separator)), "\\", "/", -1),
-			Modified: fileInfo.ModTime(),
-			Method:   zip.Deflate,
-		}
-
-		f, err := w.CreateHeader(header)
-		if err != nil {
-			return err
-		}
-		in, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		_, err = io.Copy(f, in)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
+	err := addDirRoot(w, source, onZip)
 	if err != nil {
 		return err
 	}
 
 	return w.Close()
+}
+
+func addDirRoot(
+	w *zip.Writer,
+	src string,
+	onZip OnZipFn) error {
+	return addDir(w, "", src, onZip, 0)
+}
+
+func addDir(
+	w *zip.Writer,
+	destRoot,
+	src string,
+	onZip OnZipFn,
+	symlinkDepth int) error {
+	if symlinkDepth > 40 {
+		// too deep, bail out similarly to the 'zip' tool
+		log.Println("skipping", src, "too many levels of symbolic links")
+		return nil
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		s := filepath.Join(src, entry.Name())
+		info, err := os.Lstat(s)
+		if err != nil {
+			return err
+		}
+
+		if onZip != nil {
+			include, err := onZip(s, info)
+			if err != nil {
+				return err
+			}
+			if !include {
+				continue
+			}
+		}
+
+		switch {
+		case info.Mode()&os.ModeSymlink != 0:
+			err = onSymlink(w, destRoot, s, info, onZip, symlinkDepth)
+		case info.IsDir():
+			root := filepath.Join(destRoot, info.Name())
+			err = addDir(w, root, s, onZip, symlinkDepth)
+		default:
+			err = addFile(w, destRoot, s, info.Name(), info)
+		}
+
+		if err != nil {
+			return err
+		}
+	}
+	return err
+}
+
+func addFile(
+	w *zip.Writer,
+	destRoot string,
+	src string,
+	name string,
+	info os.FileInfo) error {
+	dest := filepath.Join(destRoot, name)
+	header := &zip.FileHeader{
+		Name:     strings.ReplaceAll(dest, "\\", "/"),
+		Modified: info.ModTime(),
+		Method:   zip.Deflate,
+	}
+
+	f, err := w.CreateHeader(header)
+	if err != nil {
+		return err
+	}
+
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	_, err = io.Copy(f, in)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func onSymlink(
+	w *zip.Writer,
+	destRoot,
+	src string,
+	link os.FileInfo,
+	onZip OnZipFn,
+	symlinkDepth int) error {
+	target, err := filepath.EvalSymlinks(src)
+	if err != nil {
+		return err
+	}
+
+	info, err := os.Lstat(target)
+	if err != nil {
+		return err
+	}
+
+	switch {
+	case info.IsDir():
+		symlinkDepth++
+		root := filepath.Join(destRoot, link.Name())
+		return addDir(w, root, target, onZip, symlinkDepth)
+	default:
+		return addFile(w, destRoot, target, link.Name(), info)
+	}
 }
 
 func ExtractToDirectory(artifactPath string, targetDirectory string) error {

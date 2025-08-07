@@ -14,13 +14,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/fatih/color"
 )
 
 // DbMap is a map of supported database dependencies.
 var DbMap = map[appdetect.DatabaseDep]project.ResourceType{
 	appdetect.DbMongo:    project.ResourceTypeDbMongo,
 	appdetect.DbPostgres: project.ResourceTypeDbPostgres,
+	appdetect.DbMySql:    project.ResourceTypeDbMySql,
 	appdetect.DbRedis:    project.ResourceTypeDbRedis,
 }
 
@@ -28,6 +28,38 @@ var DbMap = map[appdetect.DatabaseDep]project.ResourceType{
 type PromptOptions struct {
 	// PrjConfig is the current project configuration.
 	PrjConfig *project.ProjectConfig
+
+	// ExistingId is the ID of an existing resource.
+	// This is only used to configure the resource with an existing resource.
+	ExistingId string
+}
+
+// ConfigureLive fills in the fields for a resource by first querying live Azure for information.
+//
+// This is used in addition to Configure currently.
+func (a *AddAction) ConfigureLive(
+	ctx context.Context,
+	r *project.ResourceConfig,
+	console input.Console,
+	p PromptOptions) (*project.ResourceConfig, error) {
+	if r.Existing {
+		return r, nil
+	}
+
+	var err error
+
+	switch r.Type {
+	case project.ResourceTypeAiProject:
+		r, err = a.promptAiModel(console, ctx, r, p)
+	case project.ResourceTypeOpenAiModel:
+		r, err = a.promptOpenAi(console, ctx, r, p)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return r, nil
 }
 
 // Configure fills in the fields for a resource.
@@ -36,14 +68,31 @@ func Configure(
 	r *project.ResourceConfig,
 	console input.Console,
 	p PromptOptions) (*project.ResourceConfig, error) {
+	if r.Existing {
+		return ConfigureExisting(ctx, r, console, p)
+	}
+
 	switch r.Type {
-	case project.ResourceTypeHostContainerApp:
+	case project.ResourceTypeHostAppService,
+		project.ResourceTypeHostContainerApp:
 		return fillUses(ctx, r, console, p)
 	case project.ResourceTypeOpenAiModel:
-		return fillAiModelName(ctx, r, console, p)
+		return fillOpenAiModelName(ctx, r, console, p)
 	case project.ResourceTypeDbPostgres,
+		project.ResourceTypeDbMySql,
 		project.ResourceTypeDbMongo:
 		return fillDatabaseName(ctx, r, console, p)
+	case project.ResourceTypeDbCosmos:
+		r, err := fillDatabaseName(ctx, r, console, p)
+		if err != nil {
+			return nil, err
+		}
+		r.Props = project.CosmosDBProps{}
+		return r, nil
+	case project.ResourceTypeMessagingEventHubs:
+		return fillEventHubs(ctx, r, console, p)
+	case project.ResourceTypeMessagingServiceBus:
+		return fillServiceBus(ctx, r, console, p)
 	case project.ResourceTypeDbRedis:
 		if _, exists := p.PrjConfig.Resources["redis"]; exists {
 			return nil, fmt.Errorf("only one Redis resource is allowed at this time")
@@ -53,6 +102,25 @@ func Configure(
 		return r, nil
 	case project.ResourceTypeStorage:
 		return fillStorageDetails(ctx, r, console, p)
+	case project.ResourceTypeAiProject:
+		return fillAiProjectName(ctx, r, console, p)
+	case project.ResourceTypeAiSearch:
+		if _, exists := p.PrjConfig.Resources["search"]; exists {
+			return nil, fmt.Errorf("only one AI Search resource is allowed at this time")
+		}
+
+		r.Name = "search"
+		return r, nil
+	case project.ResourceTypeKeyVault:
+		if _, exists := p.PrjConfig.Resources["vault"]; exists {
+			return nil, fmt.Errorf(
+				"you already have a project key vault named 'vault'. " +
+					"To add a secret to it, run 'azd env set-secret <name>'",
+			)
+		}
+
+		r.Name = "vault"
+		return r, nil
 	default:
 		return r, nil
 	}
@@ -90,7 +158,7 @@ func fillDatabaseName(
 	return r, nil
 }
 
-func fillAiModelName(
+func fillOpenAiModelName(
 	ctx context.Context,
 	r *project.ResourceConfig,
 	console input.Console,
@@ -137,6 +205,31 @@ func fillAiModelName(
 	return r, nil
 }
 
+func fillAiProjectName(
+	_ context.Context,
+	r *project.ResourceConfig,
+	_ input.Console,
+	pOptions PromptOptions) (*project.ResourceConfig, error) {
+	if r.Name != "" {
+		return r, nil
+	}
+
+	// provide a default suggestion using the underlying model name
+	defaultName := "ai-project"
+	i := 1
+	for {
+		if _, exists := pOptions.PrjConfig.Resources[defaultName]; exists {
+			i++
+			defaultName = fmt.Sprintf("%s-%d", defaultName, i)
+		} else {
+			break
+		}
+	}
+	// automatically set a name. Avoid prompting the user for a name as we are abstracting the Foundry and project
+	r.Name = defaultName
+	return r, nil
+}
+
 func fillUses(
 	ctx context.Context,
 	r *project.ResourceConfig,
@@ -147,13 +240,19 @@ func fillUses(
 		Display  string
 	}
 	res := make([]resourceDisplay, 0, len(p.PrjConfig.Resources))
-	for _, r := range p.PrjConfig.Resources {
+	isHost := strings.HasPrefix(string(r.Type), "host.")
+	for _, other := range p.PrjConfig.Resources {
+		otherIsHost := strings.HasPrefix(string(other.Type), "host.")
+		// Linking between different host types is not supported yet
+		if isHost && otherIsHost && r.Type != other.Type {
+			continue
+		}
 		res = append(res, resourceDisplay{
-			Resource: r,
+			Resource: other,
 			Display: fmt.Sprintf(
 				"[%s]\t%s",
-				r.Type.String(),
-				r.Name),
+				other.Type.String(),
+				other.Name),
 		})
 	}
 	slices.SortFunc(res, func(a, b resourceDisplay) int {
@@ -177,7 +276,7 @@ func fillUses(
 			labels = formatted
 		}
 		uses, err := console.MultiSelect(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("Select the resources that %s uses", color.BlueString(r.Name)),
+			Message: fmt.Sprintf("Select the resources that %s uses", output.WithHighLightFormat(r.Name)),
 			Options: labels,
 		})
 		if err != nil {
@@ -205,8 +304,14 @@ func promptUsedBy(
 	console input.Console,
 	p PromptOptions) ([]string, error) {
 	svc := []string{}
+	isHost := strings.HasPrefix(string(r.Type), "host.")
 	for _, other := range p.PrjConfig.Resources {
-		if strings.HasPrefix(string(other.Type), "host.") && !slices.Contains(r.Uses, other.Name) {
+		otherIsHost := strings.HasPrefix(string(other.Type), "host.")
+		// Linking between different host types is not supported yet
+		if isHost && otherIsHost && r.Type != other.Type {
+			continue
+		}
+		if otherIsHost && !slices.Contains(other.Uses, r.Name) {
 			svc = append(svc, other.Name)
 		}
 	}

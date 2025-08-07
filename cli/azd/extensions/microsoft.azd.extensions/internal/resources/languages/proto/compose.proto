@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext";
+option csharp_namespace = "Microsoft.Azd";
+
+import "models.proto";
+
+service ComposeService {
+  // ListResources retrieves all configured composability resources in the current project.
+  rpc ListResources(EmptyRequest) returns (ListResourcesResponse);
+
+  // GetResource retrieves the configuration of a specific named composability resource.
+  rpc GetResource(GetResourceRequest) returns (GetResourceResponse);
+
+  // ListResourceTypes retrieves all supported composability resource types.
+  rpc ListResourceTypes(EmptyRequest) returns (ListResourceTypesResponse);
+
+  // GetResourceType retrieves the schema of a specific named composability resource type.
+  rpc GetResourceType(GetResourceTypeRequest) returns (GetResourceTypeResponse);
+
+  // AddResource adds a new composability resource to the current project.
+  rpc AddResource(AddResourceRequest) returns (AddResourceResponse);
+}
+
+// ListResourcesResponse is the response of ListResources operation.
+message ListResourcesResponse {
+  repeated ComposedResource resources = 1;
+}
+
+// GetResourceRequest is a request to get a specific composability resource.
+message GetResourceRequest {
+  string name = 1;
+}
+
+// GetResourceResponse is the response of GetResource operation.
+message GetResourceResponse {
+  ComposedResource resource = 1;
+}
+
+// ListResourceTypesResponse is the response of ListResourceTypes operation.
+message ListResourceTypesResponse {
+  repeated ComposedResourceType resource_types = 1;
+}
+
+// GetResourceTypeRequest is a request to get a specific composability resource type.
+message GetResourceTypeRequest {
+  string type_name = 1;
+}
+
+// GetResourceTypeResponse is the response of GetResourceType operation.
+message GetResourceTypeResponse {
+  ComposedResourceType resource_type = 1;
+}
+
+// AddResourceRequest is a request to add a new composability resource.
+message AddResourceRequest {
+  ComposedResource resource = 1;
+}
+
+// AddResourceResponse is the response of AddResource operation.
+message AddResourceResponse {
+  ComposedResource resource = 1;
+}
+
+// ComposedResource represents a composability resource in an AZD project.
+message ComposedResource {
+  string name = 1;
+  string type = 2;
+  bytes config = 3;
+  repeated string uses = 4;
+}
+
+// ComposedResourceType represents a type of composability resource.
+message ComposedResourceType {
+  string type_name = 1;
+  bytes schema = 2;
+}

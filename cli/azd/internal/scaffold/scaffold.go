@@ -33,6 +33,10 @@ func Load() (*template.Template, error) {
 		"lower":            strings.ToLower,
 		"alphaSnakeUpper":  AlphaSnakeUpper,
 		"formatParam":      FormatParameter,
+		"hasACA":           HasACA,
+		"hasAppService":    HasAppService,
+		"isACA":            IsACA,
+		"isAppService":     IsAppService,
 	}
 
 	t, err := template.New("templates").
@@ -71,8 +75,18 @@ func Execute(
 func supportingFiles(spec InfraSpec) []string {
 	files := []string{"/abbreviations.json"}
 
-	if len(spec.Services) > 0 {
+	if HasACA(spec.Services) {
 		files = append(files, "/modules/fetch-container-image.bicep")
+	}
+
+	if len(spec.Existing) > 0 {
+		files = append(files,
+			"/modules/role-assignment.bicep",
+			"/modules/role-assignment.json")
+	}
+
+	if spec.AiFoundryProject != nil && spec.AISearch != nil {
+		files = append(files, "/modules/ai-search-conn.bicep")
 	}
 
 	return files
@@ -109,7 +123,7 @@ func ExecInfra(
 			return err
 		}
 
-		return os.WriteFile(target, contents, d.Type().Perm())
+		return os.WriteFile(target, contents, osutil.PermissionFile)
 	})
 	if err != nil {
 		return fmt.Errorf("writing infrastructure: %w", err)
@@ -147,6 +161,13 @@ func ExecInfraFs(
 	err = executeToFS(fs, t, "main.parameters.json", "main.parameters.json", spec)
 	if err != nil {
 		return nil, fmt.Errorf("scaffolding main.parameters.json: %w", err)
+	}
+
+	if spec.AiFoundryProject != nil {
+		err = executeToFS(fs, t, "ai-project.bicep", "ai-project.bicep", spec)
+		if err != nil {
+			return nil, fmt.Errorf("scaffolding ai-foundry-models.bicep: %w", err)
+		}
 	}
 
 	return fs, nil
@@ -200,22 +221,42 @@ func executeToFS(targetFS *memfs.FS, tmpl *template.Template, name string, path 
 }
 
 func preExecExpand(spec *InfraSpec) {
-	// postgres requires specific password seeding parameters
+	// postgres and mysql requires specific password seeding parameters
 	if spec.DbPostgres != nil {
 		spec.Parameters = append(spec.Parameters,
 			Parameter{
-				Name:   "databasePassword",
-				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} databasePassword)",
+				Name:   "postgresDatabasePassword",
+				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} postgres-password)",
+				Type:   "string",
+				Secret: true,
+			})
+	}
+	if spec.DbMySql != nil {
+		spec.Parameters = append(spec.Parameters,
+			Parameter{
+				Name:   "mysqlDatabasePassword",
+				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} mysql-password)",
 				Type:   "string",
 				Secret: true,
 			})
 	}
 
 	for _, svc := range spec.Services {
-		// containerapp requires a global '_exist' parameter for each service
-		spec.Parameters = append(spec.Parameters,
-			containerAppExistsParameter(svc.Name))
-		spec.Parameters = append(spec.Parameters,
-			serviceDefPlaceholder(svc.Name))
+		if svc.Host == ContainerAppKind {
+			// containerapp requires a global '_exist' parameter for each service
+			spec.Parameters = append(spec.Parameters,
+				containerAppExistsParameter(svc.Name))
+		}
 	}
+
+	for _, res := range spec.Existing {
+		// each existing resource adds a parameter declaration input for its resource id
+		spec.Parameters = append(spec.Parameters,
+			Parameter{
+				Name:  res.Name + "Id",
+				Value: fmt.Sprintf("${%s}", res.ResourceIdEnvVar),
+				Type:  "string",
+			})
+	}
+
 }

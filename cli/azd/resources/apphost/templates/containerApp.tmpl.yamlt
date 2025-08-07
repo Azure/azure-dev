@@ -90,6 +90,9 @@ properties:
 {{- range $arg := .Args}}
           - {{$arg}}
 {{- end}}
+{{- if ne .Entrypoint "" }}
+        command: [{{ .Entrypoint }}]
+{{- end}}
 {{- end}}
         env:
           - name: AZURE_CLIENT_ID

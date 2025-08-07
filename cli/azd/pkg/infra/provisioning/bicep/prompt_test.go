@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -67,7 +68,7 @@ func TestPromptForParameter(t *testing.T) {
 
 			value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 				Type: tc.paramType,
-			})
+			}, nil)
 
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, value)
@@ -191,7 +192,7 @@ func TestPromptForParameterValidation(t *testing.T) {
 				return ret, nil
 			})
 
-			value, err := p.promptForParameter(*mockContext.Context, "testParam", tc.param)
+			value, err := p.promptForParameter(*mockContext.Context, "testParam", tc.param, nil)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, value)
 
@@ -227,7 +228,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 	value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "string",
 		AllowedValues: to.Ptr([]any{"three", "good", "choices"}),
-	})
+	}, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "good", value)
@@ -235,7 +236,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 	value, err = p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
 		Type:          "int",
 		AllowedValues: to.Ptr([]any{10, 20, 30}),
-	})
+	}, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, 20, value)
@@ -295,7 +296,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 		Metadata: map[string]json.RawMessage{
 			"azd": json.RawMessage(`{"type": "location"}`),
 		},
-	})
+	}, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "eastus2", value)
@@ -313,7 +314,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 			"azd": json.RawMessage(`{"type": "location"}`),
 		},
 		AllowedValues: &[]any{"westus"},
-	})
+	}, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, "westus", value)
@@ -323,4 +324,173 @@ type mockCurrentPrincipal struct{}
 
 func (m *mockCurrentPrincipal) CurrentPrincipalId(_ context.Context) (string, error) {
 	return "11111111-1111-1111-1111-111111111111", nil
+}
+
+func (m *mockCurrentPrincipal) CurrentPrincipalType(_ context.Context) (provisioning.PrincipalType, error) {
+	return provisioning.UserType, nil
+}
+
+func TestPromptForParameterOverrideDefault(t *testing.T) {
+	t.Parallel()
+
+	mockContext := mocks.NewMockContext(context.Background())
+
+	prepareBicepMocks(mockContext)
+
+	p := createBicepProvider(t, mockContext)
+
+	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return strings.Contains(options.Message, "for the 'testParam' infrastructure parameter")
+	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+		require.Equal(t, 3, len(options.Options))
+		require.Equal(t, "good", options.DefaultValue)
+		return 1, nil
+	})
+
+	value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
+		Type:          "string",
+		AllowedValues: to.Ptr([]any{"three", "good", "choices"}),
+		Metadata: map[string]json.RawMessage{
+			"azd": json.RawMessage(`{"default": "good"}`),
+		},
+	}, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, "good", value)
+}
+
+func TestPromptForParameterOverrideDefaultError(t *testing.T) {
+	t.Parallel()
+
+	mockContext := mocks.NewMockContext(context.Background())
+
+	prepareBicepMocks(mockContext)
+
+	p := createBicepProvider(t, mockContext)
+
+	_, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
+		Type:          "string",
+		AllowedValues: to.Ptr([]any{"three", "good", "choices"}),
+		Metadata: map[string]json.RawMessage{
+			"azd": json.RawMessage(`{"default": "other"}`),
+		},
+	}, nil)
+
+	require.Error(t, err)
+}
+
+func TestPromptForParameterEmptyAllowedValuesError(t *testing.T) {
+	t.Parallel()
+
+	mockContext := mocks.NewMockContext(context.Background())
+
+	prepareBicepMocks(mockContext)
+
+	p := createBicepProvider(t, mockContext)
+
+	_, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
+		Type:          "string",
+		AllowedValues: to.Ptr([]any{}),
+	}, nil)
+
+	require.Error(t, err)
+}
+
+func TestPromptForParameterBoolDefaultType(t *testing.T) {
+	t.Parallel()
+
+	mockContext := mocks.NewMockContext(context.Background())
+
+	prepareBicepMocks(mockContext)
+
+	p := createBicepProvider(t, mockContext)
+
+	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return strings.Contains(options.Message, "for the 'testParam' infrastructure parameter")
+	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+		require.Equal(t, 2, len(options.Options))
+		require.Equal(t, "True", options.DefaultValue)
+		return 1, nil
+	})
+
+	value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
+		Type: "bool",
+		Metadata: map[string]json.RawMessage{
+			"azd": json.RawMessage(`{"default": true}`)},
+	}, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, true, value)
+}
+
+func TestPromptForParameterBoolDefaultStringType(t *testing.T) {
+	t.Parallel()
+
+	mockContext := mocks.NewMockContext(context.Background())
+
+	prepareBicepMocks(mockContext)
+
+	p := createBicepProvider(t, mockContext)
+
+	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return strings.Contains(options.Message, "for the 'testParam' infrastructure parameter")
+	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+		require.Equal(t, 2, len(options.Options))
+		require.Equal(t, "False", options.DefaultValue)
+		return 0, nil
+	})
+
+	value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
+		Type: "bool",
+		Metadata: map[string]json.RawMessage{
+			"azd": json.RawMessage(`{"default": "false"}`)},
+	}, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, false, value)
+}
+
+func TestPromptForParameterNumberDefaultType(t *testing.T) {
+	t.Parallel()
+
+	mockContext := mocks.NewMockContext(context.Background())
+
+	prepareBicepMocks(mockContext)
+
+	p := createBicepProvider(t, mockContext)
+
+	mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+		return strings.Contains(options.Message, "for the 'testParam' infrastructure parameter")
+	}).Respond("33")
+
+	value, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
+		Type: "int",
+		Metadata: map[string]json.RawMessage{
+			"azd": json.RawMessage(`{"default": 33}`)},
+	}, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, 33, value)
+}
+
+func TestPromptForParameterNumberDefaultStringTypeError(t *testing.T) {
+	t.Parallel()
+
+	mockContext := mocks.NewMockContext(context.Background())
+
+	prepareBicepMocks(mockContext)
+
+	p := createBicepProvider(t, mockContext)
+
+	mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+		return strings.Contains(options.Message, "for the 'testParam' infrastructure parameter")
+	}).Respond("33")
+
+	_, err := p.promptForParameter(*mockContext.Context, "testParam", azure.ArmTemplateParameterDefinition{
+		Type: "int",
+		Metadata: map[string]json.RawMessage{
+			"azd": json.RawMessage(`{"default": "33"}`)},
+	}, nil)
+
+	require.Error(t, err)
 }

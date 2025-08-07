@@ -64,7 +64,8 @@ func (i *ProvisionFlags) bindCommon(local *pflag.FlagSet, global *internal.Globa
 		&i.ignoreDeploymentState,
 		"no-state",
 		false,
-		"Do not use latest Deployment State (bicep only).")
+		"(Bicep only) Forces a fresh deployment based on current Bicep template files, "+
+			"ignoring any stored deployment state.")
 
 	i.EnvFlag = &internal.EnvFlag{}
 	i.EnvFlag.Bind(local, global)
@@ -93,7 +94,7 @@ func NewProvisionFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *inter
 func NewProvisionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "provision",
-		Short: "Provision the Azure resources for an application.",
+		Short: "Provision Azure resources for your project.",
 	}
 }
 

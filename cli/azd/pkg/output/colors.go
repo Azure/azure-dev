@@ -16,7 +16,7 @@ func WithLinkFormat(link string, a ...interface{}) string {
 
 // withHighLightFormat creates string with highlight-looking color
 func WithHighLightFormat(text string, a ...interface{}) string {
-	return color.CyanString(text, a...)
+	return color.HiBlueString(text, a...)
 }
 
 func WithErrorFormat(text string, a ...interface{}) string {
@@ -35,8 +35,12 @@ func WithGrayFormat(text string, a ...interface{}) string {
 	return color.HiBlackString(text, a...)
 }
 
+func WithHintFormat(text string, a ...interface{}) string {
+	return color.MagentaString(text, a...)
+}
+
 func WithBold(text string, a ...interface{}) string {
-	format := color.New(color.Bold)
+	format := color.New(color.FgHiWhite, color.Bold)
 	return format.Sprintf(text, a...)
 }
 

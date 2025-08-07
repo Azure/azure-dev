@@ -5,7 +5,6 @@ package pipeline
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -16,6 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	msi "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
+	"github.com/azure/azure-dev/cli/azd/pkg/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -29,7 +32,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/google/uuid"
@@ -48,6 +53,7 @@ const (
 	lookupKindPrincipleName         servicePrincipalLookupKind = "principal-name"
 	lookupKindEnvironmentVariable   servicePrincipalLookupKind = "environment-variable"
 	AzurePipelineClientIdEnvVarName string                     = "AZURE_PIPELINE_CLIENT_ID"
+	AzurePipelineMsiResourceId      string                     = "AZURE_PIPELINE_MSI_CLIENT_ID"
 )
 
 var (
@@ -96,6 +102,11 @@ type PipelineManager struct {
 	infra             *project.Infra
 	userConfigManager config.UserConfigManager
 	keyVaultService   keyvault.KeyVaultService
+	prjConfig         *project.ProjectConfig
+	ciProviderType    ciProviderType
+	msiService        armmsi.ArmMsiService
+	prompter          prompt.Prompter
+	dotnetCli         *dotnet.Cli
 }
 
 func NewPipelineManager(
@@ -111,6 +122,9 @@ func NewPipelineManager(
 	importManager *project.ImportManager,
 	userConfigManager config.UserConfigManager,
 	keyVaultService keyvault.KeyVaultService,
+	msiService armmsi.ArmMsiService,
+	prompter prompt.Prompter,
+	dotnetCli *dotnet.Cli,
 ) (*PipelineManager, error) {
 	pipelineProvider := &PipelineManager{
 		azdCtx:            azdCtx,
@@ -124,6 +138,9 @@ func NewPipelineManager(
 		importManager:     importManager,
 		userConfigManager: userConfigManager,
 		keyVaultService:   keyVaultService,
+		msiService:        msiService,
+		prompter:          prompter,
+		dotnetCli:         dotnetCli,
 	}
 
 	// check that scm and ci providers are set
@@ -224,7 +241,10 @@ func servicePrincipal(
 
 // Configure is the main function from the pipeline manager which takes care
 // of creating or setting up the git project, the ci pipeline and the Azure connection.
-func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (result *PipelineConfigResult, err error) {
+func (pm *PipelineManager) Configure(
+	ctx context.Context, projectName string, infra *project.Infra) (result *PipelineConfigResult, err error) {
+	pm.infra = infra
+
 	// check all required tools are installed
 	requiredTools, err := pm.requiredTools(ctx)
 	if err != nil {
@@ -234,6 +254,13 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 		return result, err
 	}
 
+	// pipeline definition files
+	err = pm.ensurePipelineDefinition(ctx)
+	if err != nil {
+		return result, fmt.Errorf("ensuring pipeline definition: %w", err)
+	}
+
+	// ServiceManagementReference can be set as user config (~/.azd/config.json)
 	userConfig, err := pm.userConfigManager.Load()
 	if err != nil {
 		return result, fmt.Errorf("loading user configuration: %w", err)
@@ -245,7 +272,6 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 		}
 	}
 
-	infra := pm.infra
 	// run pre-config validations.
 	rootPath := pm.azdCtx.ProjectDirectory()
 	updatedConfig, errorsFromPreConfig := pm.preConfigureCheck(ctx, infra.Options, rootPath)
@@ -269,137 +295,339 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 		)
 	}
 
+	// if AZURE_PIPELINE_MSI_CLIENT_ID is defined, the project is using MSI
+	// When both AZURE_PIPELINE_CLIENT_ID and AZURE_PIPELINE_MSI_CLIENT_ID are defined, the MSI will be used
+	// This could be the case from projects which migrated from SP to MSI
+	msiResourceId := pm.env.Getenv(AzurePipelineMsiResourceId)
+	usingMsi := msiResourceId != ""
+	subscriptionId := pm.env.GetSubscriptionId()
+
 	// see if SP already exists - This step will not create the SP if it doesn't exist.
 	spConfig, err := servicePrincipal(
-		ctx, pm.env.Getenv(AzurePipelineClientIdEnvVarName), pm.env.GetSubscriptionId(), pm.args, pm.entraIdService)
+		ctx, pm.env.Getenv(AzurePipelineClientIdEnvVarName), subscriptionId, pm.args, pm.entraIdService)
 	if err != nil {
 		return result, err
 	}
 
-	// Update the message depending on the SP already exists or not
-	var displayMsg string
-	if spConfig.servicePrincipal == nil {
-		displayMsg = fmt.Sprintf("Creating service principal %s", spConfig.applicationName)
-	} else {
-		displayMsg = fmt.Sprintf("Updating service principal %s (%s)",
-			spConfig.servicePrincipal.DisplayName,
-			spConfig.servicePrincipal.AppId)
+	usingAppRegistration := spConfig.servicePrincipal != nil
+	if usingMsi && usingAppRegistration {
+		pm.console.Message(ctx, output.WithWarningFormat("Found both SP and MSI client id. Using MSI client id. "+
+			"Remove AZURE_PIPELINE_CLIENT_ID from the environment to remove this warning."))
+		usingAppRegistration = false // MSI takes precedence over SP
 	}
 
-	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
-	description := fmt.Sprintf("Created by Azure Developer CLI for project: %s", projectName)
-	options := entraid.CreateOrUpdateServicePrincipalOptions{
-		RolesToAssign:              pm.args.PipelineRoleNames,
-		Description:                &description,
-		ServiceManagementReference: smr,
-	}
-	servicePrincipal, err := pm.entraIdService.CreateOrUpdateServicePrincipal(
-		ctx,
-		pm.env.GetSubscriptionId(),
-		spConfig.appIdOrName,
-		options)
-
-	if err != nil {
-		pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
-		return result, fmt.Errorf("failed to create or update service principal: %w", err)
-	}
-
-	if !strings.Contains(displayMsg, servicePrincipal.AppId) {
-		displayMsg += fmt.Sprintf(" (%s)", servicePrincipal.AppId)
-	}
-	pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
-
-	// Set in .env to be retrieved for any additional runs
-	pm.env.DotenvSet(AzurePipelineClientIdEnvVarName, servicePrincipal.AppId)
-	if err := pm.envManager.Save(ctx, pm.env); err != nil {
-		return result, fmt.Errorf("failed to save environment: %w", err)
-	}
-
-	repoSlug := gitRepoInfo.owner + "/" + gitRepoInfo.repoName
-	displayMsg = fmt.Sprintf("Configuring repository %s to use credentials for %s", repoSlug, spConfig.applicationName)
-	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
-
-	subscriptionId := pm.env.GetSubscriptionId()
-	credentials := &entraid.AzureCredentials{
-		ClientId:       servicePrincipal.AppId,
-		TenantId:       *servicePrincipal.AppOwnerOrganizationId,
-		SubscriptionId: subscriptionId,
-	}
-
-	// Get the requested credential options from the CI provider
-	credentialOptions, err := pm.ciProvider.credentialOptions(
-		ctx,
-		gitRepoInfo,
-		infra.Options,
-		PipelineAuthType(pm.args.PipelineAuthTypeName),
-		credentials,
-	)
-	if err != nil {
-		return result, fmt.Errorf("failed to get credential options: %w", err)
-	}
-
-	// Enable client credentials if requested
-	if credentialOptions.EnableClientCredentials {
-		spinnerMessage := "Configuring client credentials for service principal"
-		pm.console.ShowSpinner(ctx, spinnerMessage, input.Step)
-
-		creds, err := pm.entraIdService.ResetPasswordCredentials(ctx, subscriptionId, servicePrincipal.AppId)
-		pm.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
+	skipAuth := false
+	if !usingMsi && !usingAppRegistration {
+		log.Printf("Authentication mode has not been set. Prompt user if they want to set it up now.")
+		const optionMsi = "Federated User Managed Identity (MSI + OIDC)"
+		const optionOidc = "Federated Service Principal (SP + OIDC)"
+		const optionClientSec = "Client Credentials (SP + Secret)"
+		const optionSkip = "Skip authentication setup (for manually configured pipelines or existing set up)"
+		options := []string{
+			optionMsi,
+			optionOidc,
+			optionClientSec,
+			optionSkip,
+		}
+		selectedOption, err := pm.console.Select(ctx, input.ConsoleOptions{
+			Message:      "Select how to authenticate the pipeline to Azure",
+			Options:      options,
+			DefaultValue: optionMsi,
+		})
 		if err != nil {
-			return result, fmt.Errorf("failed to reset password credentials: %w", err)
+			return result, fmt.Errorf("prompting for authentication type: %w", err)
+		}
+		switch options[selectedOption] {
+		case optionMsi:
+			usingMsi = true
+		case optionOidc, optionClientSec:
+			usingAppRegistration = true
+		case optionSkip:
+			skipAuth = true
+		}
+	}
+
+	// Service Principal or MSI are both handled by authConfiguration as a top layer abstraction.
+	var authConfig *authConfiguration
+
+	// *************************** Create or update service principal ***************************
+	if !skipAuth && usingAppRegistration {
+		// Update the message depending on the SP already exists or not
+		var displayMsg string
+		if spConfig.servicePrincipal == nil {
+			displayMsg = fmt.Sprintf("Creating service principal %s", spConfig.applicationName)
+		} else {
+			displayMsg = fmt.Sprintf("Updating service principal %s (%s)",
+				spConfig.servicePrincipal.DisplayName,
+				spConfig.servicePrincipal.AppId)
 		}
 
-		credentials = creds
+		pm.console.ShowSpinner(ctx, displayMsg, input.Step)
+		description := fmt.Sprintf("Created by Azure Developer CLI for project: %s", projectName)
+		options := entraid.CreateOrUpdateServicePrincipalOptions{
+			RolesToAssign:              pm.args.PipelineRoleNames,
+			Description:                &description,
+			ServiceManagementReference: smr,
+		}
+		servicePrincipal, err := pm.entraIdService.CreateOrUpdateServicePrincipal(
+			ctx,
+			subscriptionId,
+			spConfig.appIdOrName,
+			options)
+
+		if err != nil {
+			pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
+			return result, fmt.Errorf("failed to create or update service principal: %w", err)
+		}
+
+		if !strings.Contains(displayMsg, servicePrincipal.AppId) {
+			displayMsg += fmt.Sprintf(" (%s)", servicePrincipal.AppId)
+		}
+		pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
+
+		// Set in .env to be retrieved for any additional runs
+		pm.env.DotenvSet(AzurePipelineClientIdEnvVarName, servicePrincipal.AppId)
+		if err := pm.envManager.Save(ctx, pm.env); err != nil {
+			return result, fmt.Errorf("failed to save environment: %w", err)
+		}
+
+		authConfig = &authConfiguration{
+			AzureCredentials: &entraid.AzureCredentials{
+				ClientId:       servicePrincipal.AppId,
+				TenantId:       *servicePrincipal.AppOwnerOrganizationId,
+				SubscriptionId: subscriptionId,
+			},
+			sp: servicePrincipal,
+		}
 	}
 
-	// Enable federated credentials if requested
-	if credentialOptions.EnableFederatedCredentials {
-		createdCredentials, err := pm.entraIdService.ApplyFederatedCredentials(
-			ctx, subscriptionId,
-			servicePrincipal.AppId,
-			credentialOptions.FederatedCredentialOptions,
+	// *************************** Create or update MSI ***************************
+	if !skipAuth && usingMsi {
+		// ************************** Pick or create a new MSI **************************
+		var displayMsg string
+		var msIdentity msi.Identity
+		if msiResourceId == "" {
+			// Prompt for pick or create a new MSI
+			const optionCreate = "Create new User Managed Identity (MSI)"
+			const optionUseExisting = "Use existing User Managed Identity (MSI)"
+			options := []string{
+				optionCreate,
+				optionUseExisting,
+			}
+			selectedOption, err := pm.console.Select(ctx, input.ConsoleOptions{
+				Message:      "Do you want to create a new User Managed Identity (MSI) or use an existing one?",
+				Options:      options,
+				DefaultValue: optionCreate,
+			})
+			if err != nil {
+				return result, fmt.Errorf("prompting for MSI option: %w", err)
+			}
+			if options[selectedOption] == optionCreate {
+				// pick a resource group and location for the new MSI
+				location, err := pm.prompter.PromptLocation(
+					ctx, subscriptionId, "Select the location to create the MSI", nil, nil)
+				if err != nil {
+					return nil, fmt.Errorf("prompting for MSI location: %w", err)
+				}
+				rg, err := pm.prompter.PromptResourceGroupFrom(
+					ctx, subscriptionId, location, prompt.PromptResourceGroupFromOptions{
+						DefaultName:          "rg-" + projectName + "-msi",
+						NewResourceGroupHelp: "The name of the new resource group where the MSI will be created.",
+					})
+				if err != nil {
+					return nil, fmt.Errorf("prompting for resource group: %w", err)
+				}
+
+				displayMsg = fmt.Sprintf("Creating User Managed Identity (MSI) for %s", projectName)
+				pm.console.ShowSpinner(ctx, displayMsg, input.Step)
+				// Create a new MSI
+				newMsi, err := pm.msiService.CreateUserIdentity(ctx, subscriptionId, rg, location, "msi-"+projectName)
+				if err != nil {
+					pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
+					return result, fmt.Errorf("failed to create User Managed Identity (MSI): %w", err)
+				}
+				msIdentity = newMsi
+			} else {
+				// List existing MSIs and let the user select one
+				msIdentities, err := pm.msiService.ListUserIdentities(ctx, subscriptionId)
+				if err != nil {
+					return result, fmt.Errorf("failed to list User Managed Identities (MSI): %w", err)
+				}
+				if len(msIdentities) == 0 {
+					return result, fmt.Errorf("no User Managed Identities (MSI) found in subscription %s", subscriptionId)
+				}
+				// Prompt the user to select an existing MSI
+				msiOptions := make([]string, len(msIdentities))
+				for i, msi := range msIdentities {
+					msiData, err := arm.ParseResourceID(*msi.ID)
+					if err != nil {
+						return result, fmt.Errorf("parsing MSI resource id: %w", err)
+					}
+					msiOptions[i] = fmt.Sprintf("%2d. %s (%s)", i+1, *msi.Name, msiData.ResourceGroupName)
+				}
+				selectedOption, err := pm.console.Select(ctx, input.ConsoleOptions{
+					Message:      "Select an existing User Managed Identity (MSI) to use:",
+					Options:      msiOptions,
+					DefaultValue: msiOptions[0],
+				})
+				if err != nil {
+					return result, fmt.Errorf("prompting for existing MSI: %w", err)
+				}
+				msIdentity = msIdentities[selectedOption]
+			}
+		} else {
+			displayMsg = fmt.Sprintf("Updating MSI %s", msiResourceId)
+			pm.console.ShowSpinner(ctx, displayMsg, input.Step)
+			// Get the existing MSI by resource ID
+			existingMsi, err := pm.msiService.GetUserIdentity(ctx, msiResourceId)
+			if err != nil {
+				pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
+				return result, fmt.Errorf("failed to create User Managed Identity (MSI): %w", err)
+			}
+			msIdentity = existingMsi
+		}
+
+		displayMsg = fmt.Sprintf("Assigning roles to User Managed Identity (MSI) %s", *msIdentity.Name)
+		pm.console.ShowSpinner(ctx, displayMsg, input.Step)
+		// ************************** Role Assign **************************
+		err = pm.entraIdService.EnsureRoleAssignments(
+			ctx,
+			subscriptionId,
+			pm.args.PipelineRoleNames,
+			// EnsureRoleAssignments uses the ServicePrincipal ID and the DisplayName.
+			// We are adapting the MSI to work with the same method as a regular Service Principal, by pulling name and ID.
+			&graphsdk.ServicePrincipal{
+				Id:          msIdentity.Properties.PrincipalID,
+				DisplayName: *msIdentity.Name,
+			},
+		)
+		pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
+		if err != nil {
+			return result, fmt.Errorf("failed to assign role to User Managed Identity (MSI): %w", err)
+		}
+
+		// Set in .env to be retrieved for any additional runs
+		pm.env.DotenvSet(AzurePipelineMsiResourceId, *msIdentity.ID)
+		if err := pm.envManager.Save(ctx, pm.env); err != nil {
+			return result, fmt.Errorf("failed to save environment: %w", err)
+		}
+
+		authConfig = &authConfiguration{
+			AzureCredentials: &entraid.AzureCredentials{
+				ClientId:       *msIdentity.Properties.ClientID,
+				TenantId:       *msIdentity.Properties.TenantID,
+				SubscriptionId: subscriptionId,
+			},
+			msi: &msIdentity,
+		}
+	}
+
+	if !skipAuth {
+		repoSlug := gitRepoInfo.owner + "/" + gitRepoInfo.repoName
+		displayMsg := fmt.Sprintf("Configuring repository %s to use credentials for %s", repoSlug, spConfig.applicationName)
+		pm.console.ShowSpinner(ctx, displayMsg, input.Step)
+
+		// Get the requested credential options from the CI provider
+		credentialOptions, err := pm.ciProvider.credentialOptions(
+			ctx,
+			gitRepoInfo,
+			infra.Options,
+			PipelineAuthType(pm.args.PipelineAuthTypeName),
+			authConfig.AzureCredentials,
 		)
 		if err != nil {
-			return result, fmt.Errorf("failed to create federated credentials: %w", err)
+			return result, fmt.Errorf("failed to get credential options: %w", err)
 		}
 
-		for _, credential := range createdCredentials {
-			pm.console.MessageUxItem(
-				ctx,
-				&ux.DisplayedResource{
-					Type: fmt.Sprintf("Federated identity credential for %s", pm.ciProvider.Name()),
-					Name: fmt.Sprintf("subject %s", credential.Subject),
-				},
-			)
+		// Enable client credentials if requested
+		if credentialOptions.EnableClientCredentials {
+			spinnerMessage := "Configuring client credentials for service principal"
+			pm.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+
+			creds, err := pm.entraIdService.ResetPasswordCredentials(ctx, subscriptionId, authConfig.ClientId)
+			pm.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
+			if err != nil {
+				return result, fmt.Errorf("failed to reset password credentials: %w", err)
+			}
+
+			authConfig.AzureCredentials = creds
+		}
+
+		// Enable federated credentials if requested
+		if credentialOptions.EnableFederatedCredentials {
+			type fedCredentialData struct{ Name, Subject, Issuer string }
+			var createdCredentials []fedCredentialData
+			if usingMsi {
+				// convert fedCredentials from msGraph to armmsi.FederatedIdentityCredential
+				armFedCreds := make([]msi.FederatedIdentityCredential, len(credentialOptions.FederatedCredentialOptions))
+				for i, fedCred := range credentialOptions.FederatedCredentialOptions {
+					armFedCreds[i] = msi.FederatedIdentityCredential{
+						Name: to.Ptr(fedCred.Name),
+						Properties: &msi.FederatedIdentityCredentialProperties{
+							Subject:   to.Ptr(fedCred.Subject),
+							Issuer:    to.Ptr(fedCred.Issuer),
+							Audiences: to.SliceOfPtrs(fedCred.Audiences...),
+						},
+					}
+				}
+
+				creds, err := pm.msiService.ApplyFederatedCredentials(ctx, subscriptionId, *authConfig.msi.ID, armFedCreds)
+				if err != nil {
+					return result, fmt.Errorf("failed to create federated credentials: %w", err)
+				}
+
+				// Convert the armmsi.FederatedIdentityCredential to fedCredentialData for display
+				for _, c := range creds {
+					createdCredentials = append(createdCredentials, fedCredentialData{
+						Name:    *c.Name,
+						Subject: *c.Properties.Subject,
+						Issuer:  *c.Properties.Issuer,
+					})
+				}
+			} else {
+				creds, err := pm.entraIdService.ApplyFederatedCredentials(
+					ctx, subscriptionId,
+					authConfig.ClientId,
+					credentialOptions.FederatedCredentialOptions,
+				)
+				if err != nil {
+					return result, fmt.Errorf("failed to create federated credentials: %w", err)
+				}
+				for _, c := range creds {
+					createdCredentials = append(createdCredentials, fedCredentialData{
+						Name:    c.Name,
+						Subject: c.Subject,
+						Issuer:  c.Issuer,
+					})
+				}
+			}
+
+			for _, credential := range createdCredentials {
+				pm.console.MessageUxItem(
+					ctx,
+					&ux.DisplayedResource{
+						Type: fmt.Sprintf("Federated identity credential for %s", pm.ciProvider.Name()),
+						Name: fmt.Sprintf("subject %s", credential.Subject),
+					},
+				)
+			}
+		}
+
+		err = pm.ciProvider.configureConnection(
+			ctx,
+			gitRepoInfo,
+			infra.Options,
+			authConfig,
+			credentialOptions,
+		)
+
+		pm.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
+		if err != nil {
+			return result, err
 		}
 	}
 
-	err = pm.ciProvider.configureConnection(
-		ctx,
-		gitRepoInfo,
-		infra.Options,
-		servicePrincipal,
-		credentialOptions,
-		credentials,
-	)
-
-	pm.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
-	if err != nil {
-		return result, err
-	}
-
-	// Adding environment.AzdInitialEnvironmentConfigName as a secret to the pipeline as the base configuration for
-	// whenever a new environment is created. This means loading the local environment config into a pipeline secret which
-	// azd will use to restore the the config on CI
-	localEnvConfig, err := json.Marshal(pm.env.Config.ResolvedRaw())
-	if err != nil {
-		return result, fmt.Errorf("failed to marshal environment config: %w", err)
-	}
-
-	defaultAzdSecrets := map[string]string{
-		environment.AzdInitialEnvironmentConfigName: string(localEnvConfig),
-	}
-
+	defaultAzdSecrets := map[string]string{}
 	defaultAzdVariables := map[string]string{}
 	// If the user has set the resource group name as an environment variable, we need to pass it to the pipeline
 	// as this likely means rg-deployment
@@ -408,9 +636,12 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 	}
 
 	// Merge azd default variables and secrets with the ones defined on azure.yaml
-	pm.configOptions.variables, pm.configOptions.secrets = mergeProjectVariablesAndSecrets(
+	pm.configOptions.variables, pm.configOptions.secrets, err = mergeProjectVariablesAndSecrets(
 		pm.configOptions.projectVariables, pm.configOptions.projectSecrets,
-		defaultAzdVariables, defaultAzdSecrets, pm.env.Dotenv())
+		defaultAzdVariables, defaultAzdSecrets, pm.configOptions.providerParameters, pm.env.Dotenv())
+	if err != nil {
+		return result, fmt.Errorf("failed to merge variables and secrets: %w", err)
+	}
 
 	// resolve akvs secrets
 	// For each akvs in the secrets array:
@@ -427,11 +658,15 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 	}
 	// For each akvs in the variables array:
 	// azd must grant read access role to the pipelines's identity to read the akvs
-	displayMsg = "Assigning read access role for Key Vault to service principal"
+	displayMsg := "Assigning read access role for Key Vault"
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
 	kvAccounts := make(map[string]struct{})
 	for key, value := range pm.configOptions.variables {
 		if !strings.HasPrefix(value, "akvs://") {
+			continue
+		}
+
+		if skipAuth {
 			continue
 		}
 
@@ -449,7 +684,7 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 		allKvFromSub, err := pm.keyVaultService.ListSubscriptionVaults(ctx, akvs.SubscriptionId)
 		if err != nil {
 			return result, fmt.Errorf(
-				"assigning read access role for Key Vault to service principal: %w", err)
+				"assigning read access role for Key Vault for auth: %w", err)
 		}
 		var vaultResourceId string
 		foundKeyVault := slices.ContainsFunc(allKvFromSub, func(kv keyvault.Vault) bool {
@@ -465,14 +700,23 @@ func (pm *PipelineManager) Configure(ctx context.Context, projectName string) (r
 					"key vault '%s' not found in subscription '%s'", akvs.VaultName, akvs.SubscriptionId)
 		}
 
+		var spId string
+		if usingMsi {
+			spId = *authConfig.msi.Properties.PrincipalID
+		} else if usingAppRegistration {
+			spId = *authConfig.sp.Id
+		} else {
+			continue
+		}
 		// CreateRbac uses the azure-sdk RoleAssignmentsClient.Create() which creates or updates the role assignment
 		// We don't need to check if the role assignment already exists, the method will handle it.
 		err = pm.entraIdService.CreateRbac(
-			ctx, akvs.SubscriptionId, vaultResourceId, keyvault.RoleIdKeyVaultSecretsUser, *servicePrincipal.Id)
+			ctx, akvs.SubscriptionId, vaultResourceId, keyvault.RoleIdKeyVaultSecretsUser, spId)
 		if err != nil {
 			return result, fmt.Errorf(
 				"assigning read access role for Key Vault to service principal: %w", err)
 		}
+
 		// save the kvId to avoid assigning the role multiple times for the same key vault
 		kvAccounts[kvId] = struct{}{}
 	}
@@ -624,6 +868,15 @@ func (pm *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepositor
 	var err error
 	pm.console.ShowSpinner(ctx, checkGitMessage, input.Step)
 	defer pm.console.StopSpinner(ctx, checkGitMessage, input.GetStepResultFormat(err))
+
+	// For Aspire, AZD adds gitignore when missing
+	if isAspire := pm.importManager.HasAppHost(ctx, pm.prjConfig); isAspire {
+		log.Println("Adding .gitignore for Aspire project if missing")
+		if err := pm.dotnetCli.GitIgnore(ctx, repoPath, nil); err != nil {
+			// log the error but continue. This is not a critical error to hold up the pipeline setup.
+			log.Println("Failed to add .gitignore for Aspire project:", err)
+		}
+	}
 
 	// the warningCount makes sure we only ever show one single warning for the repo missing setup
 	// if there is no git repo, the warning is for no git repo detected, but if there is a git repo
@@ -790,57 +1043,13 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 		}
 		pipelineProvider = p
 	}
+	pm.ciProviderType = pipelineProvider
 
 	prjConfig, err := project.Load(ctx, projectPath)
 	if err != nil {
 		return fmt.Errorf("Loading project configuration: %w", err)
 	}
-
-	infra, err := pm.importManager.ProjectInfrastructure(ctx, prjConfig)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = infra.Cleanup() }()
-	pm.infra = infra
-
-	hasAppHost := pm.importManager.HasAppHost(ctx, prjConfig)
-
-	infraProvider, err := toInfraProviderType(string(pm.infra.Options.Provider))
-	if err != nil {
-		return err
-	}
-
-	// There are 2 possible options, for the git branch name, when running azd pipeline config:
-	// - There is not a git repo, so the branch name is empty. In this case, we default to "main".
-	// - There is a git repo and we can get the name of the current branch.
-	branchName := "main"
-	customBranchName, err := pm.gitCli.GetCurrentBranch(ctx, repoRoot)
-	// It is fine if we can't get the branch name, we will default to "main"
-	if err == nil {
-		branchName = customBranchName
-	}
-
-	// default auth type for all providers
-	authType := AuthTypeFederated
-	if pm.args.PipelineAuthTypeName == "" && infraProvider == infraProviderTerraform {
-		// empty arg for auth and terraform forces client credentials, otherwise, it will be federated
-		authType = AuthTypeClientCredentials
-	}
-
-	// Check and prompt for missing CI/CD files
-	if err := pm.checkAndPromptForProviderFiles(
-		ctx, projectProperties{
-			CiProvider:    pipelineProvider,
-			RepoRoot:      repoRoot,
-			InfraProvider: infraProvider,
-			HasAppHost:    hasAppHost,
-			BranchName:    branchName,
-			AuthType:      authType,
-			Variables:     prjConfig.Pipeline.Variables,
-			Secrets:       prjConfig.Pipeline.Secrets,
-		}); err != nil {
-		return err
-	}
+	pm.prjConfig = prjConfig
 
 	// Save the provider to the environment
 	if err := pm.savePipelineProviderToEnv(ctx, pipelineProvider, pm.env); err != nil {
@@ -871,12 +1080,6 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 
 	pm.scmProvider = scmProvider
 	pm.ciProvider = ciProvider
-
-	pm.configOptions = &configurePipelineOptions{
-		projectVariables:     slices.Clone(prjConfig.Pipeline.Variables),
-		projectSecrets:       slices.Clone(prjConfig.Pipeline.Secrets),
-		provisioningProvider: &pm.infra.Options,
-	}
 
 	return nil
 }
@@ -938,6 +1141,7 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, p
 			pipelineProviderFiles[props.CiProvider].DisplayName,
 			strings.Join(pipelineProviderFiles[props.CiProvider].PipelineDirectories, "\n"))
 		log.Println("Error:", message)
+		// Azdo needs a pipeline definition to create a pipeline. Not finding one is an error.
 		return errors.New(message)
 	}
 
@@ -1043,19 +1247,46 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		return fmt.Errorf("parsing embedded file %s: %w", embedFilePath, err)
 	}
 	builder := strings.Builder{}
-	err = tmpl.Execute(&builder, struct {
+	tmplContext := struct {
 		BranchName             string
 		FedCredLogIn           bool
 		InstallDotNetForAspire bool
 		Variables              []string
 		Secrets                []string
+		AlphaFeatures          []string
+		IsTerraform            bool
 	}{
 		BranchName:             props.BranchName,
 		FedCredLogIn:           props.AuthType == AuthTypeFederated,
 		InstallDotNetForAspire: props.HasAppHost,
 		Variables:              props.Variables,
 		Secrets:                props.Secrets,
-	})
+		AlphaFeatures:          props.RequiredAlphaFeatures,
+		IsTerraform:            props.InfraProvider == infraProviderTerraform,
+	}
+
+	// Apply provider parameters
+	for _, param := range props.providerParameters {
+		for _, envVarName := range param.EnvVarMapping {
+			if param.Secret {
+				tmplContext.Secrets = append(tmplContext.Secrets, envVarName)
+			} else {
+				tmplContext.Variables = append(tmplContext.Variables, envVarName)
+			}
+		}
+	}
+
+	if props.InfraProvider == infraProviderTerraform {
+		// terraform provider does not resolve this variables automatically, AZD needs to define them
+		tmplContext.Variables = append(tmplContext.Variables, "AZURE_LOCATION")
+		tmplContext.Variables = append(tmplContext.Variables, "AZURE_ENV_NAME")
+
+		if props.AuthType == AuthTypeClientCredentials {
+			tmplContext.Secrets = append(tmplContext.Secrets, "AZURE_CLIENT_SECRET")
+		}
+	}
+
+	err = tmpl.Execute(&builder, tmplContext)
 	if err != nil {
 		return fmt.Errorf("executing template: %w", err)
 	}
@@ -1158,5 +1389,72 @@ func resolveSmr(smrArg string, projectConfig config.Config, userConfig config.Co
 		return smr
 	}
 	// no smr configuration
+	return nil
+}
+
+// SetParameters adds parameter configuration for the manager to use during pipeline config.
+// Parameters passed here are automatically defined as variables or secrets in the pipeline without user explicitly
+// defining them in the azure.yaml -> pipeline file.
+// This is useful for provisioning providers to define a list of parameters that are required for the pipeline.
+// If parameters is nil, it means that the pipeline manager should not set up any parameters automatically.
+func (pm *PipelineManager) SetParameters(parameters []provisioning.Parameter) {
+	if pm.configOptions == nil {
+		pm.configOptions = &configurePipelineOptions{}
+	}
+	pm.configOptions.providerParameters = parameters
+}
+
+func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
+	// pipeline definition files
+	hasAppHost := pm.importManager.HasAppHost(ctx, pm.prjConfig)
+
+	infraProvider, err := toInfraProviderType(string(pm.infra.Options.Provider))
+	if err != nil {
+		return err
+	}
+
+	var requiredAlphaFeatures []string
+	if pm.infra.IsCompose {
+		requiredAlphaFeatures = append(requiredAlphaFeatures, "compose")
+	}
+	// There are 2 possible options, for the git branch name, when running azd pipeline config:
+	// - There is not a git repo, so the branch name is empty. In this case, we default to "main".
+	// - There is a git repo and we can get the name of the current branch.
+	branchName := "main"
+	projectDir := pm.azdCtx.ProjectDirectory()
+	repoRoot, err := pm.gitCli.GetRepoRoot(ctx, projectDir)
+	if err != nil {
+		repoRoot = projectDir
+		log.Printf("using project root as repo root, since git repo wasn't available: %s", err)
+	}
+	customBranchName, err := pm.gitCli.GetCurrentBranch(ctx, repoRoot)
+	// It is fine if we can't get the branch name, we will default to "main"
+	if err == nil {
+		branchName = customBranchName
+	}
+
+	// default auth type for all providers
+	authType := AuthTypeFederated
+
+	// Check and prompt for missing CI/CD files
+	err = pm.checkAndPromptForProviderFiles(
+		ctx, projectProperties{
+			CiProvider:            pm.ciProviderType,
+			RepoRoot:              repoRoot,
+			InfraProvider:         infraProvider,
+			HasAppHost:            hasAppHost,
+			BranchName:            branchName,
+			AuthType:              authType,
+			Variables:             pm.prjConfig.Pipeline.Variables,
+			Secrets:               pm.prjConfig.Pipeline.Secrets,
+			RequiredAlphaFeatures: requiredAlphaFeatures,
+			providerParameters:    pm.configOptions.providerParameters,
+		})
+	if err != nil {
+		return err
+	}
+	pm.configOptions.projectSecrets = slices.Clone(pm.prjConfig.Pipeline.Secrets)
+	pm.configOptions.projectVariables = slices.Clone(pm.prjConfig.Pipeline.Variables)
+	pm.configOptions.provisioningProvider = &pm.infra.Options
 	return nil
 }

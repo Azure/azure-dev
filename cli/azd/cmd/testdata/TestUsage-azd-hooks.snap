@@ -1,5 +1,5 @@
 
-Develop, test and run hooks for an application. (Beta)
+Develop, test and run hooks for a project.
 
 Usage
   azd hooks [command]

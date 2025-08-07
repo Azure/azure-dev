@@ -167,6 +167,26 @@ type DeploymentService interface {
 		resourceGroupName string,
 		deploymentName string,
 	) ([]*armresources.DeploymentOperation, error)
+	ValidatePreflightToSubscription(
+		ctx context.Context,
+		subscriptionId string,
+		location string,
+		deploymentName string,
+		armTemplate azure.RawArmTemplate,
+		parameters azure.ArmParameters,
+		tags map[string]*string,
+		options map[string]any,
+	) error
+	ValidatePreflightToResourceGroup(
+		ctx context.Context,
+		subscriptionId,
+		resourceGroup,
+		deploymentName string,
+		armTemplate azure.RawArmTemplate,
+		parameters azure.ArmParameters,
+		tags map[string]*string,
+		options map[string]any,
+	) error
 	WhatIfDeployToSubscription(
 		ctx context.Context,
 		subscriptionId string,
@@ -267,6 +287,10 @@ type AzCliDeploymentOutput struct {
 	Value interface{} `json:"value"`
 }
 
+func (o AzCliDeploymentOutput) Secured() bool {
+	return azure.IsSecuredARMType(o.Type)
+}
+
 type AzCliDeploymentResult struct {
 	Properties AzCliDeploymentResultProperties `json:"properties"`
 }
@@ -324,18 +348,22 @@ func CreateDeploymentOutput(rawOutputs interface{}) (result map[string]AzCliDepl
 	return result
 }
 
+func responseToDeploymentError(title string, respErr *azcore.ResponseError) error {
+	var errorText string
+	rawBody, err := io.ReadAll(respErr.RawResponse.Body)
+	if err != nil {
+		errorText = respErr.Error()
+	} else {
+		errorText = string(rawBody)
+	}
+	return NewAzureDeploymentError(title, errorText)
+}
+
 // Attempts to create an Azure Deployment error from the HTTP response error
 func createDeploymentError(err error) error {
 	var responseErr *azcore.ResponseError
 	if errors.As(err, &responseErr) {
-		var errorText string
-		rawBody, err := io.ReadAll(responseErr.RawResponse.Body)
-		if err != nil {
-			errorText = responseErr.Error()
-		} else {
-			errorText = string(rawBody)
-		}
-		return NewAzureDeploymentError(errorText)
+		return responseToDeploymentError("Deployment Error Details", responseErr)
 	}
 
 	return err

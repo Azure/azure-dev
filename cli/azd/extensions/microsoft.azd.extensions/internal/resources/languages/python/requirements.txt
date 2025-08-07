@@ -1,0 +1,11 @@
+grpcio==1.71.0  
+grpcio-tools==1.71.0  
+protobuf==5.29.5
+grpc-interceptor==0.15.4  
+azure.identity== 1.21.0
+azure.mgmt.resource== 22.0.0
+rich==14.0.0
+typer==0.15.2
+aiohttp==3.12.14
+asyncio==3.4.3
+pyinstaller==6.13.0

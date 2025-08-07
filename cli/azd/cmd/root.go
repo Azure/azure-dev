@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd/add"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd/show"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -50,7 +51,7 @@ func NewRootCmd(
 
 	rootCmd := &cobra.Command{
 		Use:   "azd",
-		Short: fmt.Sprintf("%s is an open-source tool that helps onboard and manage your application on Azure", productName),
+		Short: fmt.Sprintf("%s is an open-source tool that helps onboard and manage your project on Azure", productName),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			// If there was a platform configuration error report it to the user until it is resolved
 			// Using fmt.Printf directly here since we can't leverage our IoC container to resolve a console instance
@@ -139,7 +140,7 @@ func NewRootCmd(
 		OutputFormats:    []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:    output.NoneFormat,
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupAbout,
+			RootLevelHelp: actions.CmdGroupManage,
 		},
 	})
 
@@ -152,13 +153,13 @@ func NewRootCmd(
 	})
 
 	root.Add("show", &actions.ActionDescriptorOptions{
-		Command:        newShowCmd(),
-		FlagsResolver:  newShowFlags,
-		ActionResolver: newShowAction,
+		Command:        show.NewShowCmd(),
+		FlagsResolver:  show.NewShowFlags,
+		ActionResolver: show.NewShowAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupMonitor,
+			RootLevelHelp: actions.CmdGroupManage,
 		},
 	})
 
@@ -190,7 +191,7 @@ func NewRootCmd(
 			Footer:      getCmdInitHelpFooter,
 		},
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupConfig,
+			RootLevelHelp: actions.CmdGroupStart,
 		},
 	})
 
@@ -206,10 +207,11 @@ func NewRootCmd(
 				Footer:      getCmdRestoreHelpFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
-				RootLevelHelp: actions.CmdGroupConfig,
+				RootLevelHelp: actions.CmdGroupBeta,
 			},
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
 		Add("build", &actions.ActionDescriptorOptions{
@@ -219,7 +221,8 @@ func NewRootCmd(
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
 		Add("provision", &actions.ActionDescriptorOptions{
@@ -233,10 +236,18 @@ func NewRootCmd(
 				Footer:      getCmdHelpDefaultFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
-				RootLevelHelp: actions.CmdGroupManage,
+				RootLevelHelp: actions.CmdGroupAzure,
 			},
+			RequireLogin: true,
 		}).
 		UseMiddlewareWhen("hooks", middleware.NewHooksMiddleware, func(descriptor *actions.ActionDescriptor) bool {
+			if onPreview, _ := descriptor.Options.Command.Flags().GetBool("preview"); onPreview {
+				log.Println("Skipping provision hooks due to preview flag.")
+				return false
+			}
+			return true
+		}).
+		UseMiddlewareWhen("extensions", middleware.NewExtensionsMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			if onPreview, _ := descriptor.Options.Command.Flags().GetBool("preview"); onPreview {
 				log.Println("Skipping provision hooks due to preview flag.")
 				return false
@@ -256,10 +267,11 @@ func NewRootCmd(
 				Footer:      getCmdPackageHelpFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
-				RootLevelHelp: actions.CmdGroupManage,
+				RootLevelHelp: actions.CmdGroupBeta,
 			},
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
 		Add("deploy", &actions.ActionDescriptorOptions{
@@ -273,10 +285,12 @@ func NewRootCmd(
 				Footer:      cmd.GetCmdDeployHelpFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
-				RootLevelHelp: actions.CmdGroupManage,
+				RootLevelHelp: actions.CmdGroupAzure,
 			},
+			RequireLogin: true,
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.
 		Add("up", &actions.ActionDescriptorOptions{
@@ -289,10 +303,12 @@ func NewRootCmd(
 				Description: getCmdUpHelpDescription,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
-				RootLevelHelp: actions.CmdGroupManage,
+				RootLevelHelp: actions.CmdGroupStart,
 			},
+			RequireLogin: true,
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	root.Add("monitor", &actions.ActionDescriptorOptions{
 		Command:        newMonitorCmd(),
@@ -303,7 +319,7 @@ func NewRootCmd(
 			Footer:      getCmdMonitorHelpFooter,
 		},
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupMonitor,
+			RootLevelHelp: actions.CmdGroupBeta,
 		},
 	})
 
@@ -319,14 +335,19 @@ func NewRootCmd(
 				Footer:      getCmdDownHelpFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
-				RootLevelHelp: actions.CmdGroupManage,
+				RootLevelHelp: actions.CmdGroupAzure,
 			},
+			RequireLogin: true,
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddleware("hooks", middleware.NewHooksMiddleware).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 	root.
 		Add("add", &actions.ActionDescriptorOptions{
 			Command:        add.NewAddCmd(),
 			ActionResolver: add.NewAddAction,
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupBeta,
+			},
 		})
 
 	// Register any global middleware defined by the caller
@@ -342,6 +363,19 @@ func NewRootCmd(
 		UseMiddleware("ux", middleware.NewUxMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
+		}).
+		UseMiddlewareWhen("loginGuard", middleware.NewLoginGuardMiddleware, func(descriptor *actions.ActionDescriptor) bool {
+			// Check if the command or any of its parents require login
+			current := descriptor
+			for current != nil {
+				if current.Options != nil && current.Options.RequireLogin {
+					return true
+				}
+
+				current = current.Parent()
+			}
+
+			return false
 		})
 
 	// Register common dependencies for the IoC rootContainer
@@ -354,15 +388,22 @@ func NewRootCmd(
 	// Conditionally register the 'extension' commands if the feature is enabled
 	err := rootContainer.Invoke(func(alphaFeatureManager *alpha.FeatureManager, extensionManager *extensions.Manager) error {
 		if alphaFeatureManager.IsEnabled(extensions.FeatureExtensions) {
+			// Enables the "extension (ext)" command group.
 			extensionActions(root)
 
+			// Enables custom extension commands
 			installedExtensions, err := extensionManager.ListInstalled()
 			if err != nil {
 				return fmt.Errorf("Failed to get installed extensions: %w", err)
 			}
 
-			if err := bindExtensions(rootContainer, root, installedExtensions); err != nil {
-				return fmt.Errorf("Failed to bind extensions: %w", err)
+			// Bind custom extension commands for extensions that expose the capability
+			for _, ext := range installedExtensions {
+				if ext.HasCapability(extensions.CustomCommandCapability) {
+					if err := bindExtension(rootContainer, root, ext); err != nil {
+						return fmt.Errorf("Failed to bind extension commands: %w", err)
+					}
+				}
 			}
 		}
 

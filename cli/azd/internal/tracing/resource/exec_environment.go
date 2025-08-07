@@ -41,6 +41,10 @@ func getExecutionEnvironment() string {
 func execEnvFromCaller() string {
 	userAgent := os.Getenv(internal.AzdUserAgentEnvVar)
 
+	if strings.Contains(userAgent, internal.VsCodeAzureCopilotAgentPrefix) {
+		return fields.EnvVSCodeAzureCopilot
+	}
+
 	if strings.Contains(userAgent, internal.VsCodeAgentPrefix) {
 		return fields.EnvVisualStudioCode
 	}

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -354,30 +355,6 @@ func (p *GitHubCiProvider) preConfigureCheck(
 		return updated, err
 	}
 
-	authType := PipelineAuthType(pipelineManagerArgs.PipelineAuthTypeName)
-
-	// Federated Auth + Terraform is not a supported combination
-	if infraOptions.Provider == provisioning.Terraform {
-		// Throw error if Federated auth is explicitly requested
-		if authType == AuthTypeFederated {
-			return false, fmt.Errorf(
-				//nolint:lll
-				"Terraform does not support federated authentication. To explicitly use client credentials set the %s flag. %w",
-				output.WithBackticks("--auth-type client-credentials"),
-				ErrAuthNotSupported,
-			)
-		} else if authType == "" {
-			// If not explicitly set, show warning
-			p.console.MessageUxItem(
-				ctx,
-				&ux.WarningMessage{
-					//nolint:lll
-					Description: "Terraform provisioning does not support federated authentication, defaulting to Service Principal with client ID and client secret.\n",
-				},
-			)
-		}
-	}
-
 	return updated, nil
 }
 
@@ -393,11 +370,6 @@ func (p *GitHubCiProvider) credentialOptions(
 	authType PipelineAuthType,
 	credentials *entraid.AzureCredentials,
 ) (*CredentialOptions, error) {
-	// Default auth type to client-credentials for terraform
-	if infraOptions.Provider == provisioning.Terraform && authType == "" {
-		authType = AuthTypeClientCredentials
-	}
-
 	if authType == AuthTypeClientCredentials {
 		return &CredentialOptions{
 			EnableClientCredentials: true,
@@ -426,8 +398,9 @@ func (p *GitHubCiProvider) credentialOptions(
 		}
 
 		for _, branch := range branches {
+			safeBranchName := regexp.MustCompile(`[^A-Za-z0-9-]`).ReplaceAllString(branch, "-")
 			branchCredentials := &graphsdk.FederatedIdentityCredential{
-				Name:        url.PathEscape(fmt.Sprintf("%s-%s", credentialSafeName, branch)),
+				Name:        url.PathEscape(fmt.Sprintf("%s-%s", credentialSafeName, safeBranchName)),
 				Issuer:      federatedIdentityIssuer,
 				Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/%s", repoSlug, branch),
 				Description: to.Ptr("Created by Azure Developer CLI"),
@@ -458,19 +431,18 @@ func (p *GitHubCiProvider) configureConnection(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 	infraOptions provisioning.Options,
-	servicePrincipal *graphsdk.ServicePrincipal,
+	authConfig *authConfiguration,
 	credentialOptions *CredentialOptions,
-	credentials *entraid.AzureCredentials,
 ) error {
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
 	if credentialOptions.EnableClientCredentials {
-		err := p.configureClientCredentialsAuth(ctx, infraOptions, repoSlug, credentials)
+		err := p.configureClientCredentialsAuth(ctx, infraOptions, repoSlug, authConfig.AzureCredentials)
 		if err != nil {
 			return fmt.Errorf("configuring client credentials auth: %w", err)
 		}
 	}
 
-	if err := p.setPipelineVariables(ctx, repoSlug, infraOptions, servicePrincipal); err != nil {
+	if err := p.setPipelineVariables(ctx, repoSlug, infraOptions, authConfig.TenantId, authConfig.ClientId); err != nil {
 		return fmt.Errorf("failed setting pipeline variables: %w", err)
 	}
 
@@ -485,14 +457,14 @@ func (p *GitHubCiProvider) setPipelineVariables(
 	ctx context.Context,
 	repoSlug string,
 	infraOptions provisioning.Options,
-	servicePrincipal *graphsdk.ServicePrincipal,
+	tenantId, clientId string,
 ) error {
 	for name, value := range map[string]string{
 		environment.EnvNameEnvVarName:        p.env.Name(),
 		environment.LocationEnvVarName:       p.env.GetLocation(),
 		environment.SubscriptionIdEnvVarName: p.env.GetSubscriptionId(),
-		environment.TenantIdEnvVarName:       *servicePrincipal.AppOwnerOrganizationId,
-		"AZURE_CLIENT_ID":                    servicePrincipal.AppId,
+		environment.TenantIdEnvVarName:       tenantId,
+		"AZURE_CLIENT_ID":                    clientId,
 	} {
 		if err := p.ghCli.SetVariable(ctx, repoSlug, name, value); err != nil {
 			return fmt.Errorf("failed setting %s variable: %w", name, err)
@@ -616,8 +588,9 @@ func (p *GitHubCiProvider) configurePipeline(
 	// - When there was a previous additional variable/secret set and then it was updated to empty string or unset from .env.
 	msg := ""
 	var procErr error
-	ciSecrets, ciVariables := []string{}, []string{}
-	if len(options.projectVariables) > 0 {
+	ciVariables := map[string]string{}
+	ciSecrets := []string{}
+	if len(options.projectVariables) > 0 || len(options.providerParameters) > 0 {
 		msg = "Setting up project's variables to be used in the pipeline"
 		ciSecretsInstance, err := p.ghCli.ListSecrets(ctx, repoSlug)
 		if err != nil {
@@ -656,47 +629,365 @@ func (p *GitHubCiProvider) configurePipeline(
 	for _, value := range options.projectSecrets {
 		variablesAndSecretsMap[value] = value
 	}
+	for _, providerParam := range options.providerParameters {
+		for _, envVar := range providerParam.EnvVarMapping {
+			variablesAndSecretsMap[envVar] = envVar
+		}
+	}
+
+	deleteAllUnused := false
+	ignoreAllUnused := false
+	updateAllDuplicates := false
+	ignoreAllDuplicates := false
+	toBeSetSecrets := maps.Clone(options.secrets)
+	const selectionIgnore string = "Keep existing secret from pipeline (ignore)."
+	const selectionIgnoreAll string = "Keep ALL existing secrets from pipeline (ignore this and any other existing secret)."
+	const selectionUpdate string = "Set the secret again (update)."
+	const selectionUpdateAll string = "Set ALL existing secrets again (update this and any other existing secret)."
+	const selectionIgnoreUnused string = "Ignore and keep the secret."
+	const selectionIgnoreAllUnused string = "Ignore and keep ALL unused secrets from the pipeline."
+	const selectionDelete string = "Delete the secret from the pipeline."
+	const selectionDeleteAll string = "Delete ALL unused secrets from the pipeline."
 
 	// iterate the existing secrets on the pipeline and remove the ones matching the project's secrets or variables
 	for _, existingSecret := range ciSecrets {
-		if _, willBeUpdated := options.secrets[existingSecret]; willBeUpdated {
-			// if the secret will be updated, we don't need to delete it
+		if _, willBeUpdated := toBeSetSecrets[existingSecret]; willBeUpdated {
+			if ignoreAllDuplicates {
+				// ignore this secret, as it will be updated
+				delete(toBeSetSecrets, existingSecret)
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingSecret,
+					Kind:   ux.GitHubSecret,
+					Action: "Ignore",
+				})
+				continue
+			}
+			if updateAllDuplicates {
+				// if the secret will be updated, we don't need to delete it
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingSecret,
+					Kind:   ux.GitHubSecret,
+					Action: "Update",
+				})
+				continue
+			}
+			// prompt the user to ignore or delete the secret
+			options := []string{
+				selectionIgnore,
+				selectionIgnoreAll,
+				selectionUpdate,
+				selectionUpdateAll,
+			}
+			selectionIndex, err := p.console.Select(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf(
+					"The secret %s already exists in the pipeline. What would you like AZD to do?", existingSecret),
+				Options:      options,
+				DefaultValue: selectionIgnore,
+			})
+			if err != nil {
+				procErr = fmt.Errorf("prompting for secret update: %w", err)
+				return nil, procErr
+			}
+			switch options[selectionIndex] {
+			case selectionIgnore:
+				delete(toBeSetSecrets, existingSecret)
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingSecret,
+					Kind:   ux.GitHubSecret,
+					Action: "Ignore",
+				})
+			case selectionIgnoreAll:
+				ignoreAllDuplicates = true
+				delete(toBeSetSecrets, existingSecret)
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingSecret,
+					Kind:   ux.GitHubSecret,
+					Action: "Ignore",
+				})
+			case selectionUpdate:
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingSecret,
+					Kind:   ux.GitHubSecret,
+					Action: "Update",
+				})
+			case selectionUpdateAll:
+				updateAllDuplicates = true
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingSecret,
+					Kind:   ux.GitHubSecret,
+					Action: "Update",
+				})
+			}
 			continue
 		}
 		// only delete if the secret is defined in the project's secrets or variables (azure.yaml)
 		if _, exists := variablesAndSecretsMap[existingSecret]; exists {
-			deleteErr := p.ghCli.DeleteSecret(ctx, repoSlug, existingSecret)
-			if deleteErr != nil {
-				procErr = fmt.Errorf("failed deleting %s secret: %w", existingSecret, deleteErr)
+			if ignoreAllUnused {
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingSecret,
+					Kind:   ux.GitHubSecret,
+					Action: "Ignore un-used",
+				})
+				continue
+			}
+			if deleteAllUnused {
+				deleteErr := p.ghCli.DeleteSecret(ctx, repoSlug, existingSecret)
+				if deleteErr != nil {
+					procErr = fmt.Errorf("failed deleting %s secret: %w", existingSecret, deleteErr)
+					return nil, procErr
+				}
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingSecret,
+					Kind:   ux.GitHubSecret,
+					Action: "Delete un-used",
+				})
+				continue
+			}
+			// prompt the user to ignore or delete the secret
+			options := []string{
+				selectionIgnoreUnused,
+				selectionIgnoreAllUnused,
+				selectionDelete,
+				selectionDeleteAll,
+			}
+			selectionIndex, err := p.console.Select(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf(
+					"The secret %s exists in the pipeline but is no longer required. What would you like AZD to do?",
+					existingSecret),
+				Options:      options,
+				DefaultValue: selectionIgnoreUnused,
+			})
+			if err != nil {
+				procErr = fmt.Errorf("prompting for secret update: %w", err)
 				return nil, procErr
+			}
+			switch options[selectionIndex] {
+			case selectionIgnoreUnused:
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingSecret,
+					Kind:   ux.GitHubSecret,
+					Action: "Ignore un-used",
+				})
+			case selectionIgnoreAllUnused:
+				ignoreAllUnused = true
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingSecret,
+					Kind:   ux.GitHubSecret,
+					Action: "Ignore un-used",
+				})
+			case selectionDelete:
+				deleteErr := p.ghCli.DeleteSecret(ctx, repoSlug, existingSecret)
+				if deleteErr != nil {
+					procErr = fmt.Errorf("failed deleting %s secret: %w", existingSecret, deleteErr)
+					return nil, procErr
+				}
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingSecret,
+					Kind:   ux.GitHubSecret,
+					Action: "Delete un-used",
+				})
+			case selectionDeleteAll:
+				deleteAllUnused = true
+				deleteErr := p.ghCli.DeleteSecret(ctx, repoSlug, existingSecret)
+				if deleteErr != nil {
+					procErr = fmt.Errorf("failed deleting %s secret: %w", existingSecret, deleteErr)
+					return nil, procErr
+				}
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingSecret,
+					Kind:   ux.GitHubSecret,
+					Action: "Delete un-used",
+				})
 			}
 		}
 	}
+
+	deleteAllUnusedVars := false
+	ignoreAllUnusedVars := false
+	updateAllDuplicatesVars := false
+	ignoreAllDuplicatesVars := false
+	toBeSetVariables := maps.Clone(options.variables)
+	const selectionIgnoreVars string = "Keep existing variable from pipeline (ignore)."
+	const selectionIgnoreAllVars string = "Keep ALL existing variables from pipeline " +
+		"(ignore this and any other existing variable)."
+	const selectionUpdateVars string = "Set the variable again (update)."
+	const selectionUpdateAllVars string = "Set ALL existing variables again (update this and any other existing variable)."
+	const selectionIgnoreUnusedVars string = "Ignore and keep the variable."
+	const selectionIgnoreAllUnusedVars string = "Ignore and keep ALL unused variables from the pipeline."
+	const selectionDeleteVars string = "Delete the variable from the pipeline."
+	const selectionDeleteAllVars string = "Delete ALL unused variables from the pipeline."
 	// iterate the existing variables on the pipeline and remove the ones matching the project's secrets or variables
-	for _, existingVariable := range ciVariables {
-		if _, willBeUpdated := options.variables[existingVariable]; willBeUpdated {
-			// if the variable will be updated, we don't need to delete it
+	for existingVariable, existingVariableValue := range ciVariables {
+		if valueToBeSet, willBeUpdated := toBeSetVariables[existingVariable]; willBeUpdated {
+			if existingVariableValue == valueToBeSet {
+				// the variable is already set to the same value, so we can ignore it
+				delete(toBeSetVariables, existingVariable)
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingVariable,
+					Kind:   ux.GitHubVariable,
+					Action: "Unchanged",
+				})
+				continue
+			}
+			if ignoreAllDuplicatesVars {
+				// ignore this variable, as it will be updated
+				delete(toBeSetVariables, existingVariable)
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingVariable,
+					Kind:   ux.GitHubVariable,
+					Action: "Ignore",
+				})
+				continue
+			}
+			if updateAllDuplicatesVars {
+				// if the secret will be updated, we don't need to delete it
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingVariable,
+					Kind:   ux.GitHubVariable,
+					Action: "Update",
+				})
+				continue
+			}
+			// prompt the user to ignore or delete the secret
+			options := []string{
+				selectionIgnoreVars,
+				selectionIgnoreAllVars,
+				selectionUpdateVars,
+				selectionUpdateAllVars,
+			}
+			selectionIndex, err := p.console.Select(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf(
+					"The variable %s already exists in the pipeline. What would you like AZD to do?", existingVariable),
+				Options:      options,
+				DefaultValue: selectionIgnoreVars,
+			})
+			if err != nil {
+				procErr = fmt.Errorf("prompting for variable update: %w", err)
+				return nil, procErr
+			}
+			switch options[selectionIndex] {
+			case selectionIgnoreVars:
+				delete(toBeSetVariables, existingVariable)
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingVariable,
+					Kind:   ux.GitHubVariable,
+					Action: "Ignore",
+				})
+			case selectionIgnoreAllVars:
+				ignoreAllDuplicatesVars = true
+				delete(toBeSetVariables, existingVariable)
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingVariable,
+					Kind:   ux.GitHubVariable,
+					Action: "Ignore",
+				})
+			case selectionUpdateVars:
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingVariable,
+					Kind:   ux.GitHubVariable,
+					Action: "Update",
+				})
+			case selectionUpdateAllVars:
+				updateAllDuplicatesVars = true
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingVariable,
+					Kind:   ux.GitHubVariable,
+					Action: "Update",
+				})
+			}
 			continue
 		}
 		// only delete if the variable is defined in the project's secrets or variables (azure.yaml)
 		if _, exists := variablesAndSecretsMap[existingVariable]; exists {
-			deleteErr := p.ghCli.DeleteVariable(ctx, repoSlug, existingVariable)
-			if deleteErr != nil {
-				procErr = fmt.Errorf("failed deleting %s variable: %w", existingVariable, deleteErr)
+			if ignoreAllUnusedVars {
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingVariable,
+					Kind:   ux.GitHubVariable,
+					Action: "Ignore un-used",
+				})
+				continue
+			}
+			if deleteAllUnusedVars {
+				deleteErr := p.ghCli.DeleteVariable(ctx, repoSlug, existingVariable)
+				if deleteErr != nil {
+					procErr = fmt.Errorf("failed deleting %s variable: %w", existingVariable, deleteErr)
+					return nil, procErr
+				}
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingVariable,
+					Kind:   ux.GitHubVariable,
+					Action: "Delete un-used",
+				})
+				continue
+			}
+			// prompt the user to ignore or delete the variable
+			options := []string{
+				selectionIgnoreUnusedVars,
+				selectionIgnoreAllUnusedVars,
+				selectionDeleteVars,
+				selectionDeleteAllVars,
+			}
+			selectionIndex, err := p.console.Select(ctx, input.ConsoleOptions{
+				Message: fmt.Sprintf(
+					"The variable %s exists in the pipeline but is no longer required. What would you like AZD to do?",
+					existingVariable),
+				Options:      options,
+				DefaultValue: selectionIgnoreUnusedVars,
+			})
+			if err != nil {
+				procErr = fmt.Errorf("prompting for variable update: %w", err)
 				return nil, procErr
+			}
+			switch options[selectionIndex] {
+			case selectionIgnoreUnusedVars:
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingVariable,
+					Kind:   ux.GitHubVariable,
+					Action: "Ignore un-used",
+				})
+			case selectionIgnoreAllUnusedVars:
+				ignoreAllUnusedVars = true
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingVariable,
+					Kind:   ux.GitHubVariable,
+					Action: "Ignore un-used",
+				})
+			case selectionDeleteVars:
+				deleteErr := p.ghCli.DeleteVariable(ctx, repoSlug, existingVariable)
+				if deleteErr != nil {
+					procErr = fmt.Errorf("failed deleting %s variable: %w", existingVariable, deleteErr)
+					return nil, procErr
+				}
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingVariable,
+					Kind:   ux.GitHubVariable,
+					Action: "Delete un-used",
+				})
+			case selectionDeleteAllVars:
+				deleteAllUnusedVars = true
+				deleteErr := p.ghCli.DeleteVariable(ctx, repoSlug, existingVariable)
+				if deleteErr != nil {
+					procErr = fmt.Errorf("failed deleting %s variable: %w", existingVariable, deleteErr)
+					return nil, procErr
+				}
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name:   existingVariable,
+					Kind:   ux.GitHubVariable,
+					Action: "Delete un-used",
+				})
 			}
 		}
 	}
 
 	// set the new variables and secrets
-	for key, value := range options.secrets {
+	for key, value := range toBeSetSecrets {
 		if err := p.ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
 			procErr = fmt.Errorf("failed setting %s secret: %w", key, err)
 			return nil, procErr
 		}
 	}
 
-	for key, value := range options.variables {
+	for key, value := range toBeSetVariables {
 		if err := p.ghCli.SetVariable(ctx, repoSlug, key, value); err != nil {
 			procErr = fmt.Errorf("failed setting %s secret: %w", key, err)
 			return nil, procErr

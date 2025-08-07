@@ -18,8 +18,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
-	"github.com/fatih/color"
 )
 
 var (
@@ -37,8 +37,6 @@ type ResourceOptions struct {
 	ResourceTypeDisplayName string
 	// SelectorOptions contains options for the resource selector.
 	SelectorOptions *SelectOptions
-	// CreateResource is a function that creates a new resource.
-	CreateResource func(ctx context.Context) (*azapi.ResourceExtended, error)
 	// Selected is a function that determines if a resource is selected
 	Selected func(resource *azapi.ResourceExtended) bool
 }
@@ -55,8 +53,8 @@ type CustomResourceOptions[T any] struct {
 	SortResource func(a *T, b *T) int
 	// Selected is a function that determines if a resource is selected
 	Selected func(resource *T) bool
-	// CreateResource is a function that creates a new resource.
-	CreateResource func(ctx context.Context) (*T, error)
+	// NewResourceValue is the default value returned when creating a new resource.
+	NewResourceValue T
 }
 
 // ResourceGroupOptions contains options for prompting the user to select a resource group.
@@ -73,8 +71,6 @@ type SelectOptions struct {
 	AllowNewResource *bool
 	// NewResourceMessage is the message to display to the user when creating a new resource.
 	NewResourceMessage string
-	// CreatingMessage is the message to display to the user when creating a new resource.
-	CreatingMessage string
 	// Message is the message to display to the user.
 	Message string
 	// HelpMessage is the help message to display to the user.
@@ -235,7 +231,7 @@ func (ps *promptService) PromptSubscription(
 			return subscriptions, nil
 		},
 		DisplayResource: func(subscription *account.Subscription) (string, error) {
-			return fmt.Sprintf("%s %s", subscription.Name, color.HiBlackString("(%s)", subscription.Id)), nil
+			return fmt.Sprintf("%s %s", subscription.Name, output.WithGrayFormat("(%s)", subscription.Id)), nil
 		},
 		Selected: func(subscription *account.Subscription) bool {
 			return strings.EqualFold(subscription.Id, defaultSubscriptionId)
@@ -311,7 +307,7 @@ func (ps *promptService) PromptLocation(
 			return locations, nil
 		},
 		DisplayResource: func(location *account.Location) (string, error) {
-			return fmt.Sprintf("%s %s", location.RegionalDisplayName, color.HiBlackString("(%s)", location.Name)), nil
+			return fmt.Sprintf("%s %s", location.RegionalDisplayName, output.WithGrayFormat("(%s)", location.Name)), nil
 		},
 		Selected: func(resource *account.Location) bool {
 			return resource.Name == defaultLocation
@@ -349,7 +345,6 @@ func (ps *promptService) PromptResourceGroup(
 		HelpMessage:        "Choose an Azure resource group for your project.",
 		AllowNewResource:   ux.Ptr(true),
 		NewResourceMessage: "Create new resource group",
-		CreatingMessage:    "Creating new resource group...",
 	}
 
 	if err := mergo.Merge(mergedSelectorOptions, options.SelectorOptions, mergo.WithoutDereference); err != nil {
@@ -361,7 +356,8 @@ func (ps *promptService) PromptResourceGroup(
 	}
 
 	return PromptCustomResource(ctx, CustomResourceOptions[azapi.ResourceGroup]{
-		SelectorOptions: mergedSelectorOptions,
+		NewResourceValue: azapi.ResourceGroup{Id: "new"},
+		SelectorOptions:  mergedSelectorOptions,
 		LoadData: func(ctx context.Context) ([]*azapi.ResourceGroup, error) {
 			resourceGroupList, err := ps.resourceService.ListResourceGroup(ctx, azureContext.Scope.SubscriptionId, nil)
 			if err != nil {
@@ -383,56 +379,11 @@ func (ps *promptService) PromptResourceGroup(
 			return fmt.Sprintf(
 				"%s %s",
 				resourceGroup.Name,
-				color.HiBlackString("(Location: %s)", resourceGroup.Location),
+				output.WithGrayFormat("(Location: %s)", resourceGroup.Location),
 			), nil
 		},
 		Selected: func(resourceGroup *azapi.ResourceGroup) bool {
 			return resourceGroup.Name == azureContext.Scope.ResourceGroup
-		},
-		CreateResource: func(ctx context.Context) (*azapi.ResourceGroup, error) {
-			namePrompt := ux.NewPrompt(&ux.PromptOptions{
-				Message: "Enter the name for the resource group",
-			})
-
-			resourceGroupName, err := namePrompt.Ask()
-			if err != nil {
-				return nil, err
-			}
-
-			if err := azureContext.EnsureLocation(ctx); err != nil {
-				return nil, err
-			}
-
-			var resourceGroup *azapi.ResourceGroup
-
-			taskName := fmt.Sprintf("Creating resource group %s", color.CyanString(resourceGroupName))
-
-			err = ux.NewTaskList(nil).
-				AddTask(ux.TaskOptions{
-					Title: taskName,
-					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
-						newResourceGroup, err := ps.resourceService.CreateOrUpdateResourceGroup(
-							ctx,
-							azureContext.Scope.SubscriptionId,
-							resourceGroupName,
-							azureContext.Scope.Location,
-							nil,
-						)
-						if err != nil {
-							return ux.Error, err
-						}
-
-						resourceGroup = newResourceGroup
-						return ux.Success, nil
-					},
-				}).
-				Run()
-
-			if err != nil {
-				return nil, err
-			}
-
-			return resourceGroup, nil
 		},
 	})
 }
@@ -458,7 +409,9 @@ func (ps *promptService) PromptSubscriptionResource(
 	}
 
 	var existingResource *arm.ResourceID
+	var resourceType string
 	if options.ResourceType != nil {
+		resourceType = string(*options.ResourceType)
 		match, has := azureContext.Resources.FindByTypeAndKind(ctx, *options.ResourceType, options.Kinds)
 		if has {
 			existingResource = match
@@ -495,7 +448,6 @@ func (ps *promptService) PromptSubscriptionResource(
 		HelpMessage:        fmt.Sprintf("Choose an Azure %s for your project.", resourceName),
 		AllowNewResource:   ux.Ptr(true),
 		NewResourceMessage: fmt.Sprintf("Create new %s", resourceName),
-		CreatingMessage:    fmt.Sprintf("Creating new %s...", resourceName),
 	}
 
 	if err := mergo.Merge(mergedSelectorOptions, options.SelectorOptions, mergo.WithoutDereference); err != nil {
@@ -506,7 +458,15 @@ func (ps *promptService) PromptSubscriptionResource(
 		return nil, err
 	}
 
+	allowNewResource := mergedSelectorOptions.AllowNewResource != nil && *mergedSelectorOptions.AllowNewResource
+
 	resource, err := PromptCustomResource(ctx, CustomResourceOptions[azapi.ResourceExtended]{
+		NewResourceValue: azapi.ResourceExtended{
+			Resource: azapi.Resource{
+				Id:   "new",
+				Type: resourceType,
+			},
+		},
 		SelectorOptions: mergedSelectorOptions,
 		LoadData: func(ctx context.Context) ([]*azapi.ResourceExtended, error) {
 			var resourceListOptions *armresources.ClientListOptions
@@ -534,7 +494,7 @@ func (ps *promptService) PromptSubscriptionResource(
 				}
 			}
 
-			if len(filteredResources) == 0 {
+			if len(filteredResources) == 0 && !allowNewResource {
 				if options.ResourceType == nil {
 					return nil, ErrNoResourcesFound
 				}
@@ -553,11 +513,10 @@ func (ps *promptService) PromptSubscriptionResource(
 			return fmt.Sprintf(
 				"%s %s",
 				parsedResource.Name,
-				color.HiBlackString("(%s)", parsedResource.ResourceGroupName),
+				output.WithGrayFormat("(%s)", parsedResource.ResourceGroupName),
 			), nil
 		},
-		Selected:       options.Selected,
-		CreateResource: options.CreateResource,
+		Selected: options.Selected,
 	})
 
 	if err != nil {
@@ -592,7 +551,9 @@ func (ps *promptService) PromptResourceGroupResource(
 	}
 
 	var existingResource *arm.ResourceID
+	var resourceType string
 	if options.ResourceType != nil {
+		resourceType = string(*options.ResourceType)
 		match, has := azureContext.Resources.FindByTypeAndKind(ctx, *options.ResourceType, options.Kinds)
 		if has {
 			existingResource = match
@@ -625,7 +586,6 @@ func (ps *promptService) PromptResourceGroupResource(
 		HelpMessage:        fmt.Sprintf("Choose an Azure %s for your project.", resourceName),
 		AllowNewResource:   ux.Ptr(true),
 		NewResourceMessage: fmt.Sprintf("Create new %s", resourceName),
-		CreatingMessage:    fmt.Sprintf("Creating new %s...", resourceName),
 	}
 
 	if err := mergo.Merge(mergedSelectorOptions, options.SelectorOptions, mergo.WithoutDereference); err != nil {
@@ -636,7 +596,15 @@ func (ps *promptService) PromptResourceGroupResource(
 		return nil, err
 	}
 
+	allowNewResource := mergedSelectorOptions.AllowNewResource != nil && *mergedSelectorOptions.AllowNewResource
+
 	resource, err := PromptCustomResource(ctx, CustomResourceOptions[azapi.ResourceExtended]{
+		NewResourceValue: azapi.ResourceExtended{
+			Resource: azapi.Resource{
+				Id:   "new",
+				Type: resourceType,
+			},
+		},
 		Selected:        options.Selected,
 		SelectorOptions: mergedSelectorOptions,
 		LoadData: func(ctx context.Context) ([]*azapi.ResourceExtended, error) {
@@ -666,7 +634,7 @@ func (ps *promptService) PromptResourceGroupResource(
 				}
 			}
 
-			if len(filteredResources) == 0 {
+			if len(filteredResources) == 0 && !allowNewResource {
 				if options.ResourceType == nil {
 					return nil, ErrNoResourcesFound
 				}
@@ -679,7 +647,6 @@ func (ps *promptService) PromptResourceGroupResource(
 		DisplayResource: func(resource *azapi.ResourceExtended) (string, error) {
 			return resource.Name, nil
 		},
-		CreateResource: options.CreateResource,
 	})
 
 	if err != nil {
@@ -710,7 +677,6 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 		AllowNewResource:   ux.Ptr(true),
 		ForceNewResource:   ux.Ptr(false),
 		NewResourceMessage: "Create new resource",
-		CreatingMessage:    "Creating new resource...",
 		DisplayNumbers:     ux.Ptr(true),
 		DisplayCount:       10,
 	}
@@ -770,17 +736,19 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 
 		hasCustomDisplay := options.DisplayResource != nil
 
-		var choices []string
+		var choices []*ux.SelectChoice
 
 		if allowNewResource {
-			choices = make([]string, len(resources)+1)
-			choices[0] = mergedSelectorOptions.NewResourceMessage
+			choices = make([]*ux.SelectChoice, len(resources)+1)
+			choices[0] = &ux.SelectChoice{
+				Label: mergedSelectorOptions.NewResourceMessage,
+			}
 
 			if defaultIndex != nil {
 				*defaultIndex++
 			}
 		} else {
-			choices = make([]string, len(resources))
+			choices = make([]*ux.SelectChoice, len(resources))
 		}
 
 		for i, resource := range resources {
@@ -797,10 +765,15 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 				displayValue = fmt.Sprintf("%v", resource)
 			}
 
+			choice := &ux.SelectChoice{
+				Value: displayValue,
+				Label: displayValue,
+			}
+
 			if allowNewResource {
-				choices[i+1] = displayValue
+				choices[i+1] = choice
 			} else {
-				choices[i] = displayValue
+				choices[i] = choice
 			}
 		}
 
@@ -812,11 +785,11 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 			Hint:            mergedSelectorOptions.Hint,
 			EnableFiltering: mergedSelectorOptions.EnableFiltering,
 			Writer:          mergedSelectorOptions.Writer,
-			Allowed:         choices,
+			Choices:         choices,
 			SelectedIndex:   defaultIndex,
 		})
 
-		userSelectedIndex, err := resourceSelector.Ask()
+		userSelectedIndex, err := resourceSelector.Ask(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -832,16 +805,7 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 
 	// Create new resource
 	if allowNewResource && *selectedIndex == 0 {
-		if options.CreateResource == nil {
-			return nil, fmt.Errorf("no create resource function provided")
-		}
-
-		createdResource, err := options.CreateResource(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		selectedResource = createdResource
+		selectedResource = &options.NewResourceValue
 	} else {
 		// If a new resource is allowed, decrement the selected index
 		if allowNewResource {

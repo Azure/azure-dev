@@ -37,7 +37,7 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 	}
 
 	confirm := ux.NewConfirm(options)
-	value, err := confirm.Ask()
+	value, err := confirm.Ask(ctx)
 
 	return &azdext.ConfirmResponse{
 		Value: value,
@@ -45,22 +45,68 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 }
 
 func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (*azdext.SelectResponse, error) {
+	choices := make([]*ux.SelectChoice, len(req.Options.Choices))
+	for i, choice := range req.Options.Choices {
+		choices[i] = &ux.SelectChoice{
+			Value: choice.Value,
+			Label: choice.Label,
+		}
+	}
+
 	options := &ux.SelectOptions{
 		SelectedIndex:   convertToInt(req.Options.SelectedIndex),
 		Message:         req.Options.Message,
-		Allowed:         req.Options.Allowed,
+		Choices:         choices,
 		HelpMessage:     req.Options.HelpMessage,
-		Hint:            req.Options.Hint,
 		DisplayCount:    int(req.Options.DisplayCount),
 		DisplayNumbers:  req.Options.DisplayNumbers,
 		EnableFiltering: req.Options.EnableFiltering,
 	}
 
 	selectPrompt := ux.NewSelect(options)
-	value, err := selectPrompt.Ask()
+	value, err := selectPrompt.Ask(ctx)
 
 	return &azdext.SelectResponse{
 		Value: convertToInt32(value),
+	}, err
+}
+
+func (s *promptService) MultiSelect(
+	ctx context.Context,
+	req *azdext.MultiSelectRequest,
+) (*azdext.MultiSelectResponse, error) {
+	choices := make([]*ux.MultiSelectChoice, len(req.Options.Choices))
+	for i, choice := range req.Options.Choices {
+		choices[i] = &ux.MultiSelectChoice{
+			Value:    choice.Value,
+			Label:    choice.Label,
+			Selected: choice.Selected,
+		}
+	}
+
+	options := &ux.MultiSelectOptions{
+		Message:         req.Options.Message,
+		Choices:         choices,
+		HelpMessage:     req.Options.HelpMessage,
+		DisplayCount:    int(req.Options.DisplayCount),
+		DisplayNumbers:  req.Options.DisplayNumbers,
+		EnableFiltering: req.Options.EnableFiltering,
+	}
+
+	selectPrompt := ux.NewMultiSelect(options)
+	values, err := selectPrompt.Ask(ctx)
+
+	resultValues := make([]*azdext.MultiSelectChoice, len(values))
+	for i, value := range values {
+		resultValues[i] = &azdext.MultiSelectChoice{
+			Value:    value.Value,
+			Label:    value.Label,
+			Selected: value.Selected,
+		}
+	}
+
+	return &azdext.MultiSelectResponse{
+		Values: resultValues,
 	}, err
 }
 
@@ -79,7 +125,7 @@ func (s *promptService) Prompt(ctx context.Context, req *azdext.PromptRequest) (
 	}
 
 	prompt := ux.NewPrompt(options)
-	value, err := prompt.Ask()
+	value, err := prompt.Ask(ctx)
 
 	return &azdext.PromptResponse{
 		Value: value,
@@ -96,11 +142,11 @@ func (s *promptService) PromptSubscription(
 	}
 
 	subscription := &azdext.Subscription{
-		Id:                 selectedSubscription.Id,
-		Name:               selectedSubscription.Name,
-		TenantId:           selectedSubscription.TenantId,
-		UserAccessTenantId: selectedSubscription.UserAccessTenantId,
-		IsDefault:          selectedSubscription.IsDefault,
+		Id:           selectedSubscription.Id,
+		Name:         selectedSubscription.Name,
+		TenantId:     selectedSubscription.TenantId,
+		UserTenantId: selectedSubscription.UserAccessTenantId,
+		IsDefault:    selectedSubscription.IsDefault,
 	}
 
 	return &azdext.PromptSubscriptionResponse{
@@ -251,7 +297,6 @@ func createResourceOptions(options *azdext.PromptResourceOptions) prompt.Resourc
 		selectOptions = &prompt.SelectOptions{
 			ForceNewResource:   options.SelectOptions.ForceNewResource,
 			NewResourceMessage: options.SelectOptions.NewResourceMessage,
-			CreatingMessage:    options.SelectOptions.CreatingMessage,
 			Message:            options.SelectOptions.Message,
 			HelpMessage:        options.SelectOptions.HelpMessage,
 			LoadingMessage:     options.SelectOptions.LoadingMessage,

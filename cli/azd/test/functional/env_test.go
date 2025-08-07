@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -36,9 +37,12 @@ func Test_CLI_EnvCommandsWorkWhenLoggedOut(t *testing.T) {
 	envNew(ctx, t, cli, "env1", true)
 	envNew(ctx, t, cli, "env2", true)
 
-	// set a private config dir, this well ensure we are logged out.
+	// set a private config dir, this will ensure we are logged out.
 	configDir := t.TempDir()
-	t.Setenv("AZD_CONFIG_DIR", configDir)
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+configDir)
+	// disable telemetry that would write to the temporary directory we create here
+	cli.Env = append(cli.Env, "AZURE_DEV_COLLECT_TELEMETRY=no")
 
 	// check to make sure we are logged out as expected.
 	res, err := cli.RunCommand(ctx, "auth", "login", "--check-status", "--output", "json")
@@ -121,7 +125,7 @@ func Test_CLI_Env_Management(t *testing.T) {
 	envName3 := randomEnvName()
 	_, _ = cli.RunCommandWithStdIn(
 		ctx,
-		"Create a new environment\n"+envName3+"\n",
+		"Create a new environment\n"+envName3+"\ny\n",
 		cmdNeedingEnv...)
 	environmentList = envList(ctx, t, cli)
 	require.Len(t, environmentList, 3)
@@ -329,10 +333,10 @@ func envNew(ctx context.Context, t *testing.T, cli *azdcli.CLI, envName string, 
 
 	if usePrompt {
 		runArgs := append(defaultArgs, args...)
-		_, err := cli.RunCommandWithStdIn(ctx, envName+"\n", runArgs...)
+		_, err := cli.RunCommandWithStdIn(ctx, envName+"\ny\n", runArgs...)
 		require.NoError(t, err)
 	} else {
-		runArgs := append(defaultArgs, envName, "--subscription", cfg.SubscriptionID, "-l", cfg.Location)
+		runArgs := append(defaultArgs, envName, "--no-prompt", "--subscription", cfg.SubscriptionID, "-l", cfg.Location)
 		runArgs = append(runArgs, args...)
 		_, err := cli.RunCommand(ctx, runArgs...)
 		require.NoError(t, err)

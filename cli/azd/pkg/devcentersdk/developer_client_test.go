@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/az"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -23,6 +24,8 @@ func Test_DevCenter_Client(t *testing.T) {
 
 	publicCloud := cloud.AzurePublic()
 	mockContext := mocks.NewMockContext(context.Background())
+	azCli, err := az.NewCli(mockContext.CommandRunner)
+	require.NoError(t, err)
 
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	authManager, err := auth.NewManager(
@@ -32,6 +35,7 @@ func Test_DevCenter_Client(t *testing.T) {
 		http.DefaultClient,
 		mockContext.Console,
 		auth.ExternalAuthConfiguration{},
+		azCli,
 	)
 	require.NoError(t, err)
 

@@ -13,7 +13,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
@@ -38,7 +37,7 @@ func getResourceGroupFollowUp(
 		projectConfig.ResourceGroupName,
 	)
 	if err == nil {
-		suffix := ":\n" + azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName)
+		suffix := ":\n" + AzurePortalLink(portalUrlBase, subscriptionId, resourceGroupName)
 
 		if v, err := strconv.ParseBool(os.Getenv("AZD_DEMO_MODE")); err == nil && v {
 			suffix = "."
@@ -56,7 +55,7 @@ func getResourceGroupFollowUp(
 	return followUp
 }
 
-func azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName string) string {
+func AzurePortalLink(portalUrlBase, subscriptionId, resourceGroupName string) string {
 	if subscriptionId == "" || resourceGroupName == "" {
 		return ""
 	}
@@ -65,18 +64,6 @@ func azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName string) st
 		portalUrlBase,
 		subscriptionId,
 		resourceGroupName))
-}
-
-func serviceNameWarningCheck(console input.Console, serviceNameFlag string, commandName string) {
-	if serviceNameFlag == "" {
-		return
-	}
-
-	fmt.Fprintln(
-		console.Handles().Stderr,
-		output.WithWarningFormat("WARNING: The `--service` flag is deprecated and will be removed in a future release."),
-	)
-	fmt.Fprintf(console.Handles().Stderr, "Next time use `azd %s <service>`.\n\n", commandName)
 }
 
 func getTargetServiceName(

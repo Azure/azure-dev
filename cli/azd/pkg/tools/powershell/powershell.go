@@ -61,20 +61,22 @@ func (bs *powershellScript) Execute(ctx context.Context, path string, options to
 		options.StrictShell = true
 	}
 
-	if err := bs.checkInstalled(options); err != nil && options.StrictShell {
-		return exec.RunResult{}, &internal.ErrorWithSuggestion{
-			Err: err,
-			Suggestion: fmt.Sprintf("PowerShell 7 is not installed or not in the path. To install PowerShell 7, visit %s",
-				output.WithLinkFormat("https://learn.microsoft.com/powershell/scripting/install/installing-powershell")),
-		}
-	}
-
-	// non-strict mode, check for alternative shell powershell 5
-	options.UserPwsh = "powershell"
 	if err := bs.checkInstalled(options); err != nil {
-		return exec.RunResult{}, &internal.ErrorWithSuggestion{
-			Err:        err,
-			Suggestion: "Make sure Powershell is installed in your system.",
+		if options.StrictShell {
+			return exec.RunResult{}, &internal.ErrorWithSuggestion{
+				Err: err,
+				Suggestion: fmt.Sprintf("PowerShell 7 is not installed or not in the path. To install PowerShell 7, visit %s",
+					output.WithLinkFormat("https://learn.microsoft.com/powershell/scripting/install/installing-powershell")),
+			}
+		}
+
+		// non-strict mode, check for alternative shell powershell 5
+		options.UserPwsh = "powershell"
+		if err := bs.checkInstalled(options); err != nil {
+			return exec.RunResult{}, &internal.ErrorWithSuggestion{
+				Err:        err,
+				Suggestion: "Make sure Powershell is installed in your system.",
+			}
 		}
 	}
 

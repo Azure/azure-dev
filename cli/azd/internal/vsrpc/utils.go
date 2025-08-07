@@ -38,13 +38,11 @@ func appHostForProject(
 func servicesFromManifest(manifest *apphost.Manifest) []*Service {
 	var services []*Service
 
-	for name, res := range manifest.Resources {
-		if res.Type == "project.v0" {
-			services = append(services, &Service{
-				Name: name,
-				Path: *res.Path,
-			})
-		}
+	for name, path := range apphost.ProjectPaths(manifest) {
+		services = append(services, &Service{
+			Name: name,
+			Path: path,
+		})
 	}
 
 	return services

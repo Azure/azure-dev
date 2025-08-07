@@ -17,6 +17,7 @@ appinsightsexporter
 appinsightsstorage
 appplatform
 appservice
+appuser
 arget
 armapimanagement
 armappconfiguration
@@ -109,6 +110,7 @@ envsubst
 errcheck
 errorinfo
 errorlint
+eventhub
 eventhubs
 executil
 flexconsumption
@@ -158,6 +160,8 @@ mockarmresources
 mockazcli
 mongojs
 mvnw
+myapp
+myservice
 mysqladmin
 mysqlclient
 mysqldb
@@ -193,8 +197,12 @@ psanford
 psycopg
 psycopgbinary
 pulumi
+pycache
 pyapp
 pyproject
+pytest
+PYTHONDONTWRITEBYTECODE
+PYTHONUNBUFFERED
 pyvenv
 rabbitmq
 reauthentication

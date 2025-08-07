@@ -95,10 +95,16 @@ func (al *ActionLogger) HandleRetrieverEnd(ctx context.Context, query string, do
 
 // HandleToolStart is called when a tool execution starts
 func (al *ActionLogger) HandleToolStart(ctx context.Context, input string) {
+	if al.debugEnabled {
+		color.HiBlack("\nHandleToolStart\n%s\n", input)
+	}
 }
 
 // HandleToolEnd is called when a tool execution ends
 func (al *ActionLogger) HandleToolEnd(ctx context.Context, output string) {
+	if al.debugEnabled {
+		color.HiBlack("\nHandleToolEnd\n%s\n", output)
+	}
 }
 
 // HandleToolError is called when a tool execution fails

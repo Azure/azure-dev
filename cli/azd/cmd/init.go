@@ -34,6 +34,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
+	"github.com/fatih/color"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -244,7 +245,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			initTypeSelect = initEnvironment
 		} else {
 			// Prompt for init type for new projects
-			initTypeSelect, err = promptInitType(i.console, ctx)
+			initTypeSelect, err = promptInitType(i.console, ctx, i.featuresManager)
 			if err != nil {
 				return nil, err
 			}
@@ -371,36 +372,174 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 func (i *initAction) initAppWithCopilot(ctx context.Context) error {
-	actionLogger := logging.NewActionLogger()
-	defaultModelContainer, err := i.llmManager.GetDefaultModel(llm.WithLogger(actionLogger))
+	// Warn user that this is an alpha feature
+	i.console.WarnForFeature(ctx, llm.FeatureLlm)
+
+	fileLogger, cleanup, err := logging.NewFileLoggerDefault()
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	defaultModelContainer, err := i.llmManager.GetDefaultModel(llm.WithLogger(fileLogger))
 	if err != nil {
 		return err
 	}
 
 	samplingModelContainer, err := i.llmManager.GetDefaultModel()
 
-	azdAgent, err := agent.NewAzdAiAgent(
+	azdAgent, err := agent.NewConversationalAzdAiAgent(
 		defaultModelContainer.Model,
 		agent.WithSamplingModel(samplingModelContainer.Model),
+		agent.WithDebug(i.flags.global.EnableDebugLogging),
 	)
 	if err != nil {
 		return err
 	}
 
-	initPrompt := `Goal: Initialize or migrate the AZD project from the current working directory.
+	type initStep struct {
+		Name        string
+		Description string
+	}
 
-Read and review the 'azd-arch-plan.md' file if it exists to get current status
-Run the 'azd_plan_init' tool and follow the steps
-Finally - run the 'azd_project_validation' tool to ensure the process is fully completed
-Be very short, terse and to the point during planning and action execution.
-Provide verbose output for the final summary when you are complete.
-	`
+	taskInput := `Your task: %s
 
-	if err := azdAgent.RunConversationLoop(ctx, []string{initPrompt}); err != nil {
+Break this task down into smaller steps if needed.
+If new information reveals more work to be done, pursue it.
+Do not stop until all tasks are complete and fully resolved.
+`
+
+	initSteps := []initStep{
+		{
+			Name:        "Running Discovery & Analysis",
+			Description: "Run a deep discovery and analysis on the current working directory. Provide a detailed summary of work performed.",
+		},
+		{
+			Name:        "Generating Architecture Plan",
+			Description: "Create a high-level architecture plan for the application. Provide a detailed summary of work performed.",
+		},
+		{
+			Name:        "Generating Dockerfile(s)",
+			Description: "Generate a Dockerfile for the application components as needed. Provide a detailed summary of work performed.",
+		},
+		{
+			Name:        "Generating infrastructure",
+			Description: "Generate infrastructure as code (IaC) for the application. Provide a detailed summary of work performed.",
+		},
+		{
+			Name:        "Generating azure.yaml file",
+			Description: "Generate an azure.yaml file for the application. Provide a detailed summary of work performed.",
+		},
+		{
+			Name:        "Validating project",
+			Description: "Validate the project structure and configuration. Provide a detailed summary of work performed.",
+		},
+	}
+
+	for idx, step := range initSteps {
+		// Collect and apply feedback for next steps
+		if idx > 0 {
+			if err := i.collectAndApplyFeedback(ctx, azdAgent, "Any feedback before continuing to the next step?"); err != nil {
+				return err
+			}
+		}
+
+		// Run Step
+		i.console.ShowSpinner(ctx, step.Name, input.Step)
+		fullTaskInput := fmt.Sprintf(taskInput, step.Description)
+		agentOutput, err := azdAgent.SendMessage(ctx, fullTaskInput)
+		if err != nil {
+			i.console.StopSpinner(ctx, fmt.Sprintf("%s (With errors)", step.Name), input.StepWarning)
+			if agentOutput != "" {
+				i.console.Message(ctx, output.WithMarkdown(agentOutput))
+			}
+
+			return err
+		}
+
+		i.console.StopSpinner(ctx, step.Name, input.StepDone)
+		i.console.Message(ctx, "")
+		finalOutput := fmt.Sprintf("%s %s", color.MagentaString("🤖 AZD Copilot:"), output.WithMarkdown(agentOutput))
+		i.console.Message(ctx, finalOutput)
+		i.console.Message(ctx, "")
+	}
+
+	// Post-completion feedback loop
+	if err := i.postCompletionFeedbackLoop(ctx, azdAgent); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// collectAndApplyFeedback prompts for user feedback and applies it using the agent in a loop
+func (i *initAction) collectAndApplyFeedback(ctx context.Context, azdAgent *agent.ConversationalAzdAiAgent, promptMessage string) error {
+	hasFeedback, err := i.console.Confirm(ctx, input.ConsoleOptions{
+		Message:      promptMessage,
+		DefaultValue: false,
+	})
+	if err != nil {
+		return err
+	}
+
+	if !hasFeedback {
+		i.console.Message(ctx, "")
+		return nil
+	}
+
+	// Loop to allow multiple rounds of feedback
+	for {
+		userInput, err := i.console.Prompt(ctx, input.ConsoleOptions{
+			Message:      "💭 You:",
+			DefaultValue: "",
+			Help:         "Additional context will be provided to AZD Copilot",
+		})
+		if err != nil {
+			return fmt.Errorf("error collecting feedback during azd init, %w", err)
+		}
+
+		if userInput != "" {
+			i.console.ShowSpinner(ctx, "Submitting feedback", input.Step)
+			feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
+			if err != nil {
+				i.console.StopSpinner(ctx, "Submitting feedback (With errors)", input.StepWarning)
+				if feedbackOutput != "" {
+					i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
+				}
+				return err
+			}
+
+			i.console.StopSpinner(ctx, "Submitting feedback", input.StepDone)
+			i.console.Message(ctx, "")
+			agentOutput := fmt.Sprintf("%s %s", color.MagentaString("🤖 AZD Copilot:"), output.WithMarkdown(feedbackOutput))
+			i.console.Message(ctx, agentOutput)
+			i.console.Message(ctx, "")
+		}
+
+		// Check if user wants to provide more feedback
+		moreFeedback, err := i.console.Confirm(ctx, input.ConsoleOptions{
+			Message:      "Do you have any more feedback or changes?",
+			DefaultValue: false,
+		})
+		if err != nil {
+			return err
+		}
+
+		if !moreFeedback {
+			break
+		}
+	}
+
+	return nil
+}
+
+// postCompletionFeedbackLoop provides a final opportunity for feedback after all steps complete
+func (i *initAction) postCompletionFeedbackLoop(ctx context.Context, azdAgent *agent.ConversationalAzdAiAgent) error {
+	i.console.Message(ctx, "")
+	i.console.Message(ctx, "🎉 All initialization steps completed!")
+	i.console.Message(ctx, "")
+
+	return i.collectAndApplyFeedback(ctx, azdAgent, "Any additional feedback or changes you'd like to make?")
 }
 
 type initType int
@@ -413,14 +552,20 @@ const (
 	initWithCopilot
 )
 
-func promptInitType(console input.Console, ctx context.Context) (initType, error) {
+func promptInitType(console input.Console, ctx context.Context, featuresManager *alpha.FeatureManager) (initType, error) {
+	options := []string{
+		"Scan current directory", // This now covers minimal project creation too
+		"Select a template",
+	}
+
+	// Only include AZD Copilot option if the LLM feature is enabled
+	if featuresManager.IsEnabled(llm.FeatureLlm) {
+		options = append(options, fmt.Sprintf("AZD Copilot %s", color.YellowString("(Alpha)")))
+	}
+
 	selection, err := console.Select(ctx, input.ConsoleOptions{
 		Message: "How do you want to initialize your app?",
-		Options: []string{
-			"Scan current directory", // This now covers minimal project creation too
-			"Select a template",
-			"AZD Copilot",
-		},
+		Options: options,
 	})
 	if err != nil {
 		return initUnknown, err
@@ -432,7 +577,11 @@ func promptInitType(console input.Console, ctx context.Context) (initType, error
 	case 1:
 		return initAppTemplate, nil
 	case 2:
-		return initWithCopilot, nil
+		// Only return initWithCopilot if the LLM feature is enabled and we have 3 options
+		if featuresManager.IsEnabled(llm.FeatureLlm) {
+			return initWithCopilot, nil
+		}
+		fallthrough
 	default:
 		panic("unhandled selection")
 	}

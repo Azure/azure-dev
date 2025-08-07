@@ -17,13 +17,15 @@ func (t *AzdAzureYamlGenerationTool) Name() string {
 }
 
 func (t *AzdAzureYamlGenerationTool) Description() string {
-	return `
-		Generates the azure.yaml configuration file for Azure Developer CLI (AZD) projects. 
-		This specialized tool focuses on creating service definitions, hosting configurations,
-		and deployment instructions. Can be used independently for service configuration updates.
+	return `Returns instructions for generating the azure.yaml configuration file with proper service hosting, build, and deployment settings for AZD projects. The LLM agent should execute these instructions using available tools.
 
-		Input: "./azd-arch-plan.md"
-	`
+Use this tool when:
+- Architecture planning has been completed and Azure services selected
+- Need to create or update azure.yaml configuration file
+- Services have been mapped to Azure hosting platforms
+- Ready to define build and deployment configurations
+
+Input: "./azd-arch-plan.md"`
 }
 
 func (t *AzdAzureYamlGenerationTool) Call(ctx context.Context, input string) (string, error) {

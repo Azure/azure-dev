@@ -1,67 +1,37 @@
-# AZD Azure.yaml Generation Tool
+# AZD Azure.yaml Generation Instructions
 
-This specialized tool generates the `azure.yaml` configuration file for Azure Developer CLI (AZD) projects.
+✅ **Agent Task List**  
 
-## Overview
+1. Check if `azd-arch-plan.md` exists and review architecture decisions
+2. Identify all application services (frontend, backend, functions, etc.)
+3. Determine hosting requirements for each service based on Azure service selections
+4. Analyze build requirements (language, package manager, build commands)
+5. Create complete `azure.yaml` file in root directory following required patterns
+6. Validate file against AZD schema using available tools
+7. Update existing `azd-arch-plan.md` with generated configuration details while preserving existing content
 
-Generate a valid `azure.yaml` configuration file with proper service hosting, build, and deployment settings.
+📄 **Required Outputs**  
 
-**IMPORTANT:** Before starting, check if `azd-arch-plan.md` exists in your current working directory. If it exists, review it to understand previous analysis and architecture decisions. Use the existing `azd_yaml_schema` tool for schema validation.
+- Valid `azure.yaml` file created in root directory
+- Service configurations matching Azure service selections from architecture planning
+- Build and deployment instructions for all services
+- Configuration validated against AZD schema
+- Update existing `azd-arch-plan.md` with configuration details while preserving existing content
 
-## Success Criteria
+🧠 **Execution Guidelines**  
 
-- [ ] Valid `azure.yaml` file created in root directory
-- [ ] All application services properly configured
-- [ ] Service hosting configurations match Azure service selections
-- [ ] Build and deployment instructions complete
-- [ ] File validates against AZD schema (use `azd_yaml_schema` tool)
+**Service Analysis Requirements:**
 
-## Service Analysis Requirements
+Identify and configure these service types:
 
-**REQUIRED ACTIONS:**
+- **Frontend applications:** React, Angular, Vue.js, static sites
+- **Backend services:** REST APIs, microservices, GraphQL, gRPC
+- **Function-based services:** Azure Functions for event-driven workloads
+- **Background services:** Workers and long-running processes
 
-1. **Identify Application Services:**
-   - Frontend applications (React, Angular, Vue.js, static sites)
-   - Backend services (REST APIs, microservices, GraphQL, gRPC)
-   - Function-based services (Azure Functions)
-   - Background services and workers
+**Hosting Configuration Patterns:**
 
-2. **Determine Hosting Requirements:**
-   - **Container Apps:** Microservices, APIs, containerized web apps
-   - **App Service:** Traditional web applications, APIs
-   - **Static Web Apps:** Frontend SPAs, static sites
-   - **Functions:** Event-driven, serverless workloads
-
-3. **Analyze Build Requirements:**
-   - Programming language and framework
-   - Package manager (npm, pip, dotnet, maven)
-   - Build commands and output directories
-   - Dependency management needs
-
-## Azure.yaml Configuration Requirements
-
-**REQUIRED ACTIONS:**
-
-Create a complete `azure.yaml` file in the root directory following these patterns:
-
-### Basic Structure Requirements
-
-**IMPORTANT:** Use the `azd_yaml_schema` tool for complete schema definition, structure requirements, and validation rules.
-
-Basic structure:
-
-```yaml
-name: [project-name]
-services:
-  # Service configurations
-infra:
-  provider: bicep
-  path: infra
-```
-
-### Service Configuration Patterns
-
-**Azure Container Apps (for microservices, APIs, containerized apps):**
+**Azure Container Apps** (for microservices, APIs, containerized apps):
 
 ```yaml
 services:
@@ -70,10 +40,10 @@ services:
     language: js
     host: containerapp
     docker:
-      path: ./src/api/Dockerfile
+      path: ./Dockerfile
 ```
 
-**Azure App Service (for traditional web apps):**
+**Azure App Service** (for traditional web apps):
 
 ```yaml
 services:
@@ -83,7 +53,7 @@ services:
     host: appservice
 ```
 
-**Azure Functions (for serverless workloads):**
+**Azure Functions** (for serverless workloads):
 
 ```yaml
 services:
@@ -93,7 +63,7 @@ services:
     host: function
 ```
 
-**Azure Static Web Apps (for SPAs, static sites):**
+**Azure Static Web Apps** (for SPAs, static sites):
 
 ```yaml
 services:
@@ -104,97 +74,28 @@ services:
     dist: build
 ```
 
-### Advanced Configuration Options
+**Critical Configuration Requirements:**
 
-**Environment Variables:**
-
-```yaml
-services:
-  api:
-    env:
-      - name: NODE_ENV
-        value: production
-      - name: DATABASE_URL
-        value: "{{ .Env.DATABASE_URL }}"
-```
-
-**Custom Build Commands:**
-
-```yaml
-services:
-  frontend:
-    hooks:
-      prebuild:
-        posix: npm install
-      build:
-        posix: npm run build
-```
-
-## Configuration Requirements
-
-**CRITICAL REQUIREMENTS:**
-
-- Service names must be valid Azure resource names (alphanumeric, hyphens only)
+- Service names must be alphanumeric with hyphens only
 - All `project` paths must point to existing directories
-- All `docker.path` references must point to existing Dockerfiles
+- All `docker.path` references must point to existing Dockerfiles **relative to the service project path**
 - Host types must be: `containerapp`, `appservice`, `function`, or `staticwebapp`
 - Language must match detected programming language
 - `dist` paths must match build output directories
 
-## Validation Requirements
+**Important Note:** For Container Apps with Docker configurations, the `docker.path` is relative to the service's `project` directory, not the repository root. For example, if your service project is `./src/api` and the Dockerfile is located at `./src/api/Dockerfile`, the `docker.path` should be `./Dockerfile`.
 
-**VALIDATION STEPS:**
+**Advanced Configuration Options:**
 
-1. **Schema Validation:** Use `azd_yaml_schema` tool for authoritative schema validation
-2. **Path Validation:** Ensure all referenced paths exist
-3. **Configuration Testing:** Run `azd show` to test service discovery
+- Environment variables using `${VARIABLE_NAME}` syntax
+- Custom commands using hooks (prebuild, postbuild, prepackage, postpackage, preprovision, postprovision)
+- Service dependencies and startup order
 
-**Validation Commands:**
+📌 **Completion Checklist**
 
-```bash
-# Validate configuration
-azd config show
-
-# Test service discovery
-azd show
-```
-
-## Common Patterns
-
-**Multi-Service Microservices:**
-
-- Frontend: Static Web App
-- APIs: Container Apps with Dockerfiles
-- Background Services: Container Apps or Functions
-
-**Full-Stack Application:**
-
-- Frontend: Static Web App
-- Backend: Container App or App Service
-
-**Serverless Application:**
-
-- Frontend: Static Web App
-- APIs: Azure Functions
-
-## Update Documentation
-
-**REQUIRED ACTIONS:**
-
-Update `azd-arch-plan.md` with:
-
-- Generated azure.yaml location and schema version
-- Service configuration table (service, type, host, language, path)
-- Hosting strategy summary by Azure service type
-- Build and deployment configuration decisions
-- Docker configuration details
-- Validation results
-
-## Next Steps
-
-After azure.yaml generation is complete:
-
-1. Validate configuration using `azd_yaml_schema` tool
-2. Test service discovery with `azd show`
-
-**IMPORTANT:** Reference existing tools for specific functionality. Use `azd_yaml_schema` for schema validation.
+- [ ] Valid `azure.yaml` file created in root directory
+- [ ] All discovered services properly configured with correct host types
+- [ ] Service hosting configurations match Azure service selections from architecture planning
+- [ ] Build and deployment instructions complete for all services
+- [ ] File validates against any available AZD schema tools
+- [ ] `azd-arch-plan.md` updated with configuration details while preserving existing content

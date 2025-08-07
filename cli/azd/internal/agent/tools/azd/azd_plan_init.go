@@ -17,11 +17,15 @@ func (t *AzdPlanInitTool) Name() string {
 }
 
 func (t *AzdPlanInitTool) Description() string {
-	return `
-		Gets the required workflow steps and best practices and patterns for initializing or migrating an application to use AZD.
+	return `Returns instructions for orchestrating complete AZD application initialization using structured phases with specialized tools. The LLM agent should execute these instructions using available tools.
 
-		Input: "./azd-arch-plan.md"
-	`
+Use this tool when:
+- Starting new AZD project initialization or migration
+- Need structured approach to transform application into AZD-compatible project
+- Want to ensure proper sequencing of discovery, planning, and file generation
+- Require complete project orchestration guidance
+
+Input: "./azd-arch-plan.md"`
 }
 
 func (t *AzdPlanInitTool) Call(ctx context.Context, input string) (string, error) {

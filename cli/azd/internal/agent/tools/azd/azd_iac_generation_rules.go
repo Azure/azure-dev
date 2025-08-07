@@ -17,11 +17,15 @@ func (t *AzdIacGenerationRulesTool) Name() string {
 }
 
 func (t *AzdIacGenerationRulesTool) Description() string {
-	return `
-		Gets the infrastructure as code (IaC) rules and best practices and patterns to use when generating bicep files and modules for use within AZD.
+	return `Returns comprehensive rules and guidelines for generating Bicep Infrastructure as Code files and modules for AZD projects. The LLM agent should reference these rules when generating infrastructure code.
 
-		Input: "./azd-arch-plan.md"
-	`
+Use this tool when:
+- Generating any Bicep infrastructure templates for AZD projects
+- Need compliance rules and naming conventions for Azure resources
+- Creating modular, reusable Bicep files
+- Ensuring security and operational best practices
+
+Input: "./azd-arch-plan.md"`
 }
 
 func (t *AzdIacGenerationRulesTool) Call(ctx context.Context, input string) (string, error) {

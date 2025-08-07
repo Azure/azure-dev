@@ -17,13 +17,15 @@ func (t *AzdArchitecturePlanningTool) Name() string {
 }
 
 func (t *AzdArchitecturePlanningTool) Description() string {
-	return `
-		Performs Azure service selection and architecture planning for applications preparing for Azure Developer CLI (AZD) initialization.
-		This is Phase 2 of the AZD migration process that maps components to Azure services, plans hosting strategies,
-		and designs infrastructure architecture based on discovery results.
+	return `Returns instructions for selecting appropriate Azure services for discovered application components and designing infrastructure architecture. The LLM agent should execute these instructions using available tools.
 
-		Input: "./azd-arch-plan.md"
-	`
+Use this tool when:
+- Discovery analysis has been completed and azd-arch-plan.md exists
+- Application components have been identified and classified
+- Need to map components to Azure hosting services
+- Ready to plan containerization and database strategies
+
+Input: "./azd-arch-plan.md"`
 }
 
 func (t *AzdArchitecturePlanningTool) Call(ctx context.Context, input string) (string, error) {

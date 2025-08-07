@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package llm
 
 import (
@@ -21,7 +24,8 @@ func (f *ModelFactory) CreateModelContainer(modelType LlmType, opts ...ModelOpti
 	var modelProvider ModelProvider
 	if err := f.serviceLocator.ResolveNamed(string(modelType), &modelProvider); err != nil {
 		return nil, &internal.ErrorWithSuggestion{
-			Err:        fmt.Errorf("The model type '%s' is not supported. Support types include: azure, ollama", modelType),
+			Err: fmt.Errorf("The model type '%s' is not supported. Support types include: azure, ollama", modelType),
+			//nolint:lll
 			Suggestion: "Use `azd config set` to set the model type and any model specific options, such as the model name or version.",
 		}
 	}

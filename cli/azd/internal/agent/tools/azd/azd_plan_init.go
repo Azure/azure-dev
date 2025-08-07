@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azd
 
 import (
@@ -17,7 +20,10 @@ func (t *AzdPlanInitTool) Name() string {
 }
 
 func (t *AzdPlanInitTool) Description() string {
-	return `Returns instructions for orchestrating complete AZD application initialization using structured phases with specialized tools. The LLM agent should execute these instructions using available tools.
+	return `Returns instructions for orchestrating complete AZD application initialization using structured phases 
+with specialized tools. 
+
+The LLM agent should execute these instructions using available tools.
 
 Use this tool when:
 - Starting new AZD project initialization or migration

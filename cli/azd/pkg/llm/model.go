@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package llm
 
 import (
@@ -7,22 +10,26 @@ import (
 	"github.com/tmc/langchaingo/llms"
 )
 
-var _ llms.Model = (*Model)(nil)
+var _ llms.Model = (*modelWithCallOptions)(nil)
 
 // / Wraps an langchaingo model to allow specifying specific call options at create time
-type Model struct {
+type modelWithCallOptions struct {
 	model   llms.Model
 	options []llms.CallOption
 }
 
-func NewModel(model llms.Model, options ...llms.CallOption) *Model {
-	return &Model{
+func newModelWithCallOptions(model llms.Model, options ...llms.CallOption) *modelWithCallOptions {
+	return &modelWithCallOptions{
 		model:   model,
 		options: options,
 	}
 }
 
-func (m *Model) GenerateContent(ctx context.Context, messages []llms.MessageContent, options ...llms.CallOption) (*llms.ContentResponse, error) {
+func (m *modelWithCallOptions) GenerateContent(
+	ctx context.Context,
+	messages []llms.MessageContent,
+	options ...llms.CallOption,
+) (*llms.ContentResponse, error) {
 	allOptions := []llms.CallOption{}
 	allOptions = append(allOptions, m.options...)
 	allOptions = append(allOptions, options...)
@@ -30,6 +37,6 @@ func (m *Model) GenerateContent(ctx context.Context, messages []llms.MessageCont
 	return m.model.GenerateContent(ctx, messages, allOptions...)
 }
 
-func (m *Model) Call(ctx context.Context, prompt string, options ...llms.CallOption) (string, error) {
+func (m *modelWithCallOptions) Call(ctx context.Context, prompt string, options ...llms.CallOption) (string, error) {
 	return "", fmt.Errorf("Deprecated, call GenerateContent")
 }

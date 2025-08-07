@@ -389,6 +389,9 @@ func (i *initAction) initAppWithCopilot(ctx context.Context) error {
 	}
 
 	samplingModelContainer, err := i.llmManager.GetDefaultModel()
+	if err != nil {
+		return err
+	}
 
 	azdAgent, err := agent.NewConversationalAzdAiAgent(
 		defaultModelContainer.Model,
@@ -441,7 +444,11 @@ Do not stop until all tasks are complete and fully resolved.
 	for idx, step := range initSteps {
 		// Collect and apply feedback for next steps
 		if idx > 0 {
-			if err := i.collectAndApplyFeedback(ctx, azdAgent, "Any feedback before continuing to the next step?"); err != nil {
+			if err := i.collectAndApplyFeedback(
+				ctx,
+				azdAgent,
+				"Any feedback before continuing to the next step?",
+			); err != nil {
 				return err
 			}
 		}
@@ -479,7 +486,11 @@ Do not stop until all tasks are complete and fully resolved.
 }
 
 // collectAndApplyFeedback prompts for user feedback and applies it using the agent in a loop
-func (i *initAction) collectAndApplyFeedback(ctx context.Context, azdAgent *agent.ConversationalAzdAiAgent, promptMessage string) error {
+func (i *initAction) collectAndApplyFeedback(
+	ctx context.Context,
+	azdAgent *agent.ConversationalAzdAiAgent,
+	promptMessage string,
+) error {
 	// Loop to allow multiple rounds of feedback
 	for {
 		confirmFeedback := uxlib.NewConfirm(&uxlib.ConfirmOptions{

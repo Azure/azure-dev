@@ -131,8 +131,3 @@ func (m Manager) GetDefaultModel(opts ...ModelOption) (*ModelContainer, error) {
 func (m Manager) GetModel(modelType LlmType, opts ...ModelOption) (*ModelContainer, error) {
 	return m.ModelFactory.CreateModelContainer(modelType, opts...)
 }
-
-var availableLlmTypes = []LlmType{
-	LlmTypeOpenAIAzure,
-	LlmTypeOllama,
-}

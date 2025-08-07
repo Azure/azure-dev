@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azd
 
 import (
@@ -17,7 +20,10 @@ func (t *AzdIacGenerationRulesTool) Name() string {
 }
 
 func (t *AzdIacGenerationRulesTool) Description() string {
-	return `Returns comprehensive rules and guidelines for generating Bicep Infrastructure as Code files and modules for AZD projects. The LLM agent should reference these rules when generating infrastructure code.
+	return `Returns comprehensive rules and guidelines for generating Bicep Infrastructure as Code files and modules 
+for AZD projects. 
+
+The LLM agent should reference these rules when generating infrastructure code.
 
 Use this tool when:
 - Generating any Bicep infrastructure templates for AZD projects

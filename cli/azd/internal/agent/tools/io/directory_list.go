@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package io
 
 import (
@@ -60,7 +63,10 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 
 	// Parse as JSON - this is now required
 	if err := json.Unmarshal([]byte(cleanInput), &params); err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Invalid JSON input: %s. Expected format: {\"path\": \".\", \"includeHidden\": false}", err.Error()))
+		return t.createErrorResponse(
+			err,
+			fmt.Sprintf("Invalid JSON input: %s. Expected format: {\"path\": \".\", \"includeHidden\": false}", err.Error()),
+		)
 	}
 
 	// Validate required path field
@@ -97,7 +103,10 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 	}
 
 	if !info.IsDir() {
-		return t.createErrorResponse(fmt.Errorf("%s is not a directory", absPath), fmt.Sprintf("%s is not a directory", absPath))
+		return t.createErrorResponse(
+			fmt.Errorf("%s is not a directory", absPath),
+			fmt.Sprintf("%s is not a directory", absPath),
+		)
 	}
 
 	// Read directory contents

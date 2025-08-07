@@ -42,6 +42,20 @@ func (p *AzureOpenAiModelProvider) CreateModelContainer(opts ...ModelOption) (*M
 		return nil, err
 	}
 
+	// Validate required attributes
+	requiredFields := map[string]string{
+		"token":      modelConfig.Token,
+		"endpoint":   modelConfig.Endpoint,
+		"apiVersion": modelConfig.ApiVersion,
+		"model":      modelConfig.Model,
+	}
+
+	for fieldName, fieldValue := range requiredFields {
+		if fieldValue == "" {
+			return nil, fmt.Errorf("azure openai model configuration is missing required '%s' field", fieldName)
+		}
+	}
+
 	modelContainer := &ModelContainer{
 		Type:    LlmTypeOpenAIAzure,
 		IsLocal: false,
@@ -77,7 +91,7 @@ func (p *AzureOpenAiModelProvider) CreateModelContainer(opts ...ModelOption) (*M
 	}
 
 	openAiModel.CallbacksHandler = modelContainer.logger
-	modelContainer.Model = NewModel(openAiModel, callOptions...)
+	modelContainer.Model = newModelWithCallOptions(openAiModel, callOptions...)
 
 	return modelContainer, nil
 }

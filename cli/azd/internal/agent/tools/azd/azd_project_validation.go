@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azd
 
 import (
@@ -20,7 +23,10 @@ func (t *AzdProjectValidationTool) Name() string {
 
 // Description returns the description of the tool.
 func (t *AzdProjectValidationTool) Description() string {
-	return `Returns instructions for validating AZD project by running comprehensive checks on azure.yaml schema, Bicep templates, environment setup, packaging, and deployment preview. The LLM agent should execute these instructions using available tools.
+	return `Returns instructions for validating AZD project by running comprehensive checks on azure.yaml schema, 
+Bicep templates, environment setup, packaging, and deployment preview.
+
+The LLM agent should execute these instructions using available tools.
 
 Use this tool when:
 - All AZD configuration files have been generated

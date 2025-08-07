@@ -69,6 +69,7 @@ BUILDNUMBER
 buildpacks
 byoi
 cflags
+charmbracelet
 circleci
 cmdrecord
 cmdsubst
@@ -76,6 +77,7 @@ cognitiveservices
 conditionalize
 consolesize
 containerapp
+containerizable
 containerapps
 containerd
 contoso
@@ -144,6 +146,8 @@ ldflags
 lechnerc77
 libc
 llms
+localtools
+mcptools
 memfs
 mergo
 mgmt
@@ -247,6 +251,7 @@ unsetenvs
 unsets
 upgrader
 utsname
+uxlib
 vite
 vsrpc
 vuejs

@@ -1,0 +1,117 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package agent
+
+import (
+	"context"
+	_ "embed"
+	"strings"
+
+	"github.com/tmc/langchaingo/agents"
+	"github.com/tmc/langchaingo/chains"
+	"github.com/tmc/langchaingo/llms"
+	"github.com/tmc/langchaingo/prompts"
+	"github.com/tmc/langchaingo/tools"
+
+	localtools "github.com/azure/azure-dev/cli/azd/internal/agent/tools"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/mcp"
+	mcptools "github.com/azure/azure-dev/cli/azd/internal/agent/tools/mcp"
+)
+
+// OneShotAzdAiAgent represents an enhanced AZD Copilot agent with action tracking, intent validation, and conversation memory
+type OneShotAzdAiAgent struct {
+	*Agent
+}
+
+//go:embed prompts/one_shot.txt
+var one_shot_prompt_template string
+
+func NewOneShotAzdAiAgent(llm llms.Model, opts ...AgentOption) (*OneShotAzdAiAgent, error) {
+	azdAgent := &OneShotAzdAiAgent{
+		Agent: &Agent{
+			defaultModel:  llm,
+			samplingModel: llm,
+			tools:         []tools.Tool{},
+		},
+	}
+
+	for _, opt := range opts {
+		opt(azdAgent.Agent)
+	}
+
+	// Create sampling handler for MCP
+	samplingHandler := mcptools.NewMcpSamplingHandler(
+		azdAgent.samplingModel,
+		mcp.WithDebug(azdAgent.debug),
+	)
+
+	toolLoaders := []localtools.ToolLoader{
+		localtools.NewLocalToolsLoader(),
+		mcptools.NewMcpToolsLoader(samplingHandler),
+	}
+
+	// Define block list of excluded tools
+	excludedTools := map[string]bool{
+		"extension_az":  true,
+		"extension_azd": true,
+		// Add more excluded tools here as needed
+	}
+
+	for _, toolLoader := range toolLoaders {
+		categoryTools, err := toolLoader.LoadTools()
+		if err != nil {
+			return nil, err
+		}
+
+		// Filter out excluded tools
+		for _, tool := range categoryTools {
+			if !excludedTools[tool.Name()] {
+				azdAgent.tools = append(azdAgent.tools, tool)
+			}
+		}
+	}
+
+	promptTemplate := prompts.PromptTemplate{
+		Template:       one_shot_prompt_template,
+		InputVariables: []string{"input", "agent_scratchpad"},
+		TemplateFormat: prompts.TemplateFormatGoTemplate,
+		PartialVariables: map[string]any{
+			"tool_names":        toolNames(azdAgent.tools),
+			"tool_descriptions": toolDescriptions(azdAgent.tools),
+		},
+	}
+
+	// 4. Create agent with memory directly integrated
+	oneShotAgent := agents.NewOneShotAgent(llm, azdAgent.tools,
+		agents.WithPrompt(promptTemplate),
+		agents.WithCallbacksHandler(azdAgent.callbacksHandler),
+		agents.WithReturnIntermediateSteps(),
+	)
+
+	// 5. Create executor without separate memory configuration since agent already has it
+	executor := agents.NewExecutor(oneShotAgent,
+		agents.WithMaxIterations(500), // Much higher limit for complex multi-step processes
+		agents.WithCallbacksHandler(azdAgent.callbacksHandler),
+		agents.WithReturnIntermediateSteps(),
+	)
+
+	azdAgent.executor = executor
+	return azdAgent, nil
+}
+
+// RunConversationLoop runs the enhanced AZD Copilot agent with full capabilities
+func (aai *OneShotAzdAiAgent) SendMessage(ctx context.Context, args ...string) (string, error) {
+	return aai.runChain(ctx, strings.Join(args, "\n"))
+}
+
+// ProcessQuery processes a user query with full action tracking and validation
+func (aai *OneShotAzdAiAgent) runChain(ctx context.Context, userInput string) (string, error) {
+	// Execute with enhanced input - agent should automatically handle memory
+	output, err := chains.Run(ctx, aai.executor, userInput)
+	if err != nil {
+		return "", err
+	}
+
+	return output, nil
+}

@@ -17,13 +17,15 @@ func (t *AzdDockerGenerationTool) Name() string {
 }
 
 func (t *AzdDockerGenerationTool) Description() string {
-	return `
-		Generates Dockerfiles and container configurations for Azure Developer CLI (AZD) projects.
-		This specialized tool focuses on containerization requirements, creating optimized Dockerfiles
-		for different programming languages, and configuring container-specific settings for Azure hosting.
+	return `Returns instructions for generating optimized Dockerfiles and container configurations for containerizable services in AZD projects. The LLM agent should execute these instructions using available tools.
 
-		Input: "./azd-arch-plan.md"
-	`
+Use this tool when:
+- Architecture planning identified services requiring containerization
+- azd-arch-plan.md shows Container Apps or AKS as selected hosting platform
+- Need Dockerfiles for microservices, APIs, or containerized web applications
+- Ready to implement containerization strategy
+
+Input: "./azd-arch-plan.md"`
 }
 
 func (t *AzdDockerGenerationTool) Call(ctx context.Context, input string) (string, error) {

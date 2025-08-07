@@ -1,165 +1,133 @@
-# AZD Architecture Planning Tool
+# AZD Architecture Planning Instructions
 
-This tool performs Azure service selection and architecture planning for Azure Developer CLI (AZD) initialization. This is Phase 2 of the AZD migration process.
+✅ **Agent Task List**  
 
-## Overview
+1. Read `azd-arch-plan.md` to understand discovered components
+2. For each component, select optimal Azure service using selection criteria below
+3. Plan containerization strategy for applicable services
+4. Select appropriate database and messaging services
+5. Design resource group organization and networking approach
+6. Generate IaC file checklist based on selected Azure services
+7. Generate Docker file checklist based on containerization strategy
+8. Create `azd-arch-plan.md` if it doesn't exist, or update existing file with service mapping table, architecture decisions, IaC checklist, and Docker checklist while preserving existing content
 
-Use discovery results to select appropriate Azure services, plan hosting strategies, and design infrastructure architecture.
+📄 **Required Outputs**  
 
-**IMPORTANT:** Before starting, review the `azd-arch-plan.md` file in your current working directory to understand discovered components and dependencies from the discovery phase.
+- Create `azd-arch-plan.md` if missing, or update existing file with Azure Service Mapping Table showing Component | Current Tech | Azure Service | Rationale
+- Hosting strategy summary documenting decisions for each component (preserve existing content)
+- Containerization plans for applicable services (preserve existing content)
+- Infrastructure architecture design including resource organization and networking (preserve existing content)
+- **IaC File Generation Checklist** listing all Bicep files that need to be created based on selected services (add to existing file)
+- **Docker File Generation Checklist** listing all Docker files needed for containerized services (add to existing file)
 
-## Success Criteria
+🧠 **Execution Guidelines**  
 
-- [ ] Azure service selections made for all components
-- [ ] Hosting strategies defined for each service
-- [ ] Containerization plans documented
-- [ ] Infrastructure architecture designed
-- [ ] Ready to proceed to file generation phase
+**Azure Service Selection Criteria:**
 
-## Azure Service Selection
+**Azure Container Apps (PREFERRED)** - Use for microservices, containerized applications, event-driven workloads with auto-scaling needs
 
-**REQUIRED ANALYSIS:**
+**Azure Kubernetes Service (AKS)** - Use for complex containerized applications requiring full Kubernetes control, advanced networking, custom operators
 
-For each discovered application component, select the most appropriate Azure hosting platform:
+**Azure App Service** - Use for web applications, REST APIs needing specific runtime versions or Windows-specific features
 
-### Azure Container Apps (PREFERRED)
+**Azure Functions** - Use for event processing, scheduled tasks, lightweight APIs with pay-per-execution model
 
-**Use for:** Microservices, containerized applications, event-driven workloads
-**Benefits:** Auto-scaling, managed Kubernetes, simplified deployment
-**Consider when:** Component can be containerized, needs elastic scaling
+**Azure Static Web Apps** - Use for frontend SPAs, static sites, JAMstack applications with minimal backend needs
 
-### Azure App Service
+**Database Service Selection:**
 
-**Use for:** Web applications, REST APIs with specific runtime needs
-**Benefits:** Managed platform, built-in CI/CD, easy SSL/custom domains
-**Consider when:** Need specific runtime versions, Windows-specific features
+- Azure SQL Database: SQL Server compatibility, complex queries, ACID compliance
+- Azure Database for PostgreSQL/MySQL: Specific engine compatibility required
+- Azure Cosmos DB: NoSQL requirements, global scale, flexible schemas
+- Azure Cache for Redis: Application caching, session storage, real-time analytics
 
-### Azure Functions
+**Messaging Service Selection:**
 
-**Use for:** Event processing, scheduled tasks, lightweight APIs
-**Benefits:** Serverless, automatic scaling, pay-per-execution
-**Consider when:** Event-driven processing, stateless operations
+- Azure Service Bus: Enterprise messaging, guaranteed delivery, complex routing
+- Azure Event Hubs: High-throughput event streaming, telemetry ingestion
+- Azure Event Grid: Event-driven architectures, reactive programming
 
-### Azure Static Web Apps
+**IaC File Checklist Generation:**
 
-**Use for:** Frontend SPAs, static sites, JAMstack applications
-**Benefits:** Global CDN, built-in authentication, API integration
-**Consider when:** Static content, minimal backend requirements
+Based on selected Azure services, generate a checklist of required Bicep files to be created:
 
-## Selection Criteria
+**Always Required:**
 
-**REQUIRED ANALYSIS:**
+- [ ] `./infra/main.bicep` - Primary deployment template (subscription scope)
+- [ ] `./infra/main.parameters.json` - Parameter defaults
+- [ ] `./infra/modules/monitoring.bicep` - Log Analytics and Application Insights
 
-For each discovered component, consider:
+**Service-Specific Modules (include based on service selection):**
 
-- Scalability requirements and traffic patterns
-- Runtime and platform needs
-- Operational complexity preferences
-- Cost considerations
-- Team expertise and preferences
+- [ ] `./infra/modules/container-apps.bicep` - If Container Apps selected
+- [ ] `./infra/modules/app-service.bicep` - If App Service selected  
+- [ ] `./infra/modules/functions.bicep` - If Azure Functions selected
+- [ ] `./infra/modules/static-web-app.bicep` - If Static Web Apps selected
+- [ ] `./infra/modules/aks.bicep` - If AKS selected
+- [ ] `./infra/modules/database.bicep` - If SQL/PostgreSQL/MySQL selected
+- [ ] `./infra/modules/cosmosdb.bicep` - If Cosmos DB selected
+- [ ] `./infra/modules/storage.bicep` - If Storage Account needed
+- [ ] `./infra/modules/keyvault.bicep` - If Key Vault needed (recommended)
+- [ ] `./infra/modules/servicebus.bicep` - If Service Bus selected
+- [ ] `./infra/modules/eventhub.bicep` - If Event Hubs selected
+- [ ] `./infra/modules/redis.bicep` - If Redis Cache selected
+- [ ] `./infra/modules/container-registry.bicep` - If container services selected
 
-## Containerization Planning
-
-**REQUIRED ASSESSMENT:**
-
-For each component, determine:
-
-- **Containerization Feasibility:** Can it run in Docker? Windows-specific dependencies?
-- **Docker Strategy:** Base image selection, port mappings, environment variables
-- **Resource Requirements:** CPU, memory, storage needs
-- **Health Check Strategy:** Endpoint patterns for monitoring
-
-## Data Storage Planning
-
-**REQUIRED ANALYSIS:**
-
-Select appropriate Azure database services:
-
-### Azure SQL Database
-
-**Use for:** SQL Server compatibility, complex queries, ACID compliance
-**Consider when:** Relational data model, existing SQL Server applications
-
-### Azure Database for PostgreSQL/MySQL
-
-**Use for:** PostgreSQL/MySQL workloads, web applications
-**Consider when:** Specific database engine compatibility required
-
-### Azure Cosmos DB
-
-**Use for:** NoSQL requirements, global scale, flexible schemas
-**Consider when:** Multiple data models, global distribution needed
-
-### Azure Cache for Redis
-
-**Use for:** Application caching, session storage, real-time analytics
-**Consider when:** Performance optimization, session management
-
-## Messaging and Integration Planning
-
-**REQUIRED ANALYSIS:**
-
-Select messaging services based on patterns:
-
-### Azure Service Bus
-
-**Use for:** Enterprise messaging, guaranteed delivery, complex routing
-**Consider when:** Reliable messaging, enterprise scenarios
-
-### Azure Event Hubs
-
-**Use for:** High-throughput event streaming, telemetry ingestion
-**Consider when:** Big data scenarios, real-time analytics
-
-### Azure Event Grid
-
-**Use for:** Event-driven architectures, reactive programming
-**Consider when:** Decoupled systems, serverless architectures
-
-## Update Architecture Documentation
-
-**REQUIRED ACTIONS:**
-
-Update `azd-arch-plan.md` with:
-
-### Azure Service Mapping Table
+**Example IaC Checklist Output:**
 
 ```markdown
-| Component | Current Tech | Azure Service | Rationale |
-|-----------|-------------|---------------|-----------|
-| Web App | React | Static Web Apps | Frontend SPA |
-| API Service | Node.js | Container Apps | Microservice architecture |
-| Database | PostgreSQL | Azure Database for PostgreSQL | Existing dependency |
+## Infrastructure as Code File Checklist
+
+Based on the selected Azure services, the following Bicep files need to be generated:
+
+### Core Files (Always Required)
+- [ ] `./infra/main.bicep` - Primary deployment template
+- [ ] `./infra/main.parameters.json` - Parameter defaults
+- [ ] `./infra/modules/monitoring.bicep` - Observability stack
+
+### Service-Specific Modules
+- [ ] `./infra/modules/container-apps.bicep` - For web API hosting
+- [ ] `./infra/modules/database.bicep` - For PostgreSQL database
+- [ ] `./infra/modules/keyvault.bicep` - For secrets management
+- [ ] `./infra/modules/container-registry.bicep` - For container image storage
+
+Total files to generate: 7
 ```
 
-### Hosting Strategy Summary
+**Docker File Checklist Generation:**
 
-- Document hosting decisions for each component
-- Include containerization plans where applicable
-- Note resource requirements and scaling strategies
+Based on selected Azure services and containerization strategy, generate a checklist of required Docker files:
 
-### Infrastructure Architecture
+**Container-Based Services (include based on service selection):**
 
-- Resource group organization strategy
-- Networking and security design approach
-- Monitoring and logging strategy
-- Integration patterns between services
+- [ ] `{service-path}/Dockerfile` - If Container Apps, AKS, or containerized App Service selected
+- [ ] `{service-path}/.dockerignore` - For each containerized service
 
-### Next Steps Checklist
+**Example Docker Checklist Output:**
 
-- [ ] Azure service selected for each component with rationale
-- [ ] Hosting strategies defined
-- [ ] Containerization plans documented
-- [ ] Data storage strategies planned
-- [ ] Ready to proceed to file generation phase
+```markdown
+## Docker File Generation Checklist
 
-## Next Phase
+Based on the containerization strategy, the following Docker files need to be generated:
 
-After completing architecture planning, proceed to the appropriate file generation tool:
+### Service Dockerfiles
+- [ ] `./api/Dockerfile` - For Node.js API service (Container Apps)
+- [ ] `./api/.dockerignore` - Exclude unnecessary files from API container
+- [ ] `./frontend/Dockerfile` - For React frontend (containerized App Service)
+- [ ] `./frontend/.dockerignore` - Exclude unnecessary files from frontend container
 
-- Use `azd_azure_yaml_generation` tool for azure.yaml configuration
-- Use `azd_infrastructure_generation` tool for Bicep templates
-- Use `azd_docker_generation` tool for container configurations
-- Use `azd_project_validation` tool for final project validation
+Total Docker files to generate: 4
+```
 
-**IMPORTANT:** Keep `azd-arch-plan.md` updated as the central reference for all architecture decisions. This document guides subsequent phases and serves as implementation documentation.
+📌 **Completion Checklist**  
+
+- [ ] Azure service selected for each discovered component with documented rationale
+- [ ] Hosting strategies defined and documented in `azd-arch-plan.md`
+- [ ] Containerization plans documented for applicable services
+- [ ] Data storage strategies planned and documented
+- [ ] Resource group organization strategy defined
+- [ ] Integration patterns between services documented
+- [ ] **IaC file checklist generated** and added to `azd-arch-plan.md` based on selected services
+- [ ] **Docker file checklist generated** and added to `azd-arch-plan.md` based on containerization strategy
+- [ ] `azd-arch-plan.md` created or updated while preserving existing content
+- [ ] Ready to proceed to infrastructure generation phase

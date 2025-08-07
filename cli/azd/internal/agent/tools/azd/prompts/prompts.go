@@ -27,3 +27,6 @@ var AzdInfrastructureGenerationPrompt string
 
 //go:embed azd_docker_generation.md
 var AzdDockerGenerationPrompt string
+
+//go:embed azd_project_validation.md
+var AzdProjectValidationPrompt string

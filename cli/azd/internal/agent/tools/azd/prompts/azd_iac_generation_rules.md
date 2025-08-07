@@ -1,134 +1,109 @@
-# Infrastructure as Code (IaC) Generation Rules for Azure Developer CLI (AZD)
+# Infrastructure as Code (IaC) Generation Rules
 
-This document provides comprehensive rules and guidelines for generating Bicep Infrastructure as Code files and modules for AZD projects. Follow these rules strictly when generating Azure infrastructure code.
+✅ **Agent Task List**  
 
-## Core Generation Rules
+1. Reference these rules when generating any IaC files
+2. Follow file structure and organization requirements
+3. Implement naming conventions and tagging strategies
+4. Apply security and compliance best practices
+5. Validate all generated code against these requirements
 
-### File Structure and Organization
+📄 **Required Outputs**  
 
-- **REQUIRED**: Place all IaC files in the `./infra` folder within an AZD project
-- **REQUIRED**: Name the main deployment file `main.bicep` - this is the primary deployment target
-- **REQUIRED**: Create a `main.parameters.json` file alongside `main.bicep` containing all parameter defaults for the Bicep deployment
-- **REQUIRED**: The root level `main.bicep` must be a subscription level deployment using `targetScope = 'subscription'`
-- **REQUIRED**: The main.bicep file must create a resource group as the primary container for all resources
-- **REQUIRED**: Pass the resource group scope to all child modules that deploy resources
-- **REQUIRED**: Create modular, reusable Bicep files instead of monolithic templates
-- **RECOMMENDED**: Organize modules by resource type or logical grouping
+- IaC files following all specified rules and conventions
+- Proper file structure in `./infra` directory
+- Compliance with Azure Well-Architected Framework principles
+- Security best practices implemented
+- Validation passing without errors
 
-### Azure Best Practices Compliance
+🧠 **Execution Guidelines**  
 
-- **REQUIRED**: Follow Azure Well-Architected Framework principles
-- **REQUIRED**: Use Bicep best practices including proper parameter validation and resource dependencies
-- **REQUIRED**: Leverage Azure Verified Modules (AVM) when available - always check for existing AVM modules before creating custom ones
-- **REQUIRED**: Implement least-privilege access principles
+**File Structure and Organization:**
 
-### Naming Conventions
+- **REQUIRED:** Place all IaC files in `./infra` folder
+- **REQUIRED:** Name main deployment file `main.bicep`
+- **REQUIRED:** Create `main.parameters.json` with parameter defaults
+- **REQUIRED:** Main.bicep must use `targetScope = 'subscription'`
+- **REQUIRED:** Create resource group as primary container
+- **REQUIRED:** Pass resource group scope to all child modules
+- **REQUIRED:** Create modular, reusable Bicep files
 
-- **REQUIRED**: Use consistent naming pattern: `{resourcePrefix}-{name}-{uniqueHash}`
-- **REQUIRED**: Generate unique hash using combination of environment name, subscription ID, and resource group name
-- **EXAMPLE**: `app-myservice-h3x9k2` where `h3x9k2` is generated from env/subscription/rg
-- **FORBIDDEN**: Hard-code tenant IDs, subscription IDs, or resource group names
+**Naming Conventions:**
 
-### Module Parameters
+- **REQUIRED:** Use pattern `{resourcePrefix}-{name}-{uniqueHash}`
+- **REQUIRED:** Generate unique hash from environment name, subscription ID, and resource group name
+- **EXAMPLE:** `app-myservice-h3x9k2` where `h3x9k2` is generated
+- **FORBIDDEN:** Hard-code tenant IDs, subscription IDs, or resource group names
 
-- **REQUIRED**: Every module must accept these standard parameters:
-  - `name` (string): Base name for the resource
-  - `location` (string): Azure region for deployment
-  - `tags` (object): Resource tags for governance
-- **REQUIRED**: Modules that deploy Azure resources must use `targetScope = 'resourceGroup'` and be called with the resource group scope from main.bicep
-- **REQUIRED**: Provide intelligent defaults for optional parameters
-- **REQUIRED**: Use parameter decorators for validation (e.g., `@minLength`, `@allowed`)
-- **RECOMMENDED**: Group related parameters using objects when appropriate
+**Module Parameters (All modules must accept):**
 
-### Tagging Strategy
+- `name` (string): Base name for the resource
+- `location` (string): Azure region for deployment  
+- `tags` (object): Resource tags for governance
+- **REQUIRED:** Modules use `targetScope = 'resourceGroup'`
+- **REQUIRED:** Provide intelligent defaults for optional parameters
+- **REQUIRED:** Use parameter decorators for validation
 
-- **REQUIRED**: Tag resource groups with `azd-env-name: {environment-name}`
-- **REQUIRED**: Tag hosting resources with `azd-service-name: {service-name}`
-- **RECOMMENDED**: Include additional governance tags (cost center, owner, etc.)
+**Tagging Strategy:**
 
-### Security and Compliance
+- **REQUIRED:** Tag resource groups with `azd-env-name: {environment-name}`
+- **REQUIRED:** Tag hosting resources with `azd-service-name: {service-name}`
+- **RECOMMENDED:** Include governance tags (cost center, owner, etc.)
 
-- **FORBIDDEN**: Hard-code secrets, connection strings, or sensitive values
-- **REQUIRED**: Use Key Vault references for secrets
-- **REQUIRED**: Enable diagnostic settings and logging where applicable
-- **REQUIRED**: Follow principle of least privilege for managed identities
+**Security and Compliance:**
 
-### Quality Assurance
+- **FORBIDDEN:** Hard-code secrets, connection strings, or sensitive values
+- **REQUIRED:** Use Key Vault references for secrets
+- **REQUIRED:** Enable diagnostic settings and logging where applicable
+- **REQUIRED:** Follow principle of least privilege for managed identities
+- **REQUIRED:** Follow Azure Well-Architected Framework principles
 
-- **REQUIRED**: Validate all generated Bicep code using Bicep CLI
-- **REQUIRED**: Address all warnings and errors before considering code complete
-- **REQUIRED**: Test deployment in a sandbox environment when possible
+**Container Resource Specifications:**
 
-## Supported Azure Services
+- **REQUIRED:** Wrap partial CPU values in `json()` function (e.g., `json('0.5')` for 0.5 CPU cores)
+- **REQUIRED:** Memory values should be strings with units (e.g., `'0.5Gi'`, `'1Gi'`, `'2Gi'`)
+- **EXAMPLE:** Container Apps resource specification:
 
-### Primary Hosting Resources (Choose One)
+  ```bicep
+  resources: {
+    cpu: json('0.25')    // Correct: wrapped in json()
+    memory: '0.5Gi'      // Correct: string with units
+  }
+  ```
 
-1. **Azure Container Apps** ⭐ **(PREFERRED)**
-   - Best for containerized applications
-   - Built-in scaling and networking
-   - Supports both HTTP and background services
+**Supported Azure Services:**
 
-2. **Azure App Service**
-   - Best for web applications and APIs
-   - Supports multiple runtime stacks
-   - Built-in CI/CD integration
+**Primary Hosting Resources (Choose One):**
 
-3. **Azure Function Apps**
-   - Best for serverless and event-driven workloads
-   - Multiple hosting plans available
-   - Trigger-based execution model
+- **Azure Container Apps** (PREFERRED): Containerized applications, built-in scaling
+- **Azure App Service:** Web applications and APIs, multiple runtime stacks
+- **Azure Function Apps:** Serverless and event-driven workloads
+- **Azure Static Web Apps:** Frontend applications, built-in CI/CD
+- **Azure Kubernetes Service (AKS):** Complex containerized workloads
 
-4. **Azure Static Web Apps**
-   - Best for frontend applications
-   - Built-in GitHub/Azure DevOps integration
-   - Free tier available
+**Essential Supporting Resources (REQUIRED for most applications):**
 
-5. **Azure Kubernetes Service (AKS)**
-   - Best for complex containerized workloads
-   - Full Kubernetes capabilities
-   - Requires advanced configuration
+- **Log Analytics Workspace:** Central logging and monitoring
+- **Application Insights:** Application performance monitoring
+- **Azure Key Vault:** Secure storage for secrets and certificates
 
-### Essential Supporting Resources
+**Conditional Resources (Include based on requirements):**
 
-**REQUIRED** - Include these resources in most AZD applications:
+- Azure Container Registry (for container-based apps)
+- Azure Service Bus (for messaging scenarios)
+- Azure Cosmos DB (for NoSQL data storage)
+- Azure SQL Database (for relational data storage)
+- Azure Storage Account (for blob/file storage)
+- Azure Cache for Redis (for caching scenarios)
 
-- **Log Analytics Workspace**
-  - Central logging and monitoring
-  - Required for Application Insights
-  - Enable diagnostic settings for all resources
-
-- **Application Insights**
-  - Application performance monitoring
-  - Dependency tracking and telemetry
-  - Link to Log Analytics workspace
-
-- **Azure Key Vault**
-  - Secure storage for secrets, keys, and certificates
-  - Use managed identity for access
-  - Enable soft delete and purge protection
-
-**CONDITIONAL** - Include based on application requirements:
-
-- **Azure Container Registry** (for container-based apps)
-- **Azure Service Bus** (for messaging scenarios)
-- **Azure Cosmos DB** (for NoSQL data storage)
-- **Azure SQL Database** (for relational data storage)
-- **Azure Storage Account** (for blob/file storage)
-- **Azure Cache for Redis** (for caching scenarios)
-
-## Code Generation Examples
-
-### Main.bicep Structure Template
+**Main.bicep Structure Template:**
 
 ```bicep
 targetScope = 'subscription'
-
 @description('Name of the environment')
 param environmentName string
-
 @description('Location for all resources')
 param location string
-
 @description('Tags to apply to all resources')
 param tags object = {}
 
@@ -157,37 +132,14 @@ module appService 'modules/app-service.bicep' = {
 }
 ```
 
-### Main.parameters.json Structure Template
-
-```json
-{
-  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentParameters.json#",
-  "contentVersion": "1.0.0.0",
-  "parameters": {
-    "environmentName": {
-      "value": "${AZURE_ENV_NAME}"
-    },
-    "location": {
-      "value": "${AZURE_LOCATION}"
-    },
-    "tags": {
-      "value": {}
-    }
-  }
-}
-```
-
-### Child Module Structure Template
+**Child Module Structure Template:**
 
 ```bicep
 targetScope = 'resourceGroup'
-
 @description('Base name for all resources')
 param name string
-
-@description('Location for all resources')
+@description('Location for all resources')  
 param location string = resourceGroup().location
-
 @description('Tags to apply to all resources')
 param tags object = {}
 
@@ -198,20 +150,16 @@ var resourceName = '${name}-${resourceSuffix}'
 // Resource definitions here...
 ```
 
-## Validation Checklist
+📌 **Completion Checklist**  
 
-Before completing code generation, verify:
-
-- [ ] All files are in `./infra` folder
-- [ ] `main.bicep` exists as primary deployment file with subscription scope
-- [ ] `main.parameters.json` exists alongside `main.bicep` with parameter defaults
-- [ ] Resource group is created in `main.bicep` and properly tagged
+- [ ] All files placed in `./infra` folder with correct structure
+- [ ] `main.bicep` exists with subscription scope and resource group creation
+- [ ] `main.parameters.json` exists with parameter defaults
 - [ ] All child modules use `targetScope = 'resourceGroup'` and receive resource group scope
-- [ ] All resources use consistent naming convention
-- [ ] Required tags are applied correctly
-- [ ] No hard-coded secrets or identifiers
-- [ ] Parameters have appropriate validation
-- [ ] Bicep CLI validation passes without errors
-- [ ] AVM modules are used where available
-- [ ] Supporting resources are included as needed
-- [ ] Security best practices are followed
+- [ ] Consistent naming convention applied: `{resourcePrefix}-{name}-{uniqueHash}`
+- [ ] Required tags applied: `azd-env-name` and `azd-service-name`
+- [ ] No hard-coded secrets, tenant IDs, or subscription IDs
+- [ ] Parameters have appropriate validation decorators
+- [ ] Security best practices followed (Key Vault, managed identities, diagnostics)
+- [ ] Bicep CLI validation passes without errors (`az bicep build`)
+- [ ] Deployment validation successful (`az deployment sub validate`)

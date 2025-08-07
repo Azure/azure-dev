@@ -1,174 +1,115 @@
-# AZD Docker Generation Tool
+# AZD Docker Generation Instructions
 
-This specialized tool generates Dockerfiles and container configurations for Azure Developer CLI (AZD) projects.
+✅ **Agent Task List**  
 
-## Overview
+1. Read the **Docker File Generation Checklist** from `azd-arch-plan.md`
+2. Identify containerizable services and required Docker files from the checklist
+3. Detect programming language and framework for each containerizable service
+4. Generate each Docker file specified in the checklist following language-specific best practices
+5. Create .dockerignore files for build optimization
+6. Implement health checks and security configurations
+7. Update the Docker checklist section in existing `azd-arch-plan.md` by marking completed items as [x] while preserving existing content
 
-Generate optimized Dockerfiles for different programming languages and frameworks with Azure Container Apps best practices.
+📄 **Required Outputs**  
 
-**IMPORTANT:** Before starting, check if `azd-arch-plan.md` exists in your current working directory. If it exists, review it to understand discovered services and containerization requirements.
+- All Docker files listed in the Docker File Generation Checklist from `azd-arch-plan.md`
+- Dockerfiles created for all containerizable services
+- .dockerignore files generated for each service
+- Health check endpoints implemented
+- Multi-stage builds with security best practices
+- Update existing `azd-arch-plan.md` Docker checklist by marking completed items as [x] while preserving existing content
 
-## Success Criteria
+🧠 **Execution Guidelines**  
 
-- [ ] Dockerfiles created for all containerizable services
-- [ ] .dockerignore files generated for build optimization
-- [ ] Health checks and security configurations implemented
-- [ ] Multi-stage builds used where appropriate
-- [ ] Azure Container Apps best practices followed
+**Read Docker Checklist:**
 
-## Containerization Requirements Analysis
+- Read the "Docker File Generation Checklist" section from `azd-arch-plan.md`
+- This checklist specifies exactly which Docker files need to be generated
+- Use this as the authoritative source for what to create
+- Follow the exact file paths specified in the checklist
 
-**REQUIRED ACTIONS:**
+**Generate Files in Order:**
 
-1. **Identify Containerization Candidates:**
-   - Microservices and APIs (REST, GraphQL, gRPC)
-   - Web applications needing runtime flexibility
-   - Background services and workers
-   - Custom applications with specific runtime requirements
+- Create service Dockerfiles first (e.g., `{service-path}/Dockerfile`)
+- Create corresponding .dockerignore files for each service (e.g., `{service-path}/.dockerignore`)
+- Follow the exact file paths specified in the checklist from `azd-arch-plan.md`
 
-2. **Services That Don't Need Containerization:**
-   - Static websites (use Azure Static Web Apps)
-   - Azure Functions (serverless, managed runtime)
-   - Database services (use managed Azure databases)
+**Containerization Candidates:**
 
-3. **Language and Framework Detection:**
-   - Programming language (Node.js, Python, .NET, Java, Go, etc.)
-   - Framework type (Express, FastAPI, ASP.NET Core, Spring Boot)
-   - Build requirements (npm, pip, dotnet, maven, gradle)
-   - Runtime dependencies and port configurations
-- **Programming language** (Node.js, Python, .NET, Java, Go, etc.)
+- **Include:** Microservices, REST APIs, GraphQL services, web applications, background workers
+- **Exclude:** Static websites (use Static Web Apps), Azure Functions (serverless), databases (use managed services)
 
-## Dockerfile Generation Requirements
-
-**REQUIRED ACTIONS:**
-
-For each containerizable service, generate optimized Dockerfiles following these patterns:
-
-### Language-Specific Requirements
+**Language-Specific Dockerfile Patterns:**
 
 **Node.js Applications:**
-- Use `node:18-alpine` base image
-- Implement multi-stage build (build + runtime)
+
+- Base image: `node:18-alpine`
+- Multi-stage build (build + runtime)
 - Copy package*.json first for layer caching
 - Use `npm ci --only=production`
-- Create non-root user (`nodejs`)
-- Expose appropriate port (typically 3000)
-- Include health check endpoint
-- Use `CMD ["npm", "start"]`
+- Non-root user: `nodejs`
+- Expose port 3000, health check `/health`
 
 **Python Applications:**
-- Use `python:3.11-slim` base image
-- Set environment variables: `PYTHONDONTWRITEBYTECODE=1`, `PYTHONUNBUFFERED=1`
-- Copy requirements.txt first for caching
+
+- Base image: `python:3.11-slim`
+- Environment: `PYTHONDONTWRITEBYTECODE=1`, `PYTHONUNBUFFERED=1`
+- Copy requirements.txt first
 - Use `pip install --no-cache-dir`
-- Create non-root user (`appuser`)
-- Expose appropriate port (typically 8000)
-- Include health check endpoint
-- Use appropriate startup command (uvicorn, gunicorn, etc.)
+- Non-root user: `appuser`
+- Expose port 8000, health check `/health`
 
 **.NET Applications:**
-- Use `mcr.microsoft.com/dotnet/sdk:8.0` for build stage
-- Use `mcr.microsoft.com/dotnet/aspnet:8.0` for runtime
-- Multi-stage build: restore → build → publish → runtime
-- Copy .csproj first for layer caching
-- Create non-root user (`appuser`)
-- Expose port 8080 (standard for .NET in containers)
-- Include health check endpoint
-- Use `ENTRYPOINT ["dotnet", "AppName.dll"]`
 
-**Java/Spring Boot Applications:**
-- Use `openjdk:17-jdk-slim` for build, `openjdk:17-jre-slim` for runtime
-- Copy pom.xml/build.gradle first for dependency caching
-- Multi-stage build pattern
-- Create non-root user (`appuser`)
-- Expose port 8080
-- Include actuator health check
-- Use `CMD ["java", "-jar", "app.jar"]`
+- Build: `mcr.microsoft.com/dotnet/sdk:8.0`
+- Runtime: `mcr.microsoft.com/dotnet/aspnet:8.0`
+- Multi-stage: restore → build → publish → runtime
+- Non-root user: `appuser`
+- Expose port 8080, health check `/health`
 
-## Security and Best Practices
+**Java/Spring Boot:**
 
-**CRITICAL REQUIREMENTS:**
+- Build: `openjdk:17-jdk-slim`, Runtime: `openjdk:17-jre-slim`
+- Copy dependency files first for caching
+- Non-root user: `appuser`
+- Expose port 8080, actuator health check
 
-- **Always use non-root users** in production stage
-- **Use minimal base images** (alpine, slim variants)
-- **Implement multi-stage builds** to reduce image size
-- **Include health check endpoints** for Container Apps
-- **Set proper working directories** and file permissions
-- **Use layer caching** by copying dependency files first
-- **Never include secrets** in container images
+**Security and Optimization Requirements:**
 
-## .dockerignore Requirements
+- Always use non-root users in production stage
+- Use minimal base images (alpine, slim variants)
+- Implement multi-stage builds to reduce size
+- Include health check endpoints for Container Apps
+- Set proper working directories and file permissions
+- Use layer caching by copying dependency files first
+- Never include secrets in container images
 
-**REQUIRED ACTIONS:**
+**.dockerignore Patterns:**
 
-Create .dockerignore files with these patterns:
+- Universal: `.git`, `README.md`, `.vscode/`, `.DS_Store`, `Dockerfile*`
+- Node.js: `node_modules/`, `npm-debug.log*`, `coverage/`
+- Python: `__pycache__/`, `*.pyc`, `venv/`, `.pytest_cache/`
+- .NET: `bin/`, `obj/`, `*.user`, `packages/`
+- Java: `target/`, `*.class`, `.mvn/repository`
 
-**Universal Exclusions:**
-- Version control: `.git`, `.gitignore`
-- Documentation: `README.md`, `*.md`
-- IDE files: `.vscode/`, `.idea/`, `*.swp`
-- OS files: `.DS_Store`, `Thumbs.db`
-- Docker files: `Dockerfile*`, `.dockerignore`, `docker-compose*.yml`
-- Build artifacts and logs
+**Health Check Implementation:**
 
-**Language-Specific Exclusions:**
-- **Node.js:** `node_modules/`, `npm-debug.log*`, `coverage/`, `dist/`
-- **Python:** `__pycache__/`, `*.pyc`, `venv/`, `.pytest_cache/`, `dist/`
-- **.NET:** `bin/`, `obj/`, `*.user`, `packages/`, `.vs/`
-- **Java:** `target/`, `*.class`, `.mvn/repository`
+- Endpoint: `/health` (standard convention)
+- Response: JSON with status and timestamp
+- HTTP Status: 200 for healthy, 503 for unhealthy
+- Timeout: 3 seconds maximum
+- Content: `{"status": "healthy", "timestamp": "ISO-8601"}`
 
-## Health Check Implementation
+📌 **Completion Checklist**  
 
-**REQUIRED ACTIONS:**
-
-Each containerized service must include a health check endpoint:
-
-- **Endpoint:** `/health` (standard convention)
-- **Response:** JSON with status and timestamp
-- **HTTP Status:** 200 for healthy, 503 for unhealthy
-- **Timeout:** 3 seconds maximum response time
-- **Content:** `{"status": "healthy", "timestamp": "ISO-8601"}`
-
-## Container Optimization
-
-**REQUIRED OPTIMIZATIONS:**
-
-- Use multi-stage builds to exclude build tools from production images
-- Copy package/dependency files before source code for better caching
-- Combine RUN commands to reduce layers
-- Clean package manager caches in same RUN command
-- Use specific versions for base images (avoid `latest`)
-- Set resource limits appropriate for Azure Container Apps
-
-## Validation and Testing
-
-**VALIDATION REQUIREMENTS:**
-
-- All Dockerfiles must build successfully: `docker build -t test-image .`
-- Containers must run with non-root users
-- Health checks must respond correctly
-- Images should be optimized for size (use `docker images` to verify)
-- Container startup time should be reasonable (<30 seconds)
-
-## Update Documentation
-
-**REQUIRED ACTIONS:**
-
-Update `azd-arch-plan.md` with:
-
-- List of generated Dockerfiles and their languages
-- Container configurations (ports, health checks, users)
-- Security implementations (non-root users, minimal images)
-- Build optimizations applied
-- Local testing commands
-
-## Next Steps
-
-After Docker generation is complete:
-
-1. Test all containers build successfully locally
-2. Integrate Dockerfile paths into `azure.yaml` service definitions
-3. Configure Container Apps infrastructure to use these images
-4. Set up Azure Container Registry for image storage
-
-**IMPORTANT:** Reference existing tools for schema validation. For azure.yaml updates, use the `azd_azure_yaml_generation` tool. For infrastructure setup, use the `azd_infrastructure_generation` tool.
+- [ ] **Docker File Generation Checklist read** from `azd-arch-plan.md`
+- [ ] **All files from Docker checklist generated** in the correct locations
+- [ ] Dockerfiles created for all containerizable services identified in architecture planning
+- [ ] .dockerignore files generated with appropriate exclusions for each language
+- [ ] Multi-stage builds implemented to reduce image size
+- [ ] Non-root users configured for security
+- [ ] Health check endpoints implemented for all services
+- [ ] Container startup optimization applied (dependency file caching)
+- [ ] All Dockerfiles build successfully (`docker build` test)
+- [ ] Security best practices followed (minimal images, no secrets)
+- [ ] **Docker checklist in `azd-arch-plan.md` updated** by marking completed items as [x] while preserving existing content

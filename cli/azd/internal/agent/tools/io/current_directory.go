@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package io
 
 import (
@@ -17,7 +20,8 @@ func (t CurrentDirectoryTool) Name() string {
 }
 
 func (t CurrentDirectoryTool) Description() string {
-	return "Get the current working directory to understand the project context. Input: use 'current' or '.' (any input works)"
+	return "Get the current working directory to understand the project context. " +
+		"Input: use 'current' or '.' (any input works)"
 }
 
 // createErrorResponse creates a JSON error response

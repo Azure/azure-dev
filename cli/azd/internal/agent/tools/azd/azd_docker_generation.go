@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azd
 
 import (
@@ -17,7 +20,10 @@ func (t *AzdDockerGenerationTool) Name() string {
 }
 
 func (t *AzdDockerGenerationTool) Description() string {
-	return `Returns instructions for generating optimized Dockerfiles and container configurations for containerizable services in AZD projects. The LLM agent should execute these instructions using available tools.
+	return `Returns instructions for generating optimized Dockerfiles and container configurations for containerizable 
+services in AZD projects. 
+
+The LLM agent should execute these instructions using available tools.
 
 Use this tool when:
 - Architecture planning identified services requiring containerization

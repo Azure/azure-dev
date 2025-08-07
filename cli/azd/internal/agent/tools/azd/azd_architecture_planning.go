@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azd
 
 import (
@@ -17,7 +20,10 @@ func (t *AzdArchitecturePlanningTool) Name() string {
 }
 
 func (t *AzdArchitecturePlanningTool) Description() string {
-	return `Returns instructions for selecting appropriate Azure services for discovered application components and designing infrastructure architecture. The LLM agent should execute these instructions using available tools.
+	return `Returns instructions for selecting appropriate Azure services for discovered application components and 
+designing infrastructure architecture. 
+
+The LLM agent should execute these instructions using available tools.
 
 Use this tool when:
 - Discovery analysis has been completed and azd-arch-plan.md exists

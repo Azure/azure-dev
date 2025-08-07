@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package io
 
 import (
@@ -18,7 +21,8 @@ func (t CreateDirectoryTool) Name() string {
 }
 
 func (t CreateDirectoryTool) Description() string {
-	return "Create a directory (and any necessary parent directories). Input: directory path (e.g., 'docs' or './src/components')"
+	return "Create a directory (and any necessary parent directories). " +
+		"Input: directory path (e.g., 'docs' or './src/components')"
 }
 
 // createErrorResponse creates a JSON error response
@@ -63,7 +67,10 @@ func (t CreateDirectoryTool) Call(ctx context.Context, input string) (string, er
 	}
 
 	if !info.IsDir() {
-		return t.createErrorResponse(fmt.Errorf("%s exists but is not a directory", input), fmt.Sprintf("%s exists but is not a directory", input))
+		return t.createErrorResponse(
+			fmt.Errorf("%s exists but is not a directory", input),
+			fmt.Sprintf("%s exists but is not a directory", input),
+		)
 	}
 
 	// Create success response

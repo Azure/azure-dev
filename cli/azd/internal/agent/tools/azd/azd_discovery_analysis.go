@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azd
 
 import (
@@ -17,7 +20,10 @@ func (t *AzdDiscoveryAnalysisTool) Name() string {
 }
 
 func (t *AzdDiscoveryAnalysisTool) Description() string {
-	return `Returns instructions for performing comprehensive discovery and analysis of application components to prepare for Azure Developer CLI (AZD) initialization. The LLM agent should execute these instructions using available tools.
+	return `Returns instructions for performing comprehensive discovery and analysis of application components 
+to prepare for Azure Developer CLI (AZD) initialization. 
+
+The LLM agent should execute these instructions using available tools.
 
 Use this tool when:
 - Starting Phase 1 of AZD migration process

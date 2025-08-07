@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package io
 
 import (
@@ -19,7 +22,8 @@ func (t FileInfoTool) Name() string {
 }
 
 func (t FileInfoTool) Description() string {
-	return "Get information about a file (size, modification time, permissions). Input: file path (e.g., 'data.txt' or './docs/readme.md'). Returns JSON with file information."
+	return "Get information about a file (size, modification time, permissions). " +
+		"Input: file path (e.g., 'data.txt' or './docs/readme.md'). Returns JSON with file information."
 }
 
 // createErrorResponse creates a JSON error response

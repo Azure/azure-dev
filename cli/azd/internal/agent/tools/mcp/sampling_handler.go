@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package mcp
 
 import (
@@ -46,7 +49,10 @@ func (h *McpSamplingHandler) cleanContent(content string) string {
 	return content
 }
 
-func (h *McpSamplingHandler) CreateMessage(ctx context.Context, request mcp.CreateMessageRequest) (*mcp.CreateMessageResult, error) {
+func (h *McpSamplingHandler) CreateMessage(
+	ctx context.Context,
+	request mcp.CreateMessageRequest,
+) (*mcp.CreateMessageResult, error) {
 	if h.debug {
 		requestJson, err := json.MarshalIndent(request, "", "  ")
 		if err != nil {

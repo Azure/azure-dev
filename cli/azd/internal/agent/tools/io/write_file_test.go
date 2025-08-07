@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package io
 
 import (
@@ -101,11 +104,15 @@ func TestWriteFileTool_AppendMode(t *testing.T) {
 	testFile := filepath.Join(tempDir, "test.txt")
 
 	// Create initial file
-	err := os.WriteFile(testFile, []byte("Initial content"), 0644)
+	err := os.WriteFile(testFile, []byte("Initial content"), 0600)
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
-	input := `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "\nAppended content", "mode": "append"}`
+	input := `{"filename": "` + strings.ReplaceAll(
+		testFile,
+		"\\",
+		"\\\\",
+	) + `", "content": "\nAppended content", "mode": "append"}`
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -131,7 +138,11 @@ func TestWriteFileTool_CreateMode_Success(t *testing.T) {
 	testFile := filepath.Join(tempDir, "new-file.txt")
 
 	tool := WriteFileTool{}
-	input := `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "New file content", "mode": "create"}`
+	input := `{"filename": "` + strings.ReplaceAll(
+		testFile,
+		"\\",
+		"\\\\",
+	) + `", "content": "New file content", "mode": "create"}`
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -155,7 +166,7 @@ func TestWriteFileTool_CreateMode_FileExists(t *testing.T) {
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "existing.txt")
 
-	err := os.WriteFile(testFile, []byte("Existing content"), 0644)
+	err := os.WriteFile(testFile, []byte("Existing content"), 0600)
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
@@ -181,11 +192,15 @@ func TestWriteFileTool_PartialWrite_Basic(t *testing.T) {
 
 	// Create initial file with multiple lines
 	initialContent := "Line 1\nLine 2\nLine 3\nLine 4\nLine 5"
-	err := os.WriteFile(testFile, []byte(initialContent), 0644)
+	err := os.WriteFile(testFile, []byte(initialContent), 0600)
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
-	input := `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "Modified Line 2\nModified Line 3", "startLine": 2, "endLine": 3}`
+	input := `{"filename": "` + strings.ReplaceAll(
+		testFile,
+		"\\",
+		"\\\\",
+	) + `", "content": "Modified Line 2\nModified Line 3", "startLine": 2, "endLine": 3}`
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -217,11 +232,15 @@ func TestWriteFileTool_PartialWrite_SingleLine(t *testing.T) {
 
 	// Create initial file
 	initialContent := "Line 1\nLine 2\nLine 3"
-	err := os.WriteFile(testFile, []byte(initialContent), 0644)
+	err := os.WriteFile(testFile, []byte(initialContent), 0600)
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
-	input := `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "Replaced Line 2", "startLine": 2, "endLine": 2}`
+	input := `{"filename": "` + strings.ReplaceAll(
+		testFile,
+		"\\",
+		"\\\\",
+	) + `", "content": "Replaced Line 2", "startLine": 2, "endLine": 2}`
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -251,12 +270,16 @@ func TestWriteFileTool_PartialWrite_SingleLineToMultipleLines(t *testing.T) {
 
 	// Create initial file
 	initialContent := "Line 1\nLine 2\nLine 3\nLine 4"
-	err := os.WriteFile(testFile, []byte(initialContent), 0644)
+	err := os.WriteFile(testFile, []byte(initialContent), 0600)
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
 	// Replace single line 2 with multiple lines
-	input := `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "New Line 2a\nNew Line 2b\nNew Line 2c", "startLine": 2, "endLine": 2}`
+	input := `{"filename": "` + strings.ReplaceAll(
+		testFile,
+		"\\",
+		"\\\\",
+	) + `", "content": "New Line 2a\nNew Line 2b\nNew Line 2c", "startLine": 2, "endLine": 2}`
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -287,7 +310,11 @@ func TestWriteFileTool_PartialWrite_FileNotExists(t *testing.T) {
 	testFile := filepath.Join(tempDir, "nonexistent.txt")
 
 	tool := WriteFileTool{}
-	input := `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "New content", "startLine": 1, "endLine": 1}`
+	input := `{"filename": "` + strings.ReplaceAll(
+		testFile,
+		"\\",
+		"\\\\",
+	) + `", "content": "New content", "startLine": 1, "endLine": 1}`
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -304,7 +331,7 @@ func TestWriteFileTool_PartialWrite_InvalidLineNumbers(t *testing.T) {
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "test.txt")
 
-	err := os.WriteFile(testFile, []byte("Line 1\nLine 2"), 0644)
+	err := os.WriteFile(testFile, []byte("Line 1\nLine 2"), 0600)
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
@@ -324,14 +351,22 @@ func TestWriteFileTool_PartialWrite_InvalidLineNumbers(t *testing.T) {
 	assert.Contains(t, result, "Both startLine and endLine must be provided")
 
 	// Test startLine < 1 (this will trigger the partial write validation)
-	input = `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "content", "startLine": 0, "endLine": 1}`
+	input = `{"filename": "` + strings.ReplaceAll(
+		testFile,
+		"\\",
+		"\\\\",
+	) + `", "content": "content", "startLine": 0, "endLine": 1}`
 	result, err = tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 	assert.Contains(t, result, "error")
 	assert.Contains(t, result, "Both startLine and endLine must be provided") // 0 is treated as "not provided"
 
 	// Test valid line numbers but startLine > endLine
-	input = `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "content", "startLine": 3, "endLine": 1}`
+	input = `{"filename": "` + strings.ReplaceAll(
+		testFile,
+		"\\",
+		"\\\\",
+	) + `", "content": "content", "startLine": 3, "endLine": 1}`
 	result, err = tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 	assert.Contains(t, result, "error")
@@ -345,12 +380,16 @@ func TestWriteFileTool_PartialWrite_BeyondFileLength(t *testing.T) {
 
 	// Create initial file with 3 lines
 	initialContent := "Line 1\nLine 2\nLine 3"
-	err := os.WriteFile(testFile, []byte(initialContent), 0644)
+	err := os.WriteFile(testFile, []byte(initialContent), 0600)
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
 	// Try to replace lines 2-5 (beyond file length)
-	input := `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "New content", "startLine": 2, "endLine": 5}`
+	input := `{"filename": "` + strings.ReplaceAll(
+		testFile,
+		"\\",
+		"\\\\",
+	) + `", "content": "New content", "startLine": 2, "endLine": 5}`
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -377,11 +416,15 @@ func TestWriteFileTool_PartialWrite_PreserveLineEndings(t *testing.T) {
 
 	// Create initial file with CRLF line endings
 	initialContent := "Line 1\r\nLine 2\r\nLine 3\r\n"
-	err := os.WriteFile(testFile, []byte(initialContent), 0644)
+	err := os.WriteFile(testFile, []byte(initialContent), 0600)
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
-	input := `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "Modified Line 2", "startLine": 2, "endLine": 2}`
+	input := `{"filename": "` + strings.ReplaceAll(
+		testFile,
+		"\\",
+		"\\\\",
+	) + `", "content": "Modified Line 2", "startLine": 2, "endLine": 2}`
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -440,19 +483,31 @@ func TestWriteFileTool_Integration_ComplexScenario(t *testing.T) {
 	tool := WriteFileTool{}
 
 	// Step 1: Create initial file
-	input := `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "# Configuration File\nversion: 1.0\nname: test\nport: 8080\ndebug: false", "mode": "create"}`
+	input := `{"filename": "` + strings.ReplaceAll(
+		testFile,
+		"\\",
+		"\\\\",
+	) + `", "content": "# Configuration File\nversion: 1.0\nname: test\nport: 8080\ndebug: false", "mode": "create"}`
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 	assert.Contains(t, result, `"success": true`)
 
 	// Step 2: Append new section
-	input = `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "\n# Database Config\nhost: localhost\nport: 5432", "mode": "append"}`
+	input = `{"filename": "` + strings.ReplaceAll(
+		testFile,
+		"\\",
+		"\\\\",
+	) + `", "content": "\n# Database Config\nhost: localhost\nport: 5432", "mode": "append"}`
 	result, err = tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 	assert.Contains(t, result, `"success": true`)
 
 	// Step 3: Update specific lines (change port and debug)
-	input = `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "port: 9090\ndebug: true", "startLine": 4, "endLine": 5}`
+	input = `{"filename": "` + strings.ReplaceAll(
+		testFile,
+		"\\",
+		"\\\\",
+	) + `", "content": "port: 9090\ndebug: true", "startLine": 4, "endLine": 5}`
 	result, err = tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 
@@ -465,6 +520,7 @@ func TestWriteFileTool_Integration_ComplexScenario(t *testing.T) {
 	// Verify final content
 	content, err := os.ReadFile(testFile)
 	assert.NoError(t, err)
+	//nolint:lll
 	expectedContent := "# Configuration File\nversion: 1.0\nname: test\nport: 9090\ndebug: true\n# Database Config\nhost: localhost\nport: 5432"
 	assert.Equal(t, expectedContent, string(content))
 }
@@ -474,20 +530,28 @@ func TestWriteFileTool_PartialWrite_InvalidLineRanges(t *testing.T) {
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "test.txt")
 
-	err := os.WriteFile(testFile, []byte("Line 1\nLine 2"), 0644)
+	err := os.WriteFile(testFile, []byte("Line 1\nLine 2"), 0600)
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
 
 	// Test negative startLine (will be handled by partial write validation)
-	input := `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "content", "startLine": -1, "endLine": 1}`
+	input := `{"filename": "` + strings.ReplaceAll(
+		testFile,
+		"\\",
+		"\\\\",
+	) + `", "content": "content", "startLine": -1, "endLine": 1}`
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 	assert.Contains(t, result, "error")
 	assert.Contains(t, result, "startLine must be")
 
 	// Test negative endLine
-	input = `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "content", "startLine": 1, "endLine": -1}`
+	input = `{"filename": "` + strings.ReplaceAll(
+		testFile,
+		"\\",
+		"\\\\",
+	) + `", "content": "content", "startLine": 1, "endLine": -1}`
 	result, err = tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 	assert.Contains(t, result, "error")

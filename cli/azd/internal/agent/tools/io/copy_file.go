@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package io
 
 import (
@@ -60,14 +63,23 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 
 	// Parse as JSON - this is now required
 	if err := json.Unmarshal([]byte(cleanInput), &params); err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Invalid JSON input: %s. Expected format: {\"source\": \"file.txt\", \"destination\": \"backup.txt\"}", err.Error()))
+		return t.createErrorResponse(
+			err,
+			fmt.Sprintf(
+				"Invalid JSON input: %s. Expected format: {\"source\": \"file.txt\", \"destination\": \"backup.txt\"}",
+				err.Error(),
+			),
+		)
 	}
 
 	source := strings.TrimSpace(params.Source)
 	destination := strings.TrimSpace(params.Destination)
 
 	if source == "" || destination == "" {
-		return t.createErrorResponse(fmt.Errorf("both source and destination paths are required"), "Both source and destination paths are required")
+		return t.createErrorResponse(
+			fmt.Errorf("both source and destination paths are required"),
+			"Both source and destination paths are required",
+		)
 	}
 
 	// Check if source file exists
@@ -77,7 +89,10 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 	}
 
 	if sourceInfo.IsDir() {
-		return t.createErrorResponse(fmt.Errorf("source %s is a directory", source), fmt.Sprintf("Source %s is a directory. Use copy_directory for directories", source))
+		return t.createErrorResponse(
+			fmt.Errorf("source %s is a directory", source),
+			fmt.Sprintf("Source %s is a directory. Use copy_directory for directories", source),
+		)
 	}
 
 	// Open source file

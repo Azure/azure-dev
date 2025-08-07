@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package io
 
 import (
@@ -62,7 +65,10 @@ func (t DeleteDirectoryTool) Call(ctx context.Context, input string) (string, er
 
 	// Make sure it's a directory, not a file
 	if !info.IsDir() {
-		return t.createErrorResponse(fmt.Errorf("%s is a file, not a directory", input), fmt.Sprintf("%s is a file, not a directory. Use delete_file to remove files", input))
+		return t.createErrorResponse(
+			fmt.Errorf("%s is a file, not a directory", input),
+			fmt.Sprintf("%s is a file, not a directory. Use delete_file to remove files", input),
+		)
 	}
 
 	// Count contents before deletion for reporting

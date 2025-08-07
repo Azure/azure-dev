@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package io
 
 import (
@@ -24,7 +27,8 @@ func (t FileSearchTool) Name() string {
 }
 
 func (t FileSearchTool) Description() string {
-	return `Search for files matching a glob pattern in the current working directory using the doublestar library for full glob support.
+	return `Searches for files matching a glob pattern in the current working directory 
+using the doublestar library for full glob support.
 
 Input: JSON payload with the following structure:
 {
@@ -96,13 +100,19 @@ func (t FileSearchTool) createErrorResponse(err error, message string) (string, 
 
 func (t FileSearchTool) Call(ctx context.Context, input string) (string, error) {
 	if input == "" {
-		return t.createErrorResponse(fmt.Errorf("input is required"), "Input is required. Expected JSON format: {\"pattern\": \"*.go\"}")
+		return t.createErrorResponse(
+			fmt.Errorf("input is required"),
+			"Input is required. Expected JSON format: {\"pattern\": \"*.go\"}",
+		)
 	}
 
 	// Parse JSON input
 	var req FileSearchRequest
 	if err := json.Unmarshal([]byte(input), &req); err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Invalid JSON input: %s. Expected format: {\"pattern\": \"*.go\", \"maxResults\": 50}", err.Error()))
+		return t.createErrorResponse(
+			err,
+			fmt.Sprintf("Invalid JSON input: %s. Expected format: {\"pattern\": \"*.go\", \"maxResults\": 50}", err.Error()),
+		)
 	}
 
 	// Validate required fields

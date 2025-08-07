@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package io
 
 import (
@@ -55,7 +58,8 @@ func (t WriteFileTool) Name() string {
 }
 
 func (t WriteFileTool) Description() string {
-	return `Comprehensive file writing tool that handles full file writes, appends, and line-based partial updates. Returns JSON response with operation details.
+	return `Comprehensive file writing tool that handles full file writes, appends, and line-based partial updates.
+Returns JSON response with operation details.
 
 Input: JSON payload with the following structure:
 {
@@ -133,7 +137,14 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 	// Debug: Check for common JSON issues
 	input = strings.TrimSpace(input)
 	if !strings.HasPrefix(input, "{") || !strings.HasSuffix(input, "}") {
-		return t.createErrorResponse(fmt.Errorf("malformed JSON structure"), fmt.Sprintf("Invalid JSON input: Input does not appear to be valid JSON object. Starts with: %q, Ends with: %q", input[:min(10, len(input))], input[max(0, len(input)-10):]))
+		return t.createErrorResponse(
+			fmt.Errorf("malformed JSON structure"),
+			fmt.Sprintf(
+				"Invalid JSON input: Input does not appear to be valid JSON object. Starts with: %q, Ends with: %q",
+				input[:min(10, len(input))],
+				input[max(0, len(input)-10):],
+			),
+		)
 	}
 
 	// Parse JSON input
@@ -144,7 +155,10 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 		if len(input) > 200 {
 			truncatedInput = input[:200] + "...[truncated]"
 		}
-		return t.createErrorResponse(err, fmt.Sprintf("Invalid JSON input. Error: %s. Input (first 200 chars): %s", err.Error(), truncatedInput))
+		return t.createErrorResponse(
+			err,
+			fmt.Sprintf("Invalid JSON input. Error: %s. Input (first 200 chars): %s", err.Error(), truncatedInput),
+		)
 	}
 
 	// Validate required fields
@@ -165,20 +179,33 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 	// If any line number is provided, both must be provided and valid
 	if hasStartLine || hasEndLine {
 		if !hasStartLine || !hasEndLine {
-			return t.createErrorResponse(fmt.Errorf("both startLine and endLine must be provided for partial write"), "Both startLine and endLine must be provided for partial write")
+			return t.createErrorResponse(
+				fmt.Errorf("both startLine and endLine must be provided for partial write"),
+				"Both startLine and endLine must be provided for partial write",
+			)
 		}
 
 		// Validate that file exists for partial write BEFORE attempting
 		filePath := strings.TrimSpace(req.Filename)
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			return t.createErrorResponse(err, fmt.Sprintf("Cannot perform partial write on file '%s' because it does not exist. For new files, omit startLine and endLine parameters to create the entire file", filePath))
+			return t.createErrorResponse(
+				err,
+				fmt.Sprintf(
+					"Cannot perform partial write on file '%s' because it does not exist. "+
+						"For new files, omit startLine and endLine parameters to create the entire file",
+					filePath,
+				),
+			)
 		}
 
 		// Smart write mode: this should be a partial write
 		if mode == "write" {
 			return t.handlePartialWrite(ctx, req)
 		} else {
-			return t.createErrorResponse(fmt.Errorf("startLine and endLine can only be used with write mode"), "startLine and endLine can only be used with write mode")
+			return t.createErrorResponse(
+				fmt.Errorf("startLine and endLine can only be used with write mode"),
+				"startLine and endLine can only be used with write mode",
+			)
 		}
 	}
 
@@ -196,7 +223,10 @@ func (t WriteFileTool) handlePartialWrite(ctx context.Context, req WriteFileRequ
 		return t.createErrorResponse(fmt.Errorf("invalid endLine: %d", req.EndLine), "endLine must be >= 1")
 	}
 	if req.StartLine > req.EndLine {
-		return t.createErrorResponse(fmt.Errorf("invalid line range: startLine=%d > endLine=%d", req.StartLine, req.EndLine), "startLine cannot be greater than endLine")
+		return t.createErrorResponse(
+			fmt.Errorf("invalid line range: startLine=%d > endLine=%d", req.StartLine, req.EndLine),
+			"startLine cannot be greater than endLine",
+		)
 	}
 
 	filePath := strings.TrimSpace(req.Filename)
@@ -256,14 +286,18 @@ func (t WriteFileTool) handlePartialWrite(ctx context.Context, req WriteFileRequ
 	finalContent := strings.Join(result, lineEnding)
 
 	// If original file had trailing newline, preserve it
-	if len(fileBytes) > 0 && (string(fileBytes[len(fileBytes)-1:]) == "\n" || strings.HasSuffix(string(fileBytes), lineEnding)) {
+	if len(fileBytes) > 0 &&
+		(string(fileBytes[len(fileBytes)-1:]) == "\n" || strings.HasSuffix(string(fileBytes), lineEnding)) {
 		finalContent += lineEnding
 	}
 
 	// Write the updated content
-	err = os.WriteFile(filePath, []byte(finalContent), 0644)
+	err = os.WriteFile(filePath, []byte(finalContent), 0600)
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to write updated content to file %s: %s", filePath, err.Error()))
+		return t.createErrorResponse(
+			err,
+			fmt.Sprintf("Failed to write updated content to file %s: %s", filePath, err.Error()),
+		)
 	}
 
 	// Get file info
@@ -311,7 +345,10 @@ func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequ
 
 	// Provide feedback for large content
 	if len(content) > 10000 {
-		fmt.Printf("📝 Large content detected (%d chars). Consider breaking into smaller edits for better reliability.\n", len(content))
+		fmt.Printf(
+			"📝 Large content detected (%d chars). Consider breaking into smaller edits for better reliability.\n",
+			len(content),
+		)
 	}
 
 	// Ensure directory exists
@@ -325,27 +362,39 @@ func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequ
 	switch mode {
 	case "create":
 		if _, err := os.Stat(filePath); err == nil {
-			return t.createErrorResponse(fmt.Errorf("file %s already exists (create mode)", filePath), fmt.Sprintf("File %s already exists. Cannot create file in 'create' mode when file already exists", filePath))
+			return t.createErrorResponse(
+				fmt.Errorf("file %s already exists (create mode)", filePath),
+				fmt.Sprintf(
+					"File %s already exists. Cannot create file in 'create' mode when file already exists",
+					filePath,
+				),
+			)
 		}
-		err = os.WriteFile(filePath, []byte(content), 0644)
+		err = os.WriteFile(filePath, []byte(content), 0600)
 		operation = "Created"
 
 	case "append":
-		file, openErr := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		file, openErr := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 		if openErr != nil {
-			return t.createErrorResponse(openErr, fmt.Sprintf("Failed to open file for append %s: %s", filePath, openErr.Error()))
+			return t.createErrorResponse(
+				openErr,
+				fmt.Sprintf("Failed to open file for append %s: %s", filePath, openErr.Error()),
+			)
 		}
 		defer file.Close()
 		_, err = file.WriteString(content)
 		operation = "Appended to"
 
 	default: // "write"
-		err = os.WriteFile(filePath, []byte(content), 0644)
+		err = os.WriteFile(filePath, []byte(content), 0600)
 		operation = "Wrote"
 	}
 
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to %s file %s: %s", strings.ToLower(operation), filePath, err.Error()))
+		return t.createErrorResponse(
+			err,
+			fmt.Sprintf("Failed to %s file %s: %s", strings.ToLower(operation), filePath, err.Error()),
+		)
 	}
 
 	// Get file size for verification

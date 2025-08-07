@@ -1,8 +1,12 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package dev
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -168,6 +172,7 @@ func (t CommandExecutorTool) executeCommand(ctx context.Context, command string,
 	if runtime.GOOS == "windows" {
 		// On Windows, use cmd.exe to handle built-in commands and path resolution
 		allArgs := append([]string{"/C", command}, args...)
+		// #nosec G204 - Command execution is the intended functionality of this tool
 		cmd = exec.CommandContext(ctx, "cmd", allArgs...)
 	} else {
 		// On Unix-like systems, use sh for better command resolution
@@ -175,6 +180,7 @@ func (t CommandExecutorTool) executeCommand(ctx context.Context, command string,
 		if len(args) > 0 {
 			fullCommand += " " + strings.Join(args, " ")
 		}
+		// #nosec G204 - Command execution is the intended functionality of this tool
 		cmd = exec.CommandContext(ctx, "sh", "-c", fullCommand)
 	}
 
@@ -198,7 +204,8 @@ func (t CommandExecutorTool) executeCommand(ctx context.Context, command string,
 	var cmdError error
 
 	if err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
 			// Command ran but exited with non-zero code - this is normal
 			exitCode = exitError.ExitCode()
 			cmdError = nil // Don't treat non-zero exit as a system error

@@ -15,6 +15,9 @@ type ExecOptions struct {
 	Interactive *bool
 	StdOut      io.Writer
 	UserPwsh    string
+	// If true, azd won't try to use alternative shell to execute the command. For example, pwsh won't be tried with
+	// powershell (pwsh5) in Windows.
+	StrictShell bool
 }
 
 // Utility to easily execute a bash script across platforms

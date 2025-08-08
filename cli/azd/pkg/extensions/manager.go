@@ -405,6 +405,10 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 			if err := rzip.ExtractToDirectory(tempFilePath, targetDir); err != nil {
 				return nil, fmt.Errorf("failed to extract zip file: %w", err)
 			}
+		} else if strings.HasSuffix(tempFilePath, ".tar.gz") {
+			if err := rzip.ExtractTarGzToDirectory(tempFilePath, targetDir); err != nil {
+				return nil, fmt.Errorf("failed to extract tar.gz file: %w", err)
+			}
 		} else {
 			targetPath = filepath.Join(targetDir, filepath.Base(tempFilePath))
 			if err := copyFile(tempFilePath, targetPath); err != nil {
@@ -558,7 +562,7 @@ func findArtifactForCurrentOS(version *ExtensionVersion) (*ExtensionArtifact, er
 		}
 	}
 
-	return nil, fmt.Errorf("no artifact available for platform: %s", artifactVersions)
+	return nil, fmt.Errorf("no artifact available for platform: %s", strings.Join(artifactVersions, ", "))
 }
 
 // downloadFile downloads a file from the given URL and saves it to a temporary directory using the filename from the URL.

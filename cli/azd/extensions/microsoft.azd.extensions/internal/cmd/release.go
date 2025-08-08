@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
@@ -24,7 +23,7 @@ import (
 
 type releaseFlags struct {
 	repository string
-	artifacts  string
+	artifacts  []string
 	title      string
 	notes      string
 	notesFile  string
@@ -60,10 +59,11 @@ func newReleaseCommand() *cobra.Command {
 		"repo", "r", flags.repository,
 		"Github repository to create the release in (e.g. owner/repo)",
 	)
-	releaseCmd.Flags().StringVar(
+	releaseCmd.Flags().StringSliceVar(
 		&flags.artifacts,
-		"artifacts", flags.artifacts,
-		"Path to the artifacts to upload to the release (e.g. ./artifacts/*.zip)",
+		"artifacts", nil,
+		"Path to artifacts to upload to the release "+
+			"(comma-separated glob patterns, e.g. ./artifacts/*.zip,./artifacts/*.tar.gz)",
 	)
 	releaseCmd.Flags().StringVarP(
 		&flags.title,
@@ -136,14 +136,8 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 		flags.title = fmt.Sprintf("%s (%s)", extensionMetadata.DisplayName, flags.version)
 	}
 
-	if flags.artifacts == "" {
-		localRegistryArtifactsPath, err := internal.LocalRegistryArtifactsPath()
-		if err != nil {
-			return err
-		}
-
-		flags.artifacts = filepath.Join(localRegistryArtifactsPath, extensionMetadata.Id, flags.version, "*.zip")
-	}
+	// Use artifacts patterns from flag
+	artifactPatterns := flags.artifacts
 
 	if flags.notes != "" && flags.notesFile != "" {
 		return errors.New("only one of --notes or --notes-file can be specified")
@@ -198,7 +192,17 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 	}
 
 	fmt.Println()
-	fmt.Printf("%s: %s\n", output.WithBold("Artifacts"), flags.artifacts)
+	// Show what artifacts will be processed
+	if len(artifactPatterns) > 0 {
+		fmt.Printf("%s: %s\n", output.WithBold("Artifacts"), strings.Join(artifactPatterns, ", "))
+	} else {
+		defaultPatterns, err := internal.DefaultArtifactPatterns(extensionMetadata.Id, flags.version)
+		if err == nil {
+			fmt.Printf("%s: %s (default)\n", output.WithBold("Artifacts"), strings.Join(defaultPatterns, ", "))
+		} else {
+			fmt.Printf("%s: <default registry path>\n", output.WithBold("Artifacts"))
+		}
+	}
 	fmt.Printf("%s: %s - %s\n",
 		output.WithBold("GitHub Repo"),
 		repo.Name,
@@ -232,16 +236,18 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 		AddTask(ux.TaskOptions{
 			Title: "Validating artifacts",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-				files, err := filepath.Glob(flags.artifacts)
+				files, err := internal.FindArtifacts(artifactPatterns, extensionMetadata.Id, flags.version)
 				if err != nil {
-					return ux.Error, common.NewDetailedError("Artifacts not found",
-						fmt.Errorf("failed to find artifacts: %w", err),
-					)
+					return ux.Error, common.NewDetailedError("Failed to find artifacts", err)
 				}
 
 				if len(files) == 0 {
+					patternDisplay := "default registry location"
+					if len(artifactPatterns) > 0 {
+						patternDisplay = strings.Join(artifactPatterns, ", ")
+					}
 					return ux.Error, common.NewDetailedError("Artifacts not found",
-						fmt.Errorf("no artifacts found at path: %s.", flags.artifacts),
+						fmt.Errorf("no artifacts found at: %s", patternDisplay),
 					)
 				}
 
@@ -254,12 +260,9 @@ func runReleaseAction(ctx context.Context, flags *releaseFlags) error {
 			ux.TaskOptions{
 				Title: "Creating Github release",
 				Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-					// Get the artifact files
-					files, err := filepath.Glob(flags.artifacts)
+					files, err := internal.FindArtifacts(artifactPatterns, extensionMetadata.Id, flags.version)
 					if err != nil {
-						return ux.Error, common.NewDetailedError("Artifacts not found",
-							fmt.Errorf("failed to find artifacts: %w", err),
-						)
+						return ux.Error, common.NewDetailedError("Failed to find artifacts", err)
 					}
 
 					// Build options map for CreateRelease

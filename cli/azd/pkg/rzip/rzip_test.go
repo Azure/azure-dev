@@ -4,7 +4,9 @@
 package rzip_test
 
 import (
+	"archive/tar"
 	"archive/zip"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"maps"
@@ -211,4 +213,63 @@ func formatFiles(files map[string]string) string {
 		sb.WriteString(fmt.Sprintf("- %s\n", path))
 	}
 	return sb.String()
+}
+
+func TestExtractTarGzToDirectory(t *testing.T) {
+	require := require.New(t)
+	tempDir := t.TempDir()
+
+	// Create a simple tar.gz file for testing
+	tarGzPath := filepath.Join(tempDir, "test.tar.gz")
+	extractDir := filepath.Join(tempDir, "extracted")
+
+	// Create test content
+	testFiles := map[string]string{
+		"file1.txt":        "Content of file1",
+		"subdir/file2.txt": "Content of file2",
+	}
+
+	// Create tar.gz file
+	file, err := os.Create(tarGzPath)
+	require.NoError(err)
+	defer file.Close()
+
+	gzWriter := gzip.NewWriter(file)
+	defer gzWriter.Close()
+
+	tarWriter := tar.NewWriter(gzWriter)
+	defer tarWriter.Close()
+
+	for path, content := range testFiles {
+		// Add file to tar
+		header := &tar.Header{
+			Name:     path,
+			Mode:     0600,
+			Size:     int64(len(content)),
+			Typeflag: tar.TypeReg,
+		}
+
+		err = tarWriter.WriteHeader(header)
+		require.NoError(err)
+
+		_, err = tarWriter.Write([]byte(content))
+		require.NoError(err)
+	}
+
+	// Close writers to ensure data is written
+	tarWriter.Close()
+	gzWriter.Close()
+	file.Close()
+
+	// Extract the tar.gz file
+	err = rzip.ExtractTarGzToDirectory(tarGzPath, extractDir)
+	require.NoError(err)
+
+	// Verify extracted files
+	for path, expectedContent := range testFiles {
+		extractedPath := filepath.Join(extractDir, path)
+		content, err := os.ReadFile(extractedPath)
+		require.NoError(err)
+		require.Equal(expectedContent, string(content))
+	}
 }

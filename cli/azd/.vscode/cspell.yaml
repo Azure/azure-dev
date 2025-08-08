@@ -177,6 +177,11 @@ overrides:
       - azdcontext
       - azapi
       - eastus
+  - filename: .github/copilot-instructions.md
+    words:
+      - golines
+      - technicalterm
+      - Errorf
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

@@ -16,7 +16,8 @@ func NewAzdDockerGenerationTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"azd_docker_generation",
-			mcp.WithDescription(`Returns instructions for generating optimized Dockerfiles and container configurations for containerizable 
+			mcp.WithDescription(
+				`Returns instructions for generating optimized Dockerfiles and container configurations for containerizable 
 services in AZD projects. 
 
 The LLM agent should execute these instructions using available tools.
@@ -25,7 +26,8 @@ Use this tool when:
 - Architecture planning identified services requiring containerization
 - azd-arch-plan.md shows Container Apps or AKS as selected hosting platform
 - Need Dockerfiles for microservices, APIs, or containerized web applications
-- Ready to implement containerization strategy`),
+- Ready to implement containerization strategy`,
+			),
 		),
 		Handler: handleAzdDockerGeneration,
 	}

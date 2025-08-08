@@ -164,6 +164,19 @@ overrides:
       - dall
       - datasource
       - vectorizing
+  - filename: docs/new-azd-command.md
+    words:
+      - pflag
+      - struct
+      - Errorf
+      - Sprintf
+      - mycommand
+      - omitempty
+      - Fprintf
+      - tabwriter
+      - azdcontext
+      - azapi
+      - eastus
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

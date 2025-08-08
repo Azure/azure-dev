@@ -16,7 +16,8 @@ func NewAzdInfrastructureGenerationTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"azd_infrastructure_generation",
-			mcp.WithDescription(`Returns instructions for generating modular Bicep infrastructure templates following Azure security and 
+			mcp.WithDescription(
+				`Returns instructions for generating modular Bicep infrastructure templates following Azure security and 
 operational best practices for AZD projects. 
 
 The LLM agent should execute these instructions using available tools.
@@ -24,7 +25,8 @@ The LLM agent should execute these instructions using available tools.
 Use this tool when:
 - Architecture planning completed with Azure services selected
 - Need to create Bicep infrastructure templates
-- Ready to implement infrastructure as code for deployment`),
+- Ready to implement infrastructure as code for deployment`,
+			),
 		),
 		Handler: handleAzdInfrastructureGeneration,
 	}

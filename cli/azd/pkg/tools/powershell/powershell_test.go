@@ -6,6 +6,7 @@ package powershell
 import (
 	"context"
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -31,6 +32,53 @@ func Test_Powershell_Execute(t *testing.T) {
 		userPwsh := "pwsh -NoProfile"
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(args.Cmd, userPwsh)
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			require.Equal(t, userPwsh, args.Cmd)
+			require.Equal(t, workingDir, args.Cwd)
+			require.Equal(t, scriptPath, args.Args[0])
+			require.Equal(t, env, args.Env)
+
+			return exec.NewRunResult(0, "", ""), nil
+		})
+
+		PowershellScript := NewPowershellScriptWithMockCheckPath(
+			mockContext.CommandRunner,
+			workingDir,
+			env,
+			func(options tools.ExecOptions) error {
+				return nil
+			})
+		runResult, err := PowershellScript.Execute(
+			*mockContext.Context,
+			scriptPath,
+			tools.ExecOptions{UserPwsh: userPwsh, Interactive: to.Ptr(true)},
+		)
+
+		require.NotNil(t, runResult)
+		require.NoError(t, err)
+	})
+
+	t.Run("Success - alternative", func(t *testing.T) {
+		if runtime.GOOS != "windows" {
+			t.Skip("pwsh alternative is only for Windows")
+		}
+		mockContext := mocks.NewMockContext(context.Background())
+
+		// #nosec G101
+		userPwsh := "pwsh -NoProfile"
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(args.Cmd, userPwsh)
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			require.Equal(t, userPwsh, args.Cmd)
+			require.Equal(t, workingDir, args.Cwd)
+			require.Equal(t, scriptPath, args.Args[0])
+			require.Equal(t, env, args.Env)
+
+			return exec.NewRunResult(1, "not found", "not found"), nil
+		})
+
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(args.Cmd, "powershell")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			require.Equal(t, userPwsh, args.Cmd)
 			require.Equal(t, workingDir, args.Cwd)
@@ -90,7 +138,7 @@ func Test_Powershell_Execute(t *testing.T) {
 		_, err := PowershellScript.Execute(
 			*mockContext.Context,
 			scriptPath,
-			tools.ExecOptions{Interactive: to.Ptr(true)},
+			tools.ExecOptions{Interactive: to.Ptr(true), StrictShell: true},
 		)
 
 		require.Error(t, err)

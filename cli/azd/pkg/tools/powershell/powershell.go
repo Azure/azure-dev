@@ -76,7 +76,7 @@ func (bs *powershellScript) Execute(ctx context.Context, path string, options to
 		if err := bs.checkInstalled(options); err != nil {
 			return exec.RunResult{}, &internal.ErrorWithSuggestion{
 				Err:        err,
-				Suggestion: "Make sure Powershell is installed in your system.",
+				Suggestion: "Make sure PowerShell is installed on your system.",
 			}
 		}
 	}

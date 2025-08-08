@@ -63,6 +63,9 @@ type HookConfig struct {
 	Name string `yaml:",omitempty"`
 	// The type of script hook (bash or powershell)
 	Shell ShellType `yaml:"shell,omitempty"`
+	// If true, azd won't try to use alternative shell to execute the command. For example, pwsh won't be tried with
+	// powershell (pwsh5) in Windows.
+	StrictShell bool `yaml:"strictShell,omitempty"`
 	// The inline script to execute or path to existing file
 	Run string `yaml:"run,omitempty"`
 	// When set to true will not halt command execution even when a script error occurs.

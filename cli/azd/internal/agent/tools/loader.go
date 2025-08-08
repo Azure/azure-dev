@@ -15,10 +15,12 @@ type ToolLoader interface {
 	LoadTools() ([]tools.Tool, error)
 }
 
+// LocalToolsLoader manages loading tools from multiple local tool categories
 type LocalToolsLoader struct {
 	loaders []ToolLoader
 }
 
+// NewLocalToolsLoader creates a new instance with default tool loaders for dev and io categories
 func NewLocalToolsLoader() *LocalToolsLoader {
 	return &LocalToolsLoader{
 		loaders: []ToolLoader{
@@ -28,7 +30,8 @@ func NewLocalToolsLoader() *LocalToolsLoader {
 	}
 }
 
-// LoadLocalTools loads all tools from all categories with the provided callback handler
+// LoadTools loads and returns all tools from all registered tool loaders.
+// Returns an error if any individual loader fails to load its tools.
 func (l *LocalToolsLoader) LoadTools() ([]tools.Tool, error) {
 	var allTools []tools.Tool
 

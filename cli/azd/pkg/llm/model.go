@@ -12,12 +12,13 @@ import (
 
 var _ llms.Model = (*modelWithCallOptions)(nil)
 
-// / Wraps an langchaingo model to allow specifying specific call options at create time
+// modelWithCallOptions wraps a langchaingo model to allow specifying default call options at creation time
 type modelWithCallOptions struct {
 	model   llms.Model
 	options []llms.CallOption
 }
 
+// newModelWithCallOptions creates a new model wrapper with default call options
 func newModelWithCallOptions(model llms.Model, options ...llms.CallOption) *modelWithCallOptions {
 	return &modelWithCallOptions{
 		model:   model,
@@ -25,6 +26,8 @@ func newModelWithCallOptions(model llms.Model, options ...llms.CallOption) *mode
 	}
 }
 
+// GenerateContent generates content using the wrapped model, combining default options
+// with any additional options provided at call time
 func (m *modelWithCallOptions) GenerateContent(
 	ctx context.Context,
 	messages []llms.MessageContent,
@@ -37,6 +40,7 @@ func (m *modelWithCallOptions) GenerateContent(
 	return m.model.GenerateContent(ctx, messages, allOptions...)
 }
 
+// Call is deprecated and returns an error directing users to use GenerateContent instead
 func (m *modelWithCallOptions) Call(ctx context.Context, prompt string, options ...llms.CallOption) (string, error) {
 	return "", fmt.Errorf("Deprecated, call GenerateContent")
 }

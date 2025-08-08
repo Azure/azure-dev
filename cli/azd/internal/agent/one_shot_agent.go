@@ -18,8 +18,8 @@ import (
 	mcptools "github.com/azure/azure-dev/cli/azd/internal/agent/tools/mcp"
 )
 
-// OneShotAzdAiAgent represents an enhanced AZD Copilot agent with action tracking,
-// intent validation, and conversation memory
+// OneShotAzdAiAgent represents an AZD Copilot agent designed for single-request processing
+// without conversation memory, optimized for one-time queries and responses
 type OneShotAzdAiAgent struct {
 	*Agent
 }
@@ -27,6 +27,9 @@ type OneShotAzdAiAgent struct {
 //go:embed prompts/one_shot.txt
 var one_shot_prompt_template string
 
+// NewOneShotAzdAiAgent creates a new one-shot agent optimized for single queries.
+// It loads tools from multiple sources, filters excluded tools, and configures
+// the agent for stateless operation without conversation memory.
 func NewOneShotAzdAiAgent(llm llms.Model, opts ...AgentOption) (*OneShotAzdAiAgent, error) {
 	azdAgent := &OneShotAzdAiAgent{
 		Agent: &Agent{
@@ -100,12 +103,12 @@ func NewOneShotAzdAiAgent(llm llms.Model, opts ...AgentOption) (*OneShotAzdAiAge
 	return azdAgent, nil
 }
 
-// RunConversationLoop runs the enhanced AZD Copilot agent with full capabilities
+// SendMessage processes a single message through the one-shot agent and returns the response
 func (aai *OneShotAzdAiAgent) SendMessage(ctx context.Context, args ...string) (string, error) {
 	return aai.runChain(ctx, strings.Join(args, "\n"))
 }
 
-// ProcessQuery processes a user query with full action tracking and validation
+// runChain executes a user query through the one-shot agent without memory persistence
 func (aai *OneShotAzdAiAgent) runChain(ctx context.Context, userInput string) (string, error) {
 	// Execute with enhanced input - agent should automatically handle memory
 	output, err := chains.Run(ctx, aai.executor, userInput)

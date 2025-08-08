@@ -11,6 +11,7 @@ import (
 	"github.com/tmc/langchaingo/llms/openai"
 )
 
+// AzureOpenAiModelConfig holds configuration settings for Azure OpenAI models
 type AzureOpenAiModelConfig struct {
 	Model       string   `json:"model"`
 	Version     string   `json:"version"`
@@ -21,16 +22,21 @@ type AzureOpenAiModelConfig struct {
 	MaxTokens   *int     `json:"maxTokens"`
 }
 
+// AzureOpenAiModelProvider creates Azure OpenAI models from user configuration
 type AzureOpenAiModelProvider struct {
 	userConfigManager config.UserConfigManager
 }
 
+// NewAzureOpenAiModelProvider creates a new Azure OpenAI model provider
 func NewAzureOpenAiModelProvider(userConfigManager config.UserConfigManager) ModelProvider {
 	return &AzureOpenAiModelProvider{
 		userConfigManager: userConfigManager,
 	}
 }
 
+// CreateModelContainer creates a model container for Azure OpenAI with configuration
+// loaded from user settings. It validates required fields and applies optional parameters
+// like temperature and max tokens before creating the OpenAI client.
 func (p *AzureOpenAiModelProvider) CreateModelContainer(opts ...ModelOption) (*ModelContainer, error) {
 	userConfig, err := p.userConfigManager.Load()
 	if err != nil {

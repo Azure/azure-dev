@@ -16,12 +16,14 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/agentRunner"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -113,6 +115,7 @@ type ProvisionAction struct {
 	importManager       *project.ImportManager
 	alphaFeatureManager *alpha.FeatureManager
 	portalUrlBase       string
+	llmManager          llm.Manager
 }
 
 func NewProvisionAction(
@@ -130,6 +133,7 @@ func NewProvisionAction(
 	subManager *account.SubscriptionsManager,
 	alphaFeatureManager *alpha.FeatureManager,
 	cloud *cloud.Cloud,
+	llmManager llm.Manager,
 ) actions.Action {
 	return &ProvisionAction{
 		flags:               flags,
@@ -146,6 +150,7 @@ func NewProvisionAction(
 		importManager:       importManager,
 		alphaFeatureManager: alphaFeatureManager,
 		portalUrlBase:       cloud.PortalUrlBase,
+		llmManager:          llmManager,
 	}
 }
 
@@ -156,6 +161,54 @@ func (p *ProvisionAction) SetFlags(flags *ProvisionFlags) {
 	}
 
 	p.flags = flags
+}
+
+func (p *ProvisionAction) errorWithSuggestion(ctx context.Context, originalError error) error {
+	// Show preview of the error
+	previewWriter := p.console.ShowPreviewer(ctx,
+		&input.ShowPreviewerOptions{
+			Prefix:       "  ",
+			MaxLineCount: 20,
+			Title:        "Error Preview",
+		})
+	fmt.Fprintf(previewWriter, "%s", originalError.Error())
+
+	// Ask user if they want to get error suggestions from AI
+	selection, err := p.console.Select(ctx, input.ConsoleOptions{
+		Message: "Do you want to get error suggestions from AI?",
+		Options: []string{
+			"Yes",
+			"No",
+		},
+	})
+
+	p.console.StopPreviewer(ctx, false)
+
+	if err != nil {
+		return fmt.Errorf("prompting failed to get error suggestions: %w", err)
+	}
+
+	switch selection {
+	case 0: // get error suggestion
+		// it takes around 30-60s
+		p.console.MessageUxItem(ctx, &ux.MessageTitle{
+			Title:     "Getting AI error suggestions",
+			TitleNote: "Getting AI error suggestions can take some time",
+		})
+		
+		result, errSampling := agentRunner.Run(ctx, p.console, p.llmManager, originalError)
+		// If llm/sampling fails, we still want to return the original error
+		if errSampling != nil {
+			fmt.Printf("Not able to get AI error suggestions: %s\n", errSampling)
+			return originalError
+		}
+
+		return &internal.ErrorWithSuggestion{Err: originalError, Suggestion: result}
+	case 1: // don't get error suggestion
+		return originalError
+	}
+
+	return originalError
 }
 
 func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -186,23 +239,23 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	startTime := time.Now()
 
 	if err := p.projectManager.Initialize(ctx, p.projectConfig); err != nil {
-		return nil, err
+		return nil, p.errorWithSuggestion(ctx, err)
 	}
 
 	if err := p.projectManager.EnsureAllTools(ctx, p.projectConfig, nil); err != nil {
-		return nil, err
+		return nil, p.errorWithSuggestion(ctx, err)
 	}
 
 	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)
 	if err != nil {
-		return nil, err
+		return nil, p.errorWithSuggestion(ctx, err)
 	}
 	defer func() { _ = infra.Cleanup() }()
 
 	infraOptions := infra.Options
 	infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
 	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, infraOptions); err != nil {
-		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
+		return nil, p.errorWithSuggestion(ctx, fmt.Errorf("initializing provisioning manager: %w", err))
 	}
 
 	// Get Subscription to Display in Command Title Note
@@ -264,18 +317,18 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		if p.formatter.Kind() == output.JsonFormat {
 			stateResult, err := p.provisionManager.State(ctx, nil)
 			if err != nil {
-				return nil, fmt.Errorf(
+				return nil, p.errorWithSuggestion(ctx, fmt.Errorf(
 					"deployment failed and the deployment result is unavailable: %w",
 					multierr.Combine(err, err),
-				)
+				))
 			}
 
 			if err := p.formatter.Format(
 				provisioning.NewEnvRefreshResultFromState(stateResult.State), p.writer, nil); err != nil {
-				return nil, fmt.Errorf(
+				return nil, p.errorWithSuggestion(ctx, fmt.Errorf(
 					"deployment failed and the deployment result could not be displayed: %w",
 					multierr.Combine(err, err),
-				)
+				))
 			}
 		}
 
@@ -313,7 +366,8 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			}
 		}
 
-		return nil, fmt.Errorf("deployment failed: %w", err)
+		return nil, p.errorWithSuggestion(ctx, fmt.Errorf("deployment failed: %w", err))
+
 	}
 
 	if previewMode {
@@ -346,7 +400,7 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	servicesStable, err := p.importManager.ServiceStable(ctx, p.projectConfig)
 	if err != nil {
-		return nil, err
+		return nil, p.errorWithSuggestion(ctx, err)
 	}
 
 	for _, svc := range servicesStable {
@@ -359,25 +413,25 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}
 
 		if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
-			return nil, err
+			return nil, p.errorWithSuggestion(ctx, err)
 		}
 	}
 
 	if p.formatter.Kind() == output.JsonFormat {
 		stateResult, err := p.provisionManager.State(ctx, nil)
 		if err != nil {
-			return nil, fmt.Errorf(
+			return nil, p.errorWithSuggestion(ctx, fmt.Errorf(
 				"deployment succeeded but the deployment result is unavailable: %w",
 				multierr.Combine(err, err),
-			)
+			))
 		}
 
 		if err := p.formatter.Format(
 			provisioning.NewEnvRefreshResultFromState(stateResult.State), p.writer, nil); err != nil {
-			return nil, fmt.Errorf(
+			return nil, p.errorWithSuggestion(ctx, fmt.Errorf(
 				"deployment succeeded but the deployment result could not be displayed: %w",
 				multierr.Combine(err, err),
-			)
+			))
 		}
 	}
 

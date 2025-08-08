@@ -596,3 +596,94 @@ func TestSplitDockerImage(t *testing.T) {
 		})
 	}
 }
+
+func TestIsContainerdEnabled(t *testing.T) {
+	tests := []struct {
+		name            string
+		systemInfoOut   string
+		systemInfoErr   error
+		expectedEnabled bool
+		expectError     bool
+	}{
+		{
+			name: "containerd enabled",
+			systemInfoOut: ` [
+				["driver", "overlay2"],
+				["snapshotter", "io.containerd.snapshotter.v1.overlayfs"]
+			]`,
+			expectedEnabled: true,
+			expectError:     false,
+		},
+		{
+			name: "containerd not enabled",
+			systemInfoOut: ` [
+				["driver", "overlay2"],
+				["backing filesystem", "extfs"]
+			]`,
+			expectedEnabled: false,
+			expectError:     false,
+		},
+		{
+			name:            "empty driver status",
+			systemInfoOut:   "",
+			expectedEnabled: false,
+			expectError:     false,
+		},
+		{
+			name:            "whitespace only output",
+			systemInfoOut:   "   \n\t  ",
+			expectedEnabled: false,
+			expectError:     false,
+		},
+		{
+			name: "containerd string present in other context",
+			systemInfoOut: ` [
+				["some unrelated field", "io.containerd.snapshotter.v1.something"],
+				["driver", "overlay2"]
+			]`,
+			expectedEnabled: true,
+			expectError:     false,
+		},
+		{
+			name:            "command execution error",
+			systemInfoErr:   errors.New("docker daemon not running"),
+			expectedEnabled: false,
+			expectError:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			docker := NewCli(mockContext.CommandRunner)
+
+			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "docker system info")
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				require.Equal(t, "docker", args.Cmd)
+				require.Equal(t, []string{"system", "info", "--format", "{{.DriverStatus}}"}, args.Args)
+
+				if tt.systemInfoErr != nil {
+					return exec.RunResult{}, tt.systemInfoErr
+				}
+
+				return exec.RunResult{
+					Stdout:   tt.systemInfoOut,
+					Stderr:   "",
+					ExitCode: 0,
+				}, nil
+			})
+
+			enabled, err := docker.IsContainerdEnabled(context.Background())
+
+			if tt.expectError {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "checking docker driver status")
+			} else {
+				require.NoError(t, err)
+			}
+
+			require.Equal(t, tt.expectedEnabled, enabled)
+		})
+	}
+}

@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -504,4 +505,78 @@ func getCmdRootHelpCommands(cmd *cobra.Command) (result string) {
 			strings.Join(commandGroups[string(title)], "\n    ")))
 	}
 	return strings.Join(paragraph, "\n")
+}
+
+// Global command matcher instance
+var commandMatcher *CommandMatcher
+
+// initializeShortcuts initializes the command matcher for shortcuts
+func initializeShortcuts(rootCmd *cobra.Command) {
+	if commandMatcher == nil {
+		commandMatcher = NewCommandMatcher()
+	}
+	commandMatcher.InitializeFromCobraCommand(rootCmd)
+	config := GetShortcutConfig()
+	config.Apply(commandMatcher)
+}
+
+// preprocessArgs expands command shortcuts to their full forms
+func preprocessArgs(args []string, rootCmd *cobra.Command) ([]string, error) {
+	// Skip shortcut processing if disabled or for specific commands
+	if IsShortcutDisabled() || ShouldSkipShortcuts(args) {
+		return args, nil
+	}
+
+	// Initialize command matcher if needed
+	if commandMatcher == nil {
+		initializeShortcuts(rootCmd)
+	}
+
+	result, err := commandMatcher.ResolveCommand(args)
+
+	if err != nil {
+		// Write error to stderr and return the original error
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return nil, err
+	}
+
+	return result, nil
+} // ExecuteRootCmdWithShortcuts executes the root command with shortcut preprocessing
+func ExecuteRootCmdWithShortcuts(
+	ctx context.Context,
+	staticHelp bool,
+	middlewareChain []*actions.MiddlewareRegistration,
+	rootContainer *ioc.NestedContainer,
+) error {
+	// Get command line arguments (excluding program name)
+	args := os.Args[1:]
+
+	// Create the root command first
+	rootCmd := NewRootCmd(staticHelp, middlewareChain, rootContainer)
+
+	// Preprocess args to expand shortcuts (now that we have the root command)
+	expandedArgs, err := preprocessArgs(args, rootCmd)
+	if err != nil {
+		return err
+	}
+
+	// Set the processed args if they were modified
+	if len(expandedArgs) > 0 && !argsEqual(args, expandedArgs) {
+		rootCmd.SetArgs(expandedArgs)
+	}
+
+	return rootCmd.ExecuteContext(ctx)
+}
+
+// argsEqual checks if two string slices are equal
+func argsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

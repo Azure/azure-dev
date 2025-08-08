@@ -163,6 +163,9 @@ overrides:
       - dall
       - datasource
       - vectorizing
+  - filename: docs/shortcuts.md
+    words:
+      - logi
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

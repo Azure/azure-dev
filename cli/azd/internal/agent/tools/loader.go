@@ -6,7 +6,6 @@ package tools
 import (
 	"github.com/tmc/langchaingo/tools"
 
-	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/azd"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/dev"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/io"
 )
@@ -23,7 +22,6 @@ type LocalToolsLoader struct {
 func NewLocalToolsLoader() *LocalToolsLoader {
 	return &LocalToolsLoader{
 		loaders: []ToolLoader{
-			azd.NewAzdToolsLoader(),
 			dev.NewDevToolsLoader(),
 			io.NewIoToolsLoader(),
 		},

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	_ "embed"
 
@@ -21,27 +22,40 @@ var _mcpJson string
 
 // McpConfig represents the overall MCP configuration structure
 type McpConfig struct {
+	// Servers maps server names to their configurations
 	Servers map[string]ServerConfig `json:"servers"`
 }
 
 // ServerConfig represents an individual server configuration
 type ServerConfig struct {
-	Type    string   `json:"type"`
-	Command string   `json:"command"`
-	Args    []string `json:"args,omitempty"`
-	Env     []string `json:"env,omitempty"`
+	// Type specifies the type of MCP server (e.g., "stdio")
+	Type string `json:"type"`
+	// Command is the executable path or command to run the MCP server
+	Command string `json:"command"`
+	// Args are optional command-line arguments for the server command
+	Args []string `json:"args,omitempty"`
+	// Env are optional environment variables for the server process
+	Env []string `json:"env,omitempty"`
 }
 
+// McpToolsLoader manages the loading of tools from MCP (Model Context Protocol) servers
 type McpToolsLoader struct {
+	// samplingHandler handles sampling requests from MCP clients
 	samplingHandler client.SamplingHandler
 }
 
+// NewMcpToolsLoader creates a new instance of McpToolsLoader with the provided sampling handler
 func NewMcpToolsLoader(samplingHandler client.SamplingHandler) *McpToolsLoader {
 	return &McpToolsLoader{
 		samplingHandler: samplingHandler,
 	}
 }
 
+// LoadTools loads and returns all available tools from configured MCP servers.
+// It parses the embedded mcp.json configuration, connects to each server,
+// and collects all tools from each successfully connected server.
+// Returns an error if the configuration cannot be parsed, but continues
+// processing other servers if individual server connections fail.
 func (l *McpToolsLoader) LoadTools() ([]tools.Tool, error) {
 	// Deserialize the embedded mcp.json configuration
 	var config McpConfig
@@ -60,19 +74,22 @@ func (l *McpToolsLoader) LoadTools() ([]tools.Tool, error) {
 		ctx := context.Background()
 
 		if err := mcpClient.Start(ctx); err != nil {
-			return nil, err
+			log.Printf("Failed to start MCP client for server %s: %v", serverName, err)
+			continue
 		}
 
 		// Create the adapter
 		adapter, err := langchaingo_mcp_adapter.New(mcpClient)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create adapter for server %s: %w", serverName, err)
+			log.Printf("Failed to create adapter for server %s: %v", serverName, err)
+			continue
 		}
 
 		// Get all tools from MCP server
 		mcpTools, err := adapter.Tools()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get tools from server %s: %w", serverName, err)
+			log.Printf("Failed to get tools from server %s: %v", serverName, err)
+			continue
 		}
 
 		// Add the tools to our collection

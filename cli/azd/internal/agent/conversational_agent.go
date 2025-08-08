@@ -26,12 +26,15 @@ import (
 //go:embed prompts/conversational.txt
 var conversational_prompt_template string
 
-// ConversationalAzdAiAgent represents an enhanced AZD Copilot agent with action tracking,
-// intent validation, and conversation memory
+// ConversationalAzdAiAgent represents an enhanced AZD Copilot agent with conversation memory,
+// tool filtering, and interactive capabilities
 type ConversationalAzdAiAgent struct {
 	*Agent
 }
 
+// NewConversationalAzdAiAgent creates a new conversational agent with memory, tool loading,
+// and MCP sampling capabilities. It filters out excluded tools and configures the agent
+// for interactive conversations with a high iteration limit for complex tasks.
 func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentOption) (*ConversationalAzdAiAgent, error) {
 	azdAgent := &ConversationalAzdAiAgent{
 		Agent: &Agent{
@@ -115,11 +118,14 @@ func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentOption) (*Conversa
 	return azdAgent, nil
 }
 
+// SendMessage processes a single message through the agent and returns the response
 func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...string) (string, error) {
 	return aai.runChain(ctx, strings.Join(args, "\n"))
 }
 
-// RunConversationLoop runs the enhanced AZD Copilot agent with full capabilities
+// StartConversation runs an interactive conversation loop with the agent.
+// It accepts an optional initial query and handles user input/output with proper formatting.
+// The conversation continues until the user types "exit" or "quit".
 func (aai *ConversationalAzdAiAgent) StartConversation(ctx context.Context, args ...string) (string, error) {
 	fmt.Println("🤖 AZD Copilot - Interactive Mode")
 	fmt.Println("═══════════════════════════════════════════════════════════")
@@ -171,7 +177,7 @@ func (aai *ConversationalAzdAiAgent) StartConversation(ctx context.Context, args
 	return "", nil
 }
 
-// ProcessQuery processes a user query with full action tracking and validation
+// runChain executes a user query through the agent's chain with memory and returns the response
 func (aai *ConversationalAzdAiAgent) runChain(ctx context.Context, userInput string) (string, error) {
 	// Execute with enhanced input - agent should automatically handle memory
 	output, err := chains.Run(ctx, aai.executor, userInput)

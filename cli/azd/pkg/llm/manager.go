@@ -127,7 +127,7 @@ func (m Manager) GetDefaultModel(opts ...ModelOption) (*ModelContainer, error) {
 	return m.ModelFactory.CreateModelContainer(LlmType(defaultModelType), opts...)
 }
 
-// GetModel returns the configured model from the global azd user configuration
+// GetModel returns the specified model type from the global azd user configuration
 func (m Manager) GetModel(modelType LlmType, opts ...ModelOption) (*ModelContainer, error) {
 	return m.ModelFactory.CreateModelContainer(modelType, opts...)
 }

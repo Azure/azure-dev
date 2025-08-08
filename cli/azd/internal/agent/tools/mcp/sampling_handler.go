@@ -14,19 +14,25 @@ import (
 	"github.com/tmc/langchaingo/llms"
 )
 
+// McpSamplingHandler handles sampling requests from MCP clients by delegating
+// to an underlying language model and converting responses to MCP format
 type McpSamplingHandler struct {
 	llm   llms.Model
 	debug bool
 }
 
+// SamplingHandlerOption is a functional option for configuring McpSamplingHandler
 type SamplingHandlerOption func(*McpSamplingHandler)
 
+// WithDebug returns an option that enables or disables debug logging
 func WithDebug(debug bool) SamplingHandlerOption {
 	return func(h *McpSamplingHandler) {
 		h.debug = debug
 	}
 }
 
+// NewMcpSamplingHandler creates a new MCP sampling handler with the specified
+// language model and applies any provided options
 func NewMcpSamplingHandler(llm llms.Model, opts ...SamplingHandlerOption) *McpSamplingHandler {
 	handler := &McpSamplingHandler{
 		llm: llm,
@@ -39,16 +45,10 @@ func NewMcpSamplingHandler(llm llms.Model, opts ...SamplingHandlerOption) *McpSa
 	return handler
 }
 
-// cleanContent converts literal line break escape sequences to actual line break characters
-func (h *McpSamplingHandler) cleanContent(content string) string {
-	// Replace literal escape sequences with actual control characters
-	// Handle Windows-style \r\n first (most common), then individual ones
-	content = strings.ReplaceAll(content, "\\r\\n", "\r\n")
-	content = strings.ReplaceAll(content, "\\n", "\n")
-	content = strings.ReplaceAll(content, "\\r", "\r")
-	return content
-}
-
+// CreateMessage handles MCP sampling requests by converting MCP messages to the
+// language model format, generating a response, and converting back to MCP format.
+// It supports various content types including text, maps, and arrays, and provides
+// debug logging when enabled. Returns an error-wrapped response if LLM generation fails.
 func (h *McpSamplingHandler) CreateMessage(
 	ctx context.Context,
 	request mcp.CreateMessageRequest,
@@ -155,4 +155,15 @@ func (h *McpSamplingHandler) CreateMessage(
 	}
 
 	return samplingResponse, nil
+}
+
+// cleanContent converts literal line break escape sequences to actual line break characters.
+// It handles Windows-style \r\n sequences first, then individual \n and \r sequences.
+func (h *McpSamplingHandler) cleanContent(content string) string {
+	// Replace literal escape sequences with actual control characters
+	// Handle Windows-style \r\n first (most common), then individual ones
+	content = strings.ReplaceAll(content, "\\r\\n", "\r\n")
+	content = strings.ReplaceAll(content, "\\n", "\n")
+	content = strings.ReplaceAll(content, "\\r", "\r")
+	return content
 }

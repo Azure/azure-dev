@@ -9,6 +9,7 @@ import (
 	"github.com/tmc/langchaingo/llms/ollama"
 )
 
+// OllamaModelConfig holds configuration settings for Ollama models
 type OllamaModelConfig struct {
 	Model       string   `json:"model"`
 	Version     string   `json:"version"`
@@ -16,16 +17,21 @@ type OllamaModelConfig struct {
 	MaxTokens   *int     `json:"maxTokens"`
 }
 
+// OllamaModelProvider creates Ollama models from user configuration with sensible defaults
 type OllamaModelProvider struct {
 	userConfigManager config.UserConfigManager
 }
 
+// NewOllamaModelProvider creates a new Ollama model provider
 func NewOllamaModelProvider(userConfigManager config.UserConfigManager) ModelProvider {
 	return &OllamaModelProvider{
 		userConfigManager: userConfigManager,
 	}
 }
 
+// CreateModelContainer creates a model container for Ollama with configuration from user settings.
+// It defaults to "llama3" model if none specified and "latest" version if not configured.
+// Applies optional parameters like temperature and max tokens to the Ollama client.
 func (p *OllamaModelProvider) CreateModelContainer(opts ...ModelOption) (*ModelContainer, error) {
 	userConfig, err := p.userConfigManager.Load()
 	if err != nil {

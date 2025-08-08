@@ -6,9 +6,9 @@ var builder = WebApplication.CreateBuilder(args);
 // Add service defaults & Aspire components.
 builder.AddServiceDefaults();
 builder.AddRedisClient("pubsub");
-builder.AddAzureTableClient("requestlog");
-builder.AddAzureBlobClient("markdown");
-builder.AddAzureQueueClient("messages");
+builder.AddAzureTableServiceClient("requestlog");
+builder.AddAzureBlobServiceClient("markdown");
+builder.AddAzureQueueServiceClient("messages");
 builder.Services.AddHostedService<BlobUploader>();
 
 // Add services to the container.

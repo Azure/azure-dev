@@ -54,10 +54,10 @@ else
 
     public class RequestLog : ITableEntity
     {
-        public string PartitionKey { get; set; }
-        public string RowKey { get; set; }
+        public string PartitionKey { get; set; } = string.Empty;
+        public string RowKey { get; set; } = string.Empty;
         public DateTimeOffset? Timestamp { get; set; }
         public ETag ETag { get; set; }
-        public string Endpoint { get; set; }
+        public string Endpoint { get; set; } = string.Empty;
     }
 }

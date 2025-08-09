@@ -13,15 +13,12 @@ import (
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/prompts"
 	"github.com/tmc/langchaingo/tools"
-
-	localtools "github.com/azure/azure-dev/cli/azd/internal/agent/tools"
-	mcptools "github.com/azure/azure-dev/cli/azd/internal/agent/tools/mcp"
 )
 
 // OneShotAzdAiAgent represents an AZD Copilot agent designed for single-request processing
 // without conversation memory, optimized for one-time queries and responses
 type OneShotAzdAiAgent struct {
-	*Agent
+	*agentBase
 }
 
 //go:embed prompts/one_shot.txt
@@ -32,47 +29,14 @@ var one_shot_prompt_template string
 // the agent for stateless operation without conversation memory.
 func NewOneShotAzdAiAgent(llm llms.Model, opts ...AgentOption) (*OneShotAzdAiAgent, error) {
 	azdAgent := &OneShotAzdAiAgent{
-		Agent: &Agent{
-			defaultModel:  llm,
-			samplingModel: llm,
-			tools:         []tools.Tool{},
+		agentBase: &agentBase{
+			defaultModel: llm,
+			tools:        []tools.Tool{},
 		},
 	}
 
 	for _, opt := range opts {
-		opt(azdAgent.Agent)
-	}
-
-	// Create sampling handler for MCP
-	samplingHandler := mcptools.NewMcpSamplingHandler(
-		azdAgent.samplingModel,
-		mcptools.WithDebug(azdAgent.debug),
-	)
-
-	toolLoaders := []localtools.ToolLoader{
-		localtools.NewLocalToolsLoader(),
-		mcptools.NewMcpToolsLoader(samplingHandler),
-	}
-
-	// Define block list of excluded tools
-	excludedTools := map[string]bool{
-		"extension_az":  true,
-		"extension_azd": true,
-		// Add more excluded tools here as needed
-	}
-
-	for _, toolLoader := range toolLoaders {
-		categoryTools, err := toolLoader.LoadTools()
-		if err != nil {
-			return nil, err
-		}
-
-		// Filter out excluded tools
-		for _, tool := range categoryTools {
-			if !excludedTools[tool.Name()] {
-				azdAgent.tools = append(azdAgent.tools, tool)
-			}
-		}
+		opt(azdAgent.agentBase)
 	}
 
 	promptTemplate := prompts.PromptTemplate{

@@ -18,9 +18,6 @@ import (
 	"github.com/tmc/langchaingo/memory"
 	"github.com/tmc/langchaingo/prompts"
 	"github.com/tmc/langchaingo/tools"
-
-	localtools "github.com/azure/azure-dev/cli/azd/internal/agent/tools"
-	mcptools "github.com/azure/azure-dev/cli/azd/internal/agent/tools/mcp"
 )
 
 //go:embed prompts/conversational.txt
@@ -29,7 +26,7 @@ var conversational_prompt_template string
 // ConversationalAzdAiAgent represents an enhanced AZD Copilot agent with conversation memory,
 // tool filtering, and interactive capabilities
 type ConversationalAzdAiAgent struct {
-	*Agent
+	*agentBase
 }
 
 // NewConversationalAzdAiAgent creates a new conversational agent with memory, tool loading,
@@ -37,15 +34,14 @@ type ConversationalAzdAiAgent struct {
 // for interactive conversations with a high iteration limit for complex tasks.
 func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentOption) (*ConversationalAzdAiAgent, error) {
 	azdAgent := &ConversationalAzdAiAgent{
-		Agent: &Agent{
-			defaultModel:  llm,
-			samplingModel: llm,
-			tools:         []tools.Tool{},
+		agentBase: &agentBase{
+			defaultModel: llm,
+			tools:        []tools.Tool{},
 		},
 	}
 
 	for _, opt := range opts {
-		opt(azdAgent.Agent)
+		opt(azdAgent.agentBase)
 	}
 
 	smartMemory := memory.NewConversationBuffer(
@@ -54,38 +50,6 @@ func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentOption) (*Conversa
 		memory.WithHumanPrefix("Human"),
 		memory.WithAIPrefix("AI"),
 	)
-
-	// Create sampling handler for MCP
-	samplingHandler := mcptools.NewMcpSamplingHandler(
-		azdAgent.samplingModel,
-		mcptools.WithDebug(azdAgent.debug),
-	)
-
-	toolLoaders := []localtools.ToolLoader{
-		localtools.NewLocalToolsLoader(),
-		mcptools.NewMcpToolsLoader(samplingHandler),
-	}
-
-	// Define block list of excluded tools
-	excludedTools := map[string]bool{
-		"extension_az":  true,
-		"extension_azd": true,
-		// Add more excluded tools here as needed
-	}
-
-	for _, toolLoader := range toolLoaders {
-		categoryTools, err := toolLoader.LoadTools()
-		if err != nil {
-			return nil, err
-		}
-
-		// Filter out excluded tools
-		for _, tool := range categoryTools {
-			if !excludedTools[tool.Name()] {
-				azdAgent.tools = append(azdAgent.tools, tool)
-			}
-		}
-	}
 
 	promptTemplate := prompts.PromptTemplate{
 		Template:       conversational_prompt_template,

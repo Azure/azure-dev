@@ -15,7 +15,9 @@ import (
 )
 
 // FileInfoTool implements the Tool interface for getting file information
-type FileInfoTool struct{}
+type FileInfoTool struct {
+	common.LocalTool
+}
 
 func (t FileInfoTool) Name() string {
 	return "file_info"

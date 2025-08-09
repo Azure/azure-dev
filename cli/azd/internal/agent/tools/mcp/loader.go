@@ -11,10 +11,10 @@ import (
 
 	_ "embed"
 
-	langchaingo_mcp_adapter "github.com/i2y/langchaingo-mcp-adapter"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
-	"github.com/tmc/langchaingo/tools"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 //go:embed mcp.json
@@ -56,14 +56,14 @@ func NewMcpToolsLoader(samplingHandler client.SamplingHandler) *McpToolsLoader {
 // and collects all tools from each successfully connected server.
 // Returns an error if the configuration cannot be parsed, but continues
 // processing other servers if individual server connections fail.
-func (l *McpToolsLoader) LoadTools() ([]tools.Tool, error) {
+func (l *McpToolsLoader) LoadTools() ([]common.Tool, error) {
 	// Deserialize the embedded mcp.json configuration
 	var config McpConfig
 	if err := json.Unmarshal([]byte(_mcpJson), &config); err != nil {
 		return nil, fmt.Errorf("failed to parse mcp.json: %w", err)
 	}
 
-	var allTools []tools.Tool
+	var allTools []common.Tool
 
 	// Iterate through each server configuration
 	for serverName, serverConfig := range config.Servers {
@@ -78,22 +78,19 @@ func (l *McpToolsLoader) LoadTools() ([]tools.Tool, error) {
 			continue
 		}
 
-		// Create the adapter
-		adapter, err := langchaingo_mcp_adapter.New(mcpClient)
+		// Get tools directly from MCP client
+		toolsRequest := mcp.ListToolsRequest{}
+		toolsResult, err := mcpClient.ListTools(ctx, toolsRequest)
 		if err != nil {
-			log.Printf("Failed to create adapter for server %s: %v", serverName, err)
+			log.Printf("Failed to list tools from server %s: %v", serverName, err)
 			continue
 		}
 
-		// Get all tools from MCP server
-		mcpTools, err := adapter.Tools()
-		if err != nil {
-			log.Printf("Failed to get tools from server %s: %v", serverName, err)
-			continue
+		// Convert MCP tools to langchaingo tools using our adapter
+		for _, mcpTool := range toolsResult.Tools {
+			toolAdapter := NewMcpToolAdapter(serverName, mcpTool, mcpClient)
+			allTools = append(allTools, toolAdapter)
 		}
-
-		// Add the tools to our collection
-		allTools = append(allTools, mcpTools...)
 	}
 
 	return allTools, nil

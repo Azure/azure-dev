@@ -14,7 +14,9 @@ import (
 )
 
 // FileSearchTool implements a tool for searching files using glob patterns
-type FileSearchTool struct{}
+type FileSearchTool struct {
+	common.LocalTool
+}
 
 // FileSearchRequest represents the JSON payload for file search requests
 type FileSearchRequest struct {

@@ -14,7 +14,9 @@ import (
 )
 
 // DeleteDirectoryTool implements the Tool interface for deleting directories
-type DeleteDirectoryTool struct{}
+type DeleteDirectoryTool struct {
+	common.LocalTool
+}
 
 func (t DeleteDirectoryTool) Name() string {
 	return "delete_directory"

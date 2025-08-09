@@ -14,7 +14,9 @@ import (
 )
 
 // MoveFileTool implements the Tool interface for moving/renaming files
-type MoveFileTool struct{}
+type MoveFileTool struct {
+	common.LocalTool
+}
 
 func (t MoveFileTool) Name() string {
 	return "move_file"

@@ -15,7 +15,9 @@ import (
 )
 
 // DirectoryListTool implements the Tool interface for listing directory contents
-type DirectoryListTool struct{}
+type DirectoryListTool struct {
+	common.LocalTool
+}
 
 func (t DirectoryListTool) Name() string {
 	return "list_directory"

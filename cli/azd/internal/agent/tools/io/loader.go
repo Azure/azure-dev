@@ -4,7 +4,7 @@
 package io
 
 import (
-	"github.com/tmc/langchaingo/tools"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 )
 
 // IoToolsLoader loads IO-related tools
@@ -14,8 +14,8 @@ func NewIoToolsLoader() *IoToolsLoader {
 	return &IoToolsLoader{}
 }
 
-func (l *IoToolsLoader) LoadTools() ([]tools.Tool, error) {
-	return []tools.Tool{
+func (l *IoToolsLoader) LoadTools() ([]common.Tool, error) {
+	return []common.Tool{
 		&CurrentDirectoryTool{},
 		&ChangeDirectoryTool{},
 		&DirectoryListTool{},

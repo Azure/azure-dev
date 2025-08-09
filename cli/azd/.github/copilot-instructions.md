@@ -197,4 +197,31 @@ Before submitting any changes, ensure:
 - Implement proper error handling and output formatting
 - Use structured configuration with sensible defaults
 
+### Go Code Structure Standards
+
+When creating or modifying Go struct files, follow this organization order:
+
+1. **Package Documentation**: At the top of main file or `doc.go`
+   ```go
+   // Package packagename provides...
+   package packagename
+   ```
+
+2. **Constants**: Package-level constants
+3. **Package-level Variables**: Global variables and error definitions
+4. **Type Declarations**: Structs, interfaces, and custom types
+   - For 3+ types, consider using `types.go` file
+   - Custom error types with struct declarations (or in `types.go` if many)
+5. **Primary Struct Declaration(s)**: Main structs for the package
+6. **Constructor Functions**: `NewXXX()` functions
+7. **Public Struct Methods**: `func (s *Struct) PublicMethod()`
+   - Group interface implementations with comment: `// For XXX interface support`
+8. **Private Struct Methods**: `func (s *struct) privateMethod()`
+9. **Private Package Functions**: `func privateFunction()`
+
+**File Organization Guidelines:**
+- **Complex packages**: Use `types.go` for type definitions, `init.go` for initialization
+- **Package init**: Place `init()` functions at top of file or in dedicated `init.go`
+- **Struct embedding**: No special placement rules - treat embedded and embedding structs equally
+
 This instruction set ensures consistency with the established codebase patterns and helps maintain the high-quality standards expected in the Azure Developer CLI project.

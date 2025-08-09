@@ -15,7 +15,9 @@ import (
 )
 
 // CopyFileTool implements the Tool interface for copying files
-type CopyFileTool struct{}
+type CopyFileTool struct {
+	common.LocalTool
+}
 
 func (t CopyFileTool) Name() string {
 	return "copy_file"

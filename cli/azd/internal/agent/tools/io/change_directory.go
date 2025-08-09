@@ -15,7 +15,9 @@ import (
 )
 
 // ChangeDirectoryTool implements the Tool interface for changing the current working directory
-type ChangeDirectoryTool struct{}
+type ChangeDirectoryTool struct {
+	common.LocalTool
+}
 
 func (t ChangeDirectoryTool) Name() string {
 	return "change_directory"

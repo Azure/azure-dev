@@ -14,7 +14,9 @@ import (
 )
 
 // DeleteFileTool implements the Tool interface for deleting files
-type DeleteFileTool struct{}
+type DeleteFileTool struct {
+	common.LocalTool
+}
 
 func (t DeleteFileTool) Name() string {
 	return "delete_file"

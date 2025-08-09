@@ -13,7 +13,9 @@ import (
 )
 
 // CurrentDirectoryTool implements the Tool interface for getting current directory
-type CurrentDirectoryTool struct{}
+type CurrentDirectoryTool struct {
+	common.LocalTool
+}
 
 func (t CurrentDirectoryTool) Name() string {
 	return "cwd"

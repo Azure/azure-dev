@@ -16,7 +16,9 @@ import (
 )
 
 // WriteFileTool implements a comprehensive file writing tool that handles all scenarios
-type WriteFileTool struct{}
+type WriteFileTool struct {
+	common.LocalTool
+}
 
 // WriteFileRequest represents the JSON input for the write_file tool
 type WriteFileRequest struct {

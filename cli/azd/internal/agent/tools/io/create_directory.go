@@ -14,7 +14,9 @@ import (
 )
 
 // CreateDirectoryTool implements the Tool interface for creating directories
-type CreateDirectoryTool struct{}
+type CreateDirectoryTool struct {
+	common.LocalTool
+}
 
 func (t CreateDirectoryTool) Name() string {
 	return "create_directory"

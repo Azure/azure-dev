@@ -16,7 +16,9 @@ import (
 )
 
 // ReadFileTool implements the Tool interface for reading file contents
-type ReadFileTool struct{}
+type ReadFileTool struct {
+	common.LocalTool
+}
 
 // ReadFileRequest represents the JSON payload for file read requests
 type ReadFileRequest struct {

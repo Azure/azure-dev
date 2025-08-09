@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
-	"github.com/azure/azure-dev/cli/azd/internal/agent/logging"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -137,7 +136,7 @@ type initAction struct {
 	featuresManager   *alpha.FeatureManager
 	extensionsManager *extensions.Manager
 	azd               workflow.AzdCommandRunner
-	llmManager        *llm.Manager
+	agentFactory      *agent.AgentFactory
 }
 
 func newInitAction(
@@ -152,7 +151,7 @@ func newInitAction(
 	featuresManager *alpha.FeatureManager,
 	extensionsManager *extensions.Manager,
 	azd workflow.AzdCommandRunner,
-	llmManager *llm.Manager,
+	agentFactory *agent.AgentFactory,
 ) actions.Action {
 	return &initAction{
 		lazyAzdCtx:        lazyAzdCtx,
@@ -166,7 +165,7 @@ func newInitAction(
 		featuresManager:   featuresManager,
 		extensionsManager: extensionsManager,
 		azd:               azd,
-		llmManager:        llmManager,
+		agentFactory:      agentFactory,
 	}
 }
 
@@ -377,25 +376,7 @@ func (i *initAction) initAppWithCopilot(ctx context.Context) error {
 	// Warn user that this is an alpha feature
 	i.console.WarnForFeature(ctx, llm.FeatureLlm)
 
-	fileLogger, cleanup, err := logging.NewFileLoggerDefault()
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	defaultModelContainer, err := i.llmManager.GetDefaultModel(llm.WithLogger(fileLogger))
-	if err != nil {
-		return err
-	}
-
-	samplingModelContainer, err := i.llmManager.GetDefaultModel()
-	if err != nil {
-		return err
-	}
-
-	azdAgent, err := agent.NewConversationalAzdAiAgent(
-		defaultModelContainer.Model,
-		agent.WithSamplingModel(samplingModelContainer.Model),
+	azdAgent, err := i.agentFactory.Create(
 		agent.WithDebug(i.flags.global.EnableDebugLogging),
 	)
 	if err != nil {
@@ -488,7 +469,7 @@ Do not stop until all tasks are complete and fully resolved.
 // collectAndApplyFeedback prompts for user feedback and applies it using the agent in a loop
 func (i *initAction) collectAndApplyFeedback(
 	ctx context.Context,
-	azdAgent *agent.ConversationalAzdAiAgent,
+	azdAgent agent.Agent,
 	promptMessage string,
 ) error {
 	// Loop to allow multiple rounds of feedback
@@ -546,7 +527,7 @@ func (i *initAction) collectAndApplyFeedback(
 }
 
 // postCompletionFeedbackLoop provides a final opportunity for feedback after all steps complete
-func (i *initAction) postCompletionFeedbackLoop(ctx context.Context, azdAgent *agent.ConversationalAzdAiAgent) error {
+func (i *initAction) postCompletionFeedbackLoop(ctx context.Context, azdAgent agent.Agent) error {
 	i.console.Message(ctx, "")
 	i.console.Message(ctx, "🎉 All initialization steps completed!")
 	i.console.Message(ctx, "")

@@ -6,6 +6,7 @@ package powershell
 import (
 	"context"
 	"errors"
+	"fmt"
 	"runtime"
 	"strings"
 	"testing"
@@ -77,10 +78,11 @@ func Test_Powershell_Execute(t *testing.T) {
 			return exec.NewRunResult(1, "not found", "not found"), nil
 		})
 
+		userPwshAlternative := "powershell"
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(args.Cmd, "powershell")
+			return strings.Contains(args.Cmd, userPwshAlternative)
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-			require.Equal(t, userPwsh, args.Cmd)
+			require.Equal(t, userPwshAlternative, args.Cmd)
 			require.Equal(t, workingDir, args.Cwd)
 			require.Equal(t, scriptPath, args.Args[0])
 			require.Equal(t, env, args.Env)
@@ -93,6 +95,9 @@ func Test_Powershell_Execute(t *testing.T) {
 			workingDir,
 			env,
 			func(options tools.ExecOptions) error {
+				if strings.Contains(options.UserPwsh, "pwsh") {
+					return fmt.Errorf("failed to find PowerShell executable")
+				}
 				return nil
 			})
 		runResult, err := PowershellScript.Execute(

@@ -7,8 +7,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/tmc/langchaingo/tools"
 )
 
 // ConsentLevel represents the level of consent granted for a tool
@@ -17,14 +17,18 @@ type ConsentLevel string
 // ConsentScope represents where consent rules are stored
 type ConsentScope string
 
+// RuleScope represents what types of tools a rule applies to
+type RuleScope string
+
 const (
-	ConsentDeny         ConsentLevel = "deny"
-	ConsentPrompt       ConsentLevel = "prompt"
-	ConsentOnce         ConsentLevel = "once"
-	ConsentSession      ConsentLevel = "session"
-	ConsentProject      ConsentLevel = "project"
-	ConsentAlways       ConsentLevel = "always"
-	ConsentServerAlways ConsentLevel = "server_always" // All tools from server
+	ConsentDeny           ConsentLevel = "deny"
+	ConsentPrompt         ConsentLevel = "prompt"
+	ConsentOnce           ConsentLevel = "once"
+	ConsentSession        ConsentLevel = "session"
+	ConsentProject        ConsentLevel = "project"
+	ConsentAlways         ConsentLevel = "always"
+	ConsentServerAlways   ConsentLevel = "server_always"   // All tools from server
+	ConsentServerReadOnly ConsentLevel = "server_readonly" // Read-only tools from server
 )
 
 const (
@@ -33,18 +37,22 @@ const (
 	ScopeSession ConsentScope = "session"
 )
 
+const (
+	RuleScopeAll      RuleScope = "all"      // All tools matching the pattern
+	RuleScopeReadOnly RuleScope = "readonly" // Only read-only tools matching the pattern
+)
+
 // ConsentRule represents a single consent rule for a tool
 type ConsentRule struct {
-	ToolID     string       `json:"tool_id"`
+	ToolID     string       `json:"toolId"`
 	Permission ConsentLevel `json:"permission"`
+	RuleScope  RuleScope    `json:"scope,omitempty"` // Defaults to "all" for backward compatibility
 	GrantedAt  time.Time    `json:"granted_at"`
 }
 
 // ConsentConfig represents the MCP consent configuration
 type ConsentConfig struct {
-	Rules              []ConsentRule `json:"rules,omitempty"`
-	AllowReadOnlyTools bool          `json:"allow_readonly_tools,omitempty"`
-	TrustedServers     []string      `json:"trusted_servers,omitempty"`
+	Rules []ConsentRule `json:"rules,omitempty"`
 }
 
 // ConsentRequest represents a request to check consent for a tool
@@ -54,7 +62,7 @@ type ConsentRequest struct {
 	Parameters  map[string]interface{}
 	SessionID   string
 	ProjectPath string
-	Annotations *mcp.ToolAnnotation
+	Annotations mcp.ToolAnnotation
 }
 
 // ConsentDecision represents the result of a consent check
@@ -73,6 +81,6 @@ type ConsentManager interface {
 	ClearConsentByToolID(ctx context.Context, toolID string, scope ConsentScope) error
 
 	// Tool wrapping methods
-	WrapTool(tool tools.Tool) tools.Tool
-	WrapTools(tools []tools.Tool) []tools.Tool
+	WrapTool(tool common.AnnotatedTool) common.AnnotatedTool
+	WrapTools(tools []common.AnnotatedTool) []common.AnnotatedTool
 }

@@ -11,11 +11,12 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // FileSearchTool implements a tool for searching files using glob patterns
 type FileSearchTool struct {
-	common.LocalTool
+	common.BuiltInTool
 }
 
 // FileSearchRequest represents the JSON payload for file search requests
@@ -26,6 +27,16 @@ type FileSearchRequest struct {
 
 func (t FileSearchTool) Name() string {
 	return "file_search"
+}
+
+func (t FileSearchTool) Annotations() mcp.ToolAnnotation {
+	return mcp.ToolAnnotation{
+		Title:           "Search Files by Pattern",
+		ReadOnlyHint:    common.ToPtr(true),
+		DestructiveHint: common.ToPtr(false),
+		IdempotentHint:  common.ToPtr(true),
+		OpenWorldHint:   common.ToPtr(false),
+	}
 }
 
 func (t FileSearchTool) Description() string {

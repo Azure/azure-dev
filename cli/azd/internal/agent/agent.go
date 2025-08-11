@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/callbacks"
 	"github.com/tmc/langchaingo/llms"
-	"github.com/tmc/langchaingo/tools"
 )
 
 // agentBase represents an AI agent that can execute tools and interact with language models.
@@ -20,7 +20,7 @@ type agentBase struct {
 	debug            bool
 	defaultModel     llms.Model
 	executor         *agents.Executor
-	tools            []tools.Tool
+	tools            []common.AnnotatedTool
 	callbacksHandler callbacks.Handler
 }
 
@@ -46,7 +46,7 @@ func WithDefaultModel(model llms.Model) AgentOption {
 }
 
 // WithTools returns an option that adds the specified tools to the agent's toolkit
-func WithTools(tools ...tools.Tool) AgentOption {
+func WithTools(tools ...common.AnnotatedTool) AgentOption {
 	return func(agent *agentBase) {
 		agent.tools = tools
 	}
@@ -60,7 +60,7 @@ func WithCallbacksHandler(handler callbacks.Handler) AgentOption {
 }
 
 // toolNames returns a comma-separated string of all tool names in the provided slice
-func toolNames(tools []tools.Tool) string {
+func toolNames(tools []common.AnnotatedTool) string {
 	var tn strings.Builder
 	for i, tool := range tools {
 		if i > 0 {
@@ -74,7 +74,7 @@ func toolNames(tools []tools.Tool) string {
 
 // toolDescriptions returns a formatted string containing the name and description
 // of each tool in the provided slice, with each tool on a separate line
-func toolDescriptions(tools []tools.Tool) string {
+func toolDescriptions(tools []common.AnnotatedTool) string {
 	var ts strings.Builder
 	for _, tool := range tools {
 		ts.WriteString(fmt.Sprintf("- %s: %s\n", tool.Name(), tool.Description()))

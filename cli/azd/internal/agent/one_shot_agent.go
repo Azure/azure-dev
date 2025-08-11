@@ -8,11 +8,11 @@ import (
 	_ "embed"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/chains"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/prompts"
-	"github.com/tmc/langchaingo/tools"
 )
 
 // OneShotAzdAiAgent represents an AZD Copilot agent designed for single-request processing
@@ -31,7 +31,7 @@ func NewOneShotAzdAiAgent(llm llms.Model, opts ...AgentOption) (*OneShotAzdAiAge
 	azdAgent := &OneShotAzdAiAgent{
 		agentBase: &agentBase{
 			defaultModel: llm,
-			tools:        []tools.Tool{},
+			tools:        []common.AnnotatedTool{},
 		},
 	}
 
@@ -50,7 +50,7 @@ func NewOneShotAzdAiAgent(llm llms.Model, opts ...AgentOption) (*OneShotAzdAiAge
 	}
 
 	// 4. Create agent with memory directly integrated
-	oneShotAgent := agents.NewOneShotAgent(llm, azdAgent.tools,
+	oneShotAgent := agents.NewOneShotAgent(llm, common.ToLangChainTools(azdAgent.tools),
 		agents.WithPrompt(promptTemplate),
 		agents.WithCallbacksHandler(azdAgent.callbacksHandler),
 		agents.WithReturnIntermediateSteps(),

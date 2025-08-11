@@ -13,11 +13,12 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // WriteFileTool implements a comprehensive file writing tool that handles all scenarios
 type WriteFileTool struct {
-	common.LocalTool
+	common.BuiltInTool
 }
 
 // WriteFileRequest represents the JSON input for the write_file tool
@@ -57,6 +58,16 @@ type FileInfoDetails struct {
 
 func (t WriteFileTool) Name() string {
 	return "write_file"
+}
+
+func (t WriteFileTool) Annotations() mcp.ToolAnnotation {
+	return mcp.ToolAnnotation{
+		Title:           "Write File Contents",
+		ReadOnlyHint:    common.ToPtr(false),
+		DestructiveHint: common.ToPtr(true),
+		IdempotentHint:  common.ToPtr(false),
+		OpenWorldHint:   common.ToPtr(false),
+	}
 }
 
 func (t WriteFileTool) Description() string {

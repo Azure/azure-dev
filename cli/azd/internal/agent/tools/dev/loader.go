@@ -12,8 +12,8 @@ func NewDevToolsLoader() *DevToolsLoader {
 	return &DevToolsLoader{}
 }
 
-func (l *DevToolsLoader) LoadTools() ([]common.Tool, error) {
-	return []common.Tool{
+func (l *DevToolsLoader) LoadTools() ([]common.AnnotatedTool, error) {
+	return []common.AnnotatedTool{
 		&CommandExecutorTool{},
 	}, nil
 }

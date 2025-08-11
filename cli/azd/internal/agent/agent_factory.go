@@ -4,9 +4,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/logging"
 	localtools "github.com/azure/azure-dev/cli/azd/internal/agent/tools"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	mcptools "github.com/azure/azure-dev/cli/azd/internal/agent/tools/mcp"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
-	"github.com/tmc/langchaingo/tools"
 )
 
 type AgentFactory struct {
@@ -58,7 +58,7 @@ func (f *AgentFactory) Create(opts ...AgentOption) (Agent, error) {
 		// Add more excluded tools here as needed
 	}
 
-	allTools := []tools.Tool{}
+	allTools := []common.AnnotatedTool{}
 
 	for _, toolLoader := range toolLoaders {
 		categoryTools, err := toolLoader.LoadTools()

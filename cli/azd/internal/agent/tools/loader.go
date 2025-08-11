@@ -11,7 +11,7 @@ import (
 
 // ToolLoader provides an interface for loading tools from different categories
 type ToolLoader interface {
-	LoadTools() ([]common.Tool, error)
+	LoadTools() ([]common.AnnotatedTool, error)
 }
 
 // LocalToolsLoader manages loading tools from multiple local tool categories
@@ -31,8 +31,8 @@ func NewLocalToolsLoader() *LocalToolsLoader {
 
 // LoadTools loads and returns all tools from all registered tool loaders.
 // Returns an error if any individual loader fails to load its tools.
-func (l *LocalToolsLoader) LoadTools() ([]common.Tool, error) {
-	var allTools []common.Tool
+func (l *LocalToolsLoader) LoadTools() ([]common.AnnotatedTool, error) {
+	var allTools []common.AnnotatedTool
 
 	for _, loader := range l.loaders {
 		categoryTools, err := loader.LoadTools()

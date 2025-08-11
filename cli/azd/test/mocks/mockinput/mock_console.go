@@ -177,6 +177,11 @@ func (c *MockConsole) MultiSelect(ctx context.Context, options input.ConsoleOpti
 func (c *MockConsole) Flush() {
 }
 
+// DoInteraction executes the provided action function and returns any error encountered
+func (c *MockConsole) DoInteraction(action func() error) error {
+	return action()
+}
+
 // Finds a matching mock expression and returns the configured value
 func (c *MockConsole) respond(command string, options input.ConsoleOptions) (any, error) {
 	var match *MockConsoleExpression

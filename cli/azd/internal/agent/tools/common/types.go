@@ -29,9 +29,9 @@ type AnnotatedTool interface {
 	Annotations() mcp.ToolAnnotation
 }
 
-type LocalTool struct {
+type BuiltInTool struct {
 }
 
-func (t *LocalTool) Server() string {
-	return "local"
+func (t *BuiltInTool) Server() string {
+	return "built-in"
 }

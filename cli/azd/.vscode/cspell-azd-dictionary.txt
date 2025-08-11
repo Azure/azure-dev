@@ -77,6 +77,7 @@ conditionalize
 consolesize
 containerapp
 containerapps
+containerd
 contoso
 createdby
 csharpapp

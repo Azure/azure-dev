@@ -19,14 +19,24 @@ var _ tools.Tool = (*ConsentWrapperTool)(nil)
 // ConsentWrapperTool wraps a langchaingo tool with consent protection
 type ConsentWrapperTool struct {
 	console        input.Console
-	tool           tools.Tool
+	tool           common.AnnotatedTool
 	consentChecker *ConsentChecker
-	annotations    *mcp.ToolAnnotation
+	annotations    mcp.ToolAnnotation
 }
 
 // Name returns the name of the tool
 func (c *ConsentWrapperTool) Name() string {
 	return c.tool.Name()
+}
+
+// Server returns the server of the tool
+func (c *ConsentWrapperTool) Server() string {
+	return c.tool.Server()
+}
+
+// Annotations returns the annotations of the tool
+func (c *ConsentWrapperTool) Annotations() mcp.ToolAnnotation {
+	return c.annotations
 }
 
 // Description returns the description of the tool
@@ -37,7 +47,7 @@ func (c *ConsentWrapperTool) Description() string {
 // Call executes the tool with consent protection
 func (c *ConsentWrapperTool) Call(ctx context.Context, input string) (string, error) {
 	// Check consent using enhanced checker with annotations
-	decision, err := c.consentChecker.CheckToolConsentWithAnnotations(ctx, c.Name(), c.Description(), c.annotations)
+	decision, err := c.consentChecker.CheckToolConsent(ctx, c.Name(), c.Description(), c.annotations)
 	if err != nil {
 		return "", fmt.Errorf("consent check failed: %w", err)
 	}
@@ -45,8 +55,8 @@ func (c *ConsentWrapperTool) Call(ctx context.Context, input string) (string, er
 	if !decision.Allowed {
 		if decision.RequiresPrompt {
 			if err := c.console.DoInteraction(func() error {
-				// Show interactive consent prompt using shared checker
-				promptErr := c.consentChecker.PromptAndGrantConsent(ctx, c.Name(), c.Description())
+				// Show interactive consent prompt using shared checker with annotations
+				promptErr := c.consentChecker.PromptAndGrantConsent(ctx, c.Name(), c.Description(), c.annotations)
 				c.console.Message(ctx, "")
 
 				return promptErr
@@ -64,31 +74,14 @@ func (c *ConsentWrapperTool) Call(ctx context.Context, input string) (string, er
 
 // newConsentWrapperTool wraps a langchaingo tool with consent protection
 func newConsentWrapperTool(
-	tool tools.Tool,
+	tool common.AnnotatedTool,
 	console input.Console,
 	consentManager ConsentManager,
-) tools.Tool {
-	var server string
-	var annotations *mcp.ToolAnnotation
-
-	if annotatedTool, ok := tool.(common.AnnotatedTool); ok {
-		toolAnnotations := annotatedTool.Annotations()
-		annotations = &toolAnnotations
-		server = annotatedTool.Server()
-	}
-
-	if commonTool, ok := tool.(common.Tool); ok {
-		server = commonTool.Server()
-	}
-
-	if server == "" {
-		server = "unknown"
-	}
-
+) common.AnnotatedTool {
 	return &ConsentWrapperTool{
 		tool:           tool,
 		console:        console,
-		consentChecker: NewConsentChecker(consentManager, server),
-		annotations:    annotations,
+		consentChecker: NewConsentChecker(consentManager, tool.Server()),
+		annotations:    tool.Annotations(),
 	}
 }

@@ -56,14 +56,14 @@ func NewMcpToolsLoader(samplingHandler client.SamplingHandler) *McpToolsLoader {
 // and collects all tools from each successfully connected server.
 // Returns an error if the configuration cannot be parsed, but continues
 // processing other servers if individual server connections fail.
-func (l *McpToolsLoader) LoadTools() ([]common.Tool, error) {
+func (l *McpToolsLoader) LoadTools() ([]common.AnnotatedTool, error) {
 	// Deserialize the embedded mcp.json configuration
 	var config McpConfig
 	if err := json.Unmarshal([]byte(_mcpJson), &config); err != nil {
 		return nil, fmt.Errorf("failed to parse mcp.json: %w", err)
 	}
 
-	var allTools []common.Tool
+	var allTools []common.AnnotatedTool
 
 	// Iterate through each server configuration
 	for serverName, serverConfig := range config.Servers {

@@ -14,8 +14,8 @@ func NewIoToolsLoader() *IoToolsLoader {
 	return &IoToolsLoader{}
 }
 
-func (l *IoToolsLoader) LoadTools() ([]common.Tool, error) {
-	return []common.Tool{
+func (l *IoToolsLoader) LoadTools() ([]common.AnnotatedTool, error) {
+	return []common.AnnotatedTool{
 		&CurrentDirectoryTool{},
 		&ChangeDirectoryTool{},
 		&DirectoryListTool{},

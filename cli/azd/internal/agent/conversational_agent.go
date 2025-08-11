@@ -11,13 +11,13 @@ import (
 	"os"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/fatih/color"
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/chains"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/memory"
 	"github.com/tmc/langchaingo/prompts"
-	"github.com/tmc/langchaingo/tools"
 )
 
 //go:embed prompts/conversational.txt
@@ -36,7 +36,7 @@ func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentOption) (*Conversa
 	azdAgent := &ConversationalAzdAiAgent{
 		agentBase: &agentBase{
 			defaultModel: llm,
-			tools:        []tools.Tool{},
+			tools:        []common.AnnotatedTool{},
 		},
 	}
 
@@ -63,7 +63,7 @@ func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentOption) (*Conversa
 	}
 
 	// 4. Create agent with memory directly integrated
-	conversationAgent := agents.NewConversationalAgent(llm, azdAgent.tools,
+	conversationAgent := agents.NewConversationalAgent(llm, common.ToLangChainTools(azdAgent.tools),
 		agents.WithPrompt(promptTemplate),
 		agents.WithMemory(smartMemory),
 		agents.WithCallbacksHandler(azdAgent.callbacksHandler),

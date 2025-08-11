@@ -12,22 +12,44 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // CopyFileTool implements the Tool interface for copying files
 type CopyFileTool struct {
-	common.LocalTool
+	common.BuiltInTool
 }
 
 func (t CopyFileTool) Name() string {
 	return "copy_file"
 }
 
+func (t CopyFileTool) Annotations() mcp.ToolAnnotation {
+	return mcp.ToolAnnotation{
+		Title:           "Copy File",
+		ReadOnlyHint:    common.ToPtr(false),
+		DestructiveHint: common.ToPtr(false),
+		IdempotentHint:  common.ToPtr(true),
+		OpenWorldHint:   common.ToPtr(false),
+	}
+}
+
 func (t CopyFileTool) Description() string {
-	return `Copy a file to a new location. 
-Input: JSON object with required 'source' and 'destination' fields: {"source": "file.txt", "destination": "backup.txt"}
+	return `Copy a file to a new location. By default, fails if destination already exists.
+Input: JSON object with required 'source' and 'destination' fields, optional 'overwrite' field:
+{"source": "file.txt", "destination": "backup.txt", "overwrite": false}
+
+Fields:
+- source: Path to the source file (required)
+- destination: Path where the file should be copied (required)  
+- overwrite: If true, allows overwriting existing destination file (optional, default: false)
+
 Returns: JSON with copy operation details or error information.
-The input must be formatted as a single line valid JSON string.`
+The input must be formatted as a single line valid JSON string.
+
+Examples:
+- Safe copy: {"source": "data.txt", "destination": "backup.txt"}
+- Copy with overwrite: {"source": "data.txt", "destination": "backup.txt", "overwrite": true}`
 }
 
 // createErrorResponse creates a JSON error response
@@ -56,6 +78,7 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 	type InputParams struct {
 		Source      string `json:"source"`
 		Destination string `json:"destination"`
+		Overwrite   bool   `json:"overwrite,omitempty"` // Optional: allow overwriting existing files
 	}
 
 	var params InputParams
@@ -68,7 +91,7 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 		return t.createErrorResponse(
 			err,
 			fmt.Sprintf(
-				"Invalid JSON input: %s. Expected format: {\"source\": \"file.txt\", \"destination\": \"backup.txt\"}",
+				"Invalid JSON input: %s. Expected format: {\"source\": \"file.txt\", \"destination\": \"backup.txt\", \"overwrite\": false}",
 				err.Error(),
 			),
 		)
@@ -97,6 +120,19 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 		)
 	}
 
+	// Check if destination exists and handle overwrite logic
+	destinationExisted := false
+	if _, err := os.Stat(destination); err == nil {
+		// Destination file exists
+		destinationExisted = true
+		if !params.Overwrite {
+			return t.createErrorResponse(
+				fmt.Errorf("destination file %s already exists", destination),
+				fmt.Sprintf("Destination file %s already exists. Set \"overwrite\": true to allow overwriting", destination),
+			)
+		}
+	}
+
 	// Open source file
 	sourceFile, err := os.Open(source)
 	if err != nil {
@@ -123,7 +159,23 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 		Source      string `json:"source"`
 		Destination string `json:"destination"`
 		BytesCopied int64  `json:"bytesCopied"`
+		Overwritten bool   `json:"overwritten"` // Indicates if an existing file was overwritten
 		Message     string `json:"message"`
+	}
+
+	// Determine if this was an overwrite operation
+	wasOverwrite := destinationExisted && params.Overwrite
+
+	var message string
+	if wasOverwrite {
+		message = fmt.Sprintf(
+			"Successfully copied %s to %s (%d bytes) - overwrote existing file",
+			source,
+			destination,
+			bytesWritten,
+		)
+	} else {
+		message = fmt.Sprintf("Successfully copied %s to %s (%d bytes)", source, destination, bytesWritten)
 	}
 
 	response := CopyResponse{
@@ -131,7 +183,8 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 		Source:      source,
 		Destination: destination,
 		BytesCopied: bytesWritten,
-		Message:     fmt.Sprintf("Successfully copied %s to %s (%d bytes)", source, destination, bytesWritten),
+		Overwritten: wasOverwrite,
+		Message:     message,
 	}
 
 	// Convert to JSON

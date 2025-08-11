@@ -14,15 +14,26 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // CommandExecutorTool implements the Tool interface for executing commands and scripts
 type CommandExecutorTool struct {
-	common.LocalTool
+	common.BuiltInTool
 }
 
 func (t CommandExecutorTool) Name() string {
 	return "execute_command"
+}
+
+func (t CommandExecutorTool) Annotations() mcp.ToolAnnotation {
+	return mcp.ToolAnnotation{
+		Title:           "Execute Terminal Command",
+		ReadOnlyHint:    common.ToPtr(false),
+		DestructiveHint: common.ToPtr(true),
+		IdempotentHint:  common.ToPtr(false),
+		OpenWorldHint:   common.ToPtr(true),
+	}
 }
 
 func (t CommandExecutorTool) Description() string {

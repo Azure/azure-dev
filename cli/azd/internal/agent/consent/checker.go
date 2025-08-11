@@ -29,13 +29,12 @@ func NewConsentChecker(
 	}
 }
 
-// CheckToolConsent checks if a tool execution should be allowed
-func (cc *ConsentChecker) CheckToolConsent(ctx context.Context, toolName, toolDesc string) (*ConsentDecision, error) {
-	return cc.CheckToolConsentWithAnnotations(ctx, toolName, toolDesc, nil)
-}
-
 // CheckToolConsentWithAnnotations checks tool consent with optional MCP annotations
-func (cc *ConsentChecker) CheckToolConsentWithAnnotations(ctx context.Context, toolName, toolDesc string, annotations *mcp.ToolAnnotation) (*ConsentDecision, error) {
+func (cc *ConsentChecker) CheckToolConsent(
+	ctx context.Context,
+	toolName, toolDesc string,
+	annotations mcp.ToolAnnotation,
+) (*ConsentDecision, error) {
 	toolID := fmt.Sprintf("%s/%s", cc.serverName, toolName)
 
 	// Create consent request
@@ -50,10 +49,14 @@ func (cc *ConsentChecker) CheckToolConsentWithAnnotations(ctx context.Context, t
 }
 
 // PromptAndGrantConsent shows consent prompt and grants permission based on user choice
-func (cc *ConsentChecker) PromptAndGrantConsent(ctx context.Context, toolName, toolDesc string) error {
+func (cc *ConsentChecker) PromptAndGrantConsent(
+	ctx context.Context,
+	toolName, toolDesc string,
+	annotations mcp.ToolAnnotation,
+) error {
 	toolID := fmt.Sprintf("%s/%s", cc.serverName, toolName)
 
-	choice, err := cc.promptForConsent(ctx, toolName, toolDesc)
+	choice, err := cc.promptForConsent(ctx, toolName, toolDesc, annotations)
 	if err != nil {
 		return fmt.Errorf("consent prompt failed: %w", err)
 	}
@@ -67,7 +70,11 @@ func (cc *ConsentChecker) PromptAndGrantConsent(ctx context.Context, toolName, t
 }
 
 // promptForConsent shows an interactive consent prompt and returns the user's choice
-func (cc *ConsentChecker) promptForConsent(ctx context.Context, toolName, toolDesc string) (string, error) {
+func (cc *ConsentChecker) promptForConsent(
+	ctx context.Context,
+	toolName, toolDesc string,
+	annotations mcp.ToolAnnotation,
+) (string, error) {
 	message := fmt.Sprintf(
 		"Tool %s from server %s requires consent.\n\nHow would you like to proceed?",
 		output.WithHighLightFormat(toolName),
@@ -103,7 +110,21 @@ func (cc *ConsentChecker) promptForConsent(ctx context.Context, toolName, toolDe
 	if !cc.isServerAlreadyTrusted(ctx) {
 		choices = append(choices, &ux.SelectChoice{
 			Value: "server",
-			Label: fmt.Sprintf("Trust server '%s' - Allow all tools from this server", cc.serverName),
+			Label: "Allow all tools from this server",
+		})
+	}
+
+	// Add readonly trust options if this is a readonly tool
+	isReadOnlyTool := annotations.ReadOnlyHint != nil && *annotations.ReadOnlyHint
+	if isReadOnlyTool {
+		choices = append(choices, &ux.SelectChoice{
+			Value: "readonly_server",
+			Label: "Allow all read-only tools from this server",
+		})
+
+		choices = append(choices, &ux.SelectChoice{
+			Value: "readonly_global",
+			Label: "Allow all read-only tools from any server",
 		})
 	}
 
@@ -112,6 +133,7 @@ func (cc *ConsentChecker) promptForConsent(ctx context.Context, toolName, toolDe
 		HelpMessage:     helpMessage,
 		Choices:         choices,
 		EnableFiltering: ux.Ptr(false),
+		DisplayCount:    10,
 	})
 
 	choiceIndex, err := selector.Ask(ctx)
@@ -128,18 +150,22 @@ func (cc *ConsentChecker) promptForConsent(ctx context.Context, toolName, toolDe
 
 // isServerAlreadyTrusted checks if the server is already trusted
 func (cc *ConsentChecker) isServerAlreadyTrusted(ctx context.Context) bool {
+	// Create a mock tool request to check if server has full trust
 	request := ConsentRequest{
-		ServerName: cc.serverName,
-		SessionID:  "", // Not needed since each manager represents one session
+		ToolID:      fmt.Sprintf("%s/test-tool", cc.serverName),
+		ServerName:  cc.serverName,
+		SessionID:   "",                   // Not needed since each manager represents one session
+		Annotations: mcp.ToolAnnotation{}, // No readonly hint
 	}
 
-	// Create a mock consent request to check if server is trusted
+	// Check if server has full trust (not readonly-only)
 	decision, err := cc.consentMgr.CheckConsent(ctx, request)
 	if err != nil {
 		return false
 	}
 
-	return decision.Allowed && decision.Reason == "trusted server"
+	// Server is trusted if it's allowed and the reason indicates server-level trust
+	return decision.Allowed && (decision.Reason == "server trusted" || decision.Reason == "server_always")
 }
 
 // grantConsentFromChoice processes the user's consent choice and saves the appropriate rule
@@ -177,6 +203,23 @@ func (cc *ConsentChecker) grantConsentFromChoice(ctx context.Context, toolID str
 		rule = ConsentRule{
 			ToolID:     fmt.Sprintf("%s/*", cc.serverName),
 			Permission: ConsentServerAlways,
+			RuleScope:  RuleScopeAll,
+		}
+		scope = ScopeGlobal
+	case "readonly_server":
+		// Grant trust to readonly tools from this server
+		rule = ConsentRule{
+			ToolID:     fmt.Sprintf("%s/*", cc.serverName),
+			Permission: ConsentAlways,
+			RuleScope:  RuleScopeReadOnly,
+		}
+		scope = ScopeGlobal
+	case "readonly_global":
+		// Grant trust to all readonly tools globally
+		rule = ConsentRule{
+			ToolID:     "*",
+			Permission: ConsentAlways,
+			RuleScope:  RuleScopeReadOnly,
 		}
 		scope = ScopeGlobal
 	default:

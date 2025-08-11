@@ -21,6 +21,6 @@ func NewHttpToolsLoader(callbackHandler callbacks.Handler) *HttpToolsLoader {
 
 func (l *HttpToolsLoader) LoadTools() ([]tools.Tool, error) {
 	return []tools.Tool{
-		&HTTPFetcherTool{CallbacksHandler: l.callbackHandler},
+		&HTTPFetcherTool{},
 	}, nil
 }

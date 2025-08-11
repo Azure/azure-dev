@@ -11,7 +11,7 @@ trigger:
       - /eng/pipelines/templates/jobs/build-cli.yml
       - /eng/pipelines/templates/jobs/cross-build-cli.yml
       - /eng/pipelines/templates/variables/image.yml
-# Test change to trigger a PR build
+
 pr:
   paths:
     include:

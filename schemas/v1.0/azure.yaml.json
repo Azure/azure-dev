@@ -704,12 +704,6 @@
                     "title": "Required. The inline script or relative path of your scripts from the project or service path",
                     "description": "When specifying an inline script you also must specify the `shell` to use. This is automatically inferred when using paths."
                 },
-                "strictShell": {
-                    "type": "boolean",
-                    "default": false,
-                    "title": "Whether to use strict shell mode",
-                    "description": "Optional. When set to true will only allow the specified shell to be used. (Default: false). Some shells like pwsh will try powershell 7 first and powershell 5 (in Windows) as an alternative in non strict mode."
-                },
                 "continueOnError": {
                     "type": "boolean",
                     "default": false,

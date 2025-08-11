@@ -138,7 +138,7 @@ func Test_Powershell_Execute(t *testing.T) {
 		_, err := PowershellScript.Execute(
 			*mockContext.Context,
 			scriptPath,
-			tools.ExecOptions{Interactive: to.Ptr(true), StrictShell: true},
+			tools.ExecOptions{Interactive: to.Ptr(true)},
 		)
 
 		require.Error(t, err)

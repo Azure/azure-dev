@@ -67,7 +67,6 @@ func (bs *powershellScript) Execute(ctx context.Context, path string, options to
 			}
 		}
 
-		// non-strict mode, check for alternative shell powershell 5
 		options.UserPwsh = "powershell"
 		if err := bs.checkInstalled(options); err != nil {
 			return exec.RunResult{}, &internal.ErrorWithSuggestion{

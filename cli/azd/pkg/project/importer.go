@@ -120,6 +120,7 @@ const (
 )
 
 // ProjectInfrastructure parses the project configuration and returns the infrastructure configuration.
+//
 // The configuration can be explicitly defined on azure.yaml using path and module, or in case these values
 // are not explicitly defined, the project importer uses default values to find the infrastructure.
 func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (*Infra, error) {
@@ -136,7 +137,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		infraRoot = filepath.Join(projectConfig.Path, infraRoot)
 	}
 
-	// Allow overriding the infrastructure only when path and module exists.
+	// if infra files exist, short-circuit and return immediately for performance purposes
 	if moduleExists, err := pathHasModule(infraRoot, projectConfig.Infra.Module); err == nil && moduleExists {
 		log.Printf("using infrastructure from %s directory", infraRoot)
 		return &Infra{
@@ -166,7 +167,10 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		return tempInfra(ctx, projectConfig)
 	}
 
-	return &Infra{}, nil
+	// return default project infra
+	return &Infra{
+		Options: projectConfig.Infra,
+	}, nil
 }
 
 // pathHasModule returns true if there is a file named "<module>" or "<module.bicep>" in path.

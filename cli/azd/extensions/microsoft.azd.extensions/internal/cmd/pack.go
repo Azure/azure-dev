@@ -201,15 +201,12 @@ func packExtensionBinaries(
 			continue
 		}
 
-		fileWithoutExt := getFileNameWithoutExt(artifactName)
-		zipFileName := fmt.Sprintf("%s.zip", fileWithoutExt)
-		targetFilePath := filepath.Join(outputPath, zipFileName)
-
-		// Create a ZIP archive for the artifact
+		fileWithoutExt := internal.GetFileNameWithoutExt(artifactName)
 		artifactSourcePath := filepath.Join(buildPath, entry.Name())
-		zipFiles := []string{extensionYamlSourcePath, artifactSourcePath}
+		sourceFiles := []string{extensionYamlSourcePath, artifactSourcePath}
 
-		if err := internal.ZipSource(zipFiles, targetFilePath); err != nil {
+		_, err := createArchive(artifactName, fileWithoutExt, outputPath, sourceFiles)
+		if err != nil {
 			return fmt.Errorf("failed to create archive for %s: %w", entry.Name(), err)
 		}
 	}
@@ -217,17 +214,34 @@ func packExtensionBinaries(
 	return nil
 }
 
-// getFileNameWithoutExt extracts the filename without its extension
-func getFileNameWithoutExt(filePath string) string {
-	// Get the base filename
-	fileName := filepath.Base(filePath)
-
-	// Remove the extension
-	return strings.TrimSuffix(fileName, filepath.Ext(fileName))
-}
-
 func defaultPackageFlags(flags *packageFlags) {
 	if flags.inputPath == "" {
 		flags.inputPath = "bin"
 	}
+}
+
+// getArchiveType determines the appropriate archive format based on the artifact name
+func getArchiveType(artifactName string) string {
+	if strings.Contains(artifactName, "linux") {
+		return "tar.gz"
+	}
+	return "zip"
+}
+
+// createArchive creates an archive file using the appropriate format for the given artifact
+func createArchive(artifactName, fileWithoutExt, outputPath string, sourceFiles []string) (string, error) {
+	archiveType := getArchiveType(artifactName)
+	targetFilePath := filepath.Join(outputPath, fmt.Sprintf("%s.%s", fileWithoutExt, archiveType))
+
+	var archiveFunc func([]string, string) error
+	switch archiveType {
+	case "tar.gz":
+		archiveFunc = internal.TarGzSource
+	case "zip":
+		archiveFunc = internal.ZipSource
+	default:
+		return "", fmt.Errorf("unsupported archive type: %s", archiveType)
+	}
+
+	return targetFilePath, archiveFunc(sourceFiles, targetFilePath)
 }

@@ -72,7 +72,7 @@ func (bs *powershellScript) Execute(ctx context.Context, path string, options to
 			return exec.RunResult{}, &internal.ErrorWithSuggestion{
 				Err: err,
 				Suggestion: fmt.Sprintf(
-					"Make sure pwsh (Powershell 7) or powershell (Powershell 5) is installed on your system, visit %s",
+					"Make sure pwsh (PowerShell 7) or powershell (PowerShell 5) is installed on your system, visit %s",
 					output.WithLinkFormat("https://learn.microsoft.com/powershell/scripting/install/installing-powershell")),
 			}
 		}
@@ -96,9 +96,9 @@ func (bs *powershellScript) Execute(ctx context.Context, path string, options to
 		if noPwshError != nil {
 			err = &internal.ErrorWithSuggestion{
 				Err: err,
-				Suggestion: fmt.Sprintf("pwsh (Powershell 7) was not found and powershell (Powershell 5) was automatically"+
+				Suggestion: fmt.Sprintf("pwsh (PowerShell 7) was not found and powershell (PowerShell 5) was automatically"+
 					" used instead. You can try installing pwsh and trying again in case this script is not compatible "+
-					"with Powershell 5. See: %s",
+					"with PowerShell 5. See: %s",
 					output.WithLinkFormat("https://learn.microsoft.com/powershell/scripting/install/installing-powershell")),
 			}
 		}

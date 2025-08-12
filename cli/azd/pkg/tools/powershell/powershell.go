@@ -72,7 +72,7 @@ func (bs *powershellScript) Execute(ctx context.Context, path string, options to
 			return exec.RunResult{}, &internal.ErrorWithSuggestion{
 				Err: err,
 				Suggestion: fmt.Sprintf(
-					"Make sure pwsh (Powershell 7) or powershell (Powershell 5) is installed on your system, visit %s",
+					"Make sure pwsh (PowerShell 7) or powershell (PowerShell 5) is installed on your system, visit %s",
 					output.WithLinkFormat("https://learn.microsoft.com/powershell/scripting/install/installing-powershell")),
 			}
 		}

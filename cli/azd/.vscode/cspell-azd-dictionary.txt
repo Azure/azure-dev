@@ -240,8 +240,9 @@ typeflag
 unhide
 unmanage
 unmarshaled
-unmarshalled
 unmarshalling
+unmarshal
+unmarshalled
 unsetenvs
 unsets
 upgrader

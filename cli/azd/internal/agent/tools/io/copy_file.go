@@ -91,7 +91,8 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 		return t.createErrorResponse(
 			err,
 			fmt.Sprintf(
-				"Invalid JSON input: %s. Expected format: {\"source\": \"file.txt\", \"destination\": \"backup.txt\", \"overwrite\": false}",
+				"Invalid JSON input: %s. Expected format: "+
+					`{"source": "file.txt", "destination": "backup.txt", "overwrite": false}`,
 				err.Error(),
 			),
 		)

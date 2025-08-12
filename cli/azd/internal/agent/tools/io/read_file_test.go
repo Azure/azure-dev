@@ -550,7 +550,8 @@ func TestReadFileTool_ContentTruncation(t *testing.T) {
 func TestReadFileTool_SpecialCharacters(t *testing.T) {
 	tempDir := t.TempDir()
 	testFile := filepath.Join(tempDir, "special.txt")
-	testContent := "Line with émojis 😀🎉\nLine with unicode: ñáéíóú\nLine with symbols: @#$%^&*()\nLine with tabs:\t\tand\tspaces"
+	testContent := "Line with émojis 😀🎉\nLine with unicode: ñáéíóú\n" +
+		"Line with symbols: @#$%^&*()\nLine with tabs:\t\tand\tspaces"
 
 	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	require.NoError(t, err)
@@ -602,7 +603,7 @@ func TestReadFileTool_FileInfoMetadata(t *testing.T) {
 	testFile := filepath.Join(tempDir, "metadata.txt")
 	testContent := "Test content for metadata"
 
-	err := os.WriteFile(testFile, []byte(testContent), 0644)
+	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	require.NoError(t, err)
 
 	// Get file info for comparison

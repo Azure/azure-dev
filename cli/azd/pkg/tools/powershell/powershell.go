@@ -96,9 +96,9 @@ func (bs *powershellScript) Execute(ctx context.Context, path string, options to
 		if noPwshError != nil {
 			err = &internal.ErrorWithSuggestion{
 				Err: err,
-				Suggestion: "pwsh (Powershell 7) was not found and powershell (Powershell 5) was automatically used " +
+				Suggestion: "pwsh (PowerShell 7) was not found and powershell (PowerShell 5) was automatically used " +
 					"instead. You can try installing pwsh and trying again in case this script is not compatible with " +
-					"Powershell 5.",
+					"PowerShell 5.",
 			}
 		}
 	}

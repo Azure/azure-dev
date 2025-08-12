@@ -7,7 +7,7 @@ This command prompts you to input the following:
   • Azure subscription: The Azure subscription where your resources will be deployed.
 
 Usage
-  azd provision [layer] [flags]
+  azd provision [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.

@@ -1058,7 +1058,8 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	if ef.flags.layer != "" || len(layers) > 1 {
 		if !ef.alphaFeatureManager.IsEnabled(featLayers) {
-			return nil, fmt.Errorf("Layered provisioning is not enabled. Run '%s' to enable it.", alpha.GetEnableCommand(featLayers))
+			return nil,
+				fmt.Errorf("Layered provisioning is not enabled. Run '%s' to enable it.", alpha.GetEnableCommand(featLayers))
 		}
 
 		ef.console.WarnForFeature(ctx, featLayers)

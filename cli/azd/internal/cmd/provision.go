@@ -212,7 +212,8 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		layer = p.args[0]
 
 		if !p.alphaFeatureManager.IsEnabled(featLayers) {
-			return nil, fmt.Errorf("Layered provisioning is not enabled. Run '%s' to enable it.", alpha.GetEnableCommand(featLayers))
+			return nil, fmt.Errorf(
+				"Layered provisioning is not enabled. Run '%s' to enable it.", alpha.GetEnableCommand(featLayers))
 		}
 
 		p.console.WarnForFeature(ctx, featLayers)

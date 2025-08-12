@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/fatih/color"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/tmc/langchaingo/llms"
@@ -17,8 +20,10 @@ import (
 // McpSamplingHandler handles sampling requests from MCP clients by delegating
 // to an underlying language model and converting responses to MCP format
 type McpSamplingHandler struct {
-	llm   llms.Model
-	debug bool
+	llm            *llm.ModelContainer
+	debug          bool
+	consentManager consent.ConsentManager
+	console        input.Console
 }
 
 // SamplingHandlerOption is a functional option for configuring McpSamplingHandler
@@ -33,9 +38,16 @@ func WithDebug(debug bool) SamplingHandlerOption {
 
 // NewMcpSamplingHandler creates a new MCP sampling handler with the specified
 // language model and applies any provided options
-func NewMcpSamplingHandler(llm llms.Model, opts ...SamplingHandlerOption) *McpSamplingHandler {
+func NewMcpSamplingHandler(
+	consentManager consent.ConsentManager,
+	console input.Console,
+	llm *llm.ModelContainer,
+	opts ...SamplingHandlerOption,
+) *McpSamplingHandler {
 	handler := &McpSamplingHandler{
-		llm: llm,
+		consentManager: consentManager,
+		console:        console,
+		llm:            llm,
 	}
 
 	for _, opt := range opts {
@@ -53,13 +65,31 @@ func (h *McpSamplingHandler) CreateMessage(
 	ctx context.Context,
 	request mcp.CreateMessageRequest,
 ) (*mcp.CreateMessageResult, error) {
+	// Get current executing tool for context (package-level tracking)
+	currentTool := consent.GetCurrentExecutingTool()
+	if currentTool == nil {
+		return nil, fmt.Errorf("no current tool executing")
+	}
+
+	// Check consent for sampling if consent manager is available
+	if err := h.checkSamplingConsent(ctx, currentTool, request); err != nil {
+		return &mcp.CreateMessageResult{
+			SamplingMessage: mcp.SamplingMessage{
+				Role:    mcp.RoleAssistant,
+				Content: llms.TextPart(fmt.Sprintf("Sampling request denied: %v", err)),
+			},
+			Model:      "consent-denied",
+			StopReason: "consent_denied",
+		}, nil
+	}
+
 	if h.debug {
 		requestJson, err := json.MarshalIndent(request, "", "  ")
 		if err != nil {
 			return nil, err
 		}
 
-		color.HiBlack("\nSamplingStart\n%s\n", requestJson)
+		color.HiBlack("\nSamplingStart (Tool: %s/%s)\n%s\n", currentTool.Server, currentTool.Name, requestJson)
 	}
 
 	messages := []llms.MessageContent{}
@@ -108,14 +138,14 @@ func (h *McpSamplingHandler) CreateMessage(
 		color.HiBlack("\nSamplingLLMContent\n%s\n", inputJson)
 	}
 
-	res, err := h.llm.GenerateContent(ctx, messages)
+	res, err := h.llm.Model.GenerateContent(ctx, messages)
 	if err != nil {
 		return &mcp.CreateMessageResult{
 			SamplingMessage: mcp.SamplingMessage{
 				Role:    mcp.RoleAssistant,
 				Content: llms.TextPart(err.Error()),
 			},
-			Model:      "llm-delegated",
+			Model:      h.llm.Metadata.Name,
 			StopReason: "error",
 		}, nil
 	}
@@ -128,7 +158,7 @@ func (h *McpSamplingHandler) CreateMessage(
 				Role:    mcp.RoleAssistant,
 				Content: llms.TextPart(""),
 			},
-			Model:      "llm-delegated",
+			Model:      h.llm.Metadata.Name,
 			StopReason: "no_choices",
 		}
 	} else {
@@ -140,7 +170,7 @@ func (h *McpSamplingHandler) CreateMessage(
 				Role:    mcp.RoleAssistant,
 				Content: llms.TextPart(choice.Content),
 			},
-			Model:      "llm-delegated",
+			Model:      h.llm.Metadata.Name,
 			StopReason: "endTurn",
 		}
 	}
@@ -166,4 +196,39 @@ func (h *McpSamplingHandler) cleanContent(content string) string {
 	content = strings.ReplaceAll(content, "\\n", "\n")
 	content = strings.ReplaceAll(content, "\\r", "\r")
 	return content
+}
+
+// checkSamplingConsent checks consent for sampling requests using the current executing tool
+func (h *McpSamplingHandler) checkSamplingConsent(
+	ctx context.Context,
+	currentTool *consent.ExecutingTool,
+	request mcp.CreateMessageRequest,
+) error {
+	// Create a consent checker for this specific server
+	consentChecker := consent.NewConsentChecker(h.consentManager, currentTool.Server)
+
+	// Check sampling consent using the consent checker
+	decision, err := consentChecker.CheckSamplingConsent(ctx, currentTool.Name)
+	if err != nil {
+		return fmt.Errorf("consent check failed: %w", err)
+	}
+
+	if !decision.Allowed {
+		if decision.RequiresPrompt {
+			// Use console.DoInteraction to show consent prompt
+			if err := h.console.DoInteraction(func() error {
+				return consentChecker.PromptAndGrantSamplingConsent(
+					ctx,
+					currentTool.Name,
+					"Allows sending data to external language models for processing",
+				)
+			}); err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("sampling denied: %s", decision.Reason)
+		}
+	}
+
+	return nil
 }

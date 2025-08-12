@@ -41,11 +41,92 @@ func (cc *ConsentChecker) CheckToolConsent(
 	consentRequest := ConsentRequest{
 		ToolID:      toolID,
 		ServerName:  cc.serverName,
-		SessionID:   "", // Not needed since each manager represents one session
+		Type:        ConsentRuleTypeTool, // This is a tool execution request
+		SessionID:   "",                  // Not needed since each manager represents one session
 		Annotations: annotations,
 	}
 
 	return cc.consentMgr.CheckConsent(ctx, consentRequest)
+}
+
+// CheckSamplingConsent checks sampling consent for a specific tool
+func (cc *ConsentChecker) CheckSamplingConsent(
+	ctx context.Context,
+	toolName string,
+) (*ConsentDecision, error) {
+	toolID := fmt.Sprintf("%s/%s", cc.serverName, toolName)
+
+	// Create consent request for sampling
+	consentRequest := ConsentRequest{
+		ToolID:     toolID,
+		ServerName: cc.serverName,
+		Type:       ConsentRuleTypeSampling, // This is a sampling request
+		SessionID:  "",                      // Not needed since each manager represents one session
+	}
+
+	return cc.consentMgr.CheckConsent(ctx, consentRequest)
+}
+
+// formatToolDescriptionWithAnnotations creates a formatted description with tool annotations as bullet points
+func (cc *ConsentChecker) formatToolDescriptionWithAnnotations(
+	toolDesc string,
+	annotations mcp.ToolAnnotation,
+) string {
+	if toolDesc == "" {
+		toolDesc = "No description available"
+	}
+
+	// Start with the base description
+	description := toolDesc
+
+	// Collect annotation information
+	var annotationBullets []string
+
+	if annotations.Title != "" {
+		annotationBullets = append(annotationBullets, fmt.Sprintf("• Title: %s", annotations.Title))
+	}
+
+	if annotations.ReadOnlyHint != nil {
+		if *annotations.ReadOnlyHint {
+			annotationBullets = append(annotationBullets, "• Read-only operation")
+		} else {
+			annotationBullets = append(annotationBullets, "• May modify data")
+		}
+	}
+
+	if annotations.DestructiveHint != nil {
+		if *annotations.DestructiveHint {
+			annotationBullets = append(annotationBullets, "• Potentially destructive operation")
+		} else {
+			annotationBullets = append(annotationBullets, "• Non-destructive operation")
+		}
+	}
+
+	if annotations.IdempotentHint != nil {
+		if *annotations.IdempotentHint {
+			annotationBullets = append(annotationBullets, "• Idempotent (safe to retry)")
+		} else {
+			annotationBullets = append(annotationBullets, "• Not idempotent (may have side effects on retry)")
+		}
+	}
+
+	if annotations.OpenWorldHint != nil {
+		if *annotations.OpenWorldHint {
+			annotationBullets = append(annotationBullets, "• May access external resources")
+		} else {
+			annotationBullets = append(annotationBullets, "• Operates on local resources only")
+		}
+	}
+
+	// Append annotations as bullet list if any exist
+	if len(annotationBullets) > 0 {
+		description += "\n\nTool characteristics:"
+		for _, bullet := range annotationBullets {
+			description += "\n" + bullet
+		}
+	}
+
+	return description
 }
 
 // PromptAndGrantConsent shows consent prompt and grants permission based on user choice
@@ -56,7 +137,7 @@ func (cc *ConsentChecker) PromptAndGrantConsent(
 ) error {
 	toolID := fmt.Sprintf("%s/%s", cc.serverName, toolName)
 
-	choice, err := cc.promptForConsent(ctx, toolName, toolDesc, annotations)
+	choice, err := cc.promptForToolConsent(ctx, toolName, toolDesc, annotations)
 	if err != nil {
 		return fmt.Errorf("consent prompt failed: %w", err)
 	}
@@ -66,22 +147,22 @@ func (cc *ConsentChecker) PromptAndGrantConsent(
 	}
 
 	// Grant consent based on user choice
-	return cc.grantConsentFromChoice(ctx, toolID, choice)
+	return cc.grantConsentFromChoice(ctx, toolID, choice, ConsentRuleTypeTool)
 }
 
-// promptForConsent shows an interactive consent prompt and returns the user's choice
-func (cc *ConsentChecker) promptForConsent(
+// promptForToolConsent shows an interactive consent prompt and returns the user's choice
+func (cc *ConsentChecker) promptForToolConsent(
 	ctx context.Context,
 	toolName, toolDesc string,
 	annotations mcp.ToolAnnotation,
 ) (string, error) {
 	message := fmt.Sprintf(
-		"Tool %s from server %s requires consent.\n\nHow would you like to proceed?",
+		"Tool %s (%s) requires consent.\n\nHow would you like to proceed?",
 		output.WithHighLightFormat(toolName),
 		output.WithHighLightFormat(cc.serverName),
 	)
 
-	helpMessage := toolDesc
+	helpMessage := cc.formatToolDescriptionWithAnnotations(toolDesc, annotations)
 
 	choices := []*ux.SelectChoice{
 		{
@@ -107,7 +188,7 @@ func (cc *ConsentChecker) promptForConsent(
 	}
 
 	// Add server trust option if not already trusted
-	if !cc.isServerAlreadyTrusted(ctx) {
+	if !cc.isServerAlreadyTrusted(ctx, ConsentRuleTypeTool) {
 		choices = append(choices, &ux.SelectChoice{
 			Value: "server",
 			Label: "Allow all tools from this server",
@@ -127,6 +208,12 @@ func (cc *ConsentChecker) promptForConsent(
 			Label: "Allow all read-only tools from any server",
 		})
 	}
+
+	// Add global sampling trust option
+	choices = append(choices, &ux.SelectChoice{
+		Value: "global",
+		Label: "Allow all tools from any server",
+	})
 
 	selector := ux.NewSelect(&ux.SelectOptions{
 		Message:         message,
@@ -148,17 +235,22 @@ func (cc *ConsentChecker) promptForConsent(
 	return choices[*choiceIndex].Value, nil
 }
 
-// isServerAlreadyTrusted checks if the server is already trusted
-func (cc *ConsentChecker) isServerAlreadyTrusted(ctx context.Context) bool {
-	// Create a mock tool request to check if server has full trust
+// isServerAlreadyTrusted checks if the server is already trusted for the specified rule type
+func (cc *ConsentChecker) isServerAlreadyTrusted(ctx context.Context, ruleType ConsentRuleType) bool {
+	// Create a mock request to check if server has trust for the specified rule type
 	request := ConsentRequest{
-		ToolID:      fmt.Sprintf("%s/test-tool", cc.serverName),
-		ServerName:  cc.serverName,
-		SessionID:   "",                   // Not needed since each manager represents one session
-		Annotations: mcp.ToolAnnotation{}, // No readonly hint
+		ToolID:     fmt.Sprintf("%s/test-tool", cc.serverName),
+		ServerName: cc.serverName,
+		Type:       ruleType,
+		SessionID:  "",
 	}
 
-	// Check if server has full trust (not readonly-only)
+	// For tool requests, add annotations to avoid readonly-only matches
+	if ruleType == ConsentRuleTypeTool {
+		request.Annotations = mcp.ToolAnnotation{} // No readonly hint
+	}
+
+	// Check if server has trust for this rule type
 	decision, err := cc.consentMgr.CheckConsent(ctx, request)
 	if err != nil {
 		return false
@@ -169,31 +261,40 @@ func (cc *ConsentChecker) isServerAlreadyTrusted(ctx context.Context) bool {
 }
 
 // grantConsentFromChoice processes the user's consent choice and saves the appropriate rule
-func (cc *ConsentChecker) grantConsentFromChoice(ctx context.Context, toolID string, choice string) error {
+func (cc *ConsentChecker) grantConsentFromChoice(
+	ctx context.Context,
+	toolID string,
+	choice string,
+	ruleType ConsentRuleType,
+) error {
 	var rule ConsentRule
 	var scope ConsentScope
 
 	switch choice {
 	case "once":
 		rule = ConsentRule{
+			Type:       ruleType,
 			ToolID:     toolID,
 			Permission: ConsentOnce,
 		}
 		scope = ScopeSession
 	case "session":
 		rule = ConsentRule{
+			Type:       ruleType,
 			ToolID:     toolID,
 			Permission: ConsentSession,
 		}
 		scope = ScopeSession
 	case "project":
 		rule = ConsentRule{
+			Type:       ruleType,
 			ToolID:     toolID,
 			Permission: ConsentProject,
 		}
 		scope = ScopeProject
 	case "always":
 		rule = ConsentRule{
+			Type:       ruleType,
 			ToolID:     toolID,
 			Permission: ConsentAlways,
 		}
@@ -201,22 +302,39 @@ func (cc *ConsentChecker) grantConsentFromChoice(ctx context.Context, toolID str
 	case "server":
 		// Grant trust to entire server
 		rule = ConsentRule{
+			Type:       ruleType,
 			ToolID:     fmt.Sprintf("%s/*", cc.serverName),
 			Permission: ConsentServerAlways,
 			RuleScope:  RuleScopeAll,
 		}
 		scope = ScopeGlobal
-	case "readonly_server":
-		// Grant trust to readonly tools from this server
+	case "global":
 		rule = ConsentRule{
+			Type:       ruleType,
+			ToolID:     "*",
+			Permission: ConsentAlways,
+			RuleScope:  RuleScopeAll,
+		}
+		scope = ScopeGlobal
+	case "readonly_server":
+		// Grant trust to readonly tools from this server (only for tool rules)
+		if ruleType != ConsentRuleTypeTool {
+			return fmt.Errorf("readonly server option only available for tool consent")
+		}
+		rule = ConsentRule{
+			Type:       ruleType,
 			ToolID:     fmt.Sprintf("%s/*", cc.serverName),
 			Permission: ConsentAlways,
 			RuleScope:  RuleScopeReadOnly,
 		}
 		scope = ScopeGlobal
 	case "readonly_global":
-		// Grant trust to all readonly tools globally
+		// Grant trust to all readonly tools globally (only for tool rules)
+		if ruleType != ConsentRuleTypeTool {
+			return fmt.Errorf("readonly global option only available for tool consent")
+		}
 		rule = ConsentRule{
+			Type:       ruleType,
 			ToolID:     "*",
 			Permission: ConsentAlways,
 			RuleScope:  RuleScopeReadOnly,
@@ -227,4 +345,95 @@ func (cc *ConsentChecker) grantConsentFromChoice(ctx context.Context, toolID str
 	}
 
 	return cc.consentMgr.GrantConsent(ctx, rule, scope)
+}
+
+// PromptAndGrantSamplingConsent shows sampling consent prompt and grants permission based on user choice
+func (cc *ConsentChecker) PromptAndGrantSamplingConsent(
+	ctx context.Context,
+	toolName, toolDesc string,
+) error {
+	toolID := fmt.Sprintf("%s/%s", cc.serverName, toolName)
+
+	choice, err := cc.promptForSamplingConsent(ctx, toolName, toolDesc)
+	if err != nil {
+		return fmt.Errorf("sampling consent prompt failed: %w", err)
+	}
+
+	if choice == "deny" {
+		return fmt.Errorf("sampling denied by user")
+	}
+
+	// Grant sampling consent based on user choice
+	return cc.grantConsentFromChoice(ctx, toolID, choice, ConsentRuleTypeSampling)
+}
+
+// promptForSamplingConsent shows an interactive sampling consent prompt and returns the user's choice
+func (cc *ConsentChecker) promptForSamplingConsent(
+	ctx context.Context,
+	toolName, toolDesc string,
+) (string, error) {
+	message := fmt.Sprintf(
+		"Tool %s (%s) wants to send data to an external language model for processing.\n\n"+
+			"How would you like to proceed?",
+		output.WithHighLightFormat(toolName),
+		output.WithHighLightFormat(cc.serverName),
+	)
+
+	helpMessage := fmt.Sprintf("This will allow the tool to send data to an LLM for analysis or generation. %s", toolDesc)
+
+	choices := []*ux.SelectChoice{
+		{
+			Value: "deny",
+			Label: "Deny - Block this sampling request",
+		},
+		{
+			Value: "once",
+			Label: "Allow once - Allow this sampling request only",
+		},
+		{
+			Value: "session",
+			Label: "Allow for session - Allow sampling until restart",
+		},
+		{
+			Value: "project",
+			Label: "Allow for project - Remember for this project",
+		},
+		{
+			Value: "always",
+			Label: "Allow always - Remember globally for this tool",
+		},
+	}
+
+	// Add server trust option if not already trusted for sampling
+	if !cc.isServerAlreadyTrusted(ctx, ConsentRuleTypeSampling) {
+		choices = append(choices, &ux.SelectChoice{
+			Value: "server",
+			Label: "Allow sampling for all tools from this server",
+		})
+	}
+
+	// Add global sampling trust option
+	choices = append(choices, &ux.SelectChoice{
+		Value: "global",
+		Label: "Allow sampling for all tools from any server",
+	})
+
+	selector := ux.NewSelect(&ux.SelectOptions{
+		Message:         message,
+		HelpMessage:     helpMessage,
+		Choices:         choices,
+		EnableFiltering: ux.Ptr(false),
+		DisplayCount:    10,
+	})
+
+	choiceIndex, err := selector.Ask(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	if choiceIndex == nil || *choiceIndex < 0 || *choiceIndex >= len(choices) {
+		return "", fmt.Errorf("invalid choice selected")
+	}
+
+	return choices[*choiceIndex].Value, nil
 }

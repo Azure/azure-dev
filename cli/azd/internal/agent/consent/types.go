@@ -5,6 +5,8 @@ package consent
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
@@ -19,6 +21,9 @@ type ConsentScope string
 
 // RuleScope represents what types of tools a rule applies to
 type RuleScope string
+
+// ConsentRuleType represents the type of consent rule
+type ConsentRuleType string
 
 const (
 	ConsentDeny           ConsentLevel = "deny"
@@ -42,12 +47,34 @@ const (
 	RuleScopeReadOnly RuleScope = "readonly" // Only read-only tools matching the pattern
 )
 
+const (
+	ConsentRuleTypeTool     ConsentRuleType = "tool"     // Tool execution consent
+	ConsentRuleTypeSampling ConsentRuleType = "sampling" // LLM sampling consent
+)
+
+// AllowedRuleTypes contains the valid rule types for command validation
+var AllowedRuleTypes = []string{
+	string(ConsentRuleTypeTool),
+	string(ConsentRuleTypeSampling),
+}
+
+// ParseConsentRuleType converts a string to ConsentRuleType with validation
+func ParseConsentRuleType(ruleTypeStr string) (ConsentRuleType, error) {
+	for _, allowedType := range AllowedRuleTypes {
+		if ruleTypeStr == allowedType {
+			return ConsentRuleType(ruleTypeStr), nil
+		}
+	}
+	return "", fmt.Errorf("invalid rule type: %s (allowed: %v)", ruleTypeStr, AllowedRuleTypes)
+}
+
 // ConsentRule represents a single consent rule for a tool
 type ConsentRule struct {
-	ToolID     string       `json:"toolId"`
-	Permission ConsentLevel `json:"permission"`
-	RuleScope  RuleScope    `json:"scope,omitempty"` // Defaults to "all" for backward compatibility
-	GrantedAt  time.Time    `json:"grantedAt"`
+	ToolID     string          `json:"toolId"`
+	Type       ConsentRuleType `json:"type"`            // Type of consent rule (tool, sampling, etc.)
+	Permission ConsentLevel    `json:"permission"`      // Permission level for this rule type
+	RuleScope  RuleScope       `json:"scope,omitempty"` // Defaults to "all" for backward compatibility
+	GrantedAt  time.Time       `json:"grantedAt"`
 }
 
 // ConsentConfig represents the MCP consent configuration
@@ -59,6 +86,7 @@ type ConsentConfig struct {
 type ConsentRequest struct {
 	ToolID      string
 	ServerName  string
+	Type        ConsentRuleType // Type of consent being requested (tool, sampling, etc.)
 	Parameters  map[string]interface{}
 	SessionID   string
 	ProjectPath string
@@ -77,10 +105,18 @@ type ConsentManager interface {
 	CheckConsent(ctx context.Context, request ConsentRequest) (*ConsentDecision, error)
 	GrantConsent(ctx context.Context, rule ConsentRule, scope ConsentScope) error
 	ListConsents(ctx context.Context, scope ConsentScope) ([]ConsentRule, error)
+	ListConsentsByType(ctx context.Context, scope ConsentScope, ruleType ConsentRuleType) ([]ConsentRule, error)
 	ClearConsents(ctx context.Context, scope ConsentScope) error
+	ClearConsentsByType(ctx context.Context, scope ConsentScope, ruleType ConsentRuleType) error
 	ClearConsentByToolID(ctx context.Context, toolID string, scope ConsentScope) error
 
 	// Tool wrapping methods
 	WrapTool(tool common.AnnotatedTool) common.AnnotatedTool
 	WrapTools(tools []common.AnnotatedTool) []common.AnnotatedTool
+}
+
+type ExecutingTool struct {
+	sync.RWMutex
+	Name   string
+	Server string
 }

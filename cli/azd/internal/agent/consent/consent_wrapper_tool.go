@@ -46,6 +46,10 @@ func (c *ConsentWrapperTool) Description() string {
 
 // Call executes the tool with consent protection
 func (c *ConsentWrapperTool) Call(ctx context.Context, input string) (string, error) {
+	// Set current executing tool for tracking (used by sampling handler)
+	SetCurrentExecutingTool(c.Name(), c.Server())
+	defer ClearCurrentExecutingTool()
+
 	// Check consent using enhanced checker with annotations
 	decision, err := c.consentChecker.CheckToolConsent(ctx, c.Name(), c.Description(), c.annotations)
 	if err != nil {

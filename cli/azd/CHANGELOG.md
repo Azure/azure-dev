@@ -1,35 +1,22 @@
 # Release History
 
-## 1.19.0 (2025-08-12)
-
-### Features Added
-
-- [[5531]](https://github.com/Azure/azure-dev/pull/5531) Add .tar.gz support for Linux extension development and installation, fix extension registry.
-- [[5545]](https://github.com/Azure/azure-dev/pull/5545) Add support for handling claims challenges due to Conditional Access Evaluation.
-- [[5517]](https://github.com/Azure/azure-dev/pull/5517) Add `apiVersion` and `resourceGroup` properties to azure.yaml schema.
+## 1.19.0 (2025-08-14)
 
 ### Bugs Fixed
 
-- [[5445]](https://github.com/Azure/azure-dev/pull/5445) Fix package deletion when using `--from-package` flag with `azd deploy`.
+- [[5445]](https://github.com/Azure/azure-dev/pull/5445) Prevent package deletion when using `--from-package` flag with `azd deploy`.
 - [[5531]](https://github.com/Azure/azure-dev/pull/5531) Fix extension installation failures on Linux.
 - [[5385]](https://github.com/Azure/azure-dev/pull/5385) Add error suggestion message when `package` fails due to containerd.
-- [[5563]](https://github.com/Azure/azure-dev/pull/5563) Fix invalid branch name characters when generating federated credential names. Thanks @Menghua1 for the contribution!
-- [[5567]](https://github.com/Azure/azure-dev/pull/5567) Fix VSServer ignoring projects.v1.
-- [[5539]](https://github.com/Azure/azure-dev/pull/5539) Fix SWA deployment failure when source and output folders are the same.
-- [[5518]](https://github.com/Azure/azure-dev/pull/5518) Add suggestion text for resource group and Container App unmarshal errors during `azd deploy`.
-
-### Other Changes
-
-- [[5556]](https://github.com/Azure/azure-dev/pull/5556) Update Bicep CLI version to 0.37.4.
 
 ## 1.18.1 (2025-08-06)
 
 ### Bugs Fixed
 
 - [[5501]](https://github.com/Azure/azure-dev/pull/5501) infra gen when dotnet project is present.
-- [[5566]](https://github.com/Azure/azure-dev/pull/5566) [VSServer] Ignoring projects.v1.
-- [[5518]](https://github.com/Azure/azure-dev/pull/5518) [VSServer] Add suggestion text for resource group and Container App un-marshall errors during azd deploy.
+- [[5567]](https://github.com/Azure/azure-dev/pull/5567) [VSServer] Ignoring projects.v1.
+- [[5518]](https://github.com/Azure/azure-dev/pull/5518) Add suggestion text for resource group and Container App unmarshal errors during `azd deploy`.
 - [[5528]](https://github.com/Azure/azure-dev/pull/5528) Fix login guard to skip interactive prompts in CI/CD environments.
+- [[5563]](https://github.com/Azure/azure-dev/pull/5563) Fix invalid branch name characters when generating federated credential names.
 
 ## 1.18.0 (2025-07-17)
 

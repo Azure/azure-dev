@@ -27,8 +27,8 @@ const (
 	ConsentSession        ConsentLevel = "session"
 	ConsentProject        ConsentLevel = "project"
 	ConsentAlways         ConsentLevel = "always"
-	ConsentServerAlways   ConsentLevel = "server_always"   // All tools from server
-	ConsentServerReadOnly ConsentLevel = "server_readonly" // Read-only tools from server
+	ConsentServerAlways   ConsentLevel = "server-always"   // All tools from server
+	ConsentServerReadOnly ConsentLevel = "server-readonly" // Read-only tools from server
 )
 
 const (
@@ -47,7 +47,7 @@ type ConsentRule struct {
 	ToolID     string       `json:"toolId"`
 	Permission ConsentLevel `json:"permission"`
 	RuleScope  RuleScope    `json:"scope,omitempty"` // Defaults to "all" for backward compatibility
-	GrantedAt  time.Time    `json:"granted_at"`
+	GrantedAt  time.Time    `json:"grantedAt"`
 }
 
 // ConsentConfig represents the MCP consent configuration

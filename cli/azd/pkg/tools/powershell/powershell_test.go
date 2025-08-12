@@ -139,7 +139,13 @@ func Test_Powershell_Execute(t *testing.T) {
 	t.Run("NoPowerShellInstalled", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
-		PowershellScript := NewPowershellScript(mockContext.CommandRunner, workingDir, env)
+		PowershellScript := NewPowershellScriptWithMockCheckPath(
+			mockContext.CommandRunner,
+			workingDir,
+			env,
+			func(options tools.ExecOptions) error {
+				return fmt.Errorf("failed to find PowerShell executable")
+			})
 		_, err := PowershellScript.Execute(
 			*mockContext.Context,
 			scriptPath,

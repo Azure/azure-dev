@@ -78,6 +78,20 @@ func (l *McpToolsLoader) LoadTools() ([]common.AnnotatedTool, error) {
 			continue
 		}
 
+		initRequest := mcp.InitializeRequest{}
+		initRequest.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
+		initRequest.Params.ClientInfo = mcp.Implementation{
+			Name:    "Azure Developer CLI (azd)",
+			Version: "1.0.1",
+		}
+
+		initResult, err := mcpClient.Initialize(context.Background(), initRequest)
+		if err != nil {
+			return nil, fmt.Errorf("initialize: %w", err)
+		}
+
+		log.Printf("Initialized MCP client for server %s (%s)", initResult.ServerInfo.Name, initResult.ServerInfo.Version)
+
 		// Get tools directly from MCP client
 		toolsRequest := mcp.ListToolsRequest{}
 		toolsResult, err := mcpClient.ListTools(ctx, toolsRequest)

@@ -46,6 +46,8 @@ const (
 	specialFeatureOrQuotaIdRequired = "SpecialFeatureOrQuotaIdRequired"
 )
 
+var featLayers = alpha.MustFeatureKey("layers")
+
 func (i *ProvisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	i.BindNonCommon(local, global)
 	i.bindCommon(local, global)
@@ -93,7 +95,7 @@ func NewProvisionFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *inter
 
 func NewProvisionCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "provision [layer]",
+		Use:   "provision",
 		Short: "Provision Azure resources for your project.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
@@ -208,6 +210,12 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	layer := ""
 	if len(p.args) > 0 {
 		layer = p.args[0]
+
+		if !p.alphaFeatureManager.IsEnabled(featLayers) {
+			return nil, fmt.Errorf("Layered provisioning is not enabled. Run '%s' to enable it.", alpha.GetEnableCommand(featLayers))
+		}
+
+		p.console.WarnForFeature(ctx, featLayers)
 	}
 
 	infraOptions := infra.Options

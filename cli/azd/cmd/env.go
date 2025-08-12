@@ -927,6 +927,8 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	return nil, nil
 }
 
+var featLayers = alpha.MustFeatureKey("layers")
+
 type envRefreshFlags struct {
 	hint   string
 	layer  string
@@ -936,7 +938,8 @@ type envRefreshFlags struct {
 
 func (er *envRefreshFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(&er.hint, "hint", "", "", "Hint to help identify the environment to refresh")
-	local.StringVarP(&er.layer, "layer", "", "", "Layer to refresh the environment from.")
+	local.StringVarP(&er.layer, "layer", "", "", "Provisioning layer to refresh the environment from.")
+	_ = local.MarkHidden("layer") // alpha: featLayers
 
 	er.EnvFlag.Bind(local, global)
 	er.global = global
@@ -986,17 +989,18 @@ func newEnvRefreshCmd() *cobra.Command {
 }
 
 type envRefreshAction struct {
-	provisionManager *provisioning.Manager
-	projectConfig    *project.ProjectConfig
-	projectManager   project.ProjectManager
-	env              *environment.Environment
-	envManager       environment.Manager
-	prompters        prompt.Prompter
-	flags            *envRefreshFlags
-	console          input.Console
-	formatter        output.Formatter
-	writer           io.Writer
-	importManager    *project.ImportManager
+	provisionManager    *provisioning.Manager
+	projectConfig       *project.ProjectConfig
+	projectManager      project.ProjectManager
+	env                 *environment.Environment
+	envManager          environment.Manager
+	prompters           prompt.Prompter
+	flags               *envRefreshFlags
+	console             input.Console
+	formatter           output.Formatter
+	writer              io.Writer
+	importManager       *project.ImportManager
+	alphaFeatureManager *alpha.FeatureManager
 }
 
 func newEnvRefreshAction(
@@ -1011,19 +1015,21 @@ func newEnvRefreshAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	importManager *project.ImportManager,
+	alphaFeatureManager *alpha.FeatureManager,
 ) actions.Action {
 	return &envRefreshAction{
-		provisionManager: provisionManager,
-		projectManager:   projectManager,
-		env:              env,
-		envManager:       envManager,
-		prompters:        prompters,
-		console:          console,
-		flags:            flags,
-		formatter:        formatter,
-		projectConfig:    projectConfig,
-		writer:           writer,
-		importManager:    importManager,
+		provisionManager:    provisionManager,
+		projectManager:      projectManager,
+		env:                 env,
+		envManager:          envManager,
+		prompters:           prompters,
+		console:             console,
+		flags:               flags,
+		formatter:           formatter,
+		projectConfig:       projectConfig,
+		writer:              writer,
+		importManager:       importManager,
+		alphaFeatureManager: alphaFeatureManager,
 	}
 }
 
@@ -1049,6 +1055,14 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	layers := []provisioning.Options{infra.Options}
 	layers = append(layers, infra.Options.Layers...)
+
+	if ef.flags.layer != "" || len(layers) > 1 {
+		if !ef.alphaFeatureManager.IsEnabled(featLayers) {
+			return nil, fmt.Errorf("Layered provisioning is not enabled. Run '%s' to enable it.", alpha.GetEnableCommand(featLayers))
+		}
+
+		ef.console.WarnForFeature(ctx, featLayers)
+	}
 
 	if ef.flags.layer != "" {
 		layerOpt, err := infra.Options.GetLayer(ef.flags.layer)

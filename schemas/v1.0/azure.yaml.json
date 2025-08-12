@@ -37,13 +37,8 @@
             "type": "object",
             "title": "The infrastructure configuration used for the application",
             "description": "Optional. Provides additional configuration for Azure infrastructure provisioning.",
-            "additionalProperties": false,
+            "additionalProperties": true,
             "properties": {
-                "name": {
-                    "type": "string",
-                    "title": "The name of the provisioning layer",
-                    "description": "The name of the provisioning layer"
-                },
                 "provider": {
                     "type": "string",
                     "title": "Type of infrastructure provisioning provider",
@@ -62,68 +57,8 @@
                     "type": "string",
                     "title": "Name of the default module within the Azure provisioning templates",
                     "description": "Optional. The name of the Azure provisioning module used when provisioning resources. (Default: main)"
-                },
-                "layers": {
-                    "type": "array",
-                    "title": "Additional provisioning layers.",
-                    "description": "Optional. Additional layers for Azure infrastructure provisioning.",
-                    "additionalProperties": false,
-                    "uniqueItems": true,
-                    "items": {
-                        "type": "object",
-                        "title": "A provisioning layer.",
-                        "additionalProperties": false,
-                        "required": [
-                            "name",
-                            "path"
-                        ],
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "title": "The name of the provisioning layer",
-                                "description": "The name of the provisioning layer"
-                            },
-                            "provider": {
-                                "type": "string",
-                                "title": "Type of infrastructure provisioning provider",
-                                "description": "Optional. The infrastructure provisioning provider used to provision the Azure resources for the application. (Default: bicep)",
-                                "enum": [
-                                    "bicep",
-                                    "terraform"
-                                ]
-                            },
-                            "path": {
-                                "type": "string",
-                                "title": "Path to the location that contains Azure provisioning templates",
-                                "description": "The relative folder path to the Azure provisioning templates for the specified provider."
-                            },
-                            "module": {
-                                "type": "string",
-                                "title": "Name of the default module within the Azure provisioning templates",
-                                "description": "Optional. The name of the Azure provisioning module used when provisioning resources. (Default: main)"
-                            }
-                        }
-                    }
                 }
-            },
-            "allOf": [
-                {
-                    "if": {
-                        "not": {
-                            "properties": {
-                                "provider": {
-                                    "const": "bicep"
-                                }
-                            }
-                        }
-                    },
-                    "then": {
-                        "properties": {
-                            "deploymentStacks": false
-                        }
-                    }
-                }
-            ]
+            }
         },
         "services": {
             "type": "object",

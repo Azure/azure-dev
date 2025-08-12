@@ -48,6 +48,8 @@ func (i *downFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"",
 		"Provisioning layer to delete resources for.",
 	)
+	_ = local.MarkHidden("layer") // alpha: featLayers
+
 	i.EnvFlag.Bind(local, global)
 	i.global = global
 }
@@ -117,6 +119,14 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	layers := []provisioning.Options{infra.Options}
 	layers = append(layers, infra.Options.Layers...)
+
+	if a.flags.layer != "" || len(layers) > 1 {
+		if !a.alphaFeatureManager.IsEnabled(featLayers) {
+			return nil, fmt.Errorf("Layered provisioning is not enabled. Run '%s' to enable it.", alpha.GetEnableCommand(featLayers))
+		}
+
+		a.console.WarnForFeature(ctx, featLayers)
+	}
 
 	slices.Reverse(layers)
 

@@ -145,7 +145,7 @@ func (i *Initializer) InitFromApp(
 		}
 
 		detect := detectConfirmAppHost{console: i.console}
-		detect.Init(appHost, wd)
+		detect.Init(appHost, wd, appHostManifests[appHost.Path])
 
 		if err := detect.Confirm(ctx); err != nil {
 			return err

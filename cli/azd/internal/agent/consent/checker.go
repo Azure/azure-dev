@@ -40,11 +40,10 @@ func (cc *ConsentChecker) CheckToolConsent(
 
 	// Create consent request
 	consentRequest := ConsentRequest{
-		ToolID:           toolID,
-		ServerName:       cc.serverName,
-		OperationContext: OperationTypeTool, // This is a tool execution request
-		SessionID:        "",                // Not needed since each manager represents one session
-		Annotations:      annotations,
+		ToolID:      toolID,
+		ServerName:  cc.serverName,
+		Operation:   OperationTypeTool, // This is a tool execution request
+		Annotations: annotations,
 	}
 
 	return cc.consentMgr.CheckConsent(ctx, consentRequest)
@@ -59,10 +58,9 @@ func (cc *ConsentChecker) CheckSamplingConsent(
 
 	// Create consent request for sampling
 	consentRequest := ConsentRequest{
-		ToolID:           toolID,
-		ServerName:       cc.serverName,
-		OperationContext: OperationTypeSampling, // This is a sampling request
-		SessionID:        "",                    // Not needed since each manager represents one session
+		ToolID:     toolID,
+		ServerName: cc.serverName,
+		Operation:  OperationTypeSampling, // This is a sampling request
 	}
 
 	return cc.consentMgr.CheckConsent(ctx, consentRequest)
@@ -178,15 +176,20 @@ func (cc *ConsentChecker) promptForToolConsent(
 			Value: "session",
 			Label: "Yes, until I restart azd",
 		},
-		{
+	}
+
+	// Add project option only if we have an environment context
+	if cc.consentMgr.IsProjectScopeAvailable(ctx) {
+		choices = append(choices, &ux.SelectChoice{
 			Value: "project",
 			Label: "Yes, remember for this project",
-		},
-		{
-			Value: "always",
-			Label: "Yes, always allow this tool",
-		},
+		})
 	}
+
+	choices = append(choices, &ux.SelectChoice{
+		Value: "always",
+		Label: "Yes, always allow this tool",
+	})
 
 	// Add server trust option if not already trusted
 	if !cc.isServerAlreadyTrusted(ctx, OperationTypeTool) {
@@ -237,17 +240,16 @@ func (cc *ConsentChecker) promptForToolConsent(
 }
 
 // isServerAlreadyTrusted checks if the server is already trusted for the specified operation context
-func (cc *ConsentChecker) isServerAlreadyTrusted(ctx context.Context, operationContext OperationType) bool {
+func (cc *ConsentChecker) isServerAlreadyTrusted(ctx context.Context, operation OperationType) bool {
 	// Create a mock request to check if server has trust for the specified operation context
 	request := ConsentRequest{
-		ToolID:           fmt.Sprintf("%s/test-tool", cc.serverName),
-		ServerName:       cc.serverName,
-		OperationContext: operationContext,
-		SessionID:        "",
+		ToolID:     fmt.Sprintf("%s/test-tool", cc.serverName),
+		ServerName: cc.serverName,
+		Operation:  operation,
 	}
 
 	// For tool requests, add annotations to avoid readonly-only matches
-	if operationContext == OperationTypeTool {
+	if operation == OperationTypeTool {
 		request.Annotations = mcp.ToolAnnotation{} // No readonly hint
 	}
 
@@ -266,7 +268,7 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 	ctx context.Context,
 	toolID string,
 	choice string,
-	operationContext OperationType,
+	operation OperationType,
 ) error {
 	var rule ConsentRule
 	var scope Scope
@@ -285,7 +287,7 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 			Scope:      ScopeSession,
 			Target:     NewToolTarget(serverName, toolName),
 			Action:     ActionAny,
-			Operation:  operationContext,
+			Operation:  operation,
 			Permission: PermissionAllow,
 		}
 		scope = ScopeSession
@@ -294,7 +296,7 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 			Scope:      ScopeSession,
 			Target:     NewToolTarget(serverName, toolName),
 			Action:     ActionAny,
-			Operation:  operationContext,
+			Operation:  operation,
 			Permission: PermissionAllow,
 		}
 		scope = ScopeSession
@@ -303,7 +305,7 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 			Scope:      ScopeProject,
 			Target:     NewToolTarget(serverName, toolName),
 			Action:     ActionAny,
-			Operation:  operationContext,
+			Operation:  operation,
 			Permission: PermissionAllow,
 		}
 		scope = ScopeProject
@@ -312,7 +314,7 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 			Scope:      ScopeGlobal,
 			Target:     NewToolTarget(serverName, toolName),
 			Action:     ActionAny,
-			Operation:  operationContext,
+			Operation:  operation,
 			Permission: PermissionAllow,
 		}
 		scope = ScopeGlobal
@@ -322,7 +324,7 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 			Scope:      ScopeGlobal,
 			Target:     NewServerTarget(serverName),
 			Action:     ActionAny,
-			Operation:  operationContext,
+			Operation:  operation,
 			Permission: PermissionAllow,
 		}
 		scope = ScopeGlobal
@@ -331,33 +333,33 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 			Scope:      ScopeGlobal,
 			Target:     NewGlobalTarget(),
 			Action:     ActionAny,
-			Operation:  operationContext,
+			Operation:  operation,
 			Permission: PermissionAllow,
 		}
 		scope = ScopeGlobal
 	case "readonly_server":
 		// Grant trust to readonly tools from this server (only for tool context)
-		if operationContext != OperationTypeTool {
+		if operation != OperationTypeTool {
 			return fmt.Errorf("readonly server option only available for tool consent")
 		}
 		rule = ConsentRule{
 			Scope:      ScopeGlobal,
 			Target:     NewServerTarget(serverName),
 			Action:     ActionReadOnly,
-			Operation:  operationContext,
+			Operation:  operation,
 			Permission: PermissionAllow,
 		}
 		scope = ScopeGlobal
 	case "readonly_global":
 		// Grant trust to all readonly tools globally (only for tool context)
-		if operationContext != OperationTypeTool {
+		if operation != OperationTypeTool {
 			return fmt.Errorf("readonly global option only available for tool consent")
 		}
 		rule = ConsentRule{
 			Scope:      ScopeGlobal,
 			Target:     NewGlobalTarget(),
 			Action:     ActionReadOnly,
-			Operation:  operationContext,
+			Operation:  operation,
 			Permission: PermissionAllow,
 		}
 		scope = ScopeGlobal
@@ -394,7 +396,9 @@ func (cc *ConsentChecker) promptForSamplingConsent(
 	toolName, toolDesc string,
 ) (string, error) {
 	message := fmt.Sprintf(
-		"The tool %s from %s wants to send data to an AI service.\n\nThis helps improve responses but shares information externally.\n\nWhat would you like to do?",
+		"The tool %s from %s wants to send data to an AI service.\n\n"+
+			"This helps improve responses but shares information externally.\n\n"+
+			"What would you like to do?",
 		output.WithHighLightFormat(toolName),
 		output.WithHighLightFormat(cc.serverName),
 	)

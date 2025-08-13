@@ -158,7 +158,7 @@ func (cc *ConsentChecker) promptForToolConsent(
 	annotations mcp.ToolAnnotation,
 ) (string, error) {
 	message := fmt.Sprintf(
-		"Tool %s (%s) requires consent.\n\nHow would you like to proceed?",
+		"The tool %s from %s wants to run.\n\nWhat would you like to do?",
 		output.WithHighLightFormat(toolName),
 		output.WithHighLightFormat(cc.serverName),
 	)
@@ -168,23 +168,23 @@ func (cc *ConsentChecker) promptForToolConsent(
 	choices := []*ux.SelectChoice{
 		{
 			Value: "deny",
-			Label: "Deny - Block this tool execution",
+			Label: "No - Block this tool",
 		},
 		{
 			Value: "once",
-			Label: "Allow once - Execute this time only",
+			Label: "Yes, just this time",
 		},
 		{
 			Value: "session",
-			Label: "Allow for session - Allow until restart",
+			Label: "Yes, until I restart azd",
 		},
 		{
 			Value: "project",
-			Label: "Allow for project - Remember for this project",
+			Label: "Yes, remember for this project",
 		},
 		{
 			Value: "always",
-			Label: "Allow always - Remember globally",
+			Label: "Yes, always allow this tool",
 		},
 	}
 
@@ -221,7 +221,7 @@ func (cc *ConsentChecker) promptForToolConsent(
 		HelpMessage:     helpMessage,
 		Choices:         choices,
 		EnableFiltering: ux.Ptr(false),
-		DisplayCount:    10,
+		DisplayCount:    5,
 	})
 
 	choiceIndex, err := selector.Ask(ctx)
@@ -394,8 +394,7 @@ func (cc *ConsentChecker) promptForSamplingConsent(
 	toolName, toolDesc string,
 ) (string, error) {
 	message := fmt.Sprintf(
-		"Tool %s (%s) wants to send data to an external language model for processing.\n\n"+
-			"How would you like to proceed?",
+		"The tool %s from %s wants to send data to an AI service.\n\nThis helps improve responses but shares information externally.\n\nWhat would you like to do?",
 		output.WithHighLightFormat(toolName),
 		output.WithHighLightFormat(cc.serverName),
 	)
@@ -405,23 +404,23 @@ func (cc *ConsentChecker) promptForSamplingConsent(
 	choices := []*ux.SelectChoice{
 		{
 			Value: "deny",
-			Label: "Deny - Block this sampling request",
+			Label: "No - Don't send data",
 		},
 		{
 			Value: "once",
-			Label: "Allow once - Allow this sampling request only",
+			Label: "Yes, just this time",
 		},
 		{
 			Value: "session",
-			Label: "Allow for session - Allow sampling until restart",
+			Label: "Yes, until I restart azd",
 		},
 		{
 			Value: "project",
-			Label: "Allow for project - Remember for this project",
+			Label: "Yes, remember for this project",
 		},
 		{
 			Value: "always",
-			Label: "Allow always - Remember globally for this tool",
+			Label: "Yes, always allow this tool",
 		},
 	}
 
@@ -444,7 +443,7 @@ func (cc *ConsentChecker) promptForSamplingConsent(
 		HelpMessage:     helpMessage,
 		Choices:         choices,
 		EnableFiltering: ux.Ptr(false),
-		DisplayCount:    10,
+		DisplayCount:    5,
 	})
 
 	choiceIndex, err := selector.Ask(ctx)

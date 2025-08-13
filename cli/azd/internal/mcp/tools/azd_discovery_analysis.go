@@ -16,6 +16,10 @@ func NewAzdDiscoveryAnalysisTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"azd_discovery_analysis",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
 				`Returns instructions for performing comprehensive discovery and analysis of application components 
 to prepare for Azure Developer CLI (AZD) initialization. 

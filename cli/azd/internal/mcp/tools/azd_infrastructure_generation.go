@@ -16,6 +16,10 @@ func NewAzdInfrastructureGenerationTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"azd_infrastructure_generation",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
 				`Returns instructions for generating modular Bicep infrastructure templates following Azure security and 
 operational best practices for AZD projects. 

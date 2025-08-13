@@ -16,6 +16,10 @@ func NewAzdIacGenerationRulesTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"azd_iac_generation_rules",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
 				`Returns comprehensive rules and guidelines for generating Bicep Infrastructure as Code files and modules 
 for AZD projects. 

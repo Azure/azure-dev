@@ -16,6 +16,10 @@ func NewAzdAzureYamlGenerationTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"azd_azure_yaml_generation",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
 				`Returns instructions for generating the azure.yaml configuration file with proper service hosting, 
 build, and deployment settings for AZD projects. 

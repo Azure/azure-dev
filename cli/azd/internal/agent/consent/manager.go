@@ -12,7 +12,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 )
 
 const (
@@ -20,6 +22,8 @@ const (
 )
 
 // Global state for tracking current executing tool
+// This is a work around right now since the MCP protocol does not contain enough information in the sampling requests
+// Specifically, the tool name and server are not included in the request context
 var (
 	executingTool = &ExecutingTool{}
 )
@@ -60,6 +64,7 @@ func GetCurrentExecutingTool() *ExecutingTool {
 
 // consentManager implements the ConsentManager interface
 type consentManager struct {
+	lazyEnvManager    *lazy.Lazy[environment.Manager]
 	console           input.Console
 	userConfigManager config.UserConfigManager
 	sessionRules      []ConsentRule // Rules for this session
@@ -68,10 +73,12 @@ type consentManager struct {
 
 // NewConsentManager creates a new consent manager
 func NewConsentManager(
+	lazyEnvManager *lazy.Lazy[environment.Manager],
 	console input.Console,
 	userConfigManager config.UserConfigManager,
 ) ConsentManager {
 	return &consentManager{
+		lazyEnvManager:    lazyEnvManager,
 		console:           console,
 		userConfigManager: userConfigManager,
 		sessionRules:      make([]ConsentRule, 0),
@@ -114,13 +121,13 @@ func (cm *consentManager) GrantConsent(ctx context.Context, rule ConsentRule, sc
 	}
 }
 
-// ListConsents lists consent rules for a given scope
-func (cm *consentManager) ListConsents(ctx context.Context, scope Scope) ([]ConsentRule, error) {
+// ListConsentRules lists consent rules for a given scope
+func (cm *consentManager) ListConsentRules(ctx context.Context, scope Scope) ([]ConsentRule, error) {
 	switch scope {
 	case ScopeSession:
 		return cm.getSessionRules(), nil
 	case ScopeProject:
-		return cm.getProjectRules(ctx, "")
+		return cm.getProjectRules(ctx)
 	case ScopeGlobal:
 		return cm.getGlobalRules(ctx)
 	default:
@@ -134,7 +141,7 @@ func (cm *consentManager) ClearConsents(ctx context.Context, scope Scope) error 
 	case ScopeSession:
 		return cm.clearSessionRules()
 	case ScopeProject:
-		return fmt.Errorf("project-level consent clearing not yet implemented")
+		return cm.clearProjectRules(ctx)
 	case ScopeGlobal:
 		return cm.clearGlobalRules(ctx)
 	default:
@@ -148,7 +155,7 @@ func (cm *consentManager) ClearConsentByTarget(ctx context.Context, target Targe
 	case ScopeSession:
 		return cm.removeSessionRule(target)
 	case ScopeProject:
-		return fmt.Errorf("project-level consent removal not yet implemented")
+		return cm.removeProjectRule(ctx, target)
 	case ScopeGlobal:
 		return cm.removeGlobalRule(ctx, target)
 	default:
@@ -156,20 +163,20 @@ func (cm *consentManager) ClearConsentByTarget(ctx context.Context, target Targe
 	}
 }
 
-// ListConsentsByOperationContext lists consent rules filtered by operation context for a given scope
-func (cm *consentManager) ListConsentsByOperationContext(
+// ListConsentsByOperationType lists consent rules filtered by operation context for a given scope
+func (cm *consentManager) ListConsentsByOperationType(
 	ctx context.Context,
 	scope Scope,
-	operationContext OperationType,
+	operation OperationType,
 ) ([]ConsentRule, error) {
-	allRules, err := cm.ListConsents(ctx, scope)
+	allRules, err := cm.ListConsentRules(ctx, scope)
 	if err != nil {
 		return nil, err
 	}
 
 	filteredRules := make([]ConsentRule, 0)
 	for _, rule := range allRules {
-		if rule.Operation == operationContext {
+		if rule.Operation == operation {
 			filteredRules = append(filteredRules, rule)
 		}
 	}
@@ -177,13 +184,13 @@ func (cm *consentManager) ListConsentsByOperationContext(
 	return filteredRules, nil
 }
 
-// ClearConsentsByOperationContext clears all consent rules of a specific operation context for a given scope
-func (cm *consentManager) ClearConsentsByOperationContext(
+// ClearConsentsByOperationType clears all consent rules of a specific operation context for a given scope
+func (cm *consentManager) ClearConsentsByOperationType(
 	ctx context.Context,
 	scope Scope,
-	operationContext OperationType,
+	operation OperationType,
 ) error {
-	rules, err := cm.ListConsentsByOperationContext(ctx, scope, operationContext)
+	rules, err := cm.ListConsentsByOperationType(ctx, scope, operation)
 	if err != nil {
 		return fmt.Errorf("failed to list consent rules: %w", err)
 	}
@@ -195,6 +202,18 @@ func (cm *consentManager) ClearConsentsByOperationContext(
 	}
 
 	return nil
+}
+
+// IsProjectScopeAvailable checks if project scope is available (i.e., we have an environment context)
+func (cm *consentManager) IsProjectScopeAvailable(ctx context.Context) bool {
+	envManager, err := cm.lazyEnvManager.GetValue()
+	if err != nil {
+		return false
+	}
+
+	// Try to get the current environment
+	_, err = envManager.Get(ctx, "")
+	return err == nil
 }
 
 // WrapTool wraps a single langchaingo tool with consent protection
@@ -238,9 +257,36 @@ func (cm *consentManager) addSessionRule(rule ConsentRule) error {
 
 // addProjectRule adds a rule to the project configuration
 func (cm *consentManager) addProjectRule(ctx context.Context, rule ConsentRule) error {
-	// This would need to be implemented with the environment manager
-	// For now, return an error to indicate it's not implemented
-	return fmt.Errorf("project-level consent not yet implemented")
+	if !cm.IsProjectScopeAvailable(ctx) {
+		return fmt.Errorf("project scope is not available (no environment context)")
+	}
+
+	envManager, err := cm.lazyEnvManager.GetValue()
+	if err != nil {
+		return fmt.Errorf("no environment available for project-level consent: %w", err)
+	}
+
+	// Get the current environment - this will be the active environment
+	env, err := envManager.Get(ctx, "")
+	if err != nil {
+		return fmt.Errorf("failed to get current environment: %w", err)
+	}
+
+	var consentConfig ConsentConfig
+	if exists, err := env.Config.GetSection(ConfigKeyMCPConsent, &consentConfig); err != nil {
+		return fmt.Errorf("failed to get consent config from environment: %w", err)
+	} else if !exists {
+		consentConfig = ConsentConfig{}
+	}
+
+	// Add or update the rule
+	consentConfig.Rules = cm.addOrUpdateRule(consentConfig.Rules, rule)
+
+	if err := env.Config.Set(ConfigKeyMCPConsent, consentConfig); err != nil {
+		return fmt.Errorf("failed to set consent config in environment: %w", err)
+	}
+
+	return envManager.Save(ctx, env)
 }
 
 // addGlobalRule adds a rule to the global configuration
@@ -294,9 +340,32 @@ func (cm *consentManager) getSessionRules() []ConsentRule {
 }
 
 // getProjectRules returns project-level consent rules
-func (cm *consentManager) getProjectRules(ctx context.Context, projectPath string) ([]ConsentRule, error) {
-	// TODO: Implement project-level consent rules
-	return []ConsentRule{}, nil
+func (cm *consentManager) getProjectRules(ctx context.Context) ([]ConsentRule, error) {
+	if !cm.IsProjectScopeAvailable(ctx) {
+		return nil, fmt.Errorf("project scope is not available (no environment context)")
+	}
+
+	envManager, err := cm.lazyEnvManager.GetValue()
+	if err != nil {
+		// No environment available - return empty rules without error
+		return []ConsentRule{}, nil
+	}
+
+	// Get the current environment - this will be the active environment
+	env, err := envManager.Get(ctx, "")
+	if err != nil {
+		// Environment not found - return empty rules without error
+		return []ConsentRule{}, nil
+	}
+
+	var consentConfig ConsentConfig
+	if exists, err := env.Config.GetSection(ConfigKeyMCPConsent, &consentConfig); err != nil {
+		return nil, fmt.Errorf("failed to get consent config from environment: %w", err)
+	} else if !exists {
+		return []ConsentRule{}, nil
+	}
+
+	return consentConfig.Rules, nil
 }
 
 // getGlobalRules returns global consent rules
@@ -353,6 +422,34 @@ func (cm *consentManager) clearGlobalRules(ctx context.Context) error {
 	return cm.userConfigManager.Save(userConfig)
 }
 
+// clearProjectRules clears all project-level consent rules
+func (cm *consentManager) clearProjectRules(ctx context.Context) error {
+	if !cm.IsProjectScopeAvailable(ctx) {
+		return fmt.Errorf("project scope is not available (no environment context)")
+	}
+
+	envManager, err := cm.lazyEnvManager.GetValue()
+	if err != nil {
+		return fmt.Errorf("no environment available for project-level consent: %w", err)
+	}
+
+	// Get the current environment
+	env, err := envManager.Get(ctx, "")
+	if err != nil {
+		return fmt.Errorf("failed to get current environment: %w", err)
+	}
+
+	consentConfig := ConsentConfig{
+		Rules: []ConsentRule{},
+	}
+
+	if err := env.Config.Set(ConfigKeyMCPConsent, consentConfig); err != nil {
+		return fmt.Errorf("failed to clear consent config in environment: %w", err)
+	}
+
+	return envManager.Save(ctx, env)
+}
+
 // removeSessionRule removes a specific rule from session rules
 func (cm *consentManager) removeSessionRule(target Target) error {
 	cm.sessionMutex.Lock()
@@ -368,6 +465,47 @@ func (cm *consentManager) removeSessionRule(target Target) error {
 
 	cm.sessionRules = filtered
 	return nil
+}
+
+// removeProjectRule removes a specific rule from project configuration
+func (cm *consentManager) removeProjectRule(ctx context.Context, target Target) error {
+	if !cm.IsProjectScopeAvailable(ctx) {
+		return fmt.Errorf("project scope is not available (no environment context)")
+	}
+
+	envManager, err := cm.lazyEnvManager.GetValue()
+	if err != nil {
+		return fmt.Errorf("no environment available for project-level consent: %w", err)
+	}
+
+	// Get the current environment
+	env, err := envManager.Get(ctx, "")
+	if err != nil {
+		return fmt.Errorf("failed to get current environment: %w", err)
+	}
+
+	var consentConfig ConsentConfig
+	if exists, err := env.Config.GetSection(ConfigKeyMCPConsent, &consentConfig); err != nil {
+		return fmt.Errorf("failed to get consent config from environment: %w", err)
+	} else if !exists {
+		return nil // Nothing to remove
+	}
+
+	// Filter out the rule to remove
+	filtered := make([]ConsentRule, 0, len(consentConfig.Rules))
+	for _, rule := range consentConfig.Rules {
+		if rule.Target != target {
+			filtered = append(filtered, rule)
+		}
+	}
+
+	consentConfig.Rules = filtered
+
+	if err := env.Config.Set(ConfigKeyMCPConsent, consentConfig); err != nil {
+		return fmt.Errorf("failed to update consent config in environment: %w", err)
+	}
+
+	return envManager.Save(ctx, env)
 }
 
 // removeGlobalRule removes a specific rule from global configuration
@@ -405,8 +543,8 @@ func (cm *consentManager) removeGlobalRule(ctx context.Context, target Target) e
 func (cm *consentManager) checkUnifiedRules(ctx context.Context, request ConsentRequest) *ConsentDecision {
 	isReadOnlyTool := request.Annotations.ReadOnlyHint != nil && *request.Annotations.ReadOnlyHint
 
-	// Build the target for this request
-	requestTarget := NewToolTarget(request.ServerName, request.ToolID)
+	// Build the target for this request - ToolID is already in "server/tool" format
+	requestTarget := Target(request.ToolID)
 
 	// Check session rules first
 	cm.sessionMutex.RLock()
@@ -414,16 +552,16 @@ func (cm *consentManager) checkUnifiedRules(ctx context.Context, request Consent
 	cm.sessionMutex.RUnlock()
 
 	if decision := cm.findMatchingRule(
-		sessionRules, requestTarget, request.OperationContext, isReadOnlyTool,
+		sessionRules, requestTarget, request.Operation, isReadOnlyTool,
 	); decision != nil {
 		return decision
 	}
 
-	// Check project rules
-	if request.ProjectPath != "" {
-		if projectRules, err := cm.getProjectRules(ctx, request.ProjectPath); err == nil {
+	// Check project rules if environment is available
+	if cm.IsProjectScopeAvailable(ctx) {
+		if projectRules, err := cm.getProjectRules(ctx); err == nil {
 			if decision := cm.findMatchingRule(
-				projectRules, requestTarget, request.OperationContext, isReadOnlyTool,
+				projectRules, requestTarget, request.Operation, isReadOnlyTool,
 			); decision != nil {
 				return decision
 			}
@@ -433,7 +571,7 @@ func (cm *consentManager) checkUnifiedRules(ctx context.Context, request Consent
 	// Check global rules
 	if globalRules, err := cm.getGlobalRules(ctx); err == nil {
 		if decision := cm.findMatchingRule(
-			globalRules, requestTarget, request.OperationContext, isReadOnlyTool,
+			globalRules, requestTarget, request.Operation, isReadOnlyTool,
 		); decision != nil {
 			return decision
 		}
@@ -446,7 +584,7 @@ func (cm *consentManager) checkUnifiedRules(ctx context.Context, request Consent
 func (cm *consentManager) findMatchingRule(
 	rules []ConsentRule,
 	requestTarget Target,
-	operationContext OperationType,
+	operation OperationType,
 	isReadOnlyTool bool,
 ) *ConsentDecision {
 	// Process rules in precedence order: deny rules first, then allow rules
@@ -454,7 +592,7 @@ func (cm *consentManager) findMatchingRule(
 
 	// First pass: Check for deny rules
 	for _, rule := range rules {
-		if rule.Permission == PermissionDeny && rule.Operation == operationContext &&
+		if rule.Permission == PermissionDeny && rule.Operation == operation &&
 			cm.targetMatches(rule.Target, requestTarget) && cm.actionMatches(rule.Action, isReadOnlyTool) {
 			return &ConsentDecision{Allowed: false, Reason: "explicitly denied"}
 		}
@@ -463,7 +601,7 @@ func (cm *consentManager) findMatchingRule(
 	// Second pass: Check for allow/prompt rules in precedence order
 	// Global patterns first (* pattern)
 	for _, rule := range rules {
-		if rule.Permission != PermissionDeny && rule.Operation == operationContext &&
+		if rule.Permission != PermissionDeny && rule.Operation == operation &&
 			(rule.Target == "*" || rule.Target == "*/*") &&
 			cm.actionMatches(rule.Action, isReadOnlyTool) {
 			return cm.evaluateRule(rule)
@@ -473,7 +611,7 @@ func (cm *consentManager) findMatchingRule(
 	// Server patterns next (server/* pattern)
 	serverPattern := NewServerTarget(string(requestTarget[:strings.Index(string(requestTarget), "/")]))
 	for _, rule := range rules {
-		if rule.Permission != PermissionDeny && rule.Operation == operationContext &&
+		if rule.Permission != PermissionDeny && rule.Operation == operation &&
 			rule.Target == serverPattern &&
 			cm.actionMatches(rule.Action, isReadOnlyTool) {
 			return cm.evaluateRule(rule)
@@ -482,7 +620,7 @@ func (cm *consentManager) findMatchingRule(
 
 	// Specific tool patterns last (exact match)
 	for _, rule := range rules {
-		if rule.Permission != PermissionDeny && rule.Operation == operationContext &&
+		if rule.Permission != PermissionDeny && rule.Operation == operation &&
 			rule.Target == requestTarget &&
 			cm.actionMatches(rule.Action, isReadOnlyTool) {
 			return cm.evaluateRule(rule)

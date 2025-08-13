@@ -89,20 +89,72 @@ func (t Target) Validate() error {
 	return nil
 }
 
-// AllowedOperationContexts contains the valid operation contexts for command validation
-var AllowedOperationContexts = []string{
+// AllowedOperationTypes contains the valid operation contexts for command validation
+var AllowedOperationTypes = []string{
 	string(OperationTypeTool),
 	string(OperationTypeSampling),
 }
 
-// ParseOperationContext converts a string to OperationContext with validation
-func ParseOperationContext(contextStr string) (OperationType, error) {
-	for _, allowedContext := range AllowedOperationContexts {
+// ParseOperationType converts a string to OperationType with validation
+func ParseOperationType(contextStr string) (OperationType, error) {
+	for _, allowedContext := range AllowedOperationTypes {
 		if contextStr == allowedContext {
 			return OperationType(contextStr), nil
 		}
 	}
-	return "", fmt.Errorf("invalid operation context: %s (allowed: %v)", contextStr, AllowedOperationContexts)
+	return "", fmt.Errorf("invalid operation context: %s (allowed: %v)", contextStr, AllowedOperationTypes)
+}
+
+// AllowedScopes contains the valid scopes for command validation
+var AllowedScopes = []string{
+	string(ScopeGlobal),
+	string(ScopeProject),
+	string(ScopeSession),
+}
+
+// ParseScope converts a string to Scope with validation
+func ParseScope(scopeStr string) (Scope, error) {
+	for _, allowedScope := range AllowedScopes {
+		if scopeStr == allowedScope {
+			return Scope(scopeStr), nil
+		}
+	}
+	return "", fmt.Errorf("invalid scope: %s (allowed: %v)", scopeStr, AllowedScopes)
+}
+
+// AllowedActionTypes contains the valid action types for command validation
+var AllowedActionTypes = []string{
+	"readonly",
+	"all",
+}
+
+// ParseActionType converts a string to ActionType with validation
+func ParseActionType(actionStr string) (ActionType, error) {
+	switch actionStr {
+	case "readonly":
+		return ActionReadOnly, nil
+	case "all":
+		return ActionAny, nil
+	default:
+		return "", fmt.Errorf("invalid action type: %s (allowed: %v)", actionStr, AllowedActionTypes)
+	}
+}
+
+// AllowedPermissions contains the valid permissions for command validation
+var AllowedPermissions = []string{
+	string(PermissionAllow),
+	string(PermissionDeny),
+	string(PermissionPrompt),
+}
+
+// ParsePermission converts a string to Permission with validation
+func ParsePermission(permissionStr string) (Permission, error) {
+	for _, allowedPermission := range AllowedPermissions {
+		if permissionStr == allowedPermission {
+			return Permission(permissionStr), nil
+		}
+	}
+	return "", fmt.Errorf("invalid permission: %s (allowed: %v)", permissionStr, AllowedPermissions)
 }
 
 // ConsentRule represents a single consent rule entry
@@ -180,13 +232,11 @@ type ConsentConfig struct {
 
 // ConsentRequest represents a request to check consent for a tool
 type ConsentRequest struct {
-	ToolID           string
-	ServerName       string
-	OperationContext OperationType // Type of consent being requested (tool, sampling, etc.)
-	Parameters       map[string]interface{}
-	SessionID        string
-	ProjectPath      string
-	Annotations      mcp.ToolAnnotation
+	ToolID      string
+	ServerName  string
+	Operation   OperationType // Type of consent being requested (tool, sampling, etc.)
+	Parameters  map[string]interface{}
+	Annotations mcp.ToolAnnotation
 }
 
 // ConsentDecision represents the result of a consent check
@@ -200,15 +250,18 @@ type ConsentDecision struct {
 type ConsentManager interface {
 	CheckConsent(ctx context.Context, request ConsentRequest) (*ConsentDecision, error)
 	GrantConsent(ctx context.Context, rule ConsentRule, scope Scope) error
-	ListConsents(ctx context.Context, scope Scope) ([]ConsentRule, error)
-	ListConsentsByOperationContext(
+	ListConsentRules(ctx context.Context, scope Scope) ([]ConsentRule, error)
+	ListConsentsByOperationType(
 		ctx context.Context,
 		scope Scope,
-		operationContext OperationType,
+		operation OperationType,
 	) ([]ConsentRule, error)
 	ClearConsents(ctx context.Context, scope Scope) error
-	ClearConsentsByOperationContext(ctx context.Context, scope Scope, operationContext OperationType) error
+	ClearConsentsByOperationType(ctx context.Context, scope Scope, operation OperationType) error
 	ClearConsentByTarget(ctx context.Context, target Target, scope Scope) error
+
+	// Environment context methods
+	IsProjectScopeAvailable(ctx context.Context) bool
 
 	// Tool wrapping methods
 	WrapTool(tool common.AnnotatedTool) common.AnnotatedTool

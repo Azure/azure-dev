@@ -137,7 +137,8 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		infraRoot = filepath.Join(projectConfig.Path, infraRoot)
 	}
 
-	// if infra files exist, short-circuit and return immediately for performance purposes
+	// if infra files exist, short-circuit and return immediately for performance purposes --
+	// dotNetImporter check can take awhile
 	if moduleExists, err := pathHasModule(infraRoot, projectConfig.Infra.Module); err == nil && moduleExists {
 		log.Printf("using infrastructure from %s directory", infraRoot)
 		return &Infra{

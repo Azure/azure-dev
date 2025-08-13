@@ -1,9 +1,10 @@
 # Release History
 
-## 1.19.0 (2025-08-14)
+## 1.18.2 (2025-08-14)
 
 ### Bugs Fixed
 
+- [[5570]](https://github.com/Azure/azure-dev/pull/5570) Update hooks engine to automatically fall back to PowerShell 5 when PowerShell 7 is unavailable.
 - [[5445]](https://github.com/Azure/azure-dev/pull/5445) Prevent package deletion when using `--from-package` flag with `azd deploy`.
 - [[5531]](https://github.com/Azure/azure-dev/pull/5531) Fix extension installation failures on Linux.
 - [[5385]](https://github.com/Azure/azure-dev/pull/5385) Add error suggestion message when `package` fails due to containerd.

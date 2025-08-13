@@ -101,7 +101,7 @@ func (cm *consentManager) CheckConsent(ctx context.Context, request ConsentReque
 }
 
 // GrantConsent grants consent for a tool
-func (cm *consentManager) GrantConsent(ctx context.Context, rule ConsentRule, scope Scope) error {
+func (cm *consentManager) GrantConsent(ctx context.Context, rule ConsentRule) error {
 	rule.GrantedAt = time.Now()
 
 	// Validate the rule
@@ -109,7 +109,7 @@ func (cm *consentManager) GrantConsent(ctx context.Context, rule ConsentRule, sc
 		return fmt.Errorf("invalid consent rule: %w", err)
 	}
 
-	switch scope {
+	switch rule.Scope {
 	case ScopeSession:
 		return cm.addSessionRule(rule)
 	case ScopeProject:
@@ -117,66 +117,55 @@ func (cm *consentManager) GrantConsent(ctx context.Context, rule ConsentRule, sc
 	case ScopeGlobal:
 		return cm.addGlobalRule(ctx, rule)
 	default:
-		return fmt.Errorf("unknown consent scope: %s", scope)
+		return fmt.Errorf("unknown consent scope: %s", rule.Scope)
 	}
 }
 
-// ListConsentRules lists consent rules for a given scope
-func (cm *consentManager) ListConsentRules(ctx context.Context, scope Scope) ([]ConsentRule, error) {
-	switch scope {
-	case ScopeSession:
-		return cm.getSessionRules(), nil
-	case ScopeProject:
-		return cm.getProjectRules(ctx)
-	case ScopeGlobal:
-		return cm.getGlobalRules(ctx)
-	default:
-		return nil, fmt.Errorf("unknown consent scope: %s", scope)
-	}
-}
-
-// ClearConsents clears all consent rules for a given scope
-func (cm *consentManager) ClearConsents(ctx context.Context, scope Scope) error {
-	switch scope {
-	case ScopeSession:
-		return cm.clearSessionRules()
-	case ScopeProject:
-		return cm.clearProjectRules(ctx)
-	case ScopeGlobal:
-		return cm.clearGlobalRules(ctx)
-	default:
-		return fmt.Errorf("unknown consent scope: %s", scope)
-	}
-}
-
-// ClearConsentByTarget clears consent for a specific target
-func (cm *consentManager) ClearConsentByTarget(ctx context.Context, target Target, scope Scope) error {
-	switch scope {
-	case ScopeSession:
-		return cm.removeSessionRule(target)
-	case ScopeProject:
-		return cm.removeProjectRule(ctx, target)
-	case ScopeGlobal:
-		return cm.removeGlobalRule(ctx, target)
-	default:
-		return fmt.Errorf("unknown consent scope: %s", scope)
-	}
-}
-
-// ListConsentsByOperationType lists consent rules filtered by operation context for a given scope
-func (cm *consentManager) ListConsentsByOperationType(
-	ctx context.Context,
-	scope Scope,
-	operation OperationType,
-) ([]ConsentRule, error) {
-	allRules, err := cm.ListConsentRules(ctx, scope)
-	if err != nil {
-		return nil, err
+// ListConsentRules lists consent rules across all scopes with optional filtering
+func (cm *consentManager) ListConsentRules(ctx context.Context, options ...FilterOption) ([]ConsentRule, error) {
+	// Build filter options
+	var opts FilterOptions
+	for _, option := range options {
+		option(&opts)
 	}
 
+	// Always query across all scopes
+	allRules := make([]ConsentRule, 0)
+
+	// Get session rules
+	sessionRules := cm.getSessionRules()
+	for _, rule := range sessionRules {
+		rule.Scope = ScopeSession // Ensure scope is set
+		allRules = append(allRules, rule)
+	}
+
+	// Get project rules if available
+	if cm.IsProjectScopeAvailable(ctx) {
+		if projectRules, err := cm.getProjectRules(ctx); err == nil {
+			for _, rule := range projectRules {
+				rule.Scope = ScopeProject // Ensure scope is set
+				allRules = append(allRules, rule)
+			}
+		}
+	}
+
+	// Get global rules
+	if globalRules, err := cm.getGlobalRules(ctx); err == nil {
+		for _, rule := range globalRules {
+			rule.Scope = ScopeGlobal // Ensure scope is set
+			allRules = append(allRules, rule)
+		}
+	}
+
+	// Apply filters if any options are provided
+	if len(options) == 0 {
+		return allRules, nil
+	}
+
+	// Apply all filters
 	filteredRules := make([]ConsentRule, 0)
 	for _, rule := range allRules {
-		if rule.Operation == operation {
+		if cm.ruleMatchesFilters(rule, opts) {
 			filteredRules = append(filteredRules, rule)
 		}
 	}
@@ -184,20 +173,68 @@ func (cm *consentManager) ListConsentsByOperationType(
 	return filteredRules, nil
 }
 
-// ClearConsentsByOperationType clears all consent rules of a specific operation context for a given scope
-func (cm *consentManager) ClearConsentsByOperationType(
-	ctx context.Context,
-	scope Scope,
-	operation OperationType,
-) error {
-	rules, err := cm.ListConsentsByOperationType(ctx, scope, operation)
-	if err != nil {
-		return fmt.Errorf("failed to list consent rules: %w", err)
+// ruleMatchesFilters checks if a rule matches the given filter options
+func (cm *consentManager) ruleMatchesFilters(rule ConsentRule, opts FilterOptions) bool {
+	// Check scope filter
+	if opts.Scope != nil && rule.Scope != *opts.Scope {
+		return false
 	}
 
-	for _, rule := range rules {
-		if err := cm.ClearConsentByTarget(ctx, rule.Target, scope); err != nil {
-			return fmt.Errorf("failed to clear consent for target %s: %w", rule.Target, err)
+	// Check operation filter
+	if opts.Operation != nil && rule.Operation != *opts.Operation {
+		return false
+	}
+
+	// Check target filter
+	if opts.Target != nil && rule.Target != *opts.Target {
+		return false
+	}
+
+	// Check action filter
+	if opts.Action != nil && rule.Action != *opts.Action {
+		return false
+	}
+
+	// Check permission filter
+	if opts.Permission != nil && rule.Permission != *opts.Permission {
+		return false
+	}
+
+	return true
+}
+
+// ClearConsentRules clears consent rules matching the specified filter options
+func (cm *consentManager) ClearConsentRules(ctx context.Context, options ...FilterOption) error {
+	// First, get all rules that match the filter criteria
+	rulesToClear, err := cm.ListConsentRules(ctx, options...)
+	if err != nil {
+		return fmt.Errorf("failed to list consent rules for clearing: %w", err)
+	}
+
+	// Group rules by scope for efficient clearing
+	rulesByScope := make(map[Scope][]ConsentRule)
+	for _, rule := range rulesToClear {
+		rulesByScope[rule.Scope] = append(rulesByScope[rule.Scope], rule)
+	}
+
+	// Clear rules by scope
+	for scope, rules := range rulesByScope {
+		for _, rule := range rules {
+			var err error
+			switch scope {
+			case ScopeSession:
+				err = cm.removeSessionRule(rule.Target)
+			case ScopeProject:
+				err = cm.removeProjectRule(ctx, rule.Target)
+			case ScopeGlobal:
+				err = cm.removeGlobalRule(ctx, rule.Target)
+			default:
+				err = fmt.Errorf("unknown consent scope: %s", scope)
+			}
+
+			if err != nil {
+				return fmt.Errorf("failed to clear consent for target %s in scope %s: %w", rule.Target, scope, err)
+			}
 		}
 	}
 
@@ -393,61 +430,6 @@ func (cm *consentManager) getGlobalConsentConfig(ctx context.Context) (*ConsentC
 	}
 
 	return &consentConfig, nil
-}
-
-// clearSessionRules clears all rules for this session
-func (cm *consentManager) clearSessionRules() error {
-	cm.sessionMutex.Lock()
-	defer cm.sessionMutex.Unlock()
-
-	cm.sessionRules = make([]ConsentRule, 0)
-	return nil
-}
-
-// clearGlobalRules clears all global consent rules
-func (cm *consentManager) clearGlobalRules(ctx context.Context) error {
-	userConfig, err := cm.userConfigManager.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load user config: %w", err)
-	}
-
-	consentConfig := ConsentConfig{
-		Rules: []ConsentRule{},
-	}
-
-	if err := userConfig.Set(ConfigKeyMCPConsent, consentConfig); err != nil {
-		return fmt.Errorf("failed to clear consent config: %w", err)
-	}
-
-	return cm.userConfigManager.Save(userConfig)
-}
-
-// clearProjectRules clears all project-level consent rules
-func (cm *consentManager) clearProjectRules(ctx context.Context) error {
-	if !cm.IsProjectScopeAvailable(ctx) {
-		return fmt.Errorf("project scope is not available (no environment context)")
-	}
-
-	envManager, err := cm.lazyEnvManager.GetValue()
-	if err != nil {
-		return fmt.Errorf("no environment available for project-level consent: %w", err)
-	}
-
-	// Get the current environment
-	env, err := envManager.Get(ctx, "")
-	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
-	}
-
-	consentConfig := ConsentConfig{
-		Rules: []ConsentRule{},
-	}
-
-	if err := env.Config.Set(ConfigKeyMCPConsent, consentConfig); err != nil {
-		return fmt.Errorf("failed to clear consent config in environment: %w", err)
-	}
-
-	return envManager.Save(ctx, env)
 }
 
 // removeSessionRule removes a specific rule from session rules

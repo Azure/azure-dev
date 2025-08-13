@@ -271,7 +271,6 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 	operation OperationType,
 ) error {
 	var rule ConsentRule
-	var scope Scope
 
 	// Parse server and tool from toolID
 	parts := strings.Split(toolID, "/")
@@ -290,7 +289,6 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 			Operation:  operation,
 			Permission: PermissionAllow,
 		}
-		scope = ScopeSession
 	case "session":
 		rule = ConsentRule{
 			Scope:      ScopeSession,
@@ -299,7 +297,6 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 			Operation:  operation,
 			Permission: PermissionAllow,
 		}
-		scope = ScopeSession
 	case "project":
 		rule = ConsentRule{
 			Scope:      ScopeProject,
@@ -308,7 +305,6 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 			Operation:  operation,
 			Permission: PermissionAllow,
 		}
-		scope = ScopeProject
 	case "always":
 		rule = ConsentRule{
 			Scope:      ScopeGlobal,
@@ -317,7 +313,6 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 			Operation:  operation,
 			Permission: PermissionAllow,
 		}
-		scope = ScopeGlobal
 	case "server":
 		// Grant trust to entire server
 		rule = ConsentRule{
@@ -327,7 +322,6 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 			Operation:  operation,
 			Permission: PermissionAllow,
 		}
-		scope = ScopeGlobal
 	case "global":
 		rule = ConsentRule{
 			Scope:      ScopeGlobal,
@@ -336,7 +330,6 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 			Operation:  operation,
 			Permission: PermissionAllow,
 		}
-		scope = ScopeGlobal
 	case "readonly_server":
 		// Grant trust to readonly tools from this server (only for tool context)
 		if operation != OperationTypeTool {
@@ -349,7 +342,6 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 			Operation:  operation,
 			Permission: PermissionAllow,
 		}
-		scope = ScopeGlobal
 	case "readonly_global":
 		// Grant trust to all readonly tools globally (only for tool context)
 		if operation != OperationTypeTool {
@@ -362,12 +354,11 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 			Operation:  operation,
 			Permission: PermissionAllow,
 		}
-		scope = ScopeGlobal
 	default:
 		return fmt.Errorf("unknown consent choice: %s", choice)
 	}
 
-	return cc.consentMgr.GrantConsent(ctx, rule, scope)
+	return cc.consentMgr.GrantConsent(ctx, rule)
 }
 
 // PromptAndGrantSamplingConsent shows sampling consent prompt and grants permission based on user choice

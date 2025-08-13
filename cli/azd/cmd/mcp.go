@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -15,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -98,9 +100,6 @@ levels and scopes for the rules.
 Examples:
   # Grant always permission to all tools globally
   azd mcp consent grant --global --permission always
-
-  # Grant session permission to a specific server
-  azd mcp consent grant --server my-server --permission session
 
   # Grant project permission to a specific tool with read-only scope
   azd mcp consent grant --server my-server --tool my-tool --permission project --scope read-only`,
@@ -191,10 +190,12 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 // Flags for MCP consent list command
 type mcpConsentListFlags struct {
-	global    *internal.GlobalCommandOptions
-	scope     string
-	target    string
-	operation string
+	global     *internal.GlobalCommandOptions
+	scope      string
+	target     string
+	operation  string
+	action     string
+	permission string
 }
 
 func newMcpConsentListFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *mcpConsentListFlags {
@@ -205,9 +206,16 @@ func newMcpConsentListFlags(cmd *cobra.Command, global *internal.GlobalCommandOp
 
 func (f *mcpConsentListFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	f.global = global
-	local.StringVar(&f.scope, "scope", "global", "Consent scope (global, project)")
+	local.StringVar(
+		&f.scope,
+		"scope",
+		"",
+		"Consent scope to filter by (global, project). If not specified, lists rules from all scopes.",
+	)
 	local.StringVar(&f.target, "target", "", "Specific target to operate on (server/tool format)")
 	local.StringVar(&f.operation, "operation", "", "Operation to filter by (tool, sampling)")
+	local.StringVar(&f.action, "action", "", "Action type to filter by (readonly, any)")
+	local.StringVar(&f.permission, "permission", "", "Permission to filter by (allow, deny, prompt)")
 }
 
 // Flags for MCP consent grant command
@@ -219,7 +227,7 @@ type mcpConsentGrantFlags struct {
 	action     string
 	operation  string
 	permission string
-	ruleScope  string
+	scope      string
 }
 
 func newMcpConsentGrantFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *mcpConsentGrantFlags {
@@ -236,15 +244,17 @@ func (f *mcpConsentGrantFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 	local.StringVar(&f.action, "action", "all", "Action type: 'all' or 'readonly'")
 	local.StringVar(&f.operation, "operation", "tool", "Operation type: 'tool' or 'sampling'")
 	local.StringVar(&f.permission, "permission", "allow", "Permission: 'allow', 'deny', or 'prompt'")
-	local.StringVar(&f.ruleScope, "scope", "global", "Rule scope: 'global', or 'project'")
+	local.StringVar(&f.scope, "scope", "global", "Rule scope: 'global', or 'project'")
 }
 
 // Flags for MCP consent clear command
 type mcpConsentClearFlags struct {
-	global    *internal.GlobalCommandOptions
-	scope     string
-	target    string
-	operation string
+	global     *internal.GlobalCommandOptions
+	scope      string
+	target     string
+	operation  string
+	action     string
+	permission string
 }
 
 func newMcpConsentClearFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *mcpConsentClearFlags {
@@ -255,9 +265,16 @@ func newMcpConsentClearFlags(cmd *cobra.Command, global *internal.GlobalCommandO
 
 func (f *mcpConsentClearFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	f.global = global
-	local.StringVar(&f.scope, "scope", "global", "Consent scope (global, project)")
+	local.StringVar(
+		&f.scope,
+		"scope",
+		"",
+		"Consent scope to filter by (global, project). If not specified, clears rules from all scopes.",
+	)
 	local.StringVar(&f.target, "target", "", "Specific target to operate on (server/tool format)")
 	local.StringVar(&f.operation, "operation", "", "Operation to filter by (tool, sampling)")
+	local.StringVar(&f.action, "action", "", "Action type to filter by (readonly, any)")
+	local.StringVar(&f.permission, "permission", "", "Permission to filter by (allow, deny, prompt)")
 }
 
 // Action for MCP consent list command
@@ -289,34 +306,71 @@ func newMcpConsentListAction(
 }
 
 func (a *mcpConsentListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	scope, err := consent.ParseScope(a.flags.scope)
-	if err != nil {
-		return nil, err
+	// Build filter options based on provided flags
+	var filterOptions []consent.FilterOption
+
+	// Add scope filter if provided
+	if a.flags.scope != "" {
+		scope, err := consent.ParseScope(a.flags.scope)
+		if err != nil {
+			return nil, err
+		}
+		filterOptions = append(filterOptions, consent.WithScope(scope))
 	}
 
-	var rules []consent.ConsentRule
-
-	// Use operation context-filtered method if context is specified
+	// Add operation filter if provided
 	if a.flags.operation != "" {
 		operation, parseErr := consent.ParseOperationType(a.flags.operation)
 		if parseErr != nil {
 			return nil, parseErr
 		}
-		rules, err = a.consentManager.ListConsentsByOperationType(ctx, scope, operation)
-	} else {
-		rules, err = a.consentManager.ListConsentRules(ctx, scope)
+		filterOptions = append(filterOptions, consent.WithOperation(operation))
 	}
 
+	// Add target filter if provided
+	if a.flags.target != "" {
+		target := consent.Target(a.flags.target)
+		filterOptions = append(filterOptions, consent.WithTarget(target))
+	}
+
+	// Add action filter if provided
+	if a.flags.action != "" {
+		action, parseErr := consent.ParseActionType(a.flags.action)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		filterOptions = append(filterOptions, consent.WithAction(action))
+	}
+
+	// Add permission filter if provided
+	if a.flags.permission != "" {
+		permission, parseErr := consent.ParsePermission(a.flags.permission)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		filterOptions = append(filterOptions, consent.WithPermission(permission))
+	}
+
+	// Get rules with filters
+	rules, err := a.consentManager.ListConsentRules(ctx, filterOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list consent rules: %w", err)
 	}
 
 	if len(rules) == 0 {
-		var typeInfo string
-		if a.flags.operation != "" {
-			typeInfo = fmt.Sprintf(" of context '%s'", a.flags.operation)
+		filterDesc := formatConsentDescription(
+			a.flags.scope,
+			a.flags.action,
+			a.flags.operation,
+			a.flags.target,
+			a.flags.permission,
+		)
+
+		if filterDesc != "" {
+			fmt.Fprintf(a.writer, "No consent rules found matching filters: %s.\n", filterDesc)
+		} else {
+			fmt.Fprintf(a.writer, "No consent rules found.\n")
 		}
-		fmt.Fprintf(a.writer, "No consent rules found%s.\n", typeInfo)
 		return nil, nil
 	}
 
@@ -408,74 +462,105 @@ func newMcpConsentClearAction(
 
 func (a *mcpConsentClearAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Command heading
-	fmt.Fprintf(a.console.Handles().Stdout, "Clearing MCP consent rules...\n\n")
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title:     "Clear MCP consent rules (azd mcp consent clear)",
+		TitleNote: "Removes consent rules for MCP tools and servers",
+	})
 
-	scope, err := consent.ParseScope(a.flags.scope)
-	if err != nil {
-		return nil, err
+	a.console.Message(ctx, "")
+
+	// Build filter options based on provided flags
+	var filterOptions []consent.FilterOption
+
+	// Add scope filter if provided
+	if a.flags.scope != "" {
+		scope, err := consent.ParseScope(a.flags.scope)
+		if err != nil {
+			return nil, err
+		}
+		filterOptions = append(filterOptions, consent.WithScope(scope))
 	}
 
+	// Add operation filter if provided
+	if a.flags.operation != "" {
+		operation, parseErr := consent.ParseOperationType(a.flags.operation)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		filterOptions = append(filterOptions, consent.WithOperation(operation))
+	}
+
+	// Add target filter if provided
 	if a.flags.target != "" {
-		// Clear specific target
 		target := consent.Target(a.flags.target)
-		err = a.consentManager.ClearConsentByTarget(ctx, target, scope)
-		if err == nil {
-			fmt.Fprintf(a.console.Handles().Stdout, "Cleared consent for target: %s\n", a.flags.target)
-		}
-	} else {
-		// Get confirmation message based on context filter
-		confirmMessage := fmt.Sprintf("Are you sure you want to clear all consent rules for scope '%s'?", a.flags.scope)
-		if a.flags.operation != "" {
-			confirmMessage = fmt.Sprintf(
-				"Are you sure you want to clear all %s consent rules for scope '%s'?",
-				a.flags.operation,
-				a.flags.scope,
-			)
-		}
-
-		// Clear all rules for scope (with optional context filtering)
-		confirmed, confirmErr := a.console.Confirm(ctx, input.ConsoleOptions{
-			Message: confirmMessage,
-		})
-		if confirmErr != nil {
-			return nil, confirmErr
-		}
-
-		if !confirmed {
-			fmt.Fprintf(a.console.Handles().Stdout, "Operation cancelled.\n")
-			return nil, nil
-		}
-
-		if a.flags.operation != "" {
-			// Context-specific clearing using the new consent manager method
-			operation, parseErr := consent.ParseOperationType(a.flags.operation)
-			if parseErr != nil {
-				return nil, parseErr
-			}
-
-			err = a.consentManager.ClearConsentsByOperationType(ctx, scope, operation)
-			if err == nil {
-				fmt.Fprintf(
-					a.console.Handles().Stdout,
-					"Cleared all %s consent rules for scope: %s\n",
-					a.flags.operation,
-					a.flags.scope,
-				)
-			}
-		} else {
-			// Clear all rules for scope
-			err = a.consentManager.ClearConsents(ctx, scope)
-			if err == nil {
-				fmt.Fprintf(a.console.Handles().Stdout, "Cleared all consent rules for scope: %s\n", a.flags.scope)
-			}
-		}
+		filterOptions = append(filterOptions, consent.WithTarget(target))
 	}
 
+	// Add action filter if provided
+	if a.flags.action != "" {
+		action, parseErr := consent.ParseActionType(a.flags.action)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		filterOptions = append(filterOptions, consent.WithAction(action))
+	}
+
+	// Add permission filter if provided
+	if a.flags.permission != "" {
+		permission, parseErr := consent.ParsePermission(a.flags.permission)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		filterOptions = append(filterOptions, consent.WithPermission(permission))
+	}
+
+	// Build confirmation message based on filters
+	filterDesc := formatConsentDescription(
+		a.flags.scope,
+		a.flags.action,
+		a.flags.operation,
+		a.flags.target,
+		a.flags.permission,
+	)
+
+	var confirmMessage string
+	if filterDesc != "" {
+		confirmMessage = fmt.Sprintf("Are you sure you want to clear consent rules for %s?", filterDesc)
+	} else {
+		confirmMessage = "Are you sure you want to clear all consent rules?"
+	}
+
+	// Get confirmation
+	confirmed, confirmErr := a.console.Confirm(ctx, input.ConsoleOptions{
+		Message: confirmMessage,
+	})
+	if confirmErr != nil {
+		return nil, confirmErr
+	}
+
+	if !confirmed {
+		fmt.Fprintf(a.console.Handles().Stdout, "Operation cancelled.\n")
+		return nil, nil
+	}
+
+	// Clear rules with filters
+	err := a.consentManager.ClearConsentRules(ctx, filterOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to clear consent rules: %w", err)
 	}
 
-	return nil, nil
+	// Success message
+	if filterDesc != "" {
+		fmt.Fprintf(a.console.Handles().Stdout, "Cleared consent rules for %s.\n", filterDesc)
+	} else {
+		fmt.Fprintf(a.console.Handles().Stdout, "Cleared all consent rules.\n")
+	}
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: "Consent rules cleared successfully",
+		},
+	}, nil
 }
 
 // Action for MCP consent grant command
@@ -502,7 +587,12 @@ func newMcpConsentGrantAction(
 
 func (a *mcpConsentGrantAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Command heading
-	fmt.Fprintf(a.console.Handles().Stdout, "Granting MCP consent rules...\n\n")
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title:     "Grant MCP consent rules (azd mcp consent grant)",
+		TitleNote: "Creates consent rules that allow MCP tools to execute without prompting",
+	})
+
+	a.console.Message(ctx, "")
 
 	// Validate flag combinations
 	if a.flags.tool != "" && a.flags.server == "" {
@@ -536,7 +626,7 @@ func (a *mcpConsentGrantAction) Run(ctx context.Context) (*actions.ActionResult,
 	}
 
 	// Validate rule scope
-	ruleScope, err := consent.ParseScope(a.flags.ruleScope)
+	ruleScope, err := consent.ParseScope(a.flags.scope)
 	if err != nil {
 		return nil, err
 	}
@@ -548,45 +638,13 @@ func (a *mcpConsentGrantAction) Run(ctx context.Context) (*actions.ActionResult,
 
 	// Build target
 	var target consent.Target
-	var description string
 
 	if a.flags.globalFlag {
 		target = consent.NewGlobalTarget()
-		if operation == consent.OperationTypeSampling {
-			if actionType == consent.ActionReadOnly {
-				description = fmt.Sprintf("all read-only sampling globally (%s)", permission)
-			} else {
-				description = fmt.Sprintf("all sampling globally (%s)", permission)
-			}
-		} else {
-			if actionType == consent.ActionReadOnly {
-				description = fmt.Sprintf("all read-only tools globally (%s)", permission)
-			} else {
-				description = fmt.Sprintf("all tools globally (%s)", permission)
-			}
-		}
 	} else if a.flags.tool != "" {
 		target = consent.NewToolTarget(a.flags.server, a.flags.tool)
-		if actionType == consent.ActionReadOnly {
-			description = fmt.Sprintf("read-only tool %s from server %s (%s)", a.flags.tool, a.flags.server, permission)
-		} else {
-			description = fmt.Sprintf("tool %s from server %s (%s)", a.flags.tool, a.flags.server, permission)
-		}
 	} else {
 		target = consent.NewServerTarget(a.flags.server)
-		if operation == consent.OperationTypeSampling {
-			if actionType == consent.ActionReadOnly {
-				description = fmt.Sprintf("read-only sampling from server %s (%s)", a.flags.server, permission)
-			} else {
-				description = fmt.Sprintf("all sampling from server %s (%s)", a.flags.server, permission)
-			}
-		} else {
-			if actionType == consent.ActionReadOnly {
-				description = fmt.Sprintf("read-only tools from server %s (%s)", a.flags.server, permission)
-			} else {
-				description = fmt.Sprintf("all tools from server %s (%s)", a.flags.server, permission)
-			}
-		}
 	}
 
 	rule := consent.ConsentRule{
@@ -597,11 +655,46 @@ func (a *mcpConsentGrantAction) Run(ctx context.Context) (*actions.ActionResult,
 		Permission: permission,
 	}
 
-	if err := a.consentManager.GrantConsent(ctx, rule, ruleScope); err != nil {
+	// Generate description using helper function
+	description := formatConsentRuleDescription(rule)
+
+	if err := a.consentManager.GrantConsent(ctx, rule); err != nil {
 		return nil, fmt.Errorf("failed to grant consent: %w", err)
 	}
 
 	fmt.Fprintf(a.console.Handles().Stdout, "Granted rule for %s\n", description)
 
-	return nil, nil
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: "Consent rule granted successfully",
+		},
+	}, nil
+}
+
+// formatConsentDescription creates a simple description with whatever parts exist
+func formatConsentDescription(scope, action, operation, target, permission string) string {
+	var parts []string
+
+	if scope != "" {
+		parts = append(parts, fmt.Sprintf("Scope: %s", scope))
+	}
+	if target != "" {
+		parts = append(parts, fmt.Sprintf("Target: %s", target))
+	}
+	if operation != "" {
+		parts = append(parts, fmt.Sprintf("Context: %s", operation))
+	}
+	if action != "" {
+		parts = append(parts, fmt.Sprintf("Action: %s", action))
+	}
+	if permission != "" {
+		parts = append(parts, fmt.Sprintf("Permission: %s", permission))
+	}
+
+	return strings.Join(parts, ", ")
+}
+
+// Legacy wrapper for backward compatibility
+func formatConsentRuleDescription(rule consent.ConsentRule) string {
+	return formatConsentDescription(string(rule.Scope), string(rule.Action), string(rule.Operation), string(rule.Target), string(rule.Permission))
 }

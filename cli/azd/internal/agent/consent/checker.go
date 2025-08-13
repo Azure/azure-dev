@@ -6,6 +6,7 @@ package consent
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
@@ -39,11 +40,11 @@ func (cc *ConsentChecker) CheckToolConsent(
 
 	// Create consent request
 	consentRequest := ConsentRequest{
-		ToolID:      toolID,
-		ServerName:  cc.serverName,
-		Type:        ConsentRuleTypeTool, // This is a tool execution request
-		SessionID:   "",                  // Not needed since each manager represents one session
-		Annotations: annotations,
+		ToolID:           toolID,
+		ServerName:       cc.serverName,
+		OperationContext: OperationTypeTool, // This is a tool execution request
+		SessionID:        "",                // Not needed since each manager represents one session
+		Annotations:      annotations,
 	}
 
 	return cc.consentMgr.CheckConsent(ctx, consentRequest)
@@ -58,10 +59,10 @@ func (cc *ConsentChecker) CheckSamplingConsent(
 
 	// Create consent request for sampling
 	consentRequest := ConsentRequest{
-		ToolID:     toolID,
-		ServerName: cc.serverName,
-		Type:       ConsentRuleTypeSampling, // This is a sampling request
-		SessionID:  "",                      // Not needed since each manager represents one session
+		ToolID:           toolID,
+		ServerName:       cc.serverName,
+		OperationContext: OperationTypeSampling, // This is a sampling request
+		SessionID:        "",                    // Not needed since each manager represents one session
 	}
 
 	return cc.consentMgr.CheckConsent(ctx, consentRequest)
@@ -147,7 +148,7 @@ func (cc *ConsentChecker) PromptAndGrantConsent(
 	}
 
 	// Grant consent based on user choice
-	return cc.grantConsentFromChoice(ctx, toolID, choice, ConsentRuleTypeTool)
+	return cc.grantConsentFromChoice(ctx, toolID, choice, OperationTypeTool)
 }
 
 // promptForToolConsent shows an interactive consent prompt and returns the user's choice
@@ -188,7 +189,7 @@ func (cc *ConsentChecker) promptForToolConsent(
 	}
 
 	// Add server trust option if not already trusted
-	if !cc.isServerAlreadyTrusted(ctx, ConsentRuleTypeTool) {
+	if !cc.isServerAlreadyTrusted(ctx, OperationTypeTool) {
 		choices = append(choices, &ux.SelectChoice{
 			Value: "server",
 			Label: "Allow all tools from this server",
@@ -235,29 +236,29 @@ func (cc *ConsentChecker) promptForToolConsent(
 	return choices[*choiceIndex].Value, nil
 }
 
-// isServerAlreadyTrusted checks if the server is already trusted for the specified rule type
-func (cc *ConsentChecker) isServerAlreadyTrusted(ctx context.Context, ruleType ConsentRuleType) bool {
-	// Create a mock request to check if server has trust for the specified rule type
+// isServerAlreadyTrusted checks if the server is already trusted for the specified operation context
+func (cc *ConsentChecker) isServerAlreadyTrusted(ctx context.Context, operationContext OperationType) bool {
+	// Create a mock request to check if server has trust for the specified operation context
 	request := ConsentRequest{
-		ToolID:     fmt.Sprintf("%s/test-tool", cc.serverName),
-		ServerName: cc.serverName,
-		Type:       ruleType,
-		SessionID:  "",
+		ToolID:           fmt.Sprintf("%s/test-tool", cc.serverName),
+		ServerName:       cc.serverName,
+		OperationContext: operationContext,
+		SessionID:        "",
 	}
 
 	// For tool requests, add annotations to avoid readonly-only matches
-	if ruleType == ConsentRuleTypeTool {
+	if operationContext == OperationTypeTool {
 		request.Annotations = mcp.ToolAnnotation{} // No readonly hint
 	}
 
-	// Check if server has trust for this rule type
+	// Check if server has trust for this operation context
 	decision, err := cc.consentMgr.CheckConsent(ctx, request)
 	if err != nil {
 		return false
 	}
 
-	// Server is trusted if it's allowed and the reason indicates server-level trust
-	return decision.Allowed && (decision.Reason == "server trusted" || decision.Reason == "server_always")
+	// Server is trusted if it's allowed
+	return decision.Allowed
 }
 
 // grantConsentFromChoice processes the user's consent choice and saves the appropriate rule
@@ -265,79 +266,99 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 	ctx context.Context,
 	toolID string,
 	choice string,
-	ruleType ConsentRuleType,
+	operationContext OperationType,
 ) error {
 	var rule ConsentRule
-	var scope ConsentScope
+	var scope Scope
+
+	// Parse server and tool from toolID
+	parts := strings.Split(toolID, "/")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid toolID format: %s", toolID)
+	}
+	serverName := parts[0]
+	toolName := parts[1]
 
 	switch choice {
 	case "once":
 		rule = ConsentRule{
-			Type:       ruleType,
-			ToolID:     toolID,
-			Permission: ConsentOnce,
+			Scope:      ScopeSession,
+			Target:     NewToolTarget(serverName, toolName),
+			Action:     ActionAny,
+			Operation:  operationContext,
+			Permission: PermissionAllow,
 		}
 		scope = ScopeSession
 	case "session":
 		rule = ConsentRule{
-			Type:       ruleType,
-			ToolID:     toolID,
-			Permission: ConsentSession,
+			Scope:      ScopeSession,
+			Target:     NewToolTarget(serverName, toolName),
+			Action:     ActionAny,
+			Operation:  operationContext,
+			Permission: PermissionAllow,
 		}
 		scope = ScopeSession
 	case "project":
 		rule = ConsentRule{
-			Type:       ruleType,
-			ToolID:     toolID,
-			Permission: ConsentProject,
+			Scope:      ScopeProject,
+			Target:     NewToolTarget(serverName, toolName),
+			Action:     ActionAny,
+			Operation:  operationContext,
+			Permission: PermissionAllow,
 		}
 		scope = ScopeProject
 	case "always":
 		rule = ConsentRule{
-			Type:       ruleType,
-			ToolID:     toolID,
-			Permission: ConsentAlways,
+			Scope:      ScopeGlobal,
+			Target:     NewToolTarget(serverName, toolName),
+			Action:     ActionAny,
+			Operation:  operationContext,
+			Permission: PermissionAllow,
 		}
 		scope = ScopeGlobal
 	case "server":
 		// Grant trust to entire server
 		rule = ConsentRule{
-			Type:       ruleType,
-			ToolID:     fmt.Sprintf("%s/*", cc.serverName),
-			Permission: ConsentServerAlways,
-			RuleScope:  RuleScopeAll,
+			Scope:      ScopeGlobal,
+			Target:     NewServerTarget(serverName),
+			Action:     ActionAny,
+			Operation:  operationContext,
+			Permission: PermissionAllow,
 		}
 		scope = ScopeGlobal
 	case "global":
 		rule = ConsentRule{
-			Type:       ruleType,
-			ToolID:     "*",
-			Permission: ConsentAlways,
-			RuleScope:  RuleScopeAll,
+			Scope:      ScopeGlobal,
+			Target:     NewGlobalTarget(),
+			Action:     ActionAny,
+			Operation:  operationContext,
+			Permission: PermissionAllow,
 		}
 		scope = ScopeGlobal
 	case "readonly_server":
-		// Grant trust to readonly tools from this server (only for tool rules)
-		if ruleType != ConsentRuleTypeTool {
+		// Grant trust to readonly tools from this server (only for tool context)
+		if operationContext != OperationTypeTool {
 			return fmt.Errorf("readonly server option only available for tool consent")
 		}
 		rule = ConsentRule{
-			Type:       ruleType,
-			ToolID:     fmt.Sprintf("%s/*", cc.serverName),
-			Permission: ConsentAlways,
-			RuleScope:  RuleScopeReadOnly,
+			Scope:      ScopeGlobal,
+			Target:     NewServerTarget(serverName),
+			Action:     ActionReadOnly,
+			Operation:  operationContext,
+			Permission: PermissionAllow,
 		}
 		scope = ScopeGlobal
 	case "readonly_global":
-		// Grant trust to all readonly tools globally (only for tool rules)
-		if ruleType != ConsentRuleTypeTool {
+		// Grant trust to all readonly tools globally (only for tool context)
+		if operationContext != OperationTypeTool {
 			return fmt.Errorf("readonly global option only available for tool consent")
 		}
 		rule = ConsentRule{
-			Type:       ruleType,
-			ToolID:     "*",
-			Permission: ConsentAlways,
-			RuleScope:  RuleScopeReadOnly,
+			Scope:      ScopeGlobal,
+			Target:     NewGlobalTarget(),
+			Action:     ActionReadOnly,
+			Operation:  operationContext,
+			Permission: PermissionAllow,
 		}
 		scope = ScopeGlobal
 	default:
@@ -364,7 +385,7 @@ func (cc *ConsentChecker) PromptAndGrantSamplingConsent(
 	}
 
 	// Grant sampling consent based on user choice
-	return cc.grantConsentFromChoice(ctx, toolID, choice, ConsentRuleTypeSampling)
+	return cc.grantConsentFromChoice(ctx, toolID, choice, OperationTypeSampling)
 }
 
 // promptForSamplingConsent shows an interactive sampling consent prompt and returns the user's choice
@@ -405,7 +426,7 @@ func (cc *ConsentChecker) promptForSamplingConsent(
 	}
 
 	// Add server trust option if not already trusted for sampling
-	if !cc.isServerAlreadyTrusted(ctx, ConsentRuleTypeSampling) {
+	if !cc.isServerAlreadyTrusted(ctx, OperationTypeSampling) {
 		choices = append(choices, &ux.SelectChoice{
 			Value: "server",
 			Label: "Allow sampling for all tools from this server",

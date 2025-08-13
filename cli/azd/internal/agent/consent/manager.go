@@ -6,6 +6,7 @@ package consent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -93,12 +94,12 @@ func (cm *consentManager) CheckConsent(ctx context.Context, request ConsentReque
 }
 
 // GrantConsent grants consent for a tool
-func (cm *consentManager) GrantConsent(ctx context.Context, rule ConsentRule, scope ConsentScope) error {
+func (cm *consentManager) GrantConsent(ctx context.Context, rule ConsentRule, scope Scope) error {
 	rule.GrantedAt = time.Now()
 
-	// Set default RuleScope if not specified (backward compatibility)
-	if rule.RuleScope == "" {
-		rule.RuleScope = RuleScopeAll
+	// Validate the rule
+	if err := rule.Validate(); err != nil {
+		return fmt.Errorf("invalid consent rule: %w", err)
 	}
 
 	switch scope {
@@ -114,7 +115,7 @@ func (cm *consentManager) GrantConsent(ctx context.Context, rule ConsentRule, sc
 }
 
 // ListConsents lists consent rules for a given scope
-func (cm *consentManager) ListConsents(ctx context.Context, scope ConsentScope) ([]ConsentRule, error) {
+func (cm *consentManager) ListConsents(ctx context.Context, scope Scope) ([]ConsentRule, error) {
 	switch scope {
 	case ScopeSession:
 		return cm.getSessionRules(), nil
@@ -128,7 +129,7 @@ func (cm *consentManager) ListConsents(ctx context.Context, scope ConsentScope) 
 }
 
 // ClearConsents clears all consent rules for a given scope
-func (cm *consentManager) ClearConsents(ctx context.Context, scope ConsentScope) error {
+func (cm *consentManager) ClearConsents(ctx context.Context, scope Scope) error {
 	switch scope {
 	case ScopeSession:
 		return cm.clearSessionRules()
@@ -141,25 +142,25 @@ func (cm *consentManager) ClearConsents(ctx context.Context, scope ConsentScope)
 	}
 }
 
-// ClearConsentByToolID clears consent for a specific tool
-func (cm *consentManager) ClearConsentByToolID(ctx context.Context, toolID string, scope ConsentScope) error {
+// ClearConsentByTarget clears consent for a specific target
+func (cm *consentManager) ClearConsentByTarget(ctx context.Context, target Target, scope Scope) error {
 	switch scope {
 	case ScopeSession:
-		return cm.removeSessionRule(toolID)
+		return cm.removeSessionRule(target)
 	case ScopeProject:
 		return fmt.Errorf("project-level consent removal not yet implemented")
 	case ScopeGlobal:
-		return cm.removeGlobalRule(ctx, toolID)
+		return cm.removeGlobalRule(ctx, target)
 	default:
 		return fmt.Errorf("unknown consent scope: %s", scope)
 	}
 }
 
-// ListConsentsByType lists consent rules filtered by type for a given scope
-func (cm *consentManager) ListConsentsByType(
+// ListConsentsByOperationContext lists consent rules filtered by operation context for a given scope
+func (cm *consentManager) ListConsentsByOperationContext(
 	ctx context.Context,
-	scope ConsentScope,
-	ruleType ConsentRuleType,
+	scope Scope,
+	operationContext OperationType,
 ) ([]ConsentRule, error) {
 	allRules, err := cm.ListConsents(ctx, scope)
 	if err != nil {
@@ -168,7 +169,7 @@ func (cm *consentManager) ListConsentsByType(
 
 	filteredRules := make([]ConsentRule, 0)
 	for _, rule := range allRules {
-		if rule.Type == ruleType {
+		if rule.Operation == operationContext {
 			filteredRules = append(filteredRules, rule)
 		}
 	}
@@ -176,16 +177,20 @@ func (cm *consentManager) ListConsentsByType(
 	return filteredRules, nil
 }
 
-// ClearConsentsByType clears all consent rules of a specific type for a given scope
-func (cm *consentManager) ClearConsentsByType(ctx context.Context, scope ConsentScope, ruleType ConsentRuleType) error {
-	rules, err := cm.ListConsentsByType(ctx, scope, ruleType)
+// ClearConsentsByOperationContext clears all consent rules of a specific operation context for a given scope
+func (cm *consentManager) ClearConsentsByOperationContext(
+	ctx context.Context,
+	scope Scope,
+	operationContext OperationType,
+) error {
+	rules, err := cm.ListConsentsByOperationContext(ctx, scope, operationContext)
 	if err != nil {
 		return fmt.Errorf("failed to list consent rules: %w", err)
 	}
 
 	for _, rule := range rules {
-		if err := cm.ClearConsentByToolID(ctx, rule.ToolID, scope); err != nil {
-			return fmt.Errorf("failed to clear consent for tool %s: %w", rule.ToolID, err)
+		if err := cm.ClearConsentByTarget(ctx, rule.Target, scope); err != nil {
+			return fmt.Errorf("failed to clear consent for target %s: %w", rule.Target, err)
 		}
 	}
 
@@ -211,18 +216,14 @@ func (cm *consentManager) WrapTools(tools []common.AnnotatedTool) []common.Annot
 // evaluateRule evaluates a consent rule and returns a decision
 func (cm *consentManager) evaluateRule(rule ConsentRule) *ConsentDecision {
 	switch rule.Permission {
-	case ConsentDeny:
+	case PermissionDeny:
 		return &ConsentDecision{Allowed: false, Reason: "explicitly denied"}
-	case ConsentPrompt:
+	case PermissionPrompt:
 		return &ConsentDecision{Allowed: false, RequiresPrompt: true, Reason: "requires prompt"}
-	case ConsentOnce:
-		// For one-time consent, we allow it but mark it for removal
-		// The caller should handle removing this rule after use
-		return &ConsentDecision{Allowed: true, Reason: "one-time consent"}
-	case ConsentSession, ConsentProject, ConsentAlways, ConsentServerAlways:
-		return &ConsentDecision{Allowed: true, Reason: string(rule.Permission)}
+	case PermissionAllow:
+		return &ConsentDecision{Allowed: true, Reason: "allowed"}
 	default:
-		return &ConsentDecision{Allowed: false, RequiresPrompt: true, Reason: "unknown permission level"}
+		return &ConsentDecision{Allowed: false, RequiresPrompt: true, Reason: "unknown decision"}
 	}
 }
 
@@ -270,7 +271,8 @@ func (cm *consentManager) addGlobalRule(ctx context.Context, rule ConsentRule) e
 func (cm *consentManager) addOrUpdateRule(rules []ConsentRule, newRule ConsentRule) []ConsentRule {
 	// Check if rule already exists and update it
 	for i, rule := range rules {
-		if rule.ToolID == newRule.ToolID {
+		if rule.Target == newRule.Target && rule.Operation == newRule.Operation &&
+			rule.Action == newRule.Action {
 			rules[i] = newRule
 			return rules
 		}
@@ -352,14 +354,14 @@ func (cm *consentManager) clearGlobalRules(ctx context.Context) error {
 }
 
 // removeSessionRule removes a specific rule from session rules
-func (cm *consentManager) removeSessionRule(toolID string) error {
+func (cm *consentManager) removeSessionRule(target Target) error {
 	cm.sessionMutex.Lock()
 	defer cm.sessionMutex.Unlock()
 
 	// Filter out the rule to remove
 	filtered := make([]ConsentRule, 0, len(cm.sessionRules))
 	for _, rule := range cm.sessionRules {
-		if rule.ToolID != toolID {
+		if rule.Target != target {
 			filtered = append(filtered, rule)
 		}
 	}
@@ -368,22 +370,8 @@ func (cm *consentManager) removeSessionRule(toolID string) error {
 	return nil
 }
 
-// removeSessionRuleByIndex removes a rule by its index (for cleanup after one-time use)
-func (cm *consentManager) removeSessionRuleByIndex(index int) error {
-	cm.sessionMutex.Lock()
-	defer cm.sessionMutex.Unlock()
-
-	if index < 0 || index >= len(cm.sessionRules) {
-		return nil // Index out of bounds, nothing to remove
-	}
-
-	// Remove the rule at the specified index
-	cm.sessionRules = append(cm.sessionRules[:index], cm.sessionRules[index+1:]...)
-	return nil
-}
-
 // removeGlobalRule removes a specific rule from global configuration
-func (cm *consentManager) removeGlobalRule(ctx context.Context, toolID string) error {
+func (cm *consentManager) removeGlobalRule(ctx context.Context, target Target) error {
 	userConfig, err := cm.userConfigManager.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load user config: %w", err)
@@ -399,7 +387,7 @@ func (cm *consentManager) removeGlobalRule(ctx context.Context, toolID string) e
 	// Filter out the rule to remove
 	filtered := make([]ConsentRule, 0, len(consentConfig.Rules))
 	for _, rule := range consentConfig.Rules {
-		if rule.ToolID != toolID {
+		if rule.Target != target {
 			filtered = append(filtered, rule)
 		}
 	}
@@ -417,19 +405,26 @@ func (cm *consentManager) removeGlobalRule(ctx context.Context, toolID string) e
 func (cm *consentManager) checkUnifiedRules(ctx context.Context, request ConsentRequest) *ConsentDecision {
 	isReadOnlyTool := request.Annotations.ReadOnlyHint != nil && *request.Annotations.ReadOnlyHint
 
+	// Build the target for this request
+	requestTarget := NewToolTarget(request.ServerName, request.ToolID)
+
 	// Check session rules first
 	cm.sessionMutex.RLock()
 	sessionRules := cm.sessionRules
 	cm.sessionMutex.RUnlock()
 
-	if decision := cm.findMatchingUnifiedRule(sessionRules, request, isReadOnlyTool); decision != nil {
+	if decision := cm.findMatchingRule(
+		sessionRules, requestTarget, request.OperationContext, isReadOnlyTool,
+	); decision != nil {
 		return decision
 	}
 
 	// Check project rules
 	if request.ProjectPath != "" {
 		if projectRules, err := cm.getProjectRules(ctx, request.ProjectPath); err == nil {
-			if decision := cm.findMatchingUnifiedRule(projectRules, request, isReadOnlyTool); decision != nil {
+			if decision := cm.findMatchingRule(
+				projectRules, requestTarget, request.OperationContext, isReadOnlyTool,
+			); decision != nil {
 				return decision
 			}
 		}
@@ -437,7 +432,9 @@ func (cm *consentManager) checkUnifiedRules(ctx context.Context, request Consent
 
 	// Check global rules
 	if globalRules, err := cm.getGlobalRules(ctx); err == nil {
-		if decision := cm.findMatchingUnifiedRule(globalRules, request, isReadOnlyTool); decision != nil {
+		if decision := cm.findMatchingRule(
+			globalRules, requestTarget, request.OperationContext, isReadOnlyTool,
+		); decision != nil {
 			return decision
 		}
 	}
@@ -445,83 +442,87 @@ func (cm *consentManager) checkUnifiedRules(ctx context.Context, request Consent
 	return nil
 }
 
-// findMatchingUnifiedRule finds a matching rule using unified pattern and scope matching
-func (cm *consentManager) findMatchingUnifiedRule(
+// findMatchingRule finds a matching rule using target pattern matching
+func (cm *consentManager) findMatchingRule(
 	rules []ConsentRule,
-	request ConsentRequest,
+	requestTarget Target,
+	operationContext OperationType,
 	isReadOnlyTool bool,
 ) *ConsentDecision {
-	// Process rules in order: deny rules first, then allow rules
-	// This implements: Explicit deny > Global scope > Server scope > Tool scope precedence
+	// Process rules in precedence order: deny rules first, then allow rules
+	// Precedence: Explicit deny > Global scope > Server scope > Tool scope
 
 	// First pass: Check for deny rules
 	for _, rule := range rules {
-		if rule.Permission == ConsentDeny && rule.Type == request.Type && cm.ruleMatches(rule, request, isReadOnlyTool) {
+		if rule.Permission == PermissionDeny && rule.Operation == operationContext &&
+			cm.targetMatches(rule.Target, requestTarget) && cm.actionMatches(rule.Action, isReadOnlyTool) {
 			return &ConsentDecision{Allowed: false, Reason: "explicitly denied"}
 		}
 	}
 
-	// Second pass: Check for allow rules in precedence order
+	// Second pass: Check for allow/prompt rules in precedence order
 	// Global patterns first (* pattern)
-	for i, rule := range rules {
-		if rule.Permission != ConsentDeny && rule.Type == request.Type && rule.ToolID == "*" &&
-			cm.ruleMatches(rule, request, isReadOnlyTool) {
-			return cm.evaluateAllowRule(rule, request, i)
+	for _, rule := range rules {
+		if rule.Permission != PermissionDeny && rule.Operation == operationContext &&
+			(rule.Target == "*" || rule.Target == "*/*") &&
+			cm.actionMatches(rule.Action, isReadOnlyTool) {
+			return cm.evaluateRule(rule)
 		}
 	}
 
 	// Server patterns next (server/* pattern)
-	serverPattern := fmt.Sprintf("%s/*", request.ServerName)
-	for i, rule := range rules {
-		if rule.Permission != ConsentDeny && rule.Type == request.Type && rule.ToolID == serverPattern &&
-			cm.ruleMatches(rule, request, isReadOnlyTool) {
-			return cm.evaluateAllowRule(rule, request, i)
+	serverPattern := NewServerTarget(string(requestTarget[:strings.Index(string(requestTarget), "/")]))
+	for _, rule := range rules {
+		if rule.Permission != PermissionDeny && rule.Operation == operationContext &&
+			rule.Target == serverPattern &&
+			cm.actionMatches(rule.Action, isReadOnlyTool) {
+			return cm.evaluateRule(rule)
 		}
 	}
 
 	// Specific tool patterns last (exact match)
-	for i, rule := range rules {
-		if rule.Permission != ConsentDeny && rule.Type == request.Type && rule.ToolID == request.ToolID &&
-			cm.ruleMatches(rule, request, isReadOnlyTool) {
-			return cm.evaluateAllowRule(rule, request, i)
+	for _, rule := range rules {
+		if rule.Permission != PermissionDeny && rule.Operation == operationContext &&
+			rule.Target == requestTarget &&
+			cm.actionMatches(rule.Action, isReadOnlyTool) {
+			return cm.evaluateRule(rule)
 		}
 	}
 
 	return nil
 }
 
-// ruleMatches checks if a rule matches the request considering scope restrictions
-func (cm *consentManager) ruleMatches(rule ConsentRule, request ConsentRequest, isReadOnlyTool bool) bool {
-	// Default to "all" scope for backward compatibility
-	ruleScope := rule.RuleScope
-	if ruleScope == "" {
-		ruleScope = RuleScopeAll
+// targetMatches checks if a rule target matches the request target
+func (cm *consentManager) targetMatches(ruleTarget, requestTarget Target) bool {
+	ruleStr := string(ruleTarget)
+	requestStr := string(requestTarget)
+
+	// Global wildcards
+	if ruleStr == "*" || ruleStr == "*/*" {
+		return true
 	}
 
-	// Check scope restrictions
-	switch ruleScope {
-	case RuleScopeReadOnly:
+	// Server wildcard
+	if strings.HasSuffix(ruleStr, "/*") {
+		serverName := ruleStr[:len(ruleStr)-2]
+		return strings.HasPrefix(requestStr, serverName+"/")
+	}
+
+	// Exact match
+	return ruleStr == requestStr
+}
+
+// actionMatches checks if a rule action matches the request (considering readonly restrictions)
+func (cm *consentManager) actionMatches(ruleAction ActionType, isReadOnlyTool bool) bool {
+	switch ruleAction {
+	case ActionReadOnly:
 		// Rule only applies to read-only tools
 		return isReadOnlyTool
-	case RuleScopeAll:
+	case ActionAny:
 		// Rule applies to all tools
 		return true
 	default:
-		// Unknown scope, default to not matching
+		// Unknown action, default to not matching
 		return false
 	}
-}
-
-// evaluateAllowRule evaluates an allow rule and handles one-time cleanup
-func (cm *consentManager) evaluateAllowRule(rule ConsentRule, request ConsentRequest, ruleIndex int) *ConsentDecision {
-	decision := cm.evaluateRule(rule)
-
-	// If this is a one-time consent rule, remove it after evaluation
-	if decision.Allowed && rule.Permission == ConsentOnce {
-		go func(index int) {
-			cm.removeSessionRuleByIndex(index)
-		}(ruleIndex)
-	}
-
-	return decision
 }

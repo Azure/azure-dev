@@ -157,6 +157,53 @@ func ParsePermission(permissionStr string) (Permission, error) {
 	return "", fmt.Errorf("invalid permission: %s (allowed: %v)", permissionStr, AllowedPermissions)
 }
 
+// FilterOption represents a functional option for filtering consent rules
+type FilterOption func(*FilterOptions)
+
+// FilterOptions contains the filtering options for listing consent rules
+type FilterOptions struct {
+	Scope      *Scope
+	Operation  *OperationType
+	Target     *Target
+	Action     *ActionType
+	Permission *Permission
+}
+
+// WithScope filters rules by scope
+func WithScope(scope Scope) FilterOption {
+	return func(opts *FilterOptions) {
+		opts.Scope = &scope
+	}
+}
+
+// WithOperation filters rules by operation type
+func WithOperation(operation OperationType) FilterOption {
+	return func(opts *FilterOptions) {
+		opts.Operation = &operation
+	}
+}
+
+// WithTarget filters rules by target pattern
+func WithTarget(target Target) FilterOption {
+	return func(opts *FilterOptions) {
+		opts.Target = &target
+	}
+}
+
+// WithAction filters rules by action type
+func WithAction(action ActionType) FilterOption {
+	return func(opts *FilterOptions) {
+		opts.Action = &action
+	}
+}
+
+// WithPermission filters rules by permission type
+func WithPermission(permission Permission) FilterOption {
+	return func(opts *FilterOptions) {
+		opts.Permission = &permission
+	}
+}
+
 // ConsentRule represents a single consent rule entry
 type ConsentRule struct {
 	Scope      Scope         `json:"scope"`
@@ -249,16 +296,9 @@ type ConsentDecision struct {
 // ConsentManager manages consent rules and decisions
 type ConsentManager interface {
 	CheckConsent(ctx context.Context, request ConsentRequest) (*ConsentDecision, error)
-	GrantConsent(ctx context.Context, rule ConsentRule, scope Scope) error
-	ListConsentRules(ctx context.Context, scope Scope) ([]ConsentRule, error)
-	ListConsentsByOperationType(
-		ctx context.Context,
-		scope Scope,
-		operation OperationType,
-	) ([]ConsentRule, error)
-	ClearConsents(ctx context.Context, scope Scope) error
-	ClearConsentsByOperationType(ctx context.Context, scope Scope, operation OperationType) error
-	ClearConsentByTarget(ctx context.Context, target Target, scope Scope) error
+	GrantConsent(ctx context.Context, rule ConsentRule) error
+	ListConsentRules(ctx context.Context, options ...FilterOption) ([]ConsentRule, error)
+	ClearConsentRules(ctx context.Context, options ...FilterOption) error
 
 	// Environment context methods
 	IsProjectScopeAvailable(ctx context.Context) bool

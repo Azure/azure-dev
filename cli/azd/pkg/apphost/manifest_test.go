@@ -166,8 +166,8 @@ func TestManifest_Warnings(t *testing.T) {
 			name:        "hybrid mode shows deprecation warning",
 			publishMode: publishModeHybrid,
 			expected: "  Deprecation Warning: " + "Your Aspire project is on hybrid mode. While you can use the AppHost" +
-				" to define the Azure Container App, azd defines the Azure Container Environment.\n  This mode is deprecated " +
-				"since Aspire 9.4.  " +
+				" to define the Azure Container App, azd defines the Azure Container Environment.\n  This mode is " +
+				"deprecated since Aspire 9.4.  " +
 				//nolint:lll
 				"See more: https://learn.microsoft.com/dotnet/aspire/whats-new/dotnet-aspire-9.4#-azure-container-apps-hybrid-mode-removal",
 		},

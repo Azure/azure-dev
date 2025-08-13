@@ -72,18 +72,18 @@ azd functionality through the Model Context Protocol interface.`,
 		FlagsResolver:  newMcpConsentListFlags,
 	})
 
-	// azd mcp consent clear
-	consentGroup.Add("clear", &actions.ActionDescriptorOptions{
+	// azd mcp consent revoke
+	consentGroup.Add("revoke", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "clear",
-			Short: "Clear consent rules.",
-			Long:  "Clear consent rules for MCP tools.",
+			Use:   "revoke",
+			Short: "Revoke consent rules.",
+			Long:  "Revoke consent rules for MCP tools.",
 			Args:  cobra.NoArgs,
 		},
 		OutputFormats:  []output.Format{output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
-		ActionResolver: newMcpConsentClearAction,
-		FlagsResolver:  newMcpConsentClearFlags,
+		ActionResolver: newMcpConsentRevokeAction,
+		FlagsResolver:  newMcpConsentRevokeFlags,
 	})
 
 	// azd mcp consent grant
@@ -110,21 +110,6 @@ Examples:
 		ActionResolver: newMcpConsentGrantAction,
 		FlagsResolver:  newMcpConsentGrantFlags,
 	})
-
-	// TODO: Re-implement revoke command with new structure
-	// azd mcp consent revoke
-	// consentGroup.Add("revoke", &actions.ActionDescriptorOptions{
-	// 	Command: &cobra.Command{
-	// 		Use:   "revoke",
-	// 		Short: "Revoke consent trust rules.",
-	// 		Long:  "Revoke specific consent rules for MCP tools and servers.",
-	// 		Args:  cobra.NoArgs,
-	// 	},
-	// 	OutputFormats:  []output.Format{output.NoneFormat},
-	// 	DefaultFormat:  output.NoneFormat,
-	// 	ActionResolver: newMcpConsentRevokeAction,
-	// 	FlagsResolver:  newMcpConsentRevokeFlags,
-	// })
 
 	return group
 }
@@ -247,8 +232,8 @@ func (f *mcpConsentGrantFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 	local.StringVar(&f.scope, "scope", "global", "Rule scope: 'global', or 'project'")
 }
 
-// Flags for MCP consent clear command
-type mcpConsentClearFlags struct {
+// Flags for MCP consent revoke command
+type mcpConsentRevokeFlags struct {
 	global     *internal.GlobalCommandOptions
 	scope      string
 	target     string
@@ -257,19 +242,19 @@ type mcpConsentClearFlags struct {
 	permission string
 }
 
-func newMcpConsentClearFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *mcpConsentClearFlags {
-	flags := &mcpConsentClearFlags{}
+func newMcpConsentRevokeFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *mcpConsentRevokeFlags {
+	flags := &mcpConsentRevokeFlags{}
 	flags.Bind(cmd.Flags(), global)
 	return flags
 }
 
-func (f *mcpConsentClearFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (f *mcpConsentRevokeFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	f.global = global
 	local.StringVar(
 		&f.scope,
 		"scope",
 		"",
-		"Consent scope to filter by (global, project). If not specified, clears rules from all scopes.",
+		"Consent scope to filter by (global, project). If not specified, revokes rules from all scopes.",
 	)
 	local.StringVar(&f.target, "target", "", "Specific target to operate on (server/tool format)")
 	local.StringVar(&f.operation, "operation", "", "Operation to filter by (tool, sampling)")
@@ -438,21 +423,21 @@ func (a *mcpConsentListAction) Run(ctx context.Context) (*actions.ActionResult, 
 	return nil, a.formatter.Format(displayRules, a.writer, nil)
 }
 
-// Action for MCP consent clear command
-type mcpConsentClearAction struct {
-	flags             *mcpConsentClearFlags
+// Action for MCP consent revoke command
+type mcpConsentRevokeAction struct {
+	flags             *mcpConsentRevokeFlags
 	console           input.Console
 	userConfigManager config.UserConfigManager
 	consentManager    consent.ConsentManager
 }
 
-func newMcpConsentClearAction(
-	flags *mcpConsentClearFlags,
+func newMcpConsentRevokeAction(
+	flags *mcpConsentRevokeFlags,
 	console input.Console,
 	userConfigManager config.UserConfigManager,
 	consentManager consent.ConsentManager,
 ) actions.Action {
-	return &mcpConsentClearAction{
+	return &mcpConsentRevokeAction{
 		flags:             flags,
 		console:           console,
 		userConfigManager: userConfigManager,
@@ -460,10 +445,10 @@ func newMcpConsentClearAction(
 	}
 }
 
-func (a *mcpConsentClearAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+func (a *mcpConsentRevokeAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Command heading
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title:     "Clear MCP consent rules (azd mcp consent clear)",
+		Title:     "Revoke MCP consent rules (azd mcp consent revoke)",
 		TitleNote: "Removes consent rules for MCP tools and servers",
 	})
 
@@ -525,9 +510,9 @@ func (a *mcpConsentClearAction) Run(ctx context.Context) (*actions.ActionResult,
 
 	var confirmMessage string
 	if filterDesc != "" {
-		confirmMessage = fmt.Sprintf("Are you sure you want to clear consent rules for %s?", filterDesc)
+		confirmMessage = fmt.Sprintf("Are you sure you want to revoke consent rules for %s?", filterDesc)
 	} else {
-		confirmMessage = "Are you sure you want to clear all consent rules?"
+		confirmMessage = "Are you sure you want to revoke all consent rules?"
 	}
 
 	// Get confirmation
@@ -551,14 +536,14 @@ func (a *mcpConsentClearAction) Run(ctx context.Context) (*actions.ActionResult,
 
 	// Success message
 	if filterDesc != "" {
-		fmt.Fprintf(a.console.Handles().Stdout, "Cleared consent rules for %s.\n", filterDesc)
+		fmt.Fprintf(a.console.Handles().Stdout, "Revoked consent rules for %s.\n", filterDesc)
 	} else {
-		fmt.Fprintf(a.console.Handles().Stdout, "Cleared all consent rules.\n")
+		fmt.Fprintf(a.console.Handles().Stdout, "Revoked all consent rules.\n")
 	}
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Consent rules cleared successfully",
+			Header: "Consent rules revoked successfully",
 		},
 	}, nil
 }

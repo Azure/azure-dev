@@ -16,6 +16,10 @@ func NewAzdYamlSchemaTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"azd_yaml_schema",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
 				`Gets the Azure YAML JSON schema file specification and structure for azure.yaml `+
 					`configuration files used in AZD.`,

@@ -155,7 +155,9 @@ func TestManifest_Warnings(t *testing.T) {
 		{
 			name:        "full azd mode shows limited mode warning",
 			publishMode: publishModeFullAzd,
+			//nolint:lll
 			expected: "  Limited mode Warning: Your Aspire project is delegating the services' host infrastructure to azd.\n" +
+				//nolint:lll
 				"  This mode is limited. You will not be able to manage the host infrastructure from your AppHost. You'll need to use `azd infra gen` " +
 				"to customize the Azure Container Environment and/or Azure Container Apps" +
 				"  See more: https://learn.microsoft.com/dotnet/aspire/azure/configure-aca-environments",
@@ -163,9 +165,11 @@ func TestManifest_Warnings(t *testing.T) {
 		{
 			name:        "hybrid mode shows deprecation warning",
 			publishMode: publishModeHybrid,
+			//nolint:lll
 			expected: "  Deprecation Warning: Your Aspire project is on hybrid mode. While your AppHost code can define the " +
 				"Azure Container App, azd defines the Azure Container Environment.\n" +
 				"  This mode is deprecated since Aspire 9.4." +
+				//nolint:lll
 				"  See more: https://learn.microsoft.com/dotnet/aspire/whats-new/dotnet-aspire-9.4#-azure-container-apps-hybrid-mode-removal",
 		},
 		{

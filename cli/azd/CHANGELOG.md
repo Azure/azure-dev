@@ -4,9 +4,13 @@
 
 ### Bugs Fixed
 
-- [[5570]](https://github.com/Azure/azure-dev/pull/5570) Update hooks engine to automatically fall back to PowerShell 5 when PowerShell 7 is unavailable.
 - [[5445]](https://github.com/Azure/azure-dev/pull/5445) Prevent package deletion when using `--from-package` flag with `azd deploy`.
 - [[5531]](https://github.com/Azure/azure-dev/pull/5531) Fix extension installation failures on Linux.
+
+### Other Changes
+
+- [[5570]](https://github.com/Azure/azure-dev/pull/5570) Update hooks engine to automatically fall back to Windows PowerShell 5.1 when PowerShell 7 is unavailable.
+- [[5582]](https://github.com/Azure/azure-dev/pull/5582) Display warning message for legacy and limited Aspire projects.
 - [[5385]](https://github.com/Azure/azure-dev/pull/5385) Add error suggestion message when `package` fails due to containerd.
 
 ## 1.18.1 (2025-08-06)

@@ -8,13 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 type azdCredential struct {
@@ -44,13 +42,7 @@ func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenReques
 				log.Println(authFailed.httpErrorDetails())
 
 				if options.Claims != "" {
-					claimsFile, err := claimsFilePath()
-					if err != nil {
-						return azcore.AccessToken{}, fmt.Errorf("getting claims path: %w", err)
-					}
-
-					err = os.WriteFile(claimsFile, []byte(options.Claims), osutil.PermissionFile)
-					if err != nil {
+					if err := saveClaims(options.Claims); err != nil {
 						return azcore.AccessToken{}, fmt.Errorf("saving claims: %w", err)
 					}
 				}

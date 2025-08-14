@@ -6,6 +6,7 @@ package powershell
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -54,11 +55,26 @@ func checkPath(options tools.ExecOptions) (err error) {
 // Executes the specified powershell script
 // When interactive is true will attach to stdin, stdout & stderr
 func (bs *powershellScript) Execute(ctx context.Context, path string, options tools.ExecOptions) (exec.RunResult, error) {
-	if err := bs.checkInstalled(options); err != nil {
-		return exec.RunResult{}, &internal.ErrorWithSuggestion{
-			Err: err,
-			Suggestion: fmt.Sprintf("PowerShell 7 is not installed or not in the path. To install PowerShell 7, visit %s",
-				output.WithLinkFormat("https://learn.microsoft.com/powershell/scripting/install/installing-powershell")),
+	noPwshError := bs.checkInstalled(options)
+	if noPwshError != nil {
+
+		if runtime.GOOS != "windows" {
+			return exec.RunResult{}, &internal.ErrorWithSuggestion{
+				Err: noPwshError,
+				Suggestion: fmt.Sprintf(
+					"PowerShell 7 is not installed or not in the path. To install PowerShell 7, visit %s",
+					output.WithLinkFormat("https://learn.microsoft.com/powershell/scripting/install/installing-powershell")),
+			}
+		}
+
+		options.UserPwsh = "powershell"
+		if err := bs.checkInstalled(options); err != nil {
+			return exec.RunResult{}, &internal.ErrorWithSuggestion{
+				Err: err,
+				Suggestion: fmt.Sprintf(
+					"Make sure pwsh (PowerShell 7) or powershell (PowerShell 5) is installed on your system, visit %s",
+					output.WithLinkFormat("https://learn.microsoft.com/powershell/scripting/install/installing-powershell")),
+			}
 		}
 	}
 
@@ -75,5 +91,18 @@ func (bs *powershellScript) Execute(ctx context.Context, path string, options to
 		runArgs = runArgs.WithStdOut(options.StdOut)
 	}
 
-	return bs.commandRunner.Run(ctx, runArgs)
+	result, err := bs.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		if noPwshError != nil {
+			err = &internal.ErrorWithSuggestion{
+				Err: err,
+				Suggestion: fmt.Sprintf("pwsh (PowerShell 7) was not found and powershell (PowerShell 5) was automatically"+
+					" used instead. You can try installing pwsh and trying again in case this script is not compatible "+
+					"with PowerShell 5. See: %s",
+					output.WithLinkFormat("https://learn.microsoft.com/powershell/scripting/install/installing-powershell")),
+			}
+		}
+	}
+
+	return result, err
 }

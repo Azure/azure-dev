@@ -244,6 +244,9 @@ func (m *HooksMiddleware) validateHooks(ctx context.Context, projectConfig *proj
 		m.console.MessageUxItem(ctx, &ux.WarningMessage{
 			Description: warning.Message,
 		})
+		if warning.Suggestion != "" {
+			m.console.Message(ctx, warning.Suggestion)
+		}
 		m.console.Message(ctx, "")
 	}
 

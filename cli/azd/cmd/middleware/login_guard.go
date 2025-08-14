@@ -8,6 +8,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -62,6 +63,11 @@ func (l *LoginGuardMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 func (l *LoginGuardMiddleware) ensureLogin(ctx context.Context) (azcore.TokenCredential, error) {
 	cred, credentialErr := l.authManager.CredentialForCurrentUser(ctx, nil)
 	if credentialErr != nil {
+		// If running in CI/CD, don't prompt for interactive login, just return the authentication error
+		if resource.IsRunningOnCI() {
+			return nil, credentialErr
+		}
+
 		loginWarning := output.WithWarningFormat("WARNING: You must be logged into Azure perform this action")
 		l.console.Message(ctx, loginWarning)
 

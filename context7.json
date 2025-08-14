@@ -1,0 +1,12 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "Azure Developer CLI",
+  "description": "Open-source CLI tool that accelerates provisioning and deploying app resources on Azure with developer-friendly commands for terminal, IDE, or CI/CD workflows.",
+  "folders": [
+    "cli/azd/docs",
+    "cli/azd/CONTRIBUTING.md",
+    "cli/azd/README.md"
+  ],
+  "excludeFolders": [],
+  "excludeFiles": []
+}

@@ -17,4 +17,6 @@ type UxItem interface {
 }
 
 var donePrefix string = output.WithSuccessFormat("(✓) Done:")
+var warningPrefix string = output.WithWarningFormat("(!) Warning:")
 var failedPrefix string = output.WithErrorFormat("(x) Failed:")
+var skippedPrefix string = output.WithGrayFormat("(-) Skipped:")

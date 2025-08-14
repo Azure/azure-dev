@@ -10,7 +10,9 @@
         "name": {
             "type": "string",
             "minLength": 2,
-            "title": "Name of the application"
+            "title": "Name of the application",
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "description": "The application name. Only lowercase letters, numbers, and hyphens (-) are allowed. The name must start and end with a letter or number."
         },
         "resourceGroup": {
             "type": "string",
@@ -93,6 +95,11 @@
                     "host"
                 ],
                 "properties": {
+                    "apiVersion": {
+                        "type": "string",
+                        "title": "Resource provider API version for deployments",
+                        "description": "Optional. The resource provider API version to use for the service. If not specified, the default SDK API version is used. Only valid when host is 'containerapp'."
+                    },
                     "resourceGroup": {
                         "type": "string",
                         "title": "Name of the Azure resource group that contains the resource",
@@ -339,6 +346,22 @@
                                     "type": "string",
                                     "description": "Optional. The path to the directory containing a single Java archive file (.jar/.ear/.war), or the path to the specific Java archive file to be included in the deployment artifact. If omitted, the CLI will detect the output directory based on the build system in-use. For maven, the default output directory 'target' is assumed."
                                 }
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "not": {
+                                "properties": {
+                                    "host": {
+                                        "const": "containerapp"
+                                    }
+                                }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "apiVersion": false
                             }
                         }
                     },
@@ -759,27 +782,64 @@
                     ]
                 }
             },
-            "if": {
-                "not": {
-                    "anyOf": [
-                        {
-                            "required": [
-                                "windows"
-                            ]
-                        },
-                        {
-                            "required": [
-                                "posix"
-                            ]
+            "allOf": [
+                {
+                    "if": {
+                        "allOf": [
+                            {
+                                "required": [
+                                    "windows"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "posix"
+                                ]
+                            }
+                        ]
+                    },
+                    "then": {
+                        "properties": {
+                            "run": false,
+                            "shell": false,
+                            "interactive": false,
+                            "continueOnError": false,
+                            "secrets": false
                         }
-                    ]
+                    }
+                },
+                {
+                    "if": {
+                        "anyOf": [
+                            {
+                                "required": [
+                                    "interactive"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "continueOnError"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "secrets"
+                                ]
+                            },
+                            {
+                                "required": [
+                                    "shell"
+                                ]
+                            }
+                        ]
+                    },
+                    "then": {
+                        "required": [
+                            "run"
+                        ]
+                    }
                 }
-            },
-            "then": {
-                "required": [
-                    "run"
-                ]
-            }
+            ]
         },
         "docker": {
             "type": "object",

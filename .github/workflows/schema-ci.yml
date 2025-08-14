@@ -25,7 +25,7 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.x'
-      - run: pip install jsonschema2md
+      - run: pip install jsonschema2md==1.5.2
       - name: Ensure v1 schema is valid for doc gen
         run: |
           jsonschema2md schemas/v1.0/azure.yaml.json ignoreV1.md

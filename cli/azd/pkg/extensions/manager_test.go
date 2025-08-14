@@ -496,3 +496,24 @@ var testRegistry = Registry{
 		},
 	},
 }
+
+func Test_FindArtifactForCurrentOS_ErrorMessage_Format(t *testing.T) {
+	// Create a version with artifacts that don't match current OS/architecture
+	// For this test, we'll use artificial platform names that definitely won't match
+	version := &ExtensionVersion{
+		Artifacts: map[string]ExtensionArtifact{
+			"fakeos": {
+				URL: "https://example.com/fakeos-binary",
+			},
+			"anotherfakeos/fakearch": {
+				URL: "https://example.com/anotherfakeos-binary",
+			},
+		},
+	}
+
+	artifact, err := findArtifactForCurrentOS(version)
+
+	require.Error(t, err)
+	require.Nil(t, artifact)
+	require.Contains(t, err.Error(), "no artifact available for platform:")
+}

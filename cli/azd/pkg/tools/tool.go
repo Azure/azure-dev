@@ -5,9 +5,7 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	osexec "os/exec"
 	"regexp"
 	"strconv"
 
@@ -34,22 +32,6 @@ type VersionInfo struct {
 func (err *ErrSemver) Error() string {
 	return fmt.Sprintf("need at least version %s or later of %s installed. %s %s version",
 		err.VersionInfo.MinimumVersion.String(), err.ToolName, err.VersionInfo.UpdateCommand, err.ToolName)
-}
-
-// toolInPath checks to see if a program can be found on the PATH, as exec.LookPath
-// does, returns exec.ErrNotFound in the case where os.LookPath would return
-// exec.ErrNotFound and other errors.
-func ToolInPath(name string) error {
-	_, err := osexec.LookPath(name)
-
-	switch {
-	case err == nil:
-		return nil
-	case errors.Is(err, osexec.ErrNotFound):
-		return osexec.ErrNotFound
-	default:
-		return fmt.Errorf("failed searching for `%s` on PATH: %w", name, err)
-	}
 }
 
 func ExecuteCommand(ctx context.Context, commandRunner exec.CommandRunner, cmd string, args ...string) (string, error) {

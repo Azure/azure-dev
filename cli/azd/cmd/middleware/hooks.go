@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
@@ -66,6 +67,13 @@ func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		return next(ctx)
 	}
 
+	// Validate hooks and display any warnings
+	if !m.options.IsChildAction(ctx) {
+		if err := m.validateHooks(ctx, projectConfig); err != nil {
+			return nil, fmt.Errorf("failed validating hooks, %w", err)
+		}
+	}
+
 	if err := m.registerServiceHooks(ctx, env, projectConfig); err != nil {
 		return nil, fmt.Errorf("failed registering service hooks, %w", err)
 	}
@@ -93,7 +101,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 		return nil, fmt.Errorf("failed getting environment manager, %w", err)
 	}
 
-	hooksManager := ext.NewHooksManager(projectConfig.Path)
+	hooksManager := ext.NewHooksManager(projectConfig.Path, m.commandRunner)
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager,
 		m.commandRunner,
@@ -152,7 +160,7 @@ func (m *HooksMiddleware) registerServiceHooks(
 			continue
 		}
 
-		serviceHooksManager := ext.NewHooksManager(service.Path())
+		serviceHooksManager := ext.NewHooksManager(service.Path(), m.commandRunner)
 		serviceHooksRunner := ext.NewHooksRunner(
 			serviceHooksManager,
 			m.commandRunner,
@@ -197,4 +205,47 @@ func (m *HooksMiddleware) createServiceEventHandler(
 	return func(ctx context.Context, eventArgs project.ServiceLifecycleEventArgs) error {
 		return hooksRunner.RunHooks(ctx, hookType, nil, hookName)
 	}
+}
+
+// validateHooks validates hook configurations and displays any warnings
+func (m *HooksMiddleware) validateHooks(ctx context.Context, projectConfig *project.ProjectConfig) error {
+	// Get service hooks for validation
+	var serviceHooks []map[string][]*ext.HookConfig
+	stableServices, err := m.importManager.ServiceStable(ctx, projectConfig)
+	if err != nil {
+		return fmt.Errorf("failed getting services for hook validation: %w", err)
+	}
+
+	for _, service := range stableServices {
+		serviceHooks = append(serviceHooks, service.Hooks)
+	}
+
+	// Combine project and service hooks into a single map
+	allHooks := make(map[string][]*ext.HookConfig)
+
+	// Add project hooks
+	for hookName, hookConfigs := range projectConfig.Hooks {
+		allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
+	}
+
+	// Add service hooks
+	for _, serviceHookMap := range serviceHooks {
+		for hookName, hookConfigs := range serviceHookMap {
+			allHooks[hookName] = append(allHooks[hookName], hookConfigs...)
+		}
+	}
+
+	// Create hooks manager and validate
+	hooksManager := ext.NewHooksManager(projectConfig.Path, m.commandRunner)
+	validationResult := hooksManager.ValidateHooks(ctx, allHooks)
+
+	// Display any warnings
+	for _, warning := range validationResult.Warnings {
+		m.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: warning.Message,
+		})
+		m.console.Message(ctx, "")
+	}
+
+	return nil
 }

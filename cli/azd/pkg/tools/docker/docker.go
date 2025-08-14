@@ -251,7 +251,7 @@ func isSupportedDockerVersion(cliOutput string) (bool, error) {
 }
 func (d *Cli) CheckInstalled(ctx context.Context) error {
 	toolName := d.Name()
-	err := tools.ToolInPath("docker")
+	err := d.commandRunner.ToolInPath("docker")
 	if err != nil {
 		return err
 	}

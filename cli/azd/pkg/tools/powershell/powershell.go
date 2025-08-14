@@ -18,44 +18,26 @@ import (
 // Creates a new PowershellScript command runner
 func NewPowershellScript(commandRunner exec.CommandRunner, cwd string, envVars []string) tools.Script {
 	return &powershellScript{
-		commandRunner:  commandRunner,
-		cwd:            cwd,
-		envVars:        envVars,
-		checkInstalled: checkPath,
-	}
-}
-
-// for testing
-func NewPowershellScriptWithMockCheckPath(
-	commandRunner exec.CommandRunner,
-	cwd string,
-	envVars []string,
-	mockCheckPath checkInstalled) tools.Script {
-	return &powershellScript{
-		commandRunner:  commandRunner,
-		cwd:            cwd,
-		envVars:        envVars,
-		checkInstalled: mockCheckPath,
+		commandRunner: commandRunner,
+		cwd:           cwd,
+		envVars:       envVars,
 	}
 }
 
 type powershellScript struct {
-	commandRunner  exec.CommandRunner
-	cwd            string
-	envVars        []string
-	checkInstalled checkInstalled
+	commandRunner exec.CommandRunner
+	cwd           string
+	envVars       []string
 }
 
-type checkInstalled func(options tools.ExecOptions) error
-
-func checkPath(options tools.ExecOptions) (err error) {
-	return tools.ToolInPath(strings.Split(options.UserPwsh, " ")[0])
+func (ps *powershellScript) checkPath(options tools.ExecOptions) error {
+	return ps.commandRunner.ToolInPath(strings.Split(options.UserPwsh, " ")[0])
 }
 
 // Executes the specified powershell script
 // When interactive is true will attach to stdin, stdout & stderr
-func (bs *powershellScript) Execute(ctx context.Context, path string, options tools.ExecOptions) (exec.RunResult, error) {
-	noPwshError := bs.checkInstalled(options)
+func (ps *powershellScript) Execute(ctx context.Context, path string, options tools.ExecOptions) (exec.RunResult, error) {
+	noPwshError := ps.checkPath(options)
 	if noPwshError != nil {
 
 		if runtime.GOOS != "windows" {
@@ -68,7 +50,7 @@ func (bs *powershellScript) Execute(ctx context.Context, path string, options to
 		}
 
 		options.UserPwsh = "powershell"
-		if err := bs.checkInstalled(options); err != nil {
+		if err := ps.checkPath(options); err != nil {
 			return exec.RunResult{}, &internal.ErrorWithSuggestion{
 				Err: err,
 				Suggestion: fmt.Sprintf(
@@ -79,8 +61,8 @@ func (bs *powershellScript) Execute(ctx context.Context, path string, options to
 	}
 
 	runArgs := exec.NewRunArgs(options.UserPwsh, path).
-		WithCwd(bs.cwd).
-		WithEnv(bs.envVars).
+		WithCwd(ps.cwd).
+		WithEnv(ps.envVars).
 		WithShell(true)
 
 	if options.Interactive != nil {
@@ -91,7 +73,7 @@ func (bs *powershellScript) Execute(ctx context.Context, path string, options to
 		runArgs = runArgs.WithStdOut(options.StdOut)
 	}
 
-	result, err := bs.commandRunner.Run(ctx, runArgs)
+	result, err := ps.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		if noPwshError != nil {
 			err = &internal.ErrorWithSuggestion{

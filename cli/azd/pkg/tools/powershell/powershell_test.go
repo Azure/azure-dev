@@ -29,6 +29,9 @@ func Test_Powershell_Execute(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
+		// Mock ToolInPath to simulate pwsh being available
+		mockContext.CommandRunner.MockToolInPath("pwsh", nil)
+
 		// #nosec G101
 		userPwsh := "pwsh -NoProfile"
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -42,14 +45,8 @@ func Test_Powershell_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		PowershellScript := NewPowershellScriptWithMockCheckPath(
-			mockContext.CommandRunner,
-			workingDir,
-			env,
-			func(options tools.ExecOptions) error {
-				return nil
-			})
-		runResult, err := PowershellScript.Execute(
+		powershellScript := NewPowershellScript(mockContext.CommandRunner, workingDir, env)
+		runResult, err := powershellScript.Execute(
 			*mockContext.Context,
 			scriptPath,
 			tools.ExecOptions{UserPwsh: userPwsh, Interactive: to.Ptr(true)},
@@ -90,17 +87,11 @@ func Test_Powershell_Execute(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-		PowershellScript := NewPowershellScriptWithMockCheckPath(
-			mockContext.CommandRunner,
-			workingDir,
-			env,
-			func(options tools.ExecOptions) error {
-				if strings.Contains(options.UserPwsh, "pwsh") {
-					return fmt.Errorf("failed to find PowerShell executable")
-				}
-				return nil
-			})
-		runResult, err := PowershellScript.Execute(
+		// Mock ToolInPath to simulate pwsh being available
+		mockContext.CommandRunner.MockToolInPath("pwsh", fmt.Errorf("failed to find PowerShell executable"))
+
+		powershellScript := NewPowershellScript(mockContext.CommandRunner, workingDir, env)
+		runResult, err := powershellScript.Execute(
 			*mockContext.Context,
 			scriptPath,
 			tools.ExecOptions{UserPwsh: userPwsh, Interactive: to.Ptr(true)},
@@ -113,23 +104,20 @@ func Test_Powershell_Execute(t *testing.T) {
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
+		// Mock ToolInPath to simulate pwsh being available
+		mockContext.CommandRunner.MockToolInPath("pwsh", nil)
+
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return true
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			return exec.NewRunResult(1, "", "error message"), errors.New("error message")
 		})
 
-		PowershellScript := NewPowershellScriptWithMockCheckPath(
-			mockContext.CommandRunner,
-			workingDir,
-			env,
-			func(options tools.ExecOptions) error {
-				return nil
-			})
-		runResult, err := PowershellScript.Execute(
+		powershellScript := NewPowershellScript(mockContext.CommandRunner, workingDir, env)
+		runResult, err := powershellScript.Execute(
 			*mockContext.Context,
 			scriptPath,
-			tools.ExecOptions{Interactive: to.Ptr(true)},
+			tools.ExecOptions{UserPwsh: "pwsh", Interactive: to.Ptr(true)},
 		)
 
 		require.Equal(t, 1, runResult.ExitCode)
@@ -139,17 +127,15 @@ func Test_Powershell_Execute(t *testing.T) {
 	t.Run("NoPowerShellInstalled", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
-		PowershellScript := NewPowershellScriptWithMockCheckPath(
-			mockContext.CommandRunner,
-			workingDir,
-			env,
-			func(options tools.ExecOptions) error {
-				return fmt.Errorf("failed to find PowerShell executable")
-			})
-		_, err := PowershellScript.Execute(
+		// Mock ToolInPath to simulate any powershell version not being available
+		mockContext.CommandRunner.MockToolInPath("pwsh", errors.New("pwsh: command not found"))
+		mockContext.CommandRunner.MockToolInPath("powershell", errors.New("powershell: command not found"))
+
+		powershellScript := NewPowershellScript(mockContext.CommandRunner, workingDir, env)
+		_, err := powershellScript.Execute(
 			*mockContext.Context,
 			scriptPath,
-			tools.ExecOptions{Interactive: to.Ptr(true)},
+			tools.ExecOptions{UserPwsh: "pwsh", Interactive: to.Ptr(true)},
 		)
 
 		require.Error(t, err)
@@ -159,13 +145,16 @@ func Test_Powershell_Execute(t *testing.T) {
 		name  string
 		value tools.ExecOptions
 	}{
-		{name: "Interactive", value: tools.ExecOptions{Interactive: to.Ptr(true)}},
-		{name: "NonInteractive", value: tools.ExecOptions{Interactive: to.Ptr(false)}},
+		{name: "Interactive", value: tools.ExecOptions{UserPwsh: "pwsh", Interactive: to.Ptr(true)}},
+		{name: "NonInteractive", value: tools.ExecOptions{UserPwsh: "pwsh", Interactive: to.Ptr(false)}},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
+
+			// Mock ToolInPath to simulate pwsh being available
+			mockContext.CommandRunner.MockToolInPath("pwsh", nil)
 
 			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 				return true
@@ -174,14 +163,8 @@ func Test_Powershell_Execute(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-			PowershellScript := NewPowershellScriptWithMockCheckPath(
-				mockContext.CommandRunner,
-				workingDir,
-				env,
-				func(options tools.ExecOptions) error {
-					return nil
-				})
-			runResult, err := PowershellScript.Execute(*mockContext.Context, scriptPath, test.value)
+			powershellScript := NewPowershellScript(mockContext.CommandRunner, workingDir, env)
+			runResult, err := powershellScript.Execute(*mockContext.Context, scriptPath, test.value)
 
 			require.NotNil(t, runResult)
 			require.NoError(t, err)

@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
+// Warning message with hidable prefix "WARNING: "
 type WarningMessage struct {
 	Description string
 	HidePrefix  bool

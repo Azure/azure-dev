@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
+// Warning message with the prefix "(!) Warning: "
 type WarningAltMessage struct {
 	Message string
 }

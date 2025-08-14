@@ -205,10 +205,12 @@ func logWebAppDeploymentStatus(
 			}
 		}
 
+		errorString += fmt.Sprintf("\n")
 		for _, log := range properties.FailedInstancesLogs {
 			errorString += fmt.Sprintf("Please check the %slogs for more info: %s\n", message, *log)
 		}
 
+		errorString += fmt.Sprintf("\n")
 		if traceId != "" {
 			errorString += fmt.Sprintf("Trace ID: %s\n", traceId)
 		}

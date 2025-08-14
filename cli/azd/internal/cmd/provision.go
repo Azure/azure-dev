@@ -46,6 +46,8 @@ const (
 	specialFeatureOrQuotaIdRequired = "SpecialFeatureOrQuotaIdRequired"
 )
 
+var featLayers = alpha.MustFeatureKey("layers")
+
 func (i *ProvisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	i.BindNonCommon(local, global)
 	i.bindCommon(local, global)
@@ -92,13 +94,17 @@ func NewProvisionFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *inter
 }
 
 func NewProvisionCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "provision",
 		Short: "Provision Azure resources for your project.",
 	}
+	cmd.Args = cobra.MaximumNArgs(1)
+
+	return cmd
 }
 
 type ProvisionAction struct {
+	args                []string
 	flags               *ProvisionFlags
 	provisionManager    *provisioning.Manager
 	projectManager      project.ProjectManager
@@ -116,6 +122,7 @@ type ProvisionAction struct {
 }
 
 func NewProvisionAction(
+	args []string,
 	flags *ProvisionFlags,
 	provisionManager *provisioning.Manager,
 	projectManager project.ProjectManager,
@@ -132,6 +139,7 @@ func NewProvisionAction(
 	cloud *cloud.Cloud,
 ) actions.Action {
 	return &ProvisionAction{
+		args:                args,
 		flags:               flags,
 		provisionManager:    provisionManager,
 		projectManager:      projectManager,
@@ -199,7 +207,33 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 	defer func() { _ = infra.Cleanup() }()
 
+	layer := ""
+	if len(p.args) > 0 {
+		layer = p.args[0]
+
+		if !p.alphaFeatureManager.IsEnabled(featLayers) {
+			return nil, fmt.Errorf(
+				"Layered provisioning is not enabled. Run '%s' to enable it.", alpha.GetEnableCommand(featLayers))
+		}
+
+		p.console.WarnForFeature(ctx, featLayers)
+	}
+
 	infraOptions := infra.Options
+	if layer != "" {
+		layerOption, err := infraOptions.GetLayer(layer)
+		if err != nil {
+			return nil, err
+		}
+
+		infraOptions = layerOption
+	}
+
+	if layer != "" || len(infraOptions.Layers) > 0 {
+		// Display if an explicit layer is passed, or if multiple layer are enabled
+		p.console.Message(ctx, fmt.Sprintf("Layer: %s", output.WithHighLightFormat(infraOptions.Name)))
+	}
+
 	infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
 	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, infraOptions); err != nil {
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)

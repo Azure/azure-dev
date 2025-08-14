@@ -18,7 +18,7 @@ type WarningMessage struct {
 func (t *WarningMessage) ToString(currentIndentation string) string {
 	var prefix string
 	if !t.HidePrefix {
-		prefix = "Warning: "
+		prefix = "WARNING: "
 	}
 	return output.WithWarningFormat("%s%s%s", currentIndentation, prefix, t.Description)
 }
@@ -26,7 +26,7 @@ func (t *WarningMessage) ToString(currentIndentation string) string {
 func (t *WarningMessage) MarshalJSON() ([]byte, error) {
 	var prefix string
 	if !t.HidePrefix {
-		prefix = "Warning: "
+		prefix = "WARNING: "
 	}
 
 	return json.Marshal(output.EventForMessage(fmt.Sprintf("%s%s", prefix, t.Description)))

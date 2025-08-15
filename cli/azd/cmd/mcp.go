@@ -681,5 +681,11 @@ func formatConsentDescription(scope, action, operation, target, permission strin
 
 // Legacy wrapper for backward compatibility
 func formatConsentRuleDescription(rule consent.ConsentRule) string {
-	return formatConsentDescription(string(rule.Scope), string(rule.Action), string(rule.Operation), string(rule.Target), string(rule.Permission))
+	return formatConsentDescription(
+		string(rule.Scope),
+		string(rule.Action),
+		string(rule.Operation),
+		string(rule.Target),
+		string(rule.Permission),
+	)
 }

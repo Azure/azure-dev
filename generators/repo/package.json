@@ -21,7 +21,7 @@
     "del": "^6.0.0",
     "figlet": "^1.5.2",
     "glob": "^7.2.0",
-    "inquirer": "^8.2.0",
+    "inquirer": "^8.2.7",
     "yamljs": "^0.3.0"
   },
   "devDependencies": {

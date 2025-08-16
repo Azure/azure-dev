@@ -161,5 +161,3 @@ var resourceName = '${name}-${resourceSuffix}'
 - [ ] No hard-coded secrets, tenant IDs, or subscription IDs
 - [ ] Parameters have appropriate validation decorators
 - [ ] Security best practices followed (Key Vault, managed identities, diagnostics)
-- [ ] Bicep CLI validation passes without errors (`az bicep build`)
-- [ ] Deployment validation successful (`az deployment sub validate`)

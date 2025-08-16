@@ -59,6 +59,14 @@ func WithBackticks(s string) string {
 	return fmt.Sprintf("`%s`", s)
 }
 
+func AzdLabel() string {
+	return "[azd]"
+}
+
+func AzdAgentLabel() string {
+	return color.HiMagentaString(fmt.Sprintf("🤖 %s Agent", AzdLabel()))
+}
+
 // WithMarkdown converts markdown to terminal-friendly colorized output using glamour.
 // This provides rich markdown rendering including bold, italic, code blocks, headers, etc.
 func WithMarkdown(markdownText string) string {

@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
 	"github.com/tmc/langchaingo/callbacks"
 	"github.com/tmc/langchaingo/llms"
@@ -77,7 +78,7 @@ func (al *ActionLogger) HandleLLMGenerateContentEnd(ctx context.Context, res *ll
 				if thought != "" {
 					// Skip thoughts that contain "Do I need to use a tool?"
 					if !strings.Contains(strings.ToLower(thought), "do i need to use a tool?") {
-						color.White("\n🤖 Agent: %s\n", thought)
+						color.White("\n%s: %s\n", output.AzdAgentLabel(), thought)
 					}
 				}
 			}
@@ -197,21 +198,21 @@ func (al *ActionLogger) HandleAgentAction(ctx context.Context, action schema.Age
 		if len(params) > 0 {
 			paramStr = strings.Join(params, ", ")
 			paramStr = truncateString(paramStr, 100)
-			output := fmt.Sprintf("\n🤖 Agent: Calling %s tool with %s\n", action.Tool, paramStr)
+			output := fmt.Sprintf("\n%s: Calling %s tool with %s\n", output.AzdAgentLabel(), action.Tool, paramStr)
 			color.Green(output)
 		} else {
-			output := fmt.Sprintf("\n🤖 Agent: Calling %s tool\n", action.Tool)
+			output := fmt.Sprintf("\n%s: Calling %s tool\n", output.AzdAgentLabel(), action.Tool)
 			color.Green(output)
 		}
 	} else {
 		// JSON parsing failed, show the input as text with truncation
 		toolInput := strings.TrimSpace(action.ToolInput)
 		if toolInput == "" {
-			output := fmt.Sprintf("\n🤖 Agent: Calling %s tool\n", action.Tool)
+			output := fmt.Sprintf("\n%s: Calling %s tool\n", output.AzdAgentLabel(), action.Tool)
 			color.Green(output)
 		} else {
 			toolInput = truncateString(toolInput, 100)
-			color.Green("\n🤖 Agent: Calling %s tool with %s\n", action.Tool, toolInput)
+			color.Green("\n%s: Calling %s tool with %s\n", output.AzdAgentLabel(), action.Tool, toolInput)
 		}
 	}
 }
@@ -231,7 +232,7 @@ func (al *ActionLogger) HandleAgentFinish(ctx context.Context, finish schema.Age
 
 	if len(matches) > 1 {
 		summary := strings.TrimSpace(matches[1])
-		color.White("\n🤖 Agent: %s\n", summary)
+		color.White("\n%s: %s\n", output.AzdAgentLabel(), summary)
 	}
 	// If "AI:" not found, don't print anything
 }

@@ -352,8 +352,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		header = fmt.Sprintf("Initialized environment %s.", env.Name())
 		followUp = ""
-	case initWithCopilot:
-		if err := i.initAppWithCopilot(ctx); err != nil {
+	case initWithAgent:
+		if err := i.initAppWithAgent(ctx); err != nil {
 			return nil, err
 		}
 	default:
@@ -372,7 +372,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}, nil
 }
 
-func (i *initAction) initAppWithCopilot(ctx context.Context) error {
+func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	// Warn user that this is an alpha feature
 	i.console.WarnForFeature(ctx, llm.FeatureLlm)
 
@@ -455,7 +455,7 @@ Do not stop until all tasks are complete and fully resolved.
 
 		i.console.StopSpinner(ctx, step.Name, input.StepDone)
 		i.console.Message(ctx, "")
-		i.console.Message(ctx, color.MagentaString("🤖 AZD Copilot:"))
+		i.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
 		i.console.Message(ctx, output.WithMarkdown(agentOutput))
 		i.console.Message(ctx, "")
 	}
@@ -519,7 +519,7 @@ func (i *initAction) collectAndApplyFeedback(
 
 			i.console.StopSpinner(ctx, "Submitting feedback", input.StepDone)
 			i.console.Message(ctx, "")
-			i.console.Message(ctx, color.MagentaString("🤖 AZD Copilot:"))
+			i.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
 			i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
 			i.console.Message(ctx, "")
 		}
@@ -544,7 +544,7 @@ const (
 	initFromApp
 	initAppTemplate
 	initEnvironment
-	initWithCopilot
+	initWithAgent
 )
 
 func promptInitType(console input.Console, ctx context.Context, featuresManager *alpha.FeatureManager) (initType, error) {
@@ -553,9 +553,9 @@ func promptInitType(console input.Console, ctx context.Context, featuresManager 
 		"Select a template",
 	}
 
-	// Only include AZD Copilot option if the LLM feature is enabled
+	// Only include AZD agent option if the LLM feature is enabled
 	if featuresManager.IsEnabled(llm.FeatureLlm) {
-		options = append(options, fmt.Sprintf("AZD Copilot %s", color.YellowString("(Alpha)")))
+		options = append(options, fmt.Sprintf("%s %s", output.AzdAgentLabel(), color.YellowString("(Alpha)")))
 	}
 
 	selection, err := console.Select(ctx, input.ConsoleOptions{
@@ -574,7 +574,7 @@ func promptInitType(console input.Console, ctx context.Context, featuresManager 
 	case 2:
 		// Only return initWithCopilot if the LLM feature is enabled and we have 3 options
 		if featuresManager.IsEnabled(llm.FeatureLlm) {
-			return initWithCopilot, nil
+			return initWithAgent, nil
 		}
 		fallthrough
 	default:

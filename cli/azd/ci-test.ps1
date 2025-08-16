@@ -33,11 +33,11 @@ function New-EmptyDirectory {
 $unitCoverDir = New-EmptyDirectory -Path $UnitTestCoverageDir
 Write-Host "Running unit tests..."
 
-# --test.gocoverdir is currently a "under-the-cover" way to pass the coverage directory to a test binary
-# See https://github.com/golang/go/issues/51430#issuecomment-1344711300
-#
-# This may be improved in go1.21 with an official 'go test' flag.
-& $gotestsum -- ./... -short -v -cover -args --test.gocoverdir="$($unitCoverDir.FullName)"
+# Using -coverprofile flag introduced in Go 1.21 for modern coverage collection
+# This replaces the older --test.gocoverdir approach and provides better integration
+# with the standard Go toolchain for coverage reporting.
+$unitCoverProfile = Join-Path $unitCoverDir.FullName "coverage.out"
+& $gotestsum -- ./... -short -v -coverprofile="$unitCoverProfile"
 if ($LASTEXITCODE) {
     exit $LASTEXITCODE
 }
@@ -54,13 +54,15 @@ $oldGOCOVERDIR = $env:GOCOVERDIR
 $oldGOEXPERIMENT = $env:GOEXPERIMENT
 
 # GOCOVERDIR enables any binaries (in this case, azd.exe) built with '-cover',
-# to write out coverage output to the specific directory.
+# to write out coverage output to the specific coverage directory.
+# This works in conjunction with the -coverprofile flag for comprehensive coverage reporting.
 $env:GOCOVERDIR = $intCoverDir.FullName
 # Set any experiment flags that are needed for the tests.
 $env:GOEXPERIMENT=""
 
 try {
-    & $gotestsum -- ./... -v -timeout $IntegrationTestTimeout
+    $intCoverProfile = Join-Path $intCoverDir.FullName "coverage.out"
+    & $gotestsum -- ./... -v -timeout $IntegrationTestTimeout -coverprofile="$intCoverProfile"
     if ($LASTEXITCODE) {
         exit $LASTEXITCODE
     }    

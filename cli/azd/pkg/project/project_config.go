@@ -40,6 +40,9 @@ type ProjectConfig struct {
 	Workflows         workflow.WorkflowMap       `yaml:"workflows,omitempty"`
 	Cloud             *cloud.Config              `yaml:"cloud,omitempty"`
 	Resources         map[string]*ResourceConfig `yaml:"resources,omitempty"`
+	// TrackingId is the template version in format YYYY-MM-DD-<short-git-hash>
+	// This is used to track the version of the template being used
+	TrackingId string `yaml:"tracking_id,omitempty"`
 
 	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:"-"`
 }

@@ -49,8 +49,11 @@ stages:
           if ($unitCoverageFiles.Count -gt 0) {
               Write-Host "Merging $($unitCoverageFiles.Count) unit test coverage files..."
               $unitFilesParam = $unitCoverageFiles -join ","
-              & "$(Build.SourcesDirectory)/eng/scripts/Merge-GoCoverageProfiles.ps1" -InputFiles $unitFilesParam -OutputFile "merged-coverage/unit-coverage.out"
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Merge-GoCoverageProfiles.ps1" -InputFiles $unitFilesParam -OutputFile "merged-coverage/unit-coverage.out"
+              if ($LASTEXITCODE -ne 0) { 
+                  Write-Error "Failed to merge unit test coverage files"
+                  exit $LASTEXITCODE 
+              }
           } else {
               Write-Warning "No unit test coverage files found"
               New-Item -ItemType File -Path "merged-coverage/unit-coverage.out" -Value "mode: set`n"
@@ -60,23 +63,33 @@ stages:
           if ($integrationCoverageFiles.Count -gt 0) {
               Write-Host "Merging $($integrationCoverageFiles.Count) integration test coverage files..."
               $intFilesParam = $integrationCoverageFiles -join ","
-              & "$(Build.SourcesDirectory)/eng/scripts/Merge-GoCoverageProfiles.ps1" -InputFiles $intFilesParam -OutputFile "merged-coverage/int-coverage.out"
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Merge-GoCoverageProfiles.ps1" -InputFiles $intFilesParam -OutputFile "merged-coverage/int-coverage.out"
+              if ($LASTEXITCODE -ne 0) { 
+                  Write-Error "Failed to merge integration test coverage files"
+                  exit $LASTEXITCODE 
+              }
           } else {
               Write-Warning "No integration test coverage files found"
               New-Item -ItemType File -Path "merged-coverage/int-coverage.out" -Value "mode: set`n"
           }
           
           # Merge unit and integration coverage into final coverage file
-          $allCoverageFiles = @("merged-coverage/unit-coverage.out", "merged-coverage/int-coverage.out")
           Write-Host "Merging unit and integration coverage into final coverage file..."
+          $allCoverageFiles = @("merged-coverage/unit-coverage.out", "merged-coverage/int-coverage.out")
           $allFilesParam = $allCoverageFiles -join ","
-          & "$(Build.SourcesDirectory)/eng/scripts/Merge-GoCoverageProfiles.ps1" -InputFiles $allFilesParam -OutputFile "cover.out"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Merge-GoCoverageProfiles.ps1" -InputFiles $allFilesParam -OutputFile "cover.out"
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Error "Failed to merge final coverage files"
+              exit $LASTEXITCODE 
+          }
 
           # Convert Go coverage to Cobertura XML format using custom script
-          & "$(Build.SourcesDirectory)/eng/scripts/Convert-GoCoverageToCobertura.ps1" -CoverageFile cover.out -OutputFile coverage.xml -SourceRoot "$(Build.SourcesDirectory)"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "Converting coverage to Cobertura XML format..."
+          pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Convert-GoCoverageToCobertura.ps1" -CoverageFile cover.out -OutputFile coverage.xml -SourceRoot "$(Build.SourcesDirectory)"
+          if ($LASTEXITCODE -ne 0) { 
+              Write-Error "Failed to convert coverage to XML"
+              exit $LASTEXITCODE 
+          }
         displayName: Merge code coverage files
 
       - task: PublishCodeCoverageResults@1

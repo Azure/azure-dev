@@ -37,50 +37,58 @@ function Parse-CoverageProfile {
         return @{}
     }
     
-    $lines = Get-Content $FilePath
-    if ($lines.Count -eq 0) {
-        Write-Warning "Empty coverage file: $FilePath"
-        return @{}
-    }
-    
-    $coverage = @{}
-    
-    # Skip the mode line (first line) and process coverage data
-    for ($i = 1; $i -lt $lines.Count; $i++) {
-        $line = $lines[$i].Trim()
-        if ([string]::IsNullOrEmpty($line)) { continue }
+    try {
+        $lines = Get-Content $FilePath -ErrorAction Stop
+        if ($lines.Count -eq 0) {
+            Write-Warning "Empty coverage file: $FilePath"
+            return @{}
+        }
         
-        # Parse line format: file.go:startLine.startCol,endLine.endCol numStmt count
-        if ($line -match '^(.+):(\d+)\.(\d+),(\d+)\.(\d+) (\d+) (\d+)$') {
-            $file = $matches[1]
-            $startLine = [int]$matches[2]
-            $startCol = [int]$matches[3]
-            $endLine = [int]$matches[4]
-            $endCol = [int]$matches[5]
-            $numStmt = [int]$matches[6]
-            $count = [int]$matches[7]
+        $coverage = @{}
+        
+        # Skip the mode line (first line) and process coverage data
+        for ($i = 1; $i -lt $lines.Count; $i++) {
+            $line = $lines[$i].Trim()
+            if ([string]::IsNullOrEmpty($line)) { continue }
             
-            # Create a unique key for this code block
-            $blockKey = "${file}:${startLine}.${startCol},${endLine}.${endCol}"
-            
-            if ($coverage.ContainsKey($blockKey)) {
-                # Merge coverage counts for the same block
-                $coverage[$blockKey].count += $count
-            } else {
-                $coverage[$blockKey] = @{
-                    file = $file
-                    startLine = $startLine
-                    startCol = $startCol
-                    endLine = $endLine
-                    endCol = $endCol
-                    numStmt = $numStmt
-                    count = $count
+            # Parse line format: file.go:startLine.startCol,endLine.endCol numStmt count
+            if ($line -match '^(.+):(\d+)\.(\d+),(\d+)\.(\d+) (\d+) (\d+)$') {
+                $file = $matches[1]
+                $startLine = [int]$matches[2]
+                $startCol = [int]$matches[3]
+                $endLine = [int]$matches[4]
+                $endCol = [int]$matches[5]
+                $numStmt = [int]$matches[6]
+                $count = [int]$matches[7]
+                
+                # Create a unique key for this code block
+                $blockKey = "${file}:${startLine}.${startCol},${endLine}.${endCol}"
+                
+                if ($coverage.ContainsKey($blockKey)) {
+                    # Merge coverage counts for the same block
+                    $coverage[$blockKey].count += $count
+                } else {
+                    $coverage[$blockKey] = @{
+                        file = $file
+                        startLine = $startLine
+                        startCol = $startCol
+                        endLine = $endLine
+                        endCol = $endCol
+                        numStmt = $numStmt
+                        count = $count
+                    }
                 }
+            } else {
+                Write-Warning "Skipping invalid coverage line in $FilePath : $line"
             }
         }
+        
+        return $coverage
     }
-    
-    return $coverage
+    catch {
+        Write-Error "Error reading coverage file $FilePath : $_"
+        throw
+    }
 }
 
 function Write-CoverageProfile {
@@ -119,50 +127,75 @@ $mergedCoverage = @{}
 $totalFiles = 0
 
 foreach ($inputFile in $InputFiles) {
+    $inputFile = $inputFile.Trim()
+    if ([string]::IsNullOrEmpty($inputFile)) { continue }
+    
     if (-not (Test-Path $inputFile)) {
         Write-Warning "Input file not found: $inputFile"
         continue
     }
     
     Write-Host "Processing: $inputFile"
-    $fileCoverage = Parse-CoverageProfile -FilePath $inputFile
-    
-    if ($fileCoverage.Count -eq 0) {
-        Write-Warning "No coverage data found in: $inputFile"
-        continue
-    }
-    
-    $totalFiles++
-    
-    # Merge this file's coverage into the overall coverage
-    foreach ($blockKey in $fileCoverage.Keys) {
-        if ($mergedCoverage.ContainsKey($blockKey)) {
-            # Add coverage counts for the same block
-            $mergedCoverage[$blockKey].count += $fileCoverage[$blockKey].count
-        } else {
-            # Copy the block data
-            $mergedCoverage[$blockKey] = $fileCoverage[$blockKey].Clone()
+    try {
+        $fileCoverage = Parse-CoverageProfile -FilePath $inputFile
+        
+        if ($fileCoverage.Count -eq 0) {
+            Write-Warning "No coverage data found in: $inputFile"
+            continue
         }
+        
+        $totalFiles++
+        
+        # Merge this file's coverage into the overall coverage
+        foreach ($blockKey in $fileCoverage.Keys) {
+            if ($mergedCoverage.ContainsKey($blockKey)) {
+                # Add coverage counts for the same block
+                $mergedCoverage[$blockKey].count += $fileCoverage[$blockKey].count
+            } else {
+                # Copy the block data
+                $mergedCoverage[$blockKey] = $fileCoverage[$blockKey].Clone()
+            }
+        }
+        
+        Write-Host "Successfully processed $inputFile with $($fileCoverage.Count) coverage blocks"
+    }
+    catch {
+        Write-Error "Failed to process coverage file $inputFile : $_"
+        exit 1
     }
 }
 
 if ($totalFiles -eq 0) {
     Write-Warning "No valid coverage files found. Creating empty coverage profile."
-    @("mode: set") | Out-File -FilePath $OutputFile -Encoding UTF8
+    try {
+        @("mode: set") | Out-File -FilePath $OutputFile -Encoding UTF8
+        Write-Host "Created empty coverage profile: $OutputFile"
+    }
+    catch {
+        Write-Error "Failed to create empty coverage profile: $_"
+        exit 1
+    }
 } else {
     Write-Host "Writing merged coverage profile to: $OutputFile"
-    Write-CoverageProfile -Coverage $mergedCoverage -OutputPath $OutputFile
-    
-    # Display summary
-    $totalBlocks = $mergedCoverage.Count
-    $coveredBlocks = ($mergedCoverage.Values | Where-Object { $_.count -gt 0 }).Count
-    $coveragePercentage = if ($totalBlocks -gt 0) { ($coveredBlocks / $totalBlocks) * 100 } else { 0 }
-    
-    Write-Host "Merge Summary:"
-    Write-Host "  Input files processed: $totalFiles"
-    Write-Host "  Total code blocks: $totalBlocks"
-    Write-Host "  Covered blocks: $coveredBlocks"
-    Write-Host "  Coverage: $($coveragePercentage.ToString('F2'))%"
+    try {
+        Write-CoverageProfile -Coverage $mergedCoverage -OutputPath $OutputFile
+        
+        # Display summary
+        $totalBlocks = $mergedCoverage.Count
+        $coveredBlocks = ($mergedCoverage.Values | Where-Object { $_.count -gt 0 }).Count
+        $coveragePercentage = if ($totalBlocks -gt 0) { ($coveredBlocks / $totalBlocks) * 100 } else { 0 }
+        
+        Write-Host "Merge Summary:"
+        Write-Host "  Input files processed: $totalFiles"
+        Write-Host "  Total code blocks: $totalBlocks"
+        Write-Host "  Covered blocks: $coveredBlocks"
+        Write-Host "  Coverage: $($coveragePercentage.ToString('F2'))%"
+    }
+    catch {
+        Write-Error "Failed to write merged coverage profile: $_"
+        exit 1
+    }
 }
 
 Write-Host "Coverage merge completed successfully!"
+exit 0

@@ -15,7 +15,7 @@ import (
 	"github.com/tmc/langchaingo/prompts"
 )
 
-// OneShotAzdAiAgent represents an AZD Copilot agent designed for single-request processing
+// OneShotAzdAiAgent represents an `azd` agent designed for single-request processing
 // without conversation memory, optimized for one-time queries and responses
 type OneShotAzdAiAgent struct {
 	*agentBase

@@ -2,16 +2,17 @@
 
 ✅ **Agent Task List**  
 
-1. Use `azd_iac_generation_rules` tool to get complete IaC rules and conventions
-2. **Inventory existing IaC files** - scan current working directory for all `.bicep` files
-3. Read `azd-arch-plan.md` to get the **IaC File Generation Checklist**
-4. Create directory structure in `./infra` following IaC rules
-5. For each file in the IaC checklist:
+1. Strictly follow Azure and Bicep best practices in all code generation
+2. Strictly follow AZD IaC generation rules during all code generation
+3. **Inventory existing IaC files** - scan current working directory for all `.bicep` files
+4. Read `azd-arch-plan.md` to get the **IaC File Generation Checklist**
+5. Create directory structure in `./infra` following IaC rules
+6. For each file in the IaC checklist:
    - **If file exists**: Intelligently update to match requirements, preserve user customizations where possible
    - **If file missing**: Generate new file following templates and best practices
    - **Flag conflicts**: Note any incompatible configurations but proceed with updates
-6. Validate all generated bicep templates compile without errors or warnings
-7. Update the IaC checklist section in existing `azd-arch-plan.md` by marking completed files as [x] while preserving existing content
+7. Validate all generated bicep templates compile without errors or warnings
+8. Update the IaC checklist section in existing `azd-arch-plan.md` by marking completed files as [x] while preserving existing content
 
 📄 **Required Outputs**  
 

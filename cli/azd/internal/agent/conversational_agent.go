@@ -23,7 +23,7 @@ import (
 //go:embed prompts/conversational.txt
 var conversational_prompt_template string
 
-// ConversationalAzdAiAgent represents an enhanced AZD Copilot agent with conversation memory,
+// ConversationalAzdAiAgent represents an enhanced `azd` agent with conversation memory,
 // tool filtering, and interactive capabilities
 type ConversationalAzdAiAgent struct {
 	*agentBase
@@ -91,9 +91,6 @@ func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...st
 // It accepts an optional initial query and handles user input/output with proper formatting.
 // The conversation continues until the user types "exit" or "quit".
 func (aai *ConversationalAzdAiAgent) StartConversation(ctx context.Context, args ...string) (string, error) {
-	fmt.Println("🤖 AZD Copilot - Interactive Mode")
-	fmt.Println("═══════════════════════════════════════════════════════════")
-
 	// Handle initial query if provided
 	var initialQuery string
 	if len(args) > 0 {
@@ -126,7 +123,7 @@ func (aai *ConversationalAzdAiAgent) StartConversation(ctx context.Context, args
 		}
 
 		if strings.ToLower(userInput) == "exit" || strings.ToLower(userInput) == "quit" {
-			fmt.Println("👋 Goodbye! Thanks for using AZD Copilot!")
+			fmt.Println("👋 Goodbye! Thanks for using azd Agent!")
 			break
 		}
 

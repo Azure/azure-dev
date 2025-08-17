@@ -237,13 +237,13 @@ func (p *Prompter) PromptParameters(
 				// Empty value explicitly skips this parameter
 				continue
 			}
-			
+
 			// Parse environment variable value according to parameter type
 			parsedValue, err := parseDevCenterEnvironmentValue(envValue, param.Type)
 			if err != nil {
 				return nil, fmt.Errorf("invalid value for environment variable %s: %w", envVarName, err)
 			}
-			
+
 			paramValues[param.Id] = parsedValue
 			continue
 		}

@@ -2066,13 +2066,13 @@ func (p *BicepProvider) ensureParameters(
 				// Empty value explicitly skips this parameter (treats as nullable)
 				continue
 			}
-			
+
 			// Parse environment variable value according to parameter type
 			parsedValue, err := parseEnvironmentValue(envValue, parameterType)
 			if err != nil {
 				return nil, fmt.Errorf("invalid value for environment variable %s: %w", envVarName, err)
 			}
-			
+
 			configuredParameters[key] = azure.ArmParameter{
 				Value: parsedValue,
 			}

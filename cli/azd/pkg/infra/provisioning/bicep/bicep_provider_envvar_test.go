@@ -137,7 +137,7 @@ func TestParseEnvironmentValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := parseEnvironmentValue(tt.value, tt.paramType)
-			
+
 			if tt.expectError {
 				assert.Error(t, err)
 			} else {
@@ -169,7 +169,7 @@ func TestBicepPlanWithEnvironmentVariables(t *testing.T) {
 
 	// Create provider and set environment variable in the provider's environment
 	infraProvider := createBicepProvider(t, mockContext)
-	
+
 	// Set environment variable for the parameter instead of prompting
 	infraProvider.env.DotenvSet("AZURE_PARAM_STRINGPARAM", "env_value")
 

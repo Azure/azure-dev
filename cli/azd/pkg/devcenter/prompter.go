@@ -229,6 +229,25 @@ func (p *Prompter) PromptParameters(
 	paramValues := map[string]any{}
 
 	for _, param := range envDef.Parameters {
+		// Check for environment variable override using AZURE_PARAM_<PARAMETER_NAME> pattern first
+		envVarName := fmt.Sprintf("AZURE_PARAM_%s", strings.ToUpper(param.Id))
+		if envValue, envExists := env.LookupEnv(envVarName); envExists {
+			// Environment variable found - use the value even if it's empty
+			if envValue == "" {
+				// Empty value explicitly skips this parameter
+				continue
+			}
+			
+			// Parse environment variable value according to parameter type
+			parsedValue, err := parseDevCenterEnvironmentValue(envValue, param.Type)
+			if err != nil {
+				return nil, fmt.Errorf("invalid value for environment variable %s: %w", envVarName, err)
+			}
+			
+			paramValues[param.Id] = parsedValue
+			continue
+		}
+
 		paramPath := fmt.Sprintf("%s.%s", ProvisionParametersConfigPath, param.Id)
 		paramValue, exists := env.Config.Get(paramPath)
 
@@ -311,4 +330,29 @@ func (p *Prompter) PromptParameters(
 	}
 
 	return paramValues, nil
+}
+
+// parseDevCenterEnvironmentValue parses an environment variable value according to the specified DevCenter parameter type
+func parseDevCenterEnvironmentValue(value string, paramType devcentersdk.ParameterType) (any, error) {
+	switch paramType {
+	case devcentersdk.ParameterTypeString:
+		return value, nil
+	case devcentersdk.ParameterTypeBool:
+		switch strings.ToLower(value) {
+		case "true", "1", "yes", "on":
+			return true, nil
+		case "false", "0", "no", "off":
+			return false, nil
+		default:
+			return nil, fmt.Errorf("invalid boolean value '%s', expected true/false", value)
+		}
+	case devcentersdk.ParameterTypeInt:
+		intVal, err := strconv.Atoi(value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid integer value '%s': %w", value, err)
+		}
+		return intVal, nil
+	default:
+		return nil, fmt.Errorf("unsupported parameter type: %s", paramType)
+	}
 }

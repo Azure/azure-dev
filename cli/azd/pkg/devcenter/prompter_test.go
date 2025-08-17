@@ -413,6 +413,74 @@ func Test_Prompt_Parameters(t *testing.T) {
 		require.Equal(t, "value1", values["param1"])
 		require.Equal(t, "value2", values["param2"])
 	})
+
+	t.Run("WithEnvironmentVariables", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		prompter := newPrompterForTest(t, mockContext, nil)
+
+		env := environment.New("Test")
+		envDefinition := &devcentersdk.EnvironmentDefinition{
+			Parameters: []devcentersdk.Parameter{
+				{
+					Id:   "param1",
+					Name: "Param 1",
+					Type: devcentersdk.ParameterTypeString,
+				},
+				{
+					Id:   "param2",
+					Name: "Param 2",
+					Type: devcentersdk.ParameterTypeBool,
+				},
+				{
+					Id:   "param3",
+					Name: "Param 3",
+					Type: devcentersdk.ParameterTypeInt,
+				},
+				{
+					Id:   "param4",
+					Name: "Param 4",
+					Type: devcentersdk.ParameterTypeString,
+				},
+			},
+		}
+
+		// Set environment variables for parameters
+		env.DotenvSet("AZURE_PARAM_PARAM1", "env_value1")
+		env.DotenvSet("AZURE_PARAM_PARAM2", "true")
+		env.DotenvSet("AZURE_PARAM_PARAM3", "42")
+		env.DotenvSet("AZURE_PARAM_PARAM4", "") // Empty value should skip this parameter
+
+		values, err := prompter.PromptParameters(*mockContext.Context, env, envDefinition)
+		require.NoError(t, err)
+		require.Equal(t, "env_value1", values["param1"])
+		require.Equal(t, true, values["param2"])
+		require.Equal(t, 42, values["param3"])
+		require.NotContains(t, values, "param4") // Should be skipped due to empty value
+	})
+
+	t.Run("WithEnvironmentVariablesOverridingConfig", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		prompter := newPrompterForTest(t, mockContext, nil)
+
+		env := environment.New("Test")
+		envDefinition := &devcentersdk.EnvironmentDefinition{
+			Parameters: []devcentersdk.Parameter{
+				{
+					Id:   "param1",
+					Name: "Param 1",
+					Type: devcentersdk.ParameterTypeString,
+				},
+			},
+		}
+
+		// Set both config and environment variable - env var should take precedence
+		_ = env.Config.Set("provision.parameters.param1", "config_value")
+		env.DotenvSet("AZURE_PARAM_PARAM1", "env_value")
+
+		values, err := prompter.PromptParameters(*mockContext.Context, env, envDefinition)
+		require.NoError(t, err)
+		require.Equal(t, "env_value", values["param1"])
+	})
 }
 
 func newPrompterForTest(t *testing.T, mockContext *mocks.MockContext, manager Manager) *Prompter {

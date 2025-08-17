@@ -2058,6 +2058,27 @@ func (p *BicepProvider) ensureParameters(
 			continue
 		}
 
+		// Check for environment variable override using AZURE_PARAM_<PARAMETER_NAME> pattern first
+		envVarName := fmt.Sprintf("AZURE_PARAM_%s", strings.ToUpper(key))
+		if envValue, envExists := p.env.LookupEnv(envVarName); envExists {
+			// Environment variable found - use the value even if it's empty
+			if envValue == "" {
+				// Empty value explicitly skips this parameter (treats as nullable)
+				continue
+			}
+			
+			// Parse environment variable value according to parameter type
+			parsedValue, err := parseEnvironmentValue(envValue, parameterType)
+			if err != nil {
+				return nil, fmt.Errorf("invalid value for environment variable %s: %w", envVarName, err)
+			}
+			
+			configuredParameters[key] = azure.ArmParameter{
+				Value: parsedValue,
+			}
+			continue
+		}
+
 		// This required parameter was not in parameters file - see if we stored a value in config from an earlier
 		// prompt and if so use it.
 		configKey := fmt.Sprintf("infra.parameters.%s", key)
@@ -2340,4 +2361,43 @@ func (p *BicepProvider) Parameters(ctx context.Context) ([]provisioning.Paramete
 	}
 
 	return provisionParameters, nil
+}
+
+// parseEnvironmentValue parses an environment variable value according to the specified parameter type
+func parseEnvironmentValue(value string, paramType provisioning.ParameterType) (any, error) {
+	switch paramType {
+	case provisioning.ParameterTypeString:
+		return value, nil
+	case provisioning.ParameterTypeBoolean:
+		switch strings.ToLower(value) {
+		case "true", "1", "yes", "on":
+			return true, nil
+		case "false", "0", "no", "off":
+			return false, nil
+		default:
+			return nil, fmt.Errorf("invalid boolean value '%s', expected true/false", value)
+		}
+	case provisioning.ParameterTypeNumber:
+		if intVal, err := strconv.Atoi(value); err == nil {
+			return intVal, nil
+		}
+		if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
+			return floatVal, nil
+		}
+		return nil, fmt.Errorf("invalid numeric value '%s'", value)
+	case provisioning.ParameterTypeArray:
+		var arr []any
+		if err := json.Unmarshal([]byte(value), &arr); err != nil {
+			return nil, fmt.Errorf("invalid JSON array value '%s': %w", value, err)
+		}
+		return arr, nil
+	case provisioning.ParameterTypeObject:
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(value), &obj); err != nil {
+			return nil, fmt.Errorf("invalid JSON object value '%s': %w", value, err)
+		}
+		return obj, nil
+	default:
+		return nil, fmt.Errorf("unsupported parameter type: %s", paramType)
+	}
 }

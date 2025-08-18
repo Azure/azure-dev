@@ -16,6 +16,10 @@ func NewAzdProjectValidationTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"azd_project_validation",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
 				`Returns instructions for validating AZD project by running comprehensive checks on azure.yaml schema, 
 Bicep templates, environment setup, packaging, and deployment preview.

@@ -182,6 +182,11 @@ overrides:
       - golines
       - technicalterm
       - Errorf
+  - filename: internal/mcp/tools/azd_yaml_schema.go
+    words:
+      - santhosh
+      - tekuri
+      - jsonschema
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

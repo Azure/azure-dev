@@ -13,9 +13,6 @@ var AzdPlanInitPrompt string
 //go:embed azd_iac_generation_rules.md
 var AzdIacRulesPrompt string
 
-//go:embed azure.yaml.json
-var AzdYamlSchemaPrompt string
-
 //go:embed azd_discovery_analysis.md
 var AzdDiscoveryAnalysisPrompt string
 
@@ -33,9 +30,3 @@ var AzdDockerGenerationPrompt string
 
 //go:embed azd_project_validation.md
 var AzdProjectValidationPrompt string
-
-//go:embed azd_provision_error_troubleshooting.md
-var AzdErrorTroubleShootingPrompt string
-
-//go:embed azd_common_error.md
-var AzdCommonErrorPrompt string

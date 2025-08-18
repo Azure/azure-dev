@@ -12,13 +12,26 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // FileInfoTool implements the Tool interface for getting file information
-type FileInfoTool struct{}
+type FileInfoTool struct {
+	common.BuiltInTool
+}
 
 func (t FileInfoTool) Name() string {
 	return "file_info"
+}
+
+func (t FileInfoTool) Annotations() mcp.ToolAnnotation {
+	return mcp.ToolAnnotation{
+		Title:           "Get File Information",
+		ReadOnlyHint:    common.ToPtr(true),
+		DestructiveHint: common.ToPtr(false),
+		IdempotentHint:  common.ToPtr(true),
+		OpenWorldHint:   common.ToPtr(false),
+	}
 }
 
 func (t FileInfoTool) Description() string {

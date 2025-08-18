@@ -4,15 +4,14 @@
 package tools
 
 import (
-	"github.com/tmc/langchaingo/tools"
-
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/dev"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/io"
 )
 
 // ToolLoader provides an interface for loading tools from different categories
 type ToolLoader interface {
-	LoadTools() ([]tools.Tool, error)
+	LoadTools() ([]common.AnnotatedTool, error)
 }
 
 // LocalToolsLoader manages loading tools from multiple local tool categories
@@ -32,8 +31,8 @@ func NewLocalToolsLoader() *LocalToolsLoader {
 
 // LoadTools loads and returns all tools from all registered tool loaders.
 // Returns an error if any individual loader fails to load its tools.
-func (l *LocalToolsLoader) LoadTools() ([]tools.Tool, error) {
-	var allTools []tools.Tool
+func (l *LocalToolsLoader) LoadTools() ([]common.AnnotatedTool, error) {
+	var allTools []common.AnnotatedTool
 
 	for _, loader := range l.loaders {
 		categoryTools, err := loader.LoadTools()

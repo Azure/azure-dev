@@ -12,13 +12,26 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // ChangeDirectoryTool implements the Tool interface for changing the current working directory
-type ChangeDirectoryTool struct{}
+type ChangeDirectoryTool struct {
+	common.BuiltInTool
+}
 
 func (t ChangeDirectoryTool) Name() string {
 	return "change_directory"
+}
+
+func (t ChangeDirectoryTool) Annotations() mcp.ToolAnnotation {
+	return mcp.ToolAnnotation{
+		Title:           "Change Directory",
+		ReadOnlyHint:    common.ToPtr(false),
+		DestructiveHint: common.ToPtr(false),
+		IdempotentHint:  common.ToPtr(true),
+		OpenWorldHint:   common.ToPtr(false),
+	}
 }
 
 func (t ChangeDirectoryTool) Description() string {

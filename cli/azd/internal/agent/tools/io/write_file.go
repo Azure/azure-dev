@@ -13,10 +13,13 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // WriteFileTool implements a comprehensive file writing tool that handles all scenarios
-type WriteFileTool struct{}
+type WriteFileTool struct {
+	common.BuiltInTool
+}
 
 // WriteFileRequest represents the JSON input for the write_file tool
 type WriteFileRequest struct {
@@ -57,9 +60,23 @@ func (t WriteFileTool) Name() string {
 	return "write_file"
 }
 
+func (t WriteFileTool) Annotations() mcp.ToolAnnotation {
+	return mcp.ToolAnnotation{
+		Title:           "Write File Contents",
+		ReadOnlyHint:    common.ToPtr(false),
+		DestructiveHint: common.ToPtr(true),
+		IdempotentHint:  common.ToPtr(false),
+		OpenWorldHint:   common.ToPtr(false),
+	}
+}
+
 func (t WriteFileTool) Description() string {
 	return `Comprehensive file writing tool that handles full file writes, appends, and line-based partial updates.
 Returns JSON response with operation details.
+
+CRITICAL SAFETY GUIDANCE FOR PARTIAL WRITES:
+When making multiple partial writes to the same file, ALWAYS re-read the file between writes!
+Line numbers shift when you insert/delete lines, causing corruption if you use stale line numbers.
 
 Input: JSON payload with the following structure:
 {
@@ -80,13 +97,12 @@ MODES:
 - "append": Add content to end of existing file
 - "create": Create file only if it doesn't exist
 
-PARTIAL WRITES (line-based editing):
-⚠️  IMPORTANT: Partial writes REQUIRE an existing file. Cannot create new files with line positioning.
 Add startLine and endLine to any "write" operation to replace specific lines in EXISTING files:
 - Both are 1-based and inclusive
 - startLine=5, endLine=8 replaces lines 5, 6, 7, and 8
 - If endLine > file length, content is appended
 - File MUST exist for partial writes - use regular write mode for new files
+- ALWAYS re-read file after writes that change line counts to get accurate line positions
 
 EXAMPLES:
 
@@ -98,6 +114,12 @@ Append to file:
 
 Partial write (replace specific lines in EXISTING file):
 {"filename": "./config.json", "content": "  \"newSetting\": true,\n  \"version\": \"2.0\"", "startLine": 3, "endLine": 4}
+
+Safe multi-step partial editing workflow:
+1. {"filename": "file.py", "startLine": 1, "endLine": 50} // read_file to understand structure
+2. {"filename": "file.py", "content": "new function", "startLine": 5, "endLine": 8} // first write
+3. {"filename": "file.py", "startLine": 1, "endLine": 50} // RE-READ to get updated line numbers
+4. {"filename": "file.py", "content": "updated content", "startLine": 12, "endLine": 15} // use fresh line numbers
 
 Create only if doesn't exist:
 {"filename": "./new-file.txt", "content": "Initial content", "mode": "create"}

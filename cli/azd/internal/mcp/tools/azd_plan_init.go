@@ -16,6 +16,10 @@ func NewAzdPlanInitTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"azd_plan_init",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
 				`Returns instructions for orchestrating complete AZD application initialization using structured phases 
 with specialized tools. 

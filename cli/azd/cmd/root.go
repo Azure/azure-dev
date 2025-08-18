@@ -409,40 +409,16 @@ func NewRootCmd(
 			}
 		}
 
+		// Enable MCP commands when LLM feature is enabled
+		if alphaFeatureManager.IsEnabled(llm.FeatureLlm) {
+			mcpActions(root)
+		}
+
 		return nil
 	})
 
 	if err != nil {
 		panic(err)
-	}
-
-	if err := rootContainer.Invoke(func(alphaFeatureManager *alpha.FeatureManager) error {
-		llmEnabledError := llm.IsLlmFeatureEnabled(alphaFeatureManager)
-		if llmEnabledError != nil {
-			root.Add("mcp", &actions.ActionDescriptorOptions{
-				Command: &cobra.Command{
-					RunE: func(cmd *cobra.Command, args []string) error {
-						return llmEnabledError
-					},
-				},
-			})
-		} else {
-			root.Add("mcp", &actions.ActionDescriptorOptions{
-				Command:        newMcpCmd(),
-				FlagsResolver:  newMcpFlags,
-				ActionResolver: newMcpAction,
-				HelpOptions: actions.ActionHelpOptions{
-					Description: getCmdMcpHelpDescription,
-					Footer:      getCmdMcpHelpFooter,
-				},
-				GroupingOptions: actions.CommandGroupOptions{
-					RootLevelHelp: actions.CmdGroupAlpha,
-				},
-			})
-		}
-		return nil
-	}); err != nil {
-		panic(fmt.Errorf("Failed to initialize LLM feature: %w", err))
 	}
 
 	// Initialize the platform specific components for the IoC container

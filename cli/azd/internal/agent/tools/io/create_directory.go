@@ -11,13 +11,26 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // CreateDirectoryTool implements the Tool interface for creating directories
-type CreateDirectoryTool struct{}
+type CreateDirectoryTool struct {
+	common.BuiltInTool
+}
 
 func (t CreateDirectoryTool) Name() string {
 	return "create_directory"
+}
+
+func (t CreateDirectoryTool) Annotations() mcp.ToolAnnotation {
+	return mcp.ToolAnnotation{
+		Title:           "Create Directory",
+		ReadOnlyHint:    common.ToPtr(false),
+		DestructiveHint: common.ToPtr(false),
+		IdempotentHint:  common.ToPtr(true),
+		OpenWorldHint:   common.ToPtr(false),
+	}
 }
 
 func (t CreateDirectoryTool) Description() string {

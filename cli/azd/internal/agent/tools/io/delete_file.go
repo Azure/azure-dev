@@ -11,13 +11,26 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // DeleteFileTool implements the Tool interface for deleting files
-type DeleteFileTool struct{}
+type DeleteFileTool struct {
+	common.BuiltInTool
+}
 
 func (t DeleteFileTool) Name() string {
 	return "delete_file"
+}
+
+func (t DeleteFileTool) Annotations() mcp.ToolAnnotation {
+	return mcp.ToolAnnotation{
+		Title:           "Delete File",
+		ReadOnlyHint:    common.ToPtr(false),
+		DestructiveHint: common.ToPtr(true),
+		IdempotentHint:  common.ToPtr(false),
+		OpenWorldHint:   common.ToPtr(false),
+	}
 }
 
 func (t DeleteFileTool) Description() string {

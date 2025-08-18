@@ -14,16 +14,26 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
-	"github.com/tmc/langchaingo/callbacks"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // CommandExecutorTool implements the Tool interface for executing commands and scripts
 type CommandExecutorTool struct {
-	CallbacksHandler callbacks.Handler
+	common.BuiltInTool
 }
 
 func (t CommandExecutorTool) Name() string {
 	return "execute_command"
+}
+
+func (t CommandExecutorTool) Annotations() mcp.ToolAnnotation {
+	return mcp.ToolAnnotation{
+		Title:           "Execute Terminal Command",
+		ReadOnlyHint:    common.ToPtr(false),
+		DestructiveHint: common.ToPtr(true),
+		IdempotentHint:  common.ToPtr(false),
+		OpenWorldHint:   common.ToPtr(true),
+	}
 }
 
 func (t CommandExecutorTool) Description() string {
@@ -77,19 +87,12 @@ type CommandResponse struct {
 }
 
 func (t CommandExecutorTool) Call(ctx context.Context, input string) (string, error) {
-	// Invoke callback for tool start
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("execute_command: %s", input))
-	}
-
 	if input == "" {
 		errorResponse := common.ErrorResponse{
 			Error:   true,
 			Message: "command execution request is required",
 		}
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("command execution request is required"))
-		}
+
 		jsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
 		return string(jsonData), nil
 	}
@@ -101,9 +104,7 @@ func (t CommandExecutorTool) Call(ctx context.Context, input string) (string, er
 			Error:   true,
 			Message: fmt.Sprintf("failed to parse command request: %s", err.Error()),
 		}
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("failed to parse command request: %w", err))
-		}
+
 		jsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
 		return string(jsonData), nil
 	}
@@ -114,9 +115,7 @@ func (t CommandExecutorTool) Call(ctx context.Context, input string) (string, er
 			Error:   true,
 			Message: "command is required",
 		}
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("command is required"))
-		}
+
 		jsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
 		return string(jsonData), nil
 	}
@@ -133,9 +132,7 @@ func (t CommandExecutorTool) Call(ctx context.Context, input string) (string, er
 			Error:   true,
 			Message: fmt.Sprintf("execution failed: %s", err.Error()),
 		}
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("execution failed: %w", err))
-		}
+
 		jsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
 		return string(jsonData), nil
 	}
@@ -150,16 +147,9 @@ func (t CommandExecutorTool) Call(ctx context.Context, input string) (string, er
 			Error:   true,
 			Message: fmt.Sprintf("failed to marshal JSON response: %s", err.Error()),
 		}
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, fmt.Errorf("failed to marshal JSON response: %w", err))
-		}
+
 		errorJsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
 		return string(errorJsonData), nil
-	}
-
-	// Invoke callback for tool end
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolEnd(ctx, string(jsonData))
 	}
 
 	return string(jsonData), nil

@@ -11,13 +11,26 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // DeleteDirectoryTool implements the Tool interface for deleting directories
-type DeleteDirectoryTool struct{}
+type DeleteDirectoryTool struct {
+	common.BuiltInTool
+}
 
 func (t DeleteDirectoryTool) Name() string {
 	return "delete_directory"
+}
+
+func (t DeleteDirectoryTool) Annotations() mcp.ToolAnnotation {
+	return mcp.ToolAnnotation{
+		Title:           "Delete Directory",
+		ReadOnlyHint:    common.ToPtr(false),
+		DestructiveHint: common.ToPtr(true),
+		IdempotentHint:  common.ToPtr(false),
+		OpenWorldHint:   common.ToPtr(false),
+	}
 }
 
 func (t DeleteDirectoryTool) Description() string {

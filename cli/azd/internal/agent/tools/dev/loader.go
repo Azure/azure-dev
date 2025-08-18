@@ -3,9 +3,7 @@
 
 package dev
 
-import (
-	"github.com/tmc/langchaingo/tools"
-)
+import "github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 
 // DevToolLoader loads development-related tools
 type DevToolsLoader struct{}
@@ -14,8 +12,8 @@ func NewDevToolsLoader() *DevToolsLoader {
 	return &DevToolsLoader{}
 }
 
-func (l *DevToolsLoader) LoadTools() ([]tools.Tool, error) {
-	return []tools.Tool{
+func (l *DevToolsLoader) LoadTools() ([]common.AnnotatedTool, error) {
+	return []common.AnnotatedTool{
 		&CommandExecutorTool{},
 	}, nil
 }

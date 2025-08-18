@@ -11,13 +11,26 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // MoveFileTool implements the Tool interface for moving/renaming files
-type MoveFileTool struct{}
+type MoveFileTool struct {
+	common.BuiltInTool
+}
 
 func (t MoveFileTool) Name() string {
 	return "move_file"
+}
+
+func (t MoveFileTool) Annotations() mcp.ToolAnnotation {
+	return mcp.ToolAnnotation{
+		Title:           "Move or Rename File",
+		ReadOnlyHint:    common.ToPtr(false),
+		DestructiveHint: common.ToPtr(true),
+		IdempotentHint:  common.ToPtr(false),
+		OpenWorldHint:   common.ToPtr(false),
+	}
 }
 
 func (t MoveFileTool) Description() string {

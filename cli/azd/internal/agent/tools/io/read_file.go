@@ -13,10 +13,13 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // ReadFileTool implements the Tool interface for reading file contents
-type ReadFileTool struct{}
+type ReadFileTool struct {
+	common.BuiltInTool
+}
 
 // ReadFileRequest represents the JSON payload for file read requests
 type ReadFileRequest struct {
@@ -54,6 +57,16 @@ type ReadFileInfo struct {
 
 func (t ReadFileTool) Name() string {
 	return "read_file"
+}
+
+func (t ReadFileTool) Annotations() mcp.ToolAnnotation {
+	return mcp.ToolAnnotation{
+		Title:           "Read File Contents",
+		ReadOnlyHint:    common.ToPtr(true),
+		DestructiveHint: common.ToPtr(false),
+		IdempotentHint:  common.ToPtr(true),
+		OpenWorldHint:   common.ToPtr(false),
+	}
 }
 
 func (t ReadFileTool) Description() string {

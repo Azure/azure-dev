@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
-	"github.com/azure/azure-dev/cli/azd/internal/agent/logging"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -137,7 +136,7 @@ type initAction struct {
 	featuresManager   *alpha.FeatureManager
 	extensionsManager *extensions.Manager
 	azd               workflow.AzdCommandRunner
-	llmManager        *llm.Manager
+	agentFactory      *agent.AgentFactory
 }
 
 func newInitAction(
@@ -152,7 +151,7 @@ func newInitAction(
 	featuresManager *alpha.FeatureManager,
 	extensionsManager *extensions.Manager,
 	azd workflow.AzdCommandRunner,
-	llmManager *llm.Manager,
+	agentFactory *agent.AgentFactory,
 ) actions.Action {
 	return &initAction{
 		lazyAzdCtx:        lazyAzdCtx,
@@ -166,7 +165,7 @@ func newInitAction(
 		featuresManager:   featuresManager,
 		extensionsManager: extensionsManager,
 		azd:               azd,
-		llmManager:        llmManager,
+		agentFactory:      agentFactory,
 	}
 }
 
@@ -353,8 +352,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		header = fmt.Sprintf("Initialized environment %s.", env.Name())
 		followUp = ""
-	case initWithCopilot:
-		if err := i.initAppWithCopilot(ctx); err != nil {
+	case initWithAgent:
+		if err := i.initAppWithAgent(ctx); err != nil {
 			return nil, err
 		}
 	default:
@@ -373,34 +372,18 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}, nil
 }
 
-func (i *initAction) initAppWithCopilot(ctx context.Context) error {
+func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	// Warn user that this is an alpha feature
 	i.console.WarnForFeature(ctx, llm.FeatureLlm)
 
-	fileLogger, cleanup, err := logging.NewFileLoggerDefault()
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	defaultModelContainer, err := i.llmManager.GetDefaultModel(llm.WithLogger(fileLogger))
-	if err != nil {
-		return err
-	}
-
-	samplingModelContainer, err := i.llmManager.GetDefaultModel()
-	if err != nil {
-		return err
-	}
-
-	azdAgent, err := agent.NewConversationalAzdAiAgent(
-		defaultModelContainer.Model,
-		agent.WithSamplingModel(samplingModelContainer.Model),
+	azdAgent, cleanup, err := i.agentFactory.Create(
 		agent.WithDebug(i.flags.global.EnableDebugLogging),
 	)
 	if err != nil {
 		return err
 	}
+
+	defer cleanup()
 
 	type initStep struct {
 		Name        string
@@ -472,7 +455,7 @@ Do not stop until all tasks are complete and fully resolved.
 
 		i.console.StopSpinner(ctx, step.Name, input.StepDone)
 		i.console.Message(ctx, "")
-		i.console.Message(ctx, color.MagentaString("🤖 AZD Copilot:"))
+		i.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
 		i.console.Message(ctx, output.WithMarkdown(agentOutput))
 		i.console.Message(ctx, "")
 	}
@@ -488,7 +471,7 @@ Do not stop until all tasks are complete and fully resolved.
 // collectAndApplyFeedback prompts for user feedback and applies it using the agent in a loop
 func (i *initAction) collectAndApplyFeedback(
 	ctx context.Context,
-	azdAgent *agent.ConversationalAzdAiAgent,
+	azdAgent agent.Agent,
 	promptMessage string,
 ) error {
 	// Loop to allow multiple rounds of feedback
@@ -536,7 +519,7 @@ func (i *initAction) collectAndApplyFeedback(
 
 			i.console.StopSpinner(ctx, "Submitting feedback", input.StepDone)
 			i.console.Message(ctx, "")
-			i.console.Message(ctx, color.MagentaString("🤖 AZD Copilot:"))
+			i.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
 			i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
 			i.console.Message(ctx, "")
 		}
@@ -546,7 +529,7 @@ func (i *initAction) collectAndApplyFeedback(
 }
 
 // postCompletionFeedbackLoop provides a final opportunity for feedback after all steps complete
-func (i *initAction) postCompletionFeedbackLoop(ctx context.Context, azdAgent *agent.ConversationalAzdAiAgent) error {
+func (i *initAction) postCompletionFeedbackLoop(ctx context.Context, azdAgent agent.Agent) error {
 	i.console.Message(ctx, "")
 	i.console.Message(ctx, "🎉 All initialization steps completed!")
 	i.console.Message(ctx, "")
@@ -561,7 +544,7 @@ const (
 	initFromApp
 	initAppTemplate
 	initEnvironment
-	initWithCopilot
+	initWithAgent
 )
 
 func promptInitType(console input.Console, ctx context.Context, featuresManager *alpha.FeatureManager) (initType, error) {
@@ -570,9 +553,9 @@ func promptInitType(console input.Console, ctx context.Context, featuresManager 
 		"Select a template",
 	}
 
-	// Only include AZD Copilot option if the LLM feature is enabled
+	// Only include AZD agent option if the LLM feature is enabled
 	if featuresManager.IsEnabled(llm.FeatureLlm) {
-		options = append(options, fmt.Sprintf("AZD Copilot %s", color.YellowString("(Alpha)")))
+		options = append(options, fmt.Sprintf("%s %s", output.AzdAgentLabel(), color.YellowString("(Alpha)")))
 	}
 
 	selection, err := console.Select(ctx, input.ConsoleOptions{
@@ -591,7 +574,7 @@ func promptInitType(console input.Console, ctx context.Context, featuresManager 
 	case 2:
 		// Only return initWithCopilot if the LLM feature is enabled and we have 3 options
 		if featuresManager.IsEnabled(llm.FeatureLlm) {
-			return initWithCopilot, nil
+			return initWithAgent, nil
 		}
 		fallthrough
 	default:

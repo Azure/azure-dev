@@ -9,16 +9,27 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/tmc/langchaingo/callbacks"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // HTTPFetcherTool implements the Tool interface for making HTTP requests
 type HTTPFetcherTool struct {
-	CallbacksHandler callbacks.Handler
+	common.BuiltInTool
 }
 
 func (t HTTPFetcherTool) Name() string {
 	return "http_fetcher"
+}
+
+func (t HTTPFetcherTool) Annotations() mcp.ToolAnnotation {
+	return mcp.ToolAnnotation{
+		Title:           "Fetch HTTP Endpoint",
+		ReadOnlyHint:    common.ToPtr(true),
+		DestructiveHint: common.ToPtr(false),
+		IdempotentHint:  common.ToPtr(true),
+		OpenWorldHint:   common.ToPtr(true),
+	}
 }
 
 func (t HTTPFetcherTool) Description() string {
@@ -26,36 +37,21 @@ func (t HTTPFetcherTool) Description() string {
 }
 
 func (t HTTPFetcherTool) Call(ctx context.Context, input string) (string, error) {
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolStart(ctx, fmt.Sprintf("http_fetcher: %s", input))
-	}
-
 	// #nosec G107 - HTTP requests with variable URLs are the intended functionality of this tool
 	resp, err := http.Get(input)
 	if err != nil {
-		toolErr := fmt.Errorf("failed to fetch URL %s: %w", input, err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return "", fmt.Errorf("failed to fetch URL %s: %w", input, err)
 	}
+
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		err := fmt.Errorf("HTTP request failed with status: %s", resp.Status)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, err)
-		}
-		return "", err
+		return "", fmt.Errorf("HTTP request failed with status: %s", resp.Status)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		toolErr := fmt.Errorf("failed to read response body: %w", err)
-		if t.CallbacksHandler != nil {
-			t.CallbacksHandler.HandleToolError(ctx, toolErr)
-		}
-		return "", toolErr
+		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	var output string
@@ -65,10 +61,6 @@ func (t HTTPFetcherTool) Call(ctx context.Context, input string) (string, error)
 	} else {
 		output = string(body)
 		output += "\n"
-	}
-
-	if t.CallbacksHandler != nil {
-		t.CallbacksHandler.HandleToolEnd(ctx, output)
 	}
 
 	return output, nil

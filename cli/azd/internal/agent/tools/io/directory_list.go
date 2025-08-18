@@ -12,13 +12,26 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // DirectoryListTool implements the Tool interface for listing directory contents
-type DirectoryListTool struct{}
+type DirectoryListTool struct {
+	common.BuiltInTool
+}
 
 func (t DirectoryListTool) Name() string {
 	return "list_directory"
+}
+
+func (t DirectoryListTool) Annotations() mcp.ToolAnnotation {
+	return mcp.ToolAnnotation{
+		Title:           "List Directory Contents",
+		ReadOnlyHint:    common.ToPtr(true),
+		DestructiveHint: common.ToPtr(false),
+		IdempotentHint:  common.ToPtr(true),
+		OpenWorldHint:   common.ToPtr(false),
+	}
 }
 
 func (t DirectoryListTool) Description() string {

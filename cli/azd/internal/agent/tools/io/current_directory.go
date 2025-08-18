@@ -10,17 +10,30 @@ import (
 	"os"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // CurrentDirectoryTool implements the Tool interface for getting current directory
-type CurrentDirectoryTool struct{}
+type CurrentDirectoryTool struct {
+	common.BuiltInTool
+}
 
 func (t CurrentDirectoryTool) Name() string {
-	return "cwd"
+	return "current_directory"
+}
+
+func (t CurrentDirectoryTool) Annotations() mcp.ToolAnnotation {
+	return mcp.ToolAnnotation{
+		Title:           "Get Current Directory",
+		ReadOnlyHint:    common.ToPtr(true),
+		DestructiveHint: common.ToPtr(false),
+		IdempotentHint:  common.ToPtr(true),
+		OpenWorldHint:   common.ToPtr(false),
+	}
 }
 
 func (t CurrentDirectoryTool) Description() string {
-	return "Get the current working directory to understand the project context. " +
+	return "Get the current working directory for the project workspace " +
 		"Input: use 'current' or '.' (any input works)"
 }
 

@@ -16,6 +16,10 @@ func NewAzdDockerGenerationTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"azd_docker_generation",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
 				`Returns instructions for generating optimized Dockerfiles and container configurations for containerizable 
 services in AZD projects. 

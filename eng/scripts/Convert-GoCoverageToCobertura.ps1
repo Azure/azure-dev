@@ -45,8 +45,59 @@ function Get-RelativePath {
     return $resolvedPath.TrimStart('.', '\', '/')
 }
 
+function Normalize-GoFilePath {
+    param(
+        [string]$GoFilePath,
+        [string]$SourceRoot
+    )
+    
+    # Handle Go module paths like "github.com/azure/azure-dev/cli/azd/pkg/test/file.go"
+    # Convert to relative paths like "cli/azd/pkg/test/file.go"
+    
+    # Common Go module path patterns to normalize
+    $modulePatterns = @(
+        "github.com/azure/azure-dev/",
+        "github.com/Azure/azure-dev/"
+    )
+    
+    $normalizedPath = $GoFilePath
+    
+    foreach ($pattern in $modulePatterns) {
+        if ($normalizedPath.StartsWith($pattern)) {
+            $normalizedPath = $normalizedPath.Substring($pattern.Length)
+            break
+        }
+    }
+    
+    # Ensure we use forward slashes for consistency
+    $normalizedPath = $normalizedPath.Replace('\', '/')
+    
+    # Verify the file exists relative to source root
+    $fullPath = Join-Path $SourceRoot $normalizedPath
+    if (Test-Path $fullPath) {
+        return $normalizedPath
+    } else {
+        # If the normalized path doesn't exist, try to find it relative to cli/azd
+        $cliPath = $normalizedPath
+        if ($normalizedPath.StartsWith("cli/azd/")) {
+            $cliPath = $normalizedPath.Substring("cli/azd/".Length)
+        }
+        
+        $cliFullPath = Join-Path $SourceRoot "cli/azd/$cliPath"
+        if (Test-Path $cliFullPath) {
+            return "cli/azd/$cliPath"
+        }
+    }
+    
+    # Return the normalized path even if file doesn't exist (for build artifacts)
+    return $normalizedPath
+}
+
 function Parse-GoCoverageFile {
-    param([string]$FilePath)
+    param(
+        [string]$FilePath,
+        [string]$SourceRoot
+    )
     
     $coverage = @{}
     $lines = Get-Content $FilePath
@@ -58,11 +109,14 @@ function Parse-GoCoverageFile {
         
         # Parse line format: file.go:startLine.startCol,endLine.endCol numStmt count
         if ($line -match '^(.+):(\d+)\.(\d+),(\d+)\.(\d+) (\d+) (\d+)$') {
-            $file = $matches[1]
+            $originalFile = $matches[1]
             $startLine = [int]$matches[2]
             $endLine = [int]$matches[4]
             $numStmt = [int]$matches[6]
             $count = [int]$matches[7]
+            
+            # Normalize the file path to be relative to source root
+            $file = Normalize-GoFilePath -GoFilePath $originalFile -SourceRoot $SourceRoot
             
             if (-not $coverage.ContainsKey($file)) {
                 $coverage[$file] = @{}
@@ -219,7 +273,7 @@ if (-not (Test-Path $CoverageFile)) {
 }
 
 # Parse the Go coverage file
-$coverage = Parse-GoCoverageFile -FilePath $CoverageFile
+$coverage = Parse-GoCoverageFile -FilePath $CoverageFile -SourceRoot $SourceRoot
 
 # Generate Cobertura XML
 $xml = Generate-CoberturaXml -Coverage $coverage -SourceRoot $SourceRoot

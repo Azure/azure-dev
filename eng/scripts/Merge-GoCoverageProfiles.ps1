@@ -24,13 +24,44 @@ param(
     [string[]]$InputFiles,
     
     [Parameter(Mandatory = $true)]
-    [string]$OutputFile
+    [string]$OutputFile,
+    
+    [Parameter(Mandatory = $false)]
+    [switch]$NormalizePaths
 )
 
 $ErrorActionPreference = 'Stop'
 
+function Normalize-GoFilePath {
+    param([string]$GoFilePath)
+    
+    # Handle Go module paths like "github.com/azure/azure-dev/cli/azd/pkg/test/file.go"
+    # Convert to relative paths like "cli/azd/pkg/test/file.go"
+    
+    # Common Go module path patterns to normalize
+    $modulePatterns = @(
+        "github.com/azure/azure-dev/",
+        "github.com/Azure/azure-dev/"
+    )
+    
+    $normalizedPath = $GoFilePath
+    
+    foreach ($pattern in $modulePatterns) {
+        if ($normalizedPath.StartsWith($pattern)) {
+            $normalizedPath = $normalizedPath.Substring($pattern.Length)
+            break
+        }
+    }
+    
+    # Ensure we use forward slashes for consistency
+    return $normalizedPath.Replace('\', '/')
+}
+
 function Parse-CoverageProfile {
-    param([string]$FilePath)
+    param(
+        [string]$FilePath,
+        [bool]$NormalizePaths = $false
+    )
     
     if (-not (Test-Path $FilePath)) {
         Write-Warning "Coverage file not found: $FilePath"
@@ -53,13 +84,20 @@ function Parse-CoverageProfile {
             
             # Parse line format: file.go:startLine.startCol,endLine.endCol numStmt count
             if ($line -match '^(.+):(\d+)\.(\d+),(\d+)\.(\d+) (\d+) (\d+)$') {
-                $file = $matches[1]
+                $originalFile = $matches[1]
                 $startLine = [int]$matches[2]
                 $startCol = [int]$matches[3]
                 $endLine = [int]$matches[4]
                 $endCol = [int]$matches[5]
                 $numStmt = [int]$matches[6]
                 $count = [int]$matches[7]
+                
+                # Normalize file path if requested
+                $file = if ($NormalizePaths) { 
+                    Normalize-GoFilePath -GoFilePath $originalFile 
+                } else { 
+                    $originalFile 
+                }
                 
                 # Create a unique key for this code block
                 $blockKey = "${file}:${startLine}.${startCol},${endLine}.${endCol}"
@@ -137,7 +175,7 @@ foreach ($inputFile in $InputFiles) {
     
     Write-Host "Processing: $inputFile"
     try {
-        $fileCoverage = Parse-CoverageProfile -FilePath $inputFile
+        $fileCoverage = Parse-CoverageProfile -FilePath $inputFile -NormalizePaths $NormalizePaths.IsPresent
         
         if ($fileCoverage.Count -eq 0) {
             Write-Warning "No coverage data found in: $inputFile"

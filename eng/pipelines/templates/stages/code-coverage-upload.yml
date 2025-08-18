@@ -49,7 +49,7 @@ stages:
           if ($unitCoverageFiles.Count -gt 0) {
               Write-Host "Merging $($unitCoverageFiles.Count) unit test coverage files..."
               $unitFilesParam = $unitCoverageFiles -join ","
-              pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Merge-GoCoverageProfiles.ps1" -InputFiles $unitFilesParam -OutputFile "merged-coverage/unit-coverage.out"
+              pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Merge-GoCoverageProfiles.ps1" -InputFiles $unitFilesParam -OutputFile "merged-coverage/unit-coverage.out" -NormalizePaths
               if ($LASTEXITCODE -ne 0) { 
                   Write-Error "Failed to merge unit test coverage files"
                   exit $LASTEXITCODE 
@@ -63,7 +63,7 @@ stages:
           if ($integrationCoverageFiles.Count -gt 0) {
               Write-Host "Merging $($integrationCoverageFiles.Count) integration test coverage files..."
               $intFilesParam = $integrationCoverageFiles -join ","
-              pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Merge-GoCoverageProfiles.ps1" -InputFiles $intFilesParam -OutputFile "merged-coverage/int-coverage.out"
+              pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Merge-GoCoverageProfiles.ps1" -InputFiles $intFilesParam -OutputFile "merged-coverage/int-coverage.out" -NormalizePaths
               if ($LASTEXITCODE -ne 0) { 
                   Write-Error "Failed to merge integration test coverage files"
                   exit $LASTEXITCODE 
@@ -77,7 +77,7 @@ stages:
           Write-Host "Merging unit and integration coverage into final coverage file..."
           $allCoverageFiles = @("merged-coverage/unit-coverage.out", "merged-coverage/int-coverage.out")
           $allFilesParam = $allCoverageFiles -join ","
-          pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Merge-GoCoverageProfiles.ps1" -InputFiles $allFilesParam -OutputFile "cover.out"
+          pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Merge-GoCoverageProfiles.ps1" -InputFiles $allFilesParam -OutputFile "cover.out" -NormalizePaths
           if ($LASTEXITCODE -ne 0) { 
               Write-Error "Failed to merge final coverage files"
               exit $LASTEXITCODE 
@@ -90,6 +90,11 @@ stages:
               Write-Error "Failed to convert coverage to XML"
               exit $LASTEXITCODE 
           }
+          
+          # Debug: Show some sample file paths from the coverage XML
+          Write-Host "Sample file paths in coverage XML:"
+          $xmlContent = Get-Content coverage.xml | Select-String 'filename=' | Select-Object -First 5
+          $xmlContent | ForEach-Object { Write-Host "  $_" }
         displayName: Merge code coverage files
 
       - task: PublishCodeCoverageResults@1

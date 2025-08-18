@@ -33,3 +33,9 @@ var AzdDockerGenerationPrompt string
 
 //go:embed azd_project_validation.md
 var AzdProjectValidationPrompt string
+
+//go:embed azd_provision_error_troubleshooting.md
+var AzdErrorTroubleShootingPrompt string
+
+//go:embed azd_common_error.md
+var AzdCommonErrorPrompt string

@@ -99,6 +99,7 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		tools.NewAzdIacGenerationRulesTool(),
 		tools.NewAzdProjectValidationTool(),
 		tools.NewAzdYamlSchemaTool(),
+		tools.NewAzdErrorTroubleShootingTool(),
 	)
 
 	// Start the server using stdio transport

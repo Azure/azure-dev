@@ -18,9 +18,9 @@ func IsLlmFeatureEnabled(alphaManager *alpha.FeatureManager) error {
 	if alphaManager == nil {
 		panic("alphaManager cannot be nil")
 	}
-	if !alphaManager.IsEnabled(featureLlm) {
+	if !alphaManager.IsEnabled(FeatureLlm) {
 		return fmt.Errorf("the LLM feature is not enabled. Please enable it using the command: \"%s\"",
-			alpha.GetEnableCommand(featureLlm))
+			alpha.GetEnableCommand(FeatureLlm))
 	}
 	return nil
 }

@@ -110,6 +110,13 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
 
+	manifestWarnings := manifest.Warnings()
+	if manifestWarnings != "" {
+		ai.console.Message(ctx, "")
+		ai.console.Message(ctx, manifestWarnings)
+		ai.console.Message(ctx, "")
+	}
+
 	azdOperationsEnabled := ai.alphaFeatureManager.IsEnabled(provisioning.AzdOperationsFeatureKey)
 	files, err := apphost.BicepTemplate("main", manifest, apphost.AppHostOptions{
 		AzdOperations: azdOperationsEnabled,

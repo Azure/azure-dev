@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -136,6 +137,31 @@ func (hc *HookConfig) validate() error {
 	hc.validated = true
 
 	return nil
+}
+
+// IsPowerShellHook determines if a hook configuration uses PowerShell
+func (hc *HookConfig) IsPowerShellHook() bool {
+	// Check if shell is explicitly set to pwsh
+	if hc.Shell == ShellTypePowershell {
+		return true
+	}
+
+	// Check if shell is unknown but the hook file has .ps1 extension
+	if hc.Shell == ScriptTypeUnknown && hc.Run != "" {
+		// For file-based hooks, check the extension
+		if strings.HasSuffix(strings.ToLower(hc.Run), ".ps1") {
+			return true
+		}
+	}
+
+	// Check OS-specific hook configurations
+	if runtime.GOOS == "windows" && hc.Windows != nil {
+		return hc.Windows.IsPowerShellHook()
+	} else if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && hc.Posix != nil {
+		return hc.Posix.IsPowerShellHook()
+	}
+
+	return false
 }
 
 func InferHookType(name string) (HookType, string) {

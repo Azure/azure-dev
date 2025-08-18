@@ -69,7 +69,7 @@ func NewCli(commandRunner exec.CommandRunner) *Cli {
 
 // Checks whether or not the K8s CLI is installed and available within the PATH
 func (cli *Cli) CheckInstalled(ctx context.Context) error {
-	if err := tools.ToolInPath("kubectl"); err != nil {
+	if err := cli.commandRunner.ToolInPath("kubectl"); err != nil {
 		return err
 	}
 

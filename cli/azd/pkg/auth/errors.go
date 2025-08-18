@@ -72,8 +72,11 @@ func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string,
 	e.errText = response.ErrorDescription
 	e.scenario = "reauthentication required"
 	e.loginCmd = "azd auth login"
-	if !matchesLoginScopes(scopes, cloud) { // if matching default login scopes, no scopes need to be specified
-		for _, scope := range scopes {
+
+	loginScopes := LoginScopesFull(cloud)
+	for _, scope := range scopes {
+		// filter out default login scopes
+		if !slices.Contains(loginScopes, scope) {
 			e.loginCmd += fmt.Sprintf(" --scope %s", scope)
 		}
 	}
@@ -95,16 +98,8 @@ func (e *ReLoginRequiredError) Error() string {
 	return e.errText
 }
 
-// matchesLoginScopes checks if the elements contained in the slice match the scopes acquired during login.
-func matchesLoginScopes(scopes []string, cloud *cloud.Cloud) bool {
-	for _, scope := range scopes {
-		_, matchLogin := loginScopesMap(cloud)[scope]
-		if !matchLogin {
-			return false
-		}
-	}
-
-	return true
+// Marker method to indicate this as non-retriable when executed within an armruntime pipeline
+func (e *ReLoginRequiredError) NonRetriable() {
 }
 
 const authFailedPrefix string = "failed to authenticate"
@@ -169,6 +164,10 @@ func (e *AuthFailedError) parseResponse() {
 	}
 
 	e.Parsed = &er
+}
+
+// Marker method to indicate this as non-retriable when executed within an armruntime pipeline
+func (e *AuthFailedError) NonRetriable() {
 }
 
 func (e *AuthFailedError) Unwrap() error {

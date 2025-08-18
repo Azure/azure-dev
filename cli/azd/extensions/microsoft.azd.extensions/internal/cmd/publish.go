@@ -28,7 +28,7 @@ type publishFlags struct {
 	repository   string
 	version      string
 	registryPath string
-	artifacts    string
+	artifacts    []string
 }
 
 func newPublishCommand() *cobra.Command {
@@ -71,10 +71,10 @@ func newPublishCommand() *cobra.Command {
 		"registry", "r", flags.registryPath,
 		"Path to the extension source registry",
 	)
-	publishCmd.Flags().StringVar(
+	publishCmd.Flags().StringSliceVar(
 		&flags.artifacts,
-		"artifacts", flags.artifacts,
-		"Path to the artifacts to upload to the release (e.g. ./artifacts/*.zip)",
+		"artifacts", nil,
+		"Path to artifacts to process (comma-separated glob patterns, e.g. ./artifacts/*.zip,./artifacts/*.tar.gz)",
 	)
 
 	return publishCmd
@@ -95,18 +95,12 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 		flags.version = extensionMetadata.Version
 	}
 
-	if flags.artifacts == "" {
-		localRegistryArtifactsPath, err := internal.LocalRegistryArtifactsPath()
-		if err != nil {
-			return err
-		}
-
-		flags.artifacts = filepath.Join(localRegistryArtifactsPath, extensionMetadata.Id, flags.version, "*.zip")
-	}
+	// Use artifacts patterns from flag
+	artifactPatterns := flags.artifacts
 
 	// Setting remote repository overrides local artifacts
 	if flags.repository != "" {
-		flags.artifacts = ""
+		artifactPatterns = nil
 	}
 
 	var release *github.Release
@@ -172,7 +166,17 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 			output.WithHyperlink(release.Url, "View Release"),
 		)
 	} else {
-		fmt.Printf("%s: %s\n", output.WithBold("Artifacts"), flags.artifacts)
+		// Show what artifacts will be processed
+		if len(artifactPatterns) > 0 {
+			fmt.Printf("%s: %s\n", output.WithBold("Artifacts"), strings.Join(artifactPatterns, ", "))
+		} else {
+			defaultPatterns, err := internal.DefaultArtifactPatterns(extensionMetadata.Id, flags.version)
+			if err == nil {
+				fmt.Printf("%s: %s (default)\n", output.WithBold("Artifacts"), strings.Join(defaultPatterns, ", "))
+			} else {
+				fmt.Printf("%s: <default registry path>\n", output.WithBold("Artifacts"))
+			}
+		}
 	}
 
 	fmt.Printf("%s: %s\n", output.WithBold("Registry"), output.WithHyperlink(absRegistryPath, absRegistryPath))
@@ -181,22 +185,26 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 		AddTask(ux.TaskOptions{
 			Title: "Fetching local artifacts",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-				if flags.artifacts == "" {
+				if flags.repository != "" {
 					return ux.Skipped, nil
 				}
 
-				files, err := filepath.Glob(flags.artifacts)
+				files, err := internal.FindArtifacts(artifactPatterns, extensionMetadata.Id, flags.version)
 				if err != nil {
 					return ux.Error, common.NewDetailedError(
-						"Failed to list artifacts",
-						fmt.Errorf("failed to list artifacts: %w", err),
+						"Failed to find artifacts",
+						err,
 					)
 				}
 
 				if len(files) == 0 {
+					patternDisplay := "default registry location"
+					if len(artifactPatterns) > 0 {
+						patternDisplay = strings.Join(artifactPatterns, ", ")
+					}
 					return ux.Error, common.NewDetailedError(
 						"Artifacts not found",
-						fmt.Errorf("no artifacts found at path: %s", flags.artifacts),
+						fmt.Errorf("no artifacts found at: %s", patternDisplay),
 					)
 				}
 
@@ -403,7 +411,7 @@ func createPlatformMetadata(
 	osArch string,
 	assetName string,
 ) (map[string]any, error) {
-	binaryFileName := getFileNameWithoutExt(assetName)
+	binaryFileName := internal.GetFileNameWithoutExt(assetName)
 	if strings.Contains(binaryFileName, "windows") {
 		binaryFileName += ".exe"
 	}

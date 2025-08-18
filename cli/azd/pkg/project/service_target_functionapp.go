@@ -83,7 +83,6 @@ func (f *functionAppTarget) Deploy(
 		return nil, fmt.Errorf("failed reading deployment zip file: %w", err)
 	}
 
-	defer os.Remove(packageOutput.PackagePath)
 	defer zipFile.Close()
 
 	progress.SetProgress(NewServiceProgress("Uploading deployment package"))

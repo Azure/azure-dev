@@ -348,18 +348,22 @@ func CreateDeploymentOutput(rawOutputs interface{}) (result map[string]AzCliDepl
 	return result
 }
 
+func responseToDeploymentError(title string, respErr *azcore.ResponseError) error {
+	var errorText string
+	rawBody, err := io.ReadAll(respErr.RawResponse.Body)
+	if err != nil {
+		errorText = respErr.Error()
+	} else {
+		errorText = string(rawBody)
+	}
+	return NewAzureDeploymentError(title, errorText)
+}
+
 // Attempts to create an Azure Deployment error from the HTTP response error
 func createDeploymentError(err error) error {
 	var responseErr *azcore.ResponseError
 	if errors.As(err, &responseErr) {
-		var errorText string
-		rawBody, err := io.ReadAll(responseErr.RawResponse.Body)
-		if err != nil {
-			errorText = responseErr.Error()
-		} else {
-			errorText = string(rawBody)
-		}
-		return NewAzureDeploymentError(errorText)
+		return responseToDeploymentError("Deployment Error Details", responseErr)
 	}
 
 	return err

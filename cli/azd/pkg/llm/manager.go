@@ -14,6 +14,17 @@ import (
 
 var FeatureLlm = alpha.MustFeatureKey("llm")
 
+func IsLlmFeatureEnabled(alphaManager *alpha.FeatureManager) error {
+	if alphaManager == nil {
+		panic("alphaManager cannot be nil")
+	}
+	if !alphaManager.IsEnabled(featureLlm) {
+		return fmt.Errorf("the LLM feature is not enabled. Please enable it using the command: \"%s\"",
+			alpha.GetEnableCommand(featureLlm))
+	}
+	return nil
+}
+
 func NewManager(
 	alphaManager *alpha.FeatureManager,
 	userConfigManager config.UserConfigManager,

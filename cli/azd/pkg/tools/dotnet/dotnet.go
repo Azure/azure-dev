@@ -59,7 +59,7 @@ func (cli *Cli) versionInfo() tools.VersionInfo {
 }
 
 func (cli *Cli) CheckInstalled(ctx context.Context) error {
-	err := tools.ToolInPath("dotnet")
+	err := cli.commandRunner.ToolInPath("dotnet")
 	if err != nil {
 		return err
 	}

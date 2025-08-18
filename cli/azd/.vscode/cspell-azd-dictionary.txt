@@ -80,6 +80,7 @@ consolesize
 containerapp
 containerizable
 containerapps
+containerd
 contoso
 createdby
 csharpapp
@@ -251,8 +252,9 @@ typeflag
 unhide
 unmanage
 unmarshaled
-unmarshalled
 unmarshalling
+unmarshal
+unmarshalled
 unsetenvs
 unsets
 upgrader

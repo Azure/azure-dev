@@ -13,13 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_toolInPath(t *testing.T) {
-	t.Run("Missing", func(t *testing.T) {
-		err := ToolInPath("somethingThatNeverExists")
-		assert.Equal(t, err, osexec.ErrNotFound)
-	})
-}
-
 func Test_Unique(t *testing.T) {
 	toolOne := &mockTool{
 		name:             "Installed One",

@@ -29,7 +29,10 @@
 
 🧠 **Execution Guidelines**  
 
-**CRITICAL:** Use `azd_iac_generation_rules` tool first to get complete file structure, naming conventions, and compliance requirements.
+**Use Tools:**
+
+- Use AZD IaC generation rules tool first to get complete file structure, naming conventions, and compliance requirements.
+- Use Bicep Schema tool get get the latest API version and bicep schema for each resource type
 
 **Inventory Existing IaC Files:**
 

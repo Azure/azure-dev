@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +36,8 @@ func Test_GetAllHookConfigs(t *testing.T) {
 
 		ensureScriptsExist(t, hooksMap)
 
-		hooksManager := NewHooksManager(tempDir)
+		mockCommandRunner := mockexec.NewMockCommandRunner()
+		hooksManager := NewHooksManager(tempDir, mockCommandRunner)
 		validHooks, err := hooksManager.GetAll(hooksMap)
 
 		require.Len(t, validHooks, len(hooksMap))
@@ -59,7 +61,8 @@ func Test_GetAllHookConfigs(t *testing.T) {
 
 		ensureScriptsExist(t, hooksMap)
 
-		hooksManager := NewHooksManager(tempDir)
+		mockCommandRunner := mockexec.NewMockCommandRunner()
+		hooksManager := NewHooksManager(tempDir, mockCommandRunner)
 		validHooks, err := hooksManager.GetAll(hooksMap)
 
 		require.Nil(t, validHooks)
@@ -72,7 +75,8 @@ func Test_GetAllHookConfigs(t *testing.T) {
 			"preprovision": nil,
 		}
 
-		hooksManager := NewHooksManager(tempDir)
+		mockCommandRunner := mockexec.NewMockCommandRunner()
+		hooksManager := NewHooksManager(tempDir, mockCommandRunner)
 		validHooks, err := hooksManager.GetAll(hooksMap)
 
 		require.NoError(t, err)
@@ -101,7 +105,8 @@ func Test_GetByParams(t *testing.T) {
 
 		ensureScriptsExist(t, hooksMap)
 
-		hooksManager := NewHooksManager(tempDir)
+		mockCommandRunner := mockexec.NewMockCommandRunner()
+		hooksManager := NewHooksManager(tempDir, mockCommandRunner)
 		validHooks, err := hooksManager.GetByParams(hooksMap, HookTypePre, "init")
 
 		require.Len(t, validHooks, 1)
@@ -126,7 +131,8 @@ func Test_GetByParams(t *testing.T) {
 
 		ensureScriptsExist(t, hooksMap)
 
-		hooksManager := NewHooksManager(tempDir)
+		mockCommandRunner := mockexec.NewMockCommandRunner()
+		hooksManager := NewHooksManager(tempDir, mockCommandRunner)
 		validHooks, err := hooksManager.GetByParams(hooksMap, HookTypePre, "init")
 
 		require.Nil(t, validHooks)

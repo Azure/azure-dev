@@ -247,7 +247,7 @@ func (hra *hooksRunAction) execHook(
 		hookName: {hook},
 	}
 
-	hooksManager := ext.NewHooksManager(cwd)
+	hooksManager := ext.NewHooksManager(cwd, hra.commandRunner)
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager, hra.commandRunner, hra.envManager, hra.console, cwd, hooksMap, hra.env, hra.serviceLocator)
 

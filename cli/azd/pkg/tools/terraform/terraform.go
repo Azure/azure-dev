@@ -47,7 +47,7 @@ func (cli *Cli) versionInfo() tools.VersionInfo {
 }
 
 func (cli *Cli) CheckInstalled(ctx context.Context) error {
-	err := tools.ToolInPath("terraform")
+	err := cli.commandRunner.ToolInPath("terraform")
 	if err != nil {
 		return err
 	}

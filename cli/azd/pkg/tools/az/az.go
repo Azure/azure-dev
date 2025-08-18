@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 // NewCli creates a new AzCli instance with the provided command runner.
@@ -40,7 +39,7 @@ type AzCli struct {
 // It verifies whether the 'az' command can be found and executed from any directory.
 // Returns nil if the Azure CLI is installed and accessible, or an error if not found.
 func (az AzCli) CheckInstalled() error {
-	return tools.ToolInPath("az")
+	return az.runner.ToolInPath("az")
 }
 
 // AzAccountUser represents a user account in Azure with basic identification details.

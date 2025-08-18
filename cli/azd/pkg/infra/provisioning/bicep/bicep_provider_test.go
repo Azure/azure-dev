@@ -1460,3 +1460,88 @@ func TestDefaultLocationToSelectFn(t *testing.T) {
 		require.Nil(t, result)
 	})
 }
+
+func TestEnsureParametersSkip(t *testing.T) {
+	t.Run("SkipParameterWithTrueValue", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+
+		// Set up environment variable for skipping
+		t.Setenv("AZURE_TESTPARAM_SKIP", "true")
+
+		infraProvider := createBicepProvider(t, mockContext)
+
+		// Create a test template with a required parameter
+		template := azure.ArmTemplate{
+			Parameters: map[string]azure.ArmTemplateParameterDefinition{
+				"testParam": {
+					Type: "string",
+					// No default value - normally this would require prompting
+				},
+			},
+		}
+
+		result, err := infraProvider.ensureParameters(*mockContext.Context, template)
+
+		require.NoError(t, err)
+		require.Contains(t, result, "testParam")
+		require.Nil(t, result["testParam"].Value)
+	})
+
+	t.Run("SkipParameterWith1Value", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+
+		// Set up environment variable for skipping
+		t.Setenv("AZURE_TESTPARAM_SKIP", "1")
+
+		infraProvider := createBicepProvider(t, mockContext)
+
+		// Create a test template with a required parameter
+		template := azure.ArmTemplate{
+			Parameters: map[string]azure.ArmTemplateParameterDefinition{
+				"testParam": {
+					Type: "string",
+					// No default value - normally this would require prompting
+				},
+			},
+		}
+
+		result, err := infraProvider.ensureParameters(*mockContext.Context, template)
+
+		require.NoError(t, err)
+		require.Contains(t, result, "testParam")
+		require.Nil(t, result["testParam"].Value)
+	})
+
+	t.Run("NoSkipParameterWithFalseValue", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		prepareBicepMocks(mockContext)
+
+		// Set up environment variable for NOT skipping
+		t.Setenv("AZURE_TESTPARAM_SKIP", "false")
+
+		// Expect a prompt to occur
+		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "testParam")
+		}).Respond("test-value")
+
+		infraProvider := createBicepProvider(t, mockContext)
+
+		// Create a test template with a required parameter
+		template := azure.ArmTemplate{
+			Parameters: map[string]azure.ArmTemplateParameterDefinition{
+				"testParam": {
+					Type: "string",
+					// No default value - normally this would require prompting
+				},
+			},
+		}
+
+		result, err := infraProvider.ensureParameters(*mockContext.Context, template)
+
+		require.NoError(t, err)
+		require.Contains(t, result, "testParam")
+		require.Equal(t, "test-value", result["testParam"].Value)
+	})
+}

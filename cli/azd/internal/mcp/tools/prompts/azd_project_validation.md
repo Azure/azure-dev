@@ -46,8 +46,7 @@
 **2. Bicep Template Validation:**
 
 - Scan `./infra` directory for `.bicep` files using file search
-- Execute `az bicep build --file <file>` for each template
-- Run `az deployment sub validate --template-file ./infra/main.bicep --parameters ./infra/main.parameters.json --location <location>`
+- Execute `azd provision --preview --no-prompt` to validate infrastructure templates
 - Verify all templates compile without errors and dependencies are correct
 - **MANDATORY:** Fix ALL compilation errors before proceeding
 - Clean up any generated `<module.json>` files generated during bicep validation

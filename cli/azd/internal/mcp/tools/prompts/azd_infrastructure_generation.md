@@ -7,12 +7,13 @@
 3. **Inventory existing IaC files** - scan current working directory for all `.bicep` files
 4. Read `azd-arch-plan.md` to get the **IaC File Generation Checklist**
 5. Create directory structure in `./infra` following IaC rules
-6. For each file in the IaC checklist:
+6. During code generation always use the latest version for each resource type using the bicep schema tool
+7. For each file in the IaC checklist:
    - **If file exists**: Intelligently update to match requirements, preserve user customizations where possible
    - **If file missing**: Generate new file following templates and best practices
    - **Flag conflicts**: Note any incompatible configurations but proceed with updates
-7. Validate all generated bicep templates compile without errors or warnings
-8. Update the IaC checklist section in existing `azd-arch-plan.md` by marking completed files as [x] while preserving existing content
+8. Validate all generated bicep templates compile without errors or warnings
+9. Update the IaC checklist section in existing `azd-arch-plan.md` by marking completed files as [x] while preserving existing content
 
 📄 **Required Outputs**  
 
@@ -156,8 +157,6 @@ The `./infra/main.parameters.json` file is critical for AZD integration and must
 - [ ] Main.bicep template created/updated with subscription scope and resource group
 - [ ] Module templates generated/updated for all services listed in checklist
 - [ ] Parameter files created/updated with appropriate defaults
-- [ ] All Bicep templates compile without errors or warnings (`az bicep build`)
-- [ ] Templates validate successfully (`az deployment sub validate`)
 - [ ] Naming conventions and tagging implemented correctly
 - [ ] Security best practices implemented (Key Vault, managed identities)
 - [ ] **IaC checklist in `azd-arch-plan.md` updated** by marking completed files as [x] while preserving existing content

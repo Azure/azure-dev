@@ -27,61 +27,28 @@ stages:
           Artifacts: ${{ parameters.DownloadArtifacts }}
 
       - pwsh: |
-          New-Item -ItemType Directory -Force -Path merged-coverage
-          
-          # Find all coverage.out files from different platforms and test types
-          $unitCoverageFiles = @()
-          $integrationCoverageFiles = @()
-          
-          # Collect unit test coverage files from all platforms
-          Get-ChildItem "cover-*/unit/coverage.out" -ErrorAction SilentlyContinue | ForEach-Object {
-              $unitCoverageFiles += $_.FullName
-              Write-Host "Found unit coverage file: $($_.FullName)"
-          }
-          
-          # Collect integration test coverage files from all platforms  
-          Get-ChildItem "cover-*/int/coverage.out" -ErrorAction SilentlyContinue | ForEach-Object {
-              $integrationCoverageFiles += $_.FullName
-              Write-Host "Found integration coverage file: $($_.FullName)"
-          }
-          
-          # Merge unit test coverage files
-          if ($unitCoverageFiles.Count -gt 0) {
-              Write-Host "Merging $($unitCoverageFiles.Count) unit test coverage files..."
-              $unitFilesParam = $unitCoverageFiles -join ","
-              pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Merge-GoCoverageProfiles.ps1" -InputFiles $unitFilesParam -OutputFile "merged-coverage/unit-coverage.out" -NormalizePaths
-              if ($LASTEXITCODE -ne 0) { 
-                  Write-Error "Failed to merge unit test coverage files"
-                  exit $LASTEXITCODE 
-              }
-          } else {
-              Write-Warning "No unit test coverage files found"
-              New-Item -ItemType File -Path "merged-coverage/unit-coverage.out" -Value "mode: set`n"
-          }
-          
-          # Merge integration test coverage files
-          if ($integrationCoverageFiles.Count -gt 0) {
-              Write-Host "Merging $($integrationCoverageFiles.Count) integration test coverage files..."
-              $intFilesParam = $integrationCoverageFiles -join ","
-              pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Merge-GoCoverageProfiles.ps1" -InputFiles $intFilesParam -OutputFile "merged-coverage/int-coverage.out" -NormalizePaths
-              if ($LASTEXITCODE -ne 0) { 
-                  Write-Error "Failed to merge integration test coverage files"
-                  exit $LASTEXITCODE 
-              }
-          } else {
-              Write-Warning "No integration test coverage files found"
-              New-Item -ItemType File -Path "merged-coverage/int-coverage.out" -Value "mode: set`n"
-          }
-          
-          # Merge unit and integration coverage into final coverage file
-          Write-Host "Merging unit and integration coverage into final coverage file..."
-          $allCoverageFiles = @("merged-coverage/unit-coverage.out", "merged-coverage/int-coverage.out")
-          $allFilesParam = $allCoverageFiles -join ","
-          pwsh -File "$(Build.SourcesDirectory)/eng/scripts/Merge-GoCoverageProfiles.ps1" -InputFiles $allFilesParam -OutputFile "cover.out" -NormalizePaths
-          if ($LASTEXITCODE -ne 0) { 
-              Write-Error "Failed to merge final coverage files"
-              exit $LASTEXITCODE 
-          }
+          New-Item -ItemType Directory -Force -Path cover
+          New-Item -ItemType Directory -Force -Path cover-int
+          New-Item -ItemType Directory -Force -Path cover-unit
+
+          $unitCoverage = (Get-ChildItem cover-*/unit).FullName -join ","
+          $integrationCoverage = (Get-ChildItem cover-*/int).FullName -join ","
+
+          # Merge unit test coverage across platforms
+          go tool covdata merge -i="$unitCoverage" -o cover-unit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          # Merge integration test coverage across platforms
+          go tool covdata merge -i="$integrationCoverage" -o cover-int
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          # Merge unit and integration code coverage
+          go tool covdata merge -i="cover-unit,cover-int" -o cover
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          # Convert to text format
+          go tool covdata textfmt -i=cover -o cover.out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Convert Go coverage to Cobertura XML format using custom script
           Write-Host "Converting coverage to Cobertura XML format..."
@@ -90,11 +57,6 @@ stages:
               Write-Error "Failed to convert coverage to XML"
               exit $LASTEXITCODE 
           }
-          
-          # Debug: Show some sample file paths from the coverage XML
-          Write-Host "Sample file paths in coverage XML:"
-          $xmlContent = Get-Content coverage.xml | Select-String 'filename=' | Select-Object -First 5
-          $xmlContent | ForEach-Object { Write-Host "  $_" }
         displayName: Merge code coverage files
 
       - task: PublishCodeCoverageResults@1
@@ -106,11 +68,11 @@ stages:
     templateContext: 
       outputs: 
         - output: pipelineArtifact
-          path: merged-coverage
-          artifact: merged-coverage
-          displayName: Upload merged coverage profiles
+          path: cover-unit
+          artifact: cover-unit
+          displayName: Upload unit test code coverage
 
         - output: pipelineArtifact
-          path: coverage.xml
-          artifact: coverage-xml
-          displayName: Upload Cobertura XML coverage report
+          path: cover-int
+          artifact: cover-int
+          displayName: Upload integration test code coverage

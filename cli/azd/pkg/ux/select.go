@@ -133,8 +133,11 @@ func (p *Select) Ask(ctx context.Context) (*int, error) {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
 
-	lockForInput(p.canvas)
-	defer unlockForInput(p.canvas)
+	release := cm.Focus(p.canvas)
+	defer func() {
+		release()
+		p.canvas.Close()
+	}()
 
 	if !*p.options.EnableFiltering {
 		p.cursor.HideCursor()

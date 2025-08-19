@@ -127,8 +127,11 @@ func (p *Prompt) Ask(ctx context.Context) (string, error) {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
 
-	lockForInput(p.canvas)
-	defer unlockForInput(p.canvas)
+	release := cm.Focus(p.canvas)
+	defer func() {
+		release()
+		p.canvas.Close()
+	}()
 
 	inputOptions := &internal.InputConfig{
 		InitialValue:   p.options.DefaultValue,

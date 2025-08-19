@@ -613,6 +613,7 @@ func renderThoughts(ctx context.Context, agentThoughts <-chan string) (func(), e
 
 	cleanup := func() {
 		canvas.Clear()
+		canvas.Close()
 	}
 
 	return cleanup, canvas.Run()

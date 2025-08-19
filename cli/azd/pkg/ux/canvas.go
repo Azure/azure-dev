@@ -8,29 +8,11 @@ import (
 	"sync"
 )
 
-var inputLock sync.Mutex
-var inputCanvas Canvas
-
-func lockForInput(c Canvas) {
-	if inputCanvas != c {
-		inputLock.Lock()
-		inputCanvas = c
-	}
-}
-
-func unlockForInput(c Canvas) {
-	if inputCanvas == c {
-		inputCanvas = nil
-		inputLock.Unlock()
-	}
-}
-
 // Canvas is a base component for UX components that require a canvas for rendering.
 type canvas struct {
 	visuals    []Visual
 	printer    Printer
 	writer     io.Writer
-	renderMap  map[Visual]*VisualContext
 	updateLock sync.Mutex
 }
 
@@ -38,19 +20,21 @@ type Canvas interface {
 	Run() error
 	Update() error
 	Clear()
+	Close()
 	WithWriter(writer io.Writer) Canvas
 }
 
 // NewCanvas creates a new Canvas instance.
 func NewCanvas(visuals ...Visual) Canvas {
 	canvas := &canvas{
-		visuals:   visuals,
-		renderMap: make(map[Visual]*VisualContext),
+		visuals: visuals,
 	}
 
 	for _, visual := range visuals {
 		visual.WithCanvas(canvas)
 	}
+
+	cm.Add(canvas)
 
 	return canvas
 }
@@ -72,9 +56,17 @@ func (c *canvas) Clear() {
 	c.printer.ClearCanvas()
 }
 
+// Close closes the canvas.
+func (c *canvas) Close() {
+	cm.Remove(c)
+}
+
 // Update updates the canvas to force a re-render.
 func (c *canvas) Update() error {
-	if inputCanvas != nil && inputCanvas != c {
+	cm.Lock()
+	defer cm.Unlock()
+
+	if !cm.CanUpdate(c) {
 		c.printer.ClearCanvas()
 		return nil
 	}
@@ -127,3 +119,64 @@ func newCanvasSize() *CanvasSize {
 		Cols: 0,
 	}
 }
+
+type canvasManager struct {
+	items         sync.Map
+	focusedCanvas Canvas
+	focusLock     sync.Mutex
+	updateLock    sync.Mutex
+}
+
+func newCanvasManager() *canvasManager {
+	return &canvasManager{
+		items: sync.Map{},
+	}
+}
+
+func (cm *canvasManager) Add(canvas Canvas) {
+	cm.items.Store(canvas, struct{}{})
+}
+
+func (cm *canvasManager) Remove(canvas Canvas) {
+	cm.items.Delete(canvas)
+}
+
+func (cm *canvasManager) Lock() {
+	cm.updateLock.Lock()
+}
+
+func (cm *canvasManager) Unlock() {
+	cm.updateLock.Unlock()
+}
+
+// Focus sets the focused canvas and clears non-focused canvases.
+func (cm *canvasManager) Focus(canvas Canvas) func() {
+	cm.Lock()
+	defer cm.Unlock()
+
+	cm.focusLock.Lock()
+	cm.focusedCanvas = canvas
+
+	// Clear non-focused canvases
+	cm.items.Range(func(key, value any) bool {
+		if c, ok := key.(Canvas); ok && c != canvas {
+			c.Clear()
+		}
+		return true
+	})
+
+	return func() {
+		cm.focusedCanvas = nil
+		cm.focusLock.Unlock()
+	}
+}
+
+func (cm *canvasManager) CanUpdate(canvas Canvas) bool {
+	if cm.focusedCanvas == nil || cm.focusedCanvas == canvas {
+		return true
+	}
+
+	return false
+}
+
+var cm = newCanvasManager()

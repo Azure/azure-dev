@@ -8,6 +8,23 @@ import (
 	"sync"
 )
 
+var inputLock sync.Mutex
+var inputCanvas Canvas
+
+func lockForInput(c Canvas) {
+	if inputCanvas != c {
+		inputLock.Lock()
+		inputCanvas = c
+	}
+}
+
+func unlockForInput(c Canvas) {
+	if inputCanvas == c {
+		inputCanvas = nil
+		inputLock.Unlock()
+	}
+}
+
 // Canvas is a base component for UX components that require a canvas for rendering.
 type canvas struct {
 	visuals    []Visual
@@ -20,6 +37,7 @@ type canvas struct {
 type Canvas interface {
 	Run() error
 	Update() error
+	Clear()
 	WithWriter(writer io.Writer) Canvas
 }
 
@@ -28,6 +46,10 @@ func NewCanvas(visuals ...Visual) Canvas {
 	canvas := &canvas{
 		visuals:   visuals,
 		renderMap: make(map[Visual]*VisualContext),
+	}
+
+	for _, visual := range visuals {
+		visual.WithCanvas(canvas)
 	}
 
 	return canvas
@@ -45,8 +67,18 @@ func (c *canvas) Run() error {
 	return c.Update()
 }
 
+// Clear clears the canvas.
+func (c *canvas) Clear() {
+	c.printer.ClearCanvas()
+}
+
 // Update updates the canvas to force a re-render.
 func (c *canvas) Update() error {
+	if inputCanvas != nil && inputCanvas != c {
+		c.printer.ClearCanvas()
+		return nil
+	}
+
 	c.updateLock.Lock()
 	defer c.updateLock.Unlock()
 

@@ -32,17 +32,26 @@ func NewAgentFactory(
 }
 
 func (f *AgentFactory) Create(opts ...AgentOption) (Agent, func() error, error) {
-	fileLogger, cleanup, err := logging.NewFileLoggerDefault()
+	fileLogger, loggerCleanup, err := logging.NewFileLoggerDefault()
+	if err != nil {
+		return nil, loggerCleanup, err
+	}
+
+	thoughtChan := make(chan string)
+	thoughtHandler := logging.NewThoughtLogger(thoughtChan)
+	chainedHandler := logging.NewChainedHandler(fileLogger, thoughtHandler)
+
+	cleanup := func() error {
+		close(thoughtChan)
+		return loggerCleanup()
+	}
+
+	defaultModelContainer, err := f.llmManager.GetDefaultModel(llm.WithLogger(chainedHandler))
 	if err != nil {
 		return nil, cleanup, err
 	}
 
-	defaultModelContainer, err := f.llmManager.GetDefaultModel(llm.WithLogger(fileLogger))
-	if err != nil {
-		return nil, cleanup, err
-	}
-
-	samplingModelContainer, err := f.llmManager.GetDefaultModel(llm.WithLogger(fileLogger))
+	samplingModelContainer, err := f.llmManager.GetDefaultModel(llm.WithLogger(chainedHandler))
 	if err != nil {
 		return nil, cleanup, err
 	}
@@ -86,7 +95,10 @@ func (f *AgentFactory) Create(opts ...AgentOption) (Agent, func() error, error) 
 
 	allOptions := []AgentOption{}
 	allOptions = append(allOptions, opts...)
-	allOptions = append(allOptions, WithTools(protectedTools...))
+	allOptions = append(allOptions,
+		WithThoughtChannel(thoughtChan),
+		WithTools(protectedTools...),
+	)
 
 	azdAgent, err := NewConversationalAzdAiAgent(defaultModelContainer.Model, allOptions...)
 	if err != nil {

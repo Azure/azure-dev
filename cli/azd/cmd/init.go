@@ -383,6 +383,8 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 		return err
 	}
 
+	agentThoughts := azdAgent.Thoughts()
+
 	defer cleanup()
 
 	type initStep struct {
@@ -399,27 +401,27 @@ Do not stop until all tasks are complete and fully resolved.
 
 	initSteps := []initStep{
 		{
-			Name:        "Running Discovery & Analysis",
+			Name:        "Step 1: Running Discovery & Analysis",
 			Description: "Run a deep discovery and analysis on the current working directory.",
 		},
 		{
-			Name:        "Generating Architecture Plan",
+			Name:        "Step 2: Generating Architecture Plan",
 			Description: "Create a high-level architecture plan for the application.",
 		},
 		{
-			Name:        "Generating Dockerfile(s)",
+			Name:        "Step 3: Generating Dockerfile(s)",
 			Description: "Generate a Dockerfile for the application components as needed.",
 		},
 		{
-			Name:        "Generating infrastructure",
+			Name:        "Step 4: Generating infrastructure",
 			Description: "Generate infrastructure as code (IaC) for the application.",
 		},
 		{
-			Name:        "Generating azure.yaml file",
+			Name:        "Step 5: Generating azure.yaml file",
 			Description: "Generate an azure.yaml file for the application.",
 		},
 		{
-			Name:        "Validating project",
+			Name:        "Step 6: Validating project",
 			Description: "Validate the project structure and configuration.",
 		},
 	}
@@ -427,25 +429,36 @@ Do not stop until all tasks are complete and fully resolved.
 	for idx, step := range initSteps {
 		// Collect and apply feedback for next steps
 		if idx > 0 {
+			feedbackMsg := fmt.Sprintf("Any feedback before continuing to %s?", step.Name)
 			if err := i.collectAndApplyFeedback(
 				ctx,
 				azdAgent,
-				"Any feedback before continuing to the next step?",
+				agentThoughts,
+				feedbackMsg,
 			); err != nil {
 				return err
 			}
 		}
 
 		// Run Step
-		i.console.ShowSpinner(ctx, step.Name, input.Step)
+		i.console.Message(ctx, color.MagentaString(step.Name))
 		fullTaskInput := fmt.Sprintf(taskInput, strings.Join([]string{
 			step.Description,
 			"Provide a very brief summary in markdown format that includes any files generated during this step.",
 		}, "\n"))
 
-		agentOutput, err := azdAgent.SendMessage(ctx, fullTaskInput)
+		thoughtsCtx, cancelThoughts := context.WithCancel(ctx)
+		cleanup, err := renderThoughts(thoughtsCtx, agentThoughts)
 		if err != nil {
-			i.console.StopSpinner(ctx, fmt.Sprintf("%s (With errors)", step.Name), input.StepWarning)
+			cancelThoughts()
+			return err
+		}
+
+		agentOutput, err := azdAgent.SendMessage(ctx, fullTaskInput)
+		cancelThoughts()
+		cleanup()
+
+		if err != nil {
 			if agentOutput != "" {
 				i.console.Message(ctx, output.WithMarkdown(agentOutput))
 			}
@@ -453,7 +466,6 @@ Do not stop until all tasks are complete and fully resolved.
 			return err
 		}
 
-		i.console.StopSpinner(ctx, step.Name, input.StepDone)
 		i.console.Message(ctx, "")
 		i.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
 		i.console.Message(ctx, output.WithMarkdown(agentOutput))
@@ -461,7 +473,7 @@ Do not stop until all tasks are complete and fully resolved.
 	}
 
 	// Post-completion feedback loop
-	if err := i.postCompletionFeedbackLoop(ctx, azdAgent); err != nil {
+	if err := i.postCompletionFeedbackLoop(ctx, azdAgent, agentThoughts); err != nil {
 		return err
 	}
 
@@ -472,6 +484,7 @@ Do not stop until all tasks are complete and fully resolved.
 func (i *initAction) collectAndApplyFeedback(
 	ctx context.Context,
 	azdAgent agent.Agent,
+	agentThoughts <-chan string,
 	promptMessage string,
 ) error {
 	// Loop to allow multiple rounds of feedback
@@ -493,7 +506,7 @@ func (i *initAction) collectAndApplyFeedback(
 		}
 
 		userInputPrompt := uxlib.NewPrompt(&uxlib.PromptOptions{
-			Message:        "💭 You",
+			Message:        "You",
 			PlaceHolder:    "Provide feedback or changes to the project",
 			Required:       true,
 			IgnoreHintKeys: true,
@@ -507,17 +520,26 @@ func (i *initAction) collectAndApplyFeedback(
 		i.console.Message(ctx, "")
 
 		if userInput != "" {
-			i.console.ShowSpinner(ctx, "Submitting feedback", input.Step)
-			feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
+			i.console.Message(ctx, color.MagentaString("Feedback"))
+
+			thoughtsCtx, cancelThoughts := context.WithCancel(ctx)
+			cleanup, err := renderThoughts(thoughtsCtx, agentThoughts)
 			if err != nil {
-				i.console.StopSpinner(ctx, "Submitting feedback (With errors)", input.StepWarning)
+				cancelThoughts()
+				return err
+			}
+
+			feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
+			cancelThoughts()
+			cleanup()
+
+			if err != nil {
 				if feedbackOutput != "" {
 					i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
 				}
 				return err
 			}
 
-			i.console.StopSpinner(ctx, "Submitting feedback", input.StepDone)
 			i.console.Message(ctx, "")
 			i.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
 			i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
@@ -529,12 +551,16 @@ func (i *initAction) collectAndApplyFeedback(
 }
 
 // postCompletionFeedbackLoop provides a final opportunity for feedback after all steps complete
-func (i *initAction) postCompletionFeedbackLoop(ctx context.Context, azdAgent agent.Agent) error {
+func (i *initAction) postCompletionFeedbackLoop(
+	ctx context.Context,
+	azdAgent agent.Agent,
+	agentThoughts <-chan string,
+) error {
 	i.console.Message(ctx, "")
 	i.console.Message(ctx, "🎉 All initialization steps completed!")
 	i.console.Message(ctx, "")
 
-	return i.collectAndApplyFeedback(ctx, azdAgent, "Any additional feedback or changes you'd like to make?")
+	return i.collectAndApplyFeedback(ctx, azdAgent, agentThoughts, "Any final feedback or changes?")
 }
 
 type initType int
@@ -546,6 +572,51 @@ const (
 	initEnvironment
 	initWithAgent
 )
+
+func renderThoughts(ctx context.Context, agentThoughts <-chan string) (func(), error) {
+	var latestThought string
+	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
+		Text: "Thinking...",
+	})
+
+	canvas := uxlib.NewCanvas(
+		spinner,
+		uxlib.NewVisualElement(func(printer uxlib.Printer) error {
+			printer.Fprintln()
+			printer.Fprintln()
+
+			if latestThought != "" {
+				printer.Fprintln(color.HiBlackString(latestThought))
+				printer.Fprintln()
+				printer.Fprintln()
+			}
+
+			return nil
+		}))
+
+	go func() {
+		defer canvas.Clear()
+
+		for {
+			select {
+			case thought := <-agentThoughts:
+				latestThought = thought
+			case <-ctx.Done():
+				latestThought = ""
+				return
+			case <-time.After(200 * time.Millisecond):
+			}
+
+			canvas.Update()
+		}
+	}()
+
+	cleanup := func() {
+		canvas.Clear()
+	}
+
+	return cleanup, canvas.Run()
+}
 
 func promptInitType(console input.Console, ctx context.Context, featuresManager *alpha.FeatureManager) (initType, error) {
 	options := []string{

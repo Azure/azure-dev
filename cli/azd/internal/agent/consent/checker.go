@@ -156,7 +156,7 @@ func (cc *ConsentChecker) promptForToolConsent(
 	annotations mcp.ToolAnnotation,
 ) (string, error) {
 	message := fmt.Sprintf(
-		"The tool %s from %s wants to run.\n\nWhat would you like to do?",
+		"Allow tool %s from server %s to run?",
 		output.WithHighLightFormat(toolName),
 		output.WithHighLightFormat(cc.serverName),
 	)
@@ -166,7 +166,7 @@ func (cc *ConsentChecker) promptForToolConsent(
 	choices := []*ux.SelectChoice{
 		{
 			Value: "deny",
-			Label: "No - Block this tool",
+			Label: "No, not right now",
 		},
 		{
 			Value: "once",
@@ -387,9 +387,7 @@ func (cc *ConsentChecker) promptForSamplingConsent(
 	toolName, toolDesc string,
 ) (string, error) {
 	message := fmt.Sprintf(
-		"The tool %s from %s wants to send data to an AI service.\n\n"+
-			"This helps improve responses but shares information externally.\n\n"+
-			"What would you like to do?",
+		"Allow tool %s from server %s to communicate with the AI Model?",
 		output.WithHighLightFormat(toolName),
 		output.WithHighLightFormat(cc.serverName),
 	)

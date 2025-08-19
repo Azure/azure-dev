@@ -114,6 +114,9 @@ func (p *Confirm) Ask(ctx context.Context) (*bool, error) {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
 
+	lockForInput(p.canvas)
+	defer unlockForInput(p.canvas)
+
 	inputConfig := &internal.InputConfig{
 		InitialValue: p.displayValue,
 	}

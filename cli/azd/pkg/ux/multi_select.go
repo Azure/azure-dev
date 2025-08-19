@@ -133,6 +133,9 @@ func (p *MultiSelect) Ask(ctx context.Context) ([]*MultiSelectChoice, error) {
 		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
 
+	lockForInput(p.canvas)
+	defer unlockForInput(p.canvas)
+
 	if !*p.options.EnableFiltering {
 		p.cursor.HideCursor()
 	}

@@ -517,3 +517,98 @@ func Test_FindArtifactForCurrentOS_ErrorMessage_Format(t *testing.T) {
 	require.Nil(t, artifact)
 	require.Contains(t, err.Error(), "no artifact available for platform:")
 }
+
+func Test_GetFromRegistry_MultipleMatches_ErrorWithSuggestion(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+
+	// Mock two different registries that both contain the same extension ID
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.URL.String() == extensionRegistryUrl
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		// Return a registry with an extension
+		registry := Registry{
+			Extensions: []*ExtensionMetadata{
+				{
+					Id:          "duplicate.extension",
+					Namespace:   "duplicate",
+					DisplayName: "Duplicate Extension from Registry",
+					Description: "Extension from first source",
+					Source:      "default", // This will be overwritten by the source
+					Tags:        []string{"test"},
+					Versions: []ExtensionVersion{
+						{
+							Version:   "1.0.0",
+							Artifacts: sampleArtifacts,
+						},
+					},
+				},
+			},
+		}
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+	})
+
+	// Create a manager and mock two sources
+	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	// Create mock sources that will return the same extension
+	mockSource1 := &mockSource{
+		name: "source1",
+		extensions: []*ExtensionMetadata{
+			{
+				Id:          "duplicate.extension",
+				Namespace:   "duplicate",
+				DisplayName: "Extension from Source 1",
+				Source:      "source1",
+			},
+		},
+	}
+
+	mockSource2 := &mockSource{
+		name: "source2",
+		extensions: []*ExtensionMetadata{
+			{
+				Id:          "duplicate.extension",
+				Namespace:   "duplicate",
+				DisplayName: "Extension from Source 2",
+				Source:      "source2",
+			},
+		},
+	}
+
+	// Override the sources with our mocks
+	manager.sources = []Source{mockSource1, mockSource2}
+
+	// Try to get the extension - should return error with suggestion
+	extension, err := manager.GetFromRegistry(*mockContext.Context, "duplicate.extension", nil)
+
+	// Verify we got the expected error
+	require.Error(t, err)
+	require.Nil(t, extension)
+}
+
+// mockSource is a test implementation of the Source interface
+type mockSource struct {
+	name       string
+	extensions []*ExtensionMetadata
+}
+
+func (m *mockSource) Name() string {
+	return m.name
+}
+
+func (m *mockSource) ListExtensions(ctx context.Context) ([]*ExtensionMetadata, error) {
+	return m.extensions, nil
+}
+
+func (m *mockSource) GetExtension(ctx context.Context, extensionId string) (*ExtensionMetadata, error) {
+	for _, ext := range m.extensions {
+		if ext.Id == extensionId {
+			return ext, nil
+		}
+	}
+	return nil, nil
+}

@@ -44,7 +44,7 @@ func main() {
 
 	// Step 1: LLM reads the entire file to understand structure
 	readRequest1 := ReadFileRequest{
-		FilePath: testFile,
+		Path: testFile,
 	}
 	result1, err := readTool.Call(context.Background(), mustMarshalJSON(readRequest1))
 	assert.NoError(t, err)
@@ -58,7 +58,7 @@ func main() {
 
 	// Step 2: LLM reads just the add function (lines 5-7)
 	readRequest2 := ReadFileRequest{
-		FilePath:  testFile,
+		Path:      testFile,
 		StartLine: 5,
 		EndLine:   7,
 	}
@@ -79,7 +79,7 @@ func main() {
 }`
 
 	writeRequest := WriteFileRequest{
-		Filename:  testFile,
+		Path:      testFile,
 		Content:   newFunction,
 		StartLine: 5,
 		EndLine:   7,
@@ -90,7 +90,7 @@ func main() {
 
 	// Step 4: LLM reads the updated function to verify change
 	readRequest3 := ReadFileRequest{
-		FilePath:  testFile,
+		Path:      testFile,
 		StartLine: 5,
 		EndLine:   8,
 	}
@@ -106,7 +106,7 @@ func main() {
 
 	// Step 5: LLM reads main function (which may have shifted)
 	readRequest4 := ReadFileRequest{
-		FilePath:  testFile,
+		Path:      testFile,
 		StartLine: 9,
 		EndLine:   12,
 	}
@@ -156,7 +156,7 @@ logging:
 
 	// Step 1: LLM scans file structure (first 10 lines)
 	readRequest1 := ReadFileRequest{
-		FilePath:  configFile,
+		Path:      configFile,
 		StartLine: 1,
 		EndLine:   10,
 	}
@@ -172,7 +172,7 @@ logging:
 
 	// Step 2: LLM focuses on database section
 	readRequest2 := ReadFileRequest{
-		FilePath:  configFile,
+		Path:      configFile,
 		StartLine: 7,
 		EndLine:   12,
 	}
@@ -195,7 +195,7 @@ logging:
   pool_size: 20`
 
 	writeRequest1 := WriteFileRequest{
-		Filename:  configFile,
+		Path:      configFile,
 		Content:   newDbConfig,
 		StartLine: 7,
 		EndLine:   11,
@@ -206,7 +206,7 @@ logging:
 
 	// Step 4: LLM reads redis section (which should have moved due to previous edit)
 	readRequest3 := ReadFileRequest{
-		FilePath:  configFile,
+		Path:      configFile,
 		StartLine: 13,
 		EndLine:   16,
 	}
@@ -221,7 +221,7 @@ logging:
 
 	// Step 5: LLM reads logging section to update it
 	readRequest4 := ReadFileRequest{
-		FilePath:  configFile,
+		Path:      configFile,
 		StartLine: 17,
 		EndLine:   21,
 	}
@@ -243,7 +243,7 @@ logging:
   rotation: "daily"`
 
 	writeRequest2 := WriteFileRequest{
-		Filename:  configFile,
+		Path:      configFile,
 		Content:   newLoggingConfig,
 		StartLine: 17,
 		EndLine:   20,
@@ -254,7 +254,7 @@ logging:
 
 	// Step 7: LLM does final validation read of entire file
 	readRequestFinal := ReadFileRequest{
-		FilePath: configFile,
+		Path: configFile,
 	}
 	resultFinal, err := readTool.Call(context.Background(), mustMarshalJSON(readRequestFinal))
 	assert.NoError(t, err)
@@ -327,7 +327,7 @@ class UserService:
 
 	// Step 1: LLM reads class definition and constructor
 	readRequest1 := ReadFileRequest{
-		FilePath:  classFile,
+		Path:      classFile,
 		StartLine: 7,
 		EndLine:   12,
 	}
@@ -343,7 +343,7 @@ class UserService:
 
 	// Step 2: LLM reads create_user method with some context
 	readRequest2 := ReadFileRequest{
-		FilePath:  classFile,
+		Path:      classFile,
 		StartLine: 14,
 		EndLine:   22,
 	}
@@ -378,7 +378,7 @@ class UserService:
             return False`
 
 	writeRequest1 := WriteFileRequest{
-		Filename:  classFile,
+		Path:      classFile,
 		Content:   improvedCreateUser,
 		StartLine: 14,
 		EndLine:   22,
@@ -389,7 +389,7 @@ class UserService:
 
 	// Step 4: LLM reads get_user method (line numbers shifted due to edit)
 	readRequest3 := ReadFileRequest{
-		FilePath:  classFile,
+		Path:      classFile,
 		StartLine: 31,
 		EndLine:   38,
 	}
@@ -404,7 +404,7 @@ class UserService:
 
 	// Step 5: LLM reads context around delete_user to understand the pattern
 	readRequest4 := ReadFileRequest{
-		FilePath:  classFile,
+		Path:      classFile,
 		StartLine: 40,
 		EndLine:   47,
 	}
@@ -419,7 +419,7 @@ class UserService:
 
 	// Step 6: LLM verifies the refactoring by reading the updated create_user method
 	readRequest5 := ReadFileRequest{
-		FilePath:  classFile,
+		Path:      classFile,
 		StartLine: 14,
 		EndLine:   30,
 	}
@@ -459,7 +459,7 @@ Line 10`
 
 	// Step 1: Read lines 3-5
 	readRequest1 := ReadFileRequest{
-		FilePath:  testFile,
+		Path:      testFile,
 		StartLine: 3,
 		EndLine:   5,
 	}
@@ -480,7 +480,7 @@ New Line C
 Line 4`
 
 	writeRequest := WriteFileRequest{
-		Filename:  testFile,
+		Path:      testFile,
 		Content:   insertContent,
 		StartLine: 3,
 		EndLine:   4,
@@ -491,7 +491,7 @@ Line 4`
 
 	// Step 3: Try to read what was originally line 5 (now line 8)
 	readRequest2 := ReadFileRequest{
-		FilePath:  testFile,
+		Path:      testFile,
 		StartLine: 8,
 		EndLine:   8,
 	}
@@ -506,7 +506,7 @@ Line 4`
 
 	// Step 4: Read the new inserted content
 	readRequest3 := ReadFileRequest{
-		FilePath:  testFile,
+		Path:      testFile,
 		StartLine: 4,
 		EndLine:   6,
 	}
@@ -523,7 +523,7 @@ Line 4`
 
 	// Step 5: Verify total line count changed correctly
 	readRequestFull := ReadFileRequest{
-		FilePath: testFile,
+		Path: testFile,
 	}
 	resultFull, err := readTool.Call(context.Background(), mustMarshalJSON(readRequestFull))
 	assert.NoError(t, err)

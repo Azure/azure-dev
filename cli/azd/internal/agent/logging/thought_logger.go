@@ -5,6 +5,8 @@ package logging
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -16,13 +18,19 @@ import (
 // Compile-time check to ensure ThoughtLogger implements callbacks.Handler
 var _ callbacks.Handler = &ThoughtLogger{}
 
+type Thought struct {
+	Thought     string
+	Action      string
+	ActionInput string
+}
+
 // ThoughtLogger tracks and logs all agent actions
 type ThoughtLogger struct {
-	ThoughtChan chan<- string
+	ThoughtChan chan<- Thought
 }
 
 // NewThoughtLogger creates a new action logger with a write-only channel for thoughts
-func NewThoughtLogger(thoughtChan chan<- string) *ThoughtLogger {
+func NewThoughtLogger(thoughtChan chan<- Thought) *ThoughtLogger {
 	return &ThoughtLogger{
 		ThoughtChan: thoughtChan,
 	}
@@ -57,7 +65,9 @@ func (al *ThoughtLogger) HandleLLMGenerateContentEnd(ctx context.Context, res *l
 					// Skip thoughts that contain "Do I need to use a tool?"
 					if !strings.Contains(strings.ToLower(thought), "do i need to use a tool?") {
 						if al.ThoughtChan != nil {
-							al.ThoughtChan <- thought
+							al.ThoughtChan <- Thought{
+								Thought: thought,
+							}
 						}
 					}
 				}
@@ -104,6 +114,97 @@ func (al *ThoughtLogger) HandleChainError(ctx context.Context, err error) {
 
 // HandleAgentAction is called when an agent action is planned
 func (al *ThoughtLogger) HandleAgentAction(ctx context.Context, action schema.AgentAction) {
+	// Print "Calling <action>"
+	// Inspect action.ToolInput. Attempt to parse input as JSON
+	// If is valid JSON and contains a param 'filename' then print filename.
+	// example: "Calling read_file <filename>"
+
+	prioritizedParams := map[string]struct{}{
+		"path":     {},
+		"pattern":  {},
+		"filename": {},
+		"command":  {},
+	}
+
+	var toolInput map[string]interface{}
+	if err := json.Unmarshal([]byte(action.ToolInput), &toolInput); err == nil {
+		// Successfully parsed JSON, create comma-delimited key-value pairs
+		excludedKeys := map[string]bool{"content": true}
+		var params []string
+
+		for key, value := range toolInput {
+			if excludedKeys[key] {
+				continue
+			}
+
+			var valueStr string
+			switch v := value.(type) {
+			case []interface{}:
+				// Skip empty arrays
+				if len(v) == 0 {
+					continue
+				}
+				// Handle arrays by joining with spaces
+				var strSlice []string
+				for _, item := range v {
+					strSlice = append(strSlice, strings.TrimSpace(string(fmt.Sprintf("%v", item))))
+				}
+				valueStr = strings.Join(strSlice, " ")
+			case map[string]interface{}:
+				// Skip empty maps
+				if len(v) == 0 {
+					continue
+				}
+				valueStr = strings.TrimSpace(fmt.Sprintf("%v", v))
+			case string:
+				// Skip empty strings
+				trimmed := strings.TrimSpace(v)
+				if trimmed == "" {
+					continue
+				}
+				valueStr = trimmed
+			default:
+				valueStr = strings.TrimSpace(fmt.Sprintf("%v", v))
+			}
+
+			if valueStr != "" {
+				params = append(params, fmt.Sprintf("%s: %s", key, valueStr))
+			}
+		}
+
+		// Identify prioritized params
+		for _, param := range params {
+			for key := range prioritizedParams {
+				if strings.HasPrefix(param, key) {
+					paramStr := truncateString(param, 120)
+					al.ThoughtChan <- Thought{
+						Action:      action.Tool,
+						ActionInput: paramStr,
+					}
+					return
+				}
+			}
+		}
+
+		al.ThoughtChan <- Thought{
+			Action: action.Tool,
+		}
+
+	} else {
+		// JSON parsing failed, show the input as text with truncation
+		toolInput := strings.TrimSpace(action.ToolInput)
+		if toolInput == "" || strings.HasPrefix(toolInput, "{") {
+			al.ThoughtChan <- Thought{
+				Action: action.Tool,
+			}
+		} else {
+			toolInput = truncateString(toolInput, 120)
+			al.ThoughtChan <- Thought{
+				Action:      action.Tool,
+				ActionInput: toolInput,
+			}
+		}
+	}
 }
 
 // HandleAgentFinish is called when the agent finishes

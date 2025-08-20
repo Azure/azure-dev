@@ -181,7 +181,7 @@ func TestReadFileTool_ReadEntireSmallFile(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, response.Success)
-	assert.Equal(t, testFile, response.FilePath)
+	assert.Equal(t, testFile, response.Path)
 	assert.Equal(t, testContent, response.Content)
 	assert.False(t, response.IsTruncated)
 	assert.False(t, response.IsPartial)

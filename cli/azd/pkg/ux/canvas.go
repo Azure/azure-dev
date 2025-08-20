@@ -4,7 +4,9 @@
 package ux
 
 import (
+	"bytes"
 	"io"
+	"os"
 	"sync"
 )
 
@@ -14,29 +16,29 @@ type canvas struct {
 	printer    Printer
 	writer     io.Writer
 	updateLock sync.Mutex
+	buffer     *bytes.Buffer // Single buffer reused for all rendering
 }
 
 type Canvas interface {
 	Run() error
 	Update() error
-	Clear()
+	Clear() error
 	Close()
 	WithWriter(writer io.Writer) Canvas
 }
 
 // NewCanvas creates a new Canvas instance.
 func NewCanvas(visuals ...Visual) Canvas {
-	canvas := &canvas{
+	c := &canvas{
 		visuals: visuals,
+		buffer:  new(bytes.Buffer),
+		writer:  os.Stdout,
 	}
-
 	for _, visual := range visuals {
-		visual.WithCanvas(canvas)
+		visual.WithCanvas(c)
 	}
-
-	cm.Add(canvas)
-
-	return canvas
+	cm.Add(c)
+	return c
 }
 
 // WithWriter sets the writer for the canvas.
@@ -47,13 +49,19 @@ func (c *canvas) WithWriter(writer io.Writer) Canvas {
 
 // Run starts the canvas.
 func (c *canvas) Run() error {
-	c.printer = NewPrinter(c.writer)
+	if c.printer == nil {
+		c.printer = NewPrinter(c.buffer)
+	}
 	return c.Update()
 }
 
 // Clear clears the canvas.
-func (c *canvas) Clear() {
+func (c *canvas) Clear() error {
+	c.updateLock.Lock()
+	defer c.updateLock.Unlock()
+
 	c.printer.ClearCanvas()
+	return c.writeBufferChunked()
 }
 
 // Close closes the canvas.
@@ -67,7 +75,6 @@ func (c *canvas) Update() error {
 	defer cm.Unlock()
 
 	if !cm.CanUpdate(c) {
-		c.printer.ClearCanvas()
 		return nil
 	}
 
@@ -75,11 +82,38 @@ func (c *canvas) Update() error {
 	defer c.updateLock.Unlock()
 
 	if c.printer == nil {
-		return nil
+		c.printer = NewPrinter(c.buffer)
 	}
 
 	c.printer.ClearCanvas()
-	return c.render()
+
+	if err := c.render(); err != nil {
+		return err
+	}
+
+	return c.writeBufferChunked()
+}
+
+func (c *canvas) writeBufferChunked() error {
+	out := c.buffer.Bytes()
+	if len(out) > 4096 {
+		for i := 0; i < len(out); i += 4096 {
+			end := i + 4096
+			if end > len(out) {
+				end = len(out)
+			}
+			if _, err := c.writer.Write(out[i:end]); err != nil {
+				return err
+			}
+		}
+	} else {
+		if _, err := c.writer.Write(out); err != nil {
+			return err
+		}
+	}
+	c.buffer.Reset()
+
+	return nil
 }
 
 func (c *canvas) render() error {
@@ -93,11 +127,9 @@ func (c *canvas) render() error {
 }
 
 func (c *canvas) renderVisual(visual Visual) error {
-	err := visual.Render(c.printer)
-	if err != nil {
+	if err := visual.Render(c.printer); err != nil {
 		return err
 	}
-
 	return nil
 }
 

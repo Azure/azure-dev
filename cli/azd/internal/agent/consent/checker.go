@@ -36,11 +36,11 @@ func (cc *ConsentChecker) CheckToolConsent(
 	toolName, toolDesc string,
 	annotations mcp.ToolAnnotation,
 ) (*ConsentDecision, error) {
-	toolID := fmt.Sprintf("%s/%s", cc.serverName, toolName)
+	toolId := fmt.Sprintf("%s/%s", cc.serverName, toolName)
 
 	// Create consent request
 	consentRequest := ConsentRequest{
-		ToolID:      toolID,
+		ToolID:      toolId,
 		ServerName:  cc.serverName,
 		Operation:   OperationTypeTool, // This is a tool execution request
 		Annotations: annotations,
@@ -54,11 +54,11 @@ func (cc *ConsentChecker) CheckSamplingConsent(
 	ctx context.Context,
 	toolName string,
 ) (*ConsentDecision, error) {
-	toolID := fmt.Sprintf("%s/%s", cc.serverName, toolName)
+	toolId := fmt.Sprintf("%s/%s", cc.serverName, toolName)
 
 	// Create consent request for sampling
 	consentRequest := ConsentRequest{
-		ToolID:     toolID,
+		ToolID:     toolId,
 		ServerName: cc.serverName,
 		Operation:  OperationTypeSampling, // This is a sampling request
 	}
@@ -134,7 +134,7 @@ func (cc *ConsentChecker) PromptAndGrantConsent(
 	toolName, toolDesc string,
 	annotations mcp.ToolAnnotation,
 ) error {
-	toolID := fmt.Sprintf("%s/%s", cc.serverName, toolName)
+	toolId := fmt.Sprintf("%s/%s", cc.serverName, toolName)
 
 	choice, err := cc.promptForToolConsent(ctx, toolName, toolDesc, annotations)
 	if err != nil {
@@ -146,7 +146,7 @@ func (cc *ConsentChecker) PromptAndGrantConsent(
 	}
 
 	// Grant consent based on user choice
-	return cc.grantConsentFromChoice(ctx, toolID, choice, OperationTypeTool)
+	return cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeTool)
 }
 
 // promptForToolConsent shows an interactive consent prompt and returns the user's choice
@@ -266,16 +266,16 @@ func (cc *ConsentChecker) isServerAlreadyTrusted(ctx context.Context, operation 
 // grantConsentFromChoice processes the user's consent choice and saves the appropriate rule
 func (cc *ConsentChecker) grantConsentFromChoice(
 	ctx context.Context,
-	toolID string,
+	toolId string,
 	choice string,
 	operation OperationType,
 ) error {
 	var rule ConsentRule
 
-	// Parse server and tool from toolID
-	parts := strings.Split(toolID, "/")
+	// Parse server and tool from toolId
+	parts := strings.Split(toolId, "/")
 	if len(parts) != 2 {
-		return fmt.Errorf("invalid toolID format: %s", toolID)
+		return fmt.Errorf("invalid toolId format: %s", toolId)
 	}
 	serverName := parts[0]
 	toolName := parts[1]
@@ -283,7 +283,7 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 	switch choice {
 	case "once":
 		rule = ConsentRule{
-			Scope:      ScopeSession,
+			Scope:      ScopeOneTime,
 			Target:     NewToolTarget(serverName, toolName),
 			Action:     ActionAny,
 			Operation:  operation,
@@ -366,7 +366,7 @@ func (cc *ConsentChecker) PromptAndGrantSamplingConsent(
 	ctx context.Context,
 	toolName, toolDesc string,
 ) error {
-	toolID := fmt.Sprintf("%s/%s", cc.serverName, toolName)
+	toolId := fmt.Sprintf("%s/%s", cc.serverName, toolName)
 
 	choice, err := cc.promptForSamplingConsent(ctx, toolName, toolDesc)
 	if err != nil {
@@ -378,7 +378,7 @@ func (cc *ConsentChecker) PromptAndGrantSamplingConsent(
 	}
 
 	// Grant sampling consent based on user choice
-	return cc.grantConsentFromChoice(ctx, toolID, choice, OperationTypeSampling)
+	return cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeSampling)
 }
 
 // promptForSamplingConsent shows an interactive sampling consent prompt and returns the user's choice

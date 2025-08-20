@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/logging"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -484,7 +485,7 @@ Do not stop until all tasks are complete and fully resolved.
 func (i *initAction) collectAndApplyFeedback(
 	ctx context.Context,
 	azdAgent agent.Agent,
-	agentThoughts <-chan string,
+	agentThoughts <-chan logging.Thought,
 	promptMessage string,
 ) error {
 	// Loop to allow multiple rounds of feedback
@@ -554,7 +555,7 @@ func (i *initAction) collectAndApplyFeedback(
 func (i *initAction) postCompletionFeedbackLoop(
 	ctx context.Context,
 	azdAgent agent.Agent,
-	agentThoughts <-chan string,
+	agentThoughts <-chan logging.Thought,
 ) error {
 	i.console.Message(ctx, "")
 	i.console.Message(ctx, "🎉 All initialization steps completed!")
@@ -573,8 +574,9 @@ const (
 	initWithAgent
 )
 
-func renderThoughts(ctx context.Context, agentThoughts <-chan string) (func(), error) {
+func renderThoughts(ctx context.Context, agentThoughts <-chan logging.Thought) (func(), error) {
 	var latestThought string
+
 	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
 		Text: "Thinking...",
 	})
@@ -597,16 +599,39 @@ func renderThoughts(ctx context.Context, agentThoughts <-chan string) (func(), e
 	go func() {
 		defer canvas.Clear()
 
+		var latestAction string
+		var latestActionInput string
+		var spinnerText string
+
 		for {
+
 			select {
 			case thought := <-agentThoughts:
-				latestThought = thought
+				if thought.Action != "" {
+					latestAction = thought.Action
+					latestActionInput = thought.ActionInput
+				}
+				if thought.Thought != "" {
+					latestThought = thought.Thought
+				}
 			case <-ctx.Done():
-				latestThought = ""
 				return
 			case <-time.After(200 * time.Millisecond):
 			}
 
+			// Update spinner text
+			if latestAction == "" {
+				spinnerText = "Thinking..."
+			} else {
+				spinnerText = fmt.Sprintf("Running %s tool", color.GreenString(latestAction))
+				if latestActionInput != "" {
+					spinnerText += " with " + color.GreenString(latestActionInput)
+				}
+
+				spinnerText += "..."
+			}
+
+			spinner.UpdateText(spinnerText)
 			canvas.Update()
 		}
 	}()

@@ -86,7 +86,7 @@ func TestWriteFileTool_FullFileWrite(t *testing.T) {
 
 	assert.True(t, response.Success)
 	assert.Equal(t, "Wrote", response.Operation)
-	assert.Equal(t, testFile, response.FilePath)
+	assert.Equal(t, testFile, response.Path)
 	assert.Equal(t, 13, response.BytesWritten) // "Hello, World!" length
 	assert.False(t, response.IsPartial)
 	assert.Nil(t, response.LineInfo)

@@ -197,5 +197,4 @@ func (fl *FileLogger) HandleLLMError(ctx context.Context, err error) {
 
 // HandleStreamingFunc handles streaming responses
 func (fl *FileLogger) HandleStreamingFunc(ctx context.Context, chunk []byte) {
-	fl.writeAndFlush("STREAMING: %s", string(chunk))
 }

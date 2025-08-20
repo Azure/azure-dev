@@ -37,7 +37,7 @@ func (f *AgentFactory) Create(opts ...AgentOption) (Agent, func() error, error) 
 		return nil, loggerCleanup, err
 	}
 
-	thoughtChan := make(chan string)
+	thoughtChan := make(chan logging.Thought)
 	thoughtHandler := logging.NewThoughtLogger(thoughtChan)
 	chainedHandler := logging.NewChainedHandler(fileLogger, thoughtHandler)
 
@@ -96,6 +96,7 @@ func (f *AgentFactory) Create(opts ...AgentOption) (Agent, func() error, error) 
 	allOptions := []AgentOption{}
 	allOptions = append(allOptions, opts...)
 	allOptions = append(allOptions,
+		WithCallbacksHandler(chainedHandler),
 		WithThoughtChannel(thoughtChan),
 		WithTools(protectedTools...),
 	)

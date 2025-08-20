@@ -86,7 +86,7 @@ func TestReadFileTool_Call_InvalidJSON(t *testing.T) {
 
 func TestReadFileTool_Call_MalformedJSON(t *testing.T) {
 	tool := ReadFileTool{}
-	result, err := tool.Call(context.Background(), `{"filePath": "test.txt", "unclosed": "value}`)
+	result, err := tool.Call(context.Background(), `{"path": "test.txt", "unclosed": "value}`)
 
 	assert.NoError(t, err)
 
@@ -115,7 +115,7 @@ func TestReadFileTool_Call_MissingFilePath(t *testing.T) {
 
 func TestReadFileTool_Call_EmptyFilePath(t *testing.T) {
 	tool := ReadFileTool{}
-	input := `{"filePath": "", "startLine": 1}`
+	input := `{"path": "", "startLine": 1}`
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -130,7 +130,7 @@ func TestReadFileTool_Call_EmptyFilePath(t *testing.T) {
 
 func TestReadFileTool_Call_FileNotFound(t *testing.T) {
 	tool := ReadFileTool{}
-	input := `{"filePath": "/nonexistent/file.txt"}`
+	input := `{"path": "/nonexistent/file.txt"}`
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -148,7 +148,7 @@ func TestReadFileTool_Call_DirectoryInsteadOfFile(t *testing.T) {
 	tempDir := t.TempDir()
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s"}`, strings.ReplaceAll(tempDir, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(tempDir, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -171,7 +171,7 @@ func TestReadFileTool_ReadEntireSmallFile(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -201,7 +201,7 @@ func TestReadFileTool_ReadSingleLine(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s", "startLine": 3, "endLine": 3}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s", "startLine": 3, "endLine": 3}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -231,7 +231,7 @@ func TestReadFileTool_ReadMultipleLines(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s", "startLine": 2, "endLine": 4}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s", "startLine": 2, "endLine": 4}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -261,7 +261,7 @@ func TestReadFileTool_ReadFromStartToLine(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s", "endLine": 3}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s", "endLine": 3}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -288,7 +288,7 @@ func TestReadFileTool_ReadFromLineToEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s", "startLine": 3}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s", "startLine": 3}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -315,7 +315,7 @@ func TestReadFileTool_StartLineOutOfRange(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s", "startLine": 10, "endLine": 15}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s", "startLine": 10, "endLine": 15}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -337,7 +337,7 @@ func TestReadFileTool_InvalidLineRange_StartGreaterThanEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s", "startLine": 4, "endLine": 2}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s", "startLine": 4, "endLine": 2}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -359,7 +359,7 @@ func TestReadFileTool_EndLineExceedsTotalLines(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s", "startLine": 2, "endLine": 10}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s", "startLine": 2, "endLine": 10}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -385,7 +385,7 @@ func TestReadFileTool_EmptyFile(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -410,7 +410,7 @@ func TestReadFileTool_SingleLineFile(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -435,7 +435,7 @@ func TestReadFileTool_FileWithOnlyNewlines(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -466,7 +466,7 @@ func TestReadFileTool_LargeFileWithoutLineRange(t *testing.T) {
 	require.Greater(t, fileInfo.Size(), int64(1024*1024)) // Greater than 1MB
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -496,7 +496,7 @@ func TestReadFileTool_LargeFileWithLineRange(t *testing.T) {
 	require.Greater(t, fileInfo.Size(), int64(1024*1024)) // Greater than 1MB
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s", "startLine": 100, "endLine": 102}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s", "startLine": 100, "endLine": 102}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -530,7 +530,7 @@ func TestReadFileTool_ContentTruncation(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -557,7 +557,7 @@ func TestReadFileTool_SpecialCharacters(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -583,7 +583,7 @@ func TestReadFileTool_WindowsLineEndings(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s", "startLine": 2, "endLine": 2}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s", "startLine": 2, "endLine": 2}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -611,7 +611,7 @@ func TestReadFileTool_FileInfoMetadata(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -639,7 +639,7 @@ func TestReadFileTool_JSONResponseStructure(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"filePath": "%s", "startLine": 1, "endLine": 1}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s", "startLine": 1, "endLine": 1}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -651,7 +651,7 @@ func TestReadFileTool_JSONResponseStructure(t *testing.T) {
 
 	// Check required fields exist
 	assert.Contains(t, jsonResult, "success")
-	assert.Contains(t, jsonResult, "filePath")
+	assert.Contains(t, jsonResult, "path")
 	assert.Contains(t, jsonResult, "content")
 	assert.Contains(t, jsonResult, "isTruncated")
 	assert.Contains(t, jsonResult, "isPartial")
@@ -675,7 +675,7 @@ func TestReadFileTool_ZeroBasedToOneBasedConversion(t *testing.T) {
 	tool := ReadFileTool{}
 
 	// Test reading line 1 (should be "Line 1", not "Line 2")
-	input := fmt.Sprintf(`{"filePath": "%s", "startLine": 1, "endLine": 1}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+	input := fmt.Sprintf(`{"path": "%s", "startLine": 1, "endLine": 1}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)

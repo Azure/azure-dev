@@ -50,7 +50,7 @@ func TestWriteFileTool_Call_InvalidJSON(t *testing.T) {
 func TestWriteFileTool_Call_MalformedJSON(t *testing.T) {
 	tool := WriteFileTool{}
 	// Test with JSON that has parse errors
-	result, err := tool.Call(context.Background(), `{"filename": "test.txt", "content": "unclosed string}`)
+	result, err := tool.Call(context.Background(), `{"path": "test.txt", "content": "unclosed string}`)
 
 	assert.NoError(t, err)
 	assert.Contains(t, result, "error")
@@ -74,7 +74,7 @@ func TestWriteFileTool_FullFileWrite(t *testing.T) {
 	testFile := filepath.Join(tempDir, "test.txt")
 
 	tool := WriteFileTool{}
-	input := `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "Hello, World!"}`
+	input := `{"path": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "Hello, World!"}`
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -108,7 +108,7 @@ func TestWriteFileTool_AppendMode(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
-	input := `{"filename": "` + strings.ReplaceAll(
+	input := `{"path": "` + strings.ReplaceAll(
 		testFile,
 		"\\",
 		"\\\\",
@@ -138,7 +138,7 @@ func TestWriteFileTool_CreateMode_Success(t *testing.T) {
 	testFile := filepath.Join(tempDir, "new-file.txt")
 
 	tool := WriteFileTool{}
-	input := `{"filename": "` + strings.ReplaceAll(
+	input := `{"path": "` + strings.ReplaceAll(
 		testFile,
 		"\\",
 		"\\\\",
@@ -170,7 +170,7 @@ func TestWriteFileTool_CreateMode_FileExists(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
-	input := `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "New content", "mode": "create"}`
+	input := `{"path": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "New content", "mode": "create"}`
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -196,7 +196,7 @@ func TestWriteFileTool_PartialWrite_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
-	input := `{"filename": "` + strings.ReplaceAll(
+	input := `{"path": "` + strings.ReplaceAll(
 		testFile,
 		"\\",
 		"\\\\",
@@ -236,7 +236,7 @@ func TestWriteFileTool_PartialWrite_SingleLine(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
-	input := `{"filename": "` + strings.ReplaceAll(
+	input := `{"path": "` + strings.ReplaceAll(
 		testFile,
 		"\\",
 		"\\\\",
@@ -275,7 +275,7 @@ func TestWriteFileTool_PartialWrite_SingleLineToMultipleLines(t *testing.T) {
 
 	tool := WriteFileTool{}
 	// Replace single line 2 with multiple lines
-	input := `{"filename": "` + strings.ReplaceAll(
+	input := `{"path": "` + strings.ReplaceAll(
 		testFile,
 		"\\",
 		"\\\\",
@@ -310,7 +310,7 @@ func TestWriteFileTool_PartialWrite_FileNotExists(t *testing.T) {
 	testFile := filepath.Join(tempDir, "nonexistent.txt")
 
 	tool := WriteFileTool{}
-	input := `{"filename": "` + strings.ReplaceAll(
+	input := `{"path": "` + strings.ReplaceAll(
 		testFile,
 		"\\",
 		"\\\\",
@@ -337,21 +337,21 @@ func TestWriteFileTool_PartialWrite_InvalidLineNumbers(t *testing.T) {
 	tool := WriteFileTool{}
 
 	// Test startLine provided but not endLine
-	input := `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "content", "startLine": 1}`
+	input := `{"path": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "content", "startLine": 1}`
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 	assert.Contains(t, result, "error")
 	assert.Contains(t, result, "Both startLine and endLine must be provided")
 
 	// Test endLine provided but not startLine
-	input = `{"filename": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "content", "endLine": 1}`
+	input = `{"path": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "content", "endLine": 1}`
 	result, err = tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 	assert.Contains(t, result, "error")
 	assert.Contains(t, result, "Both startLine and endLine must be provided")
 
 	// Test startLine < 1 (this will trigger the partial write validation)
-	input = `{"filename": "` + strings.ReplaceAll(
+	input = `{"path": "` + strings.ReplaceAll(
 		testFile,
 		"\\",
 		"\\\\",
@@ -362,7 +362,7 @@ func TestWriteFileTool_PartialWrite_InvalidLineNumbers(t *testing.T) {
 	assert.Contains(t, result, "Both startLine and endLine must be provided") // 0 is treated as "not provided"
 
 	// Test valid line numbers but startLine > endLine
-	input = `{"filename": "` + strings.ReplaceAll(
+	input = `{"path": "` + strings.ReplaceAll(
 		testFile,
 		"\\",
 		"\\\\",
@@ -385,7 +385,7 @@ func TestWriteFileTool_PartialWrite_BeyondFileLength(t *testing.T) {
 
 	tool := WriteFileTool{}
 	// Try to replace lines 2-5 (beyond file length)
-	input := `{"filename": "` + strings.ReplaceAll(
+	input := `{"path": "` + strings.ReplaceAll(
 		testFile,
 		"\\",
 		"\\\\",
@@ -420,7 +420,7 @@ func TestWriteFileTool_PartialWrite_PreserveLineEndings(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
-	input := `{"filename": "` + strings.ReplaceAll(
+	input := `{"path": "` + strings.ReplaceAll(
 		testFile,
 		"\\",
 		"\\\\",
@@ -483,7 +483,7 @@ func TestWriteFileTool_Integration_ComplexScenario(t *testing.T) {
 	tool := WriteFileTool{}
 
 	// Step 1: Create initial file
-	input := `{"filename": "` + strings.ReplaceAll(
+	input := `{"path": "` + strings.ReplaceAll(
 		testFile,
 		"\\",
 		"\\\\",
@@ -493,7 +493,7 @@ func TestWriteFileTool_Integration_ComplexScenario(t *testing.T) {
 	assert.Contains(t, result, `"success": true`)
 
 	// Step 2: Append new section
-	input = `{"filename": "` + strings.ReplaceAll(
+	input = `{"path": "` + strings.ReplaceAll(
 		testFile,
 		"\\",
 		"\\\\",
@@ -503,7 +503,7 @@ func TestWriteFileTool_Integration_ComplexScenario(t *testing.T) {
 	assert.Contains(t, result, `"success": true`)
 
 	// Step 3: Update specific lines (change port and debug)
-	input = `{"filename": "` + strings.ReplaceAll(
+	input = `{"path": "` + strings.ReplaceAll(
 		testFile,
 		"\\",
 		"\\\\",
@@ -536,7 +536,7 @@ func TestWriteFileTool_PartialWrite_InvalidLineRanges(t *testing.T) {
 	tool := WriteFileTool{}
 
 	// Test negative startLine (will be handled by partial write validation)
-	input := `{"filename": "` + strings.ReplaceAll(
+	input := `{"path": "` + strings.ReplaceAll(
 		testFile,
 		"\\",
 		"\\\\",
@@ -547,7 +547,7 @@ func TestWriteFileTool_PartialWrite_InvalidLineRanges(t *testing.T) {
 	assert.Contains(t, result, "startLine must be")
 
 	// Test negative endLine
-	input = `{"filename": "` + strings.ReplaceAll(
+	input = `{"path": "` + strings.ReplaceAll(
 		testFile,
 		"\\",
 		"\\\\",

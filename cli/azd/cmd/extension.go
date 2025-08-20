@@ -172,12 +172,12 @@ func newExtensionListAction(
 }
 
 type extensionListItem struct {
-	Id        string `json:"id"`
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-	Version   string `json:"version"`
-	Installed bool   `json:"installed"`
-	Source    string `json:"source"`
+	Id               string `json:"id"`
+	Name             string `json:"name"`
+	Namespace        string `json:"namespace"`
+	Version          string `json:"version"`
+	InstalledVersion string `json:"installedVersion"`
+	Source           string `json:"source"`
 }
 
 func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -212,20 +212,18 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			continue
 		}
 
-		var version string
-		if has {
-			version = installedExtension.Version
-		} else {
-			version = extension.Versions[len(extension.Versions)-1].Version
+		var installedVersion string
+		if installed {
+			installedVersion = installedExtension.Version
 		}
 
 		extensionRows = append(extensionRows, extensionListItem{
-			Id:        extension.Id,
-			Name:      extension.DisplayName,
-			Namespace: extension.Namespace,
-			Version:   version,
-			Source:    extension.Source,
-			Installed: installed,
+			Id:               extension.Id,
+			Name:             extension.DisplayName,
+			Namespace:        extension.Namespace,
+			Version:          extension.Versions[len(extension.Versions)-1].Version,
+			InstalledVersion: installedVersion,
+			Source:           extension.Source,
 		})
 	}
 
@@ -264,12 +262,12 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 				ValueTemplate: `{{.Version}}`,
 			},
 			{
-				Heading:       "Source",
-				ValueTemplate: `{{.Source}}`,
+				Heading:       "Installed Version",
+				ValueTemplate: `{{.InstalledVersion}}`,
 			},
 			{
-				Heading:       "Installed",
-				ValueTemplate: `{{.Installed}}`,
+				Heading:       "Source",
+				ValueTemplate: `{{.Source}}`,
 			},
 		}
 

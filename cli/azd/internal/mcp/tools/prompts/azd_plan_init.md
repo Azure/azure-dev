@@ -46,14 +46,19 @@
 
 **Phase 4: File Generation (Execute in Sequence)**
 
-1. **Azure.yaml Configuration:** `azd_azure_yaml_generation` (Required for all projects)
-2. **Infrastructure Templates:** `azd_infrastructure_generation` (Required for all projects)  
-3. **Docker Configurations:** `azd_docker_generation` (Required for containerizable services)
+Using available tools - Generate the following files:
+
+1. **Docker Configurations:** Generate docker files (Required for containerizable services)
+2. **Infrastructure Templates:** Generate IaC infrastructure templates (Required for all projects)
+3. **Azure.yaml Configuration:** Generate `azure.yaml` file (Required for all projects)
 
 **Phase 5: Project Validation and Environment Setup**
 
-- Tool: `azd_project_validation`
-- Validates azure.yaml against schema, compiles Bicep templates
+Using available tools - Perform and end-to-end AZD project validation
+
+- Validates azure.yaml against schema
+- Validate AZD environment exists
+- Validate infrastructure templates
 - Ensures AZD environment exists, tests packaging, validates deployment preview
 - Provides readiness confirmation
 

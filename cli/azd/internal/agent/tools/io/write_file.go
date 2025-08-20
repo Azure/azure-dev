@@ -23,7 +23,7 @@ type WriteFileTool struct {
 
 // WriteFileRequest represents the JSON input for the write_file tool
 type WriteFileRequest struct {
-	Filename  string `json:"filename"`
+	Path      string `json:"path"`
 	Content   string `json:"content"`
 	Mode      string `json:"mode,omitempty"`      // "write" (default), "append", "create"
 	StartLine int    `json:"startLine,omitempty"` // For partial write: 1-based line number (inclusive)
@@ -34,7 +34,7 @@ type WriteFileRequest struct {
 type WriteFileResponse struct {
 	Success      bool            `json:"success"`
 	Operation    string          `json:"operation"`
-	FilePath     string          `json:"filePath"`
+	Path         string          `json:"path"`
 	BytesWritten int             `json:"bytesWritten"`
 	IsPartial    bool            `json:"isPartial"`          // True for partial write
 	LineInfo     *LineInfo       `json:"lineInfo,omitempty"` // For partial write
@@ -80,7 +80,7 @@ Line numbers shift when you insert/delete lines, causing corruption if you use s
 
 Input: JSON payload with the following structure:
 {
-  "filename": "path/to/file.txt",
+  "path": "path/to/file.txt",
   "content": "file content here",
   "mode": "write",
   "startLine": 5,
@@ -107,22 +107,22 @@ Add startLine and endLine to any "write" operation to replace specific lines in 
 EXAMPLES:
 
 Full file write (new or existing file):
-{"filename": "./main.bicep", "content": "param location string = 'eastus'"}
+{"path": "./main.bicep", "content": "param location string = 'eastus'"}
 
 Append to file:
-{"filename": "./log.txt", "content": "\nNew log entry", "mode": "append"}
+{"path": "./log.txt", "content": "\nNew log entry", "mode": "append"}
 
 Partial write (replace specific lines in EXISTING file):
-{"filename": "./config.json", "content": "  \"newSetting\": true,\n  \"version\": \"2.0\"", "startLine": 3, "endLine": 4}
+{"path": "./config.json", "content": "  \"newSetting\": true,\n  \"version\": \"2.0\"", "startLine": 3, "endLine": 4}
 
 Safe multi-step partial editing workflow:
-1. {"filename": "file.py", "startLine": 1, "endLine": 50} // read_file to understand structure
-2. {"filename": "file.py", "content": "new function", "startLine": 5, "endLine": 8} // first write
-3. {"filename": "file.py", "startLine": 1, "endLine": 50} // RE-READ to get updated line numbers
-4. {"filename": "file.py", "content": "updated content", "startLine": 12, "endLine": 15} // use fresh line numbers
+1. {"path": "file.py", "startLine": 1, "endLine": 50} // read_file to understand structure
+2. {"path": "file.py", "content": "new function", "startLine": 5, "endLine": 8} // first write
+3. {"path": "file.py", "startLine": 1, "endLine": 50} // RE-READ to get updated line numbers
+4. {"path": "file.py", "content": "updated content", "startLine": 12, "endLine": 15} // use fresh line numbers
 
 Create only if doesn't exist:
-{"filename": "./new-file.txt", "content": "Initial content", "mode": "create"}
+{"path": "./new-file.txt", "content": "Initial content", "mode": "create"}
 
 The input must be formatted as a single line valid JSON string.`
 }
@@ -184,7 +184,7 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 	}
 
 	// Validate required fields
-	if req.Filename == "" {
+	if req.Path == "" {
 		return t.createErrorResponse(fmt.Errorf("missing filename"), "Missing required field: filename cannot be empty.")
 	}
 
@@ -208,7 +208,7 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 		}
 
 		// Validate that file exists for partial write BEFORE attempting
-		filePath := strings.TrimSpace(req.Filename)
+		filePath := strings.TrimSpace(req.Path)
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
 			return t.createErrorResponse(
 				err,
@@ -251,7 +251,7 @@ func (t WriteFileTool) handlePartialWrite(ctx context.Context, req WriteFileRequ
 		)
 	}
 
-	filePath := strings.TrimSpace(req.Filename)
+	filePath := strings.TrimSpace(req.Path)
 
 	// Read existing file
 	fileBytes, err := os.ReadFile(filePath)
@@ -335,7 +335,7 @@ func (t WriteFileTool) handlePartialWrite(ctx context.Context, req WriteFileRequ
 	response := WriteFileResponse{
 		Success:      true,
 		Operation:    "Wrote (partial)",
-		FilePath:     filePath,
+		Path:         filePath,
 		BytesWritten: len(newContent),
 		IsPartial:    true,
 		LineInfo: &LineInfo{
@@ -362,7 +362,7 @@ func (t WriteFileTool) handlePartialWrite(ctx context.Context, req WriteFileRequ
 
 // handleRegularWrite handles normal file writing
 func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequest, mode string) (string, error) {
-	filePath := strings.TrimSpace(req.Filename)
+	filePath := strings.TrimSpace(req.Path)
 	content := t.processContent(req.Content)
 
 	// Provide feedback for large content
@@ -429,7 +429,7 @@ func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequ
 	response := WriteFileResponse{
 		Success:      true,
 		Operation:    operation,
-		FilePath:     filePath,
+		Path:         filePath,
 		BytesWritten: len(content),
 		IsPartial:    false,
 		FileInfo: FileInfoDetails{

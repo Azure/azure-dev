@@ -53,6 +53,7 @@
 **Security and Compliance:**
 
 - **FORBIDDEN:** Hard-code secrets, connection strings, or sensitive values
+- **REQUIRED:** Use latest API versions and schema for all bicep resource types using available tools
 - **REQUIRED:** Use Key Vault references for secrets
 - **REQUIRED:** Enable diagnostic settings and logging where applicable
 - **REQUIRED:** Follow principle of least privilege for managed identities

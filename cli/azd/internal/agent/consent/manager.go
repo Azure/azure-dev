@@ -116,6 +116,9 @@ func (cm *consentManager) GrantConsent(ctx context.Context, rule ConsentRule) er
 		return cm.addProjectRule(ctx, rule)
 	case ScopeGlobal:
 		return cm.addGlobalRule(ctx, rule)
+	case ScopeOneTime:
+		// Do not persist one time consent
+		return nil
 	default:
 		return fmt.Errorf("unknown consent scope: %s", rule.Scope)
 	}

@@ -23,7 +23,7 @@ type ReadFileTool struct {
 
 // ReadFileRequest represents the JSON payload for file read requests
 type ReadFileRequest struct {
-	FilePath  string `json:"filePath"`
+	Path      string `json:"path"`
 	StartLine int    `json:"startLine,omitempty"` // Optional: 1-based line number to start reading from
 	EndLine   int    `json:"endLine,omitempty"`   // Optional: 1-based line number to end reading at
 }
@@ -31,7 +31,7 @@ type ReadFileRequest struct {
 // ReadFileResponse represents the JSON output for the read_file tool
 type ReadFileResponse struct {
 	Success     bool         `json:"success"`
-	FilePath    string       `json:"filePath"`
+	Path        string       `json:"path"`
 	Content     string       `json:"content"`
 	IsTruncated bool         `json:"isTruncated"`
 	IsPartial   bool         `json:"isPartial"`
@@ -75,26 +75,26 @@ Returns JSON response with file content and metadata.
 
 Input: JSON payload with the following structure:
 {
-  "filePath": "path/to/file.txt",
+  "path": "path/to/file.txt",
   "startLine": 10,    // optional: 1-based line number to start reading from
   "endLine": 50       // optional: 1-based line number to end reading at
 }
 
 Examples:
 1. Read entire file:
-   {"filePath": "README.md"}
+   {"path": "README.md"}
 
 2. Read specific line range:
-   {"filePath": "src/main.go", "startLine": 1, "endLine": 100}
+   {"path": "src/main.go", "startLine": 1, "endLine": 100}
 
 3. Read from line to end:
-   {"filePath": "config.go", "startLine": 25}
+   {"path": "config.go", "startLine": 25}
 
 4. Read from start to line:
-   {"filePath": "app.py", "endLine": 30}
+   {"path": "app.py", "endLine": 30}
 
 5. Read single line:
-   {"filePath": "package.json", "startLine": 42, "endLine": 42}
+   {"path": "package.json", "startLine": 42, "endLine": 42}
 
 Files larger than 100KB are automatically truncated.
 Files over 1MB show size info only unless specific line range is requested.
@@ -144,26 +144,26 @@ func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
 	}
 
 	// Validate required fields
-	if req.FilePath == "" {
+	if req.Path == "" {
 		return t.createErrorResponse(fmt.Errorf("missing filePath"), "Missing required field: filePath cannot be empty")
 	}
 
 	// Get file info first to check size
-	fileInfo, err := os.Stat(req.FilePath)
+	fileInfo, err := os.Stat(req.Path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return t.createErrorResponse(
 				err,
-				fmt.Sprintf("File does not exist: %s. Please check file path spelling and location", req.FilePath),
+				fmt.Sprintf("File does not exist: %s. Please check file path spelling and location", req.Path),
 			)
 		}
-		return t.createErrorResponse(err, fmt.Sprintf("Cannot access file %s: %s", req.FilePath, err.Error()))
+		return t.createErrorResponse(err, fmt.Sprintf("Cannot access file %s: %s", req.Path, err.Error()))
 	}
 
 	if fileInfo.IsDir() {
 		return t.createErrorResponse(
 			fmt.Errorf("path is a directory"),
-			fmt.Sprintf("%s is a directory, not a file. Use directory_list tool for directories", req.FilePath),
+			fmt.Sprintf("%s is a directory, not a file. Use directory_list tool for directories", req.Path),
 		)
 	}
 
@@ -174,16 +174,16 @@ func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
 			fmt.Errorf("file too large"),
 			fmt.Sprintf(
 				"File %s is too large (%d bytes). Please specify startLine and endLine to read specific sections",
-				req.FilePath,
+				req.Path,
 				fileInfo.Size(),
 			),
 		)
 	}
 
 	// Read file content
-	file, err := os.Open(req.FilePath)
+	file, err := os.Open(req.Path)
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to open file %s: %s", req.FilePath, err.Error()))
+		return t.createErrorResponse(err, fmt.Sprintf("Failed to open file %s: %s", req.Path, err.Error()))
 	}
 	defer file.Close()
 
@@ -195,7 +195,7 @@ func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Error reading file %s: %s", req.FilePath, err.Error()))
+		return t.createErrorResponse(err, fmt.Sprintf("Error reading file %s: %s", req.Path, err.Error()))
 	}
 
 	totalLines := len(lines)
@@ -264,7 +264,7 @@ func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
 	// Create success response
 	response := ReadFileResponse{
 		Success:     true,
-		FilePath:    req.FilePath,
+		Path:        req.Path,
 		Content:     content,
 		IsTruncated: isTruncated,
 		IsPartial:   isPartial,

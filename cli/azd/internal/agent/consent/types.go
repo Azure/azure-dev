@@ -21,6 +21,7 @@ const (
 	ScopeSession Scope = "session"
 	ScopeProject Scope = "project"
 	ScopeGlobal  Scope = "global"
+	ScopeOneTime Scope = "one_time"
 )
 
 // ActionType defines the kind of action the rule controls
@@ -90,15 +91,15 @@ func (t Target) Validate() error {
 }
 
 // AllowedOperationTypes contains the valid operation contexts for command validation
-var AllowedOperationTypes = []string{
-	string(OperationTypeTool),
-	string(OperationTypeSampling),
+var AllowedOperationTypes = []OperationType{
+	OperationTypeTool,
+	OperationTypeSampling,
 }
 
 // ParseOperationType converts a string to OperationType with validation
 func ParseOperationType(contextStr string) (OperationType, error) {
 	for _, allowedContext := range AllowedOperationTypes {
-		if contextStr == allowedContext {
+		if contextStr == string(allowedContext) {
 			return OperationType(contextStr), nil
 		}
 	}
@@ -106,16 +107,17 @@ func ParseOperationType(contextStr string) (OperationType, error) {
 }
 
 // AllowedScopes contains the valid scopes for command validation
-var AllowedScopes = []string{
-	string(ScopeGlobal),
-	string(ScopeProject),
-	string(ScopeSession),
+var AllowedScopes = []Scope{
+	ScopeGlobal,
+	ScopeProject,
+	ScopeSession,
+	ScopeOneTime,
 }
 
 // ParseScope converts a string to Scope with validation
 func ParseScope(scopeStr string) (Scope, error) {
 	for _, allowedScope := range AllowedScopes {
-		if scopeStr == allowedScope {
+		if scopeStr == string(allowedScope) {
 			return Scope(scopeStr), nil
 		}
 	}
@@ -123,9 +125,9 @@ func ParseScope(scopeStr string) (Scope, error) {
 }
 
 // AllowedActionTypes contains the valid action types for command validation
-var AllowedActionTypes = []string{
-	"readonly",
-	"all",
+var AllowedActionTypes = []ActionType{
+	ActionReadOnly,
+	ActionAny,
 }
 
 // ParseActionType converts a string to ActionType with validation
@@ -141,16 +143,16 @@ func ParseActionType(actionStr string) (ActionType, error) {
 }
 
 // AllowedPermissions contains the valid permissions for command validation
-var AllowedPermissions = []string{
-	string(PermissionAllow),
-	string(PermissionDeny),
-	string(PermissionPrompt),
+var AllowedPermissions = []Permission{
+	PermissionAllow,
+	PermissionDeny,
+	PermissionPrompt,
 }
 
 // ParsePermission converts a string to Permission with validation
 func ParsePermission(permissionStr string) (Permission, error) {
 	for _, allowedPermission := range AllowedPermissions {
-		if permissionStr == allowedPermission {
+		if permissionStr == string(allowedPermission) {
 			return Permission(permissionStr), nil
 		}
 	}
@@ -221,9 +223,8 @@ func (r ConsentRule) Validate() error {
 	}
 
 	// Validate enums have valid values
-	validScopes := []Scope{ScopeSession, ScopeProject, ScopeGlobal}
 	validScope := false
-	for _, scope := range validScopes {
+	for _, scope := range AllowedScopes {
 		if r.Scope == scope {
 			validScope = true
 			break
@@ -233,9 +234,8 @@ func (r ConsentRule) Validate() error {
 		return fmt.Errorf("invalid scope: %s", r.Scope)
 	}
 
-	validActions := []ActionType{ActionReadOnly, ActionAny}
 	validAction := false
-	for _, action := range validActions {
+	for _, action := range AllowedActionTypes {
 		if r.Action == action {
 			validAction = true
 			break
@@ -245,10 +245,9 @@ func (r ConsentRule) Validate() error {
 		return fmt.Errorf("invalid action: %s", r.Action)
 	}
 
-	validContexts := []OperationType{OperationTypeTool, OperationTypeSampling}
 	validContext := false
-	for _, context := range validContexts {
-		if r.Operation == context {
+	for _, operation := range AllowedOperationTypes {
+		if r.Operation == operation {
 			validContext = true
 			break
 		}
@@ -257,10 +256,9 @@ func (r ConsentRule) Validate() error {
 		return fmt.Errorf("invalid operation context: %s", r.Operation)
 	}
 
-	validDecisions := []Permission{PermissionAllow, PermissionDeny, PermissionPrompt}
 	validDecision := false
-	for _, decision := range validDecisions {
-		if r.Permission == decision {
+	for _, permission := range AllowedPermissions {
+		if r.Permission == permission {
 			validDecision = true
 			break
 		}

@@ -72,7 +72,7 @@ func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentOption) (*Conversa
 
 	// 5. Create executor without separate memory configuration since agent already has it
 	executor := agents.NewExecutor(conversationAgent,
-		agents.WithMaxIterations(500), // Much higher limit for complex multi-step processes
+		agents.WithMaxIterations(100),
 		agents.WithMemory(smartMemory),
 		agents.WithCallbacksHandler(azdAgent.callbacksHandler),
 		agents.WithReturnIntermediateSteps(),

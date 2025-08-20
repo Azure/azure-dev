@@ -71,8 +71,8 @@ func IsTelemetryEnabled() bool {
 		return false
 	}
 
-	// If it's the first run and we're in cloud shell, don't collect telemetry.
-	if noticeShown() && runcontext.IsRunningInCloudShell() {
+	// If we're in cloud shell, only enable telemetry after showing notice once
+	if runcontext.IsRunningInCloudShell() && !noticeShown() {
 		return false
 	}
 

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -165,6 +166,10 @@ func (sm *SourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 
 		allSourceConfigs = append(allSourceConfigs, defaultSource)
 	}
+
+	sort.Slice(allSourceConfigs, func(i, j int) bool {
+		return allSourceConfigs[i].Name < allSourceConfigs[j].Name
+	})
 
 	return allSourceConfigs, nil
 }

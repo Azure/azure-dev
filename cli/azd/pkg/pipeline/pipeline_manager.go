@@ -1315,6 +1315,11 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		}
 	}
 
+	// Determines which azure.<type>.yaml file azd uses to provision in pipeline
+	if props.EnvType != "" && !slices.Contains(tmplContext.Variables, "AZURE_ENV_TYPE") {
+		tmplContext.Variables = append(tmplContext.Variables, "AZURE_ENV_TYPE")
+	}
+
 	if props.InfraProvider == infraProviderTerraform {
 		// terraform provider does not resolve this variables automatically, AZD needs to define them
 		tmplContext.Variables = append(tmplContext.Variables, "AZURE_LOCATION")
@@ -1488,6 +1493,7 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 			Secrets:               pm.prjConfig.Pipeline.Secrets,
 			RequiredAlphaFeatures: requiredAlphaFeatures,
 			providerParameters:    pm.configOptions.providerParameters,
+			EnvType:               pm.env.GetEnvironmentType(),
 		})
 	if err != nil {
 		return err

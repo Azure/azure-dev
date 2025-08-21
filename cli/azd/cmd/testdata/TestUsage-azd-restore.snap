@@ -9,6 +9,7 @@ Usage
 
 Flags
         --all                	: Restores all services that are listed in azure.yaml
+        --env-type string    	: The type of the environment (e.g., dev, test, prod). (Experimental)
     -e, --environment string 	: The name of the environment to use.
 
 Global Flags

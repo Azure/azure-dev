@@ -5,6 +5,7 @@ Usage
   azd hooks run <name> [flags]
 
 Flags
+        --env-type string    	: The type of the environment (e.g., dev, test, prod). (Experimental)
     -e, --environment string 	: The name of the environment to use.
         --platform string    	: Forces hooks to run for the specified platform.
         --service string     	: Only runs hooks for the specified service.

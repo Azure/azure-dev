@@ -16,6 +16,10 @@ func NewAzdErrorTroubleShootingTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"azd_error_troubleshooting",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
 				`Returns instructions for diagnosing any error from azd commands and providing suggested actions for resolution.
 

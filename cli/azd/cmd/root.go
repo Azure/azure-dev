@@ -363,6 +363,7 @@ func NewRootCmd(
 	root.
 		UseMiddleware("debug", middleware.NewDebugMiddleware).
 		UseMiddleware("ux", middleware.NewUxMiddleware).
+		UseMiddleware("error", middleware.NewErrorMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
 		}).

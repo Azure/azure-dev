@@ -3,7 +3,7 @@
 ✅ **Agent Task List**  
 
 1. **Error Classification:** Identify the specific error type (Azure REST API, ARM Deployment, Authentication, Local Tool Installation or General)
-2. **Error Analysis:** Explain what the error means and its root causes
+2. **Error Analysis:** Explain what the error means and its root causes. Note that this error occurs when running Azure Developer CLI.
 3. **Troubleshooting Steps:** Provide manual, Azure Portal and Azure CLI-based solutions only if user installed Azure CLI
 4. **Infrastructure Fixes:** Suggest specific Bicep or Terraform file corrections based on user's infra folder
 5. **Verification:** Provide Azure Portal to validate fixes and Azure CLI-based solutions only if user installed Azure CLI

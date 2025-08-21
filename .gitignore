@@ -49,3 +49,5 @@ test-results/
 
 # Finder state files
 .DS_Store
+
+/temp/*

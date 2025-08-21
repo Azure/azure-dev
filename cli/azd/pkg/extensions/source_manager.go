@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -167,8 +167,8 @@ func (sm *SourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 		allSourceConfigs = append(allSourceConfigs, defaultSource)
 	}
 
-	sort.Slice(allSourceConfigs, func(i, j int) bool {
-		return allSourceConfigs[i].Name < allSourceConfigs[j].Name
+	slices.SortFunc(allSourceConfigs, func(a, b *SourceConfig) int {
+		return strings.Compare(a.Name, b.Name)
 	})
 
 	return allSourceConfigs, nil

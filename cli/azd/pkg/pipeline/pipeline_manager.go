@@ -398,8 +398,8 @@ func (pm *PipelineManager) Configure(
 						PreviousWasInvalid: invalidInputNotes,
 					})
 					if promptErr != nil {
-						pm.console.Message(ctx, output.WithErrorFormat("Failed to get Service Tree ID: %s", promptErr))
-						continue
+
+						return result, fmt.Errorf("failed to prompt for Service Tree ID: %w", promptErr)
 					}
 
 					// Update options with the provided Service Tree ID

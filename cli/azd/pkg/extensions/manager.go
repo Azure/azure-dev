@@ -201,7 +201,11 @@ func (m *Manager) GetFromRegistry(
 			sourceNames[i] = match.Source
 		}
 		return nil, &internal.ErrorWithSuggestion{
-			Err:        fmt.Errorf("extension '%s' found in multiple sources: %s", extensionId, strings.Join(sourceNames, ", ")),
+			Err: fmt.Errorf(
+				"extension '%s' found in multiple sources: %s",
+				extensionId,
+				strings.Join(sourceNames, ", "),
+			),
 			Suggestion: "Suggestion: specify the exact source using --source or -s.",
 		}
 	}

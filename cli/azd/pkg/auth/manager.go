@@ -678,10 +678,23 @@ type LoginInteractiveOptions struct {
 func (m *Manager) LoginInteractive(
 	ctx context.Context,
 	scopes []string,
+	claims string,
 	options *LoginInteractiveOptions) (azcore.TokenCredential, error) {
 	if scopes == nil {
 		scopes = m.LoginScopes()
 	}
+
+	var claimsFile string
+	if claims == "" {
+		c, path, err := loadClaims()
+		if err != nil {
+			return nil, err
+		}
+
+		claims = c
+		claimsFile = path
+	}
+
 	acquireTokenOptions := []public.AcquireInteractiveOption{}
 	if options == nil {
 		options = &LoginInteractiveOptions{}
@@ -700,23 +713,8 @@ func (m *Manager) LoginInteractive(
 		acquireTokenOptions = append(acquireTokenOptions, public.WithOpenURL(options.WithOpenUrl))
 	}
 
-	claimsFile, err := claimsFilePath()
-	if err != nil {
-		return nil, err
-	}
-
-	bytes, err := os.ReadFile(claimsFile)
-	if errors.Is(err, os.ErrNotExist) {
-		// do nothing, no claims to add
-	} else if err != nil {
-		return nil, fmt.Errorf("reading claims file: %w", err)
-	} else {
-		var validJson map[string]any
-		if err := json.Unmarshal(bytes, &validJson); err == nil {
-			acquireTokenOptions = append(acquireTokenOptions, public.WithClaims(string(bytes)))
-		} else if err := os.Remove(claimsFile); err != nil { // remove file immediately if it's not valid json
-			return nil, fmt.Errorf("removing claims file '%s': %w. Remove this file manually to recover", claimsFile, err)
-		}
+	if claims != "" {
+		acquireTokenOptions = append(acquireTokenOptions, public.WithClaims(claims))
 	}
 
 	res, err := m.publicClient.AcquireTokenInteractive(ctx, scopes, acquireTokenOptions...)
@@ -728,7 +726,10 @@ func (m *Manager) LoginInteractive(
 		return nil, err
 	}
 
-	_ = os.Remove(claimsFile)
+	if claimsFile != "" {
+		_ = os.Remove(claimsFile)
+	}
+
 	return newAzdCredential(m.publicClient, &res.Account, m.cloud), nil
 }
 
@@ -763,10 +764,26 @@ func (m *Manager) LoginWithOneAuth(ctx context.Context, tenantID string, scopes 
 }
 
 func (m *Manager) LoginWithDeviceCode(
-	ctx context.Context, tenantID string, scopes []string, withOpenUrl WithOpenUrl) (azcore.TokenCredential, error) {
+	ctx context.Context,
+	tenantID string,
+	scopes []string,
+	claims string,
+	withOpenUrl WithOpenUrl) (azcore.TokenCredential, error) {
 	if scopes == nil {
 		scopes = m.LoginScopes()
 	}
+
+	var claimsFile string
+	if claims == "" {
+		c, path, err := loadClaims()
+		if err != nil {
+			return nil, err
+		}
+
+		claims = c
+		claimsFile = path
+	}
+
 	options := []public.AcquireByDeviceCodeOption{}
 	if tenantID != "" {
 		options = append(options, public.WithTenantID(tenantID))
@@ -774,6 +791,10 @@ func (m *Manager) LoginWithDeviceCode(
 
 	if withOpenUrl == nil {
 		withOpenUrl = browser.OpenURL
+	}
+
+	if claims != "" {
+		options = append(options, public.WithClaims(claims))
 	}
 
 	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, scopes, options...)
@@ -813,6 +834,10 @@ func (m *Manager) LoginWithDeviceCode(
 
 	if err := m.saveLoginForPublicClient(res); err != nil {
 		return nil, err
+	}
+
+	if claimsFile != "" {
+		_ = os.Remove(claimsFile)
 	}
 
 	return newAzdCredential(m.publicClient, &res.Account, m.cloud), nil
@@ -1008,6 +1033,11 @@ func (m *Manager) Logout(ctx context.Context) error {
 
 	if err := m.saveAuthConfig(cfg); err != nil {
 		return fmt.Errorf("saving config: %w", err)
+	}
+
+	// remove any additional login state
+	if claimsFile, err := claimsFilePath(); err == nil {
+		_ = os.Remove(claimsFile)
 	}
 
 	return nil
@@ -1253,6 +1283,7 @@ func readUserProperties(cfg config.Config) (*userProperties, error) {
 	return &user, nil
 }
 
+// claimsFilePath returns the path to the claims file previously stored as login state.
 func claimsFilePath() (string, error) {
 	configDir, err := config.GetUserConfigDir()
 	if err != nil {
@@ -1260,6 +1291,47 @@ func claimsFilePath() (string, error) {
 	}
 
 	return filepath.Join(configDir, "auth.claims"), nil
+}
+
+// saveClaims stores the claims as state on disk to be used with the next login attempt.
+func saveClaims(claims string) error {
+	claimsFile, err := claimsFilePath()
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(claimsFile, []byte(claims), osutil.PermissionFile)
+}
+
+// loadClaims returns claims that were previously stored due to a claims challenge.
+// If no claims were found, empty string and a nil error is returned.
+//
+// This is typically used to request additional claims for the current login attempt.
+func loadClaims() (claims string, claimsPath string, err error) {
+	claimsFile, err := claimsFilePath()
+	if err != nil {
+		return "", "", fmt.Errorf("getting claims path: %w", err)
+	}
+
+	bytes, err := os.ReadFile(claimsFile)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", "", nil
+	} else if err != nil {
+		return "", "", fmt.Errorf("reading claims file: %w", err)
+	}
+
+	// Validate the claims as valid JSON as extra safety
+	var validJson map[string]any
+	if err := json.Unmarshal(bytes, &validJson); err != nil {
+		// an invalid claims file, remove it for recovery and treat it as if it's not there
+		if err := os.Remove(claimsFile); err != nil {
+			return "", "", fmt.Errorf("removing claims file '%s': %w. Remove this file manually to recover", claimsFile, err)
+		}
+
+		return "", "", nil
+	}
+
+	return string(bytes), claimsFile, nil
 }
 
 const (

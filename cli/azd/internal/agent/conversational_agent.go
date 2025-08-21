@@ -34,7 +34,7 @@ type ConversationalAzdAiAgent struct {
 // NewConversationalAzdAiAgent creates a new conversational agent with memory, tool loading,
 // and MCP sampling capabilities. It filters out excluded tools and configures the agent
 // for interactive conversations with a high iteration limit for complex tasks.
-func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentOption) (*ConversationalAzdAiAgent, error) {
+func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentCreateOption) (*ConversationalAzdAiAgent, error) {
 	azdAgent := &ConversationalAzdAiAgent{
 		agentBase: &agentBase{
 			defaultModel: llm,

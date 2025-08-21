@@ -24,44 +24,57 @@ type agentBase struct {
 	tools            []common.AnnotatedTool
 	callbacksHandler callbacks.Handler
 	thoughtChan      chan logging.Thought
+	cleanupFunc      AgentCleanup
 }
+
+type AgentCleanup func() error
 
 type Agent interface {
 	SendMessage(ctx context.Context, args ...string) (string, error)
+	Stop() error
 }
 
-// AgentOption is a functional option for configuring an Agent
-type AgentOption func(*agentBase)
+// Stop terminates the agent and performs any necessary cleanup
+func (a *agentBase) Stop() error {
+	if a.cleanupFunc != nil {
+		return a.cleanupFunc()
+	}
+
+	return nil
+}
+
+// AgentCreateOption is a functional option for configuring an Agent
+type AgentCreateOption func(*agentBase)
 
 // WithDebug returns an option that enables or disables debug logging for the agent
-func WithDebug(debug bool) AgentOption {
+func WithDebug(debug bool) AgentCreateOption {
 	return func(agent *agentBase) {
 		agent.debug = debug
 	}
 }
 
 // WithDefaultModel returns an option that sets the default language model for the agent
-func WithDefaultModel(model llms.Model) AgentOption {
+func WithDefaultModel(model llms.Model) AgentCreateOption {
 	return func(agent *agentBase) {
 		agent.defaultModel = model
 	}
 }
 
 // WithTools returns an option that adds the specified tools to the agent's toolkit
-func WithTools(tools ...common.AnnotatedTool) AgentOption {
+func WithTools(tools ...common.AnnotatedTool) AgentCreateOption {
 	return func(agent *agentBase) {
 		agent.tools = tools
 	}
 }
 
 // WithCallbacksHandler returns an option that sets the callbacks handler for the agent
-func WithCallbacksHandler(handler callbacks.Handler) AgentOption {
+func WithCallbacksHandler(handler callbacks.Handler) AgentCreateOption {
 	return func(agent *agentBase) {
 		agent.callbacksHandler = handler
 	}
 }
 
-func WithThoughtChannel(thoughtChan chan logging.Thought) AgentOption {
+func WithThoughtChannel(thoughtChan chan logging.Thought) AgentCreateOption {
 	return func(agent *agentBase) {
 		agent.thoughtChan = thoughtChan
 	}

@@ -376,14 +376,15 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	// Warn user that this is an alpha feature
 	i.console.WarnForFeature(ctx, llm.FeatureLlm)
 
-	azdAgent, cleanup, err := i.agentFactory.Create(
+	azdAgent, err := i.agentFactory.Create(
 		agent.WithDebug(i.flags.global.EnableDebugLogging),
 	)
 	if err != nil {
 		return err
 	}
 
-	defer cleanup()
+	defer azdAgent.Stop()
+	agentThoughts := azdAgent.Thoughts()
 
 	type initStep struct {
 		Name        string

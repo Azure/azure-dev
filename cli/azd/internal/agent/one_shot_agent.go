@@ -27,7 +27,7 @@ var one_shot_prompt_template string
 // NewOneShotAzdAiAgent creates a new one-shot agent optimized for single queries.
 // It loads tools from multiple sources, filters excluded tools, and configures
 // the agent for stateless operation without conversation memory.
-func NewOneShotAzdAiAgent(llm llms.Model, opts ...AgentOption) (*OneShotAzdAiAgent, error) {
+func NewOneShotAzdAiAgent(llm llms.Model, opts ...AgentCreateOption) (*OneShotAzdAiAgent, error) {
 	azdAgent := &OneShotAzdAiAgent{
 		agentBase: &agentBase{
 			defaultModel: llm,

@@ -31,10 +31,11 @@ func NewAgentFactory(
 	}
 }
 
-func (f *AgentFactory) Create(opts ...AgentOption) (Agent, func() error, error) {
+func (f *AgentFactory) Create(opts ...AgentCreateOption) (Agent, error) {
 	fileLogger, loggerCleanup, err := logging.NewFileLoggerDefault()
 	if err != nil {
-		return nil, loggerCleanup, err
+		defer loggerCleanup()
+		return nil, err
 	}
 
 	thoughtChan := make(chan logging.Thought)
@@ -48,12 +49,14 @@ func (f *AgentFactory) Create(opts ...AgentOption) (Agent, func() error, error) 
 
 	defaultModelContainer, err := f.llmManager.GetDefaultModel(llm.WithLogger(chainedHandler))
 	if err != nil {
-		return nil, cleanup, err
+		defer cleanup()
+		return nil, err
 	}
 
 	samplingModelContainer, err := f.llmManager.GetDefaultModel(llm.WithLogger(chainedHandler))
 	if err != nil {
-		return nil, cleanup, err
+		defer cleanup()
+		return nil, err
 	}
 
 	// Create sampling handler for MCP
@@ -80,7 +83,8 @@ func (f *AgentFactory) Create(opts ...AgentOption) (Agent, func() error, error) 
 	for _, toolLoader := range toolLoaders {
 		categoryTools, err := toolLoader.LoadTools()
 		if err != nil {
-			return nil, cleanup, err
+			defer cleanup()
+			return nil, err
 		}
 
 		// Filter out excluded tools
@@ -93,7 +97,7 @@ func (f *AgentFactory) Create(opts ...AgentOption) (Agent, func() error, error) 
 
 	protectedTools := f.consentManager.WrapTools(allTools)
 
-	allOptions := []AgentOption{}
+	allOptions := []AgentCreateOption{}
 	allOptions = append(allOptions, opts...)
 	allOptions = append(allOptions,
 		WithCallbacksHandler(chainedHandler),
@@ -103,8 +107,10 @@ func (f *AgentFactory) Create(opts ...AgentOption) (Agent, func() error, error) 
 
 	azdAgent, err := NewConversationalAzdAiAgent(defaultModelContainer.Model, allOptions...)
 	if err != nil {
-		return nil, cleanup, err
+		return nil, err
 	}
 
-	return azdAgent, cleanup, nil
+	azdAgent.cleanupFunc = cleanup
+
+	return azdAgent, nil
 }

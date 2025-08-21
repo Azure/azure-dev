@@ -49,7 +49,6 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		Command: &cobra.Command{
 			Use:   "show <extension-name>",
 			Short: "Show details for a specific extension.",
-			Args:  cobra.ExactArgs(1),
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
@@ -364,6 +363,12 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 }
 
 func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if len(a.args) == 0 {
+		return nil, fmt.Errorf("must specify an extension name")
+	}
+	if len(a.args) > 1 {
+		return nil, fmt.Errorf("cannot specify multiple extensions")
+	}
 	extensionId := a.args[0]
 	filterOptions := &extensions.FilterOptions{
 		Source: a.flags.source,
@@ -873,6 +878,12 @@ func newExtensionSourceRemoveAction(
 }
 
 func (a *extensionSourceRemoveAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if len(a.args) == 0 {
+		return nil, fmt.Errorf("must specify an extension source name")
+	}
+	if len(a.args) > 1 {
+		return nil, fmt.Errorf("cannot specify multiple extension sources")
+	}
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Remove extension source (azd extension source remove)",
 	})

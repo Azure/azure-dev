@@ -35,7 +35,7 @@ type Options struct {
 }
 
 // GetLayers return the provisioning layers defined.
-// When [Options.Layers] are not defined, it returns the single layer defined.
+// When [Options.Layers] is not defined, it returns the single layer defined.
 //
 // The ordering is stable; and reflects the order defined in azure.yaml.
 func (o *Options) GetLayers() []Options {
@@ -47,7 +47,7 @@ func (o *Options) GetLayers() []Options {
 }
 
 // GetLayer returns the provisioning layer with the provided name.
-// When [Options.Layers] are not defined, an empty name returns the single layer defined.
+// When [Options.Layers] is not defined, an empty name returns the single layer defined.
 func (o *Options) GetLayer(name string) (Options, error) {
 	if name == "" && len(o.Layers) == 0 {
 		return *o, nil
@@ -70,11 +70,6 @@ func (o *Options) GetLayer(name string) (Options, error) {
 		"layer '%s' not found in azure.yaml. available layers: %s", name, strings.Join(names, ", "))
 }
 
-// anyFieldsSet returns true if any options fields were set to a non-empty value.
-func (o *Options) anyFieldsSet() bool {
-	return o.Name != "" || o.Module != "" || o.Path != "" || o.Provider != "" || o.DeploymentStacks != nil
-}
-
 // Validate validates the current loaded config for correctness.
 //
 // This should be called immediately right after Unmarshal() before any defaulting is performed.
@@ -83,7 +78,11 @@ func (o *Options) Validate() error {
 		return fmt.Errorf("validating infra.layers: %s", err)
 	}
 
-	if len(o.Layers) > 0 && o.anyFieldsSet() {
+	anyIncompatibleFieldsSet := func() bool {
+		return o.Name != "" || o.Module != "" || o.Path != "" || o.DeploymentStacks != nil
+	}
+
+	if len(o.Layers) > 0 && anyIncompatibleFieldsSet() {
 		return errWrap(
 			"properties on 'infra' cannot be declared when 'infra.layers' is declared")
 	}

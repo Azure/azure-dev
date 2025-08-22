@@ -21,6 +21,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/agent"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
@@ -546,7 +548,15 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return serviceManager, err
 		})
 	})
+
+	// AI & LLM components
 	container.MustRegisterSingleton(llm.NewManager)
+	container.MustRegisterSingleton(llm.NewModelFactory)
+	container.MustRegisterScoped(agent.NewAgentFactory)
+	container.MustRegisterScoped(consent.NewConsentManager)
+	container.MustRegisterNamedSingleton("ollama", llm.NewOllamaModelProvider)
+	container.MustRegisterNamedSingleton("azure", llm.NewAzureOpenAiModelProvider)
+
 	container.MustRegisterSingleton(repository.NewInitializer)
 	container.MustRegisterSingleton(alpha.NewFeaturesManager)
 	container.MustRegisterSingleton(config.NewUserConfigManager)

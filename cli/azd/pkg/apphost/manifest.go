@@ -61,7 +61,14 @@ func (m *Manifest) Warnings() string {
 			output.WithWarningFormat("Deprecation Warning:")))
 		sb.WriteString("  This mode is deprecated since Aspire 9.4.")
 		//nolint:lll
-		sb.WriteString(fmt.Sprintf("  See more: %s", output.WithLinkFormat("https://learn.microsoft.com/dotnet/aspire/whats-new/dotnet-aspire-9.4#-azure-container-apps-hybrid-mode-removal")))
+		sb.WriteString(
+			fmt.Sprintf(
+				"  See more: %s",
+				output.WithLinkFormat(
+					"https://learn.microsoft.com/dotnet/aspire/whats-new/dotnet-aspire-9.4#-azure-container-apps-hybrid-mode-removal",
+				),
+			),
+		)
 	}
 
 	return sb.String()

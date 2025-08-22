@@ -412,7 +412,7 @@ func (p *BicepProvider) plan(ctx context.Context) (*compileBicepResult, error) {
 // generateDeploymentObject generates an [infra.Deployment] object from the given plan with a unique name.
 func (p *BicepProvider) generateDeploymentObject(plan *compileBicepResult) (infra.Deployment, error) {
 	baseName := p.env.Name()
-	if p.layer != provisioning.LayerEmpty && p.layer != "" {
+	if p.layer != "" {
 		baseName += "-" + p.layer
 	}
 

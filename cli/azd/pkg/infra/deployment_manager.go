@@ -13,7 +13,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
@@ -98,7 +97,7 @@ func (dm *DeploymentManager) CompletedDeployments(
 		// default hint for partial matches
 		hint = envName
 
-		if layerName != provisioning.LayerEmpty && layerName != "" {
+		if layerName != "" {
 			hint = fmt.Sprintf("%s-%s", envName, layerName)
 		}
 	}
@@ -127,7 +126,7 @@ func (dm *DeploymentManager) CompletedDeployments(
 			}
 
 			// If layerName is empty, we can match on the envName alone
-			if (layerName == provisioning.LayerEmpty || layerName == "") && !layerTagHas {
+			if layerName == "" && !layerTagHas {
 				log.Printf("completedDeployments: matched deployment '%s' using envName", deployment.Name)
 				return []*azapi.ResourceDeployment{deployment}, nil
 			}

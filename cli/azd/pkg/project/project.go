@@ -88,10 +88,6 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		projectConfig.Infra.Module = DefaultModule
 	}
 
-	if projectConfig.Infra.Name == "" {
-		projectConfig.Infra.Name = provisioning.LayerEmpty
-	}
-
 	if strings.Contains(projectConfig.Infra.Path, "\\") && !strings.Contains(projectConfig.Infra.Path, "/") {
 		projectConfig.Infra.Path = strings.ReplaceAll(projectConfig.Infra.Path, "\\", "/")
 	}

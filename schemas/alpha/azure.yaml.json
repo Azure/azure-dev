@@ -39,11 +39,6 @@
             "description": "Optional. Provides additional configuration for Azure infrastructure provisioning.",
             "additionalProperties": false,
             "properties": {
-                "name": {
-                    "type": "string",
-                    "title": "The name of the provisioning layer",
-                    "description": "The name of the provisioning layer"
-                },
                 "provider": {
                     "type": "string",
                     "title": "Type of infrastructure provisioning provider",
@@ -68,8 +63,8 @@
                 },
                 "layers": {
                     "type": "array",
-                    "title": "Additional provisioning layers.",
-                    "description": "Optional. Additional layers for Azure infrastructure provisioning.",
+                    "title": "Provisioning layers.",
+                    "description": "Optional. Layers for Azure infrastructure provisioning.",
                     "additionalProperties": false,
                     "uniqueItems": true,
                     "items": {
@@ -86,15 +81,6 @@
                                 "title": "The name of the provisioning layer",
                                 "description": "The name of the provisioning layer"
                             },
-                            "provider": {
-                                "type": "string",
-                                "title": "Type of infrastructure provisioning provider",
-                                "description": "Optional. The infrastructure provisioning provider used to provision the Azure resources for the application. (Default: bicep)",
-                                "enum": [
-                                    "bicep",
-                                    "terraform"
-                                ]
-                            },
                             "path": {
                                 "type": "string",
                                 "title": "Path to the location that contains Azure provisioning templates",
@@ -104,7 +90,10 @@
                                 "type": "string",
                                 "title": "Name of the default module within the Azure provisioning templates",
                                 "description": "Optional. The name of the Azure provisioning module used when provisioning resources. (Default: main)"
-                            }
+                            },
+                             "deploymentStacks": {
+                                 "$ref": "#/definitions/deploymentStacksConfig"
+                             }
                         }
                     },
                     "allOf": [
@@ -140,6 +129,24 @@
                     },
                     "then": {
                         "properties": {
+                            "deploymentStacks": false
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "required": ["layers"],
+                        "properties": {
+                            "layers": {
+                                "type": "array",
+                                "minItems": 1
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "path": false,
+                            "module": false,
                             "deploymentStacks": false
                         }
                     }

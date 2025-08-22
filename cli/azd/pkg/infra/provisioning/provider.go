@@ -20,7 +20,7 @@ const (
 	Test         ProviderKind = "test"
 )
 
-// Options for a provisioning provider as defined in azure.yaml.
+// Options for a provisioning provider.
 type Options struct {
 	Provider         ProviderKind   `yaml:"provider,omitempty"`
 	Path             string         `yaml:"path,omitempty"`
@@ -30,11 +30,12 @@ type Options struct {
 	// Not expected to be defined at azure.yaml
 	IgnoreDeploymentState bool `yaml:"-"`
 
-	// Provisioning options when split into layers.
+	// Provisioning options for each individually defined layer.
 	Layers []Options `yaml:"layers,omitempty"`
 }
 
 // GetLayers return the provisioning layers defined.
+// When [Options.Layers] are not defined, it returns the single layer defined.
 //
 // The ordering is stable; and reflects the order defined in azure.yaml.
 func (o *Options) GetLayers() []Options {
@@ -45,8 +46,13 @@ func (o *Options) GetLayers() []Options {
 	return o.Layers
 }
 
-// GetLayer returns the named provisioning layer.
+// GetLayer returns the provisioning layer with the provided name.
+// When [Options.Layers] are not defined, an empty name returns the single layer defined.
 func (o *Options) GetLayer(name string) (Options, error) {
+	if name == "" && len(o.Layers) == 0 {
+		return *o, nil
+	}
+
 	if len(o.Layers) == 0 {
 		return Options{}, fmt.Errorf("no layers defined in azure.yaml")
 	}

@@ -28,7 +28,6 @@ import (
 type downFlags struct {
 	forceDelete bool
 	purgeDelete bool
-	layer       string
 	global      *internal.GlobalCommandOptions
 	internal.EnvFlag
 }
@@ -42,13 +41,6 @@ func (i *downFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		//nolint:lll
 		"Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).",
 	)
-	local.StringVar(
-		&i.layer,
-		"layer",
-		"",
-		"Provisioning layer to delete resources for.",
-	)
-	_ = local.MarkHidden("layer") // alpha: featLayers
 
 	i.EnvFlag.Bind(local, global)
 	i.global = global
@@ -62,14 +54,17 @@ func newDownFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *do
 }
 
 func newDownCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "down",
 		Short: "Delete your project's Azure resources.",
 	}
+	cmd.Args = cobra.MaximumNArgs(1)
+	return cmd
 }
 
 type downAction struct {
 	flags               *downFlags
+	args                []string
 	provisionManager    *provisioning.Manager
 	importManager       *project.ImportManager
 	env                 *environment.Environment
@@ -79,6 +74,7 @@ type downAction struct {
 }
 
 func newDownAction(
+	args []string,
 	flags *downFlags,
 	provisionManager *provisioning.Manager,
 	env *environment.Environment,
@@ -95,6 +91,7 @@ func newDownAction(
 		projectConfig:       projectConfig,
 		importManager:       importManager,
 		alphaFeatureManager: alphaFeatureManager,
+		args:                args,
 	}
 }
 
@@ -117,10 +114,7 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		a.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
 	}
 
-	layers := []provisioning.Options{infra.Options}
-	layers = append(layers, infra.Options.Layers...)
-
-	if a.flags.layer != "" || len(layers) > 1 {
+	if len(infra.Options.Layers) > 1 {
 		if !a.alphaFeatureManager.IsEnabled(featLayers) {
 			return nil, fmt.Errorf(
 				"Layered provisioning is not enabled. Run '%s' to enable it.", alpha.GetEnableCommand(featLayers))
@@ -129,18 +123,23 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		a.console.WarnForFeature(ctx, featLayers)
 	}
 
-	slices.Reverse(layers)
+	downLayer := ""
+	if len(a.args) > 0 {
+		downLayer = a.args[0]
+	}
 
-	if a.flags.layer != "" {
-		layerOpt, err := infra.Options.GetLayer(a.flags.layer)
+	layers := infra.Options.GetLayers()
+	if downLayer != "" {
+		layerOpt, err := infra.Options.GetLayer(downLayer)
 		if err != nil {
 			return nil, err
 		}
 		layers = []provisioning.Options{layerOpt}
 	}
+	slices.Reverse(layers)
 
 	for _, layer := range layers {
-		if a.flags.layer != "" || len(layers) > 1 {
+		if downLayer != "" || len(layers) > 1 {
 			a.console.EnsureBlankLine(ctx)
 			a.console.Message(ctx, fmt.Sprintf("Layer: %s", output.WithHighLightFormat(layer.Name)))
 			a.console.Message(ctx, "")

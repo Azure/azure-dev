@@ -80,6 +80,10 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		return nil, fmt.Errorf("parsing project %s: %w", projectConfig.Name, err)
 	}
 
+	for _, layer := range projectConfig.Infra.Layers {
+		layer.Provider = projectConfig.Infra.Provider
+	}
+
 	if projectConfig.Infra.Path == "" {
 		projectConfig.Infra.Path = "infra"
 	}

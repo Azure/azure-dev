@@ -1053,10 +1053,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	layers := []provisioning.Options{infra.Options}
-	layers = append(layers, infra.Options.Layers...)
-
-	if ef.flags.layer != "" || len(layers) > 1 {
+	if len(infra.Options.Layers) > 1 {
 		if !ef.alphaFeatureManager.IsEnabled(featLayers) {
 			return nil,
 				fmt.Errorf("Layered provisioning is not enabled. Run '%s' to enable it.", alpha.GetEnableCommand(featLayers))
@@ -1065,6 +1062,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		ef.console.WarnForFeature(ctx, featLayers)
 	}
 
+	layers := infra.Options.GetLayers()
 	if ef.flags.layer != "" {
 		layerOpt, err := infra.Options.GetLayer(ef.flags.layer)
 		if err != nil {

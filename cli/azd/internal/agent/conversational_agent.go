@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/chains"
@@ -140,10 +142,93 @@ func (aai *ConversationalAzdAiAgent) StartConversation(ctx context.Context, args
 
 // runChain executes a user query through the agent's chain with memory and returns the response
 func (aai *ConversationalAzdAiAgent) runChain(ctx context.Context, userInput string) (string, error) {
+	thoughtsCtx, cancelCtx := context.WithCancel(ctx)
+	cleanup, err := aai.renderThoughts(thoughtsCtx)
+	if err != nil {
+		cancelCtx()
+		return "", err
+	}
+
+	defer func() {
+		cleanup()
+		cancelCtx()
+	}()
+
 	// Execute with enhanced input - agent should automatically handle memory
 	output, err := chains.Run(ctx, aai.executor, userInput)
 	if err != nil {
 		return "", err
 	}
+
 	return output, nil
+}
+
+func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func(), error) {
+	var latestThought string
+
+	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
+		Text: "Thinking...",
+	})
+
+	canvas := uxlib.NewCanvas(
+		spinner,
+		uxlib.NewVisualElement(func(printer uxlib.Printer) error {
+			printer.Fprintln()
+			printer.Fprintln()
+
+			if latestThought != "" {
+				printer.Fprintln(color.HiBlackString(latestThought))
+				printer.Fprintln()
+				printer.Fprintln()
+			}
+
+			return nil
+		}))
+
+	go func() {
+		defer canvas.Clear()
+
+		var latestAction string
+		var latestActionInput string
+		var spinnerText string
+
+		for {
+
+			select {
+			case thought := <-aai.thoughtChan:
+				if thought.Action != "" {
+					latestAction = thought.Action
+					latestActionInput = thought.ActionInput
+				}
+				if thought.Thought != "" {
+					latestThought = thought.Thought
+				}
+			case <-ctx.Done():
+				return
+			case <-time.After(200 * time.Millisecond):
+			}
+
+			// Update spinner text
+			if latestAction == "" {
+				spinnerText = "Thinking..."
+			} else {
+				spinnerText = fmt.Sprintf("Running %s tool", color.GreenString(latestAction))
+				if latestActionInput != "" {
+					spinnerText += " with " + color.GreenString(latestActionInput)
+				}
+
+				spinnerText += "..."
+			}
+
+			spinner.UpdateText(spinnerText)
+			canvas.Update()
+		}
+	}()
+
+	cleanup := func() {
+		canvas.Clear()
+		canvas.Close()
+	}
+
+	return cleanup, canvas.Run()
 }

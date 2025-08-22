@@ -137,8 +137,14 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		infraRoot = filepath.Join(projectConfig.Path, infraRoot)
 	}
 
-	// if infra files exist, short-circuit and return immediately for performance purposes --
-	// dotNetImporter check can take awhile
+	// short-circuit: If layers are defined, we know it's an explicit infrastructure
+	if len(projectConfig.Infra.Layers) > 0 {
+		return &Infra{
+			Options: projectConfig.Infra,
+		}, nil
+	}
+
+	// short-circuit: If infra files exist, we know it's an explicit infrastructure
 	if moduleExists, err := pathHasModule(infraRoot, projectConfig.Infra.Module); err == nil && moduleExists {
 		log.Printf("using infrastructure from %s directory", infraRoot)
 		return &Infra{
@@ -146,6 +152,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		}, nil
 	}
 
+	// Temp infra from AppHost
 	for _, svcConfig := range projectConfig.Services {
 		if svcConfig.Language == ServiceLanguageDotNet {
 			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
@@ -164,11 +171,12 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		}
 	}
 
+	// Temp infra from resources
 	if len(projectConfig.Resources) > 0 {
 		return tempInfra(ctx, projectConfig)
 	}
 
-	// return default project infra
+	// Return default project infra
 	return &Infra{
 		Options: projectConfig.Infra,
 	}, nil

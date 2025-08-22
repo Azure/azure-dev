@@ -105,7 +105,7 @@ func (dm *DeploymentManager) CompletedDeployments(
 	// Environment matching strategy
 	// 1. Deployment with azd tagged env name + layer name
 	// 2. Exact match on environment name to deployment name (old azd strategy)
-	// 3. Multiple matching names based on specified hint (show user prompt)
+	// 3. Multiple matching names based specified hint (show user prompt)
 	matchingDeployments := []*azapi.ResourceDeployment{}
 
 	for _, deployment := range deployments {
@@ -125,7 +125,7 @@ func (dm *DeploymentManager) CompletedDeployments(
 				return []*azapi.ResourceDeployment{deployment}, nil
 			}
 
-			// If layerName is empty, we can match on the envName alone
+			// If layerName is empty, we match on the envName alone
 			if layerName == "" && !layerTagHas {
 				log.Printf("completedDeployments: matched deployment '%s' using envName", deployment.Name)
 				return []*azapi.ResourceDeployment{deployment}, nil

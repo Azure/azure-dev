@@ -474,7 +474,6 @@ func (p *GitHubCiProvider) setPipelineVariables(
 		})
 	}
 
-	// TODO: maybe loop through it I guess?
 	if infraOptions.Provider == provisioning.Terraform {
 		remoteStateKeys := []string{"RS_RESOURCE_GROUP", "RS_STORAGE_ACCOUNT", "RS_CONTAINER_NAME"}
 		for _, key := range remoteStateKeys {
@@ -540,7 +539,6 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		Kind: ux.GitHubSecret,
 	})
 
-	// TODO: if any?
 	if infraOptions.Provider == provisioning.Terraform {
 		for key, info := range map[string]struct {
 			value  string

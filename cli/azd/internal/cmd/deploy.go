@@ -35,6 +35,7 @@ import (
 type DeployFlags struct {
 	ServiceName string
 	All         bool
+	PublishOnly bool
 	fromPackage string
 	global      *internal.GlobalCommandOptions
 	*internal.EnvFlag
@@ -69,6 +70,12 @@ func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		"all",
 		false,
 		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
+	)
+	local.BoolVar(
+		&d.PublishOnly,
+		"publish-only",
+		false,
+		"Prints the full remote image name for container app services without deploying",
 	)
 	local.StringVar(
 		&d.fromPackage,
@@ -250,6 +257,20 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			da.console.WarnForFeature(ctx, alphaFeatureId)
 		}
 
+		// Handle --publish-only flag
+		if da.flags.PublishOnly {
+			// Check if this service is a container app
+			if svc.Host != project.ContainerAppTarget && svc.Host != project.DotNetContainerAppTarget {
+				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return nil, fmt.Errorf(
+					"'--publish-only' is only supported for container app services, but service '%s' has host type '%s'",
+					svc.Name, svc.Host)
+			}
+
+			// Set publish-only context and continue with normal deploy flow
+			ctx = project.WithPublishOnly(ctx, true)
+		}
+
 		var packageResult *project.ServicePackageResult
 		if da.flags.fromPackage != "" {
 			// --from-package set, skip packaging
@@ -319,9 +340,15 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 	}
 
+	messageHeader := fmt.Sprintf("Your application was deployed to Azure in %s.", ux.DurationAsText(since(startTime)))
+	if da.flags.PublishOnly {
+		messageHeader = fmt.Sprintf("Your application was published to Azure Container Registry in %s.",
+			ux.DurationAsText(since(startTime)))
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Your application was deployed to Azure in %s.", ux.DurationAsText(since(startTime))),
+			Header: messageHeader,
 			FollowUp: getResourceGroupFollowUp(ctx,
 				da.formatter,
 				da.portalUrlBase,
@@ -359,6 +386,9 @@ func GetCmdDeployHelpFooter(*cobra.Command) string {
 		),
 		"Deploy the service named 'api' to Azure from a previously generated package.": output.WithHighLightFormat(
 			"azd deploy api --from-package <package-path>",
+		),
+		"Get the full remote image name for a container app service without deploying.": output.WithHighLightFormat(
+			"azd deploy api --publish-only",
 		),
 	})
 }

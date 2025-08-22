@@ -86,11 +86,30 @@ func (at *containerAppTarget) Deploy(
 		return nil, err
 	}
 
+	imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
+
+	// Handle --publish-only flag: return early with just the image name
+	if IsPublishOnly(ctx) {
+		if imageName == "" {
+			return nil, fmt.Errorf("image name not found for service '%s'", serviceConfig.Name)
+		}
+
+		return &ServiceDeployResult{
+			Package: packageOutput,
+			TargetResourceId: azure.ContainerAppRID(
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+			),
+			Kind:            ContainerAppTarget,
+			PublishArtifact: imageName,
+		}, nil
+	}
+
 	containerAppOptions := containerapps.ContainerAppOptions{
 		ApiVersion: serviceConfig.ApiVersion,
 	}
 
-	imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
 	progress.SetProgress(NewServiceProgress("Updating container app revision"))
 	err = at.containerAppService.AddRevision(
 		ctx,

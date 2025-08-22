@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
-	"github.com/azure/azure-dev/cli/azd/internal/agent/logging"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -384,8 +383,6 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 		return err
 	}
 
-	agentThoughts := azdAgent.Thoughts()
-
 	defer cleanup()
 
 	type initStep struct {
@@ -434,7 +431,6 @@ Do not stop until all tasks are complete and fully resolved.
 			if err := i.collectAndApplyFeedback(
 				ctx,
 				azdAgent,
-				agentThoughts,
 				feedbackMsg,
 			); err != nil {
 				return err
@@ -448,17 +444,7 @@ Do not stop until all tasks are complete and fully resolved.
 			"Provide a very brief summary in markdown format that includes any files generated during this step.",
 		}, "\n"))
 
-		thoughtsCtx, cancelThoughts := context.WithCancel(ctx)
-		cleanup, err := renderThoughts(thoughtsCtx, agentThoughts)
-		if err != nil {
-			cancelThoughts()
-			return err
-		}
-
 		agentOutput, err := azdAgent.SendMessage(ctx, fullTaskInput)
-		cancelThoughts()
-		cleanup()
-
 		if err != nil {
 			if agentOutput != "" {
 				i.console.Message(ctx, output.WithMarkdown(agentOutput))
@@ -474,7 +460,7 @@ Do not stop until all tasks are complete and fully resolved.
 	}
 
 	// Post-completion feedback loop
-	if err := i.postCompletionFeedbackLoop(ctx, azdAgent, agentThoughts); err != nil {
+	if err := i.postCompletionFeedbackLoop(ctx, azdAgent); err != nil {
 		return err
 	}
 
@@ -485,7 +471,6 @@ Do not stop until all tasks are complete and fully resolved.
 func (i *initAction) collectAndApplyFeedback(
 	ctx context.Context,
 	azdAgent agent.Agent,
-	agentThoughts <-chan logging.Thought,
 	promptMessage string,
 ) error {
 	// Loop to allow multiple rounds of feedback
@@ -523,17 +508,7 @@ func (i *initAction) collectAndApplyFeedback(
 		if userInput != "" {
 			i.console.Message(ctx, color.MagentaString("Feedback"))
 
-			thoughtsCtx, cancelThoughts := context.WithCancel(ctx)
-			cleanup, err := renderThoughts(thoughtsCtx, agentThoughts)
-			if err != nil {
-				cancelThoughts()
-				return err
-			}
-
 			feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
-			cancelThoughts()
-			cleanup()
-
 			if err != nil {
 				if feedbackOutput != "" {
 					i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
@@ -555,13 +530,12 @@ func (i *initAction) collectAndApplyFeedback(
 func (i *initAction) postCompletionFeedbackLoop(
 	ctx context.Context,
 	azdAgent agent.Agent,
-	agentThoughts <-chan logging.Thought,
 ) error {
 	i.console.Message(ctx, "")
 	i.console.Message(ctx, "🎉 All initialization steps completed!")
 	i.console.Message(ctx, "")
 
-	return i.collectAndApplyFeedback(ctx, azdAgent, agentThoughts, "Any final feedback or changes?")
+	return i.collectAndApplyFeedback(ctx, azdAgent, "Any final feedback or changes?")
 }
 
 type initType int
@@ -573,76 +547,6 @@ const (
 	initEnvironment
 	initWithAgent
 )
-
-func renderThoughts(ctx context.Context, agentThoughts <-chan logging.Thought) (func(), error) {
-	var latestThought string
-
-	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
-		Text: "Thinking...",
-	})
-
-	canvas := uxlib.NewCanvas(
-		spinner,
-		uxlib.NewVisualElement(func(printer uxlib.Printer) error {
-			printer.Fprintln()
-			printer.Fprintln()
-
-			if latestThought != "" {
-				printer.Fprintln(color.HiBlackString(latestThought))
-				printer.Fprintln()
-				printer.Fprintln()
-			}
-
-			return nil
-		}))
-
-	go func() {
-		defer canvas.Clear()
-
-		var latestAction string
-		var latestActionInput string
-		var spinnerText string
-
-		for {
-
-			select {
-			case thought := <-agentThoughts:
-				if thought.Action != "" {
-					latestAction = thought.Action
-					latestActionInput = thought.ActionInput
-				}
-				if thought.Thought != "" {
-					latestThought = thought.Thought
-				}
-			case <-ctx.Done():
-				return
-			case <-time.After(200 * time.Millisecond):
-			}
-
-			// Update spinner text
-			if latestAction == "" {
-				spinnerText = "Thinking..."
-			} else {
-				spinnerText = fmt.Sprintf("Running %s tool", color.GreenString(latestAction))
-				if latestActionInput != "" {
-					spinnerText += " with " + color.GreenString(latestActionInput)
-				}
-
-				spinnerText += "..."
-			}
-
-			spinner.UpdateText(spinnerText)
-			canvas.Update()
-		}
-	}()
-
-	cleanup := func() {
-		canvas.Clear()
-		canvas.Close()
-	}
-
-	return cleanup, canvas.Run()
-}
 
 func promptInitType(console input.Console, ctx context.Context, featuresManager *alpha.FeatureManager) (initType, error) {
 	options := []string{

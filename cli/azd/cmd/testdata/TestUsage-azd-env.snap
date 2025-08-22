@@ -14,7 +14,7 @@ Available Commands
   get-values	: Get all environment values.
   list      	: List environments.
   new       	: Create a new environment and set it as the default.
-  refresh   	: Refresh environment settings by using information from a previous infrastructure provision.
+  refresh   	: Refresh environment values by using information from a previous infrastructure provision.
   select    	: Set the default environment.
   set       	: Set one or more environment values.
   set-secret	: Set a name as a reference to a Key Vault secret in the environment.

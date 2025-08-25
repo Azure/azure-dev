@@ -329,7 +329,7 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 		}
 	}
 
-	state.Outputs = p.createOutputParameters(
+	state.Outputs = provisioning.OutputParametersFromArmOutputs(
 		outputs,
 		azapi.CreateDeploymentOutput(deployment.Outputs),
 	)
@@ -591,7 +591,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	if !p.ignoreDeploymentState && parametersHashErr == nil {
 		deploymentState, err := p.deploymentState(ctx, planned, deployment, currentParamsHash)
 		if err == nil {
-			result.Outputs = p.createOutputParameters(
+			result.Outputs = provisioning.OutputParametersFromArmOutputs(
 				planned.Template.Outputs,
 				azapi.CreateDeploymentOutput(deploymentState.Outputs),
 			)
@@ -678,7 +678,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		return nil, err
 	}
 
-	result.Outputs = p.createOutputParameters(
+	result.Outputs = provisioning.OutputParametersFromArmOutputs(
 		planned.Template.Outputs,
 		azapi.CreateDeploymentOutput(deployResult.Outputs),
 	)
@@ -925,7 +925,7 @@ func (p *BicepProvider) Destroy(
 	}
 
 	destroyResult := &provisioning.DestroyResult{
-		InvalidatedEnvKeys: slices.Collect(maps.Keys(p.createOutputParameters(
+		InvalidatedEnvKeys: slices.Collect(maps.Keys(provisioning.OutputParametersFromArmOutputs(
 			compileResult.Template.Outputs,
 			azapi.CreateDeploymentOutput(mostRecentDeployment.Outputs),
 		))),
@@ -1494,23 +1494,6 @@ func (p *BicepProvider) purgeAPIManagement(
 	return nil
 }
 
-func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) provisioning.ParameterType {
-	switch s {
-	case "String", "string", "secureString", "securestring":
-		return provisioning.ParameterTypeString
-	case "Bool", "bool":
-		return provisioning.ParameterTypeBoolean
-	case "Int", "int":
-		return provisioning.ParameterTypeNumber
-	case "Object", "object", "secureObject", "secureobject":
-		return provisioning.ParameterTypeObject
-	case "Array", "array":
-		return provisioning.ParameterTypeArray
-	default:
-		panic(fmt.Sprintf("unexpected bicep type: '%s'", s))
-	}
-}
-
 // Creates a normalized view of the azure output parameters and resolves inconsistencies in the output parameter name
 // casings.
 func (p *BicepProvider) createOutputParameters(
@@ -1544,7 +1527,7 @@ func (p *BicepProvider) createOutputParameters(
 		}
 
 		outputParams[paramName] = provisioning.OutputParameter{
-			Type:  p.mapBicepTypeToInterfaceType(azureParam.Type),
+			Type:  provisioning.ParameterTypeFromArmType(azureParam.Type),
 			Value: azureParam.Value,
 		}
 	}
@@ -1852,14 +1835,14 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) pro
 
 	for key, param := range bicepTemplate.Parameters {
 		parameters[key] = provisioning.InputParameter{
-			Type:         string(p.mapBicepTypeToInterfaceType(param.Type)),
+			Type:         string(provisioning.ParameterTypeFromArmType(param.Type)),
 			DefaultValue: param.DefaultValue,
 		}
 	}
 
 	for key, param := range bicepTemplate.Outputs {
 		outputs[key] = provisioning.OutputParameter{
-			Type:  p.mapBicepTypeToInterfaceType(param.Type),
+			Type:  provisioning.ParameterTypeFromArmType(param.Type),
 			Value: param.Value,
 		}
 	}
@@ -2022,7 +2005,7 @@ func (p *BicepProvider) ensureParameters(
 
 	for _, key := range sortedKeys {
 		param := template.Parameters[key]
-		parameterType := p.mapBicepTypeToInterfaceType(param.Type)
+		parameterType := provisioning.ParameterTypeFromArmType(param.Type)
 		azdMetadata, hasMetadata := param.AzdMetadata()
 
 		// If a value is explicitly configured via a parameters file, use it.

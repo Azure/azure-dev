@@ -75,7 +75,7 @@ func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		&d.PublishOnly,
 		"publish-only",
 		false,
-		"Prints the full remote image name for container app services without deploying",
+		"Publishes the container image to the registry without deploying the application.",
 	)
 	local.StringVar(
 		&d.fromPackage,

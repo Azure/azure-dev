@@ -3,6 +3,9 @@
 
 package internal
 
+// CmdCalledAs provides access to the cmd.CalledAs() value through dependency injection
+type CmdCalledAs string
+
 type GlobalCommandOptions struct {
 	// Cwd allows the user to override the current working directory, temporarily.
 	// The root command will take care of cd'ing into that folder before your command

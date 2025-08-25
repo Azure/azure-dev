@@ -30,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+	"github.com/drone/envsubst"
 )
 
 type dotnetContainerAppTarget struct {
@@ -196,8 +197,6 @@ func (at *dotnetContainerAppTarget) Deploy(
 	progress.SetProgress(NewServiceProgress("Updating application"))
 
 	var manifestTemplate string
-	var armTemplate *azure.RawArmTemplate
-	var armParams azure.ArmParameters
 
 	appHostRoot := serviceConfig.DotNetContainerApp.AppHostPath
 	if f, err := os.Stat(appHostRoot); err == nil && !f.IsDir() {
@@ -343,10 +342,10 @@ func (at *dotnetContainerAppTarget) Deploy(
 	resourceName := serviceConfig.Name
 	if useBicepForContainerApps {
 		// Compile the bicep template
-		compiled, params, err := func() (azure.RawArmTemplate, azure.ArmParameters, error) {
+		deployment, err := func() (armDeployment, error) {
 			tempFolder, err := os.MkdirTemp("", fmt.Sprintf("%s-build*", projectName))
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("creating temporary build folder: %w", err)
+				return armDeployment{}, fmt.Errorf("creating temporary build folder: %w", err)
 			}
 			defer func() {
 				_ = os.RemoveAll(tempFolder)
@@ -354,15 +353,15 @@ func (at *dotnetContainerAppTarget) Deploy(
 			// write bicepparam content to a new file in the temp folder
 			f, err := os.Create(filepath.Join(tempFolder, "main.bicepparam"))
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("creating bicepparam file: %w", err)
+				return armDeployment{}, fmt.Errorf("creating bicepparam file: %w", err)
 			}
 			_, err = io.Copy(f, strings.NewReader(builder.String()))
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("writing bicepparam file: %w", err)
+				return armDeployment{}, fmt.Errorf("writing bicepparam file: %w", err)
 			}
 			err = f.Close()
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("closing bicepparam file: %w", err)
+				return armDeployment{}, fmt.Errorf("closing bicepparam file: %w", err)
 			}
 
 			// copy module to same path as bicepparam so it can be compiled from the temp folder
@@ -376,60 +375,40 @@ func (at *dotnetContainerAppTarget) Deploy(
 					apphost.AppHostOptions{},
 				)
 				if err != nil {
-					return azure.RawArmTemplate{}, nil, fmt.Errorf("generating bicep file: %w", err)
+					return armDeployment{}, fmt.Errorf("generating bicep file: %w", err)
 				}
 				bicepContent = []byte(generatedBicep)
 			}
 			sourceFile, err := os.Create(filepath.Join(tempFolder, bicepSourceFileName))
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("creating bicep file: %w", err)
+				return armDeployment{}, fmt.Errorf("creating bicep file: %w", err)
 			}
 			_, err = io.Copy(sourceFile, strings.NewReader(string(bicepContent)))
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("writing bicep file: %w", err)
+				return armDeployment{}, fmt.Errorf("writing bicep file: %w", err)
 			}
 			err = sourceFile.Close()
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("closing bicep file: %w", err)
+				return armDeployment{}, fmt.Errorf("closing bicep file: %w", err)
 			}
 
-			res, err := at.bicepCli.BuildBicepParam(ctx, f.Name(), at.env.Environ())
+			deployment, err := compileBicep(at.bicepCli, ctx, f.Name(), at.env)
 			if err != nil {
-				return azure.RawArmTemplate{}, nil, fmt.Errorf("building container app bicep: %w", err)
+				return armDeployment{}, fmt.Errorf("building container app bicep: %w", err)
 			}
-			type compiledBicepParamResult struct {
-				TemplateJson   string `json:"templateJson"`
-				ParametersJson string `json:"parametersJson"`
-			}
-			var bicepParamOutput compiledBicepParamResult
-			if err := json.Unmarshal([]byte(res.Compiled), &bicepParamOutput); err != nil {
-				log.Printf(
-					"failed unmarshalling compiled bicepparam (err: %v), template contents:\n%s", err, res.Compiled)
-				return nil, nil, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
-			}
-			var params azure.ArmParameterFile
-			if err := json.Unmarshal([]byte(bicepParamOutput.ParametersJson), &params); err != nil {
-				log.Printf(
-					"failed unmarshalling compiled bicepparam parameters(err: %v), template contents:\n%s",
-					err,
-					res.Compiled)
-				return nil, nil, fmt.Errorf("failed unmarshalling arm parameters template from json: %w", err)
-			}
-			return azure.RawArmTemplate(bicepParamOutput.TemplateJson), params.Parameters, nil
+			return deployment, nil
 		}()
 		if err != nil {
 			return nil, err
 		}
-		armTemplate = &compiled
-		armParams = params
 
 		deploymentResult, err := at.deploymentService.DeployToResourceGroup(
 			ctx,
 			at.env.GetSubscriptionId(),
 			targetResource.ResourceGroupName(),
 			at.deploymentService.GenerateDeploymentName(serviceConfig.Name),
-			*armTemplate,
-			armParams,
+			deployment.Template,
+			deployment.Parameters,
 			nil, nil)
 		if err != nil {
 			return nil, fmt.Errorf("deploying bicep template: %w", err)
@@ -526,6 +505,86 @@ func deploymentHost(deploymentResult *azapi.ResourceDeployment) (appDeploymentHo
 		}
 	}
 	return appDeploymentHost{}, fmt.Errorf("didn't find any known application host from the deployment")
+}
+
+// armDeployment represents the compiled ARM template and parameters
+// that is ready to be deployed.
+type armDeployment struct {
+	Template   azure.RawArmTemplate
+	Parameters azure.ArmParameters
+}
+
+// compileBicep compiles the specified Bicep module to an ARM template and parameters.
+//
+// The Bicep module can be either a main Bicep file (with .bicep extension) or a Bicep parameters
+// file (with .bicepparam extension).
+//
+// If a Bicep file is provided, the corresponding parameters file must exist in the same directory with the same base name.
+// The environment variables in the parameters file will be substituted using the provided
+// environment before parsing.
+//
+// Returns the compiled ARM template and parameters, or an error if the compilation fails.
+func compileBicep(
+	cli *bicep.Cli,
+	ctx context.Context,
+	bicepModulePath string,
+	env *environment.Environment,
+) (armDeployment, error) {
+	var result armDeployment
+
+	ext := filepath.Ext(bicepModulePath)
+	if ext != ".bicep" && ext != ".bicepparam" {
+		return result, fmt.Errorf("bicep module path must have .bicep or .bicepparam extension")
+	}
+
+	if ext == ".bicep" {
+		paramFilePath := strings.TrimSuffix(bicepModulePath, ext) + ".parameters.json"
+		parametersBytes, err := os.ReadFile(paramFilePath)
+		if err != nil {
+			return result, fmt.Errorf("reading parameters file: %w", err)
+		}
+
+		substituted, err := envsubst.Eval(string(parametersBytes), env.Getenv)
+		if err != nil {
+			return result, fmt.Errorf("performing env substitution: %w", err)
+		}
+
+		var paramFile azure.ArmParameterFile
+		if err := json.Unmarshal([]byte(substituted), &paramFile); err != nil {
+			return result, fmt.Errorf("unmarshaling file: %w", err)
+		}
+
+		res, err := cli.Build(ctx, bicepModulePath)
+		if err != nil {
+			return result, fmt.Errorf("building bicep: %w", err)
+		}
+
+		result.Template = azure.RawArmTemplate(res.Compiled)
+		result.Parameters = paramFile.Parameters
+	} else {
+		res, err := cli.BuildBicepParam(ctx, bicepModulePath, env.Environ())
+		if err != nil {
+			return result, fmt.Errorf("building bicepparam: %w", err)
+		}
+
+		type compiledBicepParamResult struct {
+			TemplateJson   string `json:"templateJson"`
+			ParametersJson string `json:"parametersJson"`
+		}
+		var bicepParamOutput compiledBicepParamResult
+		if err := json.Unmarshal([]byte(res.Compiled), &bicepParamOutput); err != nil {
+			return result, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
+		}
+		var params azure.ArmParameterFile
+		if err := json.Unmarshal([]byte(bicepParamOutput.ParametersJson), &params); err != nil {
+			return result, fmt.Errorf("failed unmarshalling arm parameters template from json: %w", err)
+		}
+
+		result.Template = azure.RawArmTemplate(bicepParamOutput.TemplateJson)
+		result.Parameters = params.Parameters
+	}
+
+	return result, nil
 }
 
 // Gets endpoint for the container app service

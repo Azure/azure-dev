@@ -163,7 +163,7 @@ func (st ServiceTargetKind) IgnoreFile() string {
 // As an example, ContainerAppTarget is able to provision the container app as part of deployment,
 // and thus returns true.
 func (st ServiceTargetKind) SupportsDelayedProvisioning() bool {
-	return st == AksTarget
+	return st == AksTarget || st == ContainerAppTarget
 }
 
 func checkResourceType(resource *environment.TargetResource, expectedResourceType azapi.AzureResourceType) error {

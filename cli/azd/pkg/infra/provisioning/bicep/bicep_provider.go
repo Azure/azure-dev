@@ -1494,47 +1494,6 @@ func (p *BicepProvider) purgeAPIManagement(
 	return nil
 }
 
-// Creates a normalized view of the azure output parameters and resolves inconsistencies in the output parameter name
-// casings.
-func (p *BicepProvider) createOutputParameters(
-	templateOutputs azure.ArmTemplateOutputs,
-	azureOutputParams map[string]azapi.AzCliDeploymentOutput,
-) map[string]provisioning.OutputParameter {
-	canonicalOutputCasings := make(map[string]string, len(templateOutputs))
-
-	for key := range templateOutputs {
-		canonicalOutputCasings[strings.ToLower(key)] = key
-	}
-
-	outputParams := make(map[string]provisioning.OutputParameter, len(azureOutputParams))
-
-	for key, azureParam := range azureOutputParams {
-		if azureParam.Secured() {
-			// Secured output can't be retrieved, so we skip it.
-			// https://learn.microsoft.com/azure/azure-resource-manager/bicep/outputs?tabs=azure-powershell#secure-outputs
-			log.Println("Skipping secured output parameter:", key)
-			continue
-		}
-		var paramName string
-		canonicalCasing, found := canonicalOutputCasings[strings.ToLower(key)]
-		if found {
-			paramName = canonicalCasing
-		} else {
-			// To support BYOI (bring your own infrastructure) scenarios we will default to UPPER when canonical casing
-			// is not found in the parameters file to workaround strange azure behavior with OUTPUT values that look
-			// like `azurE_RESOURCE_GROUP`
-			paramName = strings.ToUpper(key)
-		}
-
-		outputParams[paramName] = provisioning.OutputParameter{
-			Type:  provisioning.ParameterTypeFromArmType(azureParam.Type),
-			Value: azureParam.Value,
-		}
-	}
-
-	return outputParams
-}
-
 type loadParametersResult struct {
 	parameters     map[string]azure.ArmParameter
 	locationParams []string

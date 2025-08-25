@@ -65,6 +65,7 @@ func NewPublishCmd() *cobra.Command {
 func NewPublishAction(
 	flags *PublishFlags,
 	args []string,
+	calledAs internal.CmdCalledAs,
 	projectConfig *project.ProjectConfig,
 	projectManager project.ProjectManager,
 	serviceManager project.ServiceManager,
@@ -88,6 +89,7 @@ func NewPublishAction(
 	return NewDeployAction(
 		flags.deploy,
 		args,
+		calledAs,
 		projectConfig,
 		projectManager,
 		serviceManager,

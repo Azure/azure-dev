@@ -201,8 +201,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return cmd.Annotations
 	})
 
-	container.MustRegisterSingleton(func(cmd *cobra.Command) CmdCalledAs {
-		return CmdCalledAs(cmd.CalledAs())
+	container.MustRegisterSingleton(func(cmd *cobra.Command) internal.CmdCalledAs {
+		return internal.CmdCalledAs(cmd.CalledAs())
 	})
 
 	// Azd Context

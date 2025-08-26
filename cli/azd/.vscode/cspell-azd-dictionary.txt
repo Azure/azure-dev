@@ -17,6 +17,7 @@ appinsightsexporter
 appinsightsstorage
 appplatform
 appservice
+appuser
 arget
 armapimanagement
 armappconfiguration
@@ -69,6 +70,7 @@ BUILDNUMBER
 buildpacks
 byoi
 cflags
+charmbracelet
 circleci
 cmdrecord
 cmdsubst
@@ -76,6 +78,7 @@ cognitiveservices
 conditionalize
 consolesize
 containerapp
+containerizable
 containerapps
 containerd
 contoso
@@ -108,6 +111,7 @@ envsubst
 errcheck
 errorinfo
 errorlint
+eventhub
 eventhubs
 executil
 flexconsumption
@@ -144,6 +148,8 @@ ldflags
 lechnerc77
 libc
 llms
+localtools
+mcptools
 memfs
 mergo
 mgmt
@@ -155,6 +161,8 @@ mockarmresources
 mockazcli
 mongojs
 mvnw
+myapp
+myservice
 mysqladmin
 mysqlclient
 mysqldb
@@ -190,8 +198,12 @@ psanford
 psycopg
 psycopgbinary
 pulumi
+pycache
 pyapp
 pyproject
+pytest
+PYTHONDONTWRITEBYTECODE
+PYTHONUNBUFFERED
 pyvenv
 rabbitmq
 reauthentication
@@ -247,6 +259,7 @@ unsetenvs
 unsets
 upgrader
 utsname
+uxlib
 vite
 vsrpc
 vuejs

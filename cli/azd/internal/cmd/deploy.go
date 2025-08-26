@@ -8,6 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -254,7 +257,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				PackagePath: da.flags.fromPackage,
 			}
 		} else {
-			//  --from-package not set, package the application
+			//  --from-package not set, automatically package the application
 			packageResult, err = async.RunWithProgress(
 				func(packageProgress project.ServiceProgress) {
 					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, packageProgress.Message)
@@ -281,6 +284,13 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				return da.serviceManager.Deploy(ctx, svc, packageResult, progress)
 			},
 		)
+
+		// clean up for packages automatically created in temp dir
+		if da.flags.fromPackage == "" && strings.HasPrefix(packageResult.PackagePath, os.TempDir()) {
+			if err := os.RemoveAll(packageResult.PackagePath); err != nil {
+				log.Printf("failed to remove temporary package: %s : %s", packageResult.PackagePath, err)
+			}
+		}
 
 		da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 		if err != nil {

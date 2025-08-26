@@ -42,20 +42,20 @@
               "entryPoint": "microsoft-azd-demo-darwin-arm64",
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.1.0-beta.1/microsoft-azd-demo-darwin-arm64.zip"
             },
-            "linux/amd64.tar": {
+            "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
                 "value": "749c01818acdaf6969b0b4b73e8c71e136e01461c537fb6b42ef71a8bd3127b0"
               },
-              "entryPoint": "microsoft-azd-demo-linux-amd64.tar",
+              "entryPoint": "microsoft-azd-demo-linux-amd64",
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.1.0-beta.1/microsoft-azd-demo-linux-amd64.tar.gz"
             },
-            "linux/arm64.tar": {
+            "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
                 "value": "2effed3b21fcc10654b1c4963da97ce079b6c8822539b7b142fc765c96f80f9a"
               },
-              "entryPoint": "microsoft-azd-demo-linux-arm64.tar",
+              "entryPoint": "microsoft-azd-demo-linux-arm64",
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-demo_0.1.0-beta.1/microsoft-azd-demo-linux-arm64.tar.gz"
             },
             "windows/amd64": {
@@ -134,20 +134,20 @@
               "entryPoint": "microsoft-azd-extensions-darwin-arm64",
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.4.2/microsoft-azd-extensions-darwin-arm64.zip"
             },
-            "linux/amd64.tar": {
+            "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
                 "value": "dcf1ac57618645bd34a004f55fe3ad0fdd13fbbb2c6558769982302970541d7e"
               },
-              "entryPoint": "microsoft-azd-extensions-linux-amd64.tar",
+              "entryPoint": "microsoft-azd-extensions-linux-amd64",
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.4.2/microsoft-azd-extensions-linux-amd64.tar.gz"
             },
-            "linux/arm64.tar": {
+            "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
                 "value": "a8b03759afcc24e2d3589fc92ea27c3f846aff9ed5cf0e04ec091d6d4c91ac33"
               },
-              "entryPoint": "microsoft-azd-extensions-linux-arm64.tar",
+              "entryPoint": "microsoft-azd-extensions-linux-arm64",
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.4.2/microsoft-azd-extensions-linux-arm64.tar.gz"
             },
             "windows/amd64": {
@@ -165,6 +165,95 @@
               },
               "entryPoint": "microsoft-azd-extensions-windows-arm64.exe",
               "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.4.2/microsoft-azd-extensions-windows-arm64.zip"
+            }
+          }
+        },
+        {
+          "capabilities": [
+            "custom-commands"
+          ],
+          "version": "0.5.0",
+          "usage": "azd x \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AZD extension project.",
+              "usage": "azd x init"
+            },
+            {
+              "name": "build",
+              "description": "Build the AZD extension project.",
+              "usage": "azd x build"
+            },
+            {
+              "name": "pack",
+              "description": "Package the AZD extension project into a distributable format and add to local registry.",
+              "usage": "azd x pack"
+            },
+            {
+              "name": "publish",
+              "description": "Publish the AZD extension project to an extension source.",
+              "usage": "azd x publish"
+            },
+            {
+              "name": "release",
+              "description": "Create an new release of the AZD extension project to a Github repository.",
+              "usage": "azd x release"
+            },
+            {
+              "name": "watch",
+              "description": "Watch for changes in the extension project and automatically rebuild and reload the extension.",
+              "usage": "azd x watch"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "7cb52900550b9ef61146ecac7def6372841f34260e98dc2098607375243e1a90"
+              },
+              "entryPoint": "microsoft-azd-extensions-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.0/microsoft-azd-extensions-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d502e34339d60fc305bc7edd21ff9052d15b7d24ddb1835b9b5851aeab6373d4"
+              },
+              "entryPoint": "microsoft-azd-extensions-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.0/microsoft-azd-extensions-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "77cd944a69d85599b2002097e7049e9cef848bc5c1d10d1c11511d8fe178cccd"
+              },
+              "entryPoint": "microsoft-azd-extensions-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.0/microsoft-azd-extensions-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "4dffb1bb79187e5970816ba118e4721e31cc77bc6106a6db2adfa2767bc7f0a1"
+              },
+              "entryPoint": "microsoft-azd-extensions-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.0/microsoft-azd-extensions-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "6dda5fff5510123148835a71f688c5c7d2bc68bc5aaf2a766eecda23d3ee9638"
+              },
+              "entryPoint": "microsoft-azd-extensions-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.0/microsoft-azd-extensions-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "7f69dc47976ddeeb04b9a649b7e257a3841502b6fa350f2025eee94e072521ad"
+              },
+              "entryPoint": "microsoft-azd-extensions-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-microsoft-azd-extensions_0.5.0/microsoft-azd-extensions-windows-arm64.zip"
             }
           }
         }

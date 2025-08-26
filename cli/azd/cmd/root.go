@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -405,6 +406,11 @@ func NewRootCmd(
 					}
 				}
 			}
+		}
+
+		// Enable MCP commands when LLM feature is enabled
+		if alphaFeatureManager.IsEnabled(llm.FeatureLlm) {
+			mcpActions(root)
 		}
 
 		return nil

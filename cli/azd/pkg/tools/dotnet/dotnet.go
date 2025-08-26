@@ -59,7 +59,7 @@ func (cli *Cli) versionInfo() tools.VersionInfo {
 }
 
 func (cli *Cli) CheckInstalled(ctx context.Context) error {
-	err := tools.ToolInPath("dotnet")
+	err := cli.commandRunner.ToolInPath("dotnet")
 	if err != nil {
 		return err
 	}
@@ -296,7 +296,8 @@ func (cli *Cli) SetSecrets(ctx context.Context, secrets map[string]string, proje
 // This only works for versions dotnet >= 8, MSBuild >= 17.8.
 // On older tool versions, this will return an error.
 func (cli *Cli) GetMsBuildProperty(ctx context.Context, project string, propertyName string) (string, error) {
-	runArgs := newDotNetRunArgs("msbuild", project, fmt.Sprintf("--getProperty:%s", propertyName))
+	runArgs := newDotNetRunArgs("msbuild",
+		project, "--ignore:.sln", fmt.Sprintf("--getProperty:%s", propertyName))
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return "", err
@@ -307,7 +308,8 @@ func (cli *Cli) GetMsBuildProperty(ctx context.Context, project string, property
 // IsAspireHostProject returns true if the project at the given path has an MS Build Property named "IsAspireHost" which is
 // set to true or has a ProjectCapability named "Aspire".
 func (cli *Cli) IsAspireHostProject(ctx context.Context, projectPath string) (bool, error) {
-	runArgs := newDotNetRunArgs("msbuild", projectPath, "--getProperty:IsAspireHost", "--getItem:ProjectCapability")
+	runArgs := newDotNetRunArgs("msbuild",
+		projectPath, "--ignore:.sln", "--getProperty:IsAspireHost", "--getItem:ProjectCapability")
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return false, fmt.Errorf("running dotnet msbuild on project '%s': %w", projectPath, err)

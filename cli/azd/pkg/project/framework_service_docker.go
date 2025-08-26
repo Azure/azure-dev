@@ -559,6 +559,20 @@ func (p *dockerProject) packBuild(
 			}
 		}
 
+		// Provide better error message for containerd-related issues
+		if strings.Contains(err.Error(), "failed to write image") && strings.Contains(err.Error(), "No such image") {
+			isContainerdEnabled, containerdErr := p.docker.IsContainerdEnabled(ctx)
+			if containerdErr != nil {
+				log.Printf("warning: failed to detect containerd status: %v", containerdErr)
+			} else if isContainerdEnabled {
+				return nil, &internal.ErrorWithSuggestion{
+					Err: err,
+					Suggestion: "Suggestion: disable containerd image store in Docker settings: " +
+						output.WithLinkFormat("https://docs.docker.com/desktop/features/containerd"),
+				}
+			}
+		}
+
 		return nil, err
 	}
 

@@ -1,5 +1,10 @@
 # Release History
 
+## 0.5.0
+
+- Adds .tar.gz support for Linux extensions
+- Adds --artifacts support for multiple glob patterns
+
 ## 0.4.2
 
 - Fixes Python local build support

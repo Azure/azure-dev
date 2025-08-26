@@ -131,6 +131,8 @@ type Console interface {
 	GetWriter() io.Writer
 	// Gets the standard input, output and error stream
 	Handles() ConsoleHandles
+	// Executes an interactive action, managing spinner state
+	DoInteraction(action func() error) error
 	ConsoleShim
 }
 
@@ -1068,4 +1070,26 @@ func (c *AskerConsole) doInteraction(promptFn func(c *AskerConsole) error) error
 
 	// Execute the interactive prompt
 	return promptFn(c)
+}
+
+func (c *AskerConsole) DoInteraction(action func() error) error {
+	if c.spinner.Status() == yacspin.SpinnerRunning {
+		_ = c.spinner.Pause()
+
+		// Ensure the spinner is always resumed
+		defer func() {
+			_ = c.spinner.Unpause()
+		}()
+	}
+
+	// Track total time for promptFn.
+	// It includes the time spent in rendering the prompt (likely <1ms)
+	// before the user has a chance to interact with the prompt.
+	start := time.Now()
+	defer func() {
+		tracing.InteractTimeMs.Add(time.Since(start).Milliseconds())
+	}()
+
+	// Execute the interactive prompt
+	return action()
 }

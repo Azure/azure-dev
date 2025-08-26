@@ -36,6 +36,34 @@ type AzureCredentials struct {
 	TenantId       string `json:"tenantId"`
 }
 
+// ServiceTreeNullValueError represents an error that occurs when a null value is provided for ServiceManagementReference
+type ServiceTreeNullValueError struct {
+	ApplicationName string
+	Err             error
+}
+
+func (e *ServiceTreeNullValueError) Error() string {
+	return fmt.Sprintf("ServiceTreeNullValueProvided error when creating application '%s': %v", e.ApplicationName, e.Err)
+}
+
+func (e *ServiceTreeNullValueError) Unwrap() error {
+	return e.Err
+}
+
+// ServiceTreeInvalidError represents an error that occurs when invalid value is provider for service tree id
+type ServiceTreeInvalidError struct {
+	ApplicationName string
+	Err             error
+}
+
+func (e *ServiceTreeInvalidError) Error() string {
+	return fmt.Sprintf("ServiceTreeInvalidError error when creating application '%s': %v", e.ApplicationName, e.Err)
+}
+
+func (e *ServiceTreeInvalidError) Unwrap() error {
+	return e.Err
+}
+
 // EntraIdService provides actions on top of Azure Active Directory (AD)
 type EntraIdService interface {
 	GetServicePrincipal(
@@ -127,6 +155,20 @@ func (ad *entraIdService) CreateOrUpdateServicePrincipal(
 		// Create application
 		application, err = ad.createApplication(ctx, subscriptionId, appIdOrName, options)
 		if err != nil {
+			// Check if the error is specifically "ServiceTreeNullValueProvided"
+			var responseError *azcore.ResponseError
+			if errors.As(err, &responseError) && responseError.ErrorCode == "ServiceTreeNullValueProvided" {
+				return nil, &ServiceTreeNullValueError{
+					ApplicationName: appIdOrName,
+					Err:             err,
+				}
+			}
+			if errors.As(err, &responseError) && responseError.ErrorCode == "ServiceTreeInvalid" {
+				return nil, &ServiceTreeInvalidError{
+					ApplicationName: appIdOrName,
+					Err:             err,
+				}
+			}
 			return nil, err
 		}
 	}

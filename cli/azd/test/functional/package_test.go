@@ -294,6 +294,7 @@ func checkFiles(
 	expectedFiles []string) {
 	zipFile, err := os.Open(zipFilePath)
 	require.NoError(t, err, "opening zip file")
+	defer zipFile.Close()
 
 	// Reopen the zip file for reading
 	_, err = zipFile.Seek(0, 0)

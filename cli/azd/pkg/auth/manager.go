@@ -160,11 +160,20 @@ func NewManager(
 	}, nil
 }
 
-// LoginScopes returns the scopes that we request an access token for when checking if a user is signed in.
+// LoginScopes returns the default scopes requested when logging in.
 func LoginScopes(cloud *cloud.Cloud) []string {
-	resourceManagerUrl := cloud.Configuration.Services[azcloud.ResourceManager].Endpoint
+	arm := cloud.Configuration.Services[azcloud.ResourceManager]
 	return []string{
-		fmt.Sprintf("%s//.default", resourceManagerUrl),
+		fmt.Sprintf("%s//.default", arm.Endpoint),
+	}
+}
+
+// LoginScopesFull returns LoginScopes and any additional equivalent scopes.
+func LoginScopesFull(cloud *cloud.Cloud) []string {
+	arm := cloud.Configuration.Services[azcloud.ResourceManager]
+	return []string{
+		fmt.Sprintf("%s//.default", arm.Endpoint),
+		fmt.Sprintf("%s//.default", strings.TrimSuffix(arm.Audience, "/")), // handle possible trailing slashes
 	}
 }
 
@@ -175,12 +184,6 @@ func (m *Manager) LoginScopes() []string {
 // Cloud returns the cloud that the manager is configured to use.
 func (m *Manager) Cloud() *cloud.Cloud {
 	return m.cloud
-}
-
-func loginScopesMap(cloud *cloud.Cloud) map[string]struct{} {
-	resourceManagerUrl := cloud.Configuration.Services[azcloud.ResourceManager].Endpoint
-
-	return map[string]struct{}{resourceManagerUrl: {}}
 }
 
 // EnsureLoggedInCredential uses the credential's GetToken method to ensure an access token can be fetched.
@@ -675,10 +678,23 @@ type LoginInteractiveOptions struct {
 func (m *Manager) LoginInteractive(
 	ctx context.Context,
 	scopes []string,
+	claims string,
 	options *LoginInteractiveOptions) (azcore.TokenCredential, error) {
 	if scopes == nil {
 		scopes = m.LoginScopes()
 	}
+
+	var claimsFile string
+	if claims == "" {
+		c, path, err := loadClaims()
+		if err != nil {
+			return nil, err
+		}
+
+		claims = c
+		claimsFile = path
+	}
+
 	acquireTokenOptions := []public.AcquireInteractiveOption{}
 	if options == nil {
 		options = &LoginInteractiveOptions{}
@@ -697,6 +713,10 @@ func (m *Manager) LoginInteractive(
 		acquireTokenOptions = append(acquireTokenOptions, public.WithOpenURL(options.WithOpenUrl))
 	}
 
+	if claims != "" {
+		acquireTokenOptions = append(acquireTokenOptions, public.WithClaims(claims))
+	}
+
 	res, err := m.publicClient.AcquireTokenInteractive(ctx, scopes, acquireTokenOptions...)
 	if err != nil {
 		return nil, err
@@ -704,6 +724,10 @@ func (m *Manager) LoginInteractive(
 
 	if err := m.saveLoginForPublicClient(res); err != nil {
 		return nil, err
+	}
+
+	if claimsFile != "" {
+		_ = os.Remove(claimsFile)
 	}
 
 	return newAzdCredential(m.publicClient, &res.Account, m.cloud), nil
@@ -740,10 +764,26 @@ func (m *Manager) LoginWithOneAuth(ctx context.Context, tenantID string, scopes 
 }
 
 func (m *Manager) LoginWithDeviceCode(
-	ctx context.Context, tenantID string, scopes []string, withOpenUrl WithOpenUrl) (azcore.TokenCredential, error) {
+	ctx context.Context,
+	tenantID string,
+	scopes []string,
+	claims string,
+	withOpenUrl WithOpenUrl) (azcore.TokenCredential, error) {
 	if scopes == nil {
 		scopes = m.LoginScopes()
 	}
+
+	var claimsFile string
+	if claims == "" {
+		c, path, err := loadClaims()
+		if err != nil {
+			return nil, err
+		}
+
+		claims = c
+		claimsFile = path
+	}
+
 	options := []public.AcquireByDeviceCodeOption{}
 	if tenantID != "" {
 		options = append(options, public.WithTenantID(tenantID))
@@ -751,6 +791,10 @@ func (m *Manager) LoginWithDeviceCode(
 
 	if withOpenUrl == nil {
 		withOpenUrl = browser.OpenURL
+	}
+
+	if claims != "" {
+		options = append(options, public.WithClaims(claims))
 	}
 
 	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, scopes, options...)
@@ -790,6 +834,10 @@ func (m *Manager) LoginWithDeviceCode(
 
 	if err := m.saveLoginForPublicClient(res); err != nil {
 		return nil, err
+	}
+
+	if claimsFile != "" {
+		_ = os.Remove(claimsFile)
 	}
 
 	return newAzdCredential(m.publicClient, &res.Account, m.cloud), nil
@@ -985,6 +1033,11 @@ func (m *Manager) Logout(ctx context.Context) error {
 
 	if err := m.saveAuthConfig(cfg); err != nil {
 		return fmt.Errorf("saving config: %w", err)
+	}
+
+	// remove any additional login state
+	if claimsFile, err := claimsFilePath(); err == nil {
+		_ = os.Remove(claimsFile)
 	}
 
 	return nil
@@ -1228,6 +1281,57 @@ func readUserProperties(cfg config.Config) (*userProperties, error) {
 	}
 
 	return &user, nil
+}
+
+// claimsFilePath returns the path to the claims file previously stored as login state.
+func claimsFilePath() (string, error) {
+	configDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get config dir: %w", err)
+	}
+
+	return filepath.Join(configDir, "auth.claims"), nil
+}
+
+// saveClaims stores the claims as state on disk to be used with the next login attempt.
+func saveClaims(claims string) error {
+	claimsFile, err := claimsFilePath()
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(claimsFile, []byte(claims), osutil.PermissionFile)
+}
+
+// loadClaims returns claims that were previously stored due to a claims challenge.
+// If no claims were found, empty string and a nil error is returned.
+//
+// This is typically used to request additional claims for the current login attempt.
+func loadClaims() (claims string, claimsPath string, err error) {
+	claimsFile, err := claimsFilePath()
+	if err != nil {
+		return "", "", fmt.Errorf("getting claims path: %w", err)
+	}
+
+	bytes, err := os.ReadFile(claimsFile)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", "", nil
+	} else if err != nil {
+		return "", "", fmt.Errorf("reading claims file: %w", err)
+	}
+
+	// Validate the claims as valid JSON as extra safety
+	var validJson map[string]any
+	if err := json.Unmarshal(bytes, &validJson); err != nil {
+		// an invalid claims file, remove it for recovery and treat it as if it's not there
+		if err := os.Remove(claimsFile); err != nil {
+			return "", "", fmt.Errorf("removing claims file '%s': %w. Remove this file manually to recover", claimsFile, err)
+		}
+
+		return "", "", nil
+	}
+
+	return string(bytes), claimsFile, nil
 }
 
 const (

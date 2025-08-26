@@ -12,6 +12,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	shellBash       = "bash"
+	shellZsh        = "zsh"
+	shellFish       = "fish"
+	shellPowerShell = "powershell"
+)
+
 func completionActions(root *actions.ActionDescriptor) {
 	completionGroup := root.Add("completion", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
@@ -28,7 +35,7 @@ See each sub-command's help for details on how to use the generated script.`,
 		},
 	})
 
-	completionGroup.Add("bash", &actions.ActionDescriptorOptions{
+	completionGroup.Add(shellBash, &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Short:                 "Generate bash completion script.",
 			DisableFlagsInUseLine: true,
@@ -42,7 +49,7 @@ See each sub-command's help for details on how to use the generated script.`,
 		},
 	})
 
-	completionGroup.Add("zsh", &actions.ActionDescriptorOptions{
+	completionGroup.Add(shellZsh, &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Short:                 "Generate zsh completion script.",
 			DisableFlagsInUseLine: true,
@@ -56,7 +63,7 @@ See each sub-command's help for details on how to use the generated script.`,
 		},
 	})
 
-	completionGroup.Add("fish", &actions.ActionDescriptorOptions{
+	completionGroup.Add(shellFish, &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Short:                 "Generate fish completion script.",
 			DisableFlagsInUseLine: true,
@@ -70,7 +77,7 @@ See each sub-command's help for details on how to use the generated script.`,
 		},
 	})
 
-	completionGroup.Add("powershell", &actions.ActionDescriptorOptions{
+	completionGroup.Add(shellPowerShell, &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Short:                 "Generate PowerShell completion script.",
 			DisableFlagsInUseLine: true,
@@ -91,36 +98,33 @@ type completionAction struct {
 }
 
 func newCompletionBashAction(cmd *cobra.Command) actions.Action {
-	return &completionAction{shell: "bash", cmd: cmd}
+	return &completionAction{shell: shellBash, cmd: cmd}
 }
 
 func newCompletionZshAction(cmd *cobra.Command) actions.Action {
-	return &completionAction{shell: "zsh", cmd: cmd}
+	return &completionAction{shell: shellZsh, cmd: cmd}
 }
 
 func newCompletionFishAction(cmd *cobra.Command) actions.Action {
-	return &completionAction{shell: "fish", cmd: cmd}
+	return &completionAction{shell: shellFish, cmd: cmd}
 }
 
 func newCompletionPowerShellAction(cmd *cobra.Command) actions.Action {
-	return &completionAction{shell: "powershell", cmd: cmd}
+	return &completionAction{shell: shellPowerShell, cmd: cmd}
 }
 
 func (a *completionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	rootCmd := a.cmd
-	for rootCmd.Parent() != nil {
-		rootCmd = rootCmd.Parent()
-	}
+	rootCmd := a.cmd.Root()
 
 	var err error
 	switch a.shell {
-	case "bash":
+	case shellBash:
 		err = rootCmd.GenBashCompletion(a.cmd.OutOrStdout())
-	case "zsh":
+	case shellZsh:
 		err = rootCmd.GenZshCompletion(a.cmd.OutOrStdout())
-	case "fish":
+	case shellFish:
 		err = rootCmd.GenFishCompletion(a.cmd.OutOrStdout(), true)
-	case "powershell":
+	case shellPowerShell:
 		err = rootCmd.GenPowerShellCompletion(a.cmd.OutOrStdout())
 	default:
 		return nil, fmt.Errorf("unsupported shell: %s", a.shell)

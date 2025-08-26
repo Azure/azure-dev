@@ -20,52 +20,6 @@
         }
       }
     },
-    "pubsub": {
-      "type": "container.v1",
-      "connectionString": "{pubsub.bindings.tcp.host}:{pubsub.bindings.tcp.port},password={pubsub-password.value}",
-      "image": "docker.io/library/redis:7.4",
-      "deployment": {
-        "type": "azure.bicep.v0",
-        "path": "pubsub.module.bicep",
-        "params": {
-          "env_outputs_azure_container_apps_environment_default_domain": "{env.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}",
-          "env_outputs_azure_container_apps_environment_id": "{env.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID}",
-          "pubsub_password_value": "{pubsub-password.value}"
-        }
-      },
-      "entrypoint": "/bin/sh",
-      "args": [
-        "-c",
-        "redis-server --requirepass $REDIS_PASSWORD"
-      ],
-      "env": {
-        "REDIS_PASSWORD": "{pubsub-password.value}"
-      },
-      "bindings": {
-        "tcp": {
-          "scheme": "tcp",
-          "protocol": "tcp",
-          "transport": "tcp",
-          "targetPort": 6379
-        }
-      }
-    },
-    "storage": {
-      "type": "azure.bicep.v0",
-      "path": "storage.module.bicep"
-    },
-    "requestlog": {
-      "type": "value.v0",
-      "connectionString": "{storage.outputs.tableEndpoint}"
-    },
-    "markdown": {
-      "type": "value.v0",
-      "connectionString": "{storage.outputs.blobEndpoint}"
-    },
-    "messages": {
-      "type": "value.v0",
-      "connectionString": "{storage.outputs.queueEndpoint}"
-    },
     "apiservice": {
       "type": "project.v1",
       "path": "../AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj",
@@ -133,14 +87,8 @@
           "env_outputs_azure_container_registry_endpoint": "{env.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT}",
           "env_outputs_azure_container_registry_managed_identity_id": "{env.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID}",
           "webfrontend_containerimage": "{webfrontend.containerImage}",
-          "webfrontend_identity_outputs_id": "{webfrontend-identity.outputs.id}",
           "webfrontend_containerport": "{webfrontend.containerPort}",
-          "pubsub_password_value": "{pubsub-password.value}",
-          "storage_outputs_tableendpoint": "{storage.outputs.tableEndpoint}",
-          "storage_outputs_blobendpoint": "{storage.outputs.blobEndpoint}",
-          "storage_outputs_queueendpoint": "{storage.outputs.queueEndpoint}",
-          "goversion_value": "{goversion.value}",
-          "webfrontend_identity_outputs_clientid": "{webfrontend-identity.outputs.clientId}"
+          "goversion_value": "{goversion.value}"
         }
       },
       "env": {
@@ -149,10 +97,6 @@
         "OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY": "in_memory",
         "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "true",
         "HTTP_PORTS": "{webfrontend.bindings.http.targetPort}",
-        "ConnectionStrings__pubsub": "{pubsub.connectionString}",
-        "ConnectionStrings__requestlog": "{requestlog.connectionString}",
-        "ConnectionStrings__markdown": "{markdown.connectionString}",
-        "ConnectionStrings__messages": "{messages.connectionString}",
         "services__apiservice__http__0": "{apiservice.bindings.http.url}",
         "services__apiservice__https__0": "{apiservice.bindings.https.url}",
         "GOVERSION": "{goversion.value}"
@@ -169,34 +113,6 @@
           "protocol": "tcp",
           "transport": "http",
           "external": true
-        }
-      }
-    },
-    "webfrontend-identity": {
-      "type": "azure.bicep.v0",
-      "path": "webfrontend-identity.module.bicep"
-    },
-    "webfrontend-roles-storage": {
-      "type": "azure.bicep.v0",
-      "path": "webfrontend-roles-storage.module.bicep",
-      "params": {
-        "storage_outputs_name": "{storage.outputs.name}",
-        "principalId": "{webfrontend-identity.outputs.principalId}"
-      }
-    },
-    "pubsub-password": {
-      "type": "parameter.v0",
-      "value": "{pubsub-password.inputs.value}",
-      "inputs": {
-        "value": {
-          "type": "string",
-          "secret": true,
-          "default": {
-            "generate": {
-              "minLength": 22,
-              "special": false
-            }
-          }
         }
       }
     }

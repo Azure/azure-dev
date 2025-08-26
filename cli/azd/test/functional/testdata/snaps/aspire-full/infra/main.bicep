@@ -13,13 +13,6 @@ param location string
 param principalId string = ''
 
 param goversion string = '1.22'
-@metadata({azd: {
-  type: 'generate'
-  config: {length:22,noSpecial:true}
-  }
-})
-@secure()
-param pubsub_password string
 
 var tags = {
   'azd-env-name': environmentName
@@ -39,39 +32,11 @@ module env 'env/env.module.bicep' = {
     userPrincipalId: principalId
   }
 }
-module storage 'storage/storage.module.bicep' = {
-  name: 'storage'
-  scope: rg
-  params: {
-    location: location
-  }
-}
-module webfrontend_identity 'webfrontend-identity/webfrontend-identity.module.bicep' = {
-  name: 'webfrontend-identity'
-  scope: rg
-  params: {
-    location: location
-  }
-}
-module webfrontend_roles_storage 'webfrontend-roles-storage/webfrontend-roles-storage.module.bicep' = {
-  name: 'webfrontend-roles-storage'
-  scope: rg
-  params: {
-    location: location
-    principalId: webfrontend_identity.outputs.principalId
-    storage_outputs_name: storage.outputs.name
-  }
-}
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = env.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = env.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output ENV_AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = env.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
 output ENV_AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = env.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
 output ENV_AZURE_CONTAINER_REGISTRY_ENDPOINT string = env.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output ENV_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = env.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
-output STORAGE_BLOBENDPOINT string = storage.outputs.blobEndpoint
-output STORAGE_QUEUEENDPOINT string = storage.outputs.queueEndpoint
-output STORAGE_TABLEENDPOINT string = storage.outputs.tableEndpoint
-output WEBFRONTEND_IDENTITY_CLIENTID string = webfrontend_identity.outputs.clientId
-output WEBFRONTEND_IDENTITY_ID string = webfrontend_identity.outputs.id
 output AZURE_GOVERSION string = goversion
 

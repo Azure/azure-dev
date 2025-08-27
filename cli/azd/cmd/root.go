@@ -90,8 +90,6 @@ func NewRootCmd(
 		DisableAutoGenTag: true,
 	}
 
-	rootCmd.CompletionOptions.HiddenDefaultCmd = true
-
 	root := actions.NewActionDescriptor("azd", &actions.ActionDescriptorOptions{
 		Command: rootCmd,
 		FlagsResolver: func(cmd *cobra.Command) *internal.GlobalCommandOptions {
@@ -122,6 +120,7 @@ func NewRootCmd(
 		},
 	})
 
+	completionActions(root)
 	configActions(root, opts)
 	envActions(root)
 	infraActions(root)

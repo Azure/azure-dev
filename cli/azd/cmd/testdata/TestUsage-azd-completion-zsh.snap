@@ -1,0 +1,25 @@
+
+Generate zsh completion script.
+
+If shell completion is not already enabled in your environment, you will need to enable it by running:
+
+echo "autoload -U compinit; compinit" >> ~/.zshrc
+
+Usage
+  azd completion zsh
+
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd completion zsh in your web browser.
+    -h, --help       	: Gets help for zsh.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Examples
+  Install completions for all sessions
+    azd completion zsh > "${fpath[1]}/_azd"
+
+  Load completions in current session
+    source <(azd completion zsh)
+
+

@@ -1,0 +1,27 @@
+
+Generate bash completion script.
+
+This script depends on the 'bash-completion' package.
+If it is not installed already, you can install it via your OS's package manager.
+
+Usage
+  azd completion bash
+
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd completion bash in your web browser.
+    -h, --help       	: Gets help for bash.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Examples
+  Install completions for all sessions (Linux)
+    azd completion bash > /etc/bash_completion.d/azd
+
+  Install completions for all sessions (macOS)
+    azd completion bash > $(brew --prefix)/etc/bash_completion.d/azd
+
+  Load completions in current session
+    source <(azd completion bash)
+
+

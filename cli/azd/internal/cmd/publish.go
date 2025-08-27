@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -129,24 +130,42 @@ func NewPublishAction(
 		return deployAction
 	}
 
-	// Wrap the deploy action to add custom tags to the context
+	// Wrap the deploy action to add custom tags to the context and validate
 	return &publishActionWrapper{
 		deployAction: deployAction,
-		imageName:    flags.Image,
-		imageTag:     flags.Tag,
+		flags:        flags,
+		args:         args,
 	}
 }
 
-// publishActionWrapper wraps the deploy action to add custom tags to the context
+// publishActionWrapper wraps the deploy action to add custom tags to the context and validate flags
 type publishActionWrapper struct {
 	deployAction actions.Action
-	imageName    string
-	imageTag     string
+	flags        *PublishFlags
+	args         []string
 }
 
 func (p *publishActionWrapper) Run(ctx context.Context) (*actions.ActionResult, error) {
-	ctx = project.WithImageName(ctx, p.imageName)
-	ctx = project.WithImageTag(ctx, p.imageTag)
+	// Validate that --tag or --image requires a specific service
+	targetServiceName := p.flags.deploy.ServiceName
+	if len(p.args) == 1 {
+		targetServiceName = p.args[0]
+	}
+
+	if p.flags.deploy.All && (p.flags.Image != "" || p.flags.Tag != "") {
+		return nil, errors.New(
+			"'--tag' and '--image' cannot be specified when '--all' is set. Specify a specific service by passing a <service>")
+	}
+
+	if targetServiceName == "" && (p.flags.Image != "" || p.flags.Tag != "") {
+		return nil, errors.New(
+			//nolint:lll
+			"'--tag' and '--image' cannot be specified when publishing all services. Specify a specific service by passing a <service>",
+		)
+	}
+
+	ctx = project.WithImageName(ctx, p.flags.Image)
+	ctx = project.WithImageTag(ctx, p.flags.Tag)
 	return p.deployAction.Run(ctx)
 }
 

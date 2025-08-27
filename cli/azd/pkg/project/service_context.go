@@ -13,12 +13,14 @@ const (
 	imageTagContextKey    contextKey = "imageTag"
 )
 
-// WithPublishOnly adds the publish-only flag to the context
+// WithPublishing sets a flag on the context to indicate that the caller is only interested in building and
+// publishing artifacts, not deploying them. This is used by `azd publish`.
 func WithPublishOnly(ctx context.Context, publishOnly bool) context.Context {
 	return context.WithValue(ctx, publishOnlyContextKey, publishOnly)
 }
 
-// IsPublishOnly retrieves the publish-only flag from the context
+// IsPublishing returns true when the caller is only interested in building and publishing artifacts, not deploying
+// them. This is used by `azd publish`.
 func IsPublishOnly(ctx context.Context) bool {
 	if val := ctx.Value(publishOnlyContextKey); val != nil {
 		if publishOnly, ok := val.(bool); ok {
@@ -28,12 +30,12 @@ func IsPublishOnly(ctx context.Context) bool {
 	return false
 }
 
-// WithImageName adds a custom image name to the context
+// WithImageName sets a custom image name override (from --image flag).
 func WithImageName(ctx context.Context, imageName string) context.Context {
 	return context.WithValue(ctx, imageNameContextKey, imageName)
 }
 
-// GetImageName retrieves image name from the context
+// GetImageName returns the custom image name override, or empty string if none.
 func GetImageName(ctx context.Context) string {
 	if val := ctx.Value(imageNameContextKey); val != nil {
 		if imageName, ok := val.(string); ok {
@@ -43,12 +45,12 @@ func GetImageName(ctx context.Context) string {
 	return ""
 }
 
-// WithImageTag adds a custom image tag to the context
+// WithImageTag sets a custom image tag override (from --image-tag flag).
 func WithImageTag(ctx context.Context, imageTag string) context.Context {
 	return context.WithValue(ctx, imageTagContextKey, imageTag)
 }
 
-// GetImageTag retrieves image tag from the context
+// GetImageTag returns the custom image tag override, or empty string if none.
 func GetImageTag(ctx context.Context) string {
 	if val := ctx.Value(imageTagContextKey); val != nil {
 		if imageTag, ok := val.(string); ok {

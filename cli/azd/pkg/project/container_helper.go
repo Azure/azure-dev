@@ -344,6 +344,35 @@ func (ch *ContainerHelper) runLocalBuild(
 
 		// If a registry has not been defined then there is no need to tag or push any images
 		if registryName != "" {
+			// Get remote remoteImageWithTag from the container helper then call docker cli remoteImageWithTag command
+			remoteImageWithTag, err := ch.RemoteImageTag(ctx, serviceConfig, targetImage)
+			if err != nil {
+				return "", fmt.Errorf("getting remote image tag: %w", err)
+			}
+
+			remoteImage = remoteImageWithTag
+
+			log.Printf("logging into container registry '%s'\n", registryName)
+			progress.SetProgress(NewServiceProgress("Logging into container registry"))
+
+			_, err = ch.Login(ctx, serviceConfig)
+			if err != nil {
+				return "", err
+			}
+
+			// Check if the remote image already exists
+			log.Printf("checking if image %s already exists in registry", remoteImage)
+			progress.SetProgress(NewServiceProgress("Checking if image exists"))
+
+			imageExists, err := ch.docker.ImageExists(ctx, remoteImage)
+			if err != nil {
+				// Log the error but continue with the build process
+				log.Printf("failed to check if image exists, proceeding with build: %v", err)
+			} else if imageExists {
+				log.Printf("image %s already exists in registry, skipping build and push", remoteImage)
+				return remoteImage, nil
+			}
+
 			// When the project does not contain source and we are using an external image we first need to pull the
 			// image before we're able to push it to a remote registry
 			// In most cases this pull will have already been part of the package step
@@ -355,25 +384,8 @@ func (ch *ContainerHelper) runLocalBuild(
 				}
 			}
 
-			// Tag image
-			// Get remote remoteImageWithTag from the container helper then call docker cli remoteImageWithTag command
-			remoteImageWithTag, err := ch.RemoteImageTag(ctx, serviceConfig, targetImage)
-			if err != nil {
-				return "", fmt.Errorf("getting remote image tag: %w", err)
-			}
-
-			remoteImage = remoteImageWithTag
-
 			progress.SetProgress(NewServiceProgress("Tagging container image"))
 			if err := ch.docker.Tag(ctx, serviceConfig.Path(), targetImage, remoteImage); err != nil {
-				return "", err
-			}
-
-			log.Printf("logging into container registry '%s'\n", registryName)
-			progress.SetProgress(NewServiceProgress("Logging into container registry"))
-
-			_, err = ch.Login(ctx, serviceConfig)
-			if err != nil {
 				return "", err
 			}
 

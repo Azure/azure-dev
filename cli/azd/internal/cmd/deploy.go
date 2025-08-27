@@ -77,6 +77,8 @@ func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		false,
 		"Publishes the container image to the registry without deploying the application.",
 	)
+	// `azd publish` is an alias for this
+	_ = local.MarkHidden("publish-only")
 	local.StringVar(
 		&d.fromPackage,
 		"from-package",
@@ -265,13 +267,12 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			da.console.WarnForFeature(ctx, alphaFeatureId)
 		}
 
-		// Handle --publish-only flag
 		if da.flags.PublishOnly {
 			// Check if this service is a container app
-			if svc.Host != project.ContainerAppTarget && svc.Host != project.DotNetContainerAppTarget {
+			if svc.Host != project.ContainerAppTarget {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, fmt.Errorf(
-					"'--publish-only' is only supported for container app services, but service '%s' has host type '%s'",
+					"'publish' is only supported for container app services, but service '%s' has host type '%s'",
 					svc.Name, svc.Host)
 			}
 
@@ -394,9 +395,6 @@ func GetCmdDeployHelpFooter(*cobra.Command) string {
 		),
 		"Deploy the service named 'api' to Azure from a previously generated package.": output.WithHighLightFormat(
 			"azd deploy api --from-package <package-path>",
-		),
-		"Get the full remote image name for a container app service without deploying.": output.WithHighLightFormat(
-			"azd deploy api --publish-only",
 		),
 	})
 }

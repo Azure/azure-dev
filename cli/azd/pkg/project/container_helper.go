@@ -127,6 +127,11 @@ func (ch *ContainerHelper) GeneratedImage(
 		return nil, fmt.Errorf("failed parsing 'image' from docker configuration, %w", err)
 	}
 
+	// Image name from ctx (from --image flag in publish command) takes precedence over azure.yaml Docker config
+	if imageName := GetImageName(ctx); imageName != "" {
+		configuredImage = imageName
+	}
+
 	// Set default image name if not configured
 	if configuredImage == "" {
 		configuredImage = ch.DefaultImageName(serviceConfig)
@@ -138,17 +143,22 @@ func (ch *ContainerHelper) GeneratedImage(
 	}
 
 	if parsedImage.Tag == "" {
-		configuredTag, err := serviceConfig.Docker.Tag.Envsubst(ch.env.Getenv)
-		if err != nil {
-			return nil, fmt.Errorf("failed parsing 'tag' from docker configuration, %w", err)
-		}
+		// First check for custom tags from context (from --tags flag in publish command)
+		if imageTag := GetImageTag(ctx); imageTag != "" {
+			parsedImage.Tag = imageTag
+		} else {
+			configuredTag, err := serviceConfig.Docker.Tag.Envsubst(ch.env.Getenv)
+			if err != nil {
+				return nil, fmt.Errorf("failed parsing 'tag' from docker configuration, %w", err)
+			}
 
-		// Set default tag if not configured
-		if configuredTag == "" {
-			configuredTag = ch.DefaultImageTag()
-		}
+			// Set default tag if not configured
+			if configuredTag == "" {
+				configuredTag = ch.DefaultImageTag()
+			}
 
-		parsedImage.Tag = configuredTag
+			parsedImage.Tag = configuredTag
+		}
 	}
 
 	// Set default registry if not configured
@@ -360,17 +370,20 @@ func (ch *ContainerHelper) runLocalBuild(
 				return "", err
 			}
 
-			// Check if the remote image already exists
-			log.Printf("checking if image %s already exists in registry", remoteImage)
-			progress.SetProgress(NewServiceProgress("Checking if image exists"))
+			// `azd deploy` skips pushing if the image already exists in the registry
+			// `azd publish` always overwrites if the image already exists in the registry
+			if !IsPublishOnly(ctx) {
+				log.Printf("checking if image %s already exists in registry", remoteImage)
+				progress.SetProgress(NewServiceProgress("Checking if image exists"))
 
-			imageExists, err := ch.docker.ImageExists(ctx, remoteImage)
-			if err != nil {
-				// Log the error but continue with the build process
-				log.Printf("failed to check if image exists, proceeding with build: %v", err)
-			} else if imageExists {
-				log.Printf("image %s already exists in registry, skipping build and push", remoteImage)
-				return remoteImage, nil
+				imageExists, err := ch.docker.ImageExists(ctx, remoteImage)
+				if err != nil {
+					// Log the error but continue with the build process
+					log.Printf("failed to check if image exists, proceeding with build: %v", err)
+				} else if imageExists {
+					log.Printf("image %s already exists in registry, skipping build and push", remoteImage)
+					return remoteImage, nil
+				}
 			}
 
 			// When the project does not contain source and we are using an external image we first need to pull the

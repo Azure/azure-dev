@@ -38,33 +38,28 @@ func (t CreateDirectoryTool) Description() string {
 		"Input: directory path (e.g., 'docs' or './src/components')"
 }
 
-// createErrorResponse creates a JSON error response
-func (t CreateDirectoryTool) createErrorResponse(err error, message string) (string, error) {
-	return common.CreateErrorResponse(err, message)
-}
-
 func (t CreateDirectoryTool) Call(ctx context.Context, input string) (string, error) {
 	input = strings.TrimPrefix(input, `"`)
 	input = strings.TrimSuffix(input, `"`)
 	input = strings.TrimSpace(input)
 
 	if input == "" {
-		return t.createErrorResponse(fmt.Errorf("directory path is required"), "Directory path is required")
+		return common.CreateErrorResponse(fmt.Errorf("directory path is required"), "Directory path is required")
 	}
 
 	err := os.MkdirAll(input, 0755)
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to create directory %s: %s", input, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to create directory %s: %s", input, err.Error()))
 	}
 
 	// Check if directory already existed or was newly created
 	info, err := os.Stat(input)
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to verify directory creation: %s", err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to verify directory creation: %s", err.Error()))
 	}
 
 	if !info.IsDir() {
-		return t.createErrorResponse(
+		return common.CreateErrorResponse(
 			fmt.Errorf("%s exists but is not a directory", input),
 			fmt.Sprintf("%s exists but is not a directory", input),
 		)
@@ -86,7 +81,7 @@ func (t CreateDirectoryTool) Call(ctx context.Context, input string) (string, er
 	// Convert to JSON
 	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
 	}
 
 	return string(jsonData), nil

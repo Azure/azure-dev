@@ -39,26 +39,21 @@ func (t FileInfoTool) Description() string {
 		"Input: file path (e.g., 'data.txt' or './docs/readme.md'). Returns JSON with file information."
 }
 
-// createErrorResponse creates a JSON error response
-func (t FileInfoTool) createErrorResponse(err error, message string) (string, error) {
-	return common.CreateErrorResponse(err, message)
-}
-
 func (t FileInfoTool) Call(ctx context.Context, input string) (string, error) {
 	input = strings.TrimPrefix(input, `"`)
 	input = strings.TrimSuffix(input, `"`)
 	input = strings.TrimSpace(input)
 
 	if input == "" {
-		return t.createErrorResponse(fmt.Errorf("file path is required"), "File path is required")
+		return common.CreateErrorResponse(fmt.Errorf("file path is required"), "File path is required")
 	}
 
 	info, err := os.Stat(input)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return t.createErrorResponse(err, fmt.Sprintf("File or directory %s does not exist", input))
+			return common.CreateErrorResponse(err, fmt.Sprintf("File or directory %s does not exist", input))
 		}
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to get info for %s: %s", input, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to get info for %s: %s", input, err.Error()))
 	}
 
 	// Prepare JSON response structure
@@ -96,7 +91,7 @@ func (t FileInfoTool) Call(ctx context.Context, input string) (string, error) {
 	// Convert to JSON
 	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
 	}
 
 	return string(jsonData), nil

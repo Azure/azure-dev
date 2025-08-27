@@ -119,7 +119,6 @@ func NewDeployCmd() *cobra.Command {
 type DeployAction struct {
 	flags               *DeployFlags
 	args                []string
-	calledAs            internal.CmdCalledAs
 	projectConfig       *project.ProjectConfig
 	azdCtx              *azdcontext.AzdContext
 	env                 *environment.Environment
@@ -140,7 +139,6 @@ type DeployAction struct {
 func NewDeployAction(
 	flags *DeployFlags,
 	args []string,
-	calledAs internal.CmdCalledAs,
 	projectConfig *project.ProjectConfig,
 	projectManager project.ProjectManager,
 	serviceManager project.ServiceManager,
@@ -160,7 +158,6 @@ func NewDeployAction(
 	return &DeployAction{
 		flags:               flags,
 		args:                args,
-		calledAs:            calledAs,
 		projectConfig:       projectConfig,
 		azdCtx:              azdCtx,
 		env:                 environment,
@@ -232,13 +229,15 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	verb := "Deploying"
-	if da.calledAs == "publish" {
+	commandTitle := "Deploying services (azd deploy)"
+	if da.flags.PublishOnly {
 		verb = "Publishing"
+		commandTitle = "Publishing services (azd publish)"
 	}
 
 	// Command title
 	da.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: fmt.Sprintf("%s services (azd %s)", verb, string(da.calledAs)),
+		Title: commandTitle,
 	})
 
 	startTime := time.Now()

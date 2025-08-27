@@ -61,7 +61,7 @@ type infraGenerateAction struct {
 	azdCtx        *azdcontext.AzdContext
 	flags         *infraGenerateFlags
 	alphaManager  *alpha.FeatureManager
-	calledAs      internal.CmdCalledAs
+	calledAs      CmdCalledAs
 }
 
 func newInfraGenerateAction(
@@ -71,7 +71,7 @@ func newInfraGenerateAction(
 	console input.Console,
 	azdCtx *azdcontext.AzdContext,
 	alphaManager *alpha.FeatureManager,
-	calledAs internal.CmdCalledAs,
+	calledAs CmdCalledAs,
 ) actions.Action {
 	return &infraGenerateAction{
 		projectConfig: projectConfig,

@@ -186,7 +186,8 @@ func getCmdCompletionPowerShellHelpDescription(cmd *cobra.Command) string {
 
 func getCmdCompletionPowerShellHelpFooter(cmd *cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		"Load completions in current session":  "azd completion powershell | Out-String | Invoke-Expression",
-		"Install completions for all sessions": "azd completion powershell >> $PROFILE",
+		"Load completions in current session": "azd completion powershell | Out-String | Invoke-Expression",
+		"Install completions for all sessions": "azd completion powershell > $HOME\\.azd\\completion.ps1" +
+			"\n    Add-Content $PROFILE \". $HOME\\.azd\\completion.ps1\"",
 	})
 }

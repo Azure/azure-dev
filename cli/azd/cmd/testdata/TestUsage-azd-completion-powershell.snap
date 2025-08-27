@@ -13,7 +13,8 @@ Global Flags
 
 Examples
   Install completions for all sessions
-    azd completion powershell >> $PROFILE
+    azd completion powershell > $HOME\.azd\completion.ps1
+    Add-Content $PROFILE ". $HOME\.azd\completion.ps1"
 
   Load completions in current session
     azd completion powershell | Out-String | Invoke-Expression

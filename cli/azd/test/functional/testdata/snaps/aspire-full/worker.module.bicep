@@ -1,13 +1,13 @@
 @description('The location for the resource(s) to be deployed.')
 param location string = resourceGroup().location
 
-param env_outputs_azure_container_apps_environment_default_domain string
+param apphostinfrastructure_outputs_azure_container_apps_environment_default_domain string
 
-param env_outputs_azure_container_apps_environment_id string
+param apphostinfrastructure_outputs_azure_container_apps_environment_id string
 
-param env_outputs_azure_container_registry_endpoint string
+param apphostinfrastructure_outputs_azure_container_registry_endpoint string
 
-param env_outputs_azure_container_registry_managed_identity_id string
+param apphostinfrastructure_outputs_azure_container_registry_managed_identity_id string
 
 param worker_containerimage string
 
@@ -19,8 +19,8 @@ resource worker 'Microsoft.App/containerApps@2025-02-02-preview' = {
       activeRevisionsMode: 'Single'
       registries: [
         {
-          server: env_outputs_azure_container_registry_endpoint
-          identity: env_outputs_azure_container_registry_managed_identity_id
+          server: apphostinfrastructure_outputs_azure_container_registry_endpoint
+          identity: apphostinfrastructure_outputs_azure_container_registry_managed_identity_id
         }
       ]
       runtime: {
@@ -29,7 +29,7 @@ resource worker 'Microsoft.App/containerApps@2025-02-02-preview' = {
         }
       }
     }
-    environmentId: env_outputs_azure_container_apps_environment_id
+    environmentId: apphostinfrastructure_outputs_azure_container_apps_environment_id
     template: {
       containers: [
         {
@@ -59,7 +59,7 @@ resource worker 'Microsoft.App/containerApps@2025-02-02-preview' = {
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
-      '${env_outputs_azure_container_registry_managed_identity_id}': { }
+      '${apphostinfrastructure_outputs_azure_container_registry_managed_identity_id}': { }
     }
   }
 }

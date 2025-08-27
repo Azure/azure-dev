@@ -1,13 +1,13 @@
 @description('The location for the resource(s) to be deployed.')
 param location string = resourceGroup().location
 
-param env_outputs_azure_container_apps_environment_default_domain string
+param apphostinfrastructure_outputs_azure_container_apps_environment_default_domain string
 
-param env_outputs_azure_container_apps_environment_id string
+param apphostinfrastructure_outputs_azure_container_apps_environment_id string
 
-param env_outputs_azure_container_registry_endpoint string
+param apphostinfrastructure_outputs_azure_container_registry_endpoint string
 
-param env_outputs_azure_container_registry_managed_identity_id string
+param apphostinfrastructure_outputs_azure_container_registry_managed_identity_id string
 
 param webfrontend_containerimage string
 
@@ -28,8 +28,8 @@ resource webfrontend 'Microsoft.App/containerApps@2025-02-02-preview' = {
       }
       registries: [
         {
-          server: env_outputs_azure_container_registry_endpoint
-          identity: env_outputs_azure_container_registry_managed_identity_id
+          server: apphostinfrastructure_outputs_azure_container_registry_endpoint
+          identity: apphostinfrastructure_outputs_azure_container_registry_managed_identity_id
         }
       ]
       runtime: {
@@ -38,7 +38,7 @@ resource webfrontend 'Microsoft.App/containerApps@2025-02-02-preview' = {
         }
       }
     }
-    environmentId: env_outputs_azure_container_apps_environment_id
+    environmentId: apphostinfrastructure_outputs_azure_container_apps_environment_id
     template: {
       containers: [
         {
@@ -67,11 +67,11 @@ resource webfrontend 'Microsoft.App/containerApps@2025-02-02-preview' = {
             }
             {
               name: 'services__apiservice__http__0'
-              value: 'http://apiservice.internal.${env_outputs_azure_container_apps_environment_default_domain}'
+              value: 'http://apiservice.internal.${apphostinfrastructure_outputs_azure_container_apps_environment_default_domain}'
             }
             {
               name: 'services__apiservice__https__0'
-              value: 'https://apiservice.internal.${env_outputs_azure_container_apps_environment_default_domain}'
+              value: 'https://apiservice.internal.${apphostinfrastructure_outputs_azure_container_apps_environment_default_domain}'
             }
             {
               name: 'GOVERSION'
@@ -88,7 +88,7 @@ resource webfrontend 'Microsoft.App/containerApps@2025-02-02-preview' = {
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
-      '${env_outputs_azure_container_registry_managed_identity_id}': { }
+      '${apphostinfrastructure_outputs_azure_container_registry_managed_identity_id}': { }
     }
   }
 }

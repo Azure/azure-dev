@@ -1,9 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/aspire-8.0.json",
   "resources": {
-    "env": {
+    "appHostInfrastructure": {
       "type": "azure.bicep.v0",
-      "path": "env.module.bicep",
+      "path": "appHostInfrastructure.module.bicep",
       "params": {
         "userPrincipalId": ""
       }
@@ -27,10 +27,10 @@
         "type": "azure.bicep.v0",
         "path": "apiservice.module.bicep",
         "params": {
-          "env_outputs_azure_container_apps_environment_default_domain": "{env.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}",
-          "env_outputs_azure_container_apps_environment_id": "{env.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID}",
-          "env_outputs_azure_container_registry_endpoint": "{env.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT}",
-          "env_outputs_azure_container_registry_managed_identity_id": "{env.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID}",
+          "apphostinfrastructure_outputs_azure_container_apps_environment_default_domain": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}",
+          "apphostinfrastructure_outputs_azure_container_apps_environment_id": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID}",
+          "apphostinfrastructure_outputs_azure_container_registry_endpoint": "{appHostInfrastructure.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT}",
+          "apphostinfrastructure_outputs_azure_container_registry_managed_identity_id": "{appHostInfrastructure.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID}",
           "apiservice_containerimage": "{apiservice.containerImage}",
           "apiservice_containerport": "{apiservice.containerPort}"
         }
@@ -62,10 +62,10 @@
         "type": "azure.bicep.v0",
         "path": "worker.module.bicep",
         "params": {
-          "env_outputs_azure_container_apps_environment_default_domain": "{env.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}",
-          "env_outputs_azure_container_apps_environment_id": "{env.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID}",
-          "env_outputs_azure_container_registry_endpoint": "{env.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT}",
-          "env_outputs_azure_container_registry_managed_identity_id": "{env.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID}",
+          "apphostinfrastructure_outputs_azure_container_apps_environment_default_domain": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}",
+          "apphostinfrastructure_outputs_azure_container_apps_environment_id": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID}",
+          "apphostinfrastructure_outputs_azure_container_registry_endpoint": "{appHostInfrastructure.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT}",
+          "apphostinfrastructure_outputs_azure_container_registry_managed_identity_id": "{appHostInfrastructure.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID}",
           "worker_containerimage": "{worker.containerImage}"
         }
       },
@@ -82,10 +82,10 @@
         "type": "azure.bicep.v0",
         "path": "webfrontend.module.bicep",
         "params": {
-          "env_outputs_azure_container_apps_environment_default_domain": "{env.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}",
-          "env_outputs_azure_container_apps_environment_id": "{env.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID}",
-          "env_outputs_azure_container_registry_endpoint": "{env.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT}",
-          "env_outputs_azure_container_registry_managed_identity_id": "{env.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID}",
+          "apphostinfrastructure_outputs_azure_container_apps_environment_default_domain": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}",
+          "apphostinfrastructure_outputs_azure_container_apps_environment_id": "{appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID}",
+          "apphostinfrastructure_outputs_azure_container_registry_endpoint": "{appHostInfrastructure.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT}",
+          "apphostinfrastructure_outputs_azure_container_registry_managed_identity_id": "{appHostInfrastructure.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID}",
           "webfrontend_containerimage": "{webfrontend.containerImage}",
           "webfrontend_containerport": "{webfrontend.containerPort}",
           "goversion_value": "{goversion.value}"

@@ -3,7 +3,7 @@ using Aspire.Hosting.Azure;
 var builder = DistributedApplication.CreateBuilder(args);
 
 // Use Aspire 9.4 to own the Azure Container App environment
-builder.AddAzureContainerAppEnvironment("env");
+builder.AddAzureContainerAppEnvironment("appHostInfrastructure");
 
 // test param with default value
 var goVersion = builder.AddParameter("goversion", "1.22", publishValueAsDefault: true);

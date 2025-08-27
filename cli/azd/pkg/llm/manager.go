@@ -12,8 +12,10 @@ import (
 	"github.com/tmc/langchaingo/llms"
 )
 
+// FeatureLlm is the feature key for the LLM (Large Language Model) feature.
 var FeatureLlm = alpha.MustFeatureKey("llm")
 
+// IsLlmFeatureEnabled checks if the LLM feature is enabled.
 func IsLlmFeatureEnabled(alphaManager *alpha.FeatureManager) error {
 	if alphaManager == nil {
 		panic("alphaManager cannot be nil")
@@ -25,6 +27,7 @@ func IsLlmFeatureEnabled(alphaManager *alpha.FeatureManager) error {
 	return nil
 }
 
+// NewManager creates a new instance of the LLM Manager.
 func NewManager(
 	alphaManager *alpha.FeatureManager,
 	userConfigManager config.UserConfigManager,
@@ -45,8 +48,10 @@ type Manager struct {
 	ModelFactory      *ModelFactory
 }
 
+// LlmType represents the type of language model.
 type LlmType string
 
+// String returns the string representation of the LlmType.
 func (l LlmType) String() string {
 	switch l {
 	case LlmTypeOllama:
@@ -59,8 +64,10 @@ func (l LlmType) String() string {
 }
 
 const (
+	// LlmTypeOpenAIAzure represents the Azure OpenAI model type.
 	LlmTypeOpenAIAzure LlmType = "azure"
-	LlmTypeOllama      LlmType = "ollama"
+	// LlmTypeOllama represents the Ollama model type.
+	LlmTypeOllama LlmType = "ollama"
 )
 
 // ModelMetadata represents a language model with its name and version information.
@@ -83,8 +90,10 @@ type ModelContainer struct {
 	logger   callbacks.Handler
 }
 
+// ModelOption is a functional option for configuring a ModelContainer
 type ModelOption func(modelContainer *ModelContainer)
 
+// WithLogger returns an option that sets the logger for the model container
 func WithLogger(logger callbacks.Handler) ModelOption {
 	return func(modelContainer *ModelContainer) {
 		modelContainer.logger = logger

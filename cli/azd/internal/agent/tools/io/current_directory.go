@@ -37,31 +37,10 @@ func (t CurrentDirectoryTool) Description() string {
 		"Input: use 'current' or '.' (any input works)"
 }
 
-// createErrorResponse creates a JSON error response
-func (t CurrentDirectoryTool) createErrorResponse(err error, message string) (string, error) {
-	if message == "" {
-		message = err.Error()
-	}
-
-	errorResp := common.ErrorResponse{
-		Error:   true,
-		Message: message,
-	}
-
-	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
-	if jsonErr != nil {
-		// Fallback to simple error message if JSON marshalling fails
-		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
-		return fallbackMsg, nil
-	}
-
-	return string(jsonData), nil
-}
-
 func (t CurrentDirectoryTool) Call(ctx context.Context, input string) (string, error) {
-	dir, err := os.Getwd()
+	currentDir, err := os.Getwd()
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to get current directory: %s", err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to get current directory: %s", err.Error()))
 	}
 
 	// Create success response
@@ -73,14 +52,14 @@ func (t CurrentDirectoryTool) Call(ctx context.Context, input string) (string, e
 
 	response := CurrentDirectoryResponse{
 		Success:          true,
-		CurrentDirectory: dir,
-		Message:          fmt.Sprintf("Current directory is %s", dir),
+		CurrentDirectory: currentDir,
+		Message:          fmt.Sprintf("Current directory is %s", currentDir),
 	}
 
 	// Convert to JSON
 	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
 	}
 
 	return string(jsonData), nil

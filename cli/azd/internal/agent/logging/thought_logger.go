@@ -15,22 +15,20 @@ import (
 	"github.com/tmc/langchaingo/schema"
 )
 
-// Compile-time check to ensure ThoughtLogger implements callbacks.Handler
-var _ callbacks.Handler = &ThoughtLogger{}
-
+// Thought represents a single thought or action taken by the agent
 type Thought struct {
 	Thought     string
 	Action      string
 	ActionInput string
 }
 
-// ThoughtLogger tracks and logs all agent actions
+// ThoughtLogger tracks and logs all agent thoughts and actions
 type ThoughtLogger struct {
 	ThoughtChan chan<- Thought
 }
 
-// NewThoughtLogger creates a new action logger with a write-only channel for thoughts
-func NewThoughtLogger(thoughtChan chan<- Thought) *ThoughtLogger {
+// NewThoughtLogger creates a new callbacks handler with a write-only channel for thoughts
+func NewThoughtLogger(thoughtChan chan<- Thought) callbacks.Handler {
 	return &ThoughtLogger{
 		ThoughtChan: thoughtChan,
 	}
@@ -217,4 +215,12 @@ func (al *ThoughtLogger) HandleLLMError(ctx context.Context, err error) {
 
 // HandleStreamingFunc handles streaming responses
 func (al *ThoughtLogger) HandleStreamingFunc(ctx context.Context, chunk []byte) {
+}
+
+// truncateString truncates a string to maxLen characters and adds "..." if truncated
+func truncateString(s string, maxLen int) string {
+	if len(s) > maxLen {
+		return s[:maxLen-3] + "..."
+	}
+	return s
 }

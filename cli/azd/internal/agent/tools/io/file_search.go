@@ -90,30 +90,9 @@ Returns a sorted list of matching file paths relative to the current working dir
 The input must be formatted as a single line valid JSON string.`
 }
 
-// createErrorResponse creates a JSON error response
-func (t FileSearchTool) createErrorResponse(err error, message string) (string, error) {
-	if message == "" {
-		message = err.Error()
-	}
-
-	errorResp := common.ErrorResponse{
-		Error:   true,
-		Message: message,
-	}
-
-	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
-	if jsonErr != nil {
-		// Fallback to simple error message if JSON marshalling fails
-		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
-		return fallbackMsg, nil
-	}
-
-	return string(jsonData), nil
-}
-
 func (t FileSearchTool) Call(ctx context.Context, input string) (string, error) {
 	if input == "" {
-		return t.createErrorResponse(
+		return common.CreateErrorResponse(
 			fmt.Errorf("input is required"),
 			"Input is required. Expected JSON format: {\"pattern\": \"*.go\"}",
 		)
@@ -122,7 +101,7 @@ func (t FileSearchTool) Call(ctx context.Context, input string) (string, error) 
 	// Parse JSON input
 	var req FileSearchRequest
 	if err := json.Unmarshal([]byte(input), &req); err != nil {
-		return t.createErrorResponse(
+		return common.CreateErrorResponse(
 			err,
 			fmt.Sprintf("Invalid JSON input: %s. Expected format: {\"pattern\": \"*.go\", \"maxResults\": 50}", err.Error()),
 		)
@@ -130,7 +109,7 @@ func (t FileSearchTool) Call(ctx context.Context, input string) (string, error) 
 
 	// Validate required fields
 	if req.Pattern == "" {
-		return t.createErrorResponse(fmt.Errorf("pattern is required"), "Pattern is required in the JSON input")
+		return common.CreateErrorResponse(fmt.Errorf("pattern is required"), "Pattern is required in the JSON input")
 	}
 
 	// Set default max results
@@ -142,7 +121,7 @@ func (t FileSearchTool) Call(ctx context.Context, input string) (string, error) 
 	// Use doublestar to find matching files
 	matches, err := doublestar.FilepathGlob(req.Pattern)
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Invalid glob pattern '%s': %s", req.Pattern, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Invalid glob pattern '%s': %s", req.Pattern, err.Error()))
 	}
 
 	// Sort results for consistent output
@@ -189,7 +168,7 @@ func (t FileSearchTool) Call(ctx context.Context, input string) (string, error) 
 	// Convert to JSON
 	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
 	}
 
 	return string(jsonData), nil

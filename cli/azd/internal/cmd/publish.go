@@ -75,7 +75,7 @@ func NewPublishFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func NewPublishCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "publish <service>",
-		Short: "Publish your project to Azure Container Registry. An alias for `azd deploy --publish-only`.",
+		Short: "Publish your project to Azure Container Registry.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 	return cmd
@@ -84,7 +84,6 @@ func NewPublishCmd() *cobra.Command {
 func NewPublishAction(
 	flags *PublishFlags,
 	args []string,
-	calledAs internal.CmdCalledAs,
 	projectConfig *project.ProjectConfig,
 	projectManager project.ProjectManager,
 	serviceManager project.ServiceManager,
@@ -108,7 +107,6 @@ func NewPublishAction(
 	deployAction := NewDeployAction(
 		flags.deploy,
 		args,
-		calledAs,
 		projectConfig,
 		projectManager,
 		serviceManager,

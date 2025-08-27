@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -23,12 +24,30 @@ import (
 )
 
 type PublishFlags struct {
+	Image  string
+	Tag    string
 	deploy *DeployFlags
 }
 
 func (f *PublishFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	f.deploy.BindNonCommon(local, global)
 	f.deploy.bindCommon(local, global)
+
+	// Add the --tag flag specific to publish command
+	local.StringVar(
+		&f.Image,
+		"image",
+		"",
+		"Specifies a custom image name for the container published to the registry.",
+	)
+
+	// Add the --tag flag specific to publish command
+	local.StringVar(
+		&f.Tag,
+		"tag",
+		"",
+		"Specifies a custom tag for the container image published to the registry.",
+	)
 
 	// The publish-only flag is not needed for the publish command.
 	// We can't remove it since it's part of the DeployFlags struct, but we can hide it.
@@ -85,8 +104,8 @@ func NewPublishAction(
 	// Set publish-only flag to true
 	flags.deploy.PublishOnly = true
 
-	// Reuse the deploy action
-	return NewDeployAction(
+	// Create the deploy action
+	deployAction := NewDeployAction(
 		flags.deploy,
 		args,
 		calledAs,
@@ -106,13 +125,38 @@ func NewPublishAction(
 		alphaFeatureManager,
 		importManager,
 	)
+
+	// If no custom tags are provided, return the deploy action directly
+	if flags.Image == "" && flags.Tag == "" {
+		return deployAction
+	}
+
+	// Wrap the deploy action to add custom tags to the context
+	return &publishActionWrapper{
+		deployAction: deployAction,
+		imageName:    flags.Image,
+		imageTag:     flags.Tag,
+	}
+}
+
+// publishActionWrapper wraps the deploy action to add custom tags to the context
+type publishActionWrapper struct {
+	deployAction actions.Action
+	imageName    string
+	imageTag     string
+}
+
+func (p *publishActionWrapper) Run(ctx context.Context) (*actions.ActionResult, error) {
+	ctx = project.WithImageName(ctx, p.imageName)
+	ctx = project.WithImageTag(ctx, p.imageTag)
+	return p.deployAction.Run(ctx)
 }
 
 func GetCmdPublishHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
 		"Publish your project to Azure Container Registry.",
 		[]string{
-			formatHelpNote("This command is an alias for `azd deploy --publish-only`."),
+			formatHelpNote("Only works with Container App services."),
 		})
 }
 
@@ -123,6 +167,9 @@ func GetCmdPublishHelpFooter(*cobra.Command) string {
 		),
 		"Publish the service named 'api'.": output.WithHighLightFormat(
 			"azd publish api",
+		),
+		"Publish the service named 'api' with image name 'app/api' and tag 'prod'.": output.WithHighLightFormat(
+			"azd publish api --image app/api --tag prod",
 		),
 		"Publish the service named 'api' from a previously generated package.": output.WithHighLightFormat(
 			"azd publish api --from-package <image-tag>",

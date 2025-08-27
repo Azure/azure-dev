@@ -104,7 +104,6 @@ type ServiceDeployResult struct {
 	Kind             ServiceTargetKind `json:"kind"`
 	Endpoints        []string          `json:"endpoints"`
 	// PublishArtifact contains the published artifact identifier (e.g., container image name)
-	// This is set when using --publish-only flag or when the deployment produces a publishable artifact
 	PublishArtifact string      `json:"publishArtifact,omitempty"`
 	Details         interface{} `json:"details"`
 }

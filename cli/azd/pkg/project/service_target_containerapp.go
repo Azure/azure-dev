@@ -88,7 +88,6 @@ func (at *containerAppTarget) Deploy(
 
 	imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
 
-	// Handle --publish-only flag: return early with just the image name
 	if IsPublishOnly(ctx) {
 		if imageName == "" {
 			return nil, fmt.Errorf("image name not found for service '%s'", serviceConfig.Name)

@@ -44,6 +44,12 @@ The official extension source registry is pre-configured in `azd` and is hosted 
 
 The registry is hosted in the [`azd` github repo](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/registry.json).
 
+If you previously removed it and want to add it back:
+
+```bash
+azd extension source add -n azd -t url -l "https://aka.ms/azd/extensions/registry"
+```
+
 #### Development Registry
 
 > [!CAUTION]
@@ -81,11 +87,17 @@ Extensions are a collection of executable artifacts that extend or enhance funct
 
 #### `azd extension list [flags]`
 
-Lists matching extensions from one or more extension sources
+Lists matching extensions from one or more extension sources.
 
 - `--installed` When set displays a list of installed extensions.
 - `--source` When set will only list extensions from the specified source.
 - `--tags` Allows filtering extensions by tags (e.g., AI, test)
+
+#### `azd extension show <extension-name> [flags]`
+
+Shows detailed information for a specific extension, including description, tags, versions, and installation status.
+
+- `-s, --source` The extension source to use. Use this flag when the same extension ID exists in multiple sources.
 
 #### `azd extension install <extension-names> [flags]`
 

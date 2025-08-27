@@ -41,23 +41,7 @@ func (t FileInfoTool) Description() string {
 
 // createErrorResponse creates a JSON error response
 func (t FileInfoTool) createErrorResponse(err error, message string) (string, error) {
-	if message == "" {
-		message = err.Error()
-	}
-
-	errorResp := common.ErrorResponse{
-		Error:   true,
-		Message: message,
-	}
-
-	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
-	if jsonErr != nil {
-		// Fallback to simple error message if JSON marshalling fails
-		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
-		return fallbackMsg, nil
-	}
-
-	return string(jsonData), nil
+	return common.CreateErrorResponse(err, message)
 }
 
 func (t FileInfoTool) Call(ctx context.Context, input string) (string, error) {

@@ -15,6 +15,23 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+// CopyFileRequest represents the JSON payload for file copy requests
+type CopyFileRequest struct {
+	Source      string `json:"source"`
+	Destination string `json:"destination"`
+	Overwrite   bool   `json:"overwrite,omitempty"` // Optional: allow overwriting existing files
+}
+
+// CopyFileResponse represents the JSON output for the copy_file tool
+type CopyFileResponse struct {
+	Success     bool   `json:"success"`
+	Source      string `json:"source"`
+	Destination string `json:"destination"`
+	BytesCopied int64  `json:"bytesCopied"`
+	Overwritten bool   `json:"overwritten"` // Indicates if an existing file was overwritten
+	Message     string `json:"message"`
+}
+
 // CopyFileTool implements the Tool interface for copying files
 type CopyFileTool struct {
 	common.BuiltInTool
@@ -54,34 +71,11 @@ Examples:
 
 // createErrorResponse creates a JSON error response
 func (t CopyFileTool) createErrorResponse(err error, message string) (string, error) {
-	if message == "" {
-		message = err.Error()
-	}
-
-	errorResp := common.ErrorResponse{
-		Error:   true,
-		Message: message,
-	}
-
-	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
-	if jsonErr != nil {
-		// Fallback to simple error message if JSON marshalling fails
-		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
-		return fallbackMsg, nil
-	}
-
-	return string(jsonData), nil
+	return common.CreateErrorResponse(err, message)
 }
 
 func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
-	// Parse JSON input
-	type InputParams struct {
-		Source      string `json:"source"`
-		Destination string `json:"destination"`
-		Overwrite   bool   `json:"overwrite,omitempty"` // Optional: allow overwriting existing files
-	}
-
-	var params InputParams
+	var params CopyFileRequest
 
 	// Clean the input first
 	cleanInput := strings.TrimSpace(input)
@@ -155,15 +149,6 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 	}
 
 	// Prepare JSON response structure
-	type CopyResponse struct {
-		Success     bool   `json:"success"`
-		Source      string `json:"source"`
-		Destination string `json:"destination"`
-		BytesCopied int64  `json:"bytesCopied"`
-		Overwritten bool   `json:"overwritten"` // Indicates if an existing file was overwritten
-		Message     string `json:"message"`
-	}
-
 	// Determine if this was an overwrite operation
 	wasOverwrite := destinationExisted && params.Overwrite
 
@@ -179,7 +164,7 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 		message = fmt.Sprintf("Successfully copied %s to %s (%d bytes)", source, destination, bytesWritten)
 	}
 
-	response := CopyResponse{
+	response := CopyFileResponse{
 		Success:     true,
 		Source:      source,
 		Destination: destination,

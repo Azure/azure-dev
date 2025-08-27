@@ -25,12 +25,18 @@ type agentBase struct {
 	callbacksHandler callbacks.Handler
 	thoughtChan      chan logging.Thought
 	cleanupFunc      AgentCleanup
+	maxIterations    int
 }
 
+// AgentCleanup is a function that performs cleanup tasks for an agent.
 type AgentCleanup func() error
 
+// Agent represents an AI agent that can execute tools and interact with language models.
 type Agent interface {
+	// SendMessage sends a message to the agent and returns the response
 	SendMessage(ctx context.Context, args ...string) (string, error)
+
+	// Stop terminates the agent and performs any necessary cleanup
 	Stop() error
 }
 
@@ -50,6 +56,13 @@ type AgentCreateOption func(*agentBase)
 func WithDebug(debug bool) AgentCreateOption {
 	return func(agent *agentBase) {
 		agent.debug = debug
+	}
+}
+
+// WithMaxIterations returns an option that sets the maximum number of iterations for the agent
+func WithMaxIterations(maxIterations int) AgentCreateOption {
+	return func(agent *agentBase) {
+		agent.maxIterations = maxIterations
 	}
 }
 
@@ -74,9 +87,17 @@ func WithCallbacksHandler(handler callbacks.Handler) AgentCreateOption {
 	}
 }
 
+// WithThoughtChannel returns an option that sets the thought channel for the agent
 func WithThoughtChannel(thoughtChan chan logging.Thought) AgentCreateOption {
 	return func(agent *agentBase) {
 		agent.thoughtChan = thoughtChan
+	}
+}
+
+// WithCleanup returns an option that sets the cleanup function for the agent
+func WithCleanup(cleanupFunc AgentCleanup) AgentCreateOption {
+	return func(agent *agentBase) {
+		agent.cleanupFunc = cleanupFunc
 	}
 }
 

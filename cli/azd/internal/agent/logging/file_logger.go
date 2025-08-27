@@ -17,9 +17,6 @@ import (
 	"github.com/tmc/langchaingo/schema"
 )
 
-// Compile-time check to ensure FileLogger implements callbacks.Handler
-var _ callbacks.Handler = &FileLogger{}
-
 // FlushWriter is an interface for writers that support flushing
 type FlushWriter interface {
 	io.Writer
@@ -36,7 +33,7 @@ type FileLogger struct {
 type FileLoggerOption func(*FileLogger)
 
 // NewFileLogger creates a new file logger that writes to the provided FlushWriter
-func NewFileLogger(writer FlushWriter, opts ...FileLoggerOption) *FileLogger {
+func NewFileLogger(writer FlushWriter, opts ...FileLoggerOption) callbacks.Handler {
 	fl := &FileLogger{
 		writer: writer,
 	}

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -60,7 +59,14 @@ func TestWriteFileTool_Call_MalformedJSON(t *testing.T) {
 
 func TestWriteFileTool_Call_MissingFilename(t *testing.T) {
 	tool := WriteFileTool{}
-	input := `{"content": "test content"}`
+
+	// Use struct with missing Path field
+	request := WriteFileRequest{
+		Content: "test content",
+		// Path is intentionally missing
+	}
+	input := mustMarshalJSON(request)
+
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -74,12 +80,17 @@ func TestWriteFileTool_FullFileWrite(t *testing.T) {
 	testFile := filepath.Join(tempDir, "test.txt")
 
 	tool := WriteFileTool{}
-	input := `{"path": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "Hello, World!"}`
+
+	request := WriteFileRequest{
+		Path:    testFile,
+		Content: "Hello, World!",
+	}
+	input := mustMarshalJSON(request)
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 
-	// Verify response
+	// Verify response using struct
 	var response WriteFileResponse
 	err = json.Unmarshal([]byte(result), &response)
 	require.NoError(t, err)
@@ -108,11 +119,13 @@ func TestWriteFileTool_AppendMode(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
-	input := `{"path": "` + strings.ReplaceAll(
-		testFile,
-		"\\",
-		"\\\\",
-	) + `", "content": "\nAppended content", "mode": "append"}`
+
+	request := WriteFileRequest{
+		Path:    testFile,
+		Content: "\nAppended content",
+		Mode:    "append",
+	}
+	input := mustMarshalJSON(request)
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -138,11 +151,13 @@ func TestWriteFileTool_CreateMode_Success(t *testing.T) {
 	testFile := filepath.Join(tempDir, "new-file.txt")
 
 	tool := WriteFileTool{}
-	input := `{"path": "` + strings.ReplaceAll(
-		testFile,
-		"\\",
-		"\\\\",
-	) + `", "content": "New file content", "mode": "create"}`
+
+	request := WriteFileRequest{
+		Path:    testFile,
+		Content: "New file content",
+		Mode:    "create",
+	}
+	input := mustMarshalJSON(request)
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -170,7 +185,13 @@ func TestWriteFileTool_CreateMode_FileExists(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
-	input := `{"path": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "New content", "mode": "create"}`
+
+	request := WriteFileRequest{
+		Path:    testFile,
+		Content: "New content",
+		Mode:    "create",
+	}
+	input := mustMarshalJSON(request)
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -196,11 +217,14 @@ func TestWriteFileTool_PartialWrite_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
-	input := `{"path": "` + strings.ReplaceAll(
-		testFile,
-		"\\",
-		"\\\\",
-	) + `", "content": "Modified Line 2\nModified Line 3", "startLine": 2, "endLine": 3}`
+
+	request := WriteFileRequest{
+		Path:      testFile,
+		Content:   "Modified Line 2\nModified Line 3",
+		StartLine: 2,
+		EndLine:   3,
+	}
+	input := mustMarshalJSON(request)
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -236,11 +260,14 @@ func TestWriteFileTool_PartialWrite_SingleLine(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
-	input := `{"path": "` + strings.ReplaceAll(
-		testFile,
-		"\\",
-		"\\\\",
-	) + `", "content": "Replaced Line 2", "startLine": 2, "endLine": 2}`
+
+	request := WriteFileRequest{
+		Path:      testFile,
+		Content:   "Replaced Line 2",
+		StartLine: 2,
+		EndLine:   2,
+	}
+	input := mustMarshalJSON(request)
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -274,12 +301,14 @@ func TestWriteFileTool_PartialWrite_SingleLineToMultipleLines(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
-	// Replace single line 2 with multiple lines
-	input := `{"path": "` + strings.ReplaceAll(
-		testFile,
-		"\\",
-		"\\\\",
-	) + `", "content": "New Line 2a\nNew Line 2b\nNew Line 2c", "startLine": 2, "endLine": 2}`
+
+	request := WriteFileRequest{
+		Path:      testFile,
+		Content:   "New Line 2a\nNew Line 2b\nNew Line 2c",
+		StartLine: 2,
+		EndLine:   2,
+	}
+	input := mustMarshalJSON(request)
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -310,11 +339,14 @@ func TestWriteFileTool_PartialWrite_FileNotExists(t *testing.T) {
 	testFile := filepath.Join(tempDir, "nonexistent.txt")
 
 	tool := WriteFileTool{}
-	input := `{"path": "` + strings.ReplaceAll(
-		testFile,
-		"\\",
-		"\\\\",
-	) + `", "content": "New content", "startLine": 1, "endLine": 1}`
+
+	request := WriteFileRequest{
+		Path:      testFile,
+		Content:   "New content",
+		StartLine: 1,
+		EndLine:   1,
+	}
+	input := mustMarshalJSON(request)
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -337,36 +369,52 @@ func TestWriteFileTool_PartialWrite_InvalidLineNumbers(t *testing.T) {
 	tool := WriteFileTool{}
 
 	// Test startLine provided but not endLine
-	input := `{"path": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "content", "startLine": 1}`
+	request1 := WriteFileRequest{
+		Path:      testFile,
+		Content:   "content",
+		StartLine: 1,
+		// EndLine intentionally missing
+	}
+	input := mustMarshalJSON(request1)
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 	assert.Contains(t, result, "error")
 	assert.Contains(t, result, "Both startLine and endLine must be provided")
 
 	// Test endLine provided but not startLine
-	input = `{"path": "` + strings.ReplaceAll(testFile, "\\", "\\\\") + `", "content": "content", "endLine": 1}`
+	request2 := WriteFileRequest{
+		Path:    testFile,
+		Content: "content",
+		EndLine: 1,
+		// StartLine intentionally missing (will be 0)
+	}
+	input = mustMarshalJSON(request2)
 	result, err = tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 	assert.Contains(t, result, "error")
 	assert.Contains(t, result, "Both startLine and endLine must be provided")
 
 	// Test startLine < 1 (this will trigger the partial write validation)
-	input = `{"path": "` + strings.ReplaceAll(
-		testFile,
-		"\\",
-		"\\\\",
-	) + `", "content": "content", "startLine": 0, "endLine": 1}`
+	request3 := WriteFileRequest{
+		Path:      testFile,
+		Content:   "content",
+		StartLine: 0,
+		EndLine:   1,
+	}
+	input = mustMarshalJSON(request3)
 	result, err = tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 	assert.Contains(t, result, "error")
 	assert.Contains(t, result, "Both startLine and endLine must be provided") // 0 is treated as "not provided"
 
 	// Test valid line numbers but startLine > endLine
-	input = `{"path": "` + strings.ReplaceAll(
-		testFile,
-		"\\",
-		"\\\\",
-	) + `", "content": "content", "startLine": 3, "endLine": 1}`
+	request4 := WriteFileRequest{
+		Path:      testFile,
+		Content:   "content",
+		StartLine: 3,
+		EndLine:   1,
+	}
+	input = mustMarshalJSON(request4)
 	result, err = tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 	assert.Contains(t, result, "error")
@@ -384,12 +432,14 @@ func TestWriteFileTool_PartialWrite_BeyondFileLength(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
-	// Try to replace lines 2-5 (beyond file length)
-	input := `{"path": "` + strings.ReplaceAll(
-		testFile,
-		"\\",
-		"\\\\",
-	) + `", "content": "New content", "startLine": 2, "endLine": 5}`
+
+	request := WriteFileRequest{
+		Path:      testFile,
+		Content:   "New content",
+		StartLine: 2,
+		EndLine:   5,
+	}
+	input := mustMarshalJSON(request)
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -420,11 +470,14 @@ func TestWriteFileTool_PartialWrite_PreserveLineEndings(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := WriteFileTool{}
-	input := `{"path": "` + strings.ReplaceAll(
-		testFile,
-		"\\",
-		"\\\\",
-	) + `", "content": "Modified Line 2", "startLine": 2, "endLine": 2}`
+
+	request := WriteFileRequest{
+		Path:      testFile,
+		Content:   "Modified Line 2",
+		StartLine: 2,
+		EndLine:   2,
+	}
+	input := mustMarshalJSON(request)
 
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
@@ -483,31 +536,35 @@ func TestWriteFileTool_Integration_ComplexScenario(t *testing.T) {
 	tool := WriteFileTool{}
 
 	// Step 1: Create initial file
-	input := `{"path": "` + strings.ReplaceAll(
-		testFile,
-		"\\",
-		"\\\\",
-	) + `", "content": "# Configuration File\nversion: 1.0\nname: test\nport: 8080\ndebug: false", "mode": "create"}`
+	request1 := WriteFileRequest{
+		Path:    testFile,
+		Content: "# Configuration File\nversion: 1.0\nname: test\nport: 8080\ndebug: false",
+		Mode:    "create",
+	}
+	input := mustMarshalJSON(request1)
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 	assert.Contains(t, result, `"success": true`)
 
 	// Step 2: Append new section
-	input = `{"path": "` + strings.ReplaceAll(
-		testFile,
-		"\\",
-		"\\\\",
-	) + `", "content": "\n# Database Config\nhost: localhost\nport: 5432", "mode": "append"}`
+	request2 := WriteFileRequest{
+		Path:    testFile,
+		Content: "\n# Database Config\nhost: localhost\nport: 5432",
+		Mode:    "append",
+	}
+	input = mustMarshalJSON(request2)
 	result, err = tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 	assert.Contains(t, result, `"success": true`)
 
 	// Step 3: Update specific lines (change port and debug)
-	input = `{"path": "` + strings.ReplaceAll(
-		testFile,
-		"\\",
-		"\\\\",
-	) + `", "content": "port: 9090\ndebug: true", "startLine": 4, "endLine": 5}`
+	request3 := WriteFileRequest{
+		Path:      testFile,
+		Content:   "port: 9090\ndebug: true",
+		StartLine: 4,
+		EndLine:   5,
+	}
+	input = mustMarshalJSON(request3)
 	result, err = tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 
@@ -536,22 +593,26 @@ func TestWriteFileTool_PartialWrite_InvalidLineRanges(t *testing.T) {
 	tool := WriteFileTool{}
 
 	// Test negative startLine (will be handled by partial write validation)
-	input := `{"path": "` + strings.ReplaceAll(
-		testFile,
-		"\\",
-		"\\\\",
-	) + `", "content": "content", "startLine": -1, "endLine": 1}`
+	request1 := WriteFileRequest{
+		Path:      testFile,
+		Content:   "content",
+		StartLine: -1,
+		EndLine:   1,
+	}
+	input := mustMarshalJSON(request1)
 	result, err := tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 	assert.Contains(t, result, "error")
 	assert.Contains(t, result, "startLine must be")
 
 	// Test negative endLine
-	input = `{"path": "` + strings.ReplaceAll(
-		testFile,
-		"\\",
-		"\\\\",
-	) + `", "content": "content", "startLine": 1, "endLine": -1}`
+	request2 := WriteFileRequest{
+		Path:      testFile,
+		Content:   "content",
+		StartLine: 1,
+		EndLine:   -1,
+	}
+	input = mustMarshalJSON(request2)
 	result, err = tool.Call(context.Background(), input)
 	assert.NoError(t, err)
 	assert.Contains(t, result, "error")

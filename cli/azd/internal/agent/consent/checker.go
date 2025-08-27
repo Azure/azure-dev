@@ -13,6 +13,9 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+var ErrToolExecutionDenied = fmt.Errorf("tool execution denied by user")
+var ErrSamplingDenied = fmt.Errorf("sampling denied by user")
+
 // ConsentChecker provides shared consent checking logic for different tool types
 type ConsentChecker struct {
 	consentMgr ConsentManager
@@ -65,6 +68,49 @@ func (cc *ConsentChecker) CheckSamplingConsent(
 
 	return cc.consentMgr.CheckConsent(ctx, consentRequest)
 }
+
+// PromptAndGrantConsent shows consent prompt and grants permission based on user choice
+func (cc *ConsentChecker) PromptAndGrantConsent(
+	ctx context.Context,
+	toolName, toolDesc string,
+	annotations mcp.ToolAnnotation,
+) error {
+	toolId := fmt.Sprintf("%s/%s", cc.serverName, toolName)
+
+	choice, err := cc.promptForToolConsent(ctx, toolName, toolDesc, annotations)
+	if err != nil {
+		return err
+	}
+
+	if choice == "deny" {
+		return ErrToolExecutionDenied
+	}
+
+	// Grant consent based on user choice
+	return cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeTool)
+}
+
+// PromptAndGrantSamplingConsent shows sampling consent prompt and grants permission based on user choice
+func (cc *ConsentChecker) PromptAndGrantSamplingConsent(
+	ctx context.Context,
+	toolName, toolDesc string,
+) error {
+	toolId := fmt.Sprintf("%s/%s", cc.serverName, toolName)
+
+	choice, err := cc.promptForSamplingConsent(ctx, toolName, toolDesc)
+	if err != nil {
+		return fmt.Errorf("sampling consent prompt failed: %w", err)
+	}
+
+	if choice == "deny" {
+		return ErrSamplingDenied
+	}
+
+	// Grant sampling consent based on user choice
+	return cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeSampling)
+}
+
+// Private Struct Methods
 
 // formatToolDescriptionWithAnnotations creates a formatted description with tool annotations as bullet points
 func (cc *ConsentChecker) formatToolDescriptionWithAnnotations(
@@ -126,27 +172,6 @@ func (cc *ConsentChecker) formatToolDescriptionWithAnnotations(
 	}
 
 	return description
-}
-
-// PromptAndGrantConsent shows consent prompt and grants permission based on user choice
-func (cc *ConsentChecker) PromptAndGrantConsent(
-	ctx context.Context,
-	toolName, toolDesc string,
-	annotations mcp.ToolAnnotation,
-) error {
-	toolId := fmt.Sprintf("%s/%s", cc.serverName, toolName)
-
-	choice, err := cc.promptForToolConsent(ctx, toolName, toolDesc, annotations)
-	if err != nil {
-		return fmt.Errorf("consent prompt failed: %w", err)
-	}
-
-	if choice == "deny" {
-		return fmt.Errorf("tool execution denied by user")
-	}
-
-	// Grant consent based on user choice
-	return cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeTool)
 }
 
 // promptForToolConsent shows an interactive consent prompt and returns the user's choice
@@ -359,26 +384,6 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 	}
 
 	return cc.consentMgr.GrantConsent(ctx, rule)
-}
-
-// PromptAndGrantSamplingConsent shows sampling consent prompt and grants permission based on user choice
-func (cc *ConsentChecker) PromptAndGrantSamplingConsent(
-	ctx context.Context,
-	toolName, toolDesc string,
-) error {
-	toolId := fmt.Sprintf("%s/%s", cc.serverName, toolName)
-
-	choice, err := cc.promptForSamplingConsent(ctx, toolName, toolDesc)
-	if err != nil {
-		return fmt.Errorf("sampling consent prompt failed: %w", err)
-	}
-
-	if choice == "deny" {
-		return fmt.Errorf("sampling denied by user")
-	}
-
-	// Grant sampling consent based on user choice
-	return cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeSampling)
 }
 
 // promptForSamplingConsent shows an interactive sampling consent prompt and returns the user's choice

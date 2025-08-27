@@ -3,7 +3,12 @@
 
 package common
 
-import "github.com/tmc/langchaingo/tools"
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/tmc/langchaingo/tools"
+)
 
 // ToPtr converts a value to a pointer
 func ToPtr[T any](value T) *T {
@@ -12,10 +17,31 @@ func ToPtr[T any](value T) *T {
 
 // ToLangChainTools converts a slice of AnnotatedTool to a slice of tools.Tool
 func ToLangChainTools(annotatedTools []AnnotatedTool) []tools.Tool {
-	var rawTools []tools.Tool
-	for _, tool := range annotatedTools {
-		rawTools = append(rawTools, tool)
+	rawTools := make([]tools.Tool, len(annotatedTools))
+	for i, tool := range annotatedTools {
+		rawTools[i] = tool
+	}
+	return rawTools
+}
+
+// CreateErrorResponse creates a JSON error response with consistent formatting
+// Used by all IO tools to maintain consistent error response structure
+func CreateErrorResponse(err error, message string) (string, error) {
+	if message == "" {
+		message = err.Error()
 	}
 
-	return rawTools
+	errorResp := ErrorResponse{
+		Error:   true,
+		Message: message,
+	}
+
+	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
+	if jsonErr != nil {
+		// Fallback to simple error message if JSON marshalling fails
+		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
+		return fallbackMsg, nil
+	}
+
+	return string(jsonData), nil
 }

@@ -15,6 +15,29 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+// DirectoryListRequest represents the JSON payload for directory listing requests
+type DirectoryListRequest struct {
+	Path          string `json:"path"`
+	IncludeHidden bool   `json:"includeHidden,omitempty"`
+}
+
+// DirectoryListFileInfo represents file information in directory listings
+type DirectoryListFileInfo struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Size  int64  `json:"size,omitempty"`
+	IsDir bool   `json:"isDirectory"`
+}
+
+// DirectoryListResponse represents the JSON output for the list_directory tool
+type DirectoryListResponse struct {
+	Success    bool                    `json:"success"`
+	Path       string                  `json:"path"`
+	TotalItems int                     `json:"totalItems"`
+	Items      []DirectoryListFileInfo `json:"items"`
+	Message    string                  `json:"message"`
+}
+
 // DirectoryListTool implements the Tool interface for listing directory contents
 type DirectoryListTool struct {
 	common.BuiltInTool
@@ -43,33 +66,11 @@ The input must be formatted as a single line valid JSON string.`
 
 // createErrorResponse creates a JSON error response
 func (t DirectoryListTool) createErrorResponse(err error, message string) (string, error) {
-	if message == "" {
-		message = err.Error()
-	}
-
-	errorResp := common.ErrorResponse{
-		Error:   true,
-		Message: message,
-	}
-
-	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
-	if jsonErr != nil {
-		// Fallback to simple error message if JSON marshalling fails
-		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
-		return fallbackMsg, nil
-	}
-
-	return string(jsonData), nil
+	return common.CreateErrorResponse(err, message)
 }
 
 func (t DirectoryListTool) Call(ctx context.Context, input string) (string, error) {
-	// Parse JSON input
-	type InputParams struct {
-		Path          string `json:"path"`
-		IncludeHidden bool   `json:"includeHidden,omitempty"`
-	}
-
-	var params InputParams
+	var params DirectoryListRequest
 
 	// Clean the input first
 	cleanInput := strings.TrimSpace(input)
@@ -129,22 +130,7 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 	}
 
 	// Prepare JSON response structure
-	type FileInfo struct {
-		Name  string `json:"name"`
-		Type  string `json:"type"`
-		Size  int64  `json:"size,omitempty"`
-		IsDir bool   `json:"isDirectory"`
-	}
-
-	type DirectoryResponse struct {
-		Success    bool       `json:"success"`
-		Path       string     `json:"path"`
-		TotalItems int        `json:"totalItems"`
-		Items      []FileInfo `json:"items"`
-		Message    string     `json:"message"`
-	}
-
-	var items []FileInfo
+	var items []DirectoryListFileInfo
 
 	for _, file := range files {
 		// Skip hidden files if not requested
@@ -152,7 +138,7 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 			continue
 		}
 
-		fileInfo := FileInfo{
+		fileInfo := DirectoryListFileInfo{
 			Name:  file.Name(),
 			IsDir: file.IsDir(),
 		}
@@ -169,7 +155,7 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 		items = append(items, fileInfo)
 	}
 
-	response := DirectoryResponse{
+	response := DirectoryListResponse{
 		Success:    true,
 		Path:       absPath,
 		TotalItems: len(items),

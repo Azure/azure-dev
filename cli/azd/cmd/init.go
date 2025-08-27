@@ -384,7 +384,6 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	}
 
 	defer azdAgent.Stop()
-	agentThoughts := azdAgent.Thoughts()
 
 	type initStep struct {
 		Name        string

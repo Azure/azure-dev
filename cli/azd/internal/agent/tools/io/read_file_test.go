@@ -18,15 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Helper function to marshal request structs to JSON strings
-func mustMarshalJSON(v interface{}) string {
-	data, err := json.Marshal(v)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to marshal JSON: %v", err))
-	}
-	return string(data)
-}
-
 func TestReadFileTool_Name(t *testing.T) {
 	tool := ReadFileTool{}
 	assert.Equal(t, "read_file", tool.Name())
@@ -100,7 +91,15 @@ func TestReadFileTool_Call_MalformedJSON(t *testing.T) {
 
 func TestReadFileTool_Call_MissingFilePath(t *testing.T) {
 	tool := ReadFileTool{}
-	input := `{"startLine": 1, "endLine": 10}`
+
+	// Use struct with missing Path field
+	request := ReadFileRequest{
+		StartLine: 1,
+		EndLine:   10,
+		// Path is intentionally missing
+	}
+	input := mustMarshalJSON(request)
+
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -115,7 +114,14 @@ func TestReadFileTool_Call_MissingFilePath(t *testing.T) {
 
 func TestReadFileTool_Call_EmptyFilePath(t *testing.T) {
 	tool := ReadFileTool{}
-	input := `{"path": "", "startLine": 1}`
+
+	// Use struct with empty Path field
+	request := ReadFileRequest{
+		Path:      "",
+		StartLine: 1,
+	}
+	input := mustMarshalJSON(request)
+
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -130,7 +136,12 @@ func TestReadFileTool_Call_EmptyFilePath(t *testing.T) {
 
 func TestReadFileTool_Call_FileNotFound(t *testing.T) {
 	tool := ReadFileTool{}
-	input := `{"path": "/nonexistent/file.txt"}`
+
+	request := ReadFileRequest{
+		Path: "/nonexistent/file.txt",
+	}
+	input := mustMarshalJSON(request)
+
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -171,7 +182,12 @@ func TestReadFileTool_ReadEntireSmallFile(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+
+	request := ReadFileRequest{
+		Path: testFile,
+	}
+	input := mustMarshalJSON(request)
+
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)
@@ -201,7 +217,14 @@ func TestReadFileTool_ReadSingleLine(t *testing.T) {
 	require.NoError(t, err)
 
 	tool := ReadFileTool{}
-	input := fmt.Sprintf(`{"path": "%s", "startLine": 3, "endLine": 3}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
+
+	request := ReadFileRequest{
+		Path:      testFile,
+		StartLine: 3,
+		EndLine:   3,
+	}
+	input := mustMarshalJSON(request)
+
 	result, err := tool.Call(context.Background(), input)
 
 	assert.NoError(t, err)

@@ -697,8 +697,6 @@ func setupDockerMocks(mockContext *mocks.MockContext) map[string]exec.RunArgs {
 	})
 
 	return mockResults
-
-	return mockResults
 }
 
 type mockContainerRegistryService struct {

@@ -3,6 +3,7 @@ words:
   - azcloud
   - azdext
   - azurefd
+  - azcontainerregistry
   - backoff
   - Canonicalize
   - chinacloudapi

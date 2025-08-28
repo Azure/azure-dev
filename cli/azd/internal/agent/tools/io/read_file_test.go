@@ -13,18 +13,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestReadFileTool_Name(t *testing.T) {
-	tool := ReadFileTool{}
+	tool, _ := createTestReadTool(t)
 	assert.Equal(t, "read_file", tool.Name())
 }
 
 func TestReadFileTool_Description(t *testing.T) {
-	tool := ReadFileTool{}
+	tool, _ := createTestReadTool(t)
 	desc := tool.Description()
 	assert.Contains(t, desc, "Read file contents")
 	assert.Contains(t, desc, "startLine")
@@ -33,7 +34,7 @@ func TestReadFileTool_Description(t *testing.T) {
 }
 
 func TestReadFileTool_Annotations(t *testing.T) {
-	tool := ReadFileTool{}
+	tool, _ := createTestReadTool(t)
 	annotations := tool.Annotations()
 	assert.Equal(t, "Read File Contents", annotations.Title)
 	assert.NotNil(t, annotations.ReadOnlyHint)
@@ -47,7 +48,7 @@ func TestReadFileTool_Annotations(t *testing.T) {
 }
 
 func TestReadFileTool_Call_EmptyInput(t *testing.T) {
-	tool := ReadFileTool{}
+	tool, _ := createTestReadTool(t)
 	result, err := tool.Call(context.Background(), "")
 
 	assert.NoError(t, err)
@@ -62,7 +63,7 @@ func TestReadFileTool_Call_EmptyInput(t *testing.T) {
 }
 
 func TestReadFileTool_Call_InvalidJSON(t *testing.T) {
-	tool := ReadFileTool{}
+	tool, _ := createTestReadTool(t)
 	result, err := tool.Call(context.Background(), "invalid json")
 
 	assert.NoError(t, err)
@@ -76,7 +77,7 @@ func TestReadFileTool_Call_InvalidJSON(t *testing.T) {
 }
 
 func TestReadFileTool_Call_MalformedJSON(t *testing.T) {
-	tool := ReadFileTool{}
+	tool, _ := createTestReadTool(t)
 	result, err := tool.Call(context.Background(), `{"path": "test.txt", "unclosed": "value}`)
 
 	assert.NoError(t, err)
@@ -90,7 +91,7 @@ func TestReadFileTool_Call_MalformedJSON(t *testing.T) {
 }
 
 func TestReadFileTool_Call_MissingFilePath(t *testing.T) {
-	tool := ReadFileTool{}
+	tool, _ := createTestReadTool(t)
 
 	// Use struct with missing Path field
 	request := ReadFileRequest{
@@ -113,7 +114,7 @@ func TestReadFileTool_Call_MissingFilePath(t *testing.T) {
 }
 
 func TestReadFileTool_Call_EmptyFilePath(t *testing.T) {
-	tool := ReadFileTool{}
+	tool, _ := createTestReadTool(t)
 
 	// Use struct with empty Path field
 	request := ReadFileRequest{
@@ -135,7 +136,7 @@ func TestReadFileTool_Call_EmptyFilePath(t *testing.T) {
 }
 
 func TestReadFileTool_Call_FileNotFound(t *testing.T) {
-	tool := ReadFileTool{}
+	tool, _ := createTestReadTool(t)
 
 	request := ReadFileRequest{
 		Path: "/nonexistent/file.txt",
@@ -151,14 +152,13 @@ func TestReadFileTool_Call_FileNotFound(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, errorResp.Error)
-	assert.Contains(t, errorResp.Message, "File does not exist")
-	assert.Contains(t, errorResp.Message, "check file path spelling")
+	assert.Contains(t, errorResp.Message, "Access denied")
+	assert.Contains(t, errorResp.Message, "file read operation not permitted outside the allowed directory")
 }
 
 func TestReadFileTool_Call_DirectoryInsteadOfFile(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(tempDir, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -174,14 +174,12 @@ func TestReadFileTool_Call_DirectoryInsteadOfFile(t *testing.T) {
 }
 
 func TestReadFileTool_ReadEntireSmallFile(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
 	testContent := "Line 1\nLine 2\nLine 3\nLine 4\nLine 5"
 
 	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	require.NoError(t, err)
-
-	tool := ReadFileTool{}
 
 	request := ReadFileRequest{
 		Path: testFile,
@@ -209,14 +207,12 @@ func TestReadFileTool_ReadEntireSmallFile(t *testing.T) {
 }
 
 func TestReadFileTool_ReadSingleLine(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
 	testContent := "Line 1\nLine 2\nLine 3\nLine 4\nLine 5"
 
 	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	require.NoError(t, err)
-
-	tool := ReadFileTool{}
 
 	request := ReadFileRequest{
 		Path:      testFile,
@@ -246,14 +242,13 @@ func TestReadFileTool_ReadSingleLine(t *testing.T) {
 }
 
 func TestReadFileTool_ReadMultipleLines(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
 	testContent := "Line 1\nLine 2\nLine 3\nLine 4\nLine 5"
 
 	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	require.NoError(t, err)
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s", "startLine": 2, "endLine": 4}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -276,14 +271,13 @@ func TestReadFileTool_ReadMultipleLines(t *testing.T) {
 }
 
 func TestReadFileTool_ReadFromStartToLine(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
 	testContent := "Line 1\nLine 2\nLine 3\nLine 4\nLine 5"
 
 	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	require.NoError(t, err)
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s", "endLine": 3}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -303,14 +297,13 @@ func TestReadFileTool_ReadFromStartToLine(t *testing.T) {
 }
 
 func TestReadFileTool_ReadFromLineToEnd(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
 	testContent := "Line 1\nLine 2\nLine 3\nLine 4\nLine 5"
 
 	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	require.NoError(t, err)
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s", "startLine": 3}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -330,14 +323,13 @@ func TestReadFileTool_ReadFromLineToEnd(t *testing.T) {
 }
 
 func TestReadFileTool_StartLineOutOfRange(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
 	testContent := "Line 1\nLine 2\nLine 3"
 
 	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	require.NoError(t, err)
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s", "startLine": 10, "endLine": 15}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -352,14 +344,13 @@ func TestReadFileTool_StartLineOutOfRange(t *testing.T) {
 }
 
 func TestReadFileTool_InvalidLineRange_StartGreaterThanEnd(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
 	testContent := "Line 1\nLine 2\nLine 3\nLine 4\nLine 5"
 
 	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	require.NoError(t, err)
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s", "startLine": 4, "endLine": 2}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -374,14 +365,13 @@ func TestReadFileTool_InvalidLineRange_StartGreaterThanEnd(t *testing.T) {
 }
 
 func TestReadFileTool_EndLineExceedsTotalLines(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
 	testContent := "Line 1\nLine 2\nLine 3"
 
 	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	require.NoError(t, err)
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s", "startLine": 2, "endLine": 10}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -401,13 +391,12 @@ func TestReadFileTool_EndLineExceedsTotalLines(t *testing.T) {
 }
 
 func TestReadFileTool_EmptyFile(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "empty.txt")
 
 	err := os.WriteFile(testFile, []byte(""), 0600)
 	require.NoError(t, err)
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -425,14 +414,13 @@ func TestReadFileTool_EmptyFile(t *testing.T) {
 }
 
 func TestReadFileTool_SingleLineFile(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "single.txt")
 	testContent := "Only one line"
 
 	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	require.NoError(t, err)
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -450,14 +438,13 @@ func TestReadFileTool_SingleLineFile(t *testing.T) {
 }
 
 func TestReadFileTool_FileWithOnlyNewlines(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "newlines.txt")
 	testContent := "\n\n\n"
 
 	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	require.NoError(t, err)
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -475,7 +462,7 @@ func TestReadFileTool_FileWithOnlyNewlines(t *testing.T) {
 }
 
 func TestReadFileTool_LargeFileWithoutLineRange(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "large.txt")
 
 	// Create a file larger than 1MB
@@ -488,7 +475,6 @@ func TestReadFileTool_LargeFileWithoutLineRange(t *testing.T) {
 	require.NoError(t, err)
 	require.Greater(t, fileInfo.Size(), int64(1024*1024)) // Greater than 1MB
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -505,7 +491,7 @@ func TestReadFileTool_LargeFileWithoutLineRange(t *testing.T) {
 }
 
 func TestReadFileTool_LargeFileWithLineRange(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "large.txt")
 
 	// Create a file larger than 1MB
@@ -518,7 +504,6 @@ func TestReadFileTool_LargeFileWithLineRange(t *testing.T) {
 	require.NoError(t, err)
 	require.Greater(t, fileInfo.Size(), int64(1024*1024)) // Greater than 1MB
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s", "startLine": 100, "endLine": 102}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -538,7 +523,7 @@ func TestReadFileTool_LargeFileWithLineRange(t *testing.T) {
 }
 
 func TestReadFileTool_ContentTruncation(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "medium.txt")
 
 	// Create content that exceeds 100KB (truncation threshold)
@@ -552,7 +537,6 @@ func TestReadFileTool_ContentTruncation(t *testing.T) {
 	err := os.WriteFile(testFile, []byte(content), 0600)
 	require.NoError(t, err)
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -571,7 +555,7 @@ func TestReadFileTool_ContentTruncation(t *testing.T) {
 }
 
 func TestReadFileTool_SpecialCharacters(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "special.txt")
 	testContent := "Line with émojis 😀🎉\nLine with unicode: ñáéíóú\n" +
 		"Line with symbols: @#$%^&*()\nLine with tabs:\t\tand\tspaces"
@@ -579,7 +563,6 @@ func TestReadFileTool_SpecialCharacters(t *testing.T) {
 	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	require.NoError(t, err)
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -597,7 +580,7 @@ func TestReadFileTool_SpecialCharacters(t *testing.T) {
 }
 
 func TestReadFileTool_WindowsLineEndings(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "windows.txt")
 	// Use Windows line endings (CRLF)
 	testContent := "Line 1\r\nLine 2\r\nLine 3\r\n"
@@ -605,7 +588,6 @@ func TestReadFileTool_WindowsLineEndings(t *testing.T) {
 	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	require.NoError(t, err)
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s", "startLine": 2, "endLine": 2}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -622,7 +604,7 @@ func TestReadFileTool_WindowsLineEndings(t *testing.T) {
 }
 
 func TestReadFileTool_FileInfoMetadata(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "metadata.txt")
 	testContent := "Test content for metadata"
 
@@ -633,7 +615,6 @@ func TestReadFileTool_FileInfoMetadata(t *testing.T) {
 	expectedInfo, err := os.Stat(testFile)
 	require.NoError(t, err)
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s"}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -654,14 +635,13 @@ func TestReadFileTool_FileInfoMetadata(t *testing.T) {
 }
 
 func TestReadFileTool_JSONResponseStructure(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "json_test.txt")
 	testContent := "Line 1\nLine 2"
 
 	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	require.NoError(t, err)
 
-	tool := ReadFileTool{}
 	input := fmt.Sprintf(`{"path": "%s", "startLine": 1, "endLine": 1}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
 	result, err := tool.Call(context.Background(), input)
 
@@ -688,14 +668,12 @@ func TestReadFileTool_JSONResponseStructure(t *testing.T) {
 }
 
 func TestReadFileTool_ZeroBasedToOneBasedConversion(t *testing.T) {
-	tempDir := t.TempDir()
+	tool, tempDir := createTestReadTool(t)
 	testFile := filepath.Join(tempDir, "indexing.txt")
 	testContent := "Line 1\nLine 2\nLine 3\nLine 4\nLine 5"
 
 	err := os.WriteFile(testFile, []byte(testContent), 0600)
 	require.NoError(t, err)
-
-	tool := ReadFileTool{}
 
 	// Test reading line 1 (should be "Line 1", not "Line 2")
 	input := fmt.Sprintf(`{"path": "%s", "startLine": 1, "endLine": 1}`, strings.ReplaceAll(testFile, "\\", "\\\\"))
@@ -711,4 +689,221 @@ func TestReadFileTool_ZeroBasedToOneBasedConversion(t *testing.T) {
 	assert.Equal(t, "Line 1", response.Content)
 	assert.Equal(t, 1, response.LineRange.StartLine)
 	assert.Equal(t, 1, response.LineRange.EndLine)
+}
+
+func TestReadFileTool_SecurityBoundaryValidation(t *testing.T) {
+	tests := []struct {
+		name          string
+		setupPath     string
+		requestPath   string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:        "absolute path outside security root",
+			requestPath: "/etc/passwd",
+			expectError: true,
+		},
+		{
+			name:        "parent directory attempt with invalid file",
+			requestPath: "../../../etc/passwd",
+			expectError: true,
+		},
+		{
+			name:        "windows absolute path outside security root",
+			requestPath: "C:\\Windows\\System32\\drivers\\etc\\hosts",
+			expectError: true,
+		},
+		{
+			name:        "mixed separators escaping",
+			requestPath: "..\\..\\..\\Windows\\System32\\cmd.exe",
+			expectError: true,
+		},
+		{
+			name:        "valid file within security root",
+			setupPath:   "test.txt",
+			requestPath: "test.txt",
+			expectError: false,
+		},
+		{
+			name:        "valid file in subdirectory within security root",
+			setupPath:   "subdir/test.txt",
+			requestPath: "subdir/test.txt",
+			expectError: false,
+		},
+		{
+			name:        "current directory reference within security root",
+			setupPath:   "test.txt",
+			requestPath: "./test.txt",
+			expectError: false,
+		},
+		{
+			name:        "parent directory attempt with valid file",
+			setupPath:   "test.txt",
+			requestPath: "subdir/../test.txt",
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create test environment
+			tool, tempDir := createTestReadTool(t)
+
+			// Setup test file if needed
+			if tt.setupPath != "" {
+				testFilePath := filepath.Join(tempDir, tt.setupPath)
+
+				// Create subdirectory if needed
+				dir := filepath.Dir(testFilePath)
+				if dir != tempDir {
+					err := os.MkdirAll(dir, 0755)
+					require.NoError(t, err)
+				}
+
+				err := os.WriteFile(testFilePath, []byte("test content"), 0600)
+				require.NoError(t, err)
+			}
+
+			// Create request
+			request := ReadFileRequest{
+				Path: tt.requestPath,
+			}
+			input := mustMarshalJSON(request)
+
+			// Execute
+			result, err := tool.Call(context.Background(), input)
+			assert.NoError(t, err) // Call itself should not error
+
+			if tt.expectError {
+				// Should return error response
+				var errorResp common.ErrorResponse
+				err = json.Unmarshal([]byte(result), &errorResp)
+				require.NoError(t, err)
+				assert.True(t, errorResp.Error)
+				assert.Contains(t, errorResp.Message, tt.errorContains)
+			} else {
+				// Should return success response
+				var response ReadFileResponse
+				err = json.Unmarshal([]byte(result), &response)
+				require.NoError(t, err)
+				assert.True(t, response.Success)
+				assert.Equal(t, "test content", response.Content)
+			}
+		})
+	}
+}
+
+func TestReadFileTool_SecurityBoundaryEdgeCases(t *testing.T) {
+	t.Run("symbolic link outside security root", func(t *testing.T) {
+		tool, tempDir := createTestReadTool(t)
+
+		// Create a test file outside the security boundary
+		outsideDir, err := os.MkdirTemp("", "outside_security")
+		require.NoError(t, err)
+		defer os.RemoveAll(outsideDir)
+
+		outsideFile := filepath.Join(outsideDir, "secret.txt")
+		err = os.WriteFile(outsideFile, []byte("secret content"), 0600)
+		require.NoError(t, err)
+
+		// Try to create a symlink inside security root pointing outside
+		linkPath := filepath.Join(tempDir, "link_to_outside.txt")
+		err = os.Symlink(outsideFile, linkPath)
+		if err != nil {
+			// Skip test if symlinks not supported (Windows without admin)
+			t.Skip("Symlinks not supported in this environment")
+		}
+
+		// Attempt to read through the symlink
+		request := ReadFileRequest{
+			Path: "link_to_outside.txt",
+		}
+		input := mustMarshalJSON(request)
+
+		result, err := tool.Call(context.Background(), input)
+		assert.NoError(t, err)
+
+		// Should fail due to security validation
+		var errorResp common.ErrorResponse
+		err = json.Unmarshal([]byte(result), &errorResp)
+		require.NoError(t, err)
+		assert.True(t, errorResp.Error)
+		assert.Contains(t, errorResp.Message, "Access denied")
+	})
+
+	t.Run("empty path", func(t *testing.T) {
+		tool, _ := createTestReadTool(t)
+
+		request := ReadFileRequest{
+			Path: "",
+		}
+		input := mustMarshalJSON(request)
+
+		result, err := tool.Call(context.Background(), input)
+		assert.NoError(t, err)
+
+		var errorResp common.ErrorResponse
+		err = json.Unmarshal([]byte(result), &errorResp)
+		require.NoError(t, err)
+		assert.True(t, errorResp.Error)
+		assert.Contains(t, errorResp.Message, "filePath cannot be empty")
+	})
+
+	t.Run("null bytes in path", func(t *testing.T) {
+		tool, _ := createTestReadTool(t)
+
+		request := ReadFileRequest{
+			Path: "test\x00file.txt",
+		}
+		input := mustMarshalJSON(request)
+
+		result, err := tool.Call(context.Background(), input)
+		assert.NoError(t, err)
+
+		var errorResp common.ErrorResponse
+		err = json.Unmarshal([]byte(result), &errorResp)
+		require.NoError(t, err)
+		assert.True(t, errorResp.Error)
+	})
+}
+
+func TestReadFileTool_SecurityBoundaryWithDirectSecurityManager(t *testing.T) {
+	// Test direct security manager interaction
+	tempDir, err := os.MkdirTemp("", "security_test")
+	require.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	sm, err := security.NewManager(tempDir)
+	require.NoError(t, err)
+
+	tool := ReadFileTool{securityManager: sm}
+
+	// Test various malicious paths
+	maliciousPaths := []string{
+		"../../../../../etc/passwd",
+		"..\\..\\..\\..\\Windows\\System32\\config\\SAM",
+		"/root/.ssh/id_rsa",
+		"C:\\Users\\Administrator\\Desktop\\secrets.txt",
+		"~/../../etc/shadow",
+		"%SYSTEMROOT%\\System32\\config\\SOFTWARE",
+	}
+
+	for _, maliciousPath := range maliciousPaths {
+		t.Run("malicious_path_"+maliciousPath, func(t *testing.T) {
+			request := ReadFileRequest{
+				Path: maliciousPath,
+			}
+			input := mustMarshalJSON(request)
+
+			result, err := tool.Call(context.Background(), input)
+			assert.NoError(t, err)
+
+			var errorResp common.ErrorResponse
+			err = json.Unmarshal([]byte(result), &errorResp)
+			require.NoError(t, err)
+			assert.True(t, errorResp.Error)
+			assert.Contains(t, errorResp.Message, "Access denied")
+		})
+	}
 }

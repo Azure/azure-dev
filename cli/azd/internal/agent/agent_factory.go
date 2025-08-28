@@ -6,6 +6,7 @@ package agent
 import (
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/logging"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	localtools "github.com/azure/azure-dev/cli/azd/internal/agent/tools"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	mcptools "github.com/azure/azure-dev/cli/azd/internal/agent/tools/mcp"
@@ -15,9 +16,10 @@ import (
 
 // AgentFactory is responsible for creating agent instances
 type AgentFactory struct {
-	consentManager consent.ConsentManager
-	llmManager     *llm.Manager
-	console        input.Console
+	consentManager  consent.ConsentManager
+	llmManager      *llm.Manager
+	console         input.Console
+	securityManager *security.Manager
 }
 
 // NewAgentFactory creates a new instance of AgentFactory
@@ -25,11 +27,13 @@ func NewAgentFactory(
 	consentManager consent.ConsentManager,
 	console input.Console,
 	llmManager *llm.Manager,
+	securityManager *security.Manager,
 ) *AgentFactory {
 	return &AgentFactory{
-		consentManager: consentManager,
-		llmManager:     llmManager,
-		console:        console,
+		consentManager:  consentManager,
+		llmManager:      llmManager,
+		console:         console,
+		securityManager: securityManager,
 	}
 }
 
@@ -76,7 +80,7 @@ func (f *AgentFactory) Create(opts ...AgentCreateOption) (Agent, error) {
 
 	// Loads build-in tools & any referenced MCP servers
 	toolLoaders := []common.ToolLoader{
-		localtools.NewLocalToolsLoader(),
+		localtools.NewLocalToolsLoader(f.securityManager),
 		mcptools.NewMcpToolsLoader(samplingHandler),
 	}
 

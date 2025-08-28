@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -17,6 +18,7 @@ import (
 // DeleteFileTool implements the Tool interface for deleting files
 type DeleteFileTool struct {
 	common.BuiltInTool
+	securityManager *security.Manager
 }
 
 func (t DeleteFileTool) Name() string {
@@ -46,29 +48,38 @@ func (t DeleteFileTool) Call(ctx context.Context, input string) (string, error) 
 		return common.CreateErrorResponse(fmt.Errorf("file path is required"), "File path is required")
 	}
 
+	// Security validation
+	validatedPath, err := t.securityManager.ValidatePath(input)
+	if err != nil {
+		return common.CreateErrorResponse(
+			err,
+			"Access denied: file deletion operation not permitted outside the allowed directory",
+		)
+	}
+
 	// Check if file exists and get info
-	info, err := os.Stat(input)
+	info, err := os.Stat(validatedPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return common.CreateErrorResponse(err, fmt.Sprintf("File %s does not exist", input))
+			return common.CreateErrorResponse(err, fmt.Sprintf("File %s does not exist", validatedPath))
 		}
-		return common.CreateErrorResponse(err, fmt.Sprintf("Cannot access file %s: %s", input, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Cannot access file %s: %s", validatedPath, err.Error()))
 	}
 
 	// Make sure it's a file, not a directory
 	if info.IsDir() {
 		return common.CreateErrorResponse(
-			fmt.Errorf("%s is a directory, not a file", input),
-			fmt.Sprintf("%s is a directory, not a file. Use delete_directory to remove directories", input),
+			fmt.Errorf("%s is a directory, not a file", validatedPath),
+			fmt.Sprintf("%s is a directory, not a file. Use delete_directory to remove directories", validatedPath),
 		)
 	}
 
 	fileSize := info.Size()
 
 	// Delete the file
-	err = os.Remove(input)
+	err = os.Remove(validatedPath)
 	if err != nil {
-		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to delete file %s: %s", input, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to delete file %s: %s", validatedPath, err.Error()))
 	}
 
 	// Create success response
@@ -81,9 +92,9 @@ func (t DeleteFileTool) Call(ctx context.Context, input string) (string, error) 
 
 	response := DeleteFileResponse{
 		Success:     true,
-		FilePath:    input,
+		FilePath:    validatedPath,
 		SizeDeleted: fileSize,
-		Message:     fmt.Sprintf("Successfully deleted file %s (%d bytes)", input, fileSize),
+		Message:     fmt.Sprintf("Successfully deleted file %s (%d bytes)", validatedPath, fileSize),
 	}
 
 	// Convert to JSON

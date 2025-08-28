@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -19,6 +20,7 @@ import (
 // ReadFileTool implements the Tool interface for reading file contents
 type ReadFileTool struct {
 	common.BuiltInTool
+	securityManager *security.Manager
 }
 
 // ReadFileRequest represents the JSON payload for file read requests
@@ -127,22 +129,31 @@ func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
 		return common.CreateErrorResponse(fmt.Errorf("missing filePath"), "Missing required field: filePath cannot be empty")
 	}
 
+	// Security validation
+	validatedPath, err := t.securityManager.ValidatePath(req.Path)
+	if err != nil {
+		return common.CreateErrorResponse(
+			err,
+			"Access denied: file read operation not permitted outside the allowed directory",
+		)
+	}
+
 	// Get file info first to check size
-	fileInfo, err := os.Stat(req.Path)
+	fileInfo, err := os.Stat(validatedPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return common.CreateErrorResponse(
 				err,
-				fmt.Sprintf("File does not exist: %s. Please check file path spelling and location", req.Path),
+				fmt.Sprintf("File does not exist: %s. Please check file path spelling and location", validatedPath),
 			)
 		}
-		return common.CreateErrorResponse(err, fmt.Sprintf("Cannot access file %s: %s", req.Path, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Cannot access file %s: %s", validatedPath, err.Error()))
 	}
 
 	if fileInfo.IsDir() {
 		return common.CreateErrorResponse(
 			fmt.Errorf("path is a directory"),
-			fmt.Sprintf("%s is a directory, not a file. Use directory_list tool for directories", req.Path),
+			fmt.Sprintf("%s is a directory, not a file. Use directory_list tool for directories", validatedPath),
 		)
 	}
 
@@ -153,16 +164,16 @@ func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
 			fmt.Errorf("file too large"),
 			fmt.Sprintf(
 				"File %s is too large (%d bytes). Please specify startLine and endLine to read specific sections",
-				req.Path,
+				validatedPath,
 				fileInfo.Size(),
 			),
 		)
 	}
 
 	// Read file content
-	file, err := os.Open(req.Path)
+	file, err := os.Open(validatedPath)
 	if err != nil {
-		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to open file %s: %s", req.Path, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to open file %s: %s", validatedPath, err.Error()))
 	}
 	defer file.Close()
 
@@ -174,7 +185,7 @@ func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return common.CreateErrorResponse(err, fmt.Sprintf("Error reading file %s: %s", req.Path, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Error reading file %s: %s", validatedPath, err.Error()))
 	}
 
 	totalLines := len(lines)
@@ -243,7 +254,7 @@ func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
 	// Create success response
 	response := ReadFileResponse{
 		Success:     true,
-		Path:        req.Path,
+		Path:        validatedPath,
 		Content:     content,
 		IsTruncated: isTruncated,
 		IsPartial:   isPartial,

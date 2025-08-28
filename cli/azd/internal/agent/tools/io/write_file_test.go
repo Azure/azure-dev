@@ -6,8 +6,10 @@ package io
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,12 +17,12 @@ import (
 )
 
 func TestWriteFileTool_Name(t *testing.T) {
-	tool := WriteFileTool{}
+	tool, _ := createTestWriteTool(t)
 	assert.Equal(t, "write_file", tool.Name())
 }
 
 func TestWriteFileTool_Description(t *testing.T) {
-	tool := WriteFileTool{}
+	tool, _ := createTestWriteTool(t)
 	desc := tool.Description()
 	assert.Contains(t, desc, "Comprehensive file writing tool")
 	assert.Contains(t, desc, "partial")
@@ -29,7 +31,7 @@ func TestWriteFileTool_Description(t *testing.T) {
 }
 
 func TestWriteFileTool_Call_EmptyInput(t *testing.T) {
-	tool := WriteFileTool{}
+	tool, _ := createTestWriteTool(t)
 	result, err := tool.Call(context.Background(), "")
 
 	assert.NoError(t, err)
@@ -38,7 +40,7 @@ func TestWriteFileTool_Call_EmptyInput(t *testing.T) {
 }
 
 func TestWriteFileTool_Call_InvalidJSON(t *testing.T) {
-	tool := WriteFileTool{}
+	tool, _ := createTestWriteTool(t)
 	result, err := tool.Call(context.Background(), "invalid json")
 
 	assert.NoError(t, err)
@@ -47,7 +49,7 @@ func TestWriteFileTool_Call_InvalidJSON(t *testing.T) {
 }
 
 func TestWriteFileTool_Call_MalformedJSON(t *testing.T) {
-	tool := WriteFileTool{}
+	tool, _ := createTestWriteTool(t)
 	// Test with JSON that has parse errors
 	result, err := tool.Call(context.Background(), `{"path": "test.txt", "content": "unclosed string}`)
 
@@ -58,7 +60,7 @@ func TestWriteFileTool_Call_MalformedJSON(t *testing.T) {
 }
 
 func TestWriteFileTool_Call_MissingFilename(t *testing.T) {
-	tool := WriteFileTool{}
+	tool, _ := createTestWriteTool(t)
 
 	// Use struct with missing Path field
 	request := WriteFileRequest{
@@ -76,10 +78,8 @@ func TestWriteFileTool_Call_MissingFilename(t *testing.T) {
 
 func TestWriteFileTool_FullFileWrite(t *testing.T) {
 	// Create temp directory
-	tempDir := t.TempDir()
+	tool, tempDir := createTestWriteTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
-
-	tool := WriteFileTool{}
 
 	request := WriteFileRequest{
 		Path:    testFile,
@@ -111,14 +111,12 @@ func TestWriteFileTool_FullFileWrite(t *testing.T) {
 
 func TestWriteFileTool_AppendMode(t *testing.T) {
 	// Create temp directory and initial file
-	tempDir := t.TempDir()
+	tool, tempDir := createTestWriteTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
 
 	// Create initial file
 	err := os.WriteFile(testFile, []byte("Initial content"), 0600)
 	require.NoError(t, err)
-
-	tool := WriteFileTool{}
 
 	request := WriteFileRequest{
 		Path:    testFile,
@@ -147,10 +145,8 @@ func TestWriteFileTool_AppendMode(t *testing.T) {
 
 func TestWriteFileTool_CreateMode_Success(t *testing.T) {
 	// Create temp directory
-	tempDir := t.TempDir()
+	tool, tempDir := createTestWriteTool(t)
 	testFile := filepath.Join(tempDir, "new-file.txt")
-
-	tool := WriteFileTool{}
 
 	request := WriteFileRequest{
 		Path:    testFile,
@@ -178,13 +174,11 @@ func TestWriteFileTool_CreateMode_Success(t *testing.T) {
 
 func TestWriteFileTool_CreateMode_FileExists(t *testing.T) {
 	// Create temp directory and existing file
-	tempDir := t.TempDir()
+	tool, tempDir := createTestWriteTool(t)
 	testFile := filepath.Join(tempDir, "existing.txt")
 
 	err := os.WriteFile(testFile, []byte("Existing content"), 0600)
 	require.NoError(t, err)
-
-	tool := WriteFileTool{}
 
 	request := WriteFileRequest{
 		Path:    testFile,
@@ -208,15 +202,13 @@ func TestWriteFileTool_CreateMode_FileExists(t *testing.T) {
 
 func TestWriteFileTool_PartialWrite_Basic(t *testing.T) {
 	// Create temp directory and initial file
-	tempDir := t.TempDir()
+	tool, tempDir := createTestWriteTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
 
 	// Create initial file with multiple lines
 	initialContent := "Line 1\nLine 2\nLine 3\nLine 4\nLine 5"
 	err := os.WriteFile(testFile, []byte(initialContent), 0600)
 	require.NoError(t, err)
-
-	tool := WriteFileTool{}
 
 	request := WriteFileRequest{
 		Path:      testFile,
@@ -251,15 +243,13 @@ func TestWriteFileTool_PartialWrite_Basic(t *testing.T) {
 
 func TestWriteFileTool_PartialWrite_SingleLine(t *testing.T) {
 	// Create temp directory and initial file
-	tempDir := t.TempDir()
+	tool, tempDir := createTestWriteTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
 
 	// Create initial file
 	initialContent := "Line 1\nLine 2\nLine 3"
 	err := os.WriteFile(testFile, []byte(initialContent), 0600)
 	require.NoError(t, err)
-
-	tool := WriteFileTool{}
 
 	request := WriteFileRequest{
 		Path:      testFile,
@@ -292,15 +282,13 @@ func TestWriteFileTool_PartialWrite_SingleLine(t *testing.T) {
 
 func TestWriteFileTool_PartialWrite_SingleLineToMultipleLines(t *testing.T) {
 	// Create temp directory and initial file
-	tempDir := t.TempDir()
+	tool, tempDir := createTestWriteTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
 
 	// Create initial file
 	initialContent := "Line 1\nLine 2\nLine 3\nLine 4"
 	err := os.WriteFile(testFile, []byte(initialContent), 0600)
 	require.NoError(t, err)
-
-	tool := WriteFileTool{}
 
 	request := WriteFileRequest{
 		Path:      testFile,
@@ -335,10 +323,8 @@ func TestWriteFileTool_PartialWrite_SingleLineToMultipleLines(t *testing.T) {
 
 func TestWriteFileTool_PartialWrite_FileNotExists(t *testing.T) {
 	// Create temp directory
-	tempDir := t.TempDir()
+	tool, tempDir := createTestWriteTool(t)
 	testFile := filepath.Join(tempDir, "nonexistent.txt")
-
-	tool := WriteFileTool{}
 
 	request := WriteFileRequest{
 		Path:      testFile,
@@ -360,13 +346,11 @@ func TestWriteFileTool_PartialWrite_FileNotExists(t *testing.T) {
 
 func TestWriteFileTool_PartialWrite_InvalidLineNumbers(t *testing.T) {
 	// Create temp directory and initial file
-	tempDir := t.TempDir()
+	tool, tempDir := createTestWriteTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
 
 	err := os.WriteFile(testFile, []byte("Line 1\nLine 2"), 0600)
 	require.NoError(t, err)
-
-	tool := WriteFileTool{}
 
 	// Test startLine provided but not endLine
 	request1 := WriteFileRequest{
@@ -423,15 +407,13 @@ func TestWriteFileTool_PartialWrite_InvalidLineNumbers(t *testing.T) {
 
 func TestWriteFileTool_PartialWrite_BeyondFileLength(t *testing.T) {
 	// Create temp directory and initial file
-	tempDir := t.TempDir()
+	tool, tempDir := createTestWriteTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
 
 	// Create initial file with 3 lines
 	initialContent := "Line 1\nLine 2\nLine 3"
 	err := os.WriteFile(testFile, []byte(initialContent), 0600)
 	require.NoError(t, err)
-
-	tool := WriteFileTool{}
 
 	request := WriteFileRequest{
 		Path:      testFile,
@@ -461,15 +443,13 @@ func TestWriteFileTool_PartialWrite_BeyondFileLength(t *testing.T) {
 
 func TestWriteFileTool_PartialWrite_PreserveLineEndings(t *testing.T) {
 	// Create temp directory and initial file with Windows line endings
-	tempDir := t.TempDir()
+	tool, tempDir := createTestWriteTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
 
 	// Create initial file with CRLF line endings
 	initialContent := "Line 1\r\nLine 2\r\nLine 3\r\n"
 	err := os.WriteFile(testFile, []byte(initialContent), 0600)
 	require.NoError(t, err)
-
-	tool := WriteFileTool{}
 
 	request := WriteFileRequest{
 		Path:      testFile,
@@ -497,7 +477,7 @@ func TestWriteFileTool_PartialWrite_PreserveLineEndings(t *testing.T) {
 }
 
 func TestWriteFileTool_ProcessContent_EscapeSequences(t *testing.T) {
-	tool := WriteFileTool{}
+	tool, _ := createTestWriteTool(t)
 
 	// Test newline escape
 	result := tool.processContent("Line 1\\nLine 2")
@@ -513,8 +493,7 @@ func TestWriteFileTool_ProcessContent_EscapeSequences(t *testing.T) {
 }
 
 func TestWriteFileTool_EnsureDirectory(t *testing.T) {
-	tool := WriteFileTool{}
-	tempDir := t.TempDir()
+	tool, tempDir := createTestWriteTool(t)
 
 	// Test creating nested directory
 	testFile := filepath.Join(tempDir, "subdir", "nested", "test.txt")
@@ -530,10 +509,8 @@ func TestWriteFileTool_EnsureDirectory(t *testing.T) {
 
 func TestWriteFileTool_Integration_ComplexScenario(t *testing.T) {
 	// Create temp directory
-	tempDir := t.TempDir()
+	tool, tempDir := createTestWriteTool(t)
 	testFile := filepath.Join(tempDir, "complex.txt")
-
-	tool := WriteFileTool{}
 
 	// Step 1: Create initial file
 	request1 := WriteFileRequest{
@@ -584,13 +561,11 @@ func TestWriteFileTool_Integration_ComplexScenario(t *testing.T) {
 
 func TestWriteFileTool_PartialWrite_InvalidLineRanges(t *testing.T) {
 	// Create temp directory and initial file
-	tempDir := t.TempDir()
+	tool, tempDir := createTestWriteTool(t)
 	testFile := filepath.Join(tempDir, "test.txt")
 
 	err := os.WriteFile(testFile, []byte("Line 1\nLine 2"), 0600)
 	require.NoError(t, err)
-
-	tool := WriteFileTool{}
 
 	// Test negative startLine (will be handled by partial write validation)
 	request1 := WriteFileRequest{
@@ -617,4 +592,84 @@ func TestWriteFileTool_PartialWrite_InvalidLineRanges(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, result, "error")
 	assert.Contains(t, result, "endLine must be")
+}
+
+func TestWriteFileTool_SecurityBoundaryValidation(t *testing.T) {
+	tool, tempDir := createTestWriteTool(t)
+
+	tests := []struct {
+		name          string
+		path          string
+		expectedError string
+		shouldFail    bool
+	}{
+		{
+			name:          "write file outside security root - absolute path",
+			path:          "C:\\Windows\\System32\\config\\SAM",
+			expectedError: "Access denied: file write operation not permitted outside the allowed directory",
+			shouldFail:    true,
+		},
+		{
+			name:          "write file escaping with relative path",
+			path:          "../../../etc/passwd",
+			expectedError: "Access denied: file write operation not permitted outside the allowed directory",
+			shouldFail:    true,
+		},
+		{
+			name:          "write windows system file",
+			path:          "C:\\Windows\\System32\\drivers\\etc\\hosts",
+			expectedError: "Access denied: file write operation not permitted outside the allowed directory",
+			shouldFail:    true,
+		},
+		{
+			name:          "write SSH private key",
+			path:          "/home/user/.ssh/id_rsa",
+			expectedError: "Access denied: file write operation not permitted outside the allowed directory",
+			shouldFail:    true,
+		},
+		{
+			name:          "write to startup folder",
+			path:          "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\malware.exe",
+			expectedError: "Access denied: file write operation not permitted outside the allowed directory",
+			shouldFail:    true,
+		},
+		{
+			name:          "write shell configuration",
+			path:          "/home/user/.bashrc",
+			expectedError: "Access denied: file write operation not permitted outside the allowed directory",
+			shouldFail:    true,
+		},
+		{
+			name:       "valid write within security root",
+			path:       filepath.Join(tempDir, "test_file.txt"),
+			shouldFail: false,
+		},
+		{
+			name: "valid write subdirectory file within security root",
+			path: filepath.Join(tempDir, "subdir", "test_file.txt"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Use proper JSON escaping for Windows paths
+			input := fmt.Sprintf(`{"path": "%s", "content": "test content"}`, strings.ReplaceAll(tc.path, "\\", "\\\\"))
+			result, err := tool.Call(context.Background(), input)
+
+			// Tool calls should never return Go errors - they return JSON responses
+			assert.NoError(t, err)
+			assert.NotEmpty(t, result)
+
+			if tc.shouldFail {
+				// For security failures, expect JSON error response
+				assert.Contains(t, result, `"error": true`)
+				assert.Contains(t, result, tc.expectedError)
+			} else {
+				// For valid paths, expect either success or file/directory not found
+				// but should NOT contain security error message
+				expected := "Access denied: file write operation not permitted outside the allowed directory"
+				assert.NotContains(t, result, expected)
+			}
+		})
+	}
 }

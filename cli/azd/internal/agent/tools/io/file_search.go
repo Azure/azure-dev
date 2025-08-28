@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -17,6 +18,7 @@ import (
 // FileSearchTool implements a tool for searching files using glob patterns
 type FileSearchTool struct {
 	common.BuiltInTool
+	securityManager *security.Manager
 }
 
 // FileSearchRequest represents the JSON payload for file search requests
@@ -112,24 +114,40 @@ func (t FileSearchTool) Call(ctx context.Context, input string) (string, error) 
 		return common.CreateErrorResponse(fmt.Errorf("pattern is required"), "Pattern is required in the JSON input")
 	}
 
+	// Security validation - ensure search is contained within security root
+	// Get the security root for search restriction
+	securityRoot := t.securityManager.GetSecurityRoot()
+	if securityRoot == "" {
+		return common.CreateErrorResponse(fmt.Errorf("security root not configured"), "Security root not configured")
+	}
+
 	// Set default max results
 	maxResults := req.MaxResults
 	if maxResults <= 0 {
 		maxResults = 100
 	}
 
-	// Use doublestar to find matching files
+	// Use doublestar to find matching files (searches from current directory)
 	matches, err := doublestar.FilepathGlob(req.Pattern)
 	if err != nil {
 		return common.CreateErrorResponse(err, fmt.Sprintf("Invalid glob pattern '%s': %s", req.Pattern, err.Error()))
 	}
 
+	// Security filter: only include files within the security root
+	var secureMatches []string
+	for _, match := range matches {
+		if validatedPath, err := t.securityManager.ValidatePath(match); err == nil {
+			secureMatches = append(secureMatches, validatedPath)
+		}
+		// If validation fails, the file is outside the security boundary and is excluded
+	}
+
 	// Sort results for consistent output
-	sort.Strings(matches)
+	sort.Strings(secureMatches)
 
 	// Limit results if needed
-	if len(matches) > maxResults {
-		matches = matches[:maxResults]
+	if len(secureMatches) > maxResults {
+		secureMatches = secureMatches[:maxResults]
 	}
 
 	// Create response structure
@@ -143,8 +161,8 @@ func (t FileSearchTool) Call(ctx context.Context, input string) (string, error) 
 		Message    string   `json:"message"`
 	}
 
-	totalFound := len(matches)
-	returned := len(matches)
+	totalFound := len(secureMatches)
+	returned := len(secureMatches)
 
 	var message string
 	if totalFound == 0 {
@@ -161,7 +179,7 @@ func (t FileSearchTool) Call(ctx context.Context, input string) (string, error) 
 		TotalFound: totalFound,
 		Returned:   returned,
 		MaxResults: maxResults,
-		Files:      matches,
+		Files:      secureMatches,
 		Message:    message,
 	}
 

@@ -18,8 +18,11 @@ import (
 // These simulate actual scenarios where LLMs read multiple sections,
 // make edits via WriteFileTool, then read again to verify changes
 func TestReadFileTool_LLMWorkflow_CodeAnalysisAndEdit(t *testing.T) {
-	// Simulate LLM analyzing a simple function and making changes
-	tempDir := t.TempDir()
+	// Create test tools with security manager
+	tools, tempDir := createTestTools(t)
+	readTool := tools["read"].(ReadFileTool)
+	writeTool := tools["write"].(WriteFileTool)
+
 	testFile := filepath.Join(tempDir, "calculator.go")
 
 	// Simple initial Go code
@@ -38,9 +41,6 @@ func main() {
 
 	err := os.WriteFile(testFile, []byte(initialContent), 0600)
 	require.NoError(t, err)
-
-	readTool := ReadFileTool{}
-	writeTool := WriteFileTool{}
 
 	// Step 1: LLM reads the entire file to understand structure
 	readRequest1 := ReadFileRequest{
@@ -121,8 +121,11 @@ func main() {
 }
 
 func TestReadFileTool_LLMWorkflow_MultiplePartialReadsAndWrites(t *testing.T) {
-	// Simulate LLM working on a complex configuration file
-	tempDir := t.TempDir()
+	// Create test tools with security manager
+	tools, tempDir := createTestTools(t)
+	readTool := tools["read"].(ReadFileTool)
+	writeTool := tools["write"].(WriteFileTool)
+
 	configFile := filepath.Join(tempDir, "config.yaml")
 
 	initialConfig := `# Application Configuration
@@ -150,9 +153,6 @@ logging:
 
 	err := os.WriteFile(configFile, []byte(initialConfig), 0600)
 	require.NoError(t, err)
-
-	readTool := ReadFileTool{}
-	writeTool := WriteFileTool{}
 
 	// Step 1: LLM scans file structure (first 10 lines)
 	readRequest1 := ReadFileRequest{
@@ -270,8 +270,11 @@ logging:
 }
 
 func TestReadFileTool_LLMWorkflow_RefactoringWithContext(t *testing.T) {
-	// Simulate LLM refactoring a class by reading context around methods
-	tempDir := t.TempDir()
+	// Create test tools with security manager
+	tools, tempDir := createTestTools(t)
+	readTool := tools["read"].(ReadFileTool)
+	writeTool := tools["write"].(WriteFileTool)
+
 	classFile := filepath.Join(tempDir, "user_service.py")
 
 	initialPython := `"""User service for managing user operations."""
@@ -321,9 +324,6 @@ class UserService:
 
 	err := os.WriteFile(classFile, []byte(initialPython), 0600)
 	require.NoError(t, err)
-
-	readTool := ReadFileTool{}
-	writeTool := WriteFileTool{}
 
 	// Step 1: LLM reads class definition and constructor
 	readRequest1 := ReadFileRequest{
@@ -436,8 +436,11 @@ class UserService:
 }
 
 func TestReadFileTool_LLMWorkflow_HandleLineShifts(t *testing.T) {
-	// Test that reads work correctly after writes that change line counts
-	tempDir := t.TempDir()
+	// Create test tools with security manager
+	tools, tempDir := createTestTools(t)
+	readTool := tools["read"].(ReadFileTool)
+	writeTool := tools["write"].(WriteFileTool)
+
 	testFile := filepath.Join(tempDir, "shifts.txt")
 
 	initialContent := `Line 1
@@ -453,9 +456,6 @@ Line 10`
 
 	err := os.WriteFile(testFile, []byte(initialContent), 0600)
 	require.NoError(t, err)
-
-	readTool := ReadFileTool{}
-	writeTool := WriteFileTool{}
 
 	// Step 1: Read lines 3-5
 	readRequest1 := ReadFileRequest{

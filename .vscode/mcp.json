@@ -1,0 +1,18 @@
+{
+    "servers": {
+        "my-mcp-server-azd-provision-sampling-tool": {
+            "type": "stdio",
+            "command": "C:\\Users\\hemarina\\Downloads\\vhvb1989\\azure-dev\\cli\\azd\\tools\\mcp\\mcp.exe",
+            "args": [],
+        },
+        "azd": {
+            "type": "stdio",
+            "command": "azd",
+            "args": [
+                "mcp",
+                "start"
+            ]
+        }
+    },
+    "inputs": []
+}

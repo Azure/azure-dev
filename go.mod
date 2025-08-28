@@ -51,7 +51,6 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/i2y/langchaingo-mcp-adapter v0.0.0-20250623114610-a01671e1c8df
-	github.com/i2y/langchaingo-mcp-adapter v0.0.0-20250623114610-a01671e1c8df
 	github.com/joho/godotenv v1.5.1
 	github.com/magefile/mage v1.15.0
 	github.com/mark3labs/mcp-go v0.36.0

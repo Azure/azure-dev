@@ -70,10 +70,18 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		}
 	}
 
+	if err := projectConfig.Infra.Validate(); err != nil {
+		return nil, err
+	}
+
 	var err error
 	projectConfig.Infra.Provider, err = provisioning.ParseProvider(projectConfig.Infra.Provider)
 	if err != nil {
 		return nil, fmt.Errorf("parsing project %s: %w", projectConfig.Name, err)
+	}
+
+	for _, layer := range projectConfig.Infra.Layers {
+		layer.Provider = projectConfig.Infra.Provider
 	}
 
 	if projectConfig.Infra.Path == "" {

@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -774,6 +775,19 @@ func setupMocksForDocker(mockContext *mocks.MockContext) {
 		return strings.Contains(command, "docker push")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	// Docker manifest inspect (for checking if image exists)
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker manifest inspect")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if len(args.Args) < 4 || args.Args[3] == "" {
+			return exec.NewRunResult(1, "", ""), errors.New("no image specified")
+		}
+
+		// For the test, we'll assume the image doesn't exist (return exit code 1)
+		// This simulates the normal case where the image needs to be built and pushed
+		return exec.NewRunResult(1, "", "manifest unknown"), nil
 	})
 }
 

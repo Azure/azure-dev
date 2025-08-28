@@ -12,6 +12,8 @@ Flags
     -m, --applicationServiceManagementReference string 	: Service Management Reference. References application or service contact information from a Service or Asset Management database. This value must be a Universally Unique Identifier (UUID). You can set this value globally by running azd config set pipeline.config.applicationServiceManagementReference <UUID>.
         --auth-type string                             	: The authentication type used between the pipeline provider and Azure for deployment (Only valid for GitHub provider). Valid values: federated, client-credentials.
     -e, --environment string                           	: The name of the environment to use.
+        --force-regenerate                             	: Force regeneration of the pipeline workflow file (overwrites existing) bypassing upgrade heuristics.
+        --github-use-environments                      	: Enable generation of GitHub Actions workflow that uses GitHub Environments (matrix or single) and environment-scoped variables/secrets. Disabled by default to preserve legacy workflow output.
         --principal-id string                          	: The client id of the service principal to use to grant access to Azure resources as part of the pipeline.
         --principal-name string                        	: The name of the service principal to use to grant access to Azure resources as part of the pipeline.
         --principal-role stringArray                   	: The roles to assign to the service principal. By default the service principal will be granted the Contributor and User Access Administrator roles.

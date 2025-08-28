@@ -4,6 +4,7 @@
 package pipeline
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -70,6 +71,8 @@ type PipelineManagerArgs struct {
 	PipelineProvider             string
 	PipelineAuthTypeName         string
 	ServiceManagementReference   string
+	UseGitHubEnvironments        bool // When true and provider is GitHub generate environment/matrix block
+	ForceRegenerate              bool // When true always regenerate workflow file
 }
 
 // CredentialOptions represents the options for configuring credentials for a pipeline.
@@ -149,6 +152,93 @@ func NewPipelineManager(
 	}
 
 	return pipelineProvider, nil
+}
+
+// EnableGitHubEnvironments toggles generation of GitHub Environment blocks in workflow templates.
+func (pm *PipelineManager) EnableGitHubEnvironments(enabled bool) {
+	if pm.args != nil {
+		pm.args.UseGitHubEnvironments = enabled
+	}
+}
+
+// ForceRegenerateWorkflow sets the flag to force regeneration of pipeline workflow files.
+func (pm *PipelineManager) ForceRegenerateWorkflow(force bool) {
+	if pm.args != nil {
+		pm.args.ForceRegenerate = force
+	}
+}
+
+// pruneLegacyFederatedCredentials removes branch & pull_request federated credentials when environment-only mode is active
+func pruneLegacyFederatedCredentials(
+	ctx context.Context,
+	console input.Console,
+	entraSvc entraid.EntraIdService,
+	subscriptionId string,
+	clientId string,
+) {
+	existing, err := entraSvc.ListFederatedCredentials(ctx, subscriptionId, clientId)
+	if err != nil {
+		return
+	} // best-effort
+	for _, fic := range existing {
+		if fic.Subject == "" || fic.Issuer != federatedIdentityIssuer {
+			continue
+		}
+		if strings.Contains(fic.Subject, ":environment:") {
+			continue
+		}
+		if strings.Contains(fic.Subject, ":pull_request") || strings.Contains(fic.Subject, ":ref:refs/heads/") {
+			if fic.Id != nil {
+				_ = entraSvc.DeleteFederatedCredential(ctx, subscriptionId, clientId, *fic.Id)
+				console.MessageUxItem(
+					ctx,
+					&ux.DisplayedResource{
+						Type: "Pruned federated identity credential",
+						Name: fmt.Sprintf("subject %s", fic.Subject),
+					},
+				)
+			}
+		}
+	}
+}
+
+// pruneLegacyMsiFederatedCredentials similar pruning for MSI identities via ARM
+func pruneLegacyMsiFederatedCredentials(
+	ctx context.Context,
+	console input.Console,
+	msiSvc armmsi.ArmMsiService,
+	subscriptionId string,
+	msiResourceId string,
+) {
+	existing, err := msiSvc.ListFederatedCredentials(ctx, subscriptionId, msiResourceId)
+	if err != nil {
+		return
+	}
+	for _, fic := range existing {
+		if fic.Properties == nil || fic.Properties.Subject == nil || fic.Properties.Issuer == nil {
+			continue
+		}
+		subj := *fic.Properties.Subject
+		issuer := *fic.Properties.Issuer
+		if issuer != federatedIdentityIssuer {
+			continue
+		}
+		if strings.Contains(subj, ":environment:") {
+			continue
+		}
+		if strings.Contains(subj, ":pull_request") || strings.Contains(subj, ":ref:refs/heads/") {
+			if fic.Name != nil {
+				_ = msiSvc.DeleteFederatedCredential(ctx, subscriptionId, msiResourceId, *fic.Name)
+				console.MessageUxItem(
+					ctx,
+					&ux.DisplayedResource{
+						Type: "Pruned federated identity credential",
+						Name: fmt.Sprintf("subject %s", subj),
+					},
+				)
+			}
+		}
+	}
 }
 
 func (pm *PipelineManager) CiProviderName() string {
@@ -268,7 +358,7 @@ func (pm *PipelineManager) Configure(
 	smr := resolveSmr(pm.args.ServiceManagementReference, pm.env.Config, userConfig)
 	if smr != nil {
 		if _, err := uuid.Parse(*smr); err != nil {
-			return result, fmt.Errorf("Invalid service management reference %s: %w", *smr, err)
+			return result, fmt.Errorf("invalid service management reference %s: %w", *smr, err)
 		}
 	}
 
@@ -291,7 +381,7 @@ func (pm *PipelineManager) Configure(
 	if pm.args.PipelineServicePrincipalName != "" && pm.args.PipelineServicePrincipalId != "" {
 		//nolint:lll
 		return result, fmt.Errorf(
-			"you have specified both --principal-id and --principal-name, but only one of these parameters should be used at a time.",
+			"you have specified both --principal-id and --principal-name, but only one of these parameters should be used at a time",
 		)
 	}
 
@@ -649,6 +739,15 @@ func (pm *PipelineManager) Configure(
 						Name: fmt.Sprintf("subject %s", credential.Subject),
 					},
 				)
+			}
+
+			// Prune legacy branch / pull_request credentials if env-only mode requested.
+			if os.Getenv("AZD_USE_GITHUB_ENVIRONMENTS") == "1" {
+				if !usingMsi && authConfig != nil && authConfig.ClientId != "" {
+					pruneLegacyFederatedCredentials(ctx, pm.console, pm.entraIdService, subscriptionId, authConfig.ClientId)
+				} else if usingMsi && authConfig != nil && authConfig.msi != nil {
+					pruneLegacyMsiFederatedCredentials(ctx, pm.console, pm.msiService, subscriptionId, *authConfig.msi.ID)
+				}
 			}
 		}
 
@@ -1024,7 +1123,7 @@ func (pm *PipelineManager) resolveProviderAndDetermine(
 	log.Printf("Loading project configuration from: %s", projectPath)
 	prjConfig, err := project.Load(ctx, projectPath)
 	if err != nil {
-		return "", fmt.Errorf("Loading project configuration: %w", err)
+		return "", fmt.Errorf("loading project configuration: %w", err)
 	}
 	log.Printf("Loaded project configuration: %+v", prjConfig)
 
@@ -1086,7 +1185,7 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 
 	prjConfig, err := project.Load(ctx, projectPath)
 	if err != nil {
-		return fmt.Errorf("Loading project configuration: %w", err)
+		return fmt.Errorf("loading project configuration: %w", err)
 	}
 	pm.prjConfig = prjConfig
 
@@ -1140,6 +1239,21 @@ func (pm *PipelineManager) savePipelineProviderToEnv(
 func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, props projectProperties) error {
 	log.Printf("Checking for provider files for: %s", props.CiProvider)
 
+	if pm.args != nil && pm.args.ForceRegenerate {
+		filePath := filepath.Join(props.RepoRoot, pipelineProviderFiles[props.CiProvider].Files[0])
+		log.Printf("--force-regenerate specified: regenerating %s", filePath)
+		if dir := filepath.Dir(filePath); !osutil.DirExists(dir) {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return fmt.Errorf("creating directory for regeneration: %w", err)
+			}
+		}
+		if err := generatePipelineDefinition(filePath, props); err != nil {
+			return err
+		}
+		pm.console.Message(ctx, "Pipeline workflow forcibly regenerated (--force-regenerate).")
+		return nil
+	}
+
 	if !hasPipelineFile(props.CiProvider, props.RepoRoot) {
 		log.Printf("%s YAML not found, prompting for creation", props.CiProvider)
 		if err := pm.promptForCiFiles(ctx, props); err != nil {
@@ -1147,6 +1261,36 @@ func (pm *PipelineManager) checkAndPromptForProviderFiles(ctx context.Context, p
 			return err
 		}
 		log.Println("Prompt for CI files completed successfully.")
+	} else if props.CiProvider == ciProviderGitHubActions {
+		// Migration path: regenerate if --github-use-environments preference differs from existing workflow structure.
+		filePath := filepath.Join(props.RepoRoot, pipelineProviderFiles[props.CiProvider].Files[0])
+		content, err := os.ReadFile(filePath)
+		if err == nil {
+			// Only treat presence of an actual matrix stanza as environment support.
+			hasMatrix := bytes.Contains(content, []byte("matrix:")) &&
+				bytes.Contains(content, []byte("environment: ${{ matrix.environment"))
+			legacySingleEnv := bytes.Contains(content, []byte("fallback to using AZURE_ENV_NAME"))
+			if props.UseGitHubEnvironments && !hasMatrix {
+				log.Printf("Regenerating GitHub workflow to add environment matrix (opt-in enabled, no matrix present).")
+				if genErr := generatePipelineDefinition(filePath, props); genErr != nil {
+					return genErr
+				}
+			} else if !props.UseGitHubEnvironments && hasMatrix {
+				log.Printf("Regenerating GitHub workflow to remove environment matrix (opt-in disabled).")
+				noEnvProps := props
+				noEnvProps.Environments = nil
+				noEnvProps.UseGitHubEnvironments = false
+				if genErr := generatePipelineDefinition(filePath, noEnvProps); genErr != nil {
+					return genErr
+				}
+			} else if props.UseGitHubEnvironments && legacySingleEnv && !hasMatrix {
+				// Legacy fallback comment present without matrix; upgrade.
+				log.Printf("Upgrading legacy single-environment workflow to matrix form.")
+				if genErr := generatePipelineDefinition(filePath, props); genErr != nil {
+					return genErr
+				}
+			}
+		}
 	}
 
 	var dirPaths []string
@@ -1244,20 +1388,42 @@ func (pm *PipelineManager) promptForCiFiles(ctx context.Context, props projectPr
 				created = true
 			}
 
-			if !osutil.FileExists(filepath.Join(dirPath, pipelineProviderFiles[props.CiProvider].DefaultFile)) {
-				if err := generatePipelineDefinition(filepath.Join(dirPath,
-					pipelineProviderFiles[props.CiProvider].DefaultFile), props); err != nil {
+			wfPath := filepath.Join(dirPath, pipelineProviderFiles[props.CiProvider].DefaultFile)
+			if !osutil.FileExists(wfPath) {
+				if err := generatePipelineDefinition(wfPath, props); err != nil {
 					return err
 				}
 				pm.console.Message(ctx,
 					fmt.Sprintf(
 						"The %s file has been created at %s. You can use it as-is or modify it to suit your needs.",
 						output.WithHighLightFormat(filepath.Base(defaultFilePath)),
-						output.WithHighLightFormat(filepath.Join(dirPath,
-							pipelineProviderFiles[props.CiProvider].DefaultFile))),
+						output.WithHighLightFormat(wfPath)),
 				)
 				pm.console.Message(ctx, "")
 				created = true
+			} else {
+				// Regenerate if the --github-use-environments flag state differs from file contents.
+				contents, readErr := os.ReadFile(wfPath)
+				if readErr == nil {
+					hasMatrix := bytes.Contains(contents, []byte("matrix:")) &&
+						bytes.Contains(contents, []byte("environment:"))
+					if props.UseGitHubEnvironments && !hasMatrix || (!props.UseGitHubEnvironments && hasMatrix) {
+						log.Printf(
+							"Regenerating %s to reflect --github-use-environments=%v",
+							wfPath,
+							props.UseGitHubEnvironments,
+						)
+						if err := generatePipelineDefinition(wfPath, props); err != nil {
+							return err
+						}
+						pm.console.Message(ctx,
+							fmt.Sprintf("The %s file has been updated at %s to reflect environment matrix settings.",
+								output.WithHighLightFormat(filepath.Base(defaultFilePath)),
+								output.WithHighLightFormat(wfPath)),
+						)
+						pm.console.Message(ctx, "")
+					}
+				}
 			}
 
 			if created {
@@ -1294,6 +1460,8 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		Secrets                []string
 		AlphaFeatures          []string
 		IsTerraform            bool
+		Environments           []string
+		UseGitHubEnvironments  bool
 	}{
 		BranchName:             props.BranchName,
 		FedCredLogIn:           props.AuthType == AuthTypeFederated,
@@ -1302,6 +1470,8 @@ func generatePipelineDefinition(path string, props projectProperties) error {
 		Secrets:                props.Secrets,
 		AlphaFeatures:          props.RequiredAlphaFeatures,
 		IsTerraform:            props.InfraProvider == infraProviderTerraform,
+		Environments:           props.Environments,
+		UseGitHubEnvironments:  props.UseGitHubEnvironments,
 	}
 
 	// Apply provider parameters
@@ -1476,6 +1646,29 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 	authType := AuthTypeFederated
 
 	// Check and prompt for missing CI/CD files
+
+	var envNames []string
+	if pm.args != nil && pm.args.UseGitHubEnvironments && pm.ciProviderType == ciProviderGitHubActions {
+		// Discover azd environments for matrix generation only when opted in.
+		envRoot := filepath.Join(repoRoot, ".azure")
+		if entries, readErr := os.ReadDir(envRoot); readErr == nil {
+			for _, e := range entries {
+				if !e.IsDir() {
+					continue
+				}
+				name := e.Name()
+				if strings.HasPrefix(name, ".") {
+					continue
+				}
+				if _, statErr := os.Stat(filepath.Join(envRoot, name, ".env")); statErr == nil {
+					envNames = append(envNames, name)
+				}
+			}
+		}
+		// stable ordering
+		slices.Sort(envNames)
+	}
+
 	err = pm.checkAndPromptForProviderFiles(
 		ctx, projectProperties{
 			CiProvider:            pm.ciProviderType,
@@ -1487,10 +1680,43 @@ func (pm *PipelineManager) ensurePipelineDefinition(ctx context.Context) error {
 			Variables:             pm.prjConfig.Pipeline.Variables,
 			Secrets:               pm.prjConfig.Pipeline.Secrets,
 			RequiredAlphaFeatures: requiredAlphaFeatures,
+			Environments:          envNames,
+			UseGitHubEnvironments: pm.args != nil && pm.args.UseGitHubEnvironments,
+			ForceRegenerate:       pm.args != nil && pm.args.ForceRegenerate,
 			providerParameters:    pm.configOptions.providerParameters,
 		})
 	if err != nil {
 		return err
+	}
+
+	// Safety net: if user opted in to GitHub environments but existing file was not regenerated (e.g. legacy content
+	// matched prior heuristic), force regeneration when matrix stanza is missing.
+	if pm.args != nil && pm.args.UseGitHubEnvironments && pm.ciProviderType == ciProviderGitHubActions {
+		wfPath := filepath.Join(repoRoot, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
+		if content, readErr := os.ReadFile(wfPath); readErr == nil {
+			if !bytes.Contains(content, []byte("matrix:")) {
+				log.Printf("Post-check regeneration: adding environment matrix to %s", wfPath)
+				regenProps := projectProperties{
+					CiProvider:            pm.ciProviderType,
+					RepoRoot:              repoRoot,
+					InfraProvider:         infraProvider,
+					HasAppHost:            hasAppHost,
+					BranchName:            branchName,
+					AuthType:              authType,
+					Variables:             pm.prjConfig.Pipeline.Variables,
+					Secrets:               pm.prjConfig.Pipeline.Secrets,
+					RequiredAlphaFeatures: requiredAlphaFeatures,
+					Environments:          envNames,
+					UseGitHubEnvironments: true,
+					ForceRegenerate:       pm.args != nil && pm.args.ForceRegenerate,
+					providerParameters:    pm.configOptions.providerParameters,
+				}
+				if genErr := generatePipelineDefinition(wfPath, regenProps); genErr != nil {
+					return genErr
+				}
+				pm.console.Message(ctx, "Updated workflow to add environment matrix (post-check).")
+			}
+		}
 	}
 	pm.configOptions.projectSecrets = slices.Clone(pm.prjConfig.Pipeline.Secrets)
 	pm.configOptions.projectVariables = slices.Clone(pm.prjConfig.Pipeline.Variables)

@@ -9,6 +9,12 @@ The Azure Developer CLI provides the command `azd pipeline config` to automatica
 1. Configuring the git repo to use the created `Service Principal` to authenticate to Azure.
 1. Creating a pipeline definition.
 
+> Optional: Passing `--github-use-environments` when targeting GitHub will cause the generated workflow to reference a GitHub Environment named after the current azd environment and, when more than one azd environment is detected locally (multiple `.azure/<env>/.env` files), emit a strategy matrix to run against each. Omitting the flag produces the legacy single-job workflow without an `environment:` key.
+>
+> Cleanup behavior when the flag is enabled:
+> - Repository-level duplicates of standard azd variables (`AZURE_ENV_NAME`, `AZURE_LOCATION`, `AZURE_SUBSCRIPTION_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, plus optional `AZURE_RESOURCE_GROUP` & terraform remote state vars) are deleted after migration into the Environment scope.
+> - Federated identity credentials for branch refs and pull_request are pruned; only the environment subject is retained (service principal auth path). MSI pruning coming later.
+
 This command **must** be executed by someone who has a `Contributor` role, in order to create the service principal with the given role.
 The next steps can be used to manually configure a pipeline without a `Contributor` role, for example, by using an existing service principal.
 

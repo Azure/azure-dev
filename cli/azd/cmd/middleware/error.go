@@ -91,12 +91,14 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			// Warn user that this is an alpha feature
 			e.console.WarnForFeature(ctx, llm.FeatureLlm)
 
-			azdAgent, cleanup, err := e.agentFactory.Create(agent.WithDebug(e.global.EnableDebugLogging))
+			azdAgent, err := e.agentFactory.Create(
+				agent.WithDebug(e.global.EnableDebugLogging),
+			)
 			if err != nil {
 				return nil, err
 			}
 
-			defer cleanup()
+			defer azdAgent.Stop()
 
 			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 				`Steps to follow:

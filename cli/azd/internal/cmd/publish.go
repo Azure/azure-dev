@@ -154,6 +154,7 @@ func (p *publishActionWrapper) Run(ctx context.Context) (*actions.ActionResult, 
 
 	if p.flags.deploy.All && (p.flags.Image != "" || p.flags.Tag != "") {
 		return nil, errors.New(
+			//nolint:lll
 			"'--tag' and '--image' cannot be specified when '--all' is set. Specify a specific service by passing a <service>")
 	}
 

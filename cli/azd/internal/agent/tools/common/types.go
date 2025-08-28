@@ -4,10 +4,14 @@
 package common
 
 import (
-	"context"
-
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/tmc/langchaingo/tools"
 )
+
+// ToolLoader provides an interface for loading tools from different categories
+type ToolLoader interface {
+	LoadTools() ([]AnnotatedTool, error)
+}
 
 // ErrorResponse represents a JSON error response structure that can be reused across all tools
 type ErrorResponse struct {
@@ -15,11 +19,10 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
+// Tool extends the tools.Tool interface with a Server method to identify the tool's server
 type Tool interface {
-	Name() string
+	tools.Tool
 	Server() string
-	Description() string
-	Call(ctx context.Context, input string) (string, error)
 }
 
 // AnnotatedTool extends the Tool interface with MCP annotations
@@ -29,9 +32,11 @@ type AnnotatedTool interface {
 	Annotations() mcp.ToolAnnotation
 }
 
+// BuiltInTool represents a built-in tool
 type BuiltInTool struct {
 }
 
+// Server returns the server name for the built-in tool
 func (t *BuiltInTool) Server() string {
 	return "built-in"
 }

@@ -37,48 +37,27 @@ func (t DeleteDirectoryTool) Description() string {
 	return "Delete a directory and all its contents. Input: directory path (e.g., 'temp-folder' or './old-docs')"
 }
 
-// createErrorResponse creates a JSON error response
-func (t DeleteDirectoryTool) createErrorResponse(err error, message string) (string, error) {
-	if message == "" {
-		message = err.Error()
-	}
-
-	errorResp := common.ErrorResponse{
-		Error:   true,
-		Message: message,
-	}
-
-	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
-	if jsonErr != nil {
-		// Fallback to simple error message if JSON marshalling fails
-		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
-		return fallbackMsg, nil
-	}
-
-	return string(jsonData), nil
-}
-
 func (t DeleteDirectoryTool) Call(ctx context.Context, input string) (string, error) {
 	input = strings.TrimPrefix(input, `"`)
 	input = strings.TrimSuffix(input, `"`)
 	input = strings.TrimSpace(input)
 
 	if input == "" {
-		return t.createErrorResponse(fmt.Errorf("directory path is required"), "Directory path is required")
+		return common.CreateErrorResponse(fmt.Errorf("directory path is required"), "Directory path is required")
 	}
 
 	// Check if directory exists
 	info, err := os.Stat(input)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return t.createErrorResponse(err, fmt.Sprintf("Directory %s does not exist", input))
+			return common.CreateErrorResponse(err, fmt.Sprintf("Directory %s does not exist", input))
 		}
-		return t.createErrorResponse(err, fmt.Sprintf("Cannot access directory %s: %s", input, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Cannot access directory %s: %s", input, err.Error()))
 	}
 
 	// Make sure it's a directory, not a file
 	if !info.IsDir() {
-		return t.createErrorResponse(
+		return common.CreateErrorResponse(
 			fmt.Errorf("%s is a file, not a directory", input),
 			fmt.Sprintf("%s is a file, not a directory. Use delete_file to remove files", input),
 		)
@@ -94,7 +73,7 @@ func (t DeleteDirectoryTool) Call(ctx context.Context, input string) (string, er
 	// Delete the directory and all contents
 	err = os.RemoveAll(input)
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to delete directory %s: %s", input, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to delete directory %s: %s", input, err.Error()))
 	}
 
 	// Create success response
@@ -122,7 +101,7 @@ func (t DeleteDirectoryTool) Call(ctx context.Context, input string) (string, er
 	// Convert to JSON
 	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
 	}
 
 	return string(jsonData), nil

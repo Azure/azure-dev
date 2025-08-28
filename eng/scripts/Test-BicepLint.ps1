@@ -27,7 +27,8 @@ function parseErrorLine($line) {
     }
 }
 
-$bicepFiles = Get-ChildItem "$Path/*.bicep" -Recurse -Force
+$bicepFiles = Get-ChildItem "$Path/*.bicep" -Recurse -Force | 
+    Where-Object { $_.FullName -notlike "*cli/azd/test/functional/testdata/snaps*" }
 
 # Running bicep in parallel reduce run time from ~52 seconds to ~11 seconds on a
 # machine with 4 cores with hyper threading. No significant improvements seen

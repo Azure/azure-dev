@@ -127,39 +127,15 @@ Create only if doesn't exist:
 The input must be formatted as a single line valid JSON string.`
 }
 
-// createErrorResponse creates a JSON error response
-func (t WriteFileTool) createErrorResponse(err error, message string) (string, error) {
-	if message == "" {
-		message = err.Error()
-	}
-
-	errorResp := common.ErrorResponse{
-		Error:   true,
-		Message: message,
-	}
-
-	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
-	if jsonErr != nil {
-		// Fallback to simple error message if JSON marshalling fails
-		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
-
-		return fallbackMsg, nil
-	}
-
-	output := string(jsonData)
-
-	return output, nil
-}
-
 func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 	if input == "" {
-		return t.createErrorResponse(fmt.Errorf("empty input"), "No input provided.")
+		return common.CreateErrorResponse(fmt.Errorf("empty input"), "No input provided.")
 	}
 
 	// Debug: Check for common JSON issues
 	input = strings.TrimSpace(input)
 	if !strings.HasPrefix(input, "{") || !strings.HasSuffix(input, "}") {
-		return t.createErrorResponse(
+		return common.CreateErrorResponse(
 			fmt.Errorf("malformed JSON structure"),
 			fmt.Sprintf(
 				"Invalid JSON input: Input does not appear to be valid JSON object. Starts with: %q, Ends with: %q",
@@ -177,7 +153,7 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 		if len(input) > 200 {
 			truncatedInput = input[:200] + "...[truncated]"
 		}
-		return t.createErrorResponse(
+		return common.CreateErrorResponse(
 			err,
 			fmt.Sprintf("Invalid JSON input. Error: %s. Input (first 200 chars): %s", err.Error(), truncatedInput),
 		)
@@ -185,7 +161,10 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 
 	// Validate required fields
 	if req.Path == "" {
-		return t.createErrorResponse(fmt.Errorf("missing filename"), "Missing required field: filename cannot be empty.")
+		return common.CreateErrorResponse(
+			fmt.Errorf("missing filename"),
+			"Missing required field: filename cannot be empty.",
+		)
 	}
 
 	// Determine mode and operation
@@ -201,7 +180,7 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 	// If any line number is provided, both must be provided and valid
 	if hasStartLine || hasEndLine {
 		if !hasStartLine || !hasEndLine {
-			return t.createErrorResponse(
+			return common.CreateErrorResponse(
 				fmt.Errorf("both startLine and endLine must be provided for partial write"),
 				"Both startLine and endLine must be provided for partial write",
 			)
@@ -210,7 +189,7 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 		// Validate that file exists for partial write BEFORE attempting
 		filePath := strings.TrimSpace(req.Path)
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			return t.createErrorResponse(
+			return common.CreateErrorResponse(
 				err,
 				fmt.Sprintf(
 					"Cannot perform partial write on file '%s' because it does not exist. "+
@@ -224,7 +203,7 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 		if mode == "write" {
 			return t.handlePartialWrite(ctx, req)
 		} else {
-			return t.createErrorResponse(
+			return common.CreateErrorResponse(
 				fmt.Errorf("startLine and endLine can only be used with write mode"),
 				"startLine and endLine can only be used with write mode",
 			)
@@ -239,13 +218,13 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 func (t WriteFileTool) handlePartialWrite(ctx context.Context, req WriteFileRequest) (string, error) {
 	// Validate line numbers
 	if req.StartLine < 1 {
-		return t.createErrorResponse(fmt.Errorf("invalid startLine: %d", req.StartLine), "startLine must be >= 1")
+		return common.CreateErrorResponse(fmt.Errorf("invalid startLine: %d", req.StartLine), "startLine must be >= 1")
 	}
 	if req.EndLine < 1 {
-		return t.createErrorResponse(fmt.Errorf("invalid endLine: %d", req.EndLine), "endLine must be >= 1")
+		return common.CreateErrorResponse(fmt.Errorf("invalid endLine: %d", req.EndLine), "endLine must be >= 1")
 	}
 	if req.StartLine > req.EndLine {
-		return t.createErrorResponse(
+		return common.CreateErrorResponse(
 			fmt.Errorf("invalid line range: startLine=%d > endLine=%d", req.StartLine, req.EndLine),
 			"startLine cannot be greater than endLine",
 		)
@@ -256,7 +235,7 @@ func (t WriteFileTool) handlePartialWrite(ctx context.Context, req WriteFileRequ
 	// Read existing file
 	fileBytes, err := os.ReadFile(filePath)
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to read existing file %s: %s", filePath, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to read existing file %s: %s", filePath, err.Error()))
 	}
 
 	// Detect line ending style from existing content
@@ -316,7 +295,7 @@ func (t WriteFileTool) handlePartialWrite(ctx context.Context, req WriteFileRequ
 	// Write the updated content
 	err = os.WriteFile(filePath, []byte(finalContent), 0600)
 	if err != nil {
-		return t.createErrorResponse(
+		return common.CreateErrorResponse(
 			err,
 			fmt.Sprintf("Failed to write updated content to file %s: %s", filePath, err.Error()),
 		)
@@ -325,7 +304,7 @@ func (t WriteFileTool) handlePartialWrite(ctx context.Context, req WriteFileRequ
 	// Get file info
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to verify file %s: %s", filePath, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to verify file %s: %s", filePath, err.Error()))
 	}
 
 	// Calculate lines changed
@@ -354,7 +333,7 @@ func (t WriteFileTool) handlePartialWrite(ctx context.Context, req WriteFileRequ
 	// Convert to JSON
 	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
 	}
 
 	return string(jsonData), nil
@@ -375,7 +354,10 @@ func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequ
 
 	// Ensure directory exists
 	if err := t.ensureDirectory(filePath); err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to create directory for file %s: %s", filePath, err.Error()))
+		return common.CreateErrorResponse(
+			err,
+			fmt.Sprintf("Failed to create directory for file %s: %s", filePath, err.Error()),
+		)
 	}
 
 	var err error
@@ -384,7 +366,7 @@ func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequ
 	switch mode {
 	case "create":
 		if _, err := os.Stat(filePath); err == nil {
-			return t.createErrorResponse(
+			return common.CreateErrorResponse(
 				fmt.Errorf("file %s already exists (create mode)", filePath),
 				fmt.Sprintf(
 					"File %s already exists. Cannot create file in 'create' mode when file already exists",
@@ -398,7 +380,7 @@ func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequ
 	case "append":
 		file, openErr := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 		if openErr != nil {
-			return t.createErrorResponse(
+			return common.CreateErrorResponse(
 				openErr,
 				fmt.Sprintf("Failed to open file for append %s: %s", filePath, openErr.Error()),
 			)
@@ -413,7 +395,7 @@ func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequ
 	}
 
 	if err != nil {
-		return t.createErrorResponse(
+		return common.CreateErrorResponse(
 			err,
 			fmt.Sprintf("Failed to %s file %s: %s", strings.ToLower(operation), filePath, err.Error()),
 		)
@@ -422,7 +404,7 @@ func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequ
 	// Get file size for verification
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to verify file %s: %s", filePath, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to verify file %s: %s", filePath, err.Error()))
 	}
 
 	// Create JSON response
@@ -443,7 +425,7 @@ func (t WriteFileTool) handleRegularWrite(ctx context.Context, req WriteFileRequ
 	// Convert to JSON
 	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
 	}
 
 	output := string(jsonData)

@@ -15,6 +15,23 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+// CopyFileRequest represents the JSON payload for file copy requests
+type CopyFileRequest struct {
+	Source      string `json:"source"`
+	Destination string `json:"destination"`
+	Overwrite   bool   `json:"overwrite,omitempty"` // Optional: allow overwriting existing files
+}
+
+// CopyFileResponse represents the JSON output for the copy_file tool
+type CopyFileResponse struct {
+	Success     bool   `json:"success"`
+	Source      string `json:"source"`
+	Destination string `json:"destination"`
+	BytesCopied int64  `json:"bytesCopied"`
+	Overwritten bool   `json:"overwritten"` // Indicates if an existing file was overwritten
+	Message     string `json:"message"`
+}
+
 // CopyFileTool implements the Tool interface for copying files
 type CopyFileTool struct {
 	common.BuiltInTool
@@ -52,43 +69,15 @@ Examples:
 - Copy with overwrite: {"source": "data.txt", "destination": "backup.txt", "overwrite": true}`
 }
 
-// createErrorResponse creates a JSON error response
-func (t CopyFileTool) createErrorResponse(err error, message string) (string, error) {
-	if message == "" {
-		message = err.Error()
-	}
-
-	errorResp := common.ErrorResponse{
-		Error:   true,
-		Message: message,
-	}
-
-	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
-	if jsonErr != nil {
-		// Fallback to simple error message if JSON marshalling fails
-		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
-		return fallbackMsg, nil
-	}
-
-	return string(jsonData), nil
-}
-
 func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
-	// Parse JSON input
-	type InputParams struct {
-		Source      string `json:"source"`
-		Destination string `json:"destination"`
-		Overwrite   bool   `json:"overwrite,omitempty"` // Optional: allow overwriting existing files
-	}
-
-	var params InputParams
+	var params CopyFileRequest
 
 	// Clean the input first
 	cleanInput := strings.TrimSpace(input)
 
 	// Parse as JSON - this is now required
 	if err := json.Unmarshal([]byte(cleanInput), &params); err != nil {
-		return t.createErrorResponse(
+		return common.CreateErrorResponse(
 			err,
 			fmt.Sprintf(
 				"Invalid JSON input: %s. Expected format: "+
@@ -102,7 +91,7 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 	destination := strings.TrimSpace(params.Destination)
 
 	if source == "" || destination == "" {
-		return t.createErrorResponse(
+		return common.CreateErrorResponse(
 			fmt.Errorf("both source and destination paths are required"),
 			"Both source and destination paths are required",
 		)
@@ -111,11 +100,11 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 	// Check if source file exists
 	sourceInfo, err := os.Stat(source)
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Source file %s does not exist: %s", source, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Source file %s does not exist: %s", source, err.Error()))
 	}
 
 	if sourceInfo.IsDir() {
-		return t.createErrorResponse(
+		return common.CreateErrorResponse(
 			fmt.Errorf("source %s is a directory", source),
 			fmt.Sprintf("Source %s is a directory. Use copy_directory for directories", source),
 		)
@@ -127,7 +116,7 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 		// Destination file exists
 		destinationExisted = true
 		if !params.Overwrite {
-			return t.createErrorResponse(
+			return common.CreateErrorResponse(
 				fmt.Errorf("destination file %s already exists", destination),
 				fmt.Sprintf("Destination file %s already exists. Set \"overwrite\": true to allow overwriting", destination),
 			)
@@ -137,33 +126,27 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 	// Open source file
 	sourceFile, err := os.Open(source)
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to open source file %s: %s", source, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to open source file %s: %s", source, err.Error()))
 	}
 	defer sourceFile.Close()
 
 	// Create destination file
 	destFile, err := os.Create(destination)
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to create destination file %s: %s", destination, err.Error()))
+		return common.CreateErrorResponse(
+			err,
+			fmt.Sprintf("Failed to create destination file %s: %s", destination, err.Error()),
+		)
 	}
 	defer destFile.Close()
 
 	// Copy contents
 	bytesWritten, err := io.Copy(destFile, sourceFile)
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to copy file: %s", err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to copy file: %s", err.Error()))
 	}
 
 	// Prepare JSON response structure
-	type CopyResponse struct {
-		Success     bool   `json:"success"`
-		Source      string `json:"source"`
-		Destination string `json:"destination"`
-		BytesCopied int64  `json:"bytesCopied"`
-		Overwritten bool   `json:"overwritten"` // Indicates if an existing file was overwritten
-		Message     string `json:"message"`
-	}
-
 	// Determine if this was an overwrite operation
 	wasOverwrite := destinationExisted && params.Overwrite
 
@@ -179,7 +162,7 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 		message = fmt.Sprintf("Successfully copied %s to %s (%d bytes)", source, destination, bytesWritten)
 	}
 
-	response := CopyResponse{
+	response := CopyFileResponse{
 		Success:     true,
 		Source:      source,
 		Destination: destination,
@@ -191,7 +174,7 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 	// Convert to JSON
 	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
 	}
 
 	return string(jsonData), nil

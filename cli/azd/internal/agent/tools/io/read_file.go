@@ -101,30 +101,9 @@ Files over 1MB show size info only unless specific line range is requested.
 The input must be formatted as a single line valid JSON string.`
 }
 
-// createErrorResponse creates a JSON error response
-func (t ReadFileTool) createErrorResponse(err error, message string) (string, error) {
-	if message == "" {
-		message = err.Error()
-	}
-
-	errorResp := common.ErrorResponse{
-		Error:   true,
-		Message: message,
-	}
-
-	jsonData, jsonErr := json.MarshalIndent(errorResp, "", "  ")
-	if jsonErr != nil {
-		// Fallback to simple error message if JSON marshalling fails
-		fallbackMsg := fmt.Sprintf(`{"error": true, "message": "JSON marshalling failed: %s"}`, jsonErr.Error())
-		return fallbackMsg, nil
-	}
-
-	return string(jsonData), nil
-}
-
 func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
 	if input == "" {
-		return t.createErrorResponse(
+		return common.CreateErrorResponse(
 			fmt.Errorf("empty input"),
 			"No input provided. Expected JSON format: {\"filePath\": \"path/to/file.txt\"}",
 		)
@@ -133,7 +112,7 @@ func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
 	// Parse JSON input
 	var req ReadFileRequest
 	if err := json.Unmarshal([]byte(input), &req); err != nil {
-		return t.createErrorResponse(
+		return common.CreateErrorResponse(
 			err,
 			fmt.Sprintf(
 				"Invalid JSON input: %s. "+
@@ -145,23 +124,23 @@ func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
 
 	// Validate required fields
 	if req.Path == "" {
-		return t.createErrorResponse(fmt.Errorf("missing filePath"), "Missing required field: filePath cannot be empty")
+		return common.CreateErrorResponse(fmt.Errorf("missing filePath"), "Missing required field: filePath cannot be empty")
 	}
 
 	// Get file info first to check size
 	fileInfo, err := os.Stat(req.Path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return t.createErrorResponse(
+			return common.CreateErrorResponse(
 				err,
 				fmt.Sprintf("File does not exist: %s. Please check file path spelling and location", req.Path),
 			)
 		}
-		return t.createErrorResponse(err, fmt.Sprintf("Cannot access file %s: %s", req.Path, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Cannot access file %s: %s", req.Path, err.Error()))
 	}
 
 	if fileInfo.IsDir() {
-		return t.createErrorResponse(
+		return common.CreateErrorResponse(
 			fmt.Errorf("path is a directory"),
 			fmt.Sprintf("%s is a directory, not a file. Use directory_list tool for directories", req.Path),
 		)
@@ -170,7 +149,7 @@ func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
 	// Handle very large files (>1MB) - require line range
 	const maxFileSize = 1024 * 1024 // 1MB
 	if fileInfo.Size() > maxFileSize && req.StartLine == 0 && req.EndLine == 0 {
-		return t.createErrorResponse(
+		return common.CreateErrorResponse(
 			fmt.Errorf("file too large"),
 			fmt.Sprintf(
 				"File %s is too large (%d bytes). Please specify startLine and endLine to read specific sections",
@@ -183,7 +162,7 @@ func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
 	// Read file content
 	file, err := os.Open(req.Path)
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to open file %s: %s", req.Path, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to open file %s: %s", req.Path, err.Error()))
 	}
 	defer file.Close()
 
@@ -195,7 +174,7 @@ func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Error reading file %s: %s", req.Path, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Error reading file %s: %s", req.Path, err.Error()))
 	}
 
 	totalLines := len(lines)
@@ -219,13 +198,13 @@ func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
 
 		// Validate line range
 		if startLine > totalLines {
-			return t.createErrorResponse(
+			return common.CreateErrorResponse(
 				fmt.Errorf("start line out of range"),
 				fmt.Sprintf("Start line %d is greater than total lines %d in file", startLine, totalLines),
 			)
 		}
 		if startLine > endLine {
-			return t.createErrorResponse(
+			return common.CreateErrorResponse(
 				fmt.Errorf("invalid line range"),
 				fmt.Sprintf("Start line %d is greater than end line %d", startLine, endLine),
 			)
@@ -293,7 +272,7 @@ func (t ReadFileTool) Call(ctx context.Context, input string) (string, error) {
 	// Convert to JSON
 	jsonData, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		return t.createErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to marshal JSON response: %s", err.Error()))
 	}
 
 	return string(jsonData), nil

@@ -4,11 +4,9 @@
 package agent
 
 import (
-	"bufio"
 	"context"
 	_ "embed"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -34,7 +32,7 @@ type ConversationalAzdAiAgent struct {
 // NewConversationalAzdAiAgent creates a new conversational agent with memory, tool loading,
 // and MCP sampling capabilities. It filters out excluded tools and configures the agent
 // for interactive conversations with a high iteration limit for complex tasks.
-func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentOption) (*ConversationalAzdAiAgent, error) {
+func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentCreateOption) (Agent, error) {
 	azdAgent := &ConversationalAzdAiAgent{
 		agentBase: &agentBase{
 			defaultModel: llm,
@@ -44,6 +42,11 @@ func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentOption) (*Conversa
 
 	for _, opt := range opts {
 		opt(azdAgent.agentBase)
+	}
+
+	// Default max iterations
+	if azdAgent.maxIterations <= 0 {
+		azdAgent.maxIterations = 100
 	}
 
 	smartMemory := memory.NewConversationBuffer(
@@ -74,7 +77,7 @@ func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentOption) (*Conversa
 
 	// 5. Create executor without separate memory configuration since agent already has it
 	executor := agents.NewExecutor(conversationAgent,
-		agents.WithMaxIterations(100),
+		agents.WithMaxIterations(azdAgent.maxIterations),
 		agents.WithMemory(smartMemory),
 		agents.WithCallbacksHandler(azdAgent.callbacksHandler),
 		agents.WithReturnIntermediateSteps(),
@@ -86,62 +89,6 @@ func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentOption) (*Conversa
 
 // SendMessage processes a single message through the agent and returns the response
 func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...string) (string, error) {
-	return aai.runChain(ctx, strings.Join(args, "\n"))
-}
-
-// StartConversation runs an interactive conversation loop with the agent.
-// It accepts an optional initial query and handles user input/output with proper formatting.
-// The conversation continues until the user types "exit" or "quit".
-func (aai *ConversationalAzdAiAgent) StartConversation(ctx context.Context, args ...string) (string, error) {
-	// Handle initial query if provided
-	var initialQuery string
-	if len(args) > 0 {
-		initialQuery = strings.Join(args, " ")
-	}
-
-	scanner := bufio.NewScanner(os.Stdin)
-
-	for {
-		var userInput string
-
-		if initialQuery != "" {
-			userInput = initialQuery
-			initialQuery = "" // Clear after first use
-			color.Cyan("💬 You: %s\n", userInput)
-		} else {
-			fmt.Print(color.CyanString("\n💬 You: "))
-			color.Set(color.FgCyan) // Set blue color for user input
-			if !scanner.Scan() {
-				color.Unset() // Reset color
-				break         // EOF or error
-			}
-			userInput = strings.TrimSpace(scanner.Text())
-			color.Unset() // Reset color after input
-		}
-
-		// Check for exit commands
-		if userInput == "" {
-			continue
-		}
-
-		if strings.ToLower(userInput) == "exit" || strings.ToLower(userInput) == "quit" {
-			fmt.Println("👋 Goodbye! Thanks for using azd Agent!")
-			break
-		}
-
-		// Process the query with the enhanced agent
-		return aai.runChain(ctx, userInput)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("error reading input: %w", err)
-	}
-
-	return "", nil
-}
-
-// runChain executes a user query through the agent's chain with memory and returns the response
-func (aai *ConversationalAzdAiAgent) runChain(ctx context.Context, userInput string) (string, error) {
 	thoughtsCtx, cancelCtx := context.WithCancel(ctx)
 	cleanup, err := aai.renderThoughts(thoughtsCtx)
 	if err != nil {
@@ -154,8 +101,7 @@ func (aai *ConversationalAzdAiAgent) runChain(ctx context.Context, userInput str
 		cancelCtx()
 	}()
 
-	// Execute with enhanced input - agent should automatically handle memory
-	output, err := chains.Run(ctx, aai.executor, userInput)
+	output, err := chains.Run(ctx, aai.executor, strings.Join(args, "\n"))
 	if err != nil {
 		return "", err
 	}

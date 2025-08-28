@@ -10,10 +10,12 @@ import (
 // IoToolsLoader loads IO-related tools
 type IoToolsLoader struct{}
 
-func NewIoToolsLoader() *IoToolsLoader {
+// NewIoToolsLoader creates a new instance of IoToolsLoader
+func NewIoToolsLoader() common.ToolLoader {
 	return &IoToolsLoader{}
 }
 
+// LoadTools loads and returns all IO-related tools
 func (l *IoToolsLoader) LoadTools() ([]common.AnnotatedTool, error) {
 	return []common.AnnotatedTool{
 		&CurrentDirectoryTool{},

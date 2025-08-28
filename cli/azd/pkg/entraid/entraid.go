@@ -88,6 +88,17 @@ type EntraIdService interface {
 		clientId string,
 		federatedCredentials []*graphsdk.FederatedIdentityCredential,
 	) ([]*graphsdk.FederatedIdentityCredential, error)
+	ListFederatedCredentials(
+		ctx context.Context,
+		subscriptionId string,
+		clientId string,
+	) ([]graphsdk.FederatedIdentityCredential, error)
+	DeleteFederatedCredential(
+		ctx context.Context,
+		subscriptionId string,
+		clientId string,
+		credentialId string,
+	) error
 	CreateRbac(ctx context.Context, subscriptionId string, scope, roleId, principalId string) error
 	EnsureRoleAssignments(
 		ctx context.Context,
@@ -287,6 +298,53 @@ func (ad *entraIdService) ApplyFederatedCredentials(
 	}
 
 	return createdCredentials, nil
+}
+
+// ListFederatedCredentials lists all federated identity credentials for the given application (by clientId)
+func (ad *entraIdService) ListFederatedCredentials(
+	ctx context.Context,
+	subscriptionId string,
+	clientId string,
+) ([]graphsdk.FederatedIdentityCredential, error) {
+	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	application, err := ad.getApplicationByAppId(ctx, subscriptionId, clientId)
+	if err != nil {
+		return nil, fmt.Errorf("failed finding matching application: %w", err)
+	}
+
+	resp, err := graphClient.
+		ApplicationById(*application.Id).
+		FederatedIdentityCredentials().
+		Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed retrieving federated credentials: %w", err)
+	}
+	return resp.Value, nil
+}
+
+// DeleteFederatedCredential deletes a federated identity credential by id for the given application (clientId)
+func (ad *entraIdService) DeleteFederatedCredential(
+	ctx context.Context,
+	subscriptionId string,
+	clientId string,
+	credentialId string,
+) error {
+	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+	application, err := ad.getApplicationByAppId(ctx, subscriptionId, clientId)
+	if err != nil {
+		return fmt.Errorf("failed finding matching application: %w", err)
+	}
+	return graphClient.
+		ApplicationById(*application.Id).
+		FederatedIdentityCredentialById(credentialId).
+		Delete(ctx)
 }
 
 func (ad *entraIdService) getApplicationByNameOrId(

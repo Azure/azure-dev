@@ -3,6 +3,10 @@
 ## 1.19.0-beta.1 (Unreleased)
 
 ### Features Added
+* [[XXXX]](https://github.com/Azure/azure-dev/pull/XXXX) GitHub pipeline config: supports setting secrets & variables in a GitHub Environment named after the current azd environment (automatically created if needed) and adds a matching OIDC federated credential subject (`repo:<owner>/<repo>:environment:<AZURE_ENV_NAME>`). (Previously configurable via `AZD_GITHUB_ENV`; that variable is now ignored.) Fixes [#5473](https://github.com/Azure/azure-dev/issues/5473).
+* [[XXXX]](https://github.com/Azure/azure-dev/pull/XXXX) Added optional `--github-use-environments` flag to `azd pipeline config` to emit GitHub Environment (and matrix when multiple) blocks. Disabled by default; existing workflows remain unchanged unless flag is provided. Re-running with the flag toggled will migrate the existing workflow by adding or removing the environment/matrix section. Addresses matrix & multi‑environment ask in [#2373](https://github.com/Azure/azure-dev/issues/2373) and community feedback in [discussion #3585](https://github.com/Azure/azure-dev/discussions/3585).
+* [[XXXX]](https://github.com/Azure/azure-dev/pull/XXXX) Environment mode now migrates standard AZD pipeline variables to the GitHub Environment scope (removing repo-level duplicates) and generates only the environment federated credential subject. Related to [#5473](https://github.com/Azure/azure-dev/issues/5473).
+* [[XXXX]](https://github.com/Azure/azure-dev/pull/XXXX) Automatic pruning of legacy branch & pull_request federated identity credentials when switching to environment-only mode (service principal & MSI identities). Part of cleanup for [#5473](https://github.com/Azure/azure-dev/issues/5473).
 
 ### Breaking Changes
 

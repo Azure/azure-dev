@@ -87,6 +87,8 @@ The Azure Developer CLI simplifies the process of setting up continuous integrat
 
 As part of the automatic configuration, AZD creates secrets and variables for your CI/CD deployment workflow. For example, the Azure Subscription ID and location are set as variables. Additionally, you can define a list of variables and secrets by using the `pipeline` configuration in the `azure.yaml` file within your project. The list of variables or secrets you define corresponds to the names of the keys in your AZD environment (.env). If the name of the key holds a secret reference (akvs), AZD will apply the following rules to set the value in your CI/CD settings.
 
+Secrets & variables for GitHub pipelines are automatically scoped to a GitHub Environment named after your azd environment (`AZURE_ENV_NAME`). No extra environment variable is required. The environment is created on demand and a federated credential subject `repo:<owner>/<repo>:environment:<AZURE_ENV_NAME>` is added so workflows referencing that environment can use OIDC authentication. (Older guidance to set `AZD_GITHUB_ENV` is obsolete.)
+
 ### Variables
 
 If the secret is added to the `variables` section of the pipeline configuration, the Azure Developer CLI (AZD) will use the value from the environment without retrieving the actual secret value. This approach is beneficial when you prefer to maintain Azure Key Vault references within your CI/CD settings. By doing so, you can rotate your secrets in the Key Vault, ensuring that your CI/CD pipeline uses the latest secret values without the need to update your workflow variables or secrets.

@@ -329,6 +329,9 @@ type projectProperties struct {
 	Variables             []string
 	Secrets               []string
 	RequiredAlphaFeatures []string
+	Environments          []string // Detected azd environments (directory names under .azure) for matrix generation
+	UseGitHubEnvironments bool     // Opt-in switch for emitting GitHub environment/matrix blocks
+	ForceRegenerate       bool     // Force regeneration of workflow regardless of existing content
 	providerParameters    []provisioning.Parameter
 }
 

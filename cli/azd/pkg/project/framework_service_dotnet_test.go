@@ -150,8 +150,8 @@ func Test_DotNetProject_Restore(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
-	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
-		return dotnetProject.Restore(*mockContext.Context, serviceConfig, progess)
+	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
+		return dotnetProject.Restore(*mockContext.Context, serviceConfig, progress)
 	})
 
 	require.NoError(t, err)

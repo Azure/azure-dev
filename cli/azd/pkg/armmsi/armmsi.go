@@ -257,3 +257,54 @@ func (s *ArmMsiService) ApplyFederatedCredentials(ctx context.Context,
 
 	return result, nil
 }
+
+// ListFederatedCredentials returns all federated identity credentials for the MSI
+func (s *ArmMsiService) ListFederatedCredentials(
+	ctx context.Context,
+	subscriptionId string,
+	msiResourceId string,
+) ([]*armmsi.FederatedIdentityCredential, error) {
+	msiData, err := arm.ParseResourceID(msiResourceId)
+	if err != nil {
+		return nil, fmt.Errorf("parsing MSI resource id: %w", err)
+	}
+	credential, err := s.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+	client, err := armmsi.NewFederatedIdentityCredentialsClient(subscriptionId, credential, s.armClientOptions)
+	if err != nil {
+		return nil, err
+	}
+	existingCreds := []*armmsi.FederatedIdentityCredential{}
+	pager := client.NewListPager(msiData.ResourceGroupName, msiData.Name, nil)
+	for pager.More() {
+		resp, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing federated identity credentials: %w", err)
+		}
+		existingCreds = append(existingCreds, resp.Value...)
+	}
+	return existingCreds, nil
+}
+
+// DeleteFederatedCredential deletes a federated identity credential by name for the MSI
+func (s *ArmMsiService) DeleteFederatedCredential(ctx context.Context, subscriptionId, msiResourceId, name string) error {
+	msiData, err := arm.ParseResourceID(msiResourceId)
+	if err != nil {
+		return fmt.Errorf("parsing MSI resource id: %w", err)
+	}
+	credential, err := s.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+	client, err := armmsi.NewFederatedIdentityCredentialsClient(subscriptionId, credential, s.armClientOptions)
+	if err != nil {
+		return err
+	}
+	_, err = client.Delete(ctx, msiData.ResourceGroupName, msiData.Name, name, nil)
+	if err != nil {
+		return fmt.Errorf("deleting federated identity credential %s: %w", name, err)
+	}
+	return nil
+}

@@ -3,19 +3,17 @@
 ✅ **Agent Task List**  
 
 1. **Error Classification:** Identify the specific error type (Azure REST API, ARM Deployment, Authentication, Local Tool Installation or General)
-2. **Error Analysis:** Explain what the error means and its root causes. Note that this error occurs when running Azure Developer CLI.
-3. **Troubleshooting Steps:** Provide manual, Azure Portal and Azure CLI-based solutions only if user installed Azure CLI
-4. **Infrastructure Fixes:** Suggest specific Bicep or Terraform file corrections based on user's infra folder
-5. **Verification:** Provide Azure Portal to validate fixes and Azure CLI-based solutions only if user installed Azure CLI
-6. **Resolution Confirmation:** Ensure the issue is fully resolved. If issue still exists, retry the task list to fix the error.
+2. **Error Analysis:** Explain what the error means and its root causes. Note that this error occurs when running Azure Developer CLI
+3. **Troubleshooting Steps:** Based on error type (Azure REST API Response Errors, Azure ARM Deployment Errors, Azure Authentication Errors, Local Tool Installation Errors, and General AZD Errors), find the Troubleshooting Approach below and provide troubleshooting approach
+4. **Resolution Confirmation:** Ensure the issue is fully resolved. If issue still exists, retry the task list to fix the error
 
 📄 **Required Outputs**  
 
 - Clear error explanation and root cause analysis
 - Step-by-step troubleshooting instructions
-- Specific infrastructure code fixes for Bicep or Terraform files based on user usage
+- Specific infrastructure code fixes for Bicep or Terraform files based on user usage if needed
 - Azure Portal navigation instructions for verification
-- Azure CLI commands for validation and testing if user installed Azure CLI
+- Azure CLI commands for validation and testing if needed when user installed Azure CLI
 - Actionable next steps for resolution
 
 🧠 **Execution Guidelines**  
@@ -35,10 +33,12 @@
    - Provide manual Troubleshooting Steps for Azure Portal
    - Check Azure Portal for resource status
    - Verify resource quotas and limits
-   - Review subscription and resource group permissions
-   - Validate resource naming conventions and conflicts
+   - Review subscription and resource group permissions if error related
+   - Validate resource naming conventions and conflicts if error related
 
 3. **If user installed Azure CLI, Azure CLI Troubleshooting Steps. Otherwise use azure portal instructions**
+   - Generate Azure CLI related commands if needed
+   - Consider using following commands if fits:
    ```bash
    # Check subscription and tenant
    az account show
@@ -53,11 +53,12 @@
    ```
 
 4. **Infrastructure Code Fixes**
-   - **Bicep Files:** Correct resource names, SKUs, locations, dependencies
-   - **Terraform Files:** Fix provider configurations, resource arguments, data sources
+   - **Bicep Files:** Correct bicep files based on error root cause
+   - **Terraform Files:** Correct terraform files based on error root cause
    - Update parameter files with valid values
 
 5. **Verification Commands if user installed Azure CLI. Otherwise skip this part**
+   - Consider using following commands if fits:
    ```bash
    # Validate Bicep templates
    az bicep build --file main.bicep
@@ -70,7 +71,7 @@
 
 ## Azure ARM Deployment Errors
 
-**Error Pattern:** Deployment validation failures, resource provisioning errors, template errors
+**Error Pattern:** Deployment validation failures, resource provisioning errors, template errors, etc
 
 **Troubleshooting Approach:**
 
@@ -86,6 +87,7 @@
    - Verify template parameter values
 
 3. **If user installed Azure CLI, Azure CLI Troubleshooting Steps. Otherwise use azure portal instructions**
+   - Consider using following commands if fits:
    ```bash
    # List recent deployments
    az deployment group list --resource-group <rg-name>
@@ -98,20 +100,12 @@
    ```
 
 4. **Infrastructure Code Fixes**
-   - **Bicep Files:**
-     - Fix template syntax errors
-     - Correct resource property values
-     - Update API versions
-     - Fix parameter and variable references
-     - Resolve dependency chains
-   
-   - **Terraform Files:**
-     - Correct resource configurations
-     - Fix provider version constraints
-     - Update data source queries
-     - Resolve resource dependencies
+   - **Bicep Files:** Correct bicep files based on error root cause
+   - **Terraform Files:** Correct terraform files based on error root cause
+   - Update parameter files with valid values
 
 5. **Verification Commands if user installed Azure CLI. Otherwise skip this part**
+   - Consider using following commands if fits:
    ```bash
    # Test deployment in validate-only mode
    az deployment group validate --resource-group <rg> --template-file main.bicep --parameters @parameters.json
@@ -122,7 +116,7 @@
 
 ## Azure Authentication Errors
 
-**Error Pattern:** Authentication failures, token expiration, permission denied, tenant/subscription issues
+**Error Pattern:** Authentication failures, token expiration, permission denied, tenant/subscription issues, etc
 
 **Troubleshooting Approach:**
 
@@ -136,6 +130,7 @@
    - Review tenant and subscription IDs
 
 3. **AZD Authentication Commands**
+   - Consider using following commands if fits:
    ```bash
    # Clear current authentication
    azd auth logout
@@ -234,11 +229,11 @@
    - Verify tool integration with azd project requirements
 
 6. **Post-Installation Verification**
+   - If the error occurs after running command `azd provision`: 
    ```bash
    # Test azd provision with preview
    azd provision --preview
    ```
-
 ## General AZD Errors
 
 **Error Pattern:** Miscellaneous errors not falling into above categories
@@ -247,22 +242,23 @@
 
 1. **Error Analysis**
    - Review error message for specific component failure
-   - Identify if error is related to configuration, dependencies, or environment
+   - Identify and diagnose the error
    - Provide solution based on error analysis
 
 2. **Common Resolution Patterns**
 
 - **Quota Exceeded:** Request quota increase in Azure Portal
-- **Permission Denied:** Add required role assignments through Azure Portal
+- **Permission Denied:** Add required role assignments through Azure Portal or through Azure CLI if needed when user installed Azure CLI
 - **Resource Name Conflicts:** Update names in Bicep or Terraform files with unique suffixes
 - **API Version Issues:** Update to latest stable API versions in templates
 - **Location Constraints:** Verify service availability in target Azure region
+- **Other errors:** Call related tool to fix the error
 
 📌 **Completion Checklist**  
 
 - [ ] Error message clearly understood and root cause identified
 - [ ] Appropriate troubleshooting steps executed successfully  
-- [ ] Infrastructure code corrections implemented and validated
-- [ ] Azure Portal verification completed for affected resources
-- [ ] Azure CLI commands confirm successful resolution if user installed Azure CLI. Otherwise, skip this step.
-- [ ] AZD command completes without errors
+- [ ] Infrastructure code corrections implemented and validated if needed
+- [ ] For Azure REST API Response Errors or Azure ARM Deployment Errors, Azure Portal verification completed for affected resources if needed
+- [ ] For Azure REST API Response Errors or Azure ARM Deployment Errors, Azure CLI commands confirm successful resolution if needed when user installed Azure CLI. Otherwise, skip this step
+- [ ] Ensure the issue is fully resolved. If issue still exists, retry the task list to fix the error

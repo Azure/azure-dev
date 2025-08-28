@@ -590,6 +590,17 @@ func (m *mockContainerRegistryServiceForRetry) GetContainerRegistries(
 	return args.Get(0).([]*armcontainerregistry.Registry), args.Error(1)
 }
 
+func (m *mockContainerRegistryServiceForRetry) TagExists(
+	ctx context.Context,
+	subscriptionId string,
+	loginServer string,
+	repository string,
+	tag string,
+) (bool, error) {
+	args := m.Called(ctx, subscriptionId, loginServer, repository, tag)
+	return args.Bool(0), args.Error(1)
+}
+
 func Test_ContainerHelper_Credential_Retry(t *testing.T) {
 	t.Run("Retry on 404 on time", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
@@ -671,6 +682,20 @@ func setupDockerMocks(mockContext *mocks.MockContext) map[string]exec.RunArgs {
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker manifest inspect")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		mockResults["docker-manifest-inspect"] = args
+
+		if len(args.Args) < 4 || args.Args[3] == "" {
+			return exec.NewRunResult(1, "", ""), errors.New("no image specified")
+		}
+
+		// For the test, we'll assume the image doesn't exist (return exit code 1)
+		// This simulates the normal case where the image needs to be built and pushed
+		return exec.NewRunResult(1, "", "manifest unknown"), nil
+	})
+
 	return mockResults
 }
 
@@ -698,4 +723,15 @@ func (m *mockContainerRegistryService) GetContainerRegistries(
 ) ([]*armcontainerregistry.Registry, error) {
 	args := m.Called(ctx, subscriptionId)
 	return args.Get(0).([]*armcontainerregistry.Registry), args.Error(1)
+}
+
+func (m *mockContainerRegistryService) TagExists(
+	ctx context.Context,
+	subscriptionId string,
+	loginServer string,
+	repository string,
+	tag string,
+) (bool, error) {
+	args := m.Called(ctx, subscriptionId, loginServer, repository, tag)
+	return args.Bool(0), args.Error(1)
 }

@@ -103,7 +103,9 @@ type ServiceDeployResult struct {
 	TargetResourceId string            `json:"targetResourceId"`
 	Kind             ServiceTargetKind `json:"kind"`
 	Endpoints        []string          `json:"endpoints"`
-	Details          interface{}       `json:"details"`
+	// PublishArtifact contains the published artifact identifier (e.g., container image name)
+	PublishArtifact string      `json:"publishArtifact,omitempty"`
+	Details         interface{} `json:"details"`
 }
 
 // Supports rendering messages for UX items
@@ -111,6 +113,11 @@ func (spr *ServiceDeployResult) ToString(currentIndentation string) string {
 	uxItem, ok := spr.Details.(ux.UxItem)
 	if ok {
 		return uxItem.ToString(currentIndentation)
+	}
+
+	// Display publish artifact if available
+	if spr.PublishArtifact != "" {
+		return fmt.Sprintf("%s- Image Name: %s", currentIndentation, output.WithLinkFormat(spr.PublishArtifact))
 	}
 
 	builder := strings.Builder{}

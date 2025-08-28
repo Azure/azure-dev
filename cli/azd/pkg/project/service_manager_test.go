@@ -28,8 +28,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type contextKey string
-
 const (
 	ServiceLanguageFake ServiceLanguageKind = "fake-framework"
 	ServiceTargetFake   ServiceTargetKind   = "fake-service-target"

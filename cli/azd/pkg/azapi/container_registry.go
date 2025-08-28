@@ -19,6 +19,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/containers/azcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -50,6 +51,8 @@ type ContainerRegistryService interface {
 	Credentials(ctx context.Context, subscriptionId string, loginServer string) (*DockerCredentials, error)
 	// Gets a list of container registries for the specified subscription
 	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
+	// Checks if a specific image tag exists in the container registry
+	TagExists(ctx context.Context, subscriptionId string, loginServer string, repository string, tag string) (bool, error)
 }
 
 type containerRegistryService struct {
@@ -313,4 +316,37 @@ func setHttpRequestBody(req *policy.Request, formData url.Values) {
 	raw := req.Raw()
 	raw.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	raw.Body = io.NopCloser(strings.NewReader(formData.Encode()))
+}
+
+// TagExists checks if a specific image tag exists in the container registry
+func (crs *containerRegistryService) TagExists(
+	ctx context.Context,
+	subscriptionId string,
+	loginServer string,
+	repository string,
+	tag string,
+) (bool, error) {
+	cred, err := crs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return false, err
+	}
+
+	// Create Azure Container Registry client
+	client, err := azcontainerregistry.NewClient(fmt.Sprintf("https://%s", loginServer), cred, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to create ACR client: %w", err)
+	}
+
+	// Check if the tag exists by getting its properties
+	_, err = client.GetTagProperties(ctx, repository, tag, nil)
+	if err != nil {
+		var httpErr *azcore.ResponseError
+		if errors.As(err, &httpErr) && httpErr.StatusCode == 404 {
+			// Tag not found
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check if tag exists: %w", err)
+	}
+
+	return true, nil
 }

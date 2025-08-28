@@ -35,6 +35,7 @@ import (
 type DeployFlags struct {
 	ServiceName string
 	All         bool
+	PublishOnly bool
 	fromPackage string
 	global      *internal.GlobalCommandOptions
 	*internal.EnvFlag
@@ -70,6 +71,14 @@ func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		false,
 		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
 	)
+	local.BoolVar(
+		&d.PublishOnly,
+		"publish-only",
+		false,
+		"Publishes the container image to the registry without deploying the application.",
+	)
+	// `azd publish` is an alias for this
+	_ = local.MarkHidden("publish-only")
 	local.StringVar(
 		&d.fromPackage,
 		"from-package",
@@ -219,9 +228,16 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
+	verb := "Deploying"
+	commandTitle := "Deploying services (azd deploy)"
+	if da.flags.PublishOnly {
+		verb = "Publishing"
+		commandTitle = "Publishing services (azd publish)"
+	}
+
 	// Command title
 	da.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Deploying services (azd deploy)",
+		Title: commandTitle,
 	})
 
 	startTime := time.Now()
@@ -233,7 +249,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	for _, svc := range stableServices {
-		stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
+		stepMessage := fmt.Sprintf("%s service %s", verb, svc.Name)
 		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// Skip this service if both cases are true:
@@ -250,6 +266,19 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			da.console.WarnForFeature(ctx, alphaFeatureId)
 		}
 
+		if da.flags.PublishOnly {
+			// Check if this service is a container app
+			if svc.Host != project.ContainerAppTarget {
+				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return nil, fmt.Errorf(
+					"'publish' is only supported for container app services, but service '%s' has host type '%s'",
+					svc.Name, svc.Host)
+			}
+
+			// Set publish-only context and continue with normal deploy flow
+			ctx = project.WithPublishOnly(ctx, true)
+		}
+
 		var packageResult *project.ServicePackageResult
 		if da.flags.fromPackage != "" {
 			// --from-package set, skip packaging
@@ -260,7 +289,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			//  --from-package not set, automatically package the application
 			packageResult, err = async.RunWithProgress(
 				func(packageProgress project.ServiceProgress) {
-					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, packageProgress.Message)
+					progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
 					da.console.ShowSpinner(ctx, progressMessage, input.Step)
 				},
 				func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePackageResult, error) {
@@ -277,7 +306,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 		deployResult, err := async.RunWithProgress(
 			func(deployProgress project.ServiceProgress) {
-				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
+				progressMessage := fmt.Sprintf("%s service %s (%s)", verb, svc.Name, deployProgress.Message)
 				da.console.ShowSpinner(ctx, progressMessage, input.Step)
 			},
 			func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceDeployResult, error) {
@@ -319,9 +348,15 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 	}
 
+	messageHeader := fmt.Sprintf("Your application was deployed to Azure in %s.", ux.DurationAsText(since(startTime)))
+	if da.flags.PublishOnly {
+		messageHeader = fmt.Sprintf("Your application was published to Azure Container Registry in %s.",
+			ux.DurationAsText(since(startTime)))
+	}
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Your application was deployed to Azure in %s.", ux.DurationAsText(since(startTime))),
+			Header: messageHeader,
 			FollowUp: getResourceGroupFollowUp(ctx,
 				da.formatter,
 				da.portalUrlBase,

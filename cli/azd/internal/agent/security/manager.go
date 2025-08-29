@@ -57,11 +57,19 @@ func (sm *Manager) ValidatePath(inputPath string) (string, error) {
 	// Clean the path to resolve any . or .. components
 	cleanPath := filepath.Clean(absPath)
 
+	// Debug logging for CI troubleshooting
+	fmt.Fprintf(os.Stderr, "[DEBUG] Security validation - Input: %q, SecurityRoot: %q, CleanPath: %q\n",
+		inputPath, sm.securityRoot, cleanPath)
+
 	// Check if the path is within the security root
 	if !sm.isWithinSecurityRoot(cleanPath) {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Security validation FAILED - Path %q is outside security root %q\n",
+			cleanPath, sm.securityRoot)
 		return "", fmt.Errorf("access denied: path outside allowed directory")
 	}
 
+	fmt.Fprintf(os.Stderr, "[DEBUG] Security validation PASSED - Path %q is within security root %q\n",
+		cleanPath, sm.securityRoot)
 	return cleanPath, nil
 }
 
@@ -77,41 +85,55 @@ func (sm *Manager) isWithinSecurityRoot(path string) bool {
 	// Ensure both paths are absolute and cleaned
 	absSecurityRoot, err := filepath.Abs(sm.securityRoot)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Failed to get absolute path for security root %q: %v\n", sm.securityRoot, err)
 		return false
 	}
 	absSecurityRoot = filepath.Clean(absSecurityRoot)
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Failed to get absolute path for input %q: %v\n", path, err)
 		return false
 	}
 	absPath = filepath.Clean(absPath)
 
+	fmt.Fprintf(os.Stderr, "[DEBUG] Path comparison - AbsSecurityRoot: %q, AbsPath: %q\n", absSecurityRoot, absPath)
+
 	// Resolve symlinks for both paths to ensure accurate comparison
 	resolvedSecurityRoot, err := filepath.EvalSymlinks(absSecurityRoot)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Failed to resolve symlinks for security root %q: %v, using original\n", absSecurityRoot, err)
 		resolvedSecurityRoot = absSecurityRoot
 	}
 
 	resolvedPath, err := filepath.EvalSymlinks(absPath)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Failed to resolve symlinks for path %q: %v, using original\n", absPath, err)
 		resolvedPath = absPath
 	}
+
+	fmt.Fprintf(os.Stderr, "[DEBUG] Resolved paths - SecurityRoot: %q, Path: %q\n", resolvedSecurityRoot, resolvedPath)
 
 	// Calculate relative path from security root to the target path
 	relPath, err := filepath.Rel(resolvedSecurityRoot, resolvedPath)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Failed to calculate relative path from %q to %q: %v\n", resolvedSecurityRoot, resolvedPath, err)
 		return false
 	}
 
 	// Normalize path separators for cross-platform compatibility
 	relPath = filepath.ToSlash(relPath)
 
+	fmt.Fprintf(os.Stderr, "[DEBUG] Relative path: %q\n", relPath)
+
 	// Check if path is within security root:
 	// - Should not start with "../" (going up and out)
 	// - Should not be exactly ".." (parent directory)
 	// - Should not start with "/" (absolute path, which shouldn't happen after Rel)
-	return !strings.HasPrefix(relPath, "../") &&
+	result := !strings.HasPrefix(relPath, "../") &&
 		relPath != ".." &&
 		!strings.HasPrefix(relPath, "/")
+
+	fmt.Fprintf(os.Stderr, "[DEBUG] Security check result: %t for relative path %q\n", result, relPath)
+	return result
 }

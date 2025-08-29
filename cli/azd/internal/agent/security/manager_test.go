@@ -6,8 +6,38 @@ package security
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+// outsidePath returns an absolute path that will be outside the test security root
+// `kind` can be "system", "hosts", "tmp", or "ssh"; fallbacks provided
+func outsidePath(kind string) string {
+	if runtime.GOOS == "windows" {
+		switch kind {
+		case "hosts":
+			return `C:\\Windows\\System32\\drivers\\etc\\hosts`
+		case "tmp":
+			return filepath.Join("C:\\", "Windows", "Temp", "malicious.txt")
+		case "ssh":
+			return `C:\\Users\\Administrator\\Desktop\\secrets.txt`
+		default:
+			return `C:\\Windows\\System32\\config\\SAM`
+		}
+	}
+
+	// Unix-like defaults (Linux/macOS)
+	switch kind {
+	case "hosts":
+		return "/etc/hosts"
+	case "ssh":
+		return "/root/.ssh/id_rsa"
+	case "tmp":
+		return "/tmp/malicious.txt"
+	default:
+		return "/etc/passwd"
+	}
+}
 
 func TestSecurityManager_ValidatePath(t *testing.T) {
 	// Create a temporary directory for testing
@@ -47,8 +77,8 @@ func TestSecurityManager_ValidatePath(t *testing.T) {
 		"..",
 		"../outside",
 		"../../escape",
-		"/etc/passwd",
-		"C:\\Windows\\System32",
+		outsidePath("system"),
+		outsidePath("hosts"),
 	}
 
 	for _, path := range invalidPaths {

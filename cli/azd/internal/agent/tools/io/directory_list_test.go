@@ -25,7 +25,7 @@ func TestDirectoryListTool_SecurityBoundaryValidation(t *testing.T) {
 	}{
 		{
 			name:          "absolute path outside security root",
-			listPath:      "/tmp",
+			listPath:      absoluteOutsidePath("system"),
 			expectError:   true,
 			errorContains: "Access denied: directory listing operation not permitted outside the allowed directory",
 		},
@@ -37,13 +37,13 @@ func TestDirectoryListTool_SecurityBoundaryValidation(t *testing.T) {
 		},
 		{
 			name:          "windows system directory",
-			listPath:      outsidePath("system"),
+			listPath:      absoluteOutsidePath("system"),
 			expectError:   true,
 			errorContains: "Access denied: directory listing operation not permitted outside the allowed directory",
 		},
 		{
 			name:          "attempt to list root directory",
-			listPath:      "/",
+			listPath:      "C:\\",
 			expectError:   true,
 			errorContains: "Access denied: directory listing operation not permitted outside the allowed directory",
 		},

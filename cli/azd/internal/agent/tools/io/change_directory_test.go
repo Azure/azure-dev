@@ -25,13 +25,13 @@ func TestChangeDirectoryTool_SecurityBoundaryValidation(t *testing.T) {
 	}{
 		{
 			name:          "absolute path outside security root",
-			targetDir:     "/tmp",
+			targetDir:     absoluteOutsidePath("temp"),
 			expectError:   true,
 			errorContains: "Access denied: directory change operation not permitted outside the allowed directory",
 		},
 		{
 			name:          "relative path escaping with ..",
-			targetDir:     "../../../tmp",
+			targetDir:     relativeEscapePath("simple"),
 			expectError:   true,
 			errorContains: "Access denied: directory change operation not permitted outside the allowed directory",
 		},

@@ -24,7 +24,7 @@ func TestCreateDirectoryTool_SecurityBoundaryValidation(t *testing.T) {
 	}{
 		{
 			name:          "absolute path outside security root",
-			dirPath:       "/tmp/malicious_dir",
+			dirPath:       absoluteOutsidePath("temp_dir"),
 			expectError:   true,
 			errorContains: "Access denied: directory creation operation not permitted outside the allowed directory",
 		},
@@ -36,13 +36,13 @@ func TestCreateDirectoryTool_SecurityBoundaryValidation(t *testing.T) {
 		},
 		{
 			name:          "windows system directory",
-			dirPath:       outsidePath("system"),
+			dirPath:       absoluteOutsidePath("system"),
 			expectError:   true,
 			errorContains: "Access denied: directory creation operation not permitted outside the allowed directory",
 		},
 		{
 			name:          "attempt to create in root",
-			dirPath:       "/malicious_root_dir",
+			dirPath:       platformSpecificPath("startup_folder"),
 			expectError:   true,
 			errorContains: "Access denied: directory creation operation not permitted outside the allowed directory",
 		},

@@ -139,7 +139,7 @@ func TestReadFileTool_Call_FileNotFound(t *testing.T) {
 	tool, _ := createTestReadTool(t)
 
 	request := ReadFileRequest{
-		Path: "/nonexistent/file.txt",
+		Path: absoluteOutsidePath("system"),
 	}
 	input := mustMarshalJSON(request)
 
@@ -701,22 +701,22 @@ func TestReadFileTool_SecurityBoundaryValidation(t *testing.T) {
 	}{
 		{
 			name:        "absolute path outside security root",
-			requestPath: outsidePath("system"),
+			requestPath: absoluteOutsidePath("system"),
 			expectError: true,
 		},
 		{
 			name:        "parent directory attempt with invalid file",
-			requestPath: "../../../etc/passwd",
+			requestPath: relativeEscapePath("with_file"),
 			expectError: true,
 		},
 		{
 			name:        "windows absolute path outside security root",
-			requestPath: outsidePath("hosts"),
+			requestPath: platformSpecificPath("hosts"),
 			expectError: true,
 		},
 		{
 			name:        "mixed separators escaping",
-			requestPath: "..\\..\\..\\Windows\\System32\\cmd.exe",
+			requestPath: relativeEscapePath("mixed"),
 			expectError: true,
 		},
 		{
@@ -1006,12 +1006,12 @@ func TestReadFileTool_SecurityBoundaryWithDirectSecurityManager(t *testing.T) {
 
 	// Test various malicious paths using cross-platform helper
 	maliciousPaths := []string{
-		"../../../../../etc/passwd",       // Relative path escape attempt
+		relativeEscapePath("deep"),        // Relative path escape attempt
 		"test.txt\x00../../../etc/passwd", // Null byte injection attack
-		outsidePath("ssh"),                // SSH keys or sensitive files
-		outsidePath("system"),             // System files (SAM/passwd)
-		"~/../../etc/shadow",              // Home directory escape
-		outsidePath("hosts"),              // Absolute path outside security root
+		platformSpecificPath("users_dir"), // SSH keys or sensitive files
+		absoluteOutsidePath("system"),     // System files (SAM/passwd)
+		relativeEscapePath("mixed"),       // Home directory escape
+		platformSpecificPath("hosts"),     // Absolute path outside security root
 	}
 
 	for _, maliciousPath := range maliciousPaths {

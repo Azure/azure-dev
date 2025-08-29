@@ -17,8 +17,8 @@ import (
 )
 
 func TestCopyFileTool_SecurityBoundaryValidation(t *testing.T) {
-	outside := outsidePath("system")
-	tmpOutside := outsidePath("tmp")
+	outside := absoluteOutsidePath("system")
+	tmpOutside := absoluteOutsidePath("temp")
 	tests := []struct {
 		name          string
 		setupFile     string

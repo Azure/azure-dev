@@ -16,8 +16,8 @@ import (
 )
 
 func TestDeleteFileTool_SecurityBoundaryValidation(t *testing.T) {
-	outside := outsidePath("system")
-	sshOutside := outsidePath("ssh")
+	outside := absoluteOutsidePath("system")
+	sshOutside := platformSpecificPath("ssh_keys")
 	tests := []struct {
 		name          string
 		setupFile     string
@@ -51,13 +51,13 @@ func TestDeleteFileTool_SecurityBoundaryValidation(t *testing.T) {
 		},
 		{
 			name:          "delete shell configuration",
-			deleteFile:    "/home/user/.bashrc",
+			deleteFile:    platformSpecificPath("shell_config"),
 			expectError:   true,
 			errorContains: "Access denied: file deletion operation not permitted outside the allowed directory",
 		},
 		{
 			name:          "delete hosts file",
-			deleteFile:    outsidePath("hosts"),
+			deleteFile:    platformSpecificPath("hosts"),
 			expectError:   true,
 			errorContains: "Access denied: file deletion operation not permitted outside the allowed directory",
 		},

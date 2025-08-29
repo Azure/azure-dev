@@ -26,19 +26,19 @@ func TestFileInfoTool_SecurityBoundaryValidation(t *testing.T) {
 	}{
 		{
 			name:          "absolute path outside security root",
-			filePath:      "/etc/passwd",
+			filePath:      absoluteOutsidePath("system"),
 			expectError:   true,
 			errorContains: "Access denied: file info operation not permitted outside the allowed directory",
 		},
 		{
 			name:          "relative path escaping with ..",
-			filePath:      "../../../etc/passwd",
+			filePath:      relativeEscapePath("with_file"),
 			expectError:   true,
 			errorContains: "Access denied: file info operation not permitted outside the allowed directory",
 		},
 		{
 			name:          "windows system file",
-			filePath:      outsidePath("system"),
+			filePath:      absoluteOutsidePath("system"),
 			expectError:   true,
 			errorContains: "Access denied: file info operation not permitted outside the allowed directory",
 		},

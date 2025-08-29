@@ -25,7 +25,7 @@ func TestDeleteDirectoryTool_SecurityBoundaryValidation(t *testing.T) {
 	}{
 		{
 			name:          "absolute path outside security root",
-			deleteDir:     "/tmp",
+			deleteDir:     absoluteOutsidePath("temp"),
 			expectError:   true,
 			errorContains: "Access denied: directory deletion operation not permitted outside the allowed directory",
 		},
@@ -36,14 +36,14 @@ func TestDeleteDirectoryTool_SecurityBoundaryValidation(t *testing.T) {
 			errorContains: "Access denied: directory deletion operation not permitted outside the allowed directory",
 		},
 		{
-			name:          "windows system directory",
-			deleteDir:     outsidePath("system"),
+			name:          "directory outside security root",
+			deleteDir:     absoluteOutsidePath("system"),
 			expectError:   true,
 			errorContains: "Access denied: directory deletion operation not permitted outside the allowed directory",
 		},
 		{
 			name:          "attempt to delete root directory",
-			deleteDir:     "/",
+			deleteDir:     absoluteOutsidePath("root"),
 			expectError:   true,
 			errorContains: "Access denied: directory deletion operation not permitted outside the allowed directory",
 		},

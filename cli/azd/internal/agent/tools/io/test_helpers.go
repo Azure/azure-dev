@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -76,47 +75,98 @@ func createTestWriteTool(t *testing.T) (WriteFileTool, string) {
 	return WriteFileTool{securityManager: sm}, tempDir
 }
 
-// outsidePath returns an absolute path that will be outside the test security root
-// `kind` can be "system", "hosts", "startup", "tmp", or "ssh"; fallbacks provided
-func outsidePath(kind string) string {
+// absoluteOutsidePath returns an absolute path that will be outside the test security root
+// This is specifically for testing absolute path validation
+func absoluteOutsidePath(kind string) string {
 	if runtime.GOOS == "windows" {
 		switch kind {
-		case "hosts":
-			return `C:\\Windows\\System32\\drivers\\etc\\hosts`
-		case "startup":
-			return filepath.Join(
-				"C:\\",
-				"ProgramData",
-				"Microsoft",
-				"Windows",
-				"Start Menu",
-				"Programs",
-				"Startup",
-				"malware.exe",
-			)
-		case "ssh":
-			return `C:\\Users\\Administrator\\Desktop\\secrets.txt`
-		case "tmp":
-			return filepath.Join("C:\\", "Windows", "Temp", "malicious.txt")
-		case "shell":
-			return `C:\\Users\\Administrator\\Desktop\\config.bat`
+		case "root":
+			return "C:\\"
+		case "system":
+			return "C:\\Windows\\System32"
+		case "temp":
+			return "C:\\Windows\\Temp"
+		case "temp_dir":
+			return "C:\\Windows\\Temp\\malicious_dir"
+		case "users":
+			return "C:\\Users"
+		case "program_files":
+			return "C:\\Program Files"
 		default:
-			return `C:\\Windows\\System32\\config\\SAM`
+			return "C:\\Windows\\System32\\config\\SAM"
 		}
 	}
 
-	// Unix-like defaults (Linux/macOS)
+	// Unix-like systems
 	switch kind {
-	case "hosts":
-		return "/etc/hosts"
-	case "ssh":
+	case "root":
+		return "/"
+	case "system":
+		return "/etc"
+	case "temp":
+		return "/tmp"
+	case "temp_dir":
+		return "/tmp/malicious_dir"
+	case "users":
+		return "/home"
+	case "program_files":
+		return "/usr/bin"
+	default:
+		return "/etc/passwd"
+	}
+}
+
+// relativeEscapePath returns a relative path that attempts to escape the security root
+// using "../" patterns. This should be blocked by security validation.
+func relativeEscapePath(kind string) string {
+	switch kind {
+	case "simple":
+		return "../../../tmp"
+	case "deep":
+		return "../../../../../../../../etc/passwd"
+	case "mixed":
+		return "../../../tmp/malicious"
+	case "with_file":
+		return "../../../etc/passwd"
+	case "with_dir":
+		return "../../../tmp/"
+	default:
+		return "../../../tmp"
+	}
+}
+
+// platformSpecificPath returns paths that are specific to the current platform
+// This is useful for testing platform-specific security scenarios
+func platformSpecificPath(kind string) string {
+	if runtime.GOOS == "windows" {
+		switch kind {
+		case "startup_folder":
+			return "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\malware.exe"
+		case "system_drive":
+			return "C:\\"
+		case "windows_dir":
+			return "C:\\Windows"
+		case "program_files":
+			return "C:\\Program Files\\malware.exe"
+		case "users_dir":
+			return "C:\\Users\\Administrator\\Desktop\\secrets.txt"
+		default:
+			return "C:\\Windows\\System32\\config\\SAM"
+		}
+	}
+
+	// Unix-like systems
+	switch kind {
+	case "startup_folder":
+		return "/etc/init.d/malware"
+	case "system_drive":
+		return "/"
+	case "windows_dir":
+		return "/etc"
+	case "program_files":
+		return "/usr/bin/malware"
+	case "users_dir":
 		return "/root/.ssh/id_rsa"
-	case "tmp":
-		return "/tmp/malicious.txt"
-	case "startup":
-		return "/tmp/malware.exe"
-	case "shell":
-		return "/home/user/.bashrc"
 	default:
 		return "/etc/passwd"
 	}

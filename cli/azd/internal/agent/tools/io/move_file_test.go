@@ -18,8 +18,8 @@ import (
 )
 
 func TestMoveFileTool_SecurityBoundaryValidation(t *testing.T) {
-	outside := outsidePath("system")
-	tmpOutside := outsidePath("tmp")
+	outside := absoluteOutsidePath("system")
+	tmpOutside := absoluteOutsidePath("temp")
 	tests := []struct {
 		name          string
 		setupFile     string
@@ -60,7 +60,7 @@ func TestMoveFileTool_SecurityBoundaryValidation(t *testing.T) {
 		},
 		{
 			name:          "attempt to move SSH private key",
-			sourceFile:    outsidePath("ssh"),
+			sourceFile:    platformSpecificPath("ssh_keys"),
 			destFile:      "stolen_key.txt",
 			expectError:   true,
 			errorContains: "Access denied",
@@ -69,7 +69,7 @@ func TestMoveFileTool_SecurityBoundaryValidation(t *testing.T) {
 			name:          "attempt to move to startup folder",
 			setupFile:     "safe_source.txt",
 			sourceFile:    "safe_source.txt",
-			destFile:      outsidePath("startup"),
+			destFile:      platformSpecificPath("startup_folder"),
 			expectError:   true,
 			errorContains: "Access denied",
 		},

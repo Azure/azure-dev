@@ -102,7 +102,12 @@ func (sm *Manager) isWithinSecurityRoot(path string) bool {
 	// Resolve symlinks for both paths to ensure accurate comparison
 	resolvedSecurityRoot, err := filepath.EvalSymlinks(absSecurityRoot)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG] Failed to resolve symlinks for security root %q: %v, using original\n", absSecurityRoot, err)
+		fmt.Fprintf(
+			os.Stderr,
+			"[DEBUG] Failed to resolve symlinks for security root %q: %v, using original\n",
+			absSecurityRoot,
+			err,
+		)
 		resolvedSecurityRoot = absSecurityRoot
 	}
 
@@ -117,7 +122,13 @@ func (sm *Manager) isWithinSecurityRoot(path string) bool {
 	// Calculate relative path from security root to the target path
 	relPath, err := filepath.Rel(resolvedSecurityRoot, resolvedPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG] Failed to calculate relative path from %q to %q: %v\n", resolvedSecurityRoot, resolvedPath, err)
+		fmt.Fprintf(
+			os.Stderr,
+			"[DEBUG] Failed to calculate relative path from %q to %q: %v\n",
+			resolvedSecurityRoot,
+			resolvedPath,
+			err,
+		)
 		return false
 	}
 

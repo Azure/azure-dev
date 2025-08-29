@@ -19,27 +19,24 @@ type Manager struct {
 
 // NewManager creates a new security manager with the specified root directory
 func NewManager(rootPath string) (*Manager, error) {
-	// Convert to absolute path and clean it
+	// Convert to absolute path (this also cleans the path)
 	absRoot, err := filepath.Abs(rootPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve security root path %s: %w", rootPath, err)
 	}
 
-	// Clean the path to normalize it
-	cleanRoot := filepath.Clean(absRoot)
-
 	// Verify the directory exists
-	info, err := os.Stat(cleanRoot)
+	info, err := os.Stat(absRoot)
 	if err != nil {
-		return nil, fmt.Errorf("security root directory does not exist: %s: %w", cleanRoot, err)
+		return nil, fmt.Errorf("security root directory does not exist: %s: %w", absRoot, err)
 	}
 
 	if !info.IsDir() {
-		return nil, fmt.Errorf("security root path is not a directory: %s", cleanRoot)
+		return nil, fmt.Errorf("security root path is not a directory: %s", absRoot)
 	}
 
 	return &Manager{
-		securityRoot: cleanRoot,
+		securityRoot: absRoot,
 	}, nil
 }
 
@@ -48,28 +45,25 @@ func (sm *Manager) ValidatePath(inputPath string) (string, error) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
-	// Convert to absolute path
+	// Convert to absolute path (this also cleans the path)
 	absPath, err := filepath.Abs(inputPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve path: %w", err)
 	}
 
-	// Clean the path to resolve any . or .. components
-	cleanPath := filepath.Clean(absPath)
-
-	fmt.Fprintf(os.Stderr, "[DEBUG] Security validation - Input: %q, SecurityRoot: %q, CleanPath: %q\n",
-		inputPath, sm.securityRoot, cleanPath)
+	fmt.Fprintf(os.Stderr, "[DEBUG] Security validation - Input: %q, SecurityRoot: %q, AbsPath: %q\n",
+		inputPath, sm.securityRoot, absPath)
 
 	// Check if the path is within the security root
-	if !sm.isWithinSecurityRoot(cleanPath) {
+	if !sm.isWithinSecurityRoot(absPath) {
 		fmt.Fprintf(os.Stderr, "[DEBUG] Security validation FAILED - Path %q is outside security root %q\n",
-			cleanPath, sm.securityRoot)
+			absPath, sm.securityRoot)
 		return "", fmt.Errorf("access denied: path outside allowed directory")
 	}
 
 	fmt.Fprintf(os.Stderr, "[DEBUG] Security validation PASSED - Path %q is within security root %q\n",
-		cleanPath, sm.securityRoot)
-	return cleanPath, nil
+		absPath, sm.securityRoot)
+	return absPath, nil
 }
 
 // GetSecurityRoot returns the current security root directory
@@ -81,28 +75,18 @@ func (sm *Manager) GetSecurityRoot() string {
 
 // isWithinSecurityRoot checks if the given path is within the security root
 func (sm *Manager) isWithinSecurityRoot(path string) bool {
-	// Ensure both paths are absolute and cleaned
-	absSecurityRoot, err := filepath.Abs(sm.securityRoot)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG] Failed to get absolute path for security root %q: %v\n", sm.securityRoot, err)
-		return false
-	}
-	absSecurityRoot = filepath.Clean(absSecurityRoot)
+	fmt.Fprintf(os.Stderr, "[DEBUG] Raw inputs - sm.securityRoot: %q, path: %q\n", sm.securityRoot, path)
 
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[DEBUG] Failed to get absolute path for input %q: %v\n", path, err)
-		return false
-	}
-	absPath = filepath.Clean(absPath)
+	// Both security root and input path are already processed with filepath.Abs()
+	// No additional processing needed - just compare them directly
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] Path comparison - AbsSecurityRoot: %q, AbsPath: %q\n", absSecurityRoot, absPath)
+	fmt.Fprintf(os.Stderr, "[DEBUG] Final comparison - SecurityRoot: %q, AbsPath: %q\n", sm.securityRoot, path)
 
 	// Calculate relative path from security root to the target path
-	relPath, err := filepath.Rel(absSecurityRoot, absPath)
+	relPath, err := filepath.Rel(sm.securityRoot, path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[DEBUG] Failed to calculate relative path from %q to %q: %v\n",
-			absSecurityRoot, absPath, err)
+			sm.securityRoot, path, err)
 		return false
 	}
 

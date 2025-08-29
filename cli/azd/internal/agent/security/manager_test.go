@@ -59,7 +59,7 @@ func TestSecurityManager_ValidatePath(t *testing.T) {
 	}
 }
 
-func TestSecurityManager_ValidateDirectoryChange(t *testing.T) {
+func TestSecurityManager_ValidatePath_DirectoryChange(t *testing.T) {
 	// Create a temporary directory structure for testing
 	tempDir, err := os.MkdirTemp("", "security_test")
 	if err != nil {
@@ -86,7 +86,7 @@ func TestSecurityManager_ValidateDirectoryChange(t *testing.T) {
 
 	// Test valid directory changes within security root
 	subDirPath := filepath.Join(tempDir, "subdir")
-	validated, err := sm.ValidateDirectoryChange(subDirPath)
+	validated, err := sm.ValidatePath(subDirPath)
 	if err != nil {
 		t.Errorf("Expected valid directory change to %s to pass, got error: %v", subDirPath, err)
 	}
@@ -95,12 +95,12 @@ func TestSecurityManager_ValidateDirectoryChange(t *testing.T) {
 	}
 
 	// Test invalid directory changes outside security root
-	_, err = sm.ValidateDirectoryChange("..")
+	_, err = sm.ValidatePath("..")
 	if err == nil {
 		t.Error("Expected directory change to .. to fail validation, but it passed")
 	}
 
-	_, err = sm.ValidateDirectoryChange("../../")
+	_, err = sm.ValidatePath("../../")
 	if err == nil {
 		t.Error("Expected directory change to ../../ to fail validation, but it passed")
 	}

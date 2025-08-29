@@ -66,13 +66,10 @@ func TestMoveFileTool_SecurityBoundaryValidation(t *testing.T) {
 			errorContains: "Access denied",
 		},
 		{
-			name:       "attempt to move to startup folder",
-			setupFile:  "safe_source.txt",
-			sourceFile: "safe_source.txt",
-			destFile: filepath.Join(
-				"C:\\", "Users", "User", "AppData", "Roaming", "Microsoft",
-				"Windows", "Start Menu", "Programs", "Startup", "malware.exe",
-			),
+			name:          "attempt to move to startup folder",
+			setupFile:     "safe_source.txt",
+			sourceFile:    "safe_source.txt",
+			destFile:      outsidePath("startup"),
 			expectError:   true,
 			errorContains: "Access denied",
 		},

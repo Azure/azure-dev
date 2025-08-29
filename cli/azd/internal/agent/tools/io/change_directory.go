@@ -49,7 +49,7 @@ func (t ChangeDirectoryTool) Call(ctx context.Context, input string) (string, er
 	}
 
 	// Security validation for directory changes (more restrictive)
-	validatedPath, err := t.securityManager.ValidateDirectoryChange(input)
+	validatedPath, err := t.securityManager.ValidatePath(input)
 	if err != nil {
 		return common.CreateErrorResponse(
 			err,

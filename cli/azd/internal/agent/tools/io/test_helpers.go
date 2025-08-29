@@ -87,11 +87,22 @@ func outsidePath(kind string) string {
 		case "hosts":
 			return `C:\\Windows\\System32\\drivers\\etc\\hosts`
 		case "startup":
-			return filepath.Join("C:\\", "ProgramData", "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "malware.exe")
+			return filepath.Join(
+				"C:\\",
+				"ProgramData",
+				"Microsoft",
+				"Windows",
+				"Start Menu",
+				"Programs",
+				"Startup",
+				"malware.exe",
+			)
 		case "ssh":
 			return `C:\\Users\\Administrator\\Desktop\\secrets.txt`
 		case "tmp":
 			return filepath.Join("C:\\", "Windows", "Temp", "malicious.txt")
+		case "shell":
+			return `C:\\Users\\Administrator\\Desktop\\config.bat`
 		default:
 			return `C:\\Windows\\System32\\config\\SAM`
 		}
@@ -107,6 +118,8 @@ func outsidePath(kind string) string {
 		return "/tmp/malicious.txt"
 	case "startup":
 		return "/tmp/malware.exe"
+	case "shell":
+		return "/home/user/.bashrc"
 	default:
 		return "/etc/passwd"
 	}

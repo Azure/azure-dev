@@ -605,7 +605,7 @@ func TestWriteFileTool_SecurityBoundaryValidation(t *testing.T) {
 	}{
 		{
 			name:          "write file outside security root - absolute path",
-			path:          "C:\\Windows\\System32\\config\\SAM",
+			path:          outsidePath("system"),
 			expectedError: "Access denied: file write operation not permitted outside the allowed directory",
 			shouldFail:    true,
 		},
@@ -617,25 +617,25 @@ func TestWriteFileTool_SecurityBoundaryValidation(t *testing.T) {
 		},
 		{
 			name:          "write windows system file",
-			path:          "C:\\Windows\\System32\\drivers\\etc\\hosts",
+			path:          outsidePath("hosts"),
 			expectedError: "Access denied: file write operation not permitted outside the allowed directory",
 			shouldFail:    true,
 		},
 		{
 			name:          "write SSH private key",
-			path:          "/home/user/.ssh/id_rsa",
+			path:          outsidePath("ssh"),
 			expectedError: "Access denied: file write operation not permitted outside the allowed directory",
 			shouldFail:    true,
 		},
 		{
 			name:          "write to startup folder",
-			path:          "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\malware.exe",
+			path:          outsidePath("startup"),
 			expectedError: "Access denied: file write operation not permitted outside the allowed directory",
 			shouldFail:    true,
 		},
 		{
 			name:          "write shell configuration",
-			path:          "/home/user/.bashrc",
+			path:          outsidePath("shell"),
 			expectedError: "Access denied: file write operation not permitted outside the allowed directory",
 			shouldFail:    true,
 		},

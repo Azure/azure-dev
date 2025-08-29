@@ -57,35 +57,19 @@ func (sm *Manager) ValidatePath(inputPath string) (string, error) {
 	// Clean the path to resolve any . or .. components
 	cleanPath := filepath.Clean(absPath)
 
-	// Check if the path is within the security root
-	if !sm.isWithinSecurityRoot(cleanPath) {
+	// Resolve symlinks to prevent symlink attacks
+	resolvedPath, err := filepath.EvalSymlinks(cleanPath)
+	if err != nil {
+		// If symlink resolution fails, check the original path
+		// This handles cases where the symlink target doesn't exist yet
+		resolvedPath = cleanPath
+	}
+
+	// Check if the resolved path is within the security root
+	if !sm.isWithinSecurityRoot(resolvedPath) {
 		return "", fmt.Errorf("access denied: path outside allowed directory")
 	}
 
-	return cleanPath, nil
-}
-
-// ValidateDirectoryChange validates a directory change operation
-// This allows navigation within the security root boundary
-func (sm *Manager) ValidateDirectoryChange(inputPath string) (string, error) {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-
-	// Convert input to absolute path
-	absPath, err := filepath.Abs(inputPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve path: %w", err)
-	}
-
-	// Clean the path
-	cleanPath := filepath.Clean(absPath)
-
-	// Check: must be within security root
-	if !sm.isWithinSecurityRoot(cleanPath) {
-		return "", fmt.Errorf("access denied: cannot navigate outside project directory")
-	}
-
-	// Allow navigation within the security root
 	return cleanPath, nil
 }
 

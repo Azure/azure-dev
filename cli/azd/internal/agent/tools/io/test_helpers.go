@@ -25,10 +25,7 @@ func mustMarshalJSON(v interface{}) string {
 
 // createTestSecurityManager creates a SecurityManager for testing with a temporary directory
 func createTestSecurityManager(t *testing.T) (*security.Manager, string) {
-	tempDir, err := os.MkdirTemp("", "io_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
+	tempDir := t.TempDir()
 
 	// Change to the test directory
 	originalWd, _ := os.Getwd()

@@ -701,7 +701,7 @@ func TestReadFileTool_SecurityBoundaryValidation(t *testing.T) {
 	}{
 		{
 			name:        "absolute path outside security root",
-			requestPath: "/etc/passwd",
+			requestPath: outsidePath("system"),
 			expectError: true,
 		},
 		{
@@ -711,7 +711,7 @@ func TestReadFileTool_SecurityBoundaryValidation(t *testing.T) {
 		},
 		{
 			name:        "windows absolute path outside security root",
-			requestPath: "C:\\Windows\\System32\\drivers\\etc\\hosts",
+			requestPath: outsidePath("hosts"),
 			expectError: true,
 		},
 		{
@@ -833,23 +833,21 @@ func TestReadFileTool_SecurityBoundaryEdgeCases(t *testing.T) {
 
 func TestReadFileTool_SecurityBoundaryWithDirectSecurityManager(t *testing.T) {
 	// Test direct security manager interaction
-	tempDir, err := os.MkdirTemp("", "security_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	sm, err := security.NewManager(tempDir)
 	require.NoError(t, err)
 
 	tool := ReadFileTool{securityManager: sm}
 
-	// Test various malicious paths
+	// Test various malicious paths using cross-platform helper
 	maliciousPaths := []string{
-		"../../../../../etc/passwd",
-		"..\\..\\..\\..\\Windows\\System32\\config\\SAM",
-		"/root/.ssh/id_rsa",
-		"C:\\Users\\Administrator\\Desktop\\secrets.txt",
-		"~/../../etc/shadow",
-		"%SYSTEMROOT%\\System32\\config\\SOFTWARE",
+		"../../../../../etc/passwd",                      // Relative path escape attempt
+		"..\\..\\..\\..\\Windows\\System32\\config\\SAM", // Windows-style relative escape
+		outsidePath("ssh"),                               // SSH keys or sensitive files
+		outsidePath("system"),                            // System files (SAM/passwd)
+		"~/../../etc/shadow",                             // Home directory escape
+		"%SYSTEMROOT%\\System32\\config\\SOFTWARE",       // Environment variable expansion
 	}
 
 	for _, maliciousPath := range maliciousPaths {

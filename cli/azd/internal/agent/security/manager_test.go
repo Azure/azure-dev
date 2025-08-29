@@ -41,11 +41,7 @@ func outsidePath(kind string) string {
 
 func TestSecurityManager_ValidatePath(t *testing.T) {
 	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("", "security_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	// Create security manager directly with temp directory as root
 	sm, err := NewManager(tempDir)
@@ -91,14 +87,10 @@ func TestSecurityManager_ValidatePath(t *testing.T) {
 
 func TestSecurityManager_ValidatePath_DirectoryChange(t *testing.T) {
 	// Create a temporary directory structure for testing
-	tempDir, err := os.MkdirTemp("", "security_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	subDir := filepath.Join(tempDir, "subdir")
-	err = os.Mkdir(subDir, 0755)
+	err := os.Mkdir(subDir, 0755)
 	if err != nil {
 		t.Fatalf("Failed to create subdir: %v", err)
 	}

@@ -12,14 +12,10 @@ import (
 
 func TestSecurityManager_ValidatePath(t *testing.T) {
 	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("", "security_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	// Initialize security manager with temp directory as root
-	err = InitializeSecurityManager(tempDir)
+	err := InitializeSecurityManager(tempDir)
 	if err != nil {
 		t.Fatalf("Failed to initialize security manager: %v", err)
 	}
@@ -71,14 +67,10 @@ func TestSecurityManager_ValidateDirectoryChange(t *testing.T) {
 	securityManagerOnce = sync.Once{}
 
 	// Create a temporary directory structure for testing
-	tempDir, err := os.MkdirTemp("", "security_test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	subDir := filepath.Join(tempDir, "subdir")
-	err = os.Mkdir(subDir, 0755)
+	err := os.Mkdir(subDir, 0755)
 	if err != nil {
 		t.Fatalf("Failed to create subdir: %v", err)
 	}

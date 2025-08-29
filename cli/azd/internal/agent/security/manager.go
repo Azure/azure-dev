@@ -38,15 +38,8 @@ func NewManager(rootPath string) (*Manager, error) {
 		return nil, fmt.Errorf("security root path is not a directory: %s", cleanRoot)
 	}
 
-	// Resolve symlinks for the security root to ensure consistent comparison
-	resolvedRoot, err := filepath.EvalSymlinks(cleanRoot)
-	if err != nil {
-		// If symlink resolution fails, use the clean path
-		resolvedRoot = cleanRoot
-	}
-
 	return &Manager{
-		securityRoot: resolvedRoot,
+		securityRoot: cleanRoot,
 	}, nil
 }
 
@@ -64,16 +57,8 @@ func (sm *Manager) ValidatePath(inputPath string) (string, error) {
 	// Clean the path to resolve any . or .. components
 	cleanPath := filepath.Clean(absPath)
 
-	// Resolve symlinks to prevent symlink attacks
-	resolvedPath, err := filepath.EvalSymlinks(cleanPath)
-	if err != nil {
-		// If symlink resolution fails, check the original path
-		// This handles cases where the symlink target doesn't exist yet
-		resolvedPath = cleanPath
-	}
-
-	// Check if the resolved path is within the security root
-	if !sm.isWithinSecurityRoot(resolvedPath) {
+	// Check if the path is within the security root
+	if !sm.isWithinSecurityRoot(cleanPath) {
 		return "", fmt.Errorf("access denied: path outside allowed directory")
 	}
 
@@ -89,12 +74,44 @@ func (sm *Manager) GetSecurityRoot() string {
 
 // isWithinSecurityRoot checks if the given path is within the security root
 func (sm *Manager) isWithinSecurityRoot(path string) bool {
-	// Normalize both paths for comparison
-	relPath, err := filepath.Rel(sm.securityRoot, path)
+	// Ensure both paths are absolute and cleaned
+	absSecurityRoot, err := filepath.Abs(sm.securityRoot)
+	if err != nil {
+		return false
+	}
+	absSecurityRoot = filepath.Clean(absSecurityRoot)
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	absPath = filepath.Clean(absPath)
+
+	// Resolve symlinks for both paths to ensure accurate comparison
+	resolvedSecurityRoot, err := filepath.EvalSymlinks(absSecurityRoot)
+	if err != nil {
+		resolvedSecurityRoot = absSecurityRoot
+	}
+
+	resolvedPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		resolvedPath = absPath
+	}
+
+	// Calculate relative path from security root to the target path
+	relPath, err := filepath.Rel(resolvedSecurityRoot, resolvedPath)
 	if err != nil {
 		return false
 	}
 
-	// If the relative path starts with "..", it's outside the security root
-	return !strings.HasPrefix(relPath, "..") && relPath != ".."
+	// Normalize path separators for cross-platform compatibility
+	relPath = filepath.ToSlash(relPath)
+
+	// Check if path is within security root:
+	// - Should not start with "../" (going up and out)
+	// - Should not be exactly ".." (parent directory)
+	// - Should not start with "/" (absolute path, which shouldn't happen after Rel)
+	return !strings.HasPrefix(relPath, "../") &&
+		relPath != ".." &&
+		!strings.HasPrefix(relPath, "/")
 }

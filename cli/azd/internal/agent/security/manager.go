@@ -38,8 +38,15 @@ func NewManager(rootPath string) (*Manager, error) {
 		return nil, fmt.Errorf("security root path is not a directory: %s", cleanRoot)
 	}
 
+	// Resolve symlinks for the security root to ensure consistent comparison
+	resolvedRoot, err := filepath.EvalSymlinks(cleanRoot)
+	if err != nil {
+		// If symlink resolution fails, use the clean path
+		resolvedRoot = cleanRoot
+	}
+
 	return &Manager{
-		securityRoot: cleanRoot,
+		securityRoot: resolvedRoot,
 	}, nil
 }
 

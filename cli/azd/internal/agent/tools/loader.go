@@ -4,6 +4,7 @@
 package tools
 
 import (
+	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/dev"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/io"
@@ -15,11 +16,11 @@ type LocalToolsLoader struct {
 }
 
 // NewLocalToolsLoader creates a new instance with default tool loaders for dev and io categories
-func NewLocalToolsLoader() common.ToolLoader {
+func NewLocalToolsLoader(securityManager *security.Manager) common.ToolLoader {
 	return &LocalToolsLoader{
 		loaders: []common.ToolLoader{
 			dev.NewDevToolsLoader(),
-			io.NewIoToolsLoader(),
+			io.NewIoToolsLoader(securityManager),
 		},
 	}
 }

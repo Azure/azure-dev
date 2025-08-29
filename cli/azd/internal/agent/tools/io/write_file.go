@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -19,6 +20,7 @@ import (
 // WriteFileTool implements a comprehensive file writing tool that handles all scenarios
 type WriteFileTool struct {
 	common.BuiltInTool
+	securityManager *security.Manager
 }
 
 // WriteFileRequest represents the JSON input for the write_file tool
@@ -166,6 +168,18 @@ func (t WriteFileTool) Call(ctx context.Context, input string) (string, error) {
 			"Missing required field: filename cannot be empty.",
 		)
 	}
+
+	// Security validation
+	validatedPath, err := t.securityManager.ValidatePath(req.Path)
+	if err != nil {
+		return common.CreateErrorResponse(
+			err,
+			"Access denied: file write operation not permitted outside the allowed directory",
+		)
+	}
+
+	// Update the request to use the validated path
+	req.Path = validatedPath
 
 	// Determine mode and operation
 	mode := req.Mode

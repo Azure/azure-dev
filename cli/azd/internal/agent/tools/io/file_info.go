@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -18,6 +19,7 @@ import (
 // FileInfoTool implements the Tool interface for getting file information
 type FileInfoTool struct {
 	common.BuiltInTool
+	securityManager *security.Manager
 }
 
 func (t FileInfoTool) Name() string {
@@ -48,12 +50,21 @@ func (t FileInfoTool) Call(ctx context.Context, input string) (string, error) {
 		return common.CreateErrorResponse(fmt.Errorf("file path is required"), "File path is required")
 	}
 
-	info, err := os.Stat(input)
+	// Security validation
+	validatedPath, err := t.securityManager.ValidatePath(input)
+	if err != nil {
+		return common.CreateErrorResponse(
+			err,
+			"Access denied: file info operation not permitted outside the allowed directory",
+		)
+	}
+
+	info, err := os.Stat(validatedPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return common.CreateErrorResponse(err, fmt.Sprintf("File or directory %s does not exist", input))
+			return common.CreateErrorResponse(err, fmt.Sprintf("File or directory %s does not exist", validatedPath))
 		}
-		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to get info for %s: %s", input, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to get info for %s: %s", validatedPath, err.Error()))
 	}
 
 	// Prepare JSON response structure
@@ -78,14 +89,14 @@ func (t FileInfoTool) Call(ctx context.Context, input string) (string, error) {
 
 	response := FileInfoResponse{
 		Success:      true,
-		Path:         input,
+		Path:         validatedPath,
 		Name:         info.Name(),
 		Type:         fileType,
 		IsDirectory:  info.IsDir(),
 		Size:         info.Size(),
 		ModifiedTime: info.ModTime(),
 		Permissions:  info.Mode().String(),
-		Message:      fmt.Sprintf("Successfully retrieved information for %s", input),
+		Message:      fmt.Sprintf("Successfully retrieved information for %s", validatedPath),
 	}
 
 	// Convert to JSON

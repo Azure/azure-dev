@@ -8,9 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -41,6 +41,7 @@ type DirectoryListResponse struct {
 // DirectoryListTool implements the Tool interface for listing directory contents
 type DirectoryListTool struct {
 	common.BuiltInTool
+	securityManager *security.Manager
 }
 
 func (t DirectoryListTool) Name() string {
@@ -85,43 +86,35 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 
 	path := strings.TrimSpace(params.Path)
 
-	// Get absolute path for clarity - handle "." explicitly to avoid potential issues
-	var absPath string
-	var err error
-
-	if path == "." {
-		// Explicitly get current working directory instead of relying on filepath.Abs(".")
-		absPath, err = os.Getwd()
-		if err != nil {
-			return common.CreateErrorResponse(err, fmt.Sprintf("Failed to get current working directory: %s", err.Error()))
-		}
-	} else {
-		absPath, err = filepath.Abs(path)
-		if err != nil {
-			return common.CreateErrorResponse(err, fmt.Sprintf("Failed to get absolute path for %s: %s", path, err.Error()))
-		}
+	// Security validation
+	validatedPath, err := t.securityManager.ValidatePath(path)
+	if err != nil {
+		return common.CreateErrorResponse(
+			err,
+			"Access denied: directory listing operation not permitted outside the allowed directory",
+		)
 	}
 
-	// Check if directory exists and is accessible
-	info, err := os.Stat(absPath)
+	// Check if directory exists
+	info, err := os.Stat(validatedPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return common.CreateErrorResponse(err, fmt.Sprintf("Directory %s does not exist", absPath))
+			return common.CreateErrorResponse(err, fmt.Sprintf("Directory %s does not exist", validatedPath))
 		}
-		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to access %s: %s", absPath, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to access %s: %s", validatedPath, err.Error()))
 	}
 
 	if !info.IsDir() {
 		return common.CreateErrorResponse(
-			fmt.Errorf("%s is not a directory", absPath),
-			fmt.Sprintf("%s is not a directory", absPath),
+			fmt.Errorf("%s is not a directory", validatedPath),
+			fmt.Sprintf("%s is not a directory", validatedPath),
 		)
 	}
 
 	// Read directory contents
-	files, err := os.ReadDir(absPath)
+	files, err := os.ReadDir(validatedPath)
 	if err != nil {
-		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to read directory %s: %s", absPath, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to read directory %s: %s", validatedPath, err.Error()))
 	}
 
 	// Prepare JSON response structure
@@ -152,10 +145,10 @@ func (t DirectoryListTool) Call(ctx context.Context, input string) (string, erro
 
 	response := DirectoryListResponse{
 		Success:    true,
-		Path:       absPath,
+		Path:       validatedPath,
 		TotalItems: len(items),
 		Items:      items,
-		Message:    fmt.Sprintf("Successfully listed %d items in directory %s", len(items), absPath),
+		Message:    fmt.Sprintf("Successfully listed %d items in directory %s", len(items), validatedPath),
 	}
 
 	// Convert to JSON

@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -17,6 +18,7 @@ import (
 // MoveFileTool implements the Tool interface for moving/renaming files
 type MoveFileTool struct {
 	common.BuiltInTool
+	securityManager *security.Manager
 }
 
 func (t MoveFileTool) Name() string {
@@ -69,27 +71,45 @@ func (t MoveFileTool) Call(ctx context.Context, input string) (string, error) {
 		)
 	}
 
-	// Check if source exists
-	sourceInfo, err := os.Stat(source)
+	// Security validation for both paths
+	validatedSource, err := t.securityManager.ValidatePath(source)
+	if err != nil {
+		return common.CreateErrorResponse(
+			err,
+			"Access denied: source path operation not permitted outside the allowed directory",
+		)
+	}
+
+	validatedDest, err := t.securityManager.ValidatePath(destination)
+	if err != nil {
+		return common.CreateErrorResponse(
+			err,
+			"Access denied: destination path operation not permitted outside the allowed directory",
+		)
+	} // Check if source exists
+	sourceInfo, err := os.Stat(validatedSource)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return common.CreateErrorResponse(err, fmt.Sprintf("Source %s does not exist", source))
+			return common.CreateErrorResponse(err, fmt.Sprintf("Source %s does not exist", validatedSource))
 		}
-		return common.CreateErrorResponse(err, fmt.Sprintf("Cannot access source %s: %s", source, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Cannot access source %s: %s", validatedSource, err.Error()))
 	}
 
 	// Check if destination already exists
-	if _, err := os.Stat(destination); err == nil {
+	if _, err := os.Stat(validatedDest); err == nil {
 		return common.CreateErrorResponse(
-			fmt.Errorf("destination %s already exists", destination),
-			fmt.Sprintf("Destination %s already exists", destination),
+			fmt.Errorf("destination %s already exists", validatedDest),
+			fmt.Sprintf("Destination %s already exists", validatedDest),
 		)
 	}
 
 	// Move/rename the file
-	err = os.Rename(source, destination)
+	err = os.Rename(validatedSource, validatedDest)
 	if err != nil {
-		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to move %s to %s: %s", source, destination, err.Error()))
+		return common.CreateErrorResponse(
+			err,
+			fmt.Sprintf("Failed to move %s to %s: %s", validatedSource, validatedDest, err.Error()),
+		)
 	}
 
 	// Create success response
@@ -109,15 +129,15 @@ func (t MoveFileTool) Call(ctx context.Context, input string) (string, error) {
 
 	response := MoveFileResponse{
 		Success:     true,
-		Source:      source,
-		Destination: destination,
+		Source:      validatedSource,
+		Destination: validatedDest,
 		Type:        fileType,
 		Size:        sourceInfo.Size(),
 		Message: fmt.Sprintf(
 			"Successfully moved %s from %s to %s (%d bytes)",
 			fileType,
-			source,
-			destination,
+			validatedSource,
+			validatedDest,
 			sourceInfo.Size(),
 		),
 	}

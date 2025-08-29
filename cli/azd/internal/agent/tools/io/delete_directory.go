@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -17,6 +18,7 @@ import (
 // DeleteDirectoryTool implements the Tool interface for deleting directories
 type DeleteDirectoryTool struct {
 	common.BuiltInTool
+	securityManager *security.Manager
 }
 
 func (t DeleteDirectoryTool) Name() string {
@@ -46,34 +48,43 @@ func (t DeleteDirectoryTool) Call(ctx context.Context, input string) (string, er
 		return common.CreateErrorResponse(fmt.Errorf("directory path is required"), "Directory path is required")
 	}
 
+	// Security validation
+	validatedPath, err := t.securityManager.ValidatePath(input)
+	if err != nil {
+		return common.CreateErrorResponse(
+			err,
+			"Access denied: directory deletion operation not permitted outside the allowed directory",
+		)
+	}
+
 	// Check if directory exists
-	info, err := os.Stat(input)
+	info, err := os.Stat(validatedPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return common.CreateErrorResponse(err, fmt.Sprintf("Directory %s does not exist", input))
+			return common.CreateErrorResponse(err, fmt.Sprintf("Directory %s does not exist", validatedPath))
 		}
-		return common.CreateErrorResponse(err, fmt.Sprintf("Cannot access directory %s: %s", input, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Cannot access directory %s: %s", validatedPath, err.Error()))
 	}
 
 	// Make sure it's a directory, not a file
 	if !info.IsDir() {
 		return common.CreateErrorResponse(
-			fmt.Errorf("%s is a file, not a directory", input),
-			fmt.Sprintf("%s is a file, not a directory. Use delete_file to remove files", input),
+			fmt.Errorf("%s is a file, not a directory", validatedPath),
+			fmt.Sprintf("%s is a file, not a directory. Use delete_file to remove files", validatedPath),
 		)
 	}
 
 	// Count contents before deletion for reporting
-	files, err := os.ReadDir(input)
+	files, err := os.ReadDir(validatedPath)
 	fileCount := 0
 	if err == nil {
 		fileCount = len(files)
 	}
 
 	// Delete the directory and all contents
-	err = os.RemoveAll(input)
+	err = os.RemoveAll(validatedPath)
 	if err != nil {
-		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to delete directory %s: %s", input, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to delete directory %s: %s", validatedPath, err.Error()))
 	}
 
 	// Create success response
@@ -86,14 +97,14 @@ func (t DeleteDirectoryTool) Call(ctx context.Context, input string) (string, er
 
 	var message string
 	if fileCount > 0 {
-		message = fmt.Sprintf("Successfully deleted directory %s (contained %d items)", input, fileCount)
+		message = fmt.Sprintf("Successfully deleted directory %s (contained %d items)", validatedPath, fileCount)
 	} else {
-		message = fmt.Sprintf("Successfully deleted empty directory %s", input)
+		message = fmt.Sprintf("Successfully deleted empty directory %s", validatedPath)
 	}
 
 	response := DeleteDirectoryResponse{
 		Success:      true,
-		Path:         input,
+		Path:         validatedPath,
 		ItemsDeleted: fileCount,
 		Message:      message,
 	}

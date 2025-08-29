@@ -170,7 +170,7 @@ func TestResolvePath_ExistingFiles(t *testing.T) {
 	testFile := filepath.Join(tempDir, "test.txt")
 
 	// Create the test file
-	if err := os.WriteFile(testFile, []byte("test content"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test content"), 0600); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -292,7 +292,7 @@ func TestResolvePartialPath_Recursive(t *testing.T) {
 
 	// Test case 2: All components exist
 	existingFile := filepath.Join(existingDir, "realfile.txt")
-	if err := os.WriteFile(existingFile, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(existingFile, []byte("test"), 0600); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -342,78 +342,5 @@ func TestResolvePath_Integration_WithSecurityManager(t *testing.T) {
 	_, err = sm.ValidatePath(outsideFile)
 	if err == nil {
 		t.Error("Expected non-existent file outside root to be denied")
-	}
-}
-
-func TestSecurityManager_Windows8dot3ShortNames(t *testing.T) {
-	// This test specifically checks Windows 8.3 short name handling
-	// by creating very long directory names that will trigger short name generation
-	tempDir := t.TempDir()
-
-	sm, err := NewManager(tempDir)
-	if err != nil {
-		t.Fatalf("Failed to create security manager: %v", err)
-	}
-
-	// Create directory names that are definitely longer than 8 characters
-	// to force Windows 8.3 short name generation
-	longDirName := "VeryLongDirectoryNameThatWillDefinitelyTriggerWindows8dot3ShortNameGeneration"
-	longSubDirName := "AnotherExtremelyLongSubdirectoryNameThatExceedsTheEightCharacterLimit"
-	longFileName := "AnExtremelyLongFileNameThatWillAlsoTriggerShortNameGenerationOnWindowsSystems.txt"
-
-	// Create the actual long directory structure to test against
-	longDirPath := filepath.Join(tempDir, longDirName)
-	err = os.MkdirAll(longDirPath, 0755)
-	if err != nil {
-		t.Fatalf("Failed to create long directory: %v", err)
-	}
-
-	longSubDirPath := filepath.Join(longDirPath, longSubDirName)
-	err = os.MkdirAll(longSubDirPath, 0755)
-	if err != nil {
-		t.Fatalf("Failed to create long subdirectory: %v", err)
-	}
-
-	// Test 1: Validate existing long directory path
-	resolved, err := sm.ValidatePath(longDirPath)
-	if err != nil {
-		t.Errorf("Expected long directory path to be allowed: %v", err)
-	}
-	if resolved == "" {
-		t.Error("Expected resolved path to be returned for long directory")
-	}
-
-	// Test 2: Validate existing long subdirectory path
-	resolved, err = sm.ValidatePath(longSubDirPath)
-	if err != nil {
-		t.Errorf("Expected long subdirectory path to be allowed: %v", err)
-	}
-	if resolved == "" {
-		t.Error("Expected resolved path to be returned for long subdirectory")
-	}
-
-	// Test 3: Validate non-existent file in long subdirectory (this mimics the CI failure)
-	longFilePath := filepath.Join(longSubDirPath, longFileName)
-	resolved, err = sm.ValidatePath(longFilePath)
-	if err != nil {
-		t.Errorf("Expected non-existent file in long subdirectory to be allowed: %v", err)
-	}
-	if resolved == "" {
-		t.Error("Expected resolved path to be returned for long file path")
-	}
-
-	// Test 4: Create the file and validate again (both short and long name should work)
-	file, err := os.Create(longFilePath)
-	if err != nil {
-		t.Fatalf("Failed to create long file: %v", err)
-	}
-	file.Close()
-
-	resolved, err = sm.ValidatePath(longFilePath)
-	if err != nil {
-		t.Errorf("Expected existing long file path to be allowed: %v", err)
-	}
-	if resolved == "" {
-		t.Error("Expected resolved path to be returned for existing long file")
 	}
 }

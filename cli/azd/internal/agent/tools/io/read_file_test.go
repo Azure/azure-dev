@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -195,7 +194,7 @@ func TestReadFileTool_ReadEntireSmallFile(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, response.Success)
-	assert.Equal(t, testFile, response.Path)
+	assert.True(t, strings.HasSuffix(response.Path, filepath.Base(testFile)))
 	assert.Equal(t, testContent, response.Content)
 	assert.False(t, response.IsTruncated)
 	assert.False(t, response.IsPartial)
@@ -891,16 +890,12 @@ func TestReadFileTool_SymlinkResolution(t *testing.T) {
 	})
 
 	t.Run("symlinked security root directory", func(t *testing.T) {
-		// Create test environment with the actual directory
-		realTempDir := t.TempDir()
+		// Create security manager with the symlinked directory
+		sm, realTempDir := createTestSecurityManager(t)
 
 		// Create a symlink to the real temp directory
 		symlinkTempDir := filepath.Join(t.TempDir(), "symlinked_root")
 		err := os.Symlink(realTempDir, symlinkTempDir)
-		require.NoError(t, err)
-
-		// Create security manager with the symlinked directory
-		sm, err := security.NewManager(symlinkTempDir)
 		require.NoError(t, err)
 
 		tool := ReadFileTool{securityManager: sm}

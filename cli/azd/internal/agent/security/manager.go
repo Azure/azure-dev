@@ -70,23 +70,14 @@ func (sm *Manager) ValidatePath(inputPath string) (string, error) {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] Prefix check - SecurityRoot: %q, Path: %q\n", sm.securityRoot, resolvedPath)
-
 	// Verify prefix relationship - the path should start with the security root
 	// Add separator to both to ensure we're checking directory boundaries, not just string prefixes
 	// This prevents "/tmp/safe" from being considered within "/tmp/saf"
 	result := strings.HasPrefix(resolvedPath+string(filepath.Separator), sm.securityRoot+string(filepath.Separator))
 	if !result {
-		fmt.Fprintf(
-			os.Stderr,
-			"[DEBUG] Validation FAILED - Path %q is outside security root %q\n",
-			resolvedPath,
-			sm.securityRoot,
-		)
 		return "", fmt.Errorf("access denied: path outside allowed directory")
 	}
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] Validation PASSED - Path %q is within security root %q\n", resolvedPath, sm.securityRoot)
 	return resolvedPath, nil
 }
 
@@ -114,7 +105,6 @@ func resolvePath(inputPath string) (string, error) {
 		resolvedPath = resolvePartialPath(absPath)
 	}
 
-	fmt.Fprintf(os.Stderr, "[DEBUG] ResolvePath - Input: %q, Resolved: %q\n", inputPath, resolvedPath)
 	return resolvedPath, nil
 }
 

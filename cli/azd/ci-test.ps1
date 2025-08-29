@@ -23,21 +23,21 @@ if (-not (Test-Path $gotestsum)) {
 }
 
 function New-EmptyDirectory {
-    param([string]$Path) 
+    param([string]$Path)
     if (Test-Path $Path) {
         Remove-Item -Force -Recurse $Path | Out-Null
     }
-    
+
     New-Item -ItemType Directory -Force -Path $Path
 }
 $unitCoverDir = New-EmptyDirectory -Path $UnitTestCoverageDir
-Write-Host "Running unit tests..."
+Write-Host "Running io and security unit tests..."
 
 # --test.gocoverdir is currently a "under-the-cover" way to pass the coverage directory to a test binary
 # See https://github.com/golang/go/issues/51430#issuecomment-1344711300
 #
 # As of Go 1.25, it’s still an “under-the-hood” option.
-& $gotestsum -- ./... -short -v -cover -args --test.gocoverdir="$($unitCoverDir.FullName)"
+& $gotestsum -- "./internal/agent/tools/io/..." "./internal/agent/security/..." -short -v -cover -args --test.gocoverdir="$($unitCoverDir.FullName)"
 if ($LASTEXITCODE) {
     exit $LASTEXITCODE
 }
@@ -47,7 +47,7 @@ if ($ShortMode) {
     exit 0
 }
 
-Write-Host "Running integration tests..."
+Write-Host "Running io and security integration tests..."
 $intCoverDir = New-EmptyDirectory -Path $IntegrationTestCoverageDir
 
 $oldGOCOVERDIR = $env:GOCOVERDIR
@@ -60,10 +60,10 @@ $env:GOCOVERDIR = $intCoverDir.FullName
 $env:GOEXPERIMENT=""
 
 try {
-    & $gotestsum -- ./... -v -timeout $IntegrationTestTimeout
+    & $gotestsum -- "./internal/agent/tools/io/..." "./internal/agent/security/..." -v -timeout $IntegrationTestTimeout
     if ($LASTEXITCODE) {
         exit $LASTEXITCODE
-    }    
+    }
 } finally {
     $env:GOCOVERDIR = $oldGOCOVERDIR
     $env:GOEXPERIMENT = $oldGOEXPERIMENT

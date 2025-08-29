@@ -38,7 +38,7 @@ func TestFileInfoTool_SecurityBoundaryValidation(t *testing.T) {
 		},
 		{
 			name:          "windows system file",
-			filePath:      "C:\\Windows\\System32\\config\\SAM",
+			filePath:      outsidePath("system"),
 			expectError:   true,
 			errorContains: "Access denied: file info operation not permitted outside the allowed directory",
 		},

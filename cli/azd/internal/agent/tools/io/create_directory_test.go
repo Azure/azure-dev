@@ -36,7 +36,7 @@ func TestCreateDirectoryTool_SecurityBoundaryValidation(t *testing.T) {
 		},
 		{
 			name:          "windows system directory",
-			dirPath:       "C:\\Windows\\System32\\malicious_dir",
+			dirPath:       outsidePath("system"),
 			expectError:   true,
 			errorContains: "Access denied: directory creation operation not permitted outside the allowed directory",
 		},

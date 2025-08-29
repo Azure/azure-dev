@@ -37,7 +37,7 @@ func TestDeleteDirectoryTool_SecurityBoundaryValidation(t *testing.T) {
 		},
 		{
 			name:          "windows system directory",
-			deleteDir:     "C:\\Windows\\System32",
+			deleteDir:     outsidePath("system"),
 			expectError:   true,
 			errorContains: "Access denied: directory deletion operation not permitted outside the allowed directory",
 		},

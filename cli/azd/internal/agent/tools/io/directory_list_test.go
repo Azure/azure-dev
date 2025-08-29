@@ -37,7 +37,7 @@ func TestDirectoryListTool_SecurityBoundaryValidation(t *testing.T) {
 		},
 		{
 			name:          "windows system directory",
-			listPath:      "C:\\Windows\\System32",
+			listPath:      outsidePath("system"),
 			expectError:   true,
 			errorContains: "Access denied: directory listing operation not permitted outside the allowed directory",
 		},

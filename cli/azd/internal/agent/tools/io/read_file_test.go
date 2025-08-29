@@ -1006,12 +1006,12 @@ func TestReadFileTool_SecurityBoundaryWithDirectSecurityManager(t *testing.T) {
 
 	// Test various malicious paths using cross-platform helper
 	maliciousPaths := []string{
-		"../../../../../etc/passwd",                      // Relative path escape attempt
-		"..\\..\\..\\..\\Windows\\System32\\config\\SAM", // Windows-style relative escape
-		outsidePath("ssh"),                               // SSH keys or sensitive files
-		outsidePath("system"),                            // System files (SAM/passwd)
-		"~/../../etc/shadow",                             // Home directory escape
-		outsidePath("hosts"),                             // Absolute path outside security root
+		"../../../../../etc/passwd",       // Relative path escape attempt
+		"test.txt\x00../../../etc/passwd", // Null byte injection attack
+		outsidePath("ssh"),                // SSH keys or sensitive files
+		outsidePath("system"),             // System files (SAM/passwd)
+		"~/../../etc/shadow",              // Home directory escape
+		outsidePath("hosts"),              // Absolute path outside security root
 	}
 
 	for _, maliciousPath := range maliciousPaths {

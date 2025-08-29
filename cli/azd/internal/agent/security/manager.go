@@ -19,18 +19,22 @@ type Manager struct {
 
 // NewManager creates a new security manager with the specified root directory
 func NewManager(rootPath string) (*Manager, error) {
-	// Convert to absolute path (this also cleans the path)
-	absRoot, err := filepath.Abs(rootPath)
+	// Try to resolve symlinks and canonical paths first (handles Unix symlinks and Windows short names)
+	resolvedRoot, err := filepath.EvalSymlinks(rootPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve security root path %s: %w", rootPath, err)
+		// If EvalSymlinks fails (e.g., path doesn't exist), fall back to filepath.Abs
+		resolvedRoot, err = filepath.Abs(rootPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve security root path %s: %w", rootPath, err)
+		}
+	} else {
+		// EvalSymlinks returns absolute paths, but ensure it's absolute just in case
+		resolvedRoot, err = filepath.Abs(resolvedRoot)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve security root path %s: %w", rootPath, err)
+		}
 	}
-
-	// Resolve any symlinks to ensure consistent path comparison
-	resolvedRoot, err := filepath.EvalSymlinks(absRoot)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve symlinks for security root path %s: %w", absRoot, err)
-	}
-	absRoot = resolvedRoot
+	absRoot := resolvedRoot
 
 	// Verify the directory exists
 	info, err := os.Stat(absRoot)
@@ -52,22 +56,22 @@ func (sm *Manager) ValidatePath(inputPath string) (string, error) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
-	// Convert to absolute path (this also cleans the path)
-	absPath, err := filepath.Abs(inputPath)
+	// Try to resolve symlinks and canonical paths first (handles Unix symlinks and Windows short names)
+	resolvedPath, err := filepath.EvalSymlinks(inputPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve path: %w", err)
-	}
-
-	// Resolve any symlinks to ensure consistent path comparison
-	resolvedPath, err := filepath.EvalSymlinks(absPath)
-	if err != nil {
-		// If the file doesn't exist, EvalSymlinks will fail
-		// In this case, we still want to validate the path structure
-		// so we'll use the absolute path as-is
-		resolvedPath = absPath
+		// If EvalSymlinks fails (e.g., file doesn't exist), fall back to filepath.Abs
+		resolvedPath, err = filepath.Abs(inputPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve path: %w", err)
+		}
 	} else {
-		absPath = resolvedPath
+		// EvalSymlinks returns absolute paths, but ensure it's absolute just in case
+		resolvedPath, err = filepath.Abs(resolvedPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve path: %w", err)
+		}
 	}
+	absPath := resolvedPath
 
 	fmt.Fprintf(os.Stderr, "[DEBUG] Security validation - Input: %q, SecurityRoot: %q, AbsPath: %q\n",
 		inputPath, sm.securityRoot, absPath)

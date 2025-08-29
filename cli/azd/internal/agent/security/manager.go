@@ -57,11 +57,18 @@ func (sm *Manager) ValidatePath(inputPath string) (string, error) {
 	// Clean the path to resolve any . or .. components
 	cleanPath := filepath.Clean(absPath)
 
+	fmt.Fprintf(os.Stderr, "[DEBUG] Security validation - Input: %q, SecurityRoot: %q, CleanPath: %q\n",
+		inputPath, sm.securityRoot, cleanPath)
+
 	// Check if the path is within the security root
 	if !sm.isWithinSecurityRoot(cleanPath) {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Security validation FAILED - Path %q is outside security root %q\n",
+			cleanPath, sm.securityRoot)
 		return "", fmt.Errorf("access denied: path outside allowed directory")
 	}
 
+	fmt.Fprintf(os.Stderr, "[DEBUG] Security validation PASSED - Path %q is within security root %q\n",
+		cleanPath, sm.securityRoot)
 	return cleanPath, nil
 }
 
@@ -77,24 +84,32 @@ func (sm *Manager) isWithinSecurityRoot(path string) bool {
 	// Ensure both paths are absolute and cleaned
 	absSecurityRoot, err := filepath.Abs(sm.securityRoot)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Failed to get absolute path for security root %q: %v\n", sm.securityRoot, err)
 		return false
 	}
 	absSecurityRoot = filepath.Clean(absSecurityRoot)
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Failed to get absolute path for input %q: %v\n", path, err)
 		return false
 	}
 	absPath = filepath.Clean(absPath)
 
+	fmt.Fprintf(os.Stderr, "[DEBUG] Path comparison - AbsSecurityRoot: %q, AbsPath: %q\n", absSecurityRoot, absPath)
+
 	// Calculate relative path from security root to the target path
 	relPath, err := filepath.Rel(absSecurityRoot, absPath)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Failed to calculate relative path from %q to %q: %v\n",
+			absSecurityRoot, absPath, err)
 		return false
 	}
 
 	// Normalize path separators for cross-platform compatibility
 	relPath = filepath.ToSlash(relPath)
+
+	fmt.Fprintf(os.Stderr, "[DEBUG] Relative path: %q\n", relPath)
 
 	// Check if path is within security root:
 	// - Should not start with "../" (going up and out)
@@ -104,5 +119,6 @@ func (sm *Manager) isWithinSecurityRoot(path string) bool {
 		relPath != ".." &&
 		!strings.HasPrefix(relPath, "/")
 
+	fmt.Fprintf(os.Stderr, "[DEBUG] Security check result: %t for relative path %q\n", result, relPath)
 	return result
 }

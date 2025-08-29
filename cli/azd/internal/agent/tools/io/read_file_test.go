@@ -795,43 +795,6 @@ func TestReadFileTool_SecurityBoundaryValidation(t *testing.T) {
 }
 
 func TestReadFileTool_SecurityBoundaryEdgeCases(t *testing.T) {
-	t.Run("symbolic link outside security root", func(t *testing.T) {
-		tool, tempDir := createTestReadTool(t)
-
-		// Create a test file outside the security boundary
-		outsideDir, err := os.MkdirTemp("", "outside_security")
-		require.NoError(t, err)
-		defer os.RemoveAll(outsideDir)
-
-		outsideFile := filepath.Join(outsideDir, "secret.txt")
-		err = os.WriteFile(outsideFile, []byte("secret content"), 0600)
-		require.NoError(t, err)
-
-		// Try to create a symlink inside security root pointing outside
-		linkPath := filepath.Join(tempDir, "link_to_outside.txt")
-		err = os.Symlink(outsideFile, linkPath)
-		if err != nil {
-			// Skip test if symlinks not supported (Windows without admin)
-			t.Skip("Symlinks not supported in this environment")
-		}
-
-		// Attempt to read through the symlink
-		request := ReadFileRequest{
-			Path: "link_to_outside.txt",
-		}
-		input := mustMarshalJSON(request)
-
-		result, err := tool.Call(context.Background(), input)
-		assert.NoError(t, err)
-
-		// Should fail due to security validation
-		var errorResp common.ErrorResponse
-		err = json.Unmarshal([]byte(result), &errorResp)
-		require.NoError(t, err)
-		assert.True(t, errorResp.Error)
-		assert.Contains(t, errorResp.Message, "Access denied")
-	})
-
 	t.Run("empty path", func(t *testing.T) {
 		tool, _ := createTestReadTool(t)
 

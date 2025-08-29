@@ -794,6 +794,174 @@ func TestReadFileTool_SecurityBoundaryValidation(t *testing.T) {
 	}
 }
 
+func TestReadFileTool_SymlinkResolution(t *testing.T) {
+	// Skip symlink tests on Windows as they require admin privileges
+	if strings.Contains(strings.ToLower(os.Getenv("OS")), "windows") {
+		t.Skip("Skipping symlink tests on Windows")
+	}
+
+	t.Run("symlink to existing file within security root", func(t *testing.T) {
+		// Create test environment
+		sm, tempDir := createTestSecurityManager(t)
+		tool := ReadFileTool{securityManager: sm}
+
+		// Create a real file
+		realFile := filepath.Join(tempDir, "real_file.txt")
+		err := os.WriteFile(realFile, []byte("symlink content"), 0600)
+		require.NoError(t, err)
+
+		// Create a symlink to the real file
+		symlinkFile := filepath.Join(tempDir, "symlink_file.txt")
+		err = os.Symlink(realFile, symlinkFile)
+		require.NoError(t, err)
+
+		// Test reading through the symlink
+		request := ReadFileRequest{
+			Path: symlinkFile,
+		}
+		input := mustMarshalJSON(request)
+
+		result, err := tool.Call(context.Background(), input)
+		assert.NoError(t, err)
+
+		var response ReadFileResponse
+		err = json.Unmarshal([]byte(result), &response)
+		require.NoError(t, err)
+		assert.True(t, response.Success)
+		assert.Equal(t, "symlink content", response.Content)
+	})
+
+	t.Run("symlink to nonexistent file within security root", func(t *testing.T) {
+		// Create test environment
+		sm, tempDir := createTestSecurityManager(t)
+		tool := ReadFileTool{securityManager: sm}
+
+		// Create a symlink to a nonexistent file
+		symlinkFile := filepath.Join(tempDir, "broken_symlink.txt")
+		nonexistentFile := filepath.Join(tempDir, "nonexistent.txt")
+		err := os.Symlink(nonexistentFile, symlinkFile)
+		require.NoError(t, err)
+
+		// Test reading through the broken symlink
+		request := ReadFileRequest{
+			Path: symlinkFile,
+		}
+		input := mustMarshalJSON(request)
+
+		result, err := tool.Call(context.Background(), input)
+		assert.NoError(t, err)
+
+		var errorResp common.ErrorResponse
+		err = json.Unmarshal([]byte(result), &errorResp)
+		require.NoError(t, err)
+		assert.True(t, errorResp.Error)
+		assert.Contains(t, errorResp.Message, "File does not exist")
+	})
+
+	t.Run("symlink to file outside security root", func(t *testing.T) {
+		// Create test environment
+		sm, tempDir := createTestSecurityManager(t)
+		tool := ReadFileTool{securityManager: sm}
+
+		// Create a file outside the security root
+		outsideDir := t.TempDir()
+		outsideFile := filepath.Join(outsideDir, "outside.txt")
+		err := os.WriteFile(outsideFile, []byte("outside content"), 0600)
+		require.NoError(t, err)
+
+		// Create a symlink inside the security root pointing to the outside file
+		symlinkFile := filepath.Join(tempDir, "malicious_symlink.txt")
+		err = os.Symlink(outsideFile, symlinkFile)
+		require.NoError(t, err)
+
+		// Test reading through the malicious symlink should fail
+		request := ReadFileRequest{
+			Path: symlinkFile,
+		}
+		input := mustMarshalJSON(request)
+
+		result, err := tool.Call(context.Background(), input)
+		assert.NoError(t, err)
+
+		var errorResp common.ErrorResponse
+		err = json.Unmarshal([]byte(result), &errorResp)
+		require.NoError(t, err)
+		assert.True(t, errorResp.Error)
+		assert.Contains(t, errorResp.Message, "Access denied")
+	})
+
+	t.Run("symlinked security root directory", func(t *testing.T) {
+		// Create test environment with the actual directory
+		realTempDir := t.TempDir()
+
+		// Create a symlink to the real temp directory
+		symlinkTempDir := filepath.Join(t.TempDir(), "symlinked_root")
+		err := os.Symlink(realTempDir, symlinkTempDir)
+		require.NoError(t, err)
+
+		// Create security manager with the symlinked directory
+		sm, err := security.NewManager(symlinkTempDir)
+		require.NoError(t, err)
+
+		tool := ReadFileTool{securityManager: sm}
+
+		// Create a file in the real directory
+		testFile := filepath.Join(realTempDir, "test.txt")
+		err = os.WriteFile(testFile, []byte("test content"), 0600)
+		require.NoError(t, err)
+
+		// Test reading through the symlinked security root
+		request := ReadFileRequest{
+			Path: filepath.Join(symlinkTempDir, "test.txt"),
+		}
+		input := mustMarshalJSON(request)
+
+		result, err := tool.Call(context.Background(), input)
+		assert.NoError(t, err)
+
+		var response ReadFileResponse
+		err = json.Unmarshal([]byte(result), &response)
+		require.NoError(t, err)
+		assert.True(t, response.Success)
+		assert.Equal(t, "test content", response.Content)
+	})
+
+	t.Run("complex symlink chain within security root", func(t *testing.T) {
+		// Create test environment
+		sm, tempDir := createTestSecurityManager(t)
+		tool := ReadFileTool{securityManager: sm}
+
+		// Create a real file
+		realFile := filepath.Join(tempDir, "real.txt")
+		err := os.WriteFile(realFile, []byte("chain content"), 0600)
+		require.NoError(t, err)
+
+		// Create a chain of symlinks
+		link1 := filepath.Join(tempDir, "link1.txt")
+		err = os.Symlink(realFile, link1)
+		require.NoError(t, err)
+
+		link2 := filepath.Join(tempDir, "link2.txt")
+		err = os.Symlink(link1, link2)
+		require.NoError(t, err)
+
+		// Test reading through the symlink chain
+		request := ReadFileRequest{
+			Path: link2,
+		}
+		input := mustMarshalJSON(request)
+
+		result, err := tool.Call(context.Background(), input)
+		assert.NoError(t, err)
+
+		var response ReadFileResponse
+		err = json.Unmarshal([]byte(result), &response)
+		require.NoError(t, err)
+		assert.True(t, response.Success)
+		assert.Equal(t, "chain content", response.Content)
+	})
+}
+
 func TestReadFileTool_SecurityBoundaryEdgeCases(t *testing.T) {
 	t.Run("empty path", func(t *testing.T) {
 		tool, _ := createTestReadTool(t)
@@ -833,11 +1001,7 @@ func TestReadFileTool_SecurityBoundaryEdgeCases(t *testing.T) {
 
 func TestReadFileTool_SecurityBoundaryWithDirectSecurityManager(t *testing.T) {
 	// Test direct security manager interaction
-	tempDir := t.TempDir()
-
-	sm, err := security.NewManager(tempDir)
-	require.NoError(t, err)
-
+	sm, _ := createTestSecurityManager(t)
 	tool := ReadFileTool{securityManager: sm}
 
 	// Test various malicious paths using cross-platform helper
@@ -847,7 +1011,7 @@ func TestReadFileTool_SecurityBoundaryWithDirectSecurityManager(t *testing.T) {
 		outsidePath("ssh"),                               // SSH keys or sensitive files
 		outsidePath("system"),                            // System files (SAM/passwd)
 		"~/../../etc/shadow",                             // Home directory escape
-		"%SYSTEMROOT%\\System32\\config\\SOFTWARE",       // Environment variable expansion
+		outsidePath("hosts"),                             // Absolute path outside security root
 	}
 
 	for _, maliciousPath := range maliciousPaths {

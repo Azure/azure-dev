@@ -25,6 +25,13 @@ func NewManager(rootPath string) (*Manager, error) {
 		return nil, fmt.Errorf("failed to resolve security root path %s: %w", rootPath, err)
 	}
 
+	// Resolve any symlinks to ensure consistent path comparison
+	resolvedRoot, err := filepath.EvalSymlinks(absRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve symlinks for security root path %s: %w", absRoot, err)
+	}
+	absRoot = resolvedRoot
+
 	// Verify the directory exists
 	info, err := os.Stat(absRoot)
 	if err != nil {
@@ -49,6 +56,17 @@ func (sm *Manager) ValidatePath(inputPath string) (string, error) {
 	absPath, err := filepath.Abs(inputPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve path: %w", err)
+	}
+
+	// Resolve any symlinks to ensure consistent path comparison
+	resolvedPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		// If the file doesn't exist, EvalSymlinks will fail
+		// In this case, we still want to validate the path structure
+		// so we'll use the absolute path as-is
+		resolvedPath = absPath
+	} else {
+		absPath = resolvedPath
 	}
 
 	fmt.Fprintf(os.Stderr, "[DEBUG] Security validation - Input: %q, SecurityRoot: %q, AbsPath: %q\n",

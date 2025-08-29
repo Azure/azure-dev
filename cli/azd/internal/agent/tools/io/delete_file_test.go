@@ -33,7 +33,7 @@ func TestDeleteFileTool_SecurityBoundaryValidation(t *testing.T) {
 		},
 		{
 			name:          "delete file escaping with relative path",
-			deleteFile:    "../../../etc/passwd",
+			deleteFile:    relativeEscapePath("deep"),
 			expectError:   true,
 			errorContains: "Access denied: file deletion operation not permitted outside the allowed directory",
 		},

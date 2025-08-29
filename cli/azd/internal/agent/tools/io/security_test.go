@@ -49,8 +49,8 @@ func TestSecurityManager_ValidatePath(t *testing.T) {
 		"..",
 		"../outside",
 		"../../escape",
-		"/etc/passwd",
-		"C:\\Windows\\System32",
+		platformSpecificPath("users_dir"), // Unix: /etc/passwd, Windows: C:\Users\Administrator\Desktop\secrets.txt
+		platformSpecificPath("system"),    // Unix: /etc/passwd, Windows: C:\Windows\System32
 	}
 
 	for _, path := range invalidPaths {

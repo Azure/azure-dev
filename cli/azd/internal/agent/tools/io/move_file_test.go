@@ -45,7 +45,7 @@ func TestMoveFileTool_SecurityBoundaryValidation(t *testing.T) {
 		},
 		{
 			name:          "source escaping with relative path",
-			sourceFile:    "../../../etc/passwd",
+			sourceFile:    relativeEscapePath("deep"),
 			destFile:      "safe_dest.txt",
 			expectError:   true,
 			errorContains: "Access denied",
@@ -54,7 +54,7 @@ func TestMoveFileTool_SecurityBoundaryValidation(t *testing.T) {
 			name:          "destination escaping with relative path",
 			setupFile:     "safe_source.txt",
 			sourceFile:    "safe_source.txt",
-			destFile:      "../../../tmp/malicious.txt",
+			destFile:      relativeEscapePath("deep"),
 			expectError:   true,
 			errorContains: "Access denied",
 		},

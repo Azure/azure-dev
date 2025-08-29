@@ -77,7 +77,12 @@ func (sm *Manager) ValidatePath(inputPath string) (string, error) {
 	// This prevents "/tmp/safe" from being considered within "/tmp/saf"
 	result := strings.HasPrefix(resolvedPath+string(filepath.Separator), sm.securityRoot+string(filepath.Separator))
 	if !result {
-		fmt.Fprintf(os.Stderr, "[DEBUG] Validation FAILED - Path %q is outside security root %q\n", resolvedPath, sm.securityRoot)
+		fmt.Fprintf(
+			os.Stderr,
+			"[DEBUG] Validation FAILED - Path %q is outside security root %q\n",
+			resolvedPath,
+			sm.securityRoot,
+		)
 		return "", fmt.Errorf("access denied: path outside allowed directory")
 	}
 
@@ -105,18 +110,38 @@ func resolvePath(inputPath string) (string, error) {
 	// Try to resolve symlinks for consistent comparison
 	resolvedPath, err := filepath.EvalSymlinks(absPath)
 	if err != nil {
-		// If file doesn't exist, resolve directory portion for consistency
-		dir := filepath.Dir(absPath)
-		filename := filepath.Base(absPath)
-
-		if resolvedDir, dirErr := filepath.EvalSymlinks(dir); dirErr == nil {
-			resolvedPath = filepath.Join(resolvedDir, filename)
-		} else {
-			// Fallback to absolute path if directory resolution fails
-			resolvedPath = absPath
-		}
+		// If file doesn't exist, recursively find the deepest existing part
+		resolvedPath = resolvePartialPath(absPath)
 	}
 
 	fmt.Fprintf(os.Stderr, "[DEBUG] ResolvePath - Input: %q, Resolved: %q\n", inputPath, resolvedPath)
 	return resolvedPath, nil
+}
+
+// resolvePartialPath recursively finds the deepest existing part of a path and resolves it
+func resolvePartialPath(fullPath string) string {
+	// Split the path into components to work backwards
+	var pathComponents []string
+	currentPath := fullPath
+
+	// Collect all path components from the full path back to an existing directory
+	for currentPath != filepath.Dir(currentPath) { // Stop when we reach root
+		pathComponents = append([]string{filepath.Base(currentPath)}, pathComponents...)
+		currentPath = filepath.Dir(currentPath)
+
+		// Try to resolve this level
+		if resolvedDir, err := filepath.EvalSymlinks(currentPath); err == nil {
+			// Found an existing directory that we can resolve
+			// Rebuild the path from the resolved existing part
+			result := resolvedDir
+			for _, component := range pathComponents {
+				result = filepath.Join(result, component)
+			}
+			return result
+		}
+	}
+
+	// If we get here, nothing could be resolved (shouldn't happen with absolute paths)
+	// Fall back to the original path
+	return fullPath
 }

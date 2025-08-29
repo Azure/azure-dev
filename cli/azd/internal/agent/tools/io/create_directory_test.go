@@ -29,8 +29,8 @@ func TestCreateDirectoryTool_SecurityBoundaryValidation(t *testing.T) {
 			errorContains: "Access denied: directory creation operation not permitted outside the allowed directory",
 		},
 		{
-			name:          "relative path escaping with ..",
-			dirPath:       "../../../tmp/malicious_dir",
+			name:          "directory escaping with relative path",
+			dirPath:       relativeEscapePath("deep"),
 			expectError:   true,
 			errorContains: "Access denied: directory creation operation not permitted outside the allowed directory",
 		},

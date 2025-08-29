@@ -10,32 +10,68 @@ import (
 	"testing"
 )
 
+// platformSpecificPath returns a platform-appropriate path for testing security boundaries
+func platformSpecificPath(pathType string) string {
+	if runtime.GOOS == "windows" {
+		switch pathType {
+		case "hosts":
+			return `C:\Windows\System32\drivers\etc\hosts`
+		case "system":
+			return `C:\Windows\System32\config\SAM`
+		case "users_dir":
+			return `C:\Users\Administrator\Desktop\secrets.txt`
+		case "temp_file":
+			return `C:\Windows\Temp\malicious.txt`
+		case "ssh_keys":
+			return `C:\Users\Administrator\.ssh\id_rsa`
+		default:
+			return `C:\Windows\System32\config\SAM`
+		}
+	}
+
+	// Unix-like systems (Linux/macOS)
+	switch pathType {
+	case "hosts":
+		return "/etc/hosts"
+	case "system":
+		return "/etc/passwd"
+	case "users_dir":
+		return "/home/user/secrets.txt"
+	case "temp_file":
+		return "/tmp/malicious.txt"
+	case "ssh_keys":
+		return "/root/.ssh/id_rsa"
+	default:
+		return "/etc/passwd"
+	}
+}
+
 // outsidePath returns an absolute path that will be outside the test security root
 // `kind` can be "system", "hosts", "tmp", or "ssh"; fallbacks provided
 func outsidePath(kind string) string {
 	if runtime.GOOS == "windows" {
 		switch kind {
 		case "hosts":
-			return `C:\\Windows\\System32\\drivers\\etc\\hosts`
+			return platformSpecificPath("hosts")
 		case "tmp":
-			return filepath.Join("C:\\", "Windows", "Temp", "malicious.txt")
+			return platformSpecificPath("temp_file")
 		case "ssh":
-			return `C:\\Users\\Administrator\\Desktop\\secrets.txt`
+			return platformSpecificPath("users_dir")
 		default:
-			return `C:\\Windows\\System32\\config\\SAM`
+			return platformSpecificPath("system")
 		}
 	}
 
 	// Unix-like defaults (Linux/macOS)
 	switch kind {
 	case "hosts":
-		return "/etc/hosts"
+		return platformSpecificPath("hosts")
 	case "ssh":
-		return "/root/.ssh/id_rsa"
+		return platformSpecificPath("ssh_keys")
 	case "tmp":
-		return "/tmp/malicious.txt"
+		return platformSpecificPath("temp_file")
 	default:
-		return "/etc/passwd"
+		return platformSpecificPath("system")
 	}
 }
 
@@ -125,5 +161,259 @@ func TestSecurityManager_ValidatePath_DirectoryChange(t *testing.T) {
 	_, err = sm.ValidatePath("../../")
 	if err == nil {
 		t.Error("Expected directory change to ../../ to fail validation, but it passed")
+	}
+}
+
+func TestResolvePath_ExistingFiles(t *testing.T) {
+	// Create a test directory structure
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test.txt")
+
+	// Create the test file
+	if err := os.WriteFile(testFile, []byte("test content"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Test resolving an existing file
+	resolved, err := resolvePath(testFile)
+	if err != nil {
+		t.Errorf("resolvePath failed for existing file: %v", err)
+	}
+
+	// Should return absolute canonical path
+	if !filepath.IsAbs(resolved) {
+		t.Errorf("Expected absolute path, got: %s", resolved)
+	}
+
+	// Test with relative path to existing file
+	oldWd, _ := os.Getwd()
+	defer os.Chdir(oldWd)
+
+	os.Chdir(tempDir)
+	resolved, err = resolvePath("test.txt")
+	if err != nil {
+		t.Errorf("resolvePath failed for relative path to existing file: %v", err)
+	}
+
+	if !filepath.IsAbs(resolved) {
+		t.Errorf("Expected absolute path for relative input, got: %s", resolved)
+	}
+}
+
+func TestResolvePath_NonExistentFiles(t *testing.T) {
+	// Create a test directory structure
+	tempDir := t.TempDir()
+
+	// Test case 1: Non-existent file in existing directory
+	nonExistentFile := filepath.Join(tempDir, "nonexistent.txt")
+	resolved, err := resolvePath(nonExistentFile)
+	if err != nil {
+		t.Errorf("resolvePath failed for non-existent file in existing dir: %v", err)
+	}
+
+	// Should resolve the directory part and append the filename
+	expectedDir, err := filepath.EvalSymlinks(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to resolve temp dir: %v", err)
+	}
+	expected := filepath.Join(expectedDir, "nonexistent.txt")
+	if resolved != expected {
+		t.Errorf("Expected %s, got %s", expected, resolved)
+	}
+}
+
+func TestResolvePath_DeepNonExistentPaths(t *testing.T) {
+	// Create a test directory structure with some existing and some non-existing parts
+	tempDir := t.TempDir()
+
+	// Create: tempDir/level1/level2/
+	level1 := filepath.Join(tempDir, "level1")
+	level2 := filepath.Join(level1, "level2")
+	if err := os.MkdirAll(level2, 0755); err != nil {
+		t.Fatalf("Failed to create test directories: %v", err)
+	}
+
+	// Test case 1: Existing path with non-existent file
+	// tempDir/level1/level2/nonexistent.txt
+	deepNonExistentFile := filepath.Join(level2, "nonexistent.txt")
+	resolved, err := resolvePath(deepNonExistentFile)
+	if err != nil {
+		t.Errorf("resolvePath failed for deep non-existent file: %v", err)
+	}
+
+	resolvedLevel2, err := filepath.EvalSymlinks(level2)
+	if err != nil {
+		t.Fatalf("Failed to resolve level2 dir: %v", err)
+	}
+	expected := filepath.Join(resolvedLevel2, "nonexistent.txt")
+	if resolved != expected {
+		t.Errorf("Expected %s, got %s", expected, resolved)
+	}
+
+	// Test case 2: Partially non-existent path
+	// tempDir/level1/level2/level3/level4/nonexistent.txt
+	deepNonExistentPath := filepath.Join(level2, "level3", "level4", "nonexistent.txt")
+	resolved, err = resolvePath(deepNonExistentPath)
+	if err != nil {
+		t.Errorf("resolvePath failed for partially non-existent path: %v", err)
+	}
+
+	// Should resolve up to level2 and append the rest
+	expected = filepath.Join(resolvedLevel2, "level3", "level4", "nonexistent.txt")
+	if resolved != expected {
+		t.Errorf("Expected %s, got %s", expected, resolved)
+	}
+}
+
+func TestResolvePartialPath_Recursive(t *testing.T) {
+	// Create a test directory structure
+	tempDir := t.TempDir()
+
+	// Create: tempDir/existing/
+	existingDir := filepath.Join(tempDir, "existing")
+	if err := os.Mkdir(existingDir, 0755); err != nil {
+		t.Fatalf("Failed to create existing directory: %v", err)
+	}
+
+	// Test case 1: Multiple non-existent levels
+	// tempDir/existing/nonexistent1/nonexistent2/file.txt
+	deepPath := filepath.Join(existingDir, "nonexistent1", "nonexistent2", "file.txt")
+	resolved := resolvePartialPath(deepPath)
+
+	// Should resolve existingDir and append the non-existent parts
+	resolvedExisting, err := filepath.EvalSymlinks(existingDir)
+	if err != nil {
+		t.Fatalf("Failed to resolve existing dir: %v", err)
+	}
+	expected := filepath.Join(resolvedExisting, "nonexistent1", "nonexistent2", "file.txt")
+	if resolved != expected {
+		t.Errorf("Expected %s, got %s", expected, resolved)
+	}
+
+	// Test case 2: All components exist
+	existingFile := filepath.Join(existingDir, "realfile.txt")
+	if err := os.WriteFile(existingFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// This should fall back to EvalSymlinks working correctly
+	resolved = resolvePartialPath(existingFile)
+	resolvedFile, err := filepath.EvalSymlinks(existingFile)
+	if err != nil {
+		t.Fatalf("Failed to resolve existing file: %v", err)
+	}
+	if resolved != resolvedFile {
+		t.Errorf("Expected %s, got %s", resolvedFile, resolved)
+	}
+}
+
+func TestResolvePath_Integration_WithSecurityManager(t *testing.T) {
+	// Create test directory structure
+	tempDir := t.TempDir()
+
+	// Create security manager
+	sm, err := NewManager(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create security manager: %v", err)
+	}
+
+	// Test case 1: Non-existent file within security root should be allowed
+	nonExistentInRoot := filepath.Join(tempDir, "future_file.txt")
+	resolved, err := sm.ValidatePath(nonExistentInRoot)
+	if err != nil {
+		t.Errorf("Expected non-existent file within root to be allowed: %v", err)
+	}
+	if resolved == "" {
+		t.Error("Expected resolved path to be returned")
+	}
+
+	// Test case 2: Deep non-existent path within security root should be allowed
+	deepPath := filepath.Join(tempDir, "deep", "nested", "future_file.txt")
+	resolved, err = sm.ValidatePath(deepPath)
+	if err != nil {
+		t.Errorf("Expected deep non-existent path within root to be allowed: %v", err)
+	}
+	if resolved == "" {
+		t.Error("Expected resolved path to be returned")
+	}
+
+	// Test case 3: Non-existent file outside security root should be denied
+	outsideFile := filepath.Join(filepath.Dir(tempDir), "outside.txt")
+	_, err = sm.ValidatePath(outsideFile)
+	if err == nil {
+		t.Error("Expected non-existent file outside root to be denied")
+	}
+}
+
+func TestSecurityManager_Windows8dot3ShortNames(t *testing.T) {
+	// This test specifically checks Windows 8.3 short name handling
+	// by creating very long directory names that will trigger short name generation
+	tempDir := t.TempDir()
+
+	sm, err := NewManager(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create security manager: %v", err)
+	}
+
+	// Create directory names that are definitely longer than 8 characters
+	// to force Windows 8.3 short name generation
+	longDirName := "VeryLongDirectoryNameThatWillDefinitelyTriggerWindows8dot3ShortNameGeneration"
+	longSubDirName := "AnotherExtremelyLongSubdirectoryNameThatExceedsTheEightCharacterLimit"
+	longFileName := "AnExtremelyLongFileNameThatWillAlsoTriggerShortNameGenerationOnWindowsSystems.txt"
+
+	// Create the actual long directory structure to test against
+	longDirPath := filepath.Join(tempDir, longDirName)
+	err = os.MkdirAll(longDirPath, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create long directory: %v", err)
+	}
+
+	longSubDirPath := filepath.Join(longDirPath, longSubDirName)
+	err = os.MkdirAll(longSubDirPath, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create long subdirectory: %v", err)
+	}
+
+	// Test 1: Validate existing long directory path
+	resolved, err := sm.ValidatePath(longDirPath)
+	if err != nil {
+		t.Errorf("Expected long directory path to be allowed: %v", err)
+	}
+	if resolved == "" {
+		t.Error("Expected resolved path to be returned for long directory")
+	}
+
+	// Test 2: Validate existing long subdirectory path
+	resolved, err = sm.ValidatePath(longSubDirPath)
+	if err != nil {
+		t.Errorf("Expected long subdirectory path to be allowed: %v", err)
+	}
+	if resolved == "" {
+		t.Error("Expected resolved path to be returned for long subdirectory")
+	}
+
+	// Test 3: Validate non-existent file in long subdirectory (this mimics the CI failure)
+	longFilePath := filepath.Join(longSubDirPath, longFileName)
+	resolved, err = sm.ValidatePath(longFilePath)
+	if err != nil {
+		t.Errorf("Expected non-existent file in long subdirectory to be allowed: %v", err)
+	}
+	if resolved == "" {
+		t.Error("Expected resolved path to be returned for long file path")
+	}
+
+	// Test 4: Create the file and validate again (both short and long name should work)
+	file, err := os.Create(longFilePath)
+	if err != nil {
+		t.Fatalf("Failed to create long file: %v", err)
+	}
+	file.Close()
+
+	resolved, err = sm.ValidatePath(longFilePath)
+	if err != nil {
+		t.Errorf("Expected existing long file path to be allowed: %v", err)
+	}
+	if resolved == "" {
+		t.Error("Expected resolved path to be returned for existing long file")
 	}
 }

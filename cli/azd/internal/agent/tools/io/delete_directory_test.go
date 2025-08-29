@@ -31,7 +31,7 @@ func TestDeleteDirectoryTool_SecurityBoundaryValidation(t *testing.T) {
 		},
 		{
 			name:          "relative path escaping with ..",
-			deleteDir:     "../../../tmp",
+			deleteDir:     relativeEscapePath("deep"),
 			expectError:   true,
 			errorContains: "Access denied: directory deletion operation not permitted outside the allowed directory",
 		},

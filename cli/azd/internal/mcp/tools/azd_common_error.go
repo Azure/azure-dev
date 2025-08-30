@@ -16,6 +16,10 @@ func NewAzdCommonErrorTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"azd_common_error",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
 				`Returns instructions for diagnosing common error type and providing suggested actions for resolution.
 

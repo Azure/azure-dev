@@ -21,14 +21,13 @@ func NewAzdErrorTroubleShootingTool() server.ServerTool {
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
-				`Returns instructions for diagnosing errors from Azure Developer CLI (azd) commands and provides step-by-step troubleshooting instructions.
+				`Returns instructions to identify, explain and diagnose the errors from Azure Developer CLI (azd) commands and provides step-by-step troubleshooting instructions.
 
 The LLM agent should execute these instructions using available tools.
 
 Use this tool when:
-- Any error occurs during Azure Developer CLI (azd) command execution
-- Need to classify, analyze, and resolve errors automatically or with guided steps
-- Provide troubleshooting steps for errors`,
+- Request to identify, explain and diagnose the error when running azd command and its root cause
+- Provide actionable troubleshooting steps`,
 			),
 		),
 		Handler: handleAzdErrorTroubleShooting,

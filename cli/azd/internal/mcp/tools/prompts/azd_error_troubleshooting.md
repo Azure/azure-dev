@@ -3,7 +3,7 @@
 ✅ **Agent Task List**  
 
 1. **Error Classification:** Identify the specific error type (Azure REST API, ARM Deployment, Authentication, Local Tool Installation or General)
-2. **Error Analysis:** Explain what the error means and its root causes. Note that this error occurs when running Azure Developer CLI
+2. **Error Analysis:** Explain and diagnose what the error means and its root causes. Note that this error occurs when running Azure Developer CLI
 3. **Troubleshooting Steps:** Based on error type (Azure REST API Response Errors, Azure ARM Deployment Errors, Azure Authentication Errors, Local Tool Installation Errors, and General AZD Errors), find the Troubleshooting Approach below and provide troubleshooting approach
 4. **Resolution Confirmation:** Ensure the issue is fully resolved. If issue still exists, retry the task list to fix the error
 
@@ -261,4 +261,4 @@
 - [ ] Infrastructure code corrections implemented and validated if needed
 - [ ] For Azure REST API Response Errors or Azure ARM Deployment Errors, Azure Portal verification completed for affected resources if needed
 - [ ] For Azure REST API Response Errors or Azure ARM Deployment Errors, Azure CLI commands confirm successful resolution if needed when user installed Azure CLI. Otherwise, skip this step
-- [ ] Ensure the issue is fully resolved. If issue still exists, retry the task list to fix the error
+- [ ] Ensure the issue is fully resolved

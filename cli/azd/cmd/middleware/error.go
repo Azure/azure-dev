@@ -17,6 +17,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/fatih/color"
 )
 
 type ErrorMiddleware struct {
@@ -48,9 +50,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		var previousError error
 		originalError := err
 
-		// skipAnalyzingErrors := []error{
-		// context.Canceled,
-		// }
+		// TODO: think about Error exclusive or inclusive
 		skipAnalyzingErrors := []string{
 			"environment already initialized",
 			"interrupt",
@@ -60,12 +60,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			if err == nil {
 				break
 			}
-
-			// for _, e := range skipAnalyzingErrors {
-			// 	if errors.As(err, &e) || errors.Is(err, e) {
-			// 		return actionResult, err
-			// 	}
-			// }
 
 			for _, s := range skipAnalyzingErrors {
 				if strings.Contains(err.Error(), s) {
@@ -102,15 +96,33 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 				`Steps to follow:
-			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
+			1. Identify, explain and diagnose this error when running azd command and its root cause.
 			2. Provide actionable troubleshooting steps.
 			Error details: %s`, originalError.Error()))
+
 			if err != nil {
 				if agentOutput != "" {
 					e.console.Message(ctx, output.WithMarkdown(agentOutput))
 				}
 
 				return nil, err
+			}
+
+			// Ask if user wants to provide AI generated troubleshooting steps
+			confirm, err := e.console.Confirm(ctx, input.ConsoleOptions{
+				Message:      "Provide AI generated troubleshooting steps?",
+				DefaultValue: true,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("prompting to provide troubleshooting steps: %w", err)
+			}
+
+			if confirm {
+				// Provide manual steps for troubleshooting
+				e.console.Message(ctx, "")
+				e.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
+				e.console.Message(ctx, output.WithMarkdown(agentOutput))
+				e.console.Message(ctx, "")
 			}
 
 			// Ask user if they want to let AI fix the error
@@ -127,12 +139,13 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			}
 
 			switch selection {
-			case 0: // fix the error
+			// fix the error with AI
+			case 0:
 				previousError = originalError
 				agentOutput, err = azdAgent.SendMessage(ctx, fmt.Sprintf(
 					`Steps to follow:
-			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
-			2. Resolve the error by iterating and attempting to solve all errors until the azd command succeeds.
+			1. Identify, explain and diagnose this error when running azd command and its root cause.
+			2. Resolve the error with the smallest possible change to the code or configuration. Only fix what is necessary.
 			Error details: %s`, originalError.Error()))
 
 				if err != nil {
@@ -142,27 +155,20 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 					return nil, err
 				}
+
+			// Not fix the error with AI
 			case 1:
-				confirm, err := e.console.Confirm(ctx, input.ConsoleOptions{
-					Message:      "Provide AI generated troubleshooting steps?",
-					DefaultValue: true,
-				})
-				if err != nil {
-					return nil, fmt.Errorf("prompting to provide troubleshooting steps: %w", err)
-				}
-
-				if confirm {
-					// Provide manual steps for troubleshooting
-					e.console.Message(ctx, "")
-					e.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
-					e.console.Message(ctx, output.WithMarkdown(agentOutput))
-					e.console.Message(ctx, "")
-				}
-
 				return actionResult, err
 			}
 
+			// Ask the user to add feedback
+			if err := e.collectAndApplyFeedback(ctx, azdAgent, "Any feedback or changes?"); err != nil {
+				return nil, err
+			}
+
+			// Clear check cache to prevent skip of tool related error
 			ctx = tools.WithInstalledCheckCache(ctx)
+
 			actionResult, err = next(ctx)
 			originalError = err
 		}
@@ -173,4 +179,60 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	actionResult, err := next(ctx)
 
 	return actionResult, err
+}
+
+// collectAndApplyFeedback prompts for user feedback and applies it using the agent
+func (e *ErrorMiddleware) collectAndApplyFeedback(
+	ctx context.Context,
+	azdAgent agent.Agent,
+	promptMessage string,
+) error {
+	confirmFeedback := uxlib.NewConfirm(&uxlib.ConfirmOptions{
+		Message:      promptMessage,
+		DefaultValue: uxlib.Ptr(false),
+		HelpMessage:  "You will be able to provide and feedback or changes after AI fix.",
+	})
+
+	hasFeedback, err := confirmFeedback.Ask(ctx)
+	if err != nil {
+		return err
+	}
+
+	if !*hasFeedback {
+		e.console.Message(ctx, "")
+		return nil
+	}
+
+	userInputPrompt := uxlib.NewPrompt(&uxlib.PromptOptions{
+		Message:        "You",
+		PlaceHolder:    "Provide feedback or changes to the project",
+		Required:       true,
+		IgnoreHintKeys: true,
+	})
+
+	userInput, err := userInputPrompt.Ask(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to collect feedback after AI fix: %w", err)
+	}
+
+	e.console.Message(ctx, "")
+
+	if userInput != "" {
+		e.console.Message(ctx, color.MagentaString("Feedback"))
+
+		feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
+		if err != nil {
+			if feedbackOutput != "" {
+				e.console.Message(ctx, output.WithMarkdown(feedbackOutput))
+			}
+			return err
+		}
+
+		e.console.Message(ctx, "")
+		e.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
+		e.console.Message(ctx, output.WithMarkdown(feedbackOutput))
+		e.console.Message(ctx, "")
+	}
+
+	return nil
 }

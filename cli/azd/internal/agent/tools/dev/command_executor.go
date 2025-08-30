@@ -120,6 +120,16 @@ func (t CommandExecutorTool) Call(ctx context.Context, input string) (string, er
 		return string(jsonData), nil
 	}
 
+	if req.Command == "azd" {
+		errorResponse := common.ErrorResponse{
+			Error:   true,
+			Message: "azd command is not supported",
+		}
+
+		jsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
+		return string(jsonData), nil
+	}
+
 	// Set defaults
 	if req.Args == nil {
 		req.Args = []string{}

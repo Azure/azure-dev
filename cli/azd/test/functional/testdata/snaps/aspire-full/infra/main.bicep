@@ -23,37 +23,20 @@ resource rg 'Microsoft.Resources/resourceGroups@2022-09-01' = {
   location: location
   tags: tags
 }
-module resources 'resources.bicep' = {
-  scope: rg
-  name: 'resources'
-  params: {
-    location: location
-    tags: tags
-    principalId: principalId
-  }
-}
 
-module storage 'storage/storage.module.bicep' = {
-  name: 'storage'
+module appHostInfrastructure 'appHostInfrastructure/appHostInfrastructure.module.bicep' = {
+  name: 'appHostInfrastructure'
   scope: rg
   params: {
     location: location
-    principalId: resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID
-    principalType: 'ServicePrincipal'
+    userPrincipalId: principalId
   }
 }
-
-output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
-output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
-output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
-output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
-output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.AZURE_CONTAINER_REGISTRY_NAME
-output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME
-output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
-output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
-output STORAGE_BLOBENDPOINT string = storage.outputs.blobEndpoint
-output STORAGE_QUEUEENDPOINT string = storage.outputs.queueEndpoint
-output STORAGE_TABLEENDPOINT string = storage.outputs.tableEndpoint
+output APPHOSTINFRASTRUCTURE_AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
+output APPHOSTINFRASTRUCTURE_AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
+output APPHOSTINFRASTRUCTURE_AZURE_CONTAINER_REGISTRY_ENDPOINT string = appHostInfrastructure.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
+output APPHOSTINFRASTRUCTURE_AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = appHostInfrastructure.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
+output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = appHostInfrastructure.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = appHostInfrastructure.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output AZURE_GOVERSION string = goversion
 

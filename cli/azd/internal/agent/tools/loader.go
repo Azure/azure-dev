@@ -9,20 +9,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/io"
 )
 
-// ToolLoader provides an interface for loading tools from different categories
-type ToolLoader interface {
-	LoadTools() ([]common.AnnotatedTool, error)
-}
-
 // LocalToolsLoader manages loading tools from multiple local tool categories
 type LocalToolsLoader struct {
-	loaders []ToolLoader
+	loaders []common.ToolLoader
 }
 
 // NewLocalToolsLoader creates a new instance with default tool loaders for dev and io categories
-func NewLocalToolsLoader() *LocalToolsLoader {
+func NewLocalToolsLoader() common.ToolLoader {
 	return &LocalToolsLoader{
-		loaders: []ToolLoader{
+		loaders: []common.ToolLoader{
 			dev.NewDevToolsLoader(),
 			io.NewIoToolsLoader(),
 		},

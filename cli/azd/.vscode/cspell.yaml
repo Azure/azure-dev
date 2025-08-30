@@ -187,6 +187,9 @@ overrides:
       - santhosh
       - tekuri
       - jsonschema
+  - filename: cmd/completion.go
+    words:
+      - compinit
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

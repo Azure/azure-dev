@@ -17,12 +17,9 @@ type ChainedHandler struct {
 }
 
 // NewChainedHandler creates a new ChainedHandler with the provided handlers.
-func NewChainedHandler(handlers ...callbacks.Handler) *ChainedHandler {
+func NewChainedHandler(handlers ...callbacks.Handler) callbacks.Handler {
 	return &ChainedHandler{handlers: handlers}
 }
-
-// Compile-time check to ensure ChainedHandler implements callbacks.Handler
-var _ callbacks.Handler = &ChainedHandler{}
 
 func (c *ChainedHandler) HandleText(ctx context.Context, text string) {
 	for _, h := range c.handlers {

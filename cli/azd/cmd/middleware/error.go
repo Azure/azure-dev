@@ -45,15 +45,19 @@ func NewErrorMiddleware(
 }
 
 func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
+	actionResult, err := next(ctx)
+
 	if e.featuresManager.IsEnabled(llm.FeatureLlm) {
 		if e.options.IsChildAction(ctx) {
 			return next(ctx)
 		}
 
-		actionResult, err := next(ctx)
 		attempt := 0
-		var previousError error
 		originalError := err
+		suggestion := ""
+		var previousError error
+		var suggestionErr *internal.ErrorWithSuggestion
+		var errorWithTraceId *internal.ErrorWithTraceId
 
 		// TODO: think about Error exclusive or inclusive
 		skipAnalyzingErrors := []string{
@@ -62,13 +66,13 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		}
 
 		for {
-			if err == nil {
+			if originalError == nil {
 				break
 			}
 
 			for _, s := range skipAnalyzingErrors {
-				if strings.Contains(err.Error(), s) {
-					return actionResult, err
+				if strings.Contains(originalError.Error(), s) {
+					return actionResult, originalError
 				}
 			}
 
@@ -77,16 +81,26 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				if attempt > 3 {
 					e.console.Message(ctx, "AI was unable to resolve the error after multiple attempts. "+
 						"Please review the error and fix it manually.")
-					return actionResult, err
+					return actionResult, originalError
 				}
 			}
 
+			// For debug, will be cleaned
 			// e.console.Confirm(ctx, input.ConsoleOptions{
 			// 	Message:      "Debugger Ready?",
 			// 	DefaultValue: true,
 			// })
 			e.console.StopSpinner(ctx, "", input.Step)
 			e.console.Message(ctx, output.WithErrorFormat("\nERROR: %s", originalError.Error()))
+
+			if errors.As(originalError, &errorWithTraceId) {
+				e.console.Message(ctx, output.WithErrorFormat("TraceID: %s", errorWithTraceId.TraceId))
+			}
+
+			if errors.As(originalError, &suggestionErr) {
+				suggestion = suggestionErr.Suggestion
+				e.console.Message(ctx, suggestion)
+			}
 
 			// Warn user that this is an alpha feature
 			e.console.WarnForFeature(ctx, llm.FeatureLlm)
@@ -100,11 +114,16 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 			defer azdAgent.Stop()
 
+			errorInput := originalError.Error()
+			if suggestion != "" {
+				errorInput += "\n" + "Suggestion: " + suggestion
+			}
+
 			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 				`Steps to follow:
 			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
 			2. Provide actionable troubleshooting steps.
-			Error details: %s`, originalError.Error()))
+			Error details: %s`, errorInput))
 
 			if err != nil {
 				if agentOutput != "" {
@@ -151,8 +170,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				agentOutput, err = azdAgent.SendMessage(ctx, fmt.Sprintf(
 					`Steps to follow:
 			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
-			2. Resolve the error with the smallest possible change to the code or configuration. Only fix what is necessary.
-			Error details: %s`, originalError.Error()))
+			2. Resolve the error by making the minimal, targeted change required to the code or configuration. Avoid unnecessary modifications and focus only on what is essential to restore correct functionality.
+			Error details: %s`, errorInput))
 
 				if err != nil {
 					if agentOutput != "" {
@@ -178,11 +197,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			actionResult, err = next(ctx)
 			originalError = err
 		}
-
-		return actionResult, err
 	}
-
-	actionResult, err := next(ctx)
 
 	return actionResult, err
 }

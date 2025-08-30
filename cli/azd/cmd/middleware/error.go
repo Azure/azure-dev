@@ -29,7 +29,12 @@ type ErrorMiddleware struct {
 	featuresManager *alpha.FeatureManager
 }
 
-func NewErrorMiddleware(options *Options, console input.Console, agentFactory *agent.AgentFactory, global *internal.GlobalCommandOptions, featuresManager *alpha.FeatureManager) Middleware {
+func NewErrorMiddleware(
+	options *Options, console input.Console,
+	agentFactory *agent.AgentFactory,
+	global *internal.GlobalCommandOptions,
+	featuresManager *alpha.FeatureManager,
+) Middleware {
 	return &ErrorMiddleware{
 		options:         options,
 		console:         console,
@@ -70,7 +75,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			if previousError != nil && errors.Is(originalError, previousError) {
 				attempt++
 				if attempt > 3 {
-					e.console.Message(ctx, "AI was unable to resolve the error after multiple attempts. Please review the error and fix it manually.")
+					e.console.Message(ctx, "AI was unable to resolve the error after multiple attempts. "+
+						"Please review the error and fix it manually.")
 					return actionResult, err
 				}
 			}
@@ -96,7 +102,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 				`Steps to follow:
-			1. Identify, explain and diagnose this error when running azd command and its root cause.
+			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
 			2. Provide actionable troubleshooting steps.
 			Error details: %s`, originalError.Error()))
 
@@ -144,7 +150,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				previousError = originalError
 				agentOutput, err = azdAgent.SendMessage(ctx, fmt.Sprintf(
 					`Steps to follow:
-			1. Identify, explain and diagnose this error when running azd command and its root cause.
+			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
 			2. Resolve the error with the smallest possible change to the code or configuration. Only fix what is necessary.
 			Error details: %s`, originalError.Error()))
 

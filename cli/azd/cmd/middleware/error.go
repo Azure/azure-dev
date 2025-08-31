@@ -170,7 +170,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				agentOutput, err = azdAgent.SendMessage(ctx, fmt.Sprintf(
 					`Steps to follow:
 			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
-			2. Resolve the error by making the minimal, targeted change required to the code or configuration. Avoid unnecessary modifications and focus only on what is essential to restore correct functionality.
+			2. Resolve the error by making the minimal, targeted change required to the code or configuration. 
+			Avoid unnecessary modifications and focus only on what is essential to restore correct functionality.
 			Error details: %s`, errorInput))
 
 				if err != nil {

@@ -8,13 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 )
 
 // Manager handles path validation and access control for agent tools
 type Manager struct {
 	securityRoot string
-	mu           sync.RWMutex
 }
 
 // NewManager creates a new security manager with the specified root directory
@@ -42,17 +40,11 @@ func NewManager(rootPath string) (*Manager, error) {
 
 // GetSecurityRoot returns the current security root directory
 func (sm *Manager) GetSecurityRoot() string {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-
 	return sm.securityRoot
 }
 
 // ValidatePath validates that the given path is within the security boundary
 func (sm *Manager) ValidatePath(inputPath string) (string, error) {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-
 	var resolvedPath string
 	var err error
 

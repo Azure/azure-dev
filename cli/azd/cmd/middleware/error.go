@@ -63,6 +63,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		skipAnalyzingErrors := []string{
 			"environment already initialized",
 			"interrupt",
+			"no project exists",
 		}
 
 		for {
@@ -85,11 +86,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				}
 			}
 
-			// For debug, will be cleaned
-			// e.console.Confirm(ctx, input.ConsoleOptions{
-			// 	Message:      "Debugger Ready?",
-			// 	DefaultValue: true,
-			// })
 			e.console.StopSpinner(ctx, "", input.Step)
 			e.console.Message(ctx, output.WithErrorFormat("\nERROR: %s", originalError.Error()))
 
@@ -150,6 +146,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				e.console.Message(ctx, "")
 			}
 
+			// TODO: update to "GitHub Copilot for Azure"
 			// Ask user if they want to let AI fix the error
 			selection, err := e.console.Select(ctx, input.ConsoleOptions{
 				Message: "Do you want to continue to fix the error using AI?",
@@ -186,6 +183,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			case 1:
 				return actionResult, err
 			}
+
+			// TODO print out the changes made by AI
 
 			// Ask the user to add feedback
 			if err := e.collectAndApplyFeedback(ctx, azdAgent, "Any feedback or changes?"); err != nil {

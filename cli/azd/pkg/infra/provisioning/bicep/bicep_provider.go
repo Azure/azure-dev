@@ -444,7 +444,6 @@ func (p *BicepProvider) deploymentState(
 	currentParamsHash string,
 ) (*azapi.ResourceDeployment, error) {
 	p.console.ShowSpinner(ctx, "Comparing deployment state", input.Step)
-	// defer p.console.StopSpinner(ctx, "", input.Step)
 	prevDeploymentResult, err := p.latestDeploymentResult(ctx, scope)
 	if err != nil {
 		return nil, fmt.Errorf("deployment state error: %w", err)

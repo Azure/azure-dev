@@ -3,13 +3,14 @@
 ✅ **Agent Task List**  
 
 1. Read `azd-arch-plan.md` to understand discovered components
-2. For each component, select optimal Azure service using selection criteria below
-3. Plan containerization strategy for applicable services
-4. Select appropriate database and messaging services
-5. Design resource group organization and networking approach
-6. Generate IaC file checklist based on selected Azure services
-7. Generate Docker file checklist based on containerization strategy
-8. Create `azd-arch-plan.md` if it doesn't exist, or update existing file with service mapping table, architecture decisions, IaC checklist, and Docker checklist while preserving existing content
+2. Always identify latest Azure best practices
+3. For each component, select optimal Azure service using selection criteria below
+4. Plan containerization strategy for applicable services
+5. Select appropriate database and messaging services
+6. Design resource group organization and networking approach
+7. Generate IaC file checklist based on selected Azure services
+8. Generate Docker file checklist based on containerization strategy
+9. Create `azd-arch-plan.md` if it doesn't exist, or update existing file with service mapping table, architecture decisions, IaC checklist, and Docker checklist while preserving existing content
 
 📄 **Required Outputs**  
 

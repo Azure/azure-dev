@@ -1,5 +1,5 @@
 
-Publish your project to Azure Container Registry.
+Publish a service to a container registry.
 
   • Only works with Container App services.
 

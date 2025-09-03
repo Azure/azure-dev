@@ -350,7 +350,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	messageHeader := fmt.Sprintf("Your application was deployed to Azure in %s.", ux.DurationAsText(since(startTime)))
 	if da.flags.PublishOnly {
-		messageHeader = fmt.Sprintf("Your application was published to Azure Container Registry in %s.",
+		messageHeader = fmt.Sprintf("Your application was published to the container registry in %s.",
 			ux.DurationAsText(since(startTime)))
 	}
 

@@ -34,7 +34,7 @@ func (f *PublishFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 	f.deploy.BindNonCommon(local, global)
 	f.deploy.bindCommon(local, global)
 
-	// Add the --tag flag specific to publish command
+	// Add the --image flag specific to publish command
 	local.StringVar(
 		&f.Image,
 		"image",
@@ -76,7 +76,7 @@ func NewPublishFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func NewPublishCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "publish <service>",
-		Short: "Publish your project to Azure Container Registry.",
+		Short: "Publish a service to a container registry.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 	return cmd
@@ -172,7 +172,7 @@ func (p *publishActionWrapper) Run(ctx context.Context) (*actions.ActionResult, 
 
 func GetCmdPublishHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		"Publish your project to Azure Container Registry.",
+		"Publish a service to a container registry.",
 		[]string{
 			formatHelpNote("Only works with Container App services."),
 		})

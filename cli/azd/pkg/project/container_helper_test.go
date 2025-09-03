@@ -111,6 +111,13 @@ func Test_ContainerHelper_RemoteImageTag(t *testing.T) {
 			localImageTag: "test-app/api-dev:azd-deploy-0",
 			expectError:   true,
 		},
+		{
+			name:              "registry with user/org prefix matches local image",
+			project:           "",
+			registry:          osutil.NewExpandableString("docker.io/org"),
+			localImageTag:     "docker.io/org/my-custom-image:latest",
+			expectedRemoteTag: "docker.io/org/my-custom-image:latest",
+		},
 	}
 
 	mockContext := mocks.NewMockContext(context.Background())

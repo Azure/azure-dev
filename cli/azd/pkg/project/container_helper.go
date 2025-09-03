@@ -184,6 +184,12 @@ func (ch *ContainerHelper) RemoteImageTag(
 		return "", err
 	}
 
+	// If the localImageTag already starts with the registryName, return it as-is
+	// This handles cases where registryName includes user/org prefixes like "docker.io/org"
+	if registryName != "" && strings.HasPrefix(localImageTag, registryName+"/") {
+		return localImageTag, nil
+	}
+
 	containerImage, err := docker.ParseContainerImage(localImageTag)
 	if err != nil {
 		return "", err

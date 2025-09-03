@@ -99,7 +99,7 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 	case AzureResourceTypePostgreSqlServer:
 		return "Azure Database for PostgreSQL flexible server"
 	case AzureResourceTypeMySqlServer:
-		return "Azure Database for MySQL flexible server"
+		return "Azure Database for MySQL flexible serverss"
 	case AzureResourceTypeCDNProfile:
 		return "Azure Front Door / CDN profile"
 	case AzureResourceTypeLoadTest:

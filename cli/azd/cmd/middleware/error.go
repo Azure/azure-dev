@@ -7,7 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -19,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
+	"github.com/fsnotify/fsnotify"
 )
 
 type ErrorMiddleware struct {
@@ -66,6 +70,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			"interrupt",
 			"no project exists",
 		}
+		agentName := "AI"
 
 		for {
 			if originalError == nil {
@@ -81,8 +86,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			if previousError != nil && errors.Is(originalError, previousError) {
 				attempt++
 				if attempt > 3 {
-					e.console.Message(ctx, "AI was unable to resolve the error after multiple attempts. "+
-						"Please review the error and fix it manually.")
+					e.console.Message(ctx, fmt.Sprintf("%s was unable to resolve the error after multiple attempts. "+
+						"Please review the error and fix it manually.", agentName))
 					return actionResult, originalError
 				}
 			}
@@ -119,7 +124,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 				`Steps to follow:
 			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
-			2. Provide actionable troubleshooting steps.
+			2. Provide actionable troubleshooting steps. Do not perform any file changes.
 			Error details: %s`, errorInput))
 
 			if err != nil {
@@ -132,7 +137,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 			// Ask if user wants to provide AI generated troubleshooting steps
 			confirm, err := e.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "Provide AI generated troubleshooting steps?",
+				Message:      fmt.Sprintf("Provide %s generated troubleshooting steps?", agentName),
 				DefaultValue: true,
 			})
 			if err != nil {
@@ -150,7 +155,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			// TODO: update to "GitHub Copilot for Azure"
 			// Ask user if they want to let AI fix the error
 			selection, err := e.console.Select(ctx, input.ConsoleOptions{
-				Message: "Do you want to continue to fix the error using AI?",
+				Message: fmt.Sprintf("Do you want to continue to fix the error using %s?", agentName),
 				Options: []string{
 					"Yes",
 					"No",
@@ -165,6 +170,14 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			// fix the error with AI
 			case 0:
 				previousError = originalError
+				changedFiles := make(map[string]bool)
+				var mu sync.Mutex
+
+				watcher, done, err := startWatcher(ctx, changedFiles, &mu)
+				if err != nil {
+					return nil, fmt.Errorf("failed to start watcher during error fix: %w", err)
+				}
+
 				agentOutput, err = azdAgent.SendMessage(ctx, fmt.Sprintf(
 					`Steps to follow:
 			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
@@ -181,12 +194,15 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 					return nil, err
 				}
 
+				// Print out changed files
+				close(done)
+				printChangedFiles(changedFiles, &mu)
+				watcher.Close()
+
 			// Not fix the error with AI
 			case 1:
 				return actionResult, err
 			}
-
-			// TODO print out the changes made by AI
 
 			// Ask the user to add feedback
 			if err := e.collectAndApplyFeedback(ctx, azdAgent, "Any feedback or changes?"); err != nil {
@@ -247,6 +263,14 @@ func (e *ErrorMiddleware) collectAndApplyFeedback(
 	if userInput != "" {
 		e.console.Message(ctx, color.MagentaString("Feedback"))
 
+		changedFiles := make(map[string]bool)
+		var mu sync.Mutex
+
+		watcher, done, err := startWatcher(ctx, changedFiles, &mu)
+		if err != nil {
+			return fmt.Errorf("failed to start watcher during error fix: %w", err)
+		}
+
 		feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
 		if err != nil {
 			if feedbackOutput != "" {
@@ -255,6 +279,11 @@ func (e *ErrorMiddleware) collectAndApplyFeedback(
 			return err
 		}
 
+		// Print out changed files
+		close(done)
+		printChangedFiles(changedFiles, &mu)
+		watcher.Close()
+
 		e.console.Message(ctx, "")
 		e.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
 		e.console.Message(ctx, output.WithMarkdown(feedbackOutput))
@@ -262,4 +291,64 @@ func (e *ErrorMiddleware) collectAndApplyFeedback(
 	}
 
 	return nil
+}
+
+func printChangedFiles(changedFiles map[string]bool, mu *sync.Mutex) {
+	mu.Lock()
+	defer mu.Unlock()
+	fmt.Println("\nFiles changed:")
+	for file := range changedFiles {
+		fmt.Println("-", file)
+	}
+}
+
+func startWatcher(ctx context.Context, changedFiles map[string]bool, mu *sync.Mutex) (*fsnotify.Watcher, chan bool, error) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create watcher: %w", err)
+	}
+
+	done := make(chan bool)
+
+	go func() {
+		for {
+			select {
+			case event := <-watcher.Events:
+				mu.Lock()
+				changedFiles[event.Name] = true
+				mu.Unlock()
+			case err := <-watcher.Errors:
+				fmt.Errorf("watcher error: %w", err)
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get current working directory: %w", err)
+	}
+
+	if err := watchRecursive(cwd, watcher); err != nil {
+		return nil, nil, fmt.Errorf("failed to watch for changes: %w", err)
+	}
+
+	return watcher, done, nil
+}
+
+func watchRecursive(root string, watcher *fsnotify.Watcher) error {
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			err = watcher.Add(path)
+			if err != nil {
+				return fmt.Errorf("failed to watch directory %s: %w", path, err)
+			}
+		}
+
+		return nil
+	})
 }

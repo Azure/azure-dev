@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"slices"
 	"strings"
 
@@ -80,6 +81,7 @@ func (dm *DeploymentManager) CompletedDeployments(
 	ctx context.Context,
 	scope Scope,
 	envName string,
+	layerName string,
 	hint string,
 ) ([]*azapi.ResourceDeployment, error) {
 	deployments, err := scope.ListDeployments(ctx)
@@ -91,15 +93,19 @@ func (dm *DeploymentManager) CompletedDeployments(
 		return y.Timestamp.Compare(x.Timestamp)
 	})
 
-	// If hint is not provided, use the environment name as the hint
 	if hint == "" {
+		// default hint for partial matches
 		hint = envName
+
+		if layerName != "" {
+			hint = fmt.Sprintf("%s-%s", envName, layerName)
+		}
 	}
 
 	// Environment matching strategy
-	// 1. Deployment with azd tagged env name
+	// 1. Deployment with azd tagged env name + layer name
 	// 2. Exact match on environment name to deployment name (old azd strategy)
-	// 3. Multiple matching names based on specified hint (show user prompt)
+	// 3. Multiple matching names based specified hint (show user prompt)
 	matchingDeployments := []*azapi.ResourceDeployment{}
 
 	for _, deployment := range deployments {
@@ -109,19 +115,36 @@ func (dm *DeploymentManager) CompletedDeployments(
 			continue
 		}
 
-		// Match on current azd strategy (tags) or old azd strategy (deployment name)
-		if v, has := deployment.Tags[azure.TagKeyAzdEnvName]; has && *v == envName || deployment.Name == envName {
+		// Match on current azd strategy (tags)
+		envTag, envTagHas := deployment.Tags[azure.TagKeyAzdEnvName]
+		layerTag, layerTagHas := deployment.Tags[azure.TagKeyAzdLayerName]
+
+		if envTagHas && *envTag == envName {
+			if layerTagHas && *layerTag == layerName {
+				log.Printf("completedDeployments: matched deployment '%s' using layerName: %s", deployment.Name, layerName)
+				return []*azapi.ResourceDeployment{deployment}, nil
+			}
+
+			// If layerName is empty, we match on the envName alone
+			if layerName == "" && !layerTagHas {
+				log.Printf("completedDeployments: matched deployment '%s' using envName", deployment.Name)
+				return []*azapi.ResourceDeployment{deployment}, nil
+			}
+		}
+
+		// LEGACY: match on deployment name
+		if deployment.Name == envName {
 			return []*azapi.ResourceDeployment{deployment}, nil
 		}
 
 		// Fallback: Match on hint
-		if hint != "" && strings.Contains(deployment.Name, hint) {
+		if strings.Contains(deployment.Name, hint) {
 			matchingDeployments = append(matchingDeployments, deployment)
 		}
 	}
 
 	if len(matchingDeployments) == 0 {
-		return nil, fmt.Errorf("'%s': %w", envName, ErrDeploymentsNotFound)
+		return nil, fmt.Errorf("'%s': %w", hint, ErrDeploymentsNotFound)
 	}
 
 	return matchingDeployments, nil

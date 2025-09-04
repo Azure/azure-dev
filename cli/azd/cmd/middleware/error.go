@@ -45,12 +45,15 @@ func NewErrorMiddleware(
 }
 
 func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
-	actionResult, err := next(ctx)
+	var actionResult *actions.ActionResult
+	var err error
 
 	if e.featuresManager.IsEnabled(llm.FeatureLlm) {
 		if e.options.IsChildAction(ctx) {
 			return next(ctx)
 		}
+
+		actionResult, err = next(ctx)
 
 		attempt := 0
 		originalError := err
@@ -58,8 +61,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		var previousError error
 		var suggestionErr *internal.ErrorWithSuggestion
 		var errorWithTraceId *internal.ErrorWithTraceId
-
-		// TODO: think about Error exclusive or inclusive
 		skipAnalyzingErrors := []string{
 			"environment already initialized",
 			"interrupt",
@@ -96,6 +97,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			if errors.As(originalError, &suggestionErr) {
 				suggestion = suggestionErr.Suggestion
 				e.console.Message(ctx, suggestion)
+				return actionResult, originalError
 			}
 
 			// Warn user that this is an alpha feature
@@ -167,7 +169,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				agentOutput, err = azdAgent.SendMessage(ctx, fmt.Sprintf(
 					`Steps to follow:
 			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
-			2. Resolve the error by making the minimal, targeted change required to the code or configuration. 
+			2. Resolve the error by making the minimal, targeted change required to the code or configuration.
 			Avoid unnecessary modifications and focus only on what is essential to restore correct functionality.
 			Error details: %s`, errorInput))
 
@@ -197,6 +199,10 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			actionResult, err = next(ctx)
 			originalError = err
 		}
+	}
+
+	if actionResult == nil {
+		actionResult, err = next(ctx)
 	}
 
 	return actionResult, err

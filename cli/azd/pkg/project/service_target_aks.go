@@ -303,6 +303,7 @@ func (t *aksTarget) Deploy(
 
 	return &ServiceDeployResult{
 		Package: packageOutput,
+		Publish: servicePublishResult,
 		TargetResourceId: azure.KubernetesServiceRID(
 			targetResource.SubscriptionId(),
 			targetResource.ResourceGroupName(),

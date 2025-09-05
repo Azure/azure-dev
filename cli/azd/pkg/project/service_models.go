@@ -98,7 +98,7 @@ func (spr *ServicePackageResult) MarshalJSON() ([]byte, error) {
 
 // ServicePublishResult is the result of a successful Publish operation for services.
 type ServicePublishResult struct {
-	// Details contains service-specific publish information.
+	Package *ServicePackageResult `json:"package"`
 	// For container services: ContainerPublishDetails
 	Details interface{} `json:"details,omitempty"`
 }

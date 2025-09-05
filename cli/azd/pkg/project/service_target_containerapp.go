@@ -155,6 +155,7 @@ func (at *containerAppTarget) Deploy(
 
 	return &ServiceDeployResult{
 		Package: packageOutput,
+		Publish: servicePublishResult,
 		TargetResourceId: azure.ContainerAppRID(
 			targetResource.SubscriptionId(),
 			targetResource.ResourceGroupName(),

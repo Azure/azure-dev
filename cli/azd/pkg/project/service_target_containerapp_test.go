@@ -130,6 +130,9 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 	require.NotNil(t, deployResult)
 	require.Equal(t, ContainerAppTarget, deployResult.Kind)
 	require.Greater(t, len(deployResult.Endpoints), 0)
+
+	require.NotNil(t, deployResult.Publish)
+	require.Equal(t, publishResult, deployResult.Publish)
 }
 
 func Test_ContainerApp_Publish(t *testing.T) {
@@ -182,6 +185,10 @@ func Test_ContainerApp_Publish(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, publishResult)
 	require.IsType(t, new(ContainerPublishDetails), publishResult.Details)
+
+	// Verify the Package field is set correctly
+	require.NotNil(t, publishResult.Package)
+	require.Equal(t, packageResult, publishResult.Package)
 
 	// Verify the environment variable was set correctly
 	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])

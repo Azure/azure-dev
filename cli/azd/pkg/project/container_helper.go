@@ -338,6 +338,7 @@ func (ch *ContainerHelper) Publish(
 	}
 
 	return &ServicePublishResult{
+		Package: packageOutput,
 		Details: &ContainerPublishDetails{
 			RemoteImage: remoteImage,
 		},

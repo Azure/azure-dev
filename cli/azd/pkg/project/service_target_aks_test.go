@@ -159,6 +159,10 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	require.Equal(t, AksTarget, deployResult.Kind)
 	require.IsType(t, new(kubectl.Deployment), deployResult.Details)
 	require.Greater(t, len(deployResult.Endpoints), 0)
+
+	// Verify the Publish field is set correctly
+	require.NotNil(t, deployResult.Publish)
+	require.Equal(t, publishResult, deployResult.Publish)
 }
 
 func Test_AKS_Publish(t *testing.T) {
@@ -208,12 +212,55 @@ func Test_AKS_Publish(t *testing.T) {
 	require.NotNil(t, publishResult)
 	require.IsType(t, new(ContainerPublishDetails), publishResult.Details)
 
+	// Verify the Package field is set correctly
+	require.NotNil(t, publishResult.Package)
+	require.Equal(t, packageResult, publishResult.Package)
+
 	// Verify the environment variable was set correctly
 	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])
 
 	// Verify the publish result contains the expected image name
 	containerDetails := publishResult.Details.(*ContainerPublishDetails)
 	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", containerDetails.RemoteImage)
+}
+
+func Test_AKS_Publish_NoContainer(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(context.Background())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
+	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
+	env := createEnv()
+
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
+	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
+	require.NoError(t, err)
+
+	// Create a package result with no details (indicating no container to publish)
+	packageResult := &ServicePackageResult{
+		PackagePath: "",
+		Details:     nil,
+	}
+
+	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
+
+	publishResult, err := logProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
+			return serviceTarget.Publish(
+				*mockContext.Context, serviceConfig, packageResult, scope, progress, &PublishOptions{})
+		},
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, publishResult)
+	require.Nil(t, publishResult.Details)
+
+	// Verify the Package field is set correctly even when no container is published
+	require.NotNil(t, publishResult.Package)
+	require.Equal(t, packageResult, publishResult.Package)
 }
 
 func Test_Resolve_Cluster_Name(t *testing.T) {
@@ -365,6 +412,8 @@ func Test_Deploy_Helm(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
 
+	require.Nil(t, deployResult.Publish)
+
 	repoAdd, repoAddCalled := mockResults["helm-repo-add"]
 	require.True(t, repoAddCalled)
 	require.Equal(t, []string{"repo", "add", "argo", "https://argoproj.github.io/argo-helm"}, repoAdd.Args)
@@ -428,6 +477,8 @@ func Test_Deploy_Kustomize(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
+
+	require.Nil(t, deployResult.Publish)
 
 	kustomizeEdit, kustomizeEditCalled := mockResults["kustomize-edit"]
 	require.True(t, kustomizeEditCalled)

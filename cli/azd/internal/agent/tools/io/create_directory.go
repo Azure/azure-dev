@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -17,6 +18,7 @@ import (
 // CreateDirectoryTool implements the Tool interface for creating directories
 type CreateDirectoryTool struct {
 	common.BuiltInTool
+	securityManager *security.Manager
 }
 
 func (t CreateDirectoryTool) Name() string {
@@ -47,21 +49,30 @@ func (t CreateDirectoryTool) Call(ctx context.Context, input string) (string, er
 		return common.CreateErrorResponse(fmt.Errorf("directory path is required"), "Directory path is required")
 	}
 
-	err := os.MkdirAll(input, 0755)
+	// Security validation
+	validatedPath, err := t.securityManager.ValidatePath(input)
 	if err != nil {
-		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to create directory %s: %s", input, err.Error()))
+		return common.CreateErrorResponse(
+			err,
+			"Access denied: directory creation operation not permitted outside the allowed directory",
+		)
+	}
+
+	err = os.MkdirAll(validatedPath, 0755)
+	if err != nil {
+		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to create directory %s: %s", validatedPath, err.Error()))
 	}
 
 	// Check if directory already existed or was newly created
-	info, err := os.Stat(input)
+	info, err := os.Stat(validatedPath)
 	if err != nil {
 		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to verify directory creation: %s", err.Error()))
 	}
 
 	if !info.IsDir() {
 		return common.CreateErrorResponse(
-			fmt.Errorf("%s exists but is not a directory", input),
-			fmt.Sprintf("%s exists but is not a directory", input),
+			fmt.Errorf("%s exists but is not a directory", validatedPath),
+			fmt.Sprintf("%s exists but is not a directory", validatedPath),
 		)
 	}
 
@@ -74,8 +85,8 @@ func (t CreateDirectoryTool) Call(ctx context.Context, input string) (string, er
 
 	response := CreateDirectoryResponse{
 		Success: true,
-		Path:    input,
-		Message: fmt.Sprintf("Successfully created directory: %s", input),
+		Path:    validatedPath,
+		Message: fmt.Sprintf("Successfully created directory: %s", validatedPath),
 	}
 
 	// Convert to JSON

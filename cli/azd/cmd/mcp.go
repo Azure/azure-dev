@@ -163,6 +163,7 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		tools.NewAzdProjectValidationTool(),
 		tools.NewAzdYamlSchemaTool(),
 		tools.NewSamplingTool(),
+		tools.NewAzdErrorTroubleShootingTool(),
 	}
 
 	s.AddTools(allTools...)

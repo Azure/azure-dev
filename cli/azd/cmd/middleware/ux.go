@@ -9,20 +9,24 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
 type UxMiddleware struct {
-	options *Options
-	console input.Console
+	options         *Options
+	console         input.Console
+	featuresManager *alpha.FeatureManager
 }
 
-func NewUxMiddleware(options *Options, console input.Console) Middleware {
+func NewUxMiddleware(options *Options, console input.Console, featuresManager *alpha.FeatureManager) Middleware {
 	return &UxMiddleware{
-		options: options,
-		console: console,
+		options:         options,
+		console:         console,
+		featuresManager: featuresManager,
 	}
 }
 
@@ -37,7 +41,7 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 	// Stop the spinner always to un-hide cursor
 	m.console.StopSpinner(ctx, "", input.Step)
 
-	if err != nil {
+	if err != nil && !m.featuresManager.IsEnabled(llm.FeatureLlm) {
 		var suggestionErr *internal.ErrorWithSuggestion
 		var errorWithTraceId *internal.ErrorWithTraceId
 		m.console.Message(ctx, output.WithErrorFormat("\nERROR: %s", err.Error()))

@@ -120,8 +120,7 @@ func (at *containerAppTarget) Deploy(
 
 	// Get the image name from the publish result
 	if servicePublishResult == nil {
-		return nil, fmt.Errorf(
-			"deploy requires a publish result for service '%s'. Run 'azd publish' first", serviceConfig.Name)
+		return nil, fmt.Errorf("unexpected publish result for service: %s", serviceConfig.Name)
 	}
 
 	containerDetails, ok := servicePublishResult.Details.(*ContainerPublishDetails)

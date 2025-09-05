@@ -64,7 +64,6 @@ func (m *aiEndpointTarget) Package(
 	return &ServicePackageResult{}, nil
 }
 
-// Publish is a no-op for AI Endpoint targets as they deploy directly rather than to a registry
 func (m *aiEndpointTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

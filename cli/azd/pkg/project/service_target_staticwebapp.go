@@ -89,7 +89,6 @@ func usingSwaConfig(packageResult *ServicePackageResult) bool {
 	return packageResult.PackagePath == "" && packageResult.Details != nil
 }
 
-// Publish is a no-op for Static Web App targets as they deploy directly rather than to a registry
 func (at *staticWebAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

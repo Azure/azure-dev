@@ -67,7 +67,6 @@ func (st *springAppTarget) Package(
 	return packageOutput, nil
 }
 
-// Publish is a no-op for Spring App targets as they deploy directly rather than to a registry
 func (st *springAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

@@ -226,12 +226,9 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	verb := "Deploying"
-	commandTitle := "Deploying services (azd deploy)"
-
 	// Command title
 	da.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: commandTitle,
+		Title: "Deploying services (azd deploy)",
 	})
 
 	startTime := time.Now()
@@ -243,7 +240,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	for _, svc := range stableServices {
-		stepMessage := fmt.Sprintf("%s service %s", verb, svc.Name)
+		stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
 		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// Skip this service if both cases are true:
@@ -314,7 +311,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 		deployResult, err := async.RunWithProgress(
 			func(deployProgress project.ServiceProgress) {
-				progressMessage := fmt.Sprintf("%s service %s (%s)", verb, svc.Name, deployProgress.Message)
+				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
 				da.console.ShowSpinner(ctx, progressMessage, input.Step)
 			},
 			func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceDeployResult, error) {
@@ -356,11 +353,9 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 	}
 
-	messageHeader := fmt.Sprintf("Your application was deployed to Azure in %s.", ux.DurationAsText(since(startTime)))
-
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: messageHeader,
+			Header: fmt.Sprintf("Your application was deployed to Azure in %s.", ux.DurationAsText(since(startTime))),
 			FollowUp: getResourceGroupFollowUp(ctx,
 				da.formatter,
 				da.portalUrlBase,

@@ -66,7 +66,6 @@ func (f *functionAppTarget) Package(
 	}, nil
 }
 
-// Publish is a no-op for Function App targets as they deploy directly rather than to a registry
 func (f *functionAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

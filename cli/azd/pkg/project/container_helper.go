@@ -329,7 +329,7 @@ func (ch *ContainerHelper) Publish(
 	if serviceConfig.Docker.RemoteBuild {
 		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, progress, options)
 	} else if useDotnetPublishForDockerBuild(serviceConfig) {
-		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, progress, options)
+		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, progress)
 	} else {
 		remoteImage, err = ch.runLocalBuild(ctx, serviceConfig, packageOutput, progress, options)
 	}
@@ -563,7 +563,6 @@ func (ch *ContainerHelper) runDotnetPublish(
 	serviceConfig *ServiceConfig,
 	target *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
-	options *PublishOptions,
 ) (string, error) {
 	progress.SetProgress(NewServiceProgress("Logging into registry"))
 

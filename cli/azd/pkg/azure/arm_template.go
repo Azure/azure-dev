@@ -146,7 +146,6 @@ const AzdMetadataTypeResourceGroup AzdMetadataType = "resourceGroup"
 type AzdMetadata struct {
 	Type               *AzdMetadataType `json:"type,omitempty"`
 	AutoGenerateConfig *AutoGenInput    `json:"config,omitempty"`
-	DefaultValueExpr   *string          `json:"defaultValueExpr,omitempty"`
 	Default            any              `json:"default,omitempty"`
 	UsageName          usageName        `json:"usageName,omitempty"`
 }

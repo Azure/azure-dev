@@ -273,8 +273,8 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			pa.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 			pa.console.MessageUxItem(ctx, &ux.WarningMessage{
 				Description: fmt.Sprintf(
-					"'publish' is only supported for container app services, but service '%s' has host type '%s'",
-					svc.Name, svc.Host),
+					"'publish' is only supported for '%s' services, but '%s' has type '%s'",
+					project.ContainerAppTarget, svc.Name, svc.Host),
 			})
 			continue
 		}
@@ -327,8 +327,6 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		}
 
 		publishResults[svc.Name] = publishResult
-
-		// report publish outputs
 		pa.console.MessageUxItem(ctx, publishResult)
 	}
 
@@ -345,7 +343,7 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Your application was published to the container registry in %s.",
+			Header: fmt.Sprintf("Your application was published in %s.",
 				ux.DurationAsText(since(startTime))),
 		},
 	}, nil

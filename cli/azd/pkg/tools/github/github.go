@@ -257,11 +257,32 @@ func (cli *Cli) ListSecrets(ctx context.Context, repoSlug string) ([]string, err
 	return ghOutputToList(output.Stdout), nil
 }
 
+// ListEnvironmentSecrets lists secrets for a specific GitHub environment within a repository.
+// If the environment does not exist, gh will error. Caller should handle and possibly fall back.
+func (cli *Cli) ListEnvironmentSecrets(ctx context.Context, repoSlug, environment string) ([]string, error) {
+	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "list", "-e", environment)
+	output, err := cli.run(ctx, runArgs)
+	if err != nil {
+		return nil, fmt.Errorf("failed running gh secret list for environment %s: %w", environment, err)
+	}
+	return ghOutputToList(output.Stdout), nil
+}
+
 func (cli *Cli) ListVariables(ctx context.Context, repoSlug string) (map[string]string, error) {
 	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "list")
 	output, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed running gh secret list: %w", err)
+	}
+	return ghOutputToMap(output.Stdout)
+}
+
+// ListEnvironmentVariables lists variables for a specific GitHub environment within a repository.
+func (cli *Cli) ListEnvironmentVariables(ctx context.Context, repoSlug, environment string) (map[string]string, error) {
+	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "list", "-e", environment)
+	output, err := cli.run(ctx, runArgs)
+	if err != nil {
+		return nil, fmt.Errorf("failed running gh variable list for environment %s: %w", environment, err)
 	}
 	return ghOutputToMap(output.Stdout)
 }
@@ -275,11 +296,31 @@ func (cli *Cli) SetSecret(ctx context.Context, repoSlug string, name string, val
 	return nil
 }
 
+// SetEnvironmentSecret sets (creates or updates) a secret in a specific GitHub environment.
+func (cli *Cli) SetEnvironmentSecret(ctx context.Context, repoSlug, environment, name, value string) error {
+	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "set", name, "-e", environment).WithStdIn(strings.NewReader(value))
+	_, err := cli.run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("failed running gh secret set (environment %s): %w", environment, err)
+	}
+	return nil
+}
+
 func (cli *Cli) SetVariable(ctx context.Context, repoSlug string, name string, value string) error {
 	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "set", name).WithStdIn(strings.NewReader(value))
 	_, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh variable set: %w", err)
+	}
+	return nil
+}
+
+// SetEnvironmentVariable sets (creates or updates) a variable in a specific GitHub environment.
+func (cli *Cli) SetEnvironmentVariable(ctx context.Context, repoSlug, environment, name, value string) error {
+	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "set", name, "-e", environment).WithStdIn(strings.NewReader(value))
+	_, err := cli.run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("failed running gh variable set (environment %s): %w", environment, err)
 	}
 	return nil
 }
@@ -293,11 +334,45 @@ func (cli *Cli) DeleteSecret(ctx context.Context, repoSlug string, name string) 
 	return nil
 }
 
+// DeleteEnvironmentSecret deletes a secret from a specific environment.
+func (cli *Cli) DeleteEnvironmentSecret(ctx context.Context, repoSlug, environment, name string) error {
+	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "delete", name, "-e", environment)
+	_, err := cli.run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("failed running gh secret delete (environment %s): %w", environment, err)
+	}
+	return nil
+}
+
 func (cli *Cli) DeleteVariable(ctx context.Context, repoSlug string, name string) error {
 	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "delete", name)
 	_, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh variable delete: %w", err)
+	}
+	return nil
+}
+
+// DeleteEnvironmentVariable deletes a variable from a specific environment.
+func (cli *Cli) DeleteEnvironmentVariable(ctx context.Context, repoSlug, environment, name string) error {
+	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "delete", name, "-e", environment)
+	_, err := cli.run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("failed running gh variable delete (environment %s): %w", environment, err)
+	}
+	return nil
+}
+
+// EnsureEnvironment creates or updates a GitHub Environment (idempotent) so that environment scoped
+// secrets & variables can be set. Safe to call even if the environment already exists.
+// API ref: https://docs.github.com/rest/deployments/environments#create-or-update-an-environment
+func (cli *Cli) EnsureEnvironment(ctx context.Context, repoSlug, environment string) error {
+	if strings.TrimSpace(environment) == "" {
+		return errors.New("environment name is required")
+	}
+	runArgs := cli.newRunArgs("api", fmt.Sprintf("repos/%s/environments/%s", repoSlug, environment), "--method", "PUT")
+	if _, err := cli.run(ctx, runArgs); err != nil {
+		return fmt.Errorf("failed ensuring github environment %s: %w", environment, err)
 	}
 	return nil
 }

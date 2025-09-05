@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -26,6 +27,8 @@ type pipelineConfigFlags struct {
 	pipeline.PipelineManagerArgs
 	global *internal.GlobalCommandOptions
 	internal.EnvFlag
+	UseGitHubEnvironments bool
+	ForceRegenerate       bool
 }
 
 func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -65,6 +68,19 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 	// there no customer input using --provider
 	local.StringVar(&pc.PipelineProvider, "provider", "",
 		"The pipeline provider to use (github for Github Actions and azdo for Azure Pipelines).")
+	local.BoolVar(
+		&pc.UseGitHubEnvironments,
+		"github-use-environments",
+		false,
+		"Enable generation of GitHub Actions workflow that uses GitHub Environments (matrix or single) "+
+			"and environment-scoped variables/secrets. Disabled by default to preserve legacy workflow output.",
+	)
+	local.BoolVar(
+		&pc.ForceRegenerate,
+		"force-regenerate",
+		false,
+		"Force regeneration of the pipeline workflow file (overwrites existing) bypassing upgrade heuristics.",
+	)
 	local.StringVarP(&pc.ServiceManagementReference, "applicationServiceManagementReference", "m", "",
 		"Service Management Reference. "+
 			"References application or service contact information from a Service or Asset Management database. "+
@@ -151,6 +167,17 @@ func newPipelineConfigAction(
 		provisioningManager: provisioningManager,
 		importManager:       importManager,
 		projectConfig:       projectConfig,
+	}
+
+	// Ensure manager args reflect new flag if provided
+	if flags.UseGitHubEnvironments {
+		manager.EnableGitHubEnvironments(true)
+		// Signal downstream providers (constructed earlier via DI) to switch behavior.
+		_ = os.Setenv("AZD_USE_GITHUB_ENVIRONMENTS", "1")
+	}
+	if flags.ForceRegenerate {
+		manager.ForceRegenerateWorkflow(true)
+		_ = os.Setenv("AZD_FORCE_PIPELINE_REGENERATE", "1")
 	}
 
 	return pca

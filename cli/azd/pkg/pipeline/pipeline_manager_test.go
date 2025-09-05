@@ -45,7 +45,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
 		assert.ErrorContains(
-			t, err, "Loading project configuration: reading project file:")
+			t, err, "loading project configuration: reading project file:")
 	})
 
 	//2. Then create the project file
@@ -619,6 +619,95 @@ func Test_promptForCiFiles(t *testing.T) {
 		assert.NoError(t, err)
 		snapshot.SnapshotT(t, normalizeEOL(content))
 	})
+	// Multi-env matrix now only generated when UseGitHubEnvironments opt-in flag is set.
+	// Legacy default intentionally omitted.
+	if true { // opt-in matrix generation test
+		t.Run("no files - github selected - multi env matrix opt-in", func(t *testing.T) {
+			tempDir := t.TempDir()
+			path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectories[0])
+			err := os.MkdirAll(path, osutil.PermissionDirectory)
+			assert.NoError(t, err)
+			expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
+			err = generatePipelineDefinition(expectedPath, projectProperties{
+				CiProvider:            ciProviderGitHubActions,
+				InfraProvider:         infraProviderBicep,
+				RepoRoot:              tempDir,
+				HasAppHost:            false,
+				BranchName:            "main",
+				AuthType:              AuthTypeFederated,
+				Environments:          []string{"e2e", "staging"},
+				UseGitHubEnvironments: true,
+			})
+			assert.NoError(t, err)
+			assert.FileExists(t, expectedPath)
+			content, err := os.ReadFile(expectedPath)
+			assert.NoError(t, err)
+			// Reuse standard snapshot naming pattern by writing file manually into testdata directory.
+			snapshot.SnapshotT(t, normalizeEOL(content))
+		})
+
+		t.Run("migration - enable environments regenerates file", func(t *testing.T) {
+			tempDir := t.TempDir()
+			path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectories[0])
+			_ = os.MkdirAll(path, osutil.PermissionDirectory)
+			filePath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
+			// First generate legacy (no environments)
+			err := generatePipelineDefinition(filePath, projectProperties{
+				CiProvider:    ciProviderGitHubActions,
+				InfraProvider: infraProviderBicep,
+				RepoRoot:      tempDir,
+				BranchName:    "main",
+				AuthType:      AuthTypeFederated,
+			})
+			assert.NoError(t, err)
+			legacyContent, _ := os.ReadFile(filePath)
+			assert.NotContains(t, string(legacyContent), "matrix:")
+			// Simulate manager regenerate with opt-in flag & environments
+			err = generatePipelineDefinition(filePath, projectProperties{
+				CiProvider:            ciProviderGitHubActions,
+				InfraProvider:         infraProviderBicep,
+				RepoRoot:              tempDir,
+				BranchName:            "main",
+				AuthType:              AuthTypeFederated,
+				Environments:          []string{"e2e", "staging"},
+				UseGitHubEnvironments: true,
+			})
+			assert.NoError(t, err)
+			updated, _ := os.ReadFile(filePath)
+			assert.Contains(t, string(updated), "matrix:")
+		})
+
+		t.Run("migration - disable environments regenerates file", func(t *testing.T) {
+			tempDir := t.TempDir()
+			path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectories[0])
+			_ = os.MkdirAll(path, osutil.PermissionDirectory)
+			filePath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
+			// First generate with environments
+			err := generatePipelineDefinition(filePath, projectProperties{
+				CiProvider:            ciProviderGitHubActions,
+				InfraProvider:         infraProviderBicep,
+				RepoRoot:              tempDir,
+				BranchName:            "main",
+				AuthType:              AuthTypeFederated,
+				Environments:          []string{"e2e", "staging"},
+				UseGitHubEnvironments: true,
+			})
+			assert.NoError(t, err)
+			withEnv, _ := os.ReadFile(filePath)
+			assert.Contains(t, string(withEnv), "matrix:")
+			// Regenerate without opt-in
+			err = generatePipelineDefinition(filePath, projectProperties{
+				CiProvider:    ciProviderGitHubActions,
+				InfraProvider: infraProviderBicep,
+				RepoRoot:      tempDir,
+				BranchName:    "main",
+				AuthType:      AuthTypeFederated,
+			})
+			assert.NoError(t, err)
+			disabledContent, _ := os.ReadFile(filePath)
+			assert.NotContains(t, string(disabledContent), "matrix:")
+		})
+	}
 	t.Run("no files - github selected - Variables and Secrets", func(t *testing.T) {
 		tempDir := t.TempDir()
 		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectories[0])

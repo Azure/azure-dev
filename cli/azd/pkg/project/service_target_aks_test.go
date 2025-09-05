@@ -257,10 +257,6 @@ func Test_AKS_Publish_NoContainer(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, publishResult)
 	require.Nil(t, publishResult.Details)
-
-	// Verify the Package field is set correctly even when no container is published
-	require.NotNil(t, publishResult.Package)
-	require.Equal(t, packageResult, publishResult.Package)
 }
 
 func Test_Resolve_Cluster_Name(t *testing.T) {

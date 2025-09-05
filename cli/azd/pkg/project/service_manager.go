@@ -30,6 +30,7 @@ const (
 	ServiceEventRestore    ext.Event = "restore"
 	ServiceEventBuild      ext.Event = "build"
 	ServiceEventPackage    ext.Event = "package"
+	ServiceEventPublish    ext.Event = "publish"
 	ServiceEventDeploy     ext.Event = "deploy"
 )
 
@@ -37,7 +38,9 @@ var (
 	ServiceEvents []ext.Event = []ext.Event{
 		ServiceEventEnvUpdated,
 		ServiceEventRestore,
+		ServiceEventBuild,
 		ServiceEventPackage,
+		ServiceEventPublish,
 		ServiceEventDeploy,
 	}
 )
@@ -85,6 +88,17 @@ type ServiceManager interface {
 		options *PackageOptions,
 	) (*ServicePackageResult, error)
 
+	// Publishes the service to make it available to other services
+	// Common examples would be pushing a message to a service bus or
+	// registering the service in a service registry.
+	Publish(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		packageOutput *ServicePackageResult,
+		progress *async.Progress[ServiceProgress],
+		publishOptions *PublishOptions,
+	) (*ServicePublishResult, error)
+
 	// Deploys the generated artifacts to the Azure resource that will
 	// host the service application
 	// Common examples would be uploading zip archive using ZipDeploy deployment or
@@ -93,6 +107,7 @@ type ServiceManager interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		packageOutput *ServicePackageResult,
+		publishResult *ServicePublishResult,
 		progress *async.Progress[ServiceProgress],
 	) (*ServiceDeployResult, error)
 
@@ -402,6 +417,55 @@ func (sm *serviceManager) Package(
 	return packageResult, nil
 }
 
+// Publishes the service to make it available to other services
+// Common examples would be pushing a message to a service bus or
+// registering the service in a service registry.
+func (sm *serviceManager) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	progress *async.Progress[ServiceProgress],
+	publishOptions *PublishOptions,
+) (*ServicePublishResult, error) {
+	cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventPublish))
+	if ok && cachedResult != nil {
+		return cachedResult.(*ServicePublishResult), nil
+	}
+
+	if packageOutput == nil {
+		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventPackage))
+		if ok && cachedResult != nil {
+			packageOutput = cachedResult.(*ServicePackageResult)
+		}
+	}
+
+	serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("getting service target: %w", err)
+	}
+
+	targetResource, err := sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("getting target resource: %w", err)
+	}
+
+	publishResult, err := runCommand(
+		ctx,
+		ServiceEventPublish,
+		serviceConfig,
+		func() (*ServicePublishResult, error) {
+			return serviceTarget.Publish(ctx, serviceConfig, packageOutput, targetResource, progress, publishOptions)
+		},
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed publishing service '%s': %w", serviceConfig.Name, err)
+	}
+
+	sm.setOperationResult(serviceConfig, string(ServiceEventPublish), publishResult)
+	return publishResult, nil
+}
+
 // Deploys the generated artifacts to the Azure resource that will host the service application
 // Common examples would be uploading zip archive using ZipDeploy deployment or
 // pushing container images to a container registry.
@@ -409,6 +473,7 @@ func (sm *serviceManager) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageResult *ServicePackageResult,
+	publishResult *ServicePublishResult,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
 	cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventDeploy))
@@ -420,6 +485,13 @@ func (sm *serviceManager) Deploy(
 		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventPackage))
 		if ok && cachedResult != nil {
 			packageResult = cachedResult.(*ServicePackageResult)
+		}
+	}
+
+	if publishResult == nil {
+		cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventPublish))
+		if ok && cachedResult != nil {
+			publishResult = cachedResult.(*ServicePublishResult)
 		}
 	}
 
@@ -483,7 +555,7 @@ func (sm *serviceManager) Deploy(
 		ServiceEventDeploy,
 		serviceConfig,
 		func() (*ServiceDeployResult, error) {
-			return serviceTarget.Deploy(ctx, serviceConfig, packageResult, targetResource, progress)
+			return serviceTarget.Deploy(ctx, serviceConfig, packageResult, publishResult, targetResource, progress)
 		},
 	)
 

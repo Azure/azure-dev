@@ -1,7 +1,8 @@
 
 Publish a service to a container registry.
 
-  • Only works with Container App services.
+  • Supports Container App services only.
+  • Target registry set by AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable or docker.registry in azure.yaml.
 
 Usage
   azd publish <service> [flags]

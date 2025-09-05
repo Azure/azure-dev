@@ -64,11 +64,24 @@ func (m *aiEndpointTarget) Package(
 	return &ServicePackageResult{}, nil
 }
 
+// Publish is a no-op for AI Endpoint targets as they deploy directly rather than to a registry
+func (m *aiEndpointTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+	publishOptions *PublishOptions,
+) (*ServicePublishResult, error) {
+	return &ServicePublishResult{}, nil
+}
+
 // Deploy deploys the service to an Azure ML online endpoint
 func (m *aiEndpointTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	servicePackage *ServicePackageResult,
+	servicePublishResult *ServicePublishResult,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {

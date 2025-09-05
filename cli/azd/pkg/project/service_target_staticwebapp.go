@@ -89,11 +89,24 @@ func usingSwaConfig(packageResult *ServicePackageResult) bool {
 	return packageResult.PackagePath == "" && packageResult.Details != nil
 }
 
+// Publish is a no-op for Static Web App targets as they deploy directly rather than to a registry
+func (at *staticWebAppTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+	publishOptions *PublishOptions,
+) (*ServicePublishResult, error) {
+	return &ServicePublishResult{}, nil
+}
+
 // Deploys the packaged build output using the SWA CLI
 func (at *staticWebAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
+	servicePublishResult *ServicePublishResult,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {

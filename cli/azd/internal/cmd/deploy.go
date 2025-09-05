@@ -1,5 +1,4 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
 
 package cmd
 
@@ -33,11 +32,11 @@ import (
 )
 
 type DeployFlags struct {
-	ServiceName string
-	All         bool
-	PublishOnly bool
-	fromPackage string
-	global      *internal.GlobalCommandOptions
+	ServiceName  string
+	All          bool
+	fromPackage  string
+	forcePublish bool
+	global       *internal.GlobalCommandOptions
 	*internal.EnvFlag
 }
 
@@ -71,20 +70,18 @@ func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		false,
 		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
 	)
-	local.BoolVar(
-		&d.PublishOnly,
-		"publish-only",
-		false,
-		"Publishes the container image to the registry without deploying the application.",
-	)
-	// `azd publish` is an alias for this
-	_ = local.MarkHidden("publish-only")
 	local.StringVar(
 		&d.fromPackage,
 		"from-package",
 		"",
 		//nolint:lll
 		"Deploys the packaged service located at the provided path. Supports zipped file packages (file path) or container images (image tag).",
+	)
+	local.BoolVar(
+		&d.forcePublish,
+		"force-publish",
+		false,
+		"Force publishes and overwrites existing images",
 	)
 }
 
@@ -230,10 +227,6 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	verb := "Deploying"
 	commandTitle := "Deploying services (azd deploy)"
-	if da.flags.PublishOnly {
-		verb = "Publishing"
-		commandTitle = "Publishing services (azd publish)"
-	}
 
 	// Command title
 	da.console.MessageUxItem(ctx, &ux.MessageTitle{
@@ -266,24 +259,18 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			da.console.WarnForFeature(ctx, alphaFeatureId)
 		}
 
-		if da.flags.PublishOnly {
-			// Check if this service is a container app
-			if svc.Host != project.ContainerAppTarget {
-				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return nil, fmt.Errorf(
-					"'publish' is only supported for container app services, but service '%s' has host type '%s'",
-					svc.Name, svc.Host)
-			}
-
-			// Set publish-only context and continue with normal deploy flow
-			ctx = project.WithPublishOnly(ctx, true)
-		}
-
 		var packageResult *project.ServicePackageResult
+		var publishResult *project.ServicePublishResult
+		var publishOptions *project.PublishOptions
+
 		if da.flags.fromPackage != "" {
 			// --from-package set, skip packaging
 			packageResult = &project.ServicePackageResult{
 				PackagePath: da.flags.fromPackage,
+			}
+
+			publishOptions = &project.PublishOptions{
+				Overwrite: da.flags.forcePublish,
 			}
 		} else {
 			//  --from-package not set, automatically package the application
@@ -297,11 +284,31 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				},
 			)
 
-			// do not stop progress here as next step is to deploy
+			// do not stop progress here as next step is to publish
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, err
 			}
+
+			publishOptions = &project.PublishOptions{
+				Overwrite: true,
+			}
+		}
+
+		publishResult, err = async.RunWithProgress(
+			func(publishProgress project.ServiceProgress) {
+				progressMessage := fmt.Sprintf("Publishing service %s (%s)", svc.Name, publishProgress.Message)
+				da.console.ShowSpinner(ctx, progressMessage, input.Step)
+			},
+			func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePublishResult, error) {
+				return da.serviceManager.Publish(ctx, svc, packageResult, progress, publishOptions)
+			},
+		)
+
+		// do not stop progress here as next step is to deploy
+		if err != nil {
+			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, err
 		}
 
 		deployResult, err := async.RunWithProgress(
@@ -310,7 +317,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				da.console.ShowSpinner(ctx, progressMessage, input.Step)
 			},
 			func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceDeployResult, error) {
-				return da.serviceManager.Deploy(ctx, svc, packageResult, progress)
+				return da.serviceManager.Deploy(ctx, svc, packageResult, publishResult, progress)
 			},
 		)
 
@@ -349,10 +356,6 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	messageHeader := fmt.Sprintf("Your application was deployed to Azure in %s.", ux.DurationAsText(since(startTime)))
-	if da.flags.PublishOnly {
-		messageHeader = fmt.Sprintf("Your application was published to the container registry in %s.",
-			ux.DurationAsText(since(startTime)))
-	}
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{

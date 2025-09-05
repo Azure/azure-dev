@@ -1,0 +1,185 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cli_test
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/stretchr/testify/require"
+)
+
+// test for errors when running publish in invalid working directories
+func Test_CLI_Publish_Err_WorkingDirectory(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "webapp")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit("testenv"), "init")
+	require.NoError(t, err)
+
+	// Otherwise, publish with 'infrastructure has not been provisioned. Run `azd provision`'
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", cfg.SubscriptionID)
+	require.NoError(t, err)
+
+	// cd infra
+	err = os.MkdirAll(filepath.Join(dir, "infra"), osutil.PermissionDirectory)
+	require.NoError(t, err)
+	cli.WorkingDirectory = filepath.Join(dir, "infra")
+
+	result, err := cli.RunCommand(ctx, "publish")
+	require.Error(t, err, "publish should fail in non-project and non-service directory")
+	require.Contains(t, result.Stdout, "current working directory")
+}
+
+// test for azd publish with invalid flag options
+func Test_CLI_PublishInvalidFlags(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "webapp")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	// Otherwise, publish with 'infrastructure has not been provisioned. Run `azd provision`'
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", cfg.SubscriptionID)
+	require.NoError(t, err)
+
+	// invalid service name
+	res, err := cli.RunCommand(ctx, "publish", "badServiceName")
+	require.Error(t, err)
+	require.Contains(t, res.Stdout, "badServiceName")
+
+	// --image with --all
+	res, err = cli.RunCommand(ctx, "publish", "--all", "--image", "custom-image")
+	require.Error(t, err)
+	require.Contains(t, res.Stdout, "--image")
+	require.Contains(t, res.Stdout, "--all")
+
+	// --tag with --all
+	res, err = cli.RunCommand(ctx, "publish", "--all", "--tag", "custom-tag")
+	require.Error(t, err)
+	require.Contains(t, res.Stdout, "--tag")
+	require.Contains(t, res.Stdout, "--all")
+
+	// --from-package with --all
+	res, err = cli.RunCommand(ctx, "publish", "--all", "--from-package", "output")
+	require.Error(t, err)
+	require.Contains(t, res.Stdout, "--all")
+	require.Contains(t, res.Stdout, "--from-package")
+
+	// --image without specific service (publishing all services)
+	res, err = cli.RunCommand(ctx, "publish", "--image", "custom-image")
+	require.Error(t, err)
+	require.Contains(t, res.Stdout, "--image")
+
+	// --tag without specific service (publishing all services)
+	res, err = cli.RunCommand(ctx, "publish", "--tag", "custom-tag")
+	require.Error(t, err)
+	require.Contains(t, res.Stdout, "--tag")
+
+	// --from-package without specific service (publishing all services)
+	res, err = cli.RunCommand(ctx, "publish", "--from-package", "output")
+	require.Error(t, err)
+	require.Contains(t, res.Stdout, "--from-package")
+}
+
+// test for azd publish without provisioned infrastructure
+func Test_CLI_Publish_Without_Provision(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "webapp")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	// Try to publish without setting subscription (no infrastructure provisioned)
+	result, err := cli.RunCommand(ctx, "publish")
+	require.Error(t, err)
+	require.Contains(t, result.Stdout, "infrastructure has not been provisioned")
+	require.Contains(t, result.Stdout, "azd provision")
+}
+
+// test for azd publish with non-container app services
+func Test_CLI_Publish_ContainerApp_Only(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	// Use a sample that might have non-container app services
+	err := copySample(dir, "webapp")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", cfg.SubscriptionID)
+	require.NoError(t, err)
+
+	// This test would need a sample with non-container app services to fully validate
+	// For now, it serves as a placeholder for the expected behavior testing
+	result, err := cli.RunCommand(ctx, "publish", "--all")
+
+	// Expected behavior: either error due to no infrastructure, or warning about non-container services
+	if err != nil {
+		// Should fail with infrastructure not provisioned, not with service type issues
+		require.Contains(t, result.Stdout, "infrastructure has not been provisioned")
+	} else {
+		// If it doesn't fail, should show warnings for non-container app services
+		require.Contains(t, result.Stdout, "only supported for container app services")
+	}
+}

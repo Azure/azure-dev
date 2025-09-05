@@ -96,16 +96,41 @@ func (spr *ServicePackageResult) MarshalJSON() ([]byte, error) {
 	return json.Marshal(*spr)
 }
 
+// ServicePublishResult is the result of a successful Publish operation for services.
+type ServicePublishResult struct {
+	// Details contains service-specific publish information.
+	// For container services: ContainerPublishDetails
+	Details interface{} `json:"details,omitempty"`
+}
+
+// ContainerPublishDetails contains publish information specific to container-based services
+type ContainerPublishDetails struct {
+	// Fully qualified image name that was pushed
+	RemoteImage string `json:"remoteImage"`
+}
+
+// Supports rendering messages for UX items
+func (spr *ServicePublishResult) ToString(currentIndentation string) string {
+	if containerDetails, ok := spr.Details.(*ContainerPublishDetails); ok && containerDetails.RemoteImage != "" {
+		return fmt.Sprintf("%s- Remote Image: %s\n", currentIndentation, output.WithLinkFormat(containerDetails.RemoteImage))
+	}
+
+	return ""
+}
+
+func (spr *ServicePublishResult) MarshalJSON() ([]byte, error) {
+	return json.Marshal(*spr)
+}
+
 // ServiceDeployResult is the result of a successful Deploy operation
 type ServiceDeployResult struct {
 	Package *ServicePackageResult `json:"package"`
+	Publish *ServicePublishResult `json:"publish"`
 	// Related Azure resource ID
 	TargetResourceId string            `json:"targetResourceId"`
 	Kind             ServiceTargetKind `json:"kind"`
 	Endpoints        []string          `json:"endpoints"`
-	// PublishArtifact contains the published artifact identifier (e.g., container image name)
-	PublishArtifact string      `json:"publishArtifact,omitempty"`
-	Details         interface{} `json:"details"`
+	Details          interface{}       `json:"details"`
 }
 
 // Supports rendering messages for UX items
@@ -113,11 +138,6 @@ func (spr *ServiceDeployResult) ToString(currentIndentation string) string {
 	uxItem, ok := spr.Details.(ux.UxItem)
 	if ok {
 		return uxItem.ToString(currentIndentation)
-	}
-
-	// Display publish artifact if available
-	if spr.PublishArtifact != "" {
-		return fmt.Sprintf("%s- Image Name: %s", currentIndentation, output.WithLinkFormat(spr.PublishArtifact))
 	}
 
 	builder := strings.Builder{}

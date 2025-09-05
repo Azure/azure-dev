@@ -30,6 +30,13 @@ import (
 	"github.com/sethvargo/go-retry"
 )
 
+// PublishOptions holds options for container operations such as publish and deploy.
+type PublishOptions struct {
+	// Overwrite indicates whether to always rebuild/republish, even if the image already exists.
+	// This is true for publish commands and false for deploy commands.
+	Overwrite bool
+}
+
 type ContainerHelper struct {
 	env                      *environment.Environment
 	envManager               environment.Manager
@@ -127,11 +134,6 @@ func (ch *ContainerHelper) GeneratedImage(
 		return nil, fmt.Errorf("failed parsing 'image' from docker configuration, %w", err)
 	}
 
-	// Image name from ctx (from --image flag in publish command) takes precedence over azure.yaml Docker config
-	if imageName := GetImageName(ctx); imageName != "" {
-		configuredImage = imageName
-	}
-
 	// Set default image name if not configured
 	if configuredImage == "" {
 		configuredImage = ch.DefaultImageName(serviceConfig)
@@ -143,22 +145,17 @@ func (ch *ContainerHelper) GeneratedImage(
 	}
 
 	if parsedImage.Tag == "" {
-		// First check for custom tags from context (from --tags flag in publish command)
-		if imageTag := GetImageTag(ctx); imageTag != "" {
-			parsedImage.Tag = imageTag
-		} else {
-			configuredTag, err := serviceConfig.Docker.Tag.Envsubst(ch.env.Getenv)
-			if err != nil {
-				return nil, fmt.Errorf("failed parsing 'tag' from docker configuration, %w", err)
-			}
-
-			// Set default tag if not configured
-			if configuredTag == "" {
-				configuredTag = ch.DefaultImageTag()
-			}
-
-			parsedImage.Tag = configuredTag
+		configuredTag, err := serviceConfig.Docker.Tag.Envsubst(ch.env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("failed parsing 'tag' from docker configuration, %w", err)
 		}
+
+		// Set default tag if not configured
+		if configuredTag == "" {
+			configuredTag = ch.DefaultImageTag()
+		}
+
+		parsedImage.Tag = configuredTag
 	}
 
 	// Set default registry if not configured
@@ -203,7 +200,10 @@ func (ch *ContainerHelper) RemoteImageTag(
 }
 
 // LocalImageTag returns the local image tag for the service configuration.
-func (ch *ContainerHelper) LocalImageTag(ctx context.Context, serviceConfig *ServiceConfig) (string, error) {
+func (ch *ContainerHelper) LocalImageTag(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) (string, error) {
 	configuredImage, err := ch.GeneratedImage(ctx, serviceConfig)
 	if err != nil {
 		return "", err
@@ -314,44 +314,32 @@ func (ch *ContainerHelper) Credentials(
 	return credential, credentialsError
 }
 
-// Deploy pushes and image to a remote server, and optionally writes the fully qualified remote image name to the
-// environment on success.
-func (ch *ContainerHelper) Deploy(
+// Publish pushes an image to a remote server and returns the fully qualified remote image name.
+func (ch *ContainerHelper) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-	writeImageToEnv bool,
 	progress *async.Progress[ServiceProgress],
-) (*ServiceDeployResult, error) {
+	options *PublishOptions,
+) (*ServicePublishResult, error) {
 	var remoteImage string
 	var err error
 
 	if serviceConfig.Docker.RemoteBuild {
-		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, progress)
+		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, progress, options)
 	} else if useDotnetPublishForDockerBuild(serviceConfig) {
-		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, progress)
+		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, progress, options)
 	} else {
-		remoteImage, err = ch.runLocalBuild(ctx, serviceConfig, packageOutput, progress)
+		remoteImage, err = ch.runLocalBuild(ctx, serviceConfig, packageOutput, progress, options)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	if writeImageToEnv {
-		// Save the name of the image we pushed into the environment with a well known key.
-		log.Printf("writing image name to environment")
-		ch.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteImage)
-
-		if err := ch.envManager.Save(ctx, ch.env); err != nil {
-			return nil, fmt.Errorf("saving image name to environment: %w", err)
-		}
-	}
-
-	return &ServiceDeployResult{
-		Package: packageOutput,
-		Details: &dockerDeployResult{
-			RemoteImageTag: remoteImage,
+	return &ServicePublishResult{
+		Details: &ContainerPublishDetails{
+			RemoteImage: remoteImage,
 		},
 	}, nil
 }
@@ -362,6 +350,7 @@ func (ch *ContainerHelper) runLocalBuild(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	progress *async.Progress[ServiceProgress],
+	options *PublishOptions,
 ) (string, error) {
 	// Get ACR Login Server
 	registryName, err := ch.RegistryName(ctx, serviceConfig)
@@ -410,7 +399,7 @@ func (ch *ContainerHelper) runLocalBuild(
 
 			// `azd deploy` skips pushing if the image already exists in the registry
 			// `azd publish` always overwrites if the image already exists in the registry
-			if !IsPublishOnly(ctx) {
+			if options == nil || !options.Overwrite {
 				log.Printf("checking if image %s already exists in registry", remoteImage)
 				progress.SetProgress(NewServiceProgress("Checking if image exists"))
 
@@ -465,6 +454,7 @@ func (ch *ContainerHelper) runRemoteBuild(
 	serviceConfig *ServiceConfig,
 	target *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
+	options *PublishOptions,
 ) (string, error) {
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
@@ -503,7 +493,7 @@ func (ch *ContainerHelper) runRemoteBuild(
 
 	// `azd deploy` skips building if the image already exists in the registry
 	// `azd publish` always overwrites if the image already exists in the registry
-	if !IsPublishOnly(ctx) {
+	if options == nil || !options.Overwrite {
 		log.Printf("checking if image %s already exists in registry", imageName)
 		progress.SetProgress(NewServiceProgress("Checking if image exists"))
 
@@ -572,6 +562,7 @@ func (ch *ContainerHelper) runDotnetPublish(
 	serviceConfig *ServiceConfig,
 	target *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
+	options *PublishOptions,
 ) (string, error) {
 	progress.SetProgress(NewServiceProgress("Logging into registry"))
 
@@ -599,8 +590,4 @@ func (ch *ContainerHelper) runDotnetPublish(
 	}
 
 	return fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName), nil
-}
-
-type dockerDeployResult struct {
-	RemoteImageTag string
 }

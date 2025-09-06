@@ -444,7 +444,7 @@ func (sm *serviceManager) Publish(
 		return nil, fmt.Errorf("getting service target: %w", err)
 	}
 
-	targetResource, err := sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
+	targetResource, err := sm.getTargetResourceForService(ctx, serviceConfig)
 	if err != nil {
 		return nil, fmt.Errorf("getting target resource: %w", err)
 	}
@@ -500,54 +500,9 @@ func (sm *serviceManager) Deploy(
 		return nil, fmt.Errorf("getting service target: %w", err)
 	}
 
-	var targetResource *environment.TargetResource
-
-	if serviceConfig.Host == DotNetContainerAppTarget {
-		containerEnvName := sm.env.GetServiceProperty(serviceConfig.Name, "CONTAINER_ENVIRONMENT_NAME")
-		// AZURE_CONTAINER_APPS_ENVIRONMENT_ID is not required for Aspire (serviceConfig.DotNetContainerApp != nil)
-		// because it uses a bicep deployment.
-		if containerEnvName == "" && serviceConfig.DotNetContainerApp == nil {
-			containerEnvName = sm.env.Getenv("AZURE_CONTAINER_APPS_ENVIRONMENT_ID")
-			if containerEnvName == "" {
-				return nil, fmt.Errorf(
-					"could not determine container app environment for service %s, "+
-						"have you set AZURE_CONTAINER_ENVIRONMENT_NAME or "+
-						"SERVICE_%s_CONTAINER_ENVIRONMENT_NAME as an output of your "+
-						"infrastructure?", serviceConfig.Name, strings.ToUpper(serviceConfig.Name))
-			}
-
-			parts := strings.Split(containerEnvName, "/")
-			containerEnvName = parts[len(parts)-1]
-		}
-
-		// Get any explicitly configured resource group name
-		// 1. Service level override
-		// 2. Project level override
-		resourceGroupNameTemplate := serviceConfig.ResourceGroupName
-		if resourceGroupNameTemplate.Empty() {
-			resourceGroupNameTemplate = serviceConfig.Project.ResourceGroupName
-		}
-
-		resourceGroupName, err := sm.resourceManager.GetResourceGroupName(
-			ctx,
-			sm.env.GetSubscriptionId(),
-			resourceGroupNameTemplate,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("getting resource group name: %w", err)
-		}
-
-		targetResource = environment.NewTargetResource(
-			sm.env.GetSubscriptionId(),
-			resourceGroupName,
-			containerEnvName,
-			string(azapi.AzureResourceTypeContainerAppEnvironment),
-		)
-	} else {
-		targetResource, err = sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
-		if err != nil {
-			return nil, fmt.Errorf("getting target resource: %w", err)
-		}
+	targetResource, err := sm.getTargetResourceForService(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("getting target resource: %w", err)
 	}
 
 	deployResult, err := runCommand(
@@ -728,6 +683,59 @@ func runCommand[T any](
 	})
 
 	return result, err
+}
+
+// getTargetResourceForService resolves the target resource for a service configuration.
+// For DotNetContainerAppTarget, it handles container app environment resolution.
+// For other service types, it delegates to the resource manager.
+func (sm *serviceManager) getTargetResourceForService(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) (*environment.TargetResource, error) {
+	if serviceConfig.Host == DotNetContainerAppTarget {
+		containerEnvName := sm.env.GetServiceProperty(serviceConfig.Name, "CONTAINER_ENVIRONMENT_NAME")
+		// AZURE_CONTAINER_APPS_ENVIRONMENT_ID is not required for Aspire (serviceConfig.DotNetContainerApp != nil)
+		// because it uses a bicep deployment.
+		if containerEnvName == "" && serviceConfig.DotNetContainerApp == nil {
+			containerEnvName = sm.env.Getenv("AZURE_CONTAINER_APPS_ENVIRONMENT_ID")
+			if containerEnvName == "" {
+				return nil, fmt.Errorf(
+					"could not determine container app environment for service %s, "+
+						"have you set AZURE_CONTAINER_ENVIRONMENT_NAME or "+
+						"SERVICE_%s_CONTAINER_ENVIRONMENT_NAME as an output of your "+
+						"infrastructure?", serviceConfig.Name, strings.ToUpper(serviceConfig.Name))
+			}
+
+			parts := strings.Split(containerEnvName, "/")
+			containerEnvName = parts[len(parts)-1]
+		}
+
+		// Get any explicitly configured resource group name
+		// 1. Service level override
+		// 2. Project level override
+		resourceGroupNameTemplate := serviceConfig.ResourceGroupName
+		if resourceGroupNameTemplate.Empty() {
+			resourceGroupNameTemplate = serviceConfig.Project.ResourceGroupName
+		}
+
+		resourceGroupName, err := sm.resourceManager.GetResourceGroupName(
+			ctx,
+			sm.env.GetSubscriptionId(),
+			resourceGroupNameTemplate,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("getting resource group name: %w", err)
+		}
+
+		return environment.NewTargetResource(
+			sm.env.GetSubscriptionId(),
+			resourceGroupName,
+			containerEnvName,
+			string(azapi.AzureResourceTypeContainerAppEnvironment),
+		), nil
+	}
+
+	return sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
 }
 
 // Copies a file from the source path to the destination path

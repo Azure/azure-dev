@@ -171,5 +171,6 @@ func Test_CLI_Publish_Unsupported_Service(t *testing.T) {
 	require.NoError(t, err)
 
 	result, err := cli.RunCommand(ctx, "publish", "--all")
+	require.NoError(t, err)
 	require.Contains(t, result.Stdout, "only supported for 'containerapp' services")
 }

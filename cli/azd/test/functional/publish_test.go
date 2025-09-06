@@ -144,7 +144,7 @@ func Test_CLI_Publish_Without_Provision(t *testing.T) {
 }
 
 // test for azd publish with non-container app services
-func Test_CLI_Publish_ContainerApp_Only(t *testing.T) {
+func Test_CLI_Publish_Unsupported_Service(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -170,16 +170,6 @@ func Test_CLI_Publish_ContainerApp_Only(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", cfg.SubscriptionID)
 	require.NoError(t, err)
 
-	// This test would need a sample with non-container app services to fully validate
-	// For now, it serves as a placeholder for the expected behavior testing
 	result, err := cli.RunCommand(ctx, "publish", "--all")
-
-	// Expected behavior: either error due to no infrastructure, or warning about non-container services
-	if err != nil {
-		// Should fail with infrastructure not provisioned, not with service type issues
-		require.Contains(t, result.Stdout, "infrastructure has not been provisioned")
-	} else {
-		// If it doesn't fail, should show warnings for non-container app services
-		require.Contains(t, result.Stdout, "only supported for container app services")
-	}
+	require.Contains(t, result.Stdout, "only supported for 'containerapp' services")
 }

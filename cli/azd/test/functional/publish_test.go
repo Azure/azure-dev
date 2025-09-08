@@ -8,10 +8,94 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/cli/azd/test/recording"
+	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/require"
 )
+
+func Test_CLI_Publish_ContainerApp_RemoteBuild(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		publishArgs       []string
+		expectedImageName string
+		expectedImageTag  string
+	}{
+		{
+			name:              "default publish",
+			publishArgs:       []string{"publish"},
+			expectedImageName: "foo/bar",
+			expectedImageTag:  "latest",
+		},
+		{
+			name:              "custom image and tag",
+			publishArgs:       []string{"publish", "--image", "custom/image", "--tag", "prod"},
+			expectedImageName: "custom/image",
+			expectedImageTag:  "prod",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := newTestContext(t)
+			defer cancel()
+
+			dir := tempDirWithDiagnostics(t)
+			t.Logf("DIR: %s", dir)
+
+			session := recording.Start(t)
+
+			envName := randomOrStoredEnvName(session)
+			t.Logf("AZURE_ENV_NAME: %s", envName)
+
+			cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+			cli.WorkingDirectory = dir
+			cli.Env = append(cli.Env, os.Environ()...)
+			cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+			defer cleanupDeployments(ctx, t, cli, session, envName)
+
+			err := copySample(dir, "containercustomdockerapp")
+			require.NoError(t, err, "failed expanding sample")
+
+			_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+			require.NoError(t, err)
+
+			_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+			require.NoError(t, err)
+
+			// Read the environment to get ACR endpoint
+			env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+			require.NoError(t, err)
+
+			acrEndpoint, has := env["AZURE_CONTAINER_REGISTRY_ENDPOINT"]
+			require.True(t, has, "AZURE_CONTAINER_REGISTRY_ENDPOINT should be in environment after provision")
+
+			// Build publish command arguments with --cwd
+			publishArgs := append(tt.publishArgs, "--cwd", filepath.Join(dir, "src", "app"))
+
+			_, err = cli.RunCommand(ctx, publishArgs...)
+			require.NoError(t, err)
+
+			// Re-read environment to get updated SERVICE_APP_IMAGE_NAME
+			env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+			require.NoError(t, err)
+
+			image, has := env["SERVICE_APP_IMAGE_NAME"]
+			require.True(t, has, "SERVICE_APP_IMAGE_NAME should be in environment after publish")
+
+			expectedImage := acrEndpoint + "/" + tt.expectedImageName + ":" + tt.expectedImageTag
+			require.Equal(t, expectedImage, image, "image name should match expected pattern")
+
+			_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+			require.NoError(t, err)
+		})
+	}
+}
 
 // test for errors when running publish in invalid working directories
 func Test_CLI_Publish_Err_WorkingDirectory(t *testing.T) {

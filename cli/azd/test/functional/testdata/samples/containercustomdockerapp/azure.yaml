@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: webapp
+metadata: 
+  template: azd-test/containerremotebuildapp@v1
+services:
+  app:
+    project: src/app
+    host: containerapp
+    language: js
+    docker:
+      remoteBuild: true
+      image: foo/bar
+      tag: latest

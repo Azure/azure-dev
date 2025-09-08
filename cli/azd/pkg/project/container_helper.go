@@ -35,6 +35,9 @@ type PublishOptions struct {
 	// Overwrite indicates whether to always rebuild/republish, even if the image already exists.
 	// This is true for publish commands and false for deploy commands.
 	Overwrite bool
+
+	OverrideImageName string
+	OverrideImageTag  string
 }
 
 type ContainerHelper struct {
@@ -175,6 +178,7 @@ func (ch *ContainerHelper) RemoteImageTag(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	localImageTag string,
+	options *PublishOptions,
 ) (string, error) {
 	registryName, err := ch.RegistryName(ctx, serviceConfig)
 	if err != nil {
@@ -194,6 +198,16 @@ func (ch *ContainerHelper) RemoteImageTag(
 
 	if registryName != "" {
 		containerImage.Registry = registryName
+	}
+
+	// Apply overrides from PublishOptions if provided
+	if options != nil {
+		if options.OverrideImageName != "" {
+			containerImage.Repository = options.OverrideImageName
+		}
+		if options.OverrideImageTag != "" {
+			containerImage.Tag = options.OverrideImageTag
+		}
 	}
 
 	return containerImage.Remote(), nil
@@ -383,7 +397,7 @@ func (ch *ContainerHelper) runLocalBuild(
 		// If a registry has not been defined then there is no need to tag or push any images
 		if registryName != "" {
 			// Get remote remoteImageWithTag from the container helper then call docker cli remoteImageWithTag command
-			remoteImageWithTag, err := ch.RemoteImageTag(ctx, serviceConfig, targetImage)
+			remoteImageWithTag, err := ch.RemoteImageTag(ctx, serviceConfig, targetImage, options)
 			if err != nil {
 				return "", fmt.Errorf("getting remote image tag: %w", err)
 			}
@@ -409,7 +423,7 @@ func (ch *ContainerHelper) runLocalBuild(
 					// Log the error but continue with the build process
 					log.Printf("failed to check if image exists, proceeding with build: %v", err)
 				} else if imageExists {
-					log.Printf("image %s already exists in registry, skipping build and push", remoteImage)
+					log.Printf("image %s already exists in registry, skipping push", remoteImage)
 					return remoteImage, nil
 				}
 			}
@@ -487,7 +501,7 @@ func (ch *ContainerHelper) runRemoteBuild(
 		return "", err
 	}
 
-	imageName, err := ch.RemoteImageTag(ctx, serviceConfig, localImageTag)
+	imageName, err := ch.RemoteImageTag(ctx, serviceConfig, localImageTag, options)
 	if err != nil {
 		return "", err
 	}

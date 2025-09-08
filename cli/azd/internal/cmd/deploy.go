@@ -82,7 +82,7 @@ func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		&d.forcePublish,
 		"force-publish",
 		false,
-		"Force publishes and overwrites existing images",
+		"Forcibly publishes service, overwriting any existing published artifacts.",
 	)
 }
 

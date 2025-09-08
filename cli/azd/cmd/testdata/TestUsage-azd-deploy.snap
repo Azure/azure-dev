@@ -11,7 +11,7 @@ Usage
 Flags
         --all                 	: Deploys all services that are listed in azure.yaml
     -e, --environment string  	: The name of the environment to use.
-        --force-publish       	: Force publishes and overwrites existing images
+        --force-publish       	: Forcibly publishes service, overwriting any existing published artifacts.
         --from-package string 	: Deploys the packaged service located at the provided path. Supports zipped file packages (file path) or container images (image tag).
 
 Global Flags

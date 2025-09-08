@@ -24,7 +24,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -208,7 +207,9 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	// Create publish options from flags
 	publishOptions := &project.PublishOptions{
-		Overwrite: true, // publish always overwrites
+		Overwrite:         true,
+		OverrideImageName: pa.flags.Image,
+		OverrideImageTag:  pa.flags.Tag,
 	}
 
 	if err := pa.projectManager.Initialize(ctx, pa.projectConfig); err != nil {
@@ -219,22 +220,6 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return targetServiceName == "" || svc.Name == targetServiceName
 	}); err != nil {
 		return nil, err
-	}
-
-	// Apply image and tag overrides to service configurations before processing
-	for _, svc := range pa.projectConfig.Services {
-		if targetServiceName != "" && svc.Name != targetServiceName {
-			continue
-		}
-
-		// Override service config with command-line flags
-		if pa.flags.Image != "" {
-			svc.Docker.Image = osutil.NewExpandableString(pa.flags.Image)
-		}
-
-		if pa.flags.Tag != "" {
-			svc.Docker.Tag = osutil.NewExpandableString(pa.flags.Tag)
-		}
 	}
 
 	// Command title
@@ -269,7 +254,7 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		}
 
 		// Check if this service is a container app
-		if svc.Host != project.ContainerAppTarget {
+		if svc.Host != project.ContainerAppTarget && svc.Host != project.AksTarget {
 			pa.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 			pa.console.MessageUxItem(ctx, &ux.WarningMessage{
 				Description: fmt.Sprintf(
@@ -357,6 +342,9 @@ func GetCmdPublishHelpDescription(*cobra.Command) string {
 			formatHelpNote(
 				//nolint:lll
 				"Target registry set by AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable or docker.registry in azure.yaml."),
+			formatHelpNote(
+				//nolint:lll
+				"Use '--from-package' to publish an existing container image, otherwise azd automatically packages the container image before publishing."),
 		})
 }
 

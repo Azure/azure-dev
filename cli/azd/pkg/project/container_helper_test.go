@@ -129,7 +129,92 @@ func Test_ContainerHelper_RemoteImageTag(t *testing.T) {
 			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, ServiceLanguageTypeScript)
 			serviceConfig.Docker.Registry = tt.registry
 
-			remoteTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig, tt.localImageTag)
+			remoteTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig, tt.localImageTag, nil)
+
+			if tt.expectError {
+				require.Error(t, err)
+				require.Empty(t, remoteTag)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.expectedRemoteTag, remoteTag)
+			}
+		})
+	}
+}
+
+func Test_ContainerHelper_RemoteImageTag_WithPublishOptions(t *testing.T) {
+	tests := []struct {
+		name              string
+		project           string
+		localImageTag     string
+		registry          osutil.ExpandableString
+		publishOptions    *PublishOptions
+		expectedRemoteTag string
+		expectError       bool
+	}{
+		{
+			name:          "with override image name",
+			project:       "./src/api",
+			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag: "test-app/api-dev:azd-deploy-0",
+			publishOptions: &PublishOptions{
+				OverrideImageName: "custom/image",
+			},
+			expectedRemoteTag: "contoso.azurecr.io/custom/image:azd-deploy-0",
+		},
+		{
+			name:          "with override image tag",
+			project:       "./src/api",
+			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag: "test-app/api-dev:azd-deploy-0",
+			publishOptions: &PublishOptions{
+				OverrideImageTag: "latest",
+			},
+			expectedRemoteTag: "contoso.azurecr.io/test-app/api-dev:latest",
+		},
+		{
+			name:          "with both override image name and tag",
+			project:       "./src/api",
+			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag: "test-app/api-dev:azd-deploy-0",
+			publishOptions: &PublishOptions{
+				OverrideImageName: "custom/image",
+				OverrideImageTag:  "latest",
+			},
+			expectedRemoteTag: "contoso.azurecr.io/custom/image:latest",
+		},
+		{
+			name:          "override image name only (no slash prefix)",
+			project:       "./src/api",
+			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag: "test-app/api-dev:azd-deploy-0",
+			publishOptions: &PublishOptions{
+				OverrideImageName: "myimage",
+			},
+			expectedRemoteTag: "contoso.azurecr.io/myimage:azd-deploy-0",
+		},
+		{
+			name:          "override tag only",
+			project:       "./src/api",
+			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag: "test-app/api-dev:azd-deploy-0",
+			publishOptions: &PublishOptions{
+				OverrideImageTag: "v1.0.0",
+			},
+			expectedRemoteTag: "contoso.azurecr.io/test-app/api-dev:v1.0.0",
+		},
+	}
+
+	mockContext := mocks.NewMockContext(context.Background())
+	env := environment.NewWithValues("dev", map[string]string{})
+	containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil, nil, nil, nil, cloud.AzurePublic())
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, ServiceLanguageTypeScript)
+			serviceConfig.Docker.Registry = tt.registry
+
+			remoteTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig, tt.localImageTag, tt.publishOptions)
 
 			if tt.expectError {
 				require.Error(t, err)

@@ -97,7 +97,10 @@ type httpClient struct {
 }
 
 func (c *httpClient) Do(req *http.Request) (*http.Response, error) {
-	// Implement custom HTTP request handling logic here if needed
+	// Set headers to mimic an approved Copilot client
+	// The copilot-integration-id header is used by GitHub to identify the client application.
+	// "vscode-chat" is a known valid value used by the official GitHub Copilot extension for VS Code.
+	// Using this value helps ensure compatibility with GitHub's Copilot service.
 	req.Header.Set("copilot-integration-id", "vscode-chat")
 	return http.DefaultClient.Do(req)
 }

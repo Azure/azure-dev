@@ -253,13 +253,20 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			pa.console.WarnForFeature(ctx, alphaFeatureId)
 		}
 
-		// Check if this service is a container app
-		if svc.Host != project.ContainerAppTarget && svc.Host != project.AksTarget {
+		if !svc.Host.RequiresContainer() {
 			pa.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+
+			var message string
+			if svc.Host == project.DotNetContainerAppTarget {
+				message = "'publish' does not currently support Aspire projects"
+			} else {
+				message = fmt.Sprintf(
+					"'publish' only supports '%s' and '%s' services, but '%s' has host type '%s'",
+					project.ContainerAppTarget, project.AksTarget, svc.Name, svc.Host)
+			}
+
 			pa.console.MessageUxItem(ctx, &ux.WarningMessage{
-				Description: fmt.Sprintf(
-					"'publish' is only supported for '%s' services, but '%s' has type '%s'",
-					project.ContainerAppTarget, svc.Name, svc.Host),
+				Description: message,
 			})
 			continue
 		}

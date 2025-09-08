@@ -142,7 +142,7 @@ func saveAsFile(content any, name string) error {
 	return saveToFile(tokenFile, content)
 }
 
-// saveToFile saves data to a file (like gptel--gh-save)
+// saveToFile saves data to a file
 func saveToFile(filePath string, data interface{}) error {
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, osutil.PermissionDirectory); err != nil {

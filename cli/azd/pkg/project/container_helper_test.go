@@ -214,7 +214,8 @@ func Test_ContainerHelper_RemoteImageTag_WithPublishOptions(t *testing.T) {
 			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, ServiceLanguageTypeScript)
 			serviceConfig.Docker.Registry = tt.registry
 
-			remoteTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig, tt.localImageTag, tt.publishOptions)
+			remoteTag, err := containerHelper.RemoteImageTag(
+				*mockContext.Context, serviceConfig, tt.localImageTag, tt.publishOptions)
 
 			if tt.expectError {
 				require.Error(t, err)

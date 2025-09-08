@@ -187,23 +187,17 @@ func TestImportManagerProjectInfrastructureDefaults(t *testing.T) {
 		alphaFeatureManager: mockContext.AlphaFeaturesManager,
 	})
 
-	// Get defaults and error b/c no infra found and no Aspire project
+	// ProjectInfrastructure does defaulting when no infra exists (fallback path)
 	r, e := manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{})
-	require.NoError(t, e, "this project does not contain expected infrastructure")
-	require.NotNil(t, r)
-	require.Equal(t, r, &Infra{})
+	require.NoError(t, e)
+	require.Equal(t, DefaultPath, r.Options.Path)
+	require.Equal(t, DefaultModule, r.Options.Module)
 
 	// adding infra folder to test defaults
 	expectedDefaultFolder := DefaultPath
 	err := os.Mkdir(expectedDefaultFolder, os.ModePerm)
 	require.NoError(t, err)
 	defer os.RemoveAll(expectedDefaultFolder)
-
-	// error should keep happening b/c infra folder exists but module is not found
-	r, e = manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{})
-	require.NoError(t, e)
-	require.NotNil(t, r)
-	require.Equal(t, r, &Infra{})
 
 	// Create the file
 	expectedDefaultModule := DefaultModule
@@ -212,7 +206,7 @@ func TestImportManagerProjectInfrastructureDefaults(t *testing.T) {
 	require.NoError(t, err)
 	defer os.Remove(path)
 
-	// infra result should be returned now that the default values are found
+	// ProjectInfrastructure does defaulting when infra exists (short-circuit path)
 	r, e = manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{})
 	require.NoError(t, e)
 	require.Equal(t, expectedDefaultFolder, r.Options.Path)

@@ -121,7 +121,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 			confirm, err := e.checkErrorHandlingConsent(
 				ctx,
-				"troubleshooting_steps",
+				"mcp.error.troubleshooting",
 				fmt.Sprintf("Generate troubleshooting steps using %s?", agentName),
 				true,
 			)
@@ -160,7 +160,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			})
 			confirm, err = e.checkErrorHandlingConsent(
 				ctx,
-				"error_fix",
+				"mcp.error.fix",
 				fmt.Sprintf("Fix this error using %s?", agentName),
 				false,
 			)
@@ -277,6 +277,10 @@ func (e *ErrorMiddleware) checkErrorHandlingConsent(
 		if choice == "always" {
 			if err := userConfig.Set(promptName, "allow"); err != nil {
 				return false, fmt.Errorf("failed to set consent config: %w", err)
+			}
+
+			if err := e.userConfigManager.Save(userConfig); err != nil {
+				return false, err
 			}
 		}
 	}

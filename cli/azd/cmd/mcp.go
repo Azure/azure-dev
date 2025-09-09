@@ -154,8 +154,16 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	allTools := []server.ServerTool{
 		tools.NewAzdPlanInitTool(),
+		tools.NewAzdIdentifyUserIntentTool(),
+		tools.NewAzdSelectStackTool(),
+		tools.NewAzdListStackResourcesTool(),
+		tools.NewAzdNewProjectTool(),
+		tools.NewAzdModernizeProjectTool(),
 		tools.NewAzdDiscoveryAnalysisTool(),
 		tools.NewAzdArchitecturePlanningTool(),
+		tools.NewAzdArtifactGenerationTool(),
+		tools.NewAzdAppCodeGenerationTool(),
+		tools.NewGenerateProjectSpecTemplateTool(),
 		tools.NewAzdAzureYamlGenerationTool(),
 		tools.NewAzdDockerGenerationTool(),
 		tools.NewAzdInfrastructureGenerationTool(),

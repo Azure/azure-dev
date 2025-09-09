@@ -1,0 +1,5 @@
+- **Log Analytics Workspace** (`Microsoft.OperationalInsights/workspaces`) - Central logging and monitoring for all application components
+- **Application Insights** (`Microsoft.Insights/components`) - Application performance monitoring, telemetry, and analytics
+- **Key Vault** (`Microsoft.KeyVault/vaults`) - Secure storage for secrets, keys, certificates, and connection strings
+- **App Configuration** (`Microsoft.AppConfiguration/configurationStores`) - Centralized configuration management and feature flags
+- **Storage Account** (`Microsoft.Storage/storageAccounts`) - File storage, queues, tables, and data persistence

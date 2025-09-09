@@ -2,13 +2,13 @@
 
 ✅ **Agent Task List**  
 
-1. Check if `azd-arch-plan.md` exists and review architecture decisions
+1. Check if application spec exists and review architecture decisions
 2. Identify all application services (frontend, backend, functions, etc.)
 3. Determine hosting requirements for each service based on Azure service selections
 4. Analyze build requirements (language, package manager, build commands)
 5. Create complete `azure.yaml` file in root directory following required patterns
 6. Validate file against AZD schema using available tools
-7. Update existing `azd-arch-plan.md` with generated configuration details while preserving existing content
+7. Update existing application spec with generated configuration details while preserving existing content
 
 📄 **Required Outputs**  
 
@@ -16,7 +16,7 @@
 - Service configurations matching Azure service selections from architecture planning
 - Build and deployment instructions for all services
 - Configuration validated against AZD schema
-- Update existing `azd-arch-plan.md` with configuration details while preserving existing content
+- Update existing application spec with configuration details while preserving existing content
 
 🧠 **Execution Guidelines**  
 
@@ -98,4 +98,4 @@ services:
 - [ ] Service hosting configurations match Azure service selections from architecture planning
 - [ ] Build and deployment instructions complete for all services
 - [ ] File validates against any available AZD schema tools
-- [ ] `azd-arch-plan.md` updated with configuration details while preserving existing content
+- [ ] Application spec updated with configuration details while preserving existing content

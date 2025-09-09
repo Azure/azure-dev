@@ -1,0 +1,2 @@
+- **Logic Apps** (`Microsoft.Logic/workflows`) - Visual workflow orchestration and business process automation with extensive connector ecosystem
+- **Integration Account** (`Microsoft.Logic/integrationAccounts`) - Optional resource for B2B scenarios, enterprise integration patterns, and advanced workflow features

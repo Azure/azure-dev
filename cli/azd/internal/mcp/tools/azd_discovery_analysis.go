@@ -30,7 +30,7 @@ Use this tool when:
 - Starting Phase 1 of AZD migration process
 - Need to identify all application components and dependencies
 - Codebase analysis required before architecture planning
-- azd-arch-plan.md does not exist or needs updating`,
+- Application spec does not exist or needs updating`,
 			),
 		),
 		Handler: handleAzdDiscoveryAnalysis,

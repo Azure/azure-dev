@@ -3,28 +3,30 @@
 ✅ **Agent Task List**
 
 1. **Inventory existing IaC files** - scan current working directory for all `.bicep` files
-2. Read `azd-arch-plan.md` to get the **IaC File Generation Checklist**
-3. Create directory structure in `./infra` following IaC rules
-4. Before generating any code, always fetch Azure and Bicep best practices
-5. Before generating any code, always get the latest bicep schema and version for each Azure resource type
+2. **Read application spec** to get the Infrastructure as Code File Checklist with required resources
+3. **Get IaC generation rules** for Azure infrastructure best practices and coding standards
+4. **Get latest bicep schema versions** for each Azure resource type from the required resources
+5. Create directory structure in `./infra` following IaC rules
 6. For each file in the IaC checklist:
    - **If file exists**: Intelligently update to match requirements, preserve user customizations where possible
    - **If file missing**: Generate new file following templates and best practices
    - **Flag conflicts**: Note any incompatible configurations but proceed with updates
-7. Validate all generated bicep templates compile without errors or warnings
-8. Update the IaC checklist section in existing `azd-arch-plan.md` by marking completed files as [x] while preserving existing content
+7. **Generate modular infrastructure**: Create generic resource modules and service-specific modules that reference them
+8. Validate all generated bicep templates compile without errors or warnings
+9. Update the IaC checklist section in existing application spec by marking completed files as [x] while preserving existing content
 
 📄 **Required Outputs**
 
 - **Existing IaC inventory** documenting all current `.bicep` files found
 - Complete Bicep template structure in `./infra` directory based on the IaC checklist
-- All files listed in the IaC File Generation Checklist from `azd-arch-plan.md` (created or updated)
+- All files listed in the Infrastructure as Code File Checklist from application spec (created or updated)
 - Main.bicep file with subscription scope and modular deployment
-- Service-specific modules for each Azure service from the checklist
-- Parameter files with sensible defaults
+- **Generic resource modules** for reusable Azure service patterns (e.g., `modules/containerapp.bicep`, `modules/storage.bicep`)
+- **Service-specific modules** that reference generic modules with customized configurations (e.g., `modules/user-api.bicep`)
+- Parameter files with sensible defaults using latest bicep schema versions
 - **Conflict report** highlighting any incompatible configurations that were updated
 - All templates validated and error-free
-- Update existing `azd-arch-plan.md` IaC checklist by marking completed files as [x] while preserving existing content
+- Update existing application spec IaC checklist by marking completed files as [x] while preserving existing content
 
 🧠 **Execution Guidelines**
 
@@ -35,11 +37,29 @@
 - Note any existing modules, parameters, and resource definitions
 - Identify which checklist files already exist vs. need to be created
 
-**Read IaC Checklist:**
+**Read IaC Checklist and Get Generation Rules:**
 
-- Read the "Infrastructure as Code File Checklist" section from `azd-arch-plan.md`
-- This checklist specifies exactly which Bicep files need to be generated
+- Read the "Infrastructure as Code File Checklist" section from application spec
+- This checklist specifies exactly which Bicep files need to be generated and their purpose
+- Get IaC generation rules for Azure infrastructure best practices and coding standards
+- Get latest bicep schema versions for each Azure resource type identified in the checklist
 - Cross-reference with existing file inventory to determine update vs. create strategy
+
+**Modular Infrastructure Generation Strategy:**
+
+**Generic Resource Modules:**
+
+- Create reusable modules for common Azure resource patterns
+- Examples: `modules/containerapp.bicep`, `modules/storage.bicep`, `modules/database.bicep`
+- These modules accept parameters for customization but contain standard resource configurations
+- Follow IaC generation rules for naming, security, and architectural patterns
+
+**Service-Specific Modules:**
+
+- Create modules that reference generic modules with service-specific configurations
+- Examples: `modules/user-api.bicep` (calls `containerapp.bicep` with user-api settings)
+- These modules provide the business logic and specific parameter values
+- Map each service from architecture planning to its corresponding module
 
 **Smart File Generation Strategy:**
 
@@ -67,8 +87,17 @@
 
 - Create `./infra/main.bicep` first (always required)
 - Create `./infra/main.parameters.json` second (always required)
-- Generate each module file listed in the checklist
-- Follow the exact file paths specified in the checklist
+- Generate generic resource modules in `./infra/modules/` (e.g., `containerapp.bicep`, `storage.bicep`)
+- Generate service-specific modules in `./infra/modules/` (e.g., `user-api.bicep`, `order-service.bicep`)
+- Follow the exact file paths specified in the checklist from application spec
+
+**Module Generation Workflow:**
+
+1. **Identify required resource types** from the Infrastructure as Code File Checklist
+2. **Create generic modules first** for each unique Azure resource type
+3. **Create service-specific modules** that reference generic modules with specific configurations
+4. **Ensure proper dependencies** between modules and main deployment template
+5. **Apply IaC generation rules** consistently across all generated files
 
 **Main Parameters File Requirements:**
 
@@ -123,17 +152,20 @@ The `./infra/main.parameters.json` file is critical for AZD integration and must
 
 ```text
 ./infra/
-├── main.bicep              # Primary deployment template (subscription scope)
-├── main.parameters.json    # Default parameters
+├── main.bicep                    # Primary deployment template (subscription scope)
+├── main.parameters.json          # Default parameters
 ├── modules/
-│   ├── container-apps.bicep
-│   ├── app-service.bicep
-│   ├── functions.bicep
-│   ├── database.bicep
-│   ├── storage.bicep
-│   ├── keyvault.bicep
-│   └── monitoring.bicep
-└── resources.bicep         # Shared resources
+│   ├── containerapp.bicep        # Generic Container Apps module
+│   ├── app-service.bicep         # Generic App Service module
+│   ├── functions.bicep           # Generic Azure Functions module
+│   ├── database.bicep            # Generic database module
+│   ├── storage.bicep             # Generic storage module
+│   ├── keyvault.bicep            # Generic Key Vault module
+│   ├── monitoring.bicep          # Generic monitoring module
+│   ├── user-api.bicep            # Service-specific module (references containerapp.bicep)
+│   ├── order-service.bicep       # Service-specific module (references containerapp.bicep)
+│   └── shared-storage.bicep      # Service-specific module (references storage.bicep)
+└── resources.bicep               # Shared resources
 ```
 
 **Main Template Requirements:**
@@ -148,8 +180,12 @@ The `./infra/main.parameters.json` file is critical for AZD integration and must
 📌 **Completion Checklist**
 
 - [ ] **Existing IaC inventory completed** - all `.bicep` files in current directory catalogued
-- [ ] **IaC File Generation Checklist read** from `azd-arch-plan.md`
+- [ ] **Infrastructure as Code File Checklist read** from application spec
+- [ ] **IaC generation rules retrieved** and applied to all generated files
+- [ ] **Latest bicep schema versions obtained** for each Azure resource type
 - [ ] **Update vs. create strategy determined** for each file in checklist
+- [ ] **Generic resource modules created** for each unique Azure resource type
+- [ ] **Service-specific modules generated** that reference generic modules appropriately
 - [ ] **All files from checklist generated or updated** in the correct locations
 - [ ] **User customizations preserved** where compatible with requirements
 - [ ] **Conflicts documented** and resolved with functional priority
@@ -160,4 +196,4 @@ The `./infra/main.parameters.json` file is critical for AZD integration and must
 - [ ] Naming conventions and tagging implemented correctly
 - [ ] Security best practices implemented (Key Vault, managed identities)
 - [ ] All Bicep modules are created with latest bicep schema version and meet Azure and Bicep best practices
-- [ ] **IaC checklist in `azd-arch-plan.md` updated** by marking completed files as [x] while preserving existing content
+- [ ] **Infrastructure as Code File Checklist in application spec updated** by marking completed files as [x] while preserving existing content

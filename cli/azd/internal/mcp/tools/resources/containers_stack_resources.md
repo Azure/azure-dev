@@ -1,0 +1,3 @@
+- **Container Apps Environment** (`Microsoft.App/managedEnvironments`) - Managed container hosting environment with built-in scaling, load balancing, and service discovery
+- **Container Registry** (`Microsoft.ContainerRegistry/registries`) - Private container image repository for storing and managing Docker images
+- **Container App** (`Microsoft.App/containerApps`) - Individual containerized application instances (one per application component) with automatic scaling and traffic management

@@ -21,16 +21,20 @@ func NewAzdPlanInitTool() server.ServerTool {
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
-				`Returns instructions for orchestrating complete AZD application initialization using structured phases 
-with specialized tools. 
+				`Initial entry point for AZD project initialization and modernization workflows.
 
-The LLM agent should execute these instructions using available tools.
+This tool provides orchestration guidance for transforming workspaces into AZD-compatible projects.
 
 Use this tool when:
-- Starting new AZD project initialization or migration
-- Need structured approach to transform application into AZD-compatible project
-- Want to ensure proper sequencing of discovery, planning, and file generation
-- Require complete project orchestration guidance`,
+- Creating new AZD project from an empty workspace
+- Modernizing an existing application to become AZD compatible
+- Need guidance for complete project setup and configuration
+
+Will help with the following:
+- Analysis & Discovery
+- Architecture Planning including stack selection
+- File / Code generation
+- Project validation`,
 			),
 		),
 		Handler: handleAzdPlanInit,

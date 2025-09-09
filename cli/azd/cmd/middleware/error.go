@@ -18,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 )
@@ -120,7 +119,12 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 			errorInput := originalError.Error()
 
-			confirm, err := e.checkErrorHandlingConsent(ctx, "troubleshooting_steps", fmt.Sprintf("Generate troubleshooting steps using %s?", agentName), true)
+			confirm, err := e.checkErrorHandlingConsent(
+				ctx,
+				"troubleshooting_steps",
+				fmt.Sprintf("Generate troubleshooting steps using %s?", agentName),
+				true,
+			)
 			if err != nil {
 				return nil, fmt.Errorf("prompting to provide troubleshooting steps: %w", err)
 			}
@@ -154,7 +158,12 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				Message:      "Debugger Ready?",
 				DefaultValue: true,
 			})
-			confirm, err = e.checkErrorHandlingConsent(ctx, "error_fix", fmt.Sprintf("Fix this error using %s?", agentName), false)
+			confirm, err = e.checkErrorHandlingConsent(
+				ctx,
+				"error_fix",
+				fmt.Sprintf("Fix this error using %s?", agentName),
+				false,
+			)
 			if err != nil {
 				return nil, fmt.Errorf("prompting to fix error using %s: %w", agentName, err)
 			}
@@ -280,7 +289,7 @@ func promptForErrorHandlingConsent(
 	message string,
 	skip bool,
 ) (string, error) {
-	choices := []*ux.SelectChoice{
+	choices := []*uxlib.SelectChoice{
 		{
 			Value: "once",
 			Label: "Yes, allow once",
@@ -292,23 +301,24 @@ func promptForErrorHandlingConsent(
 	}
 
 	if skip {
-		choices = append(choices, &ux.SelectChoice{
+		choices = append(choices, &uxlib.SelectChoice{
 			Value: "skip",
 			Label: "No, skip to next step",
 		})
 	} else {
-		choices = append(choices, &ux.SelectChoice{
+		choices = append(choices, &uxlib.SelectChoice{
 			Value: "deny",
 			Label: "No, cancel this interaction (esc)",
 		})
 	}
 
-	selector := ux.NewSelect(&ux.SelectOptions{
+	selector := uxlib.NewSelect(&uxlib.SelectOptions{
 		Message: message,
-		HelpMessage: fmt.Sprintf("This action will run AI tools to generate troubleshooting steps. Edit permissions for AI tools anytime by running %s.",
+		HelpMessage: fmt.Sprintf("This action will run AI tools to generate troubleshooting steps."+
+			" Edit permissions for AI tools anytime by running %s.",
 			output.WithHighLightFormat("azd mcp")),
 		Choices:         choices,
-		EnableFiltering: ux.Ptr(false),
+		EnableFiltering: uxlib.Ptr(false),
 		DisplayCount:    5,
 	})
 

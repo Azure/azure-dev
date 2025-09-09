@@ -7,12 +7,18 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"log"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
+	"github.com/fsnotify/fsnotify"
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/chains"
 	"github.com/tmc/langchaingo/llms"
@@ -87,9 +93,27 @@ func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentCreateOption) (Age
 	return azdAgent, nil
 }
 
+type FileChanges struct {
+	Created  map[string]bool
+	Modified map[string]bool
+	Deleted  map[string]bool
+}
+
 // SendMessage processes a single message through the agent and returns the response
 func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...string) (string, error) {
 	thoughtsCtx, cancelCtx := context.WithCancel(ctx)
+	fileChanges := &FileChanges{
+		Created:  make(map[string]bool),
+		Modified: make(map[string]bool),
+		Deleted:  make(map[string]bool),
+	}
+	var mu sync.Mutex
+
+	watcher, done, err := startWatcher(ctx, fileChanges, &mu)
+	if err != nil {
+		return "", fmt.Errorf("failed to start watcher: %w", err)
+	}
+
 	cleanup, err := aai.renderThoughts(thoughtsCtx)
 	if err != nil {
 		cancelCtx()
@@ -98,6 +122,8 @@ func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...st
 
 	defer func() {
 		cleanup()
+		close(done)
+		watcher.Close()
 		cancelCtx()
 	}()
 
@@ -106,6 +132,8 @@ func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...st
 		return "", err
 	}
 
+	printChangedFiles(fileChanges, &mu)
+
 	return output, nil
 }
 
@@ -113,7 +141,7 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 	var latestThought string
 
 	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
-		Text: "Thinking...",
+		Text: "Processing...",
 	})
 
 	canvas := uxlib.NewCanvas(
@@ -156,11 +184,11 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 
 			// Update spinner text
 			if latestAction == "" {
-				spinnerText = "Thinking..."
+				spinnerText = "Processing..."
 			} else {
-				spinnerText = fmt.Sprintf("Running %s tool", color.GreenString(latestAction))
+				spinnerText = fmt.Sprintf("Running %s tool", color.BlueString(latestAction))
 				if latestActionInput != "" {
-					spinnerText += " with " + color.GreenString(latestActionInput)
+					spinnerText += " with " + color.BlueString(latestActionInput)
 				}
 
 				spinnerText += "..."
@@ -177,4 +205,96 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 	}
 
 	return cleanup, canvas.Run()
+}
+
+func startWatcher(ctx context.Context, fileChanges *FileChanges, mu *sync.Mutex) (*fsnotify.Watcher, chan bool, error) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create watcher: %w", err)
+	}
+
+	done := make(chan bool)
+
+	go func() {
+		for {
+			select {
+			case event := <-watcher.Events:
+				mu.Lock()
+				name := event.Name
+				switch {
+				case event.Has(fsnotify.Create):
+					fileChanges.Created[name] = true
+				case event.Has(fsnotify.Write) || event.Has(fsnotify.Rename):
+					if !fileChanges.Created[name] && !fileChanges.Deleted[name] {
+						fileChanges.Modified[name] = true
+					}
+				case event.Has(fsnotify.Remove):
+					if fileChanges.Created[name] {
+						delete(fileChanges.Created, name)
+					} else {
+						fileChanges.Deleted[name] = true
+						delete(fileChanges.Modified, name)
+					}
+				}
+				mu.Unlock()
+			case err := <-watcher.Errors:
+				log.Printf("watcher error: %v", err)
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get current working directory: %w", err)
+	}
+
+	if err := watchRecursive(cwd, watcher); err != nil {
+		return nil, nil, fmt.Errorf("watcher failed: %w", err)
+	}
+
+	return watcher, done, nil
+}
+
+func watchRecursive(root string, watcher *fsnotify.Watcher) error {
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			err = watcher.Add(path)
+			if err != nil {
+				return fmt.Errorf("failed to watch directory %s: %w", path, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+func printChangedFiles(fileChanges *FileChanges, mu *sync.Mutex) {
+	mu.Lock()
+	defer mu.Unlock()
+	fmt.Println(output.WithHintFormat("| Files changed:"))
+
+	if len(fileChanges.Created) > 0 {
+		for file := range fileChanges.Created {
+			fmt.Println(output.WithHintFormat("| "), color.GreenString("+ Created "), file)
+		}
+	}
+
+	if len(fileChanges.Modified) > 0 {
+		for file := range fileChanges.Modified {
+			fmt.Println(output.WithHintFormat("| "), color.YellowString("+/- Modified "), file)
+		}
+	}
+
+	if len(fileChanges.Deleted) > 0 {
+		for file := range fileChanges.Deleted {
+			fmt.Println(output.WithHintFormat("| "), color.RedString("- Deleted "), file)
+		}
+	}
 }

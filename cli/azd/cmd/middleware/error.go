@@ -7,14 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
@@ -22,7 +20,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
-	"github.com/fsnotify/fsnotify"
 )
 
 type ErrorMiddleware struct {
@@ -31,6 +28,7 @@ type ErrorMiddleware struct {
 	agentFactory    *agent.AgentFactory
 	global          *internal.GlobalCommandOptions
 	featuresManager *alpha.FeatureManager
+	consentManager  consent.ConsentManager
 }
 
 func NewErrorMiddleware(
@@ -38,6 +36,7 @@ func NewErrorMiddleware(
 	agentFactory *agent.AgentFactory,
 	global *internal.GlobalCommandOptions,
 	featuresManager *alpha.FeatureManager,
+	consentManager consent.ConsentManager,
 ) Middleware {
 	return &ErrorMiddleware{
 		options:         options,
@@ -45,6 +44,7 @@ func NewErrorMiddleware(
 		agentFactory:    agentFactory,
 		global:          global,
 		featuresManager: featuresManager,
+		consentManager:  consentManager,
 	}
 }
 
@@ -70,7 +70,17 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			"interrupt",
 			"no project exists",
 		}
-		agentName := "AI"
+		AIDisclaimer := output.WithHintFormat("The following content is AI-generated. AI responses may be incorrect.")
+		agentName := "agent mode"
+
+		azdAgent, err := e.agentFactory.Create(
+			agent.WithDebug(e.global.EnableDebugLogging),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		defer azdAgent.Stop()
 
 		for {
 			if originalError == nil {
@@ -86,8 +96,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			if previousError != nil && errors.Is(originalError, previousError) {
 				attempt++
 				if attempt > 3 {
-					e.console.Message(ctx, fmt.Sprintf("%s was unable to resolve the error after multiple attempts. "+
-						"Please review the error and fix it manually.", agentName))
+					e.console.Message(ctx, fmt.Sprintf("Please review the error and fix it manually, "+
+						"%s was unable to resolve the error after multiple attempts.", agentName))
 					return actionResult, originalError
 				}
 			}
@@ -107,105 +117,70 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			// Warn user that this is an alpha feature
 			e.console.WarnForFeature(ctx, llm.FeatureLlm)
 
-			azdAgent, err := e.agentFactory.Create(
-				agent.WithDebug(e.global.EnableDebugLogging),
-			)
-			if err != nil {
-				return nil, err
-			}
-
-			defer azdAgent.Stop()
-
 			errorInput := originalError.Error()
-			if suggestion != "" {
-				errorInput += "\n" + "Suggestion: " + suggestion
-			}
 
-			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
-				`Steps to follow:
-			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
-			2. Provide actionable troubleshooting steps. Do not perform any file changes.
-			Error details: %s`, errorInput))
-
-			if err != nil {
-				if agentOutput != "" {
-					e.console.Message(ctx, output.WithMarkdown(agentOutput))
-				}
-
-				return nil, err
-			}
-
-			// Ask if user wants to provide AI generated troubleshooting steps
-			confirm, err := e.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      fmt.Sprintf("Provide %s generated troubleshooting steps?", agentName),
-				DefaultValue: true,
-			})
+			confirm, err := e.checkErrorHandlingConsent(ctx, "troubleshooting_steps", "azd", fmt.Sprintf("Generate troubleshooting steps using %s?", agentName), true)
 			if err != nil {
 				return nil, fmt.Errorf("prompting to provide troubleshooting steps: %w", err)
 			}
 
 			if confirm {
 				// Provide manual steps for troubleshooting
-				e.console.Message(ctx, "")
-				e.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
-				e.console.Message(ctx, output.WithMarkdown(agentOutput))
-				e.console.Message(ctx, "")
-			}
-
-			// TODO: update to "GitHub Copilot for Azure"
-			// Ask user if they want to let AI fix the error
-			selection, err := e.console.Select(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf("Do you want to continue to fix the error using %s?", agentName),
-				Options: []string{
-					"Yes",
-					"No",
-				},
-			})
-
-			if err != nil {
-				return nil, fmt.Errorf("prompting failed to confirm selection: %w", err)
-			}
-
-			switch selection {
-			// fix the error with AI
-			case 0:
-				previousError = originalError
-				changedFiles := make(map[string]bool)
-				var mu sync.Mutex
-
-				watcher, done, err := startWatcher(ctx, changedFiles, &mu)
-				if err != nil {
-					return nil, fmt.Errorf("failed to start watcher during error fix: %w", err)
-				}
-
-				agentOutput, err = azdAgent.SendMessage(ctx, fmt.Sprintf(
+				agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 					`Steps to follow:
 			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
-			2. Resolve the error by making the minimal, targeted change required to the code or configuration.
-			Avoid unnecessary modifications and focus only on what is essential to restore correct functionality.
-			3. Remove any changes that were created solely for validation and are not part of the actual error fix.
+			2. Provide actionable troubleshooting steps. Do not perform any file changes.
 			Error details: %s`, errorInput))
 
 				if err != nil {
 					if agentOutput != "" {
+						e.console.Message(ctx, AIDisclaimer)
 						e.console.Message(ctx, output.WithMarkdown(agentOutput))
 					}
 
 					return nil, err
 				}
 
-				// Print out changed files
-				close(done)
-				printChangedFiles(changedFiles, &mu)
-				watcher.Close()
+				e.console.Message(ctx, AIDisclaimer)
+				e.console.Message(ctx, "")
+				e.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
+				e.console.Message(ctx, output.WithMarkdown(agentOutput))
+				e.console.Message(ctx, "")
+			}
 
-			// Not fix the error with AI
-			case 1:
+			// Ask user if they want to let AI fix the
+			e.console.Confirm(ctx, input.ConsoleOptions{
+				Message:      "Debugger Ready?",
+				DefaultValue: true,
+			})
+			confirm, err = e.checkErrorHandlingConsent(ctx, "error_fix", "azd", fmt.Sprintf("Fix this error using %s?", agentName), true)
+			if err != nil {
+				return nil, fmt.Errorf("prompting to fix error using %s: %w", agentName, err)
+			}
+			if !confirm {
 				return actionResult, err
 			}
 
+			previousError = originalError
+			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
+				`Steps to follow:
+			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
+			2. Resolve the error by making the minimal, targeted change required to the code or configuration.
+			Avoid unnecessary modifications and focus only on what is essential to restore correct functionality.
+			3. Remove any changes that were created solely for validation and are not part of the actual error fix.
+			Error details: %s`, errorInput))
+
+			if err != nil {
+				if agentOutput != "" {
+					e.console.Message(ctx, AIDisclaimer)
+					e.console.Message(ctx, output.WithMarkdown(agentOutput))
+				}
+
+				return nil, err
+			}
+
 			// Ask the user to add feedback
-			if err := e.collectAndApplyFeedback(ctx, azdAgent, "Any feedback or changes?"); err != nil {
+			if err := e.collectAndApplyFeedback(ctx, azdAgent, AIDisclaimer); err != nil {
 				return nil, err
 			}
 
@@ -228,127 +203,80 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 func (e *ErrorMiddleware) collectAndApplyFeedback(
 	ctx context.Context,
 	azdAgent agent.Agent,
-	promptMessage string,
+	AIDisclaimer string,
 ) error {
-	confirmFeedback := uxlib.NewConfirm(&uxlib.ConfirmOptions{
-		Message:      promptMessage,
-		DefaultValue: uxlib.Ptr(false),
-		HelpMessage:  "You will be able to provide and feedback or changes after AI fix.",
-	})
-
-	hasFeedback, err := confirmFeedback.Ask(ctx)
-	if err != nil {
-		return err
-	}
-
-	if !*hasFeedback {
-		e.console.Message(ctx, "")
-		return nil
-	}
-
 	userInputPrompt := uxlib.NewPrompt(&uxlib.PromptOptions{
-		Message:        "You",
-		PlaceHolder:    "Provide feedback or changes to the project",
-		Required:       true,
-		IgnoreHintKeys: true,
+		Message:  "Any changes you'd like to make?",
+		Hint:     "Describe your changes or press enter to skip.",
+		Required: false,
 	})
 
 	userInput, err := userInputPrompt.Ask(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to collect feedback after AI fix: %w", err)
+		return fmt.Errorf("failed to collect feedback for user input: %w", err)
+	}
+
+	if userInput == "" {
+		e.console.Message(ctx, "")
+		return nil
 	}
 
 	e.console.Message(ctx, "")
+	e.console.Message(ctx, color.MagentaString("Feedback"))
 
-	if userInput != "" {
-		e.console.Message(ctx, color.MagentaString("Feedback"))
-
-		changedFiles := make(map[string]bool)
-		var mu sync.Mutex
-
-		watcher, done, err := startWatcher(ctx, changedFiles, &mu)
-		if err != nil {
-			return fmt.Errorf("failed to start watcher during error fix: %w", err)
+	feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
+	if err != nil {
+		if feedbackOutput != "" {
+			e.console.Message(ctx, AIDisclaimer)
+			e.console.Message(ctx, output.WithMarkdown(feedbackOutput))
 		}
-
-		feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
-		if err != nil {
-			if feedbackOutput != "" {
-				e.console.Message(ctx, output.WithMarkdown(feedbackOutput))
-			}
-			return err
-		}
-
-		// Print out changed files
-		close(done)
-		printChangedFiles(changedFiles, &mu)
-		watcher.Close()
-
-		e.console.Message(ctx, "")
-		e.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
-		e.console.Message(ctx, output.WithMarkdown(feedbackOutput))
-		e.console.Message(ctx, "")
+		return err
 	}
+
+	e.console.Message(ctx, AIDisclaimer)
+	e.console.Message(ctx, "")
+	e.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
+	e.console.Message(ctx, output.WithMarkdown(feedbackOutput))
+	e.console.Message(ctx, "")
 
 	return nil
 }
 
-func printChangedFiles(changedFiles map[string]bool, mu *sync.Mutex) {
-	mu.Lock()
-	defer mu.Unlock()
-	fmt.Println("\nFiles changed:")
-	for file := range changedFiles {
-		fmt.Println("-", file)
-	}
-}
+func (e *ErrorMiddleware) checkErrorHandlingConsent(
+	ctx context.Context,
+	toolName string,
+	toolServer string,
+	message string,
+	skip bool,
+) (bool, error) {
+	// Create a consent checker for this specific server
+	consentChecker := consent.NewConsentChecker(e.consentManager, toolServer)
 
-func startWatcher(ctx context.Context, changedFiles map[string]bool, mu *sync.Mutex) (*fsnotify.Watcher, chan bool, error) {
-	watcher, err := fsnotify.NewWatcher()
+	// Check error handling consent using the consent checker
+	decision, err := consentChecker.CheckErrorHandlingConsent(ctx, toolName)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create watcher: %w", err)
+		return false, fmt.Errorf("consent check failed: %w", err)
 	}
 
-	done := make(chan bool)
-
-	go func() {
-		for {
-			select {
-			case event := <-watcher.Events:
-				mu.Lock()
-				changedFiles[event.Name] = true
-				mu.Unlock()
-			case err := <-watcher.Errors:
-				fmt.Errorf("watcher error: %w", err)
-			case <-done:
-				return
+	if !decision.Allowed {
+		if decision.RequiresPrompt {
+			// Use console.DoInteraction to show consent prompt
+			if err := e.console.DoInteraction(func() error {
+				return consentChecker.PromptAndGrantErrorHandlingConsent(
+					ctx,
+					toolName,
+					message,
+					skip,
+				)
+			}); err != nil {
+				return false, err
+			}
+		} else {
+			if !skip {
+				return false, fmt.Errorf("error handling prompt denied: %s", decision.Reason)
 			}
 		}
-	}()
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get current working directory: %w", err)
 	}
 
-	if err := watchRecursive(cwd, watcher); err != nil {
-		return nil, nil, fmt.Errorf("failed to watch for changes: %w", err)
-	}
-
-	return watcher, done, nil
-}
-
-func watchRecursive(root string, watcher *fsnotify.Watcher) error {
-	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			err = watcher.Add(path)
-			if err != nil {
-				return fmt.Errorf("failed to watch directory %s: %w", path, err)
-			}
-		}
-
-		return nil
-	})
+	return true, nil
 }

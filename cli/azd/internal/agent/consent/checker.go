@@ -15,6 +15,7 @@ import (
 
 var ErrToolExecutionDenied = fmt.Errorf("tool execution denied by user")
 var ErrSamplingDenied = fmt.Errorf("sampling denied by user")
+var ErrErrorHandlingDenied = fmt.Errorf("error handling workflow denied by user")
 
 // ConsentChecker provides shared consent checking logic for different tool types
 type ConsentChecker struct {
@@ -69,6 +70,23 @@ func (cc *ConsentChecker) CheckSamplingConsent(
 	return cc.consentMgr.CheckConsent(ctx, consentRequest)
 }
 
+// CheckErrorHandlingConsent checks error handling consent for prompt
+func (cc *ConsentChecker) CheckErrorHandlingConsent(
+	ctx context.Context,
+	toolName string,
+) (*ConsentDecision, error) {
+	toolId := fmt.Sprintf("%s/%s", cc.serverName, toolName)
+
+	// Create consent request for error handling
+	consentRequest := ConsentRequest{
+		ToolID:     toolId,
+		ServerName: cc.serverName,
+		Operation:  OperationTypeErrorHandling, // This is an error handling request
+	}
+
+	return cc.consentMgr.CheckConsent(ctx, consentRequest)
+}
+
 // PromptAndGrantConsent shows consent prompt and grants permission based on user choice
 func (cc *ConsentChecker) PromptAndGrantConsent(
 	ctx context.Context,
@@ -108,6 +126,32 @@ func (cc *ConsentChecker) PromptAndGrantSamplingConsent(
 
 	// Grant sampling consent based on user choice
 	return cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeSampling)
+}
+
+// PromptAndGrantErrorHandlingConsent shows error handling consent prompt and grants permission based on user choice
+func (cc *ConsentChecker) PromptAndGrantErrorHandlingConsent(
+	ctx context.Context,
+	toolName string,
+	message string,
+	skip bool,
+) error {
+	toolId := fmt.Sprintf("%s/%s", cc.serverName, toolName)
+
+	choice, err := cc.promptForErrorHandlingConsent(ctx, message, skip)
+	if err != nil {
+		return fmt.Errorf("error handling consent prompt failed: %w", err)
+	}
+
+	if choice == "deny" {
+		return ErrErrorHandlingDenied
+	}
+
+	if choice == "skip" {
+		return nil
+	}
+
+	// Grant error handling consent based on user choice
+	return cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeErrorHandling)
 }
 
 // Private Struct Methods
@@ -384,6 +428,55 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 	}
 
 	return cc.consentMgr.GrantConsent(ctx, rule)
+}
+
+func (cc *ConsentChecker) promptForErrorHandlingConsent(
+	ctx context.Context,
+	message string,
+	skip bool,
+) (string, error) {
+	choices := []*ux.SelectChoice{
+		{
+			Value: "once",
+			Label: "Yes, allow once",
+		},
+		{
+			Value: "always",
+			Label: "Yes, allow always",
+		},
+	}
+
+	if skip {
+		choices = append(choices, &ux.SelectChoice{
+			Value: "skip",
+			Label: "No, skip to next step",
+		})
+	} else {
+		choices = append(choices, &ux.SelectChoice{
+			Value: "deny",
+			Label: "No, cancel this interaction (esc)",
+		})
+	}
+
+	selector := ux.NewSelect(&ux.SelectOptions{
+		Message: message,
+		HelpMessage: fmt.Sprintf("This action will run AI tools to generate troubleshooting steps. Edit permissions for AI tools anytime by running %s.",
+			output.WithHighLightFormat("azd mcp")),
+		Choices:         choices,
+		EnableFiltering: ux.Ptr(false),
+		DisplayCount:    5,
+	})
+
+	choiceIndex, err := selector.Ask(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	if choiceIndex == nil || *choiceIndex < 0 || *choiceIndex >= len(choices) {
+		return "", fmt.Errorf("invalid choice selected")
+	}
+
+	return choices[*choiceIndex].Value, nil
 }
 
 // promptForSamplingConsent shows an interactive sampling consent prompt and returns the user's choice

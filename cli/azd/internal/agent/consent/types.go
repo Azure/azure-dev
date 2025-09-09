@@ -36,9 +36,8 @@ const (
 type OperationType string
 
 const (
-	OperationTypeTool          OperationType = "tool"     // running tools
-	OperationTypeSampling      OperationType = "sampling" // sampling requests
-	OperationTypeErrorHandling OperationType = "error"    // running agents for error handling
+	OperationTypeTool     OperationType = "tool"     // running tools
+	OperationTypeSampling OperationType = "sampling" // sampling requests
 )
 
 // Permission is the consent outcome for a rule

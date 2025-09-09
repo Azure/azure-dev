@@ -12,23 +12,24 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
-	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 )
 
 type ErrorMiddleware struct {
-	options         *Options
-	console         input.Console
-	agentFactory    *agent.AgentFactory
-	global          *internal.GlobalCommandOptions
-	featuresManager *alpha.FeatureManager
-	consentManager  consent.ConsentManager
+	options           *Options
+	console           input.Console
+	agentFactory      *agent.AgentFactory
+	global            *internal.GlobalCommandOptions
+	featuresManager   *alpha.FeatureManager
+	userConfigManager config.UserConfigManager
 }
 
 func NewErrorMiddleware(
@@ -36,15 +37,15 @@ func NewErrorMiddleware(
 	agentFactory *agent.AgentFactory,
 	global *internal.GlobalCommandOptions,
 	featuresManager *alpha.FeatureManager,
-	consentManager consent.ConsentManager,
+	userConfigManager config.UserConfigManager,
 ) Middleware {
 	return &ErrorMiddleware{
-		options:         options,
-		console:         console,
-		agentFactory:    agentFactory,
-		global:          global,
-		featuresManager: featuresManager,
-		consentManager:  consentManager,
+		options:           options,
+		console:           console,
+		agentFactory:      agentFactory,
+		global:            global,
+		featuresManager:   featuresManager,
+		userConfigManager: userConfigManager,
 	}
 }
 
@@ -119,7 +120,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 			errorInput := originalError.Error()
 
-			confirm, err := e.checkErrorHandlingConsent(ctx, "troubleshooting_steps", "azd", fmt.Sprintf("Generate troubleshooting steps using %s?", agentName), true)
+			confirm, err := e.checkErrorHandlingConsent(ctx, "troubleshooting_steps", fmt.Sprintf("Generate troubleshooting steps using %s?", agentName), true)
 			if err != nil {
 				return nil, fmt.Errorf("prompting to provide troubleshooting steps: %w", err)
 			}
@@ -153,10 +154,11 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				Message:      "Debugger Ready?",
 				DefaultValue: true,
 			})
-			confirm, err = e.checkErrorHandlingConsent(ctx, "error_fix", "azd", fmt.Sprintf("Fix this error using %s?", agentName), true)
+			confirm, err = e.checkErrorHandlingConsent(ctx, "error_fix", fmt.Sprintf("Fix this error using %s?", agentName), false)
 			if err != nil {
 				return nil, fmt.Errorf("prompting to fix error using %s: %w", agentName, err)
 			}
+
 			if !confirm {
 				return actionResult, err
 			}
@@ -244,39 +246,80 @@ func (e *ErrorMiddleware) collectAndApplyFeedback(
 
 func (e *ErrorMiddleware) checkErrorHandlingConsent(
 	ctx context.Context,
-	toolName string,
-	toolServer string,
+	promptName string,
 	message string,
 	skip bool,
 ) (bool, error) {
-	// Create a consent checker for this specific server
-	consentChecker := consent.NewConsentChecker(e.consentManager, toolServer)
-
-	// Check error handling consent using the consent checker
-	decision, err := consentChecker.CheckErrorHandlingConsent(ctx, toolName)
+	userConfig, err := e.userConfigManager.Load()
 	if err != nil {
-		return false, fmt.Errorf("consent check failed: %w", err)
+		return false, fmt.Errorf("failed to load user config: %w", err)
 	}
 
-	if !decision.Allowed {
-		if decision.RequiresPrompt {
-			// Use console.DoInteraction to show consent prompt
-			if err := e.console.DoInteraction(func() error {
-				return consentChecker.PromptAndGrantErrorHandlingConsent(
-					ctx,
-					toolName,
-					message,
-					skip,
-				)
-			}); err != nil {
-				return false, err
-			}
-		} else {
-			if !skip {
-				return false, fmt.Errorf("error handling prompt denied: %s", decision.Reason)
+	if exists, ok := userConfig.GetString(promptName); !ok && exists == "" {
+		choice, err := promptForErrorHandlingConsent(ctx, message, skip)
+		if err != nil {
+			return false, fmt.Errorf("prompting for error handling consent: %w", err)
+		}
+
+		if choice == "skip" || choice == "deny" {
+			return false, nil
+		}
+
+		if choice == "always" {
+			if err := userConfig.Set(promptName, "allow"); err != nil {
+				return false, fmt.Errorf("failed to set consent config: %w", err)
 			}
 		}
 	}
 
 	return true, nil
+}
+
+func promptForErrorHandlingConsent(
+	ctx context.Context,
+	message string,
+	skip bool,
+) (string, error) {
+	choices := []*ux.SelectChoice{
+		{
+			Value: "once",
+			Label: "Yes, allow once",
+		},
+		{
+			Value: "always",
+			Label: "Yes, allow always",
+		},
+	}
+
+	if skip {
+		choices = append(choices, &ux.SelectChoice{
+			Value: "skip",
+			Label: "No, skip to next step",
+		})
+	} else {
+		choices = append(choices, &ux.SelectChoice{
+			Value: "deny",
+			Label: "No, cancel this interaction (esc)",
+		})
+	}
+
+	selector := ux.NewSelect(&ux.SelectOptions{
+		Message: message,
+		HelpMessage: fmt.Sprintf("This action will run AI tools to generate troubleshooting steps. Edit permissions for AI tools anytime by running %s.",
+			output.WithHighLightFormat("azd mcp")),
+		Choices:         choices,
+		EnableFiltering: ux.Ptr(false),
+		DisplayCount:    5,
+	})
+
+	choiceIndex, err := selector.Ask(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	if choiceIndex == nil || *choiceIndex < 0 || *choiceIndex >= len(choices) {
+		return "", fmt.Errorf("invalid choice selected")
+	}
+
+	return choices[*choiceIndex].Value, nil
 }

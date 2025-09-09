@@ -121,7 +121,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 			confirm, err := e.checkErrorHandlingConsent(
 				ctx,
-				"mcp.error.troubleshooting",
+				"mcp.errorHandling.troubleshooting",
 				fmt.Sprintf("Generate troubleshooting steps using %s?", agentName),
 				true,
 			)
@@ -160,7 +160,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			})
 			confirm, err = e.checkErrorHandlingConsent(
 				ctx,
-				"mcp.error.fix",
+				"mcp.errorHandling.fix",
 				fmt.Sprintf("Fix this error using %s?", agentName),
 				false,
 			)

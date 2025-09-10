@@ -10,6 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/logging"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/callbacks"
 	"github.com/tmc/langchaingo/llms"
@@ -34,7 +35,7 @@ type AgentCleanup func() error
 // Agent represents an AI agent that can execute tools and interact with language models.
 type Agent interface {
 	// SendMessage sends a message to the agent and returns the response
-	SendMessage(ctx context.Context, args ...string) (string, error)
+	SendMessage(ctx context.Context, console input.Console, args ...string) (string, error)
 
 	// Stop terminates the agent and performs any necessary cleanup
 	Stop() error

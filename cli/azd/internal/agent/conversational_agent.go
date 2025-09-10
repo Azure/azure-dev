@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
@@ -100,18 +101,23 @@ type FileChanges struct {
 }
 
 // SendMessage processes a single message through the agent and returns the response
-func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...string) (string, error) {
+func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, console input.Console, args ...string) (string, error) {
 	thoughtsCtx, cancelCtx := context.WithCancel(ctx)
+	var watcher *fsnotify.Watcher
+	var done chan bool
+	var mu sync.Mutex
+	var err error
 	fileChanges := &FileChanges{
 		Created:  make(map[string]bool),
 		Modified: make(map[string]bool),
 		Deleted:  make(map[string]bool),
 	}
-	var mu sync.Mutex
 
-	watcher, done, err := startWatcher(ctx, fileChanges, &mu)
-	if err != nil {
-		return "", fmt.Errorf("failed to start watcher: %w", err)
+	if console != nil {
+		watcher, done, err = startWatcher(ctx, fileChanges, &mu)
+		if err != nil {
+			return "", fmt.Errorf("failed to start watcher: %w", err)
+		}
 	}
 
 	cleanup, err := aai.renderThoughts(thoughtsCtx)
@@ -121,9 +127,11 @@ func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...st
 	}
 
 	defer func() {
+		if console != nil {
+			close(done)
+			watcher.Close()
+		}
 		cleanup()
-		close(done)
-		watcher.Close()
 		cancelCtx()
 	}()
 
@@ -132,7 +140,9 @@ func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...st
 		return "", err
 	}
 
-	printChangedFiles(fileChanges, &mu)
+	if console != nil {
+		printChangedFiles(ctx, console, fileChanges, &mu)
+	}
 
 	return output, nil
 }
@@ -275,26 +285,34 @@ func watchRecursive(root string, watcher *fsnotify.Watcher) error {
 	})
 }
 
-func printChangedFiles(fileChanges *FileChanges, mu *sync.Mutex) {
+func printChangedFiles(ctx context.Context, console input.Console, fileChanges *FileChanges, mu *sync.Mutex) {
 	mu.Lock()
 	defer mu.Unlock()
-	fmt.Println(output.WithHintFormat("| Files changed:"))
+	createdFileLength := len(fileChanges.Created)
+	modifiedFileLength := len(fileChanges.Modified)
+	deletedFileLength := len(fileChanges.Deleted)
 
-	if len(fileChanges.Created) > 0 {
+	if createdFileLength == 0 && modifiedFileLength == 0 && deletedFileLength == 0 {
+		return
+	}
+
+	console.Message(ctx, output.WithHintFormat("| Files changed:"))
+
+	if createdFileLength > 0 {
 		for file := range fileChanges.Created {
-			fmt.Println(output.WithHintFormat("| "), color.GreenString("+ Created "), file)
+			console.Message(ctx, fmt.Sprintf("%s %s %s", output.WithHintFormat("|"), color.GreenString("+ Created"), file))
 		}
 	}
 
-	if len(fileChanges.Modified) > 0 {
+	if modifiedFileLength > 0 {
 		for file := range fileChanges.Modified {
-			fmt.Println(output.WithHintFormat("| "), color.YellowString("+/- Modified "), file)
+			console.Message(ctx, fmt.Sprintf("%s %s %s", output.WithHintFormat("|"), color.YellowString("+/- Modified"), file))
 		}
 	}
 
-	if len(fileChanges.Deleted) > 0 {
+	if deletedFileLength > 0 {
 		for file := range fileChanges.Deleted {
-			fmt.Println(output.WithHintFormat("| "), color.RedString("- Deleted "), file)
+			console.Message(ctx, fmt.Sprintf("%s %s %s", output.WithHintFormat("|"), color.RedString("- Deleted"), file))
 		}
 	}
 }

@@ -89,8 +89,7 @@ type ServiceManager interface {
 	) (*ServicePackageResult, error)
 
 	// Publishes the service to make it available to other services
-	// Common examples would be pushing a message to a service bus or
-	// registering the service in a service registry.
+	// A common example would be pushing container images to a container registry.
 	Publish(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
@@ -102,7 +101,7 @@ type ServiceManager interface {
 	// Deploys the generated artifacts to the Azure resource that will
 	// host the service application
 	// Common examples would be uploading zip archive using ZipDeploy deployment or
-	// pushing container images to a container registry.
+	// pushing container images to a container registry and creating a revision.
 	Deploy(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,

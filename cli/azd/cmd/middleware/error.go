@@ -54,13 +54,20 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 	if e.featuresManager.IsEnabled(llm.FeatureLlm) {
 		if e.options.IsChildAction(ctx) {
-			return next(ctx)
+			actionResult, err = next(ctx)
+			if err != nil {
+				e.console.StopSpinner(ctx, "", input.Step)
+			}
+			return actionResult, err
 		}
 
 		actionResult, err = next(ctx)
 		if err == nil {
 			return actionResult, err
 		}
+
+		// Stop the spinner always to un-hide cursor
+		e.console.StopSpinner(ctx, "", input.Step)
 
 		attempt := 0
 		originalError := err

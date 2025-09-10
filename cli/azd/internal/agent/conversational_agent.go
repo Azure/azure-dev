@@ -93,6 +93,7 @@ func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentCreateOption) (Age
 // SendMessage processes a single message through the agent and returns the response
 func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, useWatch bool, args ...string) (string, error) {
 	thoughtsCtx, cancelCtx := context.WithCancel(ctx)
+	defer cancelCtx()
 
 	var watcher *fsnotify.Watcher
 	var done chan bool
@@ -109,13 +110,11 @@ func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, useWatch b
 
 	cleanup, err := aai.renderThoughts(thoughtsCtx)
 	if err != nil {
-		cancelCtx()
 		return "", err
 	}
 
 	defer func() {
 		cleanup()
-		cancelCtx()
 
 		if useWatch {
 			watch.PrintChangedFiles(ctx, fileChanges, &mu)

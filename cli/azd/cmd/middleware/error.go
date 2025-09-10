@@ -101,7 +101,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 			if previousError != nil && errors.Is(originalError, previousError) {
 				attempt++
-				if attempt > 3 {
+				if attempt >= 3 {
 					e.console.Message(ctx, fmt.Sprintf("Please review the error and fix it manually, "+
 						"%s was unable to resolve the error after multiple attempts.", agentName))
 					return actionResult, originalError

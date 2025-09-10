@@ -112,7 +112,7 @@ func PrintChangedFiles(ctx context.Context, fileChanges *FileChanges, mu *sync.M
 
 	if createdFileLength > 0 {
 		for file := range fileChanges.Created {
-			fmt.Println(output.WithGrayFormat("| "), color.GreenString("+ Created "), file)
+			fmt.Println(output.WithGrayFormat("| "), color.GreenString("+ Created  "), file)
 		}
 	}
 
@@ -125,7 +125,7 @@ func PrintChangedFiles(ctx context.Context, fileChanges *FileChanges, mu *sync.M
 
 	if deletedFileLength > 0 {
 		for file := range fileChanges.Deleted {
-			fmt.Println(output.WithGrayFormat("| "), color.RedString("- Deleted "), file)
+			fmt.Println(output.WithGrayFormat("| "), color.RedString("- Deleted  "), file)
 		}
 	}
 

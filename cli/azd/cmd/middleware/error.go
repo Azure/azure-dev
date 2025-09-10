@@ -157,10 +157,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			}
 
 			// Ask user if they want to let AI fix the
-			e.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "Debugger Ready?",
-				DefaultValue: true,
-			})
 			confirm, err = e.checkErrorHandlingConsent(
 				ctx,
 				"mcp.errorHandling.fix",

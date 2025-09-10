@@ -4,6 +4,8 @@
 package agent
 
 import (
+	"context"
+
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/logging"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
@@ -38,7 +40,7 @@ func NewAgentFactory(
 }
 
 // CreateAgent creates a new agent instance
-func (f *AgentFactory) Create(opts ...AgentCreateOption) (Agent, error) {
+func (f *AgentFactory) Create(ctx context.Context, opts ...AgentCreateOption) (Agent, error) {
 	// Create a daily log file for all agent activity
 	fileLogger, loggerCleanup, err := logging.NewFileLoggerDefault()
 	if err != nil {
@@ -57,7 +59,7 @@ func (f *AgentFactory) Create(opts ...AgentCreateOption) (Agent, error) {
 	}
 
 	// Default model gets the chained handler to expose the UX experience for the agent
-	defaultModelContainer, err := f.llmManager.GetDefaultModel(llm.WithLogger(chainedHandler))
+	defaultModelContainer, err := f.llmManager.GetDefaultModel(ctx, llm.WithLogger(chainedHandler))
 	if err != nil {
 		defer cleanup()
 		return nil, err
@@ -65,7 +67,7 @@ func (f *AgentFactory) Create(opts ...AgentCreateOption) (Agent, error) {
 
 	// Sampling model only gets the file logger to output sampling actions
 	// We don't need UX for sampling requests right now
-	samplingModelContainer, err := f.llmManager.GetDefaultModel(llm.WithLogger(fileLogger))
+	samplingModelContainer, err := f.llmManager.GetDefaultModel(ctx, llm.WithLogger(fileLogger))
 	if err != nil {
 		defer cleanup()
 		return nil, err

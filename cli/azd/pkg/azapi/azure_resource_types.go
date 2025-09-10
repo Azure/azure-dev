@@ -11,6 +11,7 @@ const (
 	AzureResourceTypeAppInsightComponent       AzureResourceType = "Microsoft.Insights/components"
 	AzureResourceTypeAutomationAccount         AzureResourceType = "Microsoft.Automation/automationAccounts"
 	AzureResourceTypeCacheForRedis             AzureResourceType = "Microsoft.Cache/redis"
+	AzureResourceTypeRedisEnterprise           AzureResourceType = "Microsoft.Cache/redisEnterprise"
 	AzureResourceTypeCDNProfile                AzureResourceType = "Microsoft.Cdn/profiles"
 	AzureResourceTypeCosmosDb                  AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
 	AzureResourceTypeEventHubsNamespace        AzureResourceType = "Microsoft.EventHub/namespaces"
@@ -94,6 +95,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Azure API Management"
 	case AzureResourceTypeCacheForRedis:
 		return "Cache for Redis"
+	case AzureResourceTypeRedisEnterprise:
+		return "Redis Enterprise"
 	case AzureResourceTypeSqlServer:
 		return "Azure SQL Server"
 	case AzureResourceTypePostgreSqlServer:

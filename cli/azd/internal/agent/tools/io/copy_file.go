@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -35,6 +36,7 @@ type CopyFileResponse struct {
 // CopyFileTool implements the Tool interface for copying files
 type CopyFileTool struct {
 	common.BuiltInTool
+	securityManager *security.Manager
 }
 
 func (t CopyFileTool) Name() string {
@@ -97,45 +99,71 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 		)
 	}
 
-	// Check if source file exists
-	sourceInfo, err := os.Stat(source)
+	// Security validation for both paths
+	validatedSource, err := t.securityManager.ValidatePath(source)
 	if err != nil {
-		return common.CreateErrorResponse(err, fmt.Sprintf("Source file %s does not exist: %s", source, err.Error()))
+		return common.CreateErrorResponse(
+			err,
+			"Access denied: source path operation not permitted outside the allowed directory",
+		)
+	}
+
+	validatedDest, err := t.securityManager.ValidatePath(destination)
+	if err != nil {
+		return common.CreateErrorResponse(
+			err,
+			"Access denied: destination path operation not permitted outside the allowed directory",
+		)
+	}
+
+	// Check if source file exists
+	sourceInfo, err := os.Stat(validatedSource)
+	if err != nil {
+		return common.CreateErrorResponse(
+			err,
+			fmt.Sprintf("Source file %s does not exist: %s", validatedSource, err.Error()),
+		)
 	}
 
 	if sourceInfo.IsDir() {
 		return common.CreateErrorResponse(
-			fmt.Errorf("source %s is a directory", source),
-			fmt.Sprintf("Source %s is a directory. Use copy_directory for directories", source),
+			fmt.Errorf("source %s is a directory", validatedSource),
+			fmt.Sprintf("Source %s is a directory. Use copy_directory for directories", validatedSource),
 		)
 	}
 
 	// Check if destination exists and handle overwrite logic
 	destinationExisted := false
-	if _, err := os.Stat(destination); err == nil {
+	if _, err := os.Stat(validatedDest); err == nil {
 		// Destination file exists
 		destinationExisted = true
 		if !params.Overwrite {
 			return common.CreateErrorResponse(
-				fmt.Errorf("destination file %s already exists", destination),
-				fmt.Sprintf("Destination file %s already exists. Set \"overwrite\": true to allow overwriting", destination),
+				fmt.Errorf("destination file %s already exists", validatedDest),
+				fmt.Sprintf(
+					"Destination file %s already exists. Set \"overwrite\": true to allow overwriting",
+					validatedDest,
+				),
 			)
 		}
 	}
 
 	// Open source file
-	sourceFile, err := os.Open(source)
+	sourceFile, err := os.Open(validatedSource)
 	if err != nil {
-		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to open source file %s: %s", source, err.Error()))
+		return common.CreateErrorResponse(
+			err,
+			fmt.Sprintf("Failed to open source file %s: %s", validatedSource, err.Error()),
+		)
 	}
 	defer sourceFile.Close()
 
 	// Create destination file
-	destFile, err := os.Create(destination)
+	destFile, err := os.Create(validatedDest)
 	if err != nil {
 		return common.CreateErrorResponse(
 			err,
-			fmt.Sprintf("Failed to create destination file %s: %s", destination, err.Error()),
+			fmt.Sprintf("Failed to create destination file %s: %s", validatedDest, err.Error()),
 		)
 	}
 	defer destFile.Close()
@@ -154,18 +182,18 @@ func (t CopyFileTool) Call(ctx context.Context, input string) (string, error) {
 	if wasOverwrite {
 		message = fmt.Sprintf(
 			"Successfully copied %s to %s (%d bytes) - overwrote existing file",
-			source,
-			destination,
+			validatedSource,
+			validatedDest,
 			bytesWritten,
 		)
 	} else {
-		message = fmt.Sprintf("Successfully copied %s to %s (%d bytes)", source, destination, bytesWritten)
+		message = fmt.Sprintf("Successfully copied %s to %s (%d bytes)", validatedSource, validatedDest, bytesWritten)
 	}
 
 	response := CopyFileResponse{
 		Success:     true,
-		Source:      source,
-		Destination: destination,
+		Source:      validatedSource,
+		Destination: validatedDest,
 		BytesCopied: bytesWritten,
 		Overwritten: wasOverwrite,
 		Message:     message,

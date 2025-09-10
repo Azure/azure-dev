@@ -544,7 +544,6 @@
         "@microsoft/vscode-azureresources-api": "~2",
         "dayjs": "~1",
         "dotenv": "~16",
-        "rxjs": "~7",
         "semver": "~7",
         "yaml": "~2"
     }

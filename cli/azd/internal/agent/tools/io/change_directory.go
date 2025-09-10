@@ -8,9 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -18,6 +18,7 @@ import (
 // ChangeDirectoryTool implements the Tool interface for changing the current working directory
 type ChangeDirectoryTool struct {
 	common.BuiltInTool
+	securityManager *security.Manager
 }
 
 func (t ChangeDirectoryTool) Name() string {
@@ -47,28 +48,37 @@ func (t ChangeDirectoryTool) Call(ctx context.Context, input string) (string, er
 		return common.CreateErrorResponse(fmt.Errorf("directory path is required"), "Directory path is required")
 	}
 
-	// Convert to absolute path
-	absPath, err := filepath.Abs(input)
+	// Security validation for directory changes (more restrictive)
+	validatedPath, err := t.securityManager.ValidatePath(input)
 	if err != nil {
-		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to resolve path %s: %s", input, err.Error()))
-	}
-
-	// Check if directory exists
-	info, err := os.Stat(absPath)
-	if err != nil {
-		return common.CreateErrorResponse(err, fmt.Sprintf("Directory %s does not exist: %s", absPath, err.Error()))
-	}
-	if !info.IsDir() {
 		return common.CreateErrorResponse(
-			fmt.Errorf("%s is not a directory", absPath),
-			fmt.Sprintf("%s is not a directory", absPath),
+			err,
+			"Access denied: directory change operation not permitted outside the allowed directory",
 		)
 	}
 
-	// Change directory
-	err = os.Chdir(absPath)
+	// Check if directory exists
+	info, err := os.Stat(validatedPath)
 	if err != nil {
-		return common.CreateErrorResponse(err, fmt.Sprintf("Failed to change directory to %s: %s", absPath, err.Error()))
+		return common.CreateErrorResponse(err, fmt.Sprintf("Directory %s does not exist: %s", validatedPath, err.Error()))
+	}
+	if !info.IsDir() {
+		return common.CreateErrorResponse(
+			fmt.Errorf("%s is not a directory", validatedPath),
+			fmt.Sprintf("%s is not a directory", validatedPath),
+		)
+	}
+
+	// Get current directory before changing (for response)
+	oldDir, _ := os.Getwd()
+
+	// Change directory
+	err = os.Chdir(validatedPath)
+	if err != nil {
+		return common.CreateErrorResponse(
+			err,
+			fmt.Sprintf("Failed to change directory to %s: %s", validatedPath, err.Error()),
+		)
 	}
 
 	// Create success response
@@ -81,8 +91,9 @@ func (t ChangeDirectoryTool) Call(ctx context.Context, input string) (string, er
 
 	response := ChangeDirectoryResponse{
 		Success: true,
-		NewPath: absPath,
-		Message: fmt.Sprintf("Successfully changed directory to %s", absPath),
+		OldPath: oldDir,
+		NewPath: validatedPath,
+		Message: fmt.Sprintf("Successfully changed directory to %s", validatedPath),
 	}
 
 	// Convert to JSON

@@ -118,7 +118,7 @@ func PrintChangedFiles(ctx context.Context, fileChanges *FileChanges, mu *sync.M
 
 	if modifiedFileLength > 0 {
 		for file := range fileChanges.Modified {
-			fmt.Println(output.WithGrayFormat("| "), color.YellowString("+/- Modified "), file)
+			fmt.Println(output.WithGrayFormat("| "), color.YellowString(output.WithUnderline("+")), color.YellowString("Modified "), file)
 		}
 	}
 

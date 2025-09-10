@@ -7,17 +7,13 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"log"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/watch"
 	"github.com/fatih/color"
 	"github.com/fsnotify/fsnotify"
 	"github.com/tmc/langchaingo/agents"
@@ -94,27 +90,18 @@ func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentCreateOption) (Age
 	return azdAgent, nil
 }
 
-type FileChanges struct {
-	Created  map[string]bool
-	Modified map[string]bool
-	Deleted  map[string]bool
-}
-
 // SendMessage processes a single message through the agent and returns the response
-func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, console input.Console, args ...string) (string, error) {
+func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, useWatch bool, args ...string) (string, error) {
 	thoughtsCtx, cancelCtx := context.WithCancel(ctx)
+
 	var watcher *fsnotify.Watcher
 	var done chan bool
 	var mu sync.Mutex
-	var err error
-	fileChanges := &FileChanges{
-		Created:  make(map[string]bool),
-		Modified: make(map[string]bool),
-		Deleted:  make(map[string]bool),
-	}
+	var fileChanges *watch.FileChanges
 
-	if console != nil {
-		watcher, done, err = startWatcher(ctx, fileChanges, &mu)
+	if useWatch {
+		var err error
+		watcher, done, fileChanges, err = watch.StartWatcher(ctx, &mu)
 		if err != nil {
 			return "", fmt.Errorf("failed to start watcher: %w", err)
 		}
@@ -127,21 +114,19 @@ func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, console in
 	}
 
 	defer func() {
-		if console != nil {
+		cleanup()
+		cancelCtx()
+
+		if useWatch {
+			watch.PrintChangedFiles(ctx, fileChanges, &mu)
 			close(done)
 			watcher.Close()
 		}
-		cleanup()
-		cancelCtx()
 	}()
 
 	output, err := chains.Run(ctx, aai.executor, strings.Join(args, "\n"))
 	if err != nil {
 		return "", err
-	}
-
-	if console != nil {
-		printChangedFiles(ctx, console, fileChanges, &mu)
 	}
 
 	return output, nil
@@ -215,104 +200,4 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 	}
 
 	return cleanup, canvas.Run()
-}
-
-func startWatcher(ctx context.Context, fileChanges *FileChanges, mu *sync.Mutex) (*fsnotify.Watcher, chan bool, error) {
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create watcher: %w", err)
-	}
-
-	done := make(chan bool)
-
-	go func() {
-		for {
-			select {
-			case event := <-watcher.Events:
-				mu.Lock()
-				name := event.Name
-				switch {
-				case event.Has(fsnotify.Create):
-					fileChanges.Created[name] = true
-				case event.Has(fsnotify.Write) || event.Has(fsnotify.Rename):
-					if !fileChanges.Created[name] && !fileChanges.Deleted[name] {
-						fileChanges.Modified[name] = true
-					}
-				case event.Has(fsnotify.Remove):
-					if fileChanges.Created[name] {
-						delete(fileChanges.Created, name)
-					} else {
-						fileChanges.Deleted[name] = true
-						delete(fileChanges.Modified, name)
-					}
-				}
-				mu.Unlock()
-			case err := <-watcher.Errors:
-				log.Printf("watcher error: %v", err)
-			case <-done:
-				return
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-
-	if err := watchRecursive(cwd, watcher); err != nil {
-		return nil, nil, fmt.Errorf("watcher failed: %w", err)
-	}
-
-	return watcher, done, nil
-}
-
-func watchRecursive(root string, watcher *fsnotify.Watcher) error {
-	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			err = watcher.Add(path)
-			if err != nil {
-				return fmt.Errorf("failed to watch directory %s: %w", path, err)
-			}
-		}
-
-		return nil
-	})
-}
-
-func printChangedFiles(ctx context.Context, console input.Console, fileChanges *FileChanges, mu *sync.Mutex) {
-	mu.Lock()
-	defer mu.Unlock()
-	createdFileLength := len(fileChanges.Created)
-	modifiedFileLength := len(fileChanges.Modified)
-	deletedFileLength := len(fileChanges.Deleted)
-
-	if createdFileLength == 0 && modifiedFileLength == 0 && deletedFileLength == 0 {
-		return
-	}
-
-	console.Message(ctx, output.WithHintFormat("| Files changed:"))
-
-	if createdFileLength > 0 {
-		for file := range fileChanges.Created {
-			console.Message(ctx, fmt.Sprintf("%s %s %s", output.WithHintFormat("|"), color.GreenString("+ Created"), file))
-		}
-	}
-
-	if modifiedFileLength > 0 {
-		for file := range fileChanges.Modified {
-			console.Message(ctx, fmt.Sprintf("%s %s %s", output.WithHintFormat("|"), color.YellowString("+/- Modified"), file))
-		}
-	}
-
-	if deletedFileLength > 0 {
-		for file := range fileChanges.Deleted {
-			console.Message(ctx, fmt.Sprintf("%s %s %s", output.WithHintFormat("|"), color.RedString("- Deleted"), file))
-		}
-	}
 }

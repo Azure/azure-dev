@@ -73,7 +73,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			"interrupt",
 			"no project exists",
 		}
-		AIDisclaimer := output.WithHintFormat("The following content is AI-generated. AI responses may be incorrect.")
+		AIDisclaimer := output.WithGrayFormat("The following content is AI-generated. AI responses may be incorrect.")
 		agentName := "agent mode"
 
 		// Warn user that this is an alpha feature
@@ -113,7 +113,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			if errors.As(originalError, &errorWithTraceId) {
 				e.console.Message(ctx, output.WithErrorFormat("TraceID: %s", errorWithTraceId.TraceId))
 			}
-
 			if errors.As(originalError, &suggestionErr) {
 				suggestion = suggestionErr.Suggestion
 				e.console.Message(ctx, suggestion)
@@ -134,7 +133,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 			if confirm {
 				// Provide manual steps for troubleshooting
-				agentOutput, err := azdAgent.SendMessage(ctx, e.console, fmt.Sprintf(
+				agentOutput, err := azdAgent.SendMessage(ctx, true, fmt.Sprintf(
 					`Steps to follow:
 			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
 			2. Provide actionable troubleshooting steps. Do not perform any file changes.
@@ -172,7 +171,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			}
 
 			previousError = originalError
-			agentOutput, err := azdAgent.SendMessage(ctx, e.console, fmt.Sprintf(
+			agentOutput, err := azdAgent.SendMessage(ctx, true, fmt.Sprintf(
 				`Steps to follow:
 			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
 			2. Resolve the error by making the minimal, targeted change required to the code or configuration.
@@ -234,7 +233,7 @@ func (e *ErrorMiddleware) collectAndApplyFeedback(
 	e.console.Message(ctx, "")
 	e.console.Message(ctx, color.MagentaString("Feedback"))
 
-	feedbackOutput, err := azdAgent.SendMessage(ctx, e.console, userInput)
+	feedbackOutput, err := azdAgent.SendMessage(ctx, true, userInput)
 	if err != nil {
 		if feedbackOutput != "" {
 			e.console.Message(ctx, AIDisclaimer)

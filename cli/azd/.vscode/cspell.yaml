@@ -1,11 +1,15 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - appcode
   - azcloud
   - azdext
   - azurefd
   - backoff
+  - bestpractices
+  - bicepschema
   - Canonicalize
   - chinacloudapi
+  - cloudarchitect
   - Codespace
   - Codespaces
   - devcontainers

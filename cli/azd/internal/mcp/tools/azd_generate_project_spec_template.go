@@ -45,7 +45,9 @@ func handleGenerateProjectSpecTemplate(ctx context.Context, request mcp.CallTool
 
 	// Check if file already exists
 	if _, err := os.Stat(outputPath); err == nil {
-		return mcp.NewToolResultText(fmt.Sprintf("Template file '%s' already exists in the workspace. No action taken.", outputPath)), nil
+		return mcp.NewToolResultText(
+			fmt.Sprintf("Template file '%s' already exists in the workspace. No action taken.", outputPath),
+		), nil
 	}
 
 	// Generate current timestamp
@@ -58,7 +60,7 @@ func handleGenerateProjectSpecTemplate(ctx context.Context, request mcp.CallTool
 	templateContent = strings.ReplaceAll(templateContent, "{{.LastUpdated}}", generatedDate)
 
 	// Write the template file to the workspace
-	if err := os.WriteFile(outputPath, []byte(templateContent), 0644); err != nil {
+	if err := os.WriteFile(outputPath, []byte(templateContent), 0600); err != nil {
 		return mcp.NewToolResultText(fmt.Sprintf("Error writing template file: %v", err)), nil
 	}
 
@@ -93,7 +95,8 @@ The template is ready! Other tools will now populate the template sections as th
 3. Architecture planning will populate the "Application Architecture" and "Azure Service Mapping" sections
 4. Implementation planning will complete the remaining sections
 
-The template serves as the living documentation for your AZD project throughout the planning and implementation process.`, outputPath, generatedDate)
+The template serves as the living documentation for your AZD project throughout the planning and " +
+		"implementation process.`, outputPath, generatedDate)
 
 	return mcp.NewToolResultText(response), nil
 }

@@ -44,7 +44,8 @@ Use this tool when:
 - A technology stack has been selected for a project (containers, serverless, or logic apps)
 - Need resource listing for the selected technology stack
 
-The tool takes a stack parameter (containers, serverless, logic_apps) and returns the comprehensive resource list with Azure resource type identifiers.`,
+The tool takes a stack parameter (containers, serverless, logic_apps) and returns the comprehensive " +
+				"resource list with Azure resource type identifiers.`,
 			),
 			mcp.WithString("stack",
 				mcp.Description("The technology stack to list resources for"),
@@ -70,7 +71,9 @@ func handleAzdListStackResources(ctx context.Context, request mcp.CallToolReques
 	}
 
 	if !validStacks[stack] {
-		return mcp.NewToolResultError(fmt.Sprintf("Invalid stack '%s'. Must be one of: containers, serverless, logic_apps", stack)), nil
+		return mcp.NewToolResultError(
+			fmt.Sprintf("Invalid stack '%s'. Must be one of: containers, serverless, logic_apps", stack),
+		), nil
 	}
 
 	// Build response with baseline resources and stack-specific resources

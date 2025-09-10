@@ -58,6 +58,9 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		}
 
 		actionResult, err = next(ctx)
+		if err == nil {
+			return actionResult, err
+		}
 
 		attempt := 0
 		originalError := err
@@ -72,6 +75,9 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		}
 		AIDisclaimer := output.WithHintFormat("The following content is AI-generated. AI responses may be incorrect.")
 		agentName := "agent mode"
+
+		// Warn user that this is an alpha feature
+		e.console.WarnForFeature(ctx, llm.FeatureLlm)
 
 		azdAgent, err := e.agentFactory.Create(
 			agent.WithDebug(e.global.EnableDebugLogging),
@@ -114,9 +120,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				return actionResult, originalError
 			}
 
-			// Warn user that this is an alpha feature
-			e.console.WarnForFeature(ctx, llm.FeatureLlm)
-
 			errorInput := originalError.Error()
 
 			confirm, err := e.checkErrorHandlingConsent(
@@ -131,7 +134,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 			if confirm {
 				// Provide manual steps for troubleshooting
-				agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
+				agentOutput, err := azdAgent.SendMessage(ctx, e.console, fmt.Sprintf(
 					`Steps to follow:
 			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
 			2. Provide actionable troubleshooting steps. Do not perform any file changes.
@@ -173,7 +176,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			}
 
 			previousError = originalError
-			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
+			agentOutput, err := azdAgent.SendMessage(ctx, e.console, fmt.Sprintf(
 				`Steps to follow:
 			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
 			2. Resolve the error by making the minimal, targeted change required to the code or configuration.
@@ -235,7 +238,7 @@ func (e *ErrorMiddleware) collectAndApplyFeedback(
 	e.console.Message(ctx, "")
 	e.console.Message(ctx, color.MagentaString("Feedback"))
 
-	feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
+	feedbackOutput, err := azdAgent.SendMessage(ctx, e.console, userInput)
 	if err != nil {
 		if feedbackOutput != "" {
 			e.console.Message(ctx, AIDisclaimer)

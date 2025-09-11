@@ -444,7 +444,7 @@ Do not stop until all tasks are complete and fully resolved.
 			"Provide a very brief summary in markdown format that includes any files generated during this step.",
 		}, "\n"))
 
-		agentOutput, err := azdAgent.SendMessage(ctx, false, fullTaskInput)
+		agentOutput, err := azdAgent.SendMessage(ctx, fullTaskInput)
 		if err != nil {
 			if agentOutput != "" {
 				i.console.Message(ctx, output.WithMarkdown(agentOutput))
@@ -508,7 +508,7 @@ func (i *initAction) collectAndApplyFeedback(
 		if userInput != "" {
 			i.console.Message(ctx, color.MagentaString("Feedback"))
 
-			feedbackOutput, err := azdAgent.SendMessage(ctx, false, userInput)
+			feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
 			if err != nil {
 				if feedbackOutput != "" {
 					i.console.Message(ctx, output.WithMarkdown(feedbackOutput))

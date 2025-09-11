@@ -88,6 +88,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 		azdAgent, err := e.agentFactory.Create(
 			agent.WithDebug(e.global.EnableDebugLogging),
+			agent.WithFileWatching(true),
 		)
 		if err != nil {
 			return nil, err
@@ -144,7 +145,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 			if confirm {
 				// Provide manual steps for troubleshooting
-				agentOutput, err := azdAgent.SendMessage(ctx, true, fmt.Sprintf(
+				agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 					`Steps to follow:
 			1. Use available tool including azd_error_troubleshooting tool to identify and explain the error.
 			Diagnose its root cause when running azd command.
@@ -186,7 +187,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			}
 
 			previousError = originalError
-			agentOutput, err := azdAgent.SendMessage(ctx, true, fmt.Sprintf(
+			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 				`Steps to follow:
 			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
 			2. Resolve the error by making the minimal, targeted change required to the code or configuration.
@@ -248,7 +249,7 @@ func (e *ErrorMiddleware) collectAndApplyFeedback(
 	e.console.Message(ctx, "")
 	e.console.Message(ctx, color.MagentaString("Feedback"))
 
-	feedbackOutput, err := azdAgent.SendMessage(ctx, true, userInput)
+	feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
 	if err != nil {
 		if feedbackOutput != "" {
 			e.console.Message(ctx, AIDisclaimer)

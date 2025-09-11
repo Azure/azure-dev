@@ -5,7 +5,6 @@ package watch
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"log"
 	"os"
@@ -17,14 +16,23 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-type FileChanges struct {
+type Watcher interface {
+	PrintChangedFiles(ctx context.Context)
+}
+
+type fileWatcher struct {
+	fileChanges *fileChanges
+	mu          sync.Mutex
+}
+
+type fileChanges struct {
 	Created  map[string]bool
 	Modified map[string]bool
 	Deleted  map[string]bool
 }
 
-func StartWatcher(ctx context.Context, mu *sync.Mutex) (*fsnotify.Watcher, chan bool, *FileChanges, error) {
-	fileChanges := &FileChanges{
+func StartWatcher(ctx context.Context) (Watcher, error) {
+	fileChanges := &fileChanges{
 		Created:  make(map[string]bool),
 		Modified: make(map[string]bool),
 		Deleted:  make(map[string]bool),
@@ -32,16 +40,20 @@ func StartWatcher(ctx context.Context, mu *sync.Mutex) (*fsnotify.Watcher, chan 
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to create watcher: %w", err)
+		return nil, fmt.Errorf("failed to create watcher: %w", err)
 	}
 
-	done := make(chan bool)
+	fw := &fileWatcher{
+		fileChanges: fileChanges,
+	}
 
 	go func() {
+		defer watcher.Close()
+
 		for {
 			select {
 			case event := <-watcher.Events:
-				mu.Lock()
+				fw.mu.Lock()
 				name := event.Name
 				switch {
 				case event.Has(fsnotify.Create):
@@ -58,11 +70,9 @@ func StartWatcher(ctx context.Context, mu *sync.Mutex) (*fsnotify.Watcher, chan 
 						delete(fileChanges.Modified, name)
 					}
 				}
-				mu.Unlock()
+				fw.mu.Unlock()
 			case err := <-watcher.Errors:
 				log.Printf("watcher error: %v", err)
-			case <-done:
-				return
 			case <-ctx.Done():
 				return
 			}
@@ -71,14 +81,14 @@ func StartWatcher(ctx context.Context, mu *sync.Mutex) (*fsnotify.Watcher, chan 
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get current working directory: %w", err)
+		return nil, fmt.Errorf("failed to get current working directory: %w", err)
 	}
 
 	if err := watchRecursive(cwd, watcher); err != nil {
-		return nil, nil, nil, fmt.Errorf("watcher failed: %w", err)
+		return nil, fmt.Errorf("watcher failed: %w", err)
 	}
 
-	return watcher, done, fileChanges, nil
+	return fw, nil
 }
 
 func watchRecursive(root string, watcher *fsnotify.Watcher) error {
@@ -92,17 +102,16 @@ func watchRecursive(root string, watcher *fsnotify.Watcher) error {
 				return fmt.Errorf("failed to watch directory %s: %w", path, err)
 			}
 		}
-
 		return nil
 	})
 }
 
-func PrintChangedFiles(ctx context.Context, fileChanges *FileChanges, mu *sync.Mutex) {
-	mu.Lock()
-	defer mu.Unlock()
-	createdFileLength := len(fileChanges.Created)
-	modifiedFileLength := len(fileChanges.Modified)
-	deletedFileLength := len(fileChanges.Deleted)
+func (fw *fileWatcher) PrintChangedFiles(ctx context.Context) {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+	createdFileLength := len(fw.fileChanges.Created)
+	modifiedFileLength := len(fw.fileChanges.Modified)
+	deletedFileLength := len(fw.fileChanges.Deleted)
 
 	if createdFileLength == 0 && modifiedFileLength == 0 && deletedFileLength == 0 {
 		return
@@ -111,20 +120,20 @@ func PrintChangedFiles(ctx context.Context, fileChanges *FileChanges, mu *sync.M
 	fmt.Println(output.WithGrayFormat("\n| Files changed:"))
 
 	if createdFileLength > 0 {
-		for file := range fileChanges.Created {
+		for file := range fw.fileChanges.Created {
 			fmt.Println(output.WithGrayFormat("| "), color.GreenString("+ Created  "), file)
 		}
 	}
 
 	if modifiedFileLength > 0 {
-		for file := range fileChanges.Modified {
+		for file := range fw.fileChanges.Modified {
 			fmt.Println(output.WithGrayFormat("| "), color.YellowString(output.WithUnderline("+")),
 				color.YellowString("Modified "), file)
 		}
 	}
 
 	if deletedFileLength > 0 {
-		for file := range fileChanges.Deleted {
+		for file := range fw.fileChanges.Deleted {
 			fmt.Println(output.WithGrayFormat("| "), color.RedString("- Deleted  "), file)
 		}
 	}

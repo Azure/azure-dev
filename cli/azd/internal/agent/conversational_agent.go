@@ -8,14 +8,12 @@ import (
 	_ "embed"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/watch"
 	"github.com/fatih/color"
-	"github.com/fsnotify/fsnotify"
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/chains"
 	"github.com/tmc/langchaingo/llms"
@@ -91,18 +89,15 @@ func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentCreateOption) (Age
 }
 
 // SendMessage processes a single message through the agent and returns the response
-func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, useWatch bool, args ...string) (string, error) {
+func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...string) (string, error) {
 	thoughtsCtx, cancelCtx := context.WithCancel(ctx)
 	defer cancelCtx()
 
-	var watcher *fsnotify.Watcher
-	var done chan bool
-	var mu sync.Mutex
-	var fileChanges *watch.FileChanges
+	var watcher watch.Watcher
 
-	if useWatch {
+	if aai.fileWatchingEnabled {
 		var err error
-		watcher, done, fileChanges, err = watch.StartWatcher(ctx, &mu)
+		watcher, err = watch.StartWatcher(ctx)
 		if err != nil {
 			return "", fmt.Errorf("failed to start watcher: %w", err)
 		}
@@ -116,10 +111,8 @@ func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, useWatch b
 	defer func() {
 		cleanup()
 
-		if useWatch {
-			watch.PrintChangedFiles(ctx, fileChanges, &mu)
-			close(done)
-			watcher.Close()
+		if aai.fileWatchingEnabled {
+			watcher.PrintChangedFiles(ctx)
 		}
 	}()
 

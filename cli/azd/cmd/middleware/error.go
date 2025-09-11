@@ -49,150 +49,99 @@ func NewErrorMiddleware(
 }
 
 func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
-	var actionResult *actions.ActionResult
-	var err error
+	actionResult, err := next(ctx)
+	if !e.featuresManager.IsEnabled(llm.FeatureLlm) {
+		return actionResult, err
+	}
 
-	if e.featuresManager.IsEnabled(llm.FeatureLlm) {
-		if e.options.IsChildAction(ctx) {
-			actionResult, err = next(ctx)
-			if err != nil {
-				e.console.StopSpinner(ctx, "", input.Step)
-			}
+	// Stop the spinner always to un-hide cursor
+	e.console.StopSpinner(ctx, "", input.Step)
+	if err == nil || e.options.IsChildAction(ctx) {
+		return actionResult, err
+	}
+
+	// Error already has a suggestion, no need for AI
+	var suggestionErr *internal.ErrorWithSuggestion
+	if errors.As(err, &suggestionErr) {
+		e.console.Message(ctx, suggestionErr.Suggestion)
+		return actionResult, err
+	}
+
+	// Skip certain errors, no need for AI
+	skipAnalyzingErrors := []string{
+		"environment already initialized",
+		"interrupt",
+		"no project exists",
+	}
+	for _, s := range skipAnalyzingErrors {
+		if strings.Contains(err.Error(), s) {
 			return actionResult, err
 		}
+	}
 
-		actionResult, err = next(ctx)
-		if err == nil {
-			return actionResult, err
+	// Warn user that this is an alpha feature
+	e.console.WarnForFeature(ctx, llm.FeatureLlm)
+
+	originalError := err
+	azdAgent, err := e.agentFactory.Create(
+		agent.WithDebug(e.global.EnableDebugLogging),
+		agent.WithFileWatching(true),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	defer azdAgent.Stop()
+
+	attempt := 0
+	var previousError error
+	var errorWithTraceId *internal.ErrorWithTraceId
+	AIDisclaimer := output.WithGrayFormat("The following content is AI-generated. AI responses may be incorrect.")
+	agentName := "agent mode"
+
+	for {
+		if originalError == nil {
+			break
 		}
 
-		// Stop the spinner always to un-hide cursor
-		e.console.StopSpinner(ctx, "", input.Step)
-
-		attempt := 0
-		originalError := err
-		suggestion := ""
-		var previousError error
-		var suggestionErr *internal.ErrorWithSuggestion
-		var errorWithTraceId *internal.ErrorWithTraceId
-		skipAnalyzingErrors := []string{
-			"environment already initialized",
-			"interrupt",
-			"no project exists",
-		}
-		AIDisclaimer := output.WithGrayFormat("The following content is AI-generated. AI responses may be incorrect.")
-		agentName := "agent mode"
-
-		// Warn user that this is an alpha feature
-		e.console.WarnForFeature(ctx, llm.FeatureLlm)
-
-		azdAgent, err := e.agentFactory.Create(
-			agent.WithDebug(e.global.EnableDebugLogging),
-			agent.WithFileWatching(true),
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		defer azdAgent.Stop()
-
-		for {
-			if originalError == nil {
-				break
-			}
-
-			for _, s := range skipAnalyzingErrors {
-				if strings.Contains(originalError.Error(), s) {
-					return actionResult, originalError
-				}
-			}
-
-			if previousError != nil && errors.Is(originalError, previousError) {
-				attempt++
-				if attempt >= 3 {
-					e.console.Message(ctx, fmt.Sprintf("Please review the error and fix it manually, "+
-						"%s was unable to resolve the error after multiple attempts.", agentName))
-					return actionResult, originalError
-				}
-			}
-
-			e.console.Message(ctx, output.WithErrorFormat("\nERROR: %s", originalError.Error()))
-
-			if errors.As(originalError, &errorWithTraceId) {
-				e.console.Message(ctx, output.WithErrorFormat("TraceID: %s", errorWithTraceId.TraceId))
-			}
-			if errors.As(originalError, &suggestionErr) {
-				suggestion = suggestionErr.Suggestion
-				e.console.Message(ctx, suggestion)
+		if previousError != nil && errors.Is(originalError, previousError) {
+			attempt++
+			if attempt >= 3 {
+				e.console.Message(ctx, fmt.Sprintf("Please review the error and fix it manually, "+
+					"%s was unable to resolve the error after multiple attempts.", agentName))
 				return actionResult, originalError
 			}
+		}
 
-			errorInput := originalError.Error()
+		e.console.Message(ctx, output.WithErrorFormat("\nERROR: %s", originalError.Error()))
 
-			e.console.Message(ctx, "")
-			confirm, err := e.checkErrorHandlingConsent(
-				ctx,
-				"mcp.errorHandling.troubleshooting",
-				fmt.Sprintf("Generate troubleshooting steps using %s?", agentName),
-				fmt.Sprintf("This action will run AI tools to generate troubleshooting steps."+
-					" Edit permissions for AI tools anytime by running %s.",
-					output.WithHighLightFormat("azd mcp consent")),
-				true,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("prompting to provide troubleshooting steps: %w", err)
-			}
+		if errors.As(originalError, &errorWithTraceId) {
+			e.console.Message(ctx, output.WithErrorFormat("TraceID: %s", errorWithTraceId.TraceId))
+		}
 
-			if confirm {
-				// Provide manual steps for troubleshooting
-				agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
-					`Steps to follow:
+		errorInput := originalError.Error()
+
+		e.console.Message(ctx, "")
+		confirm, err := e.checkErrorHandlingConsent(
+			ctx,
+			"mcp.errorHandling.troubleshooting",
+			fmt.Sprintf("Generate troubleshooting steps using %s?", agentName),
+			fmt.Sprintf("This action will run AI tools to generate troubleshooting steps."+
+				" Edit permissions for AI tools anytime by running %s.",
+				output.WithHighLightFormat("azd mcp consent")),
+			true,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("prompting to provide troubleshooting steps: %w", err)
+		}
+
+		if confirm {
+			// Provide manual steps for troubleshooting
+			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
+				`Steps to follow:
 			1. Use available tool including azd_error_troubleshooting tool to identify and explain the error.
 			Diagnose its root cause when running azd command.
 			2. Provide actionable troubleshooting steps. Do not perform any file changes.
-			Error details: %s`, errorInput))
-
-				if err != nil {
-					if agentOutput != "" {
-						e.console.Message(ctx, AIDisclaimer)
-						e.console.Message(ctx, output.WithMarkdown(agentOutput))
-					}
-
-					return nil, err
-				}
-
-				e.console.Message(ctx, AIDisclaimer)
-				e.console.Message(ctx, "")
-				e.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
-				e.console.Message(ctx, output.WithMarkdown(agentOutput))
-				e.console.Message(ctx, "")
-			}
-
-			// Ask user if they want to let AI fix the
-			confirm, err = e.checkErrorHandlingConsent(
-				ctx,
-				"mcp.errorHandling.fix",
-				fmt.Sprintf("Fix this error using %s?", agentName),
-				fmt.Sprintf("This action will run AI tools to help fix the error."+
-					" Edit permissions for AI tools anytime by running %s.",
-					output.WithHighLightFormat("azd mcp consent")),
-				false,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("prompting to fix error using %s: %w", agentName, err)
-			}
-
-			if !confirm {
-				return actionResult, err
-			}
-
-			previousError = originalError
-			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
-				`Steps to follow:
-			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
-			2. Resolve the error by making the minimal, targeted change required to the code or configuration.
-			Avoid unnecessary modifications and focus only on what is essential to restore correct functionality.
-			3. Remove any changes that were created solely for validation and are not part of the actual error fix.
 			Error details: %s`, errorInput))
 
 			if err != nil {
@@ -204,21 +153,59 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				return nil, err
 			}
 
-			// Ask the user to add feedback
-			if err := e.collectAndApplyFeedback(ctx, azdAgent, AIDisclaimer); err != nil {
-				return nil, err
+			e.console.Message(ctx, AIDisclaimer)
+			e.console.Message(ctx, "")
+			e.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
+			e.console.Message(ctx, output.WithMarkdown(agentOutput))
+			e.console.Message(ctx, "")
+		}
+
+		// Ask user if they want to let AI fix the
+		confirm, err = e.checkErrorHandlingConsent(
+			ctx,
+			"mcp.errorHandling.fix",
+			fmt.Sprintf("Fix this error using %s?", agentName),
+			fmt.Sprintf("This action will run AI tools to help fix the error."+
+				" Edit permissions for AI tools anytime by running %s.",
+				output.WithHighLightFormat("azd mcp consent")),
+			false,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("prompting to fix error using %s: %w", agentName, err)
+		}
+
+		if !confirm {
+			return actionResult, err
+		}
+
+		previousError = originalError
+		agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
+			`Steps to follow:
+			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
+			2. Resolve the error by making the minimal, targeted change required to the code or configuration.
+			Avoid unnecessary modifications and focus only on what is essential to restore correct functionality.
+			3. Remove any changes that were created solely for validation and are not part of the actual error fix.
+			Error details: %s`, errorInput))
+
+		if err != nil {
+			if agentOutput != "" {
+				e.console.Message(ctx, AIDisclaimer)
+				e.console.Message(ctx, output.WithMarkdown(agentOutput))
 			}
 
-			// Clear check cache to prevent skip of tool related error
-			ctx = tools.WithInstalledCheckCache(ctx)
-
-			actionResult, err = next(ctx)
-			originalError = err
+			return nil, err
 		}
-	}
 
-	if actionResult == nil {
+		// Ask the user to add feedback
+		if err := e.collectAndApplyFeedback(ctx, azdAgent, AIDisclaimer); err != nil {
+			return nil, err
+		}
+
+		// Clear check cache to prevent skip of tool related error
+		ctx = tools.WithInstalledCheckCache(ctx)
+
 		actionResult, err = next(ctx)
+		originalError = err
 	}
 
 	return actionResult, err

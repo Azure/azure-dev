@@ -97,7 +97,7 @@ func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...st
 
 	if aai.fileWatchingEnabled {
 		var err error
-		watcher, err = watch.StartWatcher(ctx)
+		watcher, err = watch.NewWatcher(ctx)
 		if err != nil {
 			return "", fmt.Errorf("failed to start watcher: %w", err)
 		}

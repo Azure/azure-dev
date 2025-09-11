@@ -31,7 +31,7 @@ type fileChanges struct {
 	Deleted  map[string]bool
 }
 
-func StartWatcher(ctx context.Context) (Watcher, error) {
+func NewWatcher(ctx context.Context) (Watcher, error) {
 	fileChanges := &fileChanges{
 		Created:  make(map[string]bool),
 		Modified: make(map[string]bool),

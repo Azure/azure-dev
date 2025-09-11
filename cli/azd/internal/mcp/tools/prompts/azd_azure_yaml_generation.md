@@ -1,101 +1,51 @@
 # AZD Azure.yaml Generation Instructions
 
-✅ **Agent Task List**  
+**TASK:** Create a complete and valid `azure.yaml` file in the root directory that maps all application services to their Azure hosting services with proper build and deployment configurations.
 
-1. Check if application spec exists and review architecture decisions
-2. Identify all application services (frontend, backend, functions, etc.)
-3. Determine hosting requirements for each service based on Azure service selections
-4. Analyze build requirements (language, package manager, build commands)
-5. Create complete `azure.yaml` file in root directory following required patterns
-6. Validate file against AZD schema using available tools
-7. Update existing application spec with generated configuration details while preserving existing content
-
-📄 **Required Outputs**  
+**SUCCESS CRITERIA:**
 
 - Valid `azure.yaml` file created in root directory
-- Service configurations matching Azure service selections from architecture planning
-- Build and deployment instructions for all services
-- Configuration validated against AZD schema
-- Update existing application spec with configuration details while preserving existing content
+- Service configurations match Azure service selections from architecture planning
+- Build and deployment instructions complete for all services
+- All service paths and Docker configurations reference existing files correctly
 
-🧠 **Execution Guidelines**  
+**VALIDATION REQUIRED:**
 
-**Service Analysis Requirements:**
+- File validates against AZD schema using available tools
+- All `project` paths point to existing directories
+- All `docker.path` references point to existing Dockerfiles relative to service project path
+- Host types match architecture decisions (containerapp, appservice, function, staticwebapp)
+- Service names are alphanumeric with hyphens only
 
-Identify and configure these service types:
+**COMPLETION CHECKLIST:**
 
-- **Frontend applications:** React, Angular, Vue.js, static sites
-- **Backend services:** REST APIs, microservices, GraphQL, gRPC
-- **Function-based services:** Azure Functions for event-driven workloads
-- **Background services:** Workers and long-running processes
+- [ ] Check if application spec exists and review architecture decisions
+- [ ] Identify all application services and their hosting requirements
+- [ ] Create complete `azure.yaml` file with service configurations
+- [ ] Validate file against AZD schema
+- [ ] Update application spec with configuration details
 
-**Hosting Configuration Patterns:**
+## Critical Configuration Requirements
 
-**Azure Container Apps** (for microservices, APIs, containerized apps):
+**Service Type Mappings:**
 
-```yaml
-services:
-  api:
-    project: ./src/api
-    language: js
-    host: containerapp
-    docker:
-      path: ./Dockerfile
-```
+- **Azure Container Apps**: `host: containerapp` (for APIs, microservices, containerized apps)
+- **Azure App Service**: `host: appservice` (for traditional web apps)
+- **Azure Functions**: `host: function` (for serverless workloads)
+- **Azure Static Web Apps**: `host: staticwebapp` (for SPAs, static sites)
+- **Azure Kubernetes Service**: `host: aks` (for Kubernetes)
 
-**Azure App Service** (for traditional web apps):
+**Path Configuration Rules:**
 
-```yaml
-services:
-  webapp:
-    project: ./src/webapp
-    language: js
-    host: appservice
-```
-
-**Azure Functions** (for serverless workloads):
-
-```yaml
-services:
-  functions:
-    project: ./src/functions
-    language: js
-    host: function
-```
-
-**Azure Static Web Apps** (for SPAs, static sites):
-
-```yaml
-services:
-  frontend:
-    project: ./src/frontend
-    language: js
-    host: staticwebapp
-    dist: build
-```
-
-**Critical Configuration Requirements:**
-
-- Service names must be alphanumeric with hyphens only
-- All `project` paths must point to existing directories
-- All `docker.path` references must point to existing Dockerfiles **relative to the service project path**
-- Host types must be: `containerapp`, `appservice`, `function`, or `staticwebapp`
+- Service `project` paths must point to existing directories
+- Docker `path` is relative to the service's project directory, not repository root
 - Language must match detected programming language
-- `dist` paths must match build output directories
+- `dist` paths must match build output directories for static apps
 
-**Important Note:** For Container Apps with Docker configurations, the `docker.path` is relative to the service's `project` directory, not the repository root. For example, if your service project is `./src/api` and the Dockerfile is located at `./src/api/Dockerfile`, the `docker.path` should be `./Dockerfile`.
+**Required Configuration Elements:**
 
-**Advanced Configuration Options:**
-
-- Environment variables using `${VARIABLE_NAME}` syntax
-- Custom commands using hooks (prebuild, postbuild, prepackage, postpackage, preprovision, postprovision)
-- Service dependencies and startup order
-
-📌 **Completion Checklist**
-
-- [ ] Valid `azure.yaml` file created in root directory
-- [ ] All discovered services properly configured with correct host types
-- [ ] Service hosting configurations match Azure service selections from architecture planning
-- [ ] Build and deployment instructions complete for all services
-- [ ] File validates against any available AZD schema tools
-- [ ] Application spec updated with configuration details while preserving existing content
+- Service names (alphanumeric with hyphens only)
+- Project paths (relative to repository root)
+- Language specification
+- Host type selection
+- Build and deployment configurations

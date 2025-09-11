@@ -21,16 +21,15 @@ func NewAzdDockerGenerationTool() server.ServerTool {
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
-				`Returns instructions for generating optimized Dockerfiles and container configurations for containerizable 
-services in AZD projects. 
+				`Provides instructions for generating optimized Dockerfiles and .dockerignore files for all containerizable services based on the Docker File Generation Checklist from the application spec.
 
-The LLM agent should execute these instructions using available tools.
+This tool returns detailed instructions that the LLM agent should follow using available file creation tools.
 
 Use this tool when:
-- Architecture planning identified services requiring containerization
-- azd-arch-plan.md shows Container Apps or AKS as selected hosting platform
-- Need Dockerfiles for microservices, APIs, or containerized web applications
-- Ready to implement containerization strategy`,
+- Application components requiring containerization have been identified
+- Docker File Generation Checklist exists in the application spec
+- Ready to create production-ready Dockerfiles with multi-stage builds and security best practices
+- Need to generate .dockerignore files for build optimization`,
 			),
 		),
 		Handler: handleAzdDockerGeneration,

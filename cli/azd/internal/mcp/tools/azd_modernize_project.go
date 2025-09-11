@@ -21,16 +21,15 @@ func NewAzdModernizeProjectTool() server.ServerTool {
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
-				`Returns instructions for modernizing existing applications to be AZD-compatible while preserving
-existing functionality and structure.
+				`Provides instructions for modernizing existing applications to be AZD-compatible by conducting analysis, requirements discovery, stack selection, architecture planning, and artifact generation while preserving existing functionality.
 
-The LLM agent should execute these instructions using available tools.
+This tool returns detailed instructions that the LLM agent should follow using available analysis, planning, and generation tools.
 
 Use this tool when:
-- Existing application code is detected in the workspace
-- Need to add Azure deployment capabilities to existing projects
-- Want to migrate existing applications to Azure with minimal disruption
-- Application components and architecture need analysis and Azure service mapping`,
+- Working with an existing application that needs Azure deployment capabilities
+- Ready to modernize a project to be AZD-compatible while preserving functionality
+- Need to conduct comprehensive analysis and generate Azure deployment artifacts
+- Application workspace contains existing code that should be preserved`,
 			),
 		),
 		Handler: handleAzdModernizeProject,

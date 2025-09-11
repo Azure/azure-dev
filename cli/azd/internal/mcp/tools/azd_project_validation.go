@@ -21,16 +21,15 @@ func NewAzdProjectValidationTool() server.ServerTool {
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
-				`Returns instructions for validating AZD project by running comprehensive checks on azure.yaml schema, 
-Bicep templates, environment setup, packaging, and deployment preview.
+				`Provides instructions for executing comprehensive validation of AZD project components including azure.yaml schema, Bicep templates, environment configuration, packaging, and deployment preview to ensure deployment readiness.
 
-The LLM agent should execute these instructions using available tools.
+This tool returns detailed instructions that the LLM agent should follow using available validation and testing tools.
 
 Use this tool when:
-- All AZD configuration files have been generated
-- Ready to validate complete project before deployment
+- All AZD configuration files and artifacts have been generated
+- Ready to validate complete project before deployment with azd up
 - Need to ensure azure.yaml, Bicep templates, and environment are properly configured
-- Final validation step before running azd up`,
+- Final validation step to confirm deployment readiness`,
 			),
 		),
 		Handler: handleAzdProjectValidation,

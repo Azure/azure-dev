@@ -1,48 +1,47 @@
 # AZD Stack Resources List
 
-✅ **Agent Task List**  
+**TASK:** Provide the definitive list of Azure resources required for each technology stack (baseline and stack-specific) to guide architecture planning and infrastructure generation.
 
-1. Review the baseline Azure resources required for all AZD projects
-2. Review the stack-specific Azure resources for the selected technology stack
-3. Understand the purpose and configuration of each resource type
-4. Use these resource definitions for architecture planning and infrastructure generation
-
-📄 **Required Outputs**  
+**SUCCESS CRITERIA:**
 
 - Complete understanding of baseline resources shared across all stacks
 - Detailed knowledge of stack-specific resources and their purposes
-- Azure resource type identifiers for precise infrastructure generation
-- Resource relationships and dependencies for proper deployment ordering
+- Azure resource type identifiers available for precise infrastructure generation
+- Resource relationships and dependencies understood for proper deployment ordering
 
-🧠 **Execution Guidelines**  
+**VALIDATION REQUIRED:**
 
-**CRITICAL:** This tool provides the definitive list of Azure resources required for each technology stack. These resource definitions should be used as the foundation for all architecture planning and infrastructure generation activities.
+- Resource definitions are current and match latest Azure service capabilities
+- Stack-specific resources align with architectural approaches
+- Resource dependencies and integration patterns are clearly documented
+- Resource specifications support both planning and generation phases
 
-## Resource Categories
+**COMPLETION CHECKLIST:**
 
-### Baseline Resources
+- [ ] Review baseline Azure resources required for all AZD projects
+- [ ] Review stack-specific Azure resources for the selected technology stack
+- [ ] Understand the purpose and configuration of each resource type
+- [ ] Use these resource definitions for architecture planning and infrastructure generation
+- [ ] Update application specification to include all required files within IaC checklist
 
-All AZD projects receive a standard set of baseline resources that provide essential capabilities like logging, monitoring, configuration management, and secure storage. These resources are provisioned regardless of the selected technology stack.
+## Critical Resource Categories
 
-### Stack-Specific Resources
+**Baseline Resources (All Stacks):**
 
-Each technology stack (Containers, Serverless, Logic Apps) includes additional resources optimized for that particular architectural approach. These resources provide the compute and orchestration capabilities specific to the chosen stack.
+- Essential capabilities for logging, monitoring, configuration management, and secure storage
+- Provisioned regardless of selected technology stack
+- Foundation for all AZD projects
 
-## Usage in Architecture Planning
+**Stack-Specific Resources:**
 
-When proceeding to architecture planning, use these resource definitions to:
+- **Containers Stack**: Resources optimized for containerized workloads
+- **Serverless Stack**: Resources for event-driven and function-based architectures  
+- **Logic Apps Stack**: Resources for workflow automation and integration scenarios
 
-- Map application components to appropriate Azure resources
-- Plan resource group organization and naming conventions
-- Determine resource dependencies and deployment sequencing
-- Configure monitoring and logging integration
-- Set up security and access control policies
+**Usage Guidelines:**
 
-## Infrastructure Generation Integration
-
-During infrastructure generation, these resource specifications provide:
-
-- Exact Azure resource type identifiers for Bicep templates
-- Required configuration parameters for each resource
-- Baseline security and monitoring configurations
-- Integration patterns between resources
+- **Architecture Planning**: Map application components to appropriate Azure resources
+- **Infrastructure Generation**: Provide exact resource type identifiers and configurations
+- **Resource Organization**: Plan resource group structure and naming conventions
+- **Deployment Sequencing**: Determine resource dependencies and deployment order
+- **Integration Patterns**: Configure monitoring, security, and access control

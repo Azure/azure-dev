@@ -36,16 +36,15 @@ func NewAzdListStackResourcesTool() server.ServerTool {
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
-				`List Azure resources required for a specific technology stack.
+				`Provides the definitive list of Azure resources required for each technology stack (baseline and stack-specific) to guide architecture planning and infrastructure generation.
 
-Returns baseline resources (required for all stacks) plus stack-specific resources for the chosen technology approach.
+This tool returns detailed resource definitions that the LLM agent should use for architecture planning and infrastructure generation.
 
 Use this tool when:
-- A technology stack has been selected for a project (containers, serverless, or logic apps)
-- Need resource listing for the selected technology stack
-
-The tool takes a stack parameter (containers, serverless, logic_apps) and returns the comprehensive " +
-				"resource list with Azure resource type identifiers.`,
+- Need to understand what Azure resources are available for each technology stack
+- Planning infrastructure architecture and need resource type identifiers
+- Ready to map application components to appropriate Azure services
+- Generating infrastructure templates and need resource specifications`,
 			),
 			mcp.WithString("stack",
 				mcp.Description("The technology stack to list resources for"),

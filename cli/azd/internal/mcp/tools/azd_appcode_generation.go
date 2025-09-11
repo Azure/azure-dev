@@ -21,16 +21,15 @@ func NewAzdAppCodeGenerationTool() server.ServerTool {
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
-				`Returns instructions for generating application code scaffolding for all project components
-using preferred programming languages and frameworks in src/<component> structure.
+				`Provides instructions for generating production-ready application scaffolding and starter code for all application components with Azure SDK integrations and deployment-ready configurations.
 
-The LLM agent should execute these instructions using available tools.
+This tool returns detailed instructions that the LLM agent should follow using available code generation tools.
 
 Use this tool when:
-- Project components have been defined and technology stack selected
-- Programming language and framework preferences are known
-- Need to generate application scaffolding for APIs, SPAs, workers, functions, etc.
-- Ready to create production-ready code templates with Azure integrations`,
+- Application components and technology stack have been defined in the application spec
+- Ready to create code structure in src/<component> directories
+- Need to generate framework-specific project files with Azure integrations
+- Application architecture planning is complete and ready for implementation`,
 			),
 		),
 		Handler: handleAzdAppCodeGeneration,

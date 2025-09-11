@@ -167,6 +167,7 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		tools.NewAzdAzureYamlGenerationTool(),
 		tools.NewAzdDockerGenerationTool(),
 		tools.NewAzdInfrastructureGenerationTool(),
+		tools.NewAzdGenerateInfraModuleTool(),
 		tools.NewAzdIacGenerationRulesTool(),
 		tools.NewAzdProjectValidationTool(),
 		tools.NewAzdYamlSchemaTool(),

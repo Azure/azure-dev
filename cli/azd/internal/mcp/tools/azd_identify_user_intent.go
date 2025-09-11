@@ -21,16 +21,15 @@ func NewAzdIdentifyUserIntentTool() server.ServerTool {
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
-				`Returns instructions for discovering user project intent, requirements, and technology preferences
-through conversational questioning.
+				`Provides instructions for engaging users with conversational questions to understand project purpose, scale requirements, budget constraints, and architectural preferences, then classify and document findings.
 
-The LLM agent should execute these instructions using available tools.
+This tool returns detailed instructions that the LLM agent should follow using available user interaction and documentation tools.
 
 Use this tool when:
-- Starting requirements discovery for new or existing projects
-- Need to understand project scale, budget constraints, and architectural preferences
-- Want to capture programming language and framework preferences
-- Beginning project planning phase to inform technology stack decisions`,
+- Starting a new project and need to understand user requirements
+- Beginning the discovery phase for project planning
+- Need to classify project type, scale, and budget constraints
+- Ready to gather architectural and technology preferences from the user`,
 			),
 		),
 		Handler: handleAzdIdentifyUserIntent,

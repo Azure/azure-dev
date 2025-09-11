@@ -21,16 +21,15 @@ func NewAzdNewProjectTool() server.ServerTool {
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
-				`Returns instructions for orchestrating complete new AZD project creation from scratch,
-including requirements discovery, stack selection, architecture planning, and implementation roadmap.
+				`Provides instructions for orchestrating complete new project creation from scratch through requirements discovery, stack selection, architecture planning, and file generation guidance to create a ready-to-implement project specification.
 
-The LLM agent should execute these instructions using available tools.
+This tool returns detailed instructions that the LLM agent should follow using available discovery, planning, and generation tools.
 
 Use this tool when:
-- Creating a completely new AZD project with no existing code
-- User has a clear idea of what they want to build
-- Workspace is empty or contains only minimal documentation
-- Need comprehensive project specification and architecture design`,
+- Creating a brand new AZD project from an empty or minimal workspace
+- Ready to guide user through complete project setup from requirements to implementation
+- Need systematic workflow for new project creation with all planning phases
+- Starting fresh without existing application code or infrastructure`,
 			),
 		),
 		Handler: handleAzdNewProject,

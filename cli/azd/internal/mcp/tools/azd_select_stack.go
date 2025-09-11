@@ -21,16 +21,15 @@ func NewAzdSelectStackTool() server.ServerTool {
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
-				`Returns instructions for selecting the optimal technology stack (Containers, Serverless, or Logic Apps)
-based on team expertise, performance requirements, and application characteristics.
+				`Provides instructions for assessing team expertise, application characteristics, and project requirements through targeted questions to select the optimal single technology stack (Containers, Serverless, or Logic Apps) with clear rationale.
 
-The LLM agent should execute these instructions using available tools.
+This tool returns detailed instructions that the LLM agent should follow using available user interaction and documentation tools.
 
 Use this tool when:
-- User intent discovery has been completed
-- Need to determine the best technology approach for the project
-- Team expertise and application requirements are understood
-- Ready to make technology stack decisions for architecture planning`,
+- User intent and project requirements have been discovered
+- Ready to determine the optimal technology stack for the project
+- Need to assess team capabilities and application characteristics
+- Project requirements are understood and ready for technology decisions`,
 			),
 		),
 		Handler: handleAzdSelectStack,

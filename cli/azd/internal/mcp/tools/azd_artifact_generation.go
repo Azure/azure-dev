@@ -21,16 +21,15 @@ func NewAzdArtifactGenerationTool() server.ServerTool {
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
-				`Returns instructions for orchestrating complete AZD project artifact generation including
-application scaffolding, Docker configurations, infrastructure templates, and azure.yaml configuration.
+				`Provides instructions for orchestrating the complete artifact generation process for AZD projects, generating infrastructure templates, application scaffolding, Docker configurations, and azure.yaml in the correct order with proper dependencies.
 
-The LLM agent should execute these instructions using available tools.
+This tool returns detailed instructions that the LLM agent should follow using available generation tools.
 
 Use this tool when:
-- Project architecture and requirements have been defined in Application specification
-- Ready to generate all project artifacts and implementation files
-- Need to create application code, infrastructure templates, and deployment configurations
-- Moving from planning phase to implementation phase`,
+- Application architecture design is complete with all service mappings
+- Ready to generate all project artifacts (infrastructure, code, Docker, azure.yaml)
+- Need to coordinate multiple generation processes in proper dependency order
+- Project specification contains complete requirements for artifact generation`,
 			),
 		),
 		Handler: handleAzdArtifactGeneration,

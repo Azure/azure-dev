@@ -21,15 +21,15 @@ func NewAzdInfrastructureGenerationTool() server.ServerTool {
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
-				`Returns instructions for generating modular Bicep infrastructure templates following Azure security and 
-operational best practices for AZD projects. 
+				`Provides instructions for generating complete Bicep infrastructure templates in ./infra directory based on the Infrastructure as Code File Checklist, using latest schema versions and following IaC generation rules.
 
-The LLM agent should execute these instructions using available tools.
+This tool returns detailed instructions that the LLM agent should follow using available infrastructure generation tools.
 
 Use this tool when:
-- Architecture planning completed with Azure services selected
-- Need to create Bicep infrastructure templates
-- Ready to implement infrastructure as code for deployment`,
+- Application architecture planning is complete with Azure service mappings
+- Ready to generate Bicep templates for all required Azure resources
+- Infrastructure as Code File Checklist exists in the application spec
+- Need to create modular, reusable infrastructure templates following best practices`,
 			),
 		),
 		Handler: handleAzdInfrastructureGeneration,

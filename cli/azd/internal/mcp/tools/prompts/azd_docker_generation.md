@@ -1,115 +1,56 @@
 # AZD Docker Generation Instructions
 
-✅ **Agent Task List**  
+**TASK:** Generate optimized Dockerfiles and .dockerignore files for all containerizable services based on the Docker File Generation Checklist from the application spec.
 
-1. Read the **Docker File Generation Checklist** from application spec
-2. Identify containerizable services and required Docker files from the checklist
-3. Detect programming language and framework for each containerizable service
-4. Generate each Docker file specified in the checklist following language-specific best practices
-5. Create .dockerignore files for build optimization
-6. Implement health checks and security configurations
-7. Update the Docker checklist section in existing application spec by marking completed items as [x] while preserving existing content
+**SUCCESS CRITERIA:**
 
-📄 **Required Outputs**  
+- All Docker files listed in the application spec checklist are generated
+- Dockerfiles follow language-specific best practices with multi-stage builds
+- .dockerignore files created for build optimization
+- Health check endpoints implemented for Container Apps compatibility
+- Security configurations and non-root users implemented
 
-- All Docker files listed in the Docker File Generation Checklist from application spec
-- Dockerfiles created for all containerizable services
-- .dockerignore files generated for each service
-- Health check endpoints implemented
-- Multi-stage builds with security best practices
-- Update existing application spec Docker checklist by marking completed items as [x] while preserving existing content
+**VALIDATION REQUIRED:**
 
-🧠 **Execution Guidelines**  
+- All generated Dockerfiles build successfully without errors
+- Health check endpoints respond correctly
+- Docker images follow security best practices (non-root users, minimal base images)
+- .dockerignore patterns exclude unnecessary files for efficient builds
+- Application spec Docker checklist is updated with completion status
 
-**Read Docker Checklist:**
+**COMPLETION CHECKLIST:**
 
-- Read the "Docker File Generation Checklist" section from application spec
-- This checklist specifies exactly which Docker files need to be generated
-- Use this as the authoritative source for what to create
-- Follow the exact file paths specified in the checklist
+- [ ] Read Docker File Generation Checklist from application spec
+- [ ] Identify containerizable services and required Docker files
+- [ ] Generate Dockerfiles following language-specific best practices
+- [ ] Create .dockerignore files for build optimization
+- [ ] Implement health checks and security configurations
+- [ ] Update Docker checklist in application spec marking completed items
 
-**Generate Files in Order:**
-
-- Create service Dockerfiles first (e.g., `{service-path}/Dockerfile`)
-- Create corresponding .dockerignore files for each service (e.g., `{service-path}/.dockerignore`)
-- Follow the exact file paths specified in the checklist from application spec
+## Critical Docker Requirements
 
 **Containerization Candidates:**
 
-- **Include:** Microservices, REST APIs, GraphQL services, web applications, background workers
-- **Exclude:** Static websites (use Static Web Apps), Azure Functions (serverless), databases (use managed services)
+- **Include**: Microservices, REST APIs, GraphQL services, web applications, background workers
+- **Exclude**: Static websites (use Static Web Apps), Azure Functions (serverless), databases (use managed services)
 
-**Language-Specific Dockerfile Patterns:**
+**Essential Dockerfile Elements:**
 
-**Node.js Applications:**
+- Multi-stage builds (build + runtime stages)
+- Minimal base images (alpine, slim variants)
+- Non-root users in production stage
+- Health check endpoints (`/health` for Container Apps)
+- Proper layer caching (copy dependency files first)
+- Security hardening and file permissions
 
-- Base image: `node:18-alpine`
-- Multi-stage build (build + runtime)
-- Copy package*.json first for layer caching
-- Use `npm ci --only=production`
-- Non-root user: `nodejs`
-- Expose port 3000, health check `/health`
+**Language-Specific Patterns:**
 
-**Python Applications:**
+- **Node.js**: `node:18-alpine` base, npm ci, port 3000
+- **Python**: `python:3.11-slim` base, pip install, port 8000
+- **.NET**: Multi-stage with SDK/runtime separation, port 8080
+- **Java**: OpenJDK slim variants, dependency optimization
 
-- Base image: `python:3.11-slim`
-- Environment: `PYTHONDONTWRITEBYTECODE=1`, `PYTHONUNBUFFERED=1`
-- Copy requirements.txt first
-- Use `pip install --no-cache-dir`
-- Non-root user: `appuser`
-- Expose port 8000, health check `/health`
+**.dockerignore Requirements:**
 
-**.NET Applications:**
-
-- Build: `mcr.microsoft.com/dotnet/sdk:8.0`
-- Runtime: `mcr.microsoft.com/dotnet/aspnet:8.0`
-- Multi-stage: restore → build → publish → runtime
-- Non-root user: `appuser`
-- Expose port 8080, health check `/health`
-
-**Java/Spring Boot:**
-
-- Build: `openjdk:17-jdk-slim`, Runtime: `openjdk:17-jre-slim`
-- Copy dependency files first for caching
-- Non-root user: `appuser`
-- Expose port 8080, actuator health check
-
-**Security and Optimization Requirements:**
-
-- Always use non-root users in production stage
-- Use minimal base images (alpine, slim variants)
-- Implement multi-stage builds to reduce size
-- Include health check endpoints for Container Apps
-- Set proper working directories and file permissions
-- Use layer caching by copying dependency files first
-- Never include secrets in container images
-
-**.dockerignore Patterns:**
-
-- Universal: `.git`, `README.md`, `.vscode/`, `.DS_Store`, `Dockerfile*`
-- Node.js: `node_modules/`, `npm-debug.log*`, `coverage/`
-- Python: `__pycache__/`, `*.pyc`, `venv/`, `.pytest_cache/`
-- .NET: `bin/`, `obj/`, `*.user`, `packages/`
-- Java: `target/`, `*.class`, `.mvn/repository`
-
-**Health Check Implementation:**
-
-- Endpoint: `/health` (standard convention)
-- Response: JSON with status and timestamp
-- HTTP Status: 200 for healthy, 503 for unhealthy
-- Timeout: 3 seconds maximum
-- Content: `{"status": "healthy", "timestamp": "ISO-8601"}`
-
-📌 **Completion Checklist**  
-
-- [ ] **Docker File Generation Checklist read** from application spec
-- [ ] **All files from Docker checklist generated** in the correct locations
-- [ ] Dockerfiles created for all containerizable services identified in architecture planning
-- [ ] .dockerignore files generated with appropriate exclusions for each language
-- [ ] Multi-stage builds implemented to reduce image size
-- [ ] Non-root users configured for security
-- [ ] Health check endpoints implemented for all services
-- [ ] Container startup optimization applied (dependency file caching)
-- [ ] All Dockerfiles build successfully (`docker build` test)
-- [ ] Security best practices followed (minimal images, no secrets)
-- [ ] **Docker checklist in application spec updated** by marking completed items as [x] while preserving existing content
+- Universal exclusions: `.git`, `README.md`, `.vscode/`, `Dockerfile*`
+- Language-specific: `node_modules/`, `__pycache__/`, `bin/obj/`, `target/`

@@ -128,10 +128,14 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 			errorInput := originalError.Error()
 
+			e.console.Message(ctx, "")
 			confirm, err := e.checkErrorHandlingConsent(
 				ctx,
 				"mcp.errorHandling.troubleshooting",
 				fmt.Sprintf("Generate troubleshooting steps using %s?", agentName),
+				fmt.Sprintf("This action will run AI tools to generate troubleshooting steps."+
+					" Edit permissions for AI tools anytime by running %s.",
+					output.WithHighLightFormat("azd mcp consent")),
 				true,
 			)
 			if err != nil {
@@ -142,7 +146,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				// Provide manual steps for troubleshooting
 				agentOutput, err := azdAgent.SendMessage(ctx, true, fmt.Sprintf(
 					`Steps to follow:
-			1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
+			1. Use available tool including azd_error_troubleshooting tool to identify and explain the error.
+			Diagnose its root cause when running azd command.
 			2. Provide actionable troubleshooting steps. Do not perform any file changes.
 			Error details: %s`, errorInput))
 
@@ -167,6 +172,9 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				ctx,
 				"mcp.errorHandling.fix",
 				fmt.Sprintf("Fix this error using %s?", agentName),
+				fmt.Sprintf("This action will run AI tools to help fix the error."+
+					" Edit permissions for AI tools anytime by running %s.",
+					output.WithHighLightFormat("azd mcp consent")),
 				false,
 			)
 			if err != nil {
@@ -262,6 +270,7 @@ func (e *ErrorMiddleware) checkErrorHandlingConsent(
 	ctx context.Context,
 	promptName string,
 	message string,
+	helpMessage string,
 	skip bool,
 ) (bool, error) {
 	userConfig, err := e.userConfigManager.Load()
@@ -270,7 +279,7 @@ func (e *ErrorMiddleware) checkErrorHandlingConsent(
 	}
 
 	if exists, ok := userConfig.GetString(promptName); !ok && exists == "" {
-		choice, err := promptForErrorHandlingConsent(ctx, message, skip)
+		choice, err := promptForErrorHandlingConsent(ctx, message, helpMessage, skip)
 		if err != nil {
 			return false, fmt.Errorf("prompting for error handling consent: %w", err)
 		}
@@ -296,6 +305,7 @@ func (e *ErrorMiddleware) checkErrorHandlingConsent(
 func promptForErrorHandlingConsent(
 	ctx context.Context,
 	message string,
+	helpMessage string,
 	skip bool,
 ) (string, error) {
 	choices := []*uxlib.SelectChoice{
@@ -322,10 +332,8 @@ func promptForErrorHandlingConsent(
 	}
 
 	selector := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message: message,
-		HelpMessage: fmt.Sprintf("This action will run AI tools to generate troubleshooting steps."+
-			" Edit permissions for AI tools anytime by running %s.",
-			output.WithHighLightFormat("azd mcp")),
+		Message:         message,
+		HelpMessage:     helpMessage,
 		Choices:         choices,
 		EnableFiltering: uxlib.Ptr(false),
 		DisplayCount:    5,

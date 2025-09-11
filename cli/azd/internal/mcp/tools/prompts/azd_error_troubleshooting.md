@@ -3,15 +3,14 @@
 ✅ **Agent Task List**  
 
 1. **Error Classification:** Identify the specific error type (Azure REST API, ARM Deployment, Authentication, Local Tool Installation or General)
-2. **Error Analysis:** Explain and diagnose what the error means and its root causes under the sections of "What's happening" and "Why it's happening". Note that this error occurs when running Azure Developer CLI
-3. **Troubleshooting Steps:** Based on error type (Azure REST API Response Errors, Azure ARM Deployment Errors, Azure Authentication Errors, Local Tool Installation Errors, and General AZD Errors), find the Troubleshooting Approach below and provide troubleshooting approach under the section of "How to fix it"
+2. **Error Analysis:** Explain and diagnose what the error means and its root causes. Note that this error occurs when running Azure Developer CLI
+3. **Troubleshooting Steps:** Based on error type (Azure REST API Response Errors, Azure ARM Deployment Errors, Azure Authentication Errors, Local Tool Installation Errors, and General AZD Errors), find the Troubleshooting Approach below and provide troubleshooting approach
 4. **Resolution Confirmation:** Ensure the issue is fully resolved. If issue still exists, retry the task list to fix the error
 
 📄 **Required Outputs**  
 
-- Clear error explanation under the sections of "What's happening"
-- Clear root cause analysis under the sections of "Why it's happening"
-- Under the section of "How to fix it":
+- Clear error explanation and root cause analysis where error explanation will be under a section of "What's happening" and root cause analysis under a section of  "Why it's happening"
+- Provide troubleshooting steps under a section of "How to fix it":
    - Step-by-step troubleshooting instructions 
    - Specific infrastructure code fixes for Bicep or Terraform files based on user usage if needed
    - Azure Portal navigation instructions for verification

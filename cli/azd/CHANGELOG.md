@@ -21,14 +21,6 @@
 - [[#5559]](https://github.com/Azure/azure-dev/pull/5559) Update Aspire sample to version 9.4.
 - [[#5603]](https://github.com/Azure/azure-dev/pull/5603) Update `microsoft.azd.extensions` in registry to 0.5.0.
 
-### Features Added
-
-### Breaking Changes
-
-### Bugs Fixed
-
-### Other Changes
-
 ## 1.18.2 (2025-08-14)
 
 ### Bugs Fixed

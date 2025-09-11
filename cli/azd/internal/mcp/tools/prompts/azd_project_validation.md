@@ -1,89 +1,55 @@
 # AZD Project Validation Instructions
 
-✅ **Agent Task List**  
+**TASK:** Execute comprehensive validation of AZD project components including azure.yaml schema, Bicep templates, environment configuration, packaging, and deployment preview to ensure deployment readiness.
 
-1. Load existing `azd-arch-plan.md` to understand current project state and context
-2. Execute azure.yaml against azd schema using available tool
-3. Compile and validate all Bicep templates in ./infra directory
-4. Verify AZD environment exists and is properly configured
-5. Run `azd package --no-prompt` to validate service packaging
-6. Execute `azd provision --preview --no-prompt` to test infrastructure deployment
-7. Resolve ALL issues found in each validation step before proceeding
-8. Update existing `azd-arch-plan.md` with validation results by adding/updating validation section while preserving existing content
-
-📄 **Required Outputs**  
+**SUCCESS CRITERIA:**
 
 - Complete validation report with all checks passed
 - All identified issues resolved with zero remaining errors
 - Confirmation that project is ready for deployment
-- Update existing `azd-arch-plan.md` with validation results while preserving existing content
-- Validation checklist added to or updated in architecture plan
-- Clear next steps for deployment
+- Validation results documented in application architecture plan
+- Clear next steps provided for deployment
 
-🧠 **Execution Guidelines**  
+**VALIDATION REQUIRED:**
 
-**CRITICAL REQUIREMENT:** Resolve ALL issues found during validation before proceeding to the next step.
-No validation step should be considered successful until all errors, warnings, and issues have been fully addressed.
+- `azure.yaml` passes schema validation without anyerrors or warnings
+- AZD environment exists and is properly configured
+- All Bicep templates compile without errors or warnings
+- `azd provision --preview --no-prompt` completes successfully with all resources validating
+- `azd package --no-prompt` completes without errors with all services packaging successfully
+- All service configurations are valid with no missing or incorrect settings
 
-**Validation Execution Steps:**
+**COMPLETION CHECKLIST:**
 
-**1. Load Architecture Plan:**
+- [ ] Load existing application architecture plan for project context
+- [ ] `azure.yaml` schema validation passes without any errors or warnings
+- [ ] Compile and validate all Bicep templates in ./infra directory
+- [ ] Verify AZD environment exists and is properly configured
+- [ ] Run `azd package --no-prompt` to validate service packaging
+- [ ] Execute `azd provision --preview --no-prompt` to test infrastructure deployment
+- [ ] Resolve ALL issues found in each validation step
+- [ ] Update application architecture plan with validation results
 
-- Read existing `azd-arch-plan.md` to understand current project architecture and context
-- Review any previous validation results or known issues
-- Understand the project structure and service configurations from the plan
-- **MANDATORY:** Must load and review architecture plan before starting validation
+## Critical Validation Requirements
 
-**2. Azure.yaml Schema Validation:**
+**Mandatory Resolution Requirement:**
 
-- Check if `azure.yaml` exists in current directory
-- Validate `azure.yaml` against AZD schema using available tools
-- Parse and report any schema violations or missing fields
-- Verify service definitions and configurations are correct
-- **MANDATORY:** Fix ALL schema violations before proceeding
+- **CRITICAL**: Resolve ALL issues found during validation before proceeding
+- No validation step is successful until all errors, warnings, and issues are fully addressed
+- Each validation step must pass completely before moving to the next
 
-**3. AZD Environment Validation:**
+**Validation Execution Order:**
 
-- Execute `azd env list` to check available environments
-- If no environments exist, create one: `azd env new <directory-name>-dev`
-- Ensure environment is selected and configured
-- Ensure `AZURE_LOCATION` azd environment variable is set to a valid Azure location value
-- Ensure `AZURE_SUBSCRIPTION_ID` azd environment variable is set to the users current Azure subscription
-- **MANDATORY:** Fix environment issues before proceeding
-
-**4. Bicep Template Validation:**
-
-- Scan `./infra` directory for `.bicep` files using file search
-- Review AZD IaC generation rules and guidelines and resolve any all issues
-- Execute `azd provision --preview --no-prompt` to validate infrastructure templates
-- **MANDATORY:** Fix ALL compilation errors before proceeding
-- Clean up any generated `<module.json>` files generated during bicep validation
-
-**5. Package Validation:**
-
-- Execute `azd package --no-prompt` command and monitor output
-- Verify all service source paths are valid
-- Check Docker builds complete successfully for containerized services
-- Ensure all build artifacts are created correctly
-- **MANDATORY:** Fix ALL packaging errors before proceeding
+1. **Architecture Plan Review**: Load and understand current project context
+2. **Schema Validation**: Validate azure.yaml against AZD schema
+3. **Environment Validation**: Ensure AZD environment is configured with required variables. Prompt user for environment name, location, Azure Subscription and other required values
+4. **Package Validation**: Verify all services can be packaged successfully
+5. **Deployment Preview**: Test infrastructure deployment without actual provisioning
 
 **Error Resolution Requirements:**
 
-- **Azure.yaml Schema Errors:** Validate azure.yaml using available tools
-- **Bicep Compilation Errors:** Parse error output, check module paths and parameter names, verify resource naming
-- **Environment Issues:** Run `azd auth login` if needed, check subscription access, verify location parameter
-- **Package Errors:** Check service source paths, verify Docker builds work locally, ensure dependencies available
-- **Provision Preview Errors:** Verify subscription permissions, check resource quotas, ensure resource names are unique
-
-📌 **Completion Checklist**  
-
-- [ ] `azd-arch-plan.md` loaded and reviewed for project context
-- [ ] `azure.yaml` passes schema validation with NO errors or warnings
-- [ ] AZD environment exists and is properly configured with NO issues
-- [ ] ALL Bicep templates compile without errors or warnings
-- [ ] `azd provision --preview` completes without errors or warnings with ALL resources validating correctly
-- [ ] `azd package` completes without errors or warnings with ALL services packaging successfully
-- [ ] ALL service configurations are valid with NO missing or incorrect settings
-- [ ] NO missing dependencies or configuration issues remain
-- [ ] Validation results added to existing `azd-arch-plan.md` while preserving existing content
-- [ ] Project confirmed ready for deployment with `azd up`
+- **Azure.yaml Errors**: Fix schema violations, verify service paths, validate configurations
+- **Environment Issues**: Configure authentication, set required variables, verify permissions
+- **Bicep Errors**: Resolve compilation issues, verify module paths, check resource naming
+- **Package Errors**: Fix service paths, resolve Docker build issues, verify dependencies
+- **Provision Errors**: Address permission issues, resolve resource conflicts, fix configuration problems

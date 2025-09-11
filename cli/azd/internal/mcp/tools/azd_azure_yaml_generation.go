@@ -21,10 +21,9 @@ func NewAzdAzureYamlGenerationTool() server.ServerTool {
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
-				`Returns instructions for generating the azure.yaml configuration file with proper service hosting, 
-build, and deployment settings for AZD projects. 
+				`Provides instructions for creating a complete and valid azure.yaml file in the root directory that maps all application services to their Azure hosting services with proper build and deployment configurations.
 
-The LLM agent should execute these instructions using available tools.
+This tool returns detailed instructions that the LLM agent should follow using available file creation and validation tools.
 
 Use this tool when:
 - Architecture planning has been completed and Azure services selected

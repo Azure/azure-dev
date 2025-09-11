@@ -1,98 +1,66 @@
-# AZD Application Initialization and Migration Instructions
+# AZD Project Initialization Decision Tree Instructions
 
-✅ **Agent Task List**  
+**TASK:** Analyze workspace contents to determine project state, classify as "new project" or "existing application", route users to appropriate workflow, and execute the selected workflow with proper tool orchestration.
 
-1. **Check Progress:** Review existing `azd-arch-plan.md` to understand completed work
-2. **Phase 1:** Execute `azd_discovery_analysis` for component identification
-3. **Phase 2:** Execute `azd_architecture_planning` for Azure service selection
-4. **Phase 3:** Execute file generation tools (`azd_azure_yaml_generation`, `azd_infrastructure_generation`, `azd_docker_generation`)
-5. **Phase 4:** Execute `azd_project_validation` for complete validation
-6. **Final:** Confirm project readiness for deployment
+**SUCCESS CRITERIA:**
 
-📄 **Required Outputs**  
+- Workspace analysis completed with clear routing decision rationale
+- User confirmation obtained for selected workflow path
+- Chosen workflow executed completely (new project creation or application modernization)
+- Professional application specification document created
+- Validated AZD compatible project ready for deployment
 
-- Complete AZD-compatible project structure
-- Valid `azure.yaml` configuration file
-- Bicep infrastructure templates in `./infra` directory
-- Dockerfiles for containerizable services
-- Comprehensive `azd-arch-plan.md` documentation (created or updated while preserving existing content)
-- Validated project ready for `azd up` deployment
+**VALIDATION REQUIRED:**
 
-🧠 **Execution Guidelines**  
+- Workspace analysis correctly identifies application vs minimal content
+- Routing decision aligns with workspace contents and user intentions
+- Selected workflow completes successfully with all required components
+- Generated project passes AZD validation requirements
+- Application specification provides comprehensive project documentation
 
-**CRITICAL:** Always check if `azd-arch-plan.md` exists first to understand current progress and avoid duplicate work. If the file exists, preserve all existing content and user modifications while updating relevant sections.
+**COMPLETION CHECKLIST:**
 
-**Complete Workflow Phases:**
+- [ ] Analyze current workspace to determine project state and contents
+- [ ] Classify workspace as "empty/minimal" or "existing application"
+- [ ] Route user to appropriate workflow with confirmation
+- [ ] Perform selected workflow with proper tool orchestration
+- [ ] Update application specification throughout the workflow
+- [ ] Validate final project readiness for deployment
 
-**Phase 1: Review Existing Progress**
+## Critical Analysis and Routing
 
-- Check if `azd-arch-plan.md` exists in current directory
-- If exists: Review thoroughly and skip completed phases
-- If doesn't exist: Proceed to Phase 2
+**Workspace Classification Logic:**
 
-**Phase 2: Discovery and Analysis**
+**Route to New Project Creation:**
 
-- Tool: `azd_discovery_analysis`
-- Scans files recursively, documents structure/languages/frameworks
-- Identifies entry points, maps dependencies, creates component inventory
-- Updates `azd-arch-plan.md` with findings
+- No programming language files found
+- Only documentation and git files present
+- Empty workspace or minimal placeholder content
+- User explicitly wants to start from scratch
 
-**Phase 3: Architecture Planning and Azure Service Selection**
+**Route to Application Modernization:**
 
-- Tool: `azd_architecture_planning`
-- Maps components to Azure services, plans hosting strategies
-- Designs database/messaging architecture, creates containerization strategies
-- Updates `azd-arch-plan.md` with service selections
+- Application code files detected (any programming language)
+- Framework configuration files present (package.json, requirements.txt, etc.)
+- Docker files or containerization artifacts found
+- Clear application structure and entry points
 
-**Phase 4: File Generation (Execute in Sequence)**
+**Handle Existing AZD Projects:**
 
-Using available tools - Generate the following files:
+- If `azure.yaml` exists, determine update/refinement needs
+- Check completeness of existing AZD configuration
+- Route to appropriate maintenance workflow
 
-1. **Docker Configurations:** Generate docker files (Required for containerizable services)
-2. **Infrastructure Templates:** Generate IaC infrastructure templates (Required for all projects)
-3. **Azure.yaml Configuration:** Generate `azure.yaml` file (Required for all projects)
+**User Confirmation Process:**
 
-**Phase 5: Project Validation and Environment Setup**
+- Present analysis results with detected technologies and recommendations
+- Explain chosen workflow path and what it will accomplish
+- Obtain explicit user confirmation before proceeding
+- Handle ambiguous cases by presenting options and letting user choose
 
-Using available tools - Perform and end-to-end AZD project validation
+**Workflow Execution:**
 
-- Validates azure.yaml against schema
-- Validate AZD environment exists
-- Validate infrastructure templates
-- Ensures AZD environment exists, tests packaging, validates deployment preview
-- Provides readiness confirmation
-
-**Usage Patterns:**
-
-**Complete New Project Migration:**
-
-```text
-1. Review azd-arch-plan.md → 2. azd_discovery_analysis → 3. azd_architecture_planning → 
-4. azd_azure_yaml_generation → 5. azd_infrastructure_generation → 6. azd_docker_generation → 
-7. azd_project_validation
-```
-
-**Update Existing AZD Project:**
-
-```text
-1. Review azd-arch-plan.md → 2. File generation tools → 3. azd_project_validation
-```
-
-**Quick Service Addition:**
-
-```text
-1. Review azd-arch-plan.md → 2. azd_discovery_analysis → 3. azd_azure_yaml_generation → 
-4. azd_docker_generation → 5. azd_project_validation
-```
-
-📌 **Completion Checklist**  
-
-- [ ] All application components identified and classified in discovery phase
-- [ ] Azure service selections made for each component with rationale
-- [ ] `azure.yaml` file generated and validates against schema
-- [ ] Infrastructure files generated and compile without errors
-- [ ] Dockerfiles created for containerizable components
-- [ ] `azd-arch-plan.md` created or updated to provide comprehensive project documentation while preserving existing content
-- [ ] AZD environment initialized and configured
-- [ ] All validation checks pass using `azd_project_validation` tool
-- [ ] Project confirmed ready for deployment with `azd up`
+- Execute chosen workflow systematically with proper tool orchestration
+- Maintain application specification throughout the process
+- Ensure all workflow steps complete successfully
+- Validate final project before completion

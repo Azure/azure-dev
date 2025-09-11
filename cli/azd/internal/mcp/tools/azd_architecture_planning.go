@@ -21,16 +21,15 @@ func NewAzdArchitecturePlanningTool() server.ServerTool {
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
-				`Returns instructions for selecting appropriate Azure services for discovered application components and 
-designing infrastructure architecture. 
+				`Provides instructions for consolidating all previously gathered context (requirements, stack selection, discovered components) into a complete application architecture design with Azure service mappings and implementation strategy.
 
-The LLM agent should execute these instructions using available tools.
+This tool returns detailed instructions that the LLM agent should follow using available planning and documentation tools.
 
 Use this tool when:
-- Discovery analysis has been completed and azd-arch-plan.md exists
-- Application components have been identified and classified
-- Need to map components to Azure hosting services
-- Ready to plan containerization and database strategies`,
+- Discovery analysis has been completed and application components are identified
+- Technology stack selection is complete
+- Ready to map components to Azure hosting services and design infrastructure
+- Need to create comprehensive architecture documentation in the application spec`,
 			),
 		),
 		Handler: handleAzdArchitecturePlanning,

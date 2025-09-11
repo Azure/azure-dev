@@ -21,16 +21,15 @@ func NewAzdIacGenerationRulesTool() server.ServerTool {
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
-				`Returns comprehensive rules and guidelines for generating Bicep Infrastructure as Code files and modules 
-for AZD projects. 
+				`Provides authoritative rules and standards for generating Bicep infrastructure templates that follow Azure Well-Architected Framework principles and AZD conventions.
 
-The LLM agent should reference these rules when generating infrastructure code.
+This tool returns detailed rules and guidelines that the LLM agent should follow when generating infrastructure code.
 
 Use this tool when:
 - Generating any Bicep infrastructure templates for AZD projects
 - Need compliance rules and naming conventions for Azure resources
 - Creating modular, reusable Bicep files
-- Ensuring security and operational best practices"`,
+- Ensuring security and operational best practices`,
 			),
 		),
 		Handler: handleAzdIacGenerationRules,

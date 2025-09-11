@@ -30,3 +30,21 @@ var AzdDockerGenerationPrompt string
 
 //go:embed azd_project_validation.md
 var AzdProjectValidationPrompt string
+
+//go:embed azd_identify_user_intent.md
+var AzdIdentifyUserIntentPrompt string
+
+//go:embed azd_select_stack.md
+var AzdSelectStackPrompt string
+
+//go:embed azd_new_project.md
+var AzdNewProjectPrompt string
+
+//go:embed azd_modernize_project.md
+var AzdModernizeProjectPrompt string
+
+//go:embed azd_artifact_generation.md
+var AzdArtifactGenerationPrompt string
+
+//go:embed azd_appcode_generation.md
+var AzdAppCodeGenerationPrompt string

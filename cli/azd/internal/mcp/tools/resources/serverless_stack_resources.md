@@ -1,0 +1,2 @@
+- **Azure Functions** (`Microsoft.Web/sites` with kind: `functionapp`) - Event-driven serverless compute platform with automatic scaling and pay-per-execution pricing
+- **App Service Plan** (`Microsoft.Web/serverfarms`) - Hosting plan for Azure Functions (Consumption, Premium, or Dedicated plans based on requirements)

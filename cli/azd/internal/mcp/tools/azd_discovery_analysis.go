@@ -21,16 +21,15 @@ func NewAzdDiscoveryAnalysisTool() server.ServerTool {
 			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithOpenWorldHintAnnotation(false),
 			mcp.WithDescription(
-				`Returns instructions for performing comprehensive discovery and analysis of application components 
-to prepare for Azure Developer CLI (AZD) initialization. 
+				`Provides instructions for scanning and analyzing the current workspace to identify all application components, technologies, dependencies, and communication patterns, documenting findings in the application specification.
 
-The LLM agent should execute these instructions using available tools.
+This tool returns detailed instructions that the LLM agent should follow using available analysis and documentation tools.
 
 Use this tool when:
 - Starting Phase 1 of AZD migration process
 - Need to identify all application components and dependencies
 - Codebase analysis required before architecture planning
-- azd-arch-plan.md does not exist or needs updating`,
+- Application spec does not exist or needs updating`,
 			),
 		),
 		Handler: handleAzdDiscoveryAnalysis,

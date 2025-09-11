@@ -5,7 +5,6 @@
 ### Features Added
 
 - [[#5492]](https://github.com/Azure/azure-dev/pull/5492) Add support for provisioning layers with `infra.layers` configuration.
-- [[#5557]](https://github.com/Azure/azure-dev/pull/5557) Integrate azd agent into `azd init` flow with MCP server and AI-powered project generation.
 - [[#5641]](https://github.com/Azure/azure-dev/pull/5641) Improve extension management with better ordering, version display, and source disambiguation.
 - [[#5587]](https://github.com/Azure/azure-dev/pull/5587) Add claims support for device-code authentication flow.
 - [[#5598]](https://github.com/Azure/azure-dev/pull/5598) Prompt for App Service Management Reference during service principal creation when required by tenant.

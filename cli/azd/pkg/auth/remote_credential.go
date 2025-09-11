@@ -6,6 +6,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -48,13 +49,23 @@ func (rc *RemoteCredential) GetToken(ctx context.Context, options policy.TokenRe
 		tenantID = options.TenantID
 	}
 
-	body, _ := json.Marshal(struct {
+	claims := ""
+	if options.Claims != "" {
+		claims = base64.StdEncoding.EncodeToString([]byte(options.Claims))
+	}
+
+	body, err := json.Marshal(struct {
 		Scopes   []string `json:"scopes"`
 		TenantId string   `json:"tenantId,omitempty"`
+		Claims   string   `json:"claims,omitempty"`
 	}{
 		Scopes:   options.Scopes,
 		TenantId: tenantID,
+		Claims:   claims,
 	})
+	if err != nil {
+		return azcore.AccessToken{}, remoteCredentialError("marshaling body", err)
+	}
 
 	req, err := http.NewRequestWithContext(
 		ctx,

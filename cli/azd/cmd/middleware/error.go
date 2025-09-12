@@ -104,6 +104,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			break
 		}
 
+		e.console.Message(ctx, output.WithErrorFormat("\nERROR: %s", originalError.Error()))
+
 		if previousError != nil && errors.Is(originalError, previousError) {
 			attempt++
 			if attempt >= 3 {
@@ -112,8 +114,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				return actionResult, originalError
 			}
 		}
-
-		e.console.Message(ctx, output.WithErrorFormat("\nERROR: %s", originalError.Error()))
 
 		if errors.As(originalError, &errorWithTraceId) {
 			e.console.Message(ctx, output.WithErrorFormat("TraceID: %s", errorWithTraceId.TraceId))

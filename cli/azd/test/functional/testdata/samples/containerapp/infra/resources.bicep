@@ -3,7 +3,7 @@ param location string = resourceGroup().location
 var tags = { 'azd-env-name': environmentName }
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
-param adminUserEnabled bool = true
+param adminUserEnabled bool = false
 param anonymousPullEnabled bool = false
 param dataEndpointEnabled bool = false
 param encryption object = {

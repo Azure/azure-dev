@@ -329,7 +329,7 @@ func (p *BicepProvider) State(ctx context.Context, options *provisioning.StateOp
 		}
 	}
 
-	state.Outputs = p.createOutputParameters(
+	state.Outputs = provisioning.OutputParametersFromArmOutputs(
 		outputs,
 		azapi.CreateDeploymentOutput(deployment.Outputs),
 	)
@@ -591,7 +591,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	if !p.ignoreDeploymentState && parametersHashErr == nil {
 		deploymentState, err := p.deploymentState(ctx, planned, deployment, currentParamsHash)
 		if err == nil {
-			result.Outputs = p.createOutputParameters(
+			result.Outputs = provisioning.OutputParametersFromArmOutputs(
 				planned.Template.Outputs,
 				azapi.CreateDeploymentOutput(deploymentState.Outputs),
 			)
@@ -678,7 +678,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		return nil, err
 	}
 
-	result.Outputs = p.createOutputParameters(
+	result.Outputs = provisioning.OutputParametersFromArmOutputs(
 		planned.Template.Outputs,
 		azapi.CreateDeploymentOutput(deployResult.Outputs),
 	)
@@ -925,7 +925,7 @@ func (p *BicepProvider) Destroy(
 	}
 
 	destroyResult := &provisioning.DestroyResult{
-		InvalidatedEnvKeys: slices.Collect(maps.Keys(p.createOutputParameters(
+		InvalidatedEnvKeys: slices.Collect(maps.Keys(provisioning.OutputParametersFromArmOutputs(
 			compileResult.Template.Outputs,
 			azapi.CreateDeploymentOutput(mostRecentDeployment.Outputs),
 		))),
@@ -1494,64 +1494,6 @@ func (p *BicepProvider) purgeAPIManagement(
 	return nil
 }
 
-func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) provisioning.ParameterType {
-	switch s {
-	case "String", "string", "secureString", "securestring":
-		return provisioning.ParameterTypeString
-	case "Bool", "bool":
-		return provisioning.ParameterTypeBoolean
-	case "Int", "int":
-		return provisioning.ParameterTypeNumber
-	case "Object", "object", "secureObject", "secureobject":
-		return provisioning.ParameterTypeObject
-	case "Array", "array":
-		return provisioning.ParameterTypeArray
-	default:
-		panic(fmt.Sprintf("unexpected bicep type: '%s'", s))
-	}
-}
-
-// Creates a normalized view of the azure output parameters and resolves inconsistencies in the output parameter name
-// casings.
-func (p *BicepProvider) createOutputParameters(
-	templateOutputs azure.ArmTemplateOutputs,
-	azureOutputParams map[string]azapi.AzCliDeploymentOutput,
-) map[string]provisioning.OutputParameter {
-	canonicalOutputCasings := make(map[string]string, len(templateOutputs))
-
-	for key := range templateOutputs {
-		canonicalOutputCasings[strings.ToLower(key)] = key
-	}
-
-	outputParams := make(map[string]provisioning.OutputParameter, len(azureOutputParams))
-
-	for key, azureParam := range azureOutputParams {
-		if azureParam.Secured() {
-			// Secured output can't be retrieved, so we skip it.
-			// https://learn.microsoft.com/azure/azure-resource-manager/bicep/outputs?tabs=azure-powershell#secure-outputs
-			log.Println("Skipping secured output parameter:", key)
-			continue
-		}
-		var paramName string
-		canonicalCasing, found := canonicalOutputCasings[strings.ToLower(key)]
-		if found {
-			paramName = canonicalCasing
-		} else {
-			// To support BYOI (bring your own infrastructure) scenarios we will default to UPPER when canonical casing
-			// is not found in the parameters file to workaround strange azure behavior with OUTPUT values that look
-			// like `azurE_RESOURCE_GROUP`
-			paramName = strings.ToUpper(key)
-		}
-
-		outputParams[paramName] = provisioning.OutputParameter{
-			Type:  p.mapBicepTypeToInterfaceType(azureParam.Type),
-			Value: azureParam.Value,
-		}
-	}
-
-	return outputParams
-}
-
 type loadParametersResult struct {
 	parameters     map[string]azure.ArmParameter
 	locationParams []string
@@ -1852,14 +1794,14 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) pro
 
 	for key, param := range bicepTemplate.Parameters {
 		parameters[key] = provisioning.InputParameter{
-			Type:         string(p.mapBicepTypeToInterfaceType(param.Type)),
+			Type:         string(provisioning.ParameterTypeFromArmType(param.Type)),
 			DefaultValue: param.DefaultValue,
 		}
 	}
 
 	for key, param := range bicepTemplate.Outputs {
 		outputs[key] = provisioning.OutputParameter{
-			Type:  p.mapBicepTypeToInterfaceType(param.Type),
+			Type:  provisioning.ParameterTypeFromArmType(param.Type),
 			Value: param.Value,
 		}
 	}
@@ -2022,7 +1964,7 @@ func (p *BicepProvider) ensureParameters(
 
 	for _, key := range sortedKeys {
 		param := template.Parameters[key]
-		parameterType := p.mapBicepTypeToInterfaceType(param.Type)
+		parameterType := provisioning.ParameterTypeFromArmType(param.Type)
 		azdMetadata, hasMetadata := param.AzdMetadata()
 
 		// If a value is explicitly configured via a parameters file, use it.

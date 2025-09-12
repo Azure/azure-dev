@@ -12,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/watch"
 	"github.com/fatih/color"
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/chains"
@@ -90,15 +91,29 @@ func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentCreateOption) (Age
 // SendMessage processes a single message through the agent and returns the response
 func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...string) (string, error) {
 	thoughtsCtx, cancelCtx := context.WithCancel(ctx)
+	defer cancelCtx()
+
+	var watcher watch.Watcher
+
+	if aai.fileWatchingEnabled {
+		var err error
+		watcher, err = watch.NewWatcher(ctx)
+		if err != nil {
+			return "", fmt.Errorf("failed to start watcher: %w", err)
+		}
+	}
+
 	cleanup, err := aai.renderThoughts(thoughtsCtx)
 	if err != nil {
-		cancelCtx()
 		return "", err
 	}
 
 	defer func() {
 		cleanup()
-		cancelCtx()
+
+		if aai.fileWatchingEnabled {
+			watcher.PrintChangedFiles(ctx)
+		}
 	}()
 
 	output, err := chains.Run(ctx, aai.executor, strings.Join(args, "\n"))
@@ -113,7 +128,7 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 	var latestThought string
 
 	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
-		Text: "Thinking...",
+		Text: "Processing...",
 	})
 
 	canvas := uxlib.NewCanvas(
@@ -156,11 +171,11 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 
 			// Update spinner text
 			if latestAction == "" {
-				spinnerText = "Thinking..."
+				spinnerText = "Processing..."
 			} else {
-				spinnerText = fmt.Sprintf("Running %s tool", color.GreenString(latestAction))
+				spinnerText = fmt.Sprintf("Running %s tool", color.BlueString(latestAction))
 				if latestActionInput != "" {
-					spinnerText += " with " + color.GreenString(latestActionInput)
+					spinnerText += " with " + color.BlueString(latestActionInput)
 				}
 
 				spinnerText += "..."

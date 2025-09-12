@@ -120,6 +120,22 @@ func (t CommandExecutorTool) Call(ctx context.Context, input string) (string, er
 		return string(jsonData), nil
 	}
 
+	if req.Command == "azd" {
+		blockedCommands := []string{"up", "provision", "deploy", "down"}
+
+		for _, blocked := range blockedCommands {
+			if req.Args[0] == blocked && req.Args[1] != "--preview" {
+				errorResponse := common.ErrorResponse{
+					Error:   true,
+					Message: "azd command is not supported",
+				}
+
+				jsonData, _ := json.MarshalIndent(errorResponse, "", "  ")
+				return string(jsonData), nil
+			}
+		}
+	}
+
 	// Set defaults
 	if req.Args == nil {
 		req.Args = []string{}

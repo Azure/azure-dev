@@ -106,7 +106,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 		e.console.Message(ctx, output.WithErrorFormat("\nERROR: %s", originalError.Error()))
 
-		if previousError != nil && errors.Is(originalError, previousError) {
+		if previousError != nil && originalError.Error() == previousError.Error() {
 			attempt++
 			if attempt >= 3 {
 				e.console.Message(ctx, fmt.Sprintf("Please review the error and fix it manually, "+

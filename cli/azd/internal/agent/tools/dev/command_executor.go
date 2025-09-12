@@ -124,7 +124,7 @@ func (t CommandExecutorTool) Call(ctx context.Context, input string) (string, er
 		blockedCommands := []string{"up", "provision", "deploy", "down"}
 
 		for _, blocked := range blockedCommands {
-			if req.Args[0] == blocked && req.Args[1] != "--preview" {
+			if req.Args[0] == blocked && (len(req.Args) < 2 || req.Args[1] != "--preview") {
 				errorResponse := common.ErrorResponse{
 					Error:   true,
 					Message: "azd command is not supported",

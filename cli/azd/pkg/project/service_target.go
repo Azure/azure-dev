@@ -77,11 +77,22 @@ type ServiceTarget interface {
 		progress *async.Progress[ServiceProgress],
 	) (*ServicePackageResult, error)
 
+	// Publish pushes the prepared artifacts without performing deployment.
+	Publish(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		frameworkPackageOutput *ServicePackageResult,
+		targetResource *environment.TargetResource,
+		progress *async.Progress[ServiceProgress],
+		publishOptions *PublishOptions,
+	) (*ServicePublishResult, error)
+
 	// Deploys the given deployment artifact to the target resource
 	Deploy(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		servicePackage *ServicePackageResult,
+		servicePublishResult *ServicePublishResult,
 		targetResource *environment.TargetResource,
 		progress *async.Progress[ServiceProgress],
 	) (*ServiceDeployResult, error)

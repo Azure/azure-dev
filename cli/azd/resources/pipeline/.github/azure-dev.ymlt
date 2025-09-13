@@ -18,6 +18,22 @@ permissions:
 
 jobs:
   build:
+{{- if .UseGitHubEnvironments }}
+  {{/* Always emit a matrix of azd environment names when --github-use-environments is set, even if only one.
+       max-parallel is set to 1 to serialize deployments across environments. */}}
+    strategy:
+      max-parallel: 1
+      matrix:
+        environment:
+{{- if gt (len .Environments) 0 }}
+{{- range $env := .Environments }}
+          - {{$env}}
+{{- end }}
+{{- else }}
+          # No azd environments detected at generation time
+{{- end }}
+    environment: ${{ "{{" }} matrix.environment {{ "}}" }}
+{{- end }}
     runs-on: ubuntu-latest
     env:
       AZURE_CLIENT_ID: ${{ "{{" }} vars.AZURE_CLIENT_ID {{ "}}" }}
@@ -78,7 +94,9 @@ jobs:
 {{- if not .FedCredLogIn }}
       - name: Log in with Azure (Client Credentials)
         run: |
+          if (-not $Env:AZURE_CREDENTIALS) { Write-Error 'AZURE_CREDENTIALS secret not set.'; exit 1 }
           $info = $Env:AZURE_CREDENTIALS | ConvertFrom-Json -AsHashtable;
+          if (-not $info.clientSecret) { Write-Error 'clientSecret missing in AZURE_CREDENTIALS'; exit 1 }
           Write-Host "::add-mask::$($info.clientSecret)"
 
           azd auth login `

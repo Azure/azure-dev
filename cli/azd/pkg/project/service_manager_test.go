@@ -106,8 +106,8 @@ func Test_ServiceManager_Restore(t *testing.T) {
 
 	restoreCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkRestoreCalled, restoreCalled)
-	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
-		return sm.Restore(ctx, serviceConfig, progess)
+	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
+		return sm.Restore(ctx, serviceConfig, progress)
 	})
 
 	require.NoError(t, err)
@@ -213,8 +213,8 @@ func Test_ServiceManager_Deploy(t *testing.T) {
 	deployCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, serviceTargetDeployCalled, deployCalled)
 
-	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-		return sm.Deploy(ctx, serviceConfig, nil, progess)
+	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
+		return sm.Deploy(ctx, serviceConfig, nil, progress)
 	})
 
 	require.NoError(t, err)
@@ -353,8 +353,8 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 			name: "restore",
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
 				return logProgress(
-					t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
-						return serviceManager.Restore(ctx, serviceConfig, progess)
+					t, func(progress *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
+						return serviceManager.Restore(ctx, serviceConfig, progress)
 					})
 			},
 		},

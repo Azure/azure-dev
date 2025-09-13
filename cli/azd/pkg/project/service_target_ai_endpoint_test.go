@@ -130,8 +130,8 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 		Return(onlineEndpoint, nil)
 
 	serviceTarget := createMlEndpointTarget(mockContext, env, aiHelper)
-	deployResult, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-		return serviceTarget.Deploy(*mockContext.Context, serviceConfig, servicePackage, targetResource, progess)
+	deployResult, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
+		return serviceTarget.Deploy(*mockContext.Context, serviceConfig, servicePackage, targetResource, progress)
 
 	})
 

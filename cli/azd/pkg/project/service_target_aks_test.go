@@ -119,7 +119,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	err = setupK8sManifests(t, serviceConfig)
 	require.NoError(t, err)
 
-	packageResult, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+	packageResult, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 		return serviceTarget.Package(
 			*mockContext.Context,
 			serviceConfig,
@@ -130,7 +130,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 					TargetImage: "test-app/api-test:azd-deploy-0",
 				},
 			},
-			progess,
+			progress,
 		)
 	})
 
@@ -932,7 +932,7 @@ func createTestCluster(clusterName, username string) *kubectl.KubeConfig {
 // as the observer.
 func logProgress[T comparable, P comparable](
 	t *testing.T,
-	fn func(progess *async.Progress[P]) (T, error),
+	fn func(progress *async.Progress[P]) (T, error),
 ) (T, error) {
 	return async.RunWithProgress(func(p P) { t.Log(p) }, fn)
 }

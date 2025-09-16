@@ -64,4 +64,5 @@
    ```
    This builds and automatically installs the updated extension.
 
-> **Note**: The `pack` and `publish` steps are only required for the first time setup. For ongoing development, `azd x watch` or `azd x build` handles all updates automatically.
+> [!NOTE]
+> The `pack` and `publish` steps are only required for the first time setup. For ongoing development, `azd x watch` or `azd x build` handles all updates automatically.

@@ -9,20 +9,23 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
 type UxMiddleware struct {
-	options *Options
-	console input.Console
+	options         *Options
+	console         input.Console
+	featuresManager *alpha.FeatureManager
 }
 
-func NewUxMiddleware(options *Options, console input.Console) Middleware {
+func NewUxMiddleware(options *Options, console input.Console, featuresManager *alpha.FeatureManager) Middleware {
 	return &UxMiddleware{
-		options: options,
-		console: console,
+		options:         options,
+		console:         console,
+		featuresManager: featuresManager,
 	}
 }
 

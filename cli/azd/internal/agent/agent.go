@@ -18,14 +18,15 @@ import (
 // agentBase represents an AI agent that can execute tools and interact with language models.
 // It manages multiple models for different purposes and maintains an executor for tool execution.
 type agentBase struct {
-	debug            bool
-	defaultModel     llms.Model
-	executor         *agents.Executor
-	tools            []common.AnnotatedTool
-	callbacksHandler callbacks.Handler
-	thoughtChan      chan logging.Thought
-	cleanupFunc      AgentCleanup
-	maxIterations    int
+	debug               bool
+	fileWatchingEnabled bool
+	defaultModel        llms.Model
+	executor            *agents.Executor
+	tools               []common.AnnotatedTool
+	callbacksHandler    callbacks.Handler
+	thoughtChan         chan logging.Thought
+	cleanupFunc         AgentCleanup
+	maxIterations       int
 }
 
 // AgentCleanup is a function that performs cleanup tasks for an agent.
@@ -56,6 +57,13 @@ type AgentCreateOption func(*agentBase)
 func WithDebug(debug bool) AgentCreateOption {
 	return func(agent *agentBase) {
 		agent.debug = debug
+	}
+}
+
+// WithFileWatching returns an option that enables or disables file watching for the agent
+func WithFileWatching(fileWatchingEnabled bool) AgentCreateOption {
+	return func(agent *agentBase) {
+		agent.fileWatchingEnabled = fileWatchingEnabled
 	}
 }
 

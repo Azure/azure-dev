@@ -557,6 +557,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(consent.NewConsentManager)
 	container.MustRegisterNamedSingleton("ollama", llm.NewOllamaModelProvider)
 	container.MustRegisterNamedSingleton("azure", llm.NewAzureOpenAiModelProvider)
+	container.MustRegisterNamedSingleton("github-copilot", llm.NewGitHubCopilotModelProvider)
 
 	// Agent security manager
 	container.MustRegisterSingleton(func() (*security.Manager, error) {

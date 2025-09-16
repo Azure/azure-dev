@@ -314,6 +314,23 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 			},
 		}).
 		AddTask(ux.TaskOptions{
+			Title: "Ensuring local extension source registry exists",
+			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+				if has, err := internal.HasLocalRegistry(); err == nil && has {
+					return ux.Skipped, nil
+				}
+
+				if err := internal.CreateLocalRegistry(); err != nil {
+					return ux.Error, common.NewDetailedError(
+						"Failed to create local extension source registry",
+						fmt.Errorf("failed to create local extension source registry: %w", err),
+					)
+				}
+
+				return ux.Success, nil
+			},
+		}).
+		AddTask(ux.TaskOptions{
 			Title: "Updating extension source registry",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 				registry, err := models.LoadRegistry(flags.registryPath)

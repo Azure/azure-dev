@@ -1,3 +1,6 @@
+# Set strict error handling - any error terminates the script
+$ErrorActionPreference = 'Stop'
+
 # Get the directory of the script
 $EXTENSION_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
 

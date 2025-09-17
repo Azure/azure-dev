@@ -327,8 +327,8 @@ func runPublishAction(ctx context.Context, flags *publishFlags, defaultRegistryU
 
 				if err := internal.CreateLocalRegistry(); err != nil {
 					return ux.Error, common.NewDetailedError(
-						"Failed to create local extension source registry",
-						fmt.Errorf("failed to create local extension source registry: %w", err),
+						"Registry creation failed",
+						fmt.Errorf("failed to create local registry: %w", err),
 					)
 				}
 

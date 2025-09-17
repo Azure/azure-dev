@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
+
 import { IActionContext } from '@microsoft/vscode-azext-utils';
+import { composeArgs, withArg } from '@microsoft/vscode-processutils';
 import { TelemetryId } from '../telemetry/telemetryId';
 import { createAzureDevCli, onAzdLoginAttempted } from '../utils/azureDevCli';
 import { executeAsTask } from '../utils/executeAsTask';
@@ -15,12 +17,13 @@ export async function loginCli(context: IActionContext, fromAgent: boolean = fal
     context.telemetry.properties.fromAgent = fromAgent.toString();
 
     const azureCli = await createAzureDevCli(context);
-    const command = azureCli.commandBuilder.withArgs(['auth', 'login']);
+    const args = composeArgs(
+        withArg('auth', 'login'),
+    )();
 
-    await executeAsTask(command.build(), getAzDevTerminalTitle(), {
+    await executeAsTask(azureCli.invocation, args, getAzDevTerminalTitle(), azureCli.spawnOptions(), {
         focus: true,
         alwaysRunNew: true,
-        env: azureCli.env
     }, TelemetryId.LoginCli).then(() => {
         onAzdLoginAttempted();
     });

@@ -52,7 +52,6 @@ export async function createAzureDevCli(context: IActionContext): Promise<AzureD
 
 export function scheduleAzdVersionCheck(): void {
     const oneSecond = 1 * 1000;
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const minimumSupportedVersion = semver.coerce('1.8.0')!;
 
     setTimeout(async () => {
@@ -140,7 +139,6 @@ function createCli(): AzureDevCli {
         azDevCliEnv['AZURE_DEV_COLLECT_TELEMETRY'] = "no";
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     let modifiedPath: string = process.env.PATH!;
 
     // On Unix, the CLI is installed to /usr/local/bin, which is always going to be in the PATH
@@ -150,7 +148,6 @@ function createCli(): AzureDevCli {
     // as long as it's Windows, AZURE_DEV_CLI_PATH is unset, "Azure Dev CLI" isn't already in the PATH (somewhere else?),
     // and the user did try to install within this session
     if (isWindows() && !process.env.AZURE_DEV_CLI_PATH && !/Azure Dev CLI/i.test(modifiedPath) && azdInstallAttempted) {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const defaultAzdInstallLocation = path.join(process.env.LOCALAPPDATA!, 'Programs', 'Azure Dev CLI');
         modifiedPath += `;${defaultAzdInstallLocation}`;
     }
@@ -216,7 +213,6 @@ function normalize(env: NodeJS.ProcessEnv): Environment {
     const retval: Environment = {};
     for (const prop of Object.getOwnPropertyNames(env)) {
         if (env[prop]) {
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
             retval[prop] = env[prop]!;
         }
     }

@@ -25,11 +25,10 @@ import (
 )
 
 type publishFlags struct {
-	repository          string
-	version             string
-	registryPath        string
-	artifacts           []string
-	registryPathDefault bool // true if registryPath was set by defaultPublishFlags()
+	repository   string
+	version      string
+	registryPath string
+	artifacts    []string
 }
 
 func newPublishCommand() *cobra.Command {
@@ -43,11 +42,12 @@ func newPublishCommand() *cobra.Command {
 				"Publishes the azd extension project and updates the registry",
 			)
 
-			if err := defaultPublishFlags(flags); err != nil {
+			defaultRegistryUsed, err := defaultPublishFlags(flags)
+			if err != nil {
 				return err
 			}
 
-			err := runPublishAction(cmd.Context(), flags)
+			err = runPublishAction(cmd.Context(), flags, defaultRegistryUsed)
 			if err != nil {
 				return err
 			}
@@ -81,7 +81,7 @@ func newPublishCommand() *cobra.Command {
 	return publishCmd
 }
 
-func runPublishAction(ctx context.Context, flags *publishFlags) error {
+func runPublishAction(ctx context.Context, flags *publishFlags, defaultRegistryUsed bool) error {
 	absExtensionPath, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path for extension directory: %w", err)
@@ -317,8 +317,7 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 		AddTask(ux.TaskOptions{
 			Title: "Ensuring local extension source registry exists",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-				// Only set up the local registry if we're using the default registry path
-				if !flags.registryPathDefault {
+				if !defaultRegistryUsed {
 					return ux.Skipped, nil
 				}
 
@@ -462,18 +461,20 @@ func createPlatformMetadata(
 	return platformMetadata, nil
 }
 
-func defaultPublishFlags(flags *publishFlags) error {
+// defaultPublishFlags sets flags.registryPath to <azd config>/registry.json if unset.
+// Returns true when that default was applied.
+func defaultPublishFlags(flags *publishFlags) (bool, error) {
 	if flags.registryPath == "" {
 		azdConfigDir, err := internal.AzdConfigDir()
 		if err != nil {
-			return err
+			return false, err
 		}
 
 		flags.registryPath = filepath.Join(azdConfigDir, "registry.json")
-		flags.registryPathDefault = true
+		return true, nil
 	}
 
-	return nil
+	return false, nil
 }
 
 var (

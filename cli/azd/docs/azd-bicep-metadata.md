@@ -32,4 +32,18 @@ This configuration defines a unique way for azd to prompt for an input parameter
 
 #### location
 
+Use the type location to signal azd about an input parameter handling an Azure location. When Azd finds the location type in the metadata, it prompts the user for a value using the `select location` list.  Example:
+
+```bicep
+@metadata({
+  azd: {
+    type: location
+  }
+})
+param someInput <param-type>
+```
+
+
+
+
 

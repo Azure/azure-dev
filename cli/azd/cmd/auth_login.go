@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -76,6 +77,7 @@ type loginFlags struct {
 	clientCertificate      string
 	federatedTokenProvider string
 	scopes                 []string
+	claims                 string
 	redirectPort           int
 	global                 *internal.GlobalCommandOptions
 }
@@ -176,6 +178,12 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		nil,
 		"The scope to acquire during login")
 	_ = local.MarkHidden("scope")
+	local.StringVar(
+		&lf.claims,
+		"claims",
+		"",
+		"Additional claims to include during login.")
+	_ = local.MarkHidden("claims")
 	local.IntVar(
 		&lf.redirectPort,
 		"redirect-port",
@@ -557,26 +565,38 @@ func (la *loginAction) login(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	claims := ""
+	if la.flags.claims != "" {
+		c, err := base64.StdEncoding.DecodeString(la.flags.claims)
+		if err != nil {
+			return fmt.Errorf("invalid claims '%s': expected a base64-encoded string", la.flags.claims)
+		}
+
+		claims = string(c)
+	}
+
 	if useDevCode {
-		_, err = la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes, func(url string) error {
-			if !la.flags.global.NoPrompt {
-				la.console.Message(ctx, "Then press enter and continue to log in from your browser...")
-				la.console.WaitForEnter()
-				openWithDefaultBrowser(ctx, la.console, url)
+		_, err = la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes, claims,
+			func(url string) error {
+				if !la.flags.global.NoPrompt {
+					la.console.Message(ctx, "Then press enter and continue to log in from your browser...")
+					la.console.WaitForEnter()
+					openWithDefaultBrowser(ctx, la.console, url)
+					return nil
+				}
+				// For no-prompt, Just provide instructions without trying to open the browser
+				// If manual browsing is enabled, we don't want to open the browser automatically
+				la.console.Message(ctx, fmt.Sprintf("Then, go to: %s", url))
 				return nil
-			}
-			// For no-prompt, Just provide instructions without trying to open the browser
-			// If manual browsing is enabled, we don't want to open the browser automatically
-			la.console.Message(ctx, fmt.Sprintf("Then, go to: %s", url))
-			return nil
-		})
+			})
 		return err
 	}
 
 	if oneauth.Supported && !la.flags.browser {
 		err = la.authManager.LoginWithOneAuth(ctx, la.flags.tenantID, la.flags.scopes)
 	} else {
-		_, err = la.authManager.LoginInteractive(ctx, la.flags.scopes,
+		_, err = la.authManager.LoginInteractive(ctx, la.flags.scopes, claims,
 			&auth.LoginInteractiveOptions{
 				TenantID:     la.flags.tenantID,
 				RedirectPort: la.flags.redirectPort,

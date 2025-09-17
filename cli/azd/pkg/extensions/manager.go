@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Masterminds/semver/v3"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -158,7 +159,8 @@ func (m *Manager) GetInstalled(options LookupOptions) (*Extension, error) {
 	return nil, ErrInstalledExtensionNotFound
 }
 
-// GetFromRegistry retrieves an extension from the registry by name
+// GetFromRegistry retrieves an extension from the registry by name.
+// Returns an error if multiple extensions with the same ID are found across different sources.
 func (m *Manager) GetFromRegistry(
 	ctx context.Context,
 	extensionId string,
@@ -181,7 +183,7 @@ func (m *Manager) GetFromRegistry(
 		return nil, fmt.Errorf("failed getting extension sources: %w", err)
 	}
 
-	var match *ExtensionMetadata
+	var matches []*ExtensionMetadata
 	var sourceErr error
 
 	for _, source := range sources {
@@ -189,13 +191,27 @@ func (m *Manager) GetFromRegistry(
 		if err != nil {
 			sourceErr = err
 		} else if extension != nil {
-			match = extension
-			break
+			matches = append(matches, extension)
 		}
 	}
 
-	if match != nil {
-		return match, nil
+	if len(matches) > 1 {
+		sourceNames := make([]string, len(matches))
+		for i, match := range matches {
+			sourceNames[i] = match.Source
+		}
+		return nil, &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf(
+				"extension '%s' found in multiple sources: %s",
+				extensionId,
+				strings.Join(sourceNames, ", "),
+			),
+			Suggestion: "Suggestion: specify the exact source using --source or -s.",
+		}
+	}
+
+	if len(matches) == 1 {
+		return matches[0], nil
 	}
 
 	if sourceErr != nil {

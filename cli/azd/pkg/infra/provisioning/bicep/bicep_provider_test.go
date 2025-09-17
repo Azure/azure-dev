@@ -917,12 +917,13 @@ func TestFindCompletedDeployments(t *testing.T) {
 
 	baseDate := "1989-10-31"
 	envTag := "env-tag"
+	layerName := ""
 
 	deployments, err := bicepProvider.deploymentManager.CompletedDeployments(
 		*mockContext.Context, &mockedScope{
 			baseDate: baseDate,
 			envTag:   envTag,
-		}, envTag, "")
+		}, envTag, layerName, "")
 	require.NoError(t, err)
 	require.Equal(t, 1, len(deployments))
 	// should take the base date + 2 years

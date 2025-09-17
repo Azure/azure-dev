@@ -49,11 +49,11 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		Command: &cobra.Command{
 			Use:   "show <extension-name>",
 			Short: "Show details for a specific extension.",
-			Args:  cobra.ExactArgs(1),
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
 		ActionResolver: newExtensionShowAction,
+		FlagsResolver:  newExtensionShowFlags,
 	})
 
 	// azd extension install <extension-name>
@@ -171,12 +171,12 @@ func newExtensionListAction(
 }
 
 type extensionListItem struct {
-	Id        string `json:"id"`
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-	Version   string `json:"version"`
-	Installed bool   `json:"installed"`
-	Source    string `json:"source"`
+	Id               string `json:"id"`
+	Name             string `json:"name"`
+	Namespace        string `json:"namespace"`
+	Version          string `json:"version"`
+	InstalledVersion string `json:"installedVersion"`
+	Source           string `json:"source"`
 }
 
 func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -211,20 +211,18 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			continue
 		}
 
-		var version string
-		if has {
-			version = installedExtension.Version
-		} else {
-			version = extension.Versions[len(extension.Versions)-1].Version
+		var installedVersion string
+		if installed {
+			installedVersion = installedExtension.Version
 		}
 
 		extensionRows = append(extensionRows, extensionListItem{
-			Id:        extension.Id,
-			Name:      extension.DisplayName,
-			Namespace: extension.Namespace,
-			Version:   version,
-			Source:    extension.Source,
-			Installed: installed,
+			Id:               extension.Id,
+			Name:             extension.DisplayName,
+			Namespace:        extension.Namespace,
+			Version:          extension.Versions[len(extension.Versions)-1].Version,
+			InstalledVersion: installedVersion,
+			Source:           extension.Source,
 		})
 	}
 
@@ -263,12 +261,12 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 				ValueTemplate: `{{.Version}}`,
 			},
 			{
-				Heading:       "Source",
-				ValueTemplate: `{{.Source}}`,
+				Heading:       "Installed Version",
+				ValueTemplate: `{{.InstalledVersion}}`,
 			},
 			{
-				Heading:       "Installed",
-				ValueTemplate: `{{.Installed}}`,
+				Heading:       "Source",
+				ValueTemplate: `{{.Source}}`,
 			},
 		}
 
@@ -283,8 +281,19 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 }
 
 // azd extension show
+type extensionShowFlags struct {
+	source string
+}
+
+func newExtensionShowFlags(cmd *cobra.Command) *extensionShowFlags {
+	flags := &extensionShowFlags{}
+	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use.")
+	return flags
+}
+
 type extensionShowAction struct {
 	args             []string
+	flags            *extensionShowFlags
 	formatter        output.Formatter
 	writer           io.Writer
 	extensionManager *extensions.Manager
@@ -292,12 +301,14 @@ type extensionShowAction struct {
 
 func newExtensionShowAction(
 	args []string,
+	flags *extensionShowFlags,
 	formatter output.Formatter,
 	writer io.Writer,
 	extensionManager *extensions.Manager,
 ) actions.Action {
 	return &extensionShowAction{
 		args:             args,
+		flags:            flags,
 		formatter:        formatter,
 		writer:           writer,
 		extensionManager: extensionManager,
@@ -306,6 +317,7 @@ func newExtensionShowAction(
 
 type extensionShowItem struct {
 	Id               string
+	Source           string
 	Namespace        string
 	Description      string
 	Tags             []string
@@ -325,6 +337,7 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 		output.TableFlags)
 	text := [][]string{
 		{"Id", ":", t.Id},
+		{"Source", ":", t.Source},
 		{"Namespace", ":", t.Namespace},
 		{"Description", ":", t.Description},
 		{"Latest Version", ":", t.LatestVersion},
@@ -350,8 +363,18 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 }
 
 func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if len(a.args) == 0 {
+		return nil, fmt.Errorf("must specify an extension name")
+	}
+	if len(a.args) > 1 {
+		return nil, fmt.Errorf("cannot specify multiple extensions")
+	}
 	extensionId := a.args[0]
-	registryExtension, err := a.extensionManager.GetFromRegistry(ctx, extensionId, nil)
+	filterOptions := &extensions.FilterOptions{
+		Source: a.flags.source,
+	}
+
+	registryExtension, err := a.extensionManager.GetFromRegistry(ctx, extensionId, filterOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extension details: %w", err)
 	}
@@ -360,6 +383,7 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 	extensionDetails := extensionShowItem{
 		Id:               registryExtension.Id,
+		Source:           registryExtension.Source,
 		Namespace:        registryExtension.Namespace,
 		Description:      registryExtension.DisplayName,
 		Tags:             registryExtension.Tags,
@@ -372,7 +396,7 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 	installedExtension, err := a.extensionManager.GetInstalled(
 		extensions.LookupOptions{Id: extensionId},
 	)
-	if err == nil {
+	if err == nil && installedExtension.Source == extensionDetails.Source {
 		extensionDetails.InstalledVersion = installedExtension.Version
 	}
 
@@ -854,6 +878,12 @@ func newExtensionSourceRemoveAction(
 }
 
 func (a *extensionSourceRemoveAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if len(a.args) == 0 {
+		return nil, fmt.Errorf("must specify an extension source name")
+	}
+	if len(a.args) > 1 {
+		return nil, fmt.Errorf("cannot specify multiple extension sources")
+	}
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Remove extension source (azd extension source remove)",
 	})

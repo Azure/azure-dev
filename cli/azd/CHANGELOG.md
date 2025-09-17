@@ -1,6 +1,6 @@
 # Release History
 
-## 1.19.0-beta.1 (Unreleased)
+## 1.20.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,27 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.19.0 (2025-09-12)
+
+### Features Added
+
+- [[#5492]](https://github.com/Azure/azure-dev/pull/5492) Add support for provisioning layers with `infra.layers` configuration.
+- [[#5641]](https://github.com/Azure/azure-dev/pull/5641) Improve extension management with better ordering, version display, and source disambiguation.
+- [[#5587]](https://github.com/Azure/azure-dev/pull/5587) Add claims support for device-code authentication flow.
+- [[#5598]](https://github.com/Azure/azure-dev/pull/5598) Prompt for App Service Management Reference during service principal creation when required by tenant.
+
+### Bugs Fixed
+
+- [[#5586]](https://github.com/Azure/azure-dev/pull/5586) Improve readability of failed deployment logs with additional line spacing. Thanks @Saipriya-1144 for the contribution!
+- [[#5588]](https://github.com/Azure/azure-dev/pull/5588) Fix CloudShell telemetry not being emitted after the first run.
+- [[#5590]](https://github.com/Azure/azure-dev/pull/5590) Improve warning message formatting with all-caps prefix and better hook suggestion display.
+
+### Other Changes
+
+- [[#5592]](https://github.com/Azure/azure-dev/pull/5592) Update to Go 1.25.0.
+- [[#5559]](https://github.com/Azure/azure-dev/pull/5559) Update Aspire sample to version 9.4.
+- [[#5603]](https://github.com/Azure/azure-dev/pull/5603) Update `microsoft.azd.extensions` in registry to 0.5.0.
 
 ## 1.18.2 (2025-08-14)
 

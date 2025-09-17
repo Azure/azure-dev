@@ -25,10 +25,11 @@ import (
 )
 
 type publishFlags struct {
-	repository   string
-	version      string
-	registryPath string
-	artifacts    []string
+	repository          string
+	version             string
+	registryPath        string
+	artifacts           []string
+	registryPathDefault bool // true if registryPath was set by defaultPublishFlags()
 }
 
 func newPublishCommand() *cobra.Command {
@@ -316,6 +317,11 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 		AddTask(ux.TaskOptions{
 			Title: "Ensuring local extension source registry exists",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+				// Only set up the local registry if we're using the default registry path
+				if !flags.registryPathDefault {
+					return ux.Skipped, nil
+				}
+
 				if has, err := internal.HasLocalRegistry(); err == nil && has {
 					return ux.Skipped, nil
 				}
@@ -464,6 +470,7 @@ func defaultPublishFlags(flags *publishFlags) error {
 		}
 
 		flags.registryPath = filepath.Join(azdConfigDir, "registry.json")
+		flags.registryPathDefault = true
 	}
 
 	return nil

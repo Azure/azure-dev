@@ -130,8 +130,8 @@ export async function getEnvironments(context: IActionContext, cwd: string): Pro
         withNamedArg('--output', 'json'),
     )();
 
-    const result = await execAsync(azureCli.invocation, args, azureCli.spawnOptions(cwd));
-    const envInfo = JSON.parse(result.stdout) as EnvironmentInfo[];
+    const { stdout } = await execAsync(azureCli.invocation, args, azureCli.spawnOptions(cwd));
+    const envInfo = JSON.parse(stdout) as EnvironmentInfo[];
     context.telemetry.properties.environmentCount = envInfo.length.toString();
     return envInfo;
 }

@@ -28,12 +28,11 @@ export class WorkspaceAzureDevEnvListProvider implements AzureDevEnvListProvider
 
         const args = composeArgs(
             withArg('env', 'list', '--no-prompt'),
-            withNamedArg('--cwd', configurationFileDirectory),
+            withNamedArg('--cwd', configurationFileDirectory, { shouldQuote: true }),
             withNamedArg('--output', 'json'),
         )();
 
-        const envListResultsJson = await execAsync(azureCli.invocation, args, azureCli.spawnOptions(configurationFileDirectory));
-
-        return JSON.parse(envListResultsJson.stdout) as AzDevEnvListResults;
+        const { stdout } = await execAsync(azureCli.invocation, args, azureCli.spawnOptions(configurationFileDirectory));
+        return JSON.parse(stdout) as AzDevEnvListResults;
     }
 }

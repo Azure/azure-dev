@@ -45,7 +45,7 @@ param someInput string
 
 Prompting flow:
 
-![alt text](prompt-with-location-metadata.png)
+![prompt for location with metadata](prompt-with-location-metadata.png)
 
 The `location` type can be combined with the `default` field to control which location should be initially highlighted during the prompt flow. For example:
 
@@ -61,7 +61,7 @@ param someInput string
 
 Prompting flow:
 
-![alt text](prompt-with-location-default-metadata.png)
+![prompt for location setting a default option](prompt-with-location-default-metadata.png)
 
 Note how the highlighted default option matched the `default` field from the metadata. This is convenient for template authors for recommending a location but letting users to confirm or change it. THis is difference from setting a default value for the input parameter in bicep because that makes azd to skip the prompt flow and to directly use the default value without user confirmation.
 
@@ -100,7 +100,7 @@ param someInput string
 
 Prompt flow:
 
-![alt text](prompt-with-rg.png)
+![User type resource group to prompt](prompt-with-rg.png)
 
 ### Config
 
@@ -153,8 +153,26 @@ param someInput string
 
 The example uses the `@allowed()` annotation from bicep to define a list of supported values for the input parameter. When azd prompts for this input, it uses the the list of allowed values. Then, the `default` field from the metadata can control which option to set as the initial selection:
 
-![alt text](prompt-with-default.png)
+![Using default during prompt from allowed values](prompt-with-default.png)
 
 ### usageName
 
-The `usageName` field defines an `AI-location` filter.  It makes the `type` to be automatically set to `location` (if not defined explicitly) and makes azd to filter and display only those locations where the provided AI-model SKU
+The `usageName` field defines a filter to scope the location list to only those where a given AI-SKU and capacity are found.  For example:
+
+```bicep
+@metadata({azd: {
+  type: 'location'
+  usageName: [
+    'OpenAI.GlobalStandard.gpt-5-mini,10'
+  ]}
+})
+param someInput string
+```
+
+The example makes azd to reduce the list of Azure locations to only those where the AI model `gpt-5-mini` has enough quota (capacity at least 10).
+
+Prompt flow:
+
+![setting usageName to prompt for AI location](prompt-with-usage-name.png)
+
+Note: Azd returns an error if there is not at least one location with enough quota.

@@ -318,7 +318,7 @@ func GetFileNameWithoutExt(filePath string) string {
 
 // HasLocalRegistry checks if a local extension source registry exists
 func HasLocalRegistry() (bool, error) {
-	cmdBytes, err := exec.Command("azd", "ext", "source", "list", "-o", "json").CombinedOutput()
+	cmdBytes, err := exec.Command("azd", "ext", "source", "list", "-o", "json").Output()
 	if err != nil {
 		return false, fmt.Errorf("failed to execute command: %w", err)
 	}

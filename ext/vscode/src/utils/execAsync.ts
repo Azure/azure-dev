@@ -16,7 +16,7 @@ export async function execAsync(command: string, args: CommandLineArgs, options?
         stdErrPipe: stderrFinal,
     };
 
-    await spawnStreamAsync(command, args, spawnOptions); // TODO: `getSafeExecPath` might need to be modified to accept a modified PATH env var
+    await spawnStreamAsync(command, args, spawnOptions);
 
     return {
         stdout: await stdoutFinal.getString(),

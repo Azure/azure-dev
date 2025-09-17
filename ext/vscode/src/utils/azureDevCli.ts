@@ -150,7 +150,7 @@ function createCli(): AzureDevCli {
     const combinedEnv: NodeJS.ProcessEnv = {
         ...process.env,
         ...azDevCliEnv,
-        PATH: modifiedPath, // TODO: `getSafeExecPath` might need to be modified to accept a modified PATH env var
+        PATH: modifiedPath,
     };
 
     return {

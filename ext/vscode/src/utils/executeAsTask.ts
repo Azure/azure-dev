@@ -57,7 +57,7 @@ export function executeAsTask(command: string, args: CommandLineArgs, name: stri
             name,
             'Azure Developer',
             new vscode.ShellExecution(
-                getSafeExecPath(command), // TODO: `getSafeExecPath` might need to be modified to accept a modified PATH env var
+                getSafeExecPath(command, spawnOptions.env?.PATH),
                 args,
                 {
                     cwd: (spawnOptions.cwd as string) || execOptions.workspaceFolder?.uri?.fsPath || os.homedir(),

@@ -19,6 +19,7 @@ words:
   - idxs
   # Looks like the protogen has a spelling error for panics
   - pancis
+  - proto
   - protobuf
   - protoc
   - protoreflect
@@ -163,6 +164,32 @@ overrides:
       - dall
       - datasource
       - vectorizing
+  - filename: docs/new-azd-command.md
+    words:
+      - pflag
+      - struct
+      - Errorf
+      - Sprintf
+      - mycommand
+      - omitempty
+      - Fprintf
+      - tabwriter
+      - azdcontext
+      - azapi
+      - eastus
+  - filename: .github/copilot-instructions.md
+    words:
+      - golines
+      - technicalterm
+      - Errorf
+  - filename: internal/mcp/tools/azd_yaml_schema.go
+    words:
+      - santhosh
+      - tekuri
+      - jsonschema
+  - filename: cmd/completion.go
+    words:
+      - compinit
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

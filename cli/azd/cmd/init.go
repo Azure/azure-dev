@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -24,13 +26,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
+	"github.com/fatih/color"
 	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -131,6 +136,7 @@ type initAction struct {
 	featuresManager   *alpha.FeatureManager
 	extensionsManager *extensions.Manager
 	azd               workflow.AzdCommandRunner
+	agentFactory      *agent.AgentFactory
 }
 
 func newInitAction(
@@ -145,6 +151,7 @@ func newInitAction(
 	featuresManager *alpha.FeatureManager,
 	extensionsManager *extensions.Manager,
 	azd workflow.AzdCommandRunner,
+	agentFactory *agent.AgentFactory,
 ) actions.Action {
 	return &initAction{
 		lazyAzdCtx:        lazyAzdCtx,
@@ -158,6 +165,7 @@ func newInitAction(
 		featuresManager:   featuresManager,
 		extensionsManager: extensionsManager,
 		azd:               azd,
+		agentFactory:      agentFactory,
 	}
 }
 
@@ -238,7 +246,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			initTypeSelect = initEnvironment
 		} else {
 			// Prompt for init type for new projects
-			initTypeSelect, err = promptInitType(i.console, ctx)
+			initTypeSelect, err = promptInitType(i.console, ctx, i.featuresManager)
 			if err != nil {
 				return nil, err
 			}
@@ -344,6 +352,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		header = fmt.Sprintf("Initialized environment %s.", env.Name())
 		followUp = ""
+	case initWithAgent:
+		if err := i.initAppWithAgent(ctx); err != nil {
+			return nil, err
+		}
 	default:
 		panic("unhandled init type")
 	}
@@ -360,6 +372,172 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}, nil
 }
 
+func (i *initAction) initAppWithAgent(ctx context.Context) error {
+	// Warn user that this is an alpha feature
+	i.console.WarnForFeature(ctx, llm.FeatureLlm)
+
+	azdAgent, err := i.agentFactory.Create(
+		agent.WithDebug(i.flags.global.EnableDebugLogging),
+	)
+	if err != nil {
+		return err
+	}
+
+	defer azdAgent.Stop()
+
+	type initStep struct {
+		Name        string
+		Description string
+	}
+
+	taskInput := `Your task: %s
+
+Break this task down into smaller steps if needed.
+If new information reveals more work to be done, pursue it.
+Do not stop until all tasks are complete and fully resolved.
+`
+
+	initSteps := []initStep{
+		{
+			Name:        "Step 1: Running Discovery & Analysis",
+			Description: "Run a deep discovery and analysis on the current working directory.",
+		},
+		{
+			Name:        "Step 2: Generating Architecture Plan",
+			Description: "Create a high-level architecture plan for the application.",
+		},
+		{
+			Name:        "Step 3: Generating Dockerfile(s)",
+			Description: "Generate a Dockerfile for the application components as needed.",
+		},
+		{
+			Name:        "Step 4: Generating infrastructure",
+			Description: "Generate infrastructure as code (IaC) for the application.",
+		},
+		{
+			Name:        "Step 5: Generating azure.yaml file",
+			Description: "Generate an azure.yaml file for the application.",
+		},
+		{
+			Name:        "Step 6: Validating project",
+			Description: "Validate the project structure and configuration.",
+		},
+	}
+
+	for idx, step := range initSteps {
+		// Collect and apply feedback for next steps
+		if idx > 0 {
+			feedbackMsg := fmt.Sprintf("Any feedback before continuing to %s?", step.Name)
+			if err := i.collectAndApplyFeedback(
+				ctx,
+				azdAgent,
+				feedbackMsg,
+			); err != nil {
+				return err
+			}
+		}
+
+		// Run Step
+		i.console.Message(ctx, color.MagentaString(step.Name))
+		fullTaskInput := fmt.Sprintf(taskInput, strings.Join([]string{
+			step.Description,
+			"Provide a very brief summary in markdown format that includes any files generated during this step.",
+		}, "\n"))
+
+		agentOutput, err := azdAgent.SendMessage(ctx, fullTaskInput)
+		if err != nil {
+			if agentOutput != "" {
+				i.console.Message(ctx, output.WithMarkdown(agentOutput))
+			}
+
+			return err
+		}
+
+		i.console.Message(ctx, "")
+		i.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
+		i.console.Message(ctx, output.WithMarkdown(agentOutput))
+		i.console.Message(ctx, "")
+	}
+
+	// Post-completion feedback loop
+	if err := i.postCompletionFeedbackLoop(ctx, azdAgent); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// collectAndApplyFeedback prompts for user feedback and applies it using the agent in a loop
+func (i *initAction) collectAndApplyFeedback(
+	ctx context.Context,
+	azdAgent agent.Agent,
+	promptMessage string,
+) error {
+	// Loop to allow multiple rounds of feedback
+	for {
+		confirmFeedback := uxlib.NewConfirm(&uxlib.ConfirmOptions{
+			Message:      promptMessage,
+			DefaultValue: uxlib.Ptr(false),
+			HelpMessage:  "You will be able to provide and feedback or changes after each step.",
+		})
+
+		hasFeedback, err := confirmFeedback.Ask(ctx)
+		if err != nil {
+			return err
+		}
+
+		if !*hasFeedback {
+			i.console.Message(ctx, "")
+			break
+		}
+
+		userInputPrompt := uxlib.NewPrompt(&uxlib.PromptOptions{
+			Message:        "You",
+			PlaceHolder:    "Provide feedback or changes to the project",
+			Required:       true,
+			IgnoreHintKeys: true,
+		})
+
+		userInput, err := userInputPrompt.Ask(ctx)
+		if err != nil {
+			return fmt.Errorf("error collecting feedback during azd init, %w", err)
+		}
+
+		i.console.Message(ctx, "")
+
+		if userInput != "" {
+			i.console.Message(ctx, color.MagentaString("Feedback"))
+
+			feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
+			if err != nil {
+				if feedbackOutput != "" {
+					i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
+				}
+				return err
+			}
+
+			i.console.Message(ctx, "")
+			i.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
+			i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
+			i.console.Message(ctx, "")
+		}
+	}
+
+	return nil
+}
+
+// postCompletionFeedbackLoop provides a final opportunity for feedback after all steps complete
+func (i *initAction) postCompletionFeedbackLoop(
+	ctx context.Context,
+	azdAgent agent.Agent,
+) error {
+	i.console.Message(ctx, "")
+	i.console.Message(ctx, "🎉 All initialization steps completed!")
+	i.console.Message(ctx, "")
+
+	return i.collectAndApplyFeedback(ctx, azdAgent, "Any final feedback or changes?")
+}
+
 type initType int
 
 const (
@@ -367,15 +545,23 @@ const (
 	initFromApp
 	initAppTemplate
 	initEnvironment
+	initWithAgent
 )
 
-func promptInitType(console input.Console, ctx context.Context) (initType, error) {
+func promptInitType(console input.Console, ctx context.Context, featuresManager *alpha.FeatureManager) (initType, error) {
+	options := []string{
+		"Scan current directory", // This now covers minimal project creation too
+		"Select a template",
+	}
+
+	// Only include AZD agent option if the LLM feature is enabled
+	if featuresManager.IsEnabled(llm.FeatureLlm) {
+		options = append(options, fmt.Sprintf("%s %s", output.AzdAgentLabel(), color.YellowString("(Alpha)")))
+	}
+
 	selection, err := console.Select(ctx, input.ConsoleOptions{
 		Message: "How do you want to initialize your app?",
-		Options: []string{
-			"Scan current directory", // This now covers minimal project creation too
-			"Select a template",
-		},
+		Options: options,
 	})
 	if err != nil {
 		return initUnknown, err
@@ -386,6 +572,12 @@ func promptInitType(console input.Console, ctx context.Context) (initType, error
 		return initFromApp, nil
 	case 1:
 		return initAppTemplate, nil
+	case 2:
+		// Only return initWithCopilot if the LLM feature is enabled and we have 3 options
+		if featuresManager.IsEnabled(llm.FeatureLlm) {
+			return initWithAgent, nil
+		}
+		fallthrough
 	default:
 		panic("unhandled selection")
 	}

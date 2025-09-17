@@ -46,6 +46,10 @@
    >    ```bash
    >    azd ext source add -n local -l registry.json -t file
    >    ```
+   > 3. Retry the publish command:
+   >    ```bash
+   >    azd x publish
+   >    ```
 
 3. **Install the extension**:
    ```bash

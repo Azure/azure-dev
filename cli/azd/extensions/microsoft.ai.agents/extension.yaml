@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=../extension.schema.json
 id: microsoft.ai.agents
-namespace: ai
+namespace: agent
 displayName: Agents Extension
 description: Placeholder
 usage: azd ai <command> [options]

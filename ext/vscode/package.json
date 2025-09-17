@@ -519,7 +519,6 @@
     "devDependencies": {
         "@azure/core-auth": "~1",
         "@types/chai": "~5",
-        "@types/glob": "~7",
         "@types/mocha": "~10",
         "@types/node": "~20",
         "@types/semver": "~7",
@@ -530,7 +529,7 @@
         "@vscode/vsce": "~3",
         "chai": "~6",
         "eslint": "~9",
-        "glob": "~8",
+        "glob": "~11",
         "mocha": "~11",
         "node-loader": "~2",
         "ts-loader": "~9",

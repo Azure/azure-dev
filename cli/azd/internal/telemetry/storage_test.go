@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package telemetry
 
 import (
@@ -5,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -12,7 +16,6 @@ import (
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 )
 
 // The tests in this file intentionally interacts with the filesystem (important implementation detail).
@@ -237,7 +240,7 @@ func TestStorageQueue_Cleanup(t *testing.T) {
 			// 1. Set createTime to match current time
 			// 2. Set cleanupTime to be in the future.
 			createTime:             time.Now(),
-			cleanupTime:            time.Now().Add(tempFileTtl + time.Duration(2)*time.Second),
+			cleanupTime:            time.Now().Add(tempFileTtl + time.Duration(1)*time.Minute),
 			expectedFilesRemaining: []string{},
 		},
 		{
@@ -347,7 +350,8 @@ func TestStorageQueue_Cleanup(t *testing.T) {
 						assert.Fail(
 							t,
 							fmt.Sprintf(
-								"Unknown remaining file found. Filename: %s, content: %s. Expected filenames: %v, expected content: %v. ",
+								"Unknown remaining file found. Filename: %s, content: %s. Expected filenames: %v, "+
+									"expected content: %v. ",
 								remainingFile.Name(),
 								string(content),
 								tt.expectedFilesRemaining,

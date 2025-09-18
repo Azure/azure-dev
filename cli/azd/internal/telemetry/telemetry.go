@@ -8,19 +8,25 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/resource"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/benbjohnson/clock"
 	"github.com/gofrs/flock"
+	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/trace"
+	"go.uber.org/multierr"
 )
 
 // the equivalent of AZURE_CORE_COLLECT_TELEMETRY
@@ -38,6 +44,7 @@ const appInsightsMaxIngestionDelay = time.Duration(48) * time.Hour
 
 type TelemetrySystem struct {
 	storageQueue   *StorageQueue
+	logFile        *os.File
 	tracerProvider *trace.TracerProvider
 	exporter       *Exporter
 
@@ -59,7 +66,17 @@ func getTelemetryDirectory() (string, error) {
 }
 
 func IsTelemetryEnabled() bool {
-	return os.Getenv(collectTelemetryEnvVar) != "no"
+	// If the user has opted out of telemetry directly, don't collect telemetry.
+	if os.Getenv(collectTelemetryEnvVar) == "no" {
+		return false
+	}
+
+	// If we're in cloud shell, only enable telemetry after showing notice once
+	if runcontext.IsRunningInCloudShell() && !noticeShown() {
+		return false
+	}
+
+	return true
 }
 
 // Returns the singleton TelemetrySystem instance.
@@ -110,10 +127,68 @@ func initialize() (*TelemetrySystem, error) {
 
 	exporter := NewExporter(storageQueue, config.InstrumentationKey)
 
-	tp := trace.NewTracerProvider(
+	options := []trace.TracerProviderOption{
 		trace.WithBatcher(exporter),
 		trace.WithResource(resource.New()),
-	)
+	}
+
+	logFile, logUrl := getTraceFlags()
+
+	if logFile != "" {
+		file, err := os.Create(logFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create log file %s: %w", logFile, err)
+		}
+
+		stdoutExporter, err := stdouttrace.New(stdouttrace.WithWriter(file))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create log file exporter: %w", err)
+		}
+
+		options = append(options, trace.WithBatcher(stdoutExporter))
+	}
+
+	if logUrl != "" {
+		traceOptions := []otlptracehttp.Option{}
+
+		// As a convenience we allow using localhost as an alias for http://localhost so that
+		// --trace-log-url localhost behaves as expected (for folks who are running something like Jaeger's all-in-one
+		// Docker image locally.)
+		if logUrl == "localhost" {
+			logUrl = "http://localhost"
+		}
+
+		u, err := url.Parse(logUrl)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse log url: %w", err)
+		}
+
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return nil, fmt.Errorf("unsupported log url scheme '%s', only http and https are supported.", u.Scheme)
+		}
+
+		if u.Scheme == "http" {
+			traceOptions = append(traceOptions, otlptracehttp.WithInsecure())
+		}
+
+		if u.Port() != "" {
+			traceOptions = append(traceOptions, otlptracehttp.WithEndpoint(u.Host))
+		} else {
+			// ref: go.opentelemetry.io/otel/exporters/otlp/otlptrace/internal/otlpconfig/DefaultCollectorHTTPPort
+			hostWithDefaultPort := fmt.Sprintf("%s:%d", u.Host, 4318)
+			traceOptions = append(traceOptions, otlptracehttp.WithEndpoint(hostWithDefaultPort))
+		}
+
+		httpExporter, err := otlptracehttp.New(context.Background(), traceOptions...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create http trace exporter: %w", err)
+		}
+
+		options = append(options, trace.WithBatcher(httpExporter))
+	}
+
+	tp := trace.NewTracerProvider(options...)
+
 	otel.SetTracerProvider(tp)
 
 	return &TelemetrySystem{
@@ -127,7 +202,14 @@ func initialize() (*TelemetrySystem, error) {
 
 // Flushes all ongoing telemetry and shuts down telemetry
 func (ts *TelemetrySystem) Shutdown(ctx context.Context) error {
-	return instance.tracerProvider.Shutdown(ctx)
+	shutdownErr := instance.tracerProvider.Shutdown(ctx)
+
+	var logFileCloseErr error
+	if ts.logFile != nil {
+		logFileCloseErr = ts.logFile.Close()
+	}
+
+	return multierr.Combine(shutdownErr, logFileCloseErr)
 }
 
 // Returns the telemetry queue instance.
@@ -189,4 +271,31 @@ func (ts *TelemetrySystem) tryUploadLock() (*flock.Flock, bool, error) {
 	fileLock := flock.New(filepath.Join(ts.telemetryDirectory, "upload.lock"))
 	locked, err := fileLock.TryLock()
 	return fileLock, locked, err
+}
+
+// getTraceFlags returns the values of the `--trace-log-file` and `--trace-log-url` flags.
+func getTraceFlags() (logFile string, logUrl string) {
+	help := false
+	flags := pflag.NewFlagSet("", pflag.ContinueOnError)
+
+	// Since we are running this parse logic on the full command line, there may be additional flags
+	// which we have not defined in our flag set (but would be defined by whatever command we end up
+	// running). Setting UnknownFlags instructs `flags.Parse` to continue parsing the command line
+	// even if a flag is not in the flag set (instead of just returning an error saying the flag was not
+	// found).
+	flags.ParseErrorsWhitelist.UnknownFlags = true
+	flags.StringVar(&logFile, "trace-log-file", "", "")
+	flags.StringVar(&logUrl, "trace-log-url", "", "")
+
+	// pflag treats "help" as special and if you don't define a help flag returns `ErrHelp` from
+	// Parse when `--help` is on the command line. Add an explicit help parameter (which we ignore)
+	// so pflag doesn't fail in this case.  If `--help` is passed, the help for `azd` will be shown later
+	// when `cmd.Execute` is run
+	flags.BoolVarP(&help, "help", "h", false, "")
+
+	if err := flags.Parse(os.Args[1:]); err != nil {
+		log.Printf("could not parse flags: %v", err)
+	}
+
+	return
 }

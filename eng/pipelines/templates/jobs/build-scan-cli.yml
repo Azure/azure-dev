@@ -1,0 +1,62 @@
+parameters:
+  - name: BuildMatrix
+    type: object
+    default:
+      Windows:
+        Pool: azsdk-pool
+        OSVmImage: windows-2022
+        Variables:
+          BuildTarget: azd-windows-amd64.exe
+          BuildOutputName: azd.exe
+      Linux:
+        Pool: azsdk-pool
+        OSVmImage: ubuntu-22.04
+        Variables:
+          BuildTarget: azd-linux-amd64
+          BuildOutputName: azd
+      Mac:
+        Pool: Azure Pipelines
+        OSVmImage: macOS-latest
+        OS: mac
+        Variables:
+          BuildTarget: azd-darwin-amd64
+          BuildOutputName: azd
+
+jobs:
+  - ${{ each build in parameters.BuildMatrix }}:
+    - job: BuildScanCli_${{ build.key}}
+
+      pool:
+        name: ${{ build.value.Pool }}
+        ${{ if eq('mac', build.value.OS) }}:
+          vmImage: ${{ build.value.OSVmImage }}
+        ${{ else }}:
+          demands: ImageOverride -equals ${{ build.value.OSVmImage }}
+
+      variables:
+        CLI_VERSION: 1.0.0-alpha.1
+        ${{ insert }}: ${{ build.value.Variables }}
+
+      steps:
+        - checkout: self
+        - template: /eng/pipelines/templates/steps/setup-go.yml
+
+        - task: PowerShell@2
+          inputs:
+            pwsh: true
+            targetType: filePath
+            filePath: cli/azd/ci-build.ps1
+            arguments: >-
+              -Version $(CLI_VERSION)
+              -SourceVersion $(Build.SourceVersion)
+            workingDirectory: cli/azd
+          displayName: Build Go Binary
+
+        - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
+          workingDirectory: cli/azd
+          displayName: Rename binaries
+
+        - publish: cli/azd/$(BuildTarget)
+          artifact: $(BuildTarget)
+
+        - task: ComponentGovernanceComponentDetection@0

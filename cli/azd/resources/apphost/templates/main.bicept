@@ -1,0 +1,108 @@
+{{define "main.bicep" -}}
+targetScope = 'subscription'
+
+@minLength(1)
+@maxLength(64)
+@description('Name of the environment that can be used as part of naming resource convention, the name of the resource group for your application will use this name, prefixed with rg-')
+param environmentName string
+
+@minLength(1)
+@description('The location used for all deployed resources')
+param location string
+{{ if .RequiresPrincipalId }}
+@description('Id of the user or app to assign application roles')
+param principalId string = ''
+{{ end }}
+{{- range $parameter := .WithMetadataParameters }}
+{{- if ne $parameter.MetadataConfig "" }}
+@metadata({azd: {
+  type: '{{$parameter.MetadataType}}'
+  config: {{$parameter.MetadataConfig}}
+  }
+})
+{{- end}}
+{{- if $parameter.Secret }}
+@secure()
+{{- end}}
+param {{bicepParameterName $parameter.Name}} {{$parameter.Type}}{{bicepParameterValue $parameter.Value}}
+{{- end}}
+
+var tags = {
+  'azd-env-name': environmentName
+}
+
+resource rg 'Microsoft.Resources/resourceGroups@2022-09-01' = {
+  name: 'rg-${environmentName}'
+  location: location
+  tags: tags
+}
+
+{{- if not .AppHostInfraMigration }}
+module resources 'resources.bicep' = {
+  scope: rg
+  name: 'resources'
+  params: {
+    location: location
+    tags: tags
+{{- if .RequiresPrincipalId }}
+    principalId: principalId
+{{- end }}
+{{- range $parameter := .MainToResourcesParams }}
+    {{bicepParameterName $parameter.Name}}: {{bicepParameterName $parameter.Name}}
+{{- end }}
+  }
+}
+{{- end }}
+{{ range $name, $module := .BicepModules }}
+module {{bicepParameterName $name}} '{{ fixBackSlash $module.Path }}' = {
+  name: '{{$name}}'
+  scope: {{$module.Scope}}
+  params: {
+{{- range $param, $value := $module.Params}}
+    {{$param}}: {{$value}}
+{{- end}}
+  }
+}
+{{- end }}
+{{ if not .AppHostInfraMigration }}
+output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
+output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
+{{if .HasLogAnalyticsWorkspace -}}
+output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
+{{end -}}
+{{if .HasContainerRegistry -}}
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
+output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
+output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.AZURE_CONTAINER_REGISTRY_NAME
+{{end -}}
+{{if .HasContainerEnvironment -}}
+output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME
+output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
+output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
+{{end -}}
+{{range $name, $value := .ContainerApps -}}
+{{range $volume := $value.Volumes -}}
+output SERVICE_{{alphaSnakeUpper $name}}_VOLUME_{{removeDot $volume.Name | alphaSnakeUpper}}_NAME string = resources.outputs.SERVICE_{{alphaSnakeUpper $name}}_VOLUME_{{removeDot $volume.Name | alphaSnakeUpper}}_NAME
+{{end -}}
+{{range $bMount := $value.BindMounts -}}
+output SERVICE_{{alphaSnakeUpper $name}}_VOLUME_{{removeDot $bMount.Name | alphaSnakeUpper}}_NAME string = resources.outputs.SERVICE_{{alphaSnakeUpper $name}}_VOLUME_{{removeDot $bMount.Name | alphaSnakeUpper}}_NAME
+output SERVICE_{{alphaSnakeUpper $name}}_FILE_SHARE_{{removeDot $bMount.Name | alphaSnakeUpper}}_NAME string = resources.outputs.SERVICE_{{alphaSnakeUpper $name}}_FILE_SHARE_{{removeDot $bMount.Name | alphaSnakeUpper}}_NAME
+{{end -}}
+{{end -}}
+{{range $name, $value := .KeyVaults -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME
+{{end -}}
+{{if .RequiresStorageVolume -}}
+output AZURE_VOLUMES_STORAGE_ACCOUNT string = resources.outputs.AZURE_VOLUMES_STORAGE_ACCOUNT
+{{end -}}
+{{end -}}
+{{range $param, $value := .OutputParameters -}}
+output {{bicepParameterName $param}} {{$value.Type}} = {{bicepParameterName $value.Value}}
+{{end -}}
+{{range $parameter := .WithMetadataParameters -}}
+{{if $parameter.Value -}}
+output {{azureSnakeCase $parameter.Name}} {{$parameter.Type}} = {{$parameter.Name}}
+{{end -}}
+{{end -}}
+{{ end}}

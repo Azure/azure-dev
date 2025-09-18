@@ -4,280 +4,629 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/internal/agent"
+	"github.com/azure/azure-dev/cli/azd/internal/repository"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	"github.com/otiai10/copy"
+	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
+	"github.com/fatih/color"
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-func initCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command, *initFlags) {
-	cmd := &cobra.Command{
+func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *initFlags {
+	flags := &initFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newInitCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "init",
 		Short: "Initialize a new application.",
-		//nolint:lll
-		Long: `Initialize a new application.
-
-When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, ` + output.WithBackticks("azd init") + ` initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
-
-When a template is provided, the sample code is cloned to the current directory.`,
 	}
-
-	f := &initFlags{}
-	f.Bind(cmd.Flags(), rootOptions)
-
-	if err := cmd.RegisterFlagCompletionFunc("template", templateNameCompletion); err != nil {
-		panic(err)
-	}
-
-	return cmd, f
 }
 
 type initFlags struct {
-	template       templates.Template
+	templatePath   string
 	templateBranch string
+	templateTags   []string
 	subscription   string
 	location       string
 	global         *internal.GlobalCommandOptions
-	*envFlag
+	fromCode       bool
+	minimal        bool
+	up             bool
+	internal.EnvFlag
 }
 
 func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	i.bindNonCommon(local, global)
-	i.bindCommon(local, global)
-}
-
-func (i *initFlags) bindNonCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(
-		&i.template.Name,
+		&i.templatePath,
 		"template",
 		"t",
 		"",
 		//nolint:lll
-		"The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.",
+		"Initializes a new application from a template. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.",
 	)
-	local.StringVarP(&i.templateBranch, "branch", "b", "", "The template branch to initialize from.")
-	local.StringVar(
+	local.StringVarP(
+		&i.templateBranch,
+		"branch",
+		"b",
+		"",
+		"The template branch to initialize from. Must be used with a template argument (--template or -t).")
+	local.StringSliceVarP(
+		&i.templateTags,
+		"filter",
+		"f",
+		[]string{},
+		"The tag(s) used to filter template results. Supports comma-separated values.",
+	)
+	local.StringVarP(
 		&i.subscription,
 		"subscription",
+		"s",
 		"",
 		"Name or ID of an Azure subscription to use for the new environment",
 	)
+	local.BoolVarP(
+		&i.fromCode,
+		"from-code",
+		"",
+		false,
+		"Initializes a new application from your existing code.",
+	)
+	local.BoolVarP(
+		&i.minimal,
+		"minimal",
+		"m",
+		false,
+		"Initializes a minimal project.",
+	)
+	local.BoolVarP(
+		&i.up,
+		"up",
+		"",
+		false,
+		"Provision and deploy to Azure after initializing the project from a template.",
+	)
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
+	i.EnvFlag.Bind(local, global)
+
 	i.global = global
 }
 
-func (i *initFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	i.envFlag = &envFlag{}
-	i.envFlag.Bind(local, global)
-}
-
-func (i *initFlags) setCommon(envFlag *envFlag) {
-	i.envFlag = envFlag
-}
-
 type initAction struct {
-	azdCtx         *azdcontext.AzdContext
-	accountManager *account.Manager
-	console        input.Console
-	cmdRun         exec.CommandRunner
-	gitCli         git.GitCli
-	flags          initFlags
+	lazyAzdCtx        *lazy.Lazy[*azdcontext.AzdContext]
+	lazyEnvManager    *lazy.Lazy[environment.Manager]
+	console           input.Console
+	cmdRun            exec.CommandRunner
+	gitCli            *git.Cli
+	flags             *initFlags
+	repoInitializer   *repository.Initializer
+	templateManager   *templates.TemplateManager
+	featuresManager   *alpha.FeatureManager
+	extensionsManager *extensions.Manager
+	azd               workflow.AzdCommandRunner
+	agentFactory      *agent.AgentFactory
 }
 
 func newInitAction(
-	azdCtx *azdcontext.AzdContext,
-	accountManager *account.Manager,
+	lazyAzdCtx *lazy.Lazy[*azdcontext.AzdContext],
+	lazyEnvManager *lazy.Lazy[environment.Manager],
 	cmdRun exec.CommandRunner,
 	console input.Console,
-	gitCli git.GitCli,
-	flags initFlags) (*initAction, error) {
+	gitCli *git.Cli,
+	flags *initFlags,
+	repoInitializer *repository.Initializer,
+	templateManager *templates.TemplateManager,
+	featuresManager *alpha.FeatureManager,
+	extensionsManager *extensions.Manager,
+	azd workflow.AzdCommandRunner,
+	agentFactory *agent.AgentFactory,
+) actions.Action {
 	return &initAction{
-		azdCtx:         azdCtx,
-		accountManager: accountManager,
-		console:        console,
-		cmdRun:         cmdRun,
-		gitCli:         gitCli,
-		flags:          flags,
-	}, nil
+		lazyAzdCtx:        lazyAzdCtx,
+		lazyEnvManager:    lazyEnvManager,
+		console:           console,
+		cmdRun:            cmdRun,
+		gitCli:            gitCli,
+		flags:             flags,
+		repoInitializer:   repoInitializer,
+		templateManager:   templateManager,
+		featuresManager:   featuresManager,
+		extensionsManager: extensionsManager,
+		azd:               azd,
+		agentFactory:      agentFactory,
+	}
 }
 
 func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	// In the case where `init` is run and a parent folder already has an `azure.yaml` file, the
-	// current ProjectDirectory will be set to that folder. That's not what we want here. We want
-	// to force using the current working directory as a project root (since we are initializing a
-	// new project).
 	wd, err := os.Getwd()
-	formattedWithColorCwd := output.WithLinkFormat("%s", wd)
 	if err != nil {
 		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
 
-	log.Printf("forcing project directory to %s", wd)
-	i.azdCtx.SetProjectDirectory(wd)
+	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
+	i.lazyAzdCtx.SetValue(azdCtx)
 
-	if i.flags.templateBranch != "" && i.flags.template.Name == "" {
-		return nil, errors.New("template name required when specifying a branch name")
+	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
+		return nil,
+			errors.New(
+				"using branch argument (-b or --branch) requires a template argument (--template or -t) to be specified")
 	}
 
-	requiredTools := []tools.ExternalTool{}
-
-	// When using a template, we also require `git`, to acquire the template.
-	if i.flags.template.Name != "" {
-		requiredTools = append(requiredTools, i.gitCli)
-	}
-
-	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
+	// ensure that git is available
+	if err := tools.EnsureInstalled(ctx, []tools.ExternalTool{i.gitCli}...); err != nil {
 		return nil, err
 	}
 
-	// Project not initialized and no template specified
-	// NOTE: Adding `azure.yaml` to a folder removes the option from selecting a template
-	if _, err := os.Stat(i.azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
-		// Command title
-		i.console.MessageUx(ctx, "Initializing a new project (azd init)", input.Title)
+	// Command title
+	i.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: "Initializing an app to run on Azure (azd init)",
+	})
 
-		if i.flags.template.Name == "" {
-			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:")
+	// AZD supports having .env at the root of the project directory as the initial environment file.
+	// godotenv.Load() -> add all the values from the .env file in the process environment
+	// If AZURE_ENV_NAME is set in the .env file, it will be used to name the environment during env initialize.
+	if err := godotenv.Overload(); err != nil {
+		// ignore the error if the file does not exist
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("reading .env file: %w", err)
+		}
+	}
+	if i.flags.EnvFlag.EnvironmentName == "" ||
+		(i.flags.EnvFlag.EnvironmentName != "" && !i.flags.EnvFlag.FromArg()) {
+		// only azd init supports using .env to influence the command. The `-e` flag is linked to the
+		// env var AZURE_ENV_NAME, which means it could've be set either from ENV or from arg.
+		// re-setting the value here after loading the .env file overrides any value coming from the system env but
+		// doest not override the value coming from the arg.
+		i.flags.EnvFlag.EnvironmentName = os.Getenv(environment.EnvNameEnvVarName)
+	}
 
+	var existingProject bool
+	if _, err := os.Stat(azdCtx.ProjectPath()); err == nil {
+		existingProject = true
+	} else if errors.Is(err, os.ErrNotExist) {
+		existingProject = false
+	} else {
+		return nil, fmt.Errorf("checking if project exists: %w", err)
+	}
+
+	var initTypeSelect initType = initUnknown
+	initTypeCount := 0
+	if i.flags.templatePath != "" || len(i.flags.templateTags) > 0 {
+		initTypeCount++
+		initTypeSelect = initAppTemplate
+	}
+	if i.flags.fromCode {
+		initTypeCount++
+		initTypeSelect = initFromApp
+	}
+	if i.flags.minimal {
+		initTypeCount++
+		initTypeSelect = initFromApp // Minimal now also uses initFromApp path
+	}
+
+	if initTypeCount > 1 {
+		return nil, errors.New("only one of init modes: --template, --from-code, or --minimal should be set")
+	}
+
+	if initTypeSelect == initUnknown {
+		if existingProject {
+			// only initialize environment when no mode is set explicitly
+			initTypeSelect = initEnvironment
+		} else {
+			// Prompt for init type for new projects
+			initTypeSelect, err = promptInitType(i.console, ctx, i.featuresManager)
 			if err != nil {
 				return nil, err
 			}
 		}
 	}
 
-	if i.flags.template.Name != "" {
-		var templateUrl string
+	header := "New project initialized!"
+	followUp := heredoc.Docf(`
+	You can view the template code in your directory: %s
+	Learn more about running 3rd party code on our DevHub: %s`,
+		output.WithLinkFormat("%s", wd),
+		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
 
-		if i.flags.template.RepositoryPath == "" {
-			// using template name directly from command line
-			i.flags.template.RepositoryPath = i.flags.template.Name
-		}
-
-		// treat names that start with http or git as full URLs and don't change them
-		if strings.HasPrefix(i.flags.template.RepositoryPath, "git") ||
-			strings.HasPrefix(i.flags.template.RepositoryPath, "http") {
-			templateUrl = i.flags.template.RepositoryPath
-		} else {
-			switch strings.Count(i.flags.template.RepositoryPath, "/") {
-			case 0:
-				templateUrl = fmt.Sprintf("https://github.com/Azure-Samples/%s", i.flags.template.RepositoryPath)
-			case 1:
-				templateUrl = fmt.Sprintf("https://github.com/%s", i.flags.template.RepositoryPath)
-			default:
-				return nil, fmt.Errorf(
-					"template '%s' should be either <repository> or <repo>/<repository>", i.flags.template.RepositoryPath)
-			}
-		}
-
-		templateStagingDir, err := os.MkdirTemp("", "az-dev-template")
+	switch initTypeSelect {
+	case initAppTemplate:
+		tracing.SetUsageAttributes(fields.InitMethod.String("template"))
+		template, err := i.initializeTemplate(ctx, azdCtx)
 		if err != nil {
-			return nil, fmt.Errorf("creating temp folder: %w", err)
+			return nil, err
 		}
 
-		// Attempt to remove the temporary directory we cloned the template into, but don't fail the
-		// overall operation if we can't.
-		defer func() {
-			_ = os.RemoveAll(templateStagingDir)
-		}()
-
-		stepMessage := fmt.Sprintf("Downloading template code to: %s", formattedWithColorCwd)
-		i.console.ShowSpinner(ctx, stepMessage, input.Step)
-
-		// perform the work while the spinner is running
-		err = i.gitCli.FetchCode(ctx, templateUrl, i.flags.templateBranch, templateStagingDir)
-
-		// stop the spinner based on the result
-		i.console.StopSpinner(ctx, stepMessage, getStepResultFormat(err))
-
-		if err != nil {
-			return nil, fmt.Errorf("\nfetching template: %w", err)
+		if _, err := i.initializeEnv(ctx, azdCtx, template.Metadata); err != nil {
+			return nil, err
 		}
 
-		log.Printf(
-			"template init, checking for duplicates. source: %s target: %s",
-			templateStagingDir,
-			i.azdCtx.ProjectDirectory(),
-		)
-
-		// If there are any existing files in the destination that would be overwritten by files from the
-		// template, have the user confirm they would like to overwrite these files. This is a more relaxed
-		// check than just failing the init operation when a template is provided if there are any files
-		// present (a scenario we'd like to support for cases where someone may say initialize a git repository
-		// in the target directory or create a virtual env before running init).
-		var duplicateFiles []string
-		if err := filepath.WalkDir(templateStagingDir, func(path string, d fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-
-			if d.IsDir() {
-				return nil
-			}
-
-			partial, err := filepath.Rel(templateStagingDir, path)
-			if err != nil {
-				return fmt.Errorf("computing relative path: %w", err)
-			}
-
-			if _, err := os.Stat(filepath.Join(i.azdCtx.ProjectDirectory(), partial)); err == nil {
-				duplicateFiles = append(duplicateFiles, partial)
-			}
-
-			return nil
-		}); err != nil {
-			return nil, fmt.Errorf("enumerating template files: %w", err)
-		}
-
-		if len(duplicateFiles) > 0 {
-			fmt.Fprintf(
-				i.console.Handles().Stdout,
-				"warning: the following files will be overwritten with the versions from the template: \n")
-			for _, file := range duplicateFiles {
-				fmt.Fprintf(i.console.Handles().Stdout, " * %s\n", file)
-			}
-
-			overwrite, err := i.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      "Overwrite files with versions from template?",
-				DefaultValue: false,
+		if i.flags.up {
+			// Prompt to deploy to Azure
+			deploy, err := i.console.Confirm(ctx, input.ConsoleOptions{
+				Message:      "Do you want to run " + output.WithHighLightFormat("azd up") + " now?",
+				DefaultValue: true,
+				Help: "Template files have been initialized in your local directory. " +
+					"If you want to provision and deploy now without making changes, select Y. If not, select N.",
 			})
-
 			if err != nil {
-				return nil, fmt.Errorf("prompting to overwrite: %w", err)
+				return nil, err
 			}
 
-			if !overwrite {
-				return nil, errors.New("confirmation declined")
+			if deploy {
+				// Call azd up
+				startTime := time.Now()
+				i.azd.SetArgs([]string{"up", "--cwd", azdCtx.ProjectDirectory()})
+				err := i.azd.ExecuteContext(ctx)
+				header = "New project initialized! Provision and deploy to Azure was completed in " +
+					ux.DurationAsText(since(startTime)) + "."
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 
-		if err := copy.Copy(templateStagingDir, i.azdCtx.ProjectDirectory()); err != nil {
-			return nil, fmt.Errorf("copying template contents: %w", err)
+	case initFromApp:
+		tracing.SetUsageAttributes(fields.InitMethod.String("app"))
+		header = "Your app is ready for the cloud!"
+		followUp = "Run " + output.WithHighLightFormat("azd up") + " to provision and deploy your app to Azure.\n" +
+			"Run " + output.WithHighLightFormat("azd add") + " to add new Azure components to your project.\n" +
+			"Run " + output.WithHighLightFormat("azd infra gen") + " to generate IaC for your project to disk, " +
+			"allowing you to manually manage it.\n" +
+			"See " + output.WithHighLightFormat("./next-steps.md") + " for more information on configuring your app."
+
+		envSpecified := i.flags.EnvironmentName != ""
+		initializeEnv := func() (*environment.Environment, error) {
+			return i.initializeEnv(ctx, azdCtx, templates.Metadata{})
+		}
+		initializeMinimal := func() error {
+			tracing.SetUsageAttributes(fields.InitMethod.String("project"))
+			err := i.repoInitializer.InitializeMinimal(ctx, azdCtx)
+			if err != nil {
+				return err
+			}
+
+			// Create env upfront only if the environment name is passed in.
+			if envSpecified {
+				_, err := initializeEnv()
+				if err != nil {
+					return err
+				}
+			}
+
+			header = "Generated azure.yaml project file."
+			followUp = "Run " + output.WithHighLightFormat("azd add") + " to add new Azure components to your project."
+			return nil
+		}
+
+		if i.flags.minimal {
+			err = initializeMinimal()
+		} else {
+			err = i.repoInitializer.InitFromApp(
+				ctx,
+				azdCtx,
+				initializeEnv,
+				initializeMinimal,
+				envSpecified,
+			)
+		}
+		if err != nil {
+			return nil, err
+		}
+	case initEnvironment:
+		env, err := i.initializeEnv(ctx, azdCtx, templates.Metadata{})
+		if err != nil {
+			return nil, err
+		}
+
+		header = fmt.Sprintf("Initialized environment %s.", env.Name())
+		followUp = ""
+	case initWithAgent:
+		if err := i.initAppWithAgent(ctx); err != nil {
+			return nil, err
+		}
+	default:
+		panic("unhandled init type")
+	}
+
+	if err := i.initializeExtensions(ctx, azdCtx); err != nil {
+		return nil, fmt.Errorf("initializing project extensions: %w", err)
+	}
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header:   header,
+			FollowUp: followUp,
+		},
+	}, nil
+}
+
+func (i *initAction) initAppWithAgent(ctx context.Context) error {
+	// Warn user that this is an alpha feature
+	i.console.WarnForFeature(ctx, llm.FeatureLlm)
+
+	azdAgent, err := i.agentFactory.Create(
+		agent.WithDebug(i.flags.global.EnableDebugLogging),
+	)
+	if err != nil {
+		return err
+	}
+
+	defer azdAgent.Stop()
+
+	type initStep struct {
+		Name        string
+		Description string
+	}
+
+	taskInput := `Your task: %s
+
+Break this task down into smaller steps if needed.
+If new information reveals more work to be done, pursue it.
+Do not stop until all tasks are complete and fully resolved.
+`
+
+	initSteps := []initStep{
+		{
+			Name:        "Step 1: Running Discovery & Analysis",
+			Description: "Run a deep discovery and analysis on the current working directory.",
+		},
+		{
+			Name:        "Step 2: Generating Architecture Plan",
+			Description: "Create a high-level architecture plan for the application.",
+		},
+		{
+			Name:        "Step 3: Generating Dockerfile(s)",
+			Description: "Generate a Dockerfile for the application components as needed.",
+		},
+		{
+			Name:        "Step 4: Generating infrastructure",
+			Description: "Generate infrastructure as code (IaC) for the application.",
+		},
+		{
+			Name:        "Step 5: Generating azure.yaml file",
+			Description: "Generate an azure.yaml file for the application.",
+		},
+		{
+			Name:        "Step 6: Validating project",
+			Description: "Validate the project structure and configuration.",
+		},
+	}
+
+	for idx, step := range initSteps {
+		// Collect and apply feedback for next steps
+		if idx > 0 {
+			feedbackMsg := fmt.Sprintf("Any feedback before continuing to %s?", step.Name)
+			if err := i.collectAndApplyFeedback(
+				ctx,
+				azdAgent,
+				feedbackMsg,
+			); err != nil {
+				return err
+			}
+		}
+
+		// Run Step
+		i.console.Message(ctx, color.MagentaString(step.Name))
+		fullTaskInput := fmt.Sprintf(taskInput, strings.Join([]string{
+			step.Description,
+			"Provide a very brief summary in markdown format that includes any files generated during this step.",
+		}, "\n"))
+
+		agentOutput, err := azdAgent.SendMessage(ctx, fullTaskInput)
+		if err != nil {
+			if agentOutput != "" {
+				i.console.Message(ctx, output.WithMarkdown(agentOutput))
+			}
+
+			return err
+		}
+
+		i.console.Message(ctx, "")
+		i.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
+		i.console.Message(ctx, output.WithMarkdown(agentOutput))
+		i.console.Message(ctx, "")
+	}
+
+	// Post-completion feedback loop
+	if err := i.postCompletionFeedbackLoop(ctx, azdAgent); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// collectAndApplyFeedback prompts for user feedback and applies it using the agent in a loop
+func (i *initAction) collectAndApplyFeedback(
+	ctx context.Context,
+	azdAgent agent.Agent,
+	promptMessage string,
+) error {
+	// Loop to allow multiple rounds of feedback
+	for {
+		confirmFeedback := uxlib.NewConfirm(&uxlib.ConfirmOptions{
+			Message:      promptMessage,
+			DefaultValue: uxlib.Ptr(false),
+			HelpMessage:  "You will be able to provide and feedback or changes after each step.",
+		})
+
+		hasFeedback, err := confirmFeedback.Ask(ctx)
+		if err != nil {
+			return err
+		}
+
+		if !*hasFeedback {
+			i.console.Message(ctx, "")
+			break
+		}
+
+		userInputPrompt := uxlib.NewPrompt(&uxlib.PromptOptions{
+			Message:        "You",
+			PlaceHolder:    "Provide feedback or changes to the project",
+			Required:       true,
+			IgnoreHintKeys: true,
+		})
+
+		userInput, err := userInputPrompt.Ask(ctx)
+		if err != nil {
+			return fmt.Errorf("error collecting feedback during azd init, %w", err)
+		}
+
+		i.console.Message(ctx, "")
+
+		if userInput != "" {
+			i.console.Message(ctx, color.MagentaString("Feedback"))
+
+			feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
+			if err != nil {
+				if feedbackOutput != "" {
+					i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
+				}
+				return err
+			}
+
+			i.console.Message(ctx, "")
+			i.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
+			i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
+			i.console.Message(ctx, "")
 		}
 	}
 
-	envName, err := i.azdCtx.GetDefaultEnvironmentName()
+	return nil
+}
+
+// postCompletionFeedbackLoop provides a final opportunity for feedback after all steps complete
+func (i *initAction) postCompletionFeedbackLoop(
+	ctx context.Context,
+	azdAgent agent.Agent,
+) error {
+	i.console.Message(ctx, "")
+	i.console.Message(ctx, "🎉 All initialization steps completed!")
+	i.console.Message(ctx, "")
+
+	return i.collectAndApplyFeedback(ctx, azdAgent, "Any final feedback or changes?")
+}
+
+type initType int
+
+const (
+	initUnknown = iota
+	initFromApp
+	initAppTemplate
+	initEnvironment
+	initWithAgent
+)
+
+func promptInitType(console input.Console, ctx context.Context, featuresManager *alpha.FeatureManager) (initType, error) {
+	options := []string{
+		"Scan current directory", // This now covers minimal project creation too
+		"Select a template",
+	}
+
+	// Only include AZD agent option if the LLM feature is enabled
+	if featuresManager.IsEnabled(llm.FeatureLlm) {
+		options = append(options, fmt.Sprintf("%s %s", output.AzdAgentLabel(), color.YellowString("(Alpha)")))
+	}
+
+	selection, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "How do you want to initialize your app?",
+		Options: options,
+	})
+	if err != nil {
+		return initUnknown, err
+	}
+
+	switch selection {
+	case 0:
+		return initFromApp, nil
+	case 1:
+		return initAppTemplate, nil
+	case 2:
+		// Only return initWithCopilot if the LLM feature is enabled and we have 3 options
+		if featuresManager.IsEnabled(llm.FeatureLlm) {
+			return initWithAgent, nil
+		}
+		fallthrough
+	default:
+		panic("unhandled selection")
+	}
+}
+
+func (i *initAction) initializeTemplate(
+	ctx context.Context,
+	azdCtx *azdcontext.AzdContext) (templates.Template, error) {
+	err := i.repoInitializer.PromptIfNonEmpty(ctx, azdCtx)
+	if err != nil {
+		return templates.Template{}, err
+	}
+
+	var initFromTemplate *templates.Template
+	if i.flags.templatePath == "" {
+		// prompt for the template explicitly
+		template, err := templates.PromptTemplate(
+			ctx,
+			"Select a project template:",
+			i.templateManager,
+			i.console,
+			&templates.ListOptions{
+				Tags: i.flags.templateTags,
+			},
+		)
+		if err != nil {
+			return templates.Template{}, err
+		}
+
+		initFromTemplate = &template
+	} else {
+		initFromTemplate = &templates.Template{
+			RepositoryPath: i.flags.templatePath,
+		}
+	}
+
+	err = i.repoInitializer.Initialize(ctx, azdCtx, initFromTemplate, i.flags.templateBranch)
+	if err != nil {
+		return templates.Template{}, fmt.Errorf("init from template repository: %w", err)
+	}
+
+	return *initFromTemplate, nil
+}
+
+func (i *initAction) initializeEnv(
+	ctx context.Context,
+	azdCtx *azdcontext.AzdContext,
+	templateMetadata templates.Metadata) (*environment.Environment, error) {
+	envName, err := azdCtx.GetDefaultEnvironmentName()
 	if err != nil {
 		return nil, fmt.Errorf("retrieving default environment name: %w", err)
 	}
@@ -286,97 +635,147 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, environment.NewEnvironmentInitError(envName)
 	}
 
-	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
-	_, err = os.Stat(i.azdCtx.ProjectPath())
-
-	if errors.Is(err, os.ErrNotExist) {
-		stepMessage := fmt.Sprintf("Creating a new %s file.", azdcontext.ProjectFileName)
-
-		i.console.ShowSpinner(ctx, stepMessage, input.Step)
-		_, err = project.NewProject(i.azdCtx.ProjectPath(), i.azdCtx.GetDefaultProjectName())
-		i.console.StopSpinner(ctx, stepMessage, getStepResultFormat(err))
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to create a project file: %w", err)
+	base := filepath.Base(azdCtx.ProjectDirectory())
+	examples := []string{}
+	for _, c := range []string{"dev", "test", "prod"} {
+		suggest := environment.CleanName(base + "-" + c)
+		if len(suggest) > environment.EnvironmentNameMaxLength {
+			suggest = suggest[len(suggest)-environment.EnvironmentNameMaxLength:]
 		}
+
+		examples = append(examples, suggest)
 	}
 
-	//create .azure when running azd init
-	err = os.MkdirAll(
-		filepath.Join(i.azdCtx.ProjectDirectory(), azdcontext.EnvironmentDirectoryName),
-		osutil.PermissionDirectory,
-	)
+	// Environment manager requires azd context
+	// Azd context isn't available in init so lazy instantiating
+	// it here after the template is hydrated and the context is available
+	envManager, err := i.lazyEnvManager.GetValue()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create a directory: %w", err)
+		return nil, err
 	}
 
-	//create .gitignore or open existing .gitignore file, and contains .azure
-	gitignoreFile, err := os.OpenFile(
-		filepath.Join(i.azdCtx.ProjectDirectory(), ".gitignore"),
-		os.O_APPEND|os.O_RDWR|os.O_CREATE,
-		osutil.PermissionFile,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("fail to create or open .gitignore: %w", err)
-	}
-	defer gitignoreFile.Close()
-
-	writeGitignoreFile := true
-	//bufio scanner splits on new lines by default
-	scanner := bufio.NewScanner(gitignoreFile)
-	for scanner.Scan() {
-		if azdcontext.EnvironmentDirectoryName == scanner.Text() {
-			writeGitignoreFile = false
-		}
+	envSpec := environment.Spec{
+		Name:         i.flags.EnvironmentName,
+		Subscription: i.flags.subscription,
+		Location:     i.flags.location,
+		Examples:     examples,
 	}
 
-	if writeGitignoreFile {
-		newLine := osutil.GetNewLineSeparator()
-		_, err := gitignoreFile.WriteString(newLine + azdcontext.EnvironmentDirectoryName + newLine)
-		if err != nil {
-			return nil, fmt.Errorf("fail to write '%s' in .gitignore: %w", azdcontext.EnvironmentDirectoryName, err)
-		}
-	}
-
-	envSpec := environmentSpec{
-		environmentName: i.flags.environmentName,
-		subscription:    i.flags.subscription,
-		location:        i.flags.location,
-	}
-	env, ctx, err := createAndInitEnvironment(ctx, &envSpec, i.azdCtx, i.console)
+	env, err := envManager.Create(ctx, envSpec)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	if err := i.azdCtx.SetDefaultEnvironmentName(envSpec.environmentName); err != nil {
+	if err := azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: env.Name()}); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
-	// If the configuration is empty, set default subscription & location
-	// This will be the case for first run experience
-	if !i.accountManager.HasDefaults() {
-		_, err = i.accountManager.SetDefaultSubscription(ctx, env.GetSubscriptionId())
-		if err != nil {
-			log.Printf("failed setting default subscription. %s\n", err.Error())
-		}
-		_, err = i.accountManager.SetDefaultLocation(ctx, env.GetSubscriptionId(), env.GetLocation())
-		if err != nil {
-			log.Printf("failed setting default location. %s\n", err.Error())
+	// Copy template metadata into environment values
+	for key, value := range templateMetadata.Variables {
+		env.DotenvSet(key, value)
+	}
+
+	for key, value := range templateMetadata.Config {
+		if err := env.Config.Set(key, value); err != nil {
+			return nil, fmt.Errorf("setting environment config: %w", err)
 		}
 	}
 
-	return &actions.ActionResult{
-		Message: &actions.ResultMessage{
-			Header:   "New project initialized!",
-			FollowUp: fmt.Sprintf("You can view the template code in your directory: %s", formattedWithColorCwd),
-		},
-	}, nil
+	initialValuesFromEnv, err := repository.InitEnvFileValues()
+	if err != nil {
+		return nil, fmt.Errorf("loading initial env file values: %w", err)
+	}
+	for key, value := range initialValuesFromEnv {
+		env.DotenvSet(key, value)
+	}
+
+	if err := envManager.Save(ctx, env); err != nil {
+		return nil, fmt.Errorf("saving environment: %w", err)
+	}
+
+	return env, nil
 }
 
-func getStepResultFormat(result error) input.SpinnerUxType {
-	formatResult := input.StepDone
-	if result != nil {
-		formatResult = input.StepFailed
+// initializeExtensions installs extensions specified in the project config
+func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
+	if !i.featuresManager.IsEnabled(extensions.FeatureExtensions) {
+		return nil
 	}
-	return formatResult
+
+	projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
+	if err != nil {
+		return fmt.Errorf("loading project config: %w", err)
+	}
+
+	// No extensions required
+	if projectConfig.RequiredVersions == nil || len(projectConfig.RequiredVersions.Extensions) == 0 {
+		return nil
+	}
+
+	installedExtensions, err := i.extensionsManager.ListInstalled()
+	if err != nil {
+		return fmt.Errorf("listing installed extensions: %w", err)
+	}
+
+	i.console.Message(ctx, "\nInstalling required extensions...")
+
+	for extensionId, versionConstraint := range projectConfig.RequiredVersions.Extensions {
+		stepMessage := fmt.Sprintf("Installing %s extension", output.WithHighLightFormat(extensionId))
+		i.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+		installed, isInstalled := installedExtensions[extensionId]
+		if isInstalled {
+			stepMessage += output.WithGrayFormat(" (version %s already installed)", installed.Version)
+			i.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+			continue
+		} else {
+			installConstraint := "latest"
+			if versionConstraint != nil {
+				installConstraint = *versionConstraint
+			}
+
+			filterOptions := &extensions.FilterOptions{
+				Version: installConstraint,
+			}
+			extensionVersion, err := i.extensionsManager.Install(ctx, extensionId, filterOptions)
+			if err != nil {
+				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return fmt.Errorf("installing extension %s: %w", extensionId, err)
+			}
+
+			stepMessage += output.WithGrayFormat(" (%s)", extensionVersion.Version)
+			i.console.StopSpinner(ctx, stepMessage, input.StepDone)
+		}
+	}
+
+	return nil
+}
+
+func getCmdInitHelpDescription(*cobra.Command) string {
+	return generateCmdHelpDescription("Initialize a new application in your current directory.",
+		[]string{
+			formatHelpNote(
+				fmt.Sprintf("Running %s without flags specified will prompt "+
+					"you to initialize using your existing code, or from a template.",
+					output.WithHighLightFormat("init"),
+				)),
+			formatHelpNote(
+				"To view all available sample templates, including those submitted by the azd community, visit: " +
+					output.WithLinkFormat("https://azure.github.io/awesome-azd") + "."),
+		})
+}
+
+func getCmdInitHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Initialize a template to your current local directory from a GitHub repo.": fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd init --template"),
+			output.WithWarningFormat("[GitHub repo URL]"),
+		),
+		"Initialize a template to your current local directory from a branch other than main.": fmt.Sprintf("%s %s %s %s",
+			output.WithHighLightFormat("azd init --template"),
+			output.WithWarningFormat("[GitHub repo URL]"),
+			output.WithHighLightFormat("--branch"),
+			output.WithWarningFormat("[Branch name]"),
+		),
+	})
 }

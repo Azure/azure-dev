@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package graphsdk
 
 import (
@@ -41,7 +44,7 @@ func (c *FederatedIdentityCredentialListRequestBuilder) Get(
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return nil, httputil.HandleRequestError(res, err)
+		return nil, err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusOK) {
@@ -71,7 +74,7 @@ func (c *FederatedIdentityCredentialListRequestBuilder) Post(
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return nil, httputil.HandleRequestError(res, err)
+		return nil, err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusCreated) {
@@ -112,7 +115,7 @@ func (c *FederatedIdentityCredentialItemRequestBuilder) Get(ctx context.Context)
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return nil, httputil.HandleRequestError(res, err)
+		return nil, err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusOK) {
@@ -142,7 +145,7 @@ func (c *FederatedIdentityCredentialItemRequestBuilder) Update(
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return httputil.HandleRequestError(res, err)
+		return err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusNoContent) {
@@ -165,7 +168,7 @@ func (c *FederatedIdentityCredentialItemRequestBuilder) Delete(ctx context.Conte
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return httputil.HandleRequestError(res, err)
+		return err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusNoContent) {

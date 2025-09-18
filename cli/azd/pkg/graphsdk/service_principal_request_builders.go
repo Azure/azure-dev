@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package graphsdk
 
 import (
@@ -29,7 +32,7 @@ func (c *ServicePrincipalListRequestBuilder) Get(ctx context.Context) (*ServiceP
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return nil, httputil.HandleRequestError(res, err)
+		return nil, err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusOK) {
@@ -59,7 +62,7 @@ func (c *ServicePrincipalListRequestBuilder) Post(
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return nil, httputil.HandleRequestError(res, err)
+		return nil, err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusCreated) {
@@ -89,7 +92,7 @@ func (b *ServicePrincipalItemRequestBuilder) Get(ctx context.Context) (*ServiceP
 
 	res, err := b.client.pipeline.Do(req)
 	if err != nil {
-		return nil, httputil.HandleRequestError(res, err)
+		return nil, err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusOK) {
@@ -107,7 +110,7 @@ func (b *ServicePrincipalItemRequestBuilder) Delete(ctx context.Context) error {
 
 	res, err := b.client.pipeline.Do(req)
 	if err != nil {
-		return httputil.HandleRequestError(res, err)
+		return err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusNoContent) {

@@ -1,0 +1,3 @@
+name: template-full
+metadata: 
+  template: azd-test/webapptest@v1

@@ -1,15 +1,6 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// Package terraform contains an implementation of provider.Provider for Terraform. This
-// provider is registered for use when this package is imported, and can be imported for
-// side effects only to register the provider, e.g.:
-//
-// require(
-//
-//	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
-//
-// )
 package terraform
 
 import (
@@ -17,29 +8,42 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
+	"github.com/drone/envsubst"
+	"go.opentelemetry.io/otel/trace"
+)
+
+const (
+	defaultModule = "main"
+	defaultPath   = "infra"
 )
 
 // TerraformProvider exposes infrastructure provisioning using Azure Terraform templates
 type TerraformProvider struct {
-	env         *environment.Environment
-	projectPath string
-	options     Options
-	console     input.Console
-	cli         terraform.TerraformCli
+	envManager   environment.Manager
+	env          *environment.Environment
+	prompters    prompt.Prompter
+	console      input.Console
+	cli          *terraform.Cli
+	curPrincipal provisioning.CurrentPrincipalIdProvider
+	projectPath  string
+	options      provisioning.Options
 }
 
-type TerraformDeploymentDetails struct {
+type terraformDeploymentDetails struct {
 	ParameterFilePath  string
 	PlanFilePath       string
 	localStateFilePath string
@@ -56,266 +60,244 @@ func (t *TerraformProvider) RequiredExternalTools() []tools.ExternalTool {
 
 // NewTerraformProvider creates a new instance of a Terraform Infra provider
 func NewTerraformProvider(
-	ctx context.Context,
+	cli *terraform.Cli,
+	envManager environment.Manager,
 	env *environment.Environment,
-	projectPath string,
-	infraOptions Options,
-) *TerraformProvider {
-	terraformCli := terraform.GetTerraformCli(ctx)
-	console := input.GetConsole(ctx)
-
-	// Default to a module named "main" if not specified.
-	if strings.TrimSpace(infraOptions.Module) == "" {
-		infraOptions.Module = "main"
-	}
-
+	console input.Console,
+	curPrincipal provisioning.CurrentPrincipalIdProvider,
+	prompters prompt.Prompter,
+) provisioning.Provider {
 	provider := &TerraformProvider{
-		env:         env,
-		projectPath: projectPath,
-		options:     infraOptions,
-		console:     console,
-		cli:         terraformCli,
+		envManager:   envManager,
+		env:          env,
+		console:      console,
+		cli:          cli,
+		curPrincipal: curPrincipal,
+		prompters:    prompters,
 	}
-
-	envVars := []string{
-		// Sets the terraform data directory env var that will get set on all terraform CLI commands
-		fmt.Sprintf("TF_DATA_DIR=%s", provider.dataDirPath()),
-		// Required when using service principal login
-		fmt.Sprintf("ARM_TENANT_ID=%s", os.Getenv("ARM_TENANT_ID")),
-		fmt.Sprintf("ARM_SUBSCRIPTION_ID=%s", env.GetSubscriptionId()),
-		fmt.Sprintf("ARM_CLIENT_ID=%s", os.Getenv("ARM_CLIENT_ID")),
-		fmt.Sprintf("ARM_CLIENT_SECRET=%s", os.Getenv("ARM_CLIENT_SECRET")),
-	}
-	terraformCli.SetEnv(envVars)
 
 	return provider
 }
 
+func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, options provisioning.Options) error {
+	t.projectPath = projectPath
+	t.options = options
+	if t.options.Module == "" {
+		t.options.Module = defaultModule
+	}
+	if t.options.Path == "" {
+		t.options.Path = defaultPath
+	}
+
+	requiredTools := t.RequiredExternalTools()
+	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
+		return err
+	}
+
+	if err := t.EnsureEnv(ctx); err != nil {
+		return err
+	}
+
+	envVars := []string{
+		// Sets the terraform data directory env var that will get set on all terraform CLI commands
+		fmt.Sprintf("TF_DATA_DIR=%s", t.dataDirPath()),
+		// Required when using service principal login
+		fmt.Sprintf("ARM_TENANT_ID=%s", os.Getenv("ARM_TENANT_ID")),
+		fmt.Sprintf("ARM_SUBSCRIPTION_ID=%s", t.env.GetSubscriptionId()),
+		fmt.Sprintf("ARM_CLIENT_ID=%s", os.Getenv("ARM_CLIENT_ID")),
+		fmt.Sprintf("ARM_CLIENT_SECRET=%s", os.Getenv("ARM_CLIENT_SECRET")),
+		// Include azd in user agent
+		fmt.Sprintf("TF_APPEND_USER_AGENT=%s", internal.UserAgent()),
+	}
+
+	spanCtx := trace.SpanContextFromContext(ctx)
+	if spanCtx.HasTraceID() {
+		envVars = append(envVars, fmt.Sprintf("ARM_CORRELATION_REQUEST_ID=%s", spanCtx.TraceID().String()))
+	}
+
+	t.cli.SetEnv(envVars)
+	return nil
+}
+
+// EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
+// values are unset.
+//
+// An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
+// AZURE_LOCATION value.
+func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
+	return provisioning.EnsureSubscriptionAndLocation(
+		ctx,
+		t.envManager,
+		t.env,
+		t.prompters,
+		provisioning.EnsureSubscriptionAndLocationOptions{},
+	)
+}
+
 // Previews the infrastructure through terraform plan
-func (t *TerraformProvider) Plan(
-	ctx context.Context,
-) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) {
-			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("reading backend config: %w", err))
-				return
-			}
+func (t *TerraformProvider) plan(ctx context.Context) (*provisioning.Deployment, *terraformDeploymentDetails, error) {
+	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading backend config: %w", err)
+	}
 
-			modulePath := t.modulePath()
+	modulePath := t.modulePath()
 
-			t.console.Message(ctx, "Initializing terraform...")
-			err = asyncContext.Interact(func() error {
-				initRes, err := t.init(ctx, isRemoteBackendConfig)
-				if err != nil {
-					return fmt.Errorf("terraform init failed: %s , err: %w", initRes, err)
-				}
+	initRes, err := t.init(ctx, isRemoteBackendConfig)
+	if err != nil {
+		return nil, nil, fmt.Errorf("terraform init failed: %s , err: %w", initRes, err)
+	}
 
-				return nil
-			})
+	err = t.createInputParametersFile(ctx, t.parametersTemplateFilePath(), t.parametersFilePath())
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating parameters file: %w", err)
+	}
 
-			if err != nil {
-				asyncContext.SetError(err)
-				return
-			}
+	validated, err := t.cli.Validate(ctx, modulePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("terraform validate failed: %s, err %w", validated, err)
+	}
 
-			t.console.Message(ctx, "\nGenerating terraform parameters...")
+	planArgs := t.createPlanArgs(isRemoteBackendConfig)
+	runResult, err := t.cli.Plan(ctx, modulePath, t.planFilePath(), planArgs...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("terraform plan failed:%s err %w", runResult, err)
+	}
 
-			err = CreateInputParametersFile(t.parametersTemplateFilePath(), t.parametersFilePath(), t.env.Values)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("creating parameters file: %w", err))
-				return
-			}
+	//create deployment plan
+	deployment, err := t.createDeployment(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create terraform template failed: %w", err)
+	}
 
-			t.console.Message(ctx, "Validating terraform template...")
-			validated, err := t.cli.Validate(ctx, modulePath)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("terraform validate failed: %s, err %w", validated, err))
-				return
-			}
+	deploymentDetails := terraformDeploymentDetails{
+		ParameterFilePath: t.parametersFilePath(),
+		PlanFilePath:      t.planFilePath(),
+	}
+	if !isRemoteBackendConfig {
+		deploymentDetails.localStateFilePath = t.localStateFilePath()
+	}
 
-			t.console.Message(ctx, "Generating terraform plan...\n")
-			err = asyncContext.Interact(func() error {
-				planArgs := t.createPlanArgs(isRemoteBackendConfig)
-				runResult, err := t.cli.Plan(ctx, modulePath, t.planFilePath(), planArgs...)
-				if err != nil {
-					return fmt.Errorf("terraform plan failed:%s err %w", runResult, err)
-				}
-
-				return nil
-			})
-
-			if err != nil {
-				asyncContext.SetError(err)
-				return
-			}
-
-			//create deployment plan
-			deployment, err := t.createDeployment(ctx, modulePath)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("create terraform template failed: %w", err))
-				return
-			}
-
-			deploymentDetails := TerraformDeploymentDetails{
-				ParameterFilePath: t.parametersFilePath(),
-				PlanFilePath:      t.planFilePath(),
-			}
-			if !isRemoteBackendConfig {
-				deploymentDetails.localStateFilePath = t.localStateFilePath()
-			}
-
-			result := DeploymentPlan{
-				Deployment: *deployment,
-				Details:    deploymentDetails,
-			}
-
-			asyncContext.SetResult(&result)
-		})
+	return deployment, &deploymentDetails, nil
 }
 
 // Deploy the infrastructure within the specified template through terraform apply
-func (t *TerraformProvider) Deploy(
-	ctx context.Context,
-	deployment *DeploymentPlan,
-	scope infra.Scope,
-) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
-			t.console.Message(ctx, "Locating plan file...")
+func (t *TerraformProvider) Deploy(ctx context.Context) (*provisioning.DeployResult, error) {
+	t.console.Message(ctx, "Locating plan file...")
 
-			modulePath := t.modulePath()
-			terraformDeploymentData := deployment.Details.(TerraformDeploymentDetails)
-			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("reading backend config: %w", err))
-				return
-			}
+	modulePath := t.modulePath()
+	deployment, terraformDeploymentData, err := t.plan(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-			t.console.Message(ctx, "Deploying terraform template...")
-			err = asyncContext.Interact(func() error {
-				applyArgs, err := t.createApplyArgs(isRemoteBackendConfig, terraformDeploymentData)
-				if err != nil {
-					return err
-				}
+	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
+	if err != nil {
+		return nil, fmt.Errorf("reading backend config: %w", err)
+	}
 
-				runResult, err := t.cli.Apply(ctx, modulePath, applyArgs...)
-				if err != nil {
-					return fmt.Errorf("template Deploy failed: %s , err:%w", runResult, err)
-				}
+	applyArgs, err := t.createApplyArgs(isRemoteBackendConfig, *terraformDeploymentData)
+	if err != nil {
+		return nil, err
+	}
 
-				return nil
-			})
+	runResult, err := t.cli.Apply(ctx, modulePath, applyArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("template Deploy failed: %s , err:%w", runResult, err)
+	}
 
-			if err != nil {
-				asyncContext.SetError(err)
-				return
-			}
+	// Set the deployment result
+	outputs, err := t.createOutputParameters(ctx, modulePath, isRemoteBackendConfig)
+	if err != nil {
+		return nil, fmt.Errorf("create terraform template failed: %w", err)
+	}
 
-			// Set the deployment result
-			outputs, err := t.createOutputParameters(ctx, modulePath, isRemoteBackendConfig)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("create terraform template failed: %w", err))
-				return
-			}
+	deployment.Outputs = outputs
+	return &provisioning.DeployResult{
+		Deployment: deployment,
+	}, nil
+}
 
-			currentDeployment := deployment.Deployment
-			currentDeployment.Outputs = outputs
-			result := &DeployResult{
-				Deployment: &currentDeployment,
-			}
+func (t *TerraformProvider) Preview(ctx context.Context) (*provisioning.DeployPreviewResult, error) {
+	// terraform uses plan() to display the what-if output
+	// no changes are added to the properties
+	_, _, err := t.plan(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-			asyncContext.SetResult(result)
-		})
+	return &provisioning.DeployPreviewResult{
+		Preview: &provisioning.DeploymentPreview{
+			Status:     "done",
+			Properties: &provisioning.DeploymentPreviewProperties{},
+		},
+	}, nil
 }
 
 // Destroys the specified deployment through terraform destroy
 func (t *TerraformProvider) Destroy(
 	ctx context.Context,
-	deployment *Deployment,
-	options DestroyOptions,
-) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
+	options provisioning.DestroyOptions,
+) (*provisioning.DestroyResult, error) {
+	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
+	if err != nil {
+		return nil, fmt.Errorf("reading backend config: %w", err)
+	}
 
-			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("reading backend config: %w", err))
-				return
-			}
+	t.console.Message(ctx, "Locating parameters file...")
+	err = t.ensureParametersFile(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-			t.console.Message(ctx, "Locating parameters file...")
-			err = t.ensureParametersFile()
-			if err != nil {
-				asyncContext.SetError(err)
-				return
-			}
+	modulePath := t.modulePath()
 
-			modulePath := t.modulePath()
+	//load the deployment result
+	outputs, err := t.createOutputParameters(ctx, modulePath, isRemoteBackendConfig)
+	if err != nil {
+		return nil, fmt.Errorf("load terraform template output failed: %w", err)
+	}
 
-			//load the deployment result
-			outputs, err := t.createOutputParameters(ctx, modulePath, isRemoteBackendConfig)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("load terraform template output failed: %w", err))
-				return
-			}
+	t.console.Message(ctx, "Deleting terraform deployment...")
+	// terraform doesn't use the `t.console`, we must ensure no spinner is running before calling Destroy
+	// as it could be an interactive operation if it needs confirmation
+	t.console.StopSpinner(ctx, "", input.Step)
+	destroyArgs := t.createDestroyArgs(isRemoteBackendConfig, options.Force())
+	runResult, err := t.cli.Destroy(ctx, modulePath, destroyArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("template Deploy failed: %s, err: %w", runResult, err)
+	}
 
-			t.console.Message(ctx, "Destroying terraform deployment...")
-			err = asyncContext.Interact(func() error {
-				destroyArgs := t.createDestroyArgs(isRemoteBackendConfig, options.Force())
-				runResult, err := t.cli.Destroy(ctx, modulePath, destroyArgs...)
-				if err != nil {
-					return fmt.Errorf("template Deploy failed:%s , err :%w", runResult, err)
-				}
-
-				return nil
-			})
-
-			if err != nil {
-				asyncContext.SetError(err)
-				return
-			}
-
-			result := DestroyResult{
-				Outputs: outputs,
-			}
-			asyncContext.SetResult(&result)
-		})
+	return &provisioning.DestroyResult{
+		InvalidatedEnvKeys: slices.Collect(maps.Keys(outputs)),
+	}, nil
 }
 
 func (t *TerraformProvider) State(
 	ctx context.Context,
-	_ infra.Scope,
-) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
-			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("reading backend config: %w", err))
-				return
-			}
+	options *provisioning.StateOptions,
+) (*provisioning.StateResult, error) {
+	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
+	if err != nil {
+		return nil, fmt.Errorf("reading backend config: %w", err)
+	}
 
-			t.console.Message(ctx, "Retrieving terraform state...")
-			modulePath := t.modulePath()
+	t.console.Message(ctx, "Retrieving terraform state...")
+	modulePath := t.modulePath()
 
-			terraformState, err := t.showCurrentState(ctx, modulePath, isRemoteBackendConfig)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("fetching terraform state failed: %w", err))
-				return
-			}
+	terraformState, err := t.showCurrentState(ctx, modulePath, isRemoteBackendConfig)
+	if err != nil {
+		return nil, fmt.Errorf("fetching terraform state failed: %w", err)
+	}
 
-			state := State{}
+	state := provisioning.State{}
 
-			state.Outputs = t.convertOutputs(terraformState.Values.Outputs)
-			state.Resources = t.collectAzureResources(terraformState.Values.RootModule)
+	state.Outputs = t.convertOutputs(terraformState.Values.Outputs)
+	state.Resources = t.collectAzureResources(terraformState.Values.RootModule)
 
-			result := StateResult{
-				State: &state,
-			}
-
-			asyncContext.SetResult(&result)
-		})
+	return &provisioning.StateResult{
+		State: &state,
+	}, nil
 }
 
 // Creates the terraform plan CLI arguments
@@ -331,7 +313,7 @@ func (t *TerraformProvider) createPlanArgs(isRemoteBackendConfig bool) []string 
 
 // Creates the terraform apply CLI arguments
 func (t *TerraformProvider) createApplyArgs(
-	isRemoteBackendConfig bool, data TerraformDeploymentDetails) ([]string, error) {
+	isRemoteBackendConfig bool, data terraformDeploymentDetails) ([]string, error) {
 	args := []string{}
 	if !isRemoteBackendConfig {
 		args = append(args, fmt.Sprintf("-state=%s", data.localStateFilePath))
@@ -365,9 +347,9 @@ func (t *TerraformProvider) createDestroyArgs(isRemoteBackendConfig bool, autoAp
 }
 
 // Checks if the parameters file already exists and creates if as needed.
-func (t *TerraformProvider) ensureParametersFile() error {
+func (t *TerraformProvider) ensureParametersFile(ctx context.Context) error {
 	if _, err := os.Stat(t.parametersFilePath()); err != nil {
-		err := CreateInputParametersFile(t.parametersTemplateFilePath(), t.parametersFilePath(), t.env.Values)
+		err := t.createInputParametersFile(ctx, t.parametersTemplateFilePath(), t.parametersFilePath())
 		if err != nil {
 			return fmt.Errorf("creating parameters file: %w", err)
 		}
@@ -385,7 +367,7 @@ func (t *TerraformProvider) init(ctx context.Context, isRemoteBackendConfig bool
 	if isRemoteBackendConfig {
 		t.console.Message(ctx, "Generating terraform backend config file...")
 
-		err := CreateInputParametersFile(t.backendConfigTemplateFilePath(), t.backendConfigFilePath(), t.env.Values)
+		err := t.createInputParametersFile(ctx, t.backendConfigTemplateFilePath(), t.backendConfigFilePath())
 		if err != nil {
 			return fmt.Sprintf("creating terraform backend config file: %s", err), err
 		}
@@ -405,7 +387,7 @@ func (t *TerraformProvider) createOutputParameters(
 	ctx context.Context,
 	modulePath string,
 	isRemoteBackend bool,
-) (map[string]OutputParameter, error) {
+) (map[string]provisioning.OutputParameter, error) {
 	cmd := []string{}
 
 	if !isRemoteBackend {
@@ -425,18 +407,18 @@ func (t *TerraformProvider) createOutputParameters(
 	return t.convertOutputs(outputMap), nil
 }
 
-func (t *TerraformProvider) mapTerraformTypeToInterfaceType(typ any) ParameterType {
+func (t *TerraformProvider) mapTerraformTypeToInterfaceType(typ any) provisioning.ParameterType {
 	// in the JSON output, the type property maps to either a string (for a primitive type) or an
 	// array of things which describe a complex type.
 	switch v := typ.(type) {
 	case string:
 		switch v {
 		case "string":
-			return ParameterTypeString
+			return provisioning.ParameterTypeString
 		case "bool":
-			return ParameterTypeBoolean
+			return provisioning.ParameterTypeBoolean
 		case "number":
-			return ParameterTypeNumber
+			return provisioning.ParameterTypeNumber
 		default:
 			panic(fmt.Sprintf("unknown primitive type: %s", v))
 		}
@@ -444,23 +426,28 @@ func (t *TerraformProvider) mapTerraformTypeToInterfaceType(typ any) ParameterTy
 		// in this case we have a complex type, which in json looked like ["type", <schema parts>...], just pull out the
 		// first part and map to either and object or array.
 		switch v[0].(string) {
-		case "tuple":
-			return ParameterTypeArray
-		case "object":
-			return ParameterTypeObject
+		case "list", "tuple", "set":
+			return provisioning.ParameterTypeArray
+		case "object", "map":
+			return provisioning.ParameterTypeObject
 		default:
-			panic(fmt.Sprintf("unknown primitive complex type tag: %s (full type: %+v)", v, typ))
+			panic(fmt.Sprintf("unknown complex type tag: %s (full type: %+v)", v, typ))
 		}
 	}
 
-	return ParameterTypeString
+	return provisioning.ParameterTypeString
 }
 
 // convertOutputs converts a terraform output map to the canonical format shared by all provider implementations.
-func (t *TerraformProvider) convertOutputs(outputMap map[string]terraformOutput) map[string]OutputParameter {
-	outputParameters := make(map[string]OutputParameter)
+func (t *TerraformProvider) convertOutputs(outputMap map[string]terraformOutput) map[string]provisioning.OutputParameter {
+	outputParameters := make(map[string]provisioning.OutputParameter)
 	for k, v := range outputMap {
-		outputParameters[k] = OutputParameter{
+		if val, ok := v.Value.(string); ok && val == "null" {
+			// omit null
+			continue
+		}
+
+		outputParameters[k] = provisioning.OutputParameter{
 			Type:  t.mapTerraformTypeToInterfaceType(v.Type),
 			Value: v.Value,
 		}
@@ -493,8 +480,8 @@ func (t *TerraformProvider) showCurrentState(
 }
 
 // Creates the deployment object from the specified module path
-func (t *TerraformProvider) createDeployment(ctx context.Context, modulePath string) (*Deployment, error) {
-	templateParameters := make(map[string]InputParameter)
+func (t *TerraformProvider) createDeployment(ctx context.Context) (*provisioning.Deployment, error) {
+	templateParameters := make(map[string]provisioning.InputParameter)
 
 	//build the template parameters.
 	parameters := make(map[string]any)
@@ -502,7 +489,7 @@ func (t *TerraformProvider) createDeployment(ctx context.Context, modulePath str
 
 	// check if the file does not exist to create it --> for shared env scenario
 	log.Printf("Reading parameters template file from: %s", parametersFilePath)
-	if err := t.ensureParametersFile(); err != nil {
+	if err := t.ensureParametersFile(ctx); err != nil {
 		return nil, err
 	}
 
@@ -516,13 +503,13 @@ func (t *TerraformProvider) createDeployment(ctx context.Context, modulePath str
 	}
 
 	for key, param := range parameters {
-		templateParameters[key] = InputParameter{
+		templateParameters[key] = provisioning.InputParameter{
 			Type:  key,
 			Value: param,
 		}
 	}
 
-	template := Deployment{
+	template := provisioning.Deployment{
 		Parameters: templateParameters,
 	}
 
@@ -533,7 +520,7 @@ func (t *TerraformProvider) createDeployment(ctx context.Context, modulePath str
 // resources from all child modules. Only resources managed by azure providers are considered (today, that's
 // just resources from the `registry.terraform.io/hashicorp/azurerm` provider). Only "managed" resources are
 // considered.
-func (t *TerraformProvider) collectAzureResources(rootModule terraformRootModule) []Resource {
+func (t *TerraformProvider) collectAzureResources(rootModule terraformRootModule) []provisioning.Resource {
 	// the set of resources we've seen (keyed by their id)
 	azureResources := make(map[string]struct{})
 
@@ -569,9 +556,9 @@ func (t *TerraformProvider) collectAzureResources(rootModule terraformRootModule
 	}
 
 	// At this point, allResources contains the ids of all the resources we discovered.
-	resources := make([]Resource, 0, len(azureResources))
+	resources := make([]provisioning.Resource, 0, len(azureResources))
 	for id := range azureResources {
-		resources = append(resources, Resource{
+		resources = append(resources, provisioning.Resource{
 			Id: id,
 		})
 	}
@@ -632,29 +619,29 @@ func (t *TerraformProvider) modulePath() string {
 // Gets the path to the staging .azure terraform plan file path
 func (t *TerraformProvider) planFilePath() string {
 	planFilename := fmt.Sprintf("%s.tfplan", t.options.Module)
-	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, planFilename)
+	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, planFilename)
 }
 
 // Gets the path to the staging .azure terraform local state file path
 func (t *TerraformProvider) localStateFilePath() string {
-	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, "terraform.tfstate")
+	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, "terraform.tfstate")
 }
 
 // Gets the path to the staging .azure parameters file path
 func (t *TerraformProvider) backendConfigFilePath() string {
-	backendConfigFilename := fmt.Sprintf("%s.conf.json", t.env.GetEnvName())
-	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, backendConfigFilename)
+	backendConfigFilename := fmt.Sprintf("%s.conf.json", t.env.Name())
+	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, backendConfigFilename)
 }
 
 // Gets the path to the staging .azure backend config file path
 func (t *TerraformProvider) parametersFilePath() string {
 	parametersFilename := fmt.Sprintf("%s.tfvars.json", t.options.Module)
-	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, parametersFilename)
+	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, parametersFilename)
 }
 
 // Gets the path to the current env.
 func (t *TerraformProvider) dataDirPath() string {
-	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, ".terraform")
+	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, ".terraform")
 }
 
 // Check terraform file for remote backend provider
@@ -683,17 +670,49 @@ func (t *TerraformProvider) isRemoteBackendConfig() (bool, error) {
 	return false, nil
 }
 
-func init() {
-	err := RegisterProvider(
-		Terraform,
-		func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
-			return NewTerraformProvider(ctx, env, projectPath, options), nil
-		},
-	)
+// Copies the an input parameters file templateFilePath to inputFilePath after replacing environment variable references in
+// the contents.
+func (t *TerraformProvider) createInputParametersFile(
+	ctx context.Context,
+	templateFilePath string,
+	inputFilePath string,
+) error {
+
+	principalId, err := t.curPrincipal.CurrentPrincipalId(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching current principal id: %w", err)
+	}
+
+	// Copy the parameter template file to the environment working directory and do substitutions.
+	log.Printf("Reading parameters template file from: %s", templateFilePath)
+	parametersBytes, err := os.ReadFile(templateFilePath)
+	if err != nil {
+		return fmt.Errorf("reading parameter file template: %w", err)
+	}
+	replaced, err := envsubst.Eval(string(parametersBytes), func(name string) string {
+		if name == environment.PrincipalIdEnvVarName {
+			return principalId
+		}
+
+		return t.env.Getenv(name)
+	})
 
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("substituting parameter file: %w", err)
 	}
+
+	writeDir := filepath.Dir(inputFilePath)
+	if err := os.MkdirAll(writeDir, osutil.PermissionDirectory); err != nil {
+		return fmt.Errorf("creating directory structure: %w", err)
+	}
+
+	log.Printf("Writing parameters file to: %s", inputFilePath)
+	err = os.WriteFile(inputFilePath, []byte(replaced), 0600)
+	if err != nil {
+		return fmt.Errorf("writing parameter file: %w", err)
+	}
+
+	return nil
 }
 
 // terraformShowOutput is a model type for the output of `terraform show` for a tfstate file.
@@ -745,4 +764,9 @@ type terraformChildModule struct {
 	Address      string                 `json:"address"`
 	Resources    []terraformResource    `json:"resources"`
 	ChildModules []terraformChildModule `json:"child_modules"`
+}
+
+func (t *TerraformProvider) Parameters(ctx context.Context) ([]provisioning.Parameter, error) {
+	// not supported (no-op)
+	return nil, nil
 }

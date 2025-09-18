@@ -17,8 +17,12 @@
 # GoLand temp files
 .idea 
 
-# Output of the go coverage tool, specifically when used with LiteIDE
+# go code coverage outputs
+# text format
 *.out
+# binary formats
+covcounters.*
+covmeta.*
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
@@ -31,6 +35,7 @@ __pycache__/
 .env
 .azure
 /cli/azd/bin
+/cli/azd/pkg/oneauth/bridge/_build
 *env/
 obj/
 bin/
@@ -41,3 +46,6 @@ test-results/
 **/.terraform
 *.tfstate*
 *.terraform*
+
+# Finder state files
+.DS_Store

@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <Fragment>
+        <UI Id="AzdInstallDir">
+            <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+            <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+            <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+
+            <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+            <Property Id="WixUI_Mode" Value="InstallDir" />
+
+            <DialogRef Id="BrowseDlg" />
+            <DialogRef Id="DiskCostDlg" />
+            <DialogRef Id="ErrorDlg" />
+            <DialogRef Id="FatalError" />
+            <DialogRef Id="FilesInUse" />
+            <DialogRef Id="MsiRMFilesInUse" />
+            <DialogRef Id="PrepareDlg" />
+            <DialogRef Id="ResumeDlg" />
+            <DialogRef Id="UserExit" />
+
+            <Publish Dialog="BrowseDlg" Control="OK" Event="DoAction" Value="WixUIValidatePath" Order="3">1</Publish>
+            <Publish Dialog="BrowseDlg" Control="OK" Event="SpawnDialog" Value="InvalidDirDlg" Order="4"><![CDATA[NOT WIXUI_DONTVALIDATEPATH AND WIXUI_INSTALLDIR_VALID<>"1"]]></Publish>
+
+            <Publish Dialog="AzdExitDlg" Control="Finish" Event="EndDialog" Value="Return" Order="999">1</Publish>
+
+            <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="AzdNoticesDlg">NOT Installed</Publish>
+            <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg">Installed AND PATCH</Publish>
+
+            <Publish Dialog="AzdNoticesDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg">1</Publish>
+            <Publish Dialog="AzdNoticesDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg">1</Publish>
+
+            <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="AzdNoticesDlg">1</Publish>
+            <Publish Dialog="InstallDirDlg" Control="Next" Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="1">1</Publish>
+            <Publish Dialog="InstallDirDlg" Control="Next" Event="DoAction" Value="WixUIValidatePath" Order="2">NOT WIXUI_DONTVALIDATEPATH</Publish>
+            <Publish Dialog="InstallDirDlg" Control="Next" Event="SpawnDialog" Value="InvalidDirDlg" Order="3"><![CDATA[NOT WIXUI_DONTVALIDATEPATH AND WIXUI_INSTALLDIR_VALID<>"1"]]></Publish>
+            <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Order="4">WIXUI_DONTVALIDATEPATH OR WIXUI_INSTALLDIR_VALID="1"</Publish>
+            <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="1">1</Publish>
+            <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2">1</Publish>
+
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" Order="1">NOT Installed</Publish>
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="2">Installed AND NOT PATCH</Publish>
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2">Installed AND PATCH</Publish>
+
+            <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg">1</Publish>
+
+            <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg">1</Publish>
+            <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg">1</Publish>
+            <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg">1</Publish>
+
+            <Property Id="ARPNOMODIFY" Value="1" />
+
+            <InstallUISequence>
+                <Show Dialog="WelcomeDlg" Before="AzdProgressDlg"><![CDATA[NOT Installed OR PATCH]]></Show>
+                <Show Dialog="MaintenanceWelcomeDlg" Before="AzdProgressDlg"><![CDATA[Installed AND NOT RESUME AND NOT Preselected AND NOT PATCH]]></Show>
+                <Show Dialog="ResumeDlg" Before="AzdProgressDlg"><![CDATA[Installed AND RESUME]]></Show>
+                <Show Dialog="VerifyReadyDlg" Before="AzdProgressDlg"><![CDATA[Installed AND NOT RESUME AND Preselected]]></Show>
+
+                <!-- Effectively remove WiX-standard ProgressDlg from the UI sequence since we otherwise can't without redefining the entirety of the UI. -->
+                <Show Dialog="ProgressDlg" Before="AzdProgressDlg"><![CDATA[0]]></Show>
+            </InstallUISequence>
+        </UI>
+
+        <UIRef Id="WixUI_Common" />
+
+        <SetProperty Id="WixUI_InstallMode" Value="Remove" After="CostFinalize" Sequence="ui">
+            <![CDATA[Installed AND &DefaultFeature<=2]]>
+        </SetProperty>
+    </Fragment>
+    <Fragment>
+        <UI>
+            <Dialog Id="AzdNoticesDlg" Width="370" Height="270" Title="[ProductName] Setup">
+                <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.LicenseAgreementDlgBannerBitmap)" />
+                <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+                <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+                <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Notices" />
+                <Control Id="Description" Type="Text" X="25" Y="23" Width="340" Height="15" Transparent="yes" NoPrefix="yes" Text="Please read the following notices" />
+                <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)" />
+                <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)" />
+                <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+                    <Publish Event="SpawnDialog" Value="CancelDlg">1</Publish>
+                </Control>
+                <Control Id="Print" Type="PushButton" X="112" Y="243" Width="56" Height="17" Text="!(loc.WixUIPrint)">
+                    <Publish Event="DoAction" Value="WixUIPrintEula">1</Publish>
+                </Control>
+                <Control Id="NoticesText" Type="ScrollableText" X="20" Y="60" Width="330" Height="155" Sunken="yes" TabSkip="no">
+                    <Text SourceFile="notices.rtf" />
+                </Control>
+            </Dialog>
+        </UI>
+    </Fragment>
+    <Fragment>
+        <UI>
+            <Dialog Id="AzdProgressDlg" Width="370" Height="270" Title="!(loc.ProgressDlg_Title)" Modeless="yes">
+                <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.WixUICancel)">
+                    <Publish Event="SpawnDialog" Value="CancelDlg">1</Publish>
+                </Control>
+                <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="!(loc.ProgressDlgBannerBitmap)" />
+                <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Disabled="yes" Text="!(loc.WixUIBack)" />
+                <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Disabled="yes" Text="!(loc.WixUINext)" />
+                <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+                <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+                <!-- Show "Installing" by default but hide if WixUI_InstallMode is set to anything. This resolves an odd behavior caused by dialog resequencing. -->
+                <Control Id="TextInstalling" Type="Text" X="20" Y="65" Width="330" Height="35" Hidden="no" NoPrefix="yes" Text="!(loc.ProgressDlgTextInstalling)">
+                    <!-- <Condition Action="show"><![CDATA[NOT Installed OR (Installed AND (RESUME OR Preselected) AND NOT PATCH)]]></Condition> -->
+                    <Condition Action="hide"><![CDATA[WixUI_InstallMode]]></Condition>
+                </Control>
+                <Control Id="TitleInstalling" Type="Text" X="20" Y="15" Width="330" Height="15" Transparent="yes" NoPrefix="yes" Hidden="no" Text="!(loc.ProgressDlgTitleInstalling)">
+                    <!-- <Condition Action="show"><![CDATA[NOT Installed OR (Installed AND (RESUME OR Preselected) AND NOT PATCH)]]></Condition> -->
+                    <Condition Action="hide"><![CDATA[WixUI_InstallMode]]></Condition>
+                </Control>
+                <Control Id="TextRepairing" Type="Text" X="20" Y="65" Width="330" Height="35" Hidden="yes" NoPrefix="yes" Text="!(loc.ProgressDlgTextRepairing)">
+                    <Condition Action="show">WixUI_InstallMode = "Repair"</Condition>
+                </Control>
+                <Control Id="TitleRepairing" Type="Text" X="20" Y="15" Width="330" Height="15" Transparent="yes" NoPrefix="yes" Hidden="yes" Text="!(loc.ProgressDlgTitleRepairing)">
+                    <Condition Action="show">WixUI_InstallMode = "Repair"</Condition>
+                </Control>
+                <Control Id="TextRemoving" Type="Text" X="20" Y="65" Width="330" Height="35" Hidden="yes" NoPrefix="yes" Text="!(loc.ProgressDlgTextRemoving)">
+                    <Condition Action="show">WixUI_InstallMode = "Remove"</Condition>
+                </Control>
+                <Control Id="TitleRemoving" Type="Text" X="20" Y="15" Width="330" Height="15" Transparent="yes" NoPrefix="yes" Hidden="yes" Text="!(loc.ProgressDlgTitleRemoving)">
+                    <Condition Action="show">WixUI_InstallMode = "Remove"</Condition>
+                </Control>
+                <Control Id="TextUpdating" Type="Text" X="20" Y="65" Width="330" Height="35" Hidden="yes" NoPrefix="yes" Text="!(loc.ProgressDlgTextUpdating)">
+                    <Condition Action="show">WixUI_InstallMode = "Update"</Condition>
+                </Control>
+                <Control Id="TitleUpdating" Type="Text" X="20" Y="15" Width="330" Height="15" Transparent="yes" NoPrefix="yes" Hidden="yes" Text="!(loc.ProgressDlgTitleUpdating)">
+                    <Condition Action="show">WixUI_InstallMode = "Update"</Condition>
+                </Control>
+                <Control Id="ActionText" Type="Text" X="70" Y="100" Width="285" Height="10">
+                    <Subscribe Event="ActionText" Attribute="Text" />
+                </Control>
+                <Control Id="ProgressBar" Type="ProgressBar" X="20" Y="115" Width="330" Height="10" ProgressBlocks="yes" Text="!(loc.ProgressDlgProgressBar)">
+                    <Subscribe Event="SetProgress" Attribute="Progress" />
+                </Control>
+                <Control Id="StatusLabel" Type="Text" X="20" Y="100" Width="50" Height="10" Text="!(loc.ProgressDlgStatusLabel)" />
+            </Dialog>
+
+            <InstallUISequence>
+                <Show Dialog="AzdProgressDlg" Before="ExecuteAction" />
+            </InstallUISequence>
+        </UI>
+    </Fragment>
+    <Fragment>
+        <UI>
+            <Dialog Id="AzdExitDlg" Width="370" Height="270" Title="!(loc.ExitDialog_Title)">
+                <Control Id="Finish" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.WixUIFinish)" />
+                <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Disabled="yes" Text="!(loc.WixUICancel)" />
+                <Control Id="Bitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="234" TabSkip="no" Text="!(loc.ExitDialogBitmap)" />
+                <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Disabled="yes" Text="!(loc.WixUIBack)" />
+                <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+                <Control Id="Title" Type="Text" X="135" Y="20" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Text="!(loc.ExitDialogTitle)">
+                    <Condition Action="hide"><![CDATA[WixUI_InstallMode]]></Condition>
+                </Control>
+                <Control Id="TitleRepaired" Type="Text" X="135" Y="20" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Hidden="yes" Text="{\WixUI_Font_Bigger}[ProductName] repaired successfully">
+                    <Condition Action="show"><![CDATA[WixUI_InstallMode = "Repair"]]></Condition>
+                </Control>
+                <Control Id="TitleRemoved" Type="Text" X="135" Y="20" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Hidden="yes" Text="{\WixUI_Font_Bigger}[ProductName] removed successfully">
+                    <Condition Action="show"><![CDATA[WixUI_InstallMode = "Remove"]]></Condition>
+                </Control>
+                <Control Id="TitleUpdated" Type="Text" X="135" Y="20" Width="220" Height="60" Transparent="yes" NoPrefix="yes" Hidden="yes" Text="{\WixUI_Font_Bigger}[ProductName] updated successfully">
+                    <Condition Action="show"><![CDATA[WixUI_InstallMode = "Update"]]></Condition>
+                </Control>
+                <Control Id="Description" Type="Text" X="135" Y="70" Width="220" Height="40" Transparent="yes" NoPrefix="yes" Text="!(loc.ExitDialogDescription)" />
+                <Control Id="UninstallText" Type="Text" X="135" Y="110" Width="220" Height="120" Transparent="yes" NoPrefix="yes" Hidden="yes" Text="The [ProductName] may have downloaded binaries to %USERPROFILE%\.azd\bin and, depending on how azd was used on this machine, may have downloaded binaries to other users' profile directories in their .azd\bin directory. These binaries may need to be removed manually.
+
+To remove such binaries from your home directory, run:
+
+rmdir %USERPROFILE%\.azd\bin.">
+                    <Condition Action="show"><![CDATA[&DefaultFeature<=2]]></Condition>
+                </Control>
+            </Dialog>
+
+            <InstallUISequence>
+                <Show Dialog="AzdExitDlg" OnExit="success" />
+            </InstallUISequence>
+
+            <AdminUISequence>
+                <Show Dialog="AzdExitDlg" OnExit="success" />
+            </AdminUISequence>
+        </UI>
+    </Fragment>
+</Wix>

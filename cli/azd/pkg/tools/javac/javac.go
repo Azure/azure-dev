@@ -1,9 +1,13 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package javac
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -15,21 +19,19 @@ import (
 
 const javac = "javac"
 
-type JavacCli interface {
-	tools.ExternalTool
-}
+var _ tools.ExternalTool = (*Cli)(nil)
 
-type javacCli struct {
+type Cli struct {
 	cmdRun exec.CommandRunner
 }
 
-func NewCli(cmdRun exec.CommandRunner) JavacCli {
-	return &javacCli{
+func NewCli(cmdRun exec.CommandRunner) *Cli {
+	return &Cli{
 		cmdRun: cmdRun,
 	}
 }
 
-func (j *javacCli) VersionInfo() tools.VersionInfo {
+func (j *Cli) VersionInfo() tools.VersionInfo {
 	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 17,
@@ -39,10 +41,10 @@ func (j *javacCli) VersionInfo() tools.VersionInfo {
 	}
 }
 
-func (j *javacCli) CheckInstalled(ctx context.Context) (bool, error) {
+func (j *Cli) CheckInstalled(ctx context.Context) error {
 	path, err := getInstalledPath()
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	runResult, err := j.cmdRun.Run(ctx, exec.RunArgs{
@@ -53,36 +55,38 @@ func (j *javacCli) CheckInstalled(ctx context.Context) (bool, error) {
 		// On older versions of javac (8 and below), `javac -version` is supported instead.
 		// If this returns successfully, we know that it's an older version
 		// and can safely recommend an upgrade.
-		_, err := j.cmdRun.Run(ctx, exec.RunArgs{
+		runResult, err = j.cmdRun.Run(ctx, exec.RunArgs{
 			Cmd:  path,
 			Args: []string{"-version"},
 		})
 
 		if err == nil {
-			return false, &tools.ErrSemver{ToolName: j.Name(), VersionInfo: j.VersionInfo()}
+			log.Printf("javac version: %s", runResult.Stdout)
+			return &tools.ErrSemver{ToolName: j.Name(), VersionInfo: j.VersionInfo()}
 		}
 
-		return false, fmt.Errorf("checking javac version: %w", err)
+		return fmt.Errorf("checking javac version: %w", err)
 	}
+	log.Printf("javac version: %s", runResult.Stdout)
 
 	jdkVer, err := tools.ExtractVersion(runResult.Stdout)
 	if err != nil {
-		return false, fmt.Errorf("converting to semver version fails: %w", err)
+		return fmt.Errorf("converting to semver version fails: %w", err)
 	}
 
 	requiredVersion := j.VersionInfo()
 	if jdkVer.LT(requiredVersion.MinimumVersion) {
-		return false, &tools.ErrSemver{ToolName: j.Name(), VersionInfo: requiredVersion}
+		return &tools.ErrSemver{ToolName: j.Name(), VersionInfo: requiredVersion}
 	}
 
-	return true, nil
+	return nil
 }
 
-func (j *javacCli) InstallUrl() string {
+func (j *Cli) InstallUrl() string {
 	return "https://www.microsoft.com/openjdk"
 }
 
-func (j *javacCli) Name() string {
+func (j *Cli) Name() string {
 	return "Java JDK"
 }
 

@@ -1,0 +1,6 @@
+   Resources:
+
+   Create : some Azure resource : resource name
+   Skip   : Key Vault           : resource name 2
+   Modify : Other               : resource name 3
+   Delete : Other               : resource name 3

@@ -14,7 +14,8 @@
                 "reveal": "never"
             },
             "group": {
-                "kind": "build"
+                "kind": "build",
+                "isDefault": true
             }
         },
 
@@ -30,8 +31,7 @@
                 "reveal": "never"
             },
             "group": {
-                "kind": "build",
-                "isDefault": true
+                "kind": "build"
             }
         }
     ]

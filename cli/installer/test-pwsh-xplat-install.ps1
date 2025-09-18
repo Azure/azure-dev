@@ -1,6 +1,8 @@
 param(
-    [string] $BaseUrl = 'https://azure-dev.azureedge.net/azd/standalone/release',
-    [string] $Version = 'latest'
+    [string] $BaseUrl = 'https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/release',
+    [string] $Version = 'latest',
+    [string] $InstallShScriptUrl = 'https://aka.ms/install-azd.sh',
+    [string] $UninstallShScriptUrl = 'https://aka.ms/uninstall-azd.sh'
 )
 
 function assertSuccessfulExecution($errorMessage) {
@@ -13,10 +15,14 @@ function assertSuccessfulExecution($errorMessage) {
     }
 }
 
-& $PSScriptRoot/install-azd.ps1 -BaseUrl $BaseUrl -Version $Version
+& $PSScriptRoot/install-azd.ps1 -BaseUrl $BaseUrl -Version $Version -InstallShScriptUrl $InstallShScriptUrl
 assertSuccessfulExecution "Install failed"
 
 try {
+    $azdCommand = Get-Command 'azd'
+    Write-Host "File info for $($azdCommand.Source)"
+    ls -lah $azdCommand.Source
+
     & azd version
     assertSuccessfulExecution "Could not execute azd"
 } catch {
@@ -24,7 +30,7 @@ try {
     exit 1
 }
 
-& $PSScriptRoot/uninstall-azd.ps1
+& $PSScriptRoot/uninstall-azd.ps1 -UninstallShScriptUrl $UninstallShScriptUrl
 assertSuccessfulExecution "Uninstall failed"
 
 if (Get-Command 'azd' -ErrorAction Ignore) {

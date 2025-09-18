@@ -34,7 +34,7 @@ func (c *memoryCache) Read(key string) ([]byte, error) {
 		return c.inner.Read(key)
 	}
 
-	return nil, nil
+	return nil, errCacheKeyNotFound
 }
 
 func (c *memoryCache) Set(key string, value []byte) error {

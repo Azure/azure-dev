@@ -1,0 +1,159 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExtensionSchema",
+  "description": "Schema representing the structure of extension.yaml for AZD Extensions. Provides comprehensive metadata with enhanced inline documentation for improved authoring experience.",
+  "definitions": {
+    "ExtensionExample": {
+      "type": "object",
+      "title": "Extension Example",
+      "description": "An example demonstrating how to use the extension.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "Example Name",
+          "description": "A brief name for the example."
+        },
+        "description": {
+          "type": "string",
+          "title": "Example Description",
+          "description": "Detailed explanation of what the example demonstrates."
+        },
+        "usage": {
+          "type": "string",
+          "title": "Example Usage",
+          "description": "Command or instructions that show how to use this example."
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "usage"
+      ]
+    },
+    "ExtensionDependency": {
+      "type": "object",
+      "title": "Extension Dependency",
+      "description": "A dependency required by this extension.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "title": "Dependency ID",
+          "description": "Unique identifier of the dependent extension."
+        },
+        "version": {
+          "type": "string",
+          "title": "Dependency Version",
+          "description": "The required version or version range, following semantic versioning."
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "title": "Extension ID",
+      "description": "A unique identifier for the extension."
+    },
+    "namespace": {
+      "type": "string",
+      "title": "Extension Namespace",
+      "description": "Namespace used to group extension commands; optional."
+    },
+    "entryPoint": {
+      "type": "string",
+      "title": "Entry Point",
+      "description": "Executable or script that serves as the entry point of the extension; optional."
+    },
+    "version": {
+      "type": "string",
+      "title": "Extension Version",
+      "description": "Semantic version of the extension. Use the format MAJOR.MINOR.PATCH (optionally with a pre-release tag).",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[A-Za-z0-9-.]+)?$"
+    },
+    "capabilities": {
+      "type": "array",
+      "title": "Capabilities",
+      "description": "List of capabilities provided by the extension. Supported values: custom-commands, lifecycle-events. Select one or more from the allowed list. Each value must be unique.",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "const": "custom-commands",
+            "title": "Custom Commands",
+            "description": "Custom commands expose new command groups and commands to AZD."
+          },
+          {
+            "type": "string",
+            "const": "lifecycle-events",
+            "title": "Lifecycle Events",
+            "description": "Lifecycle events enable extensions to subscribe to AZD project and service lifecycle events."
+          }
+        ]
+      }
+    },
+    "displayName": {
+      "type": "string",
+      "title": "Display Name",
+      "description": "Human-readable name of the extension."
+    },
+    "description": {
+      "type": "string",
+      "title": "Description",
+      "description": "A detailed description of the extension including its features and purpose."
+    },
+    "usage": {
+      "type": "string",
+      "title": "Usage",
+      "description": "Instructions or details on how to use the extension."
+    },
+    "examples": {
+      "type": "array",
+      "title": "Examples",
+      "description": "Usage examples that help illustrate how the extension can be used.",
+      "items": {
+        "$ref": "#/definitions/ExtensionExample"
+      }
+    },
+    "tags": {
+      "type": "array",
+      "title": "Tags",
+      "description": "Keywords to help categorize and filter the extension.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "title": "Dependencies",
+      "description": "List of other extensions that this extension depends on. These will be resolved and installed automatically.",
+      "items": {
+        "$ref": "#/definitions/ExtensionDependency"
+      }
+    },
+    "platforms": {
+      "type": "object",
+      "title": "Platform Metadata",
+      "description": "Optional, platform-specific metadata to tailor the extension for different environments.",
+      "additionalProperties": {
+        "type": "object",
+        "title": "Platform Specific",
+        "description": "Custom metadata for a particular platform.",
+        "additionalProperties": true
+      }
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "capabilities",
+    "displayName",
+    "description"
+  ]
+}

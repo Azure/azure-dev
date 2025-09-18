@@ -9,81 +9,119 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
-	"github.com/otiai10/copy"
 )
 
 type npmProject struct {
-	config *ServiceConfig
-	env    *environment.Environment
-	cli    npm.NpmCli
+	env *environment.Environment
+	cli *npm.Cli
 }
 
-func (np *npmProject) RequiredExternalTools() []tools.ExternalTool {
+// NewNpmProject creates a new instance of a NPM project
+func NewNpmProject(cli *npm.Cli, env *environment.Environment) FrameworkService {
+	return &npmProject{
+		env: env,
+		cli: cli,
+	}
+}
+
+func (np *npmProject) Requirements() FrameworkRequirements {
+	return FrameworkRequirements{
+		Package: FrameworkPackageRequirements{
+			// NPM requires a restore before running any NPM scripts
+			RequireRestore: true,
+			RequireBuild:   false,
+		},
+	}
+}
+
+// Gets the required external tools for the project
+func (np *npmProject) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{np.cli}
 }
 
-func (np *npmProject) Package(ctx context.Context, progress chan<- string) (string, error) {
-	publishRoot, err := os.MkdirTemp("", "azd")
-	if err != nil {
-		return "", fmt.Errorf("creating package directory for %s: %w", np.config.Name, err)
-	}
-
-	// Run NPM install
-	progress <- "Installing dependencies"
-	if err := np.cli.Install(ctx, np.config.Path(), false); err != nil {
-		return "", err
-	}
-
-	// Run Build, injecting env.
-	envs := make([]string, 0, len(np.env.Values)+1)
-	for k, v := range np.env.Values {
-		envs = append(envs, fmt.Sprintf("%s=%s", k, v))
-	}
-	envs = append(envs, "NODE_ENV=production")
-
-	progress <- "Building service"
-	if err := np.cli.Build(ctx, np.config.Path(), envs); err != nil {
-		return "", err
-	}
-
-	// Copy directory rooted by dist to publish root.
-	publishSource := np.config.Path()
-
-	if np.config.OutputPath != "" {
-		publishSource = filepath.Join(publishSource, np.config.OutputPath)
-	}
-
-	progress <- "Copying deployment package"
-	if err := copy.Copy(
-		publishSource,
-		publishRoot,
-		skipPatterns(
-			filepath.Join(publishSource, "node_modules"), filepath.Join(publishSource, ".azure"))); err != nil {
-		return "", fmt.Errorf("publishing for %s: %w", np.config.Name, err)
-	}
-
-	return publishRoot, nil
-}
-
-func (np *npmProject) InstallDependencies(ctx context.Context) error {
-	npmCli := npm.NewNpmCli(ctx)
-	if err := npmCli.Install(ctx, np.config.Path(), false); err != nil {
-		return err
-	}
+// Initializes the NPM project
+func (np *npmProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	return nil
 }
 
-func (np *npmProject) Initialize(ctx context.Context) error {
-	return nil
+// Restores dependencies for the NPM project using npm install command
+func (np *npmProject) Restore(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	progress *async.Progress[ServiceProgress],
+) (*ServiceRestoreResult, error) {
+	progress.SetProgress(NewServiceProgress("Installing NPM dependencies"))
+	if err := np.cli.Install(ctx, serviceConfig.Path()); err != nil {
+		return nil, err
+	}
+
+	return &ServiceRestoreResult{}, nil
 }
 
-func NewNpmProject(ctx context.Context, config *ServiceConfig, env *environment.Environment) FrameworkService {
-	return &npmProject{
-		config: config,
-		env:    env,
-		cli:    npm.NewNpmCli(ctx),
+// Builds the project executing the npm `build` script defined within the project package.json
+func (np *npmProject) Build(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	restoreOutput *ServiceRestoreResult,
+	progress *async.Progress[ServiceProgress],
+) (*ServiceBuildResult, error) {
+	// Exec custom `build` script if available
+	// If `build`` script is not defined in the package.json the NPM script will NOT fail
+	progress.SetProgress(NewServiceProgress("Running NPM build script"))
+	if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
+		return nil, err
 	}
+
+	buildSource := serviceConfig.Path()
+
+	if serviceConfig.OutputPath != "" {
+		buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
+	}
+
+	return &ServiceBuildResult{
+		Restore:         restoreOutput,
+		BuildOutputPath: buildSource,
+	}, nil
+}
+
+func (np *npmProject) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
+	progress *async.Progress[ServiceProgress],
+) (*ServicePackageResult, error) {
+	progress.SetProgress(NewServiceProgress("Running NPM package script"))
+
+	// Long term this script we call should better align with our inner-loop scenarios
+	// Keeping this defaulted to `build` will create confusion for users when we start to support
+	// both local dev / debug builds and production bundled builds
+	if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
+		return nil, err
+	}
+
+	// Copy directory rooted by dist to package root.
+	packagePath := buildOutput.BuildOutputPath
+	if packagePath == "" {
+		packagePath = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
+	}
+
+	if entries, err := os.ReadDir(packagePath); err != nil || len(entries) == 0 {
+		return nil, fmt.Errorf(
+			//nolint:lll
+			"package source '%s' is empty or does not exist. If your service has custom packaging requirements create "+
+				"an NPM script named 'build' within your package.json and ensure your package artifacts are written to "+
+				"the '%s' directory",
+			packagePath,
+			packagePath,
+		)
+	}
+
+	return &ServicePackageResult{
+		Build:       buildOutput,
+		PackagePath: packagePath,
+	}, nil
 }

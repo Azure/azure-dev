@@ -5,9 +5,7 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	osexec "os/exec"
 	"regexp"
 	"strconv"
 
@@ -16,7 +14,7 @@ import (
 )
 
 type ExternalTool interface {
-	CheckInstalled(ctx context.Context) (bool, error)
+	CheckInstalled(ctx context.Context) error
 	InstallUrl() string
 	Name() string
 }
@@ -36,24 +34,7 @@ func (err *ErrSemver) Error() string {
 		err.VersionInfo.MinimumVersion.String(), err.ToolName, err.VersionInfo.UpdateCommand, err.ToolName)
 }
 
-// toolInPath checks to see if a program can be found on the PATH, as exec.LookPath
-// does, but returns "(false, nil)" in the case where os.LookPath would return
-// exec.ErrNotFound.
-func ToolInPath(name string) (bool, error) {
-	_, err := osexec.LookPath(name)
-
-	switch {
-	case err == nil:
-		return true, nil
-	case errors.Is(err, osexec.ErrNotFound):
-		return false, nil
-	default:
-		return false, fmt.Errorf("failed searching for `%s` on PATH: %w", name, err)
-	}
-}
-
-func ExecuteCommand(ctx context.Context, cmd string, args ...string) (string, error) {
-	commandRunner := exec.GetCommandRunner(ctx)
+func ExecuteCommand(ctx context.Context, commandRunner exec.CommandRunner, cmd string, args ...string) (string, error) {
 	runResult, err := commandRunner.Run(ctx, exec.RunArgs{
 		Cmd:  cmd,
 		Args: args,

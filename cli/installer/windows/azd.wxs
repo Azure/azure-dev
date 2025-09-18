@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<?ifndef ProductName?>
+<?error ProductName property not defined?>
+<?endif?>
+
+<?ifndef ProductVersion?>
+<?error ProductVersion property not defined?>
+<?endif?>
+
+<!-- BaseProductName is used for shared registration; should be per-channel (or just use ProductName) if/when channels are supported. -->
+<?define BaseProductName = "Azure Developer CLI"?>
+<?define ProductFolder = "Azure Dev CLI"?>
+
+<!-- Define a unique UpgradeCode per platform -->
+<?if $(var.Platform) = "x64"?>
+<?define UpgradeCode = "37533D38-361D-4CDB-939C-B05A9A17B2DA"?>
+<?define ProgramFilesFolder = "ProgramFiles64Folder"?>
+<?elseif $(var.Platform) = "x86"?>
+<?define UpgradeCode = "FFE2BCD7-17E0-4C2D-A263-1FDE565F9A3F"?>
+<?define ProgramFilesFolder = "ProgramFilesFolder"?>
+<?elseif $(var.Platform) = "arm64"?>
+<?define UpgradeCode = "E5F7ECD9-D391-4278-80FA-820F81A5BCDD"?>
+<?define ProgramFilesFolder = "ProgramFiles64Folder"?>
+<?endif?>
+
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <Product Id="*" Name="$(var.ProductName)" Version="$(var.ProductVersion)" Language="1033" Manufacturer="Microsoft Corporation" UpgradeCode="$(var.UpgradeCode)">
+        <Package Compressed="yes" InstallerVersion="500" InstallScope="perUser"/>
+        <MediaTemplate EmbedCab="yes"/>
+
+        <!-- Use single package to installer per-user (default) or per-machine -->
+        <Property Id="ALLUSERS" Value="2"/>
+        <Property Id="MSIINSTALLPERUSER" Value="1"/>
+
+        <!-- Make sure any unversioned files including azd.exe (currently) are overwritten on install -->
+        <Property Id="REINSTALLMODE" Value="amus"/>
+
+        <!-- Remove older product(s) late but within the transaction to support removing ~\.azd\bin -->
+        <?if $(var.ReleaseBuild) = "true"?>
+        <!-- Release builds should still be linear to prevent installing older version. -->
+        <MajorUpgrade Schedule="afterInstallExecute" DowngradeErrorMessage="A newer version of $(var.BaseProductName) is already installed."/>
+        <?else?>
+        <!-- Dev builds should install over any other version installed for easy testing. -->
+        <MajorUpgrade Schedule="afterInstallExecute" AllowDowngrades="yes"/>
+        <?endif?>
+
+        <Directory Id="TARGETDIR" Name="SourceDir">
+            <Directory Id="$(var.ProgramFilesFolder)" Name="Program Files">
+                <Directory Id="INSTALLDIR" Name="$(var.ProductFolder)"/>
+            </Directory>
+        </Directory>
+
+        <!-- Restore the INSTALLDIR if previously persisted to the registry -->
+        <Property Id="INSTALLDIR">
+            <RegistrySearch Id="HKCUInstallDir" Root="HKCU" Key="SOFTWARE\Microsoft\$(var.ProductFolder)" Name="InstallDir" Type="directory"/>
+            <RegistrySearch Id="HKLMInstallDir" Root="HKLM" Key="SOFTWARE\Microsoft\$(var.ProductFolder)" Name="InstallDir" Type="directory"/>
+        </Property>
+
+        <Feature Id="DefaultFeature" ConfigurableDirectory="INSTALLDIR">
+            <!-- @Guid will be automatically and durably assigned based on key path -->
+            <Component Directory="INSTALLDIR">
+                <File Name="azd.exe"/>
+                <RemoveFile Id="InstalledByFile" Name=".installed-by.txt" On="uninstall"/>
+
+                <!--
+                    Attempt to clean up the downloaded files for the current user.
+                    Order matters since removing a folder requires it to be empty; however, Windows Installer makes no guarantees
+                    about order. To improve our chances, insert into the database the corret and lexically sortable order.
+                -->
+                <RemoveFile Id="DownloadedFiles" Property="BinFolder" Name="*" On="uninstall"/>
+                <RemoveFolder Id="DownloadedFolder" Property="BinFolder" On="uninstall"/>
+            </Component>
+            <Component Directory="INSTALLDIR">
+                <File Name="NOTICE.txt"/>
+            </Component>
+
+            <!-- Persist the INSTALLDIR and restore it in subsequent installs -->
+            <Component Directory="INSTALLDIR">
+                <!-- Per-user registry key path to set per-user PATH environment variable. -->
+                <Condition>NOT ALLUSERS</Condition>
+                <RegistryValue Root="HKCU" Key="SOFTWARE\Microsoft\$(var.ProductFolder)" Name="InstallDir" Type="string" Value="[INSTALLDIR]"/>
+                <Environment Id="UserPath" Action="set" Name="PATH" Part="last" System="no" Value="[INSTALLDIR]"/>
+            </Component>
+            <Component Directory="INSTALLDIR">
+                <!-- Per-machine registry key path to set per-machine PATH environment variable. -->
+                <Condition>ALLUSERS=1</Condition>
+                <RegistryValue Root="HKLM" Key="SOFTWARE\Microsoft\$(var.ProductFolder)" Name="InstallDir" Type="string" Value="[INSTALLDIR]"/>
+                <Environment Id="SystemPath" Action="set" Name="PATH" Part="last" System="yes" Value="[INSTALLDIR]"/>
+            </Component>
+
+            <!-- Override ARP to display full UI during uninstall. -->
+            <!-- Uncomment this block to restore displaying full UI on uninstall (which includes a notice to clean ~/.azd/bin) -->
+            <!-- See https://github.com/Azure/azure-dev/issues/3012 -->
+            <!-- <Component Directory="INSTALLDIR">
+                <RegistryKey Root="HKCU" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(var.BaseProductName)">
+                    <RegistryValue Name="DisplayName" Value="$(var.BaseProductName)" Type="string" />
+                    <RegistryValue Name="DisplayVersion" Value="[ProductVersion]" Type="string" />
+                    <RegistryValue Name="HelpLink" Value="https://aka.ms/azd/support" Type="string" />
+                    <RegistryValue Name="InstallLocation" Value="[INSTALLDIR]" Type="string" />
+                    <RegistryValue Name="NoModify" Value="1" Type="integer" />
+                    <RegistryValue Name="Publisher" Value="[Manufacturer]" Type="string" />
+                    <RegistryValue Name="UninstallString" Value="msiexec.exe /X[ProductCode] /qf" Type="string" />
+                </RegistryKey>
+            </Component> -->
+        </Feature>
+
+        <!-- Override ARP to display full UI during uninstall. -->
+        <!-- Uncomment this line to restore displaying full UI on uninstall (which includes a notice to clean ~/.azd/bin) -->
+        <!-- See https://github.com/Azure/azure-dev/issues/3012 -->
+        <!-- <Property Id="ARPSYSTEMCOMPONENT" Value="1" /> -->
+
+        <!-- Broadcast environment variable changes even if a reboot is pending -->
+        <CustomActionRef Id="WixBroadcastEnvironmentChange" />
+
+        <!-- Use customized WixUI_InstallDir that changes the license agreement to just a notice -->
+        <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR"/>
+        <UIRef Id="AzdInstallDir"/>
+
+        <!-- Set the BinFolder property to use for cleaning up downloaded files -->
+        <SetProperty Id="BinFolder" Value="[%USERPROFILE]\.azd\bin" After="CostFinalize" Sequence="execute"/>
+
+        <!-- Use a custom action to write the bootstrapper installing this package -->
+        <CustomActionRef Id="WriteInstalledByFile" />
+        <WixVariable Id="InstalledByFile" Value="[INSTALLDIR].installed-by.txt" />
+    </Product>
+</Wix>

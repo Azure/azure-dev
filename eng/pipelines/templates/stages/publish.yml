@@ -1,0 +1,596 @@
+stages:
+  - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
+    - stage: PublishCLI
+      dependsOn: Sign
+      condition: >-
+        and(
+          succeeded(),
+          ne(variables['Skip.Release'], 'true'),
+          or(
+            eq('Manual', variables['BuildReasonOverride']),
+            and(
+              eq('', variables['BuildReasonOverride']),
+              eq('Manual', variables['Build.Reason'])
+            )
+          )
+        )
+
+      variables:
+        - template: /eng/pipelines/templates/variables/image.yml
+        - template: /eng/pipelines/templates/variables/globals.yml
+
+      jobs:
+        - deployment: Publish_Release
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+          environment: package-publish
+
+          pool:
+            name: azsdk-pool
+            image: ubuntu-22.04
+            os: linux
+
+          templateContext:
+            type: releaseJob
+            isProduction: true
+            inputs:
+              - input: pipelineArtifact
+                artifactName: release
+                targetPath: release
+
+              - input: pipelineArtifact
+                artifactName: changelog
+                targetPath: changelog
+
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+                    parameters:
+                      Use1ESArtifactTask: true
+
+                  - pwsh: |
+                      # Initial upload locations
+                      $publishUploadLocations = 'release/$(CLI_VERSION);release/latest'
+
+                      if ('true' -eq '$(IsPublishingGa)') {
+                        $publishUploadLocations += ";release/stable"
+                      }
+
+                      Write-Host "Setting StorageUploadLocations to $publishUploadLocations"
+                      Write-Host "###vso[task.setvariable variable=StorageUploadLocations]$publishUploadLocations"
+                    displayName: Set StorageUploadLocations
+
+                  - template: /eng/pipelines/templates/steps/publish-cli.yml
+                    parameters:
+                      CreateGitHubRelease: true
+                      PublishUploadLocations: $(StorageUploadLocations)
+
+        - deployment: Publish_Choco
+          dependsOn: Publish_Release
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+          environment: package-publish
+
+          pool:
+            name: azsdk-pool
+            image: windows-2022
+            os: windows
+
+          templateContext:
+            type: releaseJob
+            isProduction: true
+            inputs:
+              - input: pipelineArtifact
+                artifactName: choco-package
+                targetPath: choco
+
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  # Sets SubmitChocoPackage
+                  - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+                    parameters:
+                      Use1ESArtifactTask: true
+
+                  - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
+
+        - job: Publish_WinGet
+          dependsOn: Publish_Release
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+
+          pool:
+            name: $(WINDOWSPOOL)
+            image: $(WINDOWSVMIMAGE)
+            os: windows
+
+          templateContext:
+            outputs:
+              - output: pipelineArtifact
+                artifact: winget-manifest
+                targetPath: winget
+
+          steps:
+            - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
+
+        - job: Publish_Brew
+          dependsOn: Publish_Release
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+
+          pool:
+            name: $(LINUXPOOL)
+            image: $(LINUXVMIMAGE)
+            os: linux
+
+          steps:
+            - checkout: self
+            - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+            - template: /eng/pipelines/templates/steps/publish-cli-brew.yml
+
+        - job: Publish_Shield
+          dependsOn: Publish_Release
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+
+          pool:
+            name: $(LINUXPOOL)
+            image: $(LINUXVMIMAGE)
+            os: linux
+
+          steps:
+            - template: /eng/pipelines/templates/steps/publish-shield.yml
+              parameters:
+                ArtifactName: shield-standalone
+                ArtifactDownloadPath: shields/standalone
+                ArtifactFilename: standalone.json
+                StorageContainerName: '`$web'
+                PublishDestination: azd/standalone/latest
+
+        - job: Increment_Version
+          dependsOn: Publish_Release
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.IncrementVersion'])
+            )
+
+          pool:
+            name: $(LINUXPOOL)
+            image: $(LINUXVMIMAGE)
+            os: linux
+
+          steps:
+            - checkout: self
+            - task: PowerShell@2
+              inputs:
+                pwsh: true
+                targetType: filePath
+                filePath: eng/scripts/Update-CliVersion.ps1
+              displayName: Increment CLI version
+
+            - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+              parameters:
+                PRBranchName: cli-version-increment-$(Build.BuildId)
+                CommitMsg: Increment CLI version after release
+                PRTitle: Increment CLI version after release
+
+        - job: Publish_Docs_PR
+          dependsOn: Publish_Release
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+
+          pool:
+            name: $(LINUXPOOL)
+            image: $(LINUXVMIMAGE)
+            os: linux
+
+          steps:
+            - checkout: self
+            - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+            - template: /eng/pipelines/templates/steps/publish-cli-docs.yml
+
+    - stage: PublishVersionTxt
+      dependsOn: PublishCLI
+
+      condition: >-
+        and(
+          succeeded(),
+          ne(variables['Skip.Release'], 'true'),
+          or(
+            eq('Manual', variables['BuildReasonOverride']),
+            and(
+              eq('', variables['BuildReasonOverride']),
+              eq('Manual', variables['Build.Reason'])
+            )
+          )
+        )
+
+      variables:
+        - template: /eng/pipelines/templates/variables/image.yml
+        - template: /eng/pipelines/templates/variables/globals.yml
+
+      jobs:
+        - deployment: ReleaseGate
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+          environment: package-publish
+
+          pool:
+            name: azsdk-pool
+            image: ubuntu-22.04
+            os: linux
+
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - pwsh: Write-Host "Release gate passed. Dependant jobs will run."
+                    displayName: Release gate passed
+
+        - job: Upload_Version_Txt
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+
+          dependsOn: ReleaseGate
+
+          pool:
+            name: $(WINDOWSPOOL)
+            image: $(WINDOWSVMIMAGE)
+            os: windows
+
+          steps:
+            - checkout: self
+
+            - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+
+            - task: PowerShell@2
+              displayName: Wait for WinGet package
+              inputs:
+                pwsh: true
+                targetType: filePath
+                filePath: eng/scripts/Wait-WinGetPackage.ps1
+                arguments: >-
+                  -PackageName 'Microsoft.Azd'
+                  -PackageVersion '$(MSI_VERSION)'
+
+            - task: PowerShell@2
+              displayName: Wait for Choco package
+              inputs:
+                pwsh: true
+                targetType: filePath
+                filePath: eng/scripts/Wait-ChocoPackage.ps1
+                arguments: >-
+                  -PackageName 'azd'
+                  -PackageVersion '$(MSI_VERSION)'
+
+            - pwsh: |
+                New-Item -ItemType Directory -Path release
+                Write-Output $(CLI_VERSION) | Out-File -Encoding utf8 -FilePath ./release/version.txt
+              displayName: Write version.txt file for release
+
+            - task: AzurePowerShell@5
+              displayName: Upload version.txt to storage account
+              inputs:
+                azureSubscription: 'Azure SDK Artifacts'
+                azurePowerShellVersion: LatestVersion
+                pwsh: true
+                ScriptType: InlineScript
+                Inline: |
+                  $isPublishingGa = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+                    -CliVersion '$(CLI_VERSION)'
+
+                  $publishUploadLocations = @('release/latest')
+                  if ($isPublishingGa) {
+                    $publishUploadLocations += @('release/stable')
+                  }
+
+                  Get-ChildItem release/
+
+                  foreach ($folder in $publishUploadLocations) {
+                    Write-Host "Upload to azd/standalone/$folder"
+                    azcopy copy "release/*" "$(publish-storage-location)/`$web/azd/standalone/$folder" --overwrite=true
+                    if ($LASTEXITCODE) {
+                      Write-Error "Upload failed"
+                      exit 1
+                    }
+                  }
+              env:
+                AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
+
+  - stage: PublishIntegration
+    dependsOn: Sign
+
+    variables:
+      - template: /eng/pipelines/templates/variables/image.yml
+      - template: /eng/pipelines/templates/variables/globals.yml
+
+    jobs:
+      # Only publish Continuous Deployment if this is the public repo
+      - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
+        - deployment: Publish_Continuous_Deployment
+          environment: none
+          condition: >-
+            and(
+              succeeded(),
+              ne(variables['Skip.Release'], 'true'),
+              or(
+                in(variables['BuildReasonOverride'], 'IndividualCI', 'BatchedCI'),
+                and(
+                  eq('', variables['BuildReasonOverride']),
+                  in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
+                )
+              )
+            )
+
+          pool:
+            name: azsdk-pool
+            image: ubuntu-22.04
+            os: linux
+
+          templateContext:
+            type: releaseJob
+            isProduction: false
+            inputs:
+              - input: pipelineArtifact
+                artifactName: release
+                targetPath: release
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+                    parameters:
+                      Use1ESArtifactTask: true
+
+                  - template: /eng/pipelines/templates/steps/publish-cli.yml
+                    parameters:
+                      CreateGitHubRelease: false
+                      PublishUploadLocations: release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
+
+      - deployment: Publish_For_PR
+        environment: none
+        condition: >-
+          and(
+            succeeded(),
+            ne(variables['Skip.Release'], 'true'),
+            or(
+              eq('PullRequest', variables['BuildReasonOverride']),
+              and(
+                eq('', variables['BuildReasonOverride']),
+                eq(variables['Build.Reason'], 'PullRequest')
+              )
+            )
+          )
+
+        pool:
+          name: azsdk-pool
+          image: ubuntu-22.04
+          os: linux
+
+        templateContext:
+          type: releaseJob
+          isProduction: false
+          inputs:
+            - input: pipelineArtifact
+              artifactName: release
+              targetPath: release
+
+            - input: pipelineArtifact
+              artifactName: docs
+              targetPath: docs
+
+            - input: pipelineArtifact
+              artifactName: install-sh
+              targetPath: installer
+
+            - input: pipelineArtifact
+              artifactName: install-pwsh
+              targetPath: installer
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - pwsh: |
+                    $PRNumber = '$(System.PullRequest.PullRequestNumber)'
+                    if ($env:PRNUMBEROVERRIDE) {
+                      Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
+                      $PRNumber = "$($env:PRNUMBEROVERRIDE)"
+                    }
+                    Write-Host "##vso[task.setvariable variable=PRNumber]$PRNumber"
+                  displayName: Set PR Number Variable
+
+                - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+                  parameters:
+                    Use1ESArtifactTask: true
+
+                - template: /eng/pipelines/templates/steps/publish-cli.yml
+                  parameters:
+                    CreateGitHubRelease: false
+                    PublishUploadLocations: pr/$(PRNumber)
+                    UploadInstaller: true
+
+                - pwsh: |
+                    $urlBase = "$(publish-storage-static-host)/azd/standalone/pr/$(PRNumber)"
+                    Write-Host "##vso[task.setvariable variable=UrlBase;isOutput=true]$urlBase"
+                  name: GenerateUrlBase
+                  displayName: Set UrlBase
+
+                - pwsh: |
+                    $urlBase = "$(GenerateUrlBase.UrlBase)"
+                    $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
+                    $linuxReleaseUrlArm64 = "$urlBase/azd-linux-arm64.tar.gz"
+                    $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
+                    $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64.zip"
+                    $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
+                    $windowsReleaseUrlArm64 = "$urlBase/azd-windows-arm64-alpha.zip"
+                    $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
+
+                    $refDocContent = Get-Content docs/azd.md -Raw
+
+                    $content = @"
+                    <!-- #comment-cli-pr -->
+                    ## Azure Dev CLI Install Instructions
+
+                    ### Install scripts
+
+                    #### MacOS/Linux
+
+                    > May elevate using ``sudo`` on some platforms and configurations
+
+                    bash:
+                    ``````
+                    curl -fsSL $urlBase/uninstall-azd.sh | bash;
+                    curl -fsSL $urlBase/install-azd.sh | bash -s -- --base-url $urlBase --version '' --verbose --skip-verify
+                    ``````
+
+                    pwsh:
+                    ``````
+                    Invoke-RestMethod '$urlBase/uninstall-azd.ps1' -OutFile uninstall-azd.ps1; ./uninstall-azd.ps1
+                    Invoke-RestMethod '$urlBase/install-azd.ps1' -OutFile install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -SkipVerify -Verbose
+                    ``````
+
+
+                    #### Windows
+
+                    PowerShell install
+
+                    ``````
+                    powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/uninstall-azd.ps1' > uninstall-azd.ps1; ./uninstall-azd.ps1;"
+                    powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/install-azd.ps1' > install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -SkipVerify -Verbose;"
+                    ``````
+
+                    MSI install
+                    ``````
+                    powershell -c "irm '$msiReleaseUrl' -OutFile azd-windows-amd64.msi; msiexec /i azd-windows-amd64.msi /qn"
+                    ``````
+
+                    ### Standalone Binary
+
+                    * Linux -
+                        * x86_64 - $linuxReleaseUrl
+                        * ARM64 - $linuxReleaseUrlArm64
+                    * MacOS -
+                        * x86_64 - $macosReleaseUrl
+                        * ARM64 - $macosReleaseUrlArm64
+                    * Windows -
+                        * x86_64 - $windowsReleaseUrl
+                        * ARM64 - $windowsReleaseUrlArm64
+
+                    ### MSI
+
+                    * x86_64 - $msiReleaseUrl
+
+                    ## Documentation
+
+                    <details>
+                    <summary>learn.microsoft.com documentation</summary>
+
+                    $refDocContent
+
+                    </details>
+                    "@
+                    $file = New-TemporaryFile
+                    Set-Content -Path $file -Value $content
+                    Write-Host "##vso[task.setvariable variable=CommentBodyFile]$file"
+                  displayName: Write body content to temporary file
+
+                - template: /eng/pipelines/templates/steps/update-prcomment.yml
+                  parameters:
+                    PrNumber: $(PRNumber)
+                    BodyFile: $(CommentBodyFile)
+                    Tag: '<!-- #comment-cli-pr -->'
+
+  - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
+    - stage: PublishInstallers
+      dependsOn: Sign
+      condition: >-
+        and(
+          succeeded(),
+          ne(variables['Skip.Release'], 'true'),
+          or(
+            eq('Manual', variables['BuildReasonOverride']),
+            and(
+              eq('', variables['BuildReasonOverride']),
+              eq('Manual', variables['Build.Reason'])
+            )
+          )
+        )
+
+      variables:
+        - template: /eng/pipelines/templates/variables/image.yml
+        - template: /eng/pipelines/templates/variables/globals.yml
+
+      jobs:
+        - deployment: PublishInstallers
+          environment: package-publish
+          pool:
+            name: azsdk-pool
+            image: ubuntu-22.04
+            os: linux
+
+          templateContext:
+            type: releaseJob
+            isProduction: true
+            inputs:
+              - input: pipelineArtifact
+                artifactName: signed-win
+                targetPath: signed-win
+
+              - input: pipelineArtifact
+                artifactName: install-sh
+                targetPath: install-sh
+
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - pwsh: |
+                      New-Item -ItemType Directory -Path script-release
+                      Copy-Item signed-win/*.ps1 script-release/
+                      Copy-Item install-sh/*.sh script-release/
+                    displayName: Copy scripts for release upload
+
+                  - task: AzurePowerShell@5
+                    displayName: Upload installer to storage location
+                    inputs:
+                      azureSubscription: 'Azure SDK Artifacts'
+                      azurePowerShellVersion: LatestVersion
+                      pwsh: true
+                      ScriptType: InlineScript
+                      Inline: |
+                        azcopy copy "script-release/*" "$(publish-storage-location)/`$web/azd/standalone/installer" --overwrite=true
+                        if ($LASTEXITCODE) {
+                          Write-Error "Upload failed"
+                          exit 1
+                        }
+                    env:
+                      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'

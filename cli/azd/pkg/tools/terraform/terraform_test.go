@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package terraform
 
 import (
@@ -24,7 +27,7 @@ func Test_WithEnv(t *testing.T) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
-	cli := GetTerraformCli(*mockContext.Context)
+	cli := NewCli(mockContext.CommandRunner)
 	cli.SetEnv(expectedEnvVars)
 
 	_, err := cli.Init(*mockContext.Context, "path/to/module")

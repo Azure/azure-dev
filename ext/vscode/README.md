@@ -1,4 +1,4 @@
-# Azure Dev CLI Visual Studio Code extension
+# Azure Developer CLI Visual Studio Code extension
 
 This extension makes it easier to run, create Azure Resources, and deploy Azure applications with the Azure Developer CLI.
 

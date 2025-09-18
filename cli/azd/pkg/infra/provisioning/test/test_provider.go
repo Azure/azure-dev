@@ -4,33 +4,26 @@
 // Package test contains an test implementation of provider.Provider. This
 // provider is registered for use when this package is imported, and can be imported for
 // side effects only to register the provider, e.g.:
-//
-// require(
-//
-//	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
-//
-// )
 package test
 
 import (
 	"context"
 	"errors"
-	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type TestProvider struct {
+	envManager  environment.Manager
 	env         *environment.Environment
 	projectPath string
-	options     Options
+	options     provisioning.Options
 	console     input.Console
+	prompters   prompt.Prompter
 }
 
 // Name gets the name of the infra provider
@@ -42,166 +35,117 @@ func (p *TestProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-func (p *TestProvider) Plan(
-	ctx context.Context,
-) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) {
-			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Planning deployment", Timestamp: time.Now()})
+func (p *TestProvider) Initialize(ctx context.Context, projectPath string, options provisioning.Options) error {
+	p.projectPath = projectPath
+	p.options = options
 
-			params := make(map[string]InputParameter)
-			params["location"] = InputParameter{Value: p.env.Values["AZURE_LOCATION"]}
-
-			deploymentPlan := DeploymentPlan{
-				Deployment: Deployment{
-					Parameters: params,
-					Outputs:    make(map[string]OutputParameter),
-				},
-			}
-
-			asyncContext.SetProgress(
-				&DeploymentPlanningProgress{Message: "Deployment planning completed", Timestamp: time.Now()},
-			)
-			asyncContext.SetResult(&deploymentPlan)
-		})
+	return p.EnsureEnv(ctx)
 }
 
-func (p *TestProvider) State(
-	ctx context.Context,
-	scope infra.Scope,
-) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
-			asyncContext.SetProgress(&StateProgress{
-				Message:   "Looking up deployment",
-				Timestamp: time.Now(),
-			})
-
-			state := State{
-				Outputs:   make(map[string]OutputParameter),
-				Resources: make([]Resource, 0),
-			}
-
-			stateResult := StateResult{
-				State: &state,
-			}
-
-			asyncContext.SetResult(&stateResult)
-		})
+// EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
+// values are unset.
+//
+// An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
+// AZURE_LOCATION value.
+func (t *TestProvider) EnsureEnv(ctx context.Context) error {
+	return provisioning.EnsureSubscriptionAndLocation(
+		ctx,
+		t.envManager,
+		t.env,
+		t.prompters,
+		provisioning.EnsureSubscriptionAndLocationOptions{},
+	)
 }
 
-func (p *TestProvider) GetDeployment(
-	ctx context.Context,
-	scope infra.Scope,
-) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
-			asyncContext.SetProgress(&DeployProgress{
-				Message:   "Looking up deployment",
-				Timestamp: time.Now(),
-			})
+func (p *TestProvider) State(ctx context.Context, options *provisioning.StateOptions) (*provisioning.StateResult, error) {
+	// TODO: progress, "Looking up deployment"
 
-			deployment := Deployment{
-				Parameters: make(map[string]InputParameter),
-				Outputs:    make(map[string]OutputParameter),
-			}
+	state := provisioning.State{
+		Outputs:   make(map[string]provisioning.OutputParameter),
+		Resources: make([]provisioning.Resource, 0),
+	}
 
-			deployResult := DeployResult{
-				Deployment: &deployment,
-			}
+	return &provisioning.StateResult{
+		State: &state,
+	}, nil
+}
 
-			asyncContext.SetResult(&deployResult)
-		})
+func (p *TestProvider) GetDeployment(ctx context.Context) (*provisioning.DeployResult, error) {
+	// TODO: progress, "Looking up deployment"
+
+	deployment := provisioning.Deployment{
+		Parameters: make(map[string]provisioning.InputParameter),
+		Outputs:    make(map[string]provisioning.OutputParameter),
+	}
+
+	return &provisioning.DeployResult{
+		Deployment: &deployment,
+	}, nil
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *TestProvider) Deploy(
-	ctx context.Context,
-	pd *DeploymentPlan,
-	scope infra.Scope,
-) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
-			asyncContext.SetProgress(&DeployProgress{
-				Message:   "Deploying azure resources",
-				Timestamp: time.Now(),
-			})
+func (p *TestProvider) Deploy(ctx context.Context) (*provisioning.DeployResult, error) {
+	// TODO: progress, "Deploying azure resources"
 
-			deployment := Deployment{
-				Parameters: make(map[string]InputParameter),
-				Outputs:    make(map[string]OutputParameter),
-			}
+	deployment := provisioning.Deployment{
+		Parameters: make(map[string]provisioning.InputParameter),
+		Outputs:    make(map[string]provisioning.OutputParameter),
+	}
 
-			deployResult := DeployResult{
-				Deployment: &deployment,
-			}
+	return &provisioning.DeployResult{
+		Deployment: &deployment,
+	}, nil
+}
 
-			asyncContext.SetResult(&deployResult)
-		})
+// Provisioning the infrastructure within the specified template
+func (p *TestProvider) Preview(ctx context.Context) (*provisioning.DeployPreviewResult, error) {
+	return &provisioning.DeployPreviewResult{
+		Preview: &provisioning.DeploymentPreview{
+			Status:     "Completed",
+			Properties: &provisioning.DeploymentPreviewProperties{},
+		},
+	}, nil
 }
 
 func (p *TestProvider) Destroy(
 	ctx context.Context,
-	deployment *Deployment,
-	options DestroyOptions,
-) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
-			asyncContext.SetProgress(&DestroyProgress{
-				Message:   "Starting destroy",
-				Timestamp: time.Now(),
-			})
+	options provisioning.DestroyOptions,
+) (*provisioning.DestroyResult, error) {
+	// TODO: progress, "Starting destroy"
 
-			destroyResult := DestroyResult{
-				Resources: []azcli.AzCliResource{},
-				Outputs:   deployment.Outputs,
-			}
-
-			err := asyncContext.Interact(func() error {
-				confirmOptions := input.ConsoleOptions{Message: "Are you sure you want to destroy?"}
-				confirmed, err := p.console.Confirm(ctx, confirmOptions)
-
-				if err != nil {
-					return err
-				}
-
-				if !confirmed {
-					return errors.New("user denied confirmation")
-				}
-
-				return nil
-			})
-
-			if err != nil {
-				asyncContext.SetError(err)
-				return
-			}
-
-			asyncContext.SetProgress(&DestroyProgress{Message: "Finishing destroy", Timestamp: time.Now()})
-
-			asyncContext.SetResult(&destroyResult)
-		})
-}
-
-func NewTestProvider(ctx context.Context, env *environment.Environment, projectPath string, options Options) Provider {
-	return &TestProvider{
-		env:         env,
-		projectPath: projectPath,
-		options:     options,
-		console:     input.GetConsole(ctx),
+	destroyResult := provisioning.DestroyResult{
+		InvalidatedEnvKeys: []string{},
 	}
-}
 
-// Registers the Test provider with the provisioning module
-func init() {
-	err := RegisterProvider(
-		Test,
-		func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
-			return NewTestProvider(ctx, env, projectPath, options), nil
-		},
-	)
+	confirmOptions := input.ConsoleOptions{Message: "Are you sure you want to destroy?"}
+	confirmed, err := p.console.Confirm(ctx, confirmOptions)
 
 	if err != nil {
-		panic(err)
+		return nil, err
+	}
+
+	if !confirmed {
+		return nil, errors.New("user denied confirmation")
+	}
+
+	return &destroyResult, nil
+}
+
+func (p *TestProvider) Parameters(ctx context.Context) ([]provisioning.Parameter, error) {
+	// not supported (no-op)
+	return nil, nil
+}
+
+func NewTestProvider(
+	envManager environment.Manager,
+	env *environment.Environment,
+	console input.Console,
+	prompters prompt.Prompter,
+) provisioning.Provider {
+	return &TestProvider{
+		envManager: envManager,
+		env:        env,
+		console:    console,
+		prompters:  prompters,
 	}
 }

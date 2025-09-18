@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package appinsightsexporter
 
 import (
@@ -13,7 +16,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	semconv "go.opentelemetry.io/otel/semconv/v1.6.1"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -150,7 +153,7 @@ func assertAttributeInPropertiesOrMeasurement(
 		assert.Contains(t, measurements, string(attrib.Key))
 		assert.Equal(t, attrib.Value.AsFloat64(), measurements[string(attrib.Key)])
 	case attribute.BOOLSLICE, attribute.INT64SLICE, attribute.FLOAT64SLICE, attribute.STRINGSLICE:
-		val, err := json.Marshal(attrib.Value)
+		val, err := json.Marshal(attrib.Value.AsInterface())
 		if err != nil {
 			assert.Fail(t, fmt.Sprintf("value cannot be marshaled to JSON: %s", err.Error()))
 		}

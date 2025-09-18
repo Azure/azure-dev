@@ -8,8 +8,8 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/microsoft/azure-devops-go-api/azuredevops"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/git"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 )
 
 // create a new repository in the current project
@@ -101,12 +101,17 @@ func GetGitRepositoriesInProject(
 	}
 	repos := *getRepositoriesResult
 
-	options := make([]string, len(repos))
-	for idx, repo := range repos {
-		options[idx] = *repo.Name
+	options := make([]string, 0, len(repos))
+	for _, repo := range repos {
+		options = append(options, *repo.Name)
 	}
+
+	if len(options) == 0 {
+		return nil, fmt.Errorf("no repositories found in project %s", projectName)
+	}
+
 	repoIdx, err := console.Select(ctx, input.ConsoleOptions{
-		Message: "Please choose an existing Azure DevOps Repository",
+		Message: "Choose an existing Azure DevOps Repository",
 		Options: options,
 	})
 

@@ -1,0 +1,260 @@
+parameters: 
+  - name: SanitizedExtensionId
+    type: string
+
+stages: 
+  - stage: Sign
+    dependsOn: BuildAndTest
+
+    variables:
+      - template: /eng/pipelines/templates/variables/globals.yml
+      - template: /eng/pipelines/templates/variables/image.yml
+
+    jobs:
+      - job: SignMac
+        pool:
+          name: $(WINDOWSPOOL)
+          image: $(WINDOWSVMIMAGE)
+          os: windows
+
+        steps:
+          # Checkout required for CredScanSuppression.json
+          - checkout: self
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: ${{ parameters.SanitizedExtensionId }}-darwin-amd64
+              path: mac-artifacts
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: ${{ parameters.SanitizedExtensionId }}-darwin-arm64
+              path: mac-artifacts
+
+          - pwsh: |
+              New-Item -ItemType Directory -Path mac
+              
+              Compress-Archive `
+              -Path mac-artifacts/${{ parameters.SanitizedExtensionId }}-darwin-amd64 `
+              -DestinationPath mac/${{ parameters.SanitizedExtensionId }}-darwin-amd64.zip
+
+              Compress-Archive `
+              -Path mac-artifacts/${{ parameters.SanitizedExtensionId }}-darwin-arm64 `
+              -DestinationPath mac/${{ parameters.SanitizedExtensionId }}-darwin-arm64.zip
+            displayName: Package mac binary for signing
+
+          - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+            - template: pipelines/steps/azd-cli-mac-signing.yml@azure-sdk-build-tools
+              parameters:
+                MacPath: mac
+
+          - ${{ else }}:
+            - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+              displayName: Signing process skipped for non-release build
+
+          - pwsh: |
+              Expand-Archive -Path mac/${{ parameters.SanitizedExtensionId }}-darwin-amd64.zip -DestinationPath mac/
+              Expand-Archive -Path mac/${{ parameters.SanitizedExtensionId }}-darwin-arm64.zip -DestinationPath mac/
+
+              Remove-Item mac/${{ parameters.SanitizedExtensionId }}-darwin-amd64.zip
+              Remove-Item mac/${{ parameters.SanitizedExtensionId }}-darwin-arm64.zip
+            displayName: Extract ${{ parameters.SanitizedExtensionId }}-darwin-amd64 from zip and remove zip
+
+          - pwsh: |
+              New-Item -ItemType Directory -Path signed-mac
+              Copy-Item mac/* signed-mac/ -Recurse
+            displayName: Copy signing outputs
+            condition: always()
+
+          # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
+          # when the common engsys is imported.
+          # https://github.com/Azure/azure-dev/issues/956
+          - task: 1ES.PublishPipelineArtifact@1
+            condition: succeeded()
+            displayName: Publish Signed Artifacts
+            inputs:
+              artifactName: signed-mac
+              path: signed-mac/
+
+          - task: 1ES.PublishPipelineArtifact@1
+            condition: failed()
+            displayName: Publish failed Signed Artifacts
+            inputs:
+              artifactName: signed-mac-FailedAttempt$(System.JobAttempt)
+              path: signed-mac/
+
+      - job: SignWindows
+        pool:
+          name: $(WINDOWSPOOL)
+          image: $(WINDOWSVMIMAGE)
+          os: windows
+
+        steps:
+          # Checkout required for CredScanSuppression.json
+          - checkout: self
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: ${{ parameters.SanitizedExtensionId}}-windows-amd64.exe
+              path: win-x86_64
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: ${{ parameters.SanitizedExtensionId}}-windows-arm64.exe
+              path: win-arm64
+
+          - pwsh: |
+              New-Item -ItemType Directory -Path win
+
+              Copy-Item win-x86_64/${{ parameters.SanitizedExtensionId}}-windows-amd64.exe win/
+              Copy-Item win-arm64/${{ parameters.SanitizedExtensionId}}-windows-arm64.exe win/
+            displayName: Package windows binary for signing
+
+          - pwsh: |
+              if (Test-Path win/_manifest) {
+                Remove-Item -Recurse -Force win/_manifest
+              }
+              Get-Childitem -Recurse win/ | Select-Object -Property Length,FullName
+            displayName: Prepare assets for signing
+
+          - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+            - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
+              parameters:
+                WinPath:  win
+                WinPattern: '**'
+
+          - ${{ else }}:
+            - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+              displayName: Signing process skipped for non-release build
+
+          - pwsh: |
+              New-Item -ItemType Directory -Path signed-win
+              Copy-Item win/* signed-win/ -Recurse
+            displayName: Copy signing outputs for publishing
+            condition: always()
+
+          # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
+          # when the common engsys is imported.
+          # https://github.com/Azure/azure-dev/issues/956
+          - task: 1ES.PublishPipelineArtifact@1
+            condition: succeeded()
+            displayName: Publish Signed Artifacts
+            inputs:
+              artifactName: signed-win
+              path: signed-win/
+
+          - task: 1ES.PublishPipelineArtifact@1
+            condition: failed()
+            displayName: Publish failed Signed Artifacts
+            inputs:
+              artifactName: signed-win-FailedAttempt$(System.JobAttempt)
+              path: signed-win/
+
+      - job: CreateRelease
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+
+        dependsOn:
+          - SignMac
+          - SignWindows
+
+        templateContext:
+          outputs:
+            - output: pipelineArtifact
+              path: release
+              artifact: release
+              condition: succeeded()
+              displayName: Upload azd release artifact
+
+        steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifactName: release-metadata
+              targetPath: release-metadata
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifactName: signed-win
+              targetPath: signed/win
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifactName: signed-mac
+              targetPath: signed/mac
+
+          # Linux binaries are not signed today so download from build outputs
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifactName: ${{ parameters.SanitizedExtensionId}}-linux-amd64
+              targetPath: release-staging
+
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifactName: ${{ parameters.SanitizedExtensionId}}-linux-arm64
+              targetPath: release-staging
+
+          - bash: | 
+              chmod +x \
+              signed/mac/${{ parameters.SanitizedExtensionId }}-darwin-amd64 \
+              signed/mac/${{ parameters.SanitizedExtensionId }}-darwin-arm64 \
+              release-staging/${{ parameters.SanitizedExtensionId }}-linux-amd64 \
+              release-staging/${{ parameters.SanitizedExtensionId }}-linux-arm64
+            displayName: Set execute bit for the mac and linux release
+
+          - pwsh: New-Item -ItemType Directory -Path release -Force
+            displayName: Create release directory
+
+          - pwsh: |
+              $extensionId = '${{ parameters.SanitizedExtensionId }}'
+
+              # zip releases
+                zip release/$extensionId-darwin-amd64.zip `
+                  -j `
+                  signed/mac/$extensionId-darwin-amd64 `
+                  release-metadata/NOTICE.txt `
+                  release-metadata/extension.yaml
+                
+                zip release/$extensionId-darwin-arm64.zip `
+                  -j `
+                  signed/mac/$extensionId-darwin-arm64 `
+                  release-metadata/NOTICE.txt `
+                  release-metadata/extension.yaml
+
+                zip release/$extensionId-windows-amd64.zip `
+                  -j `
+                  signed/win/$extensionId-windows-amd64.exe `
+                  release-metadata/NOTICE.txt `
+                  release-metadata/extension.yaml
+
+                zip release/$extensionId-windows-arm64.zip `
+                  -j `
+                  signed/win/$extensionId-windows-arm64.exe `
+                  release-metadata/NOTICE.txt `
+                  release-metadata/extension.yaml
+
+              # tar.gz releases
+
+              # Must place NOTICE.txt and extension.yaml in file tree for tar to 
+              # pick it up and place it in the same place in the directory 
+              # structure
+              Copy-Item release-metadata/NOTICE.txt ./release-staging/
+              Copy-Item release-metadata/extension.yaml ./release-staging/
+
+              tar `
+                -C ./release-staging/ `
+                -cvzf `
+                release/$extensionId-linux-amd64.tar.gz `
+                $extensionId-linux-amd64 `
+                NOTICE.txt `
+                extension.yaml
+
+              tar `
+                -C ./release-staging/ `
+                -cvzf `
+                release/$extensionId-linux-arm64.tar.gz `
+                $extensionId-linux-arm64 `
+                NOTICE.txt `
+                extension.yaml
+            displayName: Create release artifacts

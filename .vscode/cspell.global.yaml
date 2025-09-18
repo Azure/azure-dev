@@ -9,12 +9,14 @@ ignorePaths:
     - ./go.mod
     - ./go.sum
     - ./NOTICE.txt
-    - ./templates/common/NOTICE.txt
 words:
     - opentelemetry
     - bson
     - azdo
+    - choco
+    - winget
 ignoreWords:
+    - AADSTS
     - afwp
     - apim
     - appcontainers
@@ -24,6 +26,7 @@ ignoreWords:
     - armauthorization
     - armappcontainers
     - armappservice
+    - armcontainerservice
     - armkeyvault
     - armresources
     - armruntime
@@ -32,22 +35,32 @@ ignoreWords:
     - azurewebsites
     - azcore
     - Azdo
+    - azdrelease
     - aztfmod
     - azurecaf
+    - azurecr
     - azuredevops
     - azurerm
+    - azuresdkartifacts
     - armcontainerregistry
     - azidentity
     - azsecrets
+    - beginswith
     - Bfor
     - bicepcli
     - cdne
     - cdnp
+    - chooks
+    - cloudshell
     - commandrunner
+    - configlist
     - conjunction
     - containerregistry
+    - containerservice
+    - dapr
     - databricks
     - dedb
+    - devcenter
     - devcontainer
     - dnsz
     - evgd
@@ -59,18 +72,25 @@ ignoreWords:
     - fdfp
     - fics
     - Frontdoor
+    - golobby
     - graphsdk
     - hndl
     - httpclient
     - httptrigger
+    - infracreate
+    - infradelete
     - inputhelper
     - ippre
     - JOBOBJECT
     - kubernetes
     - kusto
+    - kubeconfig
+    - kubeconfigs
+    - kustomize
     - magefile
     - mainfic
     - menuid
+    - middlewares
     - migr
     - mockconfig
     - mockconsole
@@ -86,7 +106,18 @@ ignoreWords:
     - pcert
     - pdnsz
     - Peerings
+    - pipefail
     - PLACEHOLDERIACTOOLS
+    - postcommand
+    - postinit
+    - postbuild
+    - postpublish
+    - preinline
+    - prebuild
+    - precommand
+    - predeploy
+    - preinteractive
+    - prealias
     - provs
     - psql
     - pview
@@ -107,6 +138,7 @@ ignoreWords:
     - ssimp
     - stapp
     - startswith
+    - stringutil
     - stvm
     - syndp
     - synsp
@@ -119,6 +151,7 @@ ignoreWords:
     - tfstate
     - tfvars
     - traf
+    - unmanage
     - useragent
     - versioncontrol
     - vmss
@@ -142,7 +175,10 @@ ignoreWords:
     - menuid
     - PLACEHOLDERIACTOOLS
     - LOGANALYTICS
+    - venv
+    - webapprouting
     - zipdeploy
+    - appinsights
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases
@@ -155,8 +191,20 @@ dictionaryDefinitions:
       description: Custom Notice Dictionary
       addWords: true
       scope: workspace
+    - name: schemas
+      path: ./cspell-schemas.txt
+      description: Custom Schema Dictionary
+      addWords: true
+      scope: workspace
+    - name: devopsExtension
+      path: ./cspell-devops-ext.txt
+      description: Custom DevOps Extension Dictionary
+      addWords: true
+      scope: workspace
 dictionaries:
     - powershell
     - go
     - gitHubUserAliases
     - noticeMd
+    - schemas
+    - devopsExtension

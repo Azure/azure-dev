@@ -1,0 +1,111 @@
+{{define "azure-dev.yml" -}}
+# Run when commits are pushed to {{.BranchName}}
+on:
+  workflow_dispatch:
+  push:
+    # Run when commits are pushed to mainline branch (main or master)
+    # Set this to the mainline branch you are using
+    branches:
+      - {{.BranchName}}
+
+{{ if .FedCredLogIn -}}
+# Set up permissions for deploying with secretless Azure federated credentials
+# https://learn.microsoft.com/en-us/azure/developer/github/connect-from-azure?tabs=azure-portal%2Clinux#set-up-azure-login-with-openid-connect-authentication
+permissions:
+  id-token: write
+  contents: read
+{{ end }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      AZURE_CLIENT_ID: ${{ "{{" }} vars.AZURE_CLIENT_ID {{ "}}" }}
+      AZURE_TENANT_ID: ${{ "{{" }} vars.AZURE_TENANT_ID {{ "}}" }}
+      AZURE_SUBSCRIPTION_ID: ${{ "{{" }} vars.AZURE_SUBSCRIPTION_ID {{ "}}" }}
+{{- range $variable := .Variables }}
+      {{ $variable }}: ${{ "{{" }} vars.{{ $variable }} {{ "}}" }}
+{{- end}}
+{{- if .IsTerraform }}
+      ARM_SUBSCRIPTION_ID: ${{ "{{" }} vars.AZURE_SUBSCRIPTION_ID {{ "}}" }}
+      ARM_TENANT_ID: ${{ "{{" }} vars.AZURE_TENANT_ID {{ "}}" }}
+      ARM_CLIENT_ID: ${{ "{{" }} vars.AZURE_CLIENT_ID {{ "}}" }}
+      RS_RESOURCE_GROUP: ${{ "{{" }} vars.RS_RESOURCE_GROUP {{ "}}" }}
+      RS_STORAGE_ACCOUNT: ${{ "{{" }} vars.RS_STORAGE_ACCOUNT {{ "}}" }}
+      RS_CONTAINER_NAME: ${{ "{{" }} vars.RS_CONTAINER_NAME {{ "}}" }}
+{{- if .FedCredLogIn }}
+      ARM_USE_OIDC: "true"      
+{{- end }}
+{{- end }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install azd
+        uses: Azure/setup-azd@v2
+{{- if .IsTerraform}}
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+{{ end }}
+{{- if .InstallDotNetForAspire}}
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: | 
+            8.x.x
+            9.x.x
+{{ end }}
+{{- if .FedCredLogIn }}
+      - name: Log in with Azure (Federated Credentials)
+        run: |
+          azd auth login `
+            --client-id "$Env:AZURE_CLIENT_ID" `
+            --federated-credential-provider "github" `
+            --tenant-id "$Env:AZURE_TENANT_ID"
+        shell: pwsh
+{{ end }}
+
+{{- if .AlphaFeatures }}
+      - name: Enabled required alpha features
+        run: |
+{{- range $feature := .AlphaFeatures }}
+          azd config set alpha.{{ $feature }} on
+{{- end }}
+        shell: pwsh
+{{ end }}
+
+{{- if not .FedCredLogIn }}
+      - name: Log in with Azure (Client Credentials)
+        run: |
+          $info = $Env:AZURE_CREDENTIALS | ConvertFrom-Json -AsHashtable;
+          Write-Host "::add-mask::$($info.clientSecret)"
+
+          azd auth login `
+            --client-id "$($info.clientId)" `
+            --client-secret "$($info.clientSecret)" `
+            --tenant-id "$($info.tenantId)"
+        shell: pwsh
+        env:
+          AZURE_CREDENTIALS: ${{ "{{" }} secrets.AZURE_CREDENTIALS {{ "}}" }}
+{{ end }}
+
+      - name: Provision Infrastructure
+        run: azd provision --no-prompt
+{{- if .Secrets }}
+        env:
+{{- range $secret := .Secrets }}
+          {{ $secret }}: ${{ "{{" }} secrets.{{ $secret }} {{ "}}" }}
+{{- end}}
+{{- end }}
+
+      - name: Deploy Application
+        run: azd deploy --no-prompt
+{{- if .Secrets }}
+        env:
+{{- range $secret := .Secrets }}
+          {{ $secret }}: ${{ "{{" }} secrets.{{ $secret }} {{ "}}" }}
+{{- end}}
+{{- end }}
+        
+{{ end}}      

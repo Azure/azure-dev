@@ -5,12 +5,10 @@
 package cli_test
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -21,23 +19,30 @@ import (
 	osexec "os/exec"
 	"path"
 	"path/filepath"
-	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/devcenter"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/identity"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/test/recording"
+	"github.com/benbjohnson/clock"
 	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/assert"
@@ -45,69 +50,150 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-const (
-	testSubscriptionId = "2cd617ea-1866-46b1-90e3-fffb087ebf9b"
-	defaultLocation    = "eastus2"
-)
+// The current running configuration for the test suite.
+var cfg = cliConfig{}
 
-func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T) {
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	_, err := cli.RunCommandWithStdIn(
-		ctx,
-		fmt.Sprintf("Empty Template\nTESTENV\nOther (enter manually)\n%s\n\n", testSubscriptionId),
-		"init",
-	)
-	require.NoError(t, err)
-
-	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
-
-	require.NoError(t, err)
-
-	require.Regexp(t, regexp.MustCompile(fmt.Sprintf(`AZURE_SUBSCRIPTION_ID="%s"`, testSubscriptionId)+"\n"), string(file))
-	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
-
-	proj, err := project.LoadProjectConfig(filepath.Join(dir, azdcontext.ProjectFileName), environment.Ephemeral())
-	require.NoError(t, err)
-
-	require.Equal(t, filepath.Base(dir), proj.Name)
+func init() {
+	cfg.init()
 }
 
-func Test_CLI_Init_CanUseTemplate(t *testing.T) {
+// Configuration for the test suite.
+type cliConfig struct {
+	// If true, the test is running in CI.
+	// This can be used to ensure tests that are skipped locally (due to complex setup), always strictly run in CI.
+	CI bool
+
+	// The client ID to use for live Azure tests.
+	ClientID string
+	// The tenant ID to use for live Azure tests.
+	TenantID string
+	// The Azure subscription ID to use for live Azure tests.
+	// In non-CI environments with no additional environment variables set,
+	// the azd user config 'defaults.subscription' value is used.
+	SubscriptionID string
+	// The Azure location to use for live Azure tests.
+	// In non-CI environments with no additional environment variables set,
+	// the azd user config 'defaults.location' value is used.
+	Location string
+}
+
+func (c *cliConfig) init() {
+	c.CI = os.Getenv("CI") != ""
+	c.ClientID = os.Getenv("AZD_TEST_CLIENT_ID")
+	c.TenantID = os.Getenv("AZD_TEST_TENANT_ID")
+	c.SubscriptionID = os.Getenv("AZD_TEST_AZURE_SUBSCRIPTION_ID")
+	c.Location = os.Getenv("AZD_TEST_AZURE_LOCATION")
+
+	if !c.CI && (c.SubscriptionID == "" || c.Location == "") {
+		userConfig := config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager()))
+		cfg, err := userConfig.Load()
+		if err == nil {
+			if subId, ok := cfg.GetString("defaults.subscription"); ok && c.SubscriptionID == "" {
+				c.SubscriptionID = subId
+			}
+
+			if loc, ok := cfg.GetString("defaults.location"); ok && c.Location == "" {
+				c.Location = loc
+			}
+		}
+
+		if err != nil {
+			log.Printf("could not load user config to provide default test values: %v", err)
+		}
+	}
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+
+	shortFlag := flag.Lookup("test.short")
+	if shortFlag != nil && shortFlag.Value.String() == "true" {
+		log.Println("Skipping tests in short mode")
+		os.Exit(0)
+	}
+
+	exitVal := m.Run()
+	os.Exit(exitVal)
+}
+
+func Test_CLI_DevCenter_Init_Up_Down(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Skip("getting UnknownEnvironmentOperationError during deployment")
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
 	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
 
-	cli := azdcli.NewCLI(t)
+	session := recording.Start(t)
+	envName := randomOrStoredEnvName(session)
+
+	// This test leverages a real dev center configuration with the following values:
+	devCenterName := "dc-azd-o2pst6gaydv5o"
+	catalogName := "wbreza"
+	projectName := "Project-1"
+	environmentDefinitionName := "HelloWorld"
+	environmentTypeName := "Dev"
+
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, fmt.Sprintf("%s=devcenter", environment.PlatformTypeEnvVarName))
+	cli.Env = append(cli.Env, fmt.Sprintf("%s=%s", devcenter.DevCenterNameEnvName, devCenterName))
+	cli.Env = append(cli.Env, fmt.Sprintf("%s=%s", devcenter.DevCenterCatalogEnvName, catalogName))
 
-	_, err := cli.RunCommandWithStdIn(
-		ctx,
-		"TESTENV\n\nOther (enter manually)\nMY_SUB_ID\n",
-		"init",
-		"--template",
-		"cosmos-dotnet-core-todo-app",
+	initStdIn := strings.Join(
+		[]string{
+			"Select a template",
+			environmentDefinitionName,
+			envName,
+			projectName,
+		},
+		"\n",
 	)
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
+	// azd init
+	_, err := cli.RunCommandWithStdIn(ctx, initStdIn, "init")
 	require.NoError(t, err)
 
-	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over or initialize a
-	// git
-	// repository.
-	require.NoDirExists(t, filepath.Join(dir, ".git"))
+	// evaluate the project and environment configuration
+	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+	projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
+	require.NoError(t, err)
 
-	// Ensure the project was initialized from the template by checking that a file from the template is present.
-	require.FileExists(t, filepath.Join(dir, "README.md"))
+	require.Equal(t, devCenterName, projectConfig.Platform.Config["name"])
+	require.Equal(t, catalogName, projectConfig.Platform.Config["catalog"])
+	require.Equal(t, environmentDefinitionName, projectConfig.Platform.Config["environmentDefinition"])
+
+	env, err := envFromAzdRoot(ctx, dir, envName)
+	require.NoError(t, err)
+
+	require.Equal(t, envName, env.Name())
+	actualProjectName, _ := env.Config.Get(devcenter.DevCenterProjectPath)
+	repoUrl, _ := env.Config.Get("provision.parameters.repoUrl")
+	require.Equal(t, projectName, actualProjectName)
+	require.Equal(t, "https://github.com/wbreza/azd-hello-world", repoUrl)
+
+	// azd up
+	upStdIn := strings.Join([]string{environmentTypeName}, "\n")
+	_, err = cli.RunCommandWithStdIn(ctx, upStdIn, "up")
+	require.NoError(t, err)
+
+	// re-evaluate the environment configuration
+	env, err = envFromAzdRoot(ctx, dir, envName)
+	require.NoError(t, err)
+
+	actualEnvTypeName, _ := env.Config.Get(devcenter.DevCenterEnvTypePath)
+	require.Equal(t, environmentTypeName, actualEnvTypeName)
+
+	// azd down
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
 }
 
 func Test_CLI_InfraCreateAndDelete(t *testing.T) {
@@ -119,49 +205,325 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
-	envName := randomEnvName()
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-	cli := azdcli.NewCLI(t)
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "infra", "create")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 
-	envFilePath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
-	env, err := environment.FromFile(envFilePath)
+	env, err := envFromAzdRoot(ctx, dir, envName)
 	require.NoError(t, err)
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
 	// the name should start with 'st'
-	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
+	accountName, ok := env.Dotenv()["AZURE_STORAGE_ACCOUNT_NAME"]
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
 
-	// NewAzureResourceManager needs a command runner right now (since it can call the AZ CLI)
-	ctx = exec.WithCommandRunner(ctx, exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr))
+	assertEnvValuesStored(t, env)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
+	}
 
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
-	cred, err := azidentity.NewAzureCLICredential(nil)
-	if err != nil {
-		t.Fatal("could not create credential")
+	cred := azdcli.NewTestCredential(cli)
+
+	var client *http.Client
+	if session != nil {
+		client = session.ProxyClient
+	} else {
+		client = http.DefaultClient
 	}
-	ctx = identity.WithCredentials(ctx, cred)
+
+	armClientOptions := &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: client,
+			Cloud:     cloud.AzurePublic().Configuration,
+		},
+	}
+
+	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
+		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+			return cred, nil
+		},
+	)
+
+	resourceService := azapi.NewResourceService(credentialProvider, armClientOptions)
+
+	deploymentOperations := azapi.NewStandardDeployments(
+		credentialProvider,
+		armClientOptions,
+		resourceService,
+		cloud.AzurePublic(),
+		clock.NewMock(),
+	)
 
 	// Verify that resource groups are created with tag
-	resourceManager := infra.NewAzureResourceManager(ctx)
-	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
+	resourceManager := infra.NewAzureResourceManager(resourceService, deploymentOperations)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.Name())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
-	// Using `down` here to test the down alias to infra delete
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+}
+
+func Test_CLI_ProvisionState(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	expectedOutputContains := "There are no changes to provision for your application."
+
+	// Provision preview should show creation of storage account
+	preview, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--preview")
+	require.NoError(t, err)
+	require.Contains(t, preview.Stdout, "Create : Storage account")
+
+	// First provision creates all resources
+	initial, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.NotContains(t, initial.Stdout, expectedOutputContains)
+
+	// Second preview shows no changes required for storage account
+	secondPreview, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--preview")
+	require.NoError(t, err)
+	require.NotContains(t, secondPreview.Stdout, "Skip : Storage account")
+
+	// Second provision should use cache
+	secondProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, secondProvisionOutput.Stdout, expectedOutputContains)
+
+	// Third deploy setting a different param
+	cli.Env = append(cli.Env, "INT_TAG_VALUE=1989")
+	thirdProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.NotContains(t, thirdProvisionOutput.Stdout, expectedOutputContains)
+
+	// last provision should use cache
+	lastProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, lastProvisionOutput.Stdout, expectedOutputContains)
+
+	// use flag to force provision
+	flagProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--no-state")
+	require.NoError(t, err)
+	require.NotContains(t, flagProvisionOutput.Stdout, expectedOutputContains)
+
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+	}
+
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+}
+
+func Test_CLI_EnvironmentSecrets(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	if session != nil && session.Playback {
+		t.Skip("Skipping test in playback mode. This test is live only.")
+	}
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, "AZD_FORCE_TTY=false")
+
+	err := copySample(dir, "environment-secrets")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	// create the first secret reference
+	rg := envName + "-rg"
+	kva := envName + "-kva"
+	kvs := envName + "-kvs"
+	kvsv := "THIS IS THE SECRET VALUE"
+
+	defer cleanupRg(ctx, t, cli, session, rg)               // deletes the rg with the Key Vault
+	defer cleanupDeployments(ctx, t, cli, session, envName) // deletes the deployment objects
+	defer cleanupRg(ctx, t, cli, session, "rg-"+envName)    // delete the rg created by the deployment
+
+	envSetSecretOut, err := cli.RunCommandWithStdIn(ctx, stdinForCreateKvAccount(
+		rg,
+		kva,
+		kvs,
+		kvsv,
+	), "env", "set-secret", "SEC_REF")
+	require.NoError(t, err)
+	require.Contains(t, envSetSecretOut.Stdout, "https://aka.ms/azd-env-set-secret")
+
+	// Test usage of secret by running provision
+	// The sample environment-secrets is designed to output the secret from bicep outputs
+	// and also from a hook simple script
+	provisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, provisionOutput.Stdout, kvsv)
+
+	// check output
+	envValue, err := cli.RunCommand(ctx, "env", "get-value", "BICEP_OUTPUT")
+	require.NoError(t, err)
+	require.Contains(t, envValue.Stdout, kvsv)
+
+	// Now test creating kv secret on existing kv account
+	kvs2 := envName + "-kvs2"
+	kvsv2 := "THIS IS THE NEW SECRET VALUE"
+	envSetSecretOut, err = cli.RunCommandWithStdIn(ctx, stdinForExistingKvAccount(
+		kva,
+		kvs2,
+		kvsv2,
+	), "env", "set-secret", "SEC_REF")
+	require.NoError(t, err)
+	require.Contains(t, envSetSecretOut.Stdout, "https://aka.ms/azd-env-set-secret")
+
+	// Test usage of secret by running provision
+	// Should not use provision cache because we are using a new secret name that updates the parameter and
+	// void the cache
+	provisionOutput, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, provisionOutput.Stdout, kvsv2)
+
+	// check output
+	envValue, err = cli.RunCommand(ctx, "env", "get-value", "BICEP_OUTPUT")
+	require.NoError(t, err)
+	require.Contains(t, envValue.Stdout, kvsv2)
+
+	// Finally, test selecting existing kv secret by setting the initial secret again
+	envSetSecretOut, err = cli.RunCommandWithStdIn(
+		ctx, stdinForExistingKvSecret(kva), "env", "set-secret", "SEC_REF")
+	require.NoError(t, err)
+	require.Contains(t, envSetSecretOut.Stdout, "https://aka.ms/azd-env-set-secret")
+
+	// Test usage of secret by running provision
+	// Should not use provision cache because we are using a new secret name that updates the parameter and
+	// void the cache
+	provisionOutput, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, provisionOutput.Stdout, kvsv)
+
+	// check output
+	envValue, err = cli.RunCommand(ctx, "env", "get-value", "BICEP_OUTPUT")
+	require.NoError(t, err)
+	require.Contains(t, envValue.Stdout, kvsv)
+
+	env, err := envFromAzdRoot(ctx, dir, envName)
+	require.NoError(t, err)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
+	}
+}
+
+func Test_CLI_ProvisionStateWithDown(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	expectedOutputContains := "There are no changes to provision for your application."
+
+	initial, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.NotContains(t, initial.Stdout, expectedOutputContains)
+
+	// Second provision should use cache
+	secondProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, secondProvisionOutput.Stdout, expectedOutputContains)
+
+	// down to delete resources
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+
+	// use flag to force provision
+	reProvisionAfterDown, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.NotContains(t, reProvisionAfterDown.Stdout, expectedOutputContains)
+
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+	}
+
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 }
@@ -175,316 +537,95 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
+	session := recording.Start(t)
+
 	envName := "UpperCase" + randomEnvName()
+	if session != nil {
+		if session.Playback {
+			if _, ok := session.Variables[recording.EnvNameKey]; ok {
+				envName = session.Variables[recording.EnvNameKey]
+			}
+		} else {
+			session.Variables[recording.EnvNameKey] = envName
+		}
+	}
+
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-	cli := azdcli.NewCLI(t)
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "infra", "create")
+	// test 'infra create' alias
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--output", "json")
 	require.NoError(t, err)
 
-	envFilePath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
-	env, err := environment.FromFile(envFilePath)
+	env, err := envFromAzdRoot(ctx, dir, envName)
 	require.NoError(t, err)
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
 	// the name should start with 'st'
-	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
+	accountName, ok := env.Dotenv()["AZURE_STORAGE_ACCOUNT_NAME"]
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
 
-	// NewAzureResourceManager needs a command runner right now (since it can call the AZ CLI)
-	ctx = exec.WithCommandRunner(ctx, exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr))
+	assertEnvValuesStored(t, env)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
+	}
 
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
-	cred, err := azidentity.NewAzureCLICredential(nil)
-	if err != nil {
-		t.Fatal("could not create credential")
+	var client *http.Client
+	if session != nil {
+		client = session.ProxyClient
+	} else {
+		client = http.DefaultClient
 	}
-	ctx = identity.WithCredentials(ctx, cred)
+
+	cred := azdcli.NewTestCredential(cli)
+
+	armClientOptions := &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: client,
+			Cloud:     cloud.AzurePublic().Configuration,
+		},
+	}
+
+	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
+		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+			return cred, nil
+		},
+	)
+
+	resourceService := azapi.NewResourceService(credentialProvider, armClientOptions)
+
+	deploymentOperations := azapi.NewStandardDeployments(
+		credentialProvider,
+		armClientOptions,
+		resourceService,
+		cloud.AzurePublic(),
+		clock.NewMock(),
+	)
 
 	// Verify that resource groups are created with tag
-	resourceManager := infra.NewAzureResourceManager(ctx)
-	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
+	resourceManager := infra.NewAzureResourceManager(resourceService, deploymentOperations)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.Name())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
-	// Using `down` here to test the down alias to infra delete
-	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	// test 'infra delete' alias
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge", "--output", "json")
 	require.NoError(t, err)
-}
-
-func Test_CLI_InfraCreateAndDeleteWebApp(t *testing.T) {
-	t.Skip("azure-dev/834")
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-	t.Logf("DIR: %s", dir)
-
-	envName := randomEnvName()
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	err := copySample(dir, "webapp")
-	require.NoError(t, err, "failed expanding sample")
-
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
-	require.NoError(t, err)
-
-	_, err = cli.RunCommand(ctx, "infra", "create")
-	require.NoError(t, err)
-
-	t.Logf("Running show\n")
-	result, err := cli.RunCommand(ctx, "show", "-o", "json", "--cwd", dir)
-	require.NoError(t, err)
-
-	var showRes struct {
-		Services map[string]struct {
-			Project struct {
-				Path     string `json:"path"`
-				Language string `json:"language"`
-			} `json:"project"`
-			Target struct {
-				ResourceIds []string `json:"resourceIds"`
-			} `json:"target"`
-		} `json:"services"`
-	}
-	err = json.Unmarshal([]byte(result.Stdout), &showRes)
-	require.NoError(t, err)
-
-	service, has := showRes.Services["web"]
-	require.True(t, has)
-	require.Equal(t, "dotnet", service.Project.Language)
-	require.Equal(t, "webapp.csproj", filepath.Base(service.Project.Path))
-	require.Equal(t, 1, len(service.Target.ResourceIds))
-
-	_, err = cli.RunCommand(ctx, "deploy")
-	require.NoError(t, err)
-
-	// The sample hosts a small application that just responds with a 200 OK with a body of "Hello, `azd`."
-	// (without the quotes). Validate that the application is working.
-	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
-	require.NoError(t, err)
-
-	url, has := env["WEBSITE_URL"]
-	require.True(t, has, "WEBSITE_URL should be in environment after infra create")
-
-	// Add a retry here because appService deployment can take time
-	err = retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
-		t.Logf("Attempting to Get URL: %s", url)
-
-		res, err := http.Get(url)
-		if err != nil {
-			return retry.RetryableError(err)
-		}
-
-		var buf bytes.Buffer
-		_, err = buf.ReadFrom(res.Body)
-		require.NoError(t, err)
-
-		testString := "Hello, `azd`."
-		bodyString := buf.String()
-
-		if bodyString != testString {
-			return retry.RetryableError(fmt.Errorf("expected %s but got %s for request to %s", testString, bodyString, url))
-		} else {
-			assert.Equal(t, testString, bodyString)
-			return nil
-		}
-	})
-	require.NoError(t, err)
-
-	commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
-	runArgs := newRunArgs("dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
-	secrets, err := commandRunner.Run(ctx, runArgs)
-	require.NoError(t, err)
-
-	contain := strings.Contains(secrets.Stdout, fmt.Sprintf("WEBSITE_URL = %s", url))
-	require.True(t, contain)
-
-	// Ensure `env refresh` works by removing an output parameter from the .env file and ensure that `env refresh`
-	// brings it back.
-	delete(env, "WEBSITE_URL")
-	err = godotenv.Write(env, filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
-	require.NoError(t, err)
-
-	//clear dotnet secrets to test if dotnet secrets works when running env refresh
-	runArgs = newRunArgs("dotnet", "user-secrets", "clear", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
-	secrets, err = commandRunner.Run(ctx, runArgs)
-	require.NoError(t, err)
-
-	_, err = cli.RunCommand(ctx, "env", "refresh")
-	require.NoError(t, err)
-
-	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
-	require.NoError(t, err)
-
-	_, has = env["WEBSITE_URL"]
-	require.True(t, has, "WEBSITE_URL should be in environment after refresh")
-
-	runArgs = newRunArgs("dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
-	secrets, err = commandRunner.Run(ctx, runArgs)
-	require.NoError(t, err)
-
-	contain = strings.Contains(secrets.Stdout, fmt.Sprintf("WEBSITE_URL = %s", url))
-	require.True(t, contain)
-
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
-	require.NoError(t, err)
-
-	t.Logf("Running show (again)\n")
-	result, err = cli.RunCommand(ctx, "show", "-o", "json", "--cwd", dir)
-	require.NoError(t, err)
-
-	err = json.Unmarshal([]byte(result.Stdout), &showRes)
-	require.NoError(t, err)
-
-	// Project information should be present, but since we have run infra delete, there shouldn't
-	// be any resource ids.
-	service, has = showRes.Services["web"]
-	require.True(t, has)
-	require.Equal(t, "dotnet", service.Project.Language)
-	require.Equal(t, "webapp.csproj", filepath.Base(service.Project.Path))
-	require.Nil(t, service.Target.ResourceIds)
-}
-
-// test for azd deploy, azd deploy --service
-func Test_CLI_DeployInvalidName(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-	t.Logf("DIR: %s", dir)
-
-	envName := randomEnvName()
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	err := copySample(dir, "webapp")
-	require.NoError(t, err, "failed expanding sample")
-
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
-	require.NoError(t, err)
-
-	_, err = cli.RunCommand(ctx, "deploy", "--service", "badServiceName")
-	require.Error(t, err)
-}
-
-func Test_CLI_RestoreCommand(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-	t.Logf("DIR: %s", dir)
-
-	envName := randomEnvName()
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	err := copySample(dir, "restoreapp")
-	require.NoError(t, err, "failed expanding sample")
-
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore")
-	require.NoError(t, err)
-
-	require.DirExists(t, path.Join(dir, "nodeapp", "node_modules", "chalk"), "nodeapp not restored")
-	require.DirExists(t, path.Join(dir, "containerapp", "node_modules", "chalk"), "containerapp not restored")
-	require.DirExists(t, path.Join(dir, "pyapp", "pyapp_env"), "pyapp not restored")
-	require.DirExists(t, path.Join(dir, "csharpapp", "obj"), "csharpapp not restored")
-	require.DirExists(t, path.Join(dir, "funcapp", "funcapp_env"), "funcapp not restored")
-}
-
-func Test_CLI_InfraCreateAndDeleteFuncApp(t *testing.T) {
-	t.Skip("azure-dev/834")
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-	t.Logf("DIR: %s", dir)
-
-	envName := randomEnvName()
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	err := copySample(dir, "funcapp")
-	require.NoError(t, err, "failed expanding sample")
-
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
-	require.NoError(t, err)
-
-	t.Logf("Starting infra create\n")
-	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
-	require.NoError(t, err)
-
-	t.Logf("Starting deploy\n")
-	_, err = cli.RunCommand(ctx, "deploy", "--cwd", dir)
-	require.NoError(t, err)
-
-	result, err := cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
-	require.NoError(t, err)
-
-	t.Logf("env get-values command output: %s\n", result.Stdout)
-
-	var envValues map[string]interface{}
-	err = json.Unmarshal([]byte(result.Stdout), &envValues)
-	require.NoError(t, err)
-
-	url := fmt.Sprintf("%s/api/httptrigger", envValues["AZURE_FUNCTION_URI"])
-
-	t.Logf("Issuing GET request to function\n")
-
-	// We've seen some cases in CI where issuing a get right after a deploy ends up with us getting a 404, so retry the
-	// request a
-	// handful of times if it fails with a 404.
-	err = retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
-		res, err := http.Get(url)
-		if err != nil {
-			return retry.RetryableError(err)
-		}
-		defer res.Body.Close()
-		if res.StatusCode != http.StatusOK {
-			return retry.RetryableError(
-				fmt.Errorf("expected %d but got %d for request to %s", http.StatusOK, res.StatusCode, url),
-			)
-		}
-		return nil
-	})
-	require.NoError(t, err)
-
-	t.Logf("Starting infra delete\n")
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
-	require.NoError(t, err)
-
-	t.Logf("Done\n")
 }
 
 func Test_CLI_ProjectIsNeeded(t *testing.T) {
@@ -501,7 +642,9 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		command string
 		args    []string
 	}{
+		{command: "provision"},
 		{command: "deploy"},
+		{command: "up"},
 		{command: "down"},
 		{command: "env get-values"},
 		{command: "env list"},
@@ -513,11 +656,11 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		{command: "infra delete"},
 		{command: "monitor"},
 		{command: "pipeline config"},
-		{command: "provision"},
 		{command: "restore"},
 	}
 
-	for _, test := range tests {
+	for _, tt := range tests {
+		test := tt
 		args := []string{"--cwd", dir}
 		args = append(args, strings.Split(test.command, " ")...)
 		if len(test.args) > 0 {
@@ -527,34 +670,144 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		t.Run(test.command, func(t *testing.T) {
 			result, err := cli.RunCommand(ctx, args...)
 			assert.Error(t, err)
-			assert.Regexp(t, "no project exists; to create a new project, run `azd init`", result.Stdout)
+			assert.Contains(t, result.Stdout, azdcontext.ErrNoProject.Error())
 		})
 	}
 }
 
-func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
-	stdErrBuf := bytes.Buffer{}
+// Verifies commands that requires `azd provision` to be successfully run beforehand correctly errors out.
+func Test_CLI_ProvisionIsNeeded(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
 
-	cmd := osexec.Command(azdcli.GetAzdLocation(), "--help")
-	cmd.Stderr = &stdErrBuf
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
 
-	// Run the command and wait for it to complete, we don't expect any errors.
-	err := cmd.Start()
-	assert.NoError(t, err)
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-	err = cmd.Wait()
-	assert.NoError(t, err)
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
-	// Ensure no output was written to stderr
-	assert.Equal(t, "", stdErrBuf.String(), "no output should be written to stderr when --help is passed")
+	err := copySample(dir, "webapp")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	tests := []struct {
+		command       string
+		args          []string
+		errorToStdOut bool
+	}{
+		{command: "deploy"},
+		{command: "monitor"},
+	}
+
+	for _, tt := range tests {
+		test := tt
+		args := []string{"--cwd", dir}
+		args = append(args, strings.Split(test.command, " ")...)
+		if len(test.args) > 0 {
+			args = append(args, test.args...)
+		}
+
+		t.Run(test.command, func(t *testing.T) {
+			result, err := cli.RunCommand(ctx, args...)
+			assert.Error(t, err)
+			assert.Contains(t, result.Stdout, "azd provision")
+		})
+	}
 }
 
-//go:embed testdata/samples/*
+// Verifies support for bicepparam
+func Test_CLI_InfraBicepParam(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomEnvName()
+	if session != nil {
+		if session.Playback {
+			if _, ok := session.Variables[recording.EnvNameKey]; ok {
+				envName = session.Variables[recording.EnvNameKey]
+			}
+		} else {
+			session.Variables[recording.EnvNameKey] = envName
+		}
+	}
+
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
+	err := copySample(dir, "storage-bicepparam")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	// test 'infra create' alias
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--output", "json")
+	require.NoError(t, err)
+
+	env, err := envFromAzdRoot(ctx, dir, envName)
+	require.NoError(t, err)
+
+	// WEBSITE_URL is an output of the template, make sure it was added to the .env file.
+	// the name should start with 'st'
+	accountName, ok := env.Dotenv()["AZURE_STORAGE_ACCOUNT_NAME"]
+	require.True(t, ok)
+	require.Regexp(t, `st\S*`, accountName)
+
+	assertEnvValuesStored(t, env)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
+	}
+
+	// Delete
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge", "--output", "json")
+	require.NoError(t, err)
+}
+
+// Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug ensures that no debug spew is written to stderr when --help is passed
+func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
+	cli := azdcli.NewCLI(t)
+	// Update checks are one of the things that can write to stderr. Disable it since it's not relevant to this test.
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZD_SKIP_UPDATE_CHECK=true")
+	ctx := context.Background()
+	result, err := cli.RunCommand(ctx, "--help")
+	require.NoError(t, err)
+
+	// Ensure no output was written to stderr
+	assert.Equal(t, "", result.Stderr, "no output should be written to stderr when --help is passed")
+}
+
+//go:embed all:testdata/samples/*
 var samples embed.FS
+
+func samplePath(paths ...string) string {
+	elem := append([]string{"testdata", "samples"}, paths...)
+	return path.Join(elem...)
+}
 
 // copySample copies the given sample to targetRoot.
 func copySample(targetRoot string, sampleName string) error {
-	sampleRoot := path.Join("testdata", "samples", sampleName)
+	sampleRoot := samplePath(sampleName)
 
 	return fs.WalkDir(samples, sampleRoot, func(name string, d fs.DirEntry, err error) error {
 		// If there was some error that was preventing is from walking into the directory, just fail now,
@@ -576,6 +829,36 @@ func copySample(targetRoot string, sampleName string) error {
 	})
 }
 
+func randomOrStoredEnvName(session *recording.Session) string {
+	if session != nil && session.Playback {
+		if _, ok := session.Variables[recording.EnvNameKey]; ok {
+			return session.Variables[recording.EnvNameKey]
+		}
+	}
+
+	randName := randomEnvName()
+	if session != nil {
+		session.Variables[recording.EnvNameKey] = randName
+	}
+
+	return randName
+}
+
+func cfgOrStoredSubscription(session *recording.Session) string {
+	if session != nil && session.Playback {
+		if _, ok := session.Variables[recording.SubscriptionIdKey]; ok {
+			return session.Variables[recording.SubscriptionIdKey]
+		}
+	}
+
+	subID := cfg.SubscriptionID
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = subID
+	}
+
+	return subID
+}
+
 func randomEnvName() string {
 	bytes := make([]byte, 4)
 	_, err := rand.Read(bytes)
@@ -593,11 +876,44 @@ func randomEnvName() string {
 	return ("azdtest-" + osInitial + hex.EncodeToString(bytes))[0:15]
 }
 
-// stdinForTests is just enough stdin to bypass all the prompts or choose defaults.
-func stdinForTests(envName string) string {
-	return fmt.Sprintf("%s\n", envName) + // "enter deployment name"
+// stdinForInit builds the standard input string that will configure a given environment name
+// when `init` is run
+func stdinForInit(envName string) string {
+	return fmt.Sprintf("%s\n", envName)
+}
+
+// stdinForProvision is just enough stdin to accept the defaults for the two prompts
+// from `provision` (for a subscription and location)
+func stdinForProvision() string {
+	return "\n" + // "choose subscription" (we're choosing the default)
+		"\n" // "choose location" (we're choosing the default)
+}
+
+func stdinForCreateKvAccount(rg, kva, kvs, kvsv string) string {
+	return "\n" + // "Create new Key Vault Secret
+		"\n" + // "choose subscription" (we're choosing the default)
+		"\n" + // "Create new Key Vault
 		"\n" + // "choose location" (we're choosing the default)
-		"\n" // "choose subscription" (we're choosing the default)
+		"1. Create a new resource group\n" + // "1. Create new resource group"
+		rg + "\n" + // "resource group name"
+		kva + "\n" + // "key vault name"
+		kvs + "\n" + // "key vault secret name"
+		kvsv + "\n" // "key vault secret value"
+}
+
+func stdinForExistingKvAccount(kva, kvs, kvsv string) string {
+	return "\n" + // "Create new Key Vault Secret
+		"\n" + // "choose subscription" (we're choosing the default)
+		kva + "\n" + // "Use existing Key Vault
+		kvs + "\n" + // "key vault secret name"
+		kvsv + "\n" // "key vault secret value"
+}
+
+func stdinForExistingKvSecret(kva string) string {
+	return "Select an existing Key Vault secret\n" + // "Create new Key Vault Secret
+		"\n" + // "choose subscription" (we're choosing the default)
+		kva + "\n" + // "Use existing Key Vault
+		"\n" // "first key vault secret name in the list"
 }
 
 func getTestEnvPath(dir string, envName string) string {
@@ -609,7 +925,6 @@ func getTestEnvPath(dir string, envName string) string {
 // respects the deadline.
 func newTestContext(t *testing.T) (context.Context, context.CancelFunc) {
 	ctx := context.Background()
-	ctx = internal.WithCommandOptions(ctx, internal.GlobalCommandOptions{})
 
 	if deadline, ok := t.Deadline(); ok {
 		return context.WithDeadline(ctx, deadline)
@@ -637,119 +952,30 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	err := copySample(dir, "resourcegroupterraform")
 	require.NoError(t, err, "failed expanding sample")
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	t.Logf("Starting infra create\n")
-	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
+	// turn alpha feature on
+	_, err = cli.RunCommand(ctx, "config", "set", "alpha.terraform", "on")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
+	t.Logf("Starting provision\n")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--cwd", dir)
 	require.NoError(t, err)
 
-	t.Logf("Starting infra delete\n")
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
+	env, err := envFromAzdRoot(ctx, dir, envName)
 	require.NoError(t, err)
+	assertEnvValuesStored(t, env)
 
-	t.Logf("Done\n")
-}
-
-func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-	t.Logf("DIR: %s", dir)
-
-	envName := randomEnvName()
-	location := "eastus2"
-	backendResourceGroupName := fmt.Sprintf("rs-%s", envName)
-	backendStorageAccountName := strings.Replace(envName, "-", "", -1)
-	backendContainerName := "tfstate"
-
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), fmt.Sprintf("AZURE_LOCATION=%s", location))
-
-	err := copySample(dir, "resourcegroupterraformremote")
-	require.NoError(t, err, "failed expanding sample")
-
-	//Create remote state resources
-	commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
-	runArgs := newRunArgs("az", "group", "create", "--name", backendResourceGroupName, "--location", location)
-
-	_, err = commandRunner.Run(ctx, runArgs)
-	require.NoError(t, err)
-
-	defer func() {
-		commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
-		runArgs := newRunArgs("az", "group", "delete", "--name", backendResourceGroupName, "--yes")
-		_, err = commandRunner.Run(ctx, runArgs)
-		require.NoError(t, err)
-	}()
-
-	//Create storage account
-	runArgs = newRunArgs("az", "storage", "account", "create", "--resource-group", backendResourceGroupName,
-		"--name", backendStorageAccountName, "--sku", "Standard_LRS", "--encryption-services", "blob")
-	_, err = commandRunner.Run(ctx, runArgs)
-	require.NoError(t, err)
-
-	//Get Account Key
-	runArgs = newRunArgs("az", "storage", "account", "keys", "list", "--resource-group",
-		backendResourceGroupName, "--account-name", backendStorageAccountName, "--query", "[0].value",
-		"-o", "tsv")
-	cmdResult, err := commandRunner.Run(ctx, runArgs)
-	require.NoError(t, err)
-	storageAccountKey := strings.ReplaceAll(strings.ReplaceAll(cmdResult.Stdout, "\n", ""), "\r", "")
-
-	// Create storage container
-	runArgs = newRunArgs("az", "storage", "container", "create", "--name", backendContainerName,
-		"--account-name", backendStorageAccountName, "--account-key", storageAccountKey)
-	result, err := commandRunner.Run(ctx, runArgs)
-	_ = result
-	require.NoError(t, err)
-
-	//Run azd init
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
-	require.NoError(t, err)
-
-	_, err = cli.RunCommand(ctx, "env", "set", "RS_STORAGE_ACCOUNT", backendStorageAccountName, "--cwd", dir)
-	require.NoError(t, err)
-
-	_, err = cli.RunCommand(ctx, "env", "set", "RS_CONTAINER_NAME", backendContainerName, "--cwd", dir)
-	require.NoError(t, err)
-
-	_, err = cli.RunCommand(ctx, "env", "set", "RS_RESOURCE_GROUP", backendResourceGroupName, "--cwd", dir)
-	require.NoError(t, err)
-
-	t.Logf("Starting infra create\n")
-	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
-	require.NoError(t, err)
-
-	t.Logf("Starting infra delete\n")
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
+	t.Logf("Starting down\n")
+	_, err = cli.RunCommand(ctx, "down", "--cwd", dir, "--force", "--purge")
 	require.NoError(t, err)
 
 	t.Logf("Done\n")
 }
 
 func newRunArgs(cmd string, args ...string) exec.RunArgs {
-	runArgs := exec.NewRunArgs(cmd, args...)
-	return runArgs.WithEnrichError(true)
-}
-
-func TestMain(m *testing.M) {
-	flag.Parse()
-	shortFlag := flag.Lookup("test.short")
-	if shortFlag != nil && shortFlag.Value.String() == "true" {
-		log.Println("Skipping tests in short mode")
-		os.Exit(0)
-	}
-
-	exitVal := m.Run()
-	os.Exit(exitVal)
+	return exec.NewRunArgs(cmd, args...)
 }
 
 // TempDirWithDiagnostics creates a temp directory with cleanup that also provides additional
@@ -784,7 +1010,7 @@ func logHandles(t *testing.T, path string) {
 	}
 
 	args := exec.NewRunArgs(handle, path, "-nobanner")
-	cmd := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	cmd := exec.NewCommandRunner(nil)
 	rr, err := cmd.Run(context.Background(), args)
 	if err != nil {
 		t.Logf("handle.exe failed. stdout: %s, stderr: %s\n", rr.Stdout, rr.Stderr)
@@ -797,8 +1023,7 @@ func logHandles(t *testing.T, path string) {
 	_ = telemetry.GetTelemetrySystem()
 
 	// Log this to telemetry for ease of correlation
-	tracer := telemetry.GetTracer()
-	_, span := tracer.Start(context.Background(), "test.file_cleanup_failure")
+	_, span := tracing.Start(context.Background(), "test.file_cleanup_failure")
 	span.SetAttributes(attribute.String("handle.stdout", rr.Stdout))
 	span.SetAttributes(attribute.String("ci.build.number", os.Getenv("BUILD_BUILDNUMBER")))
 	span.End()
@@ -827,4 +1052,28 @@ func removeAllWithDiagnostics(t *testing.T, path string) error {
 			return retry.RetryableError(removeErr)
 		},
 	)
+}
+
+// Assert that all supported types from the infrastructure provider is marshalled and stored correctly in the environment.
+func assertEnvValuesStored(t *testing.T, env *environment.Environment) {
+	expectedEnv, err := godotenv.Read(filepath.Join("testdata", "expected-output-types", "typed-values.env"))
+	require.NoError(t, err)
+	primitives := []string{"STRING", "BOOL", "INT"}
+
+	for k, v := range expectedEnv {
+		actual, has := env.Dotenv()[k]
+		assert.True(t, has)
+
+		if slices.Contains(primitives, k) {
+			assert.Equal(t, v, actual)
+		} else {
+			assert.JSONEq(t, v, actual)
+		}
+	}
+}
+
+func envFromAzdRoot(ctx context.Context, azdRootDir string, envName string) (*environment.Environment, error) {
+	azdCtx := azdcontext.NewAzdContextWithDirectory(azdRootDir)
+	localDataStore := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+	return localDataStore.Get(ctx, envName)
 }

@@ -1,0 +1,2 @@
+Flask
+psycopg2-binary

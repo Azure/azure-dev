@@ -24,6 +24,8 @@ func AddOutputFlag(f *pflag.FlagSet, s *string, supportedFormats []Format, defau
 
 	description := fmt.Sprintf("The output format (the supported formats are %s).", strings.Join(formatNames, ", "))
 	f.StringVarP(s, outputFlagName, "o", string(defaultFormat), description)
+	//preview:flag hide --output
+	_ = f.MarkHidden(outputFlagName)
 
 	// Only error that can occur is "flag not found", which is not possible given we just added the flag on the previous line
 	_ = f.SetAnnotation(outputFlagName, supportedFormatterAnnotation, formatNames)
@@ -39,7 +41,7 @@ func GetCommandFormatter(cmd *cobra.Command) (Formatter, error) {
 	// If the command does not specify any output params just return nil Formatter pointer
 	outputVal, err := cmd.Flags().GetString(outputFlagName)
 	if err != nil {
-		return nil, nil
+		return &NoneFormatter{}, nil
 	}
 
 	desiredFormatter := strings.ToLower(strings.TrimSpace(outputVal))

@@ -1,0 +1,26 @@
+parameters:
+  - name: GitHubToken
+    type: string
+    default: $(azuresdk-github-pat)
+    displayName: GitHub token
+
+steps:
+  - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+
+  - pwsh: |
+      $PSNativeCommandArgumentPassing = 'Legacy'
+      Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+
+      $AdditionalArgs = ""
+      if ($$(SubmitWinGetPackage)) {
+          $AdditionalArgs = "--submit"
+      }
+
+      ./wingetcreate.exe update `
+          Microsoft.Azd `
+          --version '$(MSI_VERSION)' `
+          --urls "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_$(CLI_VERSION)/azd-windows-amd64.msi" `
+          --token ${{ parameters.GitHubToken }} `
+          --out winget `
+          $AdditionalArgs
+    displayName: Submit to WinGet

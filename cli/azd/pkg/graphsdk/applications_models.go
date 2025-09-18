@@ -1,14 +1,18 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package graphsdk
 
 import "time"
 
 // A Microsoft Graph Application entity.
 type Application struct {
-	Id                  *string                          `json:"id"`
-	AppId               *string                          `json:"appId"`
-	DisplayName         string                           `json:"displayName"`
-	Description         *string                          `json:"description"`
-	PasswordCredentials []*ApplicationPasswordCredential `json:"passwordCredentials"`
+	Id                         *string                          `json:"id"`
+	AppId                      *string                          `json:"appId"`
+	DisplayName                string                           `json:"displayName"`
+	Description                *string                          `json:"description"`
+	PasswordCredentials        []*ApplicationPasswordCredential `json:"passwordCredentials"`
+	ServiceManagementReference *string                          `json:"serviceManagementReference"`
 }
 
 type ApplicationCreateRequest struct {

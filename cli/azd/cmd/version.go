@@ -10,7 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -18,43 +18,33 @@ import (
 )
 
 type versionFlags struct {
-	outputFormat string
-	global       *internal.GlobalCommandOptions
+	global *internal.GlobalCommandOptions
 }
 
 func (v *versionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	output.AddOutputFlag(local, &v.outputFormat, []output.Format{output.JsonFormat, output.NoneFormat}, output.NoneFormat)
 	v.global = global
 }
 
-func versionCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *versionFlags) {
-	cmd := &cobra.Command{
-		Use:   "version",
-		Short: "Print the version number of Azure Developer CLI.",
-		Annotations: map[string]string{
-			commands.RequireNoLoginAnnotation: "true",
-		},
-	}
-
+func newVersionFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *versionFlags {
 	flags := &versionFlags{}
 	flags.Bind(cmd.Flags(), global)
 
-	return cmd, flags
+	return flags
 }
 
 type versionAction struct {
-	flags     versionFlags
+	flags     *versionFlags
 	formatter output.Formatter
 	writer    io.Writer
 	console   input.Console
 }
 
 func newVersionAction(
-	flags versionFlags,
+	flags *versionFlags,
 	formatter output.Formatter,
 	writer io.Writer,
 	console input.Console,
-) *versionAction {
+) actions.Action {
 	return &versionAction{
 		flags:     flags,
 		formatter: formatter,
@@ -68,8 +58,13 @@ func (v *versionAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	case output.NoneFormat:
 		fmt.Fprintf(v.console.Handles().Stdout, "azd version %s\n", internal.Version)
 	case output.JsonFormat:
-		versionSpec := internal.GetVersionSpec()
-		err := v.formatter.Format(versionSpec, v.writer, nil)
+		var result contracts.VersionResult
+		versionSpec := internal.VersionInfo()
+
+		result.Azd.Commit = versionSpec.Commit
+		result.Azd.Version = versionSpec.Version.String()
+
+		err := v.formatter.Format(result, v.writer, nil)
 		if err != nil {
 			return nil, err
 		}

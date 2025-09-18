@@ -1,0 +1,369 @@
+
+stages: 
+  - stage: Sign
+    dependsOn: BuildAndTest
+
+    variables:
+      - template: /eng/pipelines/templates/variables/globals.yml
+      - template: /eng/pipelines/templates/variables/image.yml
+
+    jobs:
+    - job: SignMac
+      pool:
+        name: $(WINDOWSPOOL)
+        image: $(WINDOWSVMIMAGE)
+        os: windows
+
+      steps:
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: azd-darwin-amd64
+            path: mac-artifacts
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: azd-darwin-arm64
+            path: mac-artifacts
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path mac
+            
+            Compress-Archive `
+            -Path mac-artifacts/azd-darwin-amd64 `
+            -DestinationPath mac/azd-darwin-amd64.zip
+
+            Compress-Archive `
+            -Path mac-artifacts/azd-darwin-arm64 `
+            -DestinationPath mac/azd-darwin-arm64.zip
+          displayName: Package mac binary for signing
+
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+          - template: pipelines/steps/azd-cli-mac-signing.yml@azure-sdk-build-tools
+            parameters:
+              MacPath: mac
+
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
+
+        - pwsh: |
+            Expand-Archive -Path mac/azd-darwin-amd64.zip -DestinationPath mac/
+            Expand-Archive -Path mac/azd-darwin-arm64.zip -DestinationPath mac/
+
+            Remove-Item mac/azd-darwin-amd64.zip
+            Remove-Item mac/azd-darwin-arm64.zip
+          displayName: Extract azd-darwin-amd64 from zip and remove zip
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path signed-mac
+            Copy-Item mac/* signed-mac/ -Recurse
+          displayName: Copy signing outputs
+          condition: always()
+
+        # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
+        # when the common engsys is imported.
+        # https://github.com/Azure/azure-dev/issues/956
+        - task: 1ES.PublishPipelineArtifact@1
+          condition: succeeded()
+          displayName: Publish Signed Artifacts
+          inputs:
+            artifactName: signed-mac
+            path: signed-mac/
+
+        - task: 1ES.PublishPipelineArtifact@1
+          condition: failed()
+          displayName: Publish failed Signed Artifacts
+          inputs:
+            artifactName: signed-mac-FailedAttempt$(System.JobAttempt)
+            path: signed-mac/
+
+    - job: SignWindows
+      pool:
+        name: $(WINDOWSPOOL)
+        image: $(WINDOWSVMIMAGE)
+        os: windows
+
+      steps:
+        # Checkout required to build MSI
+        - checkout: self
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: azd-windows-amd64.exe
+            path: win-x86_64
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: azd-windows-arm64.exe
+            path: win-arm64
+
+        - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path win
+
+            Copy-Item win-x86_64/azd-windows-amd64.exe win/
+            Copy-Item win-arm64/azd-windows-arm64.exe win/
+          displayName: Package windows binary for signing
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: install-pwsh
+            path: installer
+
+        - pwsh: |
+            if (Test-Path win/_manifest) {
+              Remove-Item -Recurse -Force win/_manifest
+            }
+            Copy-Item installer/*.ps1 win
+
+            Get-Childitem -Recurse win/ | Select-Object -Property Length,FullName
+          displayName: Prepare assets for signing
+
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+          - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
+            parameters:
+              WinPath:  win
+              WinPattern: '**'
+
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path signed-win
+            Copy-Item win/* signed-win/ -Recurse
+            Copy-Item win/azd-windows-amd64.exe cli/azd/azd.exe
+          displayName: Copy signing outputs for publishing and MSI build
+          condition: always()
+
+        - template: /eng/pipelines/templates/steps/build-msi.yml
+          parameters:
+            Title: Build Release MSI
+            # Only build for release in a manual (releasing) build. Otherwise
+            # the package version will be 0.1.0 with upgrade logic that allows
+            # it to be installed over any previously installed version.
+            ShouldBuildForRelease: ${{ eq(variables['Build.Reason'], 'Manual') }}
+
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+          - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
+            parameters:
+              WinPath:  cli/installer/windows/bin/Release
+              WinPattern: '*.msi'
+
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
+
+        - pwsh: Copy-Item cli/installer/windows/bin/Release/* signed-win/
+          displayName: Copy MSI for publishing
+
+        - pwsh: Copy-Item cli/installer/windows/bin/Release/azd-windows-amd64.msi cli/installer/choco/tools
+          displayName: Copy MSI for Choco package
+
+        - task: PowerShell@2
+          displayName: Build Choco Package
+          inputs:
+            pwsh: true
+            targetType: filePath
+            filePath: eng/scripts/New-ChocoPackage.ps1
+            arguments: >-
+              -Version $(MSI_VERSION)
+              -Tag 'azure-dev-cli_$(CLI_VERSION)'
+        
+        - pwsh: |
+            New-Item -ItemType Directory -Path $(Build.ArtifactStagingDirectory)/choco-package -Force
+            Copy-Item cli/installer/choco/*.nupkg $(Build.ArtifactStagingDirectory)/choco-package
+          displayName: Copy Choco Package to Artifact Staging Directory for upload
+
+        # TODO: Replace with https://github.com/Azure/azure-sdk-tools/blob/main/eng/common/pipelines/templates/steps/publish-artifact.yml
+        # when the common engsys is imported.
+        # https://github.com/Azure/azure-dev/issues/956
+        - task: 1ES.PublishPipelineArtifact@1
+          condition: succeeded()
+          displayName: Publish Signed Artifacts
+          inputs:
+            artifactName: signed-win
+            path: signed-win/
+
+        - task: 1ES.PublishPipelineArtifact@1
+          condition: failed()
+          displayName: Publish failed Signed Artifacts
+          inputs:
+            artifactName: signed-win-FailedAttempt$(System.JobAttempt)
+            path: signed-win/
+
+        - task: 1ES.PublishPipelineArtifact@1
+          condition: succeeded()
+          displayName: Publish Choco Package Artifact
+          inputs: 
+            targetPath: $(Build.ArtifactStagingDirectory)/choco-package
+            artifact: choco-package
+
+    - job: SignLinux
+      pool:
+        name: $(WINDOWSPOOL)
+        image: $(WINDOWSVMIMAGE)
+        os: windows
+
+      steps:
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: linux-packages
+            path: linux
+
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
+          - template: pipelines/steps/azd-cli-linux-signing.yml@azure-sdk-build-tools
+            parameters:
+              LinuxPath: linux
+
+        - ${{ else }}:
+          - pwsh: Write-Host "Skipping signing. Build reason - $(Build.Reason)"
+            displayName: Signing process skipped for non-release build
+
+        - pwsh: |
+            New-Item -ItemType Directory -Path signed-linux
+            Copy-Item linux/* signed-linux/ -Recurse
+          displayName: Copy signing outputs
+          condition: always()
+
+        - task: 1ES.PublishPipelineArtifact@1
+          condition: succeeded()
+          displayName: Publish Signed Artifacts
+          inputs:
+            artifactName: signed-linux
+            path: signed-linux/
+
+        - task: 1ES.PublishPipelineArtifact@1
+          condition: failed()
+          displayName: Publish failed Signed Artifacts
+          inputs:
+            artifactName: signed-linux-FailedAttempt$(System.JobAttempt)
+            path: signed-linux/
+
+    - job: CreateRelease
+      pool:
+        name: $(LINUXPOOL)
+        image: $(LINUXVMIMAGE)
+        os: linux
+
+      dependsOn:
+        - SignMac
+        - SignWindows
+        - SignLinux
+
+      templateContext:
+        outputs:
+          - output: pipelineArtifact
+            path: release
+            artifact: release
+            condition: succeeded()
+            displayName: Upload azd release artifact
+
+          - output: pipelineArtifact
+            path: homebrew-formula
+            artifact: homebrew-formula
+            condition: succeeded()
+            displayName: Upload homebrew formula artifact
+
+      steps:
+        - checkout: self
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifactName: signed-win
+            targetPath: signed/win
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifactName: signed-mac
+            targetPath: signed/mac
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifactName: signed-linux
+            targetPath: signed/linux
+
+        # Linux binaries are not signed today so download from build outputs
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifactName: azd-linux-amd64
+            targetPath: release-staging
+
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifactName: azd-linux-arm64
+            targetPath: release-staging
+
+        - template: /eng/pipelines/templates/steps/set-metadata-variables.yml
+
+        - pwsh: |
+            Write-Host "Build.SourcesDirectory: $(Build.SourcesDirectory)"
+            Write-Host "System.DefaultWorkingDirectory: $(System.DefaultWorkingDirectory)"
+            Get-Location | Write-Host 
+            Get-ChildItem -Recurse | Select-Object -Property FullName
+          displayName: List files in current directory
+
+
+        # Set up the release directory with all packages
+        - bash: | 
+            chmod +x \
+            signed/mac/azd-darwin-amd64 \
+            signed/mac/azd-darwin-arm64 \
+            release-staging/azd-linux-amd64 \
+            release-staging/azd-linux-arm64
+          displayName: Set execute bit for the mac and linux release
+
+        - pwsh: New-Item -ItemType Directory -Path release -Force
+          displayName: Create release directory
+
+        - pwsh: |
+            zip release/azd-darwin-amd64.zip -j signed/mac/azd-darwin-amd64 NOTICE.txt
+            zip release/azd-windows-amd64.zip -j signed/win/azd-windows-amd64.exe NOTICE.txt
+
+            # Must place NOTICE.txt in file tree for tar to pick it up and place it in
+            # the same place in the directory structure
+            Copy-Item NOTICE.txt ./release-staging/
+            tar -C ./release-staging/ -cvzf release/azd-linux-amd64.tar.gz azd-linux-amd64 NOTICE.txt
+
+            # ARM64 releases
+            Rename-Item signed/win/azd-windows-arm64.exe azd-windows-arm64-alpha.exe
+            zip release/azd-windows-arm64-alpha.zip -j signed/win/azd-windows-arm64-alpha.exe NOTICE.txt
+
+            Move-Item release-staging/azd-linux-arm64 release-staging/azd-linux-arm64
+            Move-Item signed/mac/azd-darwin-arm64 signed/mac/azd-darwin-arm64
+
+            zip release/azd-darwin-arm64.zip -j signed/mac/azd-darwin-arm64 NOTICE.txt
+
+            # Must place NOTICE.txt in file tree for tar to pick it up and place it in
+            # the same place in the directory structure
+            Copy-Item NOTICE.txt ./release-staging/
+            tar -C ./release-staging/ -cvzf release/azd-linux-arm64.tar.gz azd-linux-arm64 NOTICE.txt
+          displayName: Compress standalone binary for release
+
+        - pwsh: |
+            Copy-Item signed/win/azd-windows-amd64.msi release/
+          displayName: Copy MSI to release
+
+        - pwsh: |
+            Copy-Item signed/linux/*.deb release/
+            Copy-Item signed/linux/*.rpm release/
+          displayName: Copy signed Linux packages to release
+
+        # Homebrew formula
+        - pwsh: New-Item -ItemType Directory -Path homebrew-formula -Force
+          displayName: Create homebrew formula directory
+
+        - task: PowerShell@2
+          condition: eq(variables['SubmitBrewFormula'], 'true')
+          displayName: Create updated brew formula
+          inputs:
+            targetType: filePath
+            filePath: eng/scripts/Update-HomebrewFormula.ps1
+            arguments: >-
+              -ZipFilePathAmd64 release/azd-darwin-amd64.zip
+              -ZipFilePathArm64 release/azd-darwin-arm64.zip
+              -LinuxArchivePathAmd64 release/azd-linux-amd64.tar.gz
+              -LinuxArchivePathArm64 release/azd-linux-arm64.tar.gz
+              -Version $(CLI_VERSION)
+              -OutFile homebrew-formula/azd.rb

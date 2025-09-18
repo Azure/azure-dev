@@ -1,125 +1,180 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cmd
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 type upFlags struct {
-	initFlags
-	infraCreateFlags
-	deployFlags
-	outputFormat string
-	global       *internal.GlobalCommandOptions
-	envFlag
+	cmd.ProvisionFlags
+	cmd.DeployFlags
+	global *internal.GlobalCommandOptions
+	internal.EnvFlag
 }
 
 func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	output.AddOutputFlag(
-		local,
-		&u.outputFormat,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat)
-
-	u.envFlag.Bind(local, global)
+	u.EnvFlag.Bind(local, global)
 	u.global = global
 
-	u.initFlags.bindNonCommon(local, global)
-	u.initFlags.setCommon(&u.envFlag)
-	u.infraCreateFlags.bindNonCommon(local, global)
-	u.infraCreateFlags.setCommon(&u.outputFormat, &u.envFlag)
-	u.deployFlags.bindNonCommon(local, global)
-	u.deployFlags.setCommon(&u.outputFormat, &u.envFlag)
+	u.ProvisionFlags.BindNonCommon(local, global)
+	u.ProvisionFlags.SetCommon(&u.EnvFlag)
+	u.DeployFlags.BindNonCommon(local, global)
+	u.DeployFlags.SetCommon(&u.EnvFlag)
 }
 
-func upCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *upFlags) {
-	cmd := &cobra.Command{
+func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFlags {
+	flags := &upFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newUpCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "up",
-		Short: "Initialize application, provision Azure resources, and deploy your project with a single command.",
-		//nolint:lll
-		Long: `Initialize the project (if the project folder has not been initialized or cloned from a template), provision Azure resources, and deploy your project with a single command.
-
-This command executes the following in one step:
-
-	$ azd init
-	$ azd provision
-	$ azd deploy
-
-When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, running ` + output.WithBackticks(
-			"azd up",
-		) + ` initializes the current directory so that your project is compatible with Azure Developer CLI.`,
+		Short: "Provision and deploy your project to Azure with a single command.",
 	}
-
-	uf := &upFlags{}
-	uf.Bind(cmd.Flags(), global)
-
-	if err := cmd.RegisterFlagCompletionFunc("template", templateNameCompletion); err != nil {
-		panic(err)
-	}
-
-	return cmd, uf
 }
 
 type upAction struct {
-	init        *initAction
-	infraCreate *infraCreateAction
-	deploy      *deployAction
-	console     input.Console
+	flags               *upFlags
+	console             input.Console
+	env                 *environment.Environment
+	projectConfig       *project.ProjectConfig
+	provisioningManager *provisioning.Manager
+	envManager          environment.Manager
+	prompters           prompt.Prompter
+	importManager       *project.ImportManager
+	workflowRunner      *workflow.Runner
 }
 
-func newUpAction(init *initAction, infraCreate *infraCreateAction, deploy *deployAction, console input.Console) *upAction {
+var defaultUpWorkflow = &workflow.Workflow{
+	Name: "up",
+	Steps: []*workflow.Step{
+		{AzdCommand: workflow.Command{Args: []string{"package", "--all"}}},
+		{AzdCommand: workflow.Command{Args: []string{"provision"}}},
+		{AzdCommand: workflow.Command{Args: []string{"deploy", "--all"}}},
+	},
+}
+
+func newUpAction(
+	flags *upFlags,
+	console input.Console,
+	env *environment.Environment,
+	projectConfig *project.ProjectConfig,
+	provisioningManager *provisioning.Manager,
+	envManager environment.Manager,
+	prompters prompt.Prompter,
+	importManager *project.ImportManager,
+	workflowRunner *workflow.Runner,
+) actions.Action {
 	return &upAction{
-		init:        init,
-		infraCreate: infraCreate,
-		deploy:      deploy,
-		console:     console,
+		flags:               flags,
+		console:             console,
+		env:                 env,
+		projectConfig:       projectConfig,
+		provisioningManager: provisioningManager,
+		envManager:          envManager,
+		prompters:           prompters,
+		importManager:       importManager,
+		workflowRunner:      workflowRunner,
 	}
 }
 
 func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	err := u.runInit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("running init: %w", err)
-	}
-
-	finalOutput := []string{}
-	u.infraCreate.finalOutputRedirect = &finalOutput
-	_, err = u.infraCreate.Run(ctx)
+	infra, err := u.importManager.ProjectInfrastructure(ctx, u.projectConfig)
 	if err != nil {
 		return nil, err
 	}
+	defer func() { _ = infra.Cleanup() }()
 
-	// Print an additional newline to separate provision from deploy
-	u.console.Message(ctx, "")
-
-	_, err = u.deploy.Run(ctx)
-	if err != nil {
+	// TODO(weilim): remove this once we have decided if it's okay to not set AZURE_SUBSCRIPTION_ID and AZURE_LOCATION
+	// early in the up workflow in #3745
+	err = u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options)
+	if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
+		// If bicep is not available, we continue to prompt for subscription and location unfiltered
+		err = provisioning.EnsureSubscriptionAndLocation(
+			ctx, u.envManager, u.env, u.prompters, provisioning.EnsureSubscriptionAndLocationOptions{})
+		if err != nil {
+			return nil, err
+		}
+	} else if err != nil {
 		return nil, err
 	}
 
-	for _, message := range finalOutput {
-		u.console.Message(ctx, message)
+	startTime := time.Now()
+
+	upWorkflow, has := u.projectConfig.Workflows["up"]
+	if !has {
+		upWorkflow = defaultUpWorkflow
+	} else {
+		u.console.Message(ctx, output.WithGrayFormat("Note: Running custom 'up' workflow from azure.yaml"))
 	}
 
-	return nil, nil
+	if u.flags.EnvironmentName != "" {
+		ctx = context.WithValue(ctx, envFlagCtxKey, u.flags.EnvFlag)
+	}
+
+	if err := u.workflowRunner.Run(ctx, upWorkflow); err != nil {
+		return nil, err
+	}
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: fmt.Sprintf("Your up workflow to provision and deploy to Azure completed in %s.",
+				ux.DurationAsText(since(startTime))),
+		},
+	}, nil
 }
 
-func (u *upAction) runInit(ctx context.Context) error {
-	_, err := u.init.Run(ctx)
-	var envInitError *environment.EnvironmentInitError
-	if errors.As(err, &envInitError) {
-		// We can ignore environment already initialized errors
-		return nil
-	}
+func getCmdUpHelpDescription(c *cobra.Command) string {
+	return generateCmdHelpDescription(
+		heredoc.Docf(
+			`Runs a workflow to %s, %s and %s your application in a single step.
 
-	return err
+			The %s workflow can be customized by adding a %s section to your %s.
+
+			For example, modify the workflow to provision before packaging and deploying:
+
+			-------------------------
+			%s
+			workflows:
+			  up:
+			    - azd: provision
+			    - azd: package --all
+			    - azd: deploy --all
+			-------------------------
+
+			Any azd command and flags are supported in the workflow steps.`,
+			output.WithHighLightFormat("package"),
+			output.WithHighLightFormat("provision"),
+			output.WithHighLightFormat("deploy"),
+			output.WithHighLightFormat("up"),
+			output.WithHighLightFormat("workflows"),
+			output.WithHighLightFormat("azure.yaml"),
+			output.WithGrayFormat("# azure.yaml"),
+		),
+		nil,
+	)
 }

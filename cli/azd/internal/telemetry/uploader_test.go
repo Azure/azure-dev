@@ -1,9 +1,13 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package telemetry
 
 import (
 	"context"
 	"fmt"
 	"math/rand"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -11,7 +15,6 @@ import (
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/exp/slices"
 )
 
 type InMemoryItem struct {
@@ -43,7 +46,10 @@ func (tq *InMemoryTelemetryQueue) EnqueueWithDelay(message []byte, delayDuration
 }
 
 func (tq *InMemoryTelemetryQueue) save(message []byte, delayDuration time.Duration, retryCount int) error {
+	//nolint:gosec // G404 - Use of weak random number generator - false positive in test
 	fileName := strconv.FormatUint(rand.Uint64(), 10)
+
+	//nolint:gosec // G404 - Use of weak random number generator - false positive in test
 	for _, exists := tq.itemMap[fileName]; exists; fileName = strconv.FormatUint(rand.Uint64(), 10) {
 	}
 

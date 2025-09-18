@@ -1,5 +1,5 @@
 ARG prefix=''
-ARG base='debian:bullseye'
+ARG base='debian:bookworm'
 FROM ${prefix}${base}
 
 ARG shell='bash'
@@ -15,4 +15,6 @@ ENV SHELL="${shell}"
 ENV BASE_URL="${baseUrl}"
 ENV VERSION="${version}"
 
-ENTRYPOINT ./test-sh-install.sh $SHELL $BASE_URL $VERSION && ./test-telemetry-functions.sh
+ENTRYPOINT ./test-sh-install.sh $SHELL $BASE_URL $VERSION \
+    && ./test-telemetry-functions.sh \
+    && ./test-sh-install-errors.sh $SHELL $BASEURL $VERSION

@@ -1,11 +1,24 @@
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-syntax
 
-* @jongio @ellismg
-/cli/ @ellismg @wbreza @vhvb1989 @hemarina @jongio @weikanglim
-/cli/installer @ellismg @danieljurek
-/ext/ @karolz-ms @ellismg @jongio
-/generators/repo/ @wbreza @ellismg @danieljurek
-/.github/ @danieljurek @ellismg
-/eng/ @danieljurek @ellismg
-/schemas/ @jongio @karolz-ms @ellismg @wbreza
-/templates/ @jongio @wbreza
+/**                @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050
+
+/cli/              @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050
+/cli/installer/    @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
+
+/ext/              @karolz-ms @vhvb1989 @tg-msft @rajeshkamal5050
+
+/ext/azuredevops/  @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
+
+/ext/devcontainer/ @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
+
+/ext/vscode/       @bwateratmsft @vhvb1989 @tg-msft @rajeshkamal5050 @karolz-ms
+
+/.github/          @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
+
+/.config/1espt/    @Azure/azure-sdk-eng
+
+/eng/              @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
+
+/schemas/          @wbreza @vhvb1989 @tg-msft @rajeshkamal5050
+
+/.github/CODEOWNERS   @rajeshkamal5050 @Azure/azure-sdk-eng

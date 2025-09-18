@@ -8,13 +8,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/microsoft/azure-devops-go-api/azuredevops"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/taskagent"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/taskagent"
 )
 
 // Creates a variable to be associated with a Pipeline
@@ -61,7 +62,7 @@ func getPipelineDefinition(
 
 	// GetDefinitions return just the first page (it could be more)
 	// using pager to iterate pages
-	definitionsPager := getDefinitionsPager(ctx, client, projectId, pipelineName)
+	definitionsPager := getDefinitionsPager(client, projectId, pipelineName)
 
 	for definitionsPager.More() {
 		page, err := definitionsPager.NextPage(ctx)
@@ -88,10 +89,12 @@ func CreatePipeline(
 	name string,
 	repoName string,
 	connection *azuredevops.Connection,
-	credentials AzureServicePrincipalCredentials,
+	credentials *entraid.AzureCredentials,
 	env *environment.Environment,
 	console input.Console,
-	provisioningProvider provisioning.Options) (*build.BuildDefinition, error) {
+	provisioningProvider provisioning.Options,
+	additionalSecrets map[string]string,
+	additionalVariables map[string]string) (*build.BuildDefinition, error) {
 
 	client, err := build.NewClient(ctx, connection)
 	if err != nil {
@@ -108,7 +111,8 @@ func CreatePipeline(
 		// Pipeline is already created. It uses the same connection but
 		// we need to update the variables and secrets as they
 		// might have been updated
-		buildDefinitionVariables, err := getDefinitionVariables(env, credentials, provisioningProvider)
+		buildDefinitionVariables, err := getDefinitionVariables(
+			env, credentials, provisioningProvider, additionalSecrets, additionalVariables)
 		if err != nil {
 			return nil, err
 		}
@@ -130,7 +134,8 @@ func CreatePipeline(
 	}
 
 	createDefinitionArgs, err := createAzureDevPipelineArgs(
-		ctx, projectId, name, repoName, credentials, env, queue, provisioningProvider)
+		projectId, name, repoName, credentials, env, queue,
+		provisioningProvider, additionalSecrets, additionalVariables)
 	if err != nil {
 		return nil, err
 	}
@@ -145,45 +150,68 @@ func CreatePipeline(
 
 func getDefinitionVariables(
 	env *environment.Environment,
-	credentials AzureServicePrincipalCredentials,
-	provisioningProvider provisioning.Options) (*map[string]build.BuildDefinitionVariable, error) {
+	credentials *entraid.AzureCredentials,
+	provisioningProvider provisioning.Options,
+	additionalSecrets map[string]string,
+	additionalVariables map[string]string) (*map[string]build.BuildDefinitionVariable, error) {
 	variables := map[string]build.BuildDefinitionVariable{
 		"AZURE_LOCATION":           createBuildDefinitionVariable(env.GetLocation(), false, false),
-		"AZURE_ENV_NAME":           createBuildDefinitionVariable(env.GetEnvName(), false, false),
+		"AZURE_ENV_NAME":           createBuildDefinitionVariable(env.Name(), false, false),
 		"AZURE_SERVICE_CONNECTION": createBuildDefinitionVariable(ServiceConnectionName, false, false),
-		"AZURE_SUBSCRIPTION_ID":    createBuildDefinitionVariable(credentials.SubscriptionId, false, false),
+	}
+
+	if credentials != nil {
+		variables["AZURE_SUBSCRIPTION_ID"] = createBuildDefinitionVariable(credentials.SubscriptionId, false, false)
+	}
+
+	if provisioningProvider.Provider == provisioning.Bicep {
+		if rgName, has := env.LookupEnv(environment.ResourceGroupEnvVarName); has {
+			variables[environment.ResourceGroupEnvVarName] = createBuildDefinitionVariable(rgName, false, false)
+		}
 	}
 
 	if provisioningProvider.Provider == provisioning.Terraform {
-		variables["ARM_TENANT_ID"] = createBuildDefinitionVariable(credentials.TenantId, false, false)
-		variables["ARM_CLIENT_ID"] = createBuildDefinitionVariable(credentials.ClientId, true, false)
-		variables["ARM_CLIENT_SECRET"] = createBuildDefinitionVariable(credentials.ClientSecret, true, false)
+		if credentials != nil {
+			variables["ARM_TENANT_ID"] = createBuildDefinitionVariable(credentials.TenantId, false, false)
+			variables["ARM_CLIENT_ID"] = createBuildDefinitionVariable(credentials.ClientId, true, false)
+			variables["ARM_CLIENT_SECRET"] = createBuildDefinitionVariable(credentials.ClientSecret, true, false)
+		}
 
 		// Sets the terraform remote state environment variables in azure devops
 		remoteStateKeys := []string{"RS_RESOURCE_GROUP", "RS_STORAGE_ACCOUNT", "RS_CONTAINER_NAME"}
 		for _, key := range remoteStateKeys {
-			value, ok := env.Values[key]
+			value, ok := env.LookupEnv(key)
 			if !ok || strings.TrimSpace(value) == "" {
-				return nil, fmt.Errorf(fmt.Sprintf(`terraform remote state is not correctly configured,
+				return nil, fmt.Errorf(`terraform remote state is not correctly configured,
 Visit %s for more information on configuring Terraform remote state`,
-					output.WithLinkFormat("https://aka.ms/azure-dev/terraform")))
+					output.WithLinkFormat("https://aka.ms/azure-dev/terraform"))
 			}
 			variables[key] = createBuildDefinitionVariable(value, false, true)
 		}
 	}
+
+	for key, value := range additionalSecrets {
+		variables[key] = createBuildDefinitionVariable(value, true, false)
+	}
+
+	for key, value := range additionalVariables {
+		variables[key] = createBuildDefinitionVariable(value, false, true)
+	}
+
 	return &variables, nil
 }
 
 // create Azure Deploy Pipeline parameters
 func createAzureDevPipelineArgs(
-	ctx context.Context,
 	projectId string,
 	name string,
 	repoName string,
-	credentials AzureServicePrincipalCredentials,
+	credentials *entraid.AzureCredentials,
 	env *environment.Environment,
 	queue *taskagent.TaskAgentQueue,
 	provisioningProvider provisioning.Options,
+	additionalSecrets map[string]string,
+	additionalVariables map[string]string,
 ) (*build.CreateDefinitionArgs, error) {
 
 	repoType := "tfsgit"
@@ -220,7 +248,8 @@ func createAzureDevPipelineArgs(
 		trigger,
 	}
 
-	buildDefinitionVariables, err := getDefinitionVariables(env, credentials, provisioningProvider)
+	buildDefinitionVariables, err := getDefinitionVariables(
+		env, credentials, provisioningProvider, additionalSecrets, additionalVariables)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +276,8 @@ func QueueBuild(
 	ctx context.Context,
 	connection *azuredevops.Connection,
 	projectId string,
-	buildDefinition *build.BuildDefinition) error {
+	buildDefinition *build.BuildDefinition,
+	branchName string) error {
 	client, err := build.NewClient(ctx, connection)
 	if err != nil {
 		return err
@@ -257,7 +287,8 @@ func QueueBuild(
 	}
 
 	newBuild := &build.Build{
-		Definition: definitionReference,
+		Definition:   definitionReference,
+		SourceBranch: &branchName,
 	}
 	queueBuildArgs := build.QueueBuildArgs{
 		Project: &projectId,

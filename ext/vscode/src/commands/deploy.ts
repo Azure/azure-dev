@@ -2,24 +2,28 @@
 // Licensed under the MIT License.
 
 import { IActionContext } from '@microsoft/vscode-azext-utils';
+import { composeArgs, withArg } from '@microsoft/vscode-processutils';
 import * as vscode from 'vscode';
 import { TelemetryId } from '../telemetry/telemetryId';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { executeAsTask } from '../utils/executeAsTask';
+import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
+import { AzureDevCliModel } from '../views/workspace/AzureDevCliModel';
+import { AzureDevCliService } from '../views/workspace/AzureDevCliService';
 import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
 
-export async function deploy(context: IActionContext, selectedFile?: vscode.Uri): Promise<void> {
+export async function deploy(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
+    const selectedModel = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliModel>() : undefined;
+    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliModel>().context.configurationFile : selectedItem;
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const azureCli = await createAzureDevCli(context);
+    const args = composeArgs(
+        withArg('deploy'),
+        withArg(selectedModel instanceof AzureDevCliService ? selectedModel.name : '--all'),
+    )();
 
-    // Only supporting "deploy all" mode (no support for deploying individual services)
-    // until https://github.com/Azure/azure-dev/issues/696 is resolved.
-    const command = azureCli.commandBuilder.withArg('deploy').build();
-
-    void executeAsTask(command, getAzDevTerminalTitle(), {
+    void executeAsTask(azureCli.invocation, args, getAzDevTerminalTitle(), azureCli.spawnOptions(workingFolder), {
         alwaysRunNew: true,
-        cwd: workingFolder,
-        env: azureCli.env
     }, TelemetryId.DeployCli);
 }

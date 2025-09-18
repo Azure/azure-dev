@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package appinsightsexporter
 
 import (
@@ -70,7 +73,7 @@ func newTestClientServer() (Transmitter, *testServer) {
 	return client, server
 }
 
-func newTestTlsClientServer(t *testing.T) (Transmitter, *testServer) {
+func newTestTlsClientServer() (Transmitter, *testServer) {
 	server := &testServer{}
 	server.server = httptest.NewTLSServer(server)
 	server.notify = make(chan *testRequest, 1)
@@ -87,7 +90,7 @@ func newTestTlsClientServer(t *testing.T) (Transmitter, *testServer) {
 }
 
 func TestBasicTransitTls(t *testing.T) {
-	client, server := newTestTlsClientServer(t)
+	client, server := newTestTlsClientServer()
 
 	doBasicTransmit(client, server, t)
 }

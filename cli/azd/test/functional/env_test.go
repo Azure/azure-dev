@@ -4,11 +4,16 @@
 package cli_test
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/stretchr/testify/require"
 )
@@ -32,12 +37,15 @@ func Test_CLI_EnvCommandsWorkWhenLoggedOut(t *testing.T) {
 	envNew(ctx, t, cli, "env1", true)
 	envNew(ctx, t, cli, "env2", true)
 
-	// set a private config dir, this well ensure we are logged out.
+	// set a private config dir, this will ensure we are logged out.
 	configDir := t.TempDir()
-	t.Setenv("AZD_CONFIG_DIR", configDir)
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+configDir)
+	// disable telemetry that would write to the temporary directory we create here
+	cli.Env = append(cli.Env, "AZURE_DEV_COLLECT_TELEMETRY=no")
 
 	// check to make sure we are logged out as expected.
-	res, err := cli.RunCommand(ctx, "login", "--check-status", "--output", "json")
+	res, err := cli.RunCommand(ctx, "auth", "login", "--check-status", "--output", "json")
 	require.NoError(t, err)
 
 	var lr contracts.LoginResult
@@ -96,10 +104,48 @@ func Test_CLI_Env_Management(t *testing.T) {
 	environmentList = envList(ctx, t, cli)
 	require.Len(t, environmentList, 2)
 	requireIsDefault(t, environmentList, envName)
+
+	// Verify that trying to select an environment which does not exist fails.
+	res, err := cli.RunCommand(ctx, "env", "select", "does-not-exist")
+	require.Error(t, err)
+	require.Contains(t, res.Stdout, "environment 'does-not-exist' does not exist")
+
+	// Verify that running refresh with an explicit env name from an argument and from a flag leads to an error.
+	_, err = cli.RunCommand(context.Background(), "env", "refresh", "-e", "from-flag", "from-arg")
+	require.Error(t, err)
+
+	// Verify creating an environment when no default environment is set
+	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+	err = azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: ""})
+	require.NoError(t, err)
+
+	// Here we choose 'monitor' as the command that requires an environment to target
+	cmdNeedingEnv := []string{"monitor"}
+
+	envName3 := randomEnvName()
+	_, _ = cli.RunCommandWithStdIn(
+		ctx,
+		"Create a new environment\n"+envName3+"\ny\n",
+		cmdNeedingEnv...)
+	environmentList = envList(ctx, t, cli)
+	require.Len(t, environmentList, 3)
+	requireIsDefault(t, environmentList, envName3)
+
+	// Verify selecting an environment when no default environment is set
+	err = azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: ""})
+	require.NoError(t, err)
+
+	_, _ = cli.RunCommandWithStdIn(
+		ctx,
+		envName2+"\n",
+		cmdNeedingEnv...)
+
+	environmentList = envList(ctx, t, cli)
+	require.Len(t, environmentList, 3)
+	requireIsDefault(t, environmentList, envName2)
 }
 
-// Verifies azd env commands that manage environment values.
-func Test_CLI_Env_Values_Management(t *testing.T) {
+func Test_CLI_Env_Values_Json(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -115,7 +161,44 @@ func Test_CLI_Env_Values_Management(t *testing.T) {
 	// Create one environment
 	envName := randomEnvName()
 	envNew(ctx, t, cli, envName, false)
+
+	// Add key1
+	envSetValue(ctx, t, cli, "key1", "value1")
+	values := envGetValues(ctx, t, cli, "--output", "json")
+	require.Contains(t, values, "key1")
+	require.Equal(t, values["key1"], "value1")
+
+	// Add key2
+	envSetValue(ctx, t, cli, "key2", "value2")
+	values = envGetValues(ctx, t, cli, "--output", "json")
+	require.Contains(t, values, "key2")
+	require.Equal(t, values["key2"], "value2")
+
+	// Modify key1
+	envSetValue(ctx, t, cli, "key1", "modified1")
+	values = envGetValues(ctx, t, cli, "--output", "json")
+	require.Contains(t, values, "key1")
+	require.Equal(t, values["key1"], "modified1")
+	require.Contains(t, values, "key2")
+	require.Equal(t, values["key2"], "value2")
+}
+
+func Test_CLI_Env_Values(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	// Create one environment
+	envName := randomEnvName()
+	envNew(ctx, t, cli, envName, false)
 
 	// Add key1
 	envSetValue(ctx, t, cli, "key1", "value1")
@@ -138,6 +221,102 @@ func Test_CLI_Env_Values_Management(t *testing.T) {
 	require.Equal(t, values["key2"], "value2")
 }
 
+// Verifies azd env commands that manage values across different environments.
+func Test_CLI_Env_Values_MultipleEnvironments(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	// Create one environment
+	envName1 := randomEnvName()
+	envNew(ctx, t, cli, envName1, false)
+
+	// Create another environment
+	envName2 := randomEnvName()
+	envNew(ctx, t, cli, envName2, false)
+
+	values := envGetValues(ctx, t, cli)
+	require.Contains(t, values, "AZURE_ENV_NAME")
+	require.Equal(t, envName2, values["AZURE_ENV_NAME"])
+
+	// Get and set values via -e flag for first environment
+	envSetValue(ctx, t, cli, "envName1", envName1, "--environment", envName1)
+	values = envGetValues(ctx, t, cli, "--environment", envName1)
+	require.Contains(t, values, "AZURE_ENV_NAME")
+	require.Equal(t, values["AZURE_ENV_NAME"], envName1)
+	require.Contains(t, values, "envName1")
+	require.Equal(t, values["envName1"], envName1)
+
+	// Get and set values via -e flag for the second environment
+	envSetValue(ctx, t, cli, "envName2", envName2, "--environment", envName2)
+	values = envGetValues(ctx, t, cli, "--environment", envName2)
+	require.Contains(t, values, "AZURE_ENV_NAME")
+	require.Equal(t, values["AZURE_ENV_NAME"], envName2)
+	require.Contains(t, values, "envName2")
+	require.Equal(t, values["envName2"], envName2)
+}
+
+func Test_CLI_Env_GetValue(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	// Create an environment
+	envName := randomEnvName()
+	envNew(ctx, t, cli, envName, false)
+
+	// Set key1
+	envSetValue(ctx, t, cli, "key1", "value1")
+
+	// Get key1 value
+	value := envGetValue(ctx, t, cli, "key1")
+	require.Equal(t, "value1", value)
+
+	// Set key2
+	envSetValue(ctx, t, cli, "key2", "value2")
+
+	// Get key2 value
+	value = envGetValue(ctx, t, cli, "key2")
+	require.Equal(t, "value2", value)
+
+	// Modify key1
+	envSetValue(ctx, t, cli, "key1", "modified1")
+
+	// Get modified key1 value
+	value = envGetValue(ctx, t, cli, "key1")
+	require.Equal(t, "modified1", value)
+
+	// Test non-existent key
+	res, err := cli.RunCommand(ctx, "env", "get-value", "non_existent_key")
+	require.Error(t, err)
+	require.Contains(t, res.Stdout, "key 'non_existent_key' not found in the environment values")
+}
+
+func envGetValue(ctx context.Context, t *testing.T, cli *azdcli.CLI, key string) string {
+	args := []string{"env", "get-value", key}
+
+	result, err := cli.RunCommand(ctx, args...)
+	require.NoError(t, err)
+
+	return strings.TrimSpace(result.Stdout)
+}
+
 func requireIsDefault(t *testing.T, list []contracts.EnvListEnvironment, envName string) {
 	for _, env := range list {
 		if env.Name == envName {
@@ -149,12 +328,17 @@ func requireIsDefault(t *testing.T, list []contracts.EnvListEnvironment, envName
 	require.Fail(t, "%#v does not contain env with name %#v", list, envName)
 }
 
-func envNew(ctx context.Context, t *testing.T, cli *azdcli.CLI, envName string, usePrompt bool) {
+func envNew(ctx context.Context, t *testing.T, cli *azdcli.CLI, envName string, usePrompt bool, args ...string) {
+	defaultArgs := []string{"env", "new"}
+
 	if usePrompt {
-		_, err := cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "env", "new")
+		runArgs := append(defaultArgs, args...)
+		_, err := cli.RunCommandWithStdIn(ctx, envName+"\ny\n", runArgs...)
 		require.NoError(t, err)
 	} else {
-		_, err := cli.RunCommand(ctx, "env", "new", envName, "--subscription", testSubscriptionId, "-l", defaultLocation)
+		runArgs := append(defaultArgs, envName, "--no-prompt", "--subscription", cfg.SubscriptionID, "-l", cfg.Location)
+		runArgs = append(runArgs, args...)
+		_, err := cli.RunCommand(ctx, runArgs...)
 		require.NoError(t, err)
 	}
 }
@@ -175,18 +359,66 @@ func envSelect(ctx context.Context, t *testing.T, cli *azdcli.CLI, envName strin
 	require.NoError(t, err)
 }
 
-func envSetValue(ctx context.Context, t *testing.T, cli *azdcli.CLI, key string, value string) {
-	_, err := cli.RunCommand(ctx, "env", "set", key, value)
+func envSetValue(ctx context.Context, t *testing.T, cli *azdcli.CLI, key string, value string, args ...string) {
+	defaultArgs := []string{"env", "set", key, value}
+	args = append(defaultArgs, args...)
+
+	_, err := cli.RunCommand(ctx, args...)
 	require.NoError(t, err)
 }
 
-func envGetValues(ctx context.Context, t *testing.T, cli *azdcli.CLI) map[string]string {
-	result, err := cli.RunCommand(ctx, "env", "get-values", "--output", "json")
+func envGetValues(
+	ctx context.Context,
+	t *testing.T,
+	cli *azdcli.CLI,
+	args ...string) map[string]string {
+	defaultArgs := []string{"env", "get-values"}
+	args = append(defaultArgs, args...)
+
+	result, err := cli.RunCommand(ctx, args...)
 	require.NoError(t, err)
 
-	var envValues map[string]string
-	err = json.Unmarshal([]byte(result.Stdout), &envValues)
-	require.NoError(t, err)
+	outputMode := azdcli.GetOutputFlagValue(args)
+
+	envValues := map[string]string{}
+
+	switch outputMode {
+	case "json":
+		err = json.Unmarshal([]byte(result.Stdout), &envValues)
+		require.NoError(t, err)
+	case "", "none":
+		scanner := bufio.NewScanner(strings.NewReader(result.Stdout))
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.Contains(line, "=") {
+				t.Fatal("unexpected line in output: " + line)
+			}
+
+			parts := strings.Split(line, "=")
+			require.Len(t, parts, 2)
+			val, err := unquote(parts[1])
+			require.NoError(t, err)
+			envValues[parts[0]] = val
+		}
+	default:
+		panic("unhandled output mode: " + outputMode)
+	}
 
 	return envValues
+}
+
+func unquote(s string) (string, error) {
+	if len(s) == 0 {
+		return s, nil
+	}
+
+	if s[0] == '"' || s[0] == '\'' {
+		if len(s) == 1 || s[len(s)-1] != s[0] {
+			return "", fmt.Errorf("unmatched quote in: %s", s)
+		}
+
+		return s[1 : len(s)-1], nil
+	}
+
+	return s, nil
 }

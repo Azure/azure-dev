@@ -7,14 +7,13 @@ import (
 	"context"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
 )
 
 // Define an API for client methods that returns a page and a continuation token.
 
 // getDefinitionsPager providers a pager to iterate for all the pages from GetDefinitions.
 func getDefinitionsPager(
-	ctx context.Context,
 	client build.Client,
 	projectId *string,
 	pipelineName *string,

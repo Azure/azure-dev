@@ -1,0 +1,201 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "AZD Extensions Schema",
+    "description": "Schema defining the structure of AZD extensions, including versions, artifacts, and dependencies.",
+    "type": "object",
+    "definitions": {
+        "Extension": {
+            "type": "object",
+            "title": "Extension",
+            "description": "Defines an extension that can have multiple versions and associated metadata.",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Unique identifier for the extension. Must be unique across all extensions.",
+                    "pattern": "^[a-z0-9-.]+$"
+                },
+                "namespace": {
+                    "type": "string",
+                    "description": "Namespace for organizing extensions. Required for proper classification."
+                },
+                "displayName": {
+                    "type": "string",
+                    "description": "Human-readable name of the extension."
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Detailed description of the extension."
+                },
+                "versions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "description": "List of versions available for this extension.",
+                    "items": {
+                        "$ref": "#/definitions/Version"
+                    }
+                },
+                "tags": {
+                    "type": "array",
+                    "description": "Tags categorizing the extension.",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "required": [
+                "id",
+                "namespace",
+                "displayName",
+                "description",
+                "versions"
+            ]
+        },
+        "Version": {
+            "type": "object",
+            "title": "Version",
+            "description": "Defines a specific version of an extension, including artifacts and dependencies.",
+            "properties": {
+                "version": {
+                    "type": "string",
+                    "description": "Version number following semantic versioning.",
+                    "pattern": "^\\d+\\.\\d+\\.\\d+$"
+                },
+                "usage": {
+                    "type": "string",
+                    "description": "Usage instructions for this version."
+                },
+                "examples": {
+                    "type": "array",
+                    "minItems": 1,
+                    "description": "Examples of usage commands.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "Name of the example."
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": "Description of what the example does."
+                            },
+                            "usage": {
+                                "type": "string",
+                                "description": "Command to execute the example."
+                            }
+                        },
+                        "required": [
+                            "name",
+                            "description",
+                            "usage"
+                        ]
+                    }
+                },
+                "artifacts": {
+                    "type": "object",
+                    "description": "Collection of artifacts where each key is a unique identifier for the artifact.",
+                    "minProperties": 1,
+                    "additionalProperties": {
+                        "$ref": "#/definitions/Artifact"
+                    }
+                },
+                "dependencies": {
+                    "type": "array",
+                    "description": "List of dependencies required by this version.",
+                    "items": {
+                        "$ref": "#/definitions/Dependency"
+                    },
+                    "minItems": 1
+                }
+            },
+            "required": [
+                "version",
+                "usage",
+                "examples"
+            ],
+            "anyOf": [
+                {
+                    "required": [
+                        "artifacts"
+                    ]
+                },
+                {
+                    "required": [
+                        "dependencies"
+                    ]
+                }
+            ]
+        },
+        "Artifact": {
+            "type": "object",
+            "title": "Artifact",
+            "description": "Defines a downloadable artifact for an extension version.",
+            "properties": {
+                "checksum": {
+                    "type": "object",
+                    "description": "Checksum for verifying artifact integrity.",
+                    "properties": {
+                        "algorithm": {
+                            "type": "string",
+                            "description": "Checksum algorithm used."
+                        },
+                        "value": {
+                            "type": "string",
+                            "description": "Checksum value for verification."
+                        }
+                    },
+                    "required": [
+                        "algorithm",
+                        "value"
+                    ]
+                },
+                "entryPoint": {
+                    "type": "string",
+                    "description": "Executable entry point for the artifact."
+                },
+                "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "Download URL for the artifact."
+                }
+            },
+            "required": [
+                "url"
+            ]
+        },
+        "Dependency": {
+            "type": "object",
+            "title": "Dependency",
+            "description": "Defines a dependency required by an extension version.",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "ID of the dependency extension."
+                },
+                "version": {
+                    "type": "string",
+                    "description": "Required version of the dependency. Supports semantic versioning constraints."
+                }
+            },
+            "required": [
+                "id",
+                "version"
+            ]
+        }
+    },
+    "properties": {
+        "extensions": {
+            "$comment": "Each extension must have a unique 'id' within the array.",
+            "type": "array",
+            "title": "Extensions",
+            "description": "List of all available extensions.",
+            "items": {
+                "$ref": "#/definitions/Extension"
+            }
+        },
+        "signature": {
+            "type": "string",
+            "description": "Optional signature for verifying schema integrity."
+        }
+    }
+}

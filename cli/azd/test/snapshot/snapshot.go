@@ -2,6 +2,8 @@
 // Licensed under the MIT License.
 
 // Package snapshot contains adapters that azd uses to create snapshot tests.
+// By default, snapshots are stored under testdata. To change this behavior, customize the config created by
+// snapshot.NewDefaultConfig or snapshot.NewConfig.
 //
 // Snapshot with default configuration
 //
@@ -62,6 +64,10 @@ func NewDefaultConfig() *cupaloy.Config {
 //
 // If you want to call Snapshot multiple times in a test,
 // collect the values and call Snapshot with all values at once.
+//
+// To update the snapshots simply set the UPDATE_SNAPSHOTS environment variable and run your tests e.g.
+//
+//	UPDATE_SNAPSHOTS=true go test ./...
 func SnapshotT(t *testing.T, i ...interface{}) {
 	cupaloy.SnapshotT(t, i...)
 }

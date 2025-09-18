@@ -7,6 +7,11 @@ on:
       - ".github/workflows/vscode-ci.yml"
     branches: [main]
 
+# If two events are triggered within a short time in the same PR, cancel the run of the oldest event
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   actions: read
   contents: read
@@ -16,29 +21,29 @@ jobs:
   cspell-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v1
-        name: Run spell check azd vscode extension
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "16"
-      - run: npm install -g cspell
-      - run: cspell lint '**/*.ts' --config ./ext/vscode/.vscode/cspell.yaml --root ./ext/vscode --no-progress
+          node-version: "20"
+      - run: npm install -g cspell@8.13.1
+      - name: Spell check for vscode extension
+        run: cspell lint '**/*.ts' --config ./ext/vscode/.vscode/cspell.yaml --root ./ext/vscode --no-progress
 
   build-test:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        node-version: [16.x]
+        node-version: [20.x]
         os: [macos-latest, ubuntu-latest, windows-latest]
         include:
           - os: ubuntu-latest
             upload-artifact: true
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
 
@@ -74,7 +79,7 @@ jobs:
 
       - name: 'Upload azd binary to artifact store (upload-artifact: true only)'
         if: matrix.upload-artifact == true
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: package
           path: ./ext/vscode/azure-dev*.vsix

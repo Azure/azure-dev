@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package graphsdk_test
 
 import (
@@ -7,35 +10,35 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	graphsdk_mocks "github.com/azure/azure-dev/cli/azd/test/mocks/graphsdk"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockgraphsdk"
 	"github.com/stretchr/testify/require"
 )
 
 var (
 	application graphsdk.Application = graphsdk.Application{
-		Id:          convert.RefOf("application-id"),
+		Id:          to.Ptr("application-id"),
 		DisplayName: "application name",
-		Description: convert.RefOf("app description"),
+		Description: to.Ptr("app description"),
 	}
 
 	federatedCredentials []graphsdk.FederatedIdentityCredential = []graphsdk.FederatedIdentityCredential{
 		{
-			Id:          convert.RefOf("cred-01"),
+			Id:          to.Ptr("cred-01"),
 			Name:        "Credential 1",
 			Issuer:      "ISSUER",
 			Subject:     "SUBJECT",
-			Description: convert.RefOf("DESCRIPTION"),
+			Description: to.Ptr("DESCRIPTION"),
 			Audiences:   []string{"AUDIENCE"},
 		},
 		{
-			Id:          convert.RefOf("cred-02"),
+			Id:          to.Ptr("cred-02"),
 			Name:        "Credential 2",
 			Issuer:      "ISSUER",
 			Subject:     "SUBJECT",
-			Description: convert.RefOf("DESCRIPTION"),
+			Description: to.Ptr("DESCRIPTION"),
 		},
 	}
 )
@@ -45,9 +48,9 @@ func TestGetFederatedCredentialList(t *testing.T) {
 		expected := append([]graphsdk.FederatedIdentityCredential{}, federatedCredentials...)
 
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterFederatedCredentialsListMock(mockContext, *application.Id, http.StatusOK, expected)
+		mockgraphsdk.RegisterFederatedCredentialsListMock(mockContext, *application.Id, http.StatusOK, expected)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		res, err := client.
@@ -62,9 +65,9 @@ func TestGetFederatedCredentialList(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterFederatedCredentialsListMock(mockContext, *application.Id, http.StatusUnauthorized, nil)
+		mockgraphsdk.RegisterFederatedCredentialsListMock(mockContext, *application.Id, http.StatusUnauthorized, nil)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		res, err := client.
@@ -82,7 +85,7 @@ func TestGetFederatedCredentialById(t *testing.T) {
 		expected := federatedCredentials[0]
 
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterFederatedCredentialGetItemMock(
+		mockgraphsdk.RegisterFederatedCredentialGetItemMock(
 			mockContext,
 			*application.Id,
 			*expected.Id,
@@ -90,7 +93,7 @@ func TestGetFederatedCredentialById(t *testing.T) {
 			&expected,
 		)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		actual, err := client.
@@ -107,7 +110,7 @@ func TestGetFederatedCredentialById(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterFederatedCredentialGetItemMock(
+		mockgraphsdk.RegisterFederatedCredentialGetItemMock(
 			mockContext,
 			*application.Id,
 			"bad-id",
@@ -115,7 +118,7 @@ func TestGetFederatedCredentialById(t *testing.T) {
 			nil,
 		)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		res, err := client.
@@ -133,9 +136,9 @@ func TestCreateFederatedCredential(t *testing.T) {
 		expected := federatedCredentials[0]
 
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterFederatedCredentialCreateItemMock(mockContext, *application.Id, http.StatusCreated, &expected)
+		mockgraphsdk.RegisterFederatedCredentialCreateItemMock(mockContext, *application.Id, http.StatusCreated, &expected)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		actual, err := client.ApplicationById(*application.Id).
@@ -150,9 +153,9 @@ func TestCreateFederatedCredential(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterFederatedCredentialCreateItemMock(mockContext, *application.Id, http.StatusBadRequest, nil)
+		mockgraphsdk.RegisterFederatedCredentialCreateItemMock(mockContext, *application.Id, http.StatusBadRequest, nil)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		res, err := client.
@@ -170,14 +173,14 @@ func TestPatchFederatedCredential(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterFederatedCredentialPatchItemMock(
+		mockgraphsdk.RegisterFederatedCredentialPatchItemMock(
 			mockContext,
 			*application.Id,
 			*expected.Id,
 			http.StatusNoContent,
 		)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		err = client.
@@ -190,14 +193,14 @@ func TestPatchFederatedCredential(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterFederatedCredentialPatchItemMock(
+		mockgraphsdk.RegisterFederatedCredentialPatchItemMock(
 			mockContext,
 			*application.Id,
 			*expected.Id,
 			http.StatusBadRequest,
 		)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		err = client.
@@ -210,18 +213,19 @@ func TestPatchFederatedCredential(t *testing.T) {
 }
 
 func TestDeleteFederatedCredential(t *testing.T) {
+	/* #nosec G101 - Potential hardcoded credentials - false positive */
 	credentialId := "credential-to-delete"
 
 	t.Run("Success", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterFederatedCredentialDeleteItemMock(
+		mockgraphsdk.RegisterFederatedCredentialDeleteItemMock(
 			mockContext,
 			*application.Id,
 			credentialId,
 			http.StatusNoContent,
 		)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		err = client.
@@ -234,14 +238,14 @@ func TestDeleteFederatedCredential(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterFederatedCredentialDeleteItemMock(
+		mockgraphsdk.RegisterFederatedCredentialDeleteItemMock(
 			mockContext,
 			*application.Id,
 			credentialId,
 			http.StatusNotFound,
 		)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		err = client.

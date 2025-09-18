@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" DefaultTargets="Build" InitialTargets="EnsureWixToolsetInstalled" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{4CE8736E-4168-48D3-BD64-E3C16DDCD16F}</ProjectGuid>
+        <SchemaVersion>2.0</SchemaVersion>
+        <Configuration Condition="'$(Configuration)'==''">Release</Configuration>
+        <Platform Condition="'$(Platform)' == ''">x64</Platform>
+        <ProductName Condition="'$(ProductName)' == ''">Azure Developer CLI (dev)</ProductName>
+        <ReleaseBuild Condition="'$(ProductVersion)' != ''">true</ReleaseBuild>
+        <ProductVersion Condition="'$(ProductVersion)' == ''">0.1.0</ProductVersion>
+        <!-- Windows Installer ProductVersion uses only major.minor.patch -->
+        <ProductVersion Condition="$(ProductVersion.IndexOf('-')) &gt; 0">$(ProductVersion.Substring(0, $(ProductVersion.IndexOf('-'))))</ProductVersion>
+        <OutputType>package</OutputType>
+        <OutputNamePlatform>$(Platform)</OutputNamePlatform>
+        <OutputNamePlatform Condition="'$(Platform)' == 'x64'">amd64</OutputNamePlatform>
+        <OutputName Condition="'$(OutputName)' == ''">$(MSBuildProjectName)-windows-$(OutputNamePlatform)</OutputName>
+        <RepositoryPath>$([MSBuild]::NormalizeDirectory($(MSBuildProjectDirectory)\..\..\..))</RepositoryPath>
+        <OutputPath>bin\$(Configuration)</OutputPath>
+        <IntermediateOutputPath>obj\$(Configuration)</IntermediateOutputPath>
+        <DefineConstants>
+            $(DefineConstants);
+            ProductName=$(ProductName);
+            ProductVersion=$(ProductVersion);
+            ReleaseBuild=$(ReleaseBuild);
+        </DefineConstants>
+        <SuppressIces Condition="'$(Platform)' == 'arm' Or '$(Platform)' == 'arm64'">ICE39</SuppressIces>
+        <DefineSolutionProperties>false</DefineSolutionProperties>
+        <WixTargetsPath Condition="'$(WixTargetsPath)' == ''">$(MSBuildExtensionsPath)\Microsoft\WiX\v3.x\Wix.targets</WixTargetsPath>
+    </PropertyGroup>
+    <ItemGroup>
+        <!-- Build custom action(s) to bind into this package -->
+        <ProjectReference Include="..\windows-actions\actions.vcxproj"/>
+    </ItemGroup>
+    <ItemGroup>
+        <Compile Include="azd.wxs"/>
+        <Compile Include="ui.wxs"/>
+    </ItemGroup>
+    <ItemGroup>
+        <BindInputPaths Include="$(RepositoryPath)"/>
+        <BindInputPaths Include="$(RepositoryPath)\cli\azd"/>
+        <BindInputPaths Include="$(RepositoryPath)\cli\azd\build"/>
+    </ItemGroup>
+    <ItemGroup>
+        <WixExtension Include="WixUIExtension"/>
+        <WixExtension Include="WixUtilExtension"/>
+    </ItemGroup>
+    <Target Name="GetBindInputPaths" AfterTargets="ResolveProjectReferences">
+        <MSBuild Projects="@(ProjectReference)" Targets="GetNativeTargetPath">
+            <Output TaskParameter="TargetOutputs" ItemName="_NativeTargetPath"/>
+        </MSBuild>
+        <Message Importance="normal" Text="Adding native bind input paths: @(_NativeTargetPath->'%(RootDir)%(Directory)')"/>
+        <ItemGroup>
+            <BindInputPaths Include="@(_NativeTargetPath->'%(RootDir)%(Directory)')"/>
+            <Compile Include="@(_NativeTargetPath->'%(RootDir)%(Directory)actions.wxs')"/>
+        </ItemGroup>
+    </Target>
+    <Target Name="SetMsiOutputPath" AfterTargets="Build" Condition="'$(TF_BUILD)' != ''">
+        <!-- Make sure the correct target path is always set as the step output -->
+        <Message Importance="high" Text="##vso[task.setvariable variable=MsiOutputPath;isoutput=true]$(TargetPath)"/>
+    </Target>
+    <Import Project="$(WixTargetsPath)"/>
+    <Target Name="EnsureWixToolsetInstalled" Condition=" '$(WixTargetsImported)' != 'true' ">
+        <Error Text="The WiX Toolset v3.11 (or newer) build tools must be installed to build this project. To download the WiX Toolset, see http://wixtoolset.org/releases/" />
+    </Target>
+</Project>

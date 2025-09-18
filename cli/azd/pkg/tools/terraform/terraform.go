@@ -7,61 +7,36 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
 
-type TerraformCli interface {
-	tools.ExternalTool
-	// Set environment variables to be used in all terraform commands
-	SetEnv(envVars []string)
-	// Validates the terraform module
-	Validate(ctx context.Context, modulePath string) (string, error)
-	// Initializes the terraform module
-	Init(ctx context.Context, modulePath string, additionalArgs ...string) (string, error)
-	// Creates a deployment plan for the terraform module
-	Plan(ctx context.Context, modulePath string, planFilePath string, additionalArgs ...string) (string, error)
-	// Applies and provisions all resources in the terraform module
-	Apply(ctx context.Context, modulePath string, additionalArgs ...string) (string, error)
-	// Retrieves the output variables from the most recent deployment state
-	Output(ctx context.Context, modulePath string, additionalArgs ...string) (string, error)
-	// Retrieves information about the infrastructure from the current deployment state
-	Show(ctx context.Context, modulePath string, additionalArgs ...string) (string, error)
-	// Destroys all resources referenced in the terraform module
-	Destroy(ctx context.Context, modulePath string, additionalArgs ...string) (string, error)
-}
+var _ tools.ExternalTool = (*Cli)(nil)
 
-type terraformCli struct {
+type Cli struct {
 	commandRunner exec.CommandRunner
 	env           []string
 }
 
-type NewTerraformCliArgs struct {
-	commandRunner exec.CommandRunner
-}
-
-func NewTerraformCli(args NewTerraformCliArgs) TerraformCli {
-	if args.commandRunner == nil {
-		panic("NewTerraformCli: must set args.commandRunner")
-	}
-
-	return &terraformCli{
-		commandRunner: args.commandRunner,
+func NewCli(commandRunner exec.CommandRunner) *Cli {
+	return &Cli{
+		commandRunner: commandRunner,
 	}
 }
 
-func (cli *terraformCli) Name() string {
+func (cli *Cli) Name() string {
 	return "Terraform CLI"
 }
 
 // Doc  to be added for terraform install
-func (cli *terraformCli) InstallUrl() string {
+func (cli *Cli) InstallUrl() string {
 	return "https://aka.ms/azure-dev/terraform-install"
 }
 
-func (cli *terraformCli) versionInfo() tools.VersionInfo {
+func (cli *Cli) versionInfo() tools.VersionInfo {
 	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
 			Major: 1,
@@ -71,32 +46,35 @@ func (cli *terraformCli) versionInfo() tools.VersionInfo {
 	}
 }
 
-func (cli *terraformCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := tools.ToolInPath("terraform")
-	if !found {
-		return false, err
+func (cli *Cli) CheckInstalled(ctx context.Context) error {
+	err := cli.commandRunner.ToolInPath("terraform")
+	if err != nil {
+		return err
 	}
 	tfVer, err := cli.unmarshalCliVersion(ctx, "terraform_version")
 	if err != nil {
-		return false, fmt.Errorf("checking %s version:  %w", cli.Name(), err)
+		return fmt.Errorf("checking %s version:  %w", cli.Name(), err)
 	}
+
+	log.Printf("terraform version: %s", tfVer)
+
 	tfSemver, err := semver.Parse(tfVer)
 	if err != nil {
-		return false, fmt.Errorf("converting to semver version fails: %w", err)
+		return fmt.Errorf("converting to semver version fails: %w", err)
 	}
 	updateDetail := cli.versionInfo()
 	if tfSemver.LT(updateDetail.MinimumVersion) {
-		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
+		return &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
 	}
-	return true, nil
+	return nil
 }
 
 // Set environment variables to be used in all terraform commands
-func (cli *terraformCli) SetEnv(env []string) {
+func (cli *Cli) SetEnv(env []string) {
 	cli.env = env
 }
 
-func (cli *terraformCli) runCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
+func (cli *Cli) runCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("terraform", args...).
 		WithEnv(cli.env)
@@ -104,7 +82,7 @@ func (cli *terraformCli) runCommand(ctx context.Context, args ...string) (exec.R
 	return cli.commandRunner.Run(ctx, runArgs)
 }
 
-func (cli *terraformCli) runInteractive(ctx context.Context, args ...string) (exec.RunResult, error) {
+func (cli *Cli) runInteractive(ctx context.Context, args ...string) (exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("terraform", args...).
 		WithEnv(cli.env).
@@ -113,8 +91,8 @@ func (cli *terraformCli) runInteractive(ctx context.Context, args ...string) (ex
 	return cli.commandRunner.Run(ctx, runArgs)
 }
 
-func (cli *terraformCli) unmarshalCliVersion(ctx context.Context, component string) (string, error) {
-	azRes, err := tools.ExecuteCommand(ctx, "terraform", "version", "-json")
+func (cli *Cli) unmarshalCliVersion(ctx context.Context, component string) (string, error) {
+	azRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "terraform", "version", "-json")
 	if err != nil {
 		return "", err
 	}
@@ -130,7 +108,7 @@ func (cli *terraformCli) unmarshalCliVersion(ctx context.Context, component stri
 	return version, nil
 }
 
-func (cli *terraformCli) Validate(ctx context.Context, modulePath string) (string, error) {
+func (cli *Cli) Validate(ctx context.Context, modulePath string) (string, error) {
 	args := []string{fmt.Sprintf("-chdir=%s", modulePath), "validate"}
 
 	cmdRes, err := cli.runCommand(ctx, args...)
@@ -144,7 +122,7 @@ func (cli *terraformCli) Validate(ctx context.Context, modulePath string) (strin
 	return cmdRes.Stdout, nil
 }
 
-func (cli *terraformCli) Init(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
+func (cli *Cli) Init(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
 	args := []string{
 		fmt.Sprintf("-chdir=%s", modulePath),
 		"init",
@@ -163,7 +141,7 @@ func (cli *terraformCli) Init(ctx context.Context, modulePath string, additional
 	return cmdRes.Stdout, nil
 }
 
-func (cli *terraformCli) Plan(
+func (cli *Cli) Plan(
 	ctx context.Context,
 	modulePath string,
 	planFilePath string,
@@ -188,7 +166,7 @@ func (cli *terraformCli) Plan(
 	return cmdRes.Stdout, nil
 }
 
-func (cli *terraformCli) Apply(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
+func (cli *Cli) Apply(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
 	args := []string{
 		fmt.Sprintf("-chdir=%s", modulePath),
 		"apply",
@@ -207,7 +185,7 @@ func (cli *terraformCli) Apply(ctx context.Context, modulePath string, additiona
 	return cmdRes.Stdout, nil
 }
 
-func (cli *terraformCli) Output(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
+func (cli *Cli) Output(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
 	args := []string{
 		fmt.Sprintf("-chdir=%s", modulePath), "output", "-json"}
 
@@ -223,7 +201,7 @@ func (cli *terraformCli) Output(ctx context.Context, modulePath string, addition
 	return cmdRes.Stdout, nil
 }
 
-func (cli *terraformCli) Show(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
+func (cli *Cli) Show(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
 	args := []string{
 		fmt.Sprintf("-chdir=%s", modulePath), "show", "-json"}
 
@@ -239,7 +217,7 @@ func (cli *terraformCli) Show(ctx context.Context, modulePath string, additional
 	return cmdRes.Stdout, nil
 }
 
-func (cli *terraformCli) Destroy(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
+func (cli *Cli) Destroy(ctx context.Context, modulePath string, additionalArgs ...string) (string, error) {
 	args := []string{
 		fmt.Sprintf("-chdir=%s", modulePath),
 		"destroy",
@@ -255,24 +233,4 @@ func (cli *terraformCli) Destroy(ctx context.Context, modulePath string, additio
 		)
 	}
 	return cmdRes.Stdout, nil
-}
-
-type contextKey string
-
-const (
-	terraformContextKey contextKey = "terraformcli"
-)
-
-func GetTerraformCli(ctx context.Context) TerraformCli {
-	cli, ok := ctx.Value(terraformContextKey).(TerraformCli)
-	if !ok {
-		newCommandRunner := exec.GetCommandRunner(ctx)
-		args := NewTerraformCliArgs{
-			commandRunner: newCommandRunner,
-		}
-
-		cli = NewTerraformCli(args)
-	}
-
-	return cli
 }

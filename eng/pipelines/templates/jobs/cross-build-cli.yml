@@ -1,0 +1,106 @@
+parameters:
+  - name: NameSuffix
+    type: string
+  - name: Pool
+    type: string
+  - name: ImageKey
+    type: string  
+    default: image
+  - name: OSVmImage
+    type: string
+  - name: OS
+    type: string
+  - name: Variables
+    type: object
+    default: {}
+
+jobs:
+  - job: CrossBuildCLI_${{ parameters.NameSuffix }}
+    displayName: CrossBuildCLI ${{ parameters.NameSuffix }}
+
+    variables: 
+      ${{ insert }}: ${{ parameters.Variables }}
+
+    pool: 
+      name: ${{ parameters.Pool }}
+      ${{ parameters.ImageKey }}: ${{ parameters.OSVmImage }}
+      os: ${{ parameters.OS }}
+
+    timeoutInMinutes: 20
+
+    steps: 
+      - checkout: self
+
+      - template: /eng/pipelines/templates/steps/setup-go.yml
+        parameters:
+          Condition: false
+
+      # Installing goversioninfo on x86_64 Windows with GOARCH set to another
+      # arch will compile goversioninfo for that architecture and it won't run
+      # on the x86_64 host.
+      # Ensure that a compatible version of goversioninfo is installed.
+      - pwsh: |
+          # Set GOARCH for the current session
+          $env:GOARCH="amd64"
+          go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.0
+          Get-ChildItem -Path (Join-Path (go env GOPATH) "bin") -Recurse | ForEach-Object { Write-Host $_.FullName }
+        condition: and(succeeded(), eq(variables['GOOS'], 'windows'))
+        displayName: Install goversioninfo (Windows x86_64)
+
+      - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: eng/scripts/Set-CliVersionVariable.ps1
+        displayName: Set CLI_VERSION
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: cli/azd/ci-build.ps1
+          arguments: >-
+            -Version $(CLI_VERSION)
+            -SourceVersion $(Build.SourceVersion)
+          workingDirectory: cli/azd
+        displayName: Build Go Binary (cross compile)
+
+      - pwsh: file azd
+        workingDirectory: cli/azd
+        displayName: Get file info
+
+      - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
+        workingDirectory: cli/azd
+        displayName: Rename binaries
+
+      - bash: chmod +x $(BuildTarget)
+        condition: and(succeeded(), eq(variables['SetExecutableBit'], 'true'))
+        workingDirectory: cli/azd
+        displayName: Set executable bit for non-Windows binaries
+
+      - pwsh: |
+          New-Item -ItemType Directory -Path $(Build.ArtifactStagingDirectory)/build-output -Force
+          Copy-Item $(BuildTarget) $(Build.ArtifactStagingDirectory)/build-output
+        workingDirectory: cli/azd
+        displayName: Copy binary to artifact staging directory
+
+      - template: /eng/pipelines/templates/steps/build-linux-packages.yml
+        parameters:
+          Architecture: arm64
+          Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+    
+    templateContext: 
+      outputs: 
+        - output: pipelineArtifact
+          path: $(Build.ArtifactStagingDirectory)/build-output
+          artifact: $(BuildTarget)
+          condition: succeeded()
+          displayName: Upload azd binary to artifact store
+
+        - output: pipelineArtifact
+          path: cli/installer/fpm/artifact
+          artifact: linux-packages-arm64
+          condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+          displayName: Upload linux packages to artifact store

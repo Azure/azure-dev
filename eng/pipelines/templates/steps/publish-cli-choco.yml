@@ -1,0 +1,24 @@
+parameters:
+  - name: ChocoApiKey
+    type: string
+    default: $(azure-sdk-choco-api-key)
+  - name: Use1ESArtifactTask
+    type: boolean
+    default: true
+
+steps:
+  - pwsh: |
+      # Defense in depth: Legacy argument passing may be needed here
+      $PSNativeCommandArgumentPassing = 'Legacy'
+
+      Write-Host 'Pushing Choco Package...'
+      choco push azd.$(MSI_VERSION).nupkg `
+        --source https://push.chocolatey.org/ `
+        --api-key ${{ parameters.ChocoApiKey }}
+    condition: >-
+      and(
+        eq(variables['SubmitChocoPackage'], 'true'),
+        ne(variables['Skip.ReleaseChoco'], 'true')
+      )
+    displayName: Push Choco Package
+    workingDirectory: choco

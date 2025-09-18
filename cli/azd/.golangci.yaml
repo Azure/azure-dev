@@ -1,13 +1,43 @@
+version: "2"
 linters:
+  disable:
+    - errcheck # TODO: check for unhandled errors
   enable:
     - errorlint
-    - gofmt
+    - gosec
     - lll
-linters-settings:
-  errorlint:
-    errorf: true
-    asserts: true
-    comparison: true
-  lll:
-    # GitHub recommended for code review
-    line-length: 125
+  settings:
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+    lll:
+      line-length: 125
+      tab-width: 4
+    staticcheck:
+      checks:
+        - all
+        - -ST1000 # TODO: update package comments by separating them from top copyright comments
+        - -ST1020 # TODO: Update method comments to start with the method name
+        - -ST1021 # TODO: Update type comments to start with the method name
+        - -ST1022 # TODO: Update const comments to start with the method name
+        - -QF1008 # TODO: remove embedded fields
+        - -ST1006 # TODO: receiver name should not be an underscore, omit the name if it is unused
+        - -ST1023 # TODO: should omit type from declaration; it will be inferred from the right-hand side
+        - -QF1011 # TODO: same as ST1023
+        - -QF1012 # TODO: Use fmt.Fprintf(...) instead of Write()
+        - -QF1006 # Could lift into loop condition
+        - -QF1003 # Do not force switch case over if/else if/else
+        - -ST1003 # Do not force all uppercase for acronyms like Json or Url
+        - -ST1016 # methods on the same type should have the same receiver name
+        - -ST1012 # errors should have name of the form errFoo
+        - -ST1005 # error strings should not end with punctuation or newlines
+    gosec:
+      excludes:
+        - G301 # TODO: Expect directory permissions to be 0750 or less
+        - G302 # TODO: Expect file permissions to be 0600 or less
+        - G304 # TODO: Potential file inclusion via variable
+        - G104 # TODO: Errors unhandled
+formatters:
+  enable:
+    - gofmt

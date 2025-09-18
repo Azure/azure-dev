@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package graphsdk_test
 
 import (
@@ -12,7 +15,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	graphsdk_mocks "github.com/azure/azure-dev/cli/azd/test/mocks/graphsdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,8 +47,7 @@ func TestNewPipeline(t *testing.T) {
 		},
 	}
 
-	clientOptions := graphsdk_mocks.CreateDefaultClientOptions(mockContext)
-	pipeline := graphsdk.NewPipeline(&credential, graphsdk.ServiceConfig, clientOptions)
+	pipeline := graphsdk.NewPipeline(&credential, graphsdk.ServiceConfig, mockContext.CoreClientOptions)
 	require.False(t, ran)
 	require.NotNil(t, pipeline)
 

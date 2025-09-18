@@ -4,13 +4,17 @@
 package environment
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"os"
-	"path/filepath"
 	"regexp"
+	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"maps"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/joho/godotenv"
 )
 
@@ -26,6 +30,9 @@ const SubscriptionIdEnvVarName = "AZURE_SUBSCRIPTION_ID"
 // PrincipalIdEnvVarName is the name of they key used to store the id of a principal in the environment.
 const PrincipalIdEnvVarName = "AZURE_PRINCIPAL_ID"
 
+// PrincipalTypeEnvVarName is the name of they key used to store the type of a principal in the environment.
+const PrincipalTypeEnvVarName = "AZURE_PRINCIPAL_TYPE"
+
 // TenantIdEnvVarName is the tenant that owns the subscription
 const TenantIdEnvVarName = "AZURE_TENANT_ID"
 
@@ -33,132 +40,268 @@ const TenantIdEnvVarName = "AZURE_TENANT_ID"
 // to.
 const ContainerRegistryEndpointEnvVarName = "AZURE_CONTAINER_REGISTRY_ENDPOINT"
 
+// ContainerEnvironmentEndpointEnvVarName is the name of the environment variable
+// that specifies the default domain for Azure Container Apps environments.
+const ContainerEnvironmentEndpointEnvVarName = "AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN"
+
+// AksClusterEnvVarName is the name of they key used to store the endpoint of the AKS cluster to push to.
+const AksClusterEnvVarName = "AZURE_AKS_CLUSTER_NAME"
+
 // ResourceGroupEnvVarName is the name of the azure resource group that should be used for deployments
 const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 
+// PlatformTypeEnvVarName is the name of the key used to store the current azd platform type
+const PlatformTypeEnvVarName = "AZD_PLATFORM_TYPE"
+
+// The zero value of an Environment is not valid. Use [New] to create one. When writing tests,
+// [Ephemeral] and [EphemeralWithValues] are useful to create environments which are not persisted to disk.
 type Environment struct {
-	// Values is a map of setting names to values.
-	Values map[string]string
-	// File is a path to the file that backs this environment. If empty, the Environment
-	// will not be persisted when `Save` is called. This allows the zero value to be used
-	// for testing.
-	File string
+	name string
+
+	// dotenv is a map of keys to values, persisted to the `.env` file stored in this environment's [Root].
+	dotenv map[string]string
+
+	// deletedKeys keeps track of deleted keys from the `.env` to be reapplied before a merge operation
+	// happens in Save
+	deletedKeys map[string]struct{}
+
+	// Config is environment specific config
+	Config config.Config
 }
 
-// Same restrictions as a deployment name (ref:
-// https://docs.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftresources)
-var environmentNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9-\(\)_\.]{1,64}$`)
+// AzdInitialEnvironmentConfigName is part of a strategy to re-construct AZD environment in CI/CD from an initial state.
+// This strategy was introduced for templates which takes input parameters. Parameters are saved to azd's environment
+// configuration (.azure/env-name/config.json). This file is not committed to source control, so the saved values can't
+// be used during CI/CD. AZD uses AZD_INITIAL_ENVIRONMENT_CONFIG to smuggle all saved parameters into a CI/CD secret and
+// use it to create the environment configuration file (the first time AZD runs and creates a new environment).
+//
+// While AZD_INITIAL_ENVIRONMENT_CONFIG is still supported for backwards compatibility, it is deprecated.
+// The currently strategy is to create individual variables or secrets for the CI/CD pipeline depending on the parameter
+// configuration.
+const AzdInitialEnvironmentConfigName = "AZD_INITIAL_ENVIRONMENT_CONFIG"
 
-func IsValidEnvironmentName(name string) bool {
-	return environmentNameRegexp.MatchString(name)
-}
-
-// FromFile loads an environment from a file on disk. On error,
-// an valid empty environment file, configured to persist its contents
-// to file, is returned.
-func FromFile(file string) (*Environment, error) {
+// New returns a new environment with the specified name.
+func New(name string) *Environment {
 	env := &Environment{
-		File:   file,
-		Values: make(map[string]string),
+		name:        name,
+		dotenv:      make(map[string]string),
+		deletedKeys: make(map[string]struct{}),
+		Config:      getInitialConfig(),
 	}
 
-	e, err := godotenv.Read(file)
-	if err != nil {
-		env.Values = make(map[string]string)
-		return env, fmt.Errorf("can't read %s: %w", file, err)
-	}
-
-	env.Values = e
-	return env, nil
-}
-
-func GetEnvironment(azdContext *azdcontext.AzdContext, name string) (*Environment, error) {
-	return FromFile(azdContext.GetEnvironmentFilePath(name))
-}
-
-// EmptyWithFile returns an empty environment, which will be persisted
-// to a given file when saved.
-func EmptyWithFile(file string) *Environment {
-	return &Environment{
-		File:   file,
-		Values: make(map[string]string),
-	}
-}
-
-func Ephemeral() *Environment {
-	return &Environment{
-		Values: make(map[string]string),
-	}
-}
-
-// EphemeralWithValues returns an ephemeral environment (i.e. not backed by a file) with a set
-// of values. Useful for testing. The name parameter is added to the environment with the
-// AZURE_ENV_NAME key, replacing an existing value in the provided values map. A nil values is
-// treated the same way as an empty map.
-func EphemeralWithValues(name string, values map[string]string) *Environment {
-	env := Ephemeral()
-
-	if values != nil {
-		env.Values = values
-	}
-
-	env.Values[EnvNameEnvVarName] = name
+	env.DotenvSet(EnvNameEnvVarName, name)
 
 	return env
 }
 
-// If `File` is set, Save writes the current contents of the environment to
-// the given file, creating it and any intermediate directories as needed.
-func (e *Environment) Save() error {
-	if e.File == "" {
-		return nil
+func getInitialConfig() config.Config {
+	initialConfig := os.Getenv(AzdInitialEnvironmentConfigName)
+	if initialConfig == "" {
+		return config.NewEmptyConfig()
 	}
 
-	err := os.MkdirAll(filepath.Dir(e.File), osutil.PermissionDirectory)
-	if err != nil {
-		return fmt.Errorf("failed to create a directory: %w", err)
+	var initConfig map[string]any
+	if err := json.Unmarshal([]byte(initialConfig), &initConfig); err != nil {
+		log.Println("Failed to unmarshal initial config", err, "Using empty config.")
+		return config.NewEmptyConfig()
 	}
 
-	err = godotenv.Write(e.Values, e.File)
-	if err != nil {
-		return fmt.Errorf("can't write '%s': %w", e.File, err)
+	return config.NewConfig(initConfig)
+}
+
+// NewWithValues returns an ephemeral environment (i.e. not backed by a data store) with a set
+// of values. Useful for testing. The name parameter is added to the environment with the
+// AZURE_ENV_NAME key, replacing an existing value in the provided values map. A nil values is
+// treated the same way as an empty map.
+func NewWithValues(name string, values map[string]string) *Environment {
+	env := New(name)
+
+	if values != nil {
+		env.dotenv = values
 	}
 
-	return nil
+	return env
 }
 
-func (e *Environment) GetEnvName() string {
-	return e.Values[EnvNameEnvVarName]
+type EnvironmentResolver func(ctx context.Context) (*Environment, error)
+
+// Same restrictions as a deployment name (ref:
+// https://docs.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftresources)
+var EnvironmentNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9-\(\)_\.]{1,64}$`)
+
+// The maximum length of an environment name.
+var EnvironmentNameMaxLength = 64
+
+func IsValidEnvironmentName(name string) bool {
+	return EnvironmentNameRegexp.MatchString(name)
 }
 
-func (e *Environment) SetEnvName(envname string) {
-	e.Values[EnvNameEnvVarName] = envname
+// CleanName returns a version of [name] where all characters not allowed in an environment name have been replaced
+// with hyphens
+func CleanName(name string) string {
+	result := strings.Builder{}
+
+	for _, c := range name {
+		if (c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			c == '-' ||
+			c == '(' ||
+			c == ')' ||
+			c == '_' ||
+			c == '.' {
+			result.WriteRune(c)
+		} else {
+			result.WriteRune('-')
+		}
+	}
+
+	return result.String()
 }
 
+// Getenv behaves like os.Getenv, except that any keys in the `.env` file associated with this environment are considered
+// first.
+func (e *Environment) Getenv(key string) string {
+	if v, has := e.dotenv[key]; has {
+		return v
+	}
+
+	return os.Getenv(key)
+}
+
+// LookupEnv behaves like os.LookupEnv, except that any keys in the `.env` file associated with this environment are
+// considered first.
+func (e *Environment) LookupEnv(key string) (string, bool) {
+	if v, has := e.dotenv[key]; has {
+		return v, true
+	}
+
+	return os.LookupEnv(key)
+}
+
+// DotenvDelete removes the given key from the .env file in the environment, it is a no-op if the key
+// does not exist. [Save] should be called to ensure this change is persisted.
+func (e *Environment) DotenvDelete(key string) {
+	delete(e.dotenv, key)
+	e.deletedKeys[key] = struct{}{}
+}
+
+// Dotenv returns a copy of the key value pairs from the .env file in the environment.
+func (e *Environment) Dotenv() map[string]string {
+	return maps.Clone(e.dotenv)
+}
+
+// DotenvSet sets the value of [key] to [value] in the .env file associated with the environment. [Save] should be
+// called to ensure this change is persisted.
+func (e *Environment) DotenvSet(key string, value string) {
+	e.dotenv[key] = value
+	delete(e.deletedKeys, key)
+}
+
+// Name gets the name of the environment
+// If empty will fallback to the value of the AZURE_ENV_NAME environment variable
+func (e *Environment) Name() string {
+	if e.name == "" {
+		e.name = e.Getenv(EnvNameEnvVarName)
+	}
+
+	return e.name
+}
+
+// GetSubscriptionId is shorthand for Getenv(SubscriptionIdEnvVarName)
 func (e *Environment) GetSubscriptionId() string {
-	return e.Values[SubscriptionIdEnvVarName]
+	return e.Getenv(SubscriptionIdEnvVarName)
 }
 
+// GetTenantId is shorthand for Getenv(TenantIdEnvVarName)
 func (e *Environment) GetTenantId() string {
-	return e.Values[TenantIdEnvVarName]
+	return e.Getenv(TenantIdEnvVarName)
 }
 
+// SetLocation is shorthand for DotenvSet(SubscriptionIdEnvVarName, location)
 func (e *Environment) SetSubscriptionId(id string) {
-	e.Values[SubscriptionIdEnvVarName] = id
+	e.DotenvSet(SubscriptionIdEnvVarName, id)
 }
 
+// GetLocation is shorthand for Getenv(LocationEnvVarName)
 func (e *Environment) GetLocation() string {
-	return e.Values[LocationEnvVarName]
+	return e.Getenv(LocationEnvVarName)
 }
 
+// SetLocation is shorthand for DotenvSet(LocationEnvVarName, location)
 func (e *Environment) SetLocation(location string) {
-	e.Values[LocationEnvVarName] = location
+	e.DotenvSet(LocationEnvVarName, location)
 }
 
-func (e *Environment) SetPrincipalId(principalID string) {
-	e.Values[PrincipalIdEnvVarName] = principalID
+// Key returns the environment key name for the given name.
+func Key(name string) string {
+	return strings.ReplaceAll(strings.ToUpper(name), "-", "_")
 }
 
-func (e *Environment) GetPrincipalId() string {
-	return e.Values[PrincipalIdEnvVarName]
+// GetServiceProperty is shorthand for Getenv(SERVICE_$SERVICE_NAME_$PROPERTY_NAME)
+func (e *Environment) GetServiceProperty(serviceName string, propertyName string) string {
+	return e.Getenv(fmt.Sprintf("SERVICE_%s_%s", Key(serviceName), propertyName))
+}
+
+// Sets the value of a service-namespaced property in the environment.
+func (e *Environment) SetServiceProperty(serviceName string, propertyName string, value string) {
+	e.DotenvSet(fmt.Sprintf("SERVICE_%s_%s", Key(serviceName), propertyName), value)
+}
+
+// Creates a slice of key value pairs, based on the entries in the `.env` file like `KEY=VALUE` that
+// can be used to pass into command runner or similar constructs.
+func (e *Environment) Environ() []string {
+	envVars := []string{}
+	for k, v := range e.dotenv {
+		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	return envVars
+}
+
+// fixupUnquotedDotenv is a workaround for behavior in how godotenv.Marshal handles numeric like values.  Marshaling
+// a map[string]string to a dotenv file, if a value can be successfully parsed with strconv.Atoi, it will be written in
+// the dotenv file without quotes and the value written will be the value returned by strconv.Atoi. This can lead to dropping
+// leading zeros from the value that we persist.
+//
+// For example, given a map with the key value pair ("FOO", "01"), the value returned by godotenv.Marshal will have a line
+// that looks like FOO=1 instead of FOO=01 or FOO="01".
+//
+// This function takes the value returned by godotenv.Marshal and for any unquoted value replaces it with the value from
+// the values map if they differ.  This means that a key value pair ("FOO", "1") remains as FOO=1.
+//
+// When replacing a key in this manner, we ensure the value is wrapped in quotes, on the assumption that the leading zero
+// is of significance to the value and wrapping it quotes means it is more likely to be treated as a string instead of a
+// number by any downstream systems. We do not need to worry about escaping quotes in the value, because we know that
+// godotenv.Marshal only did this translation for numeric values and so we know the original value did not contain quotes.
+func fixupUnquotedDotenv(values map[string]string, dotenv string) string {
+	entries := strings.Split(dotenv, "\n")
+	for idx, line := range entries {
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		envKey := parts[0]
+		envValue := parts[1]
+
+		if len(envValue) > 0 && envValue[0] != '"' {
+			if values[envKey] != envValue {
+				entries[idx] = fmt.Sprintf("%s=\"%s\"", envKey, values[envKey])
+			}
+		}
+	}
+
+	return strings.Join(entries, "\n")
+}
+
+// Prepare dotenv for saving and returns a marshalled string that can be save to the underlying data store
+// Instead of calling `godotenv.Write` directly, we need to save the file ourselves, so we can fixup any numeric values
+// that were incorrectly unquoted.
+func marshallDotEnv(env *Environment) (string, error) {
+	marshalled, err := godotenv.Marshal(env.dotenv)
+	if err != nil {
+		return "", fmt.Errorf("marshalling .env: %w", err)
+	}
+
+	return fixupUnquotedDotenv(env.dotenv, marshalled), nil
 }

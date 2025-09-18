@@ -12,9 +12,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/microsoft/azure-devops-go-api/azuredevops"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/core"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/operations"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/core"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/operations"
 )
 
 // returns a process template (basic, agile etc) used in the new project creation flow
@@ -34,7 +34,6 @@ func createProject(
 	connection *azuredevops.Connection,
 	name string,
 	description string,
-	console input.Console,
 ) (*core.TeamProjectReference, error) {
 	coreClient, err := core.NewClient(ctx, connection)
 	if err != nil {
@@ -124,7 +123,7 @@ func GetProjectFromNew(
 			return "", "", fmt.Errorf("asking for new project name: %w", err)
 		}
 		var message string = ""
-		newProject, err := createProject(ctx, connection, name, projectDescription, console)
+		newProject, err := createProject(ctx, connection, name, projectDescription)
 		if err != nil {
 			message = err.Error()
 		}
@@ -195,15 +194,19 @@ func GetProjectFromExisting(
 	}
 
 	projects := getProjectsResponse.Value
-	projectsList := make([]core.TeamProjectReference, len(projects))
-	options := make([]string, len(projects))
-	for idx, project := range projects {
-		options[idx] = *project.Name
-		projectsList[idx] = project
+	projectsList := make([]core.TeamProjectReference, 0, len(projects))
+	options := make([]string, 0, len(projects))
+	for _, project := range projects {
+		options = append(options, *project.Name)
+		projectsList = append(projectsList, project)
+	}
+
+	if len(options) == 0 {
+		return "", "", fmt.Errorf("no Azure DevOps projects found")
 	}
 
 	projectIdx, err := console.Select(ctx, input.ConsoleOptions{
-		Message: "Please choose an existing Azure DevOps Project",
+		Message: "Choose an existing Azure DevOps Project",
 		Options: options,
 	})
 

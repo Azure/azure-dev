@@ -1,8 +1,7 @@
 parameters:
     # For PR builds, specify 'pr/<pr number>'
     Version: daily
-    ContainerRegistryHost: $(azdev-acr-host)
-    StorageAccountName: $(azdev-storage-account-name)
+    ContainerRegistryHost: 'azdevcliextacr.azurecr.io'
     ScriptUrl: https://aka.ms/install-azd.sh
     # If set, the container image for `azd` will be determined and set to the specified variable name
     OutputContainerImageVariableName: ''
@@ -11,7 +10,7 @@ parameters:
 steps:
 - pwsh: |
     if ('${{ parameters.Version }}'.StartsWith('pr/')) {
-      $InstallArgs = "--base-url https://${{ parameters.StorageAccountName }}.blob.core.windows.net/azd/standalone/${{ parameters.Version }} --version ''"
+      $InstallArgs = "--base-url $(publish-storage-static-host)/azd/standalone/${{ parameters.Version }} --skip-verify --version ''"
       $ContainerImageTag = '${{ parameters.Version }}' -replace '/', '-'
     } else {
       $InstallArgs = "--version '${{ parameters.Version }}'"

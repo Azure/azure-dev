@@ -38,7 +38,7 @@ function findOutputEntry($haystack, $needle) {
         }
     }
 
-    return $output
+    return $output.Trim()
 }
 
 if (!(Test-Path $ExpectedFieldMap)) {
@@ -51,12 +51,24 @@ if (!(Test-Path $ExpectedFieldMap)) {
 if ($NonInteractive) {
     Write-Host "$Shell -NonInteractive -c `"$PSScriptRoot/install-azd.ps1 -BaseUrl '127.0.0.1/error' -Verbose`""
     $output = &$Shell -NonInteractive -c "$PSScriptRoot/install-azd.ps1 -BaseUrl '127.0.0.1/error' -Verbose"
+
+    if ($IsLinux -or $IsMacOS) {
+        Write-Host "Running on Linux or macOS, running install-azd-report.sh to get output"
+        $output = & bash -c './install-azd-report.sh --verbose --dry-run' 
+    }
+
 } else {
     $originalErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     &"./install-azd.ps1" -BaseUrl '127.0.0.1/error' -Verbose *>install.log
     $ErrorActionPreference = $originalErrorActionPreference
     $output = Get-Content install.log
+
+    if ($IsLinux -or $IsMacOS) {
+        Write-Host "Running on Linux or macOS, running install-azd-report.sh to get output"
+        $output = & bash -c './install-azd-report.sh --verbose --dry-run' 
+    }
+
     Write-Host $output
 }
 

@@ -1,0 +1,41 @@
+parameters:
+  Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+  Version: $(CLI_VERSION)
+  Architecture: amd64
+
+steps: 
+  - pwsh: Copy-Item cli/azd/azd-linux-* cli/installer/fpm
+    condition: ${{ parameters.Condition }}
+    displayName: Copy binary to fpm working directory
+
+
+  - task: 1ES.BuildContainerImage@1
+    condition: ${{ parameters.Condition }}
+    displayName: Build fpm container (1ES)
+    inputs:
+      # Use "latest" tag because build_docker_image.py fails if there is no tag
+      image: fpm:latest
+      path: $(Build.SourcesDirectory)/cli/installer/fpm
+      dockerfile: $(Build.SourcesDirectory)/cli/installer/fpm/fpm.Dockerfile
+      enableNetwork: true
+      useBuildKit: true
+
+  - task: PowerShell@2
+    condition: ${{ parameters.Condition }}
+    displayName: Build Linux Packages
+    inputs: 
+      pwsh: true
+      workingDirectory: cli/installer/fpm
+      filePath: eng/scripts/New-LinuxPackages.ps1
+      arguments: >- 
+        -Version '${{ parameters.Version }}'
+        -Architecture '${{ parameters.Architecture }}'
+
+  - pwsh: |
+      New-Item -ItemType directory -Path artifact
+      Copy-Item *.deb artifact/
+      Copy-Item *.rpm artifact/
+      Get-ChildItem -Path artifact | Select-Object -Property Name,Size
+    condition: ${{ parameters.Condition }}
+    displayName: Place linux packages in artifact folder
+    workingDirectory: cli/installer/fpm

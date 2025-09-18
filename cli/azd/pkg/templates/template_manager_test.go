@@ -1,42 +1,199 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package templates
 
 import (
-	"fmt"
+	"context"
+	"encoding/json"
+	"net/http"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewTemplateManager(t *testing.T) {
-	templateManager := NewTemplateManager()
+var defaultTemplateSourceData = map[string]interface{}{
+	"template": map[string]interface{}{
+		"sources": map[string]interface{}{
+			"default": map[string]interface{}{},
+		},
+	},
+}
 
+func Test_Templates_NewTemplateManager(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	addGhMocks(mockContext)
+
+	templateManager, err := NewTemplateManager(
+		NewSourceManager(
+			NewSourceOptions(),
+			mockContext.Container,
+			config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager())),
+			mockContext.HttpClient,
+		),
+		mockContext.Console,
+	)
+	require.NoError(t, err)
 	require.NotNil(t, templateManager)
 }
 
-func TestListTemplates(t *testing.T) {
-	templateManager := NewTemplateManager()
-	templates, err := templateManager.ListTemplates()
+func Test_Templates_ListTemplates(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	mockAwesomeAzdTemplateSource(mockContext)
 
+	configManager := &mockUserConfigManager{}
+	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
+	addGhMocks(mockContext)
+
+	templateManager, err := NewTemplateManager(
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		mockContext.Console,
+	)
+	require.NoError(t, err)
+
+	templates, err := templateManager.ListTemplates(*mockContext.Context, nil)
+	require.Greater(t, len(templates), 0)
+	require.Nil(t, err)
+
+	// Should be parsable JSON and non-empty
+	var storedTemplates []Template
+	err = json.Unmarshal(resources.TemplatesJson, &storedTemplates)
+	require.NoError(t, err)
+	require.NotEmpty(t, storedTemplates)
+}
+
+func Test_Templates_ListTemplates_WithTagFilter(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	mockAwesomeAzdTemplateSource(mockContext)
+
+	configManager := &mockUserConfigManager{}
+	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
+	addGhMocks(mockContext)
+
+	templateManager, err := NewTemplateManager(
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		mockContext.Console,
+	)
+	require.NoError(t, err)
+
+	t.Run("WithMatchingTags", func(t *testing.T) {
+		listOptions := &ListOptions{
+			Tags: []string{"nodejs", "mongo"},
+		}
+		templates, err := templateManager.ListTemplates(*mockContext.Context, listOptions)
+		require.Len(t, templates, 5)
+		require.Nil(t, err)
+	})
+
+	t.Run("NoMatchingTags", func(t *testing.T) {
+		listOptions := &ListOptions{
+			Tags: []string{"foo", "bar"},
+		}
+		templates, err := templateManager.ListTemplates(*mockContext.Context, listOptions)
+		require.Len(t, templates, 0)
+		require.Nil(t, err)
+	})
+}
+
+func Test_Templates_ListTemplates_SourceError(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	invalidUrl := "https://www.example.com/invalid.json"
+
+	mockContext.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodGet && req.URL.String() == invalidUrl
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(req, http.StatusNotFound)
+	})
+
+	configManager := &mockUserConfigManager{}
+	config := config.NewConfig(nil)
+	_ = config.Set(baseConfigKey, map[string]interface{}{
+		"default": map[string]interface{}{},
+		"invalid": map[string]interface{}{
+			"type":     "url",
+			"name":     "invalid",
+			"location": invalidUrl,
+		},
+	})
+	configManager.On("Load").Return(config, nil)
+	addGhMocks(mockContext)
+
+	templateManager, err := NewTemplateManager(
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		mockContext.Console,
+	)
+	require.NoError(t, err)
+
+	// An invalid source should not cause an unrecoverable error
+	templates, err := templateManager.ListTemplates(*mockContext.Context, nil)
+	require.NotNil(t, templates)
 	require.Greater(t, len(templates), 0)
 	require.Nil(t, err)
 }
 
-func TestGetTemplateWithValidName(t *testing.T) {
-	templateName := "Azure-Samples/todo-nodejs-mongo"
-	templateManager := NewTemplateManager()
-	template, err := templateManager.GetTemplate(templateName)
+func Test_Templates_GetTemplate_WithValidPath(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	configManager := &mockUserConfigManager{}
+	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
+	addGhMocks(mockContext)
 
-	require.NotNil(t, template)
-	require.Equal(t, template.Name, templateName)
-	require.Nil(t, err)
+	templateManager, err := NewTemplateManager(
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		mockContext.Console,
+	)
+	require.NoError(t, err)
+
+	rel := "todo-nodejs-mongo"
+	full := "Azure-Samples/" + rel
+	template, err := templateManager.GetTemplate(*mockContext.Context, rel)
+	assert.NoError(t, err)
+	assert.Equal(t, rel, template.RepositoryPath)
+
+	template, err = templateManager.GetTemplate(*mockContext.Context, full)
+	assert.NoError(t, err)
+	require.Equal(t, rel, template.RepositoryPath)
 }
 
-func TestGetTemplateWithInvalidName(t *testing.T) {
-	templateName := "not-a-valid-template-name"
-	templateManager := NewTemplateManager()
-	template, err := templateManager.GetTemplate(templateName)
+func Test_Templates_GetTemplate_WithInvalidPath(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	configManager := &mockUserConfigManager{}
+	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
+	addGhMocks(mockContext)
 
-	require.Equal(t, template, Template{})
+	templateManager, err := NewTemplateManager(
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		mockContext.Console,
+	)
+	require.NoError(t, err)
+
+	templateName := "not-a-valid-template-name"
+	template, err := templateManager.GetTemplate(*mockContext.Context, templateName)
+
 	require.NotNil(t, err)
-	require.Equal(t, err.Error(), fmt.Sprintf("template with name '%s' was not found", templateName))
+	require.Nil(t, template)
+}
+
+func Test_Templates_GetTemplate_WithNotFoundPath(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	configManager := &mockUserConfigManager{}
+	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
+	addGhMocks(mockContext)
+
+	templateManager, err := NewTemplateManager(
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		mockContext.Console,
+	)
+	require.NoError(t, err)
+
+	templateName := "not-a-valid-template-path"
+	template, err := templateManager.GetTemplate(*mockContext.Context, templateName)
+
+	require.NotNil(t, err)
+	require.ErrorIs(t, err, ErrTemplateNotFound)
+	require.Nil(t, template)
 }

@@ -1,0 +1,109 @@
+parameters:
+  - name: NameSuffix
+    type: string
+  - name: Pool
+    type: string
+  - name: ImageKey
+    type: string
+    default: image
+  - name: OSVmImage
+    type: string
+  - name: OS
+    type: string
+  - name: Variables
+    type: object
+    default: {}
+  - name: UploadArtifact
+    type: boolean
+    default: true
+  - name: AzdExtensionDirectory
+    type: string
+
+jobs:
+  - job: BuildExtension_${{ parameters.NameSuffix }}
+    displayName: BuildExtension ${{ parameters.NameSuffix }}
+
+    variables:
+      ${{ insert }}: ${{ parameters.Variables }}
+
+    pool:
+      name: ${{ parameters.Pool }}
+      ${{ parameters.ImageKey }}: ${{ parameters.OSVmImage }}
+      os: ${{ parameters.OS }}
+
+    timeoutInMinutes: 180
+    steps:
+      - checkout: self
+
+      - template: /eng/pipelines/templates/steps/setup-go.yml
+        parameters:
+          Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: eng/scripts/Set-ExtensionVersionVariable.ps1
+          arguments: >-
+            -ExtensionDirectory ${{ parameters.AzdExtensionDirectory }}
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: ${{ parameters.AzdExtensionDirectory }}/ci-build.ps1
+          arguments: >-
+            -OutputFileName $(BuildTarget)
+            -Version $(EXT_VERSION)
+            -SourceVersion $(Build.SourceVersion)
+            -CodeCoverageEnabled
+            -BuildRecordMode
+          workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        displayName: Build Go Binary (for tests)
+
+      - pwsh: Write-Host "Tests would run here..."
+        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        displayName: Run tests
+
+      - task: PublishTestResults@2
+        inputs:
+          testResultsFormat: JUnit
+          testResultsFiles: "**/junitTestReport.xml"
+          testRunTitle: $(Agent.JobName)
+          searchFolder: ${{ parameters.AzdExtensionDirectory }}
+          publishRunAttachments: true
+        displayName: Publish test results
+        condition: succeededOrFailed()
+
+      - task: PowerShell@2
+        inputs:
+          pwsh: true
+          targetType: filePath
+          filePath: ${{ parameters.AzdExtensionDirectory }}/ci-build.ps1
+          arguments: >-
+            -OutputFileName $(BuildTarget)
+            -Version $(EXT_VERSION)
+            -SourceVersion $(Build.SourceVersion)
+          workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        displayName: Build Go Binary (for release)
+
+      - bash: chmod +x $(BuildTarget)
+        condition: and(succeeded(), eq(variables['SetExecutableBit'], 'true'))
+        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        displayName: Set executable bit for non-Windows binaries
+
+      - pwsh: |
+          New-Item -ItemType Directory -Path $(Build.ArtifactStagingDirectory)/build-output -Force
+          Copy-Item $(BuildTarget) $(Build.ArtifactStagingDirectory)/build-output
+        workingDirectory: ${{ parameters.AzdExtensionDirectory }}
+        displayName: Copy binary to artifact staging directory
+
+    templateContext:
+      outputs:
+        - ${{ if eq(parameters.UploadArtifact, true) }}:
+            - output: pipelineArtifact
+              path: $(Build.ArtifactStagingDirectory)/build-output
+              artifact: $(BuildTarget)
+              condition: succeeded()
+              displayName: Upload azd binary to artifact store

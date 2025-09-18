@@ -5,134 +5,142 @@ package provisioning
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"time"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"strings"
 )
 
 type ProviderKind string
 
-type NewProviderFn func(
-	ctx context.Context,
-	env *environment.Environment,
-	projectPath string,
-	infraOptions Options) (Provider, error)
-
-var (
-	providers map[ProviderKind]NewProviderFn = make(map[ProviderKind]NewProviderFn)
-)
-
 const (
-	Bicep     ProviderKind = "bicep"
-	Arm       ProviderKind = "arm"
-	Terraform ProviderKind = "terraform"
-	Pulumi    ProviderKind = "pulumi"
-	Test      ProviderKind = "test"
+	NotSpecified ProviderKind = ""
+	Bicep        ProviderKind = "bicep"
+	Arm          ProviderKind = "arm"
+	Terraform    ProviderKind = "terraform"
+	Pulumi       ProviderKind = "pulumi"
+	Test         ProviderKind = "test"
 )
 
+// Options for a provisioning provider.
 type Options struct {
-	Provider ProviderKind `yaml:"provider"`
-	Path     string       `yaml:"path"`
-	Module   string       `yaml:"module"`
+	Provider         ProviderKind   `yaml:"provider,omitempty"`
+	Path             string         `yaml:"path,omitempty"`
+	Module           string         `yaml:"module,omitempty"`
+	Name             string         `yaml:"name,omitempty"`
+	DeploymentStacks map[string]any `yaml:"deploymentStacks,omitempty"`
+	// Not expected to be defined at azure.yaml
+	IgnoreDeploymentState bool `yaml:"-"`
+
+	// Provisioning options for each individually defined layer.
+	Layers []Options `yaml:"layers,omitempty"`
 }
 
-type DeploymentPlan struct {
-	Deployment Deployment
+// GetLayers return the provisioning layers defined.
+// When [Options.Layers] is not defined, it returns the single layer defined.
+//
+// The ordering is stable; and reflects the order defined in azure.yaml.
+func (o *Options) GetLayers() []Options {
+	if len(o.Layers) == 0 {
+		return []Options{*o}
+	}
 
-	// Additional information about deployment, provider-specific.
-	Details interface{}
+	return o.Layers
 }
 
-type DeploymentPlanningProgress struct {
-	Message   string
-	Timestamp time.Time
+// GetLayer returns the provisioning layer with the provided name.
+// When [Options.Layers] is not defined, an empty name returns the single layer defined.
+func (o *Options) GetLayer(name string) (Options, error) {
+	if name == "" && len(o.Layers) == 0 {
+		return *o, nil
+	}
+
+	if len(o.Layers) == 0 {
+		return Options{}, fmt.Errorf("no layers defined in azure.yaml")
+	}
+
+	names := make([]string, 0, len(o.Layers))
+	for _, layer := range o.Layers {
+		if layer.Name == name {
+			return layer, nil
+		}
+
+		names = append(names, layer.Name)
+	}
+
+	return Options{}, fmt.Errorf(
+		"layer '%s' not found in azure.yaml. available layers: %s", name, strings.Join(names, ", "))
 }
+
+// Validate validates the current loaded config for correctness.
+//
+// This should be called immediately right after Unmarshal() before any defaulting is performed.
+func (o *Options) Validate() error {
+	errWrap := func(err string) error {
+		return fmt.Errorf("validating infra.layers: %s", err)
+	}
+
+	anyIncompatibleFieldsSet := func() bool {
+		return o.Name != "" || o.Module != "" || o.Path != "" || o.DeploymentStacks != nil
+	}
+
+	if len(o.Layers) > 0 && anyIncompatibleFieldsSet() {
+		return errWrap(
+			"properties on 'infra' cannot be declared when 'infra.layers' is declared")
+	}
+
+	for _, layer := range o.Layers {
+		if layer.Name == "" {
+			return errWrap("name must be specified for each provisioning layer")
+		}
+
+		if layer.Path == "" {
+			return errWrap(fmt.Sprintf("%s: path must be specified", layer.Name))
+		}
+	}
+
+	return nil
+}
+
+type SkippedReasonType string
+
+const DeploymentStateSkipped SkippedReasonType = "deployment State"
 
 type DeployResult struct {
-	Deployment *Deployment
+	Deployment    *Deployment
+	SkippedReason SkippedReasonType
+}
+
+// DeployPreviewResult defines one deployment in preview mode, displaying what changes would it be performed, without
+// applying the changes.
+type DeployPreviewResult struct {
+	Preview *DeploymentPreview
 }
 
 type DestroyResult struct {
-	Resources []azcli.AzCliResource
-	Outputs   map[string]OutputParameter
-}
-
-type DeployProgress struct {
-	Message   string
-	Timestamp time.Time
-}
-
-type DestroyProgress struct {
-	Message   string
-	Timestamp time.Time
+	// InvalidatedEnvKeys is a list of keys that should be removed from the environment after the destroy is complete.
+	InvalidatedEnvKeys []string
 }
 
 type StateResult struct {
 	State *State
 }
 
-type StateProgress struct {
-	Message   string
-	Timestamp time.Time
+type Parameter struct {
+	Name          string
+	Secret        bool
+	Value         any
+	EnvVarMapping []string
+	// true when the parameter value was set by the user from the command line (prompt)
+	LocalPrompt        bool
+	UsingEnvVarMapping bool
 }
 
 type Provider interface {
 	Name() string
-	RequiredExternalTools() []tools.ExternalTool
-	// State gets the current state of the infrastructure, this contains both the provisioned resources and any outputs from
-	// the module.
-	State(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress]
-	Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]
-	Deploy(
-		ctx context.Context,
-		plan *DeploymentPlan,
-		scope infra.Scope,
-	) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
-	Destroy(
-		ctx context.Context,
-		deployment *Deployment,
-		options DestroyOptions,
-	) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
-}
-
-// Registers a provider creation function for the specified provider kind
-func RegisterProvider(kind ProviderKind, newFn NewProviderFn) error {
-	if newFn == nil {
-		return errors.New("NewProviderFn is required")
-	}
-
-	providers[kind] = newFn
-	return nil
-}
-
-func NewProvider(
-	ctx context.Context,
-	env *environment.Environment,
-	projectPath string,
-	infraOptions Options,
-) (Provider, error) {
-	var provider Provider
-
-	if infraOptions.Provider == "" {
-		infraOptions.Provider = Bicep
-	}
-
-	newProviderFn, ok := providers[infraOptions.Provider]
-
-	if !ok {
-		return nil, fmt.Errorf("provider '%s' is not supported", infraOptions.Provider)
-	}
-
-	provider, err := newProviderFn(ctx, env, projectPath, infraOptions)
-	if err != nil {
-		return nil, fmt.Errorf("error creating provider for type '%s' : %w", infraOptions.Provider, err)
-	}
-
-	return provider, nil
+	Initialize(ctx context.Context, projectPath string, options Options) error
+	State(ctx context.Context, options *StateOptions) (*StateResult, error)
+	Deploy(ctx context.Context) (*DeployResult, error)
+	Preview(ctx context.Context) (*DeployPreviewResult, error)
+	Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error)
+	EnsureEnv(ctx context.Context) error
+	Parameters(ctx context.Context) ([]Parameter, error)
 }

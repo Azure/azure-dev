@@ -1,11 +1,19 @@
-Usage:
+
+Resets configuration to default.
+
+Usage
   azd config reset [flags]
 
-Flags:
-  -h, --help   Gets help for reset.
+Flags
+    -f, --force 	: Force reset without confirmation.
 
-Global Flags:
-  -C, --cwd string   Sets the current working directory.
-      --debug        Enables debugging and diagnostics logging.
-      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd config reset in your web browser.
+    -h, --help       	: Gets help for reset.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+
 

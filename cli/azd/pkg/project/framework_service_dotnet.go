@@ -11,48 +11,186 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
 
+const (
+	defaultDotNetBuildConfiguration string = "Release"
+)
+
 type dotnetProject struct {
-	config    *ServiceConfig
 	env       *environment.Environment
-	dotnetCli dotnet.DotNetCli
+	dotnetCli *dotnet.Cli
 }
 
-func (dp *dotnetProject) RequiredExternalTools() []tools.ExternalTool {
+// NewDotNetProject creates a new instance of a dotnet project
+func NewDotNetProject(
+	dotNetCli *dotnet.Cli,
+	env *environment.Environment,
+) FrameworkService {
+	return &dotnetProject{
+		env:       env,
+		dotnetCli: dotNetCli,
+	}
+}
+
+func (dp *dotnetProject) Requirements() FrameworkRequirements {
+	return FrameworkRequirements{
+		// dotnet will automatically restore & build the project if needed
+		Package: FrameworkPackageRequirements{
+			RequireRestore: false,
+			RequireBuild:   false,
+		},
+	}
+}
+
+// Gets the required external tools for the project
+func (dp *dotnetProject) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{dp.dotnetCli}
 }
 
-func (dp *dotnetProject) Package(ctx context.Context, progress chan<- string) (string, error) {
-	publishRoot, err := os.MkdirTemp("", "azd")
-	if err != nil {
-		return "", fmt.Errorf("creating package directory for %s: %w", dp.config.Name, err)
+// Initializes the dotnet project
+func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	// NOTE(ellismg): For dotnet based apps, we installed a lifecycle hook that would write all the outputs from a deployment
+	// into dotnet user-secrets. The goal of this was to make it easy to consume the values from your infrastructure in your
+	// dotnet app, but the strategy doesn't work well in practice and it ends up being an abuse of the user secrets setup.
+	//
+	// We'd like to stop doing this at some point for all .NET projects, but we can make sure that we don't inherit the
+	// bad behavior for containerized projects, without being concerned about it being considered a breaking change.
+	if serviceConfig.Host != DotNetContainerAppTarget {
+		projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+		if err != nil {
+			return err
+		}
+
+		if err := dp.dotnetCli.InitializeSecret(ctx, projFile); err != nil {
+			return err
+		}
+		handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			return dp.setUserSecretsFromOutputs(ctx, serviceConfig, args)
+		}
+		if err := serviceConfig.AddHandler(ServiceEventEnvUpdated, handler); err != nil {
+			return err
+		}
 	}
 
-	progress <- "Creating deployment package"
-	if err := dp.dotnetCli.Publish(ctx, dp.config.Path(), publishRoot); err != nil {
-		return "", err
-	}
-
-	if dp.config.OutputPath != "" {
-		publishRoot = filepath.Join(publishRoot, dp.config.OutputPath)
-	}
-
-	return publishRoot, nil
-}
-
-func (dp *dotnetProject) InstallDependencies(ctx context.Context) error {
-	if err := dp.dotnetCli.Restore(ctx, dp.config.Path()); err != nil {
-		return err
-	}
 	return nil
 }
 
-func (dp *dotnetProject) setUserSecretsFromOutputs(ctx context.Context, args ServiceLifecycleEventArgs) error {
+// Restores the dependencies for the project
+func (dp *dotnetProject) Restore(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	progress *async.Progress[ServiceProgress],
+) (*ServiceRestoreResult, error) {
+	progress.SetProgress(NewServiceProgress("Restoring .NET project dependencies"))
+	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+	if err != nil {
+		return nil, err
+	}
+
+	if err := dp.dotnetCli.Restore(ctx, projFile); err != nil {
+		return nil, err
+	}
+
+	return &ServiceRestoreResult{}, nil
+}
+
+// Builds the dotnet project using the dotnet CLI
+func (dp *dotnetProject) Build(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	restoreOutput *ServiceRestoreResult,
+	progress *async.Progress[ServiceProgress],
+) (*ServiceBuildResult, error) {
+	progress.SetProgress(NewServiceProgress("Building .NET project"))
+	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+	if err != nil {
+		return nil, err
+	}
+	if err := dp.dotnetCli.Build(ctx, projFile, defaultDotNetBuildConfiguration, ""); err != nil {
+		return nil, err
+	}
+
+	defaultOutputDir := filepath.Join("./bin", defaultDotNetBuildConfiguration)
+
+	// Attempt to find the default build output location
+	buildOutputDir := serviceConfig.Path()
+	_, err = os.Stat(filepath.Join(buildOutputDir, defaultOutputDir))
+	if err == nil {
+		buildOutputDir = filepath.Join(buildOutputDir, defaultOutputDir)
+	}
+
+	// By default dotnet build will create a sub folder for the project framework version, etc. net8.0
+	// If we have a single folder under build configuration assume this location as build output result
+	subDirs, err := os.ReadDir(buildOutputDir)
+	if err == nil {
+		if len(subDirs) == 1 {
+			buildOutputDir = filepath.Join(buildOutputDir, subDirs[0].Name())
+		}
+	}
+
+	return &ServiceBuildResult{
+		Restore:         restoreOutput,
+		BuildOutputPath: buildOutputDir,
+	}, nil
+}
+
+func (dp *dotnetProject) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
+	progress *async.Progress[ServiceProgress],
+) (*ServicePackageResult, error) {
+	if serviceConfig.Host == DotNetContainerAppTarget {
+		// TODO(weilim): For containerized projects, we publish the produced container image in a single call
+		// via `dotnet publish /p:PublishProfile=DefaultContainer`, thus the default `dotnet publish` command
+		// executed here is not useful.
+		//
+		// It's probably right for us to think about "package" for a containerized application as meaning
+		// "produce the tgz" of the image, as would be done by `docker save`, but this is currently not supported.
+		//
+		// See related comment in cmd/package.go.
+		return &ServicePackageResult{}, nil
+	}
+
+	packageDest, err := os.MkdirTemp("", "azd")
+	if err != nil {
+		return nil, fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err)
+	}
+
+	progress.SetProgress(NewServiceProgress("Publishing .NET project"))
+	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+	if err != nil {
+		return nil, err
+	}
+	if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, packageDest); err != nil {
+		return nil, err
+	}
+
+	if serviceConfig.OutputPath != "" {
+		packageDest = filepath.Join(packageDest, serviceConfig.OutputPath)
+	}
+
+	if err := validatePackageOutput(packageDest); err != nil {
+		return nil, err
+	}
+
+	return &ServicePackageResult{
+		Build:       buildOutput,
+		PackagePath: packageDest,
+	}, nil
+}
+
+func (dp *dotnetProject) setUserSecretsFromOutputs(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	args ServiceLifecycleEventArgs,
+) error {
 	bicepOutputArgs := args.Args["bicepOutput"]
 	if bicepOutputArgs == nil {
 		log.Println("no bicep outputs set as secrets to dotnet project, map args.Args doesn't contain key \"bicepOutput\"")
@@ -64,23 +202,14 @@ func (dp *dotnetProject) setUserSecretsFromOutputs(ctx context.Context, args Ser
 		return fmt.Errorf("fail on interface conversion: no type in map")
 	}
 
-	for key, val := range bicepOutput {
-		if err := dp.dotnetCli.SetSecret(ctx, normalizeDotNetSecret(key), fmt.Sprint(val.Value), dp.config.Path()); err != nil {
-			return err
-		}
-	}
-	return nil
-}
+	secrets := map[string]string{}
 
-func (dp *dotnetProject) Initialize(ctx context.Context) error {
-	if err := dp.dotnetCli.InitializeSecret(ctx, dp.config.Path()); err != nil {
-		return err
+	for key, val := range bicepOutput {
+		secrets[normalizeDotNetSecret(key)] = fmt.Sprint(val.Value)
 	}
-	handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		return dp.setUserSecretsFromOutputs(ctx, args)
-	}
-	if err := dp.config.AddHandler(EnvironmentUpdated, handler); err != nil {
-		return err
+
+	if err := dp.dotnetCli.SetSecrets(ctx, secrets, serviceConfig.Path()); err != nil {
+		return fmt.Errorf("failed to set secrets: %w", err)
 	}
 
 	return nil
@@ -92,10 +221,38 @@ func normalizeDotNetSecret(key string) string {
 	return strings.ReplaceAll(key, "__", ":")
 }
 
-func NewDotNetProject(ctx context.Context, config *ServiceConfig, env *environment.Environment) FrameworkService {
-	return &dotnetProject{
-		config:    config,
-		env:       env,
-		dotnetCli: dotnet.NewDotNetCli(ctx),
+/* findProjectFile locates the project file to pass to the `dotnet` tool for a given dotnet service.
+**
+** projectPath is either a path to a directory, or to a project file. When projectPath is a directory,
+** the first file matching the glob expression *.*proj (what dotnet expects) is returned.
+** If multiple files match, an error is returned.
+ */
+
+func findProjectFile(serviceName string, projectPath string) (string, error) {
+	info, err := os.Stat(projectPath)
+	if err != nil {
+		return "", err
 	}
+
+	if !info.IsDir() {
+		return projectPath, nil
+	}
+	files, err := filepath.Glob(filepath.Join(projectPath, "*.*proj"))
+	if err != nil {
+		return "", fmt.Errorf("searching for project file: %w", err)
+	}
+	if len(files) == 0 {
+		return "", fmt.Errorf(
+			"could not locate a dotnet project file for service %s in %s. Update the project setting of "+
+				"azure.yaml for service %s to be the path to the dotnet project for this service",
+			serviceName, projectPath, serviceName)
+	} else if len(files) > 1 {
+		return "", fmt.Errorf(
+			"could not locate a dotnet project file for service %s in %s. Multiple project files exist. Update "+
+				"the \"project\" setting of azure.yaml for service %s to be the path to the dotnet project to use for this "+
+				"service",
+			serviceName, projectPath, serviceName)
+	}
+
+	return files[0], nil
 }

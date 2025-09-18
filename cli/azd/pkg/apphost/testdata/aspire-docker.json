@@ -1,0 +1,87 @@
+{
+  "resources": {
+    "nodeapp": {
+      "type": "dockerfile.v0",
+      "path": "../NodeApp/Dockerfile",
+      "context": "../NodeApp",
+      "buildArgs": {
+        "SOME_STRING": "Test",
+        "SOME_BOOL": "True",
+        "SOME_NUMBER": "7",
+        "SOME_NONVALUE": null
+      },
+      "env": {
+        "NODE_ENV": "development",
+        "PORT": "{nodeapp.bindings.http.port}",
+        "MY_SQL_CONNECTION_STRING": "{mysqlabstract.connectionString}",
+        "connectionStringUrl": "{nodeapp.bindings.http.url}"
+      },
+      "bindings": {
+        "http": {
+          "scheme": "http",
+          "protocol": "tcp",
+          "transport": "http",
+          "targetPort": 3000,
+          "external": true
+        }
+      }
+    },
+    "mysqlabstract-password": {
+      "type": "parameter.v0",
+      "value": "{mysqlabstract-password.inputs.value}",
+      "inputs": {
+        "value": {
+          "type": "string",
+          "secret": true,
+          "default": {
+            "generate": {
+              "minLength": 20,
+              "lower": false,
+              "minNumeric": 5,
+              "minSpecial": 5
+            }
+          }
+        }
+      }
+    },
+    "mysqlabstract": {
+      "type": "container.v0",
+      "image": "mysql:latest",
+      "env": {
+        "MYSQL_ROOT_PASSWORD": "{mysqlabstract-password.value}"
+      },
+      "bindings": {
+        "tcp": {
+          "scheme": "tcp",
+          "protocol": "tcp",
+          "transport": "tcp",
+          "targetPort": 3306
+        }
+      },
+      "connectionString": "Server={mysqlabstract.bindings.tcp.host};Port={mysqlabstract.bindings.tcp.port};User ID=root;Password={mysqlabstract-password.value}"
+    },
+    "api": {
+      "type": "project.v0",
+      "path": "../WebApplication1/WebApplication1.csproj",
+      "env": {
+        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
+        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
+        "OTEL_DOTNET_EXPERIMENTAL_OTLP_RETRY": "in_memory",
+        "ASPNETCORE_FORWARDEDHEADERS_ENABLED": "true",
+        "http_host": "{api.bindings.http.host}",
+        "http_port": "{api.bindings.http.port}",
+        "http_targetPort": "{api.bindings.http.targetPort}",
+        "http_scheme": "{api.bindings.http.scheme}",
+        "http_ep": "{api.bindings.http.url}"
+      },
+      "bindings": {
+        "http": {
+          "scheme": "http",
+          "protocol": "tcp",
+          "transport": "http",
+          "external": true
+        }
+      }
+    }
+  }
+}

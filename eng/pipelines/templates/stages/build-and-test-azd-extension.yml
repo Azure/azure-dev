@@ -1,0 +1,167 @@
+parameters:
+  - name: BuildMatrix
+    type: object
+  - name: AzdExtensionId
+    type: string
+  - name: AzdExtensionDirectory
+    type: string
+  - name: CrossBuildMatrix
+    type: object
+    default:
+      LinuxARM64: 
+        Pool: $(LINUXPOOL)
+        OSVmImage: $(LINUXVMIMAGE)
+        OS: linux
+        ImageKey: image
+        ValidateCrossCompile: true
+        ValidateVm:
+          PoolName: $(ARMPOOL)
+          ImageName: $(LINUXARMVMIMAGE)
+          Os: linux
+        ValidationTask: bash
+        ValidationScript: |
+          ls -lah 
+          chmod +x $(SanitizedExtensionId)-linux-arm64
+          ./$(SanitizedExtensionId)-linux-arm64 version
+        Variables: 
+          BuildTarget: $(SanitizedExtensionId)-linux-arm64
+          BuildOutputName: azd
+          SetExecutableBit: true
+          GOOS: linux
+          GOARCH: arm64
+      MacARM64:
+        Pool: Azure Pipelines
+        OSVmImage: $(MACVMIMAGE)
+        OS: macOS
+        ImageKey: vmImage
+        ValidateCrossCompile: false
+        Variables: 
+          BuildTarget: $(SanitizedExtensionId)-darwin-arm64
+          BuildOutputName: azd
+          SetExecutableBit: true
+          GOOS: darwin
+          GOARCH: arm64
+          # CGO_ENABLED is required on MacOS to cross-compile pkg/outil/osversion
+          CGO_ENABLED: 1
+      WindowsARM64:
+        Pool: $(WINDOWSPOOL)
+        OSVmImage: $(WINDOWSVMIMAGE)
+        OS: windows
+        ImageKey: image
+        ValidateCrossCompile: true
+        ValidateVm:
+          PoolName: $(ARMPOOL)
+          ImageName: $(WINDOWSARMVMIMAGE)
+          Os: windows
+        ValidationTask: script
+        ValidationScript: |
+          dir
+          $(SanitizedExtensionId)-windows-arm64.exe version
+        Variables:
+          BuildTarget: $(SanitizedExtensionId)-windows-arm64.exe
+          BuildOutputName: azd.exe
+          GOOS: windows
+          GOARCH: arm64
+stages:
+  - stage: BuildAndTest
+    variables:
+      - template: /eng/pipelines/templates/variables/globals.yml
+      - template: /eng/pipelines/templates/variables/image.yml
+      - name: SanitizedExtensionId
+        value: ${{ replace(parameters.AzdExtensionId, '.', '-') }}
+    jobs:
+      - ${{ each build in parameters.BuildMatrix }}:
+          - template: /eng/pipelines/templates/jobs/build-azd-extension.yml
+            parameters:
+              NameSuffix: ${{ build.key}}
+              Pool: ${{ build.value.Pool }}
+              ImageKey: ${{ build.value.ImageKey }}
+              OSVmImage: ${{ build.value.OSVmImage }}
+              OS: ${{ build.value.OS }}
+              UploadArtifact: ${{ build.value.UploadArtifact}}
+              Variables: ${{ build.value.Variables }}
+              AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
+
+      - ${{ each build in parameters.CrossBuildMatrix }}:
+        - template: /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
+          parameters:
+            NameSuffix: ${{ build.key }}
+            Pool: ${{ build.value.Pool }}
+            ImageKey: ${{ build.value.ImageKey }}
+            OSVmImage: ${{ build.value.OSVmImage }}
+            OS: ${{ build.value.OS }}
+            Variables: ${{ build.value.Variables }}
+            ValidateCrossCompile: ${{ build.value.ValidateCrossCompile }}
+            ValidateVm: ${{ build.value.ValidateVm }}
+            ValidationTask: ${{ build.value.ValidationTask }}
+            ValidationScript: ${{ build.value.ValidationScript }}
+            AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
+
+      - job: GenerateReleaseArtifacts
+        pool:
+          name: $(LINUXPOOL)
+          image: $(LINUXVMIMAGE)
+          os: linux
+
+        steps:
+          - checkout: self
+
+          - task: PowerShell@2
+            displayName: Set extension version variable
+            inputs:
+              pwsh: true
+              targetType: filePath
+              filePath: eng/scripts/Set-ExtensionVersionVariable.ps1
+              arguments: >-
+                -ExtensionDirectory ${{ parameters.AzdExtensionDirectory }}
+
+          # Create changelog
+          - pwsh: New-Item -ItemType Directory -Path changelog
+            displayName: Create changelog folder
+
+          - task: PowerShell@2
+            inputs:
+              targetType: filePath
+              filePath: eng/scripts/New-ReleaseNotesFile.ps1
+              arguments: >-
+                -ChangeLogPath ${{ parameters.AzdExtensionDirectory }}/CHANGELOG.md
+                -Version $(EXT_VERSION)
+                -OutputPath changelog/CHANGELOG.md
+            displayName: Set release changelog content
+
+          - pwsh: Get-Content changelog/CHANGELOG.md
+            displayName: Show changelog content
+
+          # Create release metadata
+          - pwsh: |
+              New-Item -ItemType Directory -Path release-metadata -Force
+              # CLI Version may have been set by set-cli-version-cd.yml
+              $extVersion = "$(EXT_VERSION)"
+
+              $releaseMetadata = @{
+                extVersion = $extVersion;
+              }
+
+              Set-Content -Path release-metadata/metadata.json -Value ($releaseMetadata | ConvertTo-Json -Depth 100)
+            displayName: Create release metadata
+
+          - pwsh: |
+              Copy-Item ${{ parameters.AzdExtensionDirectory }}/extension.yaml release-metadata/extension.yaml
+            displayName: Copy extension.yaml to release-metadata
+
+          - pwsh: |
+              Copy-Item NOTICE.txt release-metadata/NOTICE.txt
+            displayName: Copy NOTICE.txt to release-metadata
+
+        templateContext:
+          outputs:
+            - output: pipelineArtifact
+              path: release-metadata
+              condition: succeeded()
+              artifact: release-metadata
+              displayName: Upload release metadata
+
+            - output: pipelineArtifact
+              path: changelog
+              artifact: changelog
+              displayName: Upload changelog

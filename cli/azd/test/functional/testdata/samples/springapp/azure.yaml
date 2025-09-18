@@ -1,0 +1,11 @@
+name: webapp
+metadata:
+  template: azd-test/webapptest@v1
+services:
+  helloworld-web:
+    project: ./
+    host: springapp
+    language: java
+infra:
+  path: infra-bicep
+

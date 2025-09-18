@@ -1,0 +1,8 @@
+-s dir
+--name azd
+--license "MIT License"
+--depends git
+--description "A developer CLI that accelerates the time it takes for you to get started on Azure. The Azure Developer CLI (azd) provides a set of developer-friendly commands that map to key stages in your workflow - code, build, deploy, monitor, repeat."
+--url "https://github.com/azure/azure-dev"
+--maintainer "Azure Developer CLI Team <azdevteam@microsoft.com>"
+--vendor "Microsoft Corporation"

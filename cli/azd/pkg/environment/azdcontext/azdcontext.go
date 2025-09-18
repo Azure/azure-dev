@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azdcontext
 
 import (
@@ -6,17 +9,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/internal/names"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 const ProjectFileName = "azure.yaml"
 const EnvironmentDirectoryName = ".azure"
+const DotEnvFileName = ".env"
 const ConfigFileName = "config.json"
 const ConfigFileVersion = 1
-const InfraDirectoryName = "infra"
 
 type AzdContext struct {
 	projectDirectory string
@@ -38,53 +40,17 @@ func (c *AzdContext) EnvironmentDirectory() string {
 	return filepath.Join(c.ProjectDirectory(), EnvironmentDirectoryName)
 }
 
-func (c *AzdContext) InfrastructureDirectory() string {
-	return filepath.Join(c.ProjectDirectory(), InfraDirectoryName)
+// ProjectName returns a suitable project name from the given project directory.
+func ProjectName(projectDirectory string) string {
+	return names.LabelName(filepath.Base(projectDirectory))
 }
 
-func (c *AzdContext) GetDefaultProjectName() string {
-	return filepath.Base(c.ProjectDirectory())
-}
-
-func (c *AzdContext) GetEnvironmentFilePath(name string) string {
-	return filepath.Join(c.EnvironmentDirectory(), name, ".env")
+func (c *AzdContext) EnvironmentRoot(name string) string {
+	return filepath.Join(c.EnvironmentDirectory(), name)
 }
 
 func (c *AzdContext) GetEnvironmentWorkDirectory(name string) string {
-	return filepath.Join(c.GetEnvironmentFilePath(name), "wd")
-}
-
-func (c *AzdContext) GetInfrastructurePath() string {
-	return filepath.Join(c.ProjectDirectory(), InfraDirectoryName)
-}
-
-func (c *AzdContext) ListEnvironments() ([]contracts.EnvListEnvironment, error) {
-	defaultEnv, err := c.GetDefaultEnvironmentName()
-	if err != nil {
-		return nil, err
-	}
-
-	ents, err := os.ReadDir(c.EnvironmentDirectory())
-	if err != nil {
-		return nil, fmt.Errorf("listing entries: %w", err)
-	}
-
-	var envs []contracts.EnvListEnvironment
-	for _, ent := range ents {
-		if ent.IsDir() {
-			ev := contracts.EnvListEnvironment{
-				Name:       ent.Name(),
-				IsDefault:  ent.Name() == defaultEnv,
-				DotEnvPath: c.GetEnvironmentFilePath(ent.Name()),
-			}
-			envs = append(envs, ev)
-		}
-	}
-
-	sort.Slice(envs, func(i, j int) bool {
-		return envs[i].Name < envs[j].Name
-	})
-	return envs, nil
+	return filepath.Join(c.EnvironmentRoot(name), "wd")
 }
 
 // GetDefaultEnvironmentName returns the name of the default environment. Returns
@@ -107,50 +73,57 @@ func (c *AzdContext) GetDefaultEnvironmentName() (string, error) {
 	return config.DefaultEnvironment, nil
 }
 
-func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
+// ProjectState represents the state of the project.
+type ProjectState struct {
+	DefaultEnvironment string
+}
+
+// SetProjectState persists the state of the project to the file system, like the default environment.
+func (c *AzdContext) SetProjectState(state ProjectState) error {
 	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
-	bytes, err := json.Marshal(configFile{
+	config := configFile{
 		Version:            ConfigFileVersion,
-		DefaultEnvironment: name,
-	})
-	if err != nil {
-		return fmt.Errorf("serializing config file: %w", err)
+		DefaultEnvironment: state.DefaultEnvironment,
 	}
 
-	if err := os.WriteFile(path, bytes, osutil.PermissionFile); err != nil {
-		return fmt.Errorf("writing config file: %w", err)
+	if err := writeConfig(path, config); err != nil {
+		return err
 	}
 
-	return nil
+	// make sure to ignore the environment directory
+	path = filepath.Join(c.EnvironmentDirectory(), ".gitignore")
+	return os.WriteFile(path, []byte("# .azure is not intended to be committed\n*"), osutil.PermissionFile)
 }
 
-var ErrEnvironmentExists = errors.New("environment already exists")
-
-func (c *AzdContext) NewEnvironment(name string) error {
-	if err := os.MkdirAll(c.EnvironmentDirectory(), osutil.PermissionDirectory); err != nil {
-		return fmt.Errorf("creating environment root: %w", err)
+// Creates context with project directory set to the desired directory.
+func NewAzdContextWithDirectory(projectDirectory string) *AzdContext {
+	return &AzdContext{
+		projectDirectory: projectDirectory,
 	}
-
-	if err := os.Mkdir(filepath.Join(c.EnvironmentDirectory(), name), osutil.PermissionDirectory); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return ErrEnvironmentExists
-		}
-
-		return fmt.Errorf("creating environment directory: %w", err)
-	}
-
-	return nil
 }
 
+var (
+	ErrNoProject = errors.New("no project exists; to create a new project, run `azd init`")
+)
+
+// Creates context with project directory set to the nearest project file found by calling NewAzdContextFromWd
+// on the current working directory.
 func NewAzdContext() (*AzdContext, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get the current directory: %w", err)
 	}
 
-	// Walk up from the CWD to the root, looking for a project file. If we find one, that's
-	// the root for our project. If we don't use the CWD as the root (as it's the place that
-	// we would `init` into).
+	return NewAzdContextFromWd(wd)
+}
+
+// Creates context with project directory set to the nearest project file found.
+//
+// The project file is first searched for in the working directory, if not found, the parent directory is searched
+// recursively up to root. If no project file is found, errNoProject is returned.
+func NewAzdContextFromWd(wd string) (*AzdContext, error) {
+	// Walk up from the wd to the root, looking for a project file. If we find one, that's
+	// the root project directory.
 	searchDir, err := filepath.Abs(wd)
 	if err != nil {
 		return nil, fmt.Errorf("resolving path: %w", err)
@@ -162,10 +135,7 @@ func NewAzdContext() (*AzdContext, error) {
 		if os.IsNotExist(err) || (err == nil && stat.IsDir()) {
 			parent := filepath.Dir(searchDir)
 			if parent == searchDir {
-				// hit the root without finding anything. Behave as if we had
-				// found an `azure.yaml` file in the CWD.
-				searchDir = wd
-				break
+				return nil, ErrNoProject
 			}
 			searchDir = parent
 		} else if err == nil {
@@ -184,5 +154,22 @@ func NewAzdContext() (*AzdContext, error) {
 
 type configFile struct {
 	Version            int    `json:"version"`
-	DefaultEnvironment string `json:"defaultEnvironment"`
+	DefaultEnvironment string `json:"defaultEnvironment,omitempty"`
+}
+
+func writeConfig(path string, config configFile) error {
+	bytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("serializing config file: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), osutil.PermissionDirectory); err != nil {
+		return fmt.Errorf("creating environment root: %w", err)
+	}
+
+	if err := os.WriteFile(path, bytes, osutil.PermissionFile); err != nil {
+		return fmt.Errorf("writing config file: %w", err)
+	}
+
+	return nil
 }

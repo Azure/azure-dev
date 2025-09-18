@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext";
+option csharp_namespace = "Microsoft.Azd";
+
+import "models.proto";
+
+service UserConfigService {
+  // Get retrieves a value by path
+  rpc Get (GetUserConfigRequest) returns (GetUserConfigResponse);
+
+  // GetString retrieves a value by path and returns it as a string
+  rpc GetString (GetUserConfigStringRequest) returns (GetUserConfigStringResponse);
+
+  // GetSection retrieves a section by path
+  rpc GetSection (GetUserConfigSectionRequest) returns (GetUserConfigSectionResponse);
+
+  // Set sets a value at a given path
+  rpc Set (SetUserConfigRequest) returns (EmptyResponse);
+
+  // Unset removes a value at a given path
+  rpc Unset (UnsetUserConfigRequest) returns (EmptyResponse);
+}
+
+// Request message for Get
+message GetUserConfigRequest {
+  string path = 1;
+}
+
+// Response message for Get
+message GetUserConfigResponse {
+  bytes value = 1;
+  bool found = 2;
+}
+
+// Request message for GetString
+message GetUserConfigStringRequest {
+  string path = 1;
+}
+
+// Response message for GetString
+message GetUserConfigStringResponse {
+  string value = 1;
+  bool found = 2;
+}
+
+// Request message for GetSection
+message GetUserConfigSectionRequest {
+  string path = 1;
+}
+
+// Response message for GetSection
+message GetUserConfigSectionResponse {
+  bytes section = 1;
+  bool found = 2;
+}
+
+// Request message for Set
+message SetUserConfigRequest {
+  string path = 1;
+  bytes value = 2;
+}
+
+// Request message for Unset
+message UnsetUserConfigRequest {
+  string path = 1;
+}

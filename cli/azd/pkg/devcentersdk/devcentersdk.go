@@ -1,0 +1,15 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package devcentersdk
+
+import (
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+)
+
+// The host name for the Graph API.
+const HostName = "graph.microsoft.com"
+
+var ServiceConfig cloud.ServiceConfiguration = cloud.ServiceConfiguration{
+	Audience: "https://management.core.windows.net",
+}

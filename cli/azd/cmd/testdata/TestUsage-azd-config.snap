@@ -1,20 +1,35 @@
-Usage:
+
+Manage the Azure Developer CLI user configuration.
+
+  • The default configuration path is: %HOME/.azd.
+  • The configuration directory can be overridden by specifying a path in the AZD_CONFIG_DIR environment variable.
+  • The default values for azd prompts like subscription and location are stored with the key: defaults.
+
+Usage
   azd config [command]
 
-Available Commands:
-  get         Gets a configuration
-  list        Lists all configuration values
-  reset       Resets configuration to default
-  set         Sets a configuration
-  unset       Unsets a configuration
+Available Commands
+  get       	: Gets a configuration.
+  list-alpha	: Display the list of available features in alpha stage.
+  reset     	: Resets configuration to default.
+  set       	: Sets a configuration.
+  show      	: Show all the configuration values.
+  unset     	: Unsets a configuration.
 
-Flags:
-  -h, --help   Gets help for config.
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd config in your web browser.
+    -h, --help       	: Gets help for config.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
-Global Flags:
-  -C, --cwd string   Sets the current working directory.
-      --debug        Enables debugging and diagnostics logging.
-      --no-prompt    Accepts the default value instead of prompting, or it fails if there is no default.
+Use azd config [command] --help to view examples and more information about a specific command.
 
-Use "azd config [command] --help" for more information about a command.
+Examples
+  Set the default Azure deployment location.
+    azd config set defaults.location <location>
+
+  Set the default Azure subscription.
+    azd config set defaults.subscription <yourSubscriptionID>
+
 

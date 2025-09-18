@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/microsoft/azure-devops-go-api/azuredevops"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 )
 
 var (
@@ -44,13 +44,6 @@ var (
 	ServiceConnectionName = "azconnection"
 )
 
-type AzureServicePrincipalCredentials struct {
-	TenantId       string `json:"tenantId"`
-	ClientId       string `json:"clientId"`
-	ClientSecret   string `json:"clientSecret"`
-	SubscriptionId string `json:"subscriptionId"`
-}
-
 // helper method to return an Azure DevOps connection used the AzDo go sdk
 func GetConnection(
 	ctx context.Context, organization string, personalAccessToken string) (*azuredevops.Connection, error) {
@@ -63,7 +56,5 @@ func GetConnection(
 	}
 
 	organizationUrl := fmt.Sprintf("https://%s/%s", AzDoHostName, organization)
-	connection := azuredevops.NewPatConnection(organizationUrl, personalAccessToken)
-
-	return connection, nil
+	return azuredevops.NewPatConnection(organizationUrl, personalAccessToken), nil
 }

@@ -93,14 +93,14 @@ func TestGithubCLIDeploymentEnvironments(t *testing.T) {
 	})
 
 	// TODO: how do we handle live testing resources, like a GitHub repo?
-	t.Run("live", func(t *testing.T) {
-		commandRunner := exec.NewCommandRunner(nil)
-
-		testGithubCLIDeploymentEnvironments(t, commandRunner, "richardpark-msft/copilot-auth-tests", "copilot2", func(verbAndURL string) *mockexec.CommandExpression {
-			// (unused, but needed to compile)
-			return &mockexec.CommandExpression{}
-		})
-	})
+	// t.Run("live", func(t *testing.T) {
+	// 	commandRunner := exec.NewCommandRunner(nil)
+	//  // (you can use any repo here, these were just the ones I used last)
+	// 	testGithubCLIDeploymentEnvironments(t, commandRunner, "richardpark-msft/copilot-auth-tests", "copilot2", func(verbAndURL string) *mockexec.CommandExpression {
+	// 		// (unused, but needed to compile)
+	// 		return &mockexec.CommandExpression{}
+	// 	})
+	// })
 }
 
 func testGithubCLIDeploymentEnvironments(t *testing.T, commandRunner exec.CommandRunner, repoSlug string, envName string, addAPIHandler func(verbAndURL string) *mockexec.CommandExpression) {

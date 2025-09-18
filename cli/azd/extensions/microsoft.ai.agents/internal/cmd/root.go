@@ -10,7 +10,7 @@ import (
 func NewRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:           "agent <command> [options]",
-		Short:         "Placeholder",
+		Short:         "Placeholder description",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		CompletionOptions: cobra.CompletionOptions{
@@ -25,6 +25,8 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newContextCommand())
 	rootCmd.AddCommand(newPromptCommand())
 	rootCmd.AddCommand(newVersionCommand())
+	rootCmd.AddCommand(newInitCommand())
+	rootCmd.AddCommand(newDeployCommand())
 
 	return rootCmd
 }

@@ -1,10 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import * as vscode from 'vscode';
 import { IActionContext, IAzureQuickPickItem, parseError, UserCancelledError } from '@microsoft/vscode-azext-utils';
+import { composeArgs, withArg } from '@microsoft/vscode-processutils';
+import * as vscode from 'vscode';
 import { createAzureDevCli } from '../utils/azureDevCli';
-import { spawnAsync } from '../utils/process';
+import { execAsync } from '../utils/execAsync';
 import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
 import { getWorkingFolder } from './cmdUtil';
@@ -29,20 +30,20 @@ export async function monitor(context: IActionContext, selectedItem?: vscode.Uri
     const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile : selectedItem;
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
-    const monitorChoices  = await context.ui.showQuickPick(MonitorChoices, {
+    const monitorChoices = await context.ui.showQuickPick(MonitorChoices, {
         canPickMany: true,
         placeHolder: vscode.l10n.t('What monitoring page(s) do you want to open?'),
-        isPickSelected: choice => !!choice.picked 
+        isPickSelected: choice => !!choice.picked
     });
     if (!monitorChoices || monitorChoices.length === 0) {
         throw new UserCancelledError();
     }
 
     const azureCli = await createAzureDevCli(context);
-    let command = azureCli.commandBuilder.withArg('monitor');
-    for (const choice of monitorChoices) {
-        command = command.withArg(choice.data);
-    }
+    const args = composeArgs(
+        withArg('monitor'),
+        withArg(...monitorChoices.map(c => c.data)),
+    )();
 
     const progressOptions: vscode.ProgressOptions = {
         location: vscode.ProgressLocation.Notification,
@@ -50,9 +51,9 @@ export async function monitor(context: IActionContext, selectedItem?: vscode.Uri
     };
     try {
         await vscode.window.withProgress(progressOptions, async () => {
-            await spawnAsync(command.build(), azureCli.spawnOptions(workingFolder));
+            await execAsync(azureCli.invocation, args, azureCli.spawnOptions(workingFolder));
         });
-    } catch(err) {
+    } catch (err) {
         const parsedErr = parseError(err);
         if (!parsedErr.isUserCancelledError) {
             await vscode.window.showErrorMessage(

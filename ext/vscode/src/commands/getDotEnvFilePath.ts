@@ -7,7 +7,7 @@ import { getEnvironments, EnvironmentInfo } from "./cmdUtil";
 
 export async function getDotEnvFilePath(context: IActionContext, args: string[] | undefined): Promise<string> {
     const [environmentName, workingDir] = args ?? [];
-    
+
     let cwd: string;
     if (workingDir) {
         cwd = workingDir;
@@ -22,13 +22,16 @@ export async function getDotEnvFilePath(context: IActionContext, args: string[] 
     let envData: EnvironmentInfo[] = [];
     try {
         envData = await getEnvironments(context, cwd);
-    } catch { }
+    } catch {
+        // Best effort
+    }
+
     if (envData.length === 0) {
         context.errorHandling.suppressReportIssue = true;
         throw new Error(vscode.l10n.t("No Azure developer environments found. You can create one by running 'azd env new' in the terminal."));
     }
 
-    const byName: (ei: EnvironmentInfo) => boolean = environmentName ? 
+    const byName: (ei: EnvironmentInfo) => boolean = environmentName ?
         ei => ei.Name === environmentName : ei => ei.IsDefault;
     const env = envData.find(byName);
     if (!env) {

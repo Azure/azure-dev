@@ -1,29 +1,31 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+import { callWithTelemetryAndErrorHandling, IActionContext } from '@microsoft/vscode-azext-utils';
+import { CommandLineArgs, getSafeExecPath, StreamSpawnOptions } from '@microsoft/vscode-processutils';
 import * as http from 'http';
 import * as os from 'os';
 import * as vscode from 'vscode';
 import { TelemetryId } from '../telemetry/telemetryId';
-import { callWithTelemetryAndErrorHandling, IActionContext } from '@microsoft/vscode-azext-utils';
 import { startAuthServer } from './authServer';
 import { isAzdCommand } from './azureDevCli';
 import { VsCodeAuthenticationCredential } from './VsCodeAuthenticationCredential';
 
+type ExecuteAsTaskSpawnOptions = Pick<StreamSpawnOptions, 'cwd' | 'env'>;
+
 type ExecuteAsTaskOptions = {
     workspaceFolder?: vscode.WorkspaceFolder;
-    cwd?: string;
     alwaysRunNew?: boolean;
     suppressErrors?: boolean;
     focus?: boolean;
-    env?: { [key: string]: string };  // Additional environment settings, merged with parent process environment.
 };
 
-export function executeAsTask(command: string, name: string, options?: ExecuteAsTaskOptions, telemetryId?: TelemetryId): Promise<void> {
+export function executeAsTask(command: string, args: CommandLineArgs, name: string, spawnOptions?: ExecuteAsTaskSpawnOptions, execOptions?: ExecuteAsTaskOptions, telemetryId?: TelemetryId): Promise<void> {
     const runTask = async () => {
-        options ??= {};
+        spawnOptions ??= {};
+        execOptions ??= {};
 
-        const env = {...options.env};
+        const env = {...spawnOptions.env};
 
         let useIntegratedAuth = vscode.workspace.getConfiguration('azure-dev').get<boolean>('auth.useIntegratedAuth', false);
 
@@ -41,28 +43,37 @@ export function executeAsTask(command: string, name: string, options?: ExecuteAs
             authServer = server;
         }
 
+        // Turn the env object into one that vscode.Task can consume
+        const envForVSCode: Record<string, string> = {};
+        for (const key of Object.keys(env)) {
+            if (env[key] !== undefined && env[key] !== null) {
+                envForVSCode[key] = env[key];
+            }
+        }
+
         const task = new vscode.Task(
             { type: 'shell' },
-            options.workspaceFolder ?? vscode.TaskScope.Workspace,
+            execOptions.workspaceFolder ?? vscode.TaskScope.Workspace,
             name,
             'Azure Developer',
             new vscode.ShellExecution(
-                command,
+                getSafeExecPath(command, spawnOptions.env?.PATH),
+                args,
                 {
-                    cwd: options.cwd || options.workspaceFolder?.uri?.fsPath || os.homedir(),
-                    env: env,
+                    cwd: (spawnOptions.cwd as string) || execOptions.workspaceFolder?.uri?.fsPath || os.homedir(),
+                    env: envForVSCode,
                 }
             ),
             [] // problemMatchers
         );
 
-        if (options.alwaysRunNew) {
+        if (execOptions.alwaysRunNew) {
             // If the command should always run in a new task (even if an identical command is still running), add a random value to the definition
             // This will cause a new task to be run even if one with an identical command line is already running
             task.definition.idRandomizer = Math.random();
         }
 
-        if (options.focus) {
+        if (execOptions.focus) {
             task.presentationOptions = {
                 focus: true,
             };
@@ -76,7 +87,7 @@ export function executeAsTask(command: string, name: string, options?: ExecuteAs
                     authServer?.close();
                     disposable.dispose();
 
-                    if (e.exitCode && !(options?.suppressErrors)) {
+                    if (e.exitCode && !(execOptions?.suppressErrors)) {
                         reject(e.exitCode);
                     }
 

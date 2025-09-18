@@ -452,7 +452,7 @@ func (cli *Cli) CreateEnvironmentIfNotExist(ctx context.Context, repoName string
 		"-H", "Accept: application/vnd.github+json",
 	)
 
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	res, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return err
 	}
@@ -472,7 +472,7 @@ func (cli *Cli) DeleteEnvironment(ctx context.Context, repoName string, envName 
 		"-H", "Accept: application/vnd.github+json",
 	)
 
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	res, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return err
 	}

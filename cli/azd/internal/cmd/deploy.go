@@ -33,11 +33,10 @@ import (
 )
 
 type DeployFlags struct {
-	ServiceName  string
-	All          bool
-	fromPackage  string
-	forcePublish bool
-	global       *internal.GlobalCommandOptions
+	ServiceName string
+	All         bool
+	fromPackage string
+	global      *internal.GlobalCommandOptions
 	*internal.EnvFlag
 }
 
@@ -77,12 +76,6 @@ func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		"",
 		//nolint:lll
 		"Deploys the packaged service located at the provided path. Supports zipped file packages (file path) or container images (image tag).",
-	)
-	local.BoolVar(
-		&d.forcePublish,
-		"force-publish",
-		false,
-		"Forcibly publishes service, overwriting any existing published artifacts.",
 	)
 }
 
@@ -259,16 +252,11 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 		var packageResult *project.ServicePackageResult
 		var publishResult *project.ServicePublishResult
-		var publishOptions *project.PublishOptions
 
 		if da.flags.fromPackage != "" {
 			// --from-package set, skip packaging
 			packageResult = &project.ServicePackageResult{
 				PackagePath: da.flags.fromPackage,
-			}
-
-			publishOptions = &project.PublishOptions{
-				Overwrite: da.flags.forcePublish,
 			}
 		} else {
 			//  --from-package not set, automatically package the application
@@ -287,10 +275,6 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, err
 			}
-
-			publishOptions = &project.PublishOptions{
-				Overwrite: true,
-			}
 		}
 
 		publishResult, err = async.RunWithProgress(
@@ -299,7 +283,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				da.console.ShowSpinner(ctx, progressMessage, input.Step)
 			},
 			func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePublishResult, error) {
-				return da.serviceManager.Publish(ctx, svc, packageResult, progress, publishOptions)
+				return da.serviceManager.Publish(ctx, svc, packageResult, progress, nil)
 			},
 		)
 

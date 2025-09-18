@@ -295,20 +295,6 @@ func (d *Cli) IsContainerdEnabled(ctx context.Context) (bool, error) {
 	return strings.Contains(driverStatus, "io.containerd.snapshotter.v1"), nil
 }
 
-// ImageExists checks if an image exists in the registry by inspecting its manifest.
-// Returns true if the image exists, false if it doesn't exist, and an error for other issues.
-func (d *Cli) ImageExists(ctx context.Context, imageName string) (bool, error) {
-	_, err := d.executeCommand(ctx, "", "manifest", "inspect", imageName)
-	if err != nil {
-		// If the command fails with an exit status, the image likely doesn't exist
-		// We return false (not found) rather than an error for this case
-		return false, nil
-	}
-
-	// If the command succeeds, the image exists
-	return true, nil
-}
-
 func (d *Cli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
 	runArgs := exec.NewRunArgs("docker", args...).
 		WithCwd(cwd)

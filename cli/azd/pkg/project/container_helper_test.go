@@ -142,66 +142,215 @@ func Test_ContainerHelper_RemoteImageTag(t *testing.T) {
 	}
 }
 
-func Test_ContainerHelper_RemoteImageTag_WithPublishOptions(t *testing.T) {
+func Test_parsePublishOptionsToImageOverride(t *testing.T) {
+	tests := []struct {
+		name           string
+		options        *PublishOptions
+		expectedResult *ImageOverride
+		expectedError  bool
+		errorContains  string
+	}{
+		{
+			name:           "nil options",
+			options:        nil,
+			expectedResult: nil,
+			expectedError:  false,
+		},
+		{
+			name:           "empty image",
+			options:        &PublishOptions{Image: ""},
+			expectedResult: nil,
+			expectedError:  false,
+		},
+		{
+			name:    "repository only",
+			options: &PublishOptions{Image: "myapp/api"},
+			expectedResult: &ImageOverride{
+				Registry:   "",
+				Repository: "myapp/api",
+				Tag:        "",
+			},
+			expectedError: false,
+		},
+		{
+			name:    "repository with tag",
+			options: &PublishOptions{Image: "myapp/api:v1.0.0"},
+			expectedResult: &ImageOverride{
+				Registry:   "",
+				Repository: "myapp/api",
+				Tag:        "v1.0.0",
+			},
+			expectedError: false,
+		},
+		{
+			name:    "registry with repository",
+			options: &PublishOptions{Image: "contoso.azurecr.io/myapp/api"},
+			expectedResult: &ImageOverride{
+				Registry:   "contoso.azurecr.io",
+				Repository: "myapp/api",
+				Tag:        "",
+			},
+			expectedError: false,
+		},
+		{
+			name:    "registry with repository and tag",
+			options: &PublishOptions{Image: "contoso.azurecr.io/myapp/api:v1.0.0"},
+			expectedResult: &ImageOverride{
+				Registry:   "contoso.azurecr.io",
+				Repository: "myapp/api",
+				Tag:        "v1.0.0",
+			},
+			expectedError: false,
+		},
+		{
+			name:    "dockerhub with org and repo",
+			options: &PublishOptions{Image: "docker.io/myorg/myapp:latest"},
+			expectedResult: &ImageOverride{
+				Registry:   "docker.io",
+				Repository: "myorg/myapp",
+				Tag:        "latest",
+			},
+			expectedError: false,
+		},
+		{
+			name:    "simple image name with tag",
+			options: &PublishOptions{Image: "nginx:latest"},
+			expectedResult: &ImageOverride{
+				Registry:   "",
+				Repository: "nginx",
+				Tag:        "latest",
+			},
+			expectedError: false,
+		},
+		{
+			name:           "invalid image format - too many colons",
+			options:        &PublishOptions{Image: "image:tag:extra"},
+			expectedResult: nil,
+			expectedError:  true,
+			errorContains:  "invalid image format",
+		},
+		{
+			name:           "empty repository",
+			options:        &PublishOptions{Image: ":tag"},
+			expectedResult: nil,
+			expectedError:  true,
+			errorContains:  "invalid image format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := parseImageOverride(tt.options)
+
+			if tt.expectedError {
+				require.Error(t, err)
+				if tt.errorContains != "" {
+					require.Contains(t, err.Error(), tt.errorContains)
+				}
+				require.Nil(t, result)
+			} else {
+				require.NoError(t, err)
+				if tt.expectedResult == nil {
+					require.Nil(t, result)
+				} else {
+					require.NotNil(t, result)
+					require.Equal(t, tt.expectedResult.Registry, result.Registry)
+					require.Equal(t, tt.expectedResult.Repository, result.Repository)
+					require.Equal(t, tt.expectedResult.Tag, result.Tag)
+				}
+			}
+		})
+	}
+}
+
+func Test_ContainerHelper_RemoteImageTag_WithImageOverride(t *testing.T) {
 	tests := []struct {
 		name              string
 		project           string
 		localImageTag     string
 		registry          osutil.ExpandableString
-		publishOptions    *PublishOptions
+		imageOverride     *ImageOverride
 		expectedRemoteTag string
 		expectError       bool
 	}{
 		{
-			name:          "with override image name",
+			name:          "with override repository only",
 			project:       "./src/api",
 			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
 			localImageTag: "test-app/api-dev:azd-deploy-0",
-			publishOptions: &PublishOptions{
-				OverrideImageName: "custom/image",
+			imageOverride: &ImageOverride{
+				Repository: "custom/image",
 			},
 			expectedRemoteTag: "contoso.azurecr.io/custom/image:azd-deploy-0",
 		},
 		{
-			name:          "with override image tag",
+			name:          "with override tag only",
 			project:       "./src/api",
 			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
 			localImageTag: "test-app/api-dev:azd-deploy-0",
-			publishOptions: &PublishOptions{
-				OverrideImageTag: "latest",
+			imageOverride: &ImageOverride{
+				Tag: "latest",
 			},
 			expectedRemoteTag: "contoso.azurecr.io/test-app/api-dev:latest",
 		},
 		{
-			name:          "with both override image name and tag",
+			name:          "with both override repository and tag",
 			project:       "./src/api",
 			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
 			localImageTag: "test-app/api-dev:azd-deploy-0",
-			publishOptions: &PublishOptions{
-				OverrideImageName: "custom/image",
-				OverrideImageTag:  "latest",
+			imageOverride: &ImageOverride{
+				Repository: "custom/image",
+				Tag:        "latest",
 			},
 			expectedRemoteTag: "contoso.azurecr.io/custom/image:latest",
 		},
 		{
-			name:          "override image name only (no slash prefix)",
+			name:          "with override registry only",
 			project:       "./src/api",
 			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
 			localImageTag: "test-app/api-dev:azd-deploy-0",
-			publishOptions: &PublishOptions{
-				OverrideImageName: "myimage",
+			imageOverride: &ImageOverride{
+				Registry: "docker.io",
+			},
+			expectedRemoteTag: "docker.io/test-app/api-dev:azd-deploy-0",
+		},
+		{
+			name:          "with all overrides",
+			project:       "./src/api",
+			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag: "test-app/api-dev:azd-deploy-0",
+			imageOverride: &ImageOverride{
+				Registry:   "docker.io",
+				Repository: "myorg/myimage",
+				Tag:        "v2.0.0",
+			},
+			expectedRemoteTag: "docker.io/myorg/myimage:v2.0.0",
+		},
+		{
+			name:          "repository override with no slash prefix",
+			project:       "./src/api",
+			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag: "test-app/api-dev:azd-deploy-0",
+			imageOverride: &ImageOverride{
+				Repository: "myimage",
 			},
 			expectedRemoteTag: "contoso.azurecr.io/myimage:azd-deploy-0",
 		},
 		{
-			name:          "override tag only",
-			project:       "./src/api",
-			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
-			localImageTag: "test-app/api-dev:azd-deploy-0",
-			publishOptions: &PublishOptions{
-				OverrideImageTag: "v1.0.0",
-			},
-			expectedRemoteTag: "contoso.azurecr.io/test-app/api-dev:v1.0.0",
+			name:              "no override - nil",
+			project:           "./src/api",
+			registry:          osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag:     "test-app/api-dev:azd-deploy-0",
+			imageOverride:     nil,
+			expectedRemoteTag: "contoso.azurecr.io/test-app/api-dev:azd-deploy-0",
+		},
+		{
+			name:              "no override - empty",
+			project:           "./src/api",
+			registry:          osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag:     "test-app/api-dev:azd-deploy-0",
+			imageOverride:     &ImageOverride{},
+			expectedRemoteTag: "contoso.azurecr.io/test-app/api-dev:azd-deploy-0",
 		},
 	}
 
@@ -215,7 +364,7 @@ func Test_ContainerHelper_RemoteImageTag_WithPublishOptions(t *testing.T) {
 			serviceConfig.Docker.Registry = tt.registry
 
 			remoteTag, err := containerHelper.RemoteImageTag(
-				*mockContext.Context, serviceConfig, tt.localImageTag, tt.publishOptions)
+				*mockContext.Context, serviceConfig, tt.localImageTag, tt.imageOverride)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -920,12 +1069,29 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 				SourceImage: "",
 				TargetImage: "my-project/my-service:azd-publish-0",
 			},
-			publishOptions:          &PublishOptions{Overwrite: true},
+			publishOptions:          nil,
 			expectDockerLoginCalled: true,
 			expectDockerPullCalled:  false,
 			expectDockerTagCalled:   true,
 			expectDockerPushCalled:  true,
 			expectedRemoteImage:     "contoso.azurecr.io/my-project/my-service:azd-publish-0",
+			expectError:             false,
+		},
+		{
+			name:     "With publish options image override",
+			project:  "./src/api",
+			registry: osutil.NewExpandableString("contoso.azurecr.io"),
+			dockerDetails: &dockerPackageResult{
+				ImageHash:   "IMAGE_ID",
+				SourceImage: "",
+				TargetImage: "my-project/my-service:azd-publish-0",
+			},
+			publishOptions:          &PublishOptions{Image: "myregistry.azurecr.io/myapp/myservice:v2.0.0"},
+			expectDockerLoginCalled: true,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   true,
+			expectDockerPushCalled:  true,
+			expectedRemoteImage:     "myregistry.azurecr.io/myapp/myservice:v2.0.0",
 			expectError:             false,
 		},
 		{

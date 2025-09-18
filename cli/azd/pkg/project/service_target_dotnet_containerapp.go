@@ -153,10 +153,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 	// The name of the image that should be referenced in the manifest is stored in `remoteImageName` and presented
 	// to the deployment template as a parameter named `Image`.
 	if serviceConfig.Language == ServiceLanguageDocker {
-		publishOptions := &PublishOptions{
-			Overwrite: true,
-		}
-		res, err := at.containerHelper.Publish(ctx, serviceConfig, packageOutput, targetResource, progress, publishOptions)
+		res, err := at.containerHelper.Publish(ctx, serviceConfig, packageOutput, targetResource, progress, nil)
 		if err != nil {
 			return nil, err
 		}

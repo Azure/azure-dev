@@ -27,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -34,8 +35,7 @@ import (
 type PublishFlags struct {
 	ServiceName string
 	All         bool
-	Image       string
-	Tag         string
+	To          string
 	FromPackage string
 	global      *internal.GlobalCommandOptions
 	*internal.EnvFlag
@@ -54,17 +54,10 @@ func (f *PublishFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 	)
 
 	local.StringVar(
-		&f.Image,
-		"image",
+		&f.To,
+		"to",
 		"",
-		"Specifies a custom image name for the container published to the registry.",
-	)
-
-	local.StringVar(
-		&f.Tag,
-		"tag",
-		"",
-		"Specifies a custom tag for the container image published to the registry.",
+		"Specifies the target image in the form '[registry/]repository[:tag]' for the container published to the registry.",
 	)
 
 	local.StringVar(
@@ -179,17 +172,15 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, err
 	}
 
-	// Validate that --tag or --image requires a specific service
-	if pa.flags.All && (pa.flags.Image != "" || pa.flags.Tag != "") {
+	// Validate that --to requires a specific service
+	if pa.flags.All && pa.flags.To != "" {
 		return nil, errors.New(
-			//nolint:lll
-			"'--tag' and '--image' cannot be specified when '--all' is set. Specify a specific service by passing a <service>")
+			"'--to' cannot be specified when '--all' is set. Specify a specific service by passing a <service>")
 	}
 
-	if targetServiceName == "" && (pa.flags.Image != "" || pa.flags.Tag != "") {
+	if targetServiceName == "" && pa.flags.To != "" {
 		return nil, errors.New(
-			//nolint:lll
-			"'--tag' and '--image' cannot be specified when publishing all services. Specify a specific service by passing a <service>",
+			"'--to' cannot be specified when publishing all services. Specify a specific service by passing a <service>",
 		)
 	}
 
@@ -205,11 +196,16 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		)
 	}
 
+	if pa.flags.FromPackage != "" {
+		if parsedImage, err := docker.ParseContainerImage(pa.flags.FromPackage); err == nil && parsedImage.Registry != "" {
+			return nil, fmt.Errorf(
+				"'%s' is already a remote image. Use '--to' flag to specify target", pa.flags.FromPackage)
+		}
+	}
+
 	// Create publish options from flags
 	publishOptions := &project.PublishOptions{
-		Overwrite:         true,
-		OverrideImageName: pa.flags.Image,
-		OverrideImageTag:  pa.flags.Tag,
+		Image: pa.flags.To,
 	}
 
 	if err := pa.projectManager.Initialize(ctx, pa.projectConfig); err != nil {
@@ -363,8 +359,8 @@ func GetCmdPublishHelpFooter(*cobra.Command) string {
 		"Publish the service named 'api'.": output.WithHighLightFormat(
 			"azd publish api",
 		),
-		"Publish the service named 'api' with image name 'app/api' and tag 'prod'.": output.WithHighLightFormat(
-			"azd publish api --image app/api --tag prod",
+		"Publish the service named 'api' with custom image name and tag.": output.WithHighLightFormat(
+			"azd publish api --to app/api:prod",
 		),
 		"Publish the service named 'api' from a previously generated package.": output.WithHighLightFormat(
 			"azd publish api --from-package <image-tag>",

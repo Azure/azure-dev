@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
 type containerAppTarget struct {
@@ -82,11 +83,29 @@ func (at *containerAppTarget) Publish(
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
-	// Login, tag & push container image to ACR
-	publishResult, err := at.containerHelper.Publish(
-		ctx, serviceConfig, packageOutput, targetResource, progress, publishOptions)
-	if err != nil {
-		return nil, err
+	var publishResult *ServicePublishResult
+	var err error
+
+	// Skip publishing to the container registry if packageOutput.PackagePath is a remote image reference,
+	// such as when called through `azd deploy --from-package <image>`
+	if parsedImage, err := docker.ParseContainerImage(packageOutput.PackagePath); err == nil {
+		if parsedImage.Registry != "" {
+			publishResult = &ServicePublishResult{
+				Package: packageOutput,
+				Details: &ContainerPublishDetails{
+					RemoteImage: packageOutput.PackagePath,
+				},
+			}
+		}
+	}
+
+	if publishResult == nil {
+		// Login, tag & push container image to ACR
+		publishResult, err = at.containerHelper.Publish(
+			ctx, serviceConfig, packageOutput, targetResource, progress, publishOptions)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Save the name of the image we pushed into the environment with a well known key.

@@ -32,12 +32,8 @@ import (
 
 // PublishOptions holds options for container operations such as publish and deploy.
 type PublishOptions struct {
-	// Overwrite indicates whether to always rebuild/republish, even if the image already exists.
-	// This is true for publish commands and false for deploy commands.
-	Overwrite bool
-
-	OverrideImageName string
-	OverrideImageTag  string
+	// Image specifies the target image in the form '[registry/]repository[:tag]'
+	Image string
 }
 
 type ContainerHelper struct {
@@ -178,7 +174,7 @@ func (ch *ContainerHelper) RemoteImageTag(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	localImageTag string,
-	options *PublishOptions,
+	imageOverride *ImageOverride,
 ) (string, error) {
 	registryName, err := ch.RegistryName(ctx, serviceConfig)
 	if err != nil {
@@ -200,13 +196,16 @@ func (ch *ContainerHelper) RemoteImageTag(
 		containerImage.Registry = registryName
 	}
 
-	// Apply overrides from PublishOptions if provided
-	if options != nil {
-		if options.OverrideImageName != "" {
-			containerImage.Repository = options.OverrideImageName
+	// Apply overrides
+	if imageOverride != nil {
+		if imageOverride.Registry != "" {
+			containerImage.Registry = imageOverride.Registry
 		}
-		if options.OverrideImageTag != "" {
-			containerImage.Tag = options.OverrideImageTag
+		if imageOverride.Repository != "" {
+			containerImage.Repository = imageOverride.Repository
+		}
+		if imageOverride.Tag != "" {
+			containerImage.Tag = imageOverride.Tag
 		}
 	}
 
@@ -224,38 +223,6 @@ func (ch *ContainerHelper) LocalImageTag(
 	}
 
 	return configuredImage.Local(), nil
-}
-
-// RemoteImageExists checks if a specific image tag exists in the Azure Container Registry.
-func (ch *ContainerHelper) RemoteImageExists(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	target *environment.TargetResource,
-	imageName string,
-) (bool, error) {
-	registryName, err := ch.RegistryName(ctx, serviceConfig)
-	if err != nil {
-		return false, err
-	}
-
-	if registryName == "" {
-		return false, fmt.Errorf("no registry configured for service %s", serviceConfig.Name)
-	}
-
-	// Parse the image to get repository and tag
-	parsedImage, err := docker.ParseContainerImage(imageName)
-	if err != nil {
-		return false, fmt.Errorf("failed parsing image name: %w", err)
-	}
-
-	// Use the container registry service to check if the tag exists
-	return ch.containerRegistryService.TagExists(
-		ctx,
-		target.SubscriptionId(),
-		registryName,
-		parsedImage.Repository,
-		parsedImage.Tag,
-	)
 }
 
 func (ch *ContainerHelper) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
@@ -340,12 +307,18 @@ func (ch *ContainerHelper) Publish(
 	var remoteImage string
 	var err error
 
+	// Parse PublishOptions into ImageOverride
+	imageOverride, err := parseImageOverride(options)
+	if err != nil {
+		return nil, err
+	}
+
 	if serviceConfig.Docker.RemoteBuild {
-		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, progress, options)
+		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, progress, imageOverride)
 	} else if useDotnetPublishForDockerBuild(serviceConfig) {
 		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, progress)
 	} else {
-		remoteImage, err = ch.runLocalBuild(ctx, serviceConfig, packageOutput, progress, options)
+		remoteImage, err = ch.runLocalBuild(ctx, serviceConfig, packageOutput, progress, imageOverride)
 	}
 	if err != nil {
 		return nil, err
@@ -365,7 +338,7 @@ func (ch *ContainerHelper) runLocalBuild(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	progress *async.Progress[ServiceProgress],
-	options *PublishOptions,
+	imageOverride *ImageOverride,
 ) (string, error) {
 	// Get ACR Login Server
 	registryName, err := ch.RegistryName(ctx, serviceConfig)
@@ -396,38 +369,6 @@ func (ch *ContainerHelper) runLocalBuild(
 
 		// If a registry has not been defined then there is no need to tag or push any images
 		if registryName != "" {
-			// Get remote remoteImageWithTag from the container helper then call docker cli remoteImageWithTag command
-			remoteImageWithTag, err := ch.RemoteImageTag(ctx, serviceConfig, targetImage, options)
-			if err != nil {
-				return "", fmt.Errorf("getting remote image tag: %w", err)
-			}
-
-			remoteImage = remoteImageWithTag
-
-			log.Printf("logging into container registry '%s'\n", registryName)
-			progress.SetProgress(NewServiceProgress("Logging into container registry"))
-
-			_, err = ch.Login(ctx, serviceConfig)
-			if err != nil {
-				return "", err
-			}
-
-			// `azd deploy` skips pushing if the image already exists in the registry
-			// `azd publish` always overwrites if the image already exists in the registry
-			if options == nil || !options.Overwrite {
-				log.Printf("checking if image %s already exists in registry", remoteImage)
-				progress.SetProgress(NewServiceProgress("Checking if image exists"))
-
-				imageExists, err := ch.docker.ImageExists(ctx, remoteImage)
-				if err != nil {
-					// Log the error but continue with the build process
-					log.Printf("failed to check if image exists, proceeding with build: %v", err)
-				} else if imageExists {
-					log.Printf("image %s already exists in registry, skipping push", remoteImage)
-					return remoteImage, nil
-				}
-			}
-
 			// When the project does not contain source and we are using an external image we first need to pull the
 			// image before we're able to push it to a remote registry
 			// In most cases this pull will have already been part of the package step
@@ -439,8 +380,25 @@ func (ch *ContainerHelper) runLocalBuild(
 				}
 			}
 
+			// Tag image
+			// Get remote remoteImageWithTag from the container helper then call docker cli remoteImageWithTag command
+			remoteImageWithTag, err := ch.RemoteImageTag(ctx, serviceConfig, targetImage, imageOverride)
+			if err != nil {
+				return "", fmt.Errorf("getting remote image tag: %w", err)
+			}
+
+			remoteImage = remoteImageWithTag
+
 			progress.SetProgress(NewServiceProgress("Tagging container image"))
 			if err := ch.docker.Tag(ctx, serviceConfig.Path(), targetImage, remoteImage); err != nil {
+				return "", err
+			}
+
+			log.Printf("logging into container registry '%s'\n", registryName)
+			progress.SetProgress(NewServiceProgress("Logging into container registry"))
+
+			_, err = ch.Login(ctx, serviceConfig)
+			if err != nil {
 				return "", err
 			}
 
@@ -462,6 +420,33 @@ func (ch *ContainerHelper) runLocalBuild(
 	return remoteImage, nil
 }
 
+type ImageOverride docker.ContainerImage
+
+// parseImageOverride parses the PublishOptions.Image string into an ImageOverride.
+// Supports combinations of:
+// - Registry, repository, tag all present (registry.com/repo/name:tag)
+// - Repository and tag present (repo/name:tag)
+// - Registry and repository present (registry.com/repo/name)
+// - Only repository present (repo/name)
+func parseImageOverride(options *PublishOptions) (*ImageOverride, error) {
+	if options == nil || options.Image == "" {
+		return nil, nil
+	}
+
+	// Parse the container image using the existing parser
+	parsedImage, err := docker.ParseContainerImage(options.Image)
+	if err != nil {
+		return nil, fmt.Errorf("invalid image format '%s': %w", options.Image, err)
+	}
+
+	// Convert to ImageOverride
+	return &ImageOverride{
+		Registry:   parsedImage.Registry,
+		Repository: parsedImage.Repository,
+		Tag:        parsedImage.Tag,
+	}, nil
+}
+
 // runRemoteBuild builds the image using a remote azure container registry and tags it.
 // It returns the full remote image name.
 func (ch *ContainerHelper) runRemoteBuild(
@@ -469,7 +454,7 @@ func (ch *ContainerHelper) runRemoteBuild(
 	serviceConfig *ServiceConfig,
 	target *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
-	options *PublishOptions,
+	imageOverride *ImageOverride,
 ) (string, error) {
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
@@ -485,43 +470,6 @@ func (ch *ContainerHelper) runRemoteBuild(
 		return "", fmt.Errorf("remote build only supports the linux/amd64 platform")
 	}
 
-	registryName, err := ch.RegistryName(ctx, serviceConfig)
-	if err != nil {
-		return "", err
-	}
-
-	acrRegistryDomain := "." + ch.cloud.ContainerRegistryEndpointSuffix
-
-	if !strings.HasSuffix(registryName, acrRegistryDomain) {
-		return "", fmt.Errorf("remote build is only supported when the target registry is an Azure Container Registry")
-	}
-
-	localImageTag, err := ch.LocalImageTag(ctx, serviceConfig)
-	if err != nil {
-		return "", err
-	}
-
-	imageName, err := ch.RemoteImageTag(ctx, serviceConfig, localImageTag, options)
-	if err != nil {
-		return "", err
-	}
-
-	// `azd deploy` skips building if the image already exists in the registry
-	// `azd publish` always overwrites if the image already exists in the registry
-	if options == nil || !options.Overwrite {
-		log.Printf("checking if image %s already exists in registry", imageName)
-		progress.SetProgress(NewServiceProgress("Checking if image exists"))
-
-		imageExists, err := ch.RemoteImageExists(ctx, serviceConfig, target, imageName)
-		if err != nil {
-			// Log the error but continue with the build process
-			log.Printf("failed to check if image exists, proceeding with build: %v", err)
-		} else if imageExists {
-			log.Printf("image %s already exists in registry, skipping build and push", imageName)
-			return imageName, nil
-		}
-	}
-
 	progress.SetProgress(NewServiceProgress("Packing remote build context"))
 
 	contextPath, dockerPath, err := containerregistry.PackRemoteBuildSource(ctx, dockerOptions.Context, dockerOptions.Path)
@@ -534,10 +482,31 @@ func (ch *ContainerHelper) runRemoteBuild(
 
 	progress.SetProgress(NewServiceProgress("Uploading remote build context"))
 
+	registryName, err := ch.RegistryName(ctx, serviceConfig)
+	if err != nil {
+		return "", err
+	}
+
+	acrRegistryDomain := "." + ch.cloud.ContainerRegistryEndpointSuffix
+
+	if !strings.HasSuffix(registryName, acrRegistryDomain) {
+		return "", fmt.Errorf("remote build is only supported when the target registry is an Azure Container Registry")
+	}
+
 	registryResourceName := strings.TrimSuffix(registryName, acrRegistryDomain)
 
 	source, err := ch.remoteBuildManager.UploadBuildSource(
 		ctx, target.SubscriptionId(), target.ResourceGroupName(), registryResourceName, contextPath)
+	if err != nil {
+		return "", err
+	}
+
+	localImageTag, err := ch.LocalImageTag(ctx, serviceConfig)
+	if err != nil {
+		return "", err
+	}
+
+	imageName, err := ch.RemoteImageTag(ctx, serviceConfig, localImageTag, imageOverride)
 	if err != nil {
 		return "", err
 	}

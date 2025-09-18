@@ -250,9 +250,8 @@ func Test_ServiceManager_Publish(t *testing.T) {
 	publishCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, serviceTargetPublishCalled, publishCalled)
 
-	publishOptions := &PublishOptions{Overwrite: true}
 	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
-		return sm.Publish(ctx, serviceConfig, nil, progess, publishOptions)
+		return sm.Publish(ctx, serviceConfig, nil, progess, nil)
 	})
 
 	require.NoError(t, err)

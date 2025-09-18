@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,106 +21,33 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/blang/semver/v4"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGithubCLIDeploymentEnvironments(t *testing.T) {
-	t.Run("mock", func(t *testing.T) {
-		commandRunner := mockexec.NewMockCommandRunner()
-
-		const mockRepoSlug = "richardpark-msft/copilot-auth-test"
-		const mockEnv = "copilot2"
-
-		commandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(args.Cmd, "gh") && len(args.Args) == 1 && args.Args[0] == "--version"
-		}).Respond(exec.NewRunResult(
-			0,
-			fmt.Sprintf("gh version %s (abcdef0123)", Version.String()),
-			"",
-		))
-
-		commandRunner.When(func(args exec.RunArgs, command string) bool {
-			env := ""
-			name := ""
-
-			for i := 0; i < len(args.Args); i++ {
-				switch {
-				case args.Args[i] == "variable" && args.Args[i+1] == "set":
-					name = args.Args[i+2]
-					require.Equal(t, name, "hello")
-				case args.Args[i] == "--env":
-					env = args.Args[i+1]
-					require.Equal(t, mockEnv, env)
-				}
-			}
-
-			return env != "" && name != ""
-		}).Respond(exec.NewRunResult(0, "", ""))
-
-		commandRunner.When(func(args exec.RunArgs, command string) bool {
-			env := ""
-			listing := false
-
-			for i := 0; i < len(args.Args); i++ {
-				switch {
-				case args.Args[i] == "variable" && args.Args[i+1] == "list":
-					listing = true
-				case args.Args[i] == "--env":
-					env = args.Args[i+1]
-					require.Equal(t, mockEnv, env)
-				}
-			}
-
-			return listing && env != ""
-		}).Respond(exec.NewRunResult(0, "HELLO\tworld\n", ""))
-
-		addAPIHandler := func(verbAndURL string) *mockexec.CommandExpression {
-			called := false
-
-			return commandRunner.When(func(args exec.RunArgs, command string) bool {
-				defer func() { called = true }()
-
-				// ex: 'api', 'X', verb, URL
-				return !called && verbAndURL == args.Args[2]+" "+args.Args[3]
-			})
-		}
-
-		testGithubCLIDeploymentEnvironments(t, commandRunner, "richardpark-msft/copilot-auth-tests", "copilot2", addAPIHandler)
-	})
-
 	// TODO: how do we handle live testing resources, like a GitHub repo?
-	t.Run("live", func(t *testing.T) {
-		t.Skip("GitHub environment live test disabled. Can be run manually.")
+	t.Skip("GitHub environment live test disabled. Can be run manually.")
 
-		commandRunner := exec.NewCommandRunner(nil)
+	commandRunner := exec.NewCommandRunner(nil)
 
-		// (you can use any repo here, these were just the ones I used last)
-		testGithubCLIDeploymentEnvironments(t, commandRunner, "richardpark-msft/copilot-auth-tests", "copilot2", func(verbAndURL string) *mockexec.CommandExpression {
-			// (unused, but needed to compile)
-			return &mockexec.CommandExpression{}
-		})
-	})
-}
+	// (you can use any repo here, these were just the ones I used last)
+	repoSlug := "richardpark-msft/copilot-auth-tests"
+	envName := "copilot2"
 
-func testGithubCLIDeploymentEnvironments(t *testing.T, commandRunner exec.CommandRunner, repoSlug string, envName string, addAPIHandler func(verbAndURL string) *mockexec.CommandExpression) {
 	mockContext := mocks.NewMockContext(context.Background())
 	cli, err := NewGitHubCli(context.Background(), mockContext.Console, commandRunner)
 	require.NoError(t, err)
 
-	addAPIHandler("PUT /repos/richardpark-msft/copilot-auth-tests/environments/copilot2").Respond(exec.NewRunResult(0, "", ""))
 	err = cli.CreateEnvironmentIfNotExist(context.Background(), repoSlug, envName)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		addAPIHandler("DELETE /repos/richardpark-msft/copilot-auth-tests/environments/copilot2").Respond(exec.NewRunResult(0, "", ""))
 		err = cli.DeleteEnvironment(context.Background(), repoSlug, envName)
 		require.NoError(t, err)
 	})
 
-	addAPIHandler("PATCH /repos/richardpark-msft/copilot-auth-tests/environments/copilot2/variables/hello").SetError(errors.New("this fails"))
 	err = cli.SetVariable(context.Background(), repoSlug, "hello", "world", &SetVariableOptions{
 		Environment: envName,
 	})

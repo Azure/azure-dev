@@ -6,7 +6,6 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -179,12 +178,12 @@ func runInitAction(ctx context.Context, flags *initFlags) error {
 	localRegistryExists := false
 
 	createLocalExtensionSourceAction := func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-		if has, err := hasLocalRegistry(); err == nil && has {
+		if has, err := internal.HasLocalRegistry(); err == nil && has {
 			localRegistryExists = true
 			return ux.Skipped, nil
 		}
 
-		if err := createLocalRegistry(); err != nil {
+		if err := internal.CreateLocalRegistry(); err != nil {
 			return ux.Error, common.NewDetailedError(
 				"Registry creation failed",
 				fmt.Errorf("failed to create local registry: %w", err),
@@ -668,68 +667,6 @@ func copyAndProcessTemplates(srcFS fs.FS, srcDir, destDir string, data any) erro
 
 		return nil
 	})
-}
-
-func hasLocalRegistry() (bool, error) {
-	cmdBytes, err := exec.Command("azd", "ext", "source", "list", "-o", "json").CombinedOutput()
-	if err != nil {
-		return false, fmt.Errorf("failed to execute command: %w", err)
-	}
-
-	var extensionSources []any
-	if err := json.Unmarshal(cmdBytes, &extensionSources); err != nil {
-		return false, fmt.Errorf("failed to unmarshal command output: %w", err)
-	}
-
-	for _, source := range extensionSources {
-		extensionSource, ok := source.(map[string]any)
-		if ok {
-			if extensionSource["name"] == "local" && extensionSource["type"] == "file" {
-				return true, nil
-			}
-		}
-	}
-
-	return false, nil
-}
-
-func createLocalRegistry() error {
-	azdConfigDir := os.Getenv("AZD_CONFIG_DIR")
-	if azdConfigDir == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get user home directory: %w", err)
-		}
-		azdConfigDir = filepath.Join(homeDir, ".azd")
-	}
-
-	localRegistryPath := filepath.Join(azdConfigDir, "registry.json")
-	emptyRegistry := map[string]any{
-		"registry": []any{},
-	}
-
-	registryJson, err := json.MarshalIndent(emptyRegistry, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal empty registry: %w", err)
-	}
-
-	if err := os.WriteFile(localRegistryPath, registryJson, internal.PermissionFile); err != nil {
-		return fmt.Errorf("failed to create local registry file: %w", err)
-	}
-
-	args := []string{
-		"ext", "source", "add",
-		"--name", "local",
-		"--type", "file",
-		"--location", "registry.json",
-	}
-
-	createExtSourceCmd := exec.Command("azd", args...)
-	if _, err := createExtSourceCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to create local extension source: %w", err)
-	}
-
-	return nil
 }
 
 type ExtensionTemplate struct {

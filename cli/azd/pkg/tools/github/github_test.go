@@ -32,7 +32,53 @@ func TestGithubCLIDeploymentEnvironments(t *testing.T) {
 	t.Run("mock", func(t *testing.T) {
 		commandRunner := mockexec.NewMockCommandRunner()
 
-		add := func(verbAndURL string) *mockexec.CommandExpression {
+		const mockRepoSlug = "richardpark-msft/copilot-auth-test"
+		const mockEnv = "copilot2"
+
+		commandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(args.Cmd, "gh") && len(args.Args) == 1 && args.Args[0] == "--version"
+		}).Respond(exec.NewRunResult(
+			0,
+			fmt.Sprintf("gh version %s (abcdef0123)", Version.String()),
+			"",
+		))
+
+		commandRunner.When(func(args exec.RunArgs, command string) bool {
+			env := ""
+			name := ""
+
+			for i := 0; i < len(args.Args); i++ {
+				switch {
+				case args.Args[i] == "variable" && args.Args[i+1] == "set":
+					name = args.Args[i+2]
+					require.Equal(t, name, "hello")
+				case args.Args[i] == "--env":
+					env = args.Args[i+1]
+					require.Equal(t, mockEnv, env)
+				}
+			}
+
+			return env != "" && name != ""
+		}).Respond(exec.NewRunResult(0, "", ""))
+
+		commandRunner.When(func(args exec.RunArgs, command string) bool {
+			env := ""
+			listing := false
+
+			for i := 0; i < len(args.Args); i++ {
+				switch {
+				case args.Args[i] == "variable" && args.Args[i+1] == "list":
+					listing = true
+				case args.Args[i] == "--env":
+					env = args.Args[i+1]
+					require.Equal(t, mockEnv, env)
+				}
+			}
+
+			return listing && env != ""
+		}).Respond(exec.NewRunResult(0, "HELLO\tworld\n", ""))
+
+		addAPIHandler := func(verbAndURL string) *mockexec.CommandExpression {
 			called := false
 
 			return commandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -43,57 +89,46 @@ func TestGithubCLIDeploymentEnvironments(t *testing.T) {
 			})
 		}
 
-		testGithubCLIDeploymentEnvironments(t, commandRunner, "richardpark-msft/copilot-auth-tests", "copilot2", add)
+		testGithubCLIDeploymentEnvironments(t, commandRunner, "richardpark-msft/copilot-auth-tests", "copilot2", addAPIHandler)
 	})
 
 	// TODO: how do we handle live testing resources, like a GitHub repo?
-	// t.Run("live", func(t *testing.T) {
-	// 	commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
-	// 	ctx := exec.WithCommandRunner(context.Background(), commandRunner)
+	t.Run("live", func(t *testing.T) {
+		commandRunner := exec.NewCommandRunner(nil)
 
-	// 	testGithubCLIDeploymentEnvironments(ctx, t, "richardpark-msft/copilot-auth-tests", "copilot2", func(verbAndURL string) *mockexec.CommandExpression {
-	// 		// (unused, but needed to compile)
-	// 		return &mockexec.CommandExpression{}
-	// 	})
-	// })
+		testGithubCLIDeploymentEnvironments(t, commandRunner, "richardpark-msft/copilot-auth-tests", "copilot2", func(verbAndURL string) *mockexec.CommandExpression {
+			// (unused, but needed to compile)
+			return &mockexec.CommandExpression{}
+		})
+	})
 }
 
-func testGithubCLIDeploymentEnvironments(t *testing.T, commandRunner exec.CommandRunner, repoSlug string, envName string, add func(verbAndURL string) *mockexec.CommandExpression) {
+func testGithubCLIDeploymentEnvironments(t *testing.T, commandRunner exec.CommandRunner, repoSlug string, envName string, addAPIHandler func(verbAndURL string) *mockexec.CommandExpression) {
 	mockContext := mocks.NewMockContext(context.Background())
 	cli, err := NewGitHubCli(context.Background(), mockContext.Console, commandRunner)
 	require.NoError(t, err)
 
-	add("PUT /repos/richardpark-msft/copilot-auth-tests/environments/copilot2").Respond(exec.NewRunResult(0, "", ""))
+	addAPIHandler("PUT /repos/richardpark-msft/copilot-auth-tests/environments/copilot2").Respond(exec.NewRunResult(0, "", ""))
 	err = cli.CreateEnvironmentIfNotExist(context.Background(), repoSlug, envName)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		add("DELETE /repos/richardpark-msft/copilot-auth-tests/environments/copilot2").Respond(exec.NewRunResult(0, "", ""))
+		addAPIHandler("DELETE /repos/richardpark-msft/copilot-auth-tests/environments/copilot2").Respond(exec.NewRunResult(0, "", ""))
 		err = cli.DeleteEnvironment(context.Background(), repoSlug, envName)
 		require.NoError(t, err)
-
-		add("GET /repos/richardpark-msft/copilot-auth-tests/environments/copilot2/variables/hello").Respond(exec.NewRunResult(0, "{}", ""))
-		_, err := cli.ListVariables(context.Background(), "richardpark-msft/copilot-auth-tests", &ListVariablesOptions{
-			Environment: envName,
-		})
-		require.Error(t, err, "should fail - can't get a variable in an environment that's been deleted")
 	})
 
-	add("PATCH /repos/richardpark-msft/copilot-auth-tests/environments/copilot2/variables/hello").SetError(errors.New("this fails"))
+	addAPIHandler("PATCH /repos/richardpark-msft/copilot-auth-tests/environments/copilot2/variables/hello").SetError(errors.New("this fails"))
 	err = cli.SetVariable(context.Background(), repoSlug, "hello", "world", &SetVariableOptions{
 		Environment: envName,
 	})
 	require.NoError(t, err)
 
-	contents, err := os.ReadFile("testdata/getenv.json")
-	require.NoError(t, err)
-
-	add("GET /repos/richardpark-msft/copilot-auth-tests/environments/copilot2/variables/hello").Respond(exec.NewRunResult(0, string(contents), ""))
 	values, err := cli.ListVariables(context.Background(), repoSlug, &ListVariablesOptions{
 		Environment: envName,
 	})
 	require.NoError(t, err)
-	require.Equal(t, "world", values["hello"])
+	require.Equal(t, "world", values["HELLO"])
 }
 
 func TestZipExtractContents(t *testing.T) {

@@ -29,31 +29,6 @@ import (
 	"github.com/blang/semver/v4"
 )
 
-type GitHubCli interface {
-	tools.ExternalTool
-	GetAuthStatus(ctx context.Context, hostname string) (AuthStatus, error)
-	// Forces the authentication token mode used by github CLI.
-	//
-	// If set to TokenSourceFile, environment variables such as GH_TOKEN and GITHUB_TOKEN are ignored.
-	ForceConfigureAuth(authMode AuthTokenSource)
-	ListSecrets(ctx context.Context, repo string) error
-	SetSecret(ctx context.Context, repo string, name string, value string) error
-	Login(ctx context.Context, hostname string) error
-	ListRepositories(ctx context.Context) ([]GhCliRepository, error)
-	ViewRepository(ctx context.Context, name string) (GhCliRepository, error)
-	CreatePrivateRepository(ctx context.Context, name string) error
-	GetGitProtocolType(ctx context.Context) (string, error)
-	GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error)
-
-	// deployment environment methods
-	CreateEnvironmentIfNotExist(ctx context.Context, repoName string, envName string) error
-	DeleteEnvironment(ctx context.Context, repoName string, envName string) error
-
-	// deployment environment variable methods
-	GetEnvironmentVariable(ctx context.Context, repoName string, envName string, variableName string) (string, error)
-	CreateOrUpdateEnvironmentVariable(ctx context.Context, repoName string, envName string, variableName string, variableValue string) (created bool, err error)
-}
-
 var _ tools.ExternalTool = (*Cli)(nil)
 
 func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec.CommandRunner) (*Cli, error) {
@@ -282,8 +257,18 @@ func (cli *Cli) ListSecrets(ctx context.Context, repoSlug string) ([]string, err
 	return ghOutputToList(output.Stdout), nil
 }
 
-func (cli *Cli) ListVariables(ctx context.Context, repoSlug string) (map[string]string, error) {
-	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "list")
+type ListVariablesOptions struct {
+	Environment string
+}
+
+func (cli *Cli) ListVariables(ctx context.Context, repoSlug string, options *ListVariablesOptions) (map[string]string, error) {
+	args := []string{"-R", repoSlug, "variable", "list"}
+
+	if options != nil && options.Environment != "" {
+		args = append(args, "--env", options.Environment)
+	}
+
+	runArgs := cli.newRunArgs(args...)
 	output, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed running gh secret list: %w", err)
@@ -300,8 +285,18 @@ func (cli *Cli) SetSecret(ctx context.Context, repoSlug string, name string, val
 	return nil
 }
 
-func (cli *Cli) SetVariable(ctx context.Context, repoSlug string, name string, value string) error {
-	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "set", name).WithStdIn(strings.NewReader(value))
+type SetVariableOptions struct {
+	Environment string
+}
+
+func (cli *Cli) SetVariable(ctx context.Context, repoSlug string, name string, value string, options *SetVariableOptions) error {
+	args := []string{"-R", repoSlug, "variable", "set", name}
+
+	if options != nil && options.Environment != "" {
+		args = append(args, "--env", options.Environment)
+	}
+
+	runArgs := cli.newRunArgs(args...).WithStdIn(strings.NewReader(value))
 	_, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh variable set: %w", err)
@@ -457,8 +452,6 @@ func (cli *Cli) CreateEnvironmentIfNotExist(ctx context.Context, repoName string
 		"-H", "Accept: application/vnd.github+json",
 	)
 
-	runArgs.EnrichError = true
-
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return err
@@ -479,8 +472,6 @@ func (cli *Cli) DeleteEnvironment(ctx context.Context, repoName string, envName 
 		"-H", "Accept: application/vnd.github+json",
 	)
 
-	runArgs.EnrichError = true
-
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return err
@@ -493,75 +484,6 @@ func (cli *Cli) DeleteEnvironment(ctx context.Context, repoName string, envName 
 	return nil
 }
 
-func (cli *Cli) GetEnvironmentVariable(ctx context.Context, repoName string, envName string, variableName string) (string, error) {
-	// Doc: https://docs.github.com/en/rest/actions/variables?apiVersion=2022-11-28#get-an-environment-variable
-	runArgs := cli.newRunArgs("api",
-		"-X", "GET",
-		fmt.Sprintf("/repos/%s/environments/%s/variables/%s", repoName, envName, variableName),
-	).WithEnrichError(true)
-
-	res, err := cli.commandRunner.Run(ctx, runArgs)
-
-	if err != nil {
-		return "", err
-	}
-
-	var v *struct {
-		Value string `json:"value"`
-	}
-
-	if err := json.Unmarshal([]byte(res.Stdout), &v); err != nil {
-		return "", err
-	}
-
-	return v.Value, nil
-}
-
-func (cli *Cli) CreateOrUpdateEnvironmentVariable(ctx context.Context, repoName string, envName string, variableName string, variableValue string) (created bool, err error) {
-	// Try to update the value first (ie, assume it exists)
-	// https://docs.github.com/en/rest/actions/variables?apiVersion=2022-11-28#update-an-environment-variable
-	patchArgs := cli.newRunArgs("api",
-		"-X", "PATCH",
-		fmt.Sprintf("/repos/%s/environments/%s/variables/%s", repoName, envName, variableName),
-		"-f", fmt.Sprintf("value=%s", variableValue),
-	).WithEnrichError(true)
-
-	if _, err := cli.commandRunner.Run(ctx, patchArgs); err == nil {
-		// updated!
-		return false, nil
-	}
-
-	// If it fails, just try to create it. If there's some general problem (ie, permissions, etc..) then it should happen here as well.
-	// https://docs.github.com/en/rest/actions/variables?apiVersion=2022-11-28#create-an-environment-variable
-	postArgs := cli.newRunArgs("api",
-		"-X", "POST",
-		fmt.Sprintf("/repos/%s/environments/%s/variables", repoName, envName),
-		"-f", fmt.Sprintf("name=%s", variableName),
-		"-f", fmt.Sprintf("value=%s", variableValue),
-	).WithEnrichError(true)
-
-	if _, err := cli.commandRunner.Run(ctx, postArgs); err != nil {
-		return false, err
-	}
-
-	return true, nil
-}
-
-func (cli *ghCli) ForceConfigureAuth(authMode AuthTokenSource) {
-	switch authMode {
-	case TokenSourceFile:
-		// Unset token environment variables to force file-base auth.
-		for _, tokenEnvVarName := range TokenEnvVars {
-			cli.overrideTokenEnv = append(cli.overrideTokenEnv, fmt.Sprintf("%v=", tokenEnvVarName))
-		}
-	case TokenSourceEnvVar:
-		// GitHub CLI will always use environment variables first.
-		// Therefore, we simply need to clear our environment context override (if any) to force environment variable usage.
-		cli.overrideTokenEnv = nil
-	default:
-		panic(fmt.Sprintf("Unsupported auth mode: %d", authMode))
-	}
-}
 func (cli *Cli) newRunArgs(args ...string) exec.RunArgs {
 
 	runArgs := exec.NewRunArgs(cli.path, args...)

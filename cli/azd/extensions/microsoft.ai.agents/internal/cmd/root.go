@@ -9,7 +9,7 @@ import (
 
 func NewRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:           "azd ai <command> [options]",
+		Use:           "agent <command> [options]",
 		Short:         "Placeholder",
 		SilenceUsage:  true,
 		SilenceErrors: true,

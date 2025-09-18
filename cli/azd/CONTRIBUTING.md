@@ -75,6 +75,16 @@ Launch `azd` separately, then attach:
 
 > Tip: Use the VSCode terminal to perform all `azd` build and run commands.
 
+### Testing pipeline workflow generation
+
+When iterating on GitHub workflow template changes, you can regenerate the workflow with:
+
+```bash
+azd pipeline config --github-use-environments   # opt-in to environment + matrix emission
+```
+
+Omit `--github-use-environments` to verify the legacy (non-environment) form. Re-running with the flag toggled automatically migrates the existing workflow to add or remove the `environment`/matrix sections.
+
 ## Submitting a change
 
 1. Create a new branch: `git checkout -b my-branch-name`

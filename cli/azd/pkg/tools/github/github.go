@@ -31,6 +31,14 @@ type GitHubCli interface {
 	CreatePrivateRepository(ctx context.Context, name string) error
 	GetGitProtocolType(ctx context.Context) (string, error)
 	GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error)
+
+	// deployment environment methods
+	CreateEnvironmentIfNotExist(ctx context.Context, repoName string, envName string) error
+	DeleteEnvironment(ctx context.Context, repoName string, envName string) error
+
+	// deployment environment variable methods
+	GetEnvironmentVariable(ctx context.Context, repoName string, envName string, variableName string) (string, error)
+	CreateOrUpdateEnvironmentVariable(ctx context.Context, repoName string, envName string, variableName string, variableValue string) (created bool, err error)
 }
 
 func NewGitHubCli(ctx context.Context) GitHubCli {
@@ -254,6 +262,104 @@ func (cli *ghCli) GitHubActionsExists(ctx context.Context, repoSlug string) (boo
 	if jsonResponse.TotalCount == 0 {
 		return false, nil
 	}
+	return true, nil
+}
+
+func (cli *ghCli) CreateEnvironmentIfNotExist(ctx context.Context, repoName string, envName string) error {
+	// Doc: https://docs.github.com/en/rest/deployments/environments?apiVersion=2022-11-28#create-or-update-an-environment
+	runArgs := cli.newRunArgs("api",
+		"-X", "PUT",
+		fmt.Sprintf("/repos/%s/environments/%s", repoName, envName),
+		"-H", "Accept: application/vnd.github+json",
+	)
+
+	runArgs.EnrichError = true
+
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return err
+	}
+
+	if res.ExitCode != 0 {
+		return err
+	}
+
+	return nil
+}
+
+func (cli *ghCli) DeleteEnvironment(ctx context.Context, repoName string, envName string) error {
+	// Doc: https://docs.github.com/en/rest/deployments/environments?apiVersion=2022-11-28#delete-an-environment
+	runArgs := cli.newRunArgs("api",
+		"-X", "DELETE",
+		fmt.Sprintf("/repos/%s/environments/%s", repoName, envName),
+		"-H", "Accept: application/vnd.github+json",
+	)
+
+	runArgs.EnrichError = true
+
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return err
+	}
+
+	if res.ExitCode != 0 {
+		return err
+	}
+
+	return nil
+}
+
+func (cli *ghCli) GetEnvironmentVariable(ctx context.Context, repoName string, envName string, variableName string) (string, error) {
+	// Doc: https://docs.github.com/en/rest/actions/variables?apiVersion=2022-11-28#get-an-environment-variable
+	runArgs := cli.newRunArgs("api",
+		"-X", "GET",
+		fmt.Sprintf("/repos/%s/environments/%s/variables/%s", repoName, envName, variableName),
+	).WithEnrichError(true)
+
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+
+	if err != nil {
+		return "", err
+	}
+
+	var v *struct {
+		Value string `json:"value"`
+	}
+
+	if err := json.Unmarshal([]byte(res.Stdout), &v); err != nil {
+		return "", err
+	}
+
+	return v.Value, nil
+}
+
+func (cli *ghCli) CreateOrUpdateEnvironmentVariable(ctx context.Context, repoName string, envName string, variableName string, variableValue string) (created bool, err error) {
+	// Try to update the value first (ie, assume it exists)
+	// https://docs.github.com/en/rest/actions/variables?apiVersion=2022-11-28#update-an-environment-variable
+	patchArgs := cli.newRunArgs("api",
+		"-X", "PATCH",
+		fmt.Sprintf("/repos/%s/environments/%s/variables/%s", repoName, envName, variableName),
+		"-f", fmt.Sprintf("value=%s", variableValue),
+	).WithEnrichError(true)
+
+	if _, err := cli.commandRunner.Run(ctx, patchArgs); err == nil {
+		// updated!
+		return false, nil
+	}
+
+	// If it fails, just try to create it. If there's some general problem (ie, permissions, etc..) then it should happen here as well.
+	// https://docs.github.com/en/rest/actions/variables?apiVersion=2022-11-28#create-an-environment-variable
+	postArgs := cli.newRunArgs("api",
+		"-X", "POST",
+		fmt.Sprintf("/repos/%s/environments/%s/variables", repoName, envName),
+		"-f", fmt.Sprintf("name=%s", variableName),
+		"-f", fmt.Sprintf("value=%s", variableValue),
+	).WithEnrichError(true)
+
+	if _, err := cli.commandRunner.Run(ctx, postArgs); err != nil {
+		return false, err
+	}
+
 	return true, nil
 }
 

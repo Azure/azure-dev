@@ -62,7 +62,9 @@ func main() {
 
 	rootContainer := ioc.NewNestedContainer(nil)
 	ioc.RegisterInstance(rootContainer, ctx)
-	cmdErr := cmd.NewRootCmd(false, nil, rootContainer).ExecuteContext(ctx)
+
+	// Execute command with auto-installation support for extensions
+	cmdErr := cmd.ExecuteWithAutoInstall(ctx, rootContainer, os.Args[1:])
 
 	oneauth.Shutdown()
 

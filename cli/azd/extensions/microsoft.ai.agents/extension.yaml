@@ -1,9 +1,9 @@
 # yaml-language-server: $schema=../extension.schema.json
 id: microsoft.ai.agents
-namespace: agent
+namespace: ai.agent
 displayName: Agents Extension
-description: Placeholder
-usage: azd ai <command> [options]
+description: This extension provides custom commands for working with agents using Azure Developer CLI.
+usage: azd ai agent <command> [options]
 version: 0.0.1-preview
 language: go
 capabilities:

@@ -261,6 +261,7 @@ type ListVariablesOptions struct {
 	Environment string
 }
 
+//nolint:lll
 func (cli *Cli) ListVariables(ctx context.Context, repoSlug string, options *ListVariablesOptions) (map[string]string, error) {
 	args := []string{"-R", repoSlug, "variable", "list"}
 
@@ -289,6 +290,7 @@ type SetVariableOptions struct {
 	Environment string
 }
 
+//nolint:lll
 func (cli *Cli) SetVariable(ctx context.Context, repoSlug string, name string, value string, options *SetVariableOptions) error {
 	args := []string{"-R", repoSlug, "variable", "set", name}
 

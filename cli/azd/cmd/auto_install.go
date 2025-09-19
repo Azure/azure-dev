@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -105,13 +106,15 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		// Check if this command might match an extension before trying to execute
 		extensionMatch, err := checkForMatchingExtension(ctx, extensionManager, unknownCommand)
 		if err != nil {
-			return err
+			// Do not fail if we couldn't check for extensions - just proceed to normal execution
+			log.Println("Error: check for extensions. Skipping auto-install:", err)
+			return rootCmd.ExecuteContext(ctx)
 		}
 		if extensionMatch != nil {
 			// Try to auto-install the extension first
 			var console input.Console
 			if err := rootContainer.Resolve(&console); err != nil {
-				return err
+				return fmt.Errorf("failed to resolve console for auto-install: %w", err)
 			}
 			installed, installErr := tryAutoInstallExtension(ctx, console, extensionManager, *extensionMatch)
 			if installErr != nil {

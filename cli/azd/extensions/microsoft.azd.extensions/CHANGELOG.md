@@ -1,5 +1,9 @@
 # Release History
 
+## 0.5.1 (2025-09-22)
+
+- Updates `azd x publish` to automatically set up local registry if not configured
+
 ## 0.5.0
 
 - Adds .tar.gz support for Linux extensions

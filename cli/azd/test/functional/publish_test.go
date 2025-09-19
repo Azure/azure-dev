@@ -33,7 +33,7 @@ func Test_CLI_Publish_ContainerApp_RemoteBuild(t *testing.T) {
 		},
 		{
 			name:              "custom image and tag",
-			publishArgs:       []string{"publish", "--image", "custom/image", "--tag", "prod"},
+			publishArgs:       []string{"publish", "--to", "custom/image:prod"},
 			expectedImageName: "custom/image",
 			expectedImageTag:  "prod",
 		},
@@ -163,16 +163,10 @@ func Test_CLI_PublishInvalidFlags(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, res.Stdout, "badServiceName")
 
-	// --image with --all
-	res, err = cli.RunCommand(ctx, "publish", "--all", "--image", "custom-image")
+	// --to with --all
+	res, err = cli.RunCommand(ctx, "publish", "--all", "--to", "custom-image:tag")
 	require.Error(t, err)
-	require.Contains(t, res.Stdout, "--image")
-	require.Contains(t, res.Stdout, "--all")
-
-	// --tag with --all
-	res, err = cli.RunCommand(ctx, "publish", "--all", "--tag", "custom-tag")
-	require.Error(t, err)
-	require.Contains(t, res.Stdout, "--tag")
+	require.Contains(t, res.Stdout, "--to")
 	require.Contains(t, res.Stdout, "--all")
 
 	// --from-package with --all
@@ -181,15 +175,10 @@ func Test_CLI_PublishInvalidFlags(t *testing.T) {
 	require.Contains(t, res.Stdout, "--all")
 	require.Contains(t, res.Stdout, "--from-package")
 
-	// --image without specific service (publishing all services)
-	res, err = cli.RunCommand(ctx, "publish", "--image", "custom-image")
+	// --to without specific service (publishing all services)
+	res, err = cli.RunCommand(ctx, "publish", "--to", "custom-image:tag")
 	require.Error(t, err)
-	require.Contains(t, res.Stdout, "--image")
-
-	// --tag without specific service (publishing all services)
-	res, err = cli.RunCommand(ctx, "publish", "--tag", "custom-tag")
-	require.Error(t, err)
-	require.Contains(t, res.Stdout, "--tag")
+	require.Contains(t, res.Stdout, "--to")
 
 	// --from-package without specific service (publishing all services)
 	res, err = cli.RunCommand(ctx, "publish", "--from-package", "output")

@@ -9,3 +9,10 @@ language: go
 capabilities:
   - custom-commands
   - lifecycle-events
+examples:
+  - name: init
+    description: Initialize a new AI agent project.
+    usage: azd ai agent init
+  - name: deploy
+    description: Deploy AI agents to Azure.
+    usage: azd ai agent deploy

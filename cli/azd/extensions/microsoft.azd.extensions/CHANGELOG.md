@@ -1,6 +1,6 @@
 # Release History
 
-## 0.5.0 (2025-09-22)
+## 0.5.1 (2025-09-22)
 
 - Updates `azd x publish` to automatically set up local registry if not configured
 

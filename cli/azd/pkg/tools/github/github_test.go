@@ -26,6 +26,40 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestGithubCLIDeploymentEnvironments(t *testing.T) {
+	// TODO: how do we handle live testing resources, like a GitHub repo?
+	t.Skip("GitHub environment live test disabled. Can be run manually.")
+
+	commandRunner := exec.NewCommandRunner(nil)
+
+	// (you can use any repo here, these were just the ones I used last)
+	repoSlug := "richardpark-msft/copilot-auth-tests"
+	envName := "copilot2"
+
+	mockContext := mocks.NewMockContext(context.Background())
+	cli, err := NewGitHubCli(context.Background(), mockContext.Console, commandRunner)
+	require.NoError(t, err)
+
+	err = cli.CreateEnvironmentIfNotExist(context.Background(), repoSlug, envName)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		err = cli.DeleteEnvironment(context.Background(), repoSlug, envName)
+		require.NoError(t, err)
+	})
+
+	err = cli.SetVariable(context.Background(), repoSlug, "hello", "world", &SetVariableOptions{
+		Environment: envName,
+	})
+	require.NoError(t, err)
+
+	values, err := cli.ListVariables(context.Background(), repoSlug, &ListVariablesOptions{
+		Environment: envName,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "world", values["HELLO"])
+}
+
 func TestZipExtractContents(t *testing.T) {
 	testPath := t.TempDir()
 	expectedPhrase := "this will be inside a zip file"

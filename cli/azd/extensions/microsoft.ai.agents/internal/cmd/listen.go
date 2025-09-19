@@ -30,7 +30,7 @@ func newListenCommand() *cobra.Command {
 			eventManager := azdext.NewEventManager(azdClient)
 			defer eventManager.Close()
 
-			// Register the event handlers
+			// Hook into preprovision event
 			err = eventManager.AddProjectEventHandler(
 				ctx,
 				"preprovision",
@@ -45,24 +45,6 @@ func newListenCommand() *cobra.Command {
 			)
 			if err != nil {
 				return fmt.Errorf("failed to add preprovision project event handler: %w", err)
-			}
-
-			err = eventManager.AddServiceEventHandler(
-				ctx,
-				"prepackage",
-				func(ctx context.Context, args *azdext.ServiceEventArgs) error {
-					for i := 1; i <= 20; i++ {
-						fmt.Printf("%d. Doing important work in extension...\n", i)
-						time.Sleep(250 * time.Millisecond)
-					}
-
-					return nil
-				},
-				nil,
-			)
-
-			if err != nil {
-				return fmt.Errorf("failed to add predeploy event handler: %w", err)
 			}
 
 			// Start listening for events

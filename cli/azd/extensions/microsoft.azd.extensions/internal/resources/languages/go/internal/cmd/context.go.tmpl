@@ -29,11 +29,11 @@ func newContextCommand() *cobra.Command {
 
 			defer azdClient.Close()
 
+			hasEnv := false
+
 			getConfigResponse, err := azdClient.UserConfig().Get(ctx, &azdext.GetUserConfigRequest{
 				Path: "",
 			})
-
-			// Intentionally continue if user config retrieval fails
 			if err == nil {
 				if getConfigResponse.Found {
 					color.HiWhite("User Config")
@@ -72,13 +72,14 @@ func newContextCommand() *cobra.Command {
 			getEnvResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 			if err == nil {
 				currentEnvName = getEnvResponse.Environment.Name
+				hasEnv = true
 			} else {
 				color.Yellow("WARNING: No azd environment(s) found.")
 				fmt.Printf("Run %s to create a new environment.\n", color.CyanString("azd env new"))
 				return nil
 			}
 
-			var environments []string
+			environments := []string{}
 			envListResponse, err := azdClient.Environment().List(ctx, &azdext.EmptyRequest{})
 			if err == nil {
 				for _, env := range envListResponse.Environments {
@@ -88,10 +89,9 @@ func newContextCommand() *cobra.Command {
 
 			if len(environments) == 0 {
 				fmt.Println("No environments found")
-				return nil
 			}
 
-			if currentEnvName != "" {
+			if hasEnv {
 				color.Cyan("Environments:")
 				for _, env := range environments {
 					envLine := env

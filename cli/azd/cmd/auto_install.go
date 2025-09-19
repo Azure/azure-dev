@@ -25,64 +25,45 @@ func findFirstNonFlagArg(args []string) string {
 }
 
 // checkForMatchingExtension checks if the first argument matches any available extension namespace
-func checkForMatchingExtension(ctx context.Context, extensionManager *extensions.Manager, command string) bool {
+func checkForMatchingExtension(
+	ctx context.Context, extensionManager *extensions.Manager, command string) (*extensions.ExtensionMetadata, error) {
 	options := &extensions.ListOptions{}
 	registryExtensions, err := extensionManager.ListFromRegistry(ctx, options)
 	if err != nil {
-		return false
+		return nil, err
 	}
 
 	for _, ext := range registryExtensions {
 		namespaceParts := strings.Split(ext.Namespace, ".")
 		if len(namespaceParts) > 0 && namespaceParts[0] == command {
-			return true
+			return ext, nil
 		}
 	}
 
-	return false
+	return nil, nil
 }
 
 // tryAutoInstallExtension attempts to auto-install an extension if the unknown command matches an available
 // extension namespace. Returns true if an extension was found and installed, false otherwise.
 func tryAutoInstallExtension(
-	ctx context.Context, console input.Console, extensionManager *extensions.Manager, unknownCommand string) (bool, error) {
-	// Check if the unknown command matches any available extension namespace
-	options := &extensions.ListOptions{}
-	registryExtensions, err := extensionManager.ListFromRegistry(ctx, options)
-	if err != nil {
-		// If we can't list registry extensions, we can't auto-install
-		return false, nil
-	}
-
-	var matchingExtension *extensions.ExtensionMetadata
-	for _, ext := range registryExtensions {
-		// Check if the namespace matches the unknown command
-		namespaceParts := strings.Split(ext.Namespace, ".")
-		if len(namespaceParts) > 0 && namespaceParts[0] == unknownCommand {
-			matchingExtension = ext
-			break
-		}
-	}
-
-	if matchingExtension == nil {
-		// No matching extension found
-		return false, nil
-	}
+	ctx context.Context,
+	console input.Console,
+	extensionManager *extensions.Manager,
+	extension extensions.ExtensionMetadata) (bool, error) {
 
 	// Check if the extension is already installed
-	_, err = extensionManager.GetInstalled(extensions.LookupOptions{
-		Id: matchingExtension.Id,
+	_, err := extensionManager.GetInstalled(extensions.LookupOptions{
+		Id: extension.Id,
 	})
 	if err == nil {
-		// Extension is already installed, this shouldn't happen but let's be safe
 		return false, nil
 	}
 
 	// Ask user for permission to auto-install the extension
 	console.Message(ctx,
-		fmt.Sprintf("Command '%s' not found, but there's an available extension that provides it.\n", unknownCommand))
+		fmt.Sprintf("Command '%s' not found, but there's an available extension that provides it.\n", extension.Namespace))
 	console.Message(ctx,
-		fmt.Sprintf("Extension: %s (%s)\n", matchingExtension.DisplayName, matchingExtension.Description))
+		fmt.Sprintf("Extension: %s (%s)\n", extension.DisplayName, extension.Description))
 	shouldInstall, err := console.Confirm(ctx, input.ConsoleOptions{
 		DefaultValue: true,
 		Message:      "Would you like to install it?",
@@ -96,14 +77,14 @@ func tryAutoInstallExtension(
 	}
 
 	// Install the extension
-	console.Message(ctx, fmt.Sprintf("Installing extension '%s'...\n", matchingExtension.Id))
+	console.Message(ctx, fmt.Sprintf("Installing extension '%s'...\n", extension.Id))
 	filterOptions := &extensions.FilterOptions{}
-	_, err = extensionManager.Install(ctx, matchingExtension.Id, filterOptions)
+	_, err = extensionManager.Install(ctx, extension.Id, filterOptions)
 	if err != nil {
 		return false, fmt.Errorf("failed to install extension: %w", err)
 	}
 
-	console.Message(ctx, fmt.Sprintf("Extension '%s' installed successfully!\n", matchingExtension.Id))
+	console.Message(ctx, fmt.Sprintf("Extension '%s' installed successfully!\n", extension.Id))
 	return true, nil
 }
 
@@ -122,13 +103,17 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			return err
 		}
 		// Check if this command might match an extension before trying to execute
-		if checkForMatchingExtension(ctx, extensionManager, unknownCommand) {
+		extensionMatch, err := checkForMatchingExtension(ctx, extensionManager, unknownCommand)
+		if err != nil {
+			return err
+		}
+		if extensionMatch != nil {
 			// Try to auto-install the extension first
 			var console input.Console
 			if err := rootContainer.Resolve(&console); err != nil {
 				return err
 			}
-			installed, installErr := tryAutoInstallExtension(ctx, console, extensionManager, unknownCommand)
+			installed, installErr := tryAutoInstallExtension(ctx, console, extensionManager, *extensionMatch)
 			if installErr != nil {
 				return installErr
 			}

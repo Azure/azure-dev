@@ -105,11 +105,24 @@ func (at *dotnetContainerAppTarget) Package(
 	return packageOutput, nil
 }
 
+// TODO: move publish logic from Deploy() into Publish()
+func (at *dotnetContainerAppTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+	publishOptions *PublishOptions,
+) (*ServicePublishResult, error) {
+	return &ServicePublishResult{}, nil
+}
+
 // Deploys service container images to ACR and provisions the container app service.
 func (at *dotnetContainerAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
+	servicePublishResult *ServicePublishResult,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -140,12 +153,16 @@ func (at *dotnetContainerAppTarget) Deploy(
 	// The name of the image that should be referenced in the manifest is stored in `remoteImageName` and presented
 	// to the deployment template as a parameter named `Image`.
 	if serviceConfig.Language == ServiceLanguageDocker {
-		res, err := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, false, progress)
+		res, err := at.containerHelper.Publish(ctx, serviceConfig, packageOutput, targetResource, progress, nil)
 		if err != nil {
 			return nil, err
 		}
 
-		remoteImageName = res.Details.(*dockerDeployResult).RemoteImageTag
+		containerDetails, ok := res.Details.(*ContainerPublishDetails)
+		if !ok {
+			return nil, fmt.Errorf("expected ContainerPublishDetails but got %T", res.Details)
+		}
+		remoteImageName = containerDetails.RemoteImage
 	} else if serviceConfig.DotNetContainerApp.ContainerImage != "" {
 		remoteImageName = serviceConfig.DotNetContainerApp.ContainerImage
 	} else {

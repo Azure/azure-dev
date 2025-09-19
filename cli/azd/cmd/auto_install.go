@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 
@@ -15,24 +14,43 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 )
 
+// findFirstNonFlagArg finds the first argument that doesn't start with '-'
+func findFirstNonFlagArg(args []string) string {
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "-") {
+			return arg
+		}
+	}
+	return ""
+}
+
+// checkForMatchingExtension checks if the first argument matches any available extension namespace
+func checkForMatchingExtension(ctx context.Context, extensionManager *extensions.Manager, command string) bool {
+	options := &extensions.ListOptions{}
+	registryExtensions, err := extensionManager.ListFromRegistry(ctx, options)
+	if err != nil {
+		return false
+	}
+
+	for _, ext := range registryExtensions {
+		namespaceParts := strings.Split(ext.Namespace, ".")
+		if len(namespaceParts) > 0 && namespaceParts[0] == command {
+			return true
+		}
+	}
+
+	return false
+}
+
 // tryAutoInstallExtension attempts to auto-install an extension if the unknown command matches an available
 // extension namespace. Returns true if an extension was found and installed, false otherwise.
 func tryAutoInstallExtension(
-	ctx context.Context, rootContainer *ioc.NestedContainer, unknownCommand string) (bool, error) {
-	var extensionManager *extensions.Manager
-
-	if err := rootContainer.Resolve(&extensionManager); err != nil {
-		// If we can't resolve the extension manager, we can't auto-install
-		log.Println("Failed to resolve extension manager for auto-install extension:", err)
-		return false, nil
-	}
-
+	ctx context.Context, console input.Console, extensionManager *extensions.Manager, unknownCommand string) (bool, error) {
 	// Check if the unknown command matches any available extension namespace
 	options := &extensions.ListOptions{}
 	registryExtensions, err := extensionManager.ListFromRegistry(ctx, options)
 	if err != nil {
 		// If we can't list registry extensions, we can't auto-install
-		log.Println("Failed to list registry extensions:", err)
 		return false, nil
 	}
 
@@ -48,7 +66,6 @@ func tryAutoInstallExtension(
 
 	if matchingExtension == nil {
 		// No matching extension found
-		log.Println("No matching extension found for auto-install")
 		return false, nil
 	}
 
@@ -58,13 +75,6 @@ func tryAutoInstallExtension(
 	})
 	if err == nil {
 		// Extension is already installed, this shouldn't happen but let's be safe
-		log.Println("Extension already installed during auto-install check:", matchingExtension.Id)
-		return false, nil
-	}
-
-	var console input.Console
-	if err := rootContainer.Resolve(&console); err != nil {
-		log.Println("Failed to resolve console for auto-install extension:", err)
 		return false, nil
 	}
 
@@ -78,60 +88,59 @@ func tryAutoInstallExtension(
 		Message:      "Would you like to install it?",
 	})
 	if err != nil {
-		log.Println("Failed to get user confirmation for auto-install extension:", err)
 		return false, nil
 	}
 
 	if !shouldInstall {
-		log.Println("User declined to install extension:", matchingExtension.Id)
 		return false, nil
 	}
 
 	// Install the extension
-	console.Message(ctx,
-		fmt.Sprintf("Installing extension '%s'...\n", matchingExtension.Id))
+	console.Message(ctx, fmt.Sprintf("Installing extension '%s'...\n", matchingExtension.Id))
 	filterOptions := &extensions.FilterOptions{}
 	_, err = extensionManager.Install(ctx, matchingExtension.Id, filterOptions)
 	if err != nil {
 		return false, fmt.Errorf("failed to install extension: %w", err)
 	}
 
-	console.Message(ctx,
-		fmt.Sprintf("Extension '%s' installed successfully!\n", matchingExtension.Id))
+	console.Message(ctx, fmt.Sprintf("Extension '%s' installed successfully!\n", matchingExtension.Id))
 	return true, nil
 }
 
 // ExecuteWithAutoInstall executes the command and handles auto-installation of extensions for unknown commands.
 func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContainer) error {
-	// First, try to execute the command normally
+	// Creating the RootCmd takes care of registering common dependencies in rootContainer
 	rootCmd := NewRootCmd(false, nil, rootContainer)
-	err := rootCmd.ExecuteContext(ctx)
+	originalArgs := os.Args[1:]
+	// Find the first non-flag argument (the actual command)
+	unknownCommand := findFirstNonFlagArg(originalArgs)
 
-	if err != nil {
-		originalArgs := os.Args[1:]
-		// Check if this is an "unknown command" error
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "unknown command") && len(originalArgs) > 0 {
-			// Extract the unknown command from the arguments
-			unknownCommand := originalArgs[0]
-
-			// Try to auto-install an extension for this command
-			installed, installErr := tryAutoInstallExtension(ctx, rootContainer, unknownCommand)
-			if installErr != nil {
-				// If auto-install failed, return the original error
+	// If we have a command, check if it might be an extension command
+	if unknownCommand != "" {
+		var extensionManager *extensions.Manager
+		if err := rootContainer.Resolve(&extensionManager); err != nil {
+			return err
+		}
+		// Check if this command might match an extension before trying to execute
+		if checkForMatchingExtension(ctx, extensionManager, unknownCommand) {
+			// Try to auto-install the extension first
+			var console input.Console
+			if err := rootContainer.Resolve(&console); err != nil {
 				return err
+			}
+			installed, installErr := tryAutoInstallExtension(ctx, console, extensionManager, unknownCommand)
+			if installErr != nil {
+				return installErr
 			}
 
 			if installed {
-				// Extension was installed, rebuild the command tree and try again
-				rootCmd = NewRootCmd(false, nil, rootContainer)
+				// Extension was installed, build command tree and execute
+				rootCmd := NewRootCmd(false, nil, rootContainer)
 				return rootCmd.ExecuteContext(ctx)
 			}
 		}
-
-		// Return the original error if we couldn't auto-install
-		return err
 	}
 
-	return nil
+	// Normal execution path - either no args, no matching extension, or user declined install
+	return rootCmd.ExecuteContext(ctx)
 }

@@ -64,7 +64,7 @@ func main() {
 	ioc.RegisterInstance(rootContainer, ctx)
 
 	// Execute command with auto-installation support for extensions
-	cmdErr := cmd.ExecuteWithAutoInstall(ctx, rootContainer, os.Args[1:])
+	cmdErr := cmd.ExecuteWithAutoInstall(ctx, rootContainer)
 
 	oneauth.Shutdown()
 

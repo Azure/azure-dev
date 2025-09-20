@@ -15,16 +15,104 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
-// findFirstNonFlagArg finds the first argument that doesn't start with '-'
-func findFirstNonFlagArg(args []string) string {
-	for _, arg := range args {
+// extractFlagsWithValues extracts flags that take values from a cobra command.
+// This ensures we have a single source of truth for flag definitions by
+// dynamically inspecting the command's flag definitions instead of
+// maintaining a separate hardcoded list.
+//
+// The function inspects both regular flags and persistent flags, checking
+// the flag's value type to determine if it takes an argument:
+// - Bool flags don't take values
+// - String, Int, StringSlice, etc. flags do take values
+func extractFlagsWithValues(cmd *cobra.Command) map[string]bool {
+	flagsWithValues := make(map[string]bool)
+
+	// Extract flags that take values from the command
+	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
+		// String, StringSlice, StringArray, Int, Int64, etc. all take values
+		// Bool flags don't take values
+		if flag.Value.Type() != "bool" {
+			flagsWithValues["--"+flag.Name] = true
+			if flag.Shorthand != "" {
+				flagsWithValues["-"+flag.Shorthand] = true
+			}
+		}
+	})
+
+	// Also check persistent flags (global flags)
+	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if flag.Value.Type() != "bool" {
+			flagsWithValues["--"+flag.Name] = true
+			if flag.Shorthand != "" {
+				flagsWithValues["-"+flag.Shorthand] = true
+			}
+		}
+	})
+
+	return flagsWithValues
+}
+
+// findFirstNonFlagArg finds the first argument that doesn't start with '-' and isn't a flag value.
+// This function properly handles flags that take values (like --output json) to avoid
+// incorrectly identifying flag values as commands.
+// Returns the command and any unknown flags encountered before the command.
+func findFirstNonFlagArg(args []string, flagsWithValues map[string]bool) (command string, unknownFlags []string) {
+	// Initialize as empty slice instead of nil for consistent behavior
+	unknownFlags = []string{}
+
+	skipNext := false
+	for i, arg := range args {
+		// Skip this argument if it's marked as a flag value from previous iteration
+		if skipNext {
+			skipNext = false
+			continue
+		}
+
+		// If it doesn't start with '-', it's a potential command
 		if !strings.HasPrefix(arg, "-") {
-			return arg
+			return arg, unknownFlags
+		}
+
+		// Check if this is a known flag that takes a value
+		if flagsWithValues[arg] {
+			// This flag takes a value, so skip the next argument
+			skipNext = true
+			continue
+		}
+
+		// Handle flags with '=' syntax like --output=json
+		if strings.Contains(arg, "=") {
+			parts := strings.SplitN(arg, "=", 2)
+			if flagsWithValues[parts[0]] {
+				// This is a known flag=value format, no need to skip next
+				continue
+			}
+			// Unknown flag with equals - record it
+			unknownFlags = append(unknownFlags, parts[0])
+			continue
+		}
+
+		// This is an unknown flag - record it
+		unknownFlags = append(unknownFlags, arg)
+
+		// Conservative heuristic: if the next argument doesn't start with '-'
+		// and there are more args after it, assume the unknown flag takes a value
+		if i+1 < len(args) && i+2 < len(args) {
+			nextArg := args[i+1]
+			argAfterNext := args[i+2]
+			if !strings.HasPrefix(nextArg, "-") && !strings.HasPrefix(argAfterNext, "-") {
+				// Pattern: --unknown value command
+				// Skip the value, let command be found next
+				skipNext = true
+			}
 		}
 	}
-	return ""
+
+	return "", unknownFlags
 }
 
 // checkForMatchingExtension checks if the first argument matches any available extension namespace
@@ -121,9 +209,38 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		return rootCmd.ExecuteContext(ctx)
 	}
 
+	// Get the original args passed to the command (excluding the program name)
 	originalArgs := os.Args[1:]
-	// Find the first non-flag argument (the actual command)
-	unknownCommand := findFirstNonFlagArg(originalArgs)
+
+	// Extract flags that take values from the root command
+	flagsWithValues := extractFlagsWithValues(rootCmd)
+
+	// Find the first non-flag argument (the actual command) and check for unknown flags
+	unknownCommand, unknownFlags := findFirstNonFlagArg(originalArgs, flagsWithValues)
+
+	// If unknown flags were found before a command, return an error with helpful guidance
+	if len(unknownFlags) > 0 && unknownCommand != "" {
+		var console input.Console
+		if err := rootContainer.Resolve(&console); err != nil {
+			log.Panic("failed to resolve console for unknown flags error:", err)
+		}
+
+		flagsList := strings.Join(unknownFlags, ", ")
+		errorMsg := fmt.Sprintf(
+			"Unknown flags detected before command '%s': %s\n\n"+
+				"If you're trying to run an extension command, the extension name must come BEFORE any flags.\n"+
+				"This is because extension-specific flags are not known until the extension is installed.\n\n"+
+				"Correct usage:\n"+
+				"  azd %s %s    # Extension name first, then flags\n"+
+				"  azd %s --help          # Get help for the extension\n\n"+
+				"If this is not an extension command, please check the flag names for typos.",
+			unknownCommand, flagsList,
+			unknownCommand, strings.Join(unknownFlags, " "),
+			unknownCommand)
+
+		console.Message(ctx, errorMsg)
+		return fmt.Errorf("unknown flags before command: %s", flagsList)
+	}
 
 	// If we have a command, check if it might be an extension command
 	if unknownCommand != "" {

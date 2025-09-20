@@ -8,10 +8,22 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestFindFirstNonFlagArg(t *testing.T) {
+	// Mock flags that take values for testing
+	flagsWithValues := map[string]bool{
+		"--output":         true,
+		"-o":               true,
+		"--cwd":            true,
+		"-C":               true,
+		"--trace-log-file": true,
+		"--trace-log-url":  true,
+		"--config":         true, // Additional test flag
+	}
+
 	tests := []struct {
 		name     string
 		args     []string
@@ -23,8 +35,8 @@ func TestFindFirstNonFlagArg(t *testing.T) {
 			expected: "demo",
 		},
 		{
-			name:     "command after flags",
-			args:     []string{"--verbose", "demo", "--other"},
+			name:     "command after boolean flags",
+			args:     []string{"--debug", "--no-prompt", "demo"},
 			expected: "demo",
 		},
 		{
@@ -39,32 +51,183 @@ func TestFindFirstNonFlagArg(t *testing.T) {
 		},
 		{
 			name:     "flags with equals",
-			args:     []string{"--config=file", "init", "--template=web"},
-			expected: "init",
+			args:     []string{"--output=json", "demo", "--template=web"},
+			expected: "demo",
 		},
 		{
-			name:     "single character flags",
+			name:     "single character boolean flags",
 			args:     []string{"-v", "-h", "up", "--debug"},
 			expected: "up",
 		},
 		{
-			name:     "command with flag value",
+			name:     "command with output flag value (the original problem)",
 			args:     []string{"--output", "json", "demo", "subcommand"},
-			expected: "json",
+			expected: "demo", // Fixed: should be "demo", not "json"
+		},
+		{
+			name:     "command with cwd flag value",
+			args:     []string{"--cwd", "/some/path", "demo"},
+			expected: "demo",
+		},
+		{
+			name:     "command with short output flag",
+			args:     []string{"-o", "table", "init"},
+			expected: "init",
+		},
+		{
+			name:     "command with short cwd flag",
+			args:     []string{"-C", "/path", "up"},
+			expected: "up",
+		},
+		{
+			name:     "mixed flags with values and boolean",
+			args:     []string{"--debug", "--output", "json", "--no-prompt", "deploy"},
+			expected: "deploy",
 		},
 		{
 			name:     "no arguments",
 			args:     nil,
 			expected: "",
 		},
+		{
+			name:     "trace log flags",
+			args:     []string{"--trace-log-file", "debug.log", "monitor"},
+			expected: "monitor",
+		},
+		{
+			name:     "complex real world example",
+			args:     []string{"--debug", "--cwd", "/project", "--output", "json", "demo", "--template", "minimal"},
+			expected: "demo",
+		},
+		{
+			name:     "test with custom config flag",
+			args:     []string{"--config", "myconfig.yaml", "deploy"},
+			expected: "deploy",
+		},
+		{
+			name:     "unknown flag that appears boolean",
+			args:     []string{"--unknown", "command"},
+			expected: "command",
+		},
+		{
+			name:     "unknown flag that takes value - PROBLEMATIC CASE",
+			args:     []string{"--unknown-flag", "some-value", "command"},
+			expected: "command", // Currently returns "some-value" - this is the problem!
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := findFirstNonFlagArg(tt.args)
+			result, _ := findFirstNonFlagArg(tt.args, flagsWithValues)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestFindFirstNonFlagArgWithUnknownFlags(t *testing.T) {
+	flagsWithValues := map[string]bool{
+		"--output": true,
+		"-o":       true,
+		"--cwd":    true,
+		"-C":       true,
+	}
+
+	tests := []struct {
+		name                 string
+		args                 []string
+		expectedCommand      string
+		expectedUnknownFlags []string
+	}{
+		{
+			name:                 "no unknown flags",
+			args:                 []string{"--output", "json", "deploy"},
+			expectedCommand:      "deploy",
+			expectedUnknownFlags: []string{},
+		},
+		{
+			name:                 "single unknown flag before command",
+			args:                 []string{"--unknown", "command"},
+			expectedCommand:      "command",
+			expectedUnknownFlags: []string{"--unknown"},
+		},
+		{
+			name:                 "unknown flag that takes value",
+			args:                 []string{"--unknown-flag", "some-value", "command"},
+			expectedCommand:      "command",
+			expectedUnknownFlags: []string{"--unknown-flag"},
+		},
+		{
+			name:                 "multiple unknown flags",
+			args:                 []string{"--flag1", "--flag2", "value", "command"},
+			expectedCommand:      "command",
+			expectedUnknownFlags: []string{"--flag1", "--flag2"},
+		},
+		{
+			name:                 "mixed known and unknown flags",
+			args:                 []string{"--output", "json", "--unknown", "deploy"},
+			expectedCommand:      "deploy",
+			expectedUnknownFlags: []string{"--unknown"},
+		},
+		{
+			name:                 "unknown flag with equals",
+			args:                 []string{"--unknown=value", "command"},
+			expectedCommand:      "command",
+			expectedUnknownFlags: []string{"--unknown"},
+		},
+		{
+			name:                 "only unknown flags, no command",
+			args:                 []string{"--unknown1", "--unknown2"},
+			expectedCommand:      "",
+			expectedUnknownFlags: []string{"--unknown1", "--unknown2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			command, unknownFlags := findFirstNonFlagArg(tt.args, flagsWithValues)
+			assert.Equal(t, tt.expectedCommand, command)
+			assert.Equal(t, tt.expectedUnknownFlags, unknownFlags)
+		})
+	}
+}
+
+func TestExtractFlagsWithValues(t *testing.T) {
+	// Create a test command with various flag types
+	cmd := &cobra.Command{
+		Use: "test",
+	}
+
+	// Add flags that take values
+	cmd.Flags().StringP("output", "o", "", "Output format")
+	cmd.PersistentFlags().StringP("cwd", "C", "", "Working directory")
+	cmd.Flags().String("config", "", "Config file")
+
+	// Add boolean flags (should not be included)
+	cmd.Flags().Bool("debug", false, "Debug mode")
+	cmd.PersistentFlags().Bool("no-prompt", false, "No prompting")
+
+	// Add flags with other value types
+	cmd.Flags().Int("port", 8080, "Port number")
+	cmd.Flags().StringSlice("tags", []string{}, "Tags")
+
+	// Extract flags
+	flagsWithValues := extractFlagsWithValues(cmd)
+
+	// Test that flags with values are included
+	assert.True(t, flagsWithValues["--output"], "Should include --output flag")
+	assert.True(t, flagsWithValues["-o"], "Should include -o shorthand")
+	assert.True(t, flagsWithValues["--cwd"], "Should include --cwd persistent flag")
+	assert.True(t, flagsWithValues["-C"], "Should include -C shorthand")
+	assert.True(t, flagsWithValues["--config"], "Should include --config flag")
+	assert.True(t, flagsWithValues["--port"], "Should include --port flag (int type)")
+	assert.True(t, flagsWithValues["--tags"], "Should include --tags flag (slice type)")
+
+	// Test that boolean flags are NOT included
+	assert.False(t, flagsWithValues["--debug"], "Should not include boolean --debug flag")
+	assert.False(t, flagsWithValues["--no-prompt"], "Should not include boolean --no-prompt flag")
+
+	// Test non-existent flags
+	assert.False(t, flagsWithValues["--nonexistent"], "Should not include non-existent flags")
 }
 
 func TestCheckForMatchingExtension_Unit(t *testing.T) {

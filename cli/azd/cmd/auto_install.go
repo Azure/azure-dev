@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -60,6 +62,17 @@ func tryAutoInstallExtension(
 		return false, nil
 	}
 
+	// Return error if running in CI/CD environment
+	if resource.IsRunningOnCI() {
+		return false,
+			fmt.Errorf(
+				"Command '%s' not found, but there's an available extension that provides it.\n"+
+					"However, auto-installation is not supported in CI/CD environments.\n"+
+					"Run '%s' to install it manually.",
+				extension.Namespace,
+				fmt.Sprintf("azd extension install %s", extension.Id))
+	}
+
 	// Ask user for permission to auto-install the extension
 	console.Message(ctx,
 		fmt.Sprintf("Command '%s' not found, but there's an available extension that provides it.\n", extension.Namespace))
@@ -93,6 +106,21 @@ func tryAutoInstallExtension(
 func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContainer) error {
 	// Creating the RootCmd takes care of registering common dependencies in rootContainer
 	rootCmd := NewRootCmd(false, nil, rootContainer)
+
+	// Continue only if extensions feature is enabled
+	err := rootContainer.Invoke(func(alphaFeatureManager *alpha.FeatureManager) error {
+		if !alphaFeatureManager.IsEnabled(extensions.FeatureExtensions) {
+			return fmt.Errorf("extensions feature is not enabled")
+		}
+		return nil
+	})
+	if err != nil {
+		// Error here means extensions are not enabled or failed to resolve the feature manager
+		// In either case, we just proceed to normal execution
+		log.Println("auto-install extensions: ", err)
+		return rootCmd.ExecuteContext(ctx)
+	}
+
 	originalArgs := os.Args[1:]
 	// Find the first non-flag argument (the actual command)
 	unknownCommand := findFirstNonFlagArg(originalArgs)
@@ -101,7 +129,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	if unknownCommand != "" {
 		var extensionManager *extensions.Manager
 		if err := rootContainer.Resolve(&extensionManager); err != nil {
-			return err
+			log.Panic("failed to resolve extension manager for auto-install:", err)
 		}
 		// Check if this command might match an extension before trying to execute
 		extensionMatch, err := checkForMatchingExtension(ctx, extensionManager, unknownCommand)
@@ -114,10 +142,12 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			// Try to auto-install the extension first
 			var console input.Console
 			if err := rootContainer.Resolve(&console); err != nil {
-				return fmt.Errorf("failed to resolve console for auto-install: %w", err)
+				log.Panic("failed to resolve console for auto-install:", err)
 			}
 			installed, installErr := tryAutoInstallExtension(ctx, console, extensionManager, *extensionMatch)
 			if installErr != nil {
+				// Error needs to be printed here or else it will be hidden b/c the error printing is handled inside runtime
+				console.Message(ctx, installErr.Error())
 				return installErr
 			}
 

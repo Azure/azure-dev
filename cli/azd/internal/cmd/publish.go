@@ -57,7 +57,7 @@ func (f *PublishFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 		&f.To,
 		"to",
 		"",
-		"Specifies the target image in the form '[registry/]repository[:tag]' for the container published to the registry.",
+		"The target container image in the form '[registry/]repository[:tag]' to be published.",
 	)
 
 	local.StringVar(
@@ -344,7 +344,7 @@ func GetCmdPublishHelpDescription(*cobra.Command) string {
 			formatHelpNote("Supports Container App services only."),
 			formatHelpNote(
 				//nolint:lll
-				"Target registry set by AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable or docker.registry in azure.yaml."),
+				"Target registry set by AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable, docker.registry in azure.yaml, or '--to' flag."),
 			formatHelpNote(
 				//nolint:lll
 				"Use '--from-package' to publish an existing container image, otherwise azd automatically packages the container image before publishing."),

@@ -2,7 +2,7 @@
 Publish a service to a container registry.
 
   • Supports Container App services only.
-  • Target registry set by AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable or docker.registry in azure.yaml.
+  • Target registry set by AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable, docker.registry in azure.yaml, or '--to' flag.
   • Use '--from-package' to publish an existing container image, otherwise azd automatically packages the container image before publishing.
 
 Usage
@@ -12,7 +12,7 @@ Flags
         --all                 	: Deploys all services that are listed in azure.yaml
     -e, --environment string  	: The name of the environment to use.
         --from-package string 	: Publishes the service from a container image (image tag).
-        --to string           	: Specifies the target image in the form '[registry/]repository[:tag]' for the container published to the registry.
+        --to string           	: The target container image in the form '[registry/]repository[:tag]' to be published.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

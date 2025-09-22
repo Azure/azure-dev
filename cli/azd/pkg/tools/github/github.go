@@ -257,8 +257,19 @@ func (cli *Cli) ListSecrets(ctx context.Context, repoSlug string) ([]string, err
 	return ghOutputToList(output.Stdout), nil
 }
 
-func (cli *Cli) ListVariables(ctx context.Context, repoSlug string) (map[string]string, error) {
-	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "list")
+type ListVariablesOptions struct {
+	Environment string
+}
+
+//nolint:lll
+func (cli *Cli) ListVariables(ctx context.Context, repoSlug string, options *ListVariablesOptions) (map[string]string, error) {
+	args := []string{"-R", repoSlug, "variable", "list"}
+
+	if options != nil && options.Environment != "" {
+		args = append(args, "--env", options.Environment)
+	}
+
+	runArgs := cli.newRunArgs(args...)
 	output, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed running gh secret list: %w", err)
@@ -275,8 +286,19 @@ func (cli *Cli) SetSecret(ctx context.Context, repoSlug string, name string, val
 	return nil
 }
 
-func (cli *Cli) SetVariable(ctx context.Context, repoSlug string, name string, value string) error {
-	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "set", name).WithStdIn(strings.NewReader(value))
+type SetVariableOptions struct {
+	Environment string
+}
+
+//nolint:lll
+func (cli *Cli) SetVariable(ctx context.Context, repoSlug string, name string, value string, options *SetVariableOptions) error {
+	args := []string{"-R", repoSlug, "variable", "set", name}
+
+	if options != nil && options.Environment != "" {
+		args = append(args, "--env", options.Environment)
+	}
+
+	runArgs := cli.newRunArgs(args...).WithStdIn(strings.NewReader(value))
 	_, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh variable set: %w", err)
@@ -422,6 +444,30 @@ func (cli *Cli) GitHubActionsExists(ctx context.Context, repoSlug string) (bool,
 		return false, nil
 	}
 	return true, nil
+}
+
+func (cli *Cli) CreateEnvironmentIfNotExist(ctx context.Context, repoName string, envName string) error {
+	// Doc: https://docs.github.com/en/rest/deployments/environments?apiVersion=2022-11-28#create-or-update-an-environment
+	runArgs := cli.newRunArgs("api",
+		"-X", "PUT",
+		fmt.Sprintf("/repos/%s/environments/%s", repoName, envName),
+		"-H", "Accept: application/vnd.github+json",
+	)
+
+	_, err := cli.run(ctx, runArgs)
+	return err
+}
+
+func (cli *Cli) DeleteEnvironment(ctx context.Context, repoName string, envName string) error {
+	// Doc: https://docs.github.com/en/rest/deployments/environments?apiVersion=2022-11-28#delete-an-environment
+	runArgs := cli.newRunArgs("api",
+		"-X", "DELETE",
+		fmt.Sprintf("/repos/%s/environments/%s", repoName, envName),
+		"-H", "Accept: application/vnd.github+json",
+	)
+
+	_, err := cli.run(ctx, runArgs)
+	return err
 }
 
 func (cli *Cli) newRunArgs(args ...string) exec.RunArgs {

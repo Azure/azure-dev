@@ -12,7 +12,7 @@ Flags
         --all                 	: Deploys all services that are listed in azure.yaml
     -e, --environment string  	: The name of the environment to use.
         --from-package string 	: Publishes the service from a container image (image tag).
-        --to string           	: The target container image in the form '[registry/]repository[:tag]' to be published.
+        --to string           	: The target container image in the form '[registry/]repository[:tag]' to publish to.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

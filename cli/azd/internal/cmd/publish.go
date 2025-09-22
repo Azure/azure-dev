@@ -57,7 +57,7 @@ func (f *PublishFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 		&f.To,
 		"to",
 		"",
-		"The target container image in the form '[registry/]repository[:tag]' to be published.",
+		"The target container image in the form '[registry/]repository[:tag]' to publish to.",
 	)
 
 	local.StringVar(

@@ -1,5 +1,15 @@
 # Release History
 
+## 0.11.0-alpha.1 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
 ## 0.10.0 (2025-09-22)
 
 ### Bugs Fixed

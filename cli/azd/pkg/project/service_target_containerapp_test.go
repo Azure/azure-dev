@@ -179,6 +179,9 @@ func createContainerAppServiceTarget(
 		containerHelper,
 		containerAppService,
 		resourceManager,
+		deploymentService,
+		mockContext.Console,
+		mockContext.CommandRunner,
 	)
 }
 

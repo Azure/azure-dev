@@ -1,0 +1,9 @@
+capabilities:
+    - custom-commands
+displayName: Command to configure GitHub Copilot Coding Agent access to Azure
+description: Command to configure GitHub Copilot Coding Agent access to Azure
+id: azure.coding-agent
+language: go
+namespace: coding-agent
+usage: azd coding-agent <command> [options]
+version: 0.0.1

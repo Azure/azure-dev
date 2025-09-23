@@ -108,6 +108,10 @@ func resolveAction[T actions.Action](serviceLocator ioc.ServiceLocator, actionNa
 	return instance, nil
 }
 
+func CheatCodeRegisterCommonDependencies(container *ioc.NestedContainer) {
+	registerCommonDependencies(container)
+}
+
 // Registers common Azd dependencies
 func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Core bootstrapping registrations
@@ -189,8 +193,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			// If no explicit environment flag was set, but one was provided
 			// in the context, use that instead.
 			// This is used in workflow execution (in `up`) to influence the environment used.
-			if envFlag, ok := cmd.Context().Value(envFlagCtxKey).(internal.EnvFlag); ok {
-				return envFlag
+			if cmd.Context() != nil {
+				if envFlag, ok := cmd.Context().Value(envFlagCtxKey).(internal.EnvFlag); ok {
+					return envFlag
+				}
 			}
 		}
 

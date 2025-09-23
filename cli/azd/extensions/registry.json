@@ -891,10 +891,10 @@
       ]
     },
     {
-      "id": "Azure.CodingAgent",
+      "id": "azure.coding-agent",
       "namespace": "coding-agent",
-      "displayName": "Copilot Coding Agent",
-      "description": "Copilot Coding Agent",
+      "displayName": "Command to configure GitHub Copilot Coding Agent access to Azure",
+      "description": "Command to configure GitHub Copilot Coding Agent access to Azure",
       "versions": [
         {
           "capabilities": [
@@ -907,26 +907,26 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "67b245b25ddd4f2b3d19b478a740f8001e30339012846f6805d7164e19aefa33"
+                "value": "4c47d4bbeefbabe901b83673833e337aeebcff66964d002b1e63e56838635c49"
               },
-              "entryPoint": "Azure-CodingAgent-linux-amd64",
-              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-Azure-CodingAgent_0.0.1/Azure-CodingAgent-linux-amd64.tar.gz"
+              "entryPoint": "azure-coding-agent-linux-amd64",
+              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-azure-coding-agent_0.0.1/azure-coding-agent-linux-amd64.tar.gz"
             },
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "3c04609391e65692f181f03b56f47e5e09fc1efd5126e6651d54888760d4f4c1"
+                "value": "e6408cafa965a28f68649e6ac8276a6434e03a73716409957795ebbdfd5f59aa"
               },
-              "entryPoint": "Azure-CodingAgent-windows-amd64.exe",
-              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-Azure-CodingAgent_0.0.1/Azure-CodingAgent-windows-amd64.zip"
+              "entryPoint": "azure-coding-agent-windows-amd64.exe",
+              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-azure-coding-agent_0.0.1/azure-coding-agent-windows-amd64.zip"
             },
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "d10093512e0d62bb56dbcaf837ecf8b91138c5568f64811a86e758a4da69dc6c"
+                "value": "baba672efbea462205f34674239863e917caedfc66aac0667853ef21e99a548a"
               },
-              "entryPoint": "Azure-CodingAgent-windows-arm64.exe",
-              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-Azure-CodingAgent_0.0.1/Azure-CodingAgent-windows-arm64.zip"
+              "entryPoint": "azure-coding-agent-windows-arm64.exe",
+              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-azure-coding-agent_0.0.1/azure-coding-agent-windows-arm64.zip"
             }
           }
         }

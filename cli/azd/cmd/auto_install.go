@@ -150,7 +150,9 @@ func checkForMatchingExtensions(
 
 // promptForExtensionChoice prompts the user to choose from multiple matching extensions
 func promptForExtensionChoice(
-	ctx context.Context, console input.Console, extensions []*extensions.ExtensionMetadata) (*extensions.ExtensionMetadata, error) {
+	ctx context.Context,
+	console input.Console,
+	extensions []*extensions.ExtensionMetadata) (*extensions.ExtensionMetadata, error) {
 
 	if len(extensions) == 0 {
 		return nil, nil

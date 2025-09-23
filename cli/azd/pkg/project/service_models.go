@@ -115,6 +115,7 @@ func (spr *ServicePublishResult) ToString(currentIndentation string) string {
 		return fmt.Sprintf("%s- Remote Image: %s\n", currentIndentation, output.WithLinkFormat(containerDetails.RemoteImage))
 	}
 
+	// Empty since there's no relevant publish information to display
 	return ""
 }
 

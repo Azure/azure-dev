@@ -174,7 +174,7 @@ func (ch *ContainerHelper) RemoteImageTag(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	localImageTag string,
-	imageOverride *ImageOverride,
+	imageOverride *imageOverride,
 ) (string, error) {
 	registryName, err := ch.RegistryName(ctx, serviceConfig)
 	if err != nil {
@@ -332,7 +332,7 @@ func (ch *ContainerHelper) runLocalBuild(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	progress *async.Progress[ServiceProgress],
-	imageOverride *ImageOverride,
+	imageOverride *imageOverride,
 ) (string, error) {
 	// Get ACR Login Server
 	registryName, err := ch.RegistryName(ctx, serviceConfig)
@@ -414,7 +414,7 @@ func (ch *ContainerHelper) runLocalBuild(
 	return remoteImage, nil
 }
 
-type ImageOverride docker.ContainerImage
+type imageOverride docker.ContainerImage
 
 // parseImageOverride parses the PublishOptions.Image string into an ImageOverride.
 // Supports combinations of:
@@ -422,7 +422,7 @@ type ImageOverride docker.ContainerImage
 // - Repository and tag present (repo/name:tag)
 // - Registry and repository present (registry.com/repo/name)
 // - Only repository present (repo/name)
-func parseImageOverride(options *PublishOptions) (*ImageOverride, error) {
+func parseImageOverride(options *PublishOptions) (*imageOverride, error) {
 	if options == nil || options.Image == "" {
 		return nil, nil
 	}
@@ -434,7 +434,7 @@ func parseImageOverride(options *PublishOptions) (*ImageOverride, error) {
 	}
 
 	// Convert to ImageOverride
-	return &ImageOverride{
+	return &imageOverride{
 		Registry:   parsedImage.Registry,
 		Repository: parsedImage.Repository,
 		Tag:        parsedImage.Tag,
@@ -448,7 +448,7 @@ func (ch *ContainerHelper) runRemoteBuild(
 	serviceConfig *ServiceConfig,
 	target *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
-	imageOverride *ImageOverride,
+	imageOverride *imageOverride,
 ) (string, error) {
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 

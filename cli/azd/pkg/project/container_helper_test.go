@@ -139,7 +139,7 @@ func Test_parsePublishOptionsToImageOverride(t *testing.T) {
 	tests := []struct {
 		name           string
 		options        *PublishOptions
-		expectedResult *ImageOverride
+		expectedResult *imageOverride
 		expectedError  bool
 		errorContains  string
 	}{
@@ -158,7 +158,7 @@ func Test_parsePublishOptionsToImageOverride(t *testing.T) {
 		{
 			name:    "repository only",
 			options: &PublishOptions{Image: "myapp/api"},
-			expectedResult: &ImageOverride{
+			expectedResult: &imageOverride{
 				Registry:   "",
 				Repository: "myapp/api",
 				Tag:        "",
@@ -168,7 +168,7 @@ func Test_parsePublishOptionsToImageOverride(t *testing.T) {
 		{
 			name:    "repository with tag",
 			options: &PublishOptions{Image: "myapp/api:v1.0.0"},
-			expectedResult: &ImageOverride{
+			expectedResult: &imageOverride{
 				Registry:   "",
 				Repository: "myapp/api",
 				Tag:        "v1.0.0",
@@ -178,7 +178,7 @@ func Test_parsePublishOptionsToImageOverride(t *testing.T) {
 		{
 			name:    "registry with repository",
 			options: &PublishOptions{Image: "contoso.azurecr.io/myapp/api"},
-			expectedResult: &ImageOverride{
+			expectedResult: &imageOverride{
 				Registry:   "contoso.azurecr.io",
 				Repository: "myapp/api",
 				Tag:        "",
@@ -188,7 +188,7 @@ func Test_parsePublishOptionsToImageOverride(t *testing.T) {
 		{
 			name:    "registry with repository and tag",
 			options: &PublishOptions{Image: "contoso.azurecr.io/myapp/api:v1.0.0"},
-			expectedResult: &ImageOverride{
+			expectedResult: &imageOverride{
 				Registry:   "contoso.azurecr.io",
 				Repository: "myapp/api",
 				Tag:        "v1.0.0",
@@ -198,7 +198,7 @@ func Test_parsePublishOptionsToImageOverride(t *testing.T) {
 		{
 			name:    "dockerhub with org and repo",
 			options: &PublishOptions{Image: "docker.io/myorg/myapp:latest"},
-			expectedResult: &ImageOverride{
+			expectedResult: &imageOverride{
 				Registry:   "docker.io",
 				Repository: "myorg/myapp",
 				Tag:        "latest",
@@ -208,7 +208,7 @@ func Test_parsePublishOptionsToImageOverride(t *testing.T) {
 		{
 			name:    "simple image name with tag",
 			options: &PublishOptions{Image: "nginx:latest"},
-			expectedResult: &ImageOverride{
+			expectedResult: &imageOverride{
 				Registry:   "",
 				Repository: "nginx",
 				Tag:        "latest",
@@ -262,7 +262,7 @@ func Test_ContainerHelper_RemoteImageTag_WithImageOverride(t *testing.T) {
 		project           string
 		localImageTag     string
 		registry          osutil.ExpandableString
-		imageOverride     *ImageOverride
+		imageOverride     *imageOverride
 		expectedRemoteTag string
 		expectError       bool
 	}{
@@ -271,7 +271,7 @@ func Test_ContainerHelper_RemoteImageTag_WithImageOverride(t *testing.T) {
 			project:       "./src/api",
 			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
 			localImageTag: "test-app/api-dev:azd-deploy-0",
-			imageOverride: &ImageOverride{
+			imageOverride: &imageOverride{
 				Repository: "custom/image",
 			},
 			expectedRemoteTag: "contoso.azurecr.io/custom/image:azd-deploy-0",
@@ -281,7 +281,7 @@ func Test_ContainerHelper_RemoteImageTag_WithImageOverride(t *testing.T) {
 			project:       "./src/api",
 			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
 			localImageTag: "test-app/api-dev:azd-deploy-0",
-			imageOverride: &ImageOverride{
+			imageOverride: &imageOverride{
 				Tag: "latest",
 			},
 			expectedRemoteTag: "contoso.azurecr.io/test-app/api-dev:latest",
@@ -291,7 +291,7 @@ func Test_ContainerHelper_RemoteImageTag_WithImageOverride(t *testing.T) {
 			project:       "./src/api",
 			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
 			localImageTag: "test-app/api-dev:azd-deploy-0",
-			imageOverride: &ImageOverride{
+			imageOverride: &imageOverride{
 				Repository: "custom/image",
 				Tag:        "latest",
 			},
@@ -302,7 +302,7 @@ func Test_ContainerHelper_RemoteImageTag_WithImageOverride(t *testing.T) {
 			project:       "./src/api",
 			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
 			localImageTag: "test-app/api-dev:azd-deploy-0",
-			imageOverride: &ImageOverride{
+			imageOverride: &imageOverride{
 				Registry: "docker.io",
 			},
 			expectedRemoteTag: "docker.io/test-app/api-dev:azd-deploy-0",
@@ -312,7 +312,7 @@ func Test_ContainerHelper_RemoteImageTag_WithImageOverride(t *testing.T) {
 			project:       "./src/api",
 			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
 			localImageTag: "test-app/api-dev:azd-deploy-0",
-			imageOverride: &ImageOverride{
+			imageOverride: &imageOverride{
 				Registry:   "docker.io",
 				Repository: "myorg/myimage",
 				Tag:        "v2.0.0",
@@ -324,7 +324,7 @@ func Test_ContainerHelper_RemoteImageTag_WithImageOverride(t *testing.T) {
 			project:       "./src/api",
 			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
 			localImageTag: "test-app/api-dev:azd-deploy-0",
-			imageOverride: &ImageOverride{
+			imageOverride: &imageOverride{
 				Repository: "myimage",
 			},
 			expectedRemoteTag: "contoso.azurecr.io/myimage:azd-deploy-0",
@@ -342,7 +342,7 @@ func Test_ContainerHelper_RemoteImageTag_WithImageOverride(t *testing.T) {
 			project:           "./src/api",
 			registry:          osutil.NewExpandableString("contoso.azurecr.io"),
 			localImageTag:     "test-app/api-dev:azd-deploy-0",
-			imageOverride:     &ImageOverride{},
+			imageOverride:     &imageOverride{},
 			expectedRemoteTag: "contoso.azurecr.io/test-app/api-dev:azd-deploy-0",
 		},
 	}
@@ -826,17 +826,6 @@ func (m *mockContainerRegistryServiceForRetry) GetContainerRegistries(
 	return args.Get(0).([]*armcontainerregistry.Registry), args.Error(1)
 }
 
-func (m *mockContainerRegistryServiceForRetry) TagExists(
-	ctx context.Context,
-	subscriptionId string,
-	loginServer string,
-	repository string,
-	tag string,
-) (bool, error) {
-	args := m.Called(ctx, subscriptionId, loginServer, repository, tag)
-	return args.Bool(0), args.Error(1)
-}
-
 func Test_ContainerHelper_Credential_Retry(t *testing.T) {
 	t.Run("Retry on 404 on time", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
@@ -960,18 +949,6 @@ func (m *mockContainerRegistryService) GetContainerRegistries(
 	args := m.Called(ctx, subscriptionId)
 	return args.Get(0).([]*armcontainerregistry.Registry), args.Error(1)
 }
-
-func (m *mockContainerRegistryService) TagExists(
-	ctx context.Context,
-	subscriptionId string,
-	loginServer string,
-	repository string,
-	tag string,
-) (bool, error) {
-	args := m.Called(ctx, subscriptionId, loginServer, repository, tag)
-	return args.Bool(0), args.Error(1)
-}
-
 func Test_ContainerHelper_Publish(t *testing.T) {
 	tests := []struct {
 		name                    string

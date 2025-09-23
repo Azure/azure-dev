@@ -50,7 +50,7 @@ func (f *PublishFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 		&f.All,
 		"all",
 		false,
-		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
+		"Publishes all services that are listed in "+azdcontext.ProjectFileName,
 	)
 
 	local.StringVar(

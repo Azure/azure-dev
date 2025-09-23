@@ -726,6 +726,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		project.ServiceLanguageJava:       project.NewMavenProject,
 		project.ServiceLanguageDocker:     project.NewDockerProject,
 		project.ServiceLanguageSwa:        project.NewSwaProject,
+		project.ServiceLanguageCustom:     project.NewCustomProject,
 	}
 
 	for language, constructor := range frameworkServiceMap {

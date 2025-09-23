@@ -115,23 +115,94 @@ func findFirstNonFlagArg(args []string, flagsWithValues map[string]bool) (comman
 	return "", unknownFlags
 }
 
-// checkForMatchingExtension checks if the first argument matches any available extension namespace
-func checkForMatchingExtension(
-	ctx context.Context, extensionManager *extensions.Manager, command string) (*extensions.ExtensionMetadata, error) {
+// checkForMatchingExtensions checks for extensions that match any possible namespace
+// from the command arguments. For example, "azd vhvb demo foo" will check for
+// extensions with namespaces: "vhvb", "vhvb.demo", "vhvb.demo.foo"
+func checkForMatchingExtensions(
+	ctx context.Context, extensionManager *extensions.Manager, args []string) ([]*extensions.ExtensionMetadata, error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+
 	options := &extensions.ListOptions{}
 	registryExtensions, err := extensionManager.ListFromRegistry(ctx, options)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, ext := range registryExtensions {
-		namespaceParts := strings.Split(ext.Namespace, ".")
-		if len(namespaceParts) > 0 && namespaceParts[0] == command {
-			return ext, nil
+	var matchingExtensions []*extensions.ExtensionMetadata
+
+	// Generate all possible namespace combinations from the command arguments
+	// For "azd vhvb demo foo" -> check "vhvb", "vhvb.demo", "vhvb.demo.foo"
+	for i := 1; i <= len(args); i++ {
+		candidateNamespace := strings.Join(args[:i], ".")
+
+		// Check if any extension has this exact namespace
+		for _, ext := range registryExtensions {
+			if ext.Namespace == candidateNamespace {
+				matchingExtensions = append(matchingExtensions, ext)
+			}
 		}
 	}
 
-	return nil, nil
+	return matchingExtensions, nil
+}
+
+// promptForExtensionChoice prompts the user to choose from multiple matching extensions
+func promptForExtensionChoice(
+	ctx context.Context, console input.Console, extensions []*extensions.ExtensionMetadata) (*extensions.ExtensionMetadata, error) {
+
+	if len(extensions) == 0 {
+		return nil, nil
+	}
+
+	if len(extensions) == 1 {
+		return extensions[0], nil
+	}
+
+	console.Message(ctx, "Multiple extensions found that match your command:")
+	console.Message(ctx, "")
+
+	options := make([]string, len(extensions))
+	for i, ext := range extensions {
+		options[i] = fmt.Sprintf("%s (%s) - %s", ext.Namespace, ext.DisplayName, ext.Description)
+		console.Message(ctx, fmt.Sprintf("  %d. %s", i+1, options[i]))
+	}
+	console.Message(ctx, "")
+
+	choice, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "Which extension would you like to install?",
+		Options: options,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return extensions[choice], nil
+}
+
+// isBuiltInCommand checks if the given command is a built-in command by examining
+// the root command's command tree. This includes both core azd commands and any
+// installed extensions, preventing auto-install from triggering for known commands.
+func isBuiltInCommand(rootCmd *cobra.Command, commandName string) bool {
+	if commandName == "" {
+		return false
+	}
+
+	// Check if the command exists in the root command's subcommands
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Name() == commandName {
+			return true
+		}
+		// Also check aliases
+		for _, alias := range cmd.Aliases {
+			if alias == commandName {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // tryAutoInstallExtension attempts to auto-install an extension if the unknown command matches an available
@@ -218,50 +289,86 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	// Find the first non-flag argument (the actual command) and check for unknown flags
 	unknownCommand, unknownFlags := findFirstNonFlagArg(originalArgs, flagsWithValues)
 
-	// If unknown flags were found before a command, return an error with helpful guidance
-	if len(unknownFlags) > 0 && unknownCommand != "" {
-		var console input.Console
-		if err := rootContainer.Resolve(&console); err != nil {
-			log.Panic("failed to resolve console for unknown flags error:", err)
+	// If we have a command, check if it's a built-in command first
+	if unknownCommand != "" {
+		// Check if this is a built-in command first (includes core commands and installed extensions)
+		if isBuiltInCommand(rootCmd, unknownCommand) {
+			// This is a built-in command, proceed with normal execution without checking for extensions
+			return rootCmd.ExecuteContext(ctx)
 		}
 
-		flagsList := strings.Join(unknownFlags, ", ")
-		errorMsg := fmt.Sprintf(
-			"Unknown flags detected before command '%s': %s\n\n"+
-				"If you're trying to run an extension command, the extension name must come BEFORE any flags.\n"+
-				"This is because extension-specific flags are not known until the extension is installed.\n\n"+
-				"Correct usage:\n"+
-				"  azd %s %s    # Extension name first, then flags\n"+
-				"  azd %s --help          # Get help for the extension\n\n"+
-				"If this is not an extension command, please check the flag names for typos.",
-			unknownCommand, flagsList,
-			unknownCommand, strings.Join(unknownFlags, " "),
-			unknownCommand)
+		// If unknown flags were found before a non-built-in command, return an error with helpful guidance
+		if len(unknownFlags) > 0 {
+			var console input.Console
+			if err := rootContainer.Resolve(&console); err != nil {
+				log.Panic("failed to resolve console for unknown flags error:", err)
+			}
 
-		console.Message(ctx, errorMsg)
-		return fmt.Errorf("unknown flags before command: %s", flagsList)
-	}
+			flagsList := strings.Join(unknownFlags, ", ")
+			errorMsg := fmt.Sprintf(
+				"Unknown flags detected before command '%s': %s\n\n"+
+					"If you're trying to run an extension command, the extension name must come BEFORE any flags.\n"+
+					"This is because extension-specific flags are not known until the extension is installed.\n\n"+
+					"Correct usage:\n"+
+					"  azd %s %s    # Extension name first, then flags\n"+
+					"  azd %s --help          # Get help for the extension\n\n"+
+					"If this is not an extension command, please check the flag names for typos.",
+				unknownCommand, flagsList,
+				unknownCommand, strings.Join(unknownFlags, " "),
+				unknownCommand)
 
-	// If we have a command, check if it might be an extension command
-	if unknownCommand != "" {
+			console.Message(ctx, errorMsg)
+			return fmt.Errorf("unknown flags before command: %s", flagsList)
+		}
+
 		var extensionManager *extensions.Manager
 		if err := rootContainer.Resolve(&extensionManager); err != nil {
 			log.Panic("failed to resolve extension manager for auto-install:", err)
 		}
-		// Check if this command might match an extension before trying to execute
-		extensionMatch, err := checkForMatchingExtension(ctx, extensionManager, unknownCommand)
+
+		// Get all remaining arguments starting from the command for namespace matching
+		// This allows checking longer namespaces like "vhvb.demo.foo" from "azd vhvb demo foo"
+		var argsForMatching []string
+		for i, arg := range originalArgs {
+			if !strings.HasPrefix(arg, "-") && arg == unknownCommand {
+				// Found the command, collect all non-flag arguments from here
+				for j := i; j < len(originalArgs); j++ {
+					if !strings.HasPrefix(originalArgs[j], "-") {
+						argsForMatching = append(argsForMatching, originalArgs[j])
+					}
+				}
+				break
+			}
+		}
+
+		// Check if any commands might match extensions with various namespace lengths
+		extensionMatches, err := checkForMatchingExtensions(ctx, extensionManager, argsForMatching)
 		if err != nil {
 			// Do not fail if we couldn't check for extensions - just proceed to normal execution
 			log.Println("Error: check for extensions. Skipping auto-install:", err)
 			return rootCmd.ExecuteContext(ctx)
 		}
-		if extensionMatch != nil {
-			// Try to auto-install the extension first
+
+		if len(extensionMatches) > 0 {
 			var console input.Console
 			if err := rootContainer.Resolve(&console); err != nil {
 				log.Panic("failed to resolve console for auto-install:", err)
 			}
-			installed, installErr := tryAutoInstallExtension(ctx, console, extensionManager, *extensionMatch)
+
+			// Prompt user to choose if multiple extensions match
+			chosenExtension, err := promptForExtensionChoice(ctx, console, extensionMatches)
+			if err != nil {
+				console.Message(ctx, fmt.Sprintf("Error selecting extension: %v", err))
+				return rootCmd.ExecuteContext(ctx)
+			}
+
+			if chosenExtension == nil {
+				// User cancelled selection, proceed to normal execution
+				return rootCmd.ExecuteContext(ctx)
+			}
+
+			// Try to auto-install the chosen extension
+			installed, installErr := tryAutoInstallExtension(ctx, console, extensionManager, *chosenExtension)
 			if installErr != nil {
 				// Error needs to be printed here or else it will be hidden b/c the error printing is handled inside runtime
 				console.Message(ctx, installErr.Error())

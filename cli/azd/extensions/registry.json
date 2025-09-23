@@ -910,7 +910,7 @@
                 "value": "67b245b25ddd4f2b3d19b478a740f8001e30339012846f6805d7164e19aefa33"
               },
               "entryPoint": "Azure-CodingAgent-linux-amd64",
-              "url": "/home/ripark/.azd/registry/Azure.CodingAgent/0.0.1/Azure-CodingAgent-linux-amd64.tar.gz"
+              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-Azure-CodingAgent_0.0.1/Azure-CodingAgent-linux-amd64.tar.gz"
             },
             "windows/amd64": {
               "checksum": {
@@ -918,7 +918,7 @@
                 "value": "3c04609391e65692f181f03b56f47e5e09fc1efd5126e6651d54888760d4f4c1"
               },
               "entryPoint": "Azure-CodingAgent-windows-amd64.exe",
-              "url": "/home/ripark/.azd/registry/Azure.CodingAgent/0.0.1/Azure-CodingAgent-windows-amd64.zip"
+              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-Azure-CodingAgent_0.0.1/Azure-CodingAgent-windows-amd64.zip"
             },
             "windows/arm64": {
               "checksum": {
@@ -926,7 +926,7 @@
                 "value": "d10093512e0d62bb56dbcaf837ecf8b91138c5568f64811a86e758a4da69dc6c"
               },
               "entryPoint": "Azure-CodingAgent-windows-arm64.exe",
-              "url": "/home/ripark/.azd/registry/Azure.CodingAgent/0.0.1/Azure-CodingAgent-windows-arm64.zip"
+              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-Azure-CodingAgent_0.0.1/Azure-CodingAgent-windows-arm64.zip"
             }
           }
         }

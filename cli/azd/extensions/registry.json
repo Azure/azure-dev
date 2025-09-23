@@ -889,6 +889,48 @@
           }
         }
       ]
+    },
+    {
+      "id": "Azure.CodingAgent",
+      "namespace": "coding-agent",
+      "displayName": "Copilot Coding Agent",
+      "description": "Copilot Coding Agent",
+      "versions": [
+        {
+          "capabilities": [
+            "custom-commands"
+          ],
+          "version": "0.0.1",
+          "usage": "azd coding-agent \u003ccommand\u003e [options]",
+          "examples": null,
+          "artifacts": {
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "a60f0461c8e2e0698f2895f0cab01ceac93e45f4ed50e375a9e5cf26fb05881b"
+              },
+              "entryPoint": "Azure-CodingAgent-linux-amd64",
+              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-Azure-CodingAgent_0.0.1/Azure-CodingAgent-linux-amd64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "3c04609391e65692f181f03b56f47e5e09fc1efd5126e6651d54888760d4f4c1"
+              },
+              "entryPoint": "Azure-CodingAgent-windows-amd64.exe",
+              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-Azure-CodingAgent_0.0.1/Azure-CodingAgent-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d10093512e0d62bb56dbcaf837ecf8b91138c5568f64811a86e758a4da69dc6c"
+              },
+              "entryPoint": "Azure-CodingAgent-windows-arm64.exe",
+              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-Azure-CodingAgent_0.0.1/Azure-CodingAgent-windows-arm64.zip"
+            }
+          }
+        }
+      ]
     }
   ]
 }

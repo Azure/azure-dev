@@ -14,6 +14,7 @@ Commands
     deploy    	: Deploy your project code to Azure.
     down      	: Delete your project's Azure resources.
     provision 	: Provision Azure resources for your project.
+    publish   	: Publish a service to a container registry.
 
   Manage and show settings
     completion	: Generate shell completion scripts.

@@ -27,7 +27,7 @@
 
 1. **Navigate to the extension directory**:
    ```bash
-   cd cli/azd/extensions/microsoft.ai.agents
+   cd cli/azd/extensions/azure.foundry.ai.agents
    ```
 
 2. **Initial setup** (first time only):
@@ -53,7 +53,7 @@
 
 3. **Install the extension**:
    ```bash
-   azd ext install microsoft.ai.agents
+   azd ext install azure.foundry.ai.agents
    ```
 
 4. **For subsequent development** (after initial setup):

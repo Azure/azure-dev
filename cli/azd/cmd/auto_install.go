@@ -43,16 +43,6 @@ func extractFlagsWithValues(cmd *cobra.Command) map[string]bool {
 		}
 	})
 
-	// Also check persistent flags (global flags)
-	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
-		if flag.Value.Type() != "bool" {
-			flagsWithValues["--"+flag.Name] = true
-			if flag.Shorthand != "" {
-				flagsWithValues["-"+flag.Shorthand] = true
-			}
-		}
-	})
-
 	return flagsWithValues
 }
 

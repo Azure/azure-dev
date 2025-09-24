@@ -52,7 +52,7 @@ func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
 		&flagValues.RepoSlug,
 		"--remote-name",
 		"",
-		"The name of the git remote to authorize to use the federated credential (ex: <owner>/<repo>)",
+		"The name of the git remote where the Copilot Coding Agent will run (ex: <owner>/<repo>)",
 	)
 
 	return flagValues

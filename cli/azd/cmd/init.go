@@ -553,7 +553,7 @@ func promptInitType(console input.Console, ctx context.Context, featuresManager 
 
 	// When LLM feature is enabled, put the agent option first for better visibility
 	if featuresManager.IsEnabled(llm.FeatureLlm) {
-		agentOption := fmt.Sprintf("%s %s", output.AzdAgentLabel(), color.YellowString("(Alpha)"))
+		agentOption := fmt.Sprintf("%s %s", output.WithHighLightFormat("Use agent mode"), color.YellowString("(Alpha)"))
 		options = []string{
 			agentOption,
 			"Scan current directory",

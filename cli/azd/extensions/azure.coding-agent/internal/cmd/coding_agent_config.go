@@ -94,6 +94,22 @@ func newConfigCommand() *cobra.Command {
 			return err
 		}
 
+		if cmdFlags.RepoSlug == "" {
+			// this has to be filled out - when we create/set federated credentials it's part of the subject.
+			res, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+				Options: &azdext.PromptOptions{
+					Message:     "Enter the <owner>/<repository> where the Copilot Coding Agent will run",
+					Placeholder: "<owner>/<repository>",
+				},
+			})
+
+			if err != nil {
+				return err
+			}
+
+			cmdFlags.RepoSlug = res.Value
+		}
+
 		rootContainer.MustRegisterSingleton(func() azdext.PromptServiceClient {
 			return azdClient.Prompt()
 		})

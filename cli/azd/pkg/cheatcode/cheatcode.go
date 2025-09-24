@@ -138,8 +138,6 @@ type CheatCodeAuthConfiguration struct {
 
 func PickOrCreateMSI(ctx context.Context, rootContainer *ioc.NestedContainer, projectName string, subscriptionId string, roleNames []string) (*CheatCodeAuthConfiguration, error) {
 	var deps struct {
-		//console input.Console `container:"type"`
-		//prompter       prompt.Prompter          `container:"type"`
 		prompter       azdext.PromptServiceClient `container:"type"`
 		msiService     azd_armmsi.ArmMsiService   `container:"type"`
 		entraIdService entraid.EntraIdService     `container:"type"`
@@ -198,13 +196,8 @@ func PickOrCreateMSI(ctx context.Context, rootContainer *ioc.NestedContainer, pr
 			},
 		})
 
-		// prompt.PromptResourceGroupFromOptions{
-		// 			DefaultName:          "rg-" + projectName + "-msi",
-		// 			NewResourceGroupHelp: "The name of the new resource group where the MSI will be created.",
-		// 		}
-
 		if err != nil {
-			return nil, fmt.Errorf("prompting for resource group: %w", err)
+			return nil, fmt.Errorf("failed trying to get a resource group name: %w", err)
 		}
 
 		displayMsg := fmt.Sprintf("Creating User Managed Identity (MSI) for %s", projectName)

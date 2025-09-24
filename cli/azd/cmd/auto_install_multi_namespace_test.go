@@ -40,7 +40,8 @@ func TestCheckForMatchingExtensionsLogic(t *testing.T) {
 	}
 
 	// Helper function that mimics checkForMatchingExtensions logic
-	checkMatches := func(args []string, availableExtensions []*extensions.ExtensionMetadata) []*extensions.ExtensionMetadata {
+	checkMatches := func(
+		args []string, availableExtensions []*extensions.ExtensionMetadata) []*extensions.ExtensionMetadata {
 		if len(args) == 0 {
 			return nil
 		}

@@ -907,7 +907,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "4c47d4bbeefbabe901b83673833e337aeebcff66964d002b1e63e56838635c49"
+                "value": "7b36ee492edab92e9453536b695d29c9b7269e1210f1e05e25827b90a7e21b3c"
               },
               "entryPoint": "azure-coding-agent-linux-amd64",
               "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-azure-coding-agent_0.0.1/azure-coding-agent-linux-amd64.tar.gz"

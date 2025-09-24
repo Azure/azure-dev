@@ -110,8 +110,21 @@ func newConfigCommand() *cobra.Command {
 			cmdFlags.RepoSlug = res.Value
 		}
 
+		console := input.NewConsole(true, true, input.Writers{
+			Output:  os.Stdout,
+			Spinner: os.Stdout,
+		}, input.ConsoleHandles{
+			Stdin:  os.Stdin,
+			Stdout: os.Stdout,
+			Stderr: os.Stderr,
+		}, &output.NoneFormatter{}, nil)
+
 		rootContainer.MustRegisterSingleton(func() azdext.PromptServiceClient {
 			return azdClient.Prompt()
+		})
+
+		rootContainer.MustRegisterSingleton(func() input.Console {
+			return console
 		})
 
 		subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
@@ -134,18 +147,14 @@ func newConfigCommand() *cobra.Command {
 			return err
 		}
 
-		{
-			fmt.Printf("Setting variables in the GitHub Copilot environment\n  AZURE_CLIENT_ID=%s\n  AZURE_TENANT_ID=%s\n  AZURE_SUBSCRIPTION_ID=%s\n", authConfig.AzureCredentials.ClientId, authConfig.AzureCredentials.TenantId, authConfig.AzureCredentials.SubscriptionId)
+		err = func() error {
+			var msg = fmt.Sprintf("Setting variables in the GitHub Copilot environment\n  AZURE_CLIENT_ID=%s\n  AZURE_TENANT_ID=%s\n  AZURE_SUBSCRIPTION_ID=%s\n", authConfig.AzureCredentials.ClientId, authConfig.AzureCredentials.TenantId, authConfig.AzureCredentials.SubscriptionId)
 
-			console := input.NewConsole(true, true, input.Writers{
-				Output:  os.Stdout,
-				Spinner: os.Stdout,
-			}, input.ConsoleHandles{
-				Stdin:  os.Stdin,
-				Stdout: os.Stdout,
-				Stderr: os.Stderr,
-			}, &output.NoneFormatter{}, nil)
+			console.ShowSpinner(ctx, msg, input.Step)
+			defer console.StopSpinner(ctx, msg, input.StepDone)
+
 			commandRunner := azdexec.NewCommandRunner(nil)
+
 			cli, err := github.NewGitHubCli(ctx, console, commandRunner)
 
 			if err != nil {
@@ -169,6 +178,12 @@ func newConfigCommand() *cobra.Command {
 					return err
 				}
 			}
+
+			return nil
+		}()
+
+		if err != nil {
+			return err
 		}
 
 		// Create the .github/workflows directory if it doesn't exist

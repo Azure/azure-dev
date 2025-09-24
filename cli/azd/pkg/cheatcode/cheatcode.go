@@ -138,6 +138,7 @@ type CheatCodeAuthConfiguration struct {
 
 func PickOrCreateMSI(ctx context.Context, rootContainer *ioc.NestedContainer, projectName string, subscriptionId string, roleNames []string) (*CheatCodeAuthConfiguration, error) {
 	var deps struct {
+		console        input.Console              `container:"type"`
 		prompter       azdext.PromptServiceClient `container:"type"`
 		msiService     azd_armmsi.ArmMsiService   `container:"type"`
 		entraIdService entraid.EntraIdService     `container:"type"`
@@ -200,19 +201,21 @@ func PickOrCreateMSI(ctx context.Context, rootContainer *ioc.NestedContainer, pr
 			return nil, fmt.Errorf("failed trying to get a resource group name: %w", err)
 		}
 
-		displayMsg := fmt.Sprintf("Creating User Managed Identity (MSI) for %s", projectName)
+		newMSI, err := func() (rm_armmsi.Identity, error) {
+			displayMsg := fmt.Sprintf("Creating User Managed Identity (MSI) for %s", projectName)
 
-		// TODO: no spinner
-		// deps.console.ShowSpinner(ctx, displayMsg, input.Step)
-		fmt.Printf("TODO: Imagine a spinner starting here (%s)\n", displayMsg)
+			deps.console.ShowSpinner(ctx, displayMsg, input.Step)
+			defer deps.console.StopSpinner(ctx, displayMsg, input.StepDone)
 
-		// Create a new MSI
-		newMsi, err := deps.msiService.CreateUserIdentity(ctx, subscriptionId, rg.ResourceGroup.Name, location.Location.Name, "msi-"+projectName)
+			// Create a new MSI
+			return deps.msiService.CreateUserIdentity(ctx, subscriptionId, rg.ResourceGroup.Name, location.Location.Name, "msi-"+projectName)
+		}()
+
 		if err != nil {
-			// deps.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
-			return nil, fmt.Errorf("failed to create User Managed Identity (MSI): %w", err)
+			return &CheatCodeAuthConfiguration{}, fmt.Errorf("failed to create User Managed Identity (MSI): %w", err)
 		}
-		msIdentity = newMsi
+
+		msIdentity = newMSI
 	} else {
 		// List existing MSIs and let the user select one
 		msIdentities, err := deps.msiService.ListUserIdentities(ctx, subscriptionId)
@@ -255,35 +258,42 @@ func PickOrCreateMSI(ctx context.Context, rootContainer *ioc.NestedContainer, pr
 		msIdentity = msIdentities[*selectedOption.Value]
 	}
 
-	displayMsg := fmt.Sprintf("Assigning roles to User Managed Identity (MSI) %s", *msIdentity.Name)
-	// deps.console.ShowSpinner(ctx, displayMsg, input.Step)
-	fmt.Printf("TODO: imagine a spinner starting here...(%s)\n", displayMsg)
+	err = func() error {
+		roleNameStrings := strings.Join(roleNames, ", ")
 
-	// ************************** Role Assign **************************
-	err = deps.entraIdService.EnsureRoleAssignments(
-		ctx,
-		subscriptionId,
-		roleNames,
-		// EnsureRoleAssignments uses the ServicePrincipal ID and the DisplayName.
-		// We are adapting the MSI to work with the same method as a regular Service Principal, by pulling name and ID.
-		&graphsdk.ServicePrincipal{
-			Id:          msIdentity.Properties.PrincipalID,
-			DisplayName: *msIdentity.Name,
-		},
-	)
-	//	deps.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
+		displayMsg := fmt.Sprintf("Assigning roles (%s) to User Managed Identity (MSI) %s", roleNameStrings, *msIdentity.Name)
+		deps.console.ShowSpinner(ctx, displayMsg, input.Step)
+		defer deps.console.StopSpinner(ctx, displayMsg, input.StepDone)
+
+		// ************************** Role Assign **************************
+		err = deps.entraIdService.EnsureRoleAssignments(
+			ctx,
+			subscriptionId,
+			roleNames,
+			// EnsureRoleAssignments uses the ServicePrincipal ID and the DisplayName.
+			// We are adapting the MSI to work with the same method as a regular Service Principal, by pulling name and ID.
+			&graphsdk.ServicePrincipal{
+				Id:          msIdentity.Properties.PrincipalID,
+				DisplayName: *msIdentity.Name,
+			},
+		)
+		//	deps.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
+
+		// TODO: should there be some form of persistence for this? This ID will be stored in the Github environment so
+		// it might make more sense to read it from there.
+
+		// Set in .env to be retrieved for any additional runs
+		// deps.env.DotenvSet(AzurePipelineMsiResourceId, *msIdentity.ID)
+		// if err := deps.envManager.Save(ctx, deps.env); err != nil {
+		// 	return result, fmt.Errorf("failed to save environment: %w", err)
+		// }
+
+		return err
+	}()
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to assign role to User Managed Identity (MSI): %w", err)
 	}
-
-	// TODO: should there be some form of persistence for this? This ID will be stored in the Github environment so
-	// it might make more sense to read it from there.
-
-	// Set in .env to be retrieved for any additional runs
-	// deps.env.DotenvSet(AzurePipelineMsiResourceId, *msIdentity.ID)
-	// if err := deps.envManager.Save(ctx, deps.env); err != nil {
-	// 	return result, fmt.Errorf("failed to save environment: %w", err)
-	// }
 
 	return &CheatCodeAuthConfiguration{
 		AzureCredentials: &entraid.AzureCredentials{

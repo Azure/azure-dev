@@ -26,6 +26,8 @@ const (
 	LifecycleEventsCapability CapabilityType = "lifecycle-events"
 	// McpServerCapability enables extensions to start an MCP server
 	McpServerCapability CapabilityType = "mcp-server"
+	// Service target providers enable extensions to package, publish, and deploy to custom service targets
+	ServiceTargetProviderCapability CapabilityType = "service-target-provider"
 )
 
 // Extension represents an extension in the registry

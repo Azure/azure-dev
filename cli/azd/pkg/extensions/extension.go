@@ -24,6 +24,7 @@ type Extension struct {
 	Path         string           `json:"path"`
 	Source       string           `json:"source"`
 	McpConfig    *McpConfig       `json:"mcp,omitempty"`
+	HostKinds    []string         `json:"hostKinds,omitempty"`
 
 	stdin  *bytes.Buffer
 	stdout *output.DynamicMultiWriter

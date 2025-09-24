@@ -10,6 +10,7 @@ capabilities:
   - custom-commands
   - lifecycle-events
   - mcp-server
+  - service-target-provider
 examples:
   - name: context
     description: Displays the current `azd` project & environment context.

@@ -6,10 +6,13 @@ words:
   - azcontainerregistry
   - backoff
   - Canonicalize
+  - Chans
   - chinacloudapi
   - Codespace
   - Codespaces
+  - customtype
   - devcontainers
+  - errgroup
   - extendee
   - eiannone
   # CDN host name
@@ -165,6 +168,9 @@ overrides:
       - dall
       - datasource
       - vectorizing
+  - filename: extensions/azure.foundry.ai.agents/internal/cmd/listen.go
+    words:
+      - foundryagent
   - filename: docs/new-azd-command.md
     words:
       - pflag

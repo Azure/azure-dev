@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -443,7 +444,7 @@ func (sm *serviceManager) Publish(
 		return nil, fmt.Errorf("getting service target: %w", err)
 	}
 
-	targetResource, err := sm.getTargetResourceForService(ctx, serviceConfig)
+	targetResource, err := sm.getTargetResourceForService(ctx, serviceConfig, serviceTarget)
 	if err != nil {
 		return nil, fmt.Errorf("getting target resource: %w", err)
 	}
@@ -499,7 +500,7 @@ func (sm *serviceManager) Deploy(
 		return nil, fmt.Errorf("getting service target: %w", err)
 	}
 
-	targetResource, err := sm.getTargetResourceForService(ctx, serviceConfig)
+	targetResource, err := sm.getTargetResourceForService(ctx, serviceConfig, serviceTarget)
 	if err != nil {
 		return nil, fmt.Errorf("getting target resource: %w", err)
 	}
@@ -537,7 +538,7 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 		if !sm.alphaFeatureManager.IsEnabled(alphaFeatureId) {
 			return nil, fmt.Errorf(
 				"service host '%s' is currently in alpha and needs to be enabled explicitly."+
-					" Run `%s` to enable the feature.",
+					" Run `%s` to enable the feature",
 				host,
 				alpha.GetEnableCommand(alphaFeatureId),
 			)
@@ -545,6 +546,21 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 	}
 
 	if err := sm.serviceLocator.ResolveNamed(host, &target); err != nil {
+		if errors.Is(err, ioc.ErrResolveInstance) {
+			return nil, &internal.ErrorWithSuggestion{
+				Err: fmt.Errorf(
+					"service host '%s' for service '%s' is unsupported",
+					host,
+					serviceConfig.Name,
+				),
+				Suggestion: fmt.Sprintf(
+					"Suggestion: install an extension that provides this host or update azure.yaml "+
+						"to use one of the supported hosts: %s",
+					strings.Join(builtInServiceTargetNames(), ", "),
+				),
+			}
+		}
+
 		return nil, fmt.Errorf(
 			"failed to resolve service host '%s' for service '%s', %w",
 			serviceConfig.Host,
@@ -687,10 +703,41 @@ func runCommand[T any](
 // getTargetResourceForService resolves the target resource for a service configuration.
 // For DotNetContainerAppTarget, it handles container app environment resolution.
 // For other service types, it delegates to the resource manager.
+type targetResourceResolver interface {
+	ResolveTargetResource(
+		ctx context.Context,
+		subscriptionId string,
+		serviceConfig *ServiceConfig,
+		defaultResolver func() (*environment.TargetResource, error),
+	) (*environment.TargetResource, error)
+}
+
 func (sm *serviceManager) getTargetResourceForService(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	serviceTarget ServiceTarget,
 ) (*environment.TargetResource, error) {
+	if serviceTarget != nil {
+		if resolver, ok := serviceTarget.(targetResourceResolver); ok {
+			// Callback for computing the default target resource
+			defaultResolver := func() (*environment.TargetResource, error) {
+				return sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
+			}
+
+			resource, err := resolver.ResolveTargetResource(
+				ctx,
+				sm.env.GetSubscriptionId(),
+				serviceConfig,
+				defaultResolver,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("resolving target resource via external service target: %w", err)
+			}
+
+			return resource, nil
+		}
+	}
+
 	if serviceConfig.Host == DotNetContainerAppTarget {
 		containerEnvName := sm.env.GetServiceProperty(serviceConfig.Name, "CONTAINER_ENVIRONMENT_NAME")
 		// AZURE_CONTAINER_APPS_ENVIRONMENT_ID is not required for Aspire (serviceConfig.DotNetContainerApp != nil)

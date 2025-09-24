@@ -50,9 +50,9 @@ func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
 	//nolint, lll
 	commandFlags.StringVar(
 		&flagValues.RepoSlug,
-		"repo",
+		"--remote-name",
 		"",
-		"The GitHub repo which will be authorized to use the federated credential (ex: <owner>/<repo>)",
+		"The name of the git remote to authorize to use the federated credential (ex: <owner>/<repo>)",
 	)
 
 	return flagValues
@@ -61,7 +61,7 @@ func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
 func newConfigCommand() *cobra.Command {
 	cc := &cobra.Command{
 		Use:   "config",
-		Short: "Configure a GitHub repo to support the GitHub coding agent",
+		Short: "Configure the GitHub Copiot coding agent to access Azure resources via the Azure MCP",
 	}
 
 	cmdFlags := setupFlags(cc.Flags())

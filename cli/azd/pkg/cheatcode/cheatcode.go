@@ -149,30 +149,22 @@ func PickOrCreateMSI(ctx context.Context, rootContainer *ioc.NestedContainer, pr
 	}
 
 	// ************************** Pick or create a new MSI **************************
-	var msIdentity rm_armmsi.Identity
 
 	// Prompt for pick or create a new MSI
-	const optionCreate = "Create new User Managed Identity (MSI)"
-	const optionUseExisting = "Use existing User Managed Identity (MSI)"
-
-	// selectedOption, err := deps.prompter.Select(ctx, input.ConsoleOptions{
-	// 	Message:      "Do you want to create a new User Managed Identity (MSI) or use an existing one?",
-	// 	Options:      options,
-	// 	DefaultValue: optionCreate,
-	// })
-
 	selectedOption, err := deps.prompter.Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: "Do you want to create a new User Managed Identity (MSI) or use an existing one?",
 			Choices: []*azdext.SelectChoice{
-				{Label: optionCreate},
-				{Label: optionUseExisting},
+				{Label: "Create new User Managed Identity (MSI)"},
+				{Label: "Use existing User Managed Identity (MSI)"},
 			},
 		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("prompting for MSI option: %w", err)
 	}
+
+	var msIdentity rm_armmsi.Identity
 
 	if *selectedOption.Value == 0 {
 		// pick a resource group and location for the new MSI
@@ -239,11 +231,6 @@ func PickOrCreateMSI(ctx context.Context, rootContainer *ioc.NestedContainer, pr
 				Label: msiOptions[i],
 			}
 		}
-		// selectedOption, err := deps.console.Select(ctx, input.ConsoleOptions{
-		// 	Message:      "Select an existing User Managed Identity (MSI) to use:",
-		// 	Options:      msiOptions,
-		// 	DefaultValue: msiOptions[0],
-		// })
 
 		selectedOption, err := deps.prompter.Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
@@ -277,16 +264,6 @@ func PickOrCreateMSI(ctx context.Context, rootContainer *ioc.NestedContainer, pr
 				DisplayName: *msIdentity.Name,
 			},
 		)
-		//	deps.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
-
-		// TODO: should there be some form of persistence for this? This ID will be stored in the Github environment so
-		// it might make more sense to read it from there.
-
-		// Set in .env to be retrieved for any additional runs
-		// deps.env.DotenvSet(AzurePipelineMsiResourceId, *msIdentity.ID)
-		// if err := deps.envManager.Save(ctx, deps.env); err != nil {
-		// 	return result, fmt.Errorf("failed to save environment: %w", err)
-		// }
 
 		return err
 	}()

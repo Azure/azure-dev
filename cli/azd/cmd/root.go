@@ -363,6 +363,7 @@ func NewRootCmd(
 	root.
 		Add("add", &actions.ActionDescriptorOptions{
 			Command:        add.NewAddCmd(),
+			FlagsResolver:  add.NewAddFlags,
 			ActionResolver: add.NewAddAction,
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupBeta,

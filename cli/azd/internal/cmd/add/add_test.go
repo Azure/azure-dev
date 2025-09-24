@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -328,4 +329,102 @@ func TestPathHasInfraModule(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNonInteractiveMode(t *testing.T) {
+	tests := []struct {
+		name        string
+		flags       *addFlags
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "valid ai.project type",
+			flags: &addFlags{
+				resourceType: "ai.project",
+				name:         "test-ai",
+				global:       &internal.GlobalCommandOptions{NoPrompt: true},
+			},
+			expectError: false,
+		},
+		{
+			name: "missing type",
+			flags: &addFlags{
+				name:   "test-resource",
+				global: &internal.GlobalCommandOptions{NoPrompt: true},
+			},
+			expectError: true,
+			errorMsg:    "--type is required when using non-interactive mode",
+		},
+		{
+			name: "missing name",
+			flags: &addFlags{
+				resourceType: "ai.project",
+				global:       &internal.GlobalCommandOptions{NoPrompt: true},
+			},
+			expectError: true,
+			errorMsg:    "--name is required when using non-interactive mode",
+		},
+		{
+			name: "invalid resource type",
+			flags: &addFlags{
+				resourceType: "invalid.type",
+				name:         "test-resource",
+				global:       &internal.GlobalCommandOptions{NoPrompt: true},
+			},
+			expectError: true,
+			errorMsg:    "invalid resource type: invalid.type",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			prjConfig := &project.ProjectConfig{
+				Resources: map[string]*project.ResourceConfig{},
+			}
+
+			// Create a minimal AddAction with the test flags
+			action := &AddAction{
+				flags: tt.flags,
+			}
+
+			resourceToAdd, serviceToAdd, err := action.handleNonInteractiveMode(ctx, prjConfig)
+
+			if tt.expectError {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errorMsg)
+				require.Nil(t, resourceToAdd)
+				require.Nil(t, serviceToAdd)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, resourceToAdd)
+				require.Equal(t, tt.flags.name, resourceToAdd.Name)
+				require.Equal(t, project.ResourceType(tt.flags.resourceType), resourceToAdd.Type)
+			}
+		})
+	}
+}
+
+func TestIsValidResourceType(t *testing.T) {
+	action := &AddAction{}
+
+	validTypes := []project.ResourceType{
+		project.ResourceTypeAiProject,
+		project.ResourceTypeStorage,
+		project.ResourceTypeKeyVault,
+	}
+
+	for _, resourceType := range validTypes {
+		t.Run(string(resourceType), func(t *testing.T) {
+			result := action.isValidResourceType(resourceType)
+			require.True(t, result)
+		})
+	}
+
+	// Test invalid type
+	t.Run("invalid_type", func(t *testing.T) {
+		result := action.isValidResourceType("invalid.type")
+		require.False(t, result)
+	})
 }

@@ -27,7 +27,7 @@ func mcpActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("mcp", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "mcp",
-			Short: "Manage Model Context Protocol (MCP) server.",
+			Short: fmt.Sprintf("Manage Model Context Protocol (MCP) server. %s", output.WithWarningFormat("(Alpha)")),
 		},
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupAlpha,

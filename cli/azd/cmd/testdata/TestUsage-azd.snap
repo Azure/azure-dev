@@ -34,11 +34,7 @@ Commands
     template  	: Find and view template details.
 
   Enabled alpha commands
-    extension 	: Manage azd extensions.
     mcp       	: Manage Model Context Protocol (MCP) server.
-
-  Enabled extensions commands 
-    x         	: This extension provides a set of tools for AZD extension developers to test and debug their extensions.
 
 Flags
     -C, --cwd string 	: Sets the current working directory.

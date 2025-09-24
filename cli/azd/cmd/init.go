@@ -549,14 +549,21 @@ const (
 )
 
 func promptInitType(console input.Console, ctx context.Context, featuresManager *alpha.FeatureManager) (initType, error) {
-	options := []string{
-		"Scan current directory", // This now covers minimal project creation too
-		"Select a template",
-	}
+	var options []string
 
-	// Only include AZD agent option if the LLM feature is enabled
+	// When LLM feature is enabled, put the agent option first for better visibility
 	if featuresManager.IsEnabled(llm.FeatureLlm) {
-		options = append(options, fmt.Sprintf("%s %s", output.AzdAgentLabel(), color.YellowString("(Alpha)")))
+		agentOption := fmt.Sprintf("%s %s", output.AzdAgentLabel(), color.YellowString("(Alpha)"))
+		options = []string{
+			agentOption,
+			"Scan current directory",
+			"Select a template",
+		}
+	} else {
+		options = []string{
+			"Scan current directory",
+			"Select a template",
+		}
 	}
 
 	selection, err := console.Select(ctx, input.ConsoleOptions{
@@ -567,19 +574,27 @@ func promptInitType(console input.Console, ctx context.Context, featuresManager 
 		return initUnknown, err
 	}
 
-	switch selection {
-	case 0:
-		return initFromApp, nil
-	case 1:
-		return initAppTemplate, nil
-	case 2:
-		// Only return initWithCopilot if the LLM feature is enabled and we have 3 options
-		if featuresManager.IsEnabled(llm.FeatureLlm) {
+	// Handle selection based on whether LLM feature is enabled
+	if featuresManager.IsEnabled(llm.FeatureLlm) {
+		switch selection {
+		case 0:
 			return initWithAgent, nil
+		case 1:
+			return initFromApp, nil
+		case 2:
+			return initAppTemplate, nil
+		default:
+			panic("unhandled selection")
 		}
-		fallthrough
-	default:
-		panic("unhandled selection")
+	} else {
+		switch selection {
+		case 0:
+			return initFromApp, nil
+		case 1:
+			return initAppTemplate, nil
+		default:
+			panic("unhandled selection")
+		}
 	}
 }
 

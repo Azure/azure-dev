@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -51,13 +52,17 @@ func (f *functionAppTarget) Package(
 	packageOutput *ServicePackageResult,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	progress.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
-	zipFilePath, err := createDeployableZip(
-		serviceConfig,
-		packageOutput.PackagePath,
-	)
-	if err != nil {
-		return nil, err
+	var err error
+	zipFilePath := packageOutput.PackagePath
+	if filepath.Ext(packageOutput.PackagePath) != ".zip" {
+		progress.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
+		zipFilePath, err = createDeployableZip(
+			serviceConfig,
+			packageOutput.PackagePath,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &ServicePackageResult{

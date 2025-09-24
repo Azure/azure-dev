@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -15,7 +16,7 @@ type customProject struct {
 	env *environment.Environment
 }
 
-// NewCustomProject creates a new instance of the Custom project
+// NewCustomProject creates a new instance of the custom language project
 func NewCustomProject(env *environment.Environment) FrameworkService {
 	return &customProject{
 		env: env,
@@ -24,7 +25,7 @@ func NewCustomProject(env *environment.Environment) FrameworkService {
 
 func (pp *customProject) Requirements() FrameworkRequirements {
 	return FrameworkRequirements{
-		// Custom projects do not require compilation and will just package the raw source files
+		// Custom language projects should run all commands when packaging
 		Package: FrameworkPackageRequirements{
 			RequireRestore: false,
 			RequireBuild:   false,
@@ -32,28 +33,28 @@ func (pp *customProject) Requirements() FrameworkRequirements {
 	}
 }
 
-// Gets the required external tools for the project
+// Gets tan empty slice of external tools for the project
 func (pp *customProject) RequiredExternalTools(_ context.Context, _ *ServiceConfig) []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-// Initializes the Python project
+// Initializes the custom language project
 func (pp *customProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	return nil
 }
 
-// Restores the project dependencies using PIP requirements.txt
+// Restores the project dependencies
 func (pp *customProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
 	return &ServiceRestoreResult{
-		Details: "Custom service - no restore required",
+		Details: "Custom language - restore not supported",
 	}, nil
 }
 
-// Build for Python apps performs a no-op and returns the service path with an optional output path when specified.
+// Build for custom language apps performs a no-op and returns the service path with an optional output path when specified.
 func (pp *customProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -61,7 +62,7 @@ func (pp *customProject) Build(
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	return &ServiceBuildResult{
-		Details: "Custom service - no build required",
+		Details: "Custom language - build not supported",
 	}, nil
 }
 
@@ -71,7 +72,10 @@ func (pp *customProject) Package(
 	buildOutput *ServiceBuildResult,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
+	if serviceConfig.OutputPath == "" {
+		return nil, fmt.Errorf("'dist' required for custom language")
+	}
 	return &ServicePackageResult{
-		Details: "Custom service - no package required",
+		PackagePath: serviceConfig.OutputPath,
 	}, nil
 }

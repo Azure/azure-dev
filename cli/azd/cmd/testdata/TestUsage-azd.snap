@@ -34,7 +34,7 @@ Commands
     template  	: Find and view template details.
 
   Enabled alpha commands
-    mcp       	: Manage Model Context Protocol (MCP) server.
+    mcp       	: Manage Model Context Protocol (MCP) server. (Alpha)
 
 Flags
     -C, --cwd string 	: Sets the current working directory.

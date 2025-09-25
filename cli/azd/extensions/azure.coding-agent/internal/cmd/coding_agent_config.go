@@ -16,6 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	azdexec "github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -148,11 +149,17 @@ func newConfigCommand() *cobra.Command {
 
 		msiService := azd_armmsi.NewArmMsiService(cp, nil)
 		entraIDService := entraid.NewEntraIdService(cp, nil, nil)
+		rgClient, err := armresources.NewResourceGroupsClient(subscriptionId, cred, nil)
+
+		if err != nil {
+			return fmt.Errorf("failed to create the resource gropu client: %s", err)
+		}
 
 		authConfig, err := PickOrCreateMSI(ctx,
 			prompter,
 			msiService,
 			entraIDService,
+			rgClient,
 			project.Name, subscriptionId, cmdFlags.RoleNames)
 
 		if err != nil {
@@ -338,6 +345,9 @@ func PickOrCreateMSI(ctx context.Context,
 	prompter azdext.PromptServiceClient,
 	msiService azd_armmsi.ArmMsiService,
 	entraIDService entraid.EntraIdService,
+	resourceService interface {
+		CreateOrUpdate(ctx context.Context, resourceGroupName string, parameters armresources.ResourceGroup, options *armresources.ResourceGroupsClientCreateOrUpdateOptions) (armresources.ResourceGroupsClientCreateOrUpdateResponse, error)
+	},
 	projectName string, subscriptionId string, roleNames []string) (*authConfiguration, error) {
 
 	// ************************** Pick or create a new MSI **************************
@@ -372,17 +382,10 @@ func PickOrCreateMSI(ctx context.Context,
 			return nil, fmt.Errorf("prompting for MSI location: %w", err)
 		}
 
-		rg, err := prompter.PromptResourceGroup(ctx, &azdext.PromptResourceGroupRequest{
-			AzureContext: &azdext.AzureContext{
-				Scope: &azdext.AzureScope{
-					SubscriptionId: subscriptionId,
-					Location:       location.Location.Name,
-				},
-			},
-		})
+		resourceGroupName, err := GetOrCreateResourceGroup(ctx, prompter, subscriptionId, location.Location.Name, resourceService)
 
 		if err != nil {
-			return nil, fmt.Errorf("failed trying to get a resource group name: %w", err)
+			return nil, err
 		}
 
 		displayMsg := fmt.Sprintf("Creating User Managed Identity (MSI) for %s", projectName)
@@ -393,7 +396,7 @@ func PickOrCreateMSI(ctx context.Context,
 
 		err = spinner.Run(ctx, func(ctx context.Context) error {
 			// Create a new MSI
-			newMSI, err := msiService.CreateUserIdentity(ctx, subscriptionId, rg.ResourceGroup.Name, location.Location.Name, "msi-"+projectName)
+			newMSI, err := msiService.CreateUserIdentity(ctx, subscriptionId, resourceGroupName, location.Location.Name, "msi-"+projectName)
 
 			if err != nil {
 				return err
@@ -477,6 +480,67 @@ func PickOrCreateMSI(ctx context.Context,
 		},
 		MSI: &msIdentity,
 	}, nil
+}
+
+func GetOrCreateResourceGroup(ctx context.Context,
+	prompter azdext.PromptServiceClient,
+	subscriptionId string, locationName string, resourceService interface {
+		CreateOrUpdate(ctx context.Context, resourceGroupName string, parameters armresources.ResourceGroup, options *armresources.ResourceGroupsClientCreateOrUpdateOptions) (armresources.ResourceGroupsClientCreateOrUpdateResponse, error)
+	}) (resourceGroupName string, err error) {
+	rg, err := prompter.PromptResourceGroup(ctx, &azdext.PromptResourceGroupRequest{
+		AzureContext: &azdext.AzureContext{
+			Scope: &azdext.AzureScope{
+				SubscriptionId: subscriptionId,
+				Location:       locationName,
+			},
+		},
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed trying to get a resource group name from prompt: %w", err)
+	}
+
+	// create resource group returns a sentinel value if the user chooses to create a resource group
+	// but does NOT create it, so we'll have to do that here.
+
+	if rg.ResourceGroup.Id != "new" {
+		resourceGroupName = rg.ResourceGroup.Name
+	} else {
+		// user chose to create a group, let's take them through that flow
+		rgPrompt, err := prompter.Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message: "Enter a name for the new resource group",
+			},
+		})
+
+		if err != nil {
+			return "", err
+		}
+
+		msg := fmt.Sprintf("Creating resource group %s in subscription %s", rgPrompt.Value, subscriptionId)
+		spinner := ux.NewSpinner(&ux.SpinnerOptions{
+			Text: msg,
+		})
+
+		err = spinner.Run(ctx, func(ctx context.Context) error {
+			createRGResp, err := resourceService.CreateOrUpdate(ctx, rgPrompt.Value, armresources.ResourceGroup{
+				Location: &locationName,
+			}, nil)
+
+			if err != nil {
+				return err
+			}
+
+			resourceGroupName = *createRGResp.Name
+			return nil
+		})
+
+		if err != nil {
+			return "", fmt.Errorf("failed to create resource group: %w", err)
+		}
+	}
+
+	return resourceGroupName, nil
 }
 
 type authConfiguration struct {

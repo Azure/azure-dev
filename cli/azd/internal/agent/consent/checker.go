@@ -181,7 +181,7 @@ func (cc *ConsentChecker) promptForToolConsent(
 	annotations mcp.ToolAnnotation,
 ) (string, error) {
 	message := fmt.Sprintf(
-		"Allow tool %s from server %s to run?",
+		"The tool %s from server %s wants to run. Do you want to allow this?",
 		output.WithHighLightFormat(toolName),
 		output.WithHighLightFormat(cc.serverName),
 	)
@@ -191,15 +191,15 @@ func (cc *ConsentChecker) promptForToolConsent(
 	choices := []*ux.SelectChoice{
 		{
 			Value: "deny",
-			Label: "No, not right now",
+			Label: "No, deny access",
 		},
 		{
 			Value: "once",
-			Label: "Yes, just this time",
+			Label: "Yes, allow just once",
 		},
 		{
 			Value: "session",
-			Label: "Yes, until I restart azd",
+			Label: "Yes, allow until azd restarts",
 		},
 	}
 
@@ -207,20 +207,20 @@ func (cc *ConsentChecker) promptForToolConsent(
 	if cc.consentMgr.IsProjectScopeAvailable(ctx) {
 		choices = append(choices, &ux.SelectChoice{
 			Value: "project",
-			Label: "Yes, remember for this project",
+			Label: "Yes, allow for this project",
 		})
 	}
 
 	choices = append(choices, &ux.SelectChoice{
 		Value: "always",
-		Label: "Yes, always allow this tool",
+		Label: "Yes, always allow this specific tool",
 	})
 
 	// Add server trust option if not already trusted
 	if !cc.isServerAlreadyTrusted(ctx, OperationTypeTool) {
 		choices = append(choices, &ux.SelectChoice{
 			Value: "server",
-			Label: "Allow all tools from this server",
+			Label: "Yes, trust all tools from this server",
 		})
 	}
 
@@ -229,19 +229,19 @@ func (cc *ConsentChecker) promptForToolConsent(
 	if isReadOnlyTool {
 		choices = append(choices, &ux.SelectChoice{
 			Value: "readonly_server",
-			Label: "Allow all read-only tools from this server",
+			Label: "Yes, trust read-only tools from this server",
 		})
 
 		choices = append(choices, &ux.SelectChoice{
 			Value: "readonly_global",
-			Label: "Allow all read-only tools from any server",
+			Label: "Yes, trust read-only tools from any server",
 		})
 	}
 
 	// Add global sampling trust option
 	choices = append(choices, &ux.SelectChoice{
 		Value: "global",
-		Label: "Allow all tools from any server",
+		Label: "Yes, trust all tools from any server",
 	})
 
 	selector := ux.NewSelect(&ux.SelectOptions{
@@ -392,33 +392,36 @@ func (cc *ConsentChecker) promptForSamplingConsent(
 	toolName, toolDesc string,
 ) (string, error) {
 	message := fmt.Sprintf(
-		"Allow tool %s from server %s to communicate with the AI Model?",
+		"The tool %s from server %s wants to send data to an AI model. Do you want to allow this?",
 		output.WithHighLightFormat(toolName),
 		output.WithHighLightFormat(cc.serverName),
 	)
 
-	helpMessage := fmt.Sprintf("This will allow the tool to send data to an LLM for analysis or generation. %s", toolDesc)
+	helpMessage := fmt.Sprintf(
+		"This allows the tool to send data to a language model for analysis or generation. %s",
+		toolDesc,
+	)
 
 	choices := []*ux.SelectChoice{
 		{
 			Value: "deny",
-			Label: "No - Don't send data",
+			Label: "No, deny access",
 		},
 		{
 			Value: "once",
-			Label: "Yes, just this time",
+			Label: "Yes, allow just once",
 		},
 		{
 			Value: "session",
-			Label: "Yes, until I restart azd",
+			Label: "Yes, allow until azd restarts",
 		},
 		{
 			Value: "project",
-			Label: "Yes, remember for this project",
+			Label: "Yes, allow for this project",
 		},
 		{
 			Value: "always",
-			Label: "Yes, always allow this tool",
+			Label: "Yes, always allow this specific tool",
 		},
 	}
 
@@ -426,14 +429,14 @@ func (cc *ConsentChecker) promptForSamplingConsent(
 	if !cc.isServerAlreadyTrusted(ctx, OperationTypeSampling) {
 		choices = append(choices, &ux.SelectChoice{
 			Value: "server",
-			Label: "Allow sampling for all tools from this server",
+			Label: "Yes, trust all tools from this server for AI access",
 		})
 	}
 
 	// Add global sampling trust option
 	choices = append(choices, &ux.SelectChoice{
 		Value: "global",
-		Label: "Allow sampling for all tools from any server",
+		Label: "Yes, trust all tools from any server for AI access",
 	})
 
 	selector := ux.NewSelect(&ux.SelectOptions{

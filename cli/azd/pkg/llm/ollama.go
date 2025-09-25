@@ -4,6 +4,8 @@
 package llm
 
 import (
+	"context"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/ollama"
@@ -32,7 +34,7 @@ func NewOllamaModelProvider(userConfigManager config.UserConfigManager) ModelPro
 // CreateModelContainer creates a model container for Ollama with configuration from user settings.
 // It defaults to "llama3" model if none specified and "latest" version if not configured.
 // Applies optional parameters like temperature and max tokens to the Ollama client.
-func (p *OllamaModelProvider) CreateModelContainer(opts ...ModelOption) (*ModelContainer, error) {
+func (p *OllamaModelProvider) CreateModelContainer(_ context.Context, opts ...ModelOption) (*ModelContainer, error) {
 	userConfig, err := p.userConfigManager.Load()
 	if err != nil {
 		return nil, err

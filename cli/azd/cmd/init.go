@@ -376,7 +376,7 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	// Warn user that this is an alpha feature
 	i.console.WarnForFeature(ctx, llm.FeatureLlm)
 
-	azdAgent, err := i.agentFactory.Create(
+	azdAgent, err := i.agentFactory.Create(ctx,
 		agent.WithDebug(i.flags.global.EnableDebugLogging),
 	)
 	if err != nil {

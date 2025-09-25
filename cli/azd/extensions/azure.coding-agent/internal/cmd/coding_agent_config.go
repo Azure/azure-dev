@@ -6,19 +6,31 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/cheatcode"
+	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	azdexec "github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
+	rm_armmsi "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
+	azd_armmsi "github.com/azure/azure-dev/cli/azd/pkg/armmsi"
 
 	_ "embed"
 )
@@ -98,12 +110,7 @@ func newConfigCommand() *cobra.Command {
 		}
 
 		project := getProjectResponse.Project
-
-		rootContainer, err := cheatcode.NewRootContainer(ctx, ".")
-
-		if err != nil {
-			return err
-		}
+		prompter := azdClient.Prompt()
 
 		if cmdFlags.RepoSlug == "" {
 			// this has to be filled out - when we create/set federated credentials it's part of the subject.
@@ -121,29 +128,41 @@ func newConfigCommand() *cobra.Command {
 			cmdFlags.RepoSlug = res.Value
 		}
 
-		rootContainer.MustRegisterSingleton(func() azdext.PromptServiceClient {
-			return azdClient.Prompt()
-		})
-
-		// rootContainer.MustRegisterSingleton(func() input.Console {
-		// 	return console
-		// })
-
-		subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
+		subscriptionResponse, err := prompter.PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
 
 		if err != nil {
 			return err
 		}
 
+		tenantID := subscriptionResponse.Subscription.TenantId
 		subscriptionId := subscriptionResponse.Subscription.Id
 
-		authConfig, err := cheatcode.PickOrCreateMSI(ctx, rootContainer, project.Name, subscriptionId, cmdFlags.RoleNames)
+		cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+			TenantID: tenantID,
+		})
 
 		if err != nil {
 			return err
 		}
 
-		err = cheatcode.SetCopilotCodingAgentFederation(ctx, rootContainer, cmdFlags.RepoSlug, cmdFlags.CopilotEnv, subscriptionId, *authConfig.MSI.ID)
+		cp := &credentialProviderAdapter{tokenCred: cred}
+
+		msiService := azd_armmsi.NewArmMsiService(cp, nil)
+		entraIDService := entraid.NewEntraIdService(cp, nil, nil)
+
+		authConfig, err := PickOrCreateMSI(ctx,
+			prompter,
+			msiService,
+			entraIDService,
+			project.Name, subscriptionId, cmdFlags.RoleNames)
+
+		if err != nil {
+			return err
+		}
+
+		err = SetCopilotCodingAgentFederation(ctx,
+			msiService,
+			cmdFlags.RepoSlug, cmdFlags.CopilotEnv, subscriptionId, *authConfig.MSI.ID)
 
 		if err != nil {
 			return err
@@ -256,4 +275,207 @@ func newConfigCommand() *cobra.Command {
 	}
 
 	return cc
+}
+
+type credentialProviderAdapter struct {
+	tokenCred azcore.TokenCredential
+}
+
+func (cp *credentialProviderAdapter) CredentialForSubscription(ctx context.Context, subscriptionId string) (azcore.TokenCredential, error) {
+	return cp.tokenCred, nil
+}
+
+func SetCopilotCodingAgentFederation(ctx context.Context,
+	msiService azd_armmsi.ArmMsiService,
+	repoSlug string,
+	copilotEnvName string,
+	subscriptionId string,
+	msiId string, // was *authConfig.msi.ID
+) error {
+	credentialSafeName := strings.ReplaceAll(repoSlug, "/", "-")
+
+	federatedCredentialOptions := []*graphsdk.FederatedIdentityCredential{
+		{
+			Name:        url.PathEscape(fmt.Sprintf("%s-copilot-coding-agent-env", credentialSafeName)),
+			Issuer:      pipeline.CheatCodeIssuer,
+			Subject:     fmt.Sprintf("repo:%s:environment:%s", repoSlug, copilotEnvName),
+			Description: to.Ptr("Created by Azure Developer CLI"),
+			Audiences:   []string{pipeline.CheatCodeFederatedIdentityAudience},
+		},
+	}
+
+	// Enable federated credentials if requested
+	type fedCredentialData struct{ Name, Subject, Issuer string }
+
+	// TODO: for now, assuming MSI
+
+	// convert fedCredentials from msGraph to armmsi.FederatedIdentityCredential
+	armFedCreds := make([]rm_armmsi.FederatedIdentityCredential, len(federatedCredentialOptions))
+	for i, fedCred := range federatedCredentialOptions {
+		armFedCreds[i] = rm_armmsi.FederatedIdentityCredential{
+			Name: to.Ptr(fedCred.Name),
+			Properties: &rm_armmsi.FederatedIdentityCredentialProperties{
+				Subject:   to.Ptr(fedCred.Subject),
+				Issuer:    to.Ptr(fedCred.Issuer),
+				Audiences: to.SliceOfPtrs(fedCred.Audiences...),
+			},
+		}
+	}
+
+	if _, err := msiService.ApplyFederatedCredentials(ctx, subscriptionId, msiId, armFedCreds); err != nil {
+		return fmt.Errorf("failed to create federated credentials: %w", err)
+	}
+
+	return nil
+}
+
+func PickOrCreateMSI(ctx context.Context,
+	prompter azdext.PromptServiceClient,
+	msiService azd_armmsi.ArmMsiService,
+	entraIDService entraid.EntraIdService,
+	projectName string, subscriptionId string, roleNames []string) (*authConfiguration, error) {
+
+	// ************************** Pick or create a new MSI **************************
+
+	// Prompt for pick or create a new MSI
+	selectedOption, err := prompter.Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message: "Do you want to create a new User Managed Identity (MSI) or use an existing one?",
+			Choices: []*azdext.SelectChoice{
+				{Label: "Create new User Managed Identity (MSI)"},
+				{Label: "Use existing User Managed Identity (MSI)"},
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for MSI option: %w", err)
+	}
+
+	var msIdentity rm_armmsi.Identity
+
+	if *selectedOption.Value == 0 {
+		// pick a resource group and location for the new MSI
+		location, err := prompter.PromptLocation(ctx, &azdext.PromptLocationRequest{
+			AzureContext: &azdext.AzureContext{
+				Scope: &azdext.AzureScope{
+					SubscriptionId: subscriptionId,
+				},
+			},
+		})
+
+		if err != nil {
+			return nil, fmt.Errorf("prompting for MSI location: %w", err)
+		}
+
+		rg, err := prompter.PromptResourceGroup(ctx, &azdext.PromptResourceGroupRequest{
+			AzureContext: &azdext.AzureContext{
+				Scope: &azdext.AzureScope{
+					SubscriptionId: subscriptionId,
+					Location:       location.Location.Name,
+				},
+			},
+		})
+
+		if err != nil {
+			return nil, fmt.Errorf("failed trying to get a resource group name: %w", err)
+		}
+
+		displayMsg := fmt.Sprintf("Creating User Managed Identity (MSI) for %s", projectName)
+
+		spinner := ux.NewSpinner(&ux.SpinnerOptions{
+			Text: displayMsg,
+		})
+
+		err = spinner.Run(ctx, func(ctx context.Context) error {
+			// Create a new MSI
+			newMSI, err := msiService.CreateUserIdentity(ctx, subscriptionId, rg.ResourceGroup.Name, location.Location.Name, "msi-"+projectName)
+
+			if err != nil {
+				return err
+			}
+
+			msIdentity = newMSI
+			return nil
+		})
+
+		if err != nil {
+			return &authConfiguration{}, fmt.Errorf("failed to create User Managed Identity (MSI): %w", err)
+		}
+	} else {
+		// List existing MSIs and let the user select one
+		msIdentities, err := msiService.ListUserIdentities(ctx, subscriptionId)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list User Managed Identities (MSI): %w", err)
+		}
+		if len(msIdentities) == 0 {
+			return nil, fmt.Errorf("no User Managed Identities (MSI) found in subscription %s", subscriptionId)
+		}
+		// Prompt the user to select an existing MSI
+		msiOptions := make([]string, len(msIdentities))
+		choices := make([]*azdext.SelectChoice, len(msIdentities))
+
+		for i, msi := range msIdentities {
+			msiData, err := arm.ParseResourceID(*msi.ID)
+			if err != nil {
+				return nil, fmt.Errorf("parsing MSI resource id: %w", err)
+			}
+			msiOptions[i] = fmt.Sprintf("%2d. %s (%s)", i+1, *msi.Name, msiData.ResourceGroupName)
+			choices[i] = &azdext.SelectChoice{
+				Label: msiOptions[i],
+			}
+		}
+
+		selectedOption, err := prompter.Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message: "Select an existing User Managed Identity (MSI) to use:",
+				Choices: choices,
+			},
+		})
+
+		if err != nil {
+			return nil, fmt.Errorf("prompting for existing MSI: %w", err)
+		}
+		msIdentity = msIdentities[*selectedOption.Value]
+	}
+
+	roleNameStrings := strings.Join(roleNames, ", ")
+
+	displayMsg := fmt.Sprintf("Assigning roles (%s) to User Managed Identity (MSI) %s", roleNameStrings, *msIdentity.Name)
+	spinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text: displayMsg,
+	})
+
+	err = spinner.Run(ctx, func(ctx context.Context) error {
+		// ************************** Role Assign **************************
+		return entraIDService.EnsureRoleAssignments(
+			ctx,
+			subscriptionId,
+			roleNames,
+			// EnsureRoleAssignments uses the ServicePrincipal ID and the DisplayName.
+			// We are adapting the MSI to work with the same method as a regular Service Principal, by pulling name and ID.
+			&graphsdk.ServicePrincipal{
+				Id:          msIdentity.Properties.PrincipalID,
+				DisplayName: *msIdentity.Name,
+			},
+		)
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to assign role to User Managed Identity (MSI): %w", err)
+	}
+
+	return &authConfiguration{
+		AzureCredentials: &entraid.AzureCredentials{
+			ClientId:       *msIdentity.Properties.ClientID,
+			TenantId:       *msIdentity.Properties.TenantID,
+			SubscriptionId: subscriptionId,
+		},
+		MSI: &msIdentity,
+	}, nil
+}
+
+type authConfiguration struct {
+	*entraid.AzureCredentials
+	// SP  *graphsdk.ServicePrincipal
+	MSI *armmsi.Identity
 }

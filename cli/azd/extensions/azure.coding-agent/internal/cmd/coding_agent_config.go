@@ -175,49 +175,53 @@ func newConfigCommand() *cobra.Command {
 		}
 
 		var msg = fmt.Sprintf("Setting identity variables in the GitHub Copilot environment(AZURE_CLIENT_ID=%s)", authConfig.AzureCredentials.ClientId)
+		fmt.Printf("%s\n", msg)
 
-		spinner := ux.NewSpinner(&ux.SpinnerOptions{
-			Text: msg,
-		})
+		// TODO: the command runner automatically prints out the commmands it's executing which doesn't play well with the
+		// spinner.
+		// spinner := ux.NewSpinner(&ux.SpinnerOptions{
+		// 	Text: msg,
+		// })
 
-		err = spinner.Run(ctx, func(ctx context.Context) error {
-			commandRunner := azdexec.NewCommandRunner(nil)
+		// err = spinner.Run(ctx, func(ctx context.Context) error {
+		commandRunner := azdexec.NewCommandRunner(nil)
 
-			console := input.NewConsole(true, true, input.Writers{
-				Output:  os.Stdout,
-				Spinner: os.Stdout,
-			}, input.ConsoleHandles{
-				Stdin:  os.Stdin,
-				Stdout: os.Stdout,
-				Stderr: os.Stderr,
-			}, &output.NoneFormatter{}, nil)
+		console := input.NewConsole(true, true, input.Writers{
+			Output:  os.Stdout,
+			Spinner: os.Stdout,
+		}, input.ConsoleHandles{
+			Stdin:  os.Stdin,
+			Stdout: os.Stdout,
+			Stderr: os.Stderr,
+		}, &output.NoneFormatter{}, nil)
 
-			cli, err := github.NewGitHubCli(ctx, console, commandRunner)
+		cli, err := github.NewGitHubCli(ctx, console, commandRunner)
 
-			if err != nil {
+		if err != nil {
+			return err
+		}
+
+		if err := cli.CreateEnvironmentIfNotExist(ctx, cmdFlags.RepoSlug, cmdFlags.CopilotEnv); err != nil {
+			return err
+		}
+
+		varsToSet := map[string]string{
+			"AZURE_CLIENT_ID":       authConfig.AzureCredentials.ClientId,
+			"AZURE_TENANT_ID":       authConfig.AzureCredentials.TenantId,
+			"AZURE_SUBSCRIPTION_ID": authConfig.AzureCredentials.SubscriptionId,
+		}
+
+		for name, value := range varsToSet {
+			if err := cli.SetVariable(ctx, cmdFlags.RepoSlug, name, value, &github.SetVariableOptions{
+				Environment: cmdFlags.CopilotEnv,
+			}); err != nil {
 				return err
 			}
+		}
 
-			if err := cli.CreateEnvironmentIfNotExist(ctx, cmdFlags.RepoSlug, cmdFlags.CopilotEnv); err != nil {
-				return err
-			}
+		// return nil
+		// })
 
-			varsToSet := map[string]string{
-				"AZURE_CLIENT_ID":       authConfig.AzureCredentials.ClientId,
-				"AZURE_TENANT_ID":       authConfig.AzureCredentials.TenantId,
-				"AZURE_SUBSCRIPTION_ID": authConfig.AzureCredentials.SubscriptionId,
-			}
-
-			for name, value := range varsToSet {
-				if err := cli.SetVariable(ctx, cmdFlags.RepoSlug, name, value, &github.SetVariableOptions{
-					Environment: cmdFlags.CopilotEnv,
-				}); err != nil {
-					return err
-				}
-			}
-
-			return nil
-		})
 		if err != nil {
 			return err
 		}

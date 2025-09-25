@@ -138,7 +138,7 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 			printer.Fprintln()
 
 			if latestThought != "" {
-				printer.Fprintln(color.HiBlackString(latestThought))
+				printer.Fprintln(color.HiCyanString("💭 Thought: "), color.HiWhiteString(latestThought))
 				printer.Fprintln()
 				printer.Fprintln()
 			}

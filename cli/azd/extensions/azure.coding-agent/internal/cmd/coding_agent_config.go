@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -28,9 +30,10 @@ var mcpJson string
 var copilotSetupStepsYml string
 
 type flagValues struct {
-	RoleNames  []string
-	CopilotEnv string
-	RepoSlug   string
+	Subscription string
+	RoleNames    []string
+	CopilotEnv   string
+	RepoSlug     string
 }
 
 func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
@@ -50,10 +53,18 @@ func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
 	//nolint, lll
 	commandFlags.StringVar(
 		&flagValues.RepoSlug,
-		"--remote-name",
+		"remote-name",
 		"",
 		"The name of the git remote where the Copilot Coding Agent will run (ex: <owner>/<repo>)",
 	)
+
+	// //nolint, lll
+	// commandFlags.StringVar(
+	// 	&flagValues.Subscription,
+	// 	"subscription",
+	// 	"",
+	// 	"ID of an Azure Subscription which the coding agent will access",
+	// )
 
 	return flagValues
 }
@@ -110,22 +121,13 @@ func newConfigCommand() *cobra.Command {
 			cmdFlags.RepoSlug = res.Value
 		}
 
-		console := input.NewConsole(true, true, input.Writers{
-			Output:  os.Stdout,
-			Spinner: os.Stdout,
-		}, input.ConsoleHandles{
-			Stdin:  os.Stdin,
-			Stdout: os.Stdout,
-			Stderr: os.Stderr,
-		}, &output.NoneFormatter{}, nil)
-
 		rootContainer.MustRegisterSingleton(func() azdext.PromptServiceClient {
 			return azdClient.Prompt()
 		})
 
-		rootContainer.MustRegisterSingleton(func() input.Console {
-			return console
-		})
+		// rootContainer.MustRegisterSingleton(func() input.Console {
+		// 	return console
+		// })
 
 		subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
 
@@ -147,13 +149,23 @@ func newConfigCommand() *cobra.Command {
 			return err
 		}
 
-		err = func() error {
-			var msg = fmt.Sprintf("Setting variables in the GitHub Copilot environment\n  AZURE_CLIENT_ID=%s\n  AZURE_TENANT_ID=%s\n  AZURE_SUBSCRIPTION_ID=%s\n", authConfig.AzureCredentials.ClientId, authConfig.AzureCredentials.TenantId, authConfig.AzureCredentials.SubscriptionId)
+		var msg = fmt.Sprintf("Setting identity variables in the GitHub Copilot environment(AZURE_CLIENT_ID=%s)", authConfig.AzureCredentials.ClientId)
 
-			console.ShowSpinner(ctx, msg, input.Step)
-			defer console.StopSpinner(ctx, msg, input.StepDone)
+		spinner := ux.NewSpinner(&ux.SpinnerOptions{
+			Text: msg,
+		})
 
+		err = spinner.Run(ctx, func(ctx context.Context) error {
 			commandRunner := azdexec.NewCommandRunner(nil)
+
+			console := input.NewConsole(true, true, input.Writers{
+				Output:  os.Stdout,
+				Spinner: os.Stdout,
+			}, input.ConsoleHandles{
+				Stdin:  os.Stdin,
+				Stdout: os.Stdout,
+				Stderr: os.Stderr,
+			}, &output.NoneFormatter{}, nil)
 
 			cli, err := github.NewGitHubCli(ctx, console, commandRunner)
 
@@ -180,8 +192,7 @@ func newConfigCommand() *cobra.Command {
 			}
 
 			return nil
-		}()
-
+		})
 		if err != nil {
 			return err
 		}

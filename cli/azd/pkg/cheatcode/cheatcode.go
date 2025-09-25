@@ -17,10 +17,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 )
 
@@ -33,7 +32,6 @@ func SetCopilotCodingAgentFederation(ctx context.Context,
 ) error {
 	var deps struct {
 		msiService azd_armmsi.ArmMsiService `container:"type"`
-		console    input.Console            `container:"type"`
 	}
 
 	if err := rootContainer.Fill(&deps); err != nil {
@@ -54,7 +52,6 @@ func SetCopilotCodingAgentFederation(ctx context.Context,
 
 	// Enable federated credentials if requested
 	type fedCredentialData struct{ Name, Subject, Issuer string }
-	var createdCredentials []fedCredentialData
 
 	// TODO: for now, assuming MSI
 
@@ -71,29 +68,8 @@ func SetCopilotCodingAgentFederation(ctx context.Context,
 		}
 	}
 
-	//creds, err := msiService.ApplyFederatedCredentials(ctx, subscriptionId, *authConfig.msi.ID, armFedCreds)
-	creds, err := deps.msiService.ApplyFederatedCredentials(ctx, subscriptionId, msiId, armFedCreds)
-	if err != nil {
+	if _, err := deps.msiService.ApplyFederatedCredentials(ctx, subscriptionId, msiId, armFedCreds); err != nil {
 		return fmt.Errorf("failed to create federated credentials: %w", err)
-	}
-
-	// Convert the armmsi.FederatedIdentityCredential to fedCredentialData for display
-	for _, c := range creds {
-		createdCredentials = append(createdCredentials, fedCredentialData{
-			Name:    *c.Name,
-			Subject: *c.Properties.Subject,
-			Issuer:  *c.Properties.Issuer,
-		})
-	}
-
-	for _, credential := range createdCredentials {
-		deps.console.MessageUxItem(
-			ctx,
-			&ux.DisplayedResource{
-				Type: "Federated identity credential",
-				Name: fmt.Sprintf("subject %s", credential.Subject),
-			},
-		)
 	}
 
 	return nil
@@ -138,7 +114,6 @@ type CheatCodeAuthConfiguration struct {
 
 func PickOrCreateMSI(ctx context.Context, rootContainer *ioc.NestedContainer, projectName string, subscriptionId string, roleNames []string) (*CheatCodeAuthConfiguration, error) {
 	var deps struct {
-		console        input.Console              `container:"type"`
 		prompter       azdext.PromptServiceClient `container:"type"`
 		msiService     azd_armmsi.ArmMsiService   `container:"type"`
 		entraIdService entraid.EntraIdService     `container:"type"`
@@ -193,21 +168,27 @@ func PickOrCreateMSI(ctx context.Context, rootContainer *ioc.NestedContainer, pr
 			return nil, fmt.Errorf("failed trying to get a resource group name: %w", err)
 		}
 
-		newMSI, err := func() (rm_armmsi.Identity, error) {
-			displayMsg := fmt.Sprintf("Creating User Managed Identity (MSI) for %s", projectName)
+		displayMsg := fmt.Sprintf("Creating User Managed Identity (MSI) for %s", projectName)
 
-			deps.console.ShowSpinner(ctx, displayMsg, input.Step)
-			defer deps.console.StopSpinner(ctx, displayMsg, input.StepDone)
+		spinner := ux.NewSpinner(&ux.SpinnerOptions{
+			Text: displayMsg,
+		})
 
+		err = spinner.Run(ctx, func(ctx context.Context) error {
 			// Create a new MSI
-			return deps.msiService.CreateUserIdentity(ctx, subscriptionId, rg.ResourceGroup.Name, location.Location.Name, "msi-"+projectName)
-		}()
+			newMSI, err := deps.msiService.CreateUserIdentity(ctx, subscriptionId, rg.ResourceGroup.Name, location.Location.Name, "msi-"+projectName)
+
+			if err != nil {
+				return err
+			}
+
+			msIdentity = newMSI
+			return nil
+		})
 
 		if err != nil {
 			return &CheatCodeAuthConfiguration{}, fmt.Errorf("failed to create User Managed Identity (MSI): %w", err)
 		}
-
-		msIdentity = newMSI
 	} else {
 		// List existing MSIs and let the user select one
 		msIdentities, err := deps.msiService.ListUserIdentities(ctx, subscriptionId)
@@ -245,15 +226,16 @@ func PickOrCreateMSI(ctx context.Context, rootContainer *ioc.NestedContainer, pr
 		msIdentity = msIdentities[*selectedOption.Value]
 	}
 
-	err = func() error {
-		roleNameStrings := strings.Join(roleNames, ", ")
+	roleNameStrings := strings.Join(roleNames, ", ")
 
-		displayMsg := fmt.Sprintf("Assigning roles (%s) to User Managed Identity (MSI) %s", roleNameStrings, *msIdentity.Name)
-		deps.console.ShowSpinner(ctx, displayMsg, input.Step)
-		defer deps.console.StopSpinner(ctx, displayMsg, input.StepDone)
+	displayMsg := fmt.Sprintf("Assigning roles (%s) to User Managed Identity (MSI) %s", roleNameStrings, *msIdentity.Name)
+	spinner := ux.NewSpinner(&ux.SpinnerOptions{
+		Text: displayMsg,
+	})
 
+	err = spinner.Run(ctx, func(ctx context.Context) error {
 		// ************************** Role Assign **************************
-		err = deps.entraIdService.EnsureRoleAssignments(
+		return deps.entraIdService.EnsureRoleAssignments(
 			ctx,
 			subscriptionId,
 			roleNames,
@@ -264,9 +246,7 @@ func PickOrCreateMSI(ctx context.Context, rootContainer *ioc.NestedContainer, pr
 				DisplayName: *msIdentity.Name,
 			},
 		)
-
-		return err
-	}()
+	})
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to assign role to User Managed Identity (MSI): %w", err)

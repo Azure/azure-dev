@@ -6,4 +6,4 @@ id: azure.coding-agent
 language: go
 namespace: coding-agent
 usage: azd coding-agent <command> [options]
-version: 0.0.6
+version: 0.0.7

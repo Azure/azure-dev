@@ -166,7 +166,7 @@ func newConfigCommand() *cobra.Command {
 			return err
 		}
 
-		err = SetCopilotCodingAgentFederation(ctx,
+		err = CreateFederatedCredential(ctx,
 			msiService,
 			cmdFlags.RepoSlug, cmdFlags.CopilotEnv, subscriptionId, *authConfig.MSI.ID)
 
@@ -301,41 +301,24 @@ const (
 	federatedIdentityAudience = "api://AzureADTokenExchange"
 )
 
-func SetCopilotCodingAgentFederation(ctx context.Context,
+// CreateFederatedCredential creates a federated credential (allowing Copilot to authenticate and use Azure)
+func CreateFederatedCredential(ctx context.Context,
 	msiService azd_armmsi.ArmMsiService,
 	repoSlug string,
 	copilotEnvName string,
 	subscriptionId string,
-	msiId string, // was *authConfig.msi.ID
-) error {
+	msiId string) error {
 	credentialSafeName := strings.ReplaceAll(repoSlug, "/", "-")
 
-	federatedCredentialOptions := []*graphsdk.FederatedIdentityCredential{
+	armFedCreds := []rm_armmsi.FederatedIdentityCredential{
 		{
-			Name:        url.PathEscape(fmt.Sprintf("%s-copilot-coding-agent-env", credentialSafeName)),
-			Issuer:      federatedIdentityIssuer,
-			Subject:     fmt.Sprintf("repo:%s:environment:%s", repoSlug, copilotEnvName),
-			Description: to.Ptr("Created by Azure Developer CLI"),
-			Audiences:   []string{federatedIdentityAudience},
-		},
-	}
-
-	// Enable federated credentials if requested
-	type fedCredentialData struct{ Name, Subject, Issuer string }
-
-	// TODO: for now, assuming MSI
-
-	// convert fedCredentials from msGraph to armmsi.FederatedIdentityCredential
-	armFedCreds := make([]rm_armmsi.FederatedIdentityCredential, len(federatedCredentialOptions))
-	for i, fedCred := range federatedCredentialOptions {
-		armFedCreds[i] = rm_armmsi.FederatedIdentityCredential{
-			Name: to.Ptr(fedCred.Name),
+			Name: to.Ptr(url.PathEscape(fmt.Sprintf("%s-copilot-env", credentialSafeName))),
 			Properties: &rm_armmsi.FederatedIdentityCredentialProperties{
-				Subject:   to.Ptr(fedCred.Subject),
-				Issuer:    to.Ptr(fedCred.Issuer),
-				Audiences: to.SliceOfPtrs(fedCred.Audiences...),
+				Subject:   to.Ptr(fmt.Sprintf("repo:%s:environment:%s", repoSlug, copilotEnvName)),
+				Issuer:    to.Ptr(federatedIdentityIssuer),
+				Audiences: []*string{to.Ptr(federatedIdentityAudience)},
 			},
-		}
+		},
 	}
 
 	if _, err := msiService.ApplyFederatedCredentials(ctx, subscriptionId, msiId, armFedCreds); err != nil {
@@ -400,7 +383,7 @@ func PickOrCreateMSI(ctx context.Context,
 
 		err = spinner.Run(ctx, func(ctx context.Context) error {
 			// Create a new MSI
-			newMSI, err := msiService.CreateUserIdentity(ctx, subscriptionId, resourceGroupName, location.Location.Name, "msi-"+projectName)
+			newMSI, err := msiService.CreateUserIdentity(ctx, subscriptionId, resourceGroupName, location.Location.Name, "msi-copilot-"+projectName)
 
 			if err != nil {
 				return err

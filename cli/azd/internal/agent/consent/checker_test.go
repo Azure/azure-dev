@@ -67,10 +67,10 @@ func TestConsentChecker_formatToolDescriptionWithAnnotations(t *testing.T) {
 			expected:    "No description available",
 		},
 		{
-			name:     "SimpleDescription",
-			toolDesc: "A simple test tool",
+			name:        "SimpleDescription",
+			toolDesc:    "A simple test tool",
 			annotations: mcp.ToolAnnotation{},
-			expected: "A simple test tool",
+			expected:    "A simple test tool",
 		},
 		{
 			name:     "DescriptionWithReadOnly",

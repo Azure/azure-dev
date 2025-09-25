@@ -22,7 +22,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
@@ -285,6 +284,12 @@ func (cp *credentialProviderAdapter) CredentialForSubscription(ctx context.Conte
 	return cp.tokenCred, nil
 }
 
+// copied from azd's github_provider.go
+const (
+	federatedIdentityIssuer   = "https://token.actions.githubusercontent.com"
+	federatedIdentityAudience = "api://AzureADTokenExchange"
+)
+
 func SetCopilotCodingAgentFederation(ctx context.Context,
 	msiService azd_armmsi.ArmMsiService,
 	repoSlug string,
@@ -297,10 +302,10 @@ func SetCopilotCodingAgentFederation(ctx context.Context,
 	federatedCredentialOptions := []*graphsdk.FederatedIdentityCredential{
 		{
 			Name:        url.PathEscape(fmt.Sprintf("%s-copilot-coding-agent-env", credentialSafeName)),
-			Issuer:      pipeline.CheatCodeIssuer,
+			Issuer:      federatedIdentityIssuer,
 			Subject:     fmt.Sprintf("repo:%s:environment:%s", repoSlug, copilotEnvName),
 			Description: to.Ptr("Created by Azure Developer CLI"),
-			Audiences:   []string{pipeline.CheatCodeFederatedIdentityAudience},
+			Audiences:   []string{federatedIdentityAudience},
 		},
 	}
 

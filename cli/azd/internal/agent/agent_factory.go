@@ -4,6 +4,9 @@
 package agent
 
 import (
+	"context"
+	"time"
+
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/logging"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
@@ -12,6 +15,8 @@ import (
 	mcptools "github.com/azure/azure-dev/cli/azd/internal/agent/tools/mcp"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 )
 
 // AgentFactory is responsible for creating agent instances
@@ -127,4 +132,41 @@ func (f *AgentFactory) Create(opts ...AgentCreateOption) (Agent, error) {
 	}
 
 	return azdAgent, nil
+}
+
+// PromptReadOnlyConsent shows a proactive prompt to allow read-only tools from the agent server
+func (f *AgentFactory) PromptReadOnlyConsent(ctx context.Context) error {
+	confirm := ux.NewConfirm(&ux.ConfirmOptions{
+		Message:      "Allow read-only tools to run automatically without individual prompts?",
+		DefaultValue: ux.Ptr(true),
+		HelpMessage: "This will pre-approve all read-only operations (like reading files, analyzing code) " +
+			"during the initialization process. You'll still be prompted for any tools that might modify data.",
+	})
+
+	allowReadOnly, err := confirm.Ask(ctx)
+	if err != nil {
+		return err
+	}
+
+	if allowReadOnly != nil && *allowReadOnly {
+		// Grant consent for all read-only tools from any server
+		rule := consent.ConsentRule{
+			Scope:      consent.ScopeSession,
+			Target:     consent.NewGlobalTarget(),
+			Action:     consent.ActionReadOnly,
+			Operation:  consent.OperationTypeTool,
+			Permission: consent.PermissionAllow,
+			GrantedAt:  time.Now(),
+		}
+
+		if err := f.consentManager.GrantConsent(ctx, rule); err != nil {
+			return err
+		}
+
+		f.console.Message(ctx, output.WithSuccessFormat("✓ Read-only tools will run automatically during initialization"))
+	} else {
+		f.console.Message(ctx, output.WithHintFormat("You'll be prompted for each tool during initialization"))
+	}
+
+	return nil
 }

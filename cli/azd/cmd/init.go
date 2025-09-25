@@ -385,6 +385,11 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 
 	defer azdAgent.Stop()
 
+	// Prompt for read-only consent after agent factory creation
+	if err := i.agentFactory.PromptReadOnlyConsent(ctx); err != nil {
+		return err
+	}
+
 	type initStep struct {
 		Name        string
 		Description string

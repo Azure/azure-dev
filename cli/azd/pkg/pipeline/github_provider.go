@@ -307,9 +307,6 @@ const (
 	federatedIdentityAudience = "api://AzureADTokenExchange"
 )
 
-const CheatCodeIssuer = federatedIdentityIssuer
-const CheatCodeFederatedIdentityAudience = "api://AzureADTokenExchange"
-
 // GitHubCiProvider implements a CiProvider using GitHub to manage CI pipelines as
 // GitHub actions.
 type GitHubCiProvider struct {

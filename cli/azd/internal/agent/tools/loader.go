@@ -4,6 +4,8 @@
 package tools
 
 import (
+	"context"
+
 	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/dev"
@@ -27,11 +29,11 @@ func NewLocalToolsLoader(securityManager *security.Manager) common.ToolLoader {
 
 // LoadTools loads and returns all tools from all registered tool loaders.
 // Returns an error if any individual loader fails to load its tools.
-func (l *LocalToolsLoader) LoadTools() ([]common.AnnotatedTool, error) {
+func (l *LocalToolsLoader) LoadTools(ctx context.Context) ([]common.AnnotatedTool, error) {
 	var allTools []common.AnnotatedTool
 
 	for _, loader := range l.loaders {
-		categoryTools, err := loader.LoadTools()
+		categoryTools, err := loader.LoadTools(ctx)
 		if err != nil {
 			return nil, err
 		}

@@ -3,7 +3,11 @@
 
 package dev
 
-import "github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+import (
+	"context"
+
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+)
 
 // DevToolLoader loads development-related tools
 type DevToolsLoader struct{}
@@ -14,7 +18,7 @@ func NewDevToolsLoader() common.ToolLoader {
 }
 
 // LoadTools loads and returns all development-related tools
-func (l *DevToolsLoader) LoadTools() ([]common.AnnotatedTool, error) {
+func (l *DevToolsLoader) LoadTools(ctx context.Context) ([]common.AnnotatedTool, error) {
 	return []common.AnnotatedTool{
 		&CommandExecutorTool{},
 	}, nil

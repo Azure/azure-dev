@@ -41,13 +41,15 @@ type ServerConfig struct {
 // McpToolsLoader manages the loading of tools from MCP (Model Context Protocol) servers
 type McpToolsLoader struct {
 	// samplingHandler handles sampling requests from MCP clients
-	samplingHandler client.SamplingHandler
+	samplingHandler    client.SamplingHandler
+	elicitationHandler client.ElicitationHandler
 }
 
 // NewMcpToolsLoader creates a new instance of McpToolsLoader with the provided sampling handler
-func NewMcpToolsLoader(samplingHandler client.SamplingHandler) common.ToolLoader {
+func NewMcpToolsLoader(samplingHandler client.SamplingHandler, elicitationHandler client.ElicitationHandler) common.ToolLoader {
 	return &McpToolsLoader{
-		samplingHandler: samplingHandler,
+		samplingHandler:    samplingHandler,
+		elicitationHandler: elicitationHandler,
 	}
 }
 
@@ -56,7 +58,7 @@ func NewMcpToolsLoader(samplingHandler client.SamplingHandler) common.ToolLoader
 // and collects all tools from each successfully connected server.
 // Returns an error if the configuration cannot be parsed, but continues
 // processing other servers if individual server connections fail.
-func (l *McpToolsLoader) LoadTools() ([]common.AnnotatedTool, error) {
+func (l *McpToolsLoader) LoadTools(ctx context.Context) ([]common.AnnotatedTool, error) {
 	// Deserialize the embedded mcp.json configuration
 	var config McpConfig
 	if err := json.Unmarshal([]byte(_mcpJson), &config); err != nil {
@@ -69,23 +71,33 @@ func (l *McpToolsLoader) LoadTools() ([]common.AnnotatedTool, error) {
 	for serverName, serverConfig := range config.Servers {
 		// Create MCP client for the server using stdio
 		stdioTransport := transport.NewStdio(serverConfig.Command, serverConfig.Env, serverConfig.Args...)
-		mcpClient := client.NewClient(stdioTransport, client.WithSamplingHandler(l.samplingHandler))
+		if err := stdioTransport.Start(ctx); err != nil {
+			log.Printf("Failed to start MCP transport for server %s: %v", serverName, err)
+			continue
+		}
 
-		ctx := context.Background()
+		mcpClient := client.NewClient(
+			stdioTransport,
+			client.WithSamplingHandler(l.samplingHandler),
+			client.WithElicitationHandler(l.elicitationHandler),
+		)
 
 		if err := mcpClient.Start(ctx); err != nil {
 			log.Printf("Failed to start MCP client for server %s: %v", serverName, err)
 			continue
 		}
 
-		initRequest := mcp.InitializeRequest{}
-		initRequest.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
-		initRequest.Params.ClientInfo = mcp.Implementation{
-			Name:    "Azure Developer CLI (azd)",
-			Version: "1.0.1",
+		initRequest := mcp.InitializeRequest{
+			Params: mcp.InitializeParams{
+				ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
+				ClientInfo: mcp.Implementation{
+					Name:    "Azure Developer CLI (azd)",
+					Version: "0.1.0",
+				},
+			},
 		}
 
-		initResult, err := mcpClient.Initialize(context.Background(), initRequest)
+		initResult, err := mcpClient.Initialize(ctx, initRequest)
 		if err != nil {
 			return nil, fmt.Errorf("initialize: %w", err)
 		}

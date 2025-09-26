@@ -43,6 +43,21 @@ func extractFlagsWithValues(cmd *cobra.Command) map[string]bool {
 		}
 	})
 
+	// Also check persistent flags (global flags)
+	// IMPORTANT: cmd.Flags().VisitAll() does NOT include persistent flags.
+	// In Cobra, cmd.Flags() only returns local flags specific to that command,
+	// while cmd.PersistentFlags() returns flags that are inherited by subcommands.
+	// These are separate flag sets, so we must call both VisitAll functions
+	// to capture all flags that can take values.
+	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		if flag.Value.Type() != "bool" {
+			flagsWithValues["--"+flag.Name] = true
+			if flag.Shorthand != "" {
+				flagsWithValues["-"+flag.Shorthand] = true
+			}
+		}
+	})
+
 	return flagsWithValues
 }
 

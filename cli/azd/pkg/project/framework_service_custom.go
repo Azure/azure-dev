@@ -27,8 +27,8 @@ func (pp *customProject) Requirements() FrameworkRequirements {
 	return FrameworkRequirements{
 		// Custom language projects should run all commands when packaging
 		Package: FrameworkPackageRequirements{
-			RequireRestore: false,
-			RequireBuild:   false,
+			RequireRestore: true,
+			RequireBuild:   true,
 		},
 	}
 }

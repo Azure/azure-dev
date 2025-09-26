@@ -105,11 +105,24 @@ func (at *dotnetContainerAppTarget) Package(
 	return packageOutput, nil
 }
 
+// TODO: move publish logic from Deploy() into Publish()
+func (at *dotnetContainerAppTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+	publishOptions *PublishOptions,
+) (*ServicePublishResult, error) {
+	return &ServicePublishResult{}, nil
+}
+
 // Deploys service container images to ACR and provisions the container app service.
 func (at *dotnetContainerAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
+	servicePublishResult *ServicePublishResult,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -140,12 +153,16 @@ func (at *dotnetContainerAppTarget) Deploy(
 	// The name of the image that should be referenced in the manifest is stored in `remoteImageName` and presented
 	// to the deployment template as a parameter named `Image`.
 	if serviceConfig.Language == ServiceLanguageDocker {
-		res, err := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, false, progress)
+		res, err := at.containerHelper.Publish(ctx, serviceConfig, packageOutput, targetResource, progress, nil)
 		if err != nil {
 			return nil, err
 		}
 
-		remoteImageName = res.Details.(*dockerDeployResult).RemoteImageTag
+		containerDetails, ok := res.Details.(*ContainerPublishDetails)
+		if !ok {
+			return nil, fmt.Errorf("expected ContainerPublishDetails but got %T", res.Details)
+		}
+		remoteImageName = containerDetails.RemoteImage
 	} else if serviceConfig.DotNetContainerApp.ContainerImage != "" {
 		remoteImageName = serviceConfig.DotNetContainerApp.ContainerImage
 	} else {
@@ -501,6 +518,12 @@ func deploymentHost(deploymentResult *azapi.ResourceDeployment) (appDeploymentHo
 				hostType: azapi.AzureResourceTypeContainerApp,
 			}, nil
 		}
+		if rType.String() == string(azapi.AzureResourceTypeContainerAppJob) {
+			return appDeploymentHost{
+				name:     r.Name,
+				hostType: azapi.AzureResourceTypeContainerAppJob,
+			}, nil
+		}
 	}
 	return appDeploymentHost{}, fmt.Errorf("didn't find any known application host from the deployment")
 }
@@ -512,15 +535,16 @@ func (at *dotnetContainerAppTarget) Endpoints(
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
 	resourceType := azapi.AzureResourceType(targetResource.ResourceType())
-	// Currently supports ACA and WebApp for Aspire (on reading Endpoints)
+	// Currently supports ACA, ACA Jobs, and WebApp for Aspire (on reading Endpoints)
 	if resourceType != azapi.AzureResourceTypeWebSite &&
-		resourceType != azapi.AzureResourceTypeContainerApp {
+		resourceType != azapi.AzureResourceTypeContainerApp &&
+		resourceType != azapi.AzureResourceTypeContainerAppJob {
 		return nil, fmt.Errorf("unsupported resource type: %s", resourceType)
 	}
 
 	var hostNames []string
 	switch resourceType {
-	case azapi.AzureResourceTypeContainerApp:
+	case azapi.AzureResourceTypeContainerApp, azapi.AzureResourceTypeContainerAppJob:
 
 		containerAppOptions := containerapps.ContainerAppOptions{
 			ApiVersion: serviceConfig.ApiVersion,
@@ -533,6 +557,11 @@ func (at *dotnetContainerAppTarget) Endpoints(
 			&containerAppOptions,
 		)
 		if err != nil {
+			// Container App Jobs might not have ingress configuration
+			if resourceType == azapi.AzureResourceTypeContainerAppJob {
+				// Return empty endpoints for jobs without ingress
+				return []string{}, nil
+			}
 			return nil, fmt.Errorf("fetching service properties: %w", err)
 		}
 		hostNames = ingressConfig.HostNames

@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../extension.schema.json
+id: azure.foundry.ai.agents
+namespace: ai.agent
+displayName: AI Foundry Agents
+description: This extension provides custom commands for working with agents using Azure Developer CLI.
+usage: azd ai agent <command> [options]
+version: 0.0.1-preview
+language: go
+capabilities:
+  - custom-commands
+  - lifecycle-events
+examples:
+  - name: init
+    description: Initialize a new AI agent project.
+    usage: azd ai agent init
+  - name: deploy
+    description: Deploy AI agents to Azure.
+    usage: azd ai agent deploy

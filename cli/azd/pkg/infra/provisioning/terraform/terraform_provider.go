@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package terraform
 
 import (
@@ -127,7 +130,7 @@ func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
 		t.envManager,
 		t.env,
 		t.prompters,
-		nil,
+		provisioning.EnsureSubscriptionAndLocationOptions{},
 	)
 }
 
@@ -761,4 +764,9 @@ type terraformChildModule struct {
 	Address      string                 `json:"address"`
 	Resources    []terraformResource    `json:"resources"`
 	ChildModules []terraformChildModule `json:"child_modules"`
+}
+
+func (t *TerraformProvider) Parameters(ctx context.Context) ([]provisioning.Parameter, error) {
+	// not supported (no-op)
+	return nil, nil
 }

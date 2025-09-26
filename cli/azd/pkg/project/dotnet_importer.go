@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package project
 
 import (
@@ -83,7 +86,7 @@ func (ai *DotNetImporter) CanImport(ctx context.Context, projectPath string) (bo
 		return v.is, v.err
 	}
 
-	value, err := ai.dotnetCli.GetMsBuildProperty(ctx, projectPath, "IsAspireHost")
+	isAppHost, err := ai.dotnetCli.IsAspireHostProject(ctx, projectPath)
 	if err != nil {
 		ai.hostCheck[projectPath] = hostCheckResult{
 			is:  false,
@@ -94,17 +97,24 @@ func (ai *DotNetImporter) CanImport(ctx context.Context, projectPath string) (bo
 	}
 
 	ai.hostCheck[projectPath] = hostCheckResult{
-		is:  strings.TrimSpace(value) == "true",
+		is:  isAppHost,
 		err: nil,
 	}
 
-	return strings.TrimSpace(value) == "true", nil
+	return isAppHost, nil
 }
 
 func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *ServiceConfig) (*Infra, error) {
 	manifest, err := ai.ReadManifest(ctx, svcConfig)
 	if err != nil {
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
+	}
+
+	manifestWarnings := manifest.Warnings()
+	if manifestWarnings != "" {
+		ai.console.Message(ctx, "")
+		ai.console.Message(ctx, manifestWarnings)
+		ai.console.Message(ctx, "")
 	}
 
 	azdOperationsEnabled := ai.alphaFeatureManager.IsEnabled(provisioning.AzdOperationsFeatureKey)
@@ -144,7 +154,7 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 			return err
 		}
 
-		return os.WriteFile(target, contents, d.Type().Perm())
+		return os.WriteFile(target, contents, osutil.PermissionFile)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("writing infrastructure: %w", err)
@@ -172,6 +182,23 @@ func mapToStringSlice(m map[string]string, separator string) []string {
 			result = append(result, key)
 		} else {
 			result = append(result, key+separator+value)
+		}
+	}
+	return result
+}
+
+// mapToExpandableStringSlice converts a map of strings to a slice of expandable strings.
+// Each key-value pair in the map is converted to a string in the format "key:value",
+// where the separator is specified by the `separator` parameter.
+// If the value is an empty string, only the key is included in the resulting slice.
+// The resulting slice is returned without any string interpolation performed.
+func mapToExpandableStringSlice(m map[string]string, separator string) []osutil.ExpandableString {
+	var result []osutil.ExpandableString
+	for key, value := range m {
+		if value == "" {
+			result = append(result, osutil.NewExpandableString(key))
+		} else {
+			result = append(result, osutil.NewExpandableString(key+separator+value))
 		}
 	}
 	return result
@@ -234,7 +261,7 @@ func (ai *DotNetImporter) Services(
 			Docker: DockerProjectOptions{
 				Path:      dockerfile.Path,
 				Context:   dockerfile.Context,
-				BuildArgs: mapToStringSlice(dockerfile.BuildArgs, "="),
+				BuildArgs: mapToExpandableStringSlice(dockerfile.BuildArgs, "="),
 			},
 		}
 
@@ -302,7 +329,7 @@ func (ai *DotNetImporter) Services(
 			}
 			relativePath = relPath
 
-			bArgs, err := evaluateArgsWithConfig(*manifest, bContainer.Build.Args)
+			bArgs, err := evaluateBuildArgs(*manifest, bContainer.Build.Args)
 			if err != nil {
 				return nil, fmt.Errorf("evaluating build args for service %s: %w", name, err)
 			}
@@ -314,7 +341,7 @@ func (ai *DotNetImporter) Services(
 			dOptions = DockerProjectOptions{
 				Path:         bContainer.Build.Dockerfile,
 				Context:      bContainer.Build.Context,
-				BuildArgs:    mapToStringSlice(bArgs, "="),
+				BuildArgs:    mapToExpandableStringSlice(bArgs, "="),
 				BuildSecrets: bArgsArray,
 				BuildEnv:     reqEnv,
 			}
@@ -372,7 +399,7 @@ func buildArgsArrayAndEnv(
 			if bArg.Value == nil {
 				return nil, nil, fmt.Errorf("missing value for env secret %q", bArgKey)
 			}
-			bArgValue, err := evaluateExpressions(*bArg.Value, manifest)
+			bArgValue, err := evaluateExpressionsFromArg(*bArg.Value, manifest)
 			if err != nil {
 				return nil, nil, fmt.Errorf("evaluating value for env secret %q: %w", bArgKey, err)
 			}
@@ -384,11 +411,19 @@ func buildArgsArrayAndEnv(
 	return result, reqEnv, nil
 }
 
-func evaluateArgsWithConfig(
+// evaluateBuildArgs evaluates the build args in the manifest, replacing any expressions with their evaluated values.
+// If the expression cannot be evaluated at this time, it will be replaced with a placeholder that
+// indicates that the value will be resolved later, such as during the container build process.
+// The placeholder is in the form of "{infra.parameters.parameterName}".
+// If the expression can be evaluated, it will be replaced with the evaluated value.
+// If the expression references an environment variable, it will be replaced with the value of that environment
+// variable, if it exists. If the environment variable does not exist, the expression will be
+// replaced with a placeholder that indicates it will be resolved later.
+func evaluateBuildArgs(
 	manifest apphost.Manifest, args map[string]string) (map[string]string, error) {
 	result := make(map[string]string, len(args))
 	for argKey, argValue := range args {
-		evaluatedValue, err := evaluateExpressions(argValue, manifest)
+		evaluatedValue, err := evaluateExpressionsFromArg(argValue, manifest)
 		if err != nil {
 			return nil, err
 		}
@@ -398,19 +433,43 @@ func evaluateArgsWithConfig(
 	return result, nil
 }
 
-func evaluateExpressions(source string, manifest apphost.Manifest) (string, error) {
+// evaluateExpressionsFromArg evaluates the expressions in the given source string.
+// It uses the manifest to resolve the expressions, which are expected to be in the form of
+// "{resourceName.value}" where resourceName is the name of a resource in the manifest.
+// If the expression cannot be resolved, it will return an error.
+// If the expression references an environment variable, it will be replaced with the value of that environment
+// variable, if it exists. If the environment variable does not exist, the expression will be
+// replaced with a placeholder that indicates it will be resolved later.
+func evaluateExpressionsFromArg(source string, manifest apphost.Manifest) (string, error) {
 	return apphost.EvalString(source, func(match string) (string, error) {
-		return evaluateSingleExpressionMatch(match, manifest)
+		return evaluateSingleBuildArg(match, manifest)
 	})
 }
 
-func evaluateSingleExpressionMatch(
+// evaluateSingleBuildArg processes a single build argument expression from a manifest.
+// It attempts to resolve the value for a parameter-type resource by checking:
+// 1. The manifest's resource value (if it's a constant)
+// 2. Environment variables
+// 3. Infrastructure parameters
+//
+// Parameters:
+//   - match: The expression string to evaluate in format "resource.value"
+//   - manifest: The application host manifest containing resource definitions
+//
+// Returns:
+//   - string: The resolved value or a parameter reference in format "{infra.parameter_name}"
+//   - error: An error if the expression is invalid, resource not found, or resource type is unsupported
+//
+// The function supports parameter names with hyphens, which are converted to underscores
+// for compatibility with Bicep parameter naming conventions.
+func evaluateSingleBuildArg(
 	match string, manifest apphost.Manifest) (string, error) {
 
 	exp := match
 	resourceAndPath := strings.SplitN(exp, ".", 2)
 	if len(resourceAndPath) != 2 {
-		return match, fmt.Errorf("invalid expression %q. Expecting the form of: resource.value", exp)
+		log.Println("malformed binding expression, expected <resource>.<property> but was:", match)
+		return "", apphost.UnrecognizedExpressionError{}
 	}
 	resourceName := resourceAndPath[0]
 	resource, has := manifest.Resources[resourceName]
@@ -435,15 +494,19 @@ func evaluateSingleExpressionMatch(
 		log.Println("Using value from environment variable", fromEnvVar, "for parameter", resourceName)
 		return valueInEnv, nil
 	}
+
+	// handle parameters renaming. Hyphens are supported in the manifest, but renamed to underscores for bicep parameters.
+	// If the arg is not resolved at this point, the name must be updated considering the renaming.
+	finalParamName := strings.ReplaceAll(resourceName, "-", "_")
+
 	// can't resolve the parameter here yet, best we can do is resolve the name of the parameter, removing the path
 	// of the resource from the expression, keeping only the name of the expected parameter.
 	// The parameter might not be requested at this point, because it could be
 	// the first time azd is running for the project.
-	return fmt.Sprintf("{%s%s}", infraParametersKey, resourceName), nil
+	return fmt.Sprintf("{%s%s}", infraParametersKey, finalParamName), nil
 }
 
-func (ai *DotNetImporter) SynthAllInfrastructure(
-	ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
+func (ai *DotNetImporter) GenerateAllInfrastructure(ctx context.Context, p *ProjectConfig, svcConfig *ServiceConfig,
 ) (fs.FS, error) {
 	manifest, err := ai.ReadManifest(ctx, svcConfig)
 	if err != nil {
@@ -507,16 +570,11 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		return nil, err
 	}
 
-	// writeManifestForResource writes the containerApp.tmpl.yaml for the given resource to the generated filesystem. The
-	// manifest is written to a file name "containerApp.tmpl.yaml" in the same directory as the project that produces the
+	// writeManifestForResource writes the containerApp.tmpl.yaml or containerApp.bicepparam for the given resource to the
+	// generated filesystem. The manifest is written to a file name "containerApp.tmpl.yaml" or
+	// "containerApp.tmpl.bicepparam" in the same directory as the project that produces the
 	// container we will deploy.
 	writeManifestForResource := func(name string) error {
-		containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(
-			manifest, name, apphost.AppHostOptions{})
-		if err != nil {
-			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
-		}
-
 		normalPath, err := filepath.EvalSymlinks(svcConfig.Path())
 		if err != nil {
 			return err
@@ -527,13 +585,28 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return err
 		}
 
+		containerAppManifest, manifestType, err := apphost.ContainerAppManifestTemplateForProject(
+			manifest, name, apphost.AppHostOptions{})
+		if err != nil {
+			return fmt.Errorf("generating containerApp deployment manifest for resource %s: %w", name, err)
+		}
+
 		manifestPath := filepath.Join(filepath.Dir(projectRelPath), "infra", fmt.Sprintf("%s.tmpl.yaml", name))
+		if manifestType == apphost.ContainerAppManifestTypeBicep {
+			manifestPath = filepath.Join(
+				filepath.Dir(projectRelPath), "infra", name, fmt.Sprintf("%s.tmpl.bicepparam", name))
+		}
 
 		if err := generatedFS.MkdirAll(filepath.Dir(manifestPath), osutil.PermissionDirectoryOwnerOnly); err != nil {
 			return err
 		}
 
-		return generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly)
+		err = generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly)
+		if err != nil {
+			return err
+		}
+
+		return nil
 	}
 
 	for name := range apphost.ProjectPaths(manifest) {

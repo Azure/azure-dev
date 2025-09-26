@@ -57,7 +57,7 @@ func (s *Server) Serve(l net.Listener) error {
 	mux.Handle("/EnvironmentService/v1.0", newEnvironmentService(s))
 
 	// Expose a few special test endpoints that can be used to debug our special RPC behavior around cancellation and
-	// IObservers. This is useful for both developers unit testing in VS Code (where they can set this value in launch.json
+	// observers. This is useful for both developers unit testing in VS Code (where they can set this value in launch.json
 	// as well as tests where we can set this value with t.SetEnv()).
 	if on, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_SERVER_DEBUG_ENDPOINTS")); err == nil && on {
 		mux.Handle("/TestDebugService/v1.0", newDebugService(s))
@@ -66,7 +66,7 @@ func (s *Server) Serve(l net.Listener) error {
 	// Run upload periodically in the background while the server is running.
 	ctx, cancel := context.WithCancel(context.Background())
 	ts := telemetry.GetTelemetrySystem()
-	go func() {
+	backgroundTelemetry := func() {
 		ticker := time.NewTicker(5 * time.Second)
 		for {
 			err := ts.RunBackgroundUpload(ctx, false)
@@ -80,7 +80,17 @@ func (s *Server) Serve(l net.Listener) error {
 			case <-ticker.C:
 			}
 		}
-	}()
+	}
+	// when telemetry system is disabled (like setting AZURE_DEV_COLLECT_TELEMETRY=no), ts will be nil.
+	// In this case, we skip the background telemetry upload.
+	// https://github.com/Azure/azure-dev/issues/5251
+	if ts != nil {
+		log.Println("starting background telemetry upload")
+		go backgroundTelemetry()
+	} else {
+		log.Println("skipping background telemetry upload, telemetry system not initialized or disabled")
+	}
+
 	s.cancelTelemetryUpload = cancel
 
 	server := http.Server{

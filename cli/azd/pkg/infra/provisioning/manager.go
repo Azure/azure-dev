@@ -22,7 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
-	"gopkg.in/yaml.v3"
+	"github.com/braydonk/yaml"
 )
 
 type DefaultProviderResolver func() (ProviderKind, error)
@@ -69,6 +69,14 @@ func (m *Manager) Initialize(ctx context.Context, projectPath string, options Op
 	return m.provider.Initialize(ctx, projectPath, options)
 }
 
+// Parameters gets the list of parameters and its value which will be used to provision the infrastructure.
+func (m *Manager) Parameters(ctx context.Context) ([]Parameter, error) {
+	if m.provider == nil {
+		panic("called parameters() with provider not initialized. Make sure to call manager.Initialize() first.")
+	}
+	return m.provider.Parameters(ctx)
+}
+
 // Gets the latest deployment details for the specified scope
 func (m *Manager) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
 	result, err := m.provider.State(ctx, options)
@@ -95,7 +103,7 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		m.console.StopSpinner(ctx, "Didn't find new changes.", input.StepSkipped)
 	}
 
-	if err := m.UpdateEnvironment(ctx, deployResult.Deployment.Outputs); err != nil {
+	if err := UpdateEnvironment(ctx, deployResult.Deployment.Outputs, m.env, m.envManager); err != nil {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
@@ -306,9 +314,11 @@ func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*Destroy
 	return destroyResult, nil
 }
 
-func (m *Manager) UpdateEnvironment(
+func UpdateEnvironment(
 	ctx context.Context,
 	outputs map[string]OutputParameter,
+	env *environment.Environment,
+	envManager environment.Manager,
 ) error {
 	if len(outputs) > 0 {
 		for key, param := range outputs {
@@ -318,18 +328,25 @@ func (m *Manager) UpdateEnvironment(
 				if err != nil {
 					return fmt.Errorf("invalid value for output parameter '%s' (%s): %w", key, string(param.Type), err)
 				}
-				m.env.DotenvSet(key, string(bytes))
+				env.DotenvSet(key, string(bytes))
 			} else {
-				m.env.DotenvSet(key, fmt.Sprintf("%v", param.Value))
+				env.DotenvSet(key, fmt.Sprintf("%v", param.Value))
 			}
 		}
 
-		if err := m.envManager.Save(ctx, m.env); err != nil {
+		if err := envManager.Save(ctx, env); err != nil {
 			return fmt.Errorf("writing environment: %w", err)
 		}
 	}
 
 	return nil
+}
+
+type EnsureSubscriptionAndLocationOptions struct {
+	// LocationFilterPredicate is a function to filter the locations being displayed if prompting the user for the location.
+	LocationFiler prompt.LocationFilterPredicate
+	// SelectDefaultLocation is the default location that azd mark as selected when prompting the user for the location.
+	SelectDefaultLocation *string
 }
 
 // EnsureSubscriptionAndLocation ensures that that that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION)
@@ -340,7 +357,7 @@ func EnsureSubscriptionAndLocation(
 	envManager environment.Manager,
 	env *environment.Environment,
 	prompter prompt.Prompter,
-	locationFiler prompt.LocationFilterPredicate,
+	options EnsureSubscriptionAndLocationOptions,
 ) error {
 	subId := env.GetSubscriptionId()
 	if subId == "" {
@@ -366,7 +383,8 @@ func EnsureSubscriptionAndLocation(
 			ctx,
 			env.GetSubscriptionId(),
 			"Select an Azure location to use:",
-			locationFiler,
+			options.LocationFiler,
+			options.SelectDefaultLocation,
 		)
 		if err != nil {
 			return err
@@ -376,6 +394,32 @@ func EnsureSubscriptionAndLocation(
 
 	// Same as before, this make sure the location is persisted in the .env file.
 	env.SetLocation(location)
+	return envManager.Save(ctx, env)
+}
+
+func EnsureSubscription(
+	ctx context.Context,
+	envManager environment.Manager,
+	env *environment.Environment,
+	prompter prompt.Prompter,
+) error {
+	subId := env.GetSubscriptionId()
+	if subId == "" {
+		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")
+		if err != nil {
+			return err
+		}
+		subId = subscriptionId
+	}
+	// GetSubscriptionId() can get the value from the .env file or from system environment.
+	// We want to ensure that, if the value came from the system environment, it is persisted in the .env file.
+	// By doing this, we ensure that any command depending on .env values does not need to read system env.
+	// For example, on CI, when running `azd provision`, we want the .env to have the subscription id and location
+	// so that `azd deploy` can just use the values from .env w/o checking os-env again.
+	env.SetSubscriptionId(subId)
+	if err := envManager.Save(ctx, env); err != nil {
+		return err
+	}
 	return envManager.Save(ctx, env)
 }
 

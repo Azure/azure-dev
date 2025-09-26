@@ -149,4 +149,22 @@ func convertToSlice(obj interface{}) ([]interface{}, error) {
 	return vv, nil
 }
 
+// TabAlign transforms translates tab-separated columns in input into properly aligned text
+// with the given padding for separation.
+// For more information, refer to the tabwriter package.
+func TabAlign(selections []string, padding int) ([]string, error) {
+	tabbed := strings.Builder{}
+	tabW := tabwriter.NewWriter(&tabbed, 0, 0, padding, ' ', 0)
+	_, err := tabW.Write([]byte(strings.Join(selections, "\n")))
+	if err != nil {
+		return nil, err
+	}
+	err = tabW.Flush()
+	if err != nil {
+		return nil, err
+	}
+
+	return strings.Split(tabbed.String(), "\n"), nil
+}
+
 var _ Formatter = (*TableFormatter)(nil)

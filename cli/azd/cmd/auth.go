@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cmd
 
 import (
@@ -13,7 +16,7 @@ func authActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			Short: "Authenticate with Azure.",
 		},
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupConfig,
+			RootLevelHelp: actions.CmdGroupAzure,
 		},
 	})
 

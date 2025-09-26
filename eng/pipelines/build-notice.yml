@@ -19,8 +19,8 @@ variables:
 jobs:
   - job: PoliCheck
     pool:
-      name: azsdk-pool-mms-win-2022-general
-      vmImage: MMS2022
+      name: azsdk-pool
+      demands: ImageOverride -equals windows-2022
     timeoutInMinutes: 120
     steps:
       - template: /eng/common/pipelines/templates/steps/policheck.yml
@@ -28,123 +28,14 @@ jobs:
           ExclusionDataBaseFileName: AzDevPoliCheckExclusion
           PublishAnalysisLogs: false
 
+  - template: /eng/pipelines/templates/jobs/build-scan-cli.yml
 
-  - job: BuildCLI
-    strategy:
-      matrix:
-        Windows:
-          Pool: azsdk-pool-mms-win-2022-general
-          OSVmImage: MMS2022
-          BuildTarget: azd-windows-amd64.exe
-          BuildOutputName: azd.exe
-        Linux:
-          Pool: azsdk-pool-mms-ubuntu-2004-general
-          OSVmImage:  MMSUbuntu20.04
-          BuildTarget: azd-linux-amd64
-          BuildOutputName: azd
-        Mac:
-          Pool: Azure Pipelines
-          OSVmImage: macOS-latest
-          BuildTarget: azd-darwin-amd64
-          BuildOutputName: azd
-    pool:
-        name: $(Pool)
-        vmImage: $(OSVmImage)
-
-    variables:
-      CLI_VERSION: 1.0.0-alpha.1
-
-    steps:
-      - checkout: self
-      - template: /eng/pipelines/templates/steps/setup-go.yml
-
-      - task: PowerShell@2
-        inputs:
-          pwsh: true
-          targetType: filePath
-          filePath: cli/azd/ci-build.ps1
-          arguments: >-
-            -Version $(CLI_VERSION)
-            -SourceVersion $(Build.SourceVersion)
-          workingDirectory: cli/azd
-        displayName: Build Go Binary
-
-      - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
-        workingDirectory: cli/azd
-        displayName: Rename binaries
-
-      - publish: cli/azd/$(BuildTarget)
-        artifact: $(BuildTarget)
-
-      - task: ComponentGovernanceComponentDetection@0
-
-  - job: BuildScanVscode
-    strategy:
-      matrix:
-        # Disable Windows build until packaging fixed on Windows https://github.com/Azure/azure-dev/issues/1336
-        # Windows:
-        #   Pool: azsdk-pool-mms-win-2022-general
-        #   OSVmImage: MMS2022
-        Linux:
-          Pool: azsdk-pool-mms-ubuntu-2004-general
-          OSVmImage:  MMSUbuntu20.04
-        Mac:
-          Pool: Azure Pipelines
-          OSVmImage: macOS-latest
-
-    pool:
-      name: $(Pool)
-      vmImage: $(OSVmImage)
-
-    variables:
-      NodeVersion: 18.x
-
-    steps:
-      - task: NodeTool@0
-        inputs:
-          versionSpec: $(NodeVersion)
-
-      - bash: |
-          npm install -g npm vsce
-          npm ci --no-optional
-        workingDirectory: ext/vscode
-
-      - pwsh: ./ci-package.ps1
-        workingDirectory: ext/vscode
-        displayName: Package
-
-      - task: ComponentGovernanceComponentDetection@0
-
-  - job: BuildScanContainer
-    dependsOn: BuildCli
-    pool:
-      name: azsdk-pool-mms-ubuntu-2004-general
-      OSVmImage: MMSUbuntu20.04
-
-    variables:
-      ContainerName: azure-dev:cg-scan
-
-    steps:
-      - checkout: self
-      - task: DownloadPipelineArtifact@2
-        inputs:
-          artifact: azd-linux-amd64
-          path: cli/bin
-
-      - bash: |
-          docker build . -t $(ContainerName) -f cli/Dockerfile
-        displayName: Build container
-
-      - task: ComponentGovernanceComponentDetection@0
-        inputs:
-          dockerImagesToScan: $(ContainerName)
-
-      - task: ComponentGovernanceComponentDetection@0
+  - template: /eng/pipelines/templates/jobs/build-scan-vscode.yml
 
   - job: GenerateNoticeTxt
     pool:
-      name: azsdk-pool-mms-ubuntu-2004-general
-      OSVmImage: MMSUbuntu20.04
+      name: azsdk-pool
+      demands: ImageOverride -equals ubuntu-22.04
 
     steps:
       - task: ComponentGovernanceComponentDetection@0

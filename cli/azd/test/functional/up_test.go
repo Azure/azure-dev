@@ -22,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/joho/godotenv"
@@ -219,6 +220,11 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 }
 
 func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
+	// This test is run under SDK playground and it ask us for follow policy requirements
+	// If we disabled local admin account in container registry,
+	// we are not able to perform credential operations
+	t.Skip("Skipping the test due to policy requirement to ask for disable local admin account in container registry")
+
 	t.Parallel()
 
 	if ci_os := os.Getenv("AZURE_DEV_CI_OS"); ci_os != "" && ci_os != "lin" {
@@ -241,8 +247,83 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
 	err := copySample(dir, "containerapp")
 	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "deploy", "--cwd", filepath.Join(dir, "src", "dotnet"))
+	require.NoError(t, err)
+
+	// The sample hosts a small application that just responds with a 200 OK with a body of "Hello, `azd`."
+	// (without the quotes). Validate that the application is working.
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	url, has := env["WEBSITE_URL"]
+	require.True(t, has, "WEBSITE_URL should be in environment after deploy")
+
+	if session == nil {
+		err = probeServiceHealth(
+			t, ctx, http.DefaultClient, retry.NewConstant(5*time.Second), url, expectedTestAppResponse)
+		require.NoError(t, err)
+	} else {
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+
+		err = probeServiceHealth(
+			t, ctx, session.ProxyClient, retry.NewConstant(1*time.Millisecond), url, expectedTestAppResponse)
+		require.NoError(t, err)
+	}
+
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+
+	// As part of deleting the infrastructure, outputs of the infrastructure such as "WEBSITE_URL" should
+	// have been removed from the environment.
+	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	_, has = env["WEBSITE_URL"]
+	require.False(t, has, "WEBSITE_URL should have been removed from the environment as part of infrastructure removal")
+}
+
+func Test_CLI_Up_Down_ContainerAppDotNetPublish(t *testing.T) {
+	// This test is run under SDK playground and it ask us for follow policy requirements
+	// If we disabled local admin account in container registry,
+	// we are not able to perform credential operations
+	t.Skip("Skipping the test due to policy requirement to ask for disable local admin account in container registry")
+	t.Parallel()
+
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
+	err := copySample(dir, "containerapp")
+	require.NoError(t, err, "failed expanding sample")
+
+	// Remove the Dockerfile so that we go down the `dotnet publish` path.
+	err = os.Remove(filepath.Join(dir, "src", "dotnet", "Dockerfile"))
+	require.NoError(t, err)
 
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
@@ -303,6 +384,8 @@ func Test_CLI_Up_Down_ContainerApp_RemoteBuild(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 
 	err := copySample(dir, "containerremotebuildapp")
 	require.NoError(t, err, "failed expanding sample")
@@ -430,6 +513,72 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
+}
+
+// Test_CLI_Up_EnvironmentFlags validates that the up workflow handles the --environment/-e flag
+// correctly.
+func Test_CLI_Up_EnvironmentFlags(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+
+	// set up basic project
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	// create environments
+	envNew(ctx, t, cli, "env1", false)
+	envNew(ctx, t, cli, "env2", false)
+
+	// select env1 as default
+	envSelect(ctx, t, cli, "env1")
+
+	// update up workflow
+	err = os.WriteFile(filepath.Join(dir, "azure.yaml"), []byte(`
+name: up-envflag
+workflows:
+  up:
+    steps:
+    - azd: env set CURRENT_ENV VALUE
+    - azd: env set ENV1 VALUE1 -e env1
+    - azd: env set ENV2 VALUE2 -e env2
+`), osutil.PermissionFile)
+	require.NoError(t, err)
+
+	// run with env1 selected as  implicitly default
+	_, err = cli.RunCommand(ctx, "up")
+	require.NoError(t, err)
+
+	values := envGetValues(ctx, t, cli, "-e", "env1")
+	require.Contains(t, values, "ENV1")
+	require.Contains(t, values, "CURRENT_ENV")
+	require.NotContains(t, values, "ENV2")
+
+	values = envGetValues(ctx, t, cli, "-e", "env2")
+	require.Contains(t, values, "ENV2")
+	require.NotContains(t, values, "CURRENT_ENV")
+	require.NotContains(t, values, "ENV1")
+
+	// run with env2 selected explicitly,
+	// this should newly set CURRENT_ENV on env2
+	_, err = cli.RunCommand(ctx, "up", "-e", "env2")
+	require.NoError(t, err)
+
+	values = envGetValues(ctx, t, cli, "-e", "env1")
+	require.Contains(t, values, "ENV1")
+	require.Contains(t, values, "CURRENT_ENV")
+	require.NotContains(t, values, "ENV2")
+
+	values = envGetValues(ctx, t, cli, "-e", "env2")
+	require.Contains(t, values, "ENV2")
+	require.Contains(t, values, "CURRENT_ENV")
+	require.NotContains(t, values, "ENV1")
+
 }
 
 type httpClient interface {

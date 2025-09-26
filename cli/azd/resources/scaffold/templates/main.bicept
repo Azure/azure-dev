@@ -9,15 +9,30 @@ param environmentName string
 @minLength(1)
 @description('Primary location for all resources')
 param location string
-{{range .Parameters}}
+
+{{ if .AiFoundryProject -}}
+@metadata({azd: {
+  type: 'location'
+  usageName: [
+  {{- range .AiFoundryProject.Models }}
+    '{{ .Sku.UsageName }},{{ .Sku.Capacity }}'
+  {{- end }}
+  ]}
+})
+param aiDeploymentsLocation string
+{{- end }}
+{{- range .Parameters}}
 {{- if .Secret}}
 @secure()
-{{- end}}
+{{- end }}
 param {{.Name}} {{.Type}}
-{{- end}}
+{{- end }}
 
 @description('Id of the user or app to assign application roles')
 param principalId string
+
+@description('Principal type of user or app')
+param principalType string
 
 // Tags that should be applied to all resources.
 // 
@@ -28,150 +43,120 @@ var tags = {
   'azd-env-name': environmentName
 }
 
-var abbrs = loadJsonContent('./abbreviations.json')
-var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
-
-resource rg 'Microsoft.Resources/resourceGroups@2022-09-01' = {
+// Organize resources in a resource group
+resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: 'rg-${environmentName}'
   location: location
   tags: tags
 }
 
-module monitoring './shared/monitoring.bicep' = {
-  name: 'monitoring'
-  params: {
-    location: location
-    tags: tags
-    logAnalyticsName: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
-    applicationInsightsName: '${abbrs.insightsComponents}${resourceToken}'
-  }
+module resources 'resources.bicep' = {
   scope: rg
-}
-
-module dashboard './shared/dashboard-web.bicep' = {
-  name: 'dashboard'
-  params: {
-    name: '${abbrs.portalDashboards}${resourceToken}'
-    applicationInsightsName: monitoring.outputs.applicationInsightsName
-    location: location
-    tags: tags
-  }
-  scope: rg
-}
-
-module registry './shared/registry.bicep' = {
-  name: 'registry'
+  name: 'resources'
   params: {
     location: location
     tags: tags
-    name: '${abbrs.containerRegistryRegistries}${resourceToken}'
-  }
-  scope: rg
-}
-
-module keyVault './shared/keyvault.bicep' = {
-  name: 'keyvault'
-  params: {
-    location: location
-    tags: tags
-    name: '${abbrs.keyVaultVaults}${resourceToken}'
     principalId: principalId
+    principalType: principalType
+{{- range .Parameters}}
+    {{.Name}}: {{.Name}}
+{{- end }}
+{{- if .AiFoundryProject }}
+    aiFoundryProjectEndpoint: aiModelsDeploy.outputs.ENDPOINT
+{{- end}}
   }
-  scope: rg
 }
 
-module appsEnv './shared/apps-env.bicep' = {
-  name: 'apps-env'
+{{- if .AiFoundryProject }}
+
+module aiModelsDeploy 'ai-project.bicep' = {
+  scope: rg
+  name: '{{.AiFoundryProject.Name}}'
   params: {
-    name: '${abbrs.appManagedEnvironments}${resourceToken}'
-    location: location
     tags: tags
-    applicationInsightsName: monitoring.outputs.applicationInsightsName
-    logAnalyticsWorkspaceName: monitoring.outputs.logAnalyticsWorkspaceName
+    location: aiDeploymentsLocation
+    envName: environmentName
+    principalId: principalId
+    principalType: principalType
+{{- if .AiFoundryProject.Models }}
+    deployments: [
+      {{- range .AiFoundryProject.Models }}
+      {
+        name: '{{bicepName .Name }}Deployment'
+        model: {
+          name: '{{ .Name }}'
+          format: '{{ .Format }}'
+          version: '{{ .Version }}'
+        }
+        sku: {
+          name: '{{ .Sku.Name }}'
+          capacity: {{ .Sku.Capacity }}
+        }
+      }
+      {{- end }}
+    ]
+{{- end }}
   }
-  scope: rg
 }
-{{- if (or .DbCosmosMongo .DbPostgres)}}
 
-resource vault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
-  name: keyVault.outputs.name
+{{- if .AISearch }}
+module aiSearchConnection 'modules/ai-search-conn.bicep' = {
   scope: rg
+  name: 'ai-search-connection'
+  params: {
+    aiServicesName: aiModelsDeploy.outputs.aiServicesAccountName
+    aiServicesProjectName: aiModelsDeploy.outputs.aiServicesProjectName
+    aiSearchName: resources.outputs.aiSearchName
+  }
 }
 {{- end}}
-{{- if .DbCosmosMongo}}
-
-module cosmosDb './app/db-cosmos-mongo.bicep' = {
-  name: 'cosmosDb'
-  params: {
-    accountName: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
-    location: location
-    tags: tags
-    keyVaultName: keyVault.outputs.name
-  }
-  scope: rg
-}
 {{- end}}
-{{- if .DbPostgres}}
 
-module postgresDb './app/db-postgres.bicep' = {
-  name: 'postgresDb'
-  params: {
-    serverName: '${abbrs.dBforPostgreSQLServers}${resourceToken}'
-    location: location
-    tags: tags
-    databasePassword: databasePassword
-    keyVaultName: keyVault.outputs.name
-    allowAllIPsFirewall: true
-  }
-  scope: rg
-}
+{{- if .Services}}
+{{- if hasACA .Services}}
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 {{- end}}
 {{- range .Services}}
-
-module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
-  name: '{{.Name}}'
-  params: {
-    name: '${abbrs.appContainerApps}{{containerAppInfix .Name}}-${resourceToken}'
-    location: location
-    tags: tags
-    identityName: '${abbrs.managedIdentityUserAssignedIdentities}{{containerAppInfix .Name}}-${resourceToken}'
-    applicationInsightsName: monitoring.outputs.applicationInsightsName
-    containerAppsEnvironmentName: appsEnv.outputs.name
-    containerRegistryName: registry.outputs.name
-    exists: {{bicepName .Name}}Exists
-    appDefinition: {{bicepName .Name}}Definition
-    {{- if .DbRedis}}
-    redisName: 'rd-{{containerAppInfix .Name}}-${resourceToken}'
-    {{- end}}
-    {{- if .DbCosmosMongo}}
-    cosmosDbConnectionString: vault.getSecret(cosmosDb.outputs.connectionStringKey)
-    {{- end}}
-    {{- if .DbPostgres}}
-    databaseName: postgresDb.outputs.databaseName
-    databaseHost: postgresDb.outputs.databaseHost
-    databaseUser: postgresDb.outputs.databaseUser
-    databasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
-    {{- end}}
-    {{- if (and .Frontend .Frontend.Backends)}}
-    apiUrls: [
-      {{- range .Frontend.Backends}}
-      {{bicepName .Name}}.outputs.uri
-      {{- end}}
-    ]
-    {{- end}}
-    {{- if (and .Backend .Backend.Frontends)}}
-    allowedOrigins: [
-      {{- range .Backend.Frontends}}
-      'https://${abbrs.appContainerApps}{{containerAppInfix .Name}}-${resourceToken}.${appsEnv.outputs.domain}'
-      {{- end}}
-    ]
-    {{- end}}
-  }
-  scope: rg
-}
+output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID
 {{- end}}
-
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = registry.outputs.loginServer
-output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
-output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
+{{- end}}
+{{- if .KeyVault}}
+output AZURE_KEY_VAULT_ENDPOINT string = resources.outputs.AZURE_KEY_VAULT_ENDPOINT
+output AZURE_KEY_VAULT_NAME string = resources.outputs.AZURE_KEY_VAULT_NAME
+output AZURE_RESOURCE_VAULT_ID string = resources.outputs.AZURE_RESOURCE_VAULT_ID
+{{- end}}
+{{- if  .AIModels}}
+{{- range .AIModels}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .Name}}_ID
+{{- end}}
+{{- end}}
+{{- if .DbRedis}}
+output AZURE_RESOURCE_REDIS_ID string = resources.outputs.AZURE_RESOURCE_REDIS_ID
+{{- end}}
+{{- if .DbPostgres}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbPostgres.DatabaseName}}_ID
+{{- end}}
+{{- if .DbCosmos }}
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmos.DatabaseName}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbCosmos.DatabaseName}}_ID
+{{- end}}
+{{- if .DbMySql}}
+output AZURE_RESOURCE_{{alphaSnakeUpper .DbMySql.DatabaseName}}_ID string = resources.outputs.AZURE_RESOURCE_{{alphaSnakeUpper .DbMySql.DatabaseName}}_ID
+{{- end}}
+{{- if .StorageAccount }}
+output AZURE_RESOURCE_STORAGE_ID string = resources.outputs.AZURE_RESOURCE_STORAGE_ID
+{{- end}}
+{{- if .EventHubs}}
+output AZURE_RESOURCE_EVENT_HUBS_ID string = resources.outputs.AZURE_RESOURCE_EVENT_HUBS_ID
+{{- end}}
+{{- if .ServiceBus}}
+output AZURE_RESOURCE_SERVICE_BUS_ID string = resources.outputs.AZURE_RESOURCE_SERVICE_BUS_ID
+{{- end}}
+{{- if .AiFoundryProject }}
+output AZURE_AI_PROJECT_ENDPOINT string = aiModelsDeploy.outputs.ENDPOINT
+output AZURE_RESOURCE_AI_PROJECT_ID string = aiModelsDeploy.outputs.projectId
+{{- end}}
+{{- if .AISearch }}
+output AZURE_AI_SEARCH_ENDPOINT string = resources.outputs.AZURE_AI_SEARCH_ENDPOINT
+output AZURE_RESOURCE_SEARCH_ID string = resources.outputs.AZURE_RESOURCE_SEARCH_ID
+{{- end}}
 {{ end}}

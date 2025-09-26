@@ -14,20 +14,19 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 // functionAppTarget specifies an Azure Function to deploy to.
 // Implements `project.ServiceTarget`
 type functionAppTarget struct {
 	env *environment.Environment
-	cli azcli.AzCli
+	cli *azapi.AzureClient
 }
 
 // NewFunctionAppTarget creates a new instance of the Function App target
 func NewFunctionAppTarget(
 	env *environment.Environment,
-	azCli azcli.AzCli,
+	azCli *azapi.AzureClient,
 ) ServiceTarget {
 	return &functionAppTarget{
 		env: env,
@@ -54,8 +53,7 @@ func (f *functionAppTarget) Package(
 ) (*ServicePackageResult, error) {
 	progress.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
 	zipFilePath, err := createDeployableZip(
-		serviceConfig.Project.Name,
-		serviceConfig.Name,
+		serviceConfig,
 		packageOutput.PackagePath,
 	)
 	if err != nil {
@@ -68,11 +66,23 @@ func (f *functionAppTarget) Package(
 	}, nil
 }
 
+func (f *functionAppTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+	publishOptions *PublishOptions,
+) (*ServicePublishResult, error) {
+	return &ServicePublishResult{}, nil
+}
+
 // Deploys the prepared zip archive using Zip deploy to the Azure App Service resource
 func (f *functionAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
+	servicePublishResult *ServicePublishResult,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -85,7 +95,6 @@ func (f *functionAppTarget) Deploy(
 		return nil, fmt.Errorf("failed reading deployment zip file: %w", err)
 	}
 
-	defer os.Remove(packageOutput.PackagePath)
 	defer zipFile.Close()
 
 	progress.SetProgress(NewServiceProgress("Uploading deployment package"))

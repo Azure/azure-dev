@@ -30,12 +30,19 @@ const SubscriptionIdEnvVarName = "AZURE_SUBSCRIPTION_ID"
 // PrincipalIdEnvVarName is the name of they key used to store the id of a principal in the environment.
 const PrincipalIdEnvVarName = "AZURE_PRINCIPAL_ID"
 
+// PrincipalTypeEnvVarName is the name of they key used to store the type of a principal in the environment.
+const PrincipalTypeEnvVarName = "AZURE_PRINCIPAL_TYPE"
+
 // TenantIdEnvVarName is the tenant that owns the subscription
 const TenantIdEnvVarName = "AZURE_TENANT_ID"
 
 // ContainerRegistryEndpointEnvVarName is the name of they key used to store the endpoint of the container registry to push
 // to.
 const ContainerRegistryEndpointEnvVarName = "AZURE_CONTAINER_REGISTRY_ENDPOINT"
+
+// ContainerEnvironmentEndpointEnvVarName is the name of the environment variable
+// that specifies the default domain for Azure Container Apps environments.
+const ContainerEnvironmentEndpointEnvVarName = "AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN"
 
 // AksClusterEnvVarName is the name of they key used to store the endpoint of the AKS cluster to push to.
 const AksClusterEnvVarName = "AZURE_AKS_CLUSTER_NAME"
@@ -62,6 +69,15 @@ type Environment struct {
 	Config config.Config
 }
 
+// AzdInitialEnvironmentConfigName is part of a strategy to re-construct AZD environment in CI/CD from an initial state.
+// This strategy was introduced for templates which takes input parameters. Parameters are saved to azd's environment
+// configuration (.azure/env-name/config.json). This file is not committed to source control, so the saved values can't
+// be used during CI/CD. AZD uses AZD_INITIAL_ENVIRONMENT_CONFIG to smuggle all saved parameters into a CI/CD secret and
+// use it to create the environment configuration file (the first time AZD runs and creates a new environment).
+//
+// While AZD_INITIAL_ENVIRONMENT_CONFIG is still supported for backwards compatibility, it is deprecated.
+// The currently strategy is to create individual variables or secrets for the CI/CD pipeline depending on the parameter
+// configuration.
 const AzdInitialEnvironmentConfigName = "AZD_INITIAL_ENVIRONMENT_CONFIG"
 
 // New returns a new environment with the specified name.
@@ -217,18 +233,19 @@ func (e *Environment) SetLocation(location string) {
 	e.DotenvSet(LocationEnvVarName, location)
 }
 
-func normalize(key string) string {
-	return strings.ReplaceAll(strings.ToUpper(key), "-", "_")
+// Key returns the environment key name for the given name.
+func Key(name string) string {
+	return strings.ReplaceAll(strings.ToUpper(name), "-", "_")
 }
 
 // GetServiceProperty is shorthand for Getenv(SERVICE_$SERVICE_NAME_$PROPERTY_NAME)
 func (e *Environment) GetServiceProperty(serviceName string, propertyName string) string {
-	return e.Getenv(fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName))
+	return e.Getenv(fmt.Sprintf("SERVICE_%s_%s", Key(serviceName), propertyName))
 }
 
 // Sets the value of a service-namespaced property in the environment.
 func (e *Environment) SetServiceProperty(serviceName string, propertyName string, value string) {
-	e.DotenvSet(fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName), value)
+	e.DotenvSet(fmt.Sprintf("SERVICE_%s_%s", Key(serviceName), propertyName), value)
 }
 
 // Creates a slice of key value pairs, based on the entries in the `.env` file like `KEY=VALUE` that

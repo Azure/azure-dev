@@ -16,6 +16,12 @@ param administrator_login string
 @secure()
 param administratorLoginPassword string
 param parameter string
+@metadata({azd: {
+  type: 'resourceGroup'
+  config: {}
+  }
+})
+param rg_scope string
 
 var tags = {
   'azd-env-name': environmentName
@@ -26,7 +32,6 @@ resource rg 'Microsoft.Resources/resourceGroups@2022-09-01' = {
   location: location
   tags: tags
 }
-
 module resources 'resources.bicep' = {
   scope: rg
   name: 'resources'
@@ -44,6 +49,14 @@ module ai 'ai/aspire.hosting.azure.bicep.appinsights.bicep' = {
     appInsightsName: 'ai'
     location: location
     logAnalyticsWorkspaceId: resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_ID
+    userPrincipalId: 'fixed-value-to-test-userPrincipalId-convention'
+  }
+}
+module kv 'kv/kv.bicep' = {
+  name: 'kv'
+  scope: rg
+  params: {
+    location: location
   }
 }
 module postgres_2 'postgres-2/aspire.hosting.azure.bicep.postgres.bicep' = {
@@ -85,7 +98,7 @@ module sql 'sql/aspire.hosting.azure.bicep.sql.bicep' = {
 }
 module test 'test/test.bicep' = {
   name: 'test'
-  scope: rg
+  scope: resourceGroup(rg_scope)
   params: {
     host: 'frontend.internal.${resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}'
     location: location
@@ -94,16 +107,20 @@ module test 'test/test.bicep' = {
     values: ['one','two']
   }
 }
+
 output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
 output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
+output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.AZURE_CONTAINER_REGISTRY_NAME
 output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_ID
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
 output SERVICE_BINDING_KV854251F1_ENDPOINT string = resources.outputs.SERVICE_BINDING_KV854251F1_ENDPOINT
+output SERVICE_BINDING_KV854251F1_NAME string = resources.outputs.SERVICE_BINDING_KV854251F1_NAME
 output AI_APPINSIGHTSCONNECTIONSTRING string = ai.outputs.appInsightsConnectionString
+output KV_KVURI string = kv.outputs.kvUri
 output S_B_SERVICEBUSENDPOINT string = s_b.outputs.serviceBusEndpoint
 output SQL_SQLSERVERFQDN string = sql.outputs.sqlServerFqdn
 output TEST_TEST string = test.outputs.test

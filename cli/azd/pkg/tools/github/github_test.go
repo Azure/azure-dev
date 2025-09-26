@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package github
 
 import (
@@ -22,6 +25,40 @@ import (
 	"github.com/blang/semver/v4"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGithubCLIDeploymentEnvironments(t *testing.T) {
+	// TODO: how do we handle live testing resources, like a GitHub repo?
+	t.Skip("GitHub environment live test disabled. Can be run manually.")
+
+	commandRunner := exec.NewCommandRunner(nil)
+
+	// (you can use any repo here, these were just the ones I used last)
+	repoSlug := "richardpark-msft/copilot-auth-tests"
+	envName := "copilot2"
+
+	mockContext := mocks.NewMockContext(context.Background())
+	cli, err := NewGitHubCli(context.Background(), mockContext.Console, commandRunner)
+	require.NoError(t, err)
+
+	err = cli.CreateEnvironmentIfNotExist(context.Background(), repoSlug, envName)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		err = cli.DeleteEnvironment(context.Background(), repoSlug, envName)
+		require.NoError(t, err)
+	})
+
+	err = cli.SetVariable(context.Background(), repoSlug, "hello", "world", &SetVariableOptions{
+		Environment: envName,
+	})
+	require.NoError(t, err)
+
+	values, err := cli.ListVariables(context.Background(), repoSlug, &ListVariablesOptions{
+		Environment: envName,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "world", values["HELLO"])
+}
 
 func TestZipExtractContents(t *testing.T) {
 	testPath := t.TempDir()
@@ -144,6 +181,13 @@ func TestNewGitHubCli(t *testing.T) {
 
 func TestGetAuthStatus(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && request.URL.Host == "github.com"
+	}).Respond(&http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewBufferString("this is github cli")),
+	})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "gh") && len(args.Args) == 1 && args.Args[0] == "--version"

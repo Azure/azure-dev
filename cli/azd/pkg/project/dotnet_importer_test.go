@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package project
 
 import (
@@ -97,7 +100,7 @@ func TestEvaluateArgsWithConfig(t *testing.T) {
 		"arg5": envParamExpected,
 	}
 
-	result, err := evaluateArgsWithConfig(manifest, args)
+	result, err := evaluateBuildArgs(manifest, args)
 	require.NoError(t, err)
 	require.ElementsMatch(t, mapToStringSlice(expected, ","), mapToStringSlice(result, ","))
 }

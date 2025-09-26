@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package project
 
 import (
@@ -61,11 +64,23 @@ func (m *aiEndpointTarget) Package(
 	return &ServicePackageResult{}, nil
 }
 
+func (m *aiEndpointTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+	publishOptions *PublishOptions,
+) (*ServicePublishResult, error) {
+	return &ServicePublishResult{}, nil
+}
+
 // Deploy deploys the service to an Azure ML online endpoint
 func (m *aiEndpointTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	servicePackage *ServicePackageResult,
+	servicePublishResult *ServicePublishResult,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {

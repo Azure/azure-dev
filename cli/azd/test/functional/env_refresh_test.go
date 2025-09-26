@@ -33,6 +33,8 @@ func Test_CLI_EnvRefresh_NoBicep(t *testing.T) {
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
 
@@ -51,7 +53,7 @@ func Test_CLI_EnvRefresh_NoBicep(t *testing.T) {
 	require.NoError(t, os.Rename(infraPath, infraPathHidden))
 
 	// Reuse same environment name
-	_, err = cli.RunCommandWithStdIn(ctx, envName+"\n", "env", "refresh")
+	_, err = cli.RunCommandWithStdIn(ctx, envName+"\n\ny\n", "env", "refresh")
 	require.NoError(t, err)
 
 	env, err := envFromAzdRoot(ctx, dir, envName)

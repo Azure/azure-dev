@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package vsrpc
 
 import (
@@ -6,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/stretchr/testify/require"
@@ -56,6 +61,112 @@ func Test_azdContext(t *testing.T) {
 	require.Equal(t, filepath.Dir(nearestUnmatched), ctxDir.ProjectDirectory())
 }
 
+func Test_servicesFromManifest(t *testing.T) {
+	tests := []struct {
+		name     string
+		manifest *apphost.Manifest
+		expected []*Service
+	}{
+		{
+			name: "empty manifest",
+			manifest: &apphost.Manifest{
+				Resources: map[string]*apphost.Resource{},
+			},
+			expected: []*Service{},
+		},
+		{
+			name: "manifest with project resources",
+			manifest: &apphost.Manifest{
+				Resources: map[string]*apphost.Resource{
+					"webapi": {
+						Type: "project.v0",
+						Path: to.Ptr("./src/WebApi/WebApi.csproj"),
+					},
+					"frontend": {
+						Type: "project.v0",
+						Path: to.Ptr("./src/Frontend/Frontend.csproj"),
+					},
+				},
+			},
+			expected: []*Service{
+				{
+					Name: "webapi",
+					Path: "./src/WebApi/WebApi.csproj",
+				},
+				{
+					Name: "frontend",
+					Path: "./src/Frontend/Frontend.csproj",
+				},
+			},
+		},
+		{
+			name: "manifest with mixed resource types",
+			manifest: &apphost.Manifest{
+				Resources: map[string]*apphost.Resource{
+					"api": {
+						Type: "project.v0",
+						Path: to.Ptr("./Api/Api.csproj"),
+					},
+					"database": {
+						Type:  "container.v1",
+						Image: to.Ptr("postgres:latest"),
+					},
+					"worker": {
+						Type: "project.v1",
+						Path: to.Ptr("./Worker/Worker.csproj"),
+					},
+				},
+			},
+			expected: []*Service{
+				{
+					Name: "api",
+					Path: "./Api/Api.csproj",
+				},
+				{
+					Name: "worker",
+					Path: "./Worker/Worker.csproj",
+				},
+			},
+		},
+		{
+			name: "manifest with no project resources",
+			manifest: &apphost.Manifest{
+				Resources: map[string]*apphost.Resource{
+					"redis": {
+						Type:  "container.v0",
+						Image: to.Ptr("redis:latest"),
+					},
+					"postgres": {
+						Type:  "container.v0",
+						Image: to.Ptr("postgres:latest"),
+					},
+				},
+			},
+			expected: []*Service{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := servicesFromManifest(tt.manifest)
+
+			require.Len(t, result, len(tt.expected))
+
+			// Convert to maps for easier comparison since order may vary
+			resultMap := make(map[string]string)
+			for _, svc := range result {
+				resultMap[svc.Name] = svc.Path
+			}
+
+			expectedMap := make(map[string]string)
+			for _, svc := range tt.expected {
+				expectedMap[svc.Name] = svc.Path
+			}
+
+			require.Equal(t, expectedMap, resultMap)
+		})
+	}
+}
 func createProject(prjDir string, appHostPath string) error {
 	err := os.MkdirAll(prjDir, 0755)
 	if err != nil {

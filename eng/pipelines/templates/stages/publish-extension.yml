@@ -1,0 +1,71 @@
+parameters:
+  - name: SanitizedExtensionId
+    type: string
+
+stages:
+  - stage: PublishExtension
+    dependsOn: Sign
+    condition: >-
+      and(
+        succeeded(),
+        ne(variables['Skip.Release'], 'true'),
+        or(
+          eq('Manual', variables['BuildReasonOverride']),
+          and(
+            eq('', variables['BuildReasonOverride']),
+            eq('Manual', variables['Build.Reason'])
+          )
+        )
+      )
+
+    variables:
+      - template: /eng/pipelines/templates/variables/image.yml
+      - template: /eng/pipelines/templates/variables/globals.yml
+
+    jobs:
+      - deployment: Publish_Release
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.Publish'])
+          )
+        environment: package-publish
+
+        pool:
+          name: azsdk-pool
+          image: ubuntu-22.04
+          os: linux
+
+        templateContext:
+          type: releaseJob
+          isProduction: true
+          inputs:
+            - input: pipelineArtifact
+              artifactName: release
+              targetPath: release
+
+            - input: pipelineArtifact
+              artifactName: changelog
+              targetPath: changelog
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - template: /eng/pipelines/templates/steps/extension-set-metadata-variables.yml
+                  parameters:
+                    Use1ESArtifactTask: true
+
+                - pwsh: |
+                    # Initial upload locations
+                    $publishUploadLocations = '${{ parameters.SanitizedExtensionId }}/$(EXT_VERSION)'
+
+                    Write-Host "Setting StorageUploadLocations to $publishUploadLocations"
+                    Write-Host "###vso[task.setvariable variable=StorageUploadLocations]$publishUploadLocations"
+                  displayName: Set StorageUploadLocations
+
+                - template: /eng/pipelines/templates/steps/publish-extension.yml
+                  parameters:
+                    PublishUploadLocations: $(StorageUploadLocations)
+                    TagPrefix: azd-ext-${{ parameters.SanitizedExtensionId }}
+                    TagVersion: $(EXT_VERSION)

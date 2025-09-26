@@ -10,18 +10,19 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 
 	_ "embed"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/github"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/az"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
@@ -143,16 +144,11 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 		configManager:     newMemoryConfigManager(),
 		userConfigManager: newMemoryUserConfigManager(),
 		credentialCache:   credentialCache,
-		ghClient: github.NewFederatedTokenClient(&azcore.ClientOptions{
-			Transport: mockContext.HttpClient,
-			Cloud:     cloud.AzurePublic().Configuration,
-		}),
-		cloud: cloud.AzurePublic(),
+		httpClient:        mockContext.HttpClient,
+		cloud:             cloud.AzurePublic(),
 	}
 
-	cred, err := m.LoginWithServicePrincipalFederatedTokenProvider(
-		context.Background(), "testClientId", "testTenantId", "github",
-	)
+	cred, err := m.LoginWithGitHubFederatedTokenProvider(context.Background(), "testClientId", "testTenantId")
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
@@ -213,7 +209,7 @@ func TestLoginInteractive(t *testing.T) {
 		cloud:             cloud.AzurePublic(),
 	}
 
-	cred, err := m.LoginInteractive(context.Background(), nil, nil)
+	cred, err := m.LoginInteractive(context.Background(), nil, "", nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
@@ -242,7 +238,7 @@ func TestLoginDeviceCode(t *testing.T) {
 		cloud:             cloud.AzurePublic(),
 	}
 
-	cred, err := m.LoginWithDeviceCode(context.Background(), "", nil, func(url string) error { return nil })
+	cred, err := m.LoginWithDeviceCode(context.Background(), "", nil, "", func(url string) error { return nil })
 
 	require.Regexp(t, "Start by copying the next code: 123-456", console.Output())
 
@@ -294,6 +290,68 @@ func TestAuthFileConfigUpgrade(t *testing.T) {
 	// so the current user key should no longer be set in the user configuration.
 	_, has := userCfgMgr.config.Get(currentUserKey)
 	require.False(t, has)
+}
+
+func TestLogInDetails(t *testing.T) {
+	t.Run("legacy az cli auth - user account", func(t *testing.T) {
+		mgr := newMemoryUserConfigManager()
+		cfg, err := mgr.Load()
+		require.NoError(t, err)
+
+		require.NoError(t, cfg.Set(useAzCliAuthKey, "true"))
+		require.NoError(t, mgr.Save(cfg))
+
+		// mock command runner to return a user account
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "az account show")
+		}).Respond(exec.RunResult{
+			Stdout: `{"user": {"name": "test@example.com", "type": "user"}}`,
+		})
+
+		mockAzCli, err := az.NewCli(mockContext.CommandRunner)
+		require.NoError(t, err)
+
+		m := Manager{
+			userConfigManager: mgr,
+			azCli:             mockAzCli,
+		}
+
+		details, err := m.LogInDetails(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, EmailLoginType, details.LoginType)
+		require.Equal(t, "test@example.com", details.Account)
+	})
+
+	t.Run("legacy az cli auth - service principal", func(t *testing.T) {
+		mgr := newMemoryUserConfigManager()
+		cfg, err := mgr.Load()
+		require.NoError(t, err)
+
+		require.NoError(t, cfg.Set(useAzCliAuthKey, "true"))
+		require.NoError(t, mgr.Save(cfg))
+
+		// mock command runner to return a user account
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.CommandRunner.When(func(args exec.RunArgs, cmd string) bool {
+			return strings.Contains(cmd, "az account show")
+		}).Respond(exec.RunResult{
+			Stdout: `{"user": {"name": "12345678-1234-1234-1234-123456789012", "type": "servicePrincipal"}}`,
+		})
+
+		mockAzCli, err := az.NewCli(mockContext.CommandRunner)
+		require.NoError(t, err)
+
+		m := Manager{
+			userConfigManager: mgr,
+			azCli:             mockAzCli,
+		}
+
+		details, err := m.LogInDetails(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, ClientIdLoginType, details.LoginType)
+		require.Equal(t, "12345678-1234-1234-1234-123456789012", details.Account)
+	})
 }
 
 func newMemoryUserConfigManager() *memoryUserConfigManager {

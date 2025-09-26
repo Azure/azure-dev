@@ -1,8 +1,12 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package project
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -26,8 +30,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
 	"github.com/azure/azure-dev/cli/azd/pkg/kustomize"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -35,9 +39,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/benbjohnson/clock"
+	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
 func Test_NewAksTarget(t *testing.T) {
@@ -136,9 +140,17 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	require.IsType(t, new(dockerPackageResult), packageResult.Details)
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
+
+	// Create a mock publish result that would normally come from a Publish operation
+	publishResult := &ServicePublishResult{
+		Details: &ContainerPublishDetails{
+			RemoteImage: "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0",
+		},
+	}
+
 	deployResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-			return serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope, progress)
+			return serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, publishResult, scope, progress)
 		},
 	)
 
@@ -147,8 +159,104 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	require.Equal(t, AksTarget, deployResult.Kind)
 	require.IsType(t, new(kubectl.Deployment), deployResult.Details)
 	require.Greater(t, len(deployResult.Endpoints), 0)
-	// New env variable is created
+
+	// Verify the Publish field is set correctly
+	require.NotNil(t, deployResult.Publish)
+	require.Equal(t, publishResult, deployResult.Publish)
+}
+
+func Test_AKS_Publish(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(context.Background())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
+	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
+	env := createEnv()
+
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
+	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
+	require.NoError(t, err)
+
+	packageResult, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+		return serviceTarget.Package(
+			*mockContext.Context,
+			serviceConfig,
+			&ServicePackageResult{
+				PackagePath: "test-app/api-test:azd-deploy-0",
+				Details: &dockerPackageResult{
+					ImageHash:   "IMAGE_HASH",
+					TargetImage: "test-app/api-test:azd-deploy-0",
+				},
+			},
+			progess,
+		)
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, packageResult)
+	require.IsType(t, new(dockerPackageResult), packageResult.Details)
+
+	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
+
+	publishResult, err := logProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
+			return serviceTarget.Publish(
+				*mockContext.Context, serviceConfig, packageResult, scope, progress, &PublishOptions{})
+		},
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, publishResult)
+	require.IsType(t, new(ContainerPublishDetails), publishResult.Details)
+
+	// Verify the Package field is set correctly
+	require.NotNil(t, publishResult.Package)
+	require.Equal(t, packageResult, publishResult.Package)
+
+	// Verify the environment variable was set correctly
 	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])
+
+	// Verify the publish result contains the expected image name
+	containerDetails := publishResult.Details.(*ContainerPublishDetails)
+	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", containerDetails.RemoteImage)
+}
+
+func Test_AKS_Publish_NoContainer(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(context.Background())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
+	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
+	env := createEnv()
+
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
+	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
+	require.NoError(t, err)
+
+	// Create a package result with no details (indicating no container to publish)
+	packageResult := &ServicePackageResult{
+		PackagePath: "",
+		Details:     nil,
+	}
+
+	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
+
+	publishResult, err := logProgress(
+		t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
+			return serviceTarget.Publish(
+				*mockContext.Context, serviceConfig, packageResult, scope, progress, &PublishOptions{})
+		},
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, publishResult)
+	require.Nil(t, publishResult.Details)
 }
 
 func Test_Resolve_Cluster_Name(t *testing.T) {
@@ -293,12 +401,14 @@ func Test_Deploy_Helm(t *testing.T) {
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
 	deployResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-			return serviceTarget.Deploy(*mockContext.Context, &serviceConfig, packageResult, scope, progress)
+			return serviceTarget.Deploy(*mockContext.Context, &serviceConfig, packageResult, nil, scope, progress)
 		},
 	)
 
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
+
+	require.Nil(t, deployResult.Publish)
 
 	repoAdd, repoAddCalled := mockResults["helm-repo-add"]
 	require.True(t, repoAddCalled)
@@ -357,12 +467,14 @@ func Test_Deploy_Kustomize(t *testing.T) {
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
 	deployResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-			return serviceTarget.Deploy(*mockContext.Context, &serviceConfig, packageResult, scope, progress)
+			return serviceTarget.Deploy(*mockContext.Context, &serviceConfig, packageResult, nil, scope, progress)
 		},
 	)
 
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
+
+	require.Nil(t, deployResult.Publish)
 
 	kustomizeEdit, kustomizeEditCalled := mockResults["kustomize-edit"]
 	require.True(t, kustomizeEditCalled)
@@ -772,6 +884,19 @@ func setupMocksForDocker(mockContext *mocks.MockContext) {
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
+
+	// Docker manifest inspect (for checking if image exists)
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker manifest inspect")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		if len(args.Args) < 4 || args.Args[3] == "" {
+			return exec.NewRunResult(1, "", ""), errors.New("no image specified")
+		}
+
+		// For the test, we'll assume the image doesn't exist (return exit code 1)
+		// This simulates the normal case where the image needs to be built and pushed
+		return exec.NewRunResult(1, "", "manifest unknown"), nil
+	})
 }
 
 func createK8sResourceList[T any](resource T) *kubectl.List[T] {
@@ -811,6 +936,7 @@ func createAksServiceTarget(
 	helmCli := helm.NewCli(mockContext.CommandRunner)
 	kustomizeCli := kustomize.NewCli(mockContext.CommandRunner)
 	dockerCli := docker.NewCli(mockContext.CommandRunner)
+	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 	kubeLoginCli := kubelogin.NewCli(mockContext.CommandRunner)
 	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
@@ -831,8 +957,8 @@ func createAksServiceTarget(
 		On("GetTargetResource", *mockContext.Context, "SUBSCRIPTION_ID", serviceConfig).
 		Return(targetResource, nil)
 
-	managedClustersService := azcli.NewManagedClustersService(credentialProvider, mockContext.ArmClientOptions)
-	containerRegistryService := azcli.NewContainerRegistryService(
+	managedClustersService := azapi.NewManagedClustersService(credentialProvider, mockContext.ArmClientOptions)
+	containerRegistryService := azapi.NewContainerRegistryService(
 		credentialProvider,
 		dockerCli,
 		mockContext.ArmClientOptions,
@@ -849,6 +975,7 @@ func createAksServiceTarget(
 		containerRegistryService,
 		remoteBuildManager,
 		dockerCli,
+		dotnetCli,
 		mockContext.Console,
 		cloud.AzurePublic(),
 	)
@@ -950,9 +1077,9 @@ func (m *MockResourceManager) GetServiceResources(
 	subscriptionId string,
 	resourceGroupName string,
 	serviceConfig *ServiceConfig,
-) ([]*azapi.Resource, error) {
+) ([]*azapi.ResourceExtended, error) {
 	args := m.Called(ctx, subscriptionId, resourceGroupName, serviceConfig)
-	return args.Get(0).([]*azapi.Resource), args.Error(1)
+	return args.Get(0).([]*azapi.ResourceExtended), args.Error(1)
 }
 
 func (m *MockResourceManager) GetServiceResource(
@@ -961,9 +1088,9 @@ func (m *MockResourceManager) GetServiceResource(
 	resourceGroupName string,
 	serviceConfig *ServiceConfig,
 	rerunCommand string,
-) (*azapi.Resource, error) {
+) (*azapi.ResourceExtended, error) {
 	args := m.Called(ctx, subscriptionId, resourceGroupName, serviceConfig, rerunCommand)
-	return args.Get(0).(*azapi.Resource), args.Error(1)
+	return args.Get(0).(*azapi.ResourceExtended), args.Error(1)
 }
 
 func (m *MockResourceManager) GetTargetResource(

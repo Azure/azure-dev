@@ -11,8 +11,8 @@ export interface AzDevExtensionVariables extends UIExtensionVariables {
     azureDevExtensionNamespace: 'vscode:/extensions/ms-azuretools.azure-dev';
     userAgent: string;
     experimentationSvc: IExperimentationServiceAdapter | undefined;
-    activitySvc: ActivityStatisticsService
-    extensionVersion: Lazy<string>
+    activitySvc: ActivityStatisticsService;
+    extensionVersion: Lazy<string>;
 }
 
 const ext = {
@@ -22,6 +22,6 @@ const ext = {
     extensionVersion: new Lazy<string>(() => {
         const extension = vscode.extensions.getExtension('ms-azuretools.azure-dev');
         return extension?.packageJSON?.version ?? '';
-    })
+    }),
 } as AzDevExtensionVariables;
 export default ext;

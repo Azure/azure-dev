@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"log"
 	"strconv"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -14,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
 type containerAppTarget struct {
@@ -68,11 +70,66 @@ func (at *containerAppTarget) Package(
 	return packageOutput, nil
 }
 
-// Deploys service container images to ACR and provisions the container app service.
+// Publish pushes the container image to ACR
+func (at *containerAppTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+	publishOptions *PublishOptions,
+) (*ServicePublishResult, error) {
+	if err := at.validateTargetResource(targetResource); err != nil {
+		return nil, fmt.Errorf("validating target resource: %w", err)
+	}
+
+	var publishResult *ServicePublishResult
+	var err error
+
+	// Skip publishing to the container registry if packageOutput.PackagePath is a remote image reference,
+	// such as when called through `azd deploy --from-package <image>`
+	if parsedImage, err := docker.ParseContainerImage(packageOutput.PackagePath); err == nil {
+		if parsedImage.Registry != "" {
+			publishResult = &ServicePublishResult{
+				Package: packageOutput,
+				Details: &ContainerPublishDetails{
+					RemoteImage: packageOutput.PackagePath,
+				},
+			}
+		}
+	}
+
+	if publishResult == nil {
+		// Login, tag & push container image to ACR
+		publishResult, err = at.containerHelper.Publish(
+			ctx, serviceConfig, packageOutput, targetResource, progress, publishOptions)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Save the name of the image we pushed into the environment with a well known key.
+	log.Printf("writing image name to environment")
+
+	containerDetails, ok := publishResult.Details.(*ContainerPublishDetails)
+	if !ok {
+		return nil, fmt.Errorf("expected ContainerPublishDetails but got %T", publishResult.Details)
+	}
+	at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", containerDetails.RemoteImage)
+
+	if err := at.envManager.Save(ctx, at.env); err != nil {
+		return nil, fmt.Errorf("saving image name to environment: %w", err)
+	}
+
+	return publishResult, nil
+}
+
+// Deploys the container app service using the published image.
 func (at *containerAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
+	servicePublishResult *ServicePublishResult,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -80,20 +137,29 @@ func (at *containerAppTarget) Deploy(
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
-	// Login, tag & push container image to ACR
-	_, err := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true, progress)
-	if err != nil {
-		return nil, err
+	// Get the image name from the publish result
+	if servicePublishResult == nil {
+		return nil, fmt.Errorf("unexpected publish result for service: %s", serviceConfig.Name)
 	}
 
-	imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
+	containerDetails, ok := servicePublishResult.Details.(*ContainerPublishDetails)
+	if !ok {
+		return nil, fmt.Errorf("expected ContainerPublishDetails but got %T", servicePublishResult.Details)
+	}
+	imageName := containerDetails.RemoteImage
+
+	containerAppOptions := containerapps.ContainerAppOptions{
+		ApiVersion: serviceConfig.ApiVersion,
+	}
+
 	progress.SetProgress(NewServiceProgress("Updating container app revision"))
-	err = at.containerAppService.AddRevision(
+	err := at.containerAppService.AddRevision(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
 		imageName,
+		&containerAppOptions,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("updating container app service: %w", err)
@@ -107,6 +173,7 @@ func (at *containerAppTarget) Deploy(
 
 	return &ServiceDeployResult{
 		Package: packageOutput,
+		Publish: servicePublishResult,
 		TargetResourceId: azure.ContainerAppRID(
 			targetResource.SubscriptionId(),
 			targetResource.ResourceGroupName(),
@@ -123,11 +190,16 @@ func (at *containerAppTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
+	containerAppOptions := containerapps.ContainerAppOptions{
+		ApiVersion: serviceConfig.ApiVersion,
+	}
+
 	if ingressConfig, err := at.containerAppService.GetIngressConfiguration(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
+		&containerAppOptions,
 	); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	} else {

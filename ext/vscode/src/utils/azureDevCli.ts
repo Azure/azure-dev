@@ -1,15 +1,14 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+import { AzExtErrorButton, IActionContext } from '@microsoft/vscode-azext-utils';
+import { composeArgs, StreamSpawnOptions, withArg, withNamedArg } from '@microsoft/vscode-processutils';
 import * as path from 'path';
 import * as semver from 'semver';
 import * as vscode from 'vscode';
-import { CommonOptions } from "child_process";
-import { CommandLineBuilder } from "./commandLineBuilder";
-import ext from "../ext";
-import { execAsync } from './process';
+import ext from '../ext';
+import { execAsync } from './execAsync';
 import { AsyncLazy } from './lazy';
-import { AzExtErrorButton, IActionContext } from '@microsoft/vscode-azext-utils';
 import { isWindows } from './osUtils';
 import { setVsCodeContext } from './setVsCodeContext';
 
@@ -32,11 +31,9 @@ interface VersionInfo {
     };
 }
 
-export type Environment = { [key: string]: string };
-export type AzureDevCli = {
-    commandBuilder: CommandLineBuilder,
-    env: Environment
-    spawnOptions: (cwd?: string) => CommonOptions
+type AzureDevCli = {
+    invocation: string,
+    spawnOptions: (cwd?: string) => StreamSpawnOptions,
 };
 
 export async function createAzureDevCli(context: IActionContext): Promise<AzureDevCli> {
@@ -52,7 +49,6 @@ export async function createAzureDevCli(context: IActionContext): Promise<AzureD
 
 export function scheduleAzdVersionCheck(): void {
     const oneSecond = 1 * 1000;
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const minimumSupportedVersion = semver.coerce('1.8.0')!;
 
     setTimeout(async () => {
@@ -129,8 +125,6 @@ export function onAzdLoginAttempted(): void {
 }
 
 function createCli(): AzureDevCli {
-    const invocation = getAzDevInvocation();
-    const builder = CommandLineBuilder.create(invocation[0], ...invocation.slice(1));
     const azDevCliEnv: NodeJS.ProcessEnv = {
         // eslint-disable-next-line @typescript-eslint/naming-convention
         'AZURE_DEV_USER_AGENT': ext.userAgent
@@ -140,7 +134,6 @@ function createCli(): AzureDevCli {
         azDevCliEnv['AZURE_DEV_COLLECT_TELEMETRY'] = "no";
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     let modifiedPath: string = process.env.PATH!;
 
     // On Unix, the CLI is installed to /usr/local/bin, which is always going to be in the PATH
@@ -150,20 +143,18 @@ function createCli(): AzureDevCli {
     // as long as it's Windows, AZURE_DEV_CLI_PATH is unset, "Azure Dev CLI" isn't already in the PATH (somewhere else?),
     // and the user did try to install within this session
     if (isWindows() && !process.env.AZURE_DEV_CLI_PATH && !/Azure Dev CLI/i.test(modifiedPath) && azdInstallAttempted) {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const defaultAzdInstallLocation = path.join(process.env.LOCALAPPDATA!, 'Programs', 'Azure Dev CLI');
         modifiedPath += `;${defaultAzdInstallLocation}`;
     }
 
-    const combinedEnv = {
+    const combinedEnv: NodeJS.ProcessEnv = {
         ...process.env,
         ...azDevCliEnv,
         PATH: modifiedPath,
     };
 
     return {
-        commandBuilder: builder,
-        env: normalize(combinedEnv),
+        invocation: getAzDevInvocation(),
         spawnOptions: (cwd?: string) => {
             return {
                 timeout: DefaultAzCliInvocationTimeout,
@@ -175,19 +166,19 @@ function createCli(): AzureDevCli {
     };
 }
 
-function getAzDevInvocation(): string[] {
-    if (process.env.AZURE_DEV_CLI_PATH) {
-        return [process.env.AZURE_DEV_CLI_PATH];
-    } else {
-        return ['azd'];
-    }
+function getAzDevInvocation(): string {
+    return process.env.AZURE_DEV_CLI_PATH || 'azd';
 }
 
 async function getAzdVersion(): Promise<semver.SemVer | undefined> {
     const cli = createCli();
-    const command = cli.commandBuilder.withArgs(['version', '--output', 'json']).build();
+    const args = composeArgs(
+        withArg('version'),
+        withNamedArg('--output', 'json'),
+    )();
+
     try {
-        const stdout = (await execAsync(command, cli.spawnOptions())).stdout;
+        const { stdout } = await execAsync(cli.invocation, args, cli.spawnOptions());
         const result = JSON.parse(stdout) as VersionInfo;
 
         return semver.coerce(result?.azd.version) ?? undefined;
@@ -199,9 +190,13 @@ async function getAzdVersion(): Promise<semver.SemVer | undefined> {
 
 export async function getAzdLoginStatus(): Promise<LoginStatus | undefined> {
     const cli = createCli();
-    const command = cli.commandBuilder.withArgs(['auth', 'login', '--check-status', '--output', 'json']).build();
+    const args = composeArgs(
+        withArg('auth', 'login', '--check-status'),
+        withNamedArg('--output', 'json'),
+    )();
+
     try {
-        const stdout = (await execAsync(command, cli.spawnOptions())).stdout;
+        const { stdout } = await execAsync(cli.invocation, args, cli.spawnOptions());
         const result = JSON.parse(stdout) as LoginStatus;
 
         return result;
@@ -209,18 +204,6 @@ export async function getAzdLoginStatus(): Promise<LoginStatus | undefined> {
         // If AZD is not installed, return `undefined`
         return undefined;
     }
-}
-
-// This is only necessary because Node defines the environment slightly differently from VS Code... %-/
-function normalize(env: NodeJS.ProcessEnv): Environment {
-    const retval: Environment = {};
-    for (const prop of Object.getOwnPropertyNames(env)) {
-        if (env[prop]) {
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-            retval[prop] = env[prop]!;
-        }
-    }
-    return retval;
 }
 
 function azdNotInstalledMsg(): string {
@@ -245,5 +228,5 @@ function azdNotInstalledUserChoices(): AzExtErrorButton[] {
 
 // isAzdCommand returns true if this is the command to run azd.
 export function isAzdCommand(command: string): boolean {
-    return command === getAzDevInvocation()[0] || command.startsWith(`${getAzDevInvocation()[0]} `);
+    return command === getAzDevInvocation() || command.startsWith(`${getAzDevInvocation()} `);
 }

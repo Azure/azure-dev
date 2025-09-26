@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package repository
 
 import (
@@ -7,9 +10,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/fatih/color"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -23,12 +26,14 @@ type detectConfirmAppHost struct {
 
 	// internal state and components
 	console input.Console
+
+	warningMessage string
 }
 
 // Init initializes state from initial detection output
-func (d *detectConfirmAppHost) Init(appHost appdetect.Project, root string) {
+func (d *detectConfirmAppHost) Init(appHost appdetect.Project, root string, manifest *apphost.Manifest) {
 	d.AppHost = appHost
-
+	d.warningMessage = manifest.Warnings()
 	d.captureUsage(
 		fields.AppInitDetectedServices)
 }
@@ -49,12 +54,14 @@ func (d *detectConfirmAppHost) Confirm(ctx context.Context) error {
 			return err
 		}
 
+		defaultConfirmation := "Confirm and continue initializing my app"
 		continueOption, err := d.console.Select(ctx, input.ConsoleOptions{
 			Message: "Select an option",
 			Options: []string{
-				"Confirm and continue initializing my app",
+				defaultConfirmation,
 				"Cancel and exit",
 			},
+			DefaultValue: defaultConfirmation,
 		})
 		if err != nil {
 			return err
@@ -74,15 +81,16 @@ func (d *detectConfirmAppHost) Confirm(ctx context.Context) error {
 func (d *detectConfirmAppHost) render(ctx context.Context) error {
 	d.console.Message(ctx, "\n"+output.WithBold("Detected services:")+"\n")
 
-	d.console.Message(ctx, "  "+color.BlueString(projectDisplayName(d.AppHost)))
+	d.console.Message(ctx, "  "+output.WithHighLightFormat(projectDisplayName(d.AppHost)))
 	d.console.Message(ctx, "  "+"Detected in: "+output.WithHighLightFormat(relSafe(d.root, d.AppHost.Path)))
 	d.console.Message(ctx, "")
-	d.console.Message(
-		ctx,
-		"azd will generate the files necessary to host your app on Azure using "+color.MagentaString(
-			"Azure Container Apps",
-		)+".\n",
-	)
+
+	if d.warningMessage != "" {
+		d.console.Message(ctx, d.warningMessage)
+		d.console.Message(ctx, "")
+	}
+
+	d.console.Message(ctx, "azd will generate the files necessary to host your app on Azure.")
 
 	return nil
 }

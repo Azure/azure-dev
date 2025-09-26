@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package ext
 
 import (
@@ -5,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -70,6 +74,9 @@ type HookConfig struct {
 	Windows *HookConfig `yaml:"windows,omitempty"`
 	// When running on linux/macos use this override config
 	Posix *HookConfig `yaml:"posix,omitempty"`
+	// Environment variables in this list are added to the hook script and if the value is a akvs:// reference
+	// it will be resolved to the secret value
+	Secrets map[string]string `yaml:"secrets,omitempty"`
 }
 
 // Validates and normalizes the hook configuration
@@ -132,6 +139,31 @@ func (hc *HookConfig) validate() error {
 	return nil
 }
 
+// IsPowerShellHook determines if a hook configuration uses PowerShell
+func (hc *HookConfig) IsPowerShellHook() bool {
+	// Check if shell is explicitly set to pwsh
+	if hc.Shell == ShellTypePowershell {
+		return true
+	}
+
+	// Check if shell is unknown but the hook file has .ps1 extension
+	if hc.Shell == ScriptTypeUnknown && hc.Run != "" {
+		// For file-based hooks, check the extension
+		if strings.HasSuffix(strings.ToLower(hc.Run), ".ps1") {
+			return true
+		}
+	}
+
+	// Check OS-specific hook configurations
+	if runtime.GOOS == "windows" && hc.Windows != nil {
+		return hc.Windows.IsPowerShellHook()
+	} else if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && hc.Posix != nil {
+		return hc.Posix.IsPowerShellHook()
+	}
+
+	return false
+}
+
 func InferHookType(name string) (HookType, string) {
 	// Validate name length so go doesn't PANIC for string slicing below
 	if len(name) < 4 {
@@ -166,7 +198,7 @@ func createTempScript(hookConfig *HookConfig) (string, error) {
 	scriptHeader := []string{}
 	scriptFooter := []string{}
 
-	switch hookConfig.Shell {
+	switch ShellType(strings.Split(string(hookConfig.Shell), " ")[0]) {
 	case ShellTypeBash:
 		ext = "sh"
 		scriptHeader = []string{

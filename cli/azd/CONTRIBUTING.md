@@ -1,141 +1,85 @@
 # Contributing to `azd`
 
-## Prerequisites
+Hi there 👋! Thank you for showing interest in contributing to `azd`.
 
-`azd` is written in Golang and requires Go 1.20 or above:
+In general, to make contributions a smooth and easy experience, we encourage the following:
 
-- [Go](https://go.dev/dl/)
+- Check existing issues for [bugs][bug issues] or [enhancements][enhancement issues].
+- Open an issue if things aren't working as expected, or if an enhancement is being proposed.
+- Start a conversation on the issue if you are thinking of submitting a pull request.
+- Submit a pull request. The `azd` team will work with you to review the changes and provide feedback. Once the pull request is accepted, a member will merge the changes. Thank you for taking time out of your day to help improve our community!
 
-If you don't have a preferred editor for Go code, we recommend [Visual Studio Code](https://code.visualstudio.com/Download).
-We have a `settings.json` file checked in, so if you launch `code` from within `cli/azd` you should get our customizations.
+## Building `azd`
 
-While `azd` itself does not depend on the `az` CLI, some of our tests use it, so you should make sure you've installed it
-and logged in.
+Prerequisites:
 
-- [AZ CLI](https://docs.microsoft.com/cli/azure/)
+- [Go](https://go.dev/dl/) 1.25
 
-We have some additional linting tools that we run in CI, and you will want to be able to run locally:
-
-- [golangci-lint](https://golangci-lint.run/welcome/install/#local-installation)
-
-In order to run end-to-end tests and develop templates, you'll need the following dependencies:
-
-Language tooling:
-
-- [NodeJS](https://nodejs.org/en/download/)
-- [Python](https://www.python.org/downloads)
-- [DotNet CLI](https://get.dot.net)
-
-Infrastructure-as-code providers:
-
-- [Bicep CLI](https://aka.ms/bicep-install)
-- [Terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli) (if working on Terraform templates)
-
-Docker:
-
-- [Docker](https://docs.docker.com/desktop/#download-and-install)
-
-## Submitting A Change
-
-We use a fork based workflow for `azd`. Here are simple steps:
-
-1. Fork `azure/azure-dev` on GitHub.
-2. Create a branch named `<some-description>` (e.g. `fix-123` for a bug fix or `add-deploy-command`) in your forked Git
-   repository.
-3. Push the branch to your fork on GitHub.
-4. Open a pull request in GitHub.
-
-Here is a more [in-depth guide to forks in GitHub](https://guides.github.com/activities/forking/).
-
-As part of CI validation, we run a series of live tests which provision and deprovision Azure resources. For external
-contributors, these tests will not run automatically, but someone on the team will be able to run them for your PR on your
-behalf.
-
-## Debugging
-
-In VS Code you can add a configuration to launch.json that runs the tool with a specified set of arguments and in a specific
-folder, for example:
-
-```json
-{
-    "name": "dev-azd (launch)",
-    "type": "go",
-    "request": "launch",
-    "mode": "debug",
-    "program": "${workspaceFolder}",
-    "args": [
-        "restore"
-    ],
-    "cwd": "${workspaceFolder}"
-},
-```
-
-You can also set `AZD_DEBUG=true` in your environment. If this environment variable is set, `azd` will pause early in its
-startup process and allow you to attach to it. The checked in `launch.json` already has a configuration for this mode called
-"Attach To Process".
-
-## Testing
-
-We use `gotestsum`, which is a simple tool that wraps `go test` except with better formatting output. Install the tool by
-running `go install gotest.tools/gotestsum@latest`.
-
-### Run unit tests
-
-`gotestsum -- -short ./...`
-
-### Run end-to-end tests
-
-`gotestsum -- -timeout 20m -run Test_CLI ./...`
-
-This runs all end-to-end tests that target the standalone `azd` binary locally and **will** deploy live resources.
-By default, the `azd` binary produced in the cli/azd folder is automatically built once if not up-to-date,
-so it is sufficient to run end-to-end tests without having to first running `go build`.
-
-If testing against a custom binary, set `CLI_TEST_AZD_PATH` explicitly. See test/azdcli package for more details.
-
-### Run all tests
+Build:
 
 ```bash
-gotestsum -- -timeout 20m ./...
+cd cli/azd
+go build
 ```
 
-### Run a specific test
+Run the newly produced `azd` or `azd.exe` binary:
 
-`gotestsum -- -timeout 20m -run Test_CLI_RestoreCommand ./...`
+- Unix-like systems: `./azd`
+- Windows: `.\azd.exe`
 
-This can be useful for running specific end-to-end tests that cover the relevant scenarios.
+Run tests:
 
-## Linting
-
-Run `golangci-lint run ./...`
-
-> On Windows you may need to add `C:\Program Files\Git\usr\bin` to `%PATH%`
-
-## Spell checking
-
-1. Install [cspell](https://cspell.org/)
-2. CD to /cli/azd
-3. Run `cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml`
-
-## Tracing
-
-`azd` supports logging trace information to either a file or an OpenTelemetry compatible HTTP endpoint. The
-`--trace-log-file` can be used to write a JSON file containing all the spans for an command execution. Also,
-`--trace-log-url` can be used to provide an endpoint to send spans using the OTLP HTTP protocol.
-
-You can use the Jaeger all in one docker image to run Jaeger locally to collect and inspect traces:
-
-```
-$ docker run -d --name jaeger \
- -e COLLECTOR_OTLP_ENABLED=true \
- -e JAEGER_DISABLED=true \
- -p 16686:16686 \
- -p 4318:4318 \
- jaegertracing/all-in-one
+```bash
+go test ./... -short
 ```
 
-And then pass `--trace-log-url localhost` to a command and view the results in the Jaeger UI served at
-[http://localhost:16686/search](http://localhost:16686/search)
+Run tests (including end-to-end [functional][functional tests] tests)
+
+```bash
+go test ./...
+```
+
+Run cspell (install [cspell](https://cspell.org/)):
+
+```bash
+cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml
+```
+
+Run linter (install [golangci-lint](https://golangci-lint.run/welcome/install/#local-installation)):
+
+```bash
+golangci-lint run ./...
+```
+
+> Note: On Windows you may need to add `C:\Program Files\Git\usr\bin` to `%PATH%`
+
+### Debugging (with VSCode)
+
+If you don't have a preferred editor for Go code, we recommend [Visual Studio Code](https://code.visualstudio.com/Download).
+
+Launch and debug:
+
+1. Open VSCode in either `cli/azd` (preferred) or in the root directory.
+1. In VSCode, put a breakpoint on the line of code you would like to debug.
+1. Press F5. Alternatively: Select the "Run and Debug" side pane. With the launch task set to "Debug azd cli", click on the launch button.
+1. An interactive VSCode prompt should appear. Provide the args for running `azd` in this prompt window. Press enter when you're done.
+1. `azd` should now be running inside the VSCode terminal with the debugger attached.
+
+Launch `azd` separately, then attach:
+
+1. Set `AZD_DEBUG=true` in your shell. If this environment variable is set, `azd` will pause early in its startup process and allow you to attach to it.
+1. In VSCode, run the launch task "Attach to process".
+1. Select `azd` and press enter.
+1. VSCode debugger should now be attached to the running `azd` process.
+1. In the shell with `azd` running, press enter to resume execution.
+
+> Tip: Use the VSCode terminal to perform all `azd` build and run commands.
+
+## Submitting a change
+
+1. Create a new branch: `git checkout -b my-branch-name`
+1. Make your change, add tests, and ensure tests pass
+1. Submit a pull request: `gh pr create --web` (install [gh cli][gh cli] if needed). Select "Create a fork" to set up a fork for the first time if prompted for.
 
 ## Troubleshooting
 
@@ -144,10 +88,9 @@ And then pass `--trace-log-url localhost` to a command and view the results in t
 Windows Security may block execution of unsigned .exe files. This may happen when validating unsigned .exe files produced in
 a PR build.
 
-```
+```bash
 > azd version
 Access is denied.
->
 ```
 
 To fix:
@@ -158,3 +101,8 @@ To fix:
 1. Click the `Manage settings` link under `Virus & threat protection settings`
 1. Scroll down in the window to the `Exclusions` heading and click the `Add or remove exclusions link`
 1. Select `Add an exclusion` and add the path to the exe from step 1
+
+[bug issues]: https://github.com/Azure/azure-dev/issues?q=is%3Aopen+is%3Aissue+label%3Abug
+[enhancement issues]: https://github.com/Azure/azure-dev/issues?q=is%3Aopen+is%3Aissue+label%3Aenhancement
+[functional tests]: https://github.com/Azure/azure-dev/tree/main/cli/azd/test/functional
+[gh cli]: https://github.com/cli/cli?tab=readme-ov-file#installation

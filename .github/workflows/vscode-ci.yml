@@ -7,6 +7,11 @@ on:
       - ".github/workflows/vscode-ci.yml"
     branches: [main]
 
+# If two events are triggered within a short time in the same PR, cancel the run of the oldest event
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   actions: read
   contents: read
@@ -74,7 +79,7 @@ jobs:
 
       - name: 'Upload azd binary to artifact store (upload-artifact: true only)'
         if: matrix.upload-artifact == true
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: package
           path: ./ext/vscode/azure-dev*.vsix

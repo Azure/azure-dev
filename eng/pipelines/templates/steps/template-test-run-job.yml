@@ -12,14 +12,10 @@ steps:
       parameters:
           Version: $(AzdVersion)
 
-    - template: /eng/pipelines/templates/steps/azd-login.yml
-
-    # Java pre-requisites that isn't met
-    # TODO: Use azd container as a form of validation that the container works
-    - template: /eng/pipelines/templates/steps/install-ms-openjdk.yml
-
     # Required to clone repos that are not yet public
     - template: /eng/pipelines/templates/steps/set-git-credentials.yml
+
+    - template: /eng/pipelines/templates/steps/configure-oidc-auth.yml
 
     - pwsh: |
           # Get the name without any path
@@ -66,32 +62,32 @@ steps:
           TargetFolder: "$(Build.SourcesDirectory)/temp"
       displayName: Copy test-templates.sh
 
+    - bash: |
+        go build -o ./temp/tfoidc ./cli/azd/test/internal/tfoidc 
+      displayName: Build tfoidc
+      env:
+        CGO_ENABLED: 0
+
     - task: DevcontainersCI@0
       inputs:
           env: |
-              # Required secrets for Terraform service principal authentication
-              # $(arm-*) secrets are set by azd-login.yml
-              ARM_CLIENT_ID=$(arm-client-id)
-              ARM_CLIENT_SECRET=$(arm-client-secret)
-              ARM_TENANT_ID=$(arm-tenant-id)
-              SUBSCRIPTION_ID=$(SubscriptionId)
+              # Service Connection Configuration
+              AZURESUBSCRIPTION_CLIENT_ID=$(AzureSubscriptionClientId)
+              AZURESUBSCRIPTION_TENANT_ID=$(AzureSubscriptionTenantId)
+              AZURESUBSCRIPTION_SERVICE_CONNECTION_ID=$(AzureSubscriptionServiceConnectionId)
+              AZURESUBSCRIPTION_SUBSCRIPTION_ID=$(SubscriptionId)
+              SYSTEM_ACCESSTOKEN=$(System.AccessToken)
+              SYSTEM_OIDCREQUESTURI=$(System.OidcRequestUri)
+
+              # Terraform Configuration
+              ARM_CLIENT_ID=$(AzureSubscriptionClientId)
+              ARM_TENANT_ID=$(AzureSubscriptionTenantId)
 
               # Pass in TemplateRunEnvironmentVariables
               $(VARIABLE_LIST)
 
-              # Bash Script parameters
-              BRANCH_NAME=$(TemplateBranchName)
-              ENV_NAME_PREFIX=$(EnvPrefixName)
-              TEMPLATE_NAME=$(TemplateName)
-              VALIDATE=$(TemplateName)
-              PLAYWRIGHT_REPORTER='list'
-              LOCATION=$(AzureLocation)
-              SUBSCRIPTION=$(SubscriptionId)
-              ENV_SUFFIX=$(Build.BuildId)-$(System.JobAttempt)
-              CLEANUP=$(SynchronousCleanup)
-
-              AZD_VERSION=$(AzdVersion)
-              AZD_DEBUG_FORCE_NO_TTY="1"
+              # Force no TTY in CI
+              AZD_DEBUG_FORCE_NO_TTY=1
           subFolder: "$(Build.SourcesDirectory)/temp"
           runCmd: |
               # Uninstall azd version
@@ -100,42 +96,33 @@ steps:
               # Install azd build
               if [[ $(AzdVersion) == pr/* ]];
               then
-                curl -fsSL https://aka.ms/install-azd.sh | sudo bash -s -- --base-url "$(publish-storage-location)/azd/standalone/$(AzdVersion)" --skip-verify --version ''
+                curl -fsSL https://aka.ms/install-azd.sh | sudo bash -s -- --base-url "$(publish-storage-static-host)/azd/standalone/$(AzdVersion)" --skip-verify --version ''
               else
                 curl -fsSL https://aka.ms/install-azd.sh | sudo bash -s -- --version $(AzdVersion) --verbose
               fi
 
               RUN_VALIDATION=true
-              if [[ $TEMPLATE_NAME == *aks* ]]; then
+              if [[ "$(TemplateName)" == *aks* ]]; then
                 RUN_VALIDATION=false
               fi
 
               azd version
 
               # Login azd
-              azd auth login \
-                --client-id "$(arm-client-id)" \
-                --client-secret "$(arm-client-secret)" \
-                --tenant-id "$(arm-tenant-id)"
-
-              # Login az CLI (required for scenarios where az is invoked)
-              az login \
-                --service-principal \
-                -u "$(arm-client-id)" \
-                -p "$(arm-client-secret)" \
-                --tenant "$(arm-tenant-id)"
-
-              # set default sub for az to be the same used by azd
-              az account set --subscription "$(SubscriptionId)"
-
-              # enable alpha features
-              azd config set alpha.all on
+              azd auth login --federated-credential-provider azure-pipelines
 
               # Install these packages for playwright tests. Otherwise, it will cause a error of playwright missing libraries
               sudo add-apt-repository ppa:gstreamer-developers/ppa
               sudo apt-get update
               sudo apt-get install -y gstreamer1.0*
               sudo apt-get install -y gstreamer1.0-libav libnss3-tools libatk-bridge2.0-0 libcups2-dev libxkbcommon-x11-0 libxcomposite-dev libxrandr2 libgbm-dev libgtk-3-0
+
+              # Run tfoidc in background and configure Terraform to use OIDC via it.
+              ./tfoidc -refresh-az &
+
+              export ARM_USE_OIDC=true
+              export ARM_OIDC_REQUEST_URL=http://localhost:27838/oidctoken
+              export ARM_OIDC_REQUEST_TOKEN=$(System.AccessToken)
 
               # Run template test bash script
               chmod u+x test-templates.sh
@@ -150,14 +137,14 @@ steps:
                 -c '$(SynchronousCleanup)' \
                 -v "$RUN_VALIDATION" \
 
-      displayName: Test templates in Devcontainer
+      displayName: Run template-test.sh in Devcontainer
 
     # First tag the resource group (if exists) so that it can get cleaned up
     # by the cleanup pipeline. Then attempt to delete the resource group
     # directly. If the delete fails the cleanup pipeline will delete it.
     - task: AzureCLI@2
       inputs:
-        azureSubscription: azure-sdk-tests
+        azureSubscription: azd-service-connection
         keepAzSessionActive: true
         scriptType: pscore
         scriptLocation: inlineScript

@@ -5,7 +5,9 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/url"
 	"os"
@@ -13,6 +15,8 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -24,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/sqldb"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
 
@@ -33,10 +38,13 @@ type dotnetContainerAppTarget struct {
 	containerAppService containerapps.ContainerAppService
 	resourceManager     ResourceManager
 	dotNetCli           *dotnet.Cli
+	bicepCli            *bicep.Cli
 	cosmosDbService     cosmosdb.CosmosDbService
 	sqlDbService        sqldb.SqlDbService
 	keyvaultService     keyvault.KeyVaultService
 	alphaFeatureManager *alpha.FeatureManager
+	deploymentService   azapi.DeploymentService
+	azureClient         *azapi.AzureClient
 }
 
 // NewDotNetContainerAppTarget creates the Service Target for a Container App that is written in .NET. Unlike
@@ -53,10 +61,13 @@ func NewDotNetContainerAppTarget(
 	containerAppService containerapps.ContainerAppService,
 	resourceManager ResourceManager,
 	dotNetCli *dotnet.Cli,
+	bicepCli *bicep.Cli,
 	cosmosDbService cosmosdb.CosmosDbService,
 	sqlDbService sqldb.SqlDbService,
 	keyvaultService keyvault.KeyVaultService,
 	alphaFeatureManager *alpha.FeatureManager,
+	deploymentService azapi.DeploymentService,
+	azureClient *azapi.AzureClient,
 ) ServiceTarget {
 	return &dotnetContainerAppTarget{
 		env:                 env,
@@ -64,10 +75,13 @@ func NewDotNetContainerAppTarget(
 		containerAppService: containerAppService,
 		resourceManager:     resourceManager,
 		dotNetCli:           dotNetCli,
+		bicepCli:            bicepCli,
 		cosmosDbService:     cosmosDbService,
 		sqlDbService:        sqlDbService,
 		keyvaultService:     keyvaultService,
 		alphaFeatureManager: alphaFeatureManager,
+		deploymentService:   deploymentService,
+		azureClient:         azureClient,
 	}
 }
 
@@ -91,24 +105,29 @@ func (at *dotnetContainerAppTarget) Package(
 	return packageOutput, nil
 }
 
-// Deploys service container images to ACR and provisions the container app service.
-func (at *dotnetContainerAppTarget) Deploy(
+// TODO: move publish logic from Deploy() into Publish()
+func (at *dotnetContainerAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
+	publishOptions *PublishOptions,
+) (*ServicePublishResult, error) {
+	return &ServicePublishResult{}, nil
+}
+
+// Deploys service container images to ACR and provisions the container app service.
+func (at *dotnetContainerAppTarget) Deploy(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	servicePublishResult *ServicePublishResult,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
 	if err := at.validateTargetResource(targetResource); err != nil {
 		return nil, fmt.Errorf("validating target resource: %w", err)
-	}
-
-	progress.SetProgress(NewServiceProgress("Logging in to registry"))
-
-	// Login, tag & push container image to ACR
-	dockerCreds, err := at.containerHelper.Credentials(ctx, serviceConfig, targetResource)
-	if err != nil {
-		return nil, fmt.Errorf("logging in to registry: %w", err)
 	}
 
 	progress.SetProgress(NewServiceProgress("Pushing container image"))
@@ -134,15 +153,27 @@ func (at *dotnetContainerAppTarget) Deploy(
 	// The name of the image that should be referenced in the manifest is stored in `remoteImageName` and presented
 	// to the deployment template as a parameter named `Image`.
 	if serviceConfig.Language == ServiceLanguageDocker {
-		res, err := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, false, progress)
+		res, err := at.containerHelper.Publish(ctx, serviceConfig, packageOutput, targetResource, progress, nil)
 		if err != nil {
 			return nil, err
 		}
 
-		remoteImageName = res.Details.(*dockerDeployResult).RemoteImageTag
+		containerDetails, ok := res.Details.(*ContainerPublishDetails)
+		if !ok {
+			return nil, fmt.Errorf("expected ContainerPublishDetails but got %T", res.Details)
+		}
+		remoteImageName = containerDetails.RemoteImage
 	} else if serviceConfig.DotNetContainerApp.ContainerImage != "" {
 		remoteImageName = serviceConfig.DotNetContainerApp.ContainerImage
 	} else {
+		progress.SetProgress(NewServiceProgress("Logging in to registry"))
+
+		// Login, tag & push container image to ACR
+		dockerCreds, err := at.containerHelper.Credentials(ctx, serviceConfig, targetResource)
+		if err != nil {
+			return nil, fmt.Errorf("logging in to registry: %w", err)
+		}
+
 		imageName := fmt.Sprintf("%s:%s",
 			at.containerHelper.DefaultImageName(serviceConfig),
 			at.containerHelper.DefaultImageTag())
@@ -162,41 +193,74 @@ func (at *dotnetContainerAppTarget) Deploy(
 		remoteImageName = fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName)
 	}
 
-	progress.SetProgress(NewServiceProgress("Updating container app"))
+	progress.SetProgress(NewServiceProgress("Updating application"))
 
-	var manifest string
+	var manifestTemplate string
+	var armTemplate *azure.RawArmTemplate
+	var armParams azure.ArmParameters
 
 	appHostRoot := serviceConfig.DotNetContainerApp.AppHostPath
 	if f, err := os.Stat(appHostRoot); err == nil && !f.IsDir() {
 		appHostRoot = filepath.Dir(appHostRoot)
 	}
 
-	manifestPath := filepath.Join(
-		appHostRoot, "infra", fmt.Sprintf("%s.tmpl.yaml", serviceConfig.DotNetContainerApp.ProjectName))
-	if _, err := os.Stat(manifestPath); err == nil {
-		log.Printf("using container app manifest from %s", manifestPath)
+	deploymentConfig := serviceConfig.DotNetContainerApp.Manifest.Resources[serviceConfig.Name].Deployment
+	useBicepForContainerApps := deploymentConfig != nil
+	projectName := serviceConfig.DotNetContainerApp.ProjectName
 
-		contents, err := os.ReadFile(manifestPath)
-		if err != nil {
-			return nil, fmt.Errorf("reading container app manifest: %w", err)
+	if useBicepForContainerApps {
+		bicepParamPath := filepath.Join(
+			appHostRoot, "infra", projectName, fmt.Sprintf("%s.tmpl.bicepparam", projectName))
+		if _, err := os.Stat(bicepParamPath); err == nil {
+			// read the file into manifestContents
+			contents, err := os.ReadFile(bicepParamPath)
+			if err != nil {
+				return nil, fmt.Errorf("reading container app manifest: %w", err)
+			}
+			manifestTemplate = string(contents)
+		} else {
+			// missing bicepparam template file, generate it
+			contents, _, err := apphost.ContainerAppManifestTemplateForProject(
+				serviceConfig.DotNetContainerApp.Manifest,
+				projectName,
+				apphost.AppHostOptions{},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("generating container app manifest: %w", err)
+			}
+			manifestTemplate = contents
 		}
-		manifest = string(contents)
 	} else {
-		log.Printf(
-			"generating container app manifest from %s for project %s",
-			serviceConfig.DotNetContainerApp.AppHostPath,
-			serviceConfig.DotNetContainerApp.ProjectName)
+		manifestPath := filepath.Join(
+			appHostRoot, "infra", fmt.Sprintf("%s.tmpl.yaml", projectName))
 
-		generatedManifest, err := apphost.ContainerAppManifestTemplateForProject(
-			serviceConfig.DotNetContainerApp.Manifest,
-			serviceConfig.DotNetContainerApp.ProjectName,
-			apphost.AppHostOptions{},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("generating container app manifest: %w", err)
+		if _, err := os.Stat(manifestPath); err == nil {
+			log.Printf("using container app manifest from %s", manifestPath)
+
+			contents, err := os.ReadFile(manifestPath)
+			if err != nil {
+				return nil, fmt.Errorf("reading container app manifest: %w", err)
+			}
+			manifestTemplate = string(contents)
+		} else {
+			log.Printf(
+				"generating container app manifest from %s for project %s",
+				serviceConfig.DotNetContainerApp.AppHostPath,
+				projectName)
+
+			generatedManifest, _, err := apphost.ContainerAppManifestTemplateForProject(
+				serviceConfig.DotNetContainerApp.Manifest,
+				projectName,
+				apphost.AppHostOptions{},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("generating container app manifest: %w", err)
+			}
+			manifestTemplate = generatedManifest
 		}
-		manifest = generatedManifest
 	}
+
+	log.Printf("Resolve the manifest template for project %s", projectName)
 
 	fns := &containerAppTemplateManifestFuncs{
 		ctx:                 ctx,
@@ -209,27 +273,22 @@ func (at *dotnetContainerAppTarget) Deploy(
 		keyvaultService:     at.keyvaultService,
 	}
 
-	tmpl, err := template.New("containerApp.tmpl.yaml").
-		Option("missingkey=error").
-		Funcs(template.FuncMap{
-			"urlHost":   fns.UrlHost,
-			"parameter": fns.Parameter,
-			// securedParameter gets a parameter the same way as parameter, but supporting the securedParameter
-			// allows to update the logic of pulling secret parameters in the future, if azd changes the way it
-			// stores the parameter value.
-			"securedParameter": fns.Parameter,
-			"secretOutput":     fns.kvSecret,
-			"targetPortOrDefault": func(targetPortFromManifest int) int {
-				// portNumber is 0 for dockerfile.v0, so we use the targetPort from the manifest
-				if portNumber == 0 {
-					return targetPortFromManifest
-				}
-				return portNumber
-			},
-		}).
-		Parse(manifest)
-	if err != nil {
-		return nil, fmt.Errorf("failing parsing containerApp.tmpl.yaml: %w", err)
+	funcMap := template.FuncMap{
+		"urlHost":              fns.UrlHost,
+		"parameter":            fns.Parameter,
+		"parameterWithDefault": fns.ParameterWithDefault,
+		// securedParameter gets a parameter the same way as parameter, but supporting the securedParameter
+		// allows to update the logic of pulling secret parameters in the future, if azd changes the way it
+		// stores the parameter value.
+		"securedParameter": fns.Parameter,
+		"secretOutput":     fns.kvSecret,
+		"targetPortOrDefault": func(targetPortFromManifest int) int {
+			// portNumber is 0 for dockerfile.v0, so we use the targetPort from the manifest
+			if portNumber == 0 {
+				return targetPortFromManifest
+			}
+			return portNumber
+		},
 	}
 
 	var inputs map[string]any
@@ -240,13 +299,39 @@ func (at *dotnetContainerAppTarget) Deploy(
 		inputs = make(map[string]any)
 	}
 
+	tmpl, err := template.New("manifest template").
+		Option("missingkey=error").
+		Funcs(funcMap).
+		Parse(manifestTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("failing parsing manifest template: %w", err)
+	}
+
+	// Both bicepparam and yaml go-template can reference all variables from AZD environment and those variables
+	// from system environment variables that are prefixed either AZURE_ or AZD_
+	// Variables from AZD environment override those from system environment variables.
+	env := make(map[string]string)
+	for _, envVar := range os.Environ() {
+		parts := strings.SplitN(envVar, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		if strings.HasPrefix(parts[0], "AZURE_") || strings.HasPrefix(parts[0], "AZD_") {
+			env[parts[0]] = parts[1]
+		}
+	}
+	// Add the environment variables from the azd environment
+	for key, value := range at.env.Dotenv() {
+		env[key] = value
+	}
+
 	builder := strings.Builder{}
 	err = tmpl.Execute(&builder, struct {
 		Env    map[string]string
 		Image  string
 		Inputs map[string]any
 	}{
-		Env:    at.env.Dotenv(),
+		Env:    env,
 		Image:  remoteImageName,
 		Inputs: inputs,
 	})
@@ -254,26 +339,135 @@ func (at *dotnetContainerAppTarget) Deploy(
 		return nil, fmt.Errorf("failed executing template file: %w", err)
 	}
 
-	err = at.containerAppService.DeployYaml(
-		ctx,
-		targetResource.SubscriptionId(),
-		targetResource.ResourceGroupName(),
-		serviceConfig.Name,
-		[]byte(builder.String()),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("updating container app service: %w", err)
+	aspireDeploymentType := azapi.AzureResourceTypeContainerApp
+	resourceName := serviceConfig.Name
+	if useBicepForContainerApps {
+		// Compile the bicep template
+		compiled, params, err := func() (azure.RawArmTemplate, azure.ArmParameters, error) {
+			tempFolder, err := os.MkdirTemp("", fmt.Sprintf("%s-build*", projectName))
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("creating temporary build folder: %w", err)
+			}
+			defer func() {
+				_ = os.RemoveAll(tempFolder)
+			}()
+			// write bicepparam content to a new file in the temp folder
+			f, err := os.Create(filepath.Join(tempFolder, "main.bicepparam"))
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("creating bicepparam file: %w", err)
+			}
+			_, err = io.Copy(f, strings.NewReader(builder.String()))
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("writing bicepparam file: %w", err)
+			}
+			err = f.Close()
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("closing bicepparam file: %w", err)
+			}
+
+			// copy module to same path as bicepparam so it can be compiled from the temp folder
+			bicepSourceFileName := filepath.Base(*deploymentConfig.Path)
+			bicepContent, err := os.ReadFile(filepath.Join(appHostRoot, "infra", projectName, bicepSourceFileName))
+			if err != nil {
+				// when source bicep is not found, we generate it from the manifest
+				generatedBicep, err := apphost.ContainerSourceBicepContent(
+					serviceConfig.DotNetContainerApp.Manifest,
+					projectName,
+					apphost.AppHostOptions{},
+				)
+				if err != nil {
+					return azure.RawArmTemplate{}, nil, fmt.Errorf("generating bicep file: %w", err)
+				}
+				bicepContent = []byte(generatedBicep)
+			}
+			sourceFile, err := os.Create(filepath.Join(tempFolder, bicepSourceFileName))
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("creating bicep file: %w", err)
+			}
+			_, err = io.Copy(sourceFile, strings.NewReader(string(bicepContent)))
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("writing bicep file: %w", err)
+			}
+			err = sourceFile.Close()
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("closing bicep file: %w", err)
+			}
+
+			res, err := at.bicepCli.BuildBicepParam(ctx, f.Name(), at.env.Environ())
+			if err != nil {
+				return azure.RawArmTemplate{}, nil, fmt.Errorf("building container app bicep: %w", err)
+			}
+			type compiledBicepParamResult struct {
+				TemplateJson   string `json:"templateJson"`
+				ParametersJson string `json:"parametersJson"`
+			}
+			var bicepParamOutput compiledBicepParamResult
+			if err := json.Unmarshal([]byte(res.Compiled), &bicepParamOutput); err != nil {
+				log.Printf(
+					"failed unmarshalling compiled bicepparam (err: %v), template contents:\n%s", err, res.Compiled)
+				return nil, nil, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
+			}
+			var params azure.ArmParameterFile
+			if err := json.Unmarshal([]byte(bicepParamOutput.ParametersJson), &params); err != nil {
+				log.Printf(
+					"failed unmarshalling compiled bicepparam parameters(err: %v), template contents:\n%s",
+					err,
+					res.Compiled)
+				return nil, nil, fmt.Errorf("failed unmarshalling arm parameters template from json: %w", err)
+			}
+			return azure.RawArmTemplate(bicepParamOutput.TemplateJson), params.Parameters, nil
+		}()
+		if err != nil {
+			return nil, err
+		}
+		armTemplate = &compiled
+		armParams = params
+
+		deploymentResult, err := at.deploymentService.DeployToResourceGroup(
+			ctx,
+			at.env.GetSubscriptionId(),
+			targetResource.ResourceGroupName(),
+			at.deploymentService.GenerateDeploymentName(serviceConfig.Name),
+			*armTemplate,
+			armParams,
+			nil, nil)
+		if err != nil {
+			return nil, fmt.Errorf("deploying bicep template: %w", err)
+		}
+		deploymentHostDetails, err := deploymentHost(deploymentResult)
+		if err != nil {
+			return nil, fmt.Errorf("getting deployment host type: %w", err)
+		}
+		resourceName = deploymentHostDetails.name
+		aspireDeploymentType = deploymentHostDetails.hostType
+
+	} else {
+		containerAppOptions := containerapps.ContainerAppOptions{
+			ApiVersion: serviceConfig.ApiVersion,
+		}
+
+		err = at.containerAppService.DeployYaml(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			serviceConfig.Name,
+			[]byte(builder.String()),
+			&containerAppOptions,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("updating container app service: %w", err)
+		}
 	}
 
-	progress.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
+	progress.SetProgress(NewServiceProgress("Fetching endpoints for service"))
 
-	containerAppTarget := environment.NewTargetResource(
+	target := environment.NewTargetResource(
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
-		serviceConfig.Name,
-		string(azapi.AzureResourceTypeContainerApp))
+		resourceName,
+		string(aspireDeploymentType))
 
-	endpoints, err := at.Endpoints(ctx, serviceConfig, containerAppTarget)
+	endpoints, err := at.Endpoints(ctx, serviceConfig, target)
 	if err != nil {
 		return nil, err
 	}
@@ -290,27 +484,109 @@ func (at *dotnetContainerAppTarget) Deploy(
 	}, nil
 }
 
+type appDeploymentHost struct {
+	name     string
+	hostType azapi.AzureResourceType
+}
+
+// deploymentHost inspect the deployment result and returns the type of the
+// host when it is a known host like Container App or WebApp.
+// Returns error if the type is not know.
+func deploymentHost(deploymentResult *azapi.ResourceDeployment) (appDeploymentHost, error) {
+	if deploymentResult == nil {
+		return appDeploymentHost{}, fmt.Errorf("deployment result is empty")
+	}
+
+	for _, resource := range deploymentResult.Resources {
+		rType, err := arm.ParseResourceType(*resource.ID)
+		if err != nil {
+			return appDeploymentHost{}, err
+		}
+		r, err := arm.ParseResourceID(*resource.ID)
+		if err != nil {
+			return appDeploymentHost{}, err
+		}
+		if rType.String() == string(azapi.AzureResourceTypeWebSite) {
+			return appDeploymentHost{
+				name:     r.Name,
+				hostType: azapi.AzureResourceTypeWebSite,
+			}, nil
+		}
+		if rType.String() == string(azapi.AzureResourceTypeContainerApp) {
+			return appDeploymentHost{
+				name:     r.Name,
+				hostType: azapi.AzureResourceTypeContainerApp,
+			}, nil
+		}
+		if rType.String() == string(azapi.AzureResourceTypeContainerAppJob) {
+			return appDeploymentHost{
+				name:     r.Name,
+				hostType: azapi.AzureResourceTypeContainerAppJob,
+			}, nil
+		}
+	}
+	return appDeploymentHost{}, fmt.Errorf("didn't find any known application host from the deployment")
+}
+
 // Gets endpoint for the container app service
 func (at *dotnetContainerAppTarget) Endpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
-	if ingressConfig, err := at.containerAppService.GetIngressConfiguration(
-		ctx,
-		targetResource.SubscriptionId(),
-		targetResource.ResourceGroupName(),
-		targetResource.ResourceName(),
-	); err != nil {
-		return nil, fmt.Errorf("fetching service properties: %w", err)
-	} else {
-		endpoints := make([]string, len(ingressConfig.HostNames))
-		for idx, hostName := range ingressConfig.HostNames {
-			endpoints[idx] = fmt.Sprintf("https://%s/", hostName)
+	resourceType := azapi.AzureResourceType(targetResource.ResourceType())
+	// Currently supports ACA, ACA Jobs, and WebApp for Aspire (on reading Endpoints)
+	if resourceType != azapi.AzureResourceTypeWebSite &&
+		resourceType != azapi.AzureResourceTypeContainerApp &&
+		resourceType != azapi.AzureResourceTypeContainerAppJob {
+		return nil, fmt.Errorf("unsupported resource type: %s", resourceType)
+	}
+
+	var hostNames []string
+	switch resourceType {
+	case azapi.AzureResourceTypeContainerApp, azapi.AzureResourceTypeContainerAppJob:
+
+		containerAppOptions := containerapps.ContainerAppOptions{
+			ApiVersion: serviceConfig.ApiVersion,
+		}
+		ingressConfig, err := at.containerAppService.GetIngressConfiguration(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+			&containerAppOptions,
+		)
+		if err != nil {
+			// Container App Jobs might not have ingress configuration
+			if resourceType == azapi.AzureResourceTypeContainerAppJob {
+				// Return empty endpoints for jobs without ingress
+				return []string{}, nil
+			}
+			return nil, fmt.Errorf("fetching service properties: %w", err)
+		}
+		hostNames = ingressConfig.HostNames
+
+	case azapi.AzureResourceTypeWebSite:
+		appServiceProperties, err := at.azureClient.GetAppServiceProperties(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("fetching service properties: %w", err)
 		}
 
-		return endpoints, nil
+		hostNames = appServiceProperties.HostNames
+	default:
+		hostNames = []string{}
 	}
+
+	endpoints := make([]string, len(hostNames))
+	for idx, hostName := range hostNames {
+		endpoints[idx] = fmt.Sprintf("https://%s/", hostName)
+	}
+	return endpoints, nil
 }
 
 func (at *dotnetContainerAppTarget) validateTargetResource(
@@ -354,7 +630,16 @@ func (_ *containerAppTemplateManifestFuncs) UrlHost(s string) (string, error) {
 
 const infraParametersKey = "infra.parameters."
 
+// Parameter resolves the name of a parameter defined in the ACA yaml definition. The parameter can be mapped to a system
+// environment variable ONLY.
 func (fns *containerAppTemplateManifestFuncs) Parameter(name string) (string, error) {
+	envVarMapping := scaffold.AzureSnakeCase(name)
+	// map only to system environment variables. Not adding support for mapping to azd environment by design (b/c
+	// parameters could be secured)
+	if val, found := os.LookupEnv(envVarMapping); found {
+		return val, nil
+	}
+
 	key := infraParametersKey + name
 	val, found := fns.env.Config.Get(key)
 	if !found {
@@ -365,6 +650,16 @@ func (fns *containerAppTemplateManifestFuncs) Parameter(name string) (string, er
 		return "", fmt.Errorf("parameter %s is not a string", name)
 	}
 	return valString, nil
+}
+
+// ParameterWithDefault resolves the name of a parameter defined in the ACA yaml definition.
+// The parameter can be mapped to a system environment variable or be default to a value directly.
+func (fns *containerAppTemplateManifestFuncs) ParameterWithDefault(name string, defaultValue string) (string, error) {
+	envVarMapping := scaffold.AzureSnakeCase(name)
+	if val, found := fns.env.LookupEnv(envVarMapping); found {
+		return val, nil
+	}
+	return defaultValue, nil
 }
 
 // kvSecret gets the value of the secret with the given name from the KeyVault with the given host name. If the secret is

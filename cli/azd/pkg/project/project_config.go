@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package project
 
 import (
@@ -17,19 +20,26 @@ import (
 // When changing project structure, make sure to update the JSON schema file for azure.yaml (<workspace
 // root>/schemas/vN.M/azure.yaml.json).
 type ProjectConfig struct {
-	RequiredVersions  *RequiredVersions         `yaml:"requiredVersions,omitempty"`
-	Name              string                    `yaml:"name"`
-	ResourceGroupName osutil.ExpandableString   `yaml:"resourceGroup,omitempty"`
-	Path              string                    `yaml:"-"`
-	Metadata          *ProjectMetadata          `yaml:"metadata,omitempty"`
-	Services          map[string]*ServiceConfig `yaml:"services,omitempty"`
-	Infra             provisioning.Options      `yaml:"infra,omitempty"`
-	Pipeline          PipelineOptions           `yaml:"pipeline,omitempty"`
-	Hooks             HooksConfig               `yaml:"hooks,omitempty"`
-	State             *state.Config             `yaml:"state,omitempty"`
-	Platform          *platform.Config          `yaml:"platform,omitempty"`
-	Workflows         workflow.WorkflowMap      `yaml:"workflows,omitempty"`
-	Cloud             *cloud.Config             `yaml:"cloud,omitempty"`
+	// Metadata that specifies the schema version.
+	//
+	// This is currently only used during [Save] to write the file schema annotation for intellisense.
+	// This should include the "v" prefix used in official version numbers.
+	MetaSchemaVersion string `yaml:"-"`
+
+	RequiredVersions  *RequiredVersions          `yaml:"requiredVersions,omitempty"`
+	Name              string                     `yaml:"name"`
+	ResourceGroupName osutil.ExpandableString    `yaml:"resourceGroup,omitempty"`
+	Path              string                     `yaml:"-"`
+	Metadata          *ProjectMetadata           `yaml:"metadata,omitempty"`
+	Services          map[string]*ServiceConfig  `yaml:"services,omitempty"`
+	Infra             provisioning.Options       `yaml:"infra,omitempty"`
+	Pipeline          PipelineOptions            `yaml:"pipeline,omitempty"`
+	Hooks             HooksConfig                `yaml:"hooks,omitempty"`
+	State             *state.Config              `yaml:"state,omitempty"`
+	Platform          *platform.Config           `yaml:"platform,omitempty"`
+	Workflows         workflow.WorkflowMap       `yaml:"workflows,omitempty"`
+	Cloud             *cloud.Config              `yaml:"cloud,omitempty"`
+	Resources         map[string]*ResourceConfig `yaml:"resources,omitempty"`
 
 	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:"-"`
 }
@@ -38,7 +48,8 @@ type ProjectConfig struct {
 // If a value is nil, it is treated as if there is no constraint.
 type RequiredVersions struct {
 	// When non nil, a semver range (in the format expected by semver.ParseRange).
-	Azd *string `yaml:"azd,omitempty"`
+	Azd        *string            `yaml:"azd,omitempty"`
+	Extensions map[string]*string `yaml:"extensions,omitempty"`
 }
 
 // options supported in azure.yaml

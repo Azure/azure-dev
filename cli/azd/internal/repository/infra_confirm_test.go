@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package repository
 
 import (
@@ -35,8 +38,9 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				Services: []scaffold.ServiceSpec{
 					{
 						Name:    "dotnet",
-						Port:    80,
+						Port:    8080,
 						Backend: &scaffold.Backend{},
+						Host:    "containerapp",
 					},
 				},
 			},
@@ -61,6 +65,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						Name:     "js",
 						Port:     80,
 						Frontend: &scaffold.Frontend{},
+						Host:     "containerapp",
 					},
 				},
 			},
@@ -89,6 +94,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						Name:    "dotnet",
 						Port:    1234,
 						Backend: &scaffold.Backend{},
+						Host:    "containerapp",
 					},
 				},
 			},
@@ -123,6 +129,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 								},
 							},
 						},
+						Host: "containerapp",
 					},
 					{
 						Name: "js",
@@ -134,6 +141,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 								},
 							},
 						},
+						Host: "containerapp",
 					},
 				},
 			},
@@ -162,12 +170,17 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 				},
 			},
 			interactions: []string{
+				"my app db",
+				"n",
+				"my$special$db",
+				"n",
 				"myappdb", // fill in db name
 			},
 			want: scaffold.InfraSpec{
 				DbPostgres: &scaffold.DatabasePostgres{
 					DatabaseName: "myappdb",
 				},
+				KeyVault: &scaffold.KeyVault{},
 				Services: []scaffold.ServiceSpec{
 					{
 						Name: "py",
@@ -182,6 +195,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 						DbPostgres: &scaffold.DatabaseReference{
 							DatabaseName: "myappdb",
 						},
+						Host: "containerapp",
 					},
 					{
 						Name: "js",
@@ -193,6 +207,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 								},
 							},
 						},
+						Host: "containerapp",
 					},
 				},
 			},

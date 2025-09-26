@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package project
 
 import (
@@ -14,6 +17,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -25,7 +29,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/sethvargo/go-retry"
 )
@@ -81,7 +84,7 @@ type aksTarget struct {
 	env                    *environment.Environment
 	envManager             environment.Manager
 	console                input.Console
-	managedClustersService azcli.ManagedClustersService
+	managedClustersService azapi.ManagedClustersService
 	resourceManager        ResourceManager
 	kubectl                *kubectl.Cli
 	kubeLoginCli           *kubelogin.Cli
@@ -96,7 +99,7 @@ func NewAksTarget(
 	env *environment.Environment,
 	envManager environment.Manager,
 	console input.Console,
-	managedClustersService azcli.ManagedClustersService,
+	managedClustersService azapi.ManagedClustersService,
 	resourceManager ResourceManager,
 	kubectlCli *kubectl.Cli,
 	kubeLoginCli *kubelogin.Cli,
@@ -181,11 +184,51 @@ func (t *aksTarget) Package(
 	return packageOutput, nil
 }
 
+// Publish pushes the container image to ACR for AKS targets
+func (t *aksTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+	publishOptions *PublishOptions,
+) (*ServicePublishResult, error) {
+	// Only publish the container image if a package output has been defined
+	// Empty package details is a valid scenario for any AKS deployment that does not build any containers
+	// Ex) Helm charts, or other manifests that reference external images
+	if serviceConfig.Docker.RemoteBuild || packageOutput.Details != nil || packageOutput.PackagePath != "" {
+		// Login, tag & push container image to ACR
+		publishResult, err := t.containerHelper.Publish(
+			ctx, serviceConfig, packageOutput, targetResource, progress, publishOptions)
+		if err != nil {
+			return nil, err
+		}
+
+		// Save the name of the image we pushed into the environment with a well known key.
+		log.Printf("writing image name to environment")
+
+		containerDetails, ok := publishResult.Details.(*ContainerPublishDetails)
+		if !ok {
+			return nil, fmt.Errorf("expected ContainerPublishDetails but got %T", publishResult.Details)
+		}
+		t.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", containerDetails.RemoteImage)
+
+		if err := t.envManager.Save(ctx, t.env); err != nil {
+			return nil, fmt.Errorf("saving image name to environment: %w", err)
+		}
+
+		return publishResult, nil
+	}
+
+	return &ServicePublishResult{}, nil
+}
+
 // Deploys service container images to ACR and AKS resources to the AKS cluster
 func (t *aksTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
+	servicePublishResult *ServicePublishResult,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -195,17 +238,6 @@ func (t *aksTarget) Deploy(
 
 	if packageOutput == nil {
 		return nil, errors.New("missing package output")
-	}
-
-	// Only deploy the container image if a package output has been defined
-	// Empty package details is a valid scenario for any AKS deployment that does not build any containers
-	// Ex) Helm charts, or other manifests that reference external images
-	if packageOutput.Details != nil || packageOutput.PackagePath != "" {
-		// Login, tag & push container image to ACR
-		_, err := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true, progress)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	// Sync environment
@@ -271,6 +303,7 @@ func (t *aksTarget) Deploy(
 
 	return &ServiceDeployResult{
 		Package: packageOutput,
+		Publish: servicePublishResult,
 		TargetResourceId: azure.KubernetesServiceRID(
 			targetResource.SubscriptionId(),
 			targetResource.ResourceGroupName(),
@@ -603,6 +636,7 @@ func (t *aksTarget) ensureClusterContext(
 		convertOptions := &kubelogin.ConvertOptions{
 			Login:      "azd",
 			KubeConfig: kubeConfigPath,
+			TenantId:   t.env.GetTenantId(),
 		}
 
 		if err := tools.EnsureInstalled(ctx, t.kubeLoginCli); err != nil {

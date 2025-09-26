@@ -24,7 +24,7 @@ param principalId string = ''
 {{- if $parameter.Secret }}
 @secure()
 {{- end}}
-param {{bicepParameterName $parameter.Name}} {{$parameter.Type}}
+param {{bicepParameterName $parameter.Name}} {{$parameter.Type}}{{bicepParameterValue $parameter.Value}}
 {{- end}}
 
 var tags = {
@@ -37,6 +37,7 @@ resource rg 'Microsoft.Resources/resourceGroups@2022-09-01' = {
   tags: tags
 }
 
+{{- if not .AppHostInfraMigration }}
 module resources 'resources.bicep' = {
   scope: rg
   name: 'resources'
@@ -51,10 +52,11 @@ module resources 'resources.bicep' = {
 {{- end }}
   }
 }
+{{- end }}
 {{ range $name, $module := .BicepModules }}
 module {{bicepParameterName $name}} '{{ fixBackSlash $module.Path }}' = {
   name: '{{$name}}'
-  scope: rg
+  scope: {{$module.Scope}}
   params: {
 {{- range $param, $value := $module.Params}}
     {{$param}}: {{$value}}
@@ -62,6 +64,7 @@ module {{bicepParameterName $name}} '{{ fixBackSlash $module.Path }}' = {
   }
 }
 {{- end }}
+{{ if not .AppHostInfraMigration }}
 output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
 output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
 {{if .HasLogAnalyticsWorkspace -}}
@@ -70,6 +73,7 @@ output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_A
 {{if .HasContainerRegistry -}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
+output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.AZURE_CONTAINER_REGISTRY_NAME
 {{end -}}
 {{if .HasContainerEnvironment -}}
 output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_NAME
@@ -87,11 +91,18 @@ output SERVICE_{{alphaSnakeUpper $name}}_FILE_SHARE_{{removeDot $bMount.Name | a
 {{end -}}
 {{range $name, $value := .KeyVaults -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME
+{{end -}}
+{{if .RequiresStorageVolume -}}
+output AZURE_VOLUMES_STORAGE_ACCOUNT string = resources.outputs.AZURE_VOLUMES_STORAGE_ACCOUNT
+{{end -}}
 {{end -}}
 {{range $param, $value := .OutputParameters -}}
 output {{bicepParameterName $param}} {{$value.Type}} = {{bicepParameterName $value.Value}}
 {{end -}}
-{{if .RequiresStorageVolume -}}
-output AZURE_VOLUMES_STORAGE_ACCOUNT string = resources.outputs.AZURE_VOLUMES_STORAGE_ACCOUNT
+{{range $parameter := .WithMetadataParameters -}}
+{{if $parameter.Value -}}
+output {{azureSnakeCase $parameter.Name}} {{$parameter.Type}} = {{$parameter.Name}}
+{{end -}}
 {{end -}}
 {{ end}}

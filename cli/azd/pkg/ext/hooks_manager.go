@@ -1,10 +1,20 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package ext
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log"
 	"os"
+	osexec "os/exec"
 	"runtime"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 type HookFilterPredicateFn func(scriptName string, hookConfig *HookConfig) bool
@@ -12,13 +22,15 @@ type HookFilterPredicateFn func(scriptName string, hookConfig *HookConfig) bool
 // Hooks enable support to invoke integration scripts before & after commands
 // Scripts can be invoked at the project or service level or
 type HooksManager struct {
-	cwd string
+	cwd           string
+	commandRunner exec.CommandRunner
 }
 
 // NewHooks creates a new instance of CommandHooks
 // When `cwd` is empty defaults to current shell working directory
 func NewHooksManager(
 	cwd string,
+	commandRunner exec.CommandRunner,
 ) *HooksManager {
 	if cwd == "" {
 		osWd, err := os.Getwd()
@@ -30,7 +42,8 @@ func NewHooksManager(
 	}
 
 	return &HooksManager{
-		cwd: cwd,
+		cwd:           cwd,
+		commandRunner: commandRunner,
 	}
 }
 
@@ -81,6 +94,10 @@ func (h *HooksManager) filterConfigs(
 		}
 
 		for _, hook := range hooks {
+			if hook == nil {
+				log.Printf("hook configuration for '%s' is missing", scriptName)
+				continue
+			}
 
 			if predicate != nil && !predicate(scriptName, hook) {
 				continue
@@ -105,4 +122,66 @@ func (h *HooksManager) filterConfigs(
 	}
 
 	return matchingHooks, nil
+}
+
+// HookValidationResult contains warnings found during hook validation
+type HookValidationResult struct {
+	Warnings []HookWarning
+}
+
+// HookWarning represents a validation warning for hooks
+type HookWarning struct {
+	Message    string
+	Suggestion string
+}
+
+// ValidateHooks validates hook configurations and returns any warnings
+func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]*HookConfig) *HookValidationResult {
+	result := &HookValidationResult{
+		Warnings: []HookWarning{},
+	}
+
+	hasPowerShellHooks := false
+
+	// Check all hooks
+	for _, hookConfigs := range allHooks {
+		for _, hookConfig := range hookConfigs {
+			if hookConfig.IsPowerShellHook() {
+				hasPowerShellHooks = true
+				break
+			}
+		}
+		if hasPowerShellHooks {
+			break
+		}
+	}
+
+	// If we found PowerShell hooks, check if pwsh is available
+	if hasPowerShellHooks {
+		if err := h.commandRunner.ToolInPath("pwsh"); errors.Is(err, osexec.ErrNotFound) {
+			var warningMessage string
+
+			// Check if legacy powershell is available
+			if powershellErr := h.commandRunner.ToolInPath("powershell"); !errors.Is(powershellErr, osexec.ErrNotFound) {
+				//nolint:lll
+				warningMessage = "PowerShell 7 (`pwsh`) commands found in project. Your computer only has PowerShell 5.1 (`powershell`) installed. azd will use `powershell` but errors may occur."
+			} else {
+				//nolint:lll
+				warningMessage = "PowerShell 7 (`pwsh`) commands found in project. No PowerShell installation detected. PowerShell scripts will fail."
+			}
+
+			result.Warnings = append(result.Warnings, HookWarning{
+				Message: warningMessage,
+				Suggestion: fmt.Sprintf(
+					"To resolve warning, install `pwsh` (%s)",
+					output.WithHyperlink(
+						"https://learn.microsoft.com/powershell/scripting/install/installing-powershell",
+						"Install Instructions",
+					),
+				),
+			})
+		}
+	}
+
+	return result
 }

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package apphost
 
 import "github.com/azure/azure-dev/cli/azd/pkg/custommaps"
@@ -38,32 +41,40 @@ type genContainerAppIngress struct {
 }
 
 type genContainer struct {
-	Image      string
-	Env        map[string]string
-	Bindings   custommaps.WithOrder[Binding]
-	Inputs     map[string]Input
-	Volumes    []*Volume
-	BindMounts []*BindMount
-	Args       []string
+	Image            string
+	Env              map[string]string
+	Bindings         custommaps.WithOrder[Binding]
+	Inputs           map[string]Input
+	Volumes          []*Volume
+	BindMounts       []*BindMount
+	Args             []string
+	DeploymentParams map[string]any
+	DeploymentSource string
 }
 
 type genDockerfile struct {
-	Path      string
-	Context   string
-	Env       map[string]string
-	Bindings  custommaps.WithOrder[Binding]
-	BuildArgs map[string]string
-	Args      []string
+	Path             string
+	Context          string
+	Env              map[string]string
+	Bindings         custommaps.WithOrder[Binding]
+	BuildArgs        map[string]string
+	Args             []string
+	DeploymentParams map[string]any
+	DeploymentSource string
 }
 
 type genBuildContainer struct {
-	Image      string
-	Entrypoint string
-	Args       []string
-	Env        map[string]string
-	Bindings   custommaps.WithOrder[Binding]
-	Volumes    []*Volume
-	Build      *genBuildContainerDetails
+	Image             string
+	Entrypoint        string
+	Args              []string
+	Env               map[string]string
+	Bindings          custommaps.WithOrder[Binding]
+	Volumes           []*Volume
+	Build             *genBuildContainerDetails
+	DeploymentParams  map[string]any
+	DeploymentSource  string
+	BindMounts        []*BindMount
+	DefaultTargetPort int
 }
 
 type genBuildContainerDetails struct {
@@ -74,10 +85,12 @@ type genBuildContainerDetails struct {
 }
 
 type genProject struct {
-	Path     string
-	Env      map[string]string
-	Args     []string
-	Bindings custommaps.WithOrder[Binding]
+	Path             string
+	Env              map[string]string
+	Args             []string
+	Bindings         custommaps.WithOrder[Binding]
+	DeploymentParams map[string]any
+	DeploymentSource string
 }
 
 type genDapr struct {
@@ -115,6 +128,7 @@ type genOutputParameter struct {
 type genBicepModules struct {
 	Path   string
 	Params map[string]string
+	Scope  string
 }
 
 type genBicepTemplateContext struct {
@@ -139,6 +153,7 @@ type genBicepTemplateContext struct {
 
 type genContainerAppManifestTemplateContext struct {
 	Name            string
+	Entrypoint      string
 	Ingress         *genContainerAppIngress
 	Env             map[string]string
 	Secrets         map[string]string
@@ -147,6 +162,8 @@ type genContainerAppManifestTemplateContext struct {
 	Args            []string
 	Volumes         []*Volume
 	BindMounts      []*BindMount
+	DeployParams    map[string]string
+	DeploySource    string
 }
 
 type genProjectFileContext struct {

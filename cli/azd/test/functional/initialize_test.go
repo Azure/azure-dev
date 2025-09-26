@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cli_test
 
 import (
@@ -83,6 +86,10 @@ func testCommand(
 
 	// Run the command when we find a leaf command
 	if testCmd.Runnable() {
+		if testCmd.Name() == "mcp" {
+			// Skip the mcp command as it is not runnable in this context
+			return
+		}
 		t.Run(testCmd.CommandPath(), func(t *testing.T) {
 			use := testCmd.Use
 

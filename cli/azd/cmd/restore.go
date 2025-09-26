@@ -60,7 +60,7 @@ func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func newRestoreCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "restore <service>",
-		Short: fmt.Sprintf("Restores the application's dependencies. %s", output.WithWarningFormat("(Beta)")),
+		Short: "Restores the project's dependencies.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 	return cmd
@@ -148,7 +148,7 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, err
 	}
 
-	if err := ra.projectManager.EnsureFrameworkTools(ctx, ra.projectConfig, func(svc *project.ServiceConfig) bool {
+	if err := ra.projectManager.EnsureRestoreTools(ctx, ra.projectConfig, func(svc *project.ServiceConfig) bool {
 		return targetServiceName == "" || svc.Name == targetServiceName
 	}); err != nil {
 		return nil, err

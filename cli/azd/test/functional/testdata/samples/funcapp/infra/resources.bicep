@@ -36,9 +36,9 @@ resource functions 'Microsoft.Web/sites@2022-03-01' = {
     name: 'appsettings'
     // https://docs.microsoft.com/azure/azure-functions/functions-app-settings
     properties: {
-      FUNCTIONS_EXTENSION_VERSION: '~3'
+      FUNCTIONS_EXTENSION_VERSION: '~4'
       FUNCTIONS_WORKER_RUNTIME: 'python'
-      AzureWebJobsStorage: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}'
+      AzureWebJobsStorage__accountName: storage.name
       SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
     }
   }
@@ -52,6 +52,19 @@ resource storage 'Microsoft.Storage/storageAccounts@2022-05-01' = {
     name: 'Standard_LRS'
   }
   kind: 'Storage'
+  properties: {
+    allowSharedKeyAccess: false
+  }
+}
+
+resource storage_StorageBlobDataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storage.id, functions.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'))
+  properties: {
+    principalId: functions.identity.principalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')
+    principalType: 'ServicePrincipal'
+  }
+  scope: storage
 }
 
 resource appServicePlan 'Microsoft.Web/serverfarms@2022-03-01' = {

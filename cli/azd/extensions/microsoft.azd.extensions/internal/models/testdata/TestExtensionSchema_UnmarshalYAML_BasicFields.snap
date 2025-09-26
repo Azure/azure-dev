@@ -1,0 +1,24 @@
+capabilities:
+    - graph
+dependencies:
+    - id: dep1
+      version: 1.0.0
+description: This is a test extension
+displayName: Test Extension
+entryPoint: main.go
+examples:
+    - name: Example1
+      description: Example description
+      usage: azd extension test
+id: test-extension
+language: go
+namespace: test.namespace
+platforms:
+    windows:
+        command: powershell.exe
+tags:
+    - test
+    - yaml
+usage: Testing unmarshalling
+version: 2.0.0
+

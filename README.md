@@ -4,9 +4,8 @@ Latest builds:
 
 | Artifact  | Version | Download |
 | ------- | ------- | -------- |
-| azd | ![azd version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkreleasepreview.blob.core.windows.net%2Fazd%2Fstandalone%2Flatest%2Fshield.json) | [Windows](https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone/latest/azd-windows-amd64.zip) &vert; [Linux](https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone/latest/azd-linux-amd64.tar.gz) &vert; [Mac](https://azuresdkreleasepreview.blob.core.windows.net/azd/standalone/latest/azd-darwin-amd64.zip) |
-| vscode extension | ![vscode extension version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkreleasepreview.blob.core.windows.net%2Fazd%2Fvscode%2Flatest%2Fshield.json) | [VSIX](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azure-dev) |
-| docker image | ![azd version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkreleasepreview.blob.core.windows.net%2Fazd%2Fstandalone%2Flatest%2Fshield.json) | [`mcr.microsoft.com/azure-dev-cli-apps:latest`](https://mcr.microsoft.com/en-us/product/azure-dev-cli-apps/about)
+| azd | ![azd version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkartifacts.z5.web.core.windows.net%2Fazd%2Fstandalone%2Flatest%2Fshield.json) | [Windows](https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/latest/azd-windows-amd64.zip) &vert; [Linux](https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/latest/azd-linux-amd64.tar.gz) &vert; [Mac](https://azuresdkartifacts.z5.web.core.windows.net/azd/standalone/latest/azd-darwin-amd64.zip) |
+| vscode extension | ![vscode extension version](https://img.shields.io/endpoint?url=https%3A%2F%2Fazuresdkartifacts.z5.web.core.windows.net%2Fazd%2Fvscode%2Flatest%2Fshield.json) | [VSIX](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azure-dev) |
 
 The Azure Developer CLI (`azd`) is a developer-centric command-line interface (CLI) tool for creating Azure applications. The goals of the CLI are to:
 
@@ -14,11 +13,11 @@ The Azure Developer CLI (`azd`) is a developer-centric command-line interface (C
 - demonstrate opinionated best practices for Azure development
 - help developers understand core Azure development constructs
 
-To take full advantage of the CLI, code repositories need to conform to a well defined set of conventions that will be recognized by the tooling. Please checkout the [wiki](https://github.com/Azure/azure-dev/wiki) for more information and to get started. Use [discussions](https://github.com/Azure/azure-dev/discussions) to participate in the conversation, ask questions, and see the latest announcements.
+To take full advantage of the CLI, code repositories need to conform to a well defined set of conventions that will be recognized by the tooling. Please checkout the [docs](https://aka.ms/azd) for more information and to get started. Use [discussions](https://github.com/Azure/azure-dev/discussions) to participate in the conversation, ask questions, and see the latest announcements.
 
 ## Install/Upgrade Azure Developer CLI
 
-Install and Upgrade using the following scripts. Re-running the script will install the latest available version.
+Install and upgrade using the following scripts. Re-running the script will install the latest available version.
 
 For advanced install scenarios see [Azure Developer CLI Installer Scripts](cli/installer/README.md).
 
@@ -115,6 +114,12 @@ Please see our [contributing guide](cli/azd/CONTRIBUTING.md) for complete instru
 This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
 For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
 contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+
+### Contributing as Microsoft template author
+
+Microsoft employees and partners who want to contribute templates to our official collections, must follow the standardization guidelines for template scaffolding and validation published [here](https://github.com/Azure-Samples/azd-template-artifacts)
+
+*Important Disclaimer*: The standardization artifacts, definitions, and recommendations are frequently updated. Please make sure to visit the site often to follow the latest recommended practices.
 
 ## Trademark Notice
 

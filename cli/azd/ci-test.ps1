@@ -36,7 +36,7 @@ Write-Host "Running unit tests..."
 # --test.gocoverdir is currently a "under-the-cover" way to pass the coverage directory to a test binary
 # See https://github.com/golang/go/issues/51430#issuecomment-1344711300
 #
-# This may be improved in go1.21 with an official 'go test' flag.
+# As of Go 1.25, it’s still an “under-the-hood” option.
 & $gotestsum -- ./... -short -v -cover -args --test.gocoverdir="$($unitCoverDir.FullName)"
 if ($LASTEXITCODE) {
     exit $LASTEXITCODE
@@ -56,12 +56,11 @@ $oldGOEXPERIMENT = $env:GOEXPERIMENT
 # GOCOVERDIR enables any binaries (in this case, azd.exe) built with '-cover',
 # to write out coverage output to the specific directory.
 $env:GOCOVERDIR = $intCoverDir.FullName
-# Enable the loopvar experiment, which makes the loop variaible for go loops like `range` behave as most folks would expect.
-# the go team is exploring making this default in the future, and we'd like to opt into the behavior now.
-$env:GOEXPERIMENT="loopvar"
+# Set any experiment flags that are needed for the tests.
+$env:GOEXPERIMENT=""
 
 try {
-    & $gotestsum -- ./test/... -v -timeout $IntegrationTestTimeout
+    & $gotestsum -- ./... -v -timeout $IntegrationTestTimeout
     if ($LASTEXITCODE) {
         exit $LASTEXITCODE
     }    

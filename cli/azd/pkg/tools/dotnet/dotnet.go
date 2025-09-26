@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -58,7 +59,7 @@ func (cli *Cli) versionInfo() tools.VersionInfo {
 }
 
 func (cli *Cli) CheckInstalled(ctx context.Context) error {
-	err := tools.ToolInPath("dotnet")
+	err := cli.commandRunner.ToolInPath("dotnet")
 	if err != nil {
 		return err
 	}
@@ -189,6 +190,9 @@ func (cli *Cli) PublishContainer(
 	)
 
 	runArgs = runArgs.WithEnv([]string{
+		fmt.Sprintf("DOTNET_CONTAINER_REGISTRY_UNAME=%s", username),
+		fmt.Sprintf("DOTNET_CONTAINER_REGISTRY_PWORD=%s", password),
+		// legacy variables for dotnet SDK version < 8.0.400
 		fmt.Sprintf("SDK_CONTAINER_REGISTRY_UNAME=%s", username),
 		fmt.Sprintf("SDK_CONTAINER_REGISTRY_PWORD=%s", password),
 	})
@@ -292,7 +296,8 @@ func (cli *Cli) SetSecrets(ctx context.Context, secrets map[string]string, proje
 // This only works for versions dotnet >= 8, MSBuild >= 17.8.
 // On older tool versions, this will return an error.
 func (cli *Cli) GetMsBuildProperty(ctx context.Context, project string, propertyName string) (string, error) {
-	runArgs := newDotNetRunArgs("msbuild", project, fmt.Sprintf("--getProperty:%s", propertyName))
+	runArgs := newDotNetRunArgs("msbuild",
+		project, "--ignore:.sln", fmt.Sprintf("--getProperty:%s", propertyName))
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return "", err
@@ -300,10 +305,91 @@ func (cli *Cli) GetMsBuildProperty(ctx context.Context, project string, property
 	return res.Stdout, nil
 }
 
+// IsAspireHostProject returns true if the project at the given path has an MS Build Property named "IsAspireHost" which is
+// set to true or has a ProjectCapability named "Aspire".
+func (cli *Cli) IsAspireHostProject(ctx context.Context, projectPath string) (bool, error) {
+	runArgs := newDotNetRunArgs("msbuild",
+		projectPath, "--ignore:.sln", "--getProperty:IsAspireHost", "--getItem:ProjectCapability")
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return false, fmt.Errorf("running dotnet msbuild on project '%s': %w", projectPath, err)
+	}
+
+	var result struct {
+		Properties struct {
+			IsAspireHost string `json:"IsAspireHost"`
+		} `json:"Properties"`
+		Items struct {
+			ProjectCapability []struct {
+				Identity string `json:"Identity"`
+			} `json:"ProjectCapability"`
+		} `json:"Items"`
+	}
+
+	if err := json.Unmarshal([]byte(res.Stdout), &result); err != nil {
+		return false, fmt.Errorf("unmarshal dotnet msbuild output: %w", err)
+	}
+
+	hasAspireCapability := false
+
+	for _, capability := range result.Items.ProjectCapability {
+		if capability.Identity == "Aspire" {
+			hasAspireCapability = true
+			break
+		}
+	}
+
+	return result.Properties.IsAspireHost == "true" || hasAspireCapability, nil
+}
+
 func NewCli(commandRunner exec.CommandRunner) *Cli {
 	return &Cli{
 		commandRunner: commandRunner,
 	}
+}
+
+type GitIgnoreIfExistsStrategy string
+
+const (
+	// GitIgnoreIfExistsStrategySkip skips creating the .gitignore file if it already exists. This is the default behavior.
+	GitIgnoreIfExistsStrategySkip GitIgnoreIfExistsStrategy = "skip"
+	// GitIgnoreIfExistsStrategyOverwrite overwrites the existing .gitignore file.
+	GitIgnoreIfExistsStrategyOverwrite GitIgnoreIfExistsStrategy = "overwrite"
+)
+
+type GitIgnoreOptions struct {
+	// IfExistsStrategy determines what to do if the .gitignore file already exists. Default is Skip.
+	IfExistsStrategy GitIgnoreIfExistsStrategy
+}
+
+func (cli *Cli) GitIgnore(ctx context.Context, projectPath string, options *GitIgnoreOptions) error {
+	if options == nil {
+		options = &GitIgnoreOptions{
+			IfExistsStrategy: GitIgnoreIfExistsStrategySkip,
+		}
+	}
+	if !slices.Contains([]GitIgnoreIfExistsStrategy{
+		GitIgnoreIfExistsStrategySkip,
+		GitIgnoreIfExistsStrategyOverwrite,
+	}, options.IfExistsStrategy) {
+		return fmt.Errorf("invalid IfExistsStrategy option: %s", options.IfExistsStrategy)
+	}
+
+	if _, err := os.Stat(filepath.Join(projectPath, ".gitignore")); err == nil {
+		if options.IfExistsStrategy == GitIgnoreIfExistsStrategySkip {
+			log.Printf("Skipping creation of .gitignore file at %s because it already exists.", projectPath)
+			return nil
+		}
+	}
+
+	runArgs := newDotNetRunArgs("new", "gitignore", "--project", projectPath)
+	if options.IfExistsStrategy == GitIgnoreIfExistsStrategyOverwrite {
+		// force argument prevents the command from failing if the .gitignore file already exists.
+		runArgs.Args = append(runArgs.Args, "--force")
+	}
+
+	_, err := cli.commandRunner.Run(ctx, runArgs)
+	return err
 }
 
 // newDotNetRunArgs creates a new RunArgs to run the specified dotnet command. It sets the environment variable
@@ -313,6 +399,7 @@ func newDotNetRunArgs(args ...string) exec.RunArgs {
 
 	runArgs = runArgs.WithEnv([]string{
 		"DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=1",
+		"DOTNET_NOLOGO=1",
 	})
 
 	return runArgs

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package ext
 
 import (
@@ -5,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/internal"
 )
 
 type Event string
@@ -86,12 +91,25 @@ func (ed *EventDispatcher[T]) RaiseEvent(ctx context.Context, name Event, eventA
 
 	// Build final error string if their are any failures
 	if len(handlerErrors) > 0 {
+		// For multiple errors, join them as before
 		lines := make([]string, len(handlerErrors))
+		// If any of the errors have a suggestion, collect them
+		var suggestions []string
 		for i, err := range handlerErrors {
 			lines[i] = err.Error()
+			var errWithSuggestion *internal.ErrorWithSuggestion
+			if errors.As(err, &errWithSuggestion) && errWithSuggestion.Suggestion != "" {
+				suggestions = append(suggestions, errWithSuggestion.Suggestion)
+			}
 		}
-
-		return errors.New(strings.Join(lines, ","))
+		combinedErr := errors.New(strings.Join(lines, ","))
+		if len(suggestions) > 0 {
+			return &internal.ErrorWithSuggestion{
+				Err:        combinedErr,
+				Suggestion: strings.Join(suggestions, "\n"),
+			}
+		}
+		return combinedErr
 	}
 
 	return nil

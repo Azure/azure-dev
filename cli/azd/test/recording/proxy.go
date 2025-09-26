@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"syscall"
 
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 )
@@ -95,9 +96,9 @@ func (u *gzip2HttpRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 type recorderProxy struct {
 	Log *slog.Logger
 
-	// Panic specifies the function to call when the server panics.
+	// Panic specifies the function to call when the server panics while round-tripping a http request.
 	// If nil, `panic` is used.
-	Panic func(msg string)
+	Panic func(req *http.Request, msg string)
 
 	// The recorder that will be used to record or replay interactions.
 	Recorder *recorder.Recorder
@@ -108,7 +109,7 @@ func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
 
 	resp, err := p.Recorder.RoundTrip(req)
 	if err != nil {
-		p.panic("%s", fmt.Sprintf("%s %s: %s", req.Method, req.URL.String(), err.Error()))
+		p.panic(req, fmt.Sprintf("%s %s: %s", req.Method, req.URL.String(), err.Error()))
 	}
 
 	if err != nil {
@@ -130,16 +131,16 @@ func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
 
 	err = resp.Write(conn)
 	if err != nil {
-		p.panic("%s", err.Error())
+		p.panic(req, err.Error())
 	}
 }
 
 // panic calls the user-defined Panic function if set, otherwise the default panic function.
-func (p *recorderProxy) panic(msg string, args ...interface{}) {
+func (p *recorderProxy) panic(req *http.Request, msg string) {
 	if p.Panic != nil {
-		p.Panic(fmt.Sprintf(msg, args...))
+		p.Panic(req, msg)
 	} else {
-		panic(fmt.Sprintf(msg, args...))
+		panic(msg)
 	}
 }
 
@@ -217,9 +218,15 @@ func (p *connectHandler) connectThenServe(clientConn net.Conn, connectReq *http.
 		// Read an HTTP request from the client; the request is sent over TLS that
 		// connReader is configured to serve.
 		req, err := http.ReadRequest(connReader)
-		if errors.Is(err, io.EOF) {
-			break
-		} else if err != nil {
+
+		var errno syscall.Errno
+		if errors.Is(err, io.EOF) ||
+			// errno 10054: WSAECONNRESET on Windows, client forcibly closes connection
+			errors.As(err, &errno) && errno == 10054 {
+			return
+		}
+
+		if err != nil {
 			// Terminate the connection if we fail to read the request.
 			p.Log.Error("connectHandler failed to read HTTP request", "error", err.Error())
 			return

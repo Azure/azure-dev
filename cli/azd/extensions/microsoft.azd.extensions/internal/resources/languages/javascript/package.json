@@ -1,0 +1,36 @@
+{
+  "name": "azd-extention",
+  "version": "0.0.1",
+  "description": "azd extension CLI tool",
+  "main": "index.js",
+  "bin": "pkg-entry.js",
+  "scripts": {
+    "build": "pkg pkg-entry.js --output bin/azd-extention.exe --targets node16-win-x64 --config package.json"
+  },
+  "dependencies": {
+    "@azure/arm-resources": "^6.0.0",
+    "@azure/identity": "^4.9.1",
+    "@grpc/grpc-js": "^1.8.14",
+    "@grpc/proto-loader": "^0.7.7",
+    "commander": "^11.1.0",
+    "google-protobuf": "^3.21.4",
+    "js-yaml": "^4.1.0",
+    "pkg": "^5.8.1",
+    "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^4.7.1"
+  },
+  "pkg": {
+    "scripts": [
+      "index.js",
+      "pkg-entry.js",
+      "commands/*.js",
+      "azdClient.js",
+      "eventManager.js",
+      "grpcUtils.js",
+      "logger.js"
+    ],
+    "assets": [
+      "proto/*.proto"
+    ]
+  }
+}

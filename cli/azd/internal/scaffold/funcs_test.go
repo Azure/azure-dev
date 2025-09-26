@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package scaffold
 
 import (
@@ -32,6 +35,7 @@ func Test_BicepName(t *testing.T) {
 		in   string
 		want string
 	}{
+		{"alpha upper snake", "THIS_IS_MY_VAR_123", "thisIsMyVar123"},
 		{"uppercase separators", "this-is-my-var-123", "thisIsMyVar123"},
 		{"allowed characters", "myVar_!#%^", "myVar"},
 		{"normalize casing", "MyVar", "myVar"},

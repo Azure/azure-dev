@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -26,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -33,6 +35,25 @@ import (
 
 // The parent of the login command.
 const loginCmdParentAnnotation = "loginCmdParent"
+
+// azurePipelinesClientIDEnvVarName is the name of the environment variable that contains the client ID for the principal
+// to use when authenticating with Azure Pipelines via OIDC. It is set by both the AzureCLI@2 and AzurePowerShell@5 tasks
+// when using a service connection or can be set manually when not using these tasks.
+const azurePipelinesClientIDEnvVarName = "AZURESUBSCRIPTION_CLIENT_ID"
+
+// azurePipelinesTenantIDEnvVarName is the name of the environment variable that contains the tenant ID for the principal
+// to use when authenticating with Azure Pipelines via OIDC. It is set by both the AzureCLI@2 and AzurePowerShell@5 tasks
+// when using a service connection or can be set manually when not using these tasks.
+const azurePipelinesTenantIDEnvVarName = "AZURESUBSCRIPTION_TENANT_ID"
+
+// AzurePipelinesServiceConnectionNameEnvVarName is the name of the environment variable that contains the name of the
+// service connection to use when authenticating with Azure Pipelines via OIDC. It is set by both the AzureCLI@2 and
+// AzurePowerShell@5 tasks when using a service connection or can be set manually when not using these tasks.
+const azurePipelinesServiceConnectionIDEnvVarName = "AZURESUBSCRIPTION_SERVICE_CONNECTION_ID"
+
+// azurePipelinesProvider is the name of the federated token provider to use when authenticating with Azure Pipelines via
+// OIDC.
+const azurePipelinesProvider string = "azure-pipelines"
 
 type authLoginFlags struct {
 	loginFlags
@@ -56,6 +77,7 @@ type loginFlags struct {
 	clientCertificate      string
 	federatedTokenProvider string
 	scopes                 []string
+	claims                 string
 	redirectPort           int
 	global                 *internal.GlobalCommandOptions
 }
@@ -143,7 +165,8 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		&lf.federatedTokenProvider,
 		cFederatedCredentialProviderFlagName,
 		"",
-		"The provider to use to acquire a federated token to authenticate with.")
+		"The provider to use to acquire a federated token to authenticate with. "+
+			"Supported values: github, azure-pipelines, oidc")
 	local.StringVar(
 		&lf.tenantID,
 		"tenant-id",
@@ -155,6 +178,12 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		nil,
 		"The scope to acquire during login")
 	_ = local.MarkHidden("scope")
+	local.StringVar(
+		&lf.claims,
+		"claims",
+		"",
+		"Additional claims to include during login.")
+	_ = local.MarkHidden("claims")
 	local.IntVar(
 		&lf.redirectPort,
 		"redirect-port",
@@ -299,14 +328,28 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			var msg string
 			switch res.Status {
 			case contracts.LoginStatusSuccess:
-				msg = "Logged in to Azure."
+				msg = "Logged in to Azure"
 			case contracts.LoginStatusUnauthenticated:
-				msg = "Not logged in, run `azd auth login` to login to Azure."
+				msg = "Not logged in, run `azd auth login` to login to Azure"
 			default:
 				panic("Unhandled login status")
 			}
 
-			fmt.Fprintln(la.console.Handles().Stdout, msg)
+			// get user account information - login --check-status
+			details, err := la.authManager.LogInDetails(ctx)
+
+			// error getting user account or not logged in
+			if err != nil {
+				log.Printf("error: getting signed in account: %v", err)
+				fmt.Fprintln(la.console.Handles().Stdout, msg)
+				return nil, nil
+			}
+
+			// only print the message if the user is logged in
+			la.console.MessageUxItem(ctx, &ux.LoggedIn{
+				LoggedInAs: details.Account,
+				LoginType:  ux.LoginType(details.LoginType),
+			})
 			return nil, nil
 		}
 	}
@@ -319,7 +362,12 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	if la.flags.clientID == "" {
+	forceRefresh := false
+	if v, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_LOGIN_FORCE_SUBSCRIPTION_REFRESH")); err == nil && v {
+		forceRefresh = true
+	}
+
+	if la.flags.clientID == "" || forceRefresh {
 		// Update the subscriptions cache for regular users (i.e. non-service-principals).
 		// The caching is done here to increase responsiveness of listing subscriptions in the application.
 		// It also allows an implicit command for the user to refresh cached subscriptions.
@@ -330,7 +378,18 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	la.console.Message(ctx, "Logged in to Azure.")
+	details, err := la.authManager.LogInDetails(ctx)
+
+	// error getting user account, successful log in
+	if err != nil {
+		log.Printf("error: getting signed in account: %v", err)
+		la.console.Message(ctx, "Logged in to Azure")
+		return nil, nil
+	}
+	la.console.MessageUxItem(ctx, &ux.LoggedIn{
+		LoggedInAs: details.Account,
+		LoginType:  ux.LoginType(details.LoginType),
+	})
 	return nil, nil
 }
 
@@ -381,7 +440,7 @@ func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandR
 	if err != nil {
 		// An error here means VSCode is not installed or found, or something else.
 		// At any case, we know VSCode is not within a webBrowser
-		log.Printf("error running code --status: %s", err.Error())
+		log.Printf("error running code --status: %v", err)
 		return false
 	}
 
@@ -389,6 +448,18 @@ func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandR
 }
 
 func (la *loginAction) login(ctx context.Context) error {
+	if la.flags.federatedTokenProvider == azurePipelinesProvider {
+		if la.flags.clientID == "" {
+			log.Printf("setting client id from environment variable %s", azurePipelinesClientIDEnvVarName)
+			la.flags.clientID = os.Getenv(azurePipelinesClientIDEnvVarName)
+		}
+
+		if la.flags.tenantID == "" {
+			log.Printf("setting tenant id from environment variable %s", azurePipelinesClientIDEnvVarName)
+			la.flags.tenantID = os.Getenv(azurePipelinesTenantIDEnvVarName)
+		}
+	}
+
 	if la.flags.managedIdentity {
 		if _, err := la.authManager.LoginWithManagedIdentity(
 			ctx, la.flags.clientID,
@@ -451,9 +522,28 @@ func (la *loginAction) login(ctx context.Context) error {
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
-		case la.flags.federatedTokenProvider != "":
-			if _, err := la.authManager.LoginWithServicePrincipalFederatedTokenProvider(
-				ctx, la.flags.tenantID, la.flags.clientID, la.flags.federatedTokenProvider,
+		case la.flags.federatedTokenProvider == "github":
+			if _, err := la.authManager.LoginWithGitHubFederatedTokenProvider(
+				ctx, la.flags.tenantID, la.flags.clientID,
+			); err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+		case la.flags.federatedTokenProvider == azurePipelinesProvider:
+			serviceConnectionID := os.Getenv(azurePipelinesServiceConnectionIDEnvVarName)
+
+			if serviceConnectionID == "" {
+				return fmt.Errorf("must set %s for azure-pipelines federated token provider",
+					azurePipelinesServiceConnectionIDEnvVarName)
+			}
+
+			if _, err := la.authManager.LoginWithAzurePipelinesFederatedTokenProvider(
+				ctx, la.flags.tenantID, la.flags.clientID, serviceConnectionID,
+			); err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+		case la.flags.federatedTokenProvider == "oidc": // generic oidc provider
+			if _, err := la.authManager.LoginWithOidcFederatedTokenProvider(
+				ctx, la.flags.tenantID, la.flags.clientID,
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
@@ -475,26 +565,38 @@ func (la *loginAction) login(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	claims := ""
+	if la.flags.claims != "" {
+		c, err := base64.StdEncoding.DecodeString(la.flags.claims)
+		if err != nil {
+			return fmt.Errorf("invalid claims '%s': expected a base64-encoded string", la.flags.claims)
+		}
+
+		claims = string(c)
+	}
+
 	if useDevCode {
-		_, err = la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes, func(url string) error {
-			if !la.flags.global.NoPrompt {
-				la.console.Message(ctx, "Then press enter and continue to log in from your browser...")
-				la.console.WaitForEnter()
-				openWithDefaultBrowser(ctx, la.console, url)
+		_, err = la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes, claims,
+			func(url string) error {
+				if !la.flags.global.NoPrompt {
+					la.console.Message(ctx, "Then press enter and continue to log in from your browser...")
+					la.console.WaitForEnter()
+					openWithDefaultBrowser(ctx, la.console, url)
+					return nil
+				}
+				// For no-prompt, Just provide instructions without trying to open the browser
+				// If manual browsing is enabled, we don't want to open the browser automatically
+				la.console.Message(ctx, fmt.Sprintf("Then, go to: %s", url))
 				return nil
-			}
-			// For no-prompt, Just provide instructions without trying to open the browser
-			// If manual browsing is enabled, we don't want to open the browser automatically
-			la.console.Message(ctx, fmt.Sprintf("Then, go to: %s", url))
-			return nil
-		})
+			})
 		return err
 	}
 
 	if oneauth.Supported && !la.flags.browser {
 		err = la.authManager.LoginWithOneAuth(ctx, la.flags.tenantID, la.flags.scopes)
 	} else {
-		_, err = la.authManager.LoginInteractive(ctx, la.flags.scopes,
+		_, err = la.authManager.LoginInteractive(ctx, la.flags.scopes, claims,
 			&auth.LoginInteractiveOptions{
 				TenantID:     la.flags.tenantID,
 				RedirectPort: la.flags.redirectPort,

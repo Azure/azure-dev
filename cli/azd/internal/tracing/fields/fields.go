@@ -7,7 +7,7 @@ package fields
 import (
 	"github.com/microsoft/ApplicationInsights-Go/appinsights/contracts"
 	"go.opentelemetry.io/otel/attribute"
-	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
 // Application-level fields. Guaranteed to be set and available for all events.
@@ -136,9 +136,10 @@ const (
 	// Environments that are wrapped by an intermediate calling program, and are significant enough to warrant
 	// being an environment and not an environment modifier.
 
-	EnvVisualStudio     = "Visual Studio"
-	EnvVisualStudioCode = "Visual Studio Code"
-	EnvCloudShell       = "Azure CloudShell"
+	EnvVisualStudio       = "Visual Studio"
+	EnvVisualStudioCode   = "Visual Studio Code"
+	EnvVSCodeAzureCopilot = "VS Code Azure GitHub Copilot"
+	EnvCloudShell         = "Azure CloudShell"
 
 	// Continuous Integration environments
 

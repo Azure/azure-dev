@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package repository
 
 import (
@@ -12,6 +15,8 @@ import (
 	"testing"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -59,6 +64,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 				mockContext.Console,
 				git.NewCli(mockContext.CommandRunner),
 				dotnet.NewCli(mockContext.CommandRunner),
+				mockContext.AlphaFeaturesManager,
 				lazy.From[environment.Manager](mockEnv),
 			)
 			err := i.Initialize(*mockContext.Context, azdCtx, &templates.Template{RepositoryPath: "local"}, "")
@@ -103,6 +109,7 @@ func Test_Initializer_DevCenter(t *testing.T) {
 		mockContext.Console,
 		git.NewCli(mockContext.CommandRunner),
 		dotnet.NewCli(mockContext.CommandRunner),
+		mockContext.AlphaFeaturesManager,
 		lazy.From[environment.Manager](mockEnv),
 	)
 	err := i.Initialize(*mockContext.Context, azdCtx, template, "")
@@ -173,6 +180,7 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 				console,
 				git.NewCli(mockRunner),
 				dotnet.NewCli(mockRunner),
+				alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
 				lazy.From[environment.Manager](mockEnv),
 			)
 			err = i.Initialize(context.Background(), azdCtx, &templates.Template{RepositoryPath: "local"}, "")
@@ -376,7 +384,9 @@ func Test_Initializer_WriteCoreAssets(t *testing.T) {
 			envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 			i := NewInitializer(
-				console, git.NewCli(realRunner), nil, lazy.From[environment.Manager](envManager))
+				console, git.NewCli(realRunner), nil,
+				alpha.NewFeaturesManagerWithConfig(config.NewEmptyConfig()),
+				lazy.From[environment.Manager](envManager))
 			err := i.writeCoreAssets(context.Background(), azdCtx)
 			require.NoError(t, err)
 
@@ -436,7 +446,7 @@ func verifyFileContent(t *testing.T, file string, content string) {
 }
 
 func verifyProjectFile(t *testing.T, azdCtx *azdcontext.AzdContext, content string) {
-	content = strings.Replace(content, "<project>", azdCtx.GetDefaultProjectName(), 1)
+	content = strings.Replace(content, "<project>", azdcontext.ProjectName(azdCtx.ProjectDirectory()), 1)
 	verifyFileContent(t, azdCtx.ProjectPath(), content)
 
 	_, err := project.Load(context.Background(), azdCtx.ProjectPath())
@@ -564,10 +574,10 @@ func TestInitializer_PromptIfNonEmpty(t *testing.T) {
 		files []string
 	}
 	tests := []struct {
-		name        string
-		dir         dirSetup
-		userConfirm bool
-		expectedErr string
+		name           string
+		dir            dirSetup
+		userConfirm    bool
+		declinedOutput string
 	}{
 		{
 			"EmptyDir",
@@ -585,7 +595,7 @@ func TestInitializer_PromptIfNonEmpty(t *testing.T) {
 			"NonEmptyDir_Declined",
 			dirSetup{false, []string{"a.txt"}},
 			false,
-			"confirmation declined",
+			"confirmation declined; app was not initialized",
 		},
 		{
 			"NonEmptyGitDir",
@@ -597,7 +607,7 @@ func TestInitializer_PromptIfNonEmpty(t *testing.T) {
 			"NonEmptyGitDir_Declined",
 			dirSetup{true, []string{"a.txt"}},
 			false,
-			"confirmation declined",
+			"confirmation declined; app was not initialized",
 		},
 	}
 	for _, tt := range tests {
@@ -632,12 +642,12 @@ func TestInitializer_PromptIfNonEmpty(t *testing.T) {
 				gitCli:  gitCli,
 			}
 			azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
-			err := i.PromptIfNonEmpty(context.Background(), azdCtx)
 
-			if tt.expectedErr != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.expectedErr)
-			} else {
+			// we only test if declinedOutput is empty
+			// if confirmation is declined and app is not initialized
+			// we skip the test as it will exit with code 1
+			if tt.declinedOutput == "" {
+				err := i.PromptIfNonEmpty(context.Background(), azdCtx)
 				require.NoError(t, err)
 			}
 		})

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package templates
 
 import (
@@ -73,7 +76,7 @@ func (ts *templateSource) GetTemplate(ctx context.Context, path string) (*Templa
 	matchingIndex := slices.IndexFunc(allTemplates, func(template *Template) bool {
 		absPath, err := Absolute(template.RepositoryPath)
 		if err != nil {
-			log.Printf("failed to get absolute path for template '%s': %s", template.RepositoryPath, err.Error())
+			log.Printf("failed to get absolute path for template '%s': %v", template.RepositoryPath, err)
 			return false
 		}
 

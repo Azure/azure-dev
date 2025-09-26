@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package project
 
 import (
@@ -15,23 +18,31 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/benbjohnson/clock"
 	"github.com/sethvargo/go-retry"
 )
+
+// PublishOptions holds options for container operations such as publish and deploy.
+type PublishOptions struct {
+	// Image specifies the target image in the form '[registry/]repository[:tag]'
+	Image string
+}
 
 type ContainerHelper struct {
 	env                      *environment.Environment
 	envManager               environment.Manager
 	remoteBuildManager       *containerregistry.RemoteBuildManager
-	containerRegistryService azcli.ContainerRegistryService
+	containerRegistryService azapi.ContainerRegistryService
 	docker                   *docker.Cli
+	dotNetCli                *dotnet.Cli
 	clock                    clock.Clock
 	console                  input.Console
 	cloud                    *cloud.Cloud
@@ -41,9 +52,10 @@ func NewContainerHelper(
 	env *environment.Environment,
 	envManager environment.Manager,
 	clock clock.Clock,
-	containerRegistryService azcli.ContainerRegistryService,
+	containerRegistryService azapi.ContainerRegistryService,
 	remoteBuildManager *containerregistry.RemoteBuildManager,
 	docker *docker.Cli,
+	dotNetCli *dotnet.Cli,
 	console input.Console,
 	cloud *cloud.Cloud,
 ) *ContainerHelper {
@@ -53,6 +65,7 @@ func NewContainerHelper(
 		remoteBuildManager:       remoteBuildManager,
 		containerRegistryService: containerRegistryService,
 		docker:                   docker,
+		dotNetCli:                dotNetCli,
 		clock:                    clock,
 		console:                  console,
 		cloud:                    cloud,
@@ -161,6 +174,7 @@ func (ch *ContainerHelper) RemoteImageTag(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	localImageTag string,
+	imageOverride *imageOverride,
 ) (string, error) {
 	registryName, err := ch.RegistryName(ctx, serviceConfig)
 	if err != nil {
@@ -176,11 +190,27 @@ func (ch *ContainerHelper) RemoteImageTag(
 		containerImage.Registry = registryName
 	}
 
+	// Apply overrides
+	if imageOverride != nil {
+		if imageOverride.Registry != "" {
+			containerImage.Registry = imageOverride.Registry
+		}
+		if imageOverride.Repository != "" {
+			containerImage.Repository = imageOverride.Repository
+		}
+		if imageOverride.Tag != "" {
+			containerImage.Tag = imageOverride.Tag
+		}
+	}
+
 	return containerImage.Remote(), nil
 }
 
 // LocalImageTag returns the local image tag for the service configuration.
-func (ch *ContainerHelper) LocalImageTag(ctx context.Context, serviceConfig *ServiceConfig) (string, error) {
+func (ch *ContainerHelper) LocalImageTag(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) (string, error) {
 	configuredImage, err := ch.GeneratedImage(ctx, serviceConfig)
 	if err != nil {
 		return "", err
@@ -192,6 +222,10 @@ func (ch *ContainerHelper) LocalImageTag(ctx context.Context, serviceConfig *Ser
 func (ch *ContainerHelper) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) []tools.ExternalTool {
 	if serviceConfig.Docker.RemoteBuild {
 		return []tools.ExternalTool{}
+	}
+
+	if useDotnetPublishForDockerBuild(serviceConfig) {
+		return []tools.ExternalTool{ch.dotNetCli}
 	}
 
 	return []tools.ExternalTool{ch.docker}
@@ -224,13 +258,13 @@ func (ch *ContainerHelper) Credentials(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
-) (*azcli.DockerCredentials, error) {
+) (*azapi.DockerCredentials, error) {
 	loginServer, err := ch.RegistryName(ctx, serviceConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	var credential *azcli.DockerCredentials
+	var credential *azapi.DockerCredentials
 	credentialsError := retry.Do(
 		ctx,
 		// will retry just once after 1 minute based on:
@@ -255,42 +289,39 @@ func (ch *ContainerHelper) Credentials(
 	return credential, credentialsError
 }
 
-// Deploy pushes and image to a remote server, and optionally writes the fully qualified remote image name to the
-// environment on success.
-func (ch *ContainerHelper) Deploy(
+// Publish pushes an image to a remote server and returns the fully qualified remote image name.
+func (ch *ContainerHelper) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-	writeImageToEnv bool,
 	progress *async.Progress[ServiceProgress],
-) (*ServiceDeployResult, error) {
+	options *PublishOptions,
+) (*ServicePublishResult, error) {
 	var remoteImage string
 	var err error
 
+	// Parse PublishOptions into ImageOverride
+	imageOverride, err := parseImageOverride(options)
+	if err != nil {
+		return nil, err
+	}
+
 	if serviceConfig.Docker.RemoteBuild {
-		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, progress)
+		remoteImage, err = ch.runRemoteBuild(ctx, serviceConfig, targetResource, progress, imageOverride)
+	} else if useDotnetPublishForDockerBuild(serviceConfig) {
+		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, progress)
 	} else {
-		remoteImage, err = ch.runLocalBuild(ctx, serviceConfig, packageOutput, progress)
+		remoteImage, err = ch.runLocalBuild(ctx, serviceConfig, packageOutput, progress, imageOverride)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	if writeImageToEnv {
-		// Save the name of the image we pushed into the environment with a well known key.
-		log.Printf("writing image name to environment")
-		ch.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteImage)
-
-		if err := ch.envManager.Save(ctx, ch.env); err != nil {
-			return nil, fmt.Errorf("saving image name to environment: %w", err)
-		}
-	}
-
-	return &ServiceDeployResult{
+	return &ServicePublishResult{
 		Package: packageOutput,
-		Details: &dockerDeployResult{
-			RemoteImageTag: remoteImage,
+		Details: &ContainerPublishDetails{
+			RemoteImage: remoteImage,
 		},
 	}, nil
 }
@@ -301,6 +332,7 @@ func (ch *ContainerHelper) runLocalBuild(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	progress *async.Progress[ServiceProgress],
+	imageOverride *imageOverride,
 ) (string, error) {
 	// Get ACR Login Server
 	registryName, err := ch.RegistryName(ctx, serviceConfig)
@@ -344,7 +376,7 @@ func (ch *ContainerHelper) runLocalBuild(
 
 			// Tag image
 			// Get remote remoteImageWithTag from the container helper then call docker cli remoteImageWithTag command
-			remoteImageWithTag, err := ch.RemoteImageTag(ctx, serviceConfig, targetImage)
+			remoteImageWithTag, err := ch.RemoteImageTag(ctx, serviceConfig, targetImage, imageOverride)
 			if err != nil {
 				return "", fmt.Errorf("getting remote image tag: %w", err)
 			}
@@ -382,12 +414,41 @@ func (ch *ContainerHelper) runLocalBuild(
 	return remoteImage, nil
 }
 
-// runLocalBuild builds the image using a remote azure container registry and tags it. It returns the full remote image name.
+type imageOverride docker.ContainerImage
+
+// parseImageOverride parses the PublishOptions.Image string into an ImageOverride.
+// Supports combinations of:
+// - Registry, repository, tag all present (registry.com/repo/name:tag)
+// - Repository and tag present (repo/name:tag)
+// - Registry and repository present (registry.com/repo/name)
+// - Only repository present (repo/name)
+func parseImageOverride(options *PublishOptions) (*imageOverride, error) {
+	if options == nil || options.Image == "" {
+		return nil, nil
+	}
+
+	// Parse the container image using the existing parser
+	parsedImage, err := docker.ParseContainerImage(options.Image)
+	if err != nil {
+		return nil, fmt.Errorf("invalid image format '%s': %w", options.Image, err)
+	}
+
+	// Convert to ImageOverride
+	return &imageOverride{
+		Registry:   parsedImage.Registry,
+		Repository: parsedImage.Repository,
+		Tag:        parsedImage.Tag,
+	}, nil
+}
+
+// runRemoteBuild builds the image using a remote azure container registry and tags it.
+// It returns the full remote image name.
 func (ch *ContainerHelper) runRemoteBuild(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	target *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
+	imageOverride *imageOverride,
 ) (string, error) {
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
@@ -439,7 +500,7 @@ func (ch *ContainerHelper) runRemoteBuild(
 		return "", err
 	}
 
-	imageName, err := ch.RemoteImageTag(ctx, serviceConfig, localImageTag)
+	imageName, err := ch.RemoteImageTag(ctx, serviceConfig, localImageTag, imageOverride)
 	if err != nil {
 		return "", err
 	}
@@ -473,6 +534,37 @@ func (ch *ContainerHelper) runRemoteBuild(
 	return imageName, nil
 }
 
-type dockerDeployResult struct {
-	RemoteImageTag string
+// runDotnetPublish builds and publishes the container image using `dotnet publish`. It returns the full remote image name.
+func (ch *ContainerHelper) runDotnetPublish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	target *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+) (string, error) {
+	progress.SetProgress(NewServiceProgress("Logging into registry"))
+
+	dockerCreds, err := ch.Credentials(ctx, serviceConfig, target)
+	if err != nil {
+		return "", fmt.Errorf("logging in to registry: %w", err)
+	}
+
+	progress.SetProgress(NewServiceProgress("Publishing container image"))
+
+	imageName := fmt.Sprintf("%s:%s",
+		ch.DefaultImageName(serviceConfig),
+		ch.DefaultImageTag())
+
+	_, err = ch.dotNetCli.PublishContainer(
+		ctx,
+		serviceConfig.Path(),
+		"Release",
+		imageName,
+		dockerCreds.LoginServer,
+		dockerCreds.Username,
+		dockerCreds.Password)
+	if err != nil {
+		return "", fmt.Errorf("publishing container: %w", err)
+	}
+
+	return fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName), nil
 }

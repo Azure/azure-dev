@@ -9,10 +9,14 @@ const (
 	AzureResourceTypeApim                      AzureResourceType = "Microsoft.ApiManagement/service"
 	AzureResourceTypeAppConfig                 AzureResourceType = "Microsoft.AppConfiguration/configurationStores"
 	AzureResourceTypeAppInsightComponent       AzureResourceType = "Microsoft.Insights/components"
+	AzureResourceTypeAutomationAccount         AzureResourceType = "Microsoft.Automation/automationAccounts"
 	AzureResourceTypeCacheForRedis             AzureResourceType = "Microsoft.Cache/redis"
+	AzureResourceTypeRedisEnterprise           AzureResourceType = "Microsoft.Cache/redisEnterprise"
 	AzureResourceTypeCDNProfile                AzureResourceType = "Microsoft.Cdn/profiles"
 	AzureResourceTypeCosmosDb                  AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
+	AzureResourceTypeEventHubsNamespace        AzureResourceType = "Microsoft.EventHub/namespaces"
 	AzureResourceTypeContainerApp              AzureResourceType = "Microsoft.App/containerApps"
+	AzureResourceTypeContainerAppJob           AzureResourceType = "Microsoft.App/jobs"
 	AzureResourceTypeSpringApp                 AzureResourceType = "Microsoft.AppPlatform/Spring"
 	AzureResourceTypeContainerAppEnvironment   AzureResourceType = "Microsoft.App/managedEnvironments"
 	AzureResourceTypeDeployment                AzureResourceType = "Microsoft.Resources/deployments"
@@ -42,6 +46,7 @@ const (
 	AzureResourceTypeDevCenterProject          AzureResourceType = "Microsoft.DevCenter/projects"
 	AzureResourceTypeMachineLearningWorkspace  AzureResourceType = "Microsoft.MachineLearningServices/workspaces"
 	AzureResourceTypeMachineLearningConnection AzureResourceType = "Microsoft.MachineLearningServices/workspaces/connections"
+	AzureResourceTypeRoleAssignment            AzureResourceType = "Microsoft.Authorization/roleAssignments"
 
 	//nolint:lll
 	AzureResourceTypeMachineLearningEndpoint           AzureResourceType = "Microsoft.MachineLearningServices/workspaces/onlineEndpoints"
@@ -67,6 +72,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Portal dashboard"
 	case AzureResourceTypeAppInsightComponent:
 		return "Application Insights"
+	case AzureResourceTypeAutomationAccount:
+		return "Automation account"
 	case AzureResourceTypeLogAnalyticsWorkspace:
 		return "Log Analytics workspace"
 	case AzureResourceTypeWebSite:
@@ -75,10 +82,14 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Static Web App"
 	case AzureResourceTypeContainerApp:
 		return "Container App"
+	case AzureResourceTypeContainerAppJob:
+		return "Container App Job"
 	case AzureResourceTypeContainerAppEnvironment:
 		return "Container Apps Environment"
 	case AzureResourceTypeServiceBusNamespace:
 		return "Service Bus Namespace"
+	case AzureResourceTypeEventHubsNamespace:
+		return "Event Hubs Namespace"
 	case AzureResourceTypeServicePlan:
 		return "App Service plan"
 	case AzureResourceTypeCosmosDb:
@@ -87,6 +98,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Azure API Management"
 	case AzureResourceTypeCacheForRedis:
 		return "Cache for Redis"
+	case AzureResourceTypeRedisEnterprise:
+		return "Redis Enterprise"
 	case AzureResourceTypeSqlServer:
 		return "Azure SQL Server"
 	case AzureResourceTypePostgreSqlServer:

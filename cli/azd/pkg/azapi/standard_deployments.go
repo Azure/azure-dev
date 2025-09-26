@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azapi
 
 import (
@@ -5,10 +8,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -204,6 +210,7 @@ func (ds *StandardDeployments) DeployToSubscription(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 	tags map[string]*string,
+	options map[string]any,
 ) (*ResourceDeployment, error) {
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
@@ -228,11 +235,7 @@ func (ds *StandardDeployments) DeployToSubscription(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		deploymentError := createDeploymentError(err)
-		return nil, fmt.Errorf(
-			"deploying to subscription:\n\nDeployment Error Details:\n%w",
-			deploymentError,
-		)
+		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err))
 	}
 
 	return ds.convertFromArmDeployment(&deployResult.DeploymentExtended), nil
@@ -244,6 +247,7 @@ func (ds *StandardDeployments) DeployToResourceGroup(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 	tags map[string]*string,
+	options map[string]any,
 ) (*ResourceDeployment, error) {
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
@@ -267,11 +271,7 @@ func (ds *StandardDeployments) DeployToResourceGroup(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		deploymentError := createDeploymentError(err)
-		return nil, fmt.Errorf(
-			"deploying to resource group:\n\nDeployment Error Details:\n%w",
-			deploymentError,
-		)
+		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err))
 	}
 
 	return ds.convertFromArmDeployment(&deployResult.DeploymentExtended), nil
@@ -417,6 +417,7 @@ func (ds *StandardDeployments) DeleteSubscriptionDeployment(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
+	options map[string]any,
 	progress *async.Progress[DeleteDeploymentProgress],
 ) error {
 	resources, err := ds.ListSubscriptionDeploymentResources(ctx, subscriptionId, deploymentName)
@@ -482,6 +483,7 @@ func (ds *StandardDeployments) DeleteSubscriptionDeployment(
 			emptyTemplate,
 			azure.ArmParameters{},
 			tags,
+			options,
 		)
 
 		if err != nil {
@@ -497,6 +499,7 @@ func (ds *StandardDeployments) DeleteResourceGroupDeployment(
 	subscriptionId,
 	resourceGroupName string,
 	deploymentName string,
+	options map[string]any,
 	progress *async.Progress[DeleteDeploymentProgress],
 ) error {
 	progress.SetProgress(DeleteDeploymentProgress{
@@ -555,11 +558,7 @@ func (ds *StandardDeployments) WhatIfDeployToSubscription(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		deploymentError := createDeploymentError(err)
-		return nil, fmt.Errorf(
-			"deploying to subscription:\n\nDeployment Error Details:\n%w",
-			deploymentError,
-		)
+		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err))
 	}
 
 	return &deployResult.WhatIfOperationResult, nil
@@ -592,11 +591,7 @@ func (ds *StandardDeployments) WhatIfDeployToResourceGroup(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		deploymentError := createDeploymentError(err)
-		return nil, fmt.Errorf(
-			"deploying to resource group:\n\nDeployment Error Details:\n%w",
-			deploymentError,
-		)
+		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err))
 	}
 
 	return &deployResult.WhatIfOperationResult, nil
@@ -682,4 +677,116 @@ func convertFromStandardProvisioningState(state armresources.ProvisioningState) 
 	}
 
 	return DeploymentProvisioningState("")
+}
+
+// Preflight API validates whether the specified template is syntactically correct
+// and will be accepted by Azure Resource Manager.
+func (ds *StandardDeployments) ValidatePreflightToSubscription(
+	ctx context.Context,
+	subscriptionId string,
+	location string,
+	deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) error {
+	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	var rawResponse *http.Response
+	ctx = policy.WithCaptureResponse(ctx, &rawResponse)
+
+	validateResult, err := deploymentClient.BeginValidateAtSubscriptionScope(
+		ctx, deploymentName,
+		armresources.Deployment{
+			Properties: &armresources.DeploymentProperties{
+				Template:   armTemplate,
+				Parameters: parameters,
+				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
+			},
+			Location: to.Ptr(location),
+			Tags:     tags,
+		}, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "subscription")
+	}
+	_, err = validateResult.PollUntilDone(ctx, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "subscription")
+	}
+
+	return nil
+}
+
+func validatePreflightError(
+	rawResponse *http.Response,
+	err error,
+	typeMessage string,
+) error {
+	title := "Validation Error Details"
+	var respErr *azcore.ResponseError
+	if errors.As(err, &respErr) {
+		err = responseToDeploymentError(title, respErr)
+	} else if err != nil {
+		// Error returned from azure sdk go bug: we receive a 400 Bad Request from the API,
+		// but the client-handling in azure sdk fails internally with a different error
+		// This special-cased handling and rawResponse capture can be removed once
+		// https://github.com/Azure/azure-sdk-for-go/issues/23350 is fixed
+		if rawResponse != nil && rawResponse.StatusCode == 400 {
+			defer rawResponse.Body.Close()
+			body, errOnRawResponse := io.ReadAll(rawResponse.Body)
+			if errOnRawResponse != nil {
+				return fmt.Errorf("failed to read response error body from validation api to %s: %w",
+					typeMessage, errOnRawResponse)
+			}
+
+			err = NewAzureDeploymentError(title, string(body))
+		}
+	}
+	return fmt.Errorf(
+		"validating deployment to %s: %w",
+		typeMessage,
+		err,
+	)
+}
+
+// Preflight API validates whether the specified template is syntactically correct
+// and will be accepted by Azure Resource Manager.
+func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
+	ctx context.Context,
+	subscriptionId, resourceGroup, deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) error {
+	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	var rawResponse *http.Response
+	ctx = policy.WithCaptureResponse(ctx, &rawResponse)
+
+	validateResult, err := deploymentClient.BeginValidate(ctx, resourceGroup, deploymentName,
+		armresources.Deployment{
+			Properties: &armresources.DeploymentProperties{
+				Template:   armTemplate,
+				Parameters: parameters,
+				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
+			},
+			Tags: tags,
+		}, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "resource group")
+	}
+	_, err = validateResult.PollUntilDone(ctx, nil)
+	if err != nil {
+		return validatePreflightError(rawResponse, err, "resource group")
+	}
+
+	return nil
 }

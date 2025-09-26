@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cli_test
 
 import (
@@ -19,6 +22,8 @@ import (
 
 // Verifies that the assignment context returned is included in the telemetry events we capture.
 func Test_CLI_Experiment_AssignmentContextInTelemetry(t *testing.T) {
+	t.Skip("Skipping while experimentation is not enabled")
+
 	// CLI process and working directory are isolated
 	t.Parallel()
 	ctx, cancel := newTestContext(t)

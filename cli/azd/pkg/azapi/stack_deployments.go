@@ -1,23 +1,33 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azapi
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
+	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/benbjohnson/clock"
@@ -27,14 +37,34 @@ import (
 var FeatureDeploymentStacks = alpha.MustFeatureKey("deployment.stacks")
 
 const (
-	stacksPortalUrlFragment = "#@microsoft.onmicrosoft.com/resource"
+	deploymentStacksConfigKey      = "DeploymentStacks"
+	stacksPortalUrlFragment        = "#@microsoft.onmicrosoft.com/resource"
+	bypassOutOfSyncErrorEnvVarName = "DEPLOYMENT_STACKS_BYPASS_STACK_OUT_OF_SYNC_ERROR"
 )
+
+var defaultDeploymentStackOptions = &deploymentStackOptions{
+	BypassStackOutOfSyncError: to.Ptr(false),
+	ActionOnUnmanage: &armdeploymentstacks.ActionOnUnmanage{
+		ManagementGroups: to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete),
+		ResourceGroups:   to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete),
+		Resources:        to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete),
+	},
+	DenySettings: &armdeploymentstacks.DenySettings{
+		Mode: to.Ptr(armdeploymentstacks.DenySettingsModeNone),
+	},
+}
 
 type StackDeployments struct {
 	credentialProvider  account.SubscriptionCredentialProvider
 	armClientOptions    *arm.ClientOptions
 	standardDeployments *StandardDeployments
 	cloud               *cloud.Cloud
+}
+
+type deploymentStackOptions struct {
+	BypassStackOutOfSyncError *bool                                 `yaml:"bypassStackOutOfSyncError,omitempty"`
+	ActionOnUnmanage          *armdeploymentstacks.ActionOnUnmanage `yaml:"actionOnUnmanage,omitempty"`
+	DenySettings              *armdeploymentstacks.DenySettings     `yaml:"denySettings,omitempty"`
 }
 
 func NewStackDeployments(
@@ -215,46 +245,18 @@ func (d *StackDeployments) DeployToSubscription(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 	tags map[string]*string,
+	options map[string]any,
 ) (*ResourceDeployment, error) {
 	client, err := d.createClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	templateHash, err := d.CalculateTemplateHash(ctx, subscriptionId, armTemplate)
+	stack, err := d.stackFromArmForSubscription(ctx, subscriptionId, location, armTemplate, parameters, tags, options)
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate template hash: %w", err)
+		return nil, err
 	}
 
-	clonedTags := maps.Clone(tags)
-	clonedTags[azure.TagKeyAzdDeploymentTemplateHashName] = &templateHash
-
-	stackParams := map[string]*armdeploymentstacks.DeploymentParameter{}
-	for k, v := range parameters {
-		stackParams[k] = &armdeploymentstacks.DeploymentParameter{
-			Value: v.Value,
-		}
-	}
-
-	deleteBehavior := armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete
-
-	stack := armdeploymentstacks.DeploymentStack{
-		Location: &location,
-		Tags:     clonedTags,
-		Properties: &armdeploymentstacks.DeploymentStackProperties{
-			BypassStackOutOfSyncError: to.Ptr(false),
-			ActionOnUnmanage: &armdeploymentstacks.ActionOnUnmanage{
-				Resources:        &deleteBehavior,
-				ManagementGroups: &deleteBehavior,
-				ResourceGroups:   &deleteBehavior,
-			},
-			DenySettings: &armdeploymentstacks.DenySettings{
-				Mode: to.Ptr(armdeploymentstacks.DenySettingsModeNone),
-			},
-			Parameters: stackParams,
-			Template:   armTemplate,
-		},
-	}
 	poller, err := client.BeginCreateOrUpdateAtSubscription(ctx, deploymentName, stack, nil)
 	if err != nil {
 		return nil, err
@@ -262,10 +264,51 @@ func (d *StackDeployments) DeployToSubscription(
 
 	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err))
 	}
 
 	return d.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
+}
+
+func (d *StackDeployments) stackFromArmForResourceGroup(
+	ctx context.Context,
+	subscriptionId string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) (armdeploymentstacks.DeploymentStack, error) {
+	if tags == nil {
+		tags = map[string]*string{}
+	}
+
+	templateHash, err := d.CalculateTemplateHash(ctx, subscriptionId, armTemplate)
+	if err != nil {
+		return armdeploymentstacks.DeploymentStack{}, fmt.Errorf("failed to calculate template hash: %w", err)
+	}
+
+	clonedTags := maps.Clone(tags)
+	clonedTags[azure.TagKeyAzdDeploymentTemplateHashName] = &templateHash
+
+	stackParams := convertToStackParams(parameters)
+
+	deploymentStackOptions, err := parseDeploymentStackOptions(options)
+	if err != nil {
+		return armdeploymentstacks.DeploymentStack{}, err
+	}
+
+	stack := armdeploymentstacks.DeploymentStack{
+		Tags: clonedTags,
+		Properties: &armdeploymentstacks.DeploymentStackProperties{
+			BypassStackOutOfSyncError: deploymentStackOptions.BypassStackOutOfSyncError,
+			ActionOnUnmanage:          deploymentStackOptions.ActionOnUnmanage,
+			DenySettings:              deploymentStackOptions.DenySettings,
+			Parameters:                stackParams,
+			Template:                  armTemplate,
+		},
+	}
+
+	return stack, nil
 }
 
 func (d *StackDeployments) DeployToResourceGroup(
@@ -276,45 +319,18 @@ func (d *StackDeployments) DeployToResourceGroup(
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 	tags map[string]*string,
+	options map[string]any,
 ) (*ResourceDeployment, error) {
 	client, err := d.createClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	templateHash, err := d.CalculateTemplateHash(ctx, subscriptionId, armTemplate)
+	stack, err := d.stackFromArmForResourceGroup(ctx, subscriptionId, armTemplate, parameters, tags, options)
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate template hash: %w", err)
+		return nil, err
 	}
 
-	clonedTags := maps.Clone(tags)
-	clonedTags[azure.TagKeyAzdDeploymentTemplateHashName] = &templateHash
-
-	stackParams := map[string]*armdeploymentstacks.DeploymentParameter{}
-	for k, v := range parameters {
-		stackParams[k] = &armdeploymentstacks.DeploymentParameter{
-			Value: v.Value,
-		}
-	}
-
-	deleteBehavior := armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete
-
-	stack := armdeploymentstacks.DeploymentStack{
-		Tags: clonedTags,
-		Properties: &armdeploymentstacks.DeploymentStackProperties{
-			BypassStackOutOfSyncError: to.Ptr(false),
-			ActionOnUnmanage: &armdeploymentstacks.ActionOnUnmanage{
-				Resources:        &deleteBehavior,
-				ManagementGroups: &deleteBehavior,
-				ResourceGroups:   &deleteBehavior,
-			},
-			DenySettings: &armdeploymentstacks.DenySettings{
-				Mode: to.Ptr(armdeploymentstacks.DenySettingsModeNone),
-			},
-			Parameters: stackParams,
-			Template:   armTemplate,
-		},
-	}
 	poller, err := client.BeginCreateOrUpdateAtResourceGroup(ctx, resourceGroup, deploymentName, stack, nil)
 	if err != nil {
 		return nil, err
@@ -322,7 +338,7 @@ func (d *StackDeployments) DeployToResourceGroup(
 
 	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err))
 	}
 
 	return d.GetResourceGroupDeployment(ctx, subscriptionId, resourceGroup, deploymentName)
@@ -423,6 +439,7 @@ func (d *StackDeployments) DeleteSubscriptionDeployment(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
+	options map[string]any,
 	progress *async.Progress[DeleteDeploymentProgress],
 ) error {
 	client, err := d.createClient(ctx, subscriptionId)
@@ -430,12 +447,22 @@ func (d *StackDeployments) DeleteSubscriptionDeployment(
 		return err
 	}
 
-	// Delete all resource groups & resources within the deployment stack
-	options := armdeploymentstacks.ClientBeginDeleteAtSubscriptionOptions{
-		BypassStackOutOfSyncError:      to.Ptr(false),
-		UnmanageActionManagementGroups: to.Ptr(armdeploymentstacks.UnmanageActionManagementGroupModeDelete),
-		UnmanageActionResourceGroups:   to.Ptr(armdeploymentstacks.UnmanageActionResourceGroupModeDelete),
-		UnmanageActionResources:        to.Ptr(armdeploymentstacks.UnmanageActionResourceModeDelete),
+	deploymentStackOptions, err := parseDeploymentStackOptions(options)
+	if err != nil {
+		return err
+	}
+
+	deleteOptions := &armdeploymentstacks.ClientBeginDeleteAtSubscriptionOptions{
+		BypassStackOutOfSyncError: deploymentStackOptions.BypassStackOutOfSyncError,
+		UnmanageActionManagementGroups: (*armdeploymentstacks.UnmanageActionManagementGroupMode)(
+			deploymentStackOptions.ActionOnUnmanage.ManagementGroups,
+		),
+		UnmanageActionResourceGroups: (*armdeploymentstacks.UnmanageActionResourceGroupMode)(
+			deploymentStackOptions.ActionOnUnmanage.ResourceGroups,
+		),
+		UnmanageActionResources: (*armdeploymentstacks.UnmanageActionResourceMode)(
+			deploymentStackOptions.ActionOnUnmanage.Resources,
+		),
 	}
 
 	progress.SetProgress(DeleteDeploymentProgress{
@@ -444,7 +471,7 @@ func (d *StackDeployments) DeleteSubscriptionDeployment(
 		State:   DeleteResourceStateInProgress,
 	})
 
-	poller, err := client.BeginDeleteAtSubscription(ctx, deploymentName, &options)
+	poller, err := client.BeginDeleteAtSubscription(ctx, deploymentName, deleteOptions)
 	if err != nil {
 		progress.SetProgress(DeleteDeploymentProgress{
 			Name: deploymentName,
@@ -481,11 +508,78 @@ func (d *StackDeployments) DeleteSubscriptionDeployment(
 	return nil
 }
 
+// parseDeploymentStackOptions parses the deployment stack options from the given options map.
+// If the options map is nil, the default deployment stack options are returned.
+// Default deployment stack options are:
+// - BypassStackOutOfSyncError: false
+// - ActionOnUnmanage: Delete for all
+// - DenySettings: nil
+func parseDeploymentStackOptions(options map[string]any) (*deploymentStackOptions, error) {
+	bypassStackOutOfSyncErrorVal, hasBypassStackOutOfSyncError := os.LookupEnv(bypassOutOfSyncErrorEnvVarName)
+
+	if options == nil && !hasBypassStackOutOfSyncError {
+		return defaultDeploymentStackOptions, nil
+	}
+
+	optionsConfig := config.NewConfig(options)
+
+	var deploymentStackOptions *deploymentStackOptions
+	hasDeploymentStacksConfig, err := optionsConfig.GetSection(deploymentStacksConfigKey, &deploymentStackOptions)
+	if err != nil {
+		suggestion := &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("failed parsing deployment stack options: %w", err),
+			Suggestion: "Review the 'infra.deploymentStacks' configuration section in the 'azure.yaml' file.",
+		}
+
+		return nil, suggestion
+	}
+
+	if !hasBypassStackOutOfSyncError && (!hasDeploymentStacksConfig || deploymentStackOptions == nil) {
+		return defaultDeploymentStackOptions, nil
+	}
+
+	if deploymentStackOptions == nil {
+		deploymentStackOptions = defaultDeploymentStackOptions
+	}
+
+	// The BypassStackOutOfSyncError will NOT be exposed in the `azure.yaml` for configuration
+	// since this option will typically only be used on a per call basis.
+	// The value will be read from the environment variable `DEPLOYMENT_STACKS_BYPASS_STACK_OUT_OF_SYNC_ERROR`
+	// If the value is a truthy value, the value will be set to true, otherwise it will be set to false (default)
+	if hasBypassStackOutOfSyncError {
+		byPassOutOfSyncError, err := strconv.ParseBool(bypassStackOutOfSyncErrorVal)
+		if err != nil {
+			log.Printf(
+				"Failed to parse environment variable '%s' value '%s' as a boolean. Defaulting to false.",
+				bypassOutOfSyncErrorEnvVarName,
+				bypassStackOutOfSyncErrorVal,
+			)
+		} else {
+			deploymentStackOptions.BypassStackOutOfSyncError = &byPassOutOfSyncError
+		}
+	}
+
+	if deploymentStackOptions.BypassStackOutOfSyncError == nil {
+		deploymentStackOptions.BypassStackOutOfSyncError = defaultDeploymentStackOptions.BypassStackOutOfSyncError
+	}
+
+	if deploymentStackOptions.ActionOnUnmanage == nil {
+		deploymentStackOptions.ActionOnUnmanage = defaultDeploymentStackOptions.ActionOnUnmanage
+	}
+
+	if deploymentStackOptions.DenySettings == nil {
+		deploymentStackOptions.DenySettings = defaultDeploymentStackOptions.DenySettings
+	}
+
+	return deploymentStackOptions, nil
+}
+
 func (d *StackDeployments) DeleteResourceGroupDeployment(
 	ctx context.Context,
 	subscriptionId,
 	resourceGroupName string,
 	deploymentName string,
+	options map[string]any,
 	progress *async.Progress[DeleteDeploymentProgress],
 ) error {
 	client, err := d.createClient(ctx, subscriptionId)
@@ -493,12 +587,22 @@ func (d *StackDeployments) DeleteResourceGroupDeployment(
 		return err
 	}
 
-	// Delete all resource groups & resources within the deployment stack
-	options := armdeploymentstacks.ClientBeginDeleteAtResourceGroupOptions{
-		BypassStackOutOfSyncError:      to.Ptr(false),
-		UnmanageActionManagementGroups: to.Ptr(armdeploymentstacks.UnmanageActionManagementGroupModeDelete),
-		UnmanageActionResourceGroups:   to.Ptr(armdeploymentstacks.UnmanageActionResourceGroupModeDelete),
-		UnmanageActionResources:        to.Ptr(armdeploymentstacks.UnmanageActionResourceModeDelete),
+	deploymentStackOptions, err := parseDeploymentStackOptions(options)
+	if err != nil {
+		return err
+	}
+
+	deleteOptions := &armdeploymentstacks.ClientBeginDeleteAtResourceGroupOptions{
+		BypassStackOutOfSyncError: deploymentStackOptions.BypassStackOutOfSyncError,
+		UnmanageActionManagementGroups: (*armdeploymentstacks.UnmanageActionManagementGroupMode)(
+			deploymentStackOptions.ActionOnUnmanage.ManagementGroups,
+		),
+		UnmanageActionResourceGroups: (*armdeploymentstacks.UnmanageActionResourceGroupMode)(
+			deploymentStackOptions.ActionOnUnmanage.ResourceGroups,
+		),
+		UnmanageActionResources: (*armdeploymentstacks.UnmanageActionResourceMode)(
+			deploymentStackOptions.ActionOnUnmanage.Resources,
+		),
 	}
 
 	progress.SetProgress(DeleteDeploymentProgress{
@@ -507,7 +611,7 @@ func (d *StackDeployments) DeleteResourceGroupDeployment(
 		State:   DeleteResourceStateInProgress,
 	})
 
-	poller, err := client.BeginDeleteAtResourceGroup(ctx, resourceGroupName, deploymentName, &options)
+	poller, err := client.BeginDeleteAtResourceGroup(ctx, resourceGroupName, deploymentName, deleteOptions)
 	if err != nil {
 		progress.SetProgress(DeleteDeploymentProgress{
 			Name: deploymentName,
@@ -633,4 +737,143 @@ func convertFromStacksProvisioningState(
 	}
 
 	return DeploymentProvisioningState("")
+}
+
+// convertToStackParams converts the given ARM parameters to deployment stack parameters
+func convertToStackParams(parameters azure.ArmParameters) map[string]*armdeploymentstacks.DeploymentParameter {
+	stackParams := map[string]*armdeploymentstacks.DeploymentParameter{}
+	for k, v := range parameters {
+		if v.KeyVaultReference != nil {
+			stackParams[k] = &armdeploymentstacks.DeploymentParameter{
+				Reference: &armdeploymentstacks.KeyVaultParameterReference{
+					KeyVault: &armdeploymentstacks.KeyVaultReference{
+						ID: &v.KeyVaultReference.KeyVault.ID,
+					},
+					SecretName:    &v.KeyVaultReference.SecretName,
+					SecretVersion: &v.KeyVaultReference.SecretVersion,
+				},
+			}
+		} else {
+			stackParams[k] = &armdeploymentstacks.DeploymentParameter{
+				Value: v.Value,
+			}
+		}
+	}
+	return stackParams
+}
+
+// Preflight API validates whether the specified template is syntactically correct
+// and will be accepted by Azure Resource Manager.
+func (d *StackDeployments) ValidatePreflightToResourceGroup(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) error {
+	client, err := d.createClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	stack, err := d.stackFromArmForResourceGroup(ctx, subscriptionId, armTemplate, parameters, tags, options)
+	if err != nil {
+		return err
+	}
+
+	var rawResponse *http.Response
+	ctx = policy.WithCaptureResponse(ctx, &rawResponse)
+
+	validateResult, err := client.BeginValidateStackAtResourceGroup(ctx, resourceGroup, deploymentName, stack, nil)
+	if err != nil {
+		return fmt.Errorf("validating deployment to resource group:\n\nValidation Error Details:\n%w", err)
+	}
+	_, err = validateResult.PollUntilDone(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("validating deployment to resource group:\n\nValidation Error Details:\n%w", err)
+	}
+
+	return nil
+}
+
+func (d *StackDeployments) stackFromArmForSubscription(
+	ctx context.Context,
+	subscriptionId string,
+	location string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) (armdeploymentstacks.DeploymentStack, error) {
+	if tags == nil {
+		tags = map[string]*string{}
+	}
+
+	templateHash, err := d.CalculateTemplateHash(ctx, subscriptionId, armTemplate)
+	if err != nil {
+		return armdeploymentstacks.DeploymentStack{}, fmt.Errorf("failed to calculate template hash: %w", err)
+	}
+
+	clonedTags := maps.Clone(tags)
+	clonedTags[azure.TagKeyAzdDeploymentTemplateHashName] = &templateHash
+
+	stackParams := convertToStackParams(parameters)
+
+	deploymentStackOptions, err := parseDeploymentStackOptions(options)
+	if err != nil {
+		return armdeploymentstacks.DeploymentStack{}, err
+	}
+
+	stack := armdeploymentstacks.DeploymentStack{
+		Location: &location,
+		Tags:     clonedTags,
+		Properties: &armdeploymentstacks.DeploymentStackProperties{
+			BypassStackOutOfSyncError: deploymentStackOptions.BypassStackOutOfSyncError,
+			ActionOnUnmanage:          deploymentStackOptions.ActionOnUnmanage,
+			DenySettings:              deploymentStackOptions.DenySettings,
+			Parameters:                stackParams,
+			Template:                  armTemplate,
+		},
+	}
+	return stack, nil
+}
+
+// Preflight API validates whether the specified template is syntactically correct
+// and will be accepted by Azure Resource Manager.
+func (d *StackDeployments) ValidatePreflightToSubscription(
+	ctx context.Context,
+	subscriptionId string,
+	location string,
+	deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) error {
+	client, err := d.createClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	stack, err := d.stackFromArmForSubscription(ctx, subscriptionId, location, armTemplate, parameters, tags, options)
+	if err != nil {
+		return err
+	}
+
+	var rawResponse *http.Response
+	ctx = policy.WithCaptureResponse(ctx, &rawResponse)
+
+	validateResult, err := client.BeginValidateStackAtSubscription(ctx, deploymentName, stack, nil)
+	if err != nil {
+		return fmt.Errorf("validating deployment to subscription:\n\nValidation Error Details:\n%w", err)
+	}
+	_, err = validateResult.PollUntilDone(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("validating deployment to subscription:\n\nValidation Error Details:\n%w", err)
+	}
+
+	return nil
 }

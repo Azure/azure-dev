@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package environment
 
 import (
@@ -77,6 +80,10 @@ func Test_EnvManager_PromptEnvironmentName(t *testing.T) {
 			return strings.Contains(options.Message, "would you like to create it?")
 		}).Respond(true)
 
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Would you like to set the new environment")
+		}).Respond(true)
+
 		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
 			return true
 		}).SetError(errors.New("prompt should not be called for valid environment name"))
@@ -102,6 +109,10 @@ func Test_EnvManager_PromptEnvironmentName(t *testing.T) {
 		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
 			return true
 		}).Respond(expected)
+
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Would you like to set the new environment")
+		}).Respond(true)
 
 		envManager := createEnvManagerForManagerTest(t, mockContext)
 		env, err := envManager.LoadOrInitInteractive(*mockContext.Context, "")

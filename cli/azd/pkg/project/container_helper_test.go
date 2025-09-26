@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package project
 
 import (
@@ -12,12 +15,13 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/benbjohnson/clock"
@@ -62,7 +66,7 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			env := environment.NewWithValues("dev", map[string]string{})
-			containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil, nil, nil, cloud.AzurePublic())
+			containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil, nil, nil, nil, cloud.AzurePublic())
 			serviceConfig.Docker = tt.dockerConfig
 
 			tag, err := containerHelper.LocalImageTag(*mockContext.Context, serviceConfig)
@@ -111,14 +115,249 @@ func Test_ContainerHelper_RemoteImageTag(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	env := environment.NewWithValues("dev", map[string]string{})
-	containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil, nil, nil, cloud.AzurePublic())
+	containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil, nil, nil, nil, cloud.AzurePublic())
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, ServiceLanguageTypeScript)
 			serviceConfig.Docker.Registry = tt.registry
 
-			remoteTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig, tt.localImageTag)
+			remoteTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig, tt.localImageTag, nil)
+
+			if tt.expectError {
+				require.Error(t, err)
+				require.Empty(t, remoteTag)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.expectedRemoteTag, remoteTag)
+			}
+		})
+	}
+}
+
+func Test_parsePublishOptionsToImageOverride(t *testing.T) {
+	tests := []struct {
+		name           string
+		options        *PublishOptions
+		expectedResult *imageOverride
+		expectedError  bool
+		errorContains  string
+	}{
+		{
+			name:           "nil options",
+			options:        nil,
+			expectedResult: nil,
+			expectedError:  false,
+		},
+		{
+			name:           "empty image",
+			options:        &PublishOptions{Image: ""},
+			expectedResult: nil,
+			expectedError:  false,
+		},
+		{
+			name:    "repository only",
+			options: &PublishOptions{Image: "myapp/api"},
+			expectedResult: &imageOverride{
+				Registry:   "",
+				Repository: "myapp/api",
+				Tag:        "",
+			},
+			expectedError: false,
+		},
+		{
+			name:    "repository with tag",
+			options: &PublishOptions{Image: "myapp/api:v1.0.0"},
+			expectedResult: &imageOverride{
+				Registry:   "",
+				Repository: "myapp/api",
+				Tag:        "v1.0.0",
+			},
+			expectedError: false,
+		},
+		{
+			name:    "registry with repository",
+			options: &PublishOptions{Image: "contoso.azurecr.io/myapp/api"},
+			expectedResult: &imageOverride{
+				Registry:   "contoso.azurecr.io",
+				Repository: "myapp/api",
+				Tag:        "",
+			},
+			expectedError: false,
+		},
+		{
+			name:    "registry with repository and tag",
+			options: &PublishOptions{Image: "contoso.azurecr.io/myapp/api:v1.0.0"},
+			expectedResult: &imageOverride{
+				Registry:   "contoso.azurecr.io",
+				Repository: "myapp/api",
+				Tag:        "v1.0.0",
+			},
+			expectedError: false,
+		},
+		{
+			name:    "dockerhub with org and repo",
+			options: &PublishOptions{Image: "docker.io/myorg/myapp:latest"},
+			expectedResult: &imageOverride{
+				Registry:   "docker.io",
+				Repository: "myorg/myapp",
+				Tag:        "latest",
+			},
+			expectedError: false,
+		},
+		{
+			name:    "simple image name with tag",
+			options: &PublishOptions{Image: "nginx:latest"},
+			expectedResult: &imageOverride{
+				Registry:   "",
+				Repository: "nginx",
+				Tag:        "latest",
+			},
+			expectedError: false,
+		},
+		{
+			name:           "invalid image format - too many colons",
+			options:        &PublishOptions{Image: "image:tag:extra"},
+			expectedResult: nil,
+			expectedError:  true,
+			errorContains:  "invalid image format",
+		},
+		{
+			name:           "empty repository",
+			options:        &PublishOptions{Image: ":tag"},
+			expectedResult: nil,
+			expectedError:  true,
+			errorContains:  "invalid image format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := parseImageOverride(tt.options)
+
+			if tt.expectedError {
+				require.Error(t, err)
+				if tt.errorContains != "" {
+					require.Contains(t, err.Error(), tt.errorContains)
+				}
+				require.Nil(t, result)
+			} else {
+				require.NoError(t, err)
+				if tt.expectedResult == nil {
+					require.Nil(t, result)
+				} else {
+					require.NotNil(t, result)
+					require.Equal(t, tt.expectedResult.Registry, result.Registry)
+					require.Equal(t, tt.expectedResult.Repository, result.Repository)
+					require.Equal(t, tt.expectedResult.Tag, result.Tag)
+				}
+			}
+		})
+	}
+}
+
+func Test_ContainerHelper_RemoteImageTag_WithImageOverride(t *testing.T) {
+	tests := []struct {
+		name              string
+		project           string
+		localImageTag     string
+		registry          osutil.ExpandableString
+		imageOverride     *imageOverride
+		expectedRemoteTag string
+		expectError       bool
+	}{
+		{
+			name:          "with override repository only",
+			project:       "./src/api",
+			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag: "test-app/api-dev:azd-deploy-0",
+			imageOverride: &imageOverride{
+				Repository: "custom/image",
+			},
+			expectedRemoteTag: "contoso.azurecr.io/custom/image:azd-deploy-0",
+		},
+		{
+			name:          "with override tag only",
+			project:       "./src/api",
+			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag: "test-app/api-dev:azd-deploy-0",
+			imageOverride: &imageOverride{
+				Tag: "latest",
+			},
+			expectedRemoteTag: "contoso.azurecr.io/test-app/api-dev:latest",
+		},
+		{
+			name:          "with both override repository and tag",
+			project:       "./src/api",
+			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag: "test-app/api-dev:azd-deploy-0",
+			imageOverride: &imageOverride{
+				Repository: "custom/image",
+				Tag:        "latest",
+			},
+			expectedRemoteTag: "contoso.azurecr.io/custom/image:latest",
+		},
+		{
+			name:          "with override registry only",
+			project:       "./src/api",
+			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag: "test-app/api-dev:azd-deploy-0",
+			imageOverride: &imageOverride{
+				Registry: "docker.io",
+			},
+			expectedRemoteTag: "docker.io/test-app/api-dev:azd-deploy-0",
+		},
+		{
+			name:          "with all overrides",
+			project:       "./src/api",
+			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag: "test-app/api-dev:azd-deploy-0",
+			imageOverride: &imageOverride{
+				Registry:   "docker.io",
+				Repository: "myorg/myimage",
+				Tag:        "v2.0.0",
+			},
+			expectedRemoteTag: "docker.io/myorg/myimage:v2.0.0",
+		},
+		{
+			name:          "repository override with no slash prefix",
+			project:       "./src/api",
+			registry:      osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag: "test-app/api-dev:azd-deploy-0",
+			imageOverride: &imageOverride{
+				Repository: "myimage",
+			},
+			expectedRemoteTag: "contoso.azurecr.io/myimage:azd-deploy-0",
+		},
+		{
+			name:              "no override - nil",
+			project:           "./src/api",
+			registry:          osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag:     "test-app/api-dev:azd-deploy-0",
+			imageOverride:     nil,
+			expectedRemoteTag: "contoso.azurecr.io/test-app/api-dev:azd-deploy-0",
+		},
+		{
+			name:              "no override - empty",
+			project:           "./src/api",
+			registry:          osutil.NewExpandableString("contoso.azurecr.io"),
+			localImageTag:     "test-app/api-dev:azd-deploy-0",
+			imageOverride:     &imageOverride{},
+			expectedRemoteTag: "contoso.azurecr.io/test-app/api-dev:azd-deploy-0",
+		},
+	}
+
+	mockContext := mocks.NewMockContext(context.Background())
+	env := environment.NewWithValues("dev", map[string]string{})
+	containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil, nil, nil, nil, cloud.AzurePublic())
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, ServiceLanguageTypeScript)
+			serviceConfig.Docker.Registry = tt.registry
+
+			remoteTag, err := containerHelper.RemoteImageTag(
+				*mockContext.Context, serviceConfig, tt.localImageTag, tt.imageOverride)
 
 			if tt.expectError {
 				require.Error(t, err)
@@ -138,7 +377,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 			environment.ContainerRegistryEndpointEnvVarName: "contoso.azurecr.io",
 		})
 		envManager := &mockenv.MockEnvManager{}
-		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, nil, nil, cloud.AzurePublic())
+		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, nil, nil, nil, cloud.AzurePublic())
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
 
@@ -150,7 +389,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		env := environment.NewWithValues("dev", map[string]string{})
 		envManager := &mockenv.MockEnvManager{}
-		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, nil, nil, cloud.AzurePublic())
+		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, nil, nil, nil, cloud.AzurePublic())
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 		serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
 		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
@@ -164,7 +403,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		env := environment.NewWithValues("dev", map[string]string{})
 		env.DotenvSet("MY_CUSTOM_REGISTRY", "custom.azurecr.io")
 		envManager := &mockenv.MockEnvManager{}
-		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, nil, nil, cloud.AzurePublic())
+		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, nil, nil, nil, cloud.AzurePublic())
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 		serviceConfig.Docker.Registry = osutil.NewExpandableString("${MY_CUSTOM_REGISTRY}")
 		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
@@ -177,7 +416,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		env := environment.NewWithValues("dev", map[string]string{})
 		envManager := &mockenv.MockEnvManager{}
-		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, nil, nil, cloud.AzurePublic())
+		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil, nil, nil, nil, cloud.AzurePublic())
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
 
@@ -334,6 +573,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			mockResults := setupDockerMocks(mockContext)
 			env := environment.NewWithValues("dev", map[string]string{})
 			dockerCli := docker.NewCli(mockContext.CommandRunner)
+			dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 			envManager := &mockenv.MockEnvManager{}
 			envManager.On("Save", *mockContext.Context, env).Return(nil)
 
@@ -347,6 +587,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 				mockContainerRegistryService,
 				nil,
 				dockerCli,
+				dotnetCli,
 				mockContext.Console,
 				cloud.AzurePublic(),
 			)
@@ -361,10 +602,10 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 				PackagePath: tt.packagePath,
 			}
 
-			deployResult, err := logProgress(
-				t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-					return containerHelper.Deploy(
-						*mockContext.Context, serviceConfig, packageOutput, targetResource, true, progress)
+			publishResult, err := logProgress(
+				t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
+					return containerHelper.Publish(
+						*mockContext.Context, serviceConfig, packageOutput, targetResource, progress, &PublishOptions{})
 				},
 			)
 
@@ -372,13 +613,9 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
-				require.Same(t, packageOutput, deployResult.Package)
-
-				if deployResult.Details != nil {
-					dockerDeployResult, ok := deployResult.Details.(*dockerDeployResult)
-					require.True(t, ok)
-					require.Equal(t, tt.expectedRemoteImage, dockerDeployResult.RemoteImageTag)
-				}
+				containerDetails, ok := publishResult.Details.(*ContainerPublishDetails)
+				require.True(t, ok)
+				require.Equal(t, tt.expectedRemoteImage, containerDetails.RemoteImage)
 			}
 
 			_, dockerPullCalled := mockResults["docker-pull"]
@@ -403,7 +640,12 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			require.Equal(t, tt.expectDockerPullCalled, dockerPullCalled)
 			require.Equal(t, tt.expectDockerTagCalled, dockerTagCalled)
 			require.Equal(t, tt.expectDockerPushCalled, dockerPushCalled)
-			require.Equal(t, tt.expectedRemoteImage, env.GetServiceProperty("api", "IMAGE_NAME"))
+
+			if !tt.expectError {
+				containerDetails, ok := publishResult.Details.(*ContainerPublishDetails)
+				require.True(t, ok)
+				require.Equal(t, tt.expectedRemoteImage, containerDetails.RemoteImage)
+			}
 		})
 	}
 }
@@ -411,7 +653,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	env := environment.NewWithValues("dev", map[string]string{})
-	containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil, nil, nil, cloud.AzurePublic())
+	containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil, nil, nil, nil, cloud.AzurePublic())
 
 	tests := []struct {
 		name                 string
@@ -566,14 +808,14 @@ func (m *mockContainerRegistryServiceForRetry) Credentials(
 	ctx context.Context,
 	subscriptionId string,
 	loginServer string,
-) (*azcli.DockerCredentials, error) {
+) (*azapi.DockerCredentials, error) {
 	if m.retryCount < m.MaxRetry {
 		m.retryCount++
 		return nil, &azcore.ResponseError{
 			StatusCode: http.StatusNotFound,
 		}
 	}
-	return &azcli.DockerCredentials{}, nil
+	return &azapi.DockerCredentials{}, nil
 }
 
 func (m *mockContainerRegistryServiceForRetry) GetContainerRegistries(
@@ -597,7 +839,7 @@ func Test_ContainerHelper_Credential_Retry(t *testing.T) {
 		defaultCredentialsRetryDelay = 1 * time.Millisecond
 
 		containerHelper := NewContainerHelper(
-			env, envManager, clock.NewMock(), mockContainerService, nil, nil, nil, cloud.AzurePublic())
+			env, envManager, clock.NewMock(), mockContainerService, nil, nil, nil, nil, cloud.AzurePublic())
 
 		serviceConfig := createTestServiceConfig("path", ContainerAppTarget, ServiceLanguageDotNet)
 		serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
@@ -665,6 +907,20 @@ func setupDockerMocks(mockContext *mocks.MockContext) map[string]exec.RunArgs {
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker manifest inspect")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		mockResults["docker-manifest-inspect"] = args
+
+		if len(args.Args) < 4 || args.Args[3] == "" {
+			return exec.NewRunResult(1, "", ""), errors.New("no image specified")
+		}
+
+		// For the test, we'll assume the image doesn't exist (return exit code 1)
+		// This simulates the normal case where the image needs to be built and pushed
+		return exec.NewRunResult(1, "", "manifest unknown"), nil
+	})
+
 	return mockResults
 }
 
@@ -681,9 +937,9 @@ func (m *mockContainerRegistryService) Credentials(
 	ctx context.Context,
 	subscriptionId string,
 	loginServer string,
-) (*azcli.DockerCredentials, error) {
+) (*azapi.DockerCredentials, error) {
 	args := m.Called(ctx, subscriptionId, loginServer)
-	return args.Get(0).(*azcli.DockerCredentials), args.Error(1)
+	return args.Get(0).(*azapi.DockerCredentials), args.Error(1)
 }
 
 func (m *mockContainerRegistryService) GetContainerRegistries(
@@ -692,4 +948,228 @@ func (m *mockContainerRegistryService) GetContainerRegistries(
 ) ([]*armcontainerregistry.Registry, error) {
 	args := m.Called(ctx, subscriptionId)
 	return args.Get(0).([]*armcontainerregistry.Registry), args.Error(1)
+}
+func Test_ContainerHelper_Publish(t *testing.T) {
+	tests := []struct {
+		name                    string
+		registry                osutil.ExpandableString
+		image                   string
+		project                 string
+		packagePath             string
+		dockerDetails           *dockerPackageResult
+		publishOptions          *PublishOptions
+		expectedRemoteImage     string
+		expectDockerLoginCalled bool
+		expectDockerPullCalled  bool
+		expectDockerTagCalled   bool
+		expectDockerPushCalled  bool
+		expectError             bool
+	}{
+		{
+			name:     "Source code and registry",
+			project:  "./src/api",
+			registry: osutil.NewExpandableString("contoso.azurecr.io"),
+			dockerDetails: &dockerPackageResult{
+				ImageHash:   "IMAGE_ID",
+				SourceImage: "",
+				TargetImage: "my-project/my-service:azd-publish-0",
+			},
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: true,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   true,
+			expectDockerPushCalled:  true,
+			expectedRemoteImage:     "contoso.azurecr.io/my-project/my-service:azd-publish-0",
+			expectError:             false,
+		},
+		{
+			name:    "Source code and no registry",
+			project: "./src/api",
+			dockerDetails: &dockerPackageResult{
+				ImageHash:   "IMAGE_ID",
+				SourceImage: "",
+				TargetImage: "my-project/my-service:azd-publish-0",
+			},
+			publishOptions:          &PublishOptions{},
+			expectError:             true,
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+		},
+		{
+			name:     "Source image and registry",
+			image:    "nginx",
+			registry: osutil.NewExpandableString("contoso.azurecr.io"),
+			dockerDetails: &dockerPackageResult{
+				ImageHash:   "",
+				SourceImage: "nginx",
+				TargetImage: "my-project/nginx:azd-publish-0",
+			},
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: true,
+			expectDockerPullCalled:  true,
+			expectDockerTagCalled:   true,
+			expectDockerPushCalled:  true,
+			expectedRemoteImage:     "contoso.azurecr.io/my-project/nginx:azd-publish-0",
+			expectError:             false,
+		},
+		{
+			name:  "Source image and no registry",
+			image: "nginx",
+			dockerDetails: &dockerPackageResult{
+				ImageHash:   "",
+				SourceImage: "nginx",
+				TargetImage: "my-project/nginx:azd-publish-0",
+			},
+			publishOptions:          &PublishOptions{},
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+			expectedRemoteImage:     "nginx",
+			expectError:             false,
+		},
+		{
+			name:     "With publish options overwrite",
+			project:  "./src/api",
+			registry: osutil.NewExpandableString("contoso.azurecr.io"),
+			dockerDetails: &dockerPackageResult{
+				ImageHash:   "IMAGE_ID",
+				SourceImage: "",
+				TargetImage: "my-project/my-service:azd-publish-0",
+			},
+			publishOptions:          nil,
+			expectDockerLoginCalled: true,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   true,
+			expectDockerPushCalled:  true,
+			expectedRemoteImage:     "contoso.azurecr.io/my-project/my-service:azd-publish-0",
+			expectError:             false,
+		},
+		{
+			name:     "With publish options image override",
+			project:  "./src/api",
+			registry: osutil.NewExpandableString("contoso.azurecr.io"),
+			dockerDetails: &dockerPackageResult{
+				ImageHash:   "IMAGE_ID",
+				SourceImage: "",
+				TargetImage: "my-project/my-service:azd-publish-0",
+			},
+			publishOptions:          &PublishOptions{Image: "myregistry.azurecr.io/myapp/myservice:v2.0.0"},
+			expectDockerLoginCalled: true,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   true,
+			expectDockerPushCalled:  true,
+			expectedRemoteImage:     "myregistry.azurecr.io/myapp/myservice:v2.0.0",
+			expectError:             false,
+		},
+		{
+			name:                    "Empty package details",
+			dockerDetails:           &dockerPackageResult{},
+			publishOptions:          &PublishOptions{},
+			expectError:             true,
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+		},
+		{
+			name:                    "Nil package details",
+			dockerDetails:           nil,
+			publishOptions:          &PublishOptions{},
+			expectError:             true,
+			expectDockerLoginCalled: false,
+			expectDockerPullCalled:  false,
+			expectDockerTagCalled:   false,
+			expectDockerPushCalled:  false,
+		},
+	}
+
+	targetResource := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"CONTAINER_APP",
+		"Microsoft.App/containerApps",
+	)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			mockResults := setupDockerMocks(mockContext)
+			env := environment.NewWithValues("dev", map[string]string{})
+			dockerCli := docker.NewCli(mockContext.CommandRunner)
+			dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
+			envManager := &mockenv.MockEnvManager{}
+			envManager.On("Save", *mockContext.Context, env).Return(nil)
+
+			mockContainerRegistryService := &mockContainerRegistryService{}
+			setupContainerRegistryMocks(mockContext, &mockContainerRegistryService.Mock)
+
+			containerHelper := NewContainerHelper(
+				env,
+				envManager,
+				clock.NewMock(),
+				mockContainerRegistryService,
+				nil,
+				dockerCli,
+				dotnetCli,
+				mockContext.Console,
+				cloud.AzurePublic(),
+			)
+			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+
+			serviceConfig.Image = osutil.NewExpandableString(tt.image)
+			serviceConfig.RelativePath = tt.project
+			serviceConfig.Docker.Registry = tt.registry
+
+			packageOutput := &ServicePackageResult{
+				Details:     tt.dockerDetails,
+				PackagePath: tt.packagePath,
+			}
+
+			publishResult, err := logProgress(
+				t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
+					return containerHelper.Publish(
+						*mockContext.Context, serviceConfig, packageOutput, targetResource, progress, tt.publishOptions)
+				},
+			)
+
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, publishResult)
+			}
+
+			_, dockerPullCalled := mockResults["docker-pull"]
+			_, dockerTagCalled := mockResults["docker-tag"]
+			_, dockerPushCalled := mockResults["docker-push"]
+
+			if tt.expectDockerLoginCalled {
+				registryName, err := tt.registry.Envsubst(env.Getenv)
+				require.NoError(t, err)
+
+				mockContainerRegistryService.AssertCalled(
+					t,
+					"Login",
+					*mockContext.Context,
+					env.GetSubscriptionId(),
+					registryName,
+				)
+			} else {
+				mockContainerRegistryService.AssertNotCalled(t, "Login")
+			}
+
+			require.Equal(t, tt.expectDockerPullCalled, dockerPullCalled)
+			require.Equal(t, tt.expectDockerTagCalled, dockerTagCalled)
+			require.Equal(t, tt.expectDockerPushCalled, dockerPushCalled)
+
+			if !tt.expectError {
+				containerDetails, ok := publishResult.Details.(*ContainerPublishDetails)
+				require.True(t, ok)
+				require.Equal(t, tt.expectedRemoteImage, containerDetails.RemoteImage)
+			}
+		})
+	}
 }

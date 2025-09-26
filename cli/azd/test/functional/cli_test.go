@@ -65,8 +65,6 @@ type cliConfig struct {
 
 	// The client ID to use for live Azure tests.
 	ClientID string
-	// The client secret to use for live Azure tests.
-	ClientSecret string
 	// The tenant ID to use for live Azure tests.
 	TenantID string
 	// The Azure subscription ID to use for live Azure tests.
@@ -82,7 +80,6 @@ type cliConfig struct {
 func (c *cliConfig) init() {
 	c.CI = os.Getenv("CI") != ""
 	c.ClientID = os.Getenv("AZD_TEST_CLIENT_ID")
-	c.ClientSecret = os.Getenv("AZD_TEST_CLIENT_SECRET")
 	c.TenantID = os.Getenv("AZD_TEST_TENANT_ID")
 	c.SubscriptionID = os.Getenv("AZD_TEST_AZURE_SUBSCRIPTION_ID")
 	c.Location = os.Getenv("AZD_TEST_AZURE_LOCATION")
@@ -158,6 +155,8 @@ func Test_CLI_DevCenter_Init_Up_Down(t *testing.T) {
 		"\n",
 	)
 
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
 	// azd init
 	_, err := cli.RunCommandWithStdIn(ctx, initStdIn, "init")
 	require.NoError(t, err)
@@ -215,6 +214,8 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
@@ -302,6 +303,8 @@ func Test_CLI_ProvisionState(t *testing.T) {
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
 
@@ -310,9 +313,20 @@ func Test_CLI_ProvisionState(t *testing.T) {
 
 	expectedOutputContains := "There are no changes to provision for your application."
 
+	// Provision preview should show creation of storage account
+	preview, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--preview")
+	require.NoError(t, err)
+	require.Contains(t, preview.Stdout, "Create : Storage account")
+
+	// First provision creates all resources
 	initial, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 	require.NotContains(t, initial.Stdout, expectedOutputContains)
+
+	// Second preview shows no changes required for storage account
+	secondPreview, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--preview")
+	require.NoError(t, err)
+	require.NotContains(t, secondPreview.Stdout, "Skip : Storage account")
 
 	// Second provision should use cache
 	secondProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
@@ -346,6 +360,116 @@ func Test_CLI_ProvisionState(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func Test_CLI_EnvironmentSecrets(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	if session != nil && session.Playback {
+		t.Skip("Skipping test in playback mode. This test is live only.")
+	}
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, "AZD_FORCE_TTY=false")
+
+	err := copySample(dir, "environment-secrets")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	// create the first secret reference
+	rg := envName + "-rg"
+	kva := envName + "-kva"
+	kvs := envName + "-kvs"
+	kvsv := "THIS IS THE SECRET VALUE"
+
+	defer cleanupRg(ctx, t, cli, session, rg)               // deletes the rg with the Key Vault
+	defer cleanupDeployments(ctx, t, cli, session, envName) // deletes the deployment objects
+	defer cleanupRg(ctx, t, cli, session, "rg-"+envName)    // delete the rg created by the deployment
+
+	envSetSecretOut, err := cli.RunCommandWithStdIn(ctx, stdinForCreateKvAccount(
+		rg,
+		kva,
+		kvs,
+		kvsv,
+	), "env", "set-secret", "SEC_REF")
+	require.NoError(t, err)
+	require.Contains(t, envSetSecretOut.Stdout, "https://aka.ms/azd-env-set-secret")
+
+	// Test usage of secret by running provision
+	// The sample environment-secrets is designed to output the secret from bicep outputs
+	// and also from a hook simple script
+	provisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, provisionOutput.Stdout, kvsv)
+
+	// check output
+	envValue, err := cli.RunCommand(ctx, "env", "get-value", "BICEP_OUTPUT")
+	require.NoError(t, err)
+	require.Contains(t, envValue.Stdout, kvsv)
+
+	// Now test creating kv secret on existing kv account
+	kvs2 := envName + "-kvs2"
+	kvsv2 := "THIS IS THE NEW SECRET VALUE"
+	envSetSecretOut, err = cli.RunCommandWithStdIn(ctx, stdinForExistingKvAccount(
+		kva,
+		kvs2,
+		kvsv2,
+	), "env", "set-secret", "SEC_REF")
+	require.NoError(t, err)
+	require.Contains(t, envSetSecretOut.Stdout, "https://aka.ms/azd-env-set-secret")
+
+	// Test usage of secret by running provision
+	// Should not use provision cache because we are using a new secret name that updates the parameter and
+	// void the cache
+	provisionOutput, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, provisionOutput.Stdout, kvsv2)
+
+	// check output
+	envValue, err = cli.RunCommand(ctx, "env", "get-value", "BICEP_OUTPUT")
+	require.NoError(t, err)
+	require.Contains(t, envValue.Stdout, kvsv2)
+
+	// Finally, test selecting existing kv secret by setting the initial secret again
+	envSetSecretOut, err = cli.RunCommandWithStdIn(
+		ctx, stdinForExistingKvSecret(kva), "env", "set-secret", "SEC_REF")
+	require.NoError(t, err)
+	require.Contains(t, envSetSecretOut.Stdout, "https://aka.ms/azd-env-set-secret")
+
+	// Test usage of secret by running provision
+	// Should not use provision cache because we are using a new secret name that updates the parameter and
+	// void the cache
+	provisionOutput, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, provisionOutput.Stdout, kvsv)
+
+	// check output
+	envValue, err = cli.RunCommand(ctx, "env", "get-value", "BICEP_OUTPUT")
+	require.NoError(t, err)
+	require.Contains(t, envValue.Stdout, kvsv)
+
+	env, err := envFromAzdRoot(ctx, dir, envName)
+	require.NoError(t, err)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
+	}
+}
+
 func Test_CLI_ProvisionStateWithDown(t *testing.T) {
 	t.Parallel()
 
@@ -364,6 +488,8 @@ func Test_CLI_ProvisionStateWithDown(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
@@ -430,6 +556,8 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
@@ -623,6 +751,8 @@ func Test_CLI_InfraBicepParam(t *testing.T) {
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
 	err := copySample(dir, "storage-bicepparam")
 	require.NoError(t, err, "failed expanding sample")
 
@@ -759,6 +889,33 @@ func stdinForProvision() string {
 		"\n" // "choose location" (we're choosing the default)
 }
 
+func stdinForCreateKvAccount(rg, kva, kvs, kvsv string) string {
+	return "\n" + // "Create new Key Vault Secret
+		"\n" + // "choose subscription" (we're choosing the default)
+		"\n" + // "Create new Key Vault
+		"\n" + // "choose location" (we're choosing the default)
+		"1. Create a new resource group\n" + // "1. Create new resource group"
+		rg + "\n" + // "resource group name"
+		kva + "\n" + // "key vault name"
+		kvs + "\n" + // "key vault secret name"
+		kvsv + "\n" // "key vault secret value"
+}
+
+func stdinForExistingKvAccount(kva, kvs, kvsv string) string {
+	return "\n" + // "Create new Key Vault Secret
+		"\n" + // "choose subscription" (we're choosing the default)
+		kva + "\n" + // "Use existing Key Vault
+		kvs + "\n" + // "key vault secret name"
+		kvsv + "\n" // "key vault secret value"
+}
+
+func stdinForExistingKvSecret(kva string) string {
+	return "Select an existing Key Vault secret\n" + // "Create new Key Vault Secret
+		"\n" + // "choose subscription" (we're choosing the default)
+		kva + "\n" + // "Use existing Key Vault
+		"\n" // "first key vault secret name in the list"
+}
+
 func getTestEnvPath(dir string, envName string) string {
 	return filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env")
 }
@@ -811,92 +968,6 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	assertEnvValuesStored(t, env)
 
 	t.Logf("Starting down\n")
-	_, err = cli.RunCommand(ctx, "down", "--cwd", dir, "--force", "--purge")
-	require.NoError(t, err)
-
-	t.Logf("Done\n")
-}
-
-func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-	t.Logf("DIR: %s", dir)
-
-	envName := randomEnvName()
-	location := "eastus2"
-	backendResourceGroupName := fmt.Sprintf("rs-%s", envName)
-	backendStorageAccountName := strings.Replace(envName, "-", "", -1)
-	backendContainerName := "tfstate"
-
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), fmt.Sprintf("AZURE_LOCATION=%s", location))
-
-	err := copySample(dir, "resourcegroupterraformremote")
-	require.NoError(t, err, "failed expanding sample")
-
-	//Create remote state resources
-	commandRunner := exec.NewCommandRunner(nil)
-	runArgs := newRunArgs("az", "group", "create", "--name", backendResourceGroupName, "--location", location)
-
-	_, err = commandRunner.Run(ctx, runArgs)
-	require.NoError(t, err)
-
-	defer func() {
-		commandRunner := exec.NewCommandRunner(nil)
-		runArgs := newRunArgs("az", "group", "delete", "--name", backendResourceGroupName, "--yes")
-		_, err = commandRunner.Run(ctx, runArgs)
-		require.NoError(t, err)
-	}()
-
-	//Create storage account
-	runArgs = newRunArgs("az", "storage", "account", "create", "--resource-group", backendResourceGroupName,
-		"--name", backendStorageAccountName, "--sku", "Standard_LRS", "--encryption-services", "blob")
-	_, err = commandRunner.Run(ctx, runArgs)
-	require.NoError(t, err)
-
-	//Get Account Key
-	runArgs = newRunArgs("az", "storage", "account", "keys", "list", "--resource-group",
-		backendResourceGroupName, "--account-name", backendStorageAccountName, "--query", "[0].value",
-		"-o", "tsv")
-	cmdResult, err := commandRunner.Run(ctx, runArgs)
-	require.NoError(t, err)
-	storageAccountKey := strings.ReplaceAll(strings.ReplaceAll(cmdResult.Stdout, "\n", ""), "\r", "")
-
-	// Create storage container
-	runArgs = newRunArgs("az", "storage", "container", "create", "--name", backendContainerName,
-		"--account-name", backendStorageAccountName, "--account-key", storageAccountKey)
-	runArgs.SensitiveData = append(runArgs.SensitiveData, storageAccountKey)
-	result, err := commandRunner.Run(ctx, runArgs)
-	_ = result
-	require.NoError(t, err)
-
-	//Run azd init
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
-	require.NoError(t, err)
-
-	_, err = cli.RunCommand(ctx, "env", "set", "RS_STORAGE_ACCOUNT", backendStorageAccountName, "--cwd", dir)
-	require.NoError(t, err)
-
-	_, err = cli.RunCommand(ctx, "env", "set", "RS_CONTAINER_NAME", backendContainerName, "--cwd", dir)
-	require.NoError(t, err)
-
-	_, err = cli.RunCommand(ctx, "env", "set", "RS_RESOURCE_GROUP", backendResourceGroupName, "--cwd", dir)
-	require.NoError(t, err)
-
-	// turn alpha feature on
-	_, err = cli.RunCommand(ctx, "config", "set", "alpha.terraform", "on")
-	require.NoError(t, err)
-
-	t.Logf("Starting infra create\n")
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--cwd", dir)
-	require.NoError(t, err)
-
-	t.Logf("Starting infra delete\n")
 	_, err = cli.RunCommand(ctx, "down", "--cwd", dir, "--force", "--purge")
 	require.NoError(t, err)
 

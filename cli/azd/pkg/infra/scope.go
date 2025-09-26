@@ -30,14 +30,26 @@ type Deployment interface {
 	OutputsUrl(ctx context.Context) (string, error)
 	// DeploymentUrl is the URL that may be used to view this deployment progress in the Azure Portal.
 	DeploymentUrl(ctx context.Context) (string, error)
+	// Validate a given template on preflight API
+	ValidatePreflight(
+		ctx context.Context,
+		template azure.RawArmTemplate,
+		parameters azure.ArmParameters,
+		tags map[string]*string,
+		options map[string]any,
+	) error
 	// Deploy a given template with a set of parameters.
 	Deploy(
 		ctx context.Context,
 		template azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 		tags map[string]*string,
+		options map[string]any,
 	) (*azapi.ResourceDeployment, error)
-	Delete(ctx context.Context, progress *async.Progress[azapi.DeleteDeploymentProgress]) error
+	Delete(ctx context.Context,
+		options map[string]any,
+		progress *async.Progress[azapi.DeleteDeploymentProgress],
+	) error
 	// Deploy a given template with a set of parameters.
 	DeployPreview(
 		ctx context.Context,
@@ -61,18 +73,41 @@ func (s *ResourceGroupDeployment) Name() string {
 	return s.name
 }
 
+func (s *ResourceGroupDeployment) ValidatePreflight(
+	ctx context.Context,
+	template azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) error {
+	return s.deploymentService.ValidatePreflightToResourceGroup(
+		ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters, tags, options)
+}
+
 func (s *ResourceGroupDeployment) Deploy(
-	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
+	ctx context.Context,
+	template azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
 ) (*azapi.ResourceDeployment, error) {
 	return s.deploymentService.DeployToResourceGroup(
-		ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters, tags)
+		ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters, tags, options)
 }
 
 func (s *ResourceGroupDeployment) Delete(
 	ctx context.Context,
+	options map[string]any,
 	progress *async.Progress[azapi.DeleteDeploymentProgress],
 ) error {
-	return s.deploymentService.DeleteResourceGroupDeployment(ctx, s.subscriptionId, s.resourceGroupName, s.name, progress)
+	return s.deploymentService.DeleteResourceGroupDeployment(
+		ctx,
+		s.subscriptionId,
+		s.resourceGroupName,
+		s.name,
+		options,
+		progress,
+	)
 }
 
 func (s *ResourceGroupDeployment) DeployPreview(
@@ -240,21 +275,43 @@ func (s *SubscriptionDeployment) DeploymentUrl(ctx context.Context) (string, err
 	return s.deployment.DeploymentUrl, nil
 }
 
+func (s *SubscriptionDeployment) ValidatePreflight(
+	ctx context.Context,
+	template azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+	tags map[string]*string,
+	options map[string]any,
+) error {
+	return s.deploymentService.ValidatePreflightToSubscription(ctx, s.subscriptionId, s.location,
+		s.name, template, parameters, tags, options)
+}
+
 // Deploy a given template with a set of parameters.
 func (s *SubscriptionDeployment) Deploy(
 	ctx context.Context,
 	template azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 	tags map[string]*string,
+	options map[string]any,
 ) (*azapi.ResourceDeployment, error) {
-	return s.deploymentService.DeployToSubscription(ctx, s.subscriptionId, s.location, s.name, template, parameters, tags)
+	return s.deploymentService.DeployToSubscription(
+		ctx,
+		s.subscriptionId,
+		s.location,
+		s.name,
+		template,
+		parameters,
+		tags,
+		options,
+	)
 }
 
 func (s *SubscriptionDeployment) Delete(
 	ctx context.Context,
+	options map[string]any,
 	progress *async.Progress[azapi.DeleteDeploymentProgress],
 ) error {
-	return s.deploymentService.DeleteSubscriptionDeployment(ctx, s.subscriptionId, s.name, progress)
+	return s.deploymentService.DeleteSubscriptionDeployment(ctx, s.subscriptionId, s.name, options, progress)
 }
 
 // Deploy a given template with a set of parameters.

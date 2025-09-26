@@ -8,8 +8,16 @@
           }
         }
       },
+      "rg-scope": {
+        "type": "parameter.v0",
+        "value": "{rg-scope.inputs.value}",
+        "inputs": {
+          "value": {
+          }
+        }
+      },
       "test": {
-        "type": "azure.bicep.v0",
+        "type": "azure.bicep.v1",
         "path": "test.bicep",
         "params": {
           "test": "{parameter.value}",
@@ -19,6 +27,9 @@
             "one",
             "two"
           ]
+        },
+        "scope": {
+          "resourceGroup": "{rg-scope.value}"
         }
       },
       "administrator-login": {
@@ -38,9 +49,14 @@
           }
         }
       },
+      "kv": {
+        "type": "azure.bicep.v0",
+        "connectionString": "{kv.outputs.kvUri}",
+        "path": "kv.bicep"
+      },
       "postgres-2": {
         "type": "azure.bicep.v0",
-        "connectionString": "{postgres-2.secretOutputs.connectionString}",
+        "connectionString": "{kv.secrets.connectionstrings--db}",
         "path": "aspire.hosting.azure.bicep.postgres.bicep",
         "params": {
           "serverName": "postgres-2",
@@ -93,7 +109,8 @@
         "path": "aspire.hosting.azure.bicep.appinsights.bicep",
         "params": {
           "appInsightsName": "ai",
-          "logAnalyticsWorkspaceId": ""
+          "logAnalyticsWorkspaceId": "",
+          "userPrincipalId": "fixed-value-to-test-userPrincipalId-convention"
         }
       },
       "sql": {

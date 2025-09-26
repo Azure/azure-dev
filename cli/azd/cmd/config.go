@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cmd
 
 import (
@@ -88,7 +91,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 			Footer:      getCmdConfigHelpFooter,
 		},
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupConfig,
+			RootLevelHelp: actions.CmdGroupManage,
 		},
 	})
 

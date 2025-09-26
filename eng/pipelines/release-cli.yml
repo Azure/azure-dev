@@ -10,6 +10,7 @@ trigger:
       - eng/pipelines/release-cli.yml
       - /eng/pipelines/templates/jobs/build-cli.yml
       - /eng/pipelines/templates/jobs/cross-build-cli.yml
+      - /eng/pipelines/templates/variables/image.yml
 
 pr:
   paths:
@@ -18,6 +19,8 @@ pr:
       - cli/
       - eng/pipelines/release-cli.yml
       - eng/pipelines/templates/steps/publish-cli.yml
+    exclude:
+      - cli/azd/docs/**
 
 extends: 
   template: /eng/pipelines/templates/stages/1es-redirect.yml
@@ -56,6 +59,10 @@ extends:
               Codeql.Enabled: true
               Codeql.SkipTaskAutoInjection: false
               Codeql.BuildIdentifier: cli_linux
+              # Disable cgo in the x64 Linux build. This will also statically
+              # link the resulting binary which increases backwards 
+              # compatibility with older verisons of Linux.
+              CGO_ENABLED: 0
           Mac:
             Pool: Azure Pipelines
             OSVmImage: $(MACVMIMAGE)

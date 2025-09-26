@@ -37,7 +37,7 @@ func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec
 
 // Version is the minimum version of GitHub cli that we require (and the one we fetch when we fetch gh on
 // behalf of a user).
-var Version semver.Version = semver.MustParse("2.55.0")
+var Version semver.Version = semver.MustParse("2.80.0")
 
 // newGitHubCliImplementation is like NewGitHubCli but allows providing a custom transport to use when downloading the
 // GitHub CLI, for testing purposes.
@@ -49,7 +49,7 @@ func newGitHubCliImplementation(
 	acquireGitHubCliImpl getGitHubCliImplementation,
 	extractImplementation extractGitHubCliFromFileImplementation,
 ) (*Cli, error) {
-	if override := os.Getenv("AZD_GH_CLI_TOOL_PATH"); override != "" {
+	if override := os.Getenv("AZD_GH_TOOL_PATH"); override != "" {
 		log.Printf("using external github cli tool: %s", override)
 		cli := &Cli{
 			path:          override,
@@ -135,12 +135,12 @@ func (cli *Cli) CheckInstalled(ctx context.Context) error {
 func expectedVersionInstalled(ctx context.Context, commandRunner exec.CommandRunner, binaryPath string) bool {
 	ghVersion, err := tools.ExecuteCommand(ctx, commandRunner, binaryPath, "--version")
 	if err != nil {
-		log.Printf("checking GitHub CLI version: %s", err.Error())
+		log.Printf("checking GitHub CLI version: %v", err)
 		return false
 	}
 	ghSemver, err := tools.ExtractVersion(ghVersion)
 	if err != nil {
-		log.Printf("converting to semver version fails: %s", err.Error())
+		log.Printf("converting to semver version fails: %v", err)
 		return false
 	}
 	if ghSemver.LT(Version) {
@@ -232,6 +232,22 @@ func ghOutputToList(output string) []string {
 	return result
 }
 
+func ghOutputToMap(output string) (map[string]string, error) {
+	lines := strings.Split(output, "\n")
+	result := map[string]string{}
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		valueParts := strings.Split(line, "\t")
+		if len(valueParts) < 2 {
+			return nil, fmt.Errorf("unexpected format to parse string to map: %s", line)
+		}
+		result[valueParts[0]] = valueParts[1]
+	}
+	return result, nil
+}
+
 func (cli *Cli) ListSecrets(ctx context.Context, repoSlug string) ([]string, error) {
 	runArgs := cli.newRunArgs("-R", repoSlug, "secret", "list")
 	output, err := cli.run(ctx, runArgs)
@@ -241,13 +257,24 @@ func (cli *Cli) ListSecrets(ctx context.Context, repoSlug string) ([]string, err
 	return ghOutputToList(output.Stdout), nil
 }
 
-func (cli *Cli) ListVariables(ctx context.Context, repoSlug string) ([]string, error) {
-	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "list")
+type ListVariablesOptions struct {
+	Environment string
+}
+
+//nolint:lll
+func (cli *Cli) ListVariables(ctx context.Context, repoSlug string, options *ListVariablesOptions) (map[string]string, error) {
+	args := []string{"-R", repoSlug, "variable", "list"}
+
+	if options != nil && options.Environment != "" {
+		args = append(args, "--env", options.Environment)
+	}
+
+	runArgs := cli.newRunArgs(args...)
 	output, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed running gh secret list: %w", err)
 	}
-	return ghOutputToList(output.Stdout), nil
+	return ghOutputToMap(output.Stdout)
 }
 
 func (cli *Cli) SetSecret(ctx context.Context, repoSlug string, name string, value string) error {
@@ -259,8 +286,19 @@ func (cli *Cli) SetSecret(ctx context.Context, repoSlug string, name string, val
 	return nil
 }
 
-func (cli *Cli) SetVariable(ctx context.Context, repoSlug string, name string, value string) error {
-	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "set", name).WithStdIn(strings.NewReader(value))
+type SetVariableOptions struct {
+	Environment string
+}
+
+//nolint:lll
+func (cli *Cli) SetVariable(ctx context.Context, repoSlug string, name string, value string, options *SetVariableOptions) error {
+	args := []string{"-R", repoSlug, "variable", "set", name}
+
+	if options != nil && options.Environment != "" {
+		args = append(args, "--env", options.Environment)
+	}
+
+	runArgs := cli.newRunArgs(args...).WithStdIn(strings.NewReader(value))
 	_, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh variable set: %w", err)
@@ -408,6 +446,30 @@ func (cli *Cli) GitHubActionsExists(ctx context.Context, repoSlug string) (bool,
 	return true, nil
 }
 
+func (cli *Cli) CreateEnvironmentIfNotExist(ctx context.Context, repoName string, envName string) error {
+	// Doc: https://docs.github.com/en/rest/deployments/environments?apiVersion=2022-11-28#create-or-update-an-environment
+	runArgs := cli.newRunArgs("api",
+		"-X", "PUT",
+		fmt.Sprintf("/repos/%s/environments/%s", repoName, envName),
+		"-H", "Accept: application/vnd.github+json",
+	)
+
+	_, err := cli.run(ctx, runArgs)
+	return err
+}
+
+func (cli *Cli) DeleteEnvironment(ctx context.Context, repoName string, envName string) error {
+	// Doc: https://docs.github.com/en/rest/deployments/environments?apiVersion=2022-11-28#delete-an-environment
+	runArgs := cli.newRunArgs("api",
+		"-X", "DELETE",
+		fmt.Sprintf("/repos/%s/environments/%s", repoName, envName),
+		"-H", "Accept: application/vnd.github+json",
+	)
+
+	_, err := cli.run(ctx, runArgs)
+	return err
+}
+
 func (cli *Cli) newRunArgs(args ...string) exec.RunArgs {
 
 	runArgs := exec.NewRunArgs(cli.path, args...)
@@ -517,7 +579,7 @@ func extractFromTar(src, dst string) (string, error) {
 		// cspell: disable-next-line `Typeflag` is comming fron *tar.Header
 		if fileHeader.Typeflag == tar.TypeReg && fileName == "gh" {
 			filePath := filepath.Join(dst, fileName)
-			ghCliFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(fileHeader.Mode))
+			ghCliFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fileHeader.FileInfo().Mode())
 			if err != nil {
 				return extractedAt, err
 			}
@@ -585,7 +647,7 @@ func downloadGh(
 		return fmt.Errorf("unsupported platform")
 	}
 
-	// example: https://github.com/cli/cli/releases/download/v2.55.0/gh_2.55.0_linux_arm64.rpm
+	// example: https://github.com/cli/cli/releases/download/v2.80.0/gh_2.80.0_linux_arm64.rpm
 	ghReleaseUrl := fmt.Sprintf("https://github.com/cli/cli/releases/download/v%s/%s", ghVersion, releaseName)
 
 	log.Printf("downloading github cli release %s -> %s", ghReleaseUrl, releaseName)

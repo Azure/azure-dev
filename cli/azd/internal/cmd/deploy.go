@@ -8,6 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -16,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -24,13 +28,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 type DeployFlags struct {
-	serviceName string
+	ServiceName string
 	All         bool
 	fromPackage string
 	global      *internal.GlobalCommandOptions
@@ -46,7 +49,7 @@ func (d *DeployFlags) BindNonCommon(
 	local *pflag.FlagSet,
 	global *internal.GlobalCommandOptions) {
 	local.StringVar(
-		&d.serviceName,
+		&d.ServiceName,
 		"service",
 		"",
 		//nolint:lll
@@ -71,7 +74,8 @@ func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		&d.fromPackage,
 		"from-package",
 		"",
-		"Deploys the application from an existing package.",
+		//nolint:lll
+		"Deploys the packaged service located at the provided path. Supports zipped file packages (file path) or container images (image tag).",
 	)
 }
 
@@ -96,7 +100,7 @@ func NewDeployFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *internal
 func NewDeployCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy <service>",
-		Short: "Deploy the application's code to Azure.",
+		Short: "Deploy your project code to Azure.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 
@@ -113,7 +117,7 @@ type DeployAction struct {
 	serviceManager      project.ServiceManager
 	resourceManager     project.ResourceManager
 	accountManager      account.Manager
-	azCli               azcli.AzCli
+	azCli               *azapi.AzureClient
 	portalUrlBase       string
 	formatter           output.Formatter
 	writer              io.Writer
@@ -134,7 +138,7 @@ func NewDeployAction(
 	environment *environment.Environment,
 	accountManager account.Manager,
 	cloud *cloud.Cloud,
-	azCli azcli.AzCli,
+	azCli *azapi.AzureClient,
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	formatter output.Formatter,
@@ -169,12 +173,10 @@ type DeploymentResult struct {
 }
 
 func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	targetServiceName := da.flags.serviceName
+	targetServiceName := da.flags.ServiceName
 	if len(da.args) == 1 {
 		targetServiceName = da.args[0]
 	}
-
-	serviceNameWarningCheck(da.console, da.flags.serviceName, "deploy")
 
 	if da.env.GetSubscriptionId() == "" {
 		return nil, errors.New(
@@ -249,16 +251,18 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 
 		var packageResult *project.ServicePackageResult
+		var publishResult *project.ServicePublishResult
+
 		if da.flags.fromPackage != "" {
 			// --from-package set, skip packaging
 			packageResult = &project.ServicePackageResult{
 				PackagePath: da.flags.fromPackage,
 			}
 		} else {
-			//  --from-package not set, package the application
+			//  --from-package not set, automatically package the application
 			packageResult, err = async.RunWithProgress(
 				func(packageProgress project.ServiceProgress) {
-					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, packageProgress.Message)
+					progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
 					da.console.ShowSpinner(ctx, progressMessage, input.Step)
 				},
 				func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePackageResult, error) {
@@ -266,11 +270,27 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				},
 			)
 
-			// do not stop progress here as next step is to deploy
+			// do not stop progress here as next step is to publish
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, err
 			}
+		}
+
+		publishResult, err = async.RunWithProgress(
+			func(publishProgress project.ServiceProgress) {
+				progressMessage := fmt.Sprintf("Publishing service %s (%s)", svc.Name, publishProgress.Message)
+				da.console.ShowSpinner(ctx, progressMessage, input.Step)
+			},
+			func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePublishResult, error) {
+				return da.serviceManager.Publish(ctx, svc, packageResult, progress, nil)
+			},
+		)
+
+		// do not stop progress here as next step is to deploy
+		if err != nil {
+			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, err
 		}
 
 		deployResult, err := async.RunWithProgress(
@@ -279,9 +299,16 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				da.console.ShowSpinner(ctx, progressMessage, input.Step)
 			},
 			func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceDeployResult, error) {
-				return da.serviceManager.Deploy(ctx, svc, packageResult, progress)
+				return da.serviceManager.Deploy(ctx, svc, packageResult, publishResult, progress)
 			},
 		)
+
+		// clean up for packages automatically created in temp dir
+		if da.flags.fromPackage == "" && strings.HasPrefix(packageResult.PackagePath, os.TempDir()) {
+			if err := os.RemoveAll(packageResult.PackagePath); err != nil {
+				log.Printf("failed to remove temporary package: %s : %s", packageResult.PackagePath, err)
+			}
+		}
 
 		da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 		if err != nil {

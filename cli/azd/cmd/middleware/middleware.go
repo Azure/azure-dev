@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package middleware
 
 import (
@@ -95,7 +98,7 @@ func (r *MiddlewareRunner) RunAction(
 
 			var middleware Middleware
 			if err := actionContainer.ResolveNamed(middlewareName, &middleware); err != nil {
-				log.Printf("failed resolving middleware '%s' : %s\n", middlewareName, err.Error())
+				log.Printf("failed resolving middleware '%s' : %v\n", middlewareName, err)
 			}
 
 			// It is an expected scenario that the middleware cannot be resolved

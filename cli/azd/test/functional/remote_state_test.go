@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cli_test
 
 import (
@@ -14,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/az"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/recording"
@@ -75,13 +79,15 @@ func createBlobClient(
 	}
 
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())
-
+	azCli, err := az.NewCli(mockContext.CommandRunner)
+	require.NoError(t, err)
 	authManager, err := auth.NewManager(
 		fileConfigManager,
 		config.NewUserConfigManager(fileConfigManager),
 		cloud.AzurePublic(),
 		httpClient, mockContext.Console,
 		auth.ExternalAuthConfiguration{},
+		azCli,
 	)
 	require.NoError(t, err)
 
@@ -103,6 +109,7 @@ func runTestWithRemoteState(t *testing.T, testFunc remoteStateTestFunc) {
 	envName := randomOrStoredEnvName(session)
 
 	cli, env := provisionRemoteStateStorage(t, ctx, envName, session)
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 	defer destroyRemoteStateStorage(t, ctx, cli)
 
 	accountConfig := &storage.AccountConfig{

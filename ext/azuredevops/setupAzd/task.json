@@ -8,8 +8,8 @@
     "category": "Utility",
     "author": "AzureDeveloperCLI",
     "version": {
-        "Major": 0,
-        "Minor": 13,
+        "Major": 1,
+        "Minor": 1,
         "Patch": 0
     },
     "instanceNameFormat": "Installs azd: $(rootFolder)",
@@ -25,6 +25,10 @@
         "Node10": {
             "target": "index.js",
             "argumentFormat": ""
+        },
+        "Node20_1": {
+          "target": "index.js",
+          "argumentFormat": ""
         }
     }
 }

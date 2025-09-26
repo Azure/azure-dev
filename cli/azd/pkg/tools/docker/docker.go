@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package docker
 
 import (
@@ -247,13 +250,14 @@ func isSupportedDockerVersion(cliOutput string) (bool, error) {
 	return false, fmt.Errorf("could not determine version from docker version string: %s", version)
 }
 func (d *Cli) CheckInstalled(ctx context.Context) error {
-	err := tools.ToolInPath("docker")
+	toolName := d.Name()
+	err := d.commandRunner.ToolInPath("docker")
 	if err != nil {
 		return err
 	}
 	dockerRes, err := tools.ExecuteCommand(ctx, d.commandRunner, "docker", "--version")
 	if err != nil {
-		return fmt.Errorf("checking %s version: %w", d.Name(), err)
+		return fmt.Errorf("checking %s version: %w", toolName, err)
 	}
 	log.Printf("docker version: %s", dockerRes)
 	supported, err := isSupportedDockerVersion(dockerRes)
@@ -261,7 +265,11 @@ func (d *Cli) CheckInstalled(ctx context.Context) error {
 		return err
 	}
 	if !supported {
-		return &tools.ErrSemver{ToolName: d.Name(), VersionInfo: d.versionInfo()}
+		return &tools.ErrSemver{ToolName: toolName, VersionInfo: d.versionInfo()}
+	}
+	// Check if docker daemon is running
+	if _, err := tools.ExecuteCommand(ctx, d.commandRunner, "docker", "ps"); err != nil {
+		return fmt.Errorf("the %s daemon is not running, please start the %s service: %w", toolName, toolName, err)
 	}
 	return nil
 }
@@ -272,6 +280,19 @@ func (d *Cli) InstallUrl() string {
 
 func (d *Cli) Name() string {
 	return "Docker"
+}
+
+// IsContainerdEnabled checks if Docker is using containerd as the image store
+func (d *Cli) IsContainerdEnabled(ctx context.Context) (bool, error) {
+	result, err := d.executeCommand(ctx, "", "system", "info", "--format", "{{.DriverStatus}}")
+	if err != nil {
+		return false, fmt.Errorf("checking docker driver status: %w", err)
+	}
+
+	driverStatus := strings.TrimSpace(result.Stdout)
+
+	// Check for containerd snapshotter which indicates containerd image store is enabled
+	return strings.Contains(driverStatus, "io.containerd.snapshotter.v1"), nil
 }
 
 func (d *Cli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {

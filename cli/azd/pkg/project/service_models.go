@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package project
 
 import (
@@ -93,9 +96,37 @@ func (spr *ServicePackageResult) MarshalJSON() ([]byte, error) {
 	return json.Marshal(*spr)
 }
 
+// ServicePublishResult is the result of a successful Publish operation for services.
+type ServicePublishResult struct {
+	Package *ServicePackageResult `json:"package"`
+	// For container services: ContainerPublishDetails
+	Details interface{} `json:"details,omitempty"`
+}
+
+// ContainerPublishDetails contains publish information specific to container-based services
+type ContainerPublishDetails struct {
+	// Fully qualified image name that was pushed
+	RemoteImage string `json:"remoteImage"`
+}
+
+// Supports rendering messages for UX items
+func (spr *ServicePublishResult) ToString(currentIndentation string) string {
+	if containerDetails, ok := spr.Details.(*ContainerPublishDetails); ok && containerDetails.RemoteImage != "" {
+		return fmt.Sprintf("%s- Remote Image: %s\n", currentIndentation, output.WithLinkFormat(containerDetails.RemoteImage))
+	}
+
+	// Empty since there's no relevant publish information to display
+	return ""
+}
+
+func (spr *ServicePublishResult) MarshalJSON() ([]byte, error) {
+	return json.Marshal(*spr)
+}
+
 // ServiceDeployResult is the result of a successful Deploy operation
 type ServiceDeployResult struct {
 	Package *ServicePackageResult `json:"package"`
+	Publish *ServicePublishResult `json:"publish"`
 	// Related Azure resource ID
 	TargetResourceId string            `json:"targetResourceId"`
 	Kind             ServiceTargetKind `json:"kind"`

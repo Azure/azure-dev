@@ -4,7 +4,7 @@
 
 import * as http from 'http';
 import { randomBytes } from 'crypto';
-import { AccessToken, TokenCredential } from '@azure/core-auth';
+import type { AccessToken, TokenCredential } from '@azure/core-auth';
 import { isNotSignedInError } from './VsCodeAuthenticationCredential';
 import { AddressInfo } from 'net';
 

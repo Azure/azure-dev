@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package templates
 
 import (
@@ -14,10 +17,12 @@ import (
 )
 
 type awesomeAzdTemplate struct {
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	Source      string   `json:"source"`
-	Tags        []string `json:"tags"`
+	Title            string   `json:"title"`
+	Description      string   `json:"description"`
+	Source           string   `json:"source"`
+	Tags             []string `json:"tags"`
+	AzureServiceTags []string `json:"azureServices"`
+	LanguageTags     []string `json:"languages"`
 }
 
 // newAwesomeAzdTemplateSource creates a new template source from the awesome-azd templates json file.
@@ -71,7 +76,7 @@ func newAwesomeAzdTemplateSource(
 			Name:           template.Title,
 			Description:    template.Description,
 			RepositoryPath: repoPath,
-			Tags:           template.Tags,
+			Tags:           append(append(template.Tags, template.AzureServiceTags...), template.LanguageTags...),
 		})
 	}
 

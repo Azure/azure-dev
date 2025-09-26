@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package project
 
 import (
@@ -18,12 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/blang/semver/v4"
-	"gopkg.in/yaml.v3"
-)
-
-const (
-	//nolint:lll
-	projectSchemaAnnotation = "# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json"
+	"github.com/braydonk/yaml"
 )
 
 func New(ctx context.Context, projectFilePath string, projectName string) (*ProjectConfig, error) {
@@ -72,14 +70,26 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		}
 	}
 
+	if err := projectConfig.Infra.Validate(); err != nil {
+		return nil, err
+	}
+
 	var err error
 	projectConfig.Infra.Provider, err = provisioning.ParseProvider(projectConfig.Infra.Provider)
 	if err != nil {
 		return nil, fmt.Errorf("parsing project %s: %w", projectConfig.Name, err)
 	}
 
+	for _, layer := range projectConfig.Infra.Layers {
+		layer.Provider = projectConfig.Infra.Provider
+	}
+
 	if projectConfig.Infra.Path == "" {
 		projectConfig.Infra.Path = "infra"
+	}
+
+	if projectConfig.Infra.Module == "" {
+		projectConfig.Infra.Module = DefaultModule
 	}
 
 	if strings.Contains(projectConfig.Infra.Path, "\\") && !strings.Contains(projectConfig.Infra.Path, "/") {
@@ -135,6 +145,11 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		svc.OutputPath = filepath.FromSlash(svc.OutputPath)
 	}
 
+	for key, svc := range projectConfig.Resources {
+		svc.Name = key
+		svc.Project = &projectConfig
+	}
+
 	return &projectConfig, nil
 }
 
@@ -152,6 +167,31 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 	projectConfig, err := Parse(ctx, yaml)
 	if err != nil {
 		return nil, fmt.Errorf("parsing project file: %w", err)
+	}
+
+	projectConfig.Path = filepath.Dir(projectFilePath)
+
+	// complement the project config with hooks defined in the infra path using the syntax `<moduleName>.hooks.yaml`
+	// for example `main.hooks.yaml`
+	hooksDefinedAtInfraPath, err := hooksFromInfraModule(
+		filepath.Join(projectConfig.Path, projectConfig.Infra.Path),
+		projectConfig.Infra.Module)
+	if err != nil {
+		return nil, fmt.Errorf("failed getting hooks from infra path, %w", err)
+	}
+	// Merge the hooks defined at the infra path with the hooks defined in the project configuration
+	if len(hooksDefinedAtInfraPath) > 0 && projectConfig.Hooks == nil {
+		projectConfig.Hooks = make(map[string][]*ext.HookConfig)
+	}
+	for hookName, externalHookList := range hooksDefinedAtInfraPath {
+		if hookListFromAzureYaml, hookExists := projectConfig.Hooks[hookName]; hookExists {
+			mergedHooks := make([]*ext.HookConfig, 0, len(hookListFromAzureYaml)+len(externalHookList))
+			mergedHooks = append(mergedHooks, hookListFromAzureYaml...)
+			mergedHooks = append(mergedHooks, externalHookList...)
+			projectConfig.Hooks[hookName] = mergedHooks
+			continue
+		}
+		projectConfig.Hooks[hookName] = externalHookList
 	}
 
 	if projectConfig.Metadata != nil && projectConfig.Metadata.Template != "" {
@@ -187,7 +227,6 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 		tracing.SetUsageAttributes(fields.ProjectServiceHostsKey.StringSlice(hosts))
 	}
 
-	projectConfig.Path = filepath.Dir(projectFilePath)
 	return projectConfig, nil
 }
 
@@ -252,7 +291,15 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 		return fmt.Errorf("marshalling project yaml: %w", err)
 	}
 
-	projectFileContents := bytes.NewBufferString(projectSchemaAnnotation + "\n\n")
+	version := "v1.0"
+	if projectConfig.MetaSchemaVersion != "" {
+		version = projectConfig.MetaSchemaVersion
+	}
+
+	annotation := fmt.Sprintf(
+		"# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/%s/azure.yaml.json",
+		version)
+	projectFileContents := bytes.NewBufferString(annotation + "\n\n")
 	_, err = projectFileContents.Write(projectBytes)
 	if err != nil {
 		return fmt.Errorf("preparing new project file contents: %w", err)
@@ -263,7 +310,28 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 		return fmt.Errorf("saving project file: %w", err)
 	}
 
-	projectConfig.Path = projectFilePath
+	projectConfig.Path = filepath.Dir(projectFilePath)
 
 	return nil
+}
+
+// hooksFromInfraModule check if there is file named azd.hooks.yaml in the service path
+// and return the hooks configuration.
+func hooksFromInfraModule(infraPath, moduleName string) (HooksConfig, error) {
+	hooksPath := filepath.Join(infraPath, moduleName+".hooks.yaml")
+	if _, err := os.Stat(hooksPath); os.IsNotExist(err) {
+		return nil, nil
+	}
+	hooksFile, err := os.ReadFile(hooksPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading hooks from '%s', %w", hooksPath, err)
+	}
+
+	// open hooksPath into a byte array and unmarshal it into a map[string]*ext.HookConfig
+	hooks := make(HooksConfig)
+	if err := yaml.Unmarshal(hooksFile, &hooks); err != nil {
+		return nil, fmt.Errorf("failed unmarshalling hooks from '%s', %w", hooksPath, err)
+	}
+
+	return hooks, nil
 }

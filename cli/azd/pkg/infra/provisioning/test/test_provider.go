@@ -10,7 +10,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -54,7 +53,7 @@ func (t *TestProvider) EnsureEnv(ctx context.Context) error {
 		t.envManager,
 		t.env,
 		t.prompters,
-		func(_ account.Location) bool { return true },
+		provisioning.EnsureSubscriptionAndLocationOptions{},
 	)
 }
 
@@ -130,6 +129,11 @@ func (p *TestProvider) Destroy(
 	}
 
 	return &destroyResult, nil
+}
+
+func (p *TestProvider) Parameters(ctx context.Context) ([]provisioning.Parameter, error) {
+	// not supported (no-op)
+	return nil, nil
 }
 
 func NewTestProvider(

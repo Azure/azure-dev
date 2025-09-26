@@ -1,21 +1,26 @@
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-syntax
 
-/**               @ellismg @wbreza
+/**                @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050
 
-/cli/             @ellismg @wbreza @vhvb1989 @hemarina @weikanglim
-/cli/installer/   @ellismg @danieljurek
+/cli/              @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050
+/cli/installer/    @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
 
-/ext/             @karolz-ms @ellismg
+/ext/              @karolz-ms @vhvb1989 @tg-msft @rajeshkamal5050
 
-/generators/repo/ @wbreza @ellismg @danieljurek
+/ext/azuredevops/  @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
 
-/.github/         @danieljurek @ellismg
+/ext/devcontainer/ @vhvb1989 @hemarina @tg-msft @rajeshkamal5050
 
-/eng/             @danieljurek @ellismg
+/ext/vscode/       @bwateratmsft @vhvb1989 @tg-msft @rajeshkamal5050 @karolz-ms
 
-/schemas/         @karolz-ms @ellismg @wbreza
+/.github/          @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
 
-/templates/       @jongio @wbreza
+/.config/1espt/    @Azure/azure-sdk-eng
 
-# Exclude @jongio from version bump PRs opened by dependabot
-/templates/**/package-lock.json     @wbreza
+/eng/              @danieljurek @vhvb1989 @tg-msft @rajeshkamal5050
+
+/schemas/          @wbreza @vhvb1989 @tg-msft @rajeshkamal5050
+
+/.github/CODEOWNERS   @rajeshkamal5050 @Azure/azure-sdk-eng
+
+/cli/azd/extensions/azure.foundry.ai.agents/  @wbreza @vhvb1989 @hemarina @weikanglim @JeffreyCA @tg-msft @rajeshkamal5050 @trangevi @travisw

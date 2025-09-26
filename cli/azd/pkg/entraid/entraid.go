@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package entraid
 
 import (
@@ -11,7 +14,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -31,6 +34,34 @@ type AzureCredentials struct {
 	ClientSecret   string `json:"clientSecret"`
 	SubscriptionId string `json:"subscriptionId"`
 	TenantId       string `json:"tenantId"`
+}
+
+// ServiceTreeNullValueError represents an error that occurs when a null value is provided for ServiceManagementReference
+type ServiceTreeNullValueError struct {
+	ApplicationName string
+	Err             error
+}
+
+func (e *ServiceTreeNullValueError) Error() string {
+	return fmt.Sprintf("ServiceTreeNullValueProvided error when creating application '%s': %v", e.ApplicationName, e.Err)
+}
+
+func (e *ServiceTreeNullValueError) Unwrap() error {
+	return e.Err
+}
+
+// ServiceTreeInvalidError represents an error that occurs when invalid value is provider for service tree id
+type ServiceTreeInvalidError struct {
+	ApplicationName string
+	Err             error
+}
+
+func (e *ServiceTreeInvalidError) Error() string {
+	return fmt.Sprintf("ServiceTreeInvalidError error when creating application '%s': %v", e.ApplicationName, e.Err)
+}
+
+func (e *ServiceTreeInvalidError) Unwrap() error {
+	return e.Err
 }
 
 // EntraIdService provides actions on top of Azure Active Directory (AD)
@@ -57,6 +88,13 @@ type EntraIdService interface {
 		clientId string,
 		federatedCredentials []*graphsdk.FederatedIdentityCredential,
 	) ([]*graphsdk.FederatedIdentityCredential, error)
+	CreateRbac(ctx context.Context, subscriptionId string, scope, roleId, principalId string) error
+	EnsureRoleAssignments(
+		ctx context.Context,
+		subscriptionId string,
+		roleNames []string,
+		servicePrincipal *graphsdk.ServicePrincipal,
+	) error
 }
 
 type entraIdService struct {
@@ -117,6 +155,20 @@ func (ad *entraIdService) CreateOrUpdateServicePrincipal(
 		// Create application
 		application, err = ad.createApplication(ctx, subscriptionId, appIdOrName, options)
 		if err != nil {
+			// Check if the error is specifically "ServiceTreeNullValueProvided"
+			var responseError *azcore.ResponseError
+			if errors.As(err, &responseError) && responseError.ErrorCode == "ServiceTreeNullValueProvided" {
+				return nil, &ServiceTreeNullValueError{
+					ApplicationName: appIdOrName,
+					Err:             err,
+				}
+			}
+			if errors.As(err, &responseError) && responseError.ErrorCode == "ServiceTreeInvalid" {
+				return nil, &ServiceTreeInvalidError{
+					ApplicationName: appIdOrName,
+					Err:             err,
+				}
+			}
 			return nil, err
 		}
 	}
@@ -128,7 +180,7 @@ func (ad *entraIdService) CreateOrUpdateServicePrincipal(
 	}
 
 	// Apply specified role assignments
-	err = ad.ensureRoleAssignments(ctx, subscriptionId, options.RolesToAssign, servicePrincipal)
+	err = ad.EnsureRoleAssignments(ctx, subscriptionId, options.RolesToAssign, servicePrincipal)
 	if err != nil {
 		return nil, fmt.Errorf("failed applying role assignment: %w", err)
 	}
@@ -436,7 +488,7 @@ func (ad *entraIdService) ensureFederatedCredential(
 }
 
 // Applies the Azure selected RBAC role assignments to the specified service principal
-func (ad *entraIdService) ensureRoleAssignments(
+func (ad *entraIdService) EnsureRoleAssignments(
 	ctx context.Context,
 	subscriptionId string,
 	roleNames []string,
@@ -475,6 +527,22 @@ func (ad *entraIdService) ensureRoleAssignment(
 	return nil
 }
 
+func (ad *entraIdService) CreateRbac(
+	ctx context.Context, subscriptionId, scope, roleId, principalId string) error {
+	fullRoleId := fmt.Sprintf("/subscriptions/%s%s", subscriptionId, roleId)
+	return ad.applyRoleAssignmentWithRetryImpl(
+		ctx,
+		subscriptionId,
+		scope,
+		&armauthorization.RoleDefinition{
+			ID:   to.Ptr(fullRoleId),
+			Name: to.Ptr(roleId),
+		},
+		&graphsdk.ServicePrincipal{
+			Id: to.Ptr(principalId),
+		})
+}
+
 // Applies the role assignment to the specified service principal
 // This operation will retry up to 10 times to ensure the new service principal is available in Azure AD
 func (ad *entraIdService) applyRoleAssignmentWithRetry(
@@ -483,12 +551,21 @@ func (ad *entraIdService) applyRoleAssignmentWithRetry(
 	roleDefinition *armauthorization.RoleDefinition,
 	servicePrincipal *graphsdk.ServicePrincipal,
 ) error {
+	scope := azure.SubscriptionRID(subscriptionId)
+	return ad.applyRoleAssignmentWithRetryImpl(ctx, subscriptionId, scope, roleDefinition, servicePrincipal)
+}
+
+func (ad *entraIdService) applyRoleAssignmentWithRetryImpl(
+	ctx context.Context,
+	subscriptionId string,
+	scope string,
+	roleDefinition *armauthorization.RoleDefinition,
+	servicePrincipal *graphsdk.ServicePrincipal,
+) error {
 	roleAssignmentsClient, err := ad.createRoleAssignmentsClient(ctx, subscriptionId)
 	if err != nil {
 		return err
 	}
-
-	scope := azure.SubscriptionRID(subscriptionId)
 	roleAssignmentId := uuid.New().String()
 
 	// There is a lag in the application/service principal becoming available in Azure AD

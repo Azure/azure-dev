@@ -14,18 +14,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type appServiceTarget struct {
 	env *environment.Environment
-	cli azcli.AzCli
+	cli *azapi.AzureClient
 }
 
 // NewAppServiceTarget creates a new instance of the AppServiceTarget
 func NewAppServiceTarget(
 	env *environment.Environment,
-	azCli azcli.AzCli,
+	azCli *azapi.AzureClient,
 ) ServiceTarget {
 	return &appServiceTarget{
 		env: env,
@@ -52,8 +51,7 @@ func (st *appServiceTarget) Package(
 ) (*ServicePackageResult, error) {
 	progress.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
 	zipFilePath, err := createDeployableZip(
-		serviceConfig.Project.Name,
-		serviceConfig.Name,
+		serviceConfig,
 		packageOutput.PackagePath,
 	)
 	if err != nil {
@@ -66,11 +64,23 @@ func (st *appServiceTarget) Package(
 	}, nil
 }
 
+func (st *appServiceTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+	publishOptions *PublishOptions,
+) (*ServicePublishResult, error) {
+	return &ServicePublishResult{}, nil
+}
+
 // Deploys the prepared zip archive using Zip deploy to the Azure App Service resource
 func (st *appServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
+	servicePublishResult *ServicePublishResult,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -83,7 +93,6 @@ func (st *appServiceTarget) Deploy(
 		return nil, fmt.Errorf("failed reading deployment zip file: %w", err)
 	}
 
-	defer os.Remove(packageOutput.PackagePath)
 	defer zipFile.Close()
 
 	progress.SetProgress(NewServiceProgress("Uploading deployment package"))

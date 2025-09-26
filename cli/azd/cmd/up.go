@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cmd
 
 import (
@@ -10,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
@@ -51,7 +53,7 @@ func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFl
 func newUpCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "up",
-		Short: "Provision Azure resources, and deploy your project with a single command.",
+		Short: "Provision and deploy your project to Azure with a single command.",
 	}
 }
 
@@ -80,7 +82,6 @@ func newUpAction(
 	flags *upFlags,
 	console input.Console,
 	env *environment.Environment,
-	_ auth.LoggedInGuard,
 	projectConfig *project.ProjectConfig,
 	provisioningManager *provisioning.Manager,
 	envManager environment.Manager,
@@ -113,7 +114,8 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	err = u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options)
 	if errors.Is(err, bicep.ErrEnsureEnvPreReqBicepCompileFailed) {
 		// If bicep is not available, we continue to prompt for subscription and location unfiltered
-		err = provisioning.EnsureSubscriptionAndLocation(ctx, u.envManager, u.env, u.prompters, nil)
+		err = provisioning.EnsureSubscriptionAndLocation(
+			ctx, u.envManager, u.env, u.prompters, provisioning.EnsureSubscriptionAndLocationOptions{})
 		if err != nil {
 			return nil, err
 		}
@@ -128,6 +130,10 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		upWorkflow = defaultUpWorkflow
 	} else {
 		u.console.Message(ctx, output.WithGrayFormat("Note: Running custom 'up' workflow from azure.yaml"))
+	}
+
+	if u.flags.EnvironmentName != "" {
+		ctx = context.WithValue(ctx, envFlagCtxKey, u.flags.EnvFlag)
 	}
 
 	if err := u.workflowRunner.Run(ctx, upWorkflow); err != nil {

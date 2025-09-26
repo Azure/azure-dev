@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package azsdk
 
 import (
@@ -205,10 +208,12 @@ func logWebAppDeploymentStatus(
 			}
 		}
 
+		errorString += "\n"
 		for _, log := range properties.FailedInstancesLogs {
 			errorString += fmt.Sprintf("Please check the %slogs for more info: %s\n", message, *log)
 		}
 
+		errorString += "\n"
 		if traceId != "" {
 			errorString += fmt.Sprintf("Trace ID: %s\n", traceId)
 		}
@@ -276,6 +281,10 @@ func (c *ZipDeployClient) DeployTrackStatus(
 		resp, err = poller.Poll(ctx)
 		if err != nil {
 			return err
+		}
+
+		if resp.StatusCode == http.StatusInternalServerError {
+			return runtime.NewResponseError(resp)
 		}
 
 		if err := runtime.UnmarshalAsJSON(resp, &response); err != nil {

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package devcenter
 
 import (
@@ -9,7 +12,6 @@ import (
 	"os"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -491,51 +493,12 @@ func (p *ProvisionProvider) pollForProgress(ctx context.Context, deployment infr
 		case <-timer.C:
 			if err := progressDisplay.ReportProgress(ctx, &queryStartTime); err != nil {
 				// We don't want to fail the whole deployment if a progress reporting error occurs
-				log.Printf("error while reporting progress: %s", err.Error())
+				log.Printf("error while reporting progress: %v", err)
 			}
 
 			timer.Reset(regularDelay)
 		}
 	}
-}
-
-func mapBicepTypeToInterfaceType(s string) provisioning.ParameterType {
-	switch s {
-	case "String", "string", "secureString", "securestring":
-		return provisioning.ParameterTypeString
-	case "Bool", "bool":
-		return provisioning.ParameterTypeBoolean
-	case "Int", "int":
-		return provisioning.ParameterTypeNumber
-	case "Object", "object", "secureObject", "secureobject":
-		return provisioning.ParameterTypeObject
-	case "Array", "array":
-		return provisioning.ParameterTypeArray
-	default:
-		panic(fmt.Sprintf("unexpected bicep type: '%s'", s))
-	}
-}
-
-// Creates a normalized view of the azure output parameters and resolves inconsistencies in the output parameter name
-// casings.
-func createOutputParameters(
-	deploymentOutputs map[string]azapi.AzCliDeploymentOutput,
-) map[string]provisioning.OutputParameter {
-	outputParams := map[string]provisioning.OutputParameter{}
-
-	for key, azureParam := range deploymentOutputs {
-		// To support BYOI (bring your own infrastructure) scenarios we will default to UPPER when canonical casing
-		// is not found in the parameters file to workaround strange azure behavior with OUTPUT values that look
-		// like `azurE_RESOURCE_GROUP`
-		paramName := strings.ToUpper(key)
-
-		outputParams[paramName] = provisioning.OutputParameter{
-			Type:  mapBicepTypeToInterfaceType(azureParam.Type),
-			Value: azureParam.Value,
-		}
-	}
-
-	return outputParams
 }
 
 func createInputParameters(
@@ -567,4 +530,9 @@ func hasInfraTemplates(path string) bool {
 	}
 
 	return len(entries) > 0
+}
+
+func (p *ProvisionProvider) Parameters(ctx context.Context) ([]provisioning.Parameter, error) {
+	// not supported (no-op)
+	return nil, nil
 }

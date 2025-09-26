@@ -12,15 +12,19 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -63,6 +67,14 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		// Execute the initialize method, which should trigger the confirmation prompt
 		err = manager.initialize(ctx, "")
 		assert.NoError(t, err)
+		manager.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		manager.configOptions = &configurePipelineOptions{}
+		err = manager.ensurePipelineDefinition(ctx)
+		assert.NoError(t, err)
 
 		// Check if the azure-dev.yml file was created in the expected path
 		gitHubYmlPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
@@ -78,8 +90,16 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		simulateUserInteraction(mockContext, ciProviderGitHubActions, false)
 
-		_, err := createPipelineManager(mockContext, azdContext, nil, nil)
+		m, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		// No error for GitHub, just a message to the console
+		assert.NoError(t, err)
+		m.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		m.configOptions = &configurePipelineOptions{}
+		err = m.ensurePipelineDefinition(ctx)
 		assert.NoError(t, err)
 		assert.Contains(t,
 			mockContext.Console.Output(),
@@ -97,8 +117,15 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		simulateUserInteraction(mockContext, ciProviderAzureDevOps, false)
 
-		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
-		assert.Nil(t, manager)
+		m, err := createPipelineManager(mockContext, azdContext, nil, nil)
+		assert.NoError(t, err)
+		m.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		m.configOptions = &configurePipelineOptions{}
+		err = m.ensurePipelineDefinition(ctx)
 		assert.EqualError(t, err, fmt.Sprintf(
 			"%s provider selected, but no pipeline files were found in any expected directories:\n%s\n"+
 				"Please add pipeline files and try again.",
@@ -120,6 +147,15 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		// Execute the initialize method, which should trigger the confirmation prompt
 		err = manager.initialize(ctx, "")
+		assert.NoError(t, err)
+		manager.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		manager.configOptions = &configurePipelineOptions{}
+		err = manager.ensurePipelineDefinition(ctx)
+		assert.NoError(t, err)
 		verifyProvider(t, manager, ciProviderAzureDevOps, err)
 
 		// Check if the azure-dev.yml file was created in the expected path
@@ -139,7 +175,14 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		simulateUserInteraction(mockContext, ciProviderAzureDevOps, false)
 
 		manager, err := createPipelineManager(mockContext, azdContext, env, nil)
-		assert.Nil(t, manager)
+		assert.NoError(t, err)
+		manager.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		manager.configOptions = &configurePipelineOptions{}
+		err = manager.ensurePipelineDefinition(ctx)
 		assert.EqualError(t, err, fmt.Sprintf(
 			"%s provider selected, but no pipeline files were found in any expected directories:\n%s\n"+
 				"Please add pipeline files and try again.",
@@ -173,8 +216,16 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		simulateUserInteraction(mockContext, ciProviderGitHubActions, false)
 
-		_, err := createPipelineManager(mockContext, azdContext, env, nil)
+		m, err := createPipelineManager(mockContext, azdContext, env, nil)
 		// No error for GitHub, just a message to the console
+		assert.NoError(t, err)
+		m.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		m.configOptions = &configurePipelineOptions{}
+		err = m.ensurePipelineDefinition(ctx)
 		assert.NoError(t, err)
 		assert.Contains(t,
 			mockContext.Console.Output(),
@@ -321,6 +372,13 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		assert.NotNil(t, manager)
 		assert.NoError(t, err)
 
+		manager.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		manager.configOptions = &configurePipelineOptions{}
+
 		// Execute the initialize method, which should trigger the provider selection prompt
 		err = manager.initialize(ctx, "")
 
@@ -339,6 +397,13 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		assert.NotNil(t, manager)
 		assert.NoError(t, err)
 
+		manager.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		manager.configOptions = &configurePipelineOptions{}
+
 		// Execute the initialize method, which should trigger the provider selection prompt
 		err = manager.initialize(ctx, "")
 
@@ -356,6 +421,13 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		assert.NotNil(t, manager)
 		assert.NoError(t, err)
+
+		manager.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		manager.configOptions = &configurePipelineOptions{}
 
 		// Execute the initialize method, which should trigger the provider selection prompt
 		err = manager.initialize(ctx, "")
@@ -376,6 +448,13 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		assert.NotNil(t, manager)
 		assert.NoError(t, err)
 
+		manager.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		manager.configOptions = &configurePipelineOptions{}
+
 		// Execute the initialize method, which should trigger the provider selection prompt
 		err = manager.initialize(ctx, "")
 
@@ -395,6 +474,13 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		manager, err := createPipelineManager(mockContext, azdContext, nil, nil)
 		assert.NotNil(t, manager)
 		assert.NoError(t, err)
+
+		manager.infra = &project.Infra{
+			Options: provisioning.Options{
+				Provider: provisioning.Bicep,
+			},
+			IsCompose: false}
+		manager.configOptions = &configurePipelineOptions{}
 
 		// Execute the initialize method, which should trigger the provider selection prompt
 		err = manager.initialize(ctx, "")
@@ -533,6 +619,30 @@ func Test_promptForCiFiles(t *testing.T) {
 		assert.NoError(t, err)
 		snapshot.SnapshotT(t, normalizeEOL(content))
 	})
+	t.Run("no files - github selected - Variables and Secrets", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].PipelineDirectories[0])
+		err := os.MkdirAll(path, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderGitHubActions].Files[0])
+		err = generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:    ciProviderGitHubActions,
+			InfraProvider: infraProviderBicep,
+			RepoRoot:      tempDir,
+			HasAppHost:    true,
+			BranchName:    "main",
+			AuthType:      AuthTypeFederated,
+			Variables:     []string{"VAR_1", "VAR_2"},
+			Secrets:       []string{"SECRET_1", "SECRET_2"},
+		})
+		assert.NoError(t, err)
+		// should've created the pipeline
+		assert.FileExists(t, expectedPath)
+		// open the file and check the content
+		content, err := os.ReadFile(expectedPath)
+		assert.NoError(t, err)
+		snapshot.SnapshotT(t, normalizeEOL(content))
+	})
 	t.Run("no files - azdo selected - App host - fed Cred", func(t *testing.T) {
 		tempDir := t.TempDir()
 		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].PipelineDirectories[0])
@@ -612,6 +722,30 @@ func Test_promptForCiFiles(t *testing.T) {
 			HasAppHost:    false,
 			BranchName:    "main",
 			AuthType:      AuthTypeFederated,
+		})
+		assert.NoError(t, err)
+		// should've created the pipeline
+		assert.FileExists(t, expectedPath)
+		// open the file and check the content
+		content, err := os.ReadFile(expectedPath)
+		assert.NoError(t, err)
+		snapshot.SnapshotT(t, normalizeEOL(content))
+	})
+	t.Run("no files - azdo selected - no app host - variables and secrets", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].PipelineDirectories[0])
+		err := os.MkdirAll(path, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+		expectedPath := filepath.Join(tempDir, pipelineProviderFiles[ciProviderAzureDevOps].Files[0])
+		err = generatePipelineDefinition(expectedPath, projectProperties{
+			CiProvider:    ciProviderAzureDevOps,
+			InfraProvider: infraProviderBicep,
+			RepoRoot:      tempDir,
+			HasAppHost:    false,
+			BranchName:    "main",
+			AuthType:      AuthTypeFederated,
+			Variables:     []string{"VAR_1", "VAR_2"},
+			Secrets:       []string{"SECRET_1", "SECRET_2"},
 		})
 		assert.NoError(t, err)
 		// should've created the pipeline
@@ -773,9 +907,39 @@ func createPipelineManager(
 		mockContext.Console,
 		args,
 		mockContext.Container,
-		project.NewImportManager(nil),
+		project.NewImportManager(project.NewDotNetImporter(nil, nil, nil, nil, mockContext.AlphaFeaturesManager)),
 		&mockUserConfigManager{},
+		nil,
+		armmsi.ArmMsiService{},
+		&mockPrompter{},
+		dotnet.NewCli(mockContext.CommandRunner),
 	)
+}
+
+type mockPrompter struct{}
+
+// PromptLocation implements prompt.Prompter.
+func (m *mockPrompter) PromptLocation(
+	ctx context.Context, subId string, msg string,
+	filter prompt.LocationFilterPredicate, defaultLocation *string) (string, error) {
+	return "eastus", nil
+}
+
+// PromptResourceGroup implements prompt.Prompter.
+func (m *mockPrompter) PromptResourceGroup(ctx context.Context, options prompt.PromptResourceOptions) (string, error) {
+	return "test-rg", nil
+}
+
+// PromptResourceGroupFrom implements prompt.Prompter.
+func (m *mockPrompter) PromptResourceGroupFrom(
+	ctx context.Context, subscriptionId string, location string,
+	options prompt.PromptResourceGroupFromOptions) (string, error) {
+	return "test-rg", nil
+}
+
+// PromptSubscription implements prompt.Prompter.
+func (m *mockPrompter) PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error) {
+	return "00000000-0000-0000-0000-000000000000", nil
 }
 
 type mockUserConfigManager struct {

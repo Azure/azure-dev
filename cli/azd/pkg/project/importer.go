@@ -120,6 +120,7 @@ const (
 )
 
 // ProjectInfrastructure parses the project configuration and returns the infrastructure configuration.
+//
 // The configuration can be explicitly defined on azure.yaml using path and module, or in case these values
 // are not explicitly defined, the project importer uses default values to find the infrastructure.
 func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (*Infra, error) {
@@ -136,7 +137,14 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		infraRoot = filepath.Join(projectConfig.Path, infraRoot)
 	}
 
-	// Allow overriding the infrastructure only when path and module exists.
+	// short-circuit: If layers are defined, we know it's an explicit infrastructure
+	if len(projectConfig.Infra.Layers) > 0 {
+		return &Infra{
+			Options: projectConfig.Infra,
+		}, nil
+	}
+
+	// short-circuit: If infra files exist, we know it's an explicit infrastructure
 	if moduleExists, err := pathHasModule(infraRoot, projectConfig.Infra.Module); err == nil && moduleExists {
 		log.Printf("using infrastructure from %s directory", infraRoot)
 		return &Infra{
@@ -144,6 +152,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		}, nil
 	}
 
+	// Temp infra from AppHost
 	for _, svcConfig := range projectConfig.Services {
 		if svcConfig.Language == ServiceLanguageDotNet {
 			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
@@ -162,7 +171,15 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		}
 	}
 
-	return &Infra{}, nil
+	// Temp infra from resources
+	if len(projectConfig.Resources) > 0 {
+		return tempInfra(ctx, projectConfig)
+	}
+
+	// Return default project infra
+	return &Infra{
+		Options: projectConfig.Infra,
+	}, nil
 }
 
 // pathHasModule returns true if there is a file named "<module>" or "<module.bicep>" in path.
@@ -180,18 +197,33 @@ func pathHasModule(path, module string) (bool, error) {
 
 }
 
-func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
+// GenerateAllInfrastructure returns a file system containing all infrastructure for the project,
+// rooted at the project directory.
+func (im *ImportManager) GenerateAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {
 	for _, svcConfig := range projectConfig.Services {
 		if svcConfig.Language == ServiceLanguageDotNet {
-			if len(projectConfig.Services) != 1 {
-				return nil, errNoMultipleServicesWithAppHost
+			if canImport, err := im.dotNetImporter.CanImport(ctx, svcConfig.Path()); canImport {
+				if len(projectConfig.Services) != 1 {
+					return nil, errNoMultipleServicesWithAppHost
+				}
+
+				if svcConfig.Host != ContainerAppTarget {
+					return nil, errAppHostMustTargetContainerApp
+				}
+
+				return im.dotNetImporter.GenerateAllInfrastructure(ctx, projectConfig, svcConfig)
+			} else if err != nil {
+				log.Printf("error checking if %s is an app host project: %v", svcConfig.Path(), err)
 			}
 
-			return im.dotNetImporter.SynthAllInfrastructure(ctx, projectConfig, svcConfig)
 		}
 	}
 
-	return nil, fmt.Errorf("this project does not contain any infrastructure to synthesize")
+	if len(projectConfig.Resources) > 0 {
+		return infraFsForProject(ctx, projectConfig)
+	}
+
+	return nil, fmt.Errorf("this project does not contain any infrastructure to generate")
 }
 
 // Infra represents the (possibly temporarily generated) infrastructure. Call [Cleanup] when done with infrastructure,
@@ -199,6 +231,7 @@ func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConf
 type Infra struct {
 	Options    provisioning.Options
 	cleanupDir string
+	IsCompose  bool
 }
 
 func (i *Infra) Cleanup() error {

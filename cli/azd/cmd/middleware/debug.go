@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package middleware
 
 import (
@@ -50,7 +53,7 @@ func (m *DebugMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 	debug, err := strconv.ParseBool(debugStr)
 	if err != nil {
-		log.Printf("failed converting AZD_DEBUG to boolean: %s", err.Error())
+		log.Printf("failed converting AZD_DEBUG to boolean: %v", err)
 	}
 
 	if !debug {

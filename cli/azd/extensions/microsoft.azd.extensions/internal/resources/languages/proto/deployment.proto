@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext";
+option csharp_namespace = "Microsoft.Azd";
+
+import "models.proto";
+
+service DeploymentService {
+  // Gets the current environment.
+  rpc GetDeployment(EmptyRequest) returns (GetDeploymentResponse);
+
+  // GetDeploymentContext retrieves the current deployment context.
+  rpc GetDeploymentContext(EmptyRequest) returns (GetDeploymentContextResponse);
+}
+
+message GetDeploymentResponse {
+    Deployment deployment = 1;
+}
+
+message GetDeploymentContextResponse {
+    azdext.AzureContext AzureContext = 1;
+}
+
+message Deployment {
+    string id = 1;
+    string location = 2;
+    string deploymentId = 3;
+    string name = 4;
+    string type = 5;
+    map<string, string> tags = 6;
+    map<string,string> outputs = 7;
+    repeated string resources = 8;
+}

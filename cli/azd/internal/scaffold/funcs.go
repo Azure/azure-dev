@@ -1,10 +1,16 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package scaffold
 
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/tidwall/gjson"
 )
 
 // BicepName returns a name suitable for use as a bicep variable name.
@@ -14,6 +20,9 @@ import (
 func BicepName(name string) string {
 	sb := strings.Builder{}
 	separatorStart := -1
+
+	allUpper := isAllUpperCase(name)
+
 	for i := range name {
 		switch name[i] {
 		case '-', '_':
@@ -24,18 +33,17 @@ func BicepName(name string) string {
 			if !isAsciiAlphaNumeric(name[i]) {
 				continue
 			}
-			char := name[i]
-			if separatorStart != -1 {
-				if separatorStart == 0 { // first character should be lowerCase
-					char = lowerCase(name[i])
-				} else {
-					char = upperCase(name[i])
-				}
-				separatorStart = -1
-			}
-
-			if i == 0 {
+			var char byte
+			if separatorStart == 0 || i == 0 { // we are at the start
 				char = lowerCase(name[i])
+				separatorStart = -1
+			} else if separatorStart > 0 { // end of separator, and it's not the first one
+				char = upperCase(name[i])
+				separatorStart = -1
+			} else if allUpper { // when the input is all uppercase, convert to lowercase
+				char = lowerCase(name[i])
+			} else {
+				char = name[i]
 			}
 
 			sb.WriteByte(char)
@@ -45,7 +53,24 @@ func BicepName(name string) string {
 	return sb.String()
 }
 
-// UpperSnakeAlpha returns a name in upper-snake case alphanumeric name separated only by underscores.
+// BicepNameInfix is like BicepName, except that the first character is upper-cased for infix use.
+func BicepNameInfix(name string) string {
+	bicepName := BicepName(name)
+	return capitalizeFirst(bicepName)
+}
+
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return ""
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+func RemoveDotAndDash(name string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(name, ".", ""), "-", "")
+}
+
+// AlphaSnakeUpper returns a name in upper-snake case alphanumeric name separated only by underscores.
 //
 // Non-alphanumeric characters are discarded, while consecutive separators ('-', '_', and '.') are treated
 // as a single underscore separator.
@@ -77,6 +102,33 @@ func AlphaSnakeUpper(name string) string {
 	return sb.String()
 }
 
+// AlphaSnakeUpperFromCasing transforms a camel case or pascal case name into an upper-snake case name.
+func AlphaSnakeUpperFromCasing(name string) string {
+	result := strings.Builder{}
+	for i := range name {
+		c := name[i]
+		if 'A' <= c && c <= 'Z' {
+			if i > 0 && i != len(name)-1 {
+				result.WriteRune('_')
+			}
+		}
+
+		result.WriteByte(upperCase(c))
+	}
+
+	return result.String()
+}
+
+func isAllUpperCase(c string) bool {
+	for i := range c {
+		if 'a' <= c[i] && c[i] <= 'z' {
+			return false
+		}
+	}
+
+	return true
+}
+
 func isAsciiAlphaNumeric(c byte) bool {
 	return ('0' <= c && c <= '9') || ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z')
 }
@@ -95,16 +147,9 @@ func lowerCase(r byte) byte {
 	return r
 }
 
-// Provide a reasonable limit for the container app infix to avoid name length issues
-// This is calculated as follows:
-//  1. Start with max initial length of 32 characters from the Container App name
-//     https://learn.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftapp
-//  2. Prefix abbreviation of 'ca-' from abbreviations.json (4 characters)
-//  3. Bicep resource token (13 characters) + separator '-' (1 character) -- total of 14 characters
+// 32 characters are allowed for the Container App name. See
+// https://learn.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftapp
 //
-// Which leaves us with: 32 - 4 - 14 = 14 characters.
-const containerAppNameInfixMaxLen = 12
-
 // We allow 2 additional characters for wiggle-room. We've seen failures when container app name is exactly at 32.
 const containerAppNameMaxLen = 30
 
@@ -165,16 +210,37 @@ var camelCaseRegex = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 // EnvFormat takes an input parameter like `fooParam` which is expected to be in camel case and returns it in
 // upper snake case with env var template, like `${AZURE_FOO_PARAM}`.
 func EnvFormat(src string) string {
-	snake := strings.ReplaceAll(strings.ToUpper(camelCaseRegex.ReplaceAllString(src, "${1}_${2}")), "-", "_")
-	return fmt.Sprintf("${AZURE_%s}", snake)
+	return fmt.Sprintf("${%s}", AzureSnakeCase(src))
 }
 
-// ContainerAppInfix returns a suitable infix for a container app resource.
-//
-// The name is treated to only contain alphanumeric and dash characters, with no repeated dashes, and no dashes
-// as the first or last character.
-func ContainerAppInfix(name string) string {
-	return containerAppName(name, containerAppNameInfixMaxLen)
+func AzureSnakeCase(src string) string {
+	return fmt.Sprintf(
+		"AZURE_%s", strings.ReplaceAll(strings.ToUpper(camelCaseRegex.ReplaceAllString(src, "${1}_${2}")), "-", "_"))
+}
+
+func HasACA(services []ServiceSpec) bool {
+	return hasHostType(services, ContainerAppKind)
+}
+
+func HasAppService(services []ServiceSpec) bool {
+	return hasHostType(services, AppServiceKind)
+}
+
+func IsACA(host HostKind) bool {
+	return host == ContainerAppKind
+}
+
+func IsAppService(host HostKind) bool {
+	return host == AppServiceKind
+}
+
+func hasHostType(services []ServiceSpec, host HostKind) bool {
+	for _, service := range services {
+		if service.Host == host {
+			return true
+		}
+	}
+	return false
 }
 
 // Formats a parameter value for use in a bicep file.
@@ -190,4 +256,51 @@ func FormatParameter(prefix string, indent string, value any) (string, error) {
 		return "", err
 	}
 	return string(val), nil
+}
+
+func hostFromEndpoint(endpoint string) (string, error) {
+	urlEndpoint, err := url.Parse(endpoint)
+	if err != nil {
+		return "", fmt.Errorf("invalid endpoint: %s", endpoint)
+	}
+
+	return urlEndpoint.Hostname(), nil
+}
+
+func aiProjectEndpoint(endpoints string) (string, error) {
+	result := gjson.Parse(endpoints)
+	if !result.Exists() {
+		return "", fmt.Errorf("invalid endpoints JSON: %s", endpoints)
+	}
+
+	endpoint := result.Get("AI Foundry API")
+	if !endpoint.Exists() {
+		return "", fmt.Errorf("endpoint 'AI Foundry API' not found in endpoints")
+	}
+
+	return endpoint.String(), nil
+}
+
+func emitAiProjectEndpoint(projectEndpointsVar string) (string, error) {
+	return fmt.Sprintf("%s['AI Foundry API']", projectEndpointsVar), nil
+}
+
+func emitHostFromEndpoint(endpointVar string) (string, error) {
+	// example: https://{your-namespace}.servicebus.windows.net:443
+	return fmt.Sprintf("split(split(%s, '//')[1], ':')[0]", endpointVar), nil
+
+}
+
+func bicepFuncCall(funcName string) func(name string) string {
+	// example: toLower(foo)
+	return func(name string) string {
+		return fmt.Sprintf("%s(%s)", funcName, name)
+	}
+}
+
+func bicepFuncCallThree(funcName string) func(a string, b string, c string) string {
+	// example: replace(foo, bar, baz)
+	return func(a string, b string, c string) string {
+		return fmt.Sprintf("%s(%s, %s, %s)", funcName, a, b, c)
+	}
 }

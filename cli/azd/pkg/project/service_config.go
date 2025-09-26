@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package project
 
 import (
@@ -18,6 +21,8 @@ type ServiceConfig struct {
 	ResourceGroupName osutil.ExpandableString `yaml:"resourceGroup,omitempty"`
 	// The name used to override the default azure resource name
 	ResourceName osutil.ExpandableString `yaml:"resourceName,omitempty"`
+	// The ARM api version to use for the service. If not specified, the latest version is used.
+	ApiVersion string `yaml:"apiVersion,omitempty"`
 	// The relative path to the project folder from the project root
 	RelativePath string `yaml:"project"`
 	// The azure hosting model to use, ex) appservice, function, containerapp
@@ -43,6 +48,9 @@ type ServiceConfig struct {
 	DotNetContainerApp *DotNetContainerAppOptions `yaml:"-,omitempty"`
 	// Custom configuration for the service target
 	Config map[string]any `yaml:"config,omitempty"`
+	// Computed lazily by useDotnetPublishForDockerBuild and cached. This is true when the project
+	// is a dotnet project and there is not an explicit Dockerfile in the project directory.
+	useDotNetPublishForDockerBuild *bool
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 }

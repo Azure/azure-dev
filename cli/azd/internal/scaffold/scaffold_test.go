@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package scaffold
 
 import (
@@ -10,6 +13,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/otiai10/copy"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,6 +36,7 @@ func TestExecInfra(t *testing.T) {
 					{
 						Name: "api",
 						Port: 3100,
+						Host: "containerapp",
 					},
 				},
 			},
@@ -43,6 +49,39 @@ func TestExecInfra(t *testing.T) {
 						Name:     "web",
 						Port:     3100,
 						Frontend: &Frontend{},
+						Host:     "containerapp",
+					},
+				},
+			},
+		},
+		{
+			"App Service Python",
+			InfraSpec{
+				Services: []ServiceSpec{
+					{
+						Name: "py",
+						Port: 3100,
+						Host: "appservice",
+						Runtime: &RuntimeInfo{
+							Type:    "python",
+							Version: "3.11",
+						},
+					},
+				},
+			},
+		},
+		{
+			"App Service Node",
+			InfraSpec{
+				Services: []ServiceSpec{
+					{
+						Name: "node",
+						Port: 3100,
+						Host: "appservice",
+						Runtime: &RuntimeInfo{
+							Type:    "node",
+							Version: "22-lts",
+						},
 					},
 				},
 			},
@@ -61,6 +100,7 @@ func TestExecInfra(t *testing.T) {
 								},
 							},
 						},
+						Host: "containerapp",
 					},
 					{
 						Name: "web",
@@ -72,6 +112,103 @@ func TestExecInfra(t *testing.T) {
 								},
 							},
 						},
+						Host: "containerapp",
+					},
+				},
+			},
+		},
+		{
+			"All",
+			InfraSpec{
+				AiFoundryProject: &AiFoundrySpec{
+					Name: "project",
+					Models: []AiFoundryModel{
+						{
+							AIModelModel: AIModelModel{
+								Name:    "model",
+								Version: "1.0",
+							},
+							Format: "OpenAI",
+							Sku: AiFoundryModelSku{
+								Name:      "S0",
+								UsageName: "S0",
+								Capacity:  1,
+							},
+						},
+					},
+				},
+				DbPostgres: &DatabasePostgres{
+					DatabaseName: "appdb",
+				},
+				DbMySql: &DatabaseMysql{
+					DatabaseName: "mysqldb",
+				},
+				DbCosmosMongo: &DatabaseCosmosMongo{
+					DatabaseName: "appdb",
+				},
+				DbCosmos: &DatabaseCosmos{
+					DatabaseName: "cosmos",
+				},
+				DbRedis:        &DatabaseRedis{},
+				ServiceBus:     &ServiceBus{},
+				EventHubs:      &EventHubs{},
+				StorageAccount: &StorageAccount{},
+				KeyVault:       &KeyVault{},
+				AISearch:       &AISearch{},
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						Backend: &Backend{
+							Frontends: []ServiceReference{
+								{
+									Name: "web",
+								},
+							},
+						},
+						DbCosmosMongo: &DatabaseReference{
+							DatabaseName: "appdb",
+						},
+						DbRedis: &DatabaseReference{
+							DatabaseName: "redis",
+						},
+						DbPostgres: &DatabaseReference{
+							DatabaseName: "appdb",
+						},
+						DbCosmos: &DatabaseReference{
+							DatabaseName: "cosmos",
+						},
+						DbMySql: &DatabaseReference{
+							DatabaseName: "mysqldb",
+						},
+						ServiceBus:       &ServiceBus{},
+						EventHubs:        &EventHubs{},
+						StorageAccount:   &StorageReference{},
+						KeyVault:         &KeyVaultReference{},
+						AISearch:         &AISearchReference{},
+						AiFoundryProject: &AiFoundrySpec{},
+						Host:             "containerapp",
+					},
+					{
+						Name: "web",
+						Port: 3101,
+						Frontend: &Frontend{
+							Backends: []ServiceReference{
+								{
+									Name: "api",
+								},
+							},
+						},
+						Host: "containerapp",
+					},
+					{
+						Name: "app",
+						Port: 3000,
+						Host: "appservice",
+						Runtime: &RuntimeInfo{
+							Type:    "python",
+							Version: "3.11",
+						},
 					},
 				},
 			},
@@ -81,8 +218,8 @@ func TestExecInfra(t *testing.T) {
 			InfraSpec{
 				DbPostgres: &DatabasePostgres{
 					DatabaseName: "appdb",
-					DatabaseUser: "appuser",
 				},
+				KeyVault: &KeyVault{},
 				Services: []ServiceSpec{
 					{
 						Name: "api",
@@ -90,37 +227,7 @@ func TestExecInfra(t *testing.T) {
 						DbPostgres: &DatabaseReference{
 							DatabaseName: "appdb",
 						},
-					},
-				},
-			},
-		},
-		{
-			"API with MongoDB",
-			InfraSpec{
-				DbCosmosMongo: &DatabaseCosmosMongo{
-					DatabaseName: "appdb",
-				},
-				Services: []ServiceSpec{
-					{
-						Name: "api",
-						Port: 3100,
-						DbCosmosMongo: &DatabaseReference{
-							DatabaseName: "appdb",
-						},
-					},
-				},
-			},
-		},
-		{
-			"API with Redis",
-			InfraSpec{
-				Services: []ServiceSpec{
-					{
-						Name: "api",
-						Port: 3100,
-						DbRedis: &DatabaseReference{
-							DatabaseName: "redis",
-						},
+						Host: "containerapp",
 					},
 				},
 			},
@@ -140,7 +247,7 @@ func TestExecInfra(t *testing.T) {
 				err := os.MkdirAll(dest, 0700)
 				require.NoError(t, err)
 
-				err = copyFS(os.DirFS(filepath.Dir(dir)), filepath.Base(dir), dest)
+				err = copy.Copy(dir, dest)
 				require.NoError(t, err)
 			}
 
@@ -154,7 +261,23 @@ func TestExecInfra(t *testing.T) {
 
 			res, err := cli.Build(ctx, filepath.Join(dir, "main.bicep"))
 			require.NoError(t, err)
-			require.Empty(t, res.LintErr, "lint errors occurred")
+
+			lintErrs := strings.Split(res.LintErr, "\n")
+			for _, lintErr := range lintErrs {
+				if lintErr == "" {
+					continue
+				}
+
+				// suppress these errors
+				if strings.Contains(lintErr, "no-unused-params: Parameter \"principalId\" ") ||
+					strings.Contains(lintErr, "no-unused-params: Parameter \"principalType\" ") {
+					// we always set principalId and principalType regardless of whether they are used
+					// in the current implementation
+					continue
+				}
+
+				assert.Failf(t, "found bicep lint error", "lint: %s", lintErr)
+			}
 		})
 	}
 }

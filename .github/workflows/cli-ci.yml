@@ -8,6 +8,11 @@ on:
       - "go.mod"
     branches: [main]
 
+# If two events are triggered within a short time in the same PR, cancel the run of the oldest event
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   pull-requests: write
@@ -19,14 +24,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v6
         with:
-          go-version: "^1.23.0"
+          go-version: "^1.25"
       - uses: actions/checkout@v4
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v8
         with:
-          version: v1.60.1
+          version: v2.4
           args: -v --timeout 10m0s
           working-directory: cli/azd
 
@@ -38,8 +43,15 @@ jobs:
         with:
           node-version: "20"
       - run: npm install -g cspell@8.13.1
-      - name: Spell check for CLI source code
+      - name: Spell check for go and docs
         run: cspell lint '**/*.{go,md}' --config ./cli/azd/.vscode/cspell.yaml --root ./cli/azd --no-progress
+
+  Copyright-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copyright check
+        run: ./eng/scripts/copyright-check.sh ./cli/azd
 
   bicep-lint:
     uses: ./.github/workflows/lint-bicep.yml

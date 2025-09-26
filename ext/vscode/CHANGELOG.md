@@ -1,6 +1,6 @@
 # Release History
 
-## 0.9.0-alpha.1 (Unreleased)
+## 0.11.0-alpha.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,33 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 0.10.0 (2025-09-22)
+
+### Bugs Fixed
+
+- [[#5692]](https://github.com/Azure/azure-dev/pull/5692) Fixed an issue handling movement of `azure.yaml` files
+
+### Other Changes
+
+- [[#5740]](https://github.com/Azure/azure-dev/pull/5740) Improvements to execution of external processes
+- The minimum required Visual Studio Code version is now 1.90.0 (May 2024)
+
+## 0.9.0 (2025-04-10)
+
+### Features Added
+
+ - [[#4995]](https://github.com/Azure/azure-dev/pull/4995) Add Up Flag for Init
+
+### Other Changes
+
+ - updating npm packages
+
+## 0.8.4 (2024-10-28)
+
+### Other Changes
+ - [[#4420]](https://github.com/Azure/azure-dev/pull/4420) Add option to suppress readme
+ - [[#3894]](https://github.com/Azure/azure-dev/pull/3894) Add agent skill wrapping for down command
 
 ## 0.8.3 (2024-05-07)
 

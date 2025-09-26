@@ -17,97 +17,214 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Verifies init for the minimal template.
-// - The project layout is valid (azure.yaml, .azure, infra/)
-// - The template creates a valid environment file
-func Test_CLI_Init_Minimal(t *testing.T) {
-	ctx, cancel := newTestContext(t)
-	defer cancel()
+// Test_CLI_Init_Minimal_Variations covers the core "init --minimal" and interactive "init" scenarios through
+// the "Scan current directory" option.
+func Test_CLI_Init_Minimal_Variations(t *testing.T) {
+	tests := []struct {
+		name   string
+		args   []string
+		stdIn  string
+		env    []string // test-specific environment variables
+		verify func(t *testing.T, dir string)
+	}{
+		{
+			name:  "minimal flag",
+			args:  []string{"init", "--minimal"},
+			stdIn: "\n",
+		},
+		{
+			name:  "interactive",
+			args:  []string{"init"},
+			stdIn: "Scan current directory\nConfirm and continue initializing my app\n\n",
+		},
+		{
+			name:   "minimal flag with env flag",
+			args:   []string{"init", "-m", "-e", "TESTENV"},
+			stdIn:  "\n",
+			verify: verifyEnvInitialized("TESTENV"),
+		},
+		{
+			name:   "interactive with env flag",
+			args:   []string{"init", "-e", "TESTENV"},
+			stdIn:  "Scan current directory\nConfirm and continue initializing my app\n\n",
+			verify: verifyEnvInitialized("TESTENV"),
+		},
+		{
+			name:   "interactive with env var",
+			args:   []string{"init"},
+			stdIn:  "Scan current directory\nConfirm and continue initializing my app\n\n",
+			env:    []string{"AZURE_ENV_NAME=TESTENV"},
+			verify: verifyEnvInitialized("TESTENV"),
+		},
+		{
+			name:   "minimal with env var",
+			args:   []string{"init", "--minimal"},
+			stdIn:  "\n",
+			env:    []string{"AZURE_ENV_NAME=TESTENV"},
+			verify: verifyEnvInitialized("TESTENV"),
+		},
+	}
 
-	dir := tempDirWithDiagnostics(t)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := newTestContext(t)
+			defer cancel()
 
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+			dir := tempDirWithDiagnostics(t)
+			cli := azdcli.NewCLI(t)
+			cli.WorkingDirectory = dir
 
-	_, err := cli.RunCommandWithStdIn(
-		ctx,
-		"Select a template\nMinimal\nTESTENV\n",
-		"init",
-	)
-	require.NoError(t, err)
+			if len(tt.env) > 0 {
+				cli.Env = append(os.Environ(), tt.env...)
+			}
 
-	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
+			_, err := cli.RunCommandWithStdIn(ctx, tt.stdIn, tt.args...)
+			require.NoError(t, err)
 
-	require.NoError(t, err)
-	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
+			proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
+			require.NoError(t, err)
+			require.Equal(t, filepath.Base(dir), proj.Name)
 
-	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
-	require.NoError(t, err)
-	require.Equal(t, filepath.Base(dir), proj.Name)
+			require.NoDirExists(t, filepath.Join(dir, "infra"))
+			require.FileExists(t, filepath.Join(dir, ".gitignore"))
 
-	require.DirExists(t, filepath.Join(dir, ".azure"))
-	require.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
-	require.FileExists(t, filepath.Join(dir, "infra", "main.parameters.json"))
+			gitignoreContent, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+			require.NoError(t, err)
+			require.Contains(t, string(gitignoreContent), ".azure\n")
+
+			if tt.verify != nil {
+				tt.verify(t, dir)
+			}
+		})
+	}
 }
 
-// Verifies init for the minimal template, when infra folder already exists with main.bicep and main.parameters.json.
-func Test_CLI_Init_Minimal_With_Existing_Infra(t *testing.T) {
-	ctx, cancel := newTestContext(t)
-	defer cancel()
+// Verifies init for the minimal template, when infra folder already exists.
+func Test_CLI_Init_Minimal_With_Existing_Infra_Variations(t *testing.T) {
+	tests := []struct {
+		name  string
+		args  []string
+		stdIn string
+	}{
+		{name: "minimal flag", args: []string{"init", "-m"}, stdIn: "\n"},
+		{
+			name:  "interactive",
+			args:  []string{"init"},
+			stdIn: "Scan current directory\nConfirm and continue initializing my app\n\n",
+		},
+	}
 
-	dir := tempDirWithDiagnostics(t)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := newTestContext(t)
+			defer cancel()
 
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+			dir := tempDirWithDiagnostics(t)
+			cli := azdcli.NewCLI(t)
+			cli.WorkingDirectory = dir
 
-	err := os.MkdirAll(filepath.Join(dir, "infra"), osutil.PermissionDirectory)
-	require.NoError(t, err)
+			infraDir := filepath.Join(dir, "infra")
+			require.NoError(t, os.MkdirAll(infraDir, osutil.PermissionDirectory))
 
-	originalBicep := "param location string = 'eastus2'"
-	originalParameters := "{\"parameters\": {\"location\": {\"value\": \"eastus2\"}}}"
+			originalBicep := "param location string = 'eastus2'"
+			originalParameters := "{\"parameters\": {\"location\": {\"value\": \"eastus2\"}}}"
 
-	err = os.WriteFile(filepath.Join(dir, "infra", "main.bicep"), []byte(originalBicep), osutil.PermissionFile)
-	require.NoError(t, err)
+			bicepPath := filepath.Join(infraDir, "main.bicep")
+			parametersPath := filepath.Join(infraDir, "main.parameters.json")
+			require.NoError(t, os.WriteFile(bicepPath, []byte(originalBicep), osutil.PermissionFile))
+			require.NoError(t, os.WriteFile(parametersPath, []byte(originalParameters), osutil.PermissionFile))
 
-	err = os.WriteFile(
-		filepath.Join(dir, "infra", "main.parameters.json"),
-		[]byte(originalParameters),
-		osutil.PermissionFile)
-	require.NoError(t, err)
+			_, err := cli.RunCommandWithStdIn(ctx, tt.stdIn, tt.args...)
+			require.NoError(t, err)
 
-	_, err = cli.RunCommandWithStdIn(
-		ctx,
-		"Select a template\n"+
-			"y\n"+ // Say yes to initialize in existing folder
-			"Minimal\n"+ // Choose minimal
-			"TESTENV\n", // Provide environment name
-		"init",
-	)
-	require.NoError(t, err)
+			proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
+			require.NoError(t, err)
+			require.Equal(t, filepath.Base(dir), proj.Name)
 
-	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
+			// Verify infra files are untouched
+			bicep, err := os.ReadFile(filepath.Join(infraDir, "main.bicep"))
+			require.NoError(t, err)
+			parameters, err := os.ReadFile(filepath.Join(infraDir, "main.parameters.json"))
+			require.NoError(t, err)
 
-	require.NoError(t, err)
-	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
+			require.Equal(t, originalBicep, string(bicep))
+			require.Equal(t, originalParameters, string(parameters))
+		})
+	}
+}
 
-	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
-	require.NoError(t, err)
-	require.Equal(t, filepath.Base(dir), proj.Name)
+// Test_CLI_Init_From_App_With_Infra_Variations consolidates tests for initializing from an app with infra.
+func Test_CLI_Init_From_App_With_Infra_Variations(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		setupEnvs func() []string // Use a function to avoid issues with os.Environ() in table setup
+	}{
+		{
+			name: "no env",
+			args: []string{"init"},
+			setupEnvs: func() []string {
+				return []string{"AZURE_LOCATION=eastus2"}
+			},
+		},
+		{
+			name: "with env flag",
+			args: []string{"init", "--environment", "TESTENV"},
+			setupEnvs: func() []string {
+				return []string{}
+			},
+		},
+		{
+			name: "with env var",
+			args: []string{"init"},
+			setupEnvs: func() []string {
+				return []string{
+					"AZURE_LOCATION=eastus2",
+					"AZURE_ENV_NAME=TESTENV",
+				}
+			},
+		},
+	}
 
-	require.DirExists(t, filepath.Join(dir, ".azure"))
-	bicep, err := os.ReadFile(filepath.Join(dir, "infra", "main.bicep"))
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := newTestContext(t)
+			defer cancel()
 
-	parameters, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json"))
-	require.NoError(t, err)
+			dir := tempDirWithDiagnostics(t)
+			appDir := filepath.Join(dir, "app")
+			require.NoError(t, os.MkdirAll(appDir, osutil.PermissionDirectory))
 
-	require.Equal(t, originalBicep, string(bicep))
-	require.Equal(t, originalParameters, string(parameters))
+			cli := azdcli.NewCLI(t)
+			cli.WorkingDirectory = dir
 
-	require.FileExists(t, filepath.Join(dir, "infra", "main.azd.bicep"))
-	require.FileExists(t, filepath.Join(dir, "infra", "main.parameters.azd.json"))
+			cli.Env = append(os.Environ(), "AZD_CONFIG_DIR="+dir, "AZURE_DEV_COLLECT_TELEMETRY=no")
+			cli.Env = append(cli.Env, tt.setupEnvs()...)
+
+			require.NoError(t, copySample(appDir, "py-postgres"), "failed expanding sample")
+
+			_, err := cli.RunCommandWithStdIn(
+				ctx,
+				"Scan current directory\n"+
+					"Confirm and continue initializing my app\n"+
+					"appdb\n",
+				tt.args...,
+			)
+			require.NoError(t, err)
+
+			require.NoDirExists(t, filepath.Join(dir, "infra"))
+			require.FileExists(t, filepath.Join(dir, "azure.yaml"))
+
+			// Assertions for environment
+			if tt.name != "no env" {
+				require.DirExists(t, filepath.Join(dir, ".azure"))
+				file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
+				require.NoError(t, err)
+				require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
+			}
+		})
+	}
 }
 
 func Test_CLI_Init_WithinExistingProject(t *testing.T) {
@@ -118,12 +235,12 @@ func Test_CLI_Init_WithinExistingProject(t *testing.T) {
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(os.Environ(),
+		"AZURE_LOCATION=eastus2")
 
-	// Setup: Create a project
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		"Select a template\nMinimal\nTESTENV\n",
+		"Scan current directory\nConfirm and continue initializing my app\n\n",
 		"init",
 	)
 	require.NoError(t, err)
@@ -134,7 +251,7 @@ func Test_CLI_Init_WithinExistingProject(t *testing.T) {
 	// Verify init within a nested directory. This should end up creating a new project.
 	_, err = cli.RunCommandWithStdIn(
 		ctx,
-		"Select a template\nMinimal\nTESTENV\n",
+		"Scan current directory\nConfirm and continue initializing my app\n\n",
 		"init",
 		"--cwd",
 		"nested",
@@ -163,8 +280,8 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over in the new git
-	// repository.
+	// While `init` uses git behind the scenes to pull a template, we don't want to bring
+	// the history over in the new git repository.
 	cmdRun := exec.NewCommandRunner(nil)
 	cmdRes, err := cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "log", "--oneline", "-n", "1"))
 	require.Error(t, err)
@@ -174,38 +291,13 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	require.FileExists(t, filepath.Join(dir, "README.md"))
 }
 
-func Test_CLI_Init_From_App(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-	appDir := filepath.Join(dir, "app")
-	err := os.MkdirAll(appDir, osutil.PermissionDirectory)
-	require.NoError(t, err)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+dir)
-	cli.Env = append(cli.Env, "AZURE_DEV_COLLECT_TELEMETRY=no")
-
-	err = copySample(appDir, "py-postgres")
-	require.NoError(t, err, "failed expanding sample")
-
-	_, err = cli.RunCommandWithStdIn(
-		ctx,
-		"Use code in the current directory\n"+
-			"Confirm and continue initializing my app\n"+
-			"appdb\n"+
-			"TESTENV\n",
-		"init",
-	)
-	require.NoError(t, err)
-
-	require.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
-	require.FileExists(t, filepath.Join(dir, "azure.yaml"))
-	require.FileExists(t, filepath.Join(dir, "infra", "app", "app.bicep"))
-	require.FileExists(t, filepath.Join(dir, "infra", "app", "db-postgres.bicep"))
+// verifyEnvInitialized is a helper function that returns a verification function.
+// This avoids duplicating the verification logic in the test table.
+func verifyEnvInitialized(envName string) func(t *testing.T, dir string) {
+	return func(t *testing.T, dir string) {
+		require.DirExists(t, filepath.Join(dir, ".azure"))
+		file, err := os.ReadFile(getTestEnvPath(dir, envName))
+		require.NoError(t, err)
+		require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="`+envName+`"`+"\n"), string(file))
+	}
 }

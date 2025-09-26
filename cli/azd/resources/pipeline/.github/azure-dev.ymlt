@@ -23,16 +23,38 @@ jobs:
       AZURE_CLIENT_ID: ${{ "{{" }} vars.AZURE_CLIENT_ID {{ "}}" }}
       AZURE_TENANT_ID: ${{ "{{" }} vars.AZURE_TENANT_ID {{ "}}" }}
       AZURE_SUBSCRIPTION_ID: ${{ "{{" }} vars.AZURE_SUBSCRIPTION_ID {{ "}}" }}
-      AZURE_ENV_NAME: ${{ "{{" }} vars.AZURE_ENV_NAME {{ "}}" }}
-      AZURE_LOCATION: ${{ "{{" }} vars.AZURE_LOCATION {{ "}}" }}
+{{- range $variable := .Variables }}
+      {{ $variable }}: ${{ "{{" }} vars.{{ $variable }} {{ "}}" }}
+{{- end}}
+{{- if .IsTerraform }}
+      ARM_SUBSCRIPTION_ID: ${{ "{{" }} vars.AZURE_SUBSCRIPTION_ID {{ "}}" }}
+      ARM_TENANT_ID: ${{ "{{" }} vars.AZURE_TENANT_ID {{ "}}" }}
+      ARM_CLIENT_ID: ${{ "{{" }} vars.AZURE_CLIENT_ID {{ "}}" }}
+      RS_RESOURCE_GROUP: ${{ "{{" }} vars.RS_RESOURCE_GROUP {{ "}}" }}
+      RS_STORAGE_ACCOUNT: ${{ "{{" }} vars.RS_STORAGE_ACCOUNT {{ "}}" }}
+      RS_CONTAINER_NAME: ${{ "{{" }} vars.RS_CONTAINER_NAME {{ "}}" }}
+{{- if .FedCredLogIn }}
+      ARM_USE_OIDC: "true"      
+{{- end }}
+{{- end }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Install azd
-        uses: Azure/setup-azd@v1.0.0
-{{- if .InstallDotNetAspire}}
-      - name: Install .NET Aspire workload
-        run: dotnet workload install aspire
+        uses: Azure/setup-azd@v2
+{{- if .IsTerraform}}
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+{{ end }}
+{{- if .InstallDotNetForAspire}}
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: | 
+            8.x.x
+            9.x.x
 {{ end }}
 {{- if .FedCredLogIn }}
       - name: Log in with Azure (Federated Credentials)
@@ -41,6 +63,15 @@ jobs:
             --client-id "$Env:AZURE_CLIENT_ID" `
             --federated-credential-provider "github" `
             --tenant-id "$Env:AZURE_TENANT_ID"
+        shell: pwsh
+{{ end }}
+
+{{- if .AlphaFeatures }}
+      - name: Enabled required alpha features
+        run: |
+{{- range $feature := .AlphaFeatures }}
+          azd config set alpha.{{ $feature }} on
+{{- end }}
         shell: pwsh
 {{ end }}
 
@@ -61,9 +92,20 @@ jobs:
 
       - name: Provision Infrastructure
         run: azd provision --no-prompt
+{{- if .Secrets }}
         env:
-          AZD_INITIAL_ENVIRONMENT_CONFIG: ${{ "{{" }} secrets.AZD_INITIAL_ENVIRONMENT_CONFIG {{ "}}" }}
+{{- range $secret := .Secrets }}
+          {{ $secret }}: ${{ "{{" }} secrets.{{ $secret }} {{ "}}" }}
+{{- end}}
+{{- end }}
 
       - name: Deploy Application
         run: azd deploy --no-prompt
+{{- if .Secrets }}
+        env:
+{{- range $secret := .Secrets }}
+          {{ $secret }}: ${{ "{{" }} secrets.{{ $secret }} {{ "}}" }}
+{{- end}}
+{{- end }}
+        
 {{ end}}      

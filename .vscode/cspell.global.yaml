@@ -41,6 +41,7 @@ ignoreWords:
     - azurecr
     - azuredevops
     - azurerm
+    - azuresdkartifacts
     - armcontainerregistry
     - azidentity
     - azsecrets
@@ -150,6 +151,7 @@ ignoreWords:
     - tfstate
     - tfvars
     - traf
+    - unmanage
     - useragent
     - versioncontrol
     - vmss

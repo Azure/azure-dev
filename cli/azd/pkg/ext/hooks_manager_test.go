@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package ext
 
 import (
@@ -8,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +36,8 @@ func Test_GetAllHookConfigs(t *testing.T) {
 
 		ensureScriptsExist(t, hooksMap)
 
-		hooksManager := NewHooksManager(tempDir)
+		mockCommandRunner := mockexec.NewMockCommandRunner()
+		hooksManager := NewHooksManager(tempDir, mockCommandRunner)
 		validHooks, err := hooksManager.GetAll(hooksMap)
 
 		require.Len(t, validHooks, len(hooksMap))
@@ -56,11 +61,27 @@ func Test_GetAllHookConfigs(t *testing.T) {
 
 		ensureScriptsExist(t, hooksMap)
 
-		hooksManager := NewHooksManager(tempDir)
+		mockCommandRunner := mockexec.NewMockCommandRunner()
+		hooksManager := NewHooksManager(tempDir, mockCommandRunner)
 		validHooks, err := hooksManager.GetAll(hooksMap)
 
 		require.Nil(t, validHooks)
 		require.Error(t, err)
+	})
+
+	t.Run("With Missing Configuration", func(t *testing.T) {
+		// All hooksMap are invalid because they are missing a script type
+		hooksMap := map[string][]*HookConfig{
+			"preprovision": nil,
+		}
+
+		mockCommandRunner := mockexec.NewMockCommandRunner()
+		hooksManager := NewHooksManager(tempDir, mockCommandRunner)
+		validHooks, err := hooksManager.GetAll(hooksMap)
+
+		require.NoError(t, err)
+		require.NotNil(t, validHooks)
+		require.Len(t, validHooks, 0)
 	})
 }
 
@@ -84,7 +105,8 @@ func Test_GetByParams(t *testing.T) {
 
 		ensureScriptsExist(t, hooksMap)
 
-		hooksManager := NewHooksManager(tempDir)
+		mockCommandRunner := mockexec.NewMockCommandRunner()
+		hooksManager := NewHooksManager(tempDir, mockCommandRunner)
 		validHooks, err := hooksManager.GetByParams(hooksMap, HookTypePre, "init")
 
 		require.Len(t, validHooks, 1)
@@ -109,7 +131,8 @@ func Test_GetByParams(t *testing.T) {
 
 		ensureScriptsExist(t, hooksMap)
 
-		hooksManager := NewHooksManager(tempDir)
+		mockCommandRunner := mockexec.NewMockCommandRunner()
+		hooksManager := NewHooksManager(tempDir, mockCommandRunner)
 		validHooks, err := hooksManager.GetByParams(hooksMap, HookTypePre, "init")
 
 		require.Nil(t, validHooks)

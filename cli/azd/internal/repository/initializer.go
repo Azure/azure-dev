@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 // Package repository provides handling of files in the user's code repository.
 package repository
 
@@ -8,10 +11,13 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/names"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -23,7 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/joho/godotenv"
 	"github.com/otiai10/copy"
 )
 
@@ -32,6 +38,7 @@ type Initializer struct {
 	console        input.Console
 	gitCli         *git.Cli
 	dotnetCli      *dotnet.Cli
+	features       *alpha.FeatureManager
 	lazyEnvManager *lazy.Lazy[environment.Manager]
 }
 
@@ -39,6 +46,7 @@ func NewInitializer(
 	console input.Console,
 	gitCli *git.Cli,
 	dotnetCli *dotnet.Cli,
+	features *alpha.FeatureManager,
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 ) *Initializer {
 	return &Initializer{
@@ -46,6 +54,7 @@ func NewInitializer(
 		gitCli:         gitCli,
 		lazyEnvManager: lazyEnvManager,
 		dotnetCli:      dotnetCli,
+		features:       features,
 	}
 }
 
@@ -312,65 +321,48 @@ func parseExecutableFiles(stagedFilesOutput string) ([]string, error) {
 // Initializes a minimal azd project.
 func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
 	projectDir := azdCtx.ProjectDirectory()
-	var err error
-
-	projectFormatted := output.WithLinkFormat("%s", projectDir)
-	i.console.ShowSpinner(ctx,
-		fmt.Sprintf("Creating minimal project files at: %s", projectFormatted),
-		input.Step)
-	defer i.console.StopSpinner(ctx,
-		fmt.Sprintf("Created minimal project files at: %s", projectFormatted)+"\n",
-		input.GetStepResultFormat(err))
 
 	isEmpty, err := osutil.IsDirEmpty(projectDir)
 	if err != nil {
 		return err
 	}
 
-	err = i.writeCoreAssets(ctx, azdCtx)
-	if err != nil {
+	yamlPath, err := os.Stat(azdCtx.ProjectPath())
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 
-	projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
+	if yamlPath != nil {
+		return fmt.Errorf("project already initialized")
+	}
+
+	var name string
+	for {
+		name, err = i.console.Prompt(ctx, input.ConsoleOptions{
+			Message:      "What is the name of your project?",
+			DefaultValue: azdcontext.ProjectName(projectDir),
+		})
+		if err != nil {
+			return err
+		}
+		// Check if the project name is valid.
+		if err := names.ValidateProjectName(name); err != nil {
+			i.console.Message(ctx, fmt.Sprintf("%v Please enter a valid name.", err))
+			continue
+		}
+		break
+	}
+
+	prjConfig := project.ProjectConfig{
+		Name: name,
+	}
+
+	err = project.Save(ctx, &prjConfig, azdCtx.ProjectPath())
 	if err != nil {
-		return err
+		return fmt.Errorf("saving project config: %w", err)
 	}
 
-	// Default infra path if not specified
-	infraPath := projectConfig.Infra.Path
-	if infraPath == "" {
-		infraPath = project.DefaultPath
-	}
-
-	err = os.MkdirAll(infraPath, osutil.PermissionDirectory)
-	if err != nil {
-		return err
-	}
-
-	module := projectConfig.Infra.Module
-	if projectConfig.Infra.Module == "" {
-		module = project.DefaultModule
-	}
-
-	mainPath := filepath.Join(infraPath, module)
-	retryInfix := ".azd"
-	err = i.writeFileSafe(
-		ctx,
-		fmt.Sprintf("%s.bicep", mainPath),
-		retryInfix,
-		resources.MinimalBicep,
-		osutil.PermissionFile)
-	if err != nil {
-		return err
-	}
-
-	err = i.writeFileSafe(
-		ctx,
-		fmt.Sprintf("%s.parameters.json", mainPath),
-		retryInfix,
-		resources.MinimalBicepParameters,
-		osutil.PermissionFile)
+	err = i.writeGitignore(ctx, azdCtx)
 	if err != nil {
 		return err
 	}
@@ -425,7 +417,7 @@ func (i *Initializer) writeFileSafe(
 func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
 	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
 	if _, err := os.Stat(azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
-		_, err = project.New(ctx, azdCtx.ProjectPath(), azdCtx.GetDefaultProjectName())
+		_, err = project.New(ctx, azdCtx.ProjectPath(), azdcontext.ProjectName(azdCtx.ProjectDirectory()))
 		if err != nil {
 			return fmt.Errorf("failed to create a project file: %w", err)
 		}
@@ -443,7 +435,15 @@ func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.Az
 		return fmt.Errorf("failed to create a directory: %w", err)
 	}
 
-	//create .gitignore or open existing .gitignore file, and contains .azure
+	err = i.writeGitignore(ctx, azdCtx)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// writeGitignore creates a project .gitignore or opens the existing .gitignore file, and ensures it contains .azure.
+func (i *Initializer) writeGitignore(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
 	gitignoreFile, err := os.OpenFile(
 		filepath.Join(azdCtx.ProjectDirectory(), ".gitignore"),
 		os.O_APPEND|os.O_RDWR|os.O_CREATE,
@@ -515,6 +515,25 @@ func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.Az
 	return nil
 }
 
+const allowNonEmptyEnvVar = "AZD_ALLOW_NON_EMPTY_FOLDER"
+
+func InitEnvFileValues() (map[string]string, error) {
+	values, err := godotenv.Read()
+	if err != nil {
+		// ignore the error if the file does not exist
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("reading .env file: %w", err)
+		}
+	}
+
+	// remove azd specific control variables
+	maps.DeleteFunc(values, func(key, value string) bool {
+		return key == allowNonEmptyEnvVar
+	})
+
+	return values, nil
+}
+
 // PromptIfNonEmpty prompts the user for confirmation if the project directory to initialize in is non-empty.
 // Returns error if an error occurred while prompting, or if the user declines confirmation.
 func (i *Initializer) PromptIfNonEmpty(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
@@ -522,6 +541,10 @@ func (i *Initializer) PromptIfNonEmpty(ctx context.Context, azdCtx *azdcontext.A
 	isEmpty, err := osutil.IsDirEmpty(dir)
 	if err != nil {
 		return err
+	}
+
+	if _, allowNonEmpty := os.LookupEnv(allowNonEmptyEnvVar); allowNonEmpty {
+		return nil
 	}
 
 	if !isEmpty {
@@ -551,7 +574,9 @@ func (i *Initializer) PromptIfNonEmpty(ctx context.Context, azdCtx *azdcontext.A
 		}
 
 		if !confirm {
-			return fmt.Errorf("confirmation declined")
+			successMessage := "\n\nconfirmation declined; app was not initialized"
+			i.console.Message(ctx, successMessage)
+			os.Exit(1)
 		}
 	}
 

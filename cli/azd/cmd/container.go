@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package cmd
 
 import (
@@ -18,11 +21,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/agent"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
+	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/armmsi"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
@@ -37,6 +45,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/helm"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -47,6 +56,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
 	"github.com/azure/azure-dev/cli/azd/pkg/kustomize"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
@@ -54,7 +64,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/az"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -148,7 +158,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	ioc.RegisterInstance[auth.HttpClient](container, client)
 
 	// Auth
-	container.MustRegisterSingleton(auth.NewLoggedInGuard)
 	container.MustRegisterSingleton(auth.NewMultiTenantCredentialProvider)
 	container.MustRegisterSingleton(func(mgr *auth.Manager) CredentialProviderFn {
 		return mgr.CredentialForCurrentUser
@@ -176,6 +185,15 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			envValue = ""
 		}
 
+		if envValue == "" {
+			// If no explicit environment flag was set, but one was provided
+			// in the context, use that instead.
+			// This is used in workflow execution (in `up`) to influence the environment used.
+			if envFlag, ok := cmd.Context().Value(envFlagCtxKey).(internal.EnvFlag); ok {
+				return envFlag
+			}
+		}
+
 		return internal.EnvFlag{EnvironmentName: envValue}
 	})
 
@@ -183,13 +201,20 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return cmd.Annotations
 	})
 
+	container.MustRegisterSingleton(func(cmd *cobra.Command) CmdCalledAs {
+		return CmdCalledAs(cmd.CalledAs())
+	})
+
 	// Azd Context
-	container.MustRegisterSingleton(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
+	// Scoped registration is required since the value of the azd context can change through the lifetime of a command
+	// Example: Within extensions multiple workflows can be dispatched which can cause the azd context to be updated.
+	// A specific example is within AI builder. It invokes `init` command when project is not found.
+	container.MustRegisterScoped(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
 		return lazyAzdContext.GetValue()
 	})
 
 	// Lazy loads the Azd context after the azure.yaml file becomes available
-	container.MustRegisterSingleton(func() *lazy.Lazy[*azdcontext.AzdContext] {
+	container.MustRegisterScoped(func() *lazy.Lazy[*azdcontext.AzdContext] {
 		return lazy.NewLazy(azdcontext.NewAzdContext)
 	})
 
@@ -524,6 +549,25 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return serviceManager, err
 		})
 	})
+
+	// AI & LLM components
+	container.MustRegisterSingleton(llm.NewManager)
+	container.MustRegisterSingleton(llm.NewModelFactory)
+	container.MustRegisterScoped(agent.NewAgentFactory)
+	container.MustRegisterScoped(consent.NewConsentManager)
+	container.MustRegisterNamedSingleton("ollama", llm.NewOllamaModelProvider)
+	container.MustRegisterNamedSingleton("azure", llm.NewAzureOpenAiModelProvider)
+
+	// Agent security manager
+	container.MustRegisterSingleton(func() (*security.Manager, error) {
+		// Use current working directory as security root
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current working directory: %w", err)
+		}
+		return security.NewManager(cwd)
+	})
+
 	container.MustRegisterSingleton(repository.NewInitializer)
 	container.MustRegisterSingleton(alpha.NewFeaturesManager)
 	container.MustRegisterSingleton(config.NewUserConfigManager)
@@ -562,27 +606,31 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}, nil
 	})
 	container.MustRegisterScoped(auth.NewManager)
-	container.MustRegisterSingleton(azcli.NewUserProfileService)
+	container.MustRegisterSingleton(azapi.NewUserProfileService)
+	container.MustRegisterScoped(func(authManager *auth.Manager) middleware.CurrentUserAuthManager {
+		return authManager
+	})
 	container.MustRegisterSingleton(account.NewSubscriptionsService)
 	container.MustRegisterSingleton(account.NewManager)
 	container.MustRegisterSingleton(account.NewSubscriptionsManager)
 	container.MustRegisterSingleton(account.NewSubscriptionCredentialProvider)
-	container.MustRegisterSingleton(azcli.NewManagedClustersService)
+	container.MustRegisterSingleton(azapi.NewManagedClustersService)
 	container.MustRegisterSingleton(entraid.NewEntraIdService)
-	container.MustRegisterSingleton(azcli.NewContainerRegistryService)
+	container.MustRegisterSingleton(armmsi.NewArmMsiService)
+	container.MustRegisterSingleton(azapi.NewContainerRegistryService)
 	container.MustRegisterSingleton(containerapps.NewContainerAppService)
 	container.MustRegisterSingleton(containerregistry.NewRemoteBuildManager)
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
 	container.MustRegisterSingleton(storage.NewFileShareService)
 	container.MustRegisterScoped(project.NewContainerHelper)
-	container.MustRegisterSingleton(azcli.NewSpringService)
+	container.MustRegisterSingleton(azapi.NewSpringService)
 
 	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
 		return subManager
 	})
 
 	// Tools
-	container.MustRegisterSingleton(azcli.NewAzCli)
+	container.MustRegisterSingleton(azapi.NewAzureClient)
 
 	// Tools
 	container.MustRegisterSingleton(azapi.NewResourceService)
@@ -601,6 +649,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(swa.NewCli)
 	container.MustRegisterScoped(ai.NewPythonBridge)
 	container.MustRegisterScoped(project.NewAiHelper)
+	container.MustRegisterSingleton(az.NewCli)
 
 	// Provisioning
 	container.MustRegisterSingleton(func(
@@ -786,6 +835,34 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	})
 	container.MustRegisterSingleton(workflow.NewRunner)
+
+	container.MustRegisterScoped(func(authManager *auth.Manager) prompt.AuthManager {
+		return authManager
+	})
+	container.MustRegisterSingleton(func(subscriptionManager *account.SubscriptionsManager) prompt.SubscriptionManager {
+		return subscriptionManager
+	})
+	container.MustRegisterSingleton(func(resourceService *azapi.ResourceService) prompt.ResourceService {
+		return resourceService
+	})
+
+	container.MustRegisterScoped(prompt.NewPromptService)
+
+	// Extensions
+	container.MustRegisterSingleton(extensions.NewManager)
+	container.MustRegisterSingleton(extensions.NewRunner)
+	container.MustRegisterSingleton(extensions.NewSourceManager)
+
+	// gRPC Server
+	container.MustRegisterScoped(grpcserver.NewServer)
+	container.MustRegisterScoped(grpcserver.NewProjectService)
+	container.MustRegisterScoped(grpcserver.NewEnvironmentService)
+	container.MustRegisterScoped(grpcserver.NewPromptService)
+	container.MustRegisterScoped(grpcserver.NewDeploymentService)
+	container.MustRegisterScoped(grpcserver.NewEventService)
+	container.MustRegisterSingleton(grpcserver.NewUserConfigService)
+	container.MustRegisterSingleton(grpcserver.NewComposeService)
+	container.MustRegisterSingleton(grpcserver.NewWorkflowService)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package mockinput
 
 import (
@@ -150,9 +153,9 @@ func (c *MockConsole) Prompt(ctx context.Context, options input.ConsoleOptions) 
 	return value.(string), err
 }
 
-func (c *MockConsole) PromptDir(ctx context.Context, options input.ConsoleOptions) (string, error) {
+func (c *MockConsole) PromptFs(ctx context.Context, options input.ConsoleOptions, fs input.FsOptions) (string, error) {
 	c.log = append(c.log, options.Message)
-	value, err := c.respond("PromptDir", options)
+	value, err := c.respond("PromptFs", options)
 	return value.(string), err
 }
 
@@ -172,6 +175,11 @@ func (c *MockConsole) MultiSelect(ctx context.Context, options input.ConsoleOpti
 
 // Writes messages to the underlying writer
 func (c *MockConsole) Flush() {
+}
+
+// DoInteraction executes the provided action function and returns any error encountered
+func (c *MockConsole) DoInteraction(action func() error) error {
+	return action()
 }
 
 // Finds a matching mock expression and returns the configured value

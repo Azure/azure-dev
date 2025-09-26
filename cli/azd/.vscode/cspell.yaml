@@ -1,17 +1,38 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - azcloud
+  - azdext
+  - azurefd
+  - azcontainerregistry
   - backoff
   - Canonicalize
+  - chinacloudapi
   - Codespace
   - Codespaces
   - devcontainers
+  - extendee
+  - eiannone
+  # CDN host name
+  - gfgac2cmf7b8cuay
   - goversioninfo
   - nosec
+  - oneof
+  - idxs
+  # Looks like the protogen has a spelling error for panics
+  - pancis
+  - proto
+  - protobuf
+  - protoc
+  - protoreflect
+  - protoimpl
   - Retryable
   - runcontext
-  - azcloud
+  - unmarshals
+  - unmarshaling
+  - unsetting
   - usgovcloudapi
-  - chinacloudapi
+  - jdbc
+  - springframework
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -51,7 +72,7 @@ overrides:
   - filename: pkg/spin/run.go
     words:
       - errored
-  - filename: pkg/project/framework_service_python.go
+  - filename: pkg/project/project_utils.go
     words:
       - __pycache__
       - Venv
@@ -95,6 +116,10 @@ overrides:
     words:
       - kustomization
       - templating
+  - filename: pkg/project/scaffold_gen.go
+    words:
+      - GUNICORN
+      - MULTIWORKERS
   - filename: CHANGELOG.md
     words:
       - aistudio
@@ -106,12 +131,67 @@ overrides:
   - filename: docs/proxy-configuration.md
     words:
       - Telerik
+  - filename: test/recording/recording.go
+    words:
+      - oidctoken
+  - filename: test/recording/proxy.go
+    words:
+      - WSAECONNRESET
   - filename: test/functional/testdata/samples/funcapp/getting_started.md
     words:
       - funcignore
   - filename: internal/vsrpc/handler.go
     words:
       - arity
+  - filename: test/internal/tfoidc/main.go
+    words:
+      - tfoidc
+      - OIDCREQUESTURI
+      - oidctoken
+  - filename: CHANGELOG.md
+    words:
+      - GHSA
+      - gjrc
+  - filename: pkg/apphost/generate.go
+    words:
+      - alue
+  - filename: docs/extension-framework.md
+    words:
+      - getenv
+      - errorf
+      - println
+  - filename: extensions/microsoft.azd.ai.builder/internal/cmd/start.go
+    words:
+      - dall
+      - datasource
+      - vectorizing
+  - filename: docs/new-azd-command.md
+    words:
+      - pflag
+      - struct
+      - Errorf
+      - Sprintf
+      - mycommand
+      - omitempty
+      - Fprintf
+      - tabwriter
+      - azdcontext
+      - azapi
+      - eastus
+  - filename: .github/copilot-instructions.md
+    words:
+      - golines
+      - technicalterm
+      - Errorf
+  - filename: internal/mcp/tools/azd_yaml_schema.go
+    words:
+      - santhosh
+      - tekuri
+      - jsonschema
+  - filename: cmd/completion.go
+    words:
+      - compinit
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"
+  - "**/*.pb.go"

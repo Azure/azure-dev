@@ -27,12 +27,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/az"
 	"github.com/cli/browser"
 )
 
@@ -52,6 +52,16 @@ const useAzCliAuthKey = "auth.useAzCliAuth"
 // authConfigFileName is the name of the file we store in the user configuration directory which is used to persist
 // auth related configuration information (e.g. the home account id of the current user). This information is not secret.
 const authConfigFileName = "auth.json"
+
+// azurePipelinesSystemAccessTokenEnvVarName is the name of the environment variable that contains the system access token
+// used to auth against the ODIC endpoint for Azure Pipelines. It needs to be set by the task that runs the azd command by
+// adding `SYSTEM_ACCESSTOKEN: $(System.AccessToken)` to the `env` section of the task configuration.
+const azurePipelinesSystemAccessTokenEnvVarName = "SYSTEM_ACCESSTOKEN"
+
+// errNoSystemAccessTokenEnvVar is returned when the System.AccessToken environment variable is not set.
+var errNoSystemAccessTokenEnvVar = fmt.Errorf(
+	"system access token not found, ensure the System.AccessToken value is mapped to an environment variable named %s",
+	azurePipelinesSystemAccessTokenEnvVarName)
 
 // HttpClient interface as required by MSAL library.
 type HttpClient interface {
@@ -84,10 +94,10 @@ type Manager struct {
 	configManager       config.FileConfigManager
 	userConfigManager   config.UserConfigManager
 	credentialCache     Cache
-	ghClient            *github.FederatedTokenClient
 	httpClient          HttpClient
 	console             input.Console
 	externalAuthCfg     ExternalAuthConfiguration
+	azCli               az.AzCli
 }
 
 type ExternalAuthConfiguration struct {
@@ -103,6 +113,7 @@ func NewManager(
 	httpClient HttpClient,
 	console input.Console,
 	externalAuthCfg ExternalAuthConfiguration,
+	azCli az.AzCli,
 ) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
@@ -135,8 +146,6 @@ func NewManager(
 		return nil, fmt.Errorf("creating msal client: %w", err)
 	}
 
-	ghClient := github.NewFederatedTokenClient(nil)
-
 	return &Manager{
 		publicClient:        &msalPublicClientAdapter{client: &publicClientApp},
 		publicClientOptions: options,
@@ -144,18 +153,27 @@ func NewManager(
 		configManager:       configManager,
 		userConfigManager:   userConfigManager,
 		credentialCache:     newCredentialCache(authRoot),
-		ghClient:            ghClient,
 		httpClient:          httpClient,
 		console:             console,
 		externalAuthCfg:     externalAuthCfg,
+		azCli:               azCli,
 	}, nil
 }
 
-// LoginScopes returns the scopes that we request an access token for when checking if a user is signed in.
+// LoginScopes returns the default scopes requested when logging in.
 func LoginScopes(cloud *cloud.Cloud) []string {
-	resourceManagerUrl := cloud.Configuration.Services[azcloud.ResourceManager].Endpoint
+	arm := cloud.Configuration.Services[azcloud.ResourceManager]
 	return []string{
-		fmt.Sprintf("%s//.default", resourceManagerUrl),
+		fmt.Sprintf("%s//.default", arm.Endpoint),
+	}
+}
+
+// LoginScopesFull returns LoginScopes and any additional equivalent scopes.
+func LoginScopesFull(cloud *cloud.Cloud) []string {
+	arm := cloud.Configuration.Services[azcloud.ResourceManager]
+	return []string{
+		fmt.Sprintf("%s//.default", arm.Endpoint),
+		fmt.Sprintf("%s//.default", strings.TrimSuffix(arm.Audience, "/")), // handle possible trailing slashes
 	}
 }
 
@@ -163,10 +181,9 @@ func (m *Manager) LoginScopes() []string {
 	return LoginScopes(m.cloud)
 }
 
-func loginScopesMap(cloud *cloud.Cloud) map[string]struct{} {
-	resourceManagerUrl := cloud.Configuration.Services[azcloud.ResourceManager].Endpoint
-
-	return map[string]struct{}{resourceManagerUrl: {}}
+// Cloud returns the cloud that the manager is configured to use.
+func (m *Manager) Cloud() *cloud.Cloud {
+	return m.cloud
 }
 
 // EnsureLoggedInCredential uses the credential's GetToken method to ensure an access token can be fetched.
@@ -312,11 +329,6 @@ func (m *Manager) CredentialForCurrentUser(
 		}
 		return m.newCredentialFromManagedIdentity(clientID)
 	} else if currentUser.TenantID != nil && currentUser.ClientID != nil {
-		ps, err := m.loadSecret(*currentUser.TenantID, *currentUser.ClientID)
-		if err != nil {
-			return nil, fmt.Errorf("loading secret: %w: %w", err, ErrNoCurrentUser)
-		}
-
 		// by default we used the stored tenant (i.e. the one provided with the tenant id parameter when a user ran
 		// `azd auth login`), but we allow an override using the options bag, when
 		// TenantID is non-empty and PreferFallbackTenant is not true.
@@ -326,13 +338,18 @@ func (m *Manager) CredentialForCurrentUser(
 			tenantID = options.TenantID
 		}
 
+		ps, err := m.loadSecret(*currentUser.TenantID, *currentUser.ClientID)
+		if err != nil {
+			return nil, fmt.Errorf("loading secret: %w: %w", err, ErrNoCurrentUser)
+		}
+
 		if ps.ClientSecret != nil {
 			return m.newCredentialFromClientSecret(tenantID, *currentUser.ClientID, *ps.ClientSecret)
 		} else if ps.ClientCertificate != nil {
 			return m.newCredentialFromClientCertificate(tenantID, *currentUser.ClientID, *ps.ClientCertificate)
 		} else if ps.FederatedAuth != nil && ps.FederatedAuth.TokenProvider != nil {
 			return m.newCredentialFromFederatedTokenProvider(
-				tenantID, *currentUser.ClientID, *ps.FederatedAuth.TokenProvider)
+				tenantID, *currentUser.ClientID, *ps.FederatedAuth.TokenProvider, ps.FederatedAuth.ServiceConnectionID)
 		}
 	}
 
@@ -518,35 +535,129 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 	tenantID string,
 	clientID string,
 	provider federatedTokenProvider,
+	serviceConnectionID *string,
 ) (azcore.TokenCredential, error) {
-	if provider != gitHubFederatedAuth {
-		return nil, fmt.Errorf("unsupported federated token provider: '%s'", string(provider))
+	clientOptions := azcore.ClientOptions{
+		Transport: m.httpClient,
+		// TODO: Inject client options instead? this can be done if we're OK
+		// using the default user agent string.
+		Cloud: m.cloud.Configuration,
 	}
-	options := &azidentity.ClientAssertionCredentialOptions{
-		ClientOptions: azcore.ClientOptions{
-			Transport: m.httpClient,
-			// TODO: Inject client options instead? this can be done if we're OK
-			// using the default user agent string.
-			Cloud: m.cloud.Configuration,
-		},
-	}
-	cred, err := azidentity.NewClientAssertionCredential(
-		tenantID,
-		clientID,
-		func(ctx context.Context) (string, error) {
-			federatedToken, err := m.ghClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
+
+	switch provider {
+	case gitHubFederatedTokenProvider:
+		token, has := os.LookupEnv("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+		if !has {
+			return nil, errors.New("no ACTIONS_ID_TOKEN_REQUEST_TOKEN set in environment.")
+		}
+
+		tokenUrl, has := os.LookupEnv("ACTIONS_ID_TOKEN_REQUEST_URL")
+		if !has {
+			return nil, errors.New("no ACTIONS_ID_TOKEN_REQUEST_URL set in the environment")
+		}
+
+		federatedTokenClient := NewFederatedTokenClient(tokenUrl, token, clientOptions)
+		cred, err := azidentity.NewClientAssertionCredential(
+			tenantID,
+			clientID,
+			func(ctx context.Context) (string, error) {
+				federatedToken, err := federatedTokenClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
+				if err != nil {
+					return "", fmt.Errorf("fetching federated token: %w", err)
+				}
+
+				return federatedToken, nil
+			},
+			&azidentity.ClientAssertionCredentialOptions{
+				ClientOptions: clientOptions,
+			})
+		if err != nil {
+			return nil, fmt.Errorf("creating credential: %w", err)
+		}
+
+		return cred, nil
+
+	case azurePipelinesFederatedTokenProvider:
+		systemAccessToken := os.Getenv(azurePipelinesSystemAccessTokenEnvVarName)
+		if systemAccessToken == "" {
+			return nil, errNoSystemAccessTokenEnvVar
+		}
+
+		// Guard against the case where the service connection ID is not set because someone manually edited the json
+		// files managed by `azd auth login`.
+		if serviceConnectionID == nil {
+			return nil, errors.New("service connection ID not found, please run `azd auth login` to authenticate")
+		}
+
+		cred, err := azidentity.NewAzurePipelinesCredential(
+			tenantID, clientID, *serviceConnectionID, systemAccessToken, &azidentity.AzurePipelinesCredentialOptions{
+				ClientOptions: clientOptions,
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
+		}
+
+		return cred, nil
+	case oidcFederatedTokenProvider:
+		idToken, idTokenHas := os.LookupEnv("AZURE_OIDC_TOKEN")
+		if idTokenHas {
+			cred, err := azidentity.NewClientAssertionCredential(
+				tenantID,
+				clientID,
+				func(ctx context.Context) (string, error) {
+					return idToken, nil
+				},
+				&azidentity.ClientAssertionCredentialOptions{
+					ClientOptions: clientOptions,
+				})
 			if err != nil {
-				return "", fmt.Errorf("fetching federated token: %w", err)
+				return nil, fmt.Errorf("creating credential: %w", err)
 			}
 
-			return federatedToken, nil
-		},
-		options)
-	if err != nil {
-		return nil, fmt.Errorf("creating credential: %w", err)
-	}
+			return cred, nil
+		}
 
-	return cred, nil
+		token, tokenHas := os.LookupEnv("AZURE_OIDC_REQUEST_TOKEN")
+		tokenUrl, tokenUrlHas := os.LookupEnv("AZURE_OIDC_REQUEST_URL")
+
+		if !idTokenHas && !tokenHas && !tokenUrlHas {
+			//nolint:lll
+			return nil, errors.New(`missing required values. Please set either:
+- AZURE_OIDC_TOKEN (most common in typical setups; provide your ID token directly), OR
+- Both AZURE_OIDC_REQUEST_TOKEN and AZURE_OIDC_REQUEST_URL (used when your CI provider requires an additional token exchange; less common)`)
+		}
+		if !tokenHas {
+			return nil, errors.New("missing required environment variable: AZURE_OIDC_REQUEST_TOKEN")
+		}
+		if !tokenUrlHas {
+			return nil, errors.New("missing required environment variable: AZURE_OIDC_REQUEST_URL")
+		}
+
+		federatedTokenClient := NewFederatedTokenClient(tokenUrl, token, clientOptions)
+		cred, err := azidentity.NewClientAssertionCredential(
+			tenantID,
+			clientID,
+			func(ctx context.Context) (string, error) {
+				federatedToken, err := federatedTokenClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
+				if err != nil {
+					return "", fmt.Errorf("fetching federated token: %w", err)
+				}
+
+				return federatedToken, nil
+			},
+			&azidentity.ClientAssertionCredentialOptions{
+				ClientOptions: clientOptions,
+			})
+		if err != nil {
+			return nil, fmt.Errorf("creating credential: %w", err)
+		}
+
+		return cred, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported federated token provider: '%s'", string(provider))
+	}
 }
 
 func (m *Manager) newCredentialFromCloudShell() (azcore.TokenCredential, error) {
@@ -567,10 +678,23 @@ type LoginInteractiveOptions struct {
 func (m *Manager) LoginInteractive(
 	ctx context.Context,
 	scopes []string,
+	claims string,
 	options *LoginInteractiveOptions) (azcore.TokenCredential, error) {
 	if scopes == nil {
 		scopes = m.LoginScopes()
 	}
+
+	var claimsFile string
+	if claims == "" {
+		c, path, err := loadClaims()
+		if err != nil {
+			return nil, err
+		}
+
+		claims = c
+		claimsFile = path
+	}
+
 	acquireTokenOptions := []public.AcquireInteractiveOption{}
 	if options == nil {
 		options = &LoginInteractiveOptions{}
@@ -589,6 +713,10 @@ func (m *Manager) LoginInteractive(
 		acquireTokenOptions = append(acquireTokenOptions, public.WithOpenURL(options.WithOpenUrl))
 	}
 
+	if claims != "" {
+		acquireTokenOptions = append(acquireTokenOptions, public.WithClaims(claims))
+	}
+
 	res, err := m.publicClient.AcquireTokenInteractive(ctx, scopes, acquireTokenOptions...)
 	if err != nil {
 		return nil, err
@@ -596,6 +724,10 @@ func (m *Manager) LoginInteractive(
 
 	if err := m.saveLoginForPublicClient(res); err != nil {
 		return nil, err
+	}
+
+	if claimsFile != "" {
+		_ = os.Remove(claimsFile)
 	}
 
 	return newAzdCredential(m.publicClient, &res.Account, m.cloud), nil
@@ -632,10 +764,26 @@ func (m *Manager) LoginWithOneAuth(ctx context.Context, tenantID string, scopes 
 }
 
 func (m *Manager) LoginWithDeviceCode(
-	ctx context.Context, tenantID string, scopes []string, withOpenUrl WithOpenUrl) (azcore.TokenCredential, error) {
+	ctx context.Context,
+	tenantID string,
+	scopes []string,
+	claims string,
+	withOpenUrl WithOpenUrl) (azcore.TokenCredential, error) {
 	if scopes == nil {
 		scopes = m.LoginScopes()
 	}
+
+	var claimsFile string
+	if claims == "" {
+		c, path, err := loadClaims()
+		if err != nil {
+			return nil, err
+		}
+
+		claims = c
+		claimsFile = path
+	}
+
 	options := []public.AcquireByDeviceCodeOption{}
 	if tenantID != "" {
 		options = append(options, public.WithTenantID(tenantID))
@@ -643,6 +791,10 @@ func (m *Manager) LoginWithDeviceCode(
 
 	if withOpenUrl == nil {
 		withOpenUrl = browser.OpenURL
+	}
+
+	if claims != "" {
+		options = append(options, public.WithClaims(claims))
 	}
 
 	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, scopes, options...)
@@ -682,6 +834,10 @@ func (m *Manager) LoginWithDeviceCode(
 
 	if err := m.saveLoginForPublicClient(res); err != nil {
 		return nil, err
+	}
+
+	if claimsFile != "" {
+		_ = os.Remove(claimsFile)
 	}
 
 	return newAzdCredential(m.publicClient, &res.Account, m.cloud), nil
@@ -755,10 +911,10 @@ func (m *Manager) LoginWithServicePrincipalCertificate(
 	return cred, nil
 }
 
-func (m *Manager) LoginWithServicePrincipalFederatedTokenProvider(
-	ctx context.Context, tenantId, clientId, provider string,
+func (m *Manager) LoginWithGitHubFederatedTokenProvider(
+	ctx context.Context, tenantId, clientId string,
 ) (azcore.TokenCredential, error) {
-	cred, err := m.newCredentialFromFederatedTokenProvider(tenantId, clientId, federatedTokenProvider(provider))
+	cred, err := m.newCredentialFromFederatedTokenProvider(tenantId, clientId, gitHubFederatedTokenProvider, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -768,7 +924,65 @@ func (m *Manager) LoginWithServicePrincipalFederatedTokenProvider(
 		clientId,
 		&persistedSecret{
 			FederatedAuth: &federatedAuth{
-				TokenProvider: &gitHubFederatedAuth,
+				TokenProvider: &gitHubFederatedTokenProvider,
+			},
+		},
+	); err != nil {
+		return nil, err
+	}
+
+	return cred, nil
+}
+
+func (m *Manager) LoginWithAzurePipelinesFederatedTokenProvider(
+	ctx context.Context, tenantID string, clientID string, serviceConnectionID string,
+) (azcore.TokenCredential, error) {
+	systemAccessToken := os.Getenv(azurePipelinesSystemAccessTokenEnvVarName)
+
+	if systemAccessToken == "" {
+		return nil, errNoSystemAccessTokenEnvVar
+	}
+
+	options := &azidentity.AzurePipelinesCredentialOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: m.httpClient,
+			// TODO: Inject client options instead? this can be done if we're OK
+			// using the default user agent string.
+			Cloud: m.cloud.Configuration,
+		},
+	}
+
+	cred, err := azidentity.NewAzurePipelinesCredential(tenantID, clientID, serviceConnectionID, systemAccessToken, options)
+	if err != nil {
+		return nil, fmt.Errorf("creating credential: %w", err)
+	}
+
+	if err := m.saveLoginForServicePrincipal(tenantID, clientID, &persistedSecret{
+		FederatedAuth: &federatedAuth{
+			TokenProvider:       &azurePipelinesFederatedTokenProvider,
+			ServiceConnectionID: &serviceConnectionID,
+		},
+	}); err != nil {
+		return nil, err
+	}
+
+	return cred, nil
+}
+
+func (m *Manager) LoginWithOidcFederatedTokenProvider(
+	ctx context.Context, tenantId, clientId string,
+) (azcore.TokenCredential, error) {
+	cred, err := m.newCredentialFromFederatedTokenProvider(tenantId, clientId, oidcFederatedTokenProvider, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := m.saveLoginForServicePrincipal(
+		tenantId,
+		clientId,
+		&persistedSecret{
+			FederatedAuth: &federatedAuth{
+				TokenProvider: &oidcFederatedTokenProvider,
 			},
 		},
 	); err != nil {
@@ -819,6 +1033,11 @@ func (m *Manager) Logout(ctx context.Context) error {
 
 	if err := m.saveAuthConfig(cfg); err != nil {
 		return fmt.Errorf("saving config: %w", err)
+	}
+
+	// remove any additional login state
+	if claimsFile, err := claimsFilePath(); err == nil {
+		_ = os.Remove(claimsFile)
 	}
 
 	return nil
@@ -1017,7 +1236,9 @@ type persistedSecret struct {
 
 // federated auth token providers
 var (
-	gitHubFederatedAuth federatedTokenProvider = "github"
+	gitHubFederatedTokenProvider         federatedTokenProvider = "github"
+	azurePipelinesFederatedTokenProvider federatedTokenProvider = "azure-pipelines"
+	oidcFederatedTokenProvider           federatedTokenProvider = "oidc"
 )
 
 // token provider for federated auth
@@ -1027,6 +1248,9 @@ type federatedTokenProvider string
 type federatedAuth struct {
 	// The auth token provider. Tokens are obtained by calling the provider as needed.
 	TokenProvider *federatedTokenProvider `json:"tokenProvider,omitempty"`
+	// The ID of the service connection to use for Azure Pipelines federated auth. This is only set when the TokenProvider
+	// is "azure-pipelines".
+	ServiceConnectionID *string `json:"serviceConnectionId,omitempty"`
 }
 
 // userProperties is the model type for the value we store in the user's config. It is logically a discriminated union of
@@ -1057,4 +1281,131 @@ func readUserProperties(cfg config.Config) (*userProperties, error) {
 	}
 
 	return &user, nil
+}
+
+// claimsFilePath returns the path to the claims file previously stored as login state.
+func claimsFilePath() (string, error) {
+	configDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get config dir: %w", err)
+	}
+
+	return filepath.Join(configDir, "auth.claims"), nil
+}
+
+// saveClaims stores the claims as state on disk to be used with the next login attempt.
+func saveClaims(claims string) error {
+	claimsFile, err := claimsFilePath()
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(claimsFile, []byte(claims), osutil.PermissionFile)
+}
+
+// loadClaims returns claims that were previously stored due to a claims challenge.
+// If no claims were found, empty string and a nil error is returned.
+//
+// This is typically used to request additional claims for the current login attempt.
+func loadClaims() (claims string, claimsPath string, err error) {
+	claimsFile, err := claimsFilePath()
+	if err != nil {
+		return "", "", fmt.Errorf("getting claims path: %w", err)
+	}
+
+	bytes, err := os.ReadFile(claimsFile)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", "", nil
+	} else if err != nil {
+		return "", "", fmt.Errorf("reading claims file: %w", err)
+	}
+
+	// Validate the claims as valid JSON as extra safety
+	var validJson map[string]any
+	if err := json.Unmarshal(bytes, &validJson); err != nil {
+		// an invalid claims file, remove it for recovery and treat it as if it's not there
+		if err := os.Remove(claimsFile); err != nil {
+			return "", "", fmt.Errorf("removing claims file '%s': %w. Remove this file manually to recover", claimsFile, err)
+		}
+
+		return "", "", nil
+	}
+
+	return string(bytes), claimsFile, nil
+}
+
+const (
+	EmailLoginType    LoginType = "email"
+	ClientIdLoginType LoginType = "clientId"
+)
+
+type LoginType string
+
+type LogInDetails struct {
+	LoginType LoginType
+	Account   string
+}
+
+// LogInDetails contains information about the currently logged in user.
+// It provides details about the type of login (email-based or client ID-based)
+// and the account identifier. When legacy authentication is used, it will
+// return the account name from the az CLI.
+func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
+	userConfig, err := m.userConfigManager.Load()
+	if err != nil {
+		return nil, fmt.Errorf("reading user config: %w", err)
+	}
+
+	if shouldUseLegacyAuth(userConfig) {
+		log.Printf("delegating auth to az since %s is set to true", useAzCliAuthKey)
+
+		if err := m.azCli.CheckInstalled(); err != nil {
+			return nil, fmt.Errorf("checking az cli installation (using legacy auth): %w", err)
+		}
+
+		logInType := EmailLoginType
+		azAccount, err := m.azCli.Account(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("fetching az cli account: %w", err)
+		}
+		if azAccount.User.Type != "user" {
+			logInType = ClientIdLoginType
+		}
+		return &LogInDetails{
+			LoginType: logInType,
+			Account:   azAccount.User.Name,
+		}, nil
+	}
+
+	cfg, err := m.readAuthConfig()
+	if err != nil {
+		return nil, fmt.Errorf("fetching current user: %w", err)
+	}
+
+	currentUser, err := readUserProperties(cfg)
+	if err != nil {
+		return nil, ErrNoCurrentUser
+	}
+
+	if currentUser.HomeAccountID != nil {
+		accounts, err := m.publicClient.Accounts(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, account := range accounts {
+			if account.HomeAccountID == *currentUser.HomeAccountID {
+				return &LogInDetails{
+					LoginType: EmailLoginType,
+					Account:   account.PreferredUsername,
+				}, nil
+			}
+		}
+	} else if currentUser.ClientID != nil {
+		return &LogInDetails{
+			LoginType: ClientIdLoginType,
+			Account:   *currentUser.ClientID,
+		}, nil
+	}
+
+	return nil, ErrNoCurrentUser
 }

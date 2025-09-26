@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 const (
@@ -31,7 +30,7 @@ type SpringOptions struct {
 type springAppTarget struct {
 	env           *environment.Environment
 	envManager    environment.Manager
-	springService azcli.SpringService
+	springService azapi.SpringService
 }
 
 // NewSpringAppTarget creates the spring app service target.
@@ -41,7 +40,7 @@ type springAppTarget struct {
 func NewSpringAppTarget(
 	env *environment.Environment,
 	envManager environment.Manager,
-	springService azcli.SpringService,
+	springService azapi.SpringService,
 ) ServiceTarget {
 	return &springAppTarget{
 		env:           env,
@@ -68,11 +67,23 @@ func (st *springAppTarget) Package(
 	return packageOutput, nil
 }
 
+func (st *springAppTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+	publishOptions *PublishOptions,
+) (*ServicePublishResult, error) {
+	return &ServicePublishResult{}, nil
+}
+
 // Upload artifact to Storage File and deploy to Spring App
 func (st *springAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
+	servicePublishResult *ServicePublishResult,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {

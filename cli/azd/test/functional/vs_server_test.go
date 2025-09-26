@@ -30,6 +30,8 @@ import (
 )
 
 func Test_CLI_VsServerExternalAuth(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -90,8 +92,8 @@ func Test_CLI_VsServerExternalAuth(t *testing.T) {
 			return
 		}
 
-		_, err := w.Write([]byte(fmt.Sprintf(`{"status": "success", "token": "%s", "expiresOn": "%s"}`,
-			resultToken, time.Now().Add(1*time.Hour).Format(time.RFC3339))))
+		_, err := fmt.Fprintf(w, `{"status": "success", "token": "%s", "expiresOn": "%s"}`,
+			resultToken, time.Now().Add(1*time.Hour).Format(time.RFC3339))
 		require.NoError(t, err)
 	}))
 
@@ -139,6 +141,8 @@ func Test_CLI_VsServerExternalAuth(t *testing.T) {
 }
 
 func Test_CLI_VsServer(t *testing.T) {
+	t.Parallel()
+
 	testDir := filepath.Join("testdata", "vs-server", "tests")
 	// List all tests
 	var stdout, stderr bytes.Buffer
@@ -219,6 +223,10 @@ func Test_CLI_VsServer(t *testing.T) {
 			pathString := ostest.CombinedPaths(cmd.Env)
 			if len(pathString) > 0 {
 				cmd.Env = append(cmd.Env, pathString)
+			}
+
+			if tt.IsLive {
+				defer cleanupDeployments(ctx, t, cli, session, envName)
 			}
 
 			var stdout bytes.Buffer

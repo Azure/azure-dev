@@ -5,4 +5,4 @@ resource existingApp 'Microsoft.App/containerApps@2023-05-02-preview' existing =
   name: name
 }
 
-output containers array = exists ? existingApp.properties.template.containers : []
+output containers array = exists ? existingApp!.properties.template.containers : []

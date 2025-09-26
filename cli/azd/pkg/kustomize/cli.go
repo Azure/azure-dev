@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package kustomize
 
 import (
@@ -6,7 +9,6 @@ import (
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 // Cli is a wrapper around the kustomize cli
@@ -33,7 +35,7 @@ func (cli *Cli) InstallUrl() string {
 
 // Checks whether or not the Kustomize CLI is installed and available within the PATH
 func (cli *Cli) CheckInstalled(ctx context.Context) error {
-	if err := tools.ToolInPath("kustomize"); err != nil {
+	if err := cli.commandRunner.ToolInPath("kustomize"); err != nil {
 		return err
 	}
 

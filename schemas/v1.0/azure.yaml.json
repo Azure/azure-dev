@@ -121,8 +121,7 @@
                             "js",
                             "ts",
                             "java",
-                            "docker",
-                            "custom"
+                            "docker"
                         ]
                     },
                     "module": {

@@ -78,9 +78,9 @@ cognitiveservices
 conditionalize
 consolesize
 containerapp
-containerizable
 containerapps
 containerd
+containerizable
 contoso
 createdby
 csharpapp
@@ -198,8 +198,8 @@ psanford
 psycopg
 psycopgbinary
 pulumi
-pycache
 pyapp
+pycache
 pyproject
 pytest
 PYTHONDONTWRITEBYTECODE
@@ -214,6 +214,7 @@ requirepass
 resourcegraph
 restoreapp
 retriable
+RPCJSONRPC
 runtimes
 rzip
 secureobject
@@ -251,10 +252,10 @@ Truef
 typeflag
 unhide
 unmanage
-unmarshaled
-unmarshalling
 unmarshal
+unmarshaled
 unmarshalled
+unmarshalling
 unsetenvs
 unsets
 upgrader

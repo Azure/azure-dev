@@ -283,7 +283,7 @@ func getTraceFlags() (logFile string, logUrl string) {
 	// running). Setting UnknownFlags instructs `flags.Parse` to continue parsing the command line
 	// even if a flag is not in the flag set (instead of just returning an error saying the flag was not
 	// found).
-	flags.ParseErrorsWhitelist.UnknownFlags = true
+	flags.ParseErrorsAllowlist.UnknownFlags = true
 	flags.StringVar(&logFile, "trace-log-file", "", "")
 	flags.StringVar(&logUrl, "trace-log-url", "", "")
 

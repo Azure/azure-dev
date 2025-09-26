@@ -7,7 +7,7 @@ package fields
 import (
 	"github.com/microsoft/ApplicationInsights-Go/appinsights/contracts"
 	"go.opentelemetry.io/otel/attribute"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 )
 
 // Application-level fields. Guaranteed to be set and available for all events.
@@ -267,8 +267,8 @@ const (
 	RpcMethod = semconv.RPCMethodKey
 
 	// `id` property of JSON-RPC request or response.
-	JsonRpcId = semconv.RPCJsonrpcRequestIDKey
+	JsonRpcId = semconv.RPCJSONRPCRequestIDKey
 
 	// `error_code` property of JSON-RPC request or response. Type: int.
-	JsonRpcErrorCode = semconv.RPCJsonrpcErrorCodeKey
+	JsonRpcErrorCode = semconv.RPCJSONRPCErrorCodeKey
 )

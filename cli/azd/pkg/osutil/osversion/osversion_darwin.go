@@ -2,7 +2,6 @@ package osversion
 
 import (
 	"bytes"
-	"fmt"
 	"os/exec"
 	"strings"
 )
@@ -16,8 +15,6 @@ func GetVersion() (string, error) {
 	}
 
 	output := string(bytes.TrimSpace(outputBytes))
-
-	fmt.Printf("count = %d\n", strings.Count(output, "."))
 
 	if strings.Count(output, ".") == 1 {
 		// they're not including the patch version, we'll tack it on for compatibility

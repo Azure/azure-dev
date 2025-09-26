@@ -518,6 +518,12 @@ func deploymentHost(deploymentResult *azapi.ResourceDeployment) (appDeploymentHo
 				hostType: azapi.AzureResourceTypeContainerApp,
 			}, nil
 		}
+		if rType.String() == string(azapi.AzureResourceTypeContainerAppJob) {
+			return appDeploymentHost{
+				name:     r.Name,
+				hostType: azapi.AzureResourceTypeContainerAppJob,
+			}, nil
+		}
 	}
 	return appDeploymentHost{}, fmt.Errorf("didn't find any known application host from the deployment")
 }
@@ -529,15 +535,16 @@ func (at *dotnetContainerAppTarget) Endpoints(
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
 	resourceType := azapi.AzureResourceType(targetResource.ResourceType())
-	// Currently supports ACA and WebApp for Aspire (on reading Endpoints)
+	// Currently supports ACA, ACA Jobs, and WebApp for Aspire (on reading Endpoints)
 	if resourceType != azapi.AzureResourceTypeWebSite &&
-		resourceType != azapi.AzureResourceTypeContainerApp {
+		resourceType != azapi.AzureResourceTypeContainerApp &&
+		resourceType != azapi.AzureResourceTypeContainerAppJob {
 		return nil, fmt.Errorf("unsupported resource type: %s", resourceType)
 	}
 
 	var hostNames []string
 	switch resourceType {
-	case azapi.AzureResourceTypeContainerApp:
+	case azapi.AzureResourceTypeContainerApp, azapi.AzureResourceTypeContainerAppJob:
 
 		containerAppOptions := containerapps.ContainerAppOptions{
 			ApiVersion: serviceConfig.ApiVersion,
@@ -550,6 +557,11 @@ func (at *dotnetContainerAppTarget) Endpoints(
 			&containerAppOptions,
 		)
 		if err != nil {
+			// Container App Jobs might not have ingress configuration
+			if resourceType == azapi.AzureResourceTypeContainerAppJob {
+				// Return empty endpoints for jobs without ingress
+				return []string{}, nil
+			}
 			return nil, fmt.Errorf("fetching service properties: %w", err)
 		}
 		hostNames = ingressConfig.HostNames

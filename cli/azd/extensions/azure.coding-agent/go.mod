@@ -88,4 +88,4 @@ require (
 )
 
 // TODO: osversion.go (for darwin) fails to cross-compile in Linux so I've stubbed out osversion_darwin.go.
-replace github.com/azure/azure-dev v0.0.0-20250925170919-4e85bc6f37cd => github.com/richardpark-msft/azure-dev v0.0.0-20250925211947-a142b935b723
+// replace github.com/azure/azure-dev v0.0.0-20250925170919-4e85bc6f37cd => github.com/richardpark-msft/azure-dev v0.0.0-20250925211947-a142b935b723

@@ -17,7 +17,7 @@ The Azure Developer CLI (`azd`) follows a systematic approach to command structu
 - Leverage established `azd verbs` rather than creating parallel command structures
 - Extend existing workflows to accommodate new functionality
 - Maintain backward compatibility with current usage patterns
-- Avoid verb duplication; build on core verbs instead of creating new ones
+- Avoid ambiguous or similarly-named verbs; build on core verbs instead of creating new ones
 
 ### 3. **Progressive Disclosure**
 

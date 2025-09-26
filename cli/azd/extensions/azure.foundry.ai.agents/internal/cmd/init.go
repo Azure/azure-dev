@@ -175,16 +175,17 @@ func promptForFoundry(ctx context.Context, azdClient *azdext.AzdClient) (*azdext
 		},
 	}
 
-	selectedResourceResponse, err := azdClient.Prompt().PromptSubscriptionResource(ctx, &azdext.PromptSubscriptionResourceRequest{
-		AzureContext: azureContext,
-		Options: &azdext.PromptResourceOptions{
-			ResourceType: "Microsoft.CognitiveServices/accounts",
-			Kinds:        []string{"AIServices"},
-			SelectOptions: &azdext.PromptResourceSelectOptions{
-				AllowNewResource: to.Ptr(false),
+	selectedResourceResponse, err := azdClient.Prompt().
+		PromptSubscriptionResource(ctx, &azdext.PromptSubscriptionResourceRequest{
+			AzureContext: azureContext,
+			Options: &azdext.PromptResourceOptions{
+				ResourceType: "Microsoft.CognitiveServices/accounts",
+				Kinds:        []string{"AIServices"},
+				SelectOptions: &azdext.PromptResourceSelectOptions{
+					AllowNewResource: to.Ptr(false),
+				},
 			},
-		},
-	})
+		})
 	if err != nil {
 		return nil, fmt.Errorf("prompting for AI Services resource: %w", err)
 	}

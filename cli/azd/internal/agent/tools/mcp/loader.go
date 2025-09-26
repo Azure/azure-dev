@@ -46,7 +46,10 @@ type McpToolsLoader struct {
 }
 
 // NewMcpToolsLoader creates a new instance of McpToolsLoader with the provided sampling handler
-func NewMcpToolsLoader(samplingHandler client.SamplingHandler, elicitationHandler client.ElicitationHandler) common.ToolLoader {
+func NewMcpToolsLoader(
+	samplingHandler client.SamplingHandler,
+	elicitationHandler client.ElicitationHandler,
+) common.ToolLoader {
 	return &McpToolsLoader{
 		samplingHandler:    samplingHandler,
 		elicitationHandler: elicitationHandler,

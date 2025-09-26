@@ -4,12 +4,14 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -28,7 +30,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	rm_armmsi "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	azd_armmsi "github.com/azure/azure-dev/cli/azd/pkg/armmsi"
 
@@ -41,15 +42,22 @@ var mcpJson string
 //go:embed templates/copilot-setup-steps.yml
 var copilotSetupStepsYml string
 
+const copilotEnv = "copilot"
+
 type flagValues struct {
-	Subscription string
-	RoleNames    []string
-	CopilotEnv   string
-	RepoSlug     string
+	RepoSlug  string
+	RoleNames []string
 }
 
 func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
 	flagValues := &flagValues{}
+
+	commandFlags.StringVar(
+		&flagValues.RepoSlug,
+		"remote-name",
+		"",
+		"The name of the git remote where the Copilot Coding Agent will run (ex: <owner>/<repo>)",
+	)
 
 	//nolint:lll
 	commandFlags.StringArrayVar(
@@ -59,32 +67,13 @@ func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
 		"The roles to assign to the service principal or managed identity. By default, the service principal or managed identity will be granted the Reader role.",
 	)
 
-	//, The documentation makes it seem like you can only use 'copilot' as the environment, so we'll leave this as non-configurable for now.
-	flagValues.CopilotEnv = "copilot"
-
-	//nolint, lll
-	commandFlags.StringVar(
-		&flagValues.RepoSlug,
-		"remote-name",
-		"",
-		"The name of the git remote where the Copilot Coding Agent will run (ex: <owner>/<repo>)",
-	)
-
-	// //nolint, lll
-	// commandFlags.StringVar(
-	// 	&flagValues.Subscription,
-	// 	"subscription",
-	// 	"",
-	// 	"ID of an Azure Subscription which the coding agent will access",
-	// )
-
 	return flagValues
 }
 
 func newConfigCommand() *cobra.Command {
 	cc := &cobra.Command{
 		Use:   "config",
-		Short: "Configure the GitHub Copiot coding agent to access Azure resources via the Azure MCP",
+		Short: "Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP",
 	}
 
 	cmdFlags := setupFlags(cc.Flags())
@@ -102,18 +91,16 @@ func newConfigCommand() *cobra.Command {
 
 		defer azdClient.Close()
 
+		prompter := azdClient.Prompt()
+
 		// Get the azd project to retrieve the project path
 		getProjectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 
 		if err != nil {
 			return fmt.Errorf("failed to get azd project: %w", err)
 		}
-
-		project := getProjectResponse.Project
-		prompter := azdClient.Prompt()
-
+		projectName := getProjectResponse.Project.Name
 		if cmdFlags.RepoSlug == "" {
-			// this has to be filled out - when we create/set federated credentials it's part of the subject.
 			res, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 				Options: &azdext.PromptOptions{
 					Message:     "Enter the <owner>/<repository> where the Copilot Coding Agent will run",
@@ -135,7 +122,7 @@ func newConfigCommand() *cobra.Command {
 		}
 
 		tenantID := subscriptionResponse.Subscription.TenantId
-		subscriptionId := subscriptionResponse.Subscription.Id
+		subscriptionID := subscriptionResponse.Subscription.Id
 
 		cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
 			TenantID: tenantID,
@@ -149,10 +136,10 @@ func newConfigCommand() *cobra.Command {
 
 		msiService := azd_armmsi.NewArmMsiService(cp, nil)
 		entraIDService := entraid.NewEntraIdService(cp, nil, nil)
-		rgClient, err := armresources.NewResourceGroupsClient(subscriptionId, cred, nil)
+		rgClient, err := armresources.NewResourceGroupsClient(subscriptionID, cred, nil)
 
 		if err != nil {
-			return fmt.Errorf("failed to create the resource gropu client: %s", err)
+			return fmt.Errorf("failed to create the resource group client: %s", err)
 		}
 
 		authConfig, err := PickOrCreateMSI(ctx,
@@ -160,7 +147,7 @@ func newConfigCommand() *cobra.Command {
 			msiService,
 			entraIDService,
 			rgClient,
-			project.Name, subscriptionId, cmdFlags.RoleNames)
+			projectName, subscriptionID, cmdFlags.RoleNames)
 
 		if err != nil {
 			return err
@@ -168,123 +155,106 @@ func newConfigCommand() *cobra.Command {
 
 		err = CreateFederatedCredential(ctx,
 			msiService,
-			cmdFlags.RepoSlug, cmdFlags.CopilotEnv, subscriptionId, *authConfig.MSI.ID)
+			cmdFlags.RepoSlug, copilotEnv, subscriptionID, authConfig.ResourceID)
 
 		if err != nil {
 			return err
 		}
 
-		var msg = fmt.Sprintf("Setting identity variables in the GitHub Copilot environment(AZURE_CLIENT_ID=%s)", authConfig.AzureCredentials.ClientId)
+		var msg = fmt.Sprintf("Setting identity variables in the GitHub Copilot environment(AZURE_CLIENT_ID=%s)", authConfig.ClientId)
 		fmt.Printf("%s\n", msg)
 
-		// TODO: the command runner automatically prints out the commmands it's executing which doesn't play well with the
-		// spinner.
-		// spinner := ux.NewSpinner(&ux.SpinnerOptions{
-		// 	Text: msg,
-		// })
+		if err := setCopilotEnvVars(ctx, cmdFlags, authConfig); err != nil {
+			return err
+		}
 
-		// err = spinner.Run(ctx, func(ctx context.Context) error {
-		commandRunner := azdexec.NewCommandRunner(nil)
-
-		console := input.NewConsole(true, true, input.Writers{
-			Output:  os.Stdout,
-			Spinner: os.Stdout,
-		}, input.ConsoleHandles{
-			Stdin:  os.Stdin,
-			Stdout: os.Stdout,
-			Stderr: os.Stderr,
-		}, &output.NoneFormatter{}, nil)
-
-		cli, err := github.NewGitHubCli(ctx, console, commandRunner)
+		gitRepoRoot, err := getGitRoot(ctx)
 
 		if err != nil {
 			return err
 		}
 
-		if err := cli.CreateEnvironmentIfNotExist(ctx, cmdFlags.RepoSlug, cmdFlags.CopilotEnv); err != nil {
-			return err
-		}
+		workflowsDir := filepath.Join(gitRepoRoot, ".github", "workflows")
 
-		varsToSet := map[string]string{
-			"AZURE_CLIENT_ID":       authConfig.AzureCredentials.ClientId,
-			"AZURE_TENANT_ID":       authConfig.AzureCredentials.TenantId,
-			"AZURE_SUBSCRIPTION_ID": authConfig.AzureCredentials.SubscriptionId,
-		}
-
-		for name, value := range varsToSet {
-			if err := cli.SetVariable(ctx, cmdFlags.RepoSlug, name, value, &github.SetVariableOptions{
-				Environment: cmdFlags.CopilotEnv,
-			}); err != nil {
-				return err
-			}
-		}
-
-		// return nil
-		// })
-
-		if err != nil {
-			return err
-		}
-
-		// Create the .github/workflows directory if it doesn't exist
-		workflowsDir := filepath.Join(project.Path, ".github", "workflows")
-
-		// TODO: mask?
-		if err := os.MkdirAll(workflowsDir, 0600); err != nil {
-			return fmt.Errorf("failed to create the .github/workflows folder")
+		if err := os.MkdirAll(workflowsDir, 0755); err != nil {
+			return fmt.Errorf("failed to create the %s folder: %w", workflowsDir, err)
 		}
 
 		// Create the copilot-setup-steps.yml file
 		copilotSetupStepsPath := filepath.Join(workflowsDir, "copilot-setup-steps.yml")
 
-		// fmt.Printf("// TODO: if copilot-setup-steps.yml already exists then don't just overwrite it\n")
-		// TODO: create the copilot enviroment and populate it's values with the chosen identity.
-
-		// Basic content for copilot setup steps with Azure login
-		actualContent := fmt.Sprintf(copilotSetupStepsYml, cmdFlags.CopilotEnv)
-
 		// Write the setup file
-		if err := os.WriteFile(copilotSetupStepsPath, []byte(actualContent), 0644); err != nil {
+		if err := os.WriteFile(copilotSetupStepsPath, []byte(copilotSetupStepsYml), 0644); err != nil {
 			return fmt.Errorf("failed to write copilot setup file: %w", err)
 		}
 
-		// TODO: git CLI code. There's better stuff in pipeline_manager.go
-		fmt.Printf("Pushing changes\n")
-		{
-			gitAddCmd := exec.CommandContext(ctx, "git", "add", ".github/workflows/copilot-setup-steps.yml")
-			gitAddCmd.Dir = project.Path
-			gitAddCmd.Stdout = os.Stdout
-			gitAddCmd.Stderr = os.Stderr
+		// doPush, err := prompter.Confirm(ctx, &azdext.ConfirmRequest{
+		// 	Options: &azdext.ConfirmOptions{
+		// 		Message: "Would you like to push these changes?",
+		// 	},
+		// })
 
-			if err := gitAddCmd.Run(); err != nil {
-				return fmt.Errorf("failed to add changes: %w", err)
-			}
+		// if err != nil {
+		// 	return err
+		// }
 
-			gitCommitCmd := exec.CommandContext(ctx, "git", "commit", "-m", "adding copilot-setup-steps.yml", ".github/workflows/copilot-setup-steps.yml")
-			gitCommitCmd.Dir = project.Path
-			gitCommitCmd.Stdout = os.Stdout
-			gitCommitCmd.Stderr = os.Stderr
+		// var gitError error
 
-			if err := gitCommitCmd.Run(); err != nil {
-				return fmt.Errorf("failed to commit changes: %w", err)
-			}
+		// if *doPush.Value {
+		// 	if err := gitPush(ctx, gitRepoRoot); err != nil {
+		// 		// the user can still fix this on their own, so we'll add that they need to complete the push.
+		// 		gitError = err
+		// 	}
+		// }
 
-			gitPushCmd := exec.CommandContext(ctx, "git", "push")
-			gitPushCmd.Dir = project.Path
-			gitPushCmd.Stdout = os.Stdout
-			gitPushCmd.Stderr = os.Stderr
+		fmt.Printf("\n\nNOTE: Some manual setup steps still need to be completed!\n")
 
-			if err := gitPushCmd.Run(); err != nil {
-				return fmt.Errorf("failed to push changes: %w", err)
-			}
-		}
+		fmt.Printf("1. Merge the changes to %s to the main branch of your repository.\n", copilotSetupStepsPath)
+		fmt.Printf("2. Visit https://github.com/%s/settings/copilot/coding_agent and paste the following into \"MCP configuration\" field:\n%s", cmdFlags.RepoSlug, mcpJson)
 
-		fmt.Printf("\nNOTE: to enable the Azure MCP with Copilot visit https://github.com/%s/settings/copilot/coding_agent and paste the following into MCP configuration field:\n%s", cmdFlags.RepoSlug, mcpJson)
-		// fmt.Printf("\nNOTE: Additional setup is required.\n  See https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/extend-coding-agent-with-mcp for instructions on enabling specific MCP servers for Copilot Coding Agent\n")
 		return nil
 	}
 
 	return cc
+}
+
+func setCopilotEnvVars(ctx context.Context, cmdFlags *flagValues, authConfig *authConfiguration) error {
+	commandRunner := azdexec.NewCommandRunner(nil)
+
+	console := input.NewConsole(true, true, input.Writers{
+		Output:  os.Stdout,
+		Spinner: os.Stdout,
+	}, input.ConsoleHandles{
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+	}, &output.NoneFormatter{}, nil)
+
+	cli, err := github.NewGitHubCli(ctx, console, commandRunner)
+
+	if err != nil {
+		return err
+	}
+
+	if err := cli.CreateEnvironmentIfNotExist(ctx, cmdFlags.RepoSlug, copilotEnv); err != nil {
+		return err
+	}
+
+	varsToSet := map[string]string{
+		"AZURE_CLIENT_ID":       authConfig.ClientId,
+		"AZURE_TENANT_ID":       authConfig.TenantId,
+		"AZURE_SUBSCRIPTION_ID": authConfig.SubscriptionId,
+	}
+
+	for name, value := range varsToSet {
+		if err := cli.SetVariable(ctx, cmdFlags.RepoSlug, name, value, &github.SetVariableOptions{
+			Environment: copilotEnv,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 type credentialProviderAdapter struct {
@@ -295,19 +265,19 @@ func (cp *credentialProviderAdapter) CredentialForSubscription(ctx context.Conte
 	return cp.tokenCred, nil
 }
 
-// copied from azd's github_provider.go
-const (
-	federatedIdentityIssuer   = "https://token.actions.githubusercontent.com"
-	federatedIdentityAudience = "api://AzureADTokenExchange"
-)
-
 // CreateFederatedCredential creates a federated credential (allowing Copilot to authenticate and use Azure)
 func CreateFederatedCredential(ctx context.Context,
 	msiService azd_armmsi.ArmMsiService,
 	repoSlug string,
 	copilotEnvName string,
 	subscriptionId string,
-	msiId string) error {
+	msiResourceID string) error {
+	// copied from azd's github_provider.go
+	const (
+		federatedIdentityIssuer   = "https://token.actions.githubusercontent.com"
+		federatedIdentityAudience = "api://AzureADTokenExchange"
+	)
+
 	credentialSafeName := strings.ReplaceAll(repoSlug, "/", "-")
 
 	armFedCreds := []rm_armmsi.FederatedIdentityCredential{
@@ -321,13 +291,31 @@ func CreateFederatedCredential(ctx context.Context,
 		},
 	}
 
-	if _, err := msiService.ApplyFederatedCredentials(ctx, subscriptionId, msiId, armFedCreds); err != nil {
+	if _, err := msiService.ApplyFederatedCredentials(ctx, subscriptionId, msiResourceID, armFedCreds); err != nil {
 		return fmt.Errorf("failed to create federated credentials: %w", err)
 	}
 
 	return nil
 }
 
+func GetExistingMSIByResourceID(ctx context.Context,
+	msiService azd_armmsi.ArmMsiService,
+	managedIdentityResourceID string) (*authConfiguration, error) {
+	id, err := msiService.GetUserIdentity(ctx, managedIdentityResourceID)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user identity for resource ID %s: %w", managedIdentityResourceID, err)
+	}
+
+	return &authConfiguration{
+		ClientId:       *id.Properties.ClientID,
+		SubscriptionId: *id.Properties.TenantID,
+		TenantId:       *id.Properties.TenantID,
+		ResourceID:     *id.ID,
+	}, nil
+}
+
+// PickOrCreateMSI walks the user through creating an MSI
 func PickOrCreateMSI(ctx context.Context,
 	prompter azdext.PromptServiceClient,
 	msiService azd_armmsi.ArmMsiService,
@@ -382,7 +370,6 @@ func PickOrCreateMSI(ctx context.Context,
 		})
 
 		err = spinner.Run(ctx, func(ctx context.Context) error {
-			// Create a new MSI
 			newMSI, err := msiService.CreateUserIdentity(ctx, subscriptionId, resourceGroupName, location.Location.Name, "msi-copilot-"+projectName)
 
 			if err != nil {
@@ -394,7 +381,7 @@ func PickOrCreateMSI(ctx context.Context,
 		})
 
 		if err != nil {
-			return &authConfiguration{}, fmt.Errorf("failed to create User Managed Identity (MSI): %w", err)
+			return nil, fmt.Errorf("failed to create User Managed Identity (MSI): %w", err)
 		}
 	} else {
 		// List existing MSIs and let the user select one
@@ -460,12 +447,10 @@ func PickOrCreateMSI(ctx context.Context,
 	}
 
 	return &authConfiguration{
-		AzureCredentials: &entraid.AzureCredentials{
-			ClientId:       *msIdentity.Properties.ClientID,
-			TenantId:       *msIdentity.Properties.TenantID,
-			SubscriptionId: subscriptionId,
-		},
-		MSI: &msIdentity,
+		TenantId:       *msIdentity.Properties.TenantID,
+		SubscriptionId: subscriptionId,
+		ResourceID:     *msIdentity.ID,
+		ClientId:       *msIdentity.Properties.ClientID,
 	}, nil
 }
 
@@ -531,7 +516,28 @@ func GetOrCreateResourceGroup(ctx context.Context,
 }
 
 type authConfiguration struct {
-	*entraid.AzureCredentials
-	// SP  *graphsdk.ServicePrincipal
-	MSI *armmsi.Identity
+	ClientId       string
+	SubscriptionId string
+	TenantId       string
+	ResourceID     string
+}
+
+func getGitRoot(ctx context.Context) (string, error) {
+	gitRevParseCmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
+
+	buff := &bytes.Buffer{}
+	gitRevParseCmd.Stdout = buff
+
+	if err := gitRevParseCmd.Run(); err != nil {
+		return "", fmt.Errorf("failed using git rev-parse to get the top level directory for this repo: %w", err)
+	}
+
+	gitRoot := strings.TrimSpace(buff.String())
+
+	if runtime.GOOS == "windows" {
+		// even on Windows, git will return unix style paths.
+		gitRoot = strings.ReplaceAll(gitRoot, "/", string(os.PathSeparator))
+	}
+
+	return gitRoot, nil
 }

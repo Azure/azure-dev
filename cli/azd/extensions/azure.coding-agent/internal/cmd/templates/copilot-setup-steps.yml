@@ -9,7 +9,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    environment: %s
+    environment: copilot
     steps:
       - name: Install azd
         uses: Azure/setup-azd@v2

@@ -121,8 +121,8 @@ func findFirstNonFlagArg(args []string, flagsWithValues map[string]bool) (comman
 }
 
 // checkForMatchingExtensions checks for extensions that match any possible namespace
-// from the command arguments. For example, "azd vhvb demo foo" will check for
-// extensions with namespaces: "vhvb", "vhvb.demo", "vhvb.demo.foo"
+// from the command arguments. For example, "azd foo demo bar" will check for
+// extensions with namespaces: "foo", "foo.demo", "foo.demo.bar"
 func checkForMatchingExtensions(
 	ctx context.Context, extensionManager *extensions.Manager, args []string) ([]*extensions.ExtensionMetadata, error) {
 	if len(args) == 0 {

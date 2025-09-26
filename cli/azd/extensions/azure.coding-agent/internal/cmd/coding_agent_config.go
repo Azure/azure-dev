@@ -188,25 +188,6 @@ func newConfigCommand() *cobra.Command {
 			return fmt.Errorf("failed to write copilot setup file: %w", err)
 		}
 
-		// doPush, err := prompter.Confirm(ctx, &azdext.ConfirmRequest{
-		// 	Options: &azdext.ConfirmOptions{
-		// 		Message: "Would you like to push these changes?",
-		// 	},
-		// })
-
-		// if err != nil {
-		// 	return err
-		// }
-
-		// var gitError error
-
-		// if *doPush.Value {
-		// 	if err := gitPush(ctx, gitRepoRoot); err != nil {
-		// 		// the user can still fix this on their own, so we'll add that they need to complete the push.
-		// 		gitError = err
-		// 	}
-		// }
-
 		fmt.Printf("\n\nNOTE: Some manual setup steps still need to be completed!\n")
 
 		fmt.Printf("1. Merge the changes in %s to the main branch of your repository.\n", copilotSetupStepsPath)

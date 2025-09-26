@@ -149,6 +149,7 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	s := server.NewMCPServer(
 		"AZD MCP Server 🚀", "1.0.0",
 		server.WithToolCapabilities(true),
+		server.WithElicitation(),
 	)
 	s.EnableSampling()
 

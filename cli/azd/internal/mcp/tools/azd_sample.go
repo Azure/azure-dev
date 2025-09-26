@@ -23,6 +23,36 @@ func NewSamplingTool() server.ServerTool {
 		),
 		Handler: func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			serverFromCtx := server.ServerFromContext(ctx)
+
+			elicitationRequest := mcp.ElicitationRequest{
+				Params: mcp.ElicitationParams{
+					Message: "Can we learn some more information about you?",
+					RequestedSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"name": map[string]any{
+								"type":        "string",
+								"description": "The name of the user",
+							},
+							"language": map[string]any{
+								"type":        "string",
+								"description": "Favorite programming language",
+								"enum":        []string{"Go", "Python", "JavaScript", "TypeScript", "Java", "C#", "C++"},
+							},
+							"team": map[string]any{
+								"type":        "string",
+								"description": "The team that you are a member of",
+							},
+						},
+						"required": []string{"name"},
+					},
+				},
+			}
+			elicitationResult, err := serverFromCtx.RequestElicitation(ctx, elicitationRequest)
+			if err != nil {
+				return mcp.NewToolResultErrorFromErr("Error during elicitation", err), nil
+			}
+
 			samplingRequest := mcp.CreateMessageRequest{
 				CreateMessageParams: mcp.CreateMessageParams{
 					Messages: []mcp.SamplingMessage{
@@ -49,7 +79,9 @@ func NewSamplingTool() server.ServerTool {
 				return mcp.NewToolResultText(textContent.Text), nil
 			}
 
-			return mcp.NewToolResultText(fmt.Sprintf("%v", samplingResult.Content)), nil
+			return mcp.NewToolResultText(
+				fmt.Sprintf("Sampling: %v, Elicitation: %v", samplingResult.Content, elicitationResult.Content),
+			), nil
 		},
 	}
 }

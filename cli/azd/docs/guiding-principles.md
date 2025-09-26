@@ -64,7 +64,7 @@ The Azure Developer CLI (`azd`) follows a systematic approach to command structu
 ### 1. **Command Integration Strategy**
 
 - New functionality should extend existing command categories
-- Use subcommands and parameters rather than new top-level verbs
+- Use a verb-first structure, where the primary action (e.g., add, create, delete, list) is the top-level command, and the target entity or context follows as an argument or subcommand.
 - Example: `azd add <new-resource-type>` instead of `azd <new-resource-type> add`
 
 ### 2. **Parameter and Flag Consistency**

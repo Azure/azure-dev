@@ -126,6 +126,8 @@ func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...st
 
 func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func(), error) {
 	var latestThought string
+	var latestAction string
+	var latestActionInput string
 
 	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
 		Text: "Processing...",
@@ -138,7 +140,17 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 			printer.Fprintln()
 
 			if latestThought != "" {
-				printer.Fprintln(color.HiBlackString(latestThought))
+				printer.Fprintln(color.HiCyanString("💭 Thought: "), color.HiWhiteString(latestThought))
+				printer.Fprintln()
+				printer.Fprintln()
+			}
+
+			if latestAction != "" {
+				actionText := fmt.Sprintf("🔧 Tool: %s", latestAction)
+				if latestActionInput != "" {
+					actionText += fmt.Sprintf(" with %s", latestActionInput)
+				}
+				printer.Fprintln(color.HiGreenString(actionText))
 				printer.Fprintln()
 				printer.Fprintln()
 			}
@@ -149,8 +161,6 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 	go func() {
 		defer canvas.Clear()
 
-		var latestAction string
-		var latestActionInput string
 		var spinnerText string
 
 		for {

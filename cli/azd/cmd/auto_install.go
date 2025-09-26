@@ -138,7 +138,7 @@ func checkForMatchingExtensions(
 	var matchingExtensions []*extensions.ExtensionMetadata
 
 	// Generate all possible namespace combinations from the command arguments
-	// For "azd vhvb demo foo" -> check "vhvb", "vhvb.demo", "vhvb.demo.foo"
+	// For "azd something demo foo" -> check "something", "something.demo", "something.demo.foo"
 	for i := 1; i <= len(args); i++ {
 		candidateNamespace := strings.Join(args[:i], ".")
 
@@ -334,7 +334,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		}
 
 		// Get all remaining arguments starting from the command for namespace matching
-		// This allows checking longer namespaces like "vhvb.demo.foo" from "azd vhvb demo foo"
+		// This allows checking longer namespaces like "something.demo.foo" from "azd something demo foo"
 		var argsForMatching []string
 		for i, arg := range originalArgs {
 			if !strings.HasPrefix(arg, "-") && arg == unknownCommand {

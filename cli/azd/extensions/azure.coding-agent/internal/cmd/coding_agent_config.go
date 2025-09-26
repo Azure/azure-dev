@@ -209,9 +209,12 @@ func newConfigCommand() *cobra.Command {
 
 		fmt.Printf("\n\nNOTE: Some manual setup steps still need to be completed!\n")
 
-		fmt.Printf("1. Merge the changes to %s to the main branch of your repository.\n", copilotSetupStepsPath)
+		fmt.Printf("1. Merge the changes in %s to the main branch of your repository.\n", copilotSetupStepsPath)
+		fmt.Printf("   For example:\n")
+		fmt.Printf("   git add .github/workflows/copilot-setup-steps.yml\n")
+		fmt.Printf("   git commit -m \"add coding-agent workflow\"\n")
+		fmt.Printf("   git push\n")
 		fmt.Printf("2. Visit https://github.com/%s/settings/copilot/coding_agent and paste the following into \"MCP configuration\" field:\n%s", cmdFlags.RepoSlug, mcpJson)
-
 		return nil
 	}
 

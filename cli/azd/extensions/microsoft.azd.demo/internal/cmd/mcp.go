@@ -65,7 +65,7 @@ func runMcpServer(ctx context.Context) error {
 func newDemoGreetingTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
-			"demo_greeting",
+			"greeting",
 			mcp.WithDescription("A simple greeting tool that takes a name and returns a personalized greeting"),
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithIdempotentHintAnnotation(true),
@@ -97,7 +97,7 @@ func newDemoGreetingTool() server.ServerTool {
 func newDemoCalculatorTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
-			"demo_calculator",
+			"calculator",
 			mcp.WithDescription("A simple calculator that can perform basic arithmetic operations (add, subtract, multiply, divide)"),
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithIdempotentHintAnnotation(true),
@@ -170,7 +170,7 @@ func newDemoCalculatorTool() server.ServerTool {
 func newDemoAzdInfoTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
-			"demo_azd_info",
+			"info",
 			mcp.WithDescription("Gets AZD project and environment information using the azd client"),
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithIdempotentHintAnnotation(true),

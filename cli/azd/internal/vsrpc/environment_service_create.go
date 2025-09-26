@@ -12,10 +12,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/names"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
 
@@ -64,32 +66,65 @@ func (s *environmentService) CreateEnvironmentAsync(
 	// If an azure.yaml doesn't already exist, we need to create one. Creating an environment implies initializing the
 	// azd project if it does not already exist.
 	if _, err := os.Stat(c.azdContext.ProjectPath()); errors.Is(err, fs.ErrNotExist) {
-		_ = observer.OnNext(ctx, newImportantProgressMessage("Analyzing Aspire Application (this might take a moment...)"))
-
-		manifest, err := apphost.ManifestFromAppHost(ctx, rc.HostProjectPath, c.dotnetCli, dotnetEnv)
+		isAspire, err := c.dotnetCli.IsAspireHostProject(ctx, rc.HostProjectPath)
 		if err != nil {
-			return false, fmt.Errorf("reading app host manifest: %w", err)
+			return false, fmt.Errorf("checking if %s is an app host project: %w", rc.HostProjectPath, err)
 		}
 
-		projectName := azdcontext.ProjectName(strings.TrimSuffix(c.azdContext.ProjectDirectory(), ".AppHost"))
+		if isAspire {
+			_ = observer.OnNext(ctx,
+				newImportantProgressMessage("Analyzing Aspire Application (this might take a moment...)"))
 
-		// Write an azure.yaml file to the project.
-		files, err := apphost.GenerateProjectArtifacts(
-			ctx,
-			c.azdContext.ProjectDirectory(),
-			projectName,
-			manifest,
-			rc.HostProjectPath,
-		)
-		if err != nil {
-			return false, fmt.Errorf("generating project artifacts: %w", err)
-		}
+			manifest, err := apphost.ManifestFromAppHost(ctx, rc.HostProjectPath, c.dotnetCli, dotnetEnv)
+			if err != nil {
+				return false, fmt.Errorf("reading app host manifest: %w", err)
+			}
 
-		file := files["azure.yaml"]
-		projectFilePath := filepath.Join(c.azdContext.ProjectDirectory(), "azure.yaml")
+			projectName := azdcontext.ProjectName(strings.TrimSuffix(c.azdContext.ProjectDirectory(), ".AppHost"))
 
-		if err := os.WriteFile(projectFilePath, []byte(file.Contents), osutil.PermissionFile); err != nil {
-			return false, fmt.Errorf("writing azure.yaml: %w", err)
+			// Write an azure.yaml file to the project.
+			files, err := apphost.GenerateProjectArtifacts(
+				ctx,
+				c.azdContext.ProjectDirectory(),
+				projectName,
+				manifest,
+				rc.HostProjectPath,
+			)
+			if err != nil {
+				return false, fmt.Errorf("generating project artifacts: %w", err)
+			}
+
+			file := files["azure.yaml"]
+			projectFilePath := filepath.Join(c.azdContext.ProjectDirectory(), "azure.yaml")
+
+			if err := os.WriteFile(projectFilePath, []byte(file.Contents), osutil.PermissionFile); err != nil {
+				return false, fmt.Errorf("writing azure.yaml: %w", err)
+			}
+		} else {
+			rel, err := filepath.Rel(c.azdContext.ProjectDirectory(), rc.HostProjectPath)
+			if err != nil {
+				return false, fmt.Errorf("determining relative path: %w", err)
+			}
+
+			projectName := azdcontext.ProjectName(c.azdContext.ProjectDirectory())
+
+			ext := filepath.Ext(rc.HostProjectPath)
+			serviceName := names.LabelName(strings.TrimSuffix(filepath.Base(rc.HostProjectPath), ext))
+
+			prjConfig := project.ProjectConfig{
+				Name: projectName,
+				Services: map[string]*project.ServiceConfig{
+					serviceName: {
+						Name:         serviceName,
+						RelativePath: fmt.Sprintf("./%s", filepath.ToSlash(rel)),
+					},
+				},
+			}
+
+			err = project.Save(ctx, &prjConfig, c.azdContext.ProjectPath())
+			if err != nil {
+				return false, fmt.Errorf("saving project config: %w", err)
+			}
 		}
 	} else if err != nil {
 		return false, fmt.Errorf("checking for project: %w", err)

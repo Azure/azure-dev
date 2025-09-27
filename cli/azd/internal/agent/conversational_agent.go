@@ -175,7 +175,7 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 			} else {
 				// each time we get a thought, we start the timer
 				// when get a new thought, we change the time
-				// make sure timming
+				// make sure timing
 				spinnerText = fmt.Sprintf("Running %s tool", color.MagentaString(latestAction))
 				if latestActionInput != "" {
 					spinnerText += " with " + color.HiBlackString(latestActionInput)

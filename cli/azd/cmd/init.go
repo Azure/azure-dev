@@ -377,6 +377,7 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	i.console.WarnForFeature(ctx, llm.FeatureLlm)
 
 	azdAgent, err := i.agentFactory.Create(
+		ctx,
 		agent.WithDebug(i.flags.global.EnableDebugLogging),
 	)
 	if err != nil {

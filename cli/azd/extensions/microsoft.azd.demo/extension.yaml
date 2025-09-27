@@ -9,6 +9,7 @@ language: go
 capabilities:
   - custom-commands
   - lifecycle-events
+  - mcp-server
 examples:
   - name: context
     description: Displays the current `azd` project & environment context.
@@ -16,3 +17,6 @@ examples:
   - name: prompt
     description: Display prompt capabilities.
     usage: azd demo prompt
+  - name: mcp
+    description: Start MCP server with demo tools.
+    usage: azd demo mcp start

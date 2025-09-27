@@ -26,6 +26,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newPromptCommand())
 	rootCmd.AddCommand(newColorsCommand())
 	rootCmd.AddCommand(newVersionCommand())
+	rootCmd.AddCommand(newMcpCommand())
 
 	return rootCmd
 }

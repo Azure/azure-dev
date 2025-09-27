@@ -1,6 +1,7 @@
 AADSTS
 ABRT
 ACCESSTOKEN
+Agentic
 aiomysql
 aiopg
 akvs

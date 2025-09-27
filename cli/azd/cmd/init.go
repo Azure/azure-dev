@@ -16,6 +16,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/feedback"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -33,7 +35,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/fatih/color"
 	"github.com/joho/godotenv"
@@ -137,6 +138,7 @@ type initAction struct {
 	extensionsManager *extensions.Manager
 	azd               workflow.AzdCommandRunner
 	agentFactory      *agent.AgentFactory
+	consentManager    consent.ConsentManager
 }
 
 func newInitAction(
@@ -152,6 +154,7 @@ func newInitAction(
 	extensionsManager *extensions.Manager,
 	azd workflow.AzdCommandRunner,
 	agentFactory *agent.AgentFactory,
+	consentManager consent.ConsentManager,
 ) actions.Action {
 	return &initAction{
 		lazyAzdCtx:        lazyAzdCtx,
@@ -166,6 +169,7 @@ func newInitAction(
 		extensionsManager: extensionsManager,
 		azd:               azd,
 		agentFactory:      agentFactory,
+		consentManager:    consentManager,
 	}
 }
 
@@ -374,10 +378,41 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	// Warn user that this is an alpha feature
-	i.console.WarnForFeature(ctx, llm.FeatureLlm)
+	i.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: "Agentic mode init is in alpha mode. The agent will scan your repository and " +
+			"attempt to make an azd-ready template to init. You can always change permissions later " +
+			"by running `azd mcp consent`. Mistakes may occur in agent mode. " +
+			"To learn more, go to [LINK]\n", //TODO: add link
+		TitleNote: "CTRL C to cancel interaction \n? to pull up help text",
+	})
+
+	// Check read only tool consent
+	readOnlyRules, err := i.consentManager.ListConsentRules(ctx,
+		consent.WithScope(consent.ScopeGlobal),
+		consent.WithOperation(consent.OperationTypeTool),
+		consent.WithAction(consent.ActionReadOnly),
+		consent.WithPermission(consent.PermissionAllow),
+	)
+	if err != nil {
+		return err
+	}
+
+	if len(readOnlyRules) == 0 {
+		if err := i.console.DoInteraction(func() error {
+			// TODO check if server name is OK
+			consentChecker := consent.NewConsentChecker(i.consentManager, "ReadOnlyTools")
+			promptErr := consentChecker.PromptAndGrantReadOnlyToolConsent(ctx)
+			i.console.Message(ctx, "")
+
+			return promptErr
+		}); err != nil {
+			return err
+		}
+	}
 
 	azdAgent, err := i.agentFactory.Create(
 		agent.WithDebug(i.flags.global.EnableDebugLogging),
+		agent.WithFileWatching(true),
 	)
 	if err != nil {
 		return err
@@ -427,11 +462,10 @@ Do not stop until all tasks are complete and fully resolved.
 	for idx, step := range initSteps {
 		// Collect and apply feedback for next steps
 		if idx > 0 {
-			feedbackMsg := fmt.Sprintf("Any feedback before continuing to %s?", step.Name)
 			if err := i.collectAndApplyFeedback(
 				ctx,
 				azdAgent,
-				feedbackMsg,
+				"Any changes before moving to the next step?",
 			); err != nil {
 				return err
 			}
@@ -473,57 +507,16 @@ func (i *initAction) collectAndApplyFeedback(
 	azdAgent agent.Agent,
 	promptMessage string,
 ) error {
-	// Loop to allow multiple rounds of feedback
-	for {
-		confirmFeedback := uxlib.NewConfirm(&uxlib.ConfirmOptions{
-			Message:      promptMessage,
-			DefaultValue: uxlib.Ptr(false),
-			HelpMessage:  "You will be able to provide and feedback or changes after each step.",
-		})
+	AIDisclaimer := output.WithGrayFormat("The following content is AI-generated. AI responses may be incorrect.")
+	collector := feedback.NewFeedbackCollector(i.console, feedback.FeedbackCollectorOptions{
+		EnableLoop:      true,
+		FeedbackPrompt:  promptMessage,
+		FeedbackHint:    "Enter to skip",
+		RequireFeedback: false,
+		AIDisclaimer:    AIDisclaimer,
+	})
 
-		hasFeedback, err := confirmFeedback.Ask(ctx)
-		if err != nil {
-			return err
-		}
-
-		if !*hasFeedback {
-			i.console.Message(ctx, "")
-			break
-		}
-
-		userInputPrompt := uxlib.NewPrompt(&uxlib.PromptOptions{
-			Message:        "You",
-			PlaceHolder:    "Provide feedback or changes to the project",
-			Required:       true,
-			IgnoreHintKeys: true,
-		})
-
-		userInput, err := userInputPrompt.Ask(ctx)
-		if err != nil {
-			return fmt.Errorf("error collecting feedback during azd init, %w", err)
-		}
-
-		i.console.Message(ctx, "")
-
-		if userInput != "" {
-			i.console.Message(ctx, color.MagentaString("Feedback"))
-
-			feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
-			if err != nil {
-				if feedbackOutput != "" {
-					i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
-				}
-				return err
-			}
-
-			i.console.Message(ctx, "")
-			i.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
-			i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
-			i.console.Message(ctx, "")
-		}
-	}
-
-	return nil
+	return collector.CollectFeedbackAndApply(ctx, azdAgent, AIDisclaimer)
 }
 
 // postCompletionFeedbackLoop provides a final opportunity for feedback after all steps complete
@@ -535,7 +528,7 @@ func (i *initAction) postCompletionFeedbackLoop(
 	i.console.Message(ctx, "🎉 All initialization steps completed!")
 	i.console.Message(ctx, "")
 
-	return i.collectAndApplyFeedback(ctx, azdAgent, "Any final feedback or changes?")
+	return i.collectAndApplyFeedback(ctx, azdAgent, "Any changes before moving to the next completing interaction?")
 }
 
 type initType int
@@ -556,7 +549,7 @@ func promptInitType(console input.Console, ctx context.Context, featuresManager 
 
 	// Only include AZD agent option if the LLM feature is enabled
 	if featuresManager.IsEnabled(llm.FeatureLlm) {
-		options = append(options, fmt.Sprintf("%s %s", output.AzdAgentLabel(), color.YellowString("(Alpha)")))
+		options = append(options, fmt.Sprintf("Use agent mode %s", color.YellowString("(Alpha)")))
 	}
 
 	selection, err := console.Select(ctx, input.ConsoleOptions{

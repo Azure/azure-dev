@@ -379,8 +379,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	// Warn user that this is an alpha feature
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Agentic mode init is in alpha mode. The agent will scan your repository and attempt to make an azd-ready template to init. " +
-			"You can always change permissions later by running `azd mcp consent`. Mistakes may occur in agent mode. To learn more, go to [LINK]\n", //TODO: add link
+		Title: "Agentic mode init is in alpha mode. The agent will scan your repository and " +
+			"attempt to make an azd-ready template to init. You can always change permissions later " +
+			"by running `azd mcp consent`. Mistakes may occur in agent mode. " +
+			"To learn more, go to [LINK]\n", //TODO: add link
 		TitleNote: "CTRL C to cancel interaction \n? to pull up help text",
 	})
 

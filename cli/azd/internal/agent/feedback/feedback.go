@@ -85,7 +85,7 @@ func (c *FeedbackCollector) collectFeedbackAndApplyWithLoop(
 			break
 		}
 
-		return c.applyFeedback(ctx, azdAgent, userInput, AIDisclaimer)
+		c.applyFeedback(ctx, azdAgent, userInput, AIDisclaimer)
 	}
 
 	return nil

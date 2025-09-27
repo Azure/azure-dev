@@ -282,23 +282,6 @@ func CreateFederatedCredential(ctx context.Context,
 	return nil
 }
 
-func GetExistingMSIByResourceID(ctx context.Context,
-	msiService azd_armmsi.ArmMsiService,
-	managedIdentityResourceID string) (*authConfiguration, error) {
-	id, err := msiService.GetUserIdentity(ctx, managedIdentityResourceID)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user identity for resource ID %s: %w", managedIdentityResourceID, err)
-	}
-
-	return &authConfiguration{
-		ClientId:       *id.Properties.ClientID,
-		SubscriptionId: *id.Properties.TenantID,
-		TenantId:       *id.Properties.TenantID,
-		ResourceID:     *id.ID,
-	}, nil
-}
-
 // PickOrCreateMSI walks the user through creating an MSI
 func PickOrCreateMSI(ctx context.Context,
 	prompter azdext.PromptServiceClient,

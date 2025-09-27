@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -137,6 +138,7 @@ type initAction struct {
 	extensionsManager *extensions.Manager
 	azd               workflow.AzdCommandRunner
 	agentFactory      *agent.AgentFactory
+	consentManager    consent.ConsentManager
 }
 
 func newInitAction(
@@ -152,6 +154,7 @@ func newInitAction(
 	extensionsManager *extensions.Manager,
 	azd workflow.AzdCommandRunner,
 	agentFactory *agent.AgentFactory,
+	consentManager consent.ConsentManager,
 ) actions.Action {
 	return &initAction{
 		lazyAzdCtx:        lazyAzdCtx,
@@ -166,6 +169,7 @@ func newInitAction(
 		extensionsManager: extensionsManager,
 		azd:               azd,
 		agentFactory:      agentFactory,
+		consentManager:    consentManager,
 	}
 }
 
@@ -374,10 +378,39 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	// Warn user that this is an alpha feature
-	i.console.WarnForFeature(ctx, llm.FeatureLlm)
+	i.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: "Agentic mode init is in alpha mode. The agent will scan your repository and attempt to make an azd-ready template to init. " +
+			"You can always change permissions later by running `azd mcp consent`. Mistakes may occur in agent mode. To learn more, go to [LINK]\n", //TODO: add link
+		TitleNote: "CTRL C to cancel interaction \n? to pull up help text",
+	})
+
+	// Check read only tool consent
+	readOnlyRules, err := i.consentManager.ListConsentRules(ctx,
+		consent.WithScope(consent.ScopeGlobal),
+		consent.WithOperation(consent.OperationTypeTool),
+		consent.WithAction(consent.ActionReadOnly),
+		consent.WithPermission(consent.PermissionAllow),
+	)
+	if err != nil {
+		return err
+	}
+
+	if len(readOnlyRules) == 0 {
+		if err := i.console.DoInteraction(func() error {
+			// TODO check if server name is OK
+			consentChecker := consent.NewConsentChecker(i.consentManager, "ReadOnlyTools")
+			promptErr := consentChecker.PromptAndGrantReadOnlyToolConsent(ctx)
+			i.console.Message(ctx, "")
+
+			return promptErr
+		}); err != nil {
+			return err
+		}
+	}
 
 	azdAgent, err := i.agentFactory.Create(
 		agent.WithDebug(i.flags.global.EnableDebugLogging),
+		agent.WithFileWatching(true),
 	)
 	if err != nil {
 		return err
@@ -556,7 +589,7 @@ func promptInitType(console input.Console, ctx context.Context, featuresManager 
 
 	// Only include AZD agent option if the LLM feature is enabled
 	if featuresManager.IsEnabled(llm.FeatureLlm) {
-		options = append(options, fmt.Sprintf("%s %s", output.AzdAgentLabel(), color.YellowString("(Alpha)")))
+		options = append(options, fmt.Sprintf("Use agent mode %s", color.YellowString("(Alpha)")))
 	}
 
 	selection, err := console.Select(ctx, input.ConsoleOptions{

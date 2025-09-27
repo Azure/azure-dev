@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
+	"github.com/azure/azure-dev/cli/azd/internal/mcp"
 	"github.com/azure/azure-dev/cli/azd/internal/mcp/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -23,8 +24,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/fatih/color"
-	"github.com/mark3labs/mcp-go/client"
-	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -144,6 +143,7 @@ type mcpStartAction struct {
 	flags            *mcpStartFlags
 	extensionManager *extensions.Manager
 	grpcServer       *grpcserver.Server
+	mcpHost          *mcp.McpHost
 }
 
 func newMcpStartAction(
@@ -163,6 +163,7 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	mcpServer := server.NewMCPServer(
 		"AZD MCP Server 🚀", "1.0.0",
 		server.WithToolCapabilities(true),
+		server.WithElicitation(),
 	)
 	mcpServer.EnableSampling()
 
@@ -191,13 +192,33 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	defer a.grpcServer.Stop()
 
-	// Load tools from extensions with MCP server capability
-	extensionTools, err := a.loadExtensionTools(ctx, serverInfo)
+	extensionServers, err := a.getExtensionServers(ctx, serverInfo)
 	if err != nil {
-		log.Printf("Warning: Failed to load extension tools: %v", err)
-		// Continue with built-in tools only
-	} else {
-		allTools = append(allTools, extensionTools...)
+		log.Printf("failed getting extension MCP servers, %v", err)
+	}
+
+	if len(extensionServers) > 0 {
+		mcpCapabilities := mcp.Capabilities{}
+
+		mcpHostOptions := []mcp.McpHostOption{
+			mcp.WithServers(extensionServers),
+			mcp.WithCapabilities(mcpCapabilities),
+		}
+
+		a.mcpHost = mcp.NewMcpHost(mcpHostOptions...)
+		if err := a.mcpHost.Start(ctx); err != nil {
+			log.Printf("failed starting extension servers, %v", err)
+		} else {
+			defer a.mcpHost.Stop()
+
+			extensionTools, err := a.mcpHost.AllTools(ctx)
+			if err != nil {
+				log.Printf("failed loading MCP host tools, %v", err)
+			} else {
+				allTools = append(allTools, extensionTools...)
+			}
+
+		}
 	}
 
 	mcpServer.AddTools(allTools...)
@@ -210,36 +231,36 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	return nil, nil
 }
 
-// loadExtensionTools discovers and loads MCP tools from installed extensions
-func (a *mcpStartAction) loadExtensionTools(ctx context.Context, serverInfo *grpcserver.ServerInfo) ([]server.ServerTool, error) {
-	var allExtensionTools []server.ServerTool
-
+func (a *mcpStartAction) getExtensionServers(ctx context.Context, serverInfo *grpcserver.ServerInfo) (map[string]*mcp.ServerConfig, error) {
 	// Get all installed extensions
 	installedExtensions, err := a.extensionManager.ListInstalled()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get installed extensions: %w", err)
 	}
 
+	servers := map[string]*mcp.ServerConfig{}
+
 	// Find extensions with MCP server capability
 	for _, ext := range installedExtensions {
-		if ext.HasCapability(extensions.McpServerCapability) {
-			log.Printf("Loading MCP tools from extension: %s", ext.Id)
-
-			extensionTools, err := a.loadToolsFromExtension(ctx, ext, serverInfo)
-			if err != nil {
-				log.Printf("Failed to load tools from extension %s: %v", ext.Id, err)
-				continue // Continue with other extensions
-			}
-
-			allExtensionTools = append(allExtensionTools, extensionTools...)
+		if !ext.HasCapability(extensions.McpServerCapability) {
+			continue
 		}
+
+		log.Printf("Loading MCP tools from extension: %s", ext.Id)
+
+		serverConfig, err := a.getExtensionServerConfig(ctx, ext, serverInfo)
+		if err != nil {
+			log.Printf("failed to get MCP server config for extension %s: %v", ext.Id, err)
+		}
+
+		servers[ext.Id] = serverConfig
 	}
 
-	return allExtensionTools, nil
+	return servers, nil
 }
 
 // loadToolsFromExtension connects to a single extension's MCP server and loads its tools
-func (a *mcpStartAction) loadToolsFromExtension(ctx context.Context, ext *extensions.Extension, serverInfo *grpcserver.ServerInfo) ([]server.ServerTool, error) {
+func (a *mcpStartAction) getExtensionServerConfig(ctx context.Context, ext *extensions.Extension, serverInfo *grpcserver.ServerInfo) (*mcp.ServerConfig, error) {
 	// Get extension executable path
 	userConfigDir, err := config.GetUserConfigDir()
 	if err != nil {
@@ -253,16 +274,16 @@ func (a *mcpStartAction) loadToolsFromExtension(ctx context.Context, ext *extens
 
 	// Use convention-over-configuration for MCP args and env
 	var args []string
-	var configEnv []string
+	var env []string
 
-	if ext.McpConfig != nil && len(ext.McpConfig.Serve.Args) > 0 {
+	if ext.McpConfig != nil && len(ext.McpConfig.Server.Args) > 0 {
 		// Use explicitly configured args
-		args = append([]string{}, ext.McpConfig.Serve.Args...)
-		configEnv = append([]string{}, ext.McpConfig.Serve.Env...)
+		args = append([]string{}, ext.McpConfig.Server.Args...)
+		env = append([]string{}, ext.McpConfig.Server.Env...)
 	} else {
 		// Use default convention: ["mcp", "start"]
 		args = []string{"mcp", "start"}
-		configEnv = []string{}
+		env = []string{}
 	}
 
 	// Always layer in AZD extension environment variables
@@ -271,55 +292,15 @@ func (a *mcpStartAction) loadToolsFromExtension(ctx context.Context, ext *extens
 		return nil, fmt.Errorf("failed to get AZD extension environment variables")
 	}
 
-	env := append(os.Environ(), configEnv...)
 	env = append(env, azdEnv...)
 
-	// Create & Start stdio transport for the extension MCP server
-	mcpClient, err := client.NewStdioMCPClient(extensionPath, env, args...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create or start the stdio MCP client for extension %s: %w", ext.Id, err)
-	}
+	return &mcp.ServerConfig{
+		Type:    "stdio",
+		Command: extensionPath,
+		Args:    args,
+		Env:     env,
+	}, nil
 
-	// Initialize MCP connection
-	initRequest := mcp.InitializeRequest{}
-	initRequest.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
-	initRequest.Params.ClientInfo = mcp.Implementation{
-		Name:    "Azure Developer CLI (azd)",
-		Version: "1.0.1",
-	}
-
-	initResult, err := mcpClient.Initialize(ctx, initRequest)
-	if err != nil {
-		mcpClient.Close()
-		return nil, fmt.Errorf("failed to initialize MCP connection for extension %s: %w", ext.Id, err)
-	}
-
-	log.Printf("Connected to extension MCP server: %s (%s)", initResult.ServerInfo.Name, initResult.ServerInfo.Version)
-
-	// Get tools from the extension's MCP server
-	toolsRequest := mcp.ListToolsRequest{}
-	toolsResult, err := mcpClient.ListTools(ctx, toolsRequest)
-	if err != nil {
-		mcpClient.Close()
-		return nil, fmt.Errorf("failed to list tools from extension %s: %w", ext.Id, err)
-	}
-
-	// Convert extension ID to snake_case for tool prefixing
-	toolPrefix := convertToSnakeCase(ext.Id)
-
-	// Create proxy tools for each tool from the extension
-	var extensionTools []server.ServerTool
-	for _, mcpTool := range toolsResult.Tools {
-		// Create prefixed tool name to avoid conflicts
-		prefixedName := fmt.Sprintf("%s_%s", toolPrefix, mcpTool.Name)
-
-		proxyTool := createExtensionProxyTool(prefixedName, mcpTool, mcpClient)
-		extensionTools = append(extensionTools, proxyTool)
-
-		log.Printf("Registered extension tool: %s (from %s)", prefixedName, ext.Id)
-	}
-
-	return extensionTools, nil
 }
 
 // getExtensionEnvironment prepares AZD environment variables for extensions
@@ -345,40 +326,6 @@ func (a *mcpStartAction) getExtensionEnvironment(ctx context.Context, ext *exten
 // convertToSnakeCase converts a dot-separated string to snake_case
 func convertToSnakeCase(input string) string {
 	return strings.ReplaceAll(input, ".", "_")
-}
-
-// createExtensionProxyTool creates a proxy tool that forwards calls to the extension's MCP server
-func createExtensionProxyTool(toolName string, mcpTool mcp.Tool, mcpClient client.MCPClient) server.ServerTool {
-	// Build tool options starting with description
-	toolOptions := []mcp.ToolOption{
-		mcp.WithDescription(mcpTool.Description),
-	}
-
-	// Copy annotations from the original tool if they exist
-	if mcpTool.Annotations.ReadOnlyHint != nil {
-		toolOptions = append(toolOptions, mcp.WithReadOnlyHintAnnotation(*mcpTool.Annotations.ReadOnlyHint))
-	}
-	if mcpTool.Annotations.IdempotentHint != nil {
-		toolOptions = append(toolOptions, mcp.WithIdempotentHintAnnotation(*mcpTool.Annotations.IdempotentHint))
-	}
-	if mcpTool.Annotations.DestructiveHint != nil {
-		toolOptions = append(toolOptions, mcp.WithDestructiveHintAnnotation(*mcpTool.Annotations.DestructiveHint))
-	}
-	if mcpTool.Annotations.OpenWorldHint != nil {
-		toolOptions = append(toolOptions, mcp.WithOpenWorldHintAnnotation(*mcpTool.Annotations.OpenWorldHint))
-	}
-
-	return server.ServerTool{
-		Tool: mcp.NewTool(toolName, toolOptions...),
-		Handler: func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			// Forward the tool call to the extension's MCP server
-			// Note: We need to use the original tool name when forwarding
-			originalRequest := request
-			originalRequest.Params.Name = mcpTool.Name
-
-			return mcpClient.CallTool(ctx, originalRequest)
-		},
-	}
 }
 
 // Flags for MCP consent list command

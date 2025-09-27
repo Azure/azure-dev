@@ -58,12 +58,12 @@ type ExtensionDependency struct {
 
 // McpConfig represents the MCP server configuration for an extension
 type McpConfig struct {
-	// Serve contains configuration for starting the extension's MCP server
-	Serve McpServeConfig `json:"serve"`
+	// Server contains configuration for starting the extension's MCP server
+	Server McpServerConfig `json:"server"`
 }
 
-// McpServeConfig represents the configuration for starting an extension's MCP server
-type McpServeConfig struct {
+// McpServerConfig represents the configuration for starting an extension's MCP server
+type McpServerConfig struct {
 	// Args are the command-line arguments to pass when starting the MCP server
 	Args []string `json:"args"`
 	// Env are additional environment variables to set when starting the MCP server

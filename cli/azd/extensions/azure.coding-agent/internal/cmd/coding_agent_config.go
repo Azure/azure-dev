@@ -49,6 +49,11 @@ type flagValues struct {
 	RoleNames []string
 }
 
+// resourceService is just a minimal version of [*armresources.ResourceGroupsClient]
+type resourceService interface {
+	CreateOrUpdate(ctx context.Context, resourceGroupName string, parameters armresources.ResourceGroup, options *armresources.ResourceGroupsClientCreateOrUpdateOptions) (armresources.ResourceGroupsClientCreateOrUpdateResponse, error)
+}
+
 func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
 	flagValues := &flagValues{}
 
@@ -287,9 +292,7 @@ func PickOrCreateMSI(ctx context.Context,
 	prompter azdext.PromptServiceClient,
 	msiService azd_armmsi.ArmMsiService,
 	entraIDService entraid.EntraIdService,
-	resourceService interface {
-		CreateOrUpdate(ctx context.Context, resourceGroupName string, parameters armresources.ResourceGroup, options *armresources.ResourceGroupsClientCreateOrUpdateOptions) (armresources.ResourceGroupsClientCreateOrUpdateResponse, error)
-	},
+	resourceService resourceService,
 	projectName string, subscriptionId string, roleNames []string) (*authConfiguration, error) {
 
 	// ************************** Pick or create a new MSI **************************
@@ -423,9 +426,7 @@ func PickOrCreateMSI(ctx context.Context,
 
 func GetOrCreateResourceGroup(ctx context.Context,
 	prompter azdext.PromptServiceClient,
-	subscriptionId string, locationName string, resourceService interface {
-		CreateOrUpdate(ctx context.Context, resourceGroupName string, parameters armresources.ResourceGroup, options *armresources.ResourceGroupsClientCreateOrUpdateOptions) (armresources.ResourceGroupsClientCreateOrUpdateResponse, error)
-	}) (resourceGroupName string, err error) {
+	subscriptionId string, locationName string, resourceService resourceService) (resourceGroupName string, err error) {
 	rg, err := prompter.PromptResourceGroup(ctx, &azdext.PromptResourceGroupRequest{
 		AzureContext: &azdext.AzureContext{
 			Scope: &azdext.AzureScope{

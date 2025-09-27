@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/feedback"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -34,7 +35,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/fatih/color"
 	"github.com/joho/godotenv"
@@ -460,11 +460,10 @@ Do not stop until all tasks are complete and fully resolved.
 	for idx, step := range initSteps {
 		// Collect and apply feedback for next steps
 		if idx > 0 {
-			feedbackMsg := fmt.Sprintf("Any feedback before continuing to %s?", step.Name)
 			if err := i.collectAndApplyFeedback(
 				ctx,
 				azdAgent,
-				feedbackMsg,
+				"Any changes before moving to the next step?",
 			); err != nil {
 				return err
 			}
@@ -506,57 +505,16 @@ func (i *initAction) collectAndApplyFeedback(
 	azdAgent agent.Agent,
 	promptMessage string,
 ) error {
-	// Loop to allow multiple rounds of feedback
-	for {
-		confirmFeedback := uxlib.NewConfirm(&uxlib.ConfirmOptions{
-			Message:      promptMessage,
-			DefaultValue: uxlib.Ptr(false),
-			HelpMessage:  "You will be able to provide and feedback or changes after each step.",
-		})
+	AIDisclaimer := output.WithGrayFormat("The following content is AI-generated. AI responses may be incorrect.")
+	collector := feedback.NewFeedbackCollector(i.console, feedback.FeedbackCollectorOptions{
+		EnableLoop:      true,
+		FeedbackPrompt:  promptMessage,
+		FeedbackHint:    "Enter to skip",
+		RequireFeedback: false,
+		AIDisclaimer:    AIDisclaimer,
+	})
 
-		hasFeedback, err := confirmFeedback.Ask(ctx)
-		if err != nil {
-			return err
-		}
-
-		if !*hasFeedback {
-			i.console.Message(ctx, "")
-			break
-		}
-
-		userInputPrompt := uxlib.NewPrompt(&uxlib.PromptOptions{
-			Message:        "You",
-			PlaceHolder:    "Provide feedback or changes to the project",
-			Required:       true,
-			IgnoreHintKeys: true,
-		})
-
-		userInput, err := userInputPrompt.Ask(ctx)
-		if err != nil {
-			return fmt.Errorf("error collecting feedback during azd init, %w", err)
-		}
-
-		i.console.Message(ctx, "")
-
-		if userInput != "" {
-			i.console.Message(ctx, color.MagentaString("Feedback"))
-
-			feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
-			if err != nil {
-				if feedbackOutput != "" {
-					i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
-				}
-				return err
-			}
-
-			i.console.Message(ctx, "")
-			i.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
-			i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
-			i.console.Message(ctx, "")
-		}
-	}
-
-	return nil
+	return collector.CollectFeedbackAndApply(ctx, azdAgent, AIDisclaimer)
 }
 
 // postCompletionFeedbackLoop provides a final opportunity for feedback after all steps complete
@@ -568,7 +526,7 @@ func (i *initAction) postCompletionFeedbackLoop(
 	i.console.Message(ctx, "🎉 All initialization steps completed!")
 	i.console.Message(ctx, "")
 
-	return i.collectAndApplyFeedback(ctx, azdAgent, "Any final feedback or changes?")
+	return i.collectAndApplyFeedback(ctx, azdAgent, "Any changes before moving to the next completing interaction?")
 }
 
 type initType int

@@ -188,6 +188,9 @@ overrides:
       - santhosh
       - tekuri
       - jsonschema
+  - filename: internal/mcp/host.go
+    words:
+      - Streamable
   - filename: cmd/completion.go
     words:
       - compinit

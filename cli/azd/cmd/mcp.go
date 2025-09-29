@@ -231,7 +231,10 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	return nil, nil
 }
 
-func (a *mcpStartAction) getExtensionServers(ctx context.Context, serverInfo *grpcserver.ServerInfo) (map[string]*mcp.ServerConfig, error) {
+func (a *mcpStartAction) getExtensionServers(
+	ctx context.Context,
+	serverInfo *grpcserver.ServerInfo,
+) (map[string]*mcp.ServerConfig, error) {
 	// Get all installed extensions
 	installedExtensions, err := a.extensionManager.ListInstalled()
 	if err != nil {
@@ -260,7 +263,11 @@ func (a *mcpStartAction) getExtensionServers(ctx context.Context, serverInfo *gr
 }
 
 // loadToolsFromExtension connects to a single extension's MCP server and loads its tools
-func (a *mcpStartAction) getExtensionServerConfig(ctx context.Context, ext *extensions.Extension, serverInfo *grpcserver.ServerInfo) (*mcp.ServerConfig, error) {
+func (a *mcpStartAction) getExtensionServerConfig(
+	ctx context.Context,
+	ext *extensions.Extension,
+	serverInfo *grpcserver.ServerInfo,
+) (*mcp.ServerConfig, error) {
 	// Get extension executable path
 	userConfigDir, err := config.GetUserConfigDir()
 	if err != nil {
@@ -304,7 +311,11 @@ func (a *mcpStartAction) getExtensionServerConfig(ctx context.Context, ext *exte
 }
 
 // getExtensionEnvironment prepares AZD environment variables for extensions
-func (a *mcpStartAction) getExtensionEnvironment(ctx context.Context, ext *extensions.Extension, serverInfo *grpcserver.ServerInfo) ([]string, error) {
+func (a *mcpStartAction) getExtensionEnvironment(
+	ctx context.Context,
+	ext *extensions.Extension,
+	serverInfo *grpcserver.ServerInfo,
+) ([]string, error) {
 	jwtToken, err := grpcserver.GenerateExtensionToken(ext, serverInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate extension token: %w", err)
@@ -321,11 +332,6 @@ func (a *mcpStartAction) getExtensionEnvironment(ctx context.Context, ext *exten
 	}
 
 	return env, nil
-}
-
-// convertToSnakeCase converts a dot-separated string to snake_case
-func convertToSnakeCase(input string) string {
-	return strings.ReplaceAll(input, ".", "_")
 }
 
 // Flags for MCP consent list command

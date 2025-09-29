@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package mcp
 
 import "github.com/mark3labs/mcp-go/client"

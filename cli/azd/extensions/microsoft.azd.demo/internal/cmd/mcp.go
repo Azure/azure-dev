@@ -98,7 +98,9 @@ func newDemoCalculatorTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"calculator",
-			mcp.WithDescription("A simple calculator that can perform basic arithmetic operations (add, subtract, multiply, divide)"),
+			mcp.WithDescription(
+				"A simple calculator that can perform basic arithmetic operations (add, subtract, multiply, divide)",
+			),
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(false),
@@ -157,7 +159,9 @@ func newDemoCalculatorTool() server.ServerTool {
 				result = a / b
 				opSymbol = "/"
 			default:
-				return mcp.NewToolResultError(fmt.Sprintf("Unknown operation '%s'. Supported operations: add, subtract, multiply, divide", operation)), nil
+				return mcp.NewToolResultError(
+					fmt.Sprintf("Unknown operation '%s'. Supported operations: add, subtract, multiply, divide", operation),
+				), nil
 			}
 
 			response := fmt.Sprintf("%.2f %s %.2f = %.2f", a, opSymbol, b, result)

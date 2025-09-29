@@ -379,10 +379,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	// Warn user that this is an alpha feature
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Agentic mode init is in alpha mode. The agent will scan your repository and " +
-			"attempt to make an azd-ready template to init. You can always change permissions later " +
-			"by running `azd mcp consent`. Mistakes may occur in agent mode. " +
-			"To learn more, go to [LINK]\n", //TODO: add link
+		Title: fmt.Sprintf("Agentic mode init is in alpha mode. The agent will scan your repository and "+
+			"attempt to make an azd-ready template to init. You can always change permissions later "+
+			"by running `azd mcp consent`. Mistakes may occur in agent mode. "+
+			"To learn more, go to %s\n", output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
 		TitleNote: "CTRL C to cancel interaction \n? to pull up help text",
 	})
 
@@ -459,6 +459,17 @@ Do not stop until all tasks are complete and fully resolved.
 		},
 	}
 
+	stepsSummaryLabels := []string{
+		"Step 1 (discovery & analysis) Summary:",
+		"Step 2 (architecture plan) Summary:",
+		"Step 3 (dockerfile generation) Summary:",
+		"Step 4 (infrastructure generation) Summary:",
+		"Step 5 (azure.yaml generation) Summary:",
+		"Step 6 (project validation) Summary:",
+	}
+
+	var stepSummaries []string
+
 	for idx, step := range initSteps {
 		// Collect and apply feedback for next steps
 		if idx > 0 {
@@ -466,6 +477,14 @@ Do not stop until all tasks are complete and fully resolved.
 				ctx,
 				azdAgent,
 				"Any changes before moving to the next step?",
+			); err != nil {
+				return err
+			}
+		} else if idx == len(initSteps)-1 {
+			if err := i.collectAndApplyFeedback(
+				ctx,
+				azdAgent,
+				"Any changes before moving to the next completing interaction?",
 			); err != nil {
 				return err
 			}
@@ -487,14 +506,16 @@ Do not stop until all tasks are complete and fully resolved.
 			return err
 		}
 
+		stepSummaries = append(stepSummaries, agentOutput)
+
 		i.console.Message(ctx, "")
-		i.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
+		i.console.Message(ctx, color.HiMagentaString(fmt.Sprintf("◆ %s Summary:", stepsSummaryLabels[idx])))
 		i.console.Message(ctx, output.WithMarkdown(agentOutput))
 		i.console.Message(ctx, "")
 	}
 
-	// Post-completion feedback loop
-	if err := i.postCompletionFeedbackLoop(ctx, azdAgent); err != nil {
+	// Post-completion summary
+	if err := i.postCompletionSummary(ctx, azdAgent, stepSummaries); err != nil {
 		return err
 	}
 
@@ -519,16 +540,46 @@ func (i *initAction) collectAndApplyFeedback(
 	return collector.CollectFeedbackAndApply(ctx, azdAgent, AIDisclaimer)
 }
 
-// postCompletionFeedbackLoop provides a final opportunity for feedback after all steps complete
-func (i *initAction) postCompletionFeedbackLoop(
+// postCompletionSummary provides a final summary after all steps complete
+func (i *initAction) postCompletionSummary(
 	ctx context.Context,
 	azdAgent agent.Agent,
+	stepSummaries []string,
 ) error {
 	i.console.Message(ctx, "")
 	i.console.Message(ctx, "🎉 All initialization steps completed!")
 	i.console.Message(ctx, "")
 
-	return i.collectAndApplyFeedback(ctx, azdAgent, "Any changes before moving to the next completing interaction?")
+	// Combine all step summaries into a single prompt
+	combinedSummaries := strings.Join(stepSummaries, "\n\n---\n\n")
+	summaryPrompt := fmt.Sprintf(`Based on the following step-by-step summaries of the azd init process, please provide 
+	a comprehensive overall summary of what was accomplished: %s
+
+Please provide:
+1. A brief overview of the initialization process
+2. Key files and components that were created
+3. Any important notes or considerations
+
+Format your response in clear markdown.`, combinedSummaries)
+
+	agentOutput, err := azdAgent.SendMessage(ctx, summaryPrompt)
+	if err != nil {
+		if agentOutput != "" {
+			i.console.Message(ctx, output.WithMarkdown(agentOutput))
+		}
+
+		return err
+	}
+
+	i.console.Message(ctx, "")
+	i.console.Message(ctx, color.HiMagentaString("◆ Agentic init Summary:"))
+	i.console.Message(ctx, output.WithMarkdown(agentOutput))
+	i.console.Message(ctx, "")
+
+	i.console.Message(ctx, fmt.Sprintf("%s Run azd up to deploy project to the cloud.", color.HiMagentaString("Next steps:")))
+	i.console.Message(ctx, "")
+
+	return nil
 }
 
 type initType int

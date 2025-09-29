@@ -19,14 +19,11 @@ type FeedbackCollectorOptions struct {
 	// EnableLoop determines if feedback collection should loop for multiple rounds
 	EnableLoop bool
 
-	// FeedbackPrompt is the prompt for collecting actual feedback
+	// FeedbackPrompt is the prompt for collecting feedback
 	FeedbackPrompt string
 
-	// FeedbackHint is the hint text for feedback input
+	// FeedbackHint is the hint text for FeedbackPrompt
 	FeedbackHint string
-
-	// Whether or not to capture hint keys (default: true)
-	IgnoreHintKeys bool
 
 	// RequireFeedback determines if feedback input is required when provided
 	RequireFeedback bool

@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/feedback"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -38,6 +39,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/fatih/color"
 	"github.com/joho/godotenv"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -387,17 +389,21 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	})
 
 	// Check read only tool consent
-	readOnlyRules, err := i.consentManager.ListConsentRules(ctx,
-		consent.WithScope(consent.ScopeGlobal),
-		consent.WithOperation(consent.OperationTypeTool),
-		consent.WithAction(consent.ActionReadOnly),
-		consent.WithPermission(consent.PermissionAllow),
+	readOnlyRule, err := i.consentManager.CheckConsent(ctx,
+		consent.ConsentRequest{
+			ToolID:     "*/*",
+			ServerName: "*",
+			Operation:  consent.OperationTypeTool,
+			Annotations: mcp.ToolAnnotation{
+				ReadOnlyHint: common.ToPtr(true),
+			},
+		},
 	)
 	if err != nil {
 		return err
 	}
 
-	if len(readOnlyRules) == 0 {
+	if !readOnlyRule.Allowed {
 		if err := i.console.DoInteraction(func() error {
 			consentChecker := consent.NewConsentChecker(i.consentManager, "")
 			promptErr := consentChecker.PromptAndGrantReadOnlyToolConsent(ctx)

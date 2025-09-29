@@ -499,7 +499,8 @@ Do not stop until all tasks are complete and fully resolved.
 		i.console.Message(ctx, color.MagentaString(step.Name))
 		fullTaskInput := fmt.Sprintf(taskInput, strings.Join([]string{
 			step.Description,
-			"Provide a brief summary in bullet point format about what was scanned or analyzed and key actions performed:\n" +
+			"Provide a brief summary in bullet point format about what was scanned" +
+				" or analyzed and key actions performed:\n" +
 				"Keep it concise and focus on high-level accomplishments, not implementation details.",
 		}, "\n"))
 

@@ -42,6 +42,25 @@ module ai 'ai/aspire.hosting.azure.bicep.appinsights.bicep' = {
     logAnalyticsWorkspaceId: ''
   }
 }
+module aspire_owned_env 'aspire-owned-env/aspire-owned-env.bicep' = {
+  name: 'aspire-owned-env'
+  scope: resourceGroup(rg_scope)
+  params: {
+    location: location
+    userPrincipalId: principalId
+  }
+}
+module bicepModule 'bicepModule/bicepModule.bicep' = {
+  name: 'bicepModule'
+  scope: resourceGroup(rg_scope)
+  params: {
+    host: 'frontend.internal.${aspire-owned-env.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}'
+    location: location
+    test: parameter
+    url: 'http://frontend.internal.${aspire-owned-env.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}'
+    values: ['one','two']
+  }
+}
 module postgres_2 'postgres-2/aspire.hosting.azure.bicep.postgres.bicep' = {
   name: 'postgres-2'
   scope: rg
@@ -79,25 +98,13 @@ module sql 'sql/aspire.hosting.azure.bicep.sql.bicep' = {
     serverName: 'sql'
   }
 }
-module test 'test/test.bicep' = {
-  name: 'test'
-  scope: resourceGroup(rg_scope)
-  params: {
-    host: 'frontend.internal.${resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}'
-    location: location
-    test: parameter
-    url: 'http://frontend.internal.${resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}'
-    userPrincipalId: principalId
-    values: ['one','two']
-  }
-}
 output AI_APPINSIGHTSCONNECTIONSTRING string = ai.outputs.appInsightsConnectionString
-output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = test.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = test.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
+output ASPIRE_OWNED_ENV_AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = aspire_owned_env.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
+output ASPIRE_OWNED_ENV_AZURE_CONTAINER_REGISTRY_ENDPOINT string = aspire_owned_env.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
+output ASPIRE_OWNED_ENV_TEST string = aspire_owned_env.outputs.test
+output ASPIRE_OWNED_ENV_VAL0 string = aspire_owned_env.outputs.val0
+output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = aspire_owned_env.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = aspire_owned_env.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output S_B_SERVICEBUSENDPOINT string = s_b.outputs.serviceBusEndpoint
 output SQL_SQLSERVERFQDN string = sql.outputs.sqlServerFqdn
-output TEST_AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = test.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
-output TEST_AZURE_CONTAINER_REGISTRY_ENDPOINT string = test.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
-output TEST_TEST string = test.outputs.test
-output TEST_VAL0 string = test.outputs.val0
 

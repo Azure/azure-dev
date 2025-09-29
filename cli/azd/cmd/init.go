@@ -399,8 +399,7 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 
 	if len(readOnlyRules) == 0 {
 		if err := i.console.DoInteraction(func() error {
-			// TODO check if server name is OK
-			consentChecker := consent.NewConsentChecker(i.consentManager, "ReadOnlyTools")
+			consentChecker := consent.NewConsentChecker(i.consentManager, "")
 			promptErr := consentChecker.PromptAndGrantReadOnlyToolConsent(ctx)
 			i.console.Message(ctx, "")
 
@@ -460,12 +459,12 @@ Do not stop until all tasks are complete and fully resolved.
 	}
 
 	stepsSummaryLabels := []string{
-		"Step 1 (discovery & analysis) Summary:",
-		"Step 2 (architecture plan) Summary:",
-		"Step 3 (dockerfile generation) Summary:",
-		"Step 4 (infrastructure generation) Summary:",
-		"Step 5 (azure.yaml generation) Summary:",
-		"Step 6 (project validation) Summary:",
+		"Step 1 (discovery & analysis)",
+		"Step 2 (architecture plan)",
+		"Step 3 (dockerfile generation)",
+		"Step 4 (infrastructure generation)",
+		"Step 5 (azure.yaml generation)",
+		"Step 6 (project validation)",
 	}
 
 	var stepSummaries []string

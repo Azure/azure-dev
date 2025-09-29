@@ -152,6 +152,7 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 		var latestAction string
 		var latestActionInput string
 		var spinnerText string
+		var toolStartTime time.Time
 
 		for {
 
@@ -160,6 +161,7 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 				if thought.Action != "" {
 					latestAction = thought.Action
 					latestActionInput = thought.ActionInput
+					toolStartTime = time.Now()
 				}
 				if thought.Thought != "" {
 					latestThought = thought.Thought
@@ -173,15 +175,15 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 			if latestAction == "" {
 				spinnerText = "Processing..."
 			} else {
-				// each time we get a thought, we start the timer
-				// when get a new thought, we change the time
-				// make sure timing
+				elapsedSeconds := int(time.Since(toolStartTime).Seconds())
+
 				spinnerText = fmt.Sprintf("Running %s tool", color.MagentaString(latestAction))
 				if latestActionInput != "" {
 					spinnerText += " with " + color.HiBlackString(latestActionInput)
 				}
 
 				spinnerText += "..."
+				spinnerText += color.HiBlackString(fmt.Sprintf("\n(%ds, esc exit agentic mode)", elapsedSeconds))
 
 				// print out the result and use spinner to indicate processing
 			}

@@ -94,8 +94,6 @@ func (cc *ConsentChecker) PromptAndGrantConsent(
 func (cc *ConsentChecker) PromptAndGrantReadOnlyToolConsent(
 	ctx context.Context,
 ) error {
-	toolId := fmt.Sprintf("%s/%s", cc.serverName, "ReadOnlyTools")
-
 	choice, err := cc.promptForReadOnlyToolConsent(ctx)
 	if err != nil {
 		return err
@@ -107,7 +105,7 @@ func (cc *ConsentChecker) PromptAndGrantReadOnlyToolConsent(
 	}
 
 	// Grant consent based on user choice
-	return cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeTool)
+	return cc.grantConsentFromChoice(ctx, "*/*", choice, OperationTypeTool)
 }
 
 // PromptAndGrantSamplingConsent shows sampling consent prompt and grants permission based on user choice
@@ -411,15 +409,15 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 			Operation:  operation,
 			Permission: PermissionAllow,
 		}
+	case "global":
+		rule = ConsentRule{
+			Scope:      ScopeGlobal,
+			Target:     NewGlobalTarget(),
+			Action:     ActionAny,
+			Operation:  operation,
+			Permission: PermissionAllow,
+		}
 	// Keep the choice for future use if needed, will clean comment later
-	// case "global":
-	// 	rule = ConsentRule{
-	// 		Scope:      ScopeGlobal,
-	// 		Target:     NewGlobalTarget(),
-	// 		Action:     ActionAny,
-	// 		Operation:  operation,
-	// 		Permission: PermissionAllow,
-	// 	}
 	// case "readonly_server":
 	// 	// Grant trust to readonly tools from this server (only for tool context)
 	// 	if operation != OperationTypeTool {
@@ -439,7 +437,7 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 		}
 		rule = ConsentRule{
 			Scope:      ScopeSession,
-			Target:     NewServerTarget(serverName),
+			Target:     NewGlobalTarget(),
 			Action:     ActionReadOnly,
 			Operation:  operation,
 			Permission: PermissionAllow,

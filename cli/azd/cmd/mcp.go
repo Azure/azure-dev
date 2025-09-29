@@ -160,10 +160,19 @@ func newMcpStartAction(
 }
 
 func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	var mcpHost *mcp.McpHost
+
 	mcpServer := server.NewMCPServer(
 		"AZD MCP Server 🚀", "1.0.0",
 		server.WithToolCapabilities(true),
 		server.WithElicitation(),
+		server.WithHooks(&server.Hooks{
+			OnRegisterSession: []server.OnRegisterSessionHookFunc{
+				func(ctx context.Context, session server.ClientSession) {
+					mcpHost.SetSession(session)
+				},
+			},
+		}),
 	)
 	mcpServer.EnableSampling()
 
@@ -198,11 +207,14 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	}
 
 	if len(extensionServers) > 0 {
-		mcpCapabilities := mcp.Capabilities{}
-
 		mcpHostOptions := []mcp.McpHostOption{
 			mcp.WithServers(extensionServers),
-			mcp.WithCapabilities(mcpCapabilities),
+			// Register capabilities with forwarding handlers so any sampling/elicitation requests
+			// are automatically forwarded up to the root server.
+			mcp.WithCapabilities(mcp.Capabilities{
+				Sampling:    mcp.NewProxySamplingHandler(mcpServer),
+				Elicitation: mcp.NewProxyElicitationHandler(mcpServer),
+			}),
 		}
 
 		a.mcpHost = mcp.NewMcpHost(mcpHostOptions...)
@@ -219,6 +231,8 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			}
 
 		}
+
+		mcpHost = a.mcpHost
 	}
 
 	mcpServer.AddTools(allTools...)
@@ -256,7 +270,8 @@ func (a *mcpStartAction) getExtensionServers(
 			log.Printf("failed to get MCP server config for extension %s: %v", ext.Id, err)
 		}
 
-		servers[ext.Id] = serverConfig
+		serverName := fmt.Sprintf("azd_%s", strings.ReplaceAll(ext.Namespace, ".", "_"))
+		servers[serverName] = serverConfig
 	}
 
 	return servers, nil

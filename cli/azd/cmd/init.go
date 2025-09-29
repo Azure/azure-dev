@@ -493,7 +493,8 @@ Do not stop until all tasks are complete and fully resolved.
 		i.console.Message(ctx, color.MagentaString(step.Name))
 		fullTaskInput := fmt.Sprintf(taskInput, strings.Join([]string{
 			step.Description,
-			"Provide a very brief summary in markdown format that includes any files generated during this step.",
+			"Provide a brief summary in bullet point format about what was scanned or analyzed and key actions performed:\n" +
+				"Keep it concise and focus on high-level accomplishments, not implementation details.",
 		}, "\n"))
 
 		agentOutput, err := azdAgent.SendMessage(ctx, fullTaskInput)
@@ -551,15 +552,8 @@ func (i *initAction) postCompletionSummary(
 
 	// Combine all step summaries into a single prompt
 	combinedSummaries := strings.Join(stepSummaries, "\n\n---\n\n")
-	summaryPrompt := fmt.Sprintf(`Based on the following step-by-step summaries of the azd init process, please provide 
-	a comprehensive overall summary of what was accomplished: %s
-
-Please provide:
-1. A brief overview of the initialization process
-2. Key files and components that were created
-3. Any important notes or considerations
-
-Format your response in clear markdown.`, combinedSummaries)
+	summaryPrompt := fmt.Sprintf(`Based on the following summaries of the azd init process, please provide
+	a comprehensive overall summary of what was accomplished in bullet point format:\n%s`, combinedSummaries)
 
 	agentOutput, err := azdAgent.SendMessage(ctx, summaryPrompt)
 	if err != nil {
@@ -575,7 +569,8 @@ Format your response in clear markdown.`, combinedSummaries)
 	i.console.Message(ctx, output.WithMarkdown(agentOutput))
 	i.console.Message(ctx, "")
 
-	i.console.Message(ctx, fmt.Sprintf("%s Run azd up to deploy project to the cloud.", color.HiMagentaString("Next steps:")))
+	i.console.Message(ctx, fmt.Sprintf("%s Run azd up to deploy project to the cloud.",
+		color.HiMagentaString("Next steps:")))
 	i.console.Message(ctx, "")
 
 	return nil

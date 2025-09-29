@@ -103,12 +103,15 @@ func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...st
 		}
 	}
 
-	cleanup, err := aai.renderThoughts(thoughtsCtx)
+	cleanup, completionChan, err := aai.renderThoughts(thoughtsCtx)
 	if err != nil {
 		return "", err
 	}
 
 	defer func() {
+		close(completionChan)
+		// Give a brief moment for the final tool message "Ran..." to be printed
+		time.Sleep(100 * time.Millisecond)
 		cleanup()
 
 		if aai.fileWatchingEnabled {
@@ -124,8 +127,9 @@ func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...st
 	return output, nil
 }
 
-func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func(), error) {
+func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func(), chan struct{}, error) {
 	var latestThought string
+	completionChan := make(chan struct{})
 
 	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
 		Text: "Processing...",
@@ -146,6 +150,24 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 			return nil
 		}))
 
+	printToolCompletion := func(action, actionInput, thought string) {
+		if action == "" {
+			return
+		}
+
+		completionMsg := fmt.Sprintf("%s Ran %s", color.GreenString("✔︎"), color.MagentaString(action))
+		if actionInput != "" {
+			completionMsg += " with " + color.HiBlackString(actionInput)
+		}
+		if thought != "" {
+			completionMsg += color.MagentaString("\n\n◆ agent: ") + thought
+		}
+
+		canvas.Clear()
+		fmt.Println(completionMsg)
+		fmt.Println()
+	}
+
 	go func() {
 		defer canvas.Clear()
 
@@ -159,6 +181,9 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 			select {
 			case thought := <-aai.thoughtChan:
 				if thought.Action != "" {
+					if thought.Action != latestAction {
+						printToolCompletion(latestAction, latestActionInput, latestThought)
+					}
 					latestAction = thought.Action
 					latestActionInput = thought.ActionInput
 					toolStartTime = time.Now()
@@ -166,6 +191,9 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 				if thought.Thought != "" {
 					latestThought = thought.Thought
 				}
+			case <-completionChan:
+				printToolCompletion(latestAction, latestActionInput, latestThought)
+				return
 			case <-ctx.Done():
 				return
 			case <-time.After(200 * time.Millisecond):
@@ -198,5 +226,5 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 		canvas.Close()
 	}
 
-	return cleanup, canvas.Run()
+	return cleanup, completionChan, canvas.Run()
 }

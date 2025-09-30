@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/feedback"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -19,7 +20,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
-	"github.com/fatih/color"
 )
 
 type ErrorMiddleware struct {
@@ -72,6 +72,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		"environment already initialized",
 		"interrupt",
 		"no project exists",
+		"tool execution denied",
 	}
 	for _, s := range skipAnalyzingErrors {
 		if strings.Contains(err.Error(), s) {
@@ -85,7 +86,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	originalError := err
 	azdAgent, err := e.agentFactory.Create(
 		agent.WithDebug(e.global.EnableDebugLogging),
-		agent.WithFileWatching(true),
 	)
 	if err != nil {
 		return nil, err
@@ -217,41 +217,15 @@ func (e *ErrorMiddleware) collectAndApplyFeedback(
 	azdAgent agent.Agent,
 	AIDisclaimer string,
 ) error {
-	userInputPrompt := uxlib.NewPrompt(&uxlib.PromptOptions{
-		Message:  "Any changes you'd like to make?",
-		Hint:     "Describe your changes or press enter to skip.",
-		Required: false,
+	collector := feedback.NewFeedbackCollector(e.console, feedback.FeedbackCollectorOptions{
+		EnableLoop:      false,
+		FeedbackPrompt:  "Any changes you'd like to make?",
+		FeedbackHint:    "Describe your changes or press enter to skip.",
+		RequireFeedback: false,
+		AIDisclaimer:    AIDisclaimer,
 	})
 
-	userInput, err := userInputPrompt.Ask(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to collect feedback for user input: %w", err)
-	}
-
-	if userInput == "" {
-		e.console.Message(ctx, "")
-		return nil
-	}
-
-	e.console.Message(ctx, "")
-	e.console.Message(ctx, color.MagentaString("Feedback"))
-
-	feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
-	if err != nil {
-		if feedbackOutput != "" {
-			e.console.Message(ctx, AIDisclaimer)
-			e.console.Message(ctx, output.WithMarkdown(feedbackOutput))
-		}
-		return err
-	}
-
-	e.console.Message(ctx, AIDisclaimer)
-	e.console.Message(ctx, "")
-	e.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
-	e.console.Message(ctx, output.WithMarkdown(feedbackOutput))
-	e.console.Message(ctx, "")
-
-	return nil
+	return collector.CollectFeedbackAndApply(ctx, azdAgent, AIDisclaimer)
 }
 
 func (e *ErrorMiddleware) checkErrorHandlingConsent(

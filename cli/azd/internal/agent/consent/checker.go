@@ -215,20 +215,7 @@ func (cc *ConsentChecker) promptForToolConsent(
 			Value: "session",
 			Label: "Yes, until I restart azd",
 		},
-		// Keep the choice for future use if needed, will clean comment later
-		// {
-		// 	Value: "once",
-		// 	Label: "Yes, just this time",
-		// },
 	}
-
-	// Add project option only if we have an environment context
-	// if cc.consentMgr.IsProjectScopeAvailable(ctx) {
-	// 	choices = append(choices, &ux.SelectChoice{
-	// 		Value: "project",
-	// 		Label: "Yes, remember for this project",
-	// 	})
-	// }
 
 	// Add server trust option if not already trusted
 	if !cc.isServerAlreadyTrusted(ctx, OperationTypeTool) {
@@ -237,19 +224,6 @@ func (cc *ConsentChecker) promptForToolConsent(
 			Label: fmt.Sprintf("Yes, always allow all tools from %s server", cc.serverName),
 		})
 	}
-
-	// Add readonly trust options if this is a readonly tool
-	// isReadOnlyTool := annotations.ReadOnlyHint != nil && *annotations.ReadOnlyHint
-	// if isReadOnlyTool {
-	// 	choices = append(choices, &ux.SelectChoice{
-	// 		Value: "readonly_server",
-	// 		Label: "Allow all read-only tools from this server",
-	// 	})
-
-	// choices = append(choices, &ux.SelectChoice{
-	// 	Value: "global",
-	// 	Label: "Allow all tools from any server",
-	// })
 
 	choices = append(choices, &ux.SelectChoice{
 		Value: "deny",
@@ -292,14 +266,6 @@ func (cc *ConsentChecker) promptForReadOnlyToolConsent(
 			Label: "Yes, until I restart azd",
 		},
 	}
-
-	// Add project option only if we have an environment context
-	// if cc.consentMgr.IsProjectScopeAvailable(ctx) {
-	// 	choices = append(choices, &ux.SelectChoice{
-	// 		Value: "project",
-	// 		Label: "Yes, remember for this project",
-	// 	})
-	// }
 
 	choices = append(choices, &ux.SelectChoice{
 		Value: "readonly_global",
@@ -417,19 +383,6 @@ func (cc *ConsentChecker) grantConsentFromChoice(
 			Operation:  operation,
 			Permission: PermissionAllow,
 		}
-	// Keep the choice for future use if needed, will clean comment later
-	// case "readonly_server":
-	// 	// Grant trust to readonly tools from this server (only for tool context)
-	// 	if operation != OperationTypeTool {
-	// 		return fmt.Errorf("readonly server option only available for tool consent")
-	// 	}
-	// 	rule = ConsentRule{
-	// 		Scope:      ScopeGlobal,
-	// 		Target:     NewServerTarget(serverName),
-	// 		Action:     ActionReadOnly,
-	// 		Operation:  operation,
-	// 		Permission: PermissionAllow,
-	// 	}
 	case "readonly_session":
 		// Grant trust to all readonly tools until azd restart (only for tool context)
 		if operation != OperationTypeTool {

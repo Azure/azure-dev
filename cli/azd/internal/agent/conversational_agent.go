@@ -36,8 +36,9 @@ type ConversationalAzdAiAgent struct {
 func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentCreateOption) (Agent, error) {
 	azdAgent := &ConversationalAzdAiAgent{
 		agentBase: &agentBase{
-			defaultModel: llm,
-			tools:        []common.AnnotatedTool{},
+			defaultModel:         llm,
+			tools:                []common.AnnotatedTool{},
+			fileWatchingDisabled: true,
 		},
 	}
 
@@ -91,30 +92,31 @@ func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentCreateOption) (Age
 // SendMessage processes a single message through the agent and returns the response
 func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...string) (string, error) {
 	thoughtsCtx, cancelCtx := context.WithCancel(ctx)
-	defer cancelCtx()
 
 	var watcher watch.Watcher
 
-	if aai.fileWatchingEnabled {
+	if aai.fileWatchingDisabled {
 		var err error
 		watcher, err = watch.NewWatcher(ctx)
 		if err != nil {
+			cancelCtx()
 			return "", fmt.Errorf("failed to start watcher: %w", err)
 		}
 	}
 
-	cleanup, completionChan, err := aai.renderThoughts(thoughtsCtx)
+	cleanup, err := aai.renderThoughts(thoughtsCtx)
 	if err != nil {
+		cancelCtx()
 		return "", err
 	}
 
 	defer func() {
-		close(completionChan)
+		cancelCtx()
 		// Give a brief moment for the final tool message "Ran..." to be printed
 		time.Sleep(100 * time.Millisecond)
 		cleanup()
 
-		if aai.fileWatchingEnabled {
+		if aai.fileWatchingDisabled {
 			watcher.PrintChangedFiles(ctx)
 		}
 	}()
@@ -127,9 +129,8 @@ func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...st
 	return output, nil
 }
 
-func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func(), chan struct{}, error) {
+func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func(), error) {
 	var latestThought string
-	completionChan := make(chan struct{})
 
 	spinner := uxlib.NewSpinner(&uxlib.SpinnerOptions{
 		Text: "Processing...",
@@ -191,10 +192,8 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 				if thought.Thought != "" {
 					latestThought = thought.Thought
 				}
-			case <-completionChan:
-				printToolCompletion(latestAction, latestActionInput, latestThought)
-				return
 			case <-ctx.Done():
+				printToolCompletion(latestAction, latestActionInput, latestThought)
 				return
 			case <-time.After(200 * time.Millisecond):
 			}
@@ -211,7 +210,7 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 				}
 
 				spinnerText += "..."
-				spinnerText += color.HiBlackString(fmt.Sprintf("\n(%ds, esc exit agentic mode)", elapsedSeconds))
+				spinnerText += color.HiBlackString(fmt.Sprintf("\n(%ds, CTRL C to exit agentic mode)", elapsedSeconds))
 
 				// print out the result and use spinner to indicate processing
 			}
@@ -226,5 +225,5 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 		canvas.Close()
 	}
 
-	return cleanup, completionChan, canvas.Run()
+	return cleanup, canvas.Run()
 }

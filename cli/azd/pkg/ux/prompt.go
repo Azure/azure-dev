@@ -44,8 +44,8 @@ type PromptOptions struct {
 	ClearOnCompletion bool
 	// Whether or not to capture hint keys (default: true)
 	IgnoreHintKeys bool
-	// The optional second line message to display (default: "")
-	SecondLineMessage string
+	// The optional help message that displays on the next line (default: "")
+	HelpMessageOnNextLine string
 }
 
 var DefaultPromptOptions PromptOptions = PromptOptions{
@@ -230,8 +230,8 @@ func (p *Prompt) Render(printer Printer) error {
 	}
 
 	// Display SecondLineMessage on next line in gray
-	if !p.complete && p.options.SecondLineMessage != "" {
-		printer.Fprintf("\n%s", output.WithGrayFormat(p.options.SecondLineMessage))
+	if !p.complete && p.options.HelpMessageOnNextLine != "" {
+		printer.Fprintf("\n%s", output.WithGrayFormat(p.options.HelpMessageOnNextLine))
 		// Reset cursor to the input position after showing the message
 		if p.cursorPosition != nil {
 			printer.SetCursorPosition(*p.cursorPosition)

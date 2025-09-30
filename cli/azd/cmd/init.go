@@ -262,9 +262,11 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	header := "New project initialized!"
 	followUp := heredoc.Docf(`
 	You can view the template code in your directory: %s
-	Learn more about running 3rd party code on our DevHub: %s`,
+	Learn more about running 3rd party code on our DevHub: %s
+	%s Run azd up to deploy project to the cloud.`,
 		output.WithLinkFormat("%s", wd),
-		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
+		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"),
+		color.HiMagentaString("Next steps:"))
 
 	switch initTypeSelect {
 	case initAppTemplate:
@@ -404,20 +406,16 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	}
 
 	if !readOnlyRule.Allowed {
-		if err := i.console.DoInteraction(func() error {
-			consentChecker := consent.NewConsentChecker(i.consentManager, "")
-			promptErr := consentChecker.PromptAndGrantReadOnlyToolConsent(ctx)
-			i.console.Message(ctx, "")
-
-			return promptErr
-		}); err != nil {
+		consentChecker := consent.NewConsentChecker(i.consentManager, "")
+		err = consentChecker.PromptAndGrantReadOnlyToolConsent(ctx)
+		if err != nil {
 			return err
 		}
+		i.console.Message(ctx, "")
 	}
 
 	azdAgent, err := i.agentFactory.Create(
 		agent.WithDebug(i.flags.global.EnableDebugLogging),
-		agent.WithFileWatching(true),
 	)
 	if err != nil {
 		return err
@@ -426,8 +424,9 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	defer azdAgent.Stop()
 
 	type initStep struct {
-		Name        string
-		Description string
+		Name         string
+		Description  string
+		SummaryTitle string
 	}
 
 	taskInput := `Your task: %s
@@ -439,38 +438,35 @@ Do not stop until all tasks are complete and fully resolved.
 
 	initSteps := []initStep{
 		{
-			Name:        "Step 1: Running Discovery & Analysis",
-			Description: "Run a deep discovery and analysis on the current working directory.",
+			Name:         "Step 1: Running Discovery & Analysis",
+			Description:  "Run a deep discovery and analysis on the current working directory.",
+			SummaryTitle: "Step 1 (discovery & analysis)",
 		},
 		{
-			Name:        "Step 2: Generating Architecture Plan",
-			Description: "Create a high-level architecture plan for the application.",
+			Name:         "Step 2: Generating Architecture Plan",
+			Description:  "Create a high-level architecture plan for the application.",
+			SummaryTitle: "Step 2 (architecture plan)",
 		},
 		{
-			Name:        "Step 3: Generating Dockerfile(s)",
-			Description: "Generate a Dockerfile for the application components as needed.",
+			Name:         "Step 3: Generating Dockerfile(s)",
+			Description:  "Generate a Dockerfile for the application components as needed.",
+			SummaryTitle: "Step 3 (dockerfile generation)",
 		},
 		{
-			Name:        "Step 4: Generating infrastructure",
-			Description: "Generate infrastructure as code (IaC) for the application.",
+			Name:         "Step 4: Generating infrastructure",
+			Description:  "Generate infrastructure as code (IaC) for the application.",
+			SummaryTitle: "Step 4 (infrastructure generation)",
 		},
 		{
-			Name:        "Step 5: Generating azure.yaml file",
-			Description: "Generate an azure.yaml file for the application.",
+			Name:         "Step 5: Generating azure.yaml file",
+			Description:  "Generate an azure.yaml file for the application.",
+			SummaryTitle: "Step 5 (azure.yaml generation)",
 		},
 		{
-			Name:        "Step 6: Validating project",
-			Description: "Validate the project structure and configuration.",
+			Name:         "Step 6: Validating project",
+			Description:  "Validate the project structure and configuration.",
+			SummaryTitle: "Step 6 (project validation)",
 		},
-	}
-
-	stepsSummaryLabels := []string{
-		"Step 1 (discovery & analysis)",
-		"Step 2 (architecture plan)",
-		"Step 3 (dockerfile generation)",
-		"Step 4 (infrastructure generation)",
-		"Step 5 (azure.yaml generation)",
-		"Step 6 (project validation)",
 	}
 
 	var stepSummaries []string
@@ -499,7 +495,7 @@ Do not stop until all tasks are complete and fully resolved.
 		i.console.Message(ctx, color.MagentaString(step.Name))
 		fullTaskInput := fmt.Sprintf(taskInput, strings.Join([]string{
 			step.Description,
-			"Provide a brief summary in bullet point format about what was scanned" +
+			"Provide a brief summary in around 6 bullet points format about what was scanned" +
 				" or analyzed and key actions performed:\n" +
 				"Keep it concise and focus on high-level accomplishments, not implementation details.",
 		}, "\n"))
@@ -516,7 +512,7 @@ Do not stop until all tasks are complete and fully resolved.
 		stepSummaries = append(stepSummaries, agentOutput)
 
 		i.console.Message(ctx, "")
-		i.console.Message(ctx, color.HiMagentaString(fmt.Sprintf("◆ %s Summary:", stepsSummaryLabels[idx])))
+		i.console.Message(ctx, color.HiMagentaString(fmt.Sprintf("◆ %s Summary:", step.SummaryTitle)))
 		i.console.Message(ctx, output.WithMarkdown(agentOutput))
 		i.console.Message(ctx, "")
 	}
@@ -574,10 +570,6 @@ func (i *initAction) postCompletionSummary(
 	i.console.Message(ctx, "")
 	i.console.Message(ctx, color.HiMagentaString("◆ Agentic init Summary:"))
 	i.console.Message(ctx, output.WithMarkdown(agentOutput))
-	i.console.Message(ctx, "")
-
-	i.console.Message(ctx, fmt.Sprintf("%s Run azd up to deploy project to the cloud.",
-		color.HiMagentaString("Next steps:")))
 	i.console.Message(ctx, "")
 
 	return nil

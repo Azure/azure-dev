@@ -67,9 +67,9 @@ func (c *FeedbackCollector) collectFeedbackAndApplyWithLoop(
 	// Loop to allow multiple rounds of feedback
 	for {
 		userInputPrompt := uxlib.NewPrompt(&uxlib.PromptOptions{
-			Message:           c.options.FeedbackPrompt,
-			SecondLineMessage: c.options.FeedbackHint,
-			Required:          c.options.RequireFeedback,
+			Message:               c.options.FeedbackPrompt,
+			HelpMessageOnNextLine: c.options.FeedbackHint,
+			Required:              c.options.RequireFeedback,
 		})
 
 		userInput, err := userInputPrompt.Ask(ctx)
@@ -95,9 +95,9 @@ func (c *FeedbackCollector) collectFeedbackAndApplyOnce(
 	AIDisclaimer string,
 ) error {
 	userInputPrompt := uxlib.NewPrompt(&uxlib.PromptOptions{
-		Message:           c.options.FeedbackPrompt,
-		SecondLineMessage: c.options.FeedbackHint,
-		Required:          c.options.RequireFeedback,
+		Message:               c.options.FeedbackPrompt,
+		HelpMessageOnNextLine: c.options.FeedbackHint,
+		Required:              c.options.RequireFeedback,
 	})
 
 	userInput, err := userInputPrompt.Ask(ctx)

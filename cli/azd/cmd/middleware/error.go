@@ -72,6 +72,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		"environment already initialized",
 		"interrupt",
 		"no project exists",
+		"tool execution denied",
 	}
 	for _, s := range skipAnalyzingErrors {
 		if strings.Contains(err.Error(), s) {
@@ -85,7 +86,6 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	originalError := err
 	azdAgent, err := e.agentFactory.Create(
 		agent.WithDebug(e.global.EnableDebugLogging),
-		agent.WithFileWatching(true),
 	)
 	if err != nil {
 		return nil, err

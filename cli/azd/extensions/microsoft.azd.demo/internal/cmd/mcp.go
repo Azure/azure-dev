@@ -160,7 +160,7 @@ func newAzdInfoTool() server.ServerTool {
 			info = append(info, "  MCP Server: Active")
 			info = append(
 				info,
-				"  Available Tools: demo_greeting, demo_calculator, demo_azd_info, demo_sampling, demo_elicitation",
+				"  Available Tools: greeting, azd_info, sampling, elicitation",
 			)
 
 			return mcp.NewToolResultText(strings.Join(info, "\n")), nil

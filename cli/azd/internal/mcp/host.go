@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"sync"
 
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
@@ -17,11 +16,11 @@ import (
 
 // McpHost manages multiple MCP (Model Context Protocol) servers and their tools
 type McpHost struct {
+	proxyServer  *server.MCPServer
 	servers      map[string]*ServerConfig
 	capabilities Capabilities
 	clients      map[string]*client.Client
 	session      server.ClientSession
-	sessionMutex sync.Mutex
 }
 
 // McpHostOption defines a functional option for configuring the McpHost
@@ -131,14 +130,11 @@ func (h *McpHost) Start(ctx context.Context) error {
 }
 
 func (h *McpHost) SetSession(session server.ClientSession) {
-	h.sessionMutex.Lock()
-	defer h.sessionMutex.Unlock()
-
 	h.session = session
 }
 
-func (h *McpHost) GetSession() server.ClientSession {
-	return h.session
+func (h *McpHost) SetProxyServer(server *server.MCPServer) {
+	h.proxyServer = server
 }
 
 // Servers returns the names of all configured MCP servers
@@ -204,6 +200,19 @@ func (h *McpHost) Stop() error {
 	return nil
 }
 
+// Hooks returns server hooks for the MCP host to manage client sessions
+func (h *McpHost) Hooks() *server.Hooks {
+	return &server.Hooks{
+		OnRegisterSession: []server.OnRegisterSessionHookFunc{
+			func(ctx context.Context, session server.ClientSession) {
+				if session != nil {
+					h.SetSession(session)
+				}
+			},
+		},
+	}
+}
+
 // createExtensionProxyTool creates a proxy tool that forwards calls to the extension's MCP server
 func createProxyTool(toolName string, mcpTool mcp.Tool, mcpClient client.MCPClient) server.ServerTool {
 	// Build tool options starting with description
@@ -228,13 +237,10 @@ func createProxyTool(toolName string, mcpTool mcp.Tool, mcpClient client.MCPClie
 	return server.ServerTool{
 		Tool: mcp.NewTool(toolName, toolOptions...),
 		Handler: func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			session := server.ClientSessionFromContext(ctx)
-
 			// Forward the tool call to the extension's MCP server
 			// Note: We need to use the original tool name when forwarding
 			originalRequest := request
 			originalRequest.Params.Name = mcpTool.Name
-			originalRequest.Header.Set("Mcp-Session-Id", session.SessionID())
 
 			return mcpClient.CallTool(ctx, originalRequest)
 		},

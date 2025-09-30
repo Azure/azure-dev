@@ -51,7 +51,12 @@ type flagValues struct {
 
 // resourceService is just a minimal version of [*armresources.ResourceGroupsClient]
 type resourceService interface {
-	CreateOrUpdate(ctx context.Context, resourceGroupName string, parameters armresources.ResourceGroup, options *armresources.ResourceGroupsClientCreateOrUpdateOptions) (armresources.ResourceGroupsClientCreateOrUpdateResponse, error)
+	CreateOrUpdate(
+		ctx context.Context,
+		resourceGroupName string,
+		parameters armresources.ResourceGroup,
+		options *armresources.ResourceGroupsClientCreateOrUpdateOptions,
+	) (armresources.ResourceGroupsClientCreateOrUpdateResponse, error)
 }
 
 func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
@@ -200,7 +205,11 @@ func newConfigCommand() *cobra.Command {
 		fmt.Printf("   git add .github/workflows/copilot-setup-steps.yml\n")
 		fmt.Printf("   git commit -m \"add coding-agent workflow\"\n")
 		fmt.Printf("   git push\n")
-		fmt.Printf("2. Visit https://github.com/%s/settings/copilot/coding_agent and paste the following into \"MCP configuration\" field:\n%s", cmdFlags.RepoSlug, mcpJson)
+		fmt.Printf(
+			"2. Visit https://github.com/%s/settings/copilot/coding_agent and paste the following into \"MCP configuration\" field:\n%s",
+			cmdFlags.RepoSlug,
+			mcpJson,
+		)
 		return nil
 	}
 
@@ -250,7 +259,10 @@ type credentialProviderAdapter struct {
 	tokenCred azcore.TokenCredential
 }
 
-func (cp *credentialProviderAdapter) CredentialForSubscription(ctx context.Context, subscriptionId string) (azcore.TokenCredential, error) {
+func (cp *credentialProviderAdapter) CredentialForSubscription(
+	ctx context.Context,
+	subscriptionId string,
+) (azcore.TokenCredential, error) {
 	return cp.tokenCred, nil
 }
 
@@ -327,7 +339,13 @@ func PickOrCreateMSI(ctx context.Context,
 			return nil, fmt.Errorf("prompting for MSI location: %w", err)
 		}
 
-		resourceGroupName, err := GetOrCreateResourceGroup(ctx, prompter, subscriptionId, location.Location.Name, resourceService)
+		resourceGroupName, err := GetOrCreateResourceGroup(
+			ctx,
+			prompter,
+			subscriptionId,
+			location.Location.Name,
+			resourceService,
+		)
 
 		if err != nil {
 			return nil, err
@@ -340,7 +358,13 @@ func PickOrCreateMSI(ctx context.Context,
 		})
 
 		err = spinner.Run(ctx, func(ctx context.Context) error {
-			newMSI, err := msiService.CreateUserIdentity(ctx, subscriptionId, resourceGroupName, location.Location.Name, "msi-copilot-"+projectName)
+			newMSI, err := msiService.CreateUserIdentity(
+				ctx,
+				subscriptionId,
+				resourceGroupName,
+				location.Location.Name,
+				"msi-copilot-"+projectName,
+			)
 
 			if err != nil {
 				return err

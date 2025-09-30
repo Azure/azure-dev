@@ -475,6 +475,7 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 		Usage:        selectedVersion.Usage,
 		Path:         relativeExtensionPath,
 		Source:       extension.Source,
+		McpConfig:    selectedVersion.McpConfig,
 	}
 
 	if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {

@@ -7,16 +7,23 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
+	"github.com/azure/azure-dev/cli/azd/internal/mcp"
 	"github.com/azure/azure-dev/cli/azd/internal/mcp/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/fatih/color"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -133,26 +140,43 @@ func (f *mcpStartFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 
 // Action for MCP start command
 type mcpStartAction struct {
-	flags *mcpStartFlags
+	flags            *mcpStartFlags
+	extensionManager *extensions.Manager
+	grpcServer       *grpcserver.Server
+	mcpHost          *mcp.McpHost
 }
 
 func newMcpStartAction(
 	flags *mcpStartFlags,
 	userConfigManager config.UserConfigManager,
+	extensionManager *extensions.Manager,
+	grpcServer *grpcserver.Server,
 ) actions.Action {
 	return &mcpStartAction{
-		flags: flags,
+		flags:            flags,
+		extensionManager: extensionManager,
+		grpcServer:       grpcServer,
 	}
 }
 
 func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	s := server.NewMCPServer(
+	var mcpHost *mcp.McpHost
+
+	mcpServer := server.NewMCPServer(
 		"AZD MCP Server 🚀", "1.0.0",
 		server.WithToolCapabilities(true),
+		server.WithElicitation(),
+		server.WithHooks(&server.Hooks{
+			OnRegisterSession: []server.OnRegisterSessionHookFunc{
+				func(ctx context.Context, session server.ClientSession) {
+					mcpHost.SetSession(session)
+				},
+			},
+		}),
 	)
-	s.EnableSampling()
+	mcpServer.EnableSampling()
 
-	allTools := []server.ServerTool{
+	azdTools := []server.ServerTool{
 		tools.NewAzdPlanInitTool(),
 		tools.NewAzdDiscoveryAnalysisTool(),
 		tools.NewAzdArchitecturePlanningTool(),
@@ -166,14 +190,163 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		tools.NewAzdErrorTroubleShootingTool(),
 	}
 
-	s.AddTools(allTools...)
+	allTools := []server.ServerTool{}
+	allTools = append(allTools, azdTools...)
+
+	// Start gRPC server for extension communication
+	serverInfo, err := a.grpcServer.Start()
+	if err != nil {
+		return nil, fmt.Errorf("failed to start gRPC server: %w", err)
+	}
+
+	defer a.grpcServer.Stop()
+
+	extensionServers, err := a.getExtensionServers(ctx, serverInfo)
+	if err != nil {
+		log.Printf("failed getting extension MCP servers, %v", err)
+	}
+
+	if len(extensionServers) > 0 {
+		mcpHostOptions := []mcp.McpHostOption{
+			mcp.WithServers(extensionServers),
+			// Register capabilities with forwarding handlers so any sampling/elicitation requests
+			// are automatically forwarded up to the root server.
+			mcp.WithCapabilities(mcp.Capabilities{
+				Sampling:    mcp.NewProxySamplingHandler(mcpServer),
+				Elicitation: mcp.NewProxyElicitationHandler(mcpServer),
+			}),
+		}
+
+		a.mcpHost = mcp.NewMcpHost(mcpHostOptions...)
+		if err := a.mcpHost.Start(ctx); err != nil {
+			log.Printf("failed starting extension servers, %v", err)
+		} else {
+			defer a.mcpHost.Stop()
+
+			extensionTools, err := a.mcpHost.AllTools(ctx)
+			if err != nil {
+				log.Printf("failed loading MCP host tools, %v", err)
+			} else {
+				allTools = append(allTools, extensionTools...)
+			}
+
+		}
+
+		mcpHost = a.mcpHost
+	}
+
+	mcpServer.AddTools(allTools...)
 
 	// Start the server using stdio transport
-	if err := server.ServeStdio(s); err != nil {
+	if err := server.ServeStdio(mcpServer); err != nil {
 		fmt.Printf("Server error: %v\n", err)
 	}
 
 	return nil, nil
+}
+
+func (a *mcpStartAction) getExtensionServers(
+	ctx context.Context,
+	serverInfo *grpcserver.ServerInfo,
+) (map[string]*mcp.ServerConfig, error) {
+	// Get all installed extensions
+	installedExtensions, err := a.extensionManager.ListInstalled()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get installed extensions: %w", err)
+	}
+
+	servers := map[string]*mcp.ServerConfig{}
+
+	// Find extensions with MCP server capability
+	for _, ext := range installedExtensions {
+		if !ext.HasCapability(extensions.McpServerCapability) {
+			continue
+		}
+
+		log.Printf("Loading MCP tools from extension: %s", ext.Id)
+
+		serverConfig, err := a.getExtensionServerConfig(ctx, ext, serverInfo)
+		if err != nil {
+			log.Printf("failed to get MCP server config for extension %s: %v", ext.Id, err)
+		}
+
+		serverName := fmt.Sprintf("azd_%s", strings.ReplaceAll(ext.Namespace, ".", "_"))
+		servers[serverName] = serverConfig
+	}
+
+	return servers, nil
+}
+
+// loadToolsFromExtension connects to a single extension's MCP server and loads its tools
+func (a *mcpStartAction) getExtensionServerConfig(
+	ctx context.Context,
+	ext *extensions.Extension,
+	serverInfo *grpcserver.ServerInfo,
+) (*mcp.ServerConfig, error) {
+	// Get extension executable path
+	userConfigDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user config directory: %w", err)
+	}
+
+	extensionPath := filepath.Join(userConfigDir, ext.Path)
+	if _, err := os.Stat(extensionPath); err != nil {
+		return nil, fmt.Errorf("extension path '%s' not found: %w", extensionPath, err)
+	}
+
+	// Use convention-over-configuration for MCP args and env
+	var args []string
+	var env []string
+
+	if ext.McpConfig != nil && len(ext.McpConfig.Server.Args) > 0 {
+		// Use explicitly configured args
+		args = append([]string{}, ext.McpConfig.Server.Args...)
+		env = append([]string{}, ext.McpConfig.Server.Env...)
+	} else {
+		// Use default convention: ["mcp", "start"]
+		args = []string{"mcp", "start"}
+		env = []string{}
+	}
+
+	// Always layer in AZD extension environment variables
+	azdEnv, err := a.getExtensionEnvironment(ctx, ext, serverInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get AZD extension environment variables")
+	}
+
+	env = append(env, azdEnv...)
+
+	return &mcp.ServerConfig{
+		Type:    "stdio",
+		Command: extensionPath,
+		Args:    args,
+		Env:     env,
+	}, nil
+
+}
+
+// getExtensionEnvironment prepares AZD environment variables for extensions
+func (a *mcpStartAction) getExtensionEnvironment(
+	ctx context.Context,
+	ext *extensions.Extension,
+	serverInfo *grpcserver.ServerInfo,
+) ([]string, error) {
+	jwtToken, err := grpcserver.GenerateExtensionToken(ext, serverInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate extension token: %w", err)
+	}
+
+	env := []string{
+		fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
+		fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
+	}
+
+	// Add color support if enabled
+	if !color.NoColor {
+		env = append(env, "FORCE_COLOR=1")
+	}
+
+	return env, nil
 }
 
 // Flags for MCP consent list command

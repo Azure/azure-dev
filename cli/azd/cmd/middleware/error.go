@@ -85,6 +85,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 	originalError := err
 	azdAgent, err := e.agentFactory.Create(
+		ctx,
 		agent.WithDebug(e.global.EnableDebugLogging),
 	)
 	if err != nil {

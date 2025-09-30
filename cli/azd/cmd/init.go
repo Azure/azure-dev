@@ -415,6 +415,7 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	}
 
 	azdAgent, err := i.agentFactory.Create(
+		ctx,
 		agent.WithDebug(i.flags.global.EnableDebugLogging),
 	)
 	if err != nil {

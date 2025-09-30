@@ -344,12 +344,10 @@ func GetCmdPublishHelpDescription(*cobra.Command) string {
 			formatHelpNote("Supports Container App services only."),
 			formatHelpNote(
 				//nolint:lll
-				"Target registry set by AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable, docker.registry in azure.yaml, or '--to' flag.",
-			),
+				"Target registry set by AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable, docker.registry in azure.yaml, or '--to' flag."),
 			formatHelpNote(
 				//nolint:lll
-				"Use '--from-package' to publish an existing container image, otherwise azd automatically packages the container image before publishing.",
-			),
+				"Use '--from-package' to publish an existing container image, otherwise azd automatically packages the container image before publishing."),
 		})
 }
 

@@ -145,7 +145,13 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 	hasPowerShellHooks := false
 	hasDefaultShellHooks := false
 
-	// First, perform lightweight validation to set flags like usingDefaultShell
+	// Two-pass validation is required because:
+	// 1. First pass: Set shell defaults and detect inline scripts for each hook configuration
+	// 2. Second pass: Generate warnings only after all hooks have been processed and we know
+	//    the complete state (e.g., whether ANY hook uses PowerShell or default shell)
+	// We cannot merge these loops because warnings depend on global state across all hooks.
+
+	// First pass: perform lightweight validation to set flags like usingDefaultShell
 	// without creating temporary files (which full validation does)
 	for _, hookConfigs := range allHooks {
 		for _, hookConfig := range hookConfigs {
@@ -179,7 +185,7 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 		}
 	}
 
-	// Now check all hooks for warning conditions
+	// Second pass: check all hooks for warning conditions using the state set in first pass
 	for _, hookConfigs := range allHooks {
 		for _, hookConfig := range hookConfigs {
 			if hookConfig.IsPowerShellHook() {

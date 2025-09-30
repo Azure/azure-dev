@@ -467,10 +467,6 @@ func (cc *ConsentChecker) promptForSamplingConsent(
 
 	choices := []*ux.SelectChoice{
 		{
-			Value: "deny",
-			Label: "No - Don't send data",
-		},
-		{
 			Value: "once",
 			Label: "Yes, just this time",
 		},
@@ -485,6 +481,10 @@ func (cc *ConsentChecker) promptForSamplingConsent(
 		{
 			Value: "always",
 			Label: "Yes, always allow this tool",
+		},
+		{
+			Value: "deny",
+			Label: "No - Don't send data",
 		},
 	}
 
@@ -528,7 +528,7 @@ func (cc *ConsentChecker) promptForElicitationConsent(
 	toolName, toolDesc string,
 ) (string, error) {
 	message := fmt.Sprintf(
-		"Allow tool %s from server %s to collect additional information?",
+		"Allow %s tool from %s server to collect additional information?",
 		output.WithHighLightFormat(toolName),
 		output.WithHighLightFormat(cc.serverName),
 	)
@@ -536,10 +536,6 @@ func (cc *ConsentChecker) promptForElicitationConsent(
 	helpMessage := fmt.Sprintf("This will allow the tool prompt you for additional information as needed. %s", toolDesc)
 
 	choices := []*ux.SelectChoice{
-		{
-			Value: "deny",
-			Label: "No - Don't collect data",
-		},
 		{
 			Value: "once",
 			Label: "Yes, just this time",
@@ -555,6 +551,10 @@ func (cc *ConsentChecker) promptForElicitationConsent(
 		{
 			Value: "always",
 			Label: "Yes, always allow for this tool",
+		},
+		{
+			Value: "deny",
+			Label: "No - Don't collect data",
 		},
 	}
 

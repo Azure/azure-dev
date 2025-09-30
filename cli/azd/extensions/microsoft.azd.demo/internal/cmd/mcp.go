@@ -283,19 +283,23 @@ func newElicitationTool() server.ServerTool {
 						"properties": map[string]any{
 							"name": map[string]any{
 								"type":        "string",
+								"title":       "Name",
 								"description": "Your name",
 							},
 							"role": map[string]any{
 								"type":        "string",
+								"title":       "Job Title",
 								"description": "Your role or job title",
 							},
 							"experience_level": map[string]any{
 								"type":        "string",
+								"title":       "Level of experience",
 								"description": "Your experience level with Azure",
 								"enum":        []string{"Beginner", "Intermediate", "Advanced", "Expert"},
 							},
 							"favorite_language": map[string]any{
 								"type":        "string",
+								"Title":       "Favorite programming language",
 								"description": "Your favorite programming language",
 								"enum": []string{
 									"Go",
@@ -311,6 +315,7 @@ func newElicitationTool() server.ServerTool {
 							},
 							"project_type": map[string]any{
 								"type":        "string",
+								"title":       "Project type",
 								"description": "Type of project you're working on",
 								"enum": []string{
 									"Web App",
@@ -324,6 +329,7 @@ func newElicitationTool() server.ServerTool {
 							},
 							"team_size": map[string]any{
 								"type":        "integer",
+								"title":       "Team size",
 								"description": "Size of your development team",
 								"minimum":     1,
 								"maximum":     1000,

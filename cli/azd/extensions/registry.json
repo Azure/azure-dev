@@ -1475,6 +1475,64 @@
               "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-azure-coding-agent_0.1.2/azure-coding-agent-windows-arm64.zip"
             }
           }
+        },
+        {
+          "capabilities": [
+            "custom-commands"
+          ],
+          "version": "0.1.3",
+          "usage": "azd coding-agent \u003ccommand\u003e [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "f2a72d4639d03744a642901a774a31a1919587f1f2044b54345dbc09b2fc7144"
+              },
+              "entryPoint": "azure-coding-agent-darwin-amd64",
+              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-azure-coding-agent_0.1.3/azure-coding-agent-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "b4ea72ea4e17bc609cc7ab8911f5ee1d003ec511adf770ba748158bb448a4d81"
+              },
+              "entryPoint": "azure-coding-agent-darwin-arm64",
+              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-azure-coding-agent_0.1.3/azure-coding-agent-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "bf41b054a9364dd63cebcb95a4dccfb73c427f17c808dce3768f80cf0ec65f64"
+              },
+              "entryPoint": "azure-coding-agent-linux-amd64",
+              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-azure-coding-agent_0.1.3/azure-coding-agent-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "ae43e6fc1dec9f7df010337ec744b7009d892eb892fe2b591a69061f0159ad3e"
+              },
+              "entryPoint": "azure-coding-agent-linux-arm64",
+              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-azure-coding-agent_0.1.3/azure-coding-agent-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "38f90704d4480c3bffedb1201af6026144319b6f81d21f44da8039a6fc3bcba4"
+              },
+              "entryPoint": "azure-coding-agent-windows-amd64.exe",
+              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-azure-coding-agent_0.1.3/azure-coding-agent-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9502dcf4fb0a9b1050e9e8021db380f3b2997ee9c44750628025f8d2b94b9868"
+              },
+              "entryPoint": "azure-coding-agent-windows-arm64.exe",
+              "url": "https://github.com/richardpark-msft/azdev-extensions/releases/download/azd-ext-azure-coding-agent_0.1.3/azure-coding-agent-windows-arm64.zip"
+            }
+          }
         }
       ]
     }

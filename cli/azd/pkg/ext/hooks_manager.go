@@ -237,8 +237,10 @@ func (h *HooksManager) ValidateHooks(ctx context.Context, allHooks map[string][]
 
 		warningMessage = fmt.Sprintf(
 			"Hook configurations found without explicit shell specification. Using OS default shell '%s'. "+
-				"For better reliability, consider specifying the shell explicitly in your hook configuration.",
+				"For better reliability, consider specifying the shell explicitly in your hook configuration.\n"+
+				"More about using hooks: %s",
 			defaultShell,
+			output.WithHyperlink("aka.ms/azd-hooks", "aka.ms/azd-hooks"),
 		)
 
 		result.Warnings = append(result.Warnings, HookWarning{

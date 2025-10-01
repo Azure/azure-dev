@@ -15,7 +15,7 @@ import (
 func NewAzdDiscoveryAnalysisTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
-			"azd_discovery_analysis",
+			"discovery_analysis",
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(false),

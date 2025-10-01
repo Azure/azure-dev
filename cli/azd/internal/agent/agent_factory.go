@@ -126,9 +126,7 @@ func (f *AgentFactory) Create(ctx context.Context, opts ...AgentCreateOption) (A
 
 	// Define block list of excluded tools
 	excludedTools := map[string]bool{
-		"extension_az":  true,
-		"extension_azd": true,
-		// Add more excluded tools here as needed
+		"azd": true,
 	}
 
 	allTools := []common.AnnotatedTool{}

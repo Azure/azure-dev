@@ -16,6 +16,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/feedback"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -37,6 +40,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/fatih/color"
 	"github.com/joho/godotenv"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -137,6 +141,7 @@ type initAction struct {
 	extensionsManager *extensions.Manager
 	azd               workflow.AzdCommandRunner
 	agentFactory      *agent.AgentFactory
+	consentManager    consent.ConsentManager
 }
 
 func newInitAction(
@@ -152,6 +157,7 @@ func newInitAction(
 	extensionsManager *extensions.Manager,
 	azd workflow.AzdCommandRunner,
 	agentFactory *agent.AgentFactory,
+	consentManager consent.ConsentManager,
 ) actions.Action {
 	return &initAction{
 		lazyAzdCtx:        lazyAzdCtx,
@@ -166,6 +172,7 @@ func newInitAction(
 		extensionsManager: extensionsManager,
 		azd:               azd,
 		agentFactory:      agentFactory,
+		consentManager:    consentManager,
 	}
 }
 
@@ -256,9 +263,11 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	header := "New project initialized!"
 	followUp := heredoc.Docf(`
 	You can view the template code in your directory: %s
-	Learn more about running 3rd party code on our DevHub: %s`,
+	Learn more about running 3rd party code on our DevHub: %s
+	%s Run azd up to deploy project to the cloud.`,
 		output.WithLinkFormat("%s", wd),
-		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
+		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"),
+		color.HiMagentaString("Next steps:"))
 
 	switch initTypeSelect {
 	case initAppTemplate:
@@ -374,9 +383,40 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	// Warn user that this is an alpha feature
-	i.console.WarnForFeature(ctx, llm.FeatureLlm)
+	i.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: fmt.Sprintf("Agentic mode init is in alpha mode. The agent will scan your repository and "+
+			"attempt to make an azd-ready template to init. You can always change permissions later "+
+			"by running `azd mcp consent`. Mistakes may occur in agent mode. "+
+			"To learn more, go to %s\n", output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
+		TitleNote: "CTRL C to cancel interaction \n? to pull up help text",
+	})
+
+	// Check read only tool consent
+	readOnlyRule, err := i.consentManager.CheckConsent(ctx,
+		consent.ConsentRequest{
+			ToolID:     "*/*",
+			ServerName: "*",
+			Operation:  consent.OperationTypeTool,
+			Annotations: mcp.ToolAnnotation{
+				ReadOnlyHint: common.ToPtr(true),
+			},
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	if !readOnlyRule.Allowed {
+		consentChecker := consent.NewConsentChecker(i.consentManager, "")
+		err = consentChecker.PromptAndGrantReadOnlyToolConsent(ctx)
+		if err != nil {
+			return err
+		}
+		i.console.Message(ctx, "")
+	}
 
 	azdAgent, err := i.agentFactory.Create(
+		ctx,
 		agent.WithDebug(i.flags.global.EnableDebugLogging),
 	)
 	if err != nil {
@@ -386,8 +426,9 @@ func (i *initAction) initAppWithAgent(ctx context.Context) error {
 	defer azdAgent.Stop()
 
 	type initStep struct {
-		Name        string
-		Description string
+		Name         string
+		Description  string
+		SummaryTitle string
 	}
 
 	taskInput := `Your task: %s
@@ -399,39 +440,54 @@ Do not stop until all tasks are complete and fully resolved.
 
 	initSteps := []initStep{
 		{
-			Name:        "Step 1: Running Discovery & Analysis",
-			Description: "Run a deep discovery and analysis on the current working directory.",
+			Name:         "Step 1: Running Discovery & Analysis",
+			Description:  "Run a deep discovery and analysis on the current working directory.",
+			SummaryTitle: "Step 1 (discovery & analysis)",
 		},
 		{
-			Name:        "Step 2: Generating Architecture Plan",
-			Description: "Create a high-level architecture plan for the application.",
+			Name:         "Step 2: Generating Architecture Plan",
+			Description:  "Create a high-level architecture plan for the application.",
+			SummaryTitle: "Step 2 (architecture plan)",
 		},
 		{
-			Name:        "Step 3: Generating Dockerfile(s)",
-			Description: "Generate a Dockerfile for the application components as needed.",
+			Name:         "Step 3: Generating Dockerfile(s)",
+			Description:  "Generate a Dockerfile for the application components as needed.",
+			SummaryTitle: "Step 3 (dockerfile generation)",
 		},
 		{
-			Name:        "Step 4: Generating infrastructure",
-			Description: "Generate infrastructure as code (IaC) for the application.",
+			Name:         "Step 4: Generating infrastructure",
+			Description:  "Generate infrastructure as code (IaC) for the application.",
+			SummaryTitle: "Step 4 (infrastructure generation)",
 		},
 		{
-			Name:        "Step 5: Generating azure.yaml file",
-			Description: "Generate an azure.yaml file for the application.",
+			Name:         "Step 5: Generating azure.yaml file",
+			Description:  "Generate an azure.yaml file for the application.",
+			SummaryTitle: "Step 5 (azure.yaml generation)",
 		},
 		{
-			Name:        "Step 6: Validating project",
-			Description: "Validate the project structure and configuration.",
+			Name:         "Step 6: Validating project",
+			Description:  "Validate the project structure and configuration.",
+			SummaryTitle: "Step 6 (project validation)",
 		},
 	}
+
+	var stepSummaries []string
 
 	for idx, step := range initSteps {
 		// Collect and apply feedback for next steps
 		if idx > 0 {
-			feedbackMsg := fmt.Sprintf("Any feedback before continuing to %s?", step.Name)
 			if err := i.collectAndApplyFeedback(
 				ctx,
 				azdAgent,
-				feedbackMsg,
+				"Any changes before moving to the next step?",
+			); err != nil {
+				return err
+			}
+		} else if idx == len(initSteps)-1 {
+			if err := i.collectAndApplyFeedback(
+				ctx,
+				azdAgent,
+				"Any changes before moving to the next completing interaction?",
 			); err != nil {
 				return err
 			}
@@ -441,10 +497,12 @@ Do not stop until all tasks are complete and fully resolved.
 		i.console.Message(ctx, color.MagentaString(step.Name))
 		fullTaskInput := fmt.Sprintf(taskInput, strings.Join([]string{
 			step.Description,
-			"Provide a very brief summary in markdown format that includes any files generated during this step.",
+			"Provide a brief summary in around 6 bullet points format about what was scanned" +
+				" or analyzed and key actions performed:\n" +
+				"Keep it concise and focus on high-level accomplishments, not implementation details.",
 		}, "\n"))
 
-		agentOutput, err := azdAgent.SendMessage(ctx, fullTaskInput)
+		agentOutput, err := i.sendMessageWithRetry(ctx, azdAgent, fullTaskInput)
 		if err != nil {
 			if agentOutput != "" {
 				i.console.Message(ctx, output.WithMarkdown(agentOutput))
@@ -453,18 +511,64 @@ Do not stop until all tasks are complete and fully resolved.
 			return err
 		}
 
+		stepSummaries = append(stepSummaries, agentOutput)
+
 		i.console.Message(ctx, "")
-		i.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
+		i.console.Message(ctx, color.HiMagentaString(fmt.Sprintf("◆ %s Summary:", step.SummaryTitle)))
 		i.console.Message(ctx, output.WithMarkdown(agentOutput))
 		i.console.Message(ctx, "")
 	}
 
-	// Post-completion feedback loop
-	if err := i.postCompletionFeedbackLoop(ctx, azdAgent); err != nil {
+	// Post-completion summary
+	if err := i.postCompletionSummary(ctx, azdAgent, stepSummaries); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// sendMessageWithRetry sends a message to the agent with retry logic for error recovery
+func (i *initAction) sendMessageWithRetry(ctx context.Context, azdAgent agent.Agent, input string) (string, error) {
+	for {
+		agentOutput, err := azdAgent.SendMessage(ctx, input)
+		if err != nil {
+			if agentOutput != "" {
+				i.console.Message(ctx, output.WithMarkdown(agentOutput))
+			}
+
+			// Display error and ask if user wants to retry
+			if shouldRetry := i.handleErrorWithRetryPrompt(ctx, err); shouldRetry {
+				continue // Retry the same operation
+			}
+
+			return "", err // User chose not to retry, return original error
+		}
+
+		return agentOutput, nil
+	}
+}
+
+// handleErrorWithRetryPrompt displays an error and prompts user for retry
+func (i *initAction) handleErrorWithRetryPrompt(ctx context.Context, err error) bool {
+	// Display error in error format
+	i.console.Message(ctx, "")
+	i.console.Message(ctx, output.WithErrorFormat("Error occurred: %s", err.Error()))
+	i.console.Message(ctx, "")
+
+	// Prompt user if they want to try again
+	retryPrompt := uxlib.NewConfirm(&uxlib.ConfirmOptions{
+		Message:      "Oops, my reply didn’t quite fit what was needed. Want me to try again?",
+		DefaultValue: uxlib.Ptr(true),
+		HelpMessage:  "Choose 'yes' to retry the current step, or 'no' to stop the initialization.",
+	})
+
+	shouldRetry, promptErr := retryPrompt.Ask(ctx)
+	if promptErr != nil {
+		// If we can't prompt, don't retry
+		return false
+	}
+
+	return shouldRetry != nil && *shouldRetry
 }
 
 // collectAndApplyFeedback prompts for user feedback and applies it using the agent in a loop
@@ -473,69 +577,48 @@ func (i *initAction) collectAndApplyFeedback(
 	azdAgent agent.Agent,
 	promptMessage string,
 ) error {
-	// Loop to allow multiple rounds of feedback
-	for {
-		confirmFeedback := uxlib.NewConfirm(&uxlib.ConfirmOptions{
-			Message:      promptMessage,
-			DefaultValue: uxlib.Ptr(false),
-			HelpMessage:  "You will be able to provide and feedback or changes after each step.",
-		})
+	AIDisclaimer := output.WithGrayFormat("The following content is AI-generated. AI responses may be incorrect.")
+	collector := feedback.NewFeedbackCollector(i.console, feedback.FeedbackCollectorOptions{
+		EnableLoop:      true,
+		FeedbackPrompt:  promptMessage,
+		FeedbackHint:    "Enter to skip",
+		RequireFeedback: false,
+		AIDisclaimer:    AIDisclaimer,
+	})
 
-		hasFeedback, err := confirmFeedback.Ask(ctx)
-		if err != nil {
-			return err
-		}
-
-		if !*hasFeedback {
-			i.console.Message(ctx, "")
-			break
-		}
-
-		userInputPrompt := uxlib.NewPrompt(&uxlib.PromptOptions{
-			Message:        "You",
-			PlaceHolder:    "Provide feedback or changes to the project",
-			Required:       true,
-			IgnoreHintKeys: true,
-		})
-
-		userInput, err := userInputPrompt.Ask(ctx)
-		if err != nil {
-			return fmt.Errorf("error collecting feedback during azd init, %w", err)
-		}
-
-		i.console.Message(ctx, "")
-
-		if userInput != "" {
-			i.console.Message(ctx, color.MagentaString("Feedback"))
-
-			feedbackOutput, err := azdAgent.SendMessage(ctx, userInput)
-			if err != nil {
-				if feedbackOutput != "" {
-					i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
-				}
-				return err
-			}
-
-			i.console.Message(ctx, "")
-			i.console.Message(ctx, fmt.Sprintf("%s:", output.AzdAgentLabel()))
-			i.console.Message(ctx, output.WithMarkdown(feedbackOutput))
-			i.console.Message(ctx, "")
-		}
-	}
-
-	return nil
+	return collector.CollectFeedbackAndApply(ctx, azdAgent, AIDisclaimer)
 }
 
-// postCompletionFeedbackLoop provides a final opportunity for feedback after all steps complete
-func (i *initAction) postCompletionFeedbackLoop(
+// postCompletionSummary provides a final summary after all steps complete
+func (i *initAction) postCompletionSummary(
 	ctx context.Context,
 	azdAgent agent.Agent,
+	stepSummaries []string,
 ) error {
 	i.console.Message(ctx, "")
 	i.console.Message(ctx, "🎉 All initialization steps completed!")
 	i.console.Message(ctx, "")
 
-	return i.collectAndApplyFeedback(ctx, azdAgent, "Any final feedback or changes?")
+	// Combine all step summaries into a single prompt
+	combinedSummaries := strings.Join(stepSummaries, "\n\n---\n\n")
+	summaryPrompt := fmt.Sprintf(`Based on the following summaries of the azd init process, please provide
+	a comprehensive overall summary of what was accomplished in bullet point format:\n%s`, combinedSummaries)
+
+	agentOutput, err := i.sendMessageWithRetry(ctx, azdAgent, summaryPrompt)
+	if err != nil {
+		if agentOutput != "" {
+			i.console.Message(ctx, output.WithMarkdown(agentOutput))
+		}
+
+		return err
+	}
+
+	i.console.Message(ctx, "")
+	i.console.Message(ctx, color.HiMagentaString("◆ Agentic init Summary:"))
+	i.console.Message(ctx, output.WithMarkdown(agentOutput))
+	i.console.Message(ctx, "")
+
+	return nil
 }
 
 type initType int
@@ -556,7 +639,7 @@ func promptInitType(console input.Console, ctx context.Context, featuresManager 
 
 	// Only include AZD agent option if the LLM feature is enabled
 	if featuresManager.IsEnabled(llm.FeatureLlm) {
-		options = append(options, fmt.Sprintf("%s %s", output.AzdAgentLabel(), color.YellowString("(Alpha)")))
+		options = append(options, fmt.Sprintf("Use agent mode %s", color.YellowString("(Alpha)")))
 	}
 
 	selection, err := console.Select(ctx, input.ConsoleOptions{

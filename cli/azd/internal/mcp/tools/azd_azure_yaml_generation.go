@@ -15,7 +15,7 @@ import (
 func NewAzdAzureYamlGenerationTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
-			"azd_azure_yaml_generation",
+			"azure_yaml_generation",
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(false),

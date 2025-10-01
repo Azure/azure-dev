@@ -415,9 +415,10 @@ func createRegistryMocks(mockContext *mocks.MockContext) {
 		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, testRegistry)
 	})
 
-	// Return some mock file
+	// Return some mock file for both test extensions
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/test.extension")
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/test.extension") ||
+			strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/test.mcp.extension")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
 	})
@@ -491,6 +492,26 @@ var testRegistry = Registry{
 				{
 					Version:   "3.1.0",
 					Artifacts: sampleArtifacts,
+				},
+			},
+		},
+		{
+			Id:          "test.mcp.extension",
+			Namespace:   "test.mcp",
+			DisplayName: "Test MCP Extension",
+			Description: "Test extension with MCP configuration",
+			Tags:        []string{"test", "mcp"},
+			Versions: []ExtensionVersion{
+				{
+					Version:      "1.0.0",
+					Artifacts:    sampleArtifacts,
+					Capabilities: []CapabilityType{McpServerCapability},
+					McpConfig: &McpConfig{
+						Server: McpServerConfig{
+							Args: []string{"custom", "mcp", "start"},
+							Env:  []string{"CUSTOM_VAR=test", "DEBUG=${HOME}/debug"},
+						},
+					},
 				},
 			},
 		},
@@ -611,4 +632,40 @@ func (m *mockSource) GetExtension(ctx context.Context, extensionId string) (*Ext
 		}
 	}
 	return nil, nil
+}
+
+func Test_Install_WithMcpConfig(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	// Use the existing registry mock setup
+	createRegistryMocks(mockContext)
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	// Install extension with MCP configuration
+	extensionVersion, err := manager.Install(*mockContext.Context, "test.mcp.extension", nil)
+	require.NoError(t, err)
+	require.NotNil(t, extensionVersion)
+
+	// Verify the extension was installed
+	installed, err := manager.ListInstalled()
+	require.NoError(t, err)
+	require.Equal(t, 1, len(installed))
+
+	// Get the installed extension
+	installedExtension, exists := installed["test.mcp.extension"]
+	require.True(t, exists)
+	require.NotNil(t, installedExtension)
+
+	// Verify McpConfig was preserved during installation
+	require.NotNil(t, installedExtension.McpConfig, "McpConfig should be preserved during installation")
+	require.NotNil(t, installedExtension.McpConfig.Server, "McpServerConfig should be preserved")
+	require.Equal(t, []string{"custom", "mcp", "start"}, installedExtension.McpConfig.Server.Args)
+	require.Equal(t, []string{"CUSTOM_VAR=test", "DEBUG=${HOME}/debug"}, installedExtension.McpConfig.Server.Env)
+
+	// Verify the extension has MCP server capability
+	require.True(t, installedExtension.HasCapability(McpServerCapability))
 }

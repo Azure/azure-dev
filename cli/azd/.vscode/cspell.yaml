@@ -170,7 +170,7 @@ overrides:
       - vectorizing
   - filename: extensions/azure.foundry.ai.agents/internal/cmd/listen.go
     words:
-      - foundryagent
+      - hostedagent
   - filename: docs/new-azd-command.md
     words:
       - pflag

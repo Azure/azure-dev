@@ -29,5 +29,5 @@ extends:
       - template: /eng/pipelines/templates/stages/release-azd-extension.yml
         parameters: 
           AzdExtensionId: azure.coding-agent
-          SanitizedExtensionId: azure.coding-agent
+          SanitizedExtensionId: azure-coding-agent
           AzdExtensionDirectory: cli/azd/extensions/azure.coding-agent

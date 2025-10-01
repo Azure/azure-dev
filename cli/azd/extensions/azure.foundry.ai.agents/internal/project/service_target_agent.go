@@ -33,7 +33,8 @@ func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTa
 // Initialize initializes the service target provider with service configuration
 func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
 	if serviceConfig != nil {
-		fmt.Printf("Agent extension initializing for service: %s\n", color.New(color.FgHiBlue).Sprint(serviceConfig.GetName()))
+		serviceName := color.New(color.FgHiBlue).Sprint(serviceConfig.GetName())
+		fmt.Printf("Agent extension initializing for service: %s\n", serviceName)
 	}
 	p.serviceConfig = serviceConfig
 	return nil
@@ -57,10 +58,14 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
+	serviceName := ""
+	if serviceConfig != nil {
+		serviceName = serviceConfig.Name
+	}
 	targetResource := &azdext.TargetResource{
 		SubscriptionId:    subscriptionId,
 		ResourceGroupName: "rg-agent-demo",
-		ResourceName:      "ca-" + serviceConfig.Name + "-agent",
+		ResourceName:      "ca-" + serviceName + "-agent",
 		ResourceType:      "Microsoft.App/containerApps",
 		Metadata: map[string]string{
 			"agentId":   "asst_xYZ",

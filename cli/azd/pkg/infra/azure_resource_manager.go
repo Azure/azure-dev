@@ -232,6 +232,14 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 		} else {
 			return resourceTypeDisplayName, nil
 		}
+	} else if resourceType == azapi.AzureResourceTypeRedisEnterprise {
+		resourceTypeDisplayName, err := rm.getRedisEnterpriseResourceTypeDisplayName(ctx, subscriptionId, resourceId)
+
+		if err != nil {
+			return "", err
+		} else {
+			return resourceTypeDisplayName, nil
+		}
 	} else {
 		resourceTypeDisplayName := azapi.GetResourceTypeDisplayName(resourceType)
 		return resourceTypeDisplayName, nil
@@ -281,6 +289,27 @@ func (rm *AzureResourceManager) getCognitiveServiceResourceTypeDisplayName(
 		return "Document Intelligence", nil
 	} else {
 		return "Azure AI Services", nil
+	}
+}
+
+// redisEnterpriseApiVersion is the API Version we use when querying information about Redis Enterprise resources
+const redisEnterpriseApiVersion = "2025-07-01"
+
+func (rm *AzureResourceManager) getRedisEnterpriseResourceTypeDisplayName(
+	ctx context.Context,
+	subscriptionId string,
+	resourceId string,
+) (string, error) {
+	resource, err := rm.resourceService.GetResource(ctx, subscriptionId, resourceId, redisEnterpriseApiVersion)
+
+	if err != nil {
+		return "", fmt.Errorf("getting redis enterprise resource type display names: %w", err)
+	}
+
+	if strings.EqualFold(resource.Kind, "v2") {
+		return "Azure Managed Redis", nil
+	} else {
+		return "Redis Enterprise", nil
 	}
 }
 

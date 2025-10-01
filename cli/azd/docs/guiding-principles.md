@@ -14,8 +14,8 @@ The Azure Developer CLI (`azd`) follows a systematic approach to command structu
 
 ### 2. **Build on Existing Foundations**
 
-- Leverage established `azd verbs` rather than creating parallel command structures
-- Extend existing workflows to accommodate new functionality
+- Leverage established `azd verbs` rather than creating parallel command structures (eg `azd init` vs `azd foo init`)
+- Extend existing workflows to accommodate new functionality (eg `init`, `up`, `down`, workflow with pickers)
 - Maintain backward compatibility with current usage patterns
 - Avoid ambiguous or similarly-named verbs; build on core verbs instead of creating new ones
 
@@ -84,6 +84,11 @@ The Azure Developer CLI (`azd`) follows a systematic approach to command structu
 - Leverage existing template system for new resource types
 - Follow established template discovery and management patterns
 - Integrate new resources into azd's resource lifecycle management
+
+### 4. **CI/CD and IaC Guidance**
+
+- Provide support for GitHub Actions and Azure DevOps
+- Consider support for a range of IaC providers (Bicep, Terraform, etc.)
 
 ## Implementation Benefits
 

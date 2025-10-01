@@ -32,11 +32,11 @@ func Test_CLI_MCP_Server_ListTools(t *testing.T) {
 
 	// Check for some expected tools
 	expectedTools := []string{
-		"azd_plan_init",
-		"azd_architecture_planning",
-		"azd_azure_yaml_generation",
-		"azd_discovery_analysis",
-		"azd_project_validation",
+		"plan_init",
+		"architecture_planning",
+		"azure_yaml_generation",
+		"discovery_analysis",
+		"project_validation",
 	}
 
 	toolNames := make([]string, len(result.Tools))
@@ -51,7 +51,7 @@ func Test_CLI_MCP_Server_ListTools(t *testing.T) {
 	t.Logf("Found %d MCP tools: %v", len(result.Tools), toolNames)
 }
 
-// Test_CLI_MCP_Server_CallTool tests that we can call the azd_plan_init tool
+// Test_CLI_MCP_Server_CallTool tests that we can call the plan_init tool
 func Test_CLI_MCP_Server_CallTool(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -60,17 +60,17 @@ func Test_CLI_MCP_Server_CallTool(t *testing.T) {
 	mcpClient, cleanup := createMCPClient(t, ctx)
 	defer cleanup()
 
-	// Test calling azd_plan_init tool
+	// Test calling plan_init tool
 	toolArgs := map[string]interface{}{
 		"query": "Create a simple web application using Node.js and Express",
 	}
 
 	callRequest := mcp.CallToolRequest{}
-	callRequest.Params.Name = "azd_plan_init"
+	callRequest.Params.Name = "plan_init"
 	callRequest.Params.Arguments = toolArgs
 
 	result, err := mcpClient.CallTool(ctx, callRequest)
-	require.NoError(t, err, "Failed to call azd_plan_init tool")
+	require.NoError(t, err, "Failed to call plan_init tool")
 
 	// Verify the response structure
 	assert.NotNil(t, result, "Expected non-nil result from tool call")

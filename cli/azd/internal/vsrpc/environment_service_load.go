@@ -120,14 +120,17 @@ func (s *environmentService) loadEnvironmentAsync(
 	appHost, err := appHostForProject(ctx, c.projectConfig, c.dotnetCli)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find Aspire app host: %w", err)
+	} else if appHost != nil {
+		manifest, err := c.dotnetImporter.ReadManifest(ctx, appHost)
+		if err != nil {
+			return nil, fmt.Errorf("reading app host manifest: %w", err)
+		}
+
+		ret.Services = servicesFromManifest(manifest)
+
+		return ret, nil
 	}
 
-	manifest, err := c.dotnetImporter.ReadManifest(ctx, appHost)
-	if err != nil {
-		return nil, fmt.Errorf("reading app host manifest: %w", err)
-	}
-
-	ret.Services = servicesFromManifest(manifest)
-
+	ret.Services = servicesFromProjectConfig(ctx, c.projectConfig)
 	return ret, nil
 }

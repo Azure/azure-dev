@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
@@ -121,16 +122,11 @@ func (t CommandExecutorTool) Call(ctx context.Context, input string) (string, er
 	}
 
 	if req.Command == "azd" {
-		// Ensure --no-prompt is included in args
-		hasNoPrompt := false
-		for _, arg := range req.Args {
-			if arg == "--no-prompt" {
-				hasNoPrompt = true
-				break
-			}
-		}
-
-		if !hasNoPrompt {
+		// Ensure --no-prompt is included in args to prevent interactive prompts
+		// that would block execution in agent/automation scenarios. The azd CLI
+		// may prompt for user input (confirmations, selections, etc.) which cannot
+		// be handled in a non-interactive agent context, so we force non-interactive mode.
+		if !slices.Contains(req.Args, "--no-prompt") {
 			req.Args = append(req.Args, "--no-prompt")
 		}
 	}

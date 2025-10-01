@@ -165,7 +165,7 @@ func (f *AgentFactory) Create(ctx context.Context, opts ...AgentCreateOption) (A
 		WithCleanup(cleanup),
 	)
 
-	azdAgent, err := NewConversationalAzdAiAgent(defaultModelContainer.Model, allOptions...)
+	azdAgent, err := NewConversationalAzdAiAgent(defaultModelContainer.Model, f.console, allOptions...)
 	if err != nil {
 		return nil, err
 	}

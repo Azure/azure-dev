@@ -91,11 +91,16 @@ func (f *AgentFactory) Create(ctx context.Context, opts ...AgentCreateOption) (A
 		return nil, err
 	}
 
-	// Create sampling handler for MCP
+	// Create sampling & elicitation handlers for MCP
 	samplingHandler := mcptools.NewMcpSamplingHandler(
 		f.consentManager,
 		f.console,
 		samplingModelContainer,
+	)
+
+	elicitationHandler := mcptools.NewMcpElicitationHandler(
+		f.consentManager,
+		f.console,
 	)
 
 	var mcpConfig *mcp.McpConfig
@@ -107,7 +112,8 @@ func (f *AgentFactory) Create(ctx context.Context, opts ...AgentCreateOption) (A
 	mcpHost := mcp.NewMcpHost(
 		mcp.WithServers(mcpConfig.Servers),
 		mcp.WithCapabilities(mcp.Capabilities{
-			Sampling: samplingHandler,
+			Sampling:    samplingHandler,
+			Elicitation: elicitationHandler,
 		}),
 	)
 

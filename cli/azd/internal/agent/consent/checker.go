@@ -15,6 +15,7 @@ import (
 
 var ErrToolExecutionDenied = fmt.Errorf("tool execution denied by user")
 var ErrSamplingDenied = fmt.Errorf("sampling denied by user")
+var ErrElicitationDenied = fmt.Errorf("elicitation denied by user")
 
 // ConsentChecker provides shared consent checking logic for different tool types
 type ConsentChecker struct {
@@ -64,6 +65,23 @@ func (cc *ConsentChecker) CheckSamplingConsent(
 		ToolID:     toolId,
 		ServerName: cc.serverName,
 		Operation:  OperationTypeSampling, // This is a sampling request
+	}
+
+	return cc.consentMgr.CheckConsent(ctx, consentRequest)
+}
+
+// CheckElicitationConsent checks elicitation consent for a specific tool
+func (cc *ConsentChecker) CheckElicitationConsent(
+	ctx context.Context,
+	toolName string,
+) (*ConsentDecision, error) {
+	toolId := fmt.Sprintf("%s/%s", cc.serverName, toolName)
+
+	// Create consent request for sampling
+	consentRequest := ConsentRequest{
+		ToolID:     toolId,
+		ServerName: cc.serverName,
+		Operation:  OperationTypeElicitation, // This is a elicitation request
 	}
 
 	return cc.consentMgr.CheckConsent(ctx, consentRequest)
@@ -126,6 +144,26 @@ func (cc *ConsentChecker) PromptAndGrantSamplingConsent(
 
 	// Grant sampling consent based on user choice
 	return cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeSampling)
+}
+
+// PromptAndGrantElicitationConsent shows elicitation consent prompt and grants permission based on user choice
+func (cc *ConsentChecker) PromptAndGrantElicitationConsent(
+	ctx context.Context,
+	toolName, toolDesc string,
+) error {
+	toolId := fmt.Sprintf("%s/%s", cc.serverName, toolName)
+
+	choice, err := cc.promptForElicitationConsent(ctx, toolName, toolDesc)
+	if err != nil {
+		return fmt.Errorf("elicitation consent prompt failed: %w", err)
+	}
+
+	if choice == "deny" {
+		return ErrElicitationDenied
+	}
+
+	// Grant elicitation consent based on user choice
+	return cc.grantConsentFromChoice(ctx, toolId, choice, OperationTypeElicitation)
 }
 
 // Private Struct Methods
@@ -429,10 +467,6 @@ func (cc *ConsentChecker) promptForSamplingConsent(
 
 	choices := []*ux.SelectChoice{
 		{
-			Value: "deny",
-			Label: "No - Don't send data",
-		},
-		{
 			Value: "once",
 			Label: "Yes, just this time",
 		},
@@ -448,6 +482,10 @@ func (cc *ConsentChecker) promptForSamplingConsent(
 			Value: "always",
 			Label: "Yes, always allow this tool",
 		},
+		{
+			Value: "deny",
+			Label: "No - Don't send data",
+		},
 	}
 
 	// Add server trust option if not already trusted for sampling
@@ -462,6 +500,76 @@ func (cc *ConsentChecker) promptForSamplingConsent(
 	choices = append(choices, &ux.SelectChoice{
 		Value: "global",
 		Label: "Allow sampling for all tools from any server",
+	})
+
+	selector := ux.NewSelect(&ux.SelectOptions{
+		Message:         message,
+		HelpMessage:     helpMessage,
+		Choices:         choices,
+		EnableFiltering: ux.Ptr(false),
+		DisplayCount:    5,
+	})
+
+	choiceIndex, err := selector.Ask(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	if choiceIndex == nil || *choiceIndex < 0 || *choiceIndex >= len(choices) {
+		return "", fmt.Errorf("invalid choice selected")
+	}
+
+	return choices[*choiceIndex].Value, nil
+}
+
+// promptForElicitationConsent shows an interactive elicitation consent prompt and returns the user's choice
+func (cc *ConsentChecker) promptForElicitationConsent(
+	ctx context.Context,
+	toolName, toolDesc string,
+) (string, error) {
+	message := fmt.Sprintf(
+		"Allow %s tool from %s server to collect additional information?",
+		output.WithHighLightFormat(toolName),
+		output.WithHighLightFormat(cc.serverName),
+	)
+
+	helpMessage := fmt.Sprintf("This will allow the tool prompt you for additional information as needed. %s", toolDesc)
+
+	choices := []*ux.SelectChoice{
+		{
+			Value: "once",
+			Label: "Yes, just this time",
+		},
+		{
+			Value: "session",
+			Label: "Yes, until I restart azd",
+		},
+		{
+			Value: "project",
+			Label: "Yes, remember for this project",
+		},
+		{
+			Value: "always",
+			Label: "Yes, always allow for this tool",
+		},
+		{
+			Value: "deny",
+			Label: "No - Don't collect data",
+		},
+	}
+
+	// Add server trust option if not already trusted for elicitation
+	if !cc.isServerAlreadyTrusted(ctx, OperationTypeElicitation) {
+		choices = append(choices, &ux.SelectChoice{
+			Value: "server",
+			Label: "Allow elicitation for all tools from this server",
+		})
+	}
+
+	// Add global elicitation trust option
+	choices = append(choices, &ux.SelectChoice{
+		Value: "global",
+		Label: "Allow elicitation for all tools from any server",
 	})
 
 	selector := ux.NewSelect(&ux.SelectOptions{

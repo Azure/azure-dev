@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -111,10 +112,10 @@ func newConfigCommand() *cobra.Command {
 		Short: "Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP",
 	}
 
-	cmdFlags := setupFlags(cc.Flags())
+	flagValues := setupFlags(cc.Flags())
 
 	cc.RunE = func(cmd *cobra.Command, args []string) error {
-		if cmdFlags.Debug {
+		if flagValues.Debug {
 			log.SetOutput(os.Stderr)
 		} else {
 			log.SetOutput(io.Discard)
@@ -141,20 +142,20 @@ func newConfigCommand() *cobra.Command {
 			return fmt.Errorf("failed to get azd project: %w", err)
 		}
 
-		repoSlug, err := getRepoSlug(ctx, cmdFlags.RepoSlug, azdClient)
+		repoSlug, err := getRepoSlug(ctx, flagValues.RepoSlug, azdClient)
 
 		if err != nil {
 			return fmt.Errorf("failed getting the <owner>/<repository>: %w", err)
 		}
 
-		if err := loginToGitHubIfNeeded(ctx, cmdFlags.GitHubHostName); err != nil {
+		if err := loginToGitHubIfNeeded(ctx, flagValues.GitHubHostName); err != nil {
 			return fmt.Errorf("failed to log in to GitHub. Login manually using `gh auth login`: %w", err)
 		}
 
 		subscriptionResponse, err := prompter.PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
 
 		if err != nil {
-			return err
+			return fmt.Errorf("failed getting a subscription from prompt: %w", err)
 		}
 
 		tenantID := subscriptionResponse.Subscription.TenantId
@@ -165,7 +166,7 @@ func newConfigCommand() *cobra.Command {
 		})
 
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get the Azure Developer CLI credential: %w", err)
 		}
 
 		cp := &credentialProviderAdapter{tokenCred: cred}
@@ -180,7 +181,7 @@ func newConfigCommand() *cobra.Command {
 
 		// the defaults follow along with whatever the user has chosen for --debug. So if --debug is
 		// _off_ then you don't see all the console output from sub-commands.
-		defaultCommandRunner, defaultConsole := newCommandRunner(cmdFlags.Debug)
+		defaultCommandRunner, defaultConsole := newCommandRunner(flagValues.Debug)
 		defaultGitHubCLI, err := github.NewGitHubCli(ctx, defaultConsole, defaultCommandRunner)
 
 		if err != nil {
@@ -200,7 +201,7 @@ func newConfigCommand() *cobra.Command {
 			msiService,
 			entraIDService,
 			rgClient,
-			getProjectResponse.Project.Name, subscriptionID, cmdFlags.RoleNames)
+			getProjectResponse.Project.Name, subscriptionID, flagValues.RoleNames)
 
 		if err != nil {
 			return err
@@ -223,7 +224,7 @@ func newConfigCommand() *cobra.Command {
 		remote, err := gitPushChanges(ctx, prompter, gitCLI, defaultCommandRunner,
 			gitRepoRoot,
 			repoSlug,
-			cmdFlags.BranchName)
+			flagValues.BranchName)
 
 		if err != nil {
 			return fmt.Errorf("failed to push files to git: %w", err)
@@ -233,7 +234,7 @@ func newConfigCommand() *cobra.Command {
 
 		fmt.Println("")
 		fmt.Println(output.WithHighLightFormat("(!) NOTE: Some tasks must still be completed, manually:"))
-		fmt.Printf("1. The branch created at %s/%s must be merged to %s/main\n", remote, cmdFlags.BranchName, repoSlug)
+		fmt.Printf("1. The branch created at %s/%s must be merged to %s/main\n", remote, flagValues.BranchName, repoSlug)
 		fmt.Printf("2. Visit %s and update the \"MCP configuration\" field with this JSON:\n\n", codingAgentURL)
 
 		fmt.Println(mcpJson)
@@ -262,8 +263,12 @@ func openBrowserWindows(ctx context.Context,
 		return fmt.Errorf("failed to get confirm response for browser/pr option: %w", err)
 	}
 
+	var errs []error
+
 	if *resp.Value {
-		_ = browser.OpenURL(codingAgentURL)
+		if err := browser.OpenURL(codingAgentURL); err != nil {
+			errs = append(errs, err)
+		}
 
 		//nolint:gosec	// defaultGitHubCLI.BinaryPath is derived from our own code, shouldn't be considered tainted.
 		cmd := exec.CommandContext(
@@ -277,9 +282,14 @@ func openBrowserWindows(ctx context.Context,
 		cmd.Dir = gitRepoRoot
 
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to launch gh pr: %w", err)
+			errs = append(errs, fmt.Errorf("failed to launch gh pr: %w", err))
 		}
 	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+
 	return nil
 }
 

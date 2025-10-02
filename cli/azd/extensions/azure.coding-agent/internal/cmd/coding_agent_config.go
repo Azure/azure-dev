@@ -27,7 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	azd_git "github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	azd_github "github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
@@ -53,15 +53,6 @@ type flagValues struct {
 	RoleNames      []string
 	BranchName     string
 	GitHubHostName string
-}
-
-// resourceService is just a minimal version of [*armresources.ResourceGroupsClient]
-type resourceService interface {
-	CreateOrUpdate(ctx context.Context,
-		resourceGroupName string,
-		parameters armresources.ResourceGroup,
-		options *armresources.ResourceGroupsClientCreateOrUpdateOptions,
-	) (armresources.ResourceGroupsClientCreateOrUpdateResponse, error)
 }
 
 func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
@@ -133,7 +124,7 @@ func newConfigCommand() *cobra.Command {
 
 		defer azdClient.Close()
 
-		prompter := azdClient.Prompt()
+		promptClient := azdClient.Prompt()
 
 		// Get the azd project to retrieve the project path
 		getProjectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
@@ -142,17 +133,17 @@ func newConfigCommand() *cobra.Command {
 			return fmt.Errorf("failed to get azd project: %w", err)
 		}
 
-		repoSlug, err := getRepoSlug(ctx, flagValues.RepoSlug, azdClient)
+		repoSlug, err := getRepoSlug(ctx, flagValues.RepoSlug, promptClient)
 
 		if err != nil {
 			return fmt.Errorf("failed getting the <owner>/<repository>: %w", err)
 		}
 
-		if err := loginToGitHubIfNeeded(ctx, flagValues.GitHubHostName); err != nil {
+		if err := loginToGitHubIfNeeded(ctx, flagValues.GitHubHostName, newCommandRunner, newGitHubCLI); err != nil {
 			return fmt.Errorf("failed to log in to GitHub. Login manually using `gh auth login`: %w", err)
 		}
 
-		subscriptionResponse, err := prompter.PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
+		subscriptionResponse, err := promptClient.PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
 
 		if err != nil {
 			return fmt.Errorf("failed getting a subscription from prompt: %w", err)
@@ -182,7 +173,7 @@ func newConfigCommand() *cobra.Command {
 		// the defaults follow along with whatever the user has chosen for --debug. So if --debug is
 		// _off_ then you don't see all the console output from sub-commands.
 		defaultCommandRunner, defaultConsole := newCommandRunner(flagValues.Debug)
-		defaultGitHubCLI, err := github.NewGitHubCli(ctx, defaultConsole, defaultCommandRunner)
+		defaultGitHubCLI, err := azd_github.NewGitHubCli(ctx, defaultConsole, defaultCommandRunner)
 
 		if err != nil {
 			return fmt.Errorf("failed to get the github CLI: %w", err)
@@ -197,8 +188,8 @@ func newConfigCommand() *cobra.Command {
 		}
 
 		authConfig, err := pickOrCreateMSI(ctx,
-			prompter,
-			msiService,
+			promptClient,
+			&msiService,
 			entraIDService,
 			rgClient,
 			getProjectResponse.Project.Name, subscriptionID, flagValues.RoleNames)
@@ -208,12 +199,12 @@ func newConfigCommand() *cobra.Command {
 		}
 
 		if err := createFederatedCredential(ctx,
-			msiService,
+			&msiService,
 			repoSlug, copilotEnv, subscriptionID, authConfig.ResourceID); err != nil {
 			return err
 		}
 
-		if err := setCopilotEnvVars(ctx, defaultGitHubCLI, repoSlug, authConfig); err != nil {
+		if err := setCopilotEnvVars(ctx, defaultGitHubCLI, repoSlug, *authConfig); err != nil {
 			return err
 		}
 
@@ -221,7 +212,7 @@ func newConfigCommand() *cobra.Command {
 			return err
 		}
 
-		remote, err := gitPushChanges(ctx, prompter, gitCLI, defaultCommandRunner,
+		remote, err := gitPushChanges(ctx, promptClient, gitCLI, defaultCommandRunner,
 			gitRepoRoot,
 			repoSlug,
 			flagValues.BranchName)
@@ -239,7 +230,7 @@ func newConfigCommand() *cobra.Command {
 
 		fmt.Println(mcpJson)
 
-		if err := openBrowserWindows(ctx, prompter, defaultGitHubCLI, codingAgentURL, gitRepoRoot); err != nil {
+		if err := openBrowserWindows(ctx, promptClient, defaultGitHubCLI, codingAgentURL, gitRepoRoot); err != nil {
 			return err
 		}
 
@@ -250,7 +241,7 @@ func newConfigCommand() *cobra.Command {
 }
 
 func openBrowserWindows(ctx context.Context,
-	prompter azdext.PromptServiceClient, githubCLI *github.Cli,
+	prompter azdext.PromptServiceClient, githubCLI *azd_github.Cli,
 	codingAgentURL string, gitRepoRoot string) error {
 	resp, err := prompter.Confirm(ctx, &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
@@ -293,12 +284,12 @@ func openBrowserWindows(ctx context.Context,
 	return nil
 }
 
-func getRepoSlug(ctx context.Context, currentRepoSlug string, azdClient *azdext.AzdClient) (string, error) {
+func getRepoSlug(ctx context.Context, currentRepoSlug string, promptClient azdext.PromptServiceClient) (string, error) {
 	if currentRepoSlug != "" {
 		return currentRepoSlug, nil
 	}
 
-	res, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+	res, err := promptClient.Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
 			Message:     "Enter the <owner>/<repository> where the Copilot Coding Agent will run",
 			Placeholder: "<owner>/<repository>",
@@ -331,6 +322,12 @@ func writeCopilotSetupStepsYaml(gitRepoRoot string) error {
 	return nil
 }
 
+// newGitHubCLI is a thin wrapper around [azd_github.NewGitHubCli], for testing
+func newGitHubCLI(ctx context.Context, console input.Console, commandRunner azd_exec.CommandRunner) (githubCLI, error) {
+	cli, err := azd_github.NewGitHubCli(ctx, console, commandRunner)
+	return cli, err
+}
+
 func newCommandRunner(showOutput bool) (azd_exec.CommandRunner, input.Console) {
 	var commandRunner azd_exec.CommandRunner
 
@@ -358,7 +355,7 @@ func newCommandRunner(showOutput bool) (azd_exec.CommandRunner, input.Console) {
 	return commandRunner, console
 }
 
-func setCopilotEnvVars(ctx context.Context, githubCLI *github.Cli, repoSlug string, authConfig *authConfiguration) error {
+func setCopilotEnvVars(ctx context.Context, githubCLI githubCLI, repoSlug string, authConfig authConfiguration) error {
 	taskList := ux.NewTaskList(&ux.TaskListOptions{
 		Writer: os.Stdout,
 	})
@@ -381,7 +378,7 @@ func setCopilotEnvVars(ctx context.Context, githubCLI *github.Cli, repoSlug stri
 					repoSlug,
 					name,
 					value,
-					&github.SetVariableOptions{Environment: copilotEnv}); err != nil {
+					&azd_github.SetVariableOptions{Environment: copilotEnv}); err != nil {
 					return ux.Error, err
 				}
 
@@ -405,7 +402,7 @@ func (cp *credentialProviderAdapter) CredentialForSubscription(ctx context.Conte
 
 // createFederatedCredential creates a federated credential (allowing Copilot to authenticate and use Azure)
 func createFederatedCredential(ctx context.Context,
-	msiService azd_armmsi.ArmMsiService,
+	msiService azdMSIService,
 	repoSlug string,
 	copilotEnvName string,
 	subscriptionId string,
@@ -439,7 +436,7 @@ func createFederatedCredential(ctx context.Context,
 // pickOrCreateMSI walks the user through creating an MSI
 func pickOrCreateMSI(ctx context.Context,
 	prompter azdext.PromptServiceClient,
-	msiService azd_armmsi.ArmMsiService,
+	msiService azdMSIService,
 	entraIDService entraid.EntraIdService,
 	resourceService resourceService,
 	projectName string, subscriptionId string, roleNames []string) (*authConfiguration, error) {
@@ -457,7 +454,8 @@ func pickOrCreateMSI(ctx context.Context,
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("prompting for MSI option: %w", err)
+		//nolint:lll
+		return nil, fmt.Errorf("failed when prompting for MSI option. Try logging in manually with 'azd auth login' before running this command. Error: %w", err)
 	}
 
 	taskList := ux.NewTaskList(nil)
@@ -475,7 +473,8 @@ func pickOrCreateMSI(ctx context.Context,
 		})
 
 		if err != nil {
-			return nil, fmt.Errorf("prompting for MSI location: %w", err)
+			//nolint:lll
+			return nil, fmt.Errorf("failed when prompting for MSI location. Try logging in manually with 'azd auth login' before running this command. Error: %w", err)
 		}
 
 		shouldCreate, rgName, err := promptForResourceGroup(ctx, prompter, subscriptionId, location.Location.Name)
@@ -767,13 +766,19 @@ func gitPushChanges(ctx context.Context,
 	return chosenRemote, nil
 }
 
-func loginToGitHubIfNeeded(ctx context.Context, githubHostName string) error {
+func loginToGitHubIfNeeded(ctx context.Context,
+	githubHostName string,
+	//nolint:lll
+	newCommandRunnerFn func(showOutput bool) (azd_exec.CommandRunner, input.Console), // Just an alias of [newCommandRunner], for testing
+	//nolint:lll
+	newGitHubCLIFn func(ctx context.Context, console input.Console, commandRunner azd_exec.CommandRunner) (githubCLI, error), // Just an alias of [newGitHubCLI], for testing
+) error {
 	fmt.Println(output.WithBold("Checking if GitHub CLI is logged in..."))
 
 	// when we're logging in we do actually need to show the output from the Github CLI command so we'll
 	// use the console/commandRunner that's hooked up stdout and stderr.
-	commandRunner, console := newCommandRunner(true)
-	githubCLI, err := github.NewGitHubCli(ctx, console, commandRunner)
+	commandRunner, console := newCommandRunnerFn(true)
+	githubCLI, err := newGitHubCLIFn(ctx, console, commandRunner)
 
 	if err != nil {
 		return fmt.Errorf("failed to get the interactive github CLI: %w", err)

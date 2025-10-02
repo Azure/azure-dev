@@ -287,8 +287,19 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		return rootCmd.ExecuteContext(ctx)
 	}
 
-	// Get the original args passed to the command (excluding the program name)
-	originalArgs := os.Args[1:]
+	// rootCmd.Find() returns the root command if no subcommand is identified. Cobra checks all the registered commands
+	// and returns the longest matching command. If no subcommand is found, it returns the root command itself.
+	// This allows us to determine if a subcommand was provided or not or if the command is unknown.
+	topCommand, originalArgs, err := rootCmd.Find(os.Args[1:])
+	if err != nil {
+		// If we can't parse the command, just proceed to normal execution
+		log.Println("Error: parse command. Skipping auto-install:", err)
+		return rootCmd.ExecuteContext(ctx)
+	}
+	if topCommand != rootCmd || len(originalArgs) == 0 {
+		// known command to be run OR no subcommand provided - skip auto-install
+		return rootCmd.ExecuteContext(ctx)
+	}
 
 	// Extract flags that take values from the root command
 	flagsWithValues := extractFlagsWithValues(rootCmd)

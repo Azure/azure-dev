@@ -757,7 +757,7 @@ func gitPushChanges(ctx context.Context,
 		},
 	})
 
-	fmt.Printf("Commiting and pushing changes to %s to git", copilotFileRelative)
+	fmt.Printf("Committing and pushing changes to %s to git", copilotFileRelative)
 
 	if err := taskList.Run(); err != nil {
 		return "", err

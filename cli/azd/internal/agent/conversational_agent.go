@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/watch"
 	"github.com/fatih/color"
@@ -28,18 +30,20 @@ var conversational_prompt_template string
 // tool filtering, and interactive capabilities
 type ConversationalAzdAiAgent struct {
 	*agentBase
+	console input.Console
 }
 
 // NewConversationalAzdAiAgent creates a new conversational agent with memory, tool loading,
 // and MCP sampling capabilities. It filters out excluded tools and configures the agent
 // for interactive conversations with a high iteration limit for complex tasks.
-func NewConversationalAzdAiAgent(llm llms.Model, opts ...AgentCreateOption) (Agent, error) {
+func NewConversationalAzdAiAgent(llm llms.Model, console input.Console, opts ...AgentCreateOption) (Agent, error) {
 	azdAgent := &ConversationalAzdAiAgent{
 		agentBase: &agentBase{
-			defaultModel:         llm,
-			tools:                []common.AnnotatedTool{},
-			fileWatchingDisabled: true,
+			defaultModel:        llm,
+			tools:               []common.AnnotatedTool{},
+			watchForFileChanges: true,
 		},
+		console: console,
 	}
 
 	for _, opt := range opts {
@@ -95,7 +99,7 @@ func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...st
 
 	var watcher watch.Watcher
 
-	if aai.fileWatchingDisabled {
+	if aai.watchForFileChanges {
 		var err error
 		watcher, err = watch.NewWatcher(ctx)
 		if err != nil {
@@ -116,7 +120,7 @@ func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...st
 		time.Sleep(100 * time.Millisecond)
 		cleanup()
 
-		if aai.fileWatchingDisabled {
+		if aai.watchForFileChanges {
 			watcher.PrintChangedFiles(ctx)
 		}
 	}()
@@ -127,6 +131,49 @@ func (aai *ConversationalAzdAiAgent) SendMessage(ctx context.Context, args ...st
 	}
 
 	return output, nil
+}
+
+func (aai *ConversationalAzdAiAgent) SendMessageWithRetry(ctx context.Context, args ...string) (string, error) {
+	for {
+		agentOutput, err := aai.SendMessage(ctx, args...)
+		if err != nil {
+			if agentOutput != "" {
+				aai.console.Message(ctx, output.WithMarkdown(agentOutput))
+			}
+
+			// Display error and ask if user wants to retry
+			if shouldRetry := aai.handleErrorWithRetryPrompt(ctx, err); shouldRetry {
+				continue // Retry the same operation
+			}
+
+			return "", err // User chose not to retry, return original error
+		}
+
+		return agentOutput, nil
+	}
+}
+
+// handleErrorWithRetryPrompt displays an error and prompts user for retry
+func (aai *ConversationalAzdAiAgent) handleErrorWithRetryPrompt(ctx context.Context, err error) bool {
+	// Display error in error format
+	aai.console.Message(ctx, "")
+	aai.console.Message(ctx, output.WithErrorFormat("Error occurred: %s", err.Error()))
+	aai.console.Message(ctx, "")
+
+	// Prompt user if they want to try again
+	retryPrompt := uxlib.NewConfirm(&uxlib.ConfirmOptions{
+		Message:      "Oops, my reply didn’t quite fit what was needed. Want me to try again?",
+		DefaultValue: uxlib.Ptr(true),
+		HelpMessage:  "Choose 'yes' to retry the current step, or 'no' to stop the initialization.",
+	})
+
+	shouldRetry, promptErr := retryPrompt.Ask(ctx)
+	if promptErr != nil {
+		// If we can't prompt, don't retry
+		return false
+	}
+
+	return shouldRetry != nil && *shouldRetry
 }
 
 func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func(), error) {
@@ -182,7 +229,9 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 			select {
 			case thought := <-aai.thoughtChan:
 				if thought.Action != "" {
-					if thought.Action != latestAction {
+					// When a new action starts (different name OR different input),
+					// treat the previous action as complete and print its completion.
+					if thought.Action != latestAction || thought.ActionInput != latestActionInput {
 						printToolCompletion(latestAction, latestActionInput, latestThought)
 					}
 					latestAction = thought.Action
@@ -211,8 +260,6 @@ func (aai *ConversationalAzdAiAgent) renderThoughts(ctx context.Context) (func()
 
 				spinnerText += "..."
 				spinnerText += color.HiBlackString(fmt.Sprintf("\n(%ds, CTRL C to exit agentic mode)", elapsedSeconds))
-
-				// print out the result and use spinner to indicate processing
 			}
 
 			spinner.UpdateText(spinnerText)

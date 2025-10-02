@@ -21,7 +21,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
-	azdexec "github.com/azure/azure-dev/cli/azd/pkg/exec"
+	azd_exec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -56,7 +56,11 @@ type flagValues struct {
 
 // resourceService is just a minimal version of [*armresources.ResourceGroupsClient]
 type resourceService interface {
-	CreateOrUpdate(ctx context.Context, resourceGroupName string, parameters armresources.ResourceGroup, options *armresources.ResourceGroupsClientCreateOrUpdateOptions) (armresources.ResourceGroupsClientCreateOrUpdateResponse, error)
+	CreateOrUpdate(ctx context.Context,
+		resourceGroupName string,
+		parameters armresources.ResourceGroup,
+		options *armresources.ResourceGroupsClientCreateOrUpdateOptions,
+	) (armresources.ResourceGroupsClientCreateOrUpdateResponse, error)
 }
 
 func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
@@ -171,7 +175,7 @@ func newConfigCommand() *cobra.Command {
 		rgClient, err := armresources.NewResourceGroupsClient(subscriptionID, cred, nil)
 
 		if err != nil {
-			return fmt.Errorf("failed to create the resource group client: %s", err)
+			return fmt.Errorf("failed to create the resource group client: %w", err)
 		}
 
 		// the defaults follow along with whatever the user has chosen for --debug. So if --debug is
@@ -202,7 +206,9 @@ func newConfigCommand() *cobra.Command {
 			return err
 		}
 
-		if err := createFederatedCredential(ctx, msiService, repoSlug, copilotEnv, subscriptionID, authConfig.ResourceID); err != nil {
+		if err := createFederatedCredential(ctx,
+			msiService,
+			repoSlug, copilotEnv, subscriptionID, authConfig.ResourceID); err != nil {
 			return err
 		}
 
@@ -214,7 +220,10 @@ func newConfigCommand() *cobra.Command {
 			return err
 		}
 
-		remote, err := gitPushChanges(ctx, prompter, gitCLI, defaultCommandRunner, gitRepoRoot, repoSlug, cmdFlags.BranchName)
+		remote, err := gitPushChanges(ctx, prompter, gitCLI, defaultCommandRunner,
+			gitRepoRoot,
+			repoSlug,
+			cmdFlags.BranchName)
 
 		if err != nil {
 			return fmt.Errorf("failed to push files to git: %w", err)
@@ -223,40 +232,55 @@ func newConfigCommand() *cobra.Command {
 		codingAgentURL := fmt.Sprintf("https://github.com/%s/settings/copilot/coding_agent", repoSlug)
 
 		fmt.Println("")
-		fmt.Printf(output.WithHighLightFormat("(!) NOTE: Some tasks must still be completed, manually:\n"))
-		fmt.Printf("1. The branch created at %s/%s needs to be merged, to main, in the repository where the Copilot coding agent will run.\n", remote, cmdFlags.BranchName)
+		fmt.Println(output.WithHighLightFormat("(!) NOTE: Some tasks must still be completed, manually:"))
+		fmt.Printf("1. The branch created at %s/%s must be merged to %s/main\n", remote, cmdFlags.BranchName, repoSlug)
 		fmt.Printf("2. Visit %s and update the \"MCP configuration\" field with this JSON:\n\n", codingAgentURL)
 
 		fmt.Println(mcpJson)
 
-		resp, err := prompter.Confirm(ctx, &azdext.ConfirmRequest{
-			Options: &azdext.ConfirmOptions{
-				Message:      "Open browser windows for pull request and coding agent configuration?",
-				DefaultValue: to.Ptr(true),
-			},
-		})
-
-		if err != nil {
-			return fmt.Errorf("failed to get confirm response for browser/pr option: %w", err)
-		}
-
-		if *resp.Value {
-			_ = browser.OpenURL(codingAgentURL)
-
-			cmd := exec.CommandContext(ctx, defaultGitHubCLI.BinaryPath(), "pr", "create", "--fill", "--title", "Updating/adding copilot-setup-steps.yaml to enable the Copilot coding agent to access Azure", "--web")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			cmd.Dir = gitRepoRoot
-
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("failed to launch gh pr: %w", err)
-			}
+		if err := openBrowserWindows(ctx, prompter, defaultGitHubCLI, codingAgentURL, gitRepoRoot); err != nil {
+			return err
 		}
 
 		return nil
 	}
 
 	return cc
+}
+
+func openBrowserWindows(ctx context.Context,
+	prompter azdext.PromptServiceClient, githubCLI *github.Cli,
+	codingAgentURL string, gitRepoRoot string) error {
+	resp, err := prompter.Confirm(ctx, &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
+			Message:      "Open browser windows for pull request and coding agent configuration?",
+			DefaultValue: to.Ptr(true),
+		},
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to get confirm response for browser/pr option: %w", err)
+	}
+
+	if *resp.Value {
+		_ = browser.OpenURL(codingAgentURL)
+
+		//nolint:gosec	// defaultGitHubCLI.BinaryPath is derived from our own code, shouldn't be considered tainted.
+		cmd := exec.CommandContext(
+			ctx,
+			githubCLI.BinaryPath(),
+			"pr", "create", "--fill",
+			"--title", "Updating/adding copilot-setup-steps.yaml to enable the Copilot coding agent to access Azure",
+			"--web")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Dir = gitRepoRoot
+
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to launch gh pr: %w", err)
+		}
+	}
+	return nil
 }
 
 func getRepoSlug(ctx context.Context, currentRepoSlug string, azdClient *azdext.AzdClient) (string, error) {
@@ -289,6 +313,7 @@ func writeCopilotSetupStepsYaml(gitRepoRoot string) error {
 	copilotSetupStepsPath := filepath.Join(workflowsDir, "copilot-setup-steps.yml")
 
 	// Write the setup file
+	//nolint:gosec // permissions are correct - owner can read and change the file, others can read it (it's not secret)
 	if err := os.WriteFile(copilotSetupStepsPath, []byte(copilotSetupStepsYml), 0644); err != nil {
 		return fmt.Errorf("failed to write copilot setup file: %w", err)
 	}
@@ -296,16 +321,16 @@ func writeCopilotSetupStepsYaml(gitRepoRoot string) error {
 	return nil
 }
 
-func newCommandRunner(showOutput bool) (azdexec.CommandRunner, input.Console) {
-	var commandRunner azdexec.CommandRunner
+func newCommandRunner(showOutput bool) (azd_exec.CommandRunner, input.Console) {
+	var commandRunner azd_exec.CommandRunner
 
 	if showOutput {
-		commandRunner = azdexec.NewCommandRunner(&azdexec.RunnerOptions{
+		commandRunner = azd_exec.NewCommandRunner(&azd_exec.RunnerOptions{
 			Stdout: os.Stdout,
 			Stderr: os.Stderr,
 		})
 	} else {
-		commandRunner = azdexec.NewCommandRunner(&azdexec.RunnerOptions{
+		commandRunner = azd_exec.NewCommandRunner(&azd_exec.RunnerOptions{
 			Stdout: io.Discard,
 			Stderr: io.Discard,
 		})
@@ -342,7 +367,11 @@ func setCopilotEnvVars(ctx context.Context, githubCLI *github.Cli, repoSlug stri
 		taskList.AddTask(ux.TaskOptions{
 			Title: fmt.Sprintf("Set %s in copilot environment", name),
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-				if err := githubCLI.SetVariable(ctx, repoSlug, name, value, &github.SetVariableOptions{Environment: copilotEnv}); err != nil {
+				if err := githubCLI.SetVariable(ctx,
+					repoSlug,
+					name,
+					value,
+					&github.SetVariableOptions{Environment: copilotEnv}); err != nil {
 					return ux.Error, err
 				}
 
@@ -359,6 +388,7 @@ type credentialProviderAdapter struct {
 	tokenCred azcore.TokenCredential
 }
 
+//nolint:lll
 func (cp *credentialProviderAdapter) CredentialForSubscription(ctx context.Context, subscriptionId string) (azcore.TokenCredential, error) {
 	return cp.tokenCred, nil
 }
@@ -438,7 +468,7 @@ func pickOrCreateMSI(ctx context.Context,
 			return nil, fmt.Errorf("prompting for MSI location: %w", err)
 		}
 
-		shouldCreate, rgName, err := promptForResourceGroup(ctx, prompter, subscriptionId, location.Location.Name, resourceService)
+		shouldCreate, rgName, err := promptForResourceGroup(ctx, prompter, subscriptionId, location.Location.Name)
 
 		if err != nil {
 			return nil, err
@@ -471,18 +501,17 @@ func pickOrCreateMSI(ctx context.Context,
 		taskList.AddTask(ux.TaskOptions{
 			Title: fmt.Sprintf("Creating User Managed Identity (MSI) '%s'", identityName),
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-				newMSI, err := msiService.CreateUserIdentity(ctx, subscriptionId, resourceGroupName, location.Location.Name, identityName)
-
-				if err != nil {
-					return ux.Error, err
-				}
-
-				msIdentity = newMSI
+				newMSI, err := msiService.CreateUserIdentity(ctx,
+					subscriptionId,
+					resourceGroupName,
+					location.Location.Name,
+					identityName)
 
 				if err != nil {
 					return ux.Error, fmt.Errorf("failed to create User Managed Identity (MSI): %w", err)
 				}
 
+				msIdentity = newMSI
 				return ux.Success, nil
 			},
 		})
@@ -537,7 +566,8 @@ func pickOrCreateMSI(ctx context.Context,
 				subscriptionId,
 				roleNames,
 				// EnsureRoleAssignments uses the ServicePrincipal ID and the DisplayName.
-				// We are adapting the MSI to work with the same method as a regular Service Principal, by pulling name and ID.
+				// We are adapting the MSI to work with the same method as a regular Service Principal,
+				// by pulling name and ID.
 				&graphsdk.ServicePrincipal{
 					Id:          msIdentity.Properties.PrincipalID,
 					DisplayName: *msIdentity.Name,
@@ -566,7 +596,7 @@ func pickOrCreateMSI(ctx context.Context,
 
 func promptForResourceGroup(ctx context.Context,
 	prompter azdext.PromptServiceClient,
-	subscriptionId string, locationName string, resourceService resourceService) (mustCreate bool, resourceGroupName string, err error) {
+	subscriptionId string, locationName string) (mustCreate bool, resourceGroupName string, err error) {
 	rg, err := prompter.PromptResourceGroup(ctx, &azdext.PromptResourceGroupRequest{
 		AzureContext: &azdext.AzureContext{
 			Scope: &azdext.AzureScope{
@@ -609,12 +639,15 @@ type authConfiguration struct {
 }
 
 // gitPushChanges walks the user through pushing a branch with their changes to git.
-func gitPushChanges(ctx context.Context, prompter azdext.PromptServiceClient, gitCLI *azd_git.Cli, commandRunner azdexec.CommandRunner, gitRepoRoot string, repoSlug string, branchName string) (remote string, err error) {
+func gitPushChanges(ctx context.Context,
+	prompter azdext.PromptServiceClient, gitCLI *azd_git.Cli, commandRunner azd_exec.CommandRunner,
+	gitRepoRoot string, repoSlug string, branchName string,
+) (remote string, err error) {
 	copilotFileRelative := ".github/workflows/copilot-setup-steps.yml"
 
 	chosenRemote := ""
 
-	runResult, err := commandRunner.Run(ctx, azdexec.RunArgs{
+	runResult, err := commandRunner.Run(ctx, azd_exec.RunArgs{
 		Cmd:  "git",
 		Args: []string{"remote"},
 		Cwd:  gitRepoRoot,
@@ -655,9 +688,9 @@ func gitPushChanges(ctx context.Context, prompter azdext.PromptServiceClient, gi
 		return "", fmt.Errorf("failed to get selection: %w", err)
 	}
 
-	if *resp.Value == int32(len(choices)-1) {
+	if int64(*resp.Value) == int64(len(choices)-1) {
 		// they're going to do the push themselves.
-		fmt.Printf(output.WithErrorFormat("(!) NOTE: copilot-setup-steps.yml must be committed to the main branch of %s before it will take effect!", repoSlug))
+		fmt.Println(output.WithWarningFormat("(!) NOTE: copilot-setup-steps.yml must be committed to the main branch of %s before it will take effect!", repoSlug)) //nolint:lll
 		return "", nil
 	}
 
@@ -668,7 +701,7 @@ func gitPushChanges(ctx context.Context, prompter azdext.PromptServiceClient, gi
 	taskList.AddTask(ux.TaskOptions{
 		Title: fmt.Sprintf("Creating branch (%s)", branchName),
 		Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-			_, err := commandRunner.Run(ctx, azdexec.RunArgs{
+			_, err := commandRunner.Run(ctx, azd_exec.RunArgs{
 				Cmd:  "git",
 				Args: []string{"checkout", "-b", branchName},
 				Cwd:  gitRepoRoot,
@@ -743,13 +776,14 @@ func loginToGitHubIfNeeded(ctx context.Context, githubHostName string) error {
 	}
 
 	if !authStatus.LoggedIn {
-		fmt.Printf(output.WithWarningFormat("(!) Not currently logged in GitHub CLI, attempting to login using `gh auth login`\n"))
+		//nolint:lll
+		fmt.Println(output.WithWarningFormat("(!) Not currently logged in GitHub CLI, attempting to login using `gh auth login`"))
 
 		if err := githubCLI.Login(context.Background(), githubHostName); err != nil {
 			return err
 		}
 	}
 
-	fmt.Printf(output.WithSuccessFormat("✓ GitHub CLI is logged in\n"))
+	fmt.Println(output.WithSuccessFormat("✓ GitHub CLI is logged in"))
 	return nil
 }

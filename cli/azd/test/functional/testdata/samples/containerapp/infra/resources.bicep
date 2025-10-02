@@ -82,6 +82,6 @@ resource caeMiRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01
 }
 
 output containerRegistryName string = containerRegistry.name
-output containerAppsEnvironmentName string = containerAppsEnvironment.name
-output containerRegistryloginServer string = containerRegistry.properties.loginServer
+output containerAppsEnvironmentId string = containerAppsEnvironment.id
+output containerRegistryLoginServer string = containerRegistry.properties.loginServer
 output managedIdentityId string = managedIdentity.id

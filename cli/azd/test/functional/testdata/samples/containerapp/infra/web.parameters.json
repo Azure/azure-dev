@@ -8,11 +8,11 @@
     "location": {
       "value": "${AZURE_LOCATION}"
     },
-    "containerRegistryName": {
-      "value": "${AZURE_CONTAINER_REGISTRY_NAME}"
+    "containerRegistryEndpoint": {
+      "value": "${AZURE_CONTAINER_REGISTRY_ENDPOINT}"
     },
-    "containerAppsEnvironmentName": {
-      "value": "${AZURE_CONTAINER_ENVIRONMENT_NAME}"
+    "containerEnvironmentId": {
+      "value": "${AZURE_CONTAINER_ENVIRONMENT_ID}"
     },
     "imageName": {
       "value": "${SERVICE_WEB_IMAGE_NAME}"

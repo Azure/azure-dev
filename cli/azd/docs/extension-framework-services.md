@@ -27,7 +27,7 @@ Your extension needs to declare the `framework-service-provider` capability in i
 ```yaml
 # extension.yaml
 id: my.custom.extension
-namespace: myext
+namespace: my.extension
 displayName: My Custom Language Extension
 description: Adds support for Rust programming language
 version: 1.0.0

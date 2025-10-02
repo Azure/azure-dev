@@ -1,0 +1,531 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package project
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"sync"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/google/uuid"
+)
+
+// externalTool implements the tools.ExternalTool interface for extension-provided tools
+type externalTool struct {
+	name       string
+	installUrl string
+}
+
+func (et *externalTool) CheckInstalled(ctx context.Context) error {
+	// Extension-provided tools are assumed to be checked by the extension itself
+	return nil
+}
+
+func (et *externalTool) InstallUrl() string {
+	return et.installUrl
+}
+
+func (et *externalTool) Name() string {
+	return et.name
+}
+
+type ExternalFrameworkService struct {
+	extension    *extensions.Extension
+	languageName string
+	languageKind ServiceLanguageKind
+	console      input.Console
+
+	stream        azdext.FrameworkService_StreamServer
+	responseChans sync.Map
+}
+
+// NewExternalFrameworkService creates a new external framework service
+func NewExternalFrameworkService(
+	name string,
+	kind ServiceLanguageKind,
+	extension *extensions.Extension,
+	stream azdext.FrameworkService_StreamServer,
+	console input.Console,
+) FrameworkService {
+	service := &ExternalFrameworkService{
+		extension:    extension,
+		languageName: name,
+		languageKind: kind,
+		console:      console,
+		stream:       stream,
+	}
+
+	service.startResponseDispatcher()
+
+	return service
+}
+
+// RequiredExternalTools gets a list of the required external tools for the framework service
+func (efs *ExternalFrameworkService) RequiredExternalTools(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) []tools.ExternalTool {
+	// Convert serviceConfig to gRPC proto
+	cleanup := efs.wireConsole()
+	defer cleanup()
+
+	protoServiceConfig, err := efs.toProtoServiceConfig(serviceConfig)
+	if err != nil {
+		return nil
+	}
+
+	req := &azdext.FrameworkServiceMessage{
+		RequestId: uuid.NewString(),
+		MessageType: &azdext.FrameworkServiceMessage_RequiredExternalToolsRequest{
+			RequiredExternalToolsRequest: &azdext.FrameworkServiceRequiredExternalToolsRequest{
+				ServiceConfig: protoServiceConfig,
+			},
+		},
+	}
+
+	resp, err := efs.sendAndWait(ctx, req, func(r *azdext.FrameworkServiceMessage) bool {
+		return r.GetRequiredExternalToolsResponse() != nil
+	})
+	if err != nil {
+		return nil
+	}
+
+	toolsResp := resp.GetRequiredExternalToolsResponse()
+	if toolsResp == nil {
+		return nil
+	}
+
+	var externalTools []tools.ExternalTool
+	for _, protoTool := range toolsResp.Tools {
+		// Create a simple implementation of ExternalTool interface
+		tool := &externalTool{
+			name:       protoTool.Name,
+			installUrl: protoTool.InstallUrl,
+		}
+		externalTools = append(externalTools, tool)
+	}
+
+	return externalTools
+}
+
+// Initialize initializes the framework service for the specified service configuration
+func (efs *ExternalFrameworkService) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	cleanup := efs.wireConsole()
+	defer cleanup()
+
+	if serviceConfig == nil {
+		return errors.New("service configuration is required")
+	}
+
+	protoServiceConfig, err := efs.toProtoServiceConfig(serviceConfig)
+	if err != nil {
+		return err
+	}
+
+	req := &azdext.FrameworkServiceMessage{
+		RequestId: uuid.NewString(),
+		MessageType: &azdext.FrameworkServiceMessage_InitializeRequest{
+			InitializeRequest: &azdext.FrameworkServiceInitializeRequest{
+				ServiceConfig: protoServiceConfig,
+			},
+		},
+	}
+
+	_, err = efs.sendAndWait(ctx, req, func(r *azdext.FrameworkServiceMessage) bool {
+		return r.GetInitializeResponse() != nil
+	})
+	return err
+}
+
+// Requirements gets the requirements for the language or framework service
+func (efs *ExternalFrameworkService) Requirements() FrameworkRequirements {
+	ctx := context.Background()
+	cleanup := efs.wireConsole()
+	defer cleanup()
+
+	req := &azdext.FrameworkServiceMessage{
+		RequestId: uuid.NewString(),
+		MessageType: &azdext.FrameworkServiceMessage_RequirementsRequest{
+			RequirementsRequest: &azdext.FrameworkServiceRequirementsRequest{
+				// Empty - requirements are static for a framework
+			},
+		},
+	}
+
+	resp, err := efs.sendAndWait(ctx, req, func(r *azdext.FrameworkServiceMessage) bool {
+		return r.GetRequirementsResponse() != nil
+	})
+	if err != nil {
+		// Return default requirements on error
+		return FrameworkRequirements{
+			Package: FrameworkPackageRequirements{
+				RequireRestore: false,
+				RequireBuild:   false,
+			},
+		}
+	}
+
+	reqResp := resp.GetRequirementsResponse()
+	if reqResp == nil || reqResp.Requirements == nil {
+		return FrameworkRequirements{
+			Package: FrameworkPackageRequirements{
+				RequireRestore: false,
+				RequireBuild:   false,
+			},
+		}
+	}
+
+	protoReqs := reqResp.Requirements
+	requirements := FrameworkRequirements{}
+
+	if protoReqs.Package != nil {
+		requirements.Package = FrameworkPackageRequirements{
+			RequireRestore: protoReqs.Package.RequireRestore,
+			RequireBuild:   protoReqs.Package.RequireBuild,
+		}
+	}
+
+	return requirements
+}
+
+// Restore restores dependencies for the framework service
+func (efs *ExternalFrameworkService) Restore(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	progress *async.Progress[ServiceProgress],
+) (*ServiceRestoreResult, error) {
+	cleanup := efs.wireConsole()
+	defer cleanup()
+
+	protoServiceConfig, err := efs.toProtoServiceConfig(serviceConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	req := &azdext.FrameworkServiceMessage{
+		RequestId: uuid.NewString(),
+		MessageType: &azdext.FrameworkServiceMessage_RestoreRequest{
+			RestoreRequest: &azdext.FrameworkServiceRestoreRequest{
+				ServiceConfig: protoServiceConfig,
+			},
+		},
+	}
+
+	resp, err := efs.sendAndWaitWithProgress(ctx, req, progress, func(r *azdext.FrameworkServiceMessage) bool {
+		return r.GetRestoreResponse() != nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	restoreResp := resp.GetRestoreResponse()
+	if restoreResp == nil {
+		return nil, fmt.Errorf("received empty restore response")
+	}
+
+	return efs.fromProtoServiceRestoreResult(restoreResp.RestoreResult), nil
+}
+
+// Build builds the source for the framework service
+func (efs *ExternalFrameworkService) Build(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	restoreOutput *ServiceRestoreResult,
+	progress *async.Progress[ServiceProgress],
+) (*ServiceBuildResult, error) {
+	cleanup := efs.wireConsole()
+	defer cleanup()
+
+	protoServiceConfig, err := efs.toProtoServiceConfig(serviceConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	protoRestoreOutput := efs.toProtoServiceRestoreResult(restoreOutput)
+
+	req := &azdext.FrameworkServiceMessage{
+		RequestId: uuid.NewString(),
+		MessageType: &azdext.FrameworkServiceMessage_BuildRequest{
+			BuildRequest: &azdext.FrameworkServiceBuildRequest{
+				ServiceConfig: protoServiceConfig,
+				RestoreOutput: protoRestoreOutput,
+			},
+		},
+	}
+
+	resp, err := efs.sendAndWaitWithProgress(ctx, req, progress, func(r *azdext.FrameworkServiceMessage) bool {
+		return r.GetBuildResponse() != nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	buildResp := resp.GetBuildResponse()
+	if buildResp == nil {
+		return nil, fmt.Errorf("received empty build response")
+	}
+
+	return efs.fromProtoServiceBuildResult(buildResp.BuildResult), nil
+}
+
+// Package packages the source suitable for deployment
+func (efs *ExternalFrameworkService) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
+	progress *async.Progress[ServiceProgress],
+) (*ServicePackageResult, error) {
+	cleanup := efs.wireConsole()
+	defer cleanup()
+
+	protoServiceConfig, err := efs.toProtoServiceConfig(serviceConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	protoBuildOutput := efs.toProtoServiceBuildResult(buildOutput)
+
+	req := &azdext.FrameworkServiceMessage{
+		RequestId: uuid.NewString(),
+		MessageType: &azdext.FrameworkServiceMessage_PackageRequest{
+			PackageRequest: &azdext.FrameworkServicePackageRequest{
+				ServiceConfig: protoServiceConfig,
+				BuildOutput:   protoBuildOutput,
+			},
+		},
+	}
+
+	resp, err := efs.sendAndWaitWithProgress(ctx, req, progress, func(r *azdext.FrameworkServiceMessage) bool {
+		return r.GetPackageResponse() != nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	packageResp := resp.GetPackageResponse()
+	if packageResp == nil {
+		return nil, fmt.Errorf("received empty package response")
+	}
+
+	return fromProtoServicePackageResult(packageResp.PackageResult, nil), nil
+}
+
+// Private methods for gRPC communication
+
+// helper to send a request and wait for the matching response using async dispatcher
+func (efs *ExternalFrameworkService) sendAndWait(
+	ctx context.Context,
+	req *azdext.FrameworkServiceMessage,
+	match func(*azdext.FrameworkServiceMessage) bool,
+) (*azdext.FrameworkServiceMessage, error) {
+	// Create a response channel for this request
+	respChan := make(chan *azdext.FrameworkServiceMessage, 1)
+	efs.responseChans.Store(req.RequestId, respChan)
+	defer efs.responseChans.Delete(req.RequestId)
+
+	// Send the request
+	if err := efs.stream.Send(req); err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+
+	// Wait for response via the async dispatcher
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case resp, ok := <-respChan:
+		if !ok {
+			return nil, fmt.Errorf("response channel closed")
+		}
+
+		if resp.Error != nil {
+			return nil, fmt.Errorf("framework service error: %s", resp.Error.Message)
+		}
+
+		if !match(resp) {
+			return nil, fmt.Errorf("received unexpected response type")
+		}
+
+		return resp, nil
+	}
+}
+
+// helper to send a request, handle progress updates, and wait for the matching response
+func (efs *ExternalFrameworkService) sendAndWaitWithProgress(
+	ctx context.Context,
+	req *azdext.FrameworkServiceMessage,
+	progress *async.Progress[ServiceProgress],
+	match func(*azdext.FrameworkServiceMessage) bool,
+) (*azdext.FrameworkServiceMessage, error) {
+	respChan := make(chan *azdext.FrameworkServiceMessage, 1)
+	efs.responseChans.Store(req.RequestId, respChan)
+	defer efs.responseChans.Delete(req.RequestId)
+
+	if err := efs.stream.Send(req); err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case resp := <-respChan:
+			if resp == nil {
+				return nil, fmt.Errorf("stream closed")
+			}
+
+			if resp.Error != nil {
+				return nil, fmt.Errorf("framework service error: %s", resp.Error.Message)
+			}
+
+			if progressMsg := resp.GetProgressMessage(); progressMsg != nil {
+				if progress != nil {
+					progress.SetProgress(ServiceProgress{
+						Message: progressMsg.Message,
+					})
+				}
+				continue // Wait for the actual response
+			}
+
+			if !match(resp) {
+				return nil, fmt.Errorf("received unexpected response type")
+			}
+
+			return resp, nil
+		}
+	}
+}
+
+// goroutine to receive and dispatch responses
+func (efs *ExternalFrameworkService) startResponseDispatcher() {
+	go func() {
+		for {
+			resp, err := efs.stream.Recv()
+			if err != nil {
+				// propagate error to all waiting calls
+				efs.responseChans.Range(func(key, value any) bool {
+					ch := value.(chan *azdext.FrameworkServiceMessage)
+					close(ch)
+					return true
+				})
+				return
+			}
+			if ch, ok := efs.responseChans.Load(resp.RequestId); ok {
+
+				ch.(chan *azdext.FrameworkServiceMessage) <- resp
+			} else {
+				log.Printf("No response channel found for RequestId: %s", resp.RequestId)
+			}
+		}
+	}()
+}
+
+func (efs *ExternalFrameworkService) wireConsole() func() {
+	stdOut := efs.extension.StdOut()
+	stdErr := efs.extension.StdErr()
+	stdOut.AddWriter(efs.console.Handles().Stdout)
+	stdErr.AddWriter(efs.console.Handles().Stderr)
+
+	return func() {
+		stdOut.RemoveWriter(efs.console.Handles().Stdout)
+		stdErr.RemoveWriter(efs.console.Handles().Stderr)
+	}
+}
+
+// Convert ServiceConfig to proto message
+func (efs *ExternalFrameworkService) toProtoServiceConfig(serviceConfig *ServiceConfig) (*azdext.ServiceConfig, error) {
+	if serviceConfig == nil {
+		return nil, nil
+	}
+
+	image, err := serviceConfig.Image.Envsubst(func(name string) string {
+		return "" // Use empty resolver for now, similar to service_target_external.go
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve image value: %w", err)
+	}
+
+	return &azdext.ServiceConfig{
+		Name:         serviceConfig.Name,
+		RelativePath: serviceConfig.RelativePath,
+		Host:         string(serviceConfig.Host),
+		Language:     string(serviceConfig.Language),
+		OutputPath:   serviceConfig.OutputPath,
+		Image:        image,
+	}, nil
+}
+
+// Convert proto ServiceRestoreResult to local type
+func (efs *ExternalFrameworkService) fromProtoServiceRestoreResult(
+	protoResult *azdext.ServiceRestoreResult,
+) *ServiceRestoreResult {
+	if protoResult == nil {
+		return nil
+	}
+
+	result := &ServiceRestoreResult{}
+	if len(protoResult.Details) > 0 {
+		result.Details = stringMapToDetailsInterface(protoResult.Details)
+	}
+
+	return result
+}
+
+// Convert ServiceRestoreResult to proto message
+func (efs *ExternalFrameworkService) toProtoServiceRestoreResult(result *ServiceRestoreResult) *azdext.ServiceRestoreResult {
+	if result == nil {
+		return nil
+	}
+
+	details := detailsInterfaceToStringMap(result.Details)
+	protoResult := &azdext.ServiceRestoreResult{}
+	if len(details) > 0 {
+		protoResult.Details = details
+	}
+
+	return protoResult
+}
+
+// Convert proto ServiceBuildResult to local type
+func (efs *ExternalFrameworkService) fromProtoServiceBuildResult(
+	protoResult *azdext.ServiceBuildResult,
+) *ServiceBuildResult {
+	if protoResult == nil {
+		return nil
+	}
+
+	result := &ServiceBuildResult{
+		Restore: efs.fromProtoServiceRestoreResult(protoResult.Restore),
+	}
+
+	if len(protoResult.Details) > 0 {
+		result.Details = stringMapToDetailsInterface(protoResult.Details)
+	}
+
+	return result
+}
+
+// Convert ServiceBuildResult to proto message
+func (efs *ExternalFrameworkService) toProtoServiceBuildResult(result *ServiceBuildResult) *azdext.ServiceBuildResult {
+	if result == nil {
+		return nil
+	}
+
+	details := detailsInterfaceToStringMap(result.Details)
+	protoResult := &azdext.ServiceBuildResult{
+		Restore: efs.toProtoServiceRestoreResult(result.Restore),
+	}
+
+	if len(details) > 0 {
+		protoResult.Details = details
+	}
+
+	return protoResult
+}

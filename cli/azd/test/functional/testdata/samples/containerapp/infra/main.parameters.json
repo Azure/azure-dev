@@ -7,9 +7,6 @@
     },
     "location": {
       "value": "${AZURE_LOCATION}"
-    },
-    "provisionContainerApp": {
-      "value": "${AZURE_PROVISION_CONTAINER_APP}"
     }
   }
 }

@@ -4,12 +4,13 @@ namespace: demo
 displayName: Demo Extension
 description: This extension provides examples of the AZD extension framework.
 usage: azd demo <command> [options]
-version: 0.2.0
+version: 0.3.0
 language: go
 capabilities:
   - custom-commands
   - lifecycle-events
   - mcp-server
+  - service-target-provider
 examples:
   - name: context
     description: Displays the current `azd` project & environment context.

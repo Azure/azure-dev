@@ -131,6 +131,68 @@ The following guide will help you develop and ship extensions for `azd`.
 3. Navigate to the `cli/azd/extensions` directory in your favorite terminal.
 4. Install the `azd` [Developer Extension](#developer-extension)
 
+### Capabilities
+
+Extensions can provide different types of capabilities:
+
+#### Event Handlers
+
+Extensions can register handlers for project and service lifecycle events (e.g., `preprovision`, `prepackage`, `predeploy`). These handlers execute custom logic at specific points in the `azd` workflow. The `ExtensionHost` is the preferred way to wire handlers and manage the long-lived connection.
+
+**Example:**
+```go
+host := azdext.NewExtensionHost(azdClient).
+  WithProjectEventHandler(
+    "preprovision",
+    func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+      // Custom logic before provisioning
+      return nil
+    },
+  ).
+  WithServiceEventHandler(
+    "prepackage",
+    func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+      // Custom packaging logic
+      return nil
+    },
+    nil,
+  )
+
+if err := host.Run(ctx); err != nil {
+  return fmt.Errorf("failed to run extension: %w", err)
+}
+```
+
+#### Service Target Providers
+
+Extensions can implement custom service targets that handle the full deployment lifecycle (package, publish, deploy) for specialized Azure services or custom deployment patterns. `ExtensionHost` handles registration and readiness by default.
+
+**Recommended:**
+```go
+// Create a service target provider and register it using the extension host
+provider := project.NewCustomServiceTargetProvider(azdClient)
+host := azdext.NewExtensionHost(azdClient).
+  WithServiceTarget("customtype", provider)
+
+// Run blocks until the azd server shuts down the connection
+if err := host.Run(ctx); err != nil {
+  return fmt.Errorf("failed to run extension: %w", err)
+}
+```
+
+A service target provider must implement the `azdext.ServiceTargetProvider` interface:
+
+```go
+type ServiceTargetProvider interface {
+    Initialize(ctx context.Context, serviceConfig *ServiceConfig) error
+    GetTargetResource(ctx context.Context, subscriptionId string, serviceConfig *ServiceConfig) (*TargetResource, error)
+    Package(ctx context.Context, serviceConfig *ServiceConfig, frameworkPackage *ServicePackageResult, progress ProgressReporter) (*ServicePackageResult, error)
+    Publish(ctx context.Context, serviceConfig *ServiceConfig, servicePackage *ServicePackageResult, targetResource *TargetResource, progress ProgressReporter) (*ServicePublishResult, error)
+    Deploy(ctx context.Context, serviceConfig *ServiceConfig, servicePackage *ServicePackageResult, servicePublish *ServicePublishResult, targetResource *TargetResource, progress ProgressReporter) (*ServiceDeployResult, error)
+    Endpoints(ctx context.Context, serviceConfig *ServiceConfig, targetResource *TargetResource) ([]string, error)
+}
+```
+
 ### Supported Languages
 
 `azd` extensions can be built in any programming language but starter templates are included for the following:
@@ -606,7 +668,7 @@ fmt.Println(getProjectResponse.Project.Name)
 
 The following is an example of subscribing to project & service lifecycle events within an `azd` template.
 
-In this example the extension is leveraging the `azdext.EventManager` struct. This struct makes it easier to subscribe and consume the gRPC bi-directional event stream between `azd` and the extension.
+In this example the extension is leveraging the `azdext.NewExtensionHost` constructor. This provides a fluent API to register event handlers, service target providers, and other extension capabilities in a unified way.
 
 Other languages will need to manually handle the different message types invoked by the service.
 
@@ -621,32 +683,18 @@ if err != nil {
 }
 defer azdClient.Close()
 
-eventManager := azdext.NewEventManager(azdClient)
-defer eventManager.Close()
-
-// Subscribe to a project event
-err = eventManager.AddProjectEventHandler(
-    ctx,
-    "preprovision",
-    func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+// Create an extension host and register event handlers using the fluent API
+host := azdext.NewExtensionHost(azdClient).
+    WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
         // This is your event handler code
-    for i := 1; i <= 20; i++ {
+        for i := 1; i <= 20; i++ {
             fmt.Printf("%d. Doing important work in extension...\n", i)
             time.Sleep(250 * time.Millisecond)
         }
 
         return nil
-    },
-)
-if err != nil {
-    return fmt.Errorf("failed to add preprovision project event handler: %w", err)
-}
-
-// Subscribe to a service event
-err = eventManager.AddServiceEventHandler(
-    ctx,
-    "prepackage",
-    func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+    }).
+    WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
         // This is your event handler
         for i := 1; i <= 20; i++ {
             fmt.Printf("%d. Doing important work in extension...\n", i)
@@ -654,22 +702,16 @@ err = eventManager.AddServiceEventHandler(
         }
 
         return nil
-    },
-    // Optionally filter your subscription by service host and/or language
-    &azdext.ServerEventOptions{
+    }, &azdext.ServerEventOptions{
+        // Optionally filter your subscription by service host and/or language
         Host: "containerapp",
         Language: "python",
-    },
-)
+    })
 
-if err != nil {
-    return fmt.Errorf("failed to add prepackage event handler: %w", err)
-}
-
-// Start listening for events
+// Start the extension host
 // This is a blocking call and will not return until the server connection is closed.
-if err := eventManager.Receive(ctx); err != nil {
-    return fmt.Errorf("failed to receive events: %w", err)
+if err := host.Run(ctx); err != nil {
+    return fmt.Errorf("failed to run extension: %w", err)
 }
 
 ```

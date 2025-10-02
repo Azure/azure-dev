@@ -7,7 +7,7 @@ import (
 	"context"
 	"os"
 
-	"azure.foundry.ai.agents/internal/cmd"
+	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/cmd"
 	"github.com/fatih/color"
 )
 

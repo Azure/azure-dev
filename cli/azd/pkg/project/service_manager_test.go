@@ -318,6 +318,18 @@ func Test_ServiceManager_GetServiceTarget(t *testing.T) {
 	require.IsType(t, new(fakeServiceTarget), serviceTarget)
 }
 
+func Test_ServiceManager_GetServiceTarget_UnsupportedHost(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	setupMocksForServiceManager(mockContext)
+	env := environment.New("test")
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetKind("missing-target"), ServiceLanguageFake)
+
+	_, err := sm.GetServiceTarget(*mockContext.Context, serviceConfig)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "service host 'missing-target' for service 'api' is unsupported")
+}
+
 func Test_ServiceManager_CacheResults(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)

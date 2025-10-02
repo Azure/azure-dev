@@ -192,7 +192,7 @@
                         "type": "string",
                         "title": "Required. The type of Azure resource used for service implementation",
                         "description": "The Azure service that will be used as the target for deployment operations for the service.",
-                        "enum": [
+                        "examples": [
                             "appservice",
                             "containerapp",
                             "function",

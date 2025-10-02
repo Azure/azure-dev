@@ -5,8 +5,11 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -14,7 +17,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
@@ -24,6 +31,11 @@ type containerAppTarget struct {
 	containerHelper     *ContainerHelper
 	containerAppService containerapps.ContainerAppService
 	resourceManager     ResourceManager
+	armDeployments      *azapi.StandardDeployments
+	console             input.Console
+	commandRunner       exec.CommandRunner
+
+	bicepCli func() (*bicep.Cli, error)
 }
 
 // NewContainerAppTarget creates the container app service target.
@@ -36,6 +48,9 @@ func NewContainerAppTarget(
 	containerHelper *ContainerHelper,
 	containerAppService containerapps.ContainerAppService,
 	resourceManager ResourceManager,
+	deploymentService *azapi.StandardDeployments,
+	console input.Console,
+	commandRunner exec.CommandRunner,
 ) ServiceTarget {
 	return &containerAppTarget{
 		env:                 env,
@@ -43,6 +58,9 @@ func NewContainerAppTarget(
 		containerHelper:     containerHelper,
 		containerAppService: containerAppService,
 		resourceManager:     resourceManager,
+		armDeployments:      deploymentService,
+		console:             console,
+		commandRunner:       commandRunner,
 	}
 }
 
@@ -148,25 +166,126 @@ func (at *containerAppTarget) Deploy(
 	}
 	imageName := containerDetails.RemoteImage
 
-	containerAppOptions := containerapps.ContainerAppOptions{
-		ApiVersion: serviceConfig.ApiVersion,
+	// Default resource name and type
+	resourceName := targetResource.ResourceName()
+	resourceTypeContainer := azapi.AzureResourceTypeContainerApp
+
+	// Check for the presence of a deployment module infra/<module_name> that is used to deploy the revisions.
+	// If present, build and deploy it.
+	controlledRevision := false
+
+	moduleName := serviceConfig.Module
+	if moduleName == "" {
+		moduleName = serviceConfig.Name
 	}
 
-	progress.SetProgress(NewServiceProgress("Updating container app revision"))
-	err := at.containerAppService.AddRevision(
-		ctx,
-		targetResource.SubscriptionId(),
-		targetResource.ResourceGroupName(),
-		targetResource.ResourceName(),
-		imageName,
-		&containerAppOptions,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("updating container app service: %w", err)
+	modulePath := filepath.Join(serviceConfig.Project.Infra.Path, moduleName)
+	bicepPath := modulePath + ".bicep"
+	bicepParametersPath := modulePath + ".parameters.json"
+	bicepParamPath := modulePath + ".bicepparam"
+	mainPath := bicepPath
+
+	if _, err := os.Stat(bicepParamPath); err == nil {
+		controlledRevision = true
+		mainPath = bicepParamPath
+	} else if _, err := os.Stat(bicepPath); err == nil {
+		if _, err := os.Stat(bicepParametersPath); err == nil {
+			controlledRevision = true
+		}
+	}
+
+	if controlledRevision {
+		fetchBicepCli := at.bicepCli
+		if fetchBicepCli == nil {
+			fetchBicepCli = func() (*bicep.Cli, error) {
+				return bicep.NewCli(ctx, at.console, at.commandRunner)
+			}
+		}
+
+		bicepCli, err := fetchBicepCli()
+		if err != nil {
+			return nil, fmt.Errorf("acquiring bicep cli: %w", err)
+		}
+
+		progress.SetProgress(NewServiceProgress("Building bicep"))
+		deployment, err := compileBicep(bicepCli, ctx, mainPath, at.env)
+		if err != nil {
+			return nil, fmt.Errorf("building bicep: %w", err)
+		}
+
+		var template azure.ArmTemplate
+		if err := json.Unmarshal(deployment.Template, &template); err != nil {
+			log.Printf("failed unmarshalling arm template to JSON: %s: contents:\n%s", err, deployment.Template)
+			return nil, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
+		}
+
+		progress.SetProgress(NewServiceProgress("Deploying revision"))
+		deploymentResult, err := at.armDeployments.DeployToResourceGroup(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			at.armDeployments.GenerateDeploymentName(serviceConfig.Name),
+			deployment.Template,
+			deployment.Parameters,
+			nil, nil,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("deploying bicep template: %w", err)
+		}
+
+		deploymentHostDetails, err := deploymentHost(deploymentResult)
+		if err != nil {
+			return nil, fmt.Errorf("getting deployment host type: %w", err)
+		}
+		resourceName = deploymentHostDetails.name
+		outputs := azapi.CreateDeploymentOutput(deploymentResult.Outputs)
+
+		if len(outputs) > 0 {
+			outputParams := provisioning.OutputParametersFromArmOutputs(template.Outputs, outputs)
+			err := provisioning.UpdateEnvironment(ctx, outputParams, at.env, at.envManager)
+			if err != nil {
+				return nil, fmt.Errorf("updating environment: %w", err)
+			}
+		}
+	} else {
+		if resourceName == "" {
+			// Fetch the target resource explicitly
+			res, err := at.resourceManager.GetTargetResource(ctx, at.env.GetSubscriptionId(), serviceConfig)
+			if err != nil {
+				return nil, fmt.Errorf("fetching target resource: %w", err)
+			}
+
+			targetResource = res
+		}
+
+		// Fall back to only updating container image when no bicep infra is present
+		containerAppOptions := containerapps.ContainerAppOptions{
+			ApiVersion: serviceConfig.ApiVersion,
+		}
+
+		progress.SetProgress(NewServiceProgress("Updating container app revision"))
+		err := at.containerAppService.AddRevision(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			resourceName,
+			imageName,
+			&containerAppOptions,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("updating container app service: %w", err)
+		}
 	}
 
 	progress.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
-	endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
+
+	target := environment.NewTargetResource(
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		resourceName,
+		string(resourceTypeContainer))
+
+	endpoints, err := at.Endpoints(ctx, serviceConfig, target)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +296,7 @@ func (at *containerAppTarget) Deploy(
 		TargetResourceId: azure.ContainerAppRID(
 			targetResource.SubscriptionId(),
 			targetResource.ResourceGroupName(),
-			targetResource.ResourceName(),
+			resourceName,
 		),
 		Kind:      ContainerAppTarget,
 		Endpoints: endpoints,

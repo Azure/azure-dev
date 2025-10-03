@@ -15,7 +15,6 @@ import (
 
 	// Importing for infrastructure provider plugin registrations
 
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -405,24 +404,22 @@ func NewRootCmd(
 	ioc.RegisterNamedInstance(rootContainer, "root-cmd", rootCmd)
 	registerCommonDependencies(rootContainer)
 
-	// Conditionally register the 'extension' commands if the feature is enabled
-	err := rootContainer.Invoke(func(alphaFeatureManager *alpha.FeatureManager, extensionManager *extensions.Manager) error {
-		if alphaFeatureManager.IsEnabled(extensions.FeatureExtensions) {
-			// Enables the "extension (ext)" command group.
-			extensionActions(root)
+	// Register the 'extension' commands
+	err := rootContainer.Invoke(func(extensionManager *extensions.Manager) error {
+		// Enables the "extension (ext)" command group.
+		extensionActions(root)
 
-			// Enables custom extension commands
-			installedExtensions, err := extensionManager.ListInstalled()
-			if err != nil {
-				return fmt.Errorf("Failed to get installed extensions: %w", err)
-			}
+		// Enables custom extension commands
+		installedExtensions, err := extensionManager.ListInstalled()
+		if err != nil {
+			return fmt.Errorf("Failed to get installed extensions: %w", err)
+		}
 
-			// Bind custom extension commands for extensions that expose the capability
-			for _, ext := range installedExtensions {
-				if ext.HasCapability(extensions.CustomCommandCapability) {
-					if err := bindExtension(rootContainer, root, ext); err != nil {
-						return fmt.Errorf("Failed to bind extension commands: %w", err)
-					}
+		// Bind custom extension commands for extensions that expose the capability
+		for _, ext := range installedExtensions {
+			if ext.HasCapability(extensions.CustomCommandCapability) {
+				if err := bindExtension(rootContainer, root, ext); err != nil {
+					return fmt.Errorf("Failed to bind extension commands: %w", err)
 				}
 			}
 		}

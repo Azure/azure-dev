@@ -736,10 +736,6 @@ func (i *initAction) initializeEnv(
 
 // initializeExtensions installs extensions specified in the project config
 func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
-	if !i.featuresManager.IsEnabled(extensions.FeatureExtensions) {
-		return nil
-	}
-
 	projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
 	if err != nil {
 		return fmt.Errorf("loading project config: %w", err)

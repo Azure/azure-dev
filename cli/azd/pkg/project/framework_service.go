@@ -25,6 +25,7 @@ const (
 	ServiceLanguageJava       ServiceLanguageKind = "java"
 	ServiceLanguageDocker     ServiceLanguageKind = "docker"
 	ServiceLanguageSwa        ServiceLanguageKind = "swa"
+	ServiceLanguageCustom     ServiceLanguageKind = "custom"
 )
 
 func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error) {
@@ -42,7 +43,8 @@ func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error)
 		ServiceLanguageTypeScript,
 		ServiceLanguagePython,
 		ServiceLanguageJava,
-		ServiceLanguageDocker:
+		ServiceLanguageDocker,
+		ServiceLanguageCustom:
 		// Excluding ServiceLanguageSwa since it is implicitly derived currently,
 		// and not an actual language
 		return kind, nil

@@ -100,26 +100,19 @@ func (p *AgentServiceTargetProvider) Package(
 	frameworkPackageOutput *azdext.ServicePackageResult,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
-	progress("Validating framework package output")
-	time.Sleep(400 * time.Millisecond)
-	progress("Preparing agent package artifacts")
-	time.Sleep(600 * time.Millisecond)
+	var targetImage string
 
-	fmt.Printf("\nReceived package: %s\n", color.New(color.FgHiBlue).Sprint(frameworkPackageOutput.GetPackagePath()))
-
-	// Log all details from the package result
-	if len(frameworkPackageOutput.Details) > 0 {
-		fmt.Printf("Package Details:\n")
-		for key, value := range frameworkPackageOutput.Details {
-			fmt.Printf("  %s: %s\n", key, color.New(color.FgHiBlue).Sprint(value))
-		}
+	// Check for structured docker package result first
+	if frameworkPackageOutput.DockerPackageResult != nil {
+		targetImage = frameworkPackageOutput.DockerPackageResult.TargetImage
 	}
 
-	packagePath := "agent-aca/app:azd-deploy-1758834482"
-	fmt.Printf("\nAgent package created: %s\n", color.New(color.FgHiBlue).Sprint(packagePath))
+	fmt.Printf("\nPackage path: %s\n", color.New(color.FgHiBlue).Sprint(frameworkPackageOutput.PackagePath))
+	fmt.Printf("\nDockerPackageResult: %s\n", color.New(color.FgHiBlue).Sprint(targetImage))
 
 	return &azdext.ServicePackageResult{
-		PackagePath: packagePath,
+		PackagePath:         frameworkPackageOutput.PackagePath,
+		DockerPackageResult: frameworkPackageOutput.DockerPackageResult,
 		Details: map[string]string{
 			"timestamp": time.Now().Format(time.RFC3339),
 		},
@@ -132,29 +125,32 @@ func (p *AgentServiceTargetProvider) Publish(
 	serviceConfig *azdext.ServiceConfig,
 	packageResult *azdext.ServicePackageResult,
 	targetResource *azdext.TargetResource,
+	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
 	if packageResult == nil {
 		return nil, fmt.Errorf("packageResult is nil")
 	}
 
-	packagePath := packageResult.GetPackagePath()
-	if packagePath == "" {
-		return nil, fmt.Errorf("package path isempty")
+	if packageResult.DockerPackageResult == nil {
+		return nil, fmt.Errorf("docker package result is nil")
 	}
 
-	progress(fmt.Sprintf("Retrieving %s...", packagePath))
-	time.Sleep(500 * time.Millisecond)
+	localImageTag := packageResult.DockerPackageResult.TargetImage
 
-	progress("Pushing artifacts to registry")
-	time.Sleep(700 * time.Millisecond)
+	// E.g. Given `azd publish svc --to acr.io/my/img:tag12`, publishOptions.Image would be "acr.io/my/img:tag12"
+	if publishOptions != nil && publishOptions.Image != "" {
+		// To actually use this, you may need to parse out the registry, image name, and tag components
+		// See parseImageOverride in container_helper.go
+		fmt.Printf("Using publish options with image: %s\n", publishOptions.Image)
+	}
 
-	remoteImage := fmt.Sprintf("contoso.azurecr.io/%s", packagePath)
+	remoteImage := fmt.Sprintf("contoso.azurecr.io/%s", localImageTag)
 	fmt.Printf("\nAgent image published: %s\n", color.New(color.FgHiBlue).Sprint(remoteImage))
 
 	return &azdext.ServicePublishResult{
-		Details: map[string]string{
-			"remoteImage": remoteImage,
+		ContainerDetails: &azdext.ContainerPublishDetails{
+			RemoteImage: remoteImage,
 		},
 	}, nil
 }
@@ -182,18 +178,17 @@ func (p *AgentServiceTargetProvider) Deploy(
 	// Print package result details
 	fmt.Printf("\nPackage Details:\n")
 	fmt.Printf("  Package Path: %s\n", color.New(color.FgHiBlue).Sprint(packageResult.GetPackagePath()))
-	if packageResult.Details != nil {
-		for key, value := range packageResult.Details {
-			fmt.Printf("  %s: %s\n", key, color.New(color.FgHiBlue).Sprint(value))
-		}
+	if packageResult.DockerPackageResult != nil {
+		fmt.Printf("  Docker Package Result:\n")
+		fmt.Printf("    Image Hash: %s\n", color.New(color.FgHiBlue).Sprint(packageResult.DockerPackageResult.ImageHash))
+		fmt.Printf("    Source Image: %s\n", color.New(color.FgHiBlue).Sprint(packageResult.DockerPackageResult.SourceImage))
+		fmt.Printf("    Target Image: %s\n", color.New(color.FgHiBlue).Sprint(packageResult.DockerPackageResult.TargetImage))
 	}
 
 	// Print publish result details
 	fmt.Printf("\nPublish Details:\n")
-	if publishResult.Details != nil {
-		for key, value := range publishResult.Details {
-			fmt.Printf("  %s: %s\n", key, color.New(color.FgHiBlue).Sprint(value))
-		}
+	if publishResult.ContainerDetails != nil {
+		fmt.Printf("  Remote Image: %s\n", color.New(color.FgHiBlue).Sprint(publishResult.ContainerDetails.RemoteImage))
 	}
 	fmt.Println()
 

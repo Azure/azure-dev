@@ -30,6 +30,44 @@ func NewProjectService(
 	}
 }
 
+// toDockerOptions converts a project.DockerProjectOptions to azdext.DockerProjectOptions.
+// Returns nil if no docker options are configured.
+func toDockerOptions(docker *project.DockerProjectOptions, envKeyMapper func(string) string) *azdext.DockerProjectOptions {
+	// Check if any docker configuration is present
+	if docker.Path == "" &&
+		docker.Context == "" &&
+		docker.Platform == "" &&
+		docker.Target == "" &&
+		docker.Registry.Empty() &&
+		docker.Image.Empty() &&
+		docker.Tag.Empty() &&
+		!docker.RemoteBuild &&
+		len(docker.BuildArgs) == 0 {
+		return nil
+	}
+
+	options := &azdext.DockerProjectOptions{
+		Path:        docker.Path,
+		Context:     docker.Context,
+		Platform:    docker.Platform,
+		Target:      docker.Target,
+		Registry:    docker.Registry.MustEnvsubst(envKeyMapper),
+		Image:       docker.Image.MustEnvsubst(envKeyMapper),
+		Tag:         docker.Tag.MustEnvsubst(envKeyMapper),
+		RemoteBuild: docker.RemoteBuild,
+	}
+
+	// Convert build args with env substitution
+	if len(docker.BuildArgs) > 0 {
+		options.BuildArgs = make([]string, len(docker.BuildArgs))
+		for i, arg := range docker.BuildArgs {
+			options.BuildArgs[i] = arg.MustEnvsubst(envKeyMapper)
+		}
+	}
+
+	return options
+}
+
 func (s *projectService) Get(ctx context.Context, req *azdext.EmptyRequest) (*azdext.GetProjectResponse, error) {
 	azdContext, err := s.lazyAzdContext.GetValue()
 	if err != nil {
@@ -81,7 +119,7 @@ func (s *projectService) Get(ctx context.Context, req *azdext.EmptyRequest) (*az
 	}
 
 	for name, service := range projectConfig.Services {
-		project.Services[name] = &azdext.ServiceConfig{
+		protoService := &azdext.ServiceConfig{
 			Name:              service.Name,
 			ResourceGroupName: service.ResourceGroupName.MustEnvsubst(envKeyMapper),
 			ResourceName:      service.ResourceName.MustEnvsubst(envKeyMapper),
@@ -92,6 +130,13 @@ func (s *projectService) Get(ctx context.Context, req *azdext.EmptyRequest) (*az
 			OutputPath:        service.OutputPath,
 			Image:             service.Image.MustEnvsubst(envKeyMapper),
 		}
+
+		// Populate docker options with env substitution
+		if dockerOptions := toDockerOptions(&service.Docker, envKeyMapper); dockerOptions != nil {
+			protoService.Docker = dockerOptions
+		}
+
+		project.Services[name] = protoService
 	}
 
 	return &azdext.GetProjectResponse{

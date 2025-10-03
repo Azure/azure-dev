@@ -43,6 +43,7 @@ type ServiceTargetProvider interface {
 		serviceConfig *ServiceConfig,
 		packageResult *ServicePackageResult,
 		targetResource *TargetResource,
+		publishOptions *PublishOptions,
 		progress ProgressReporter,
 	) (*ServicePublishResult, error)
 	Deploy(
@@ -253,6 +254,7 @@ func buildServiceTargetResponseMsg(
 			r.PublishRequest.ServiceConfig,
 			r.PublishRequest.ServicePackage,
 			r.PublishRequest.TargetResource,
+			r.PublishRequest.PublishOptions,
 			progressReporter,
 		)
 		resp = &ServiceTargetMessage{

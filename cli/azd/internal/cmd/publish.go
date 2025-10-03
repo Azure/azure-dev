@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -102,6 +103,7 @@ func NewPublishAction(
 	writer io.Writer,
 	alphaFeatureManager *alpha.FeatureManager,
 	importManager *project.ImportManager,
+	serviceLocator ioc.ServiceLocator,
 ) actions.Action {
 	return &PublishAction{
 		flags:               flags,
@@ -120,6 +122,7 @@ func NewPublishAction(
 		commandRunner:       commandRunner,
 		alphaFeatureManager: alphaFeatureManager,
 		importManager:       importManager,
+		serviceLocator:      serviceLocator,
 	}
 }
 
@@ -140,6 +143,7 @@ type PublishAction struct {
 	commandRunner       exec.CommandRunner
 	alphaFeatureManager *alpha.FeatureManager
 	importManager       *project.ImportManager
+	serviceLocator      ioc.ServiceLocator
 }
 
 type PublishResult struct {
@@ -249,7 +253,7 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			pa.console.WarnForFeature(ctx, alphaFeatureId)
 		}
 
-		if !svc.Host.RequiresContainer() {
+		if !pa.supportsPublish(ctx, svc) {
 			pa.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 
 			var message string
@@ -335,6 +339,21 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 				ux.DurationAsText(since(startTime))),
 		},
 	}, nil
+}
+
+// supportsPublish checks if the service host supports publishing.
+func (pa *PublishAction) supportsPublish(ctx context.Context, serviceConfig *project.ServiceConfig) bool {
+	if serviceConfig.Host.RequiresContainer() {
+		return true
+	}
+
+	// Treat extension-provided targets as supported
+	var target project.ServiceTarget
+	if err := pa.serviceLocator.ResolveNamed(string(serviceConfig.Host), &target); err == nil {
+		return true
+	}
+
+	return false
 }
 
 func GetCmdPublishHelpDescription(*cobra.Command) string {

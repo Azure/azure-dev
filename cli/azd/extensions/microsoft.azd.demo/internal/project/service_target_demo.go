@@ -99,6 +99,7 @@ func (p *DemoServiceTargetProvider) Publish(
 	serviceConfig *azdext.ServiceConfig,
 	packageResult *azdext.ServicePackageResult,
 	targetResource *azdext.TargetResource,
+	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
 	if packageResult == nil {

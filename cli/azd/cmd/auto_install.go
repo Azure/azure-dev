@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -272,20 +271,6 @@ func tryAutoInstallExtension(
 func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContainer) error {
 	// Creating the RootCmd takes care of registering common dependencies in rootContainer
 	rootCmd := NewRootCmd(false, nil, rootContainer)
-
-	// Continue only if extensions feature is enabled
-	err := rootContainer.Invoke(func(alphaFeatureManager *alpha.FeatureManager) error {
-		if !alphaFeatureManager.IsEnabled(extensions.FeatureExtensions) {
-			return fmt.Errorf("extensions feature is not enabled")
-		}
-		return nil
-	})
-	if err != nil {
-		// Error here means extensions are not enabled or failed to resolve the feature manager
-		// In either case, we just proceed to normal execution
-		log.Println("auto-install extensions: ", err)
-		return rootCmd.ExecuteContext(ctx)
-	}
 
 	// rootCmd.Find() returns error if the command is not identified. Cobra checks all the registered commands
 	// and returns error if the input command is not registered.

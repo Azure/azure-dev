@@ -28,7 +28,7 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 			Short:   "Manage azd extensions.",
 		},
 		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupAlpha,
+			RootLevelHelp: actions.CmdGroupBeta,
 		},
 	})
 

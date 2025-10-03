@@ -189,13 +189,6 @@ func Test_ContainerApp_Publish(t *testing.T) {
 	// Verify the Package field is set correctly
 	require.NotNil(t, publishResult.Package)
 	require.Equal(t, packageResult, publishResult.Package)
-
-	// Verify the environment variable was set correctly
-	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])
-
-	// Verify the publish result contains the expected image name
-	containerDetails := publishResult.Details.(*ContainerPublishDetails)
-	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", containerDetails.RemoteImage)
 }
 
 func createContainerAppServiceTarget(

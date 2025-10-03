@@ -126,19 +126,6 @@ func (at *containerAppTarget) Publish(
 		}
 	}
 
-	// Save the name of the image we pushed into the environment with a well known key.
-	log.Printf("writing image name to environment")
-
-	containerDetails, ok := publishResult.Details.(*ContainerPublishDetails)
-	if !ok {
-		return nil, fmt.Errorf("expected ContainerPublishDetails but got %T", publishResult.Details)
-	}
-	at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", containerDetails.RemoteImage)
-
-	if err := at.envManager.Save(ctx, at.env); err != nil {
-		return nil, fmt.Errorf("saving image name to environment: %w", err)
-	}
-
 	return publishResult, nil
 }
 
@@ -208,7 +195,12 @@ func (at *containerAppTarget) Deploy(
 		}
 
 		progress.SetProgress(NewServiceProgress("Building bicep"))
-		deployment, err := compileBicep(bicepCli, ctx, mainPath, at.env)
+
+		// Create a temp environment with IMAGE_NAME set
+		envForRevision := environment.NewWithValues(at.env.Name(), at.env.Dotenv())
+		envForRevision.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", imageName)
+
+		deployment, err := compileBicep(bicepCli, ctx, mainPath, envForRevision)
 		if err != nil {
 			return nil, fmt.Errorf("building bicep: %w", err)
 		}

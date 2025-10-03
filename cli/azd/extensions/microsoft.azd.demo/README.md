@@ -2,11 +2,6 @@
 
 An AZD Demo extension with custom commands showcasing current capabilities of the `azd` extension framework.
 
-> [!IMPORTANT]
-> Ensure the extensions alpha feature has been enabled.
->
-> Run `azd config set alpha.extensions on`
-
 ## Installation
 
 Run `azd ext install microsoft.azd.demo`

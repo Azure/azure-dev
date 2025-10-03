@@ -143,6 +143,14 @@
                         "type": "object",
                         "additionalProperties": true
                     },
+                    "uses": {
+                        "type": "array",
+                        "title": "Dependencies on other services and resources",
+                        "description": "List of service names and resource names that this service depends on.",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
                     "hooks": {
                         "type": "object",
                         "title": "Service level hooks",

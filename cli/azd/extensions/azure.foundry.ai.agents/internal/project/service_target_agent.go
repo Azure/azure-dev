@@ -178,18 +178,17 @@ func (p *AgentServiceTargetProvider) Deploy(
 	// Print package result details
 	fmt.Printf("\nPackage Details:\n")
 	fmt.Printf("  Package Path: %s\n", color.New(color.FgHiBlue).Sprint(packageResult.GetPackagePath()))
-	if packageResult.Details != nil {
-		for key, value := range packageResult.Details {
-			fmt.Printf("  %s: %s\n", key, color.New(color.FgHiBlue).Sprint(value))
-		}
+	if packageResult.DockerPackageResult != nil {
+		fmt.Printf("  Docker Package Result:\n")
+		fmt.Printf("    Image Hash: %s\n", color.New(color.FgHiBlue).Sprint(packageResult.DockerPackageResult.ImageHash))
+		fmt.Printf("    Source Image: %s\n", color.New(color.FgHiBlue).Sprint(packageResult.DockerPackageResult.SourceImage))
+		fmt.Printf("    Target Image: %s\n", color.New(color.FgHiBlue).Sprint(packageResult.DockerPackageResult.TargetImage))
 	}
 
 	// Print publish result details
 	fmt.Printf("\nPublish Details:\n")
-	if publishResult.Details != nil {
-		for key, value := range publishResult.Details {
-			fmt.Printf("  %s: %s\n", key, color.New(color.FgHiBlue).Sprint(value))
-		}
+	if publishResult.ContainerDetails != nil {
+		fmt.Printf("  Remote Image: %s\n", color.New(color.FgHiBlue).Sprint(publishResult.ContainerDetails.RemoteImage))
 	}
 	fmt.Println()
 

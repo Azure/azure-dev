@@ -138,7 +138,7 @@ func (p *AgentServiceTargetProvider) Publish(
 
 	localImageTag := packageResult.DockerPackageResult.TargetImage
 
-	// E.g. Given `azd publish svc --to myreg.io/my/img:tag12`, publishOptions.Image would be "myreg.io/my/img:tag12"
+	// E.g. Given `azd publish svc --to acr.io/my/img:tag12`, publishOptions.Image would be "acr.io/my/img:tag12"
 	if publishOptions != nil && publishOptions.Image != "" {
 		// To actually use this, you may need to parse out the registry, image name, and tag components
 		// See parseImageOverride in container_helper.go

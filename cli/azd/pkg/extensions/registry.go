@@ -28,6 +28,8 @@ const (
 	McpServerCapability CapabilityType = "mcp-server"
 	// Service target providers enable extensions to package, publish, and deploy to custom service targets
 	ServiceTargetProviderCapability CapabilityType = "service-target-provider"
+	// Framework service providers enable extensions to provide custom language frameworks and build systems
+	FrameworkServiceProviderCapability CapabilityType = "framework-service-provider"
 )
 
 // Extension represents an extension in the registry

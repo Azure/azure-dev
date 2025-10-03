@@ -28,9 +28,11 @@ func newListenCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			provider := project.NewDemoServiceTargetProvider(azdClient)
+			serviceTargetProvider := project.NewDemoServiceTargetProvider(azdClient)
+			frameworkServiceProvider := project.NewDemoFrameworkServiceProvider(azdClient)
 			host := azdext.NewExtensionHost(azdClient).
-				WithServiceTarget("demo", provider).
+				WithServiceTarget("demo", serviceTargetProvider).
+				WithFrameworkService("rust", frameworkServiceProvider).
 				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					for i := 1; i <= 20; i++ {
 						fmt.Printf("%d. Doing important work in extension...\n", i)

@@ -568,7 +568,8 @@ func DiscoverServiceTargetCapabilities(
 
 // discoverServiceTargetsFromExtension attempts to discover service targets provided by an extension
 // by temporarily downloading its binary and analyzing its capabilities
-func discoverServiceTargetsFromExtension(ctx context.Context, extensionManager *extensions.Manager, extension *extensions.ExtensionMetadata) ([]string, error) {
+func discoverServiceTargetsFromExtension(
+	ctx context.Context, extensionManager *extensions.Manager, extension *extensions.ExtensionMetadata) ([]string, error) {
 	// Create a temporary directory for the extension binary
 	tempDir, err := os.MkdirTemp("", fmt.Sprintf("azd-ext-discovery-%s-*", extension.Id))
 	if err != nil {

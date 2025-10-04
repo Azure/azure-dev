@@ -334,12 +334,6 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 		}
 	}
 
-	// Get extension metadata (already retrieved in Acquire, but we need it here for the Extension struct)
-	extension, err = m.GetFromRegistry(ctx, id, options)
-	if err != nil {
-		return nil, err
-	}
-
 	// Step 7: Update the user config with the installed extension
 	extensions, err := m.ListInstalled()
 	if err != nil {
@@ -367,7 +361,8 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 		return nil, fmt.Errorf("failed to save user config: %w", err)
 	}
 
-	log.Printf("Extension '%s' (version %s) installed successfully to %s\n", id, selectedVersion.Version, result.ExtensionPath)
+	log.Printf("Extension '%s' (version %s) installed successfully to %s\n",
+		id, selectedVersion.Version, result.ExtensionPath)
 
 	return selectedVersion, nil
 }

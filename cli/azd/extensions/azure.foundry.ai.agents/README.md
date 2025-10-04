@@ -4,12 +4,7 @@
 
 ### Prerequisites
 
-1. **Enable extensions** (if not already enabled):
-   ```bash
-   azd config set alpha.extensions on
-   ```
-
-2. **Install developer kit extension** (if not already installed):
+1. **Install developer kit extension** (if not already installed):
    ```bash
    azd ext install microsoft.azd.extensions
    ```

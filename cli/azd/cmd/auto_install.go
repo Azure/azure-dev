@@ -5,19 +5,29 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"net"
 	"os"
+	"os/exec"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"google.golang.org/grpc"
 )
 
 // extractFlagsWithValues extracts flags that take values from a cobra command.
@@ -161,22 +171,17 @@ func promptForExtensionChoice(
 	extensions []*extensions.ExtensionMetadata) (*extensions.ExtensionMetadata, error) {
 
 	if len(extensions) == 0 {
-		return nil, nil
+		return nil, fmt.Errorf("no extensions to choose from")
 	}
 
 	if len(extensions) == 1 {
 		return extensions[0], nil
 	}
 
-	console.Message(ctx, "Multiple extensions found that match your command:")
-	console.Message(ctx, "")
-
 	options := make([]string, len(extensions))
 	for i, ext := range extensions {
-		options[i] = fmt.Sprintf("%s (%s) - %s", ext.Namespace, ext.DisplayName, ext.Description)
-		console.Message(ctx, fmt.Sprintf("  %d. %s", i+1, options[i]))
+		options[i] = fmt.Sprintf("%s (%s) - %s", ext.DisplayName, ext.Source, ext.Description)
 	}
-	console.Message(ctx, "")
 
 	choice, err := console.Select(ctx, input.ConsoleOptions{
 		Message: "Which extension would you like to install?",
@@ -233,21 +238,23 @@ func tryAutoInstallExtension(
 	if resource.IsRunningOnCI() {
 		return false,
 			fmt.Errorf(
-				"Command '%s' not found, but there's an available extension that provides it.\n"+
-					"However, auto-installation is not supported in CI/CD environments.\n"+
+				"Auto-installation is not supported in CI/CD environments.\n"+
 					"Run '%s' to install it manually.",
-				extension.Namespace,
 				fmt.Sprintf("azd extension install %s", extension.Id))
 	}
 
+	console.MessageUxItem(ctx, &ux.WarningMessage{
+		Description: "You are about to install an extension !!",
+	})
+	console.Message(ctx, fmt.Sprintf("Source: %s", extension.Source))
+	console.Message(ctx, fmt.Sprintf("Id: %s", extension.Id))
+	console.Message(ctx, fmt.Sprintf("Name: %s", extension.DisplayName))
+	console.Message(ctx, fmt.Sprintf("Description: %s", extension.Description))
+
 	// Ask user for permission to auto-install the extension
-	console.Message(ctx,
-		fmt.Sprintf("Command '%s' not found, but there's an available extension that provides it.\n", extension.Namespace))
-	console.Message(ctx,
-		fmt.Sprintf("Extension: %s (%s)\n", extension.DisplayName, extension.Description))
 	shouldInstall, err := console.Confirm(ctx, input.ConsoleOptions{
 		DefaultValue: true,
-		Message:      "Would you like to install it?",
+		Message:      "Confirm installation",
 	})
 	if err != nil {
 		return false, nil
@@ -259,7 +266,9 @@ func tryAutoInstallExtension(
 
 	// Install the extension
 	console.Message(ctx, fmt.Sprintf("Installing extension '%s'...\n", extension.Id))
-	filterOptions := &extensions.FilterOptions{}
+	filterOptions := &extensions.FilterOptions{
+		Source: extension.Source,
+	}
 	_, err = extensionManager.Install(ctx, extension.Id, filterOptions)
 	if err != nil {
 		return false, fmt.Errorf("failed to install extension: %w", err)
@@ -278,11 +287,10 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	if err := rootContainer.Resolve(&extensionManager); err != nil {
 		log.Panic("failed to resolve extension manager for auto-install:", err)
 	}
-	output, err1 := DiscoverServiceTargetCapabilities(ctx, extensionManager)
-	if err1 != nil {
-		log.Panic("failed to discover service target capabilities:", err1)
+	var console input.Console
+	if err := rootContainer.Resolve(&console); err != nil {
+		log.Panic("failed to resolve console for unknown flags error:", err)
 	}
-	_ = output
 
 	// Continue only if extensions feature is enabled
 	err := rootContainer.Invoke(func(alphaFeatureManager *alpha.FeatureManager) error {
@@ -304,7 +312,61 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	_, originalArgs, err := rootCmd.Find(os.Args[1:])
 	if err == nil {
 		// Known command, no need to auto-install
-		return rootCmd.ExecuteContext(ctx)
+		err := rootCmd.ExecuteContext(ctx)
+
+		// auto-install for target service
+		var unsupportedErr *project.UnsupportedServiceHostError
+		if errors.As(err, &unsupportedErr) {
+			discoveryResults, capErr := DiscoverServiceTargetCapabilities(ctx, extensionManager)
+			if capErr != nil {
+				log.Printf("failed to discover service target capabilities: %v", capErr)
+				log.Printf("ignoring auto-install for service target")
+				return err
+			}
+			filterMatches := []*extensions.ExtensionMetadata{}
+			for _, result := range discoveryResults {
+				if slices.Contains(result.serviceTargets, unsupportedErr.Host) {
+					filterMatches = append(filterMatches, result.extensionMetadata)
+				}
+			}
+			if len(filterMatches) == 0 {
+				// did not find an extension with the capability, just print the original error message
+				console.Message(ctx, unsupportedErr.ErrorMessage)
+			}
+
+			console.Message(ctx,
+				fmt.Sprintf("Your project is using host '%s' which is not supported by default.\n", unsupportedErr.Host))
+
+			var extensionIdToInstall extensions.ExtensionMetadata
+			if len(filterMatches) == 1 {
+				extensionIdToInstall = *filterMatches[0]
+				console.Message(ctx, "An extension was found that provides support for this host.")
+			} else {
+				console.Message(ctx, "There are multiple extensions that provide support for this host.")
+				// Multiple matches found, prompt user to choose
+				chosenExtension, err := promptForExtensionChoice(ctx, console, filterMatches)
+				if err != nil {
+					console.Message(ctx, fmt.Sprintf("Error selecting extension: %v", err))
+					return err
+				}
+				extensionIdToInstall = *chosenExtension
+			}
+
+			installed, installErr := tryAutoInstallExtension(ctx, console, extensionManager, extensionIdToInstall)
+			if installErr != nil {
+				// Error needs to be printed here or else it will be hidden b/c the error printing is handled inside runtime
+				console.Message(ctx, installErr.Error())
+				return installErr
+			}
+
+			if installed {
+				// Extension was installed, build command tree and execute
+				rootCmd := NewRootCmd(false, nil, rootContainer)
+				return rootCmd.ExecuteContext(ctx)
+			}
+		}
+
+		return err
 	}
 
 	// Extract flags that take values from the root command
@@ -323,11 +385,6 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 
 		// If unknown flags were found before a non-built-in command, return an error with helpful guidance
 		if len(unknownFlags) > 0 {
-			var console input.Console
-			if err := rootContainer.Resolve(&console); err != nil {
-				log.Panic("failed to resolve console for unknown flags error:", err)
-			}
-
 			flagsList := strings.Join(unknownFlags, ", ")
 			errorMsg := fmt.Sprintf(
 				"Unknown flags detected before command '%s': %s\n\n"+
@@ -343,11 +400,6 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 
 			console.Message(ctx, errorMsg)
 			return fmt.Errorf("unknown flags before command: %s", flagsList)
-		}
-
-		var extensionManager *extensions.Manager
-		if err := rootContainer.Resolve(&extensionManager); err != nil {
-			log.Panic("failed to resolve extension manager for auto-install:", err)
 		}
 
 		// Get all remaining arguments starting from the command for namespace matching
@@ -378,6 +430,10 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			if err := rootContainer.Resolve(&console); err != nil {
 				log.Panic("failed to resolve console for auto-install:", err)
 			}
+
+			console.Message(ctx,
+				fmt.Sprintf("Command '%s' was not found, but there's an available extension that provides it\n",
+					strings.Join(argsForMatching, " ")))
 
 			// Prompt user to choose if multiple extensions match
 			chosenExtension, err := promptForExtensionChoice(ctx, console, extensionMatches)
@@ -411,9 +467,17 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	return rootCmd.ExecuteContext(ctx)
 }
 
+type discoveryResult struct {
+	extensionName     string
+	extensionMetadata *extensions.ExtensionMetadata
+	serviceTargets    []string
+	err               error
+}
+
 // DiscoverServiceTargetCapabilities discovers service target capabilities from all non-installed extensions
 // by temporarily pulling their binaries and checking what service targets they provide.
-func DiscoverServiceTargetCapabilities(ctx context.Context, extensionManager *extensions.Manager) (map[string][]string, error) {
+func DiscoverServiceTargetCapabilities(
+	ctx context.Context, extensionManager *extensions.Manager) ([]discoveryResult, error) {
 	// Get all extensions from registry
 	options := &extensions.ListOptions{}
 	registryExtensions, err := extensionManager.ListFromRegistry(ctx, options)
@@ -434,14 +498,7 @@ func DiscoverServiceTargetCapabilities(ctx context.Context, extensionManager *ex
 	}
 
 	if len(nonInstalledExtensions) == 0 {
-		return make(map[string][]string), nil
-	}
-
-	// Create a channel to collect results and a wait group to coordinate goroutines
-	type discoveryResult struct {
-		extensionName  string
-		serviceTargets []string
-		err            error
+		return nil, nil
 	}
 
 	resultChan := make(chan discoveryResult, len(nonInstalledExtensions))
@@ -469,9 +526,10 @@ func DiscoverServiceTargetCapabilities(ctx context.Context, extensionManager *ex
 
 			if !hasServiceTargetCapability {
 				resultChan <- discoveryResult{
-					extensionName:  extension.DisplayName,
-					serviceTargets: nil,
-					err:            nil,
+					extensionName:     extension.Id,
+					extensionMetadata: extension,
+					serviceTargets:    nil,
+					err:               nil,
 				}
 				return
 			}
@@ -479,9 +537,10 @@ func DiscoverServiceTargetCapabilities(ctx context.Context, extensionManager *ex
 			// Try to discover service targets from this extension
 			serviceTargets, err := discoverServiceTargetsFromExtension(ctx, extensionManager, extension)
 			resultChan <- discoveryResult{
-				extensionName:  extension.DisplayName,
-				serviceTargets: serviceTargets,
-				err:            err,
+				extensionName:     extension.DisplayName,
+				extensionMetadata: extension,
+				serviceTargets:    serviceTargets,
+				err:               err,
 			}
 		}(ext)
 	}
@@ -493,18 +552,18 @@ func DiscoverServiceTargetCapabilities(ctx context.Context, extensionManager *ex
 	}()
 
 	// Collect results
-	serviceTargetMap := make(map[string][]string)
+	var discoveryResults []discoveryResult
 	for result := range resultChan {
 		if result.err != nil {
 			log.Printf("Error discovering service targets for extension %s: %v", result.extensionName, result.err)
 			continue
 		}
 		if len(result.serviceTargets) > 0 {
-			serviceTargetMap[result.extensionName] = result.serviceTargets
+			discoveryResults = append(discoveryResults, result)
 		}
 	}
 
-	return serviceTargetMap, nil
+	return discoveryResults, nil
 }
 
 // discoverServiceTargetsFromExtension attempts to discover service targets provided by an extension
@@ -521,106 +580,222 @@ func discoverServiceTargetsFromExtension(ctx context.Context, extensionManager *
 		}
 	}()
 
-	// Try to download the extension binary to temp directory
-	// Note: This is a simplified approach. In a real implementation, you would need to:
-	// 1. Download the extension binary from the registry source
-	// 2. Extract it if it's compressed
-	// 3. Make it executable
-	// 4. Run it with appropriate flags to discover service targets
+	// Use the new Acquire method to download the extension binary without installing dependencies
+	acquireOptions := &extensions.AcquireOptions{
+		FilterOptions: &extensions.FilterOptions{
+			Version: "latest", // Get the latest version
+		},
+		InstallDependencies: false,            // Don't install dependencies for discovery
+		TargetDir:           tempDir,          // Download to our temp directory
+		Source:              extension.Source, // Use the source from the extension metadata
+	}
 
-	// For now, we'll simulate this process since we don't have direct access to the download mechanism
-	// In a real implementation, you would use extensionManager's internal download methods
-
-	// Simulate running the extension binary to discover service targets
-	// This would typically involve:
-	// 1. Running: <extension-binary> --list-service-targets or similar
-	// 2. Parsing the output to extract service target names
-	// 3. Or using gRPC introspection if the extension supports it
-
-	serviceTargets, err := simulateServiceTargetDiscovery(extension)
+	result, err := extensionManager.Acquire(ctx, extension.Id, acquireOptions)
 	if err != nil {
-		return nil, fmt.Errorf("failed to discover service targets: %w", err)
+		// If acquisition fails, fall back to simulation
+		log.Printf("Failed to acquire extension %s for discovery: %v", extension.Id, err)
+		return nil, nil
+	}
+
+	// For now, we'll still simulate this process but with the actual binary available
+	// In a real implementation, you would execute the binary and parse its output
+	serviceTargets, err := discoverServiceTargetsFromBinary(result.ExtensionPath, extension)
+	if err != nil {
+		// Fall back to simulation if binary execution fails
+		log.Printf("Failed to discover service targets from binary %s: %v", result.ExtensionPath, err)
 	}
 
 	return serviceTargets, nil
 }
 
-// simulateServiceTargetDiscovery simulates the process of discovering service targets from an extension
-// This is a placeholder implementation that would be replaced with actual binary execution and introspection
-func simulateServiceTargetDiscovery(extension *extensions.ExtensionMetadata) ([]string, error) {
-	// This is a simulation - in a real implementation, you would:
-	// 1. Execute the extension binary with discovery flags
-	// 2. Parse its output or use gRPC introspection
-	// 3. Extract the list of service targets it provides
-
-	// For demonstration purposes, return some mock data based on extension name patterns
-	var serviceTargets []string
-
-	// Check extension metadata for hints about service targets
-	extensionName := strings.ToLower(extension.DisplayName)
-
-	// These are examples based on common patterns - replace with actual discovery logic
-	if strings.Contains(extensionName, "demo") {
-		serviceTargets = append(serviceTargets, "demo-target")
-	}
-	if strings.Contains(extensionName, "foundry") || strings.Contains(extensionName, "ai") {
-		serviceTargets = append(serviceTargets, "ai-agent-target")
-	}
-	if strings.Contains(extensionName, "custom") {
-		serviceTargets = append(serviceTargets, "custom-deployment-target")
+// discoverServiceTargetsFromBinary attempts to discover service targets by executing the extension binary
+// with a listen command and intercepting the service target registration requests
+func discoverServiceTargetsFromBinary(binaryPath string, extension *extensions.ExtensionMetadata) ([]string, error) {
+	// Check if the binary exists and is executable
+	if _, err := os.Stat(binaryPath); err != nil {
+		return nil, fmt.Errorf("binary not found at path %s: %w", binaryPath, err)
 	}
 
-	// If no patterns match but it has service target capability, assume it provides at least one
-	if len(serviceTargets) == 0 {
-		// Use extension namespace as a default service target name
-		serviceTargets = append(serviceTargets, extension.Namespace+"-target")
+	// Start a temporary gRPC server to capture service target registrations
+	discoveryServer, err := newServiceTargetDiscoveryServer()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create discovery server: %w", err)
+	}
+	defer discoveryServer.Stop()
+
+	serverInfo, err := discoveryServer.Start()
+	if err != nil {
+		return nil, fmt.Errorf("failed to start discovery server: %w", err)
 	}
 
+	// Generate a temporary JWT token for the extension
+	tempExtension := &extensions.Extension{
+		Id:           extension.Id,
+		Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
+	}
+
+	jwtToken, err := grpcserver.GenerateExtensionToken(tempExtension, serverInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate JWT token: %w", err)
+	}
+
+	// Execute the extension binary with listen command
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, binaryPath, "listen")
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
+		fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
+	)
+
+	// Start the extension process
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start extension binary: %w", err)
+	}
+
+	// Wait for service target registrations or timeout
+	serviceTargets := discoveryServer.WaitForServiceTargets(ctx)
+
+	// Terminate the extension process
+	if cmd.Process != nil {
+		_ = cmd.Process.Kill()
+	}
+
+	log.Printf("Discovered %d service targets from extension %s: %v", len(serviceTargets), extension.Id, serviceTargets)
 	return serviceTargets, nil
 }
 
-// PrintServiceTargetCapabilities prints the discovered service target capabilities in a formatted way
-func PrintServiceTargetCapabilities(ctx context.Context, console input.Console, serviceTargetMap map[string][]string) {
-	if len(serviceTargetMap) == 0 {
-		console.Message(ctx, "No extensions with service target capabilities found.")
-		return
-	}
-
-	console.Message(ctx, "Discovered Service Target Capabilities:")
-	console.Message(ctx, "=====================================")
-	console.Message(ctx, "")
-
-	for extensionName, serviceTargets := range serviceTargetMap {
-		console.Message(ctx, fmt.Sprintf("Extension: %s", extensionName))
-		console.Message(ctx, fmt.Sprintf("  Service Targets: %s", strings.Join(serviceTargets, ", ")))
-		console.Message(ctx, "")
-	}
+// serviceTargetDiscoveryServer is a lightweight gRPC server that captures service target registrations
+type serviceTargetDiscoveryServer struct {
+	azdext.UnimplementedServiceTargetServiceServer
+	server         *grpc.Server
+	listener       net.Listener
+	serviceTargets []string
+	mu             sync.Mutex
+	done           chan struct{}
 }
 
-/*
-Example usage of the DiscoverServiceTargetCapabilities function:
+// newServiceTargetDiscoveryServer creates a new service target discovery server
+func newServiceTargetDiscoveryServer() (*serviceTargetDiscoveryServer, error) {
+	return &serviceTargetDiscoveryServer{
+		done: make(chan struct{}),
+	}, nil
+}
 
-func ExampleDiscoverServiceTargets(ctx context.Context, rootContainer *ioc.NestedContainer) error {
-	var extensionManager *extensions.Manager
-	var console input.Console
-
-	if err := rootContainer.Resolve(&extensionManager); err != nil {
-		return fmt.Errorf("failed to resolve extension manager: %w", err)
-	}
-
-	if err := rootContainer.Resolve(&console); err != nil {
-		return fmt.Errorf("failed to resolve console: %w", err)
-	}
-
-	// Discover service target capabilities from all non-installed extensions
-	serviceTargetMap, err := DiscoverServiceTargetCapabilities(ctx, extensionManager)
+// Start starts the discovery server and returns server info
+func (s *serviceTargetDiscoveryServer) Start() (*grpcserver.ServerInfo, error) {
+	// Use ":0" to let the system assign an available random port
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return fmt.Errorf("failed to discover service target capabilities: %w", err)
+		return nil, fmt.Errorf("failed to listen: %w", err)
+	}
+	s.listener = listener
+
+	// Get the assigned random port
+	randomPort := listener.Addr().(*net.TCPAddr).Port
+
+	// Create gRPC server
+	s.server = grpc.NewServer()
+	azdext.RegisterServiceTargetServiceServer(s.server, s)
+
+	// Generate a simple signing key for testing
+	signingKey := []byte("test-signing-key-for-discovery")
+
+	serverInfo := &grpcserver.ServerInfo{
+		Address:    fmt.Sprintf("localhost:%d", randomPort),
+		Port:       randomPort,
+		SigningKey: signingKey,
 	}
 
-	// Print the results
-	PrintServiceTargetCapabilities(ctx, console, serviceTargetMap)
+	// Start the server in a goroutine
+	go func() {
+		if err := s.server.Serve(listener); err != nil {
+			log.Printf("Discovery server error: %v", err)
+		}
+	}()
 
+	log.Printf("Service target discovery server listening on port %d", randomPort)
+	return serverInfo, nil
+}
+
+// Stop stops the discovery server
+func (s *serviceTargetDiscoveryServer) Stop() {
+	if s.server != nil {
+		s.server.Stop()
+	}
+	if s.listener != nil {
+		s.listener.Close()
+	}
+	close(s.done)
+}
+
+// Stream implements the ServiceTargetService Stream method to capture registrations
+func (s *serviceTargetDiscoveryServer) Stream(stream azdext.ServiceTargetService_StreamServer) error {
+	// Wait for the registration request
+	msg, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+
+	regRequest := msg.GetRegisterServiceTargetRequest()
+	if regRequest != nil {
+		hostType := regRequest.GetHost()
+		log.Printf("Discovered service target: %s", hostType)
+
+		s.mu.Lock()
+		s.serviceTargets = append(s.serviceTargets, hostType)
+		s.mu.Unlock()
+
+		// Send a response to acknowledge the registration
+		resp := &azdext.ServiceTargetMessage{
+			RequestId: msg.RequestId,
+			MessageType: &azdext.ServiceTargetMessage_RegisterServiceTargetResponse{
+				RegisterServiceTargetResponse: &azdext.RegisterServiceTargetResponse{},
+			},
+		}
+
+		if err := stream.Send(resp); err != nil {
+			return err
+		}
+	}
+
+	// Keep the stream open until the context is done
+	<-stream.Context().Done()
 	return nil
 }
-*/
+
+// WaitForServiceTargets waits for service target registrations with a timeout
+func (s *serviceTargetDiscoveryServer) WaitForServiceTargets(ctx context.Context) []string {
+	// Wait for a reasonable amount of time for registrations
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	timeout := time.After(5 * time.Second)
+
+	for {
+		select {
+		case <-ctx.Done():
+			s.mu.Lock()
+			result := make([]string, len(s.serviceTargets))
+			copy(result, s.serviceTargets)
+			s.mu.Unlock()
+			return result
+		case <-timeout:
+			s.mu.Lock()
+			result := make([]string, len(s.serviceTargets))
+			copy(result, s.serviceTargets)
+			s.mu.Unlock()
+			return result
+		case <-ticker.C:
+			s.mu.Lock()
+			if len(s.serviceTargets) > 0 {
+				result := make([]string, len(s.serviceTargets))
+				copy(result, s.serviceTargets)
+				s.mu.Unlock()
+				return result
+			}
+			s.mu.Unlock()
+		}
+	}
+}

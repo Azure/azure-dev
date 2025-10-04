@@ -306,157 +306,38 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 		return nil, err
 	}
 
-	// Step 2: Determine the version to install
-	var selectedVersion *ExtensionVersion
-
-	availableVersions := []*semver.Version{}
-	availableVersionMap := map[*semver.Version]*ExtensionVersion{}
-
-	// Create a map of available versions and sort them
-	// This sorts the version from lowest to highest
-	for _, extensionVersion := range extension.Versions {
-		version, err := semver.NewVersion(extensionVersion.Version)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse version: %w", err)
-		}
-
-		availableVersionMap[version] = &extensionVersion
-		availableVersions = append(availableVersions, version)
+	// Use the new Acquire method to get the extension version and download artifacts
+	acquireOptions := &AcquireOptions{
+		FilterOptions:       options,
+		InstallDependencies: true,
+		TargetDir:           "", // Use default user config directory
 	}
 
-	sort.Sort(semver.Collection(availableVersions))
-
-	if options.Version == "" || options.Version == "latest" {
-		latestVersion := availableVersions[len(availableVersions)-1]
-		selectedVersion = availableVersionMap[latestVersion]
-	} else {
-		// Find the best match for the version constraint
-		constraint, err := semver.NewConstraint(options.Version)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse version constraint: %w", err)
-		}
-
-		var bestMatch *semver.Version
-		for _, v := range availableVersions {
-			// Find the highest version that satisfies the constraint
-			if constraint.Check(v) {
-				bestMatch = v
-			}
-		}
-
-		if bestMatch == nil {
-			return nil, fmt.Errorf(
-				"no matching version found for extension: %s and constraint: %s",
-				id, options.Version,
-			)
-		}
-
-		selectedVersion = availableVersionMap[bestMatch]
+	result, err := m.Acquire(ctx, id, acquireOptions)
+	if err != nil {
+		return nil, err
 	}
 
-	if selectedVersion == nil {
-		return nil, fmt.Errorf("no compatible version found for extension: %s", id)
-	}
-
-	// Binaries are optional as long as dependencies are provided
-	// This allows for extensions that are just extension packs
-	if len(selectedVersion.Artifacts) == 0 && len(selectedVersion.Dependencies) == 0 {
-		return nil, fmt.Errorf("no binaries or dependencies available for this version")
-	}
-
-	// Install dependencies
-	if len(selectedVersion.Dependencies) > 0 {
-		for _, dependency := range selectedVersion.Dependencies {
-			dependencyInstallOptions := &FilterOptions{
-				Version: dependency.Version,
-				Source:  options.Source,
-			}
-			if _, err := m.Install(ctx, dependency.Id, dependencyInstallOptions); err != nil {
-				if !errors.Is(err, ErrExtensionInstalled) {
-					return nil, fmt.Errorf("failed to install dependency: %w", err)
-				}
-			}
-		}
-	}
-
-	hasArtifact := len(selectedVersion.Artifacts) > 0
+	selectedVersion := result.ExtensionVersion
 	var relativeExtensionPath string
-	var targetPath string
 
-	// Install the artifacts
-	if hasArtifact {
-		// Step 3: Find the artifact for the current OS
-		artifact, err := findArtifactForCurrentOS(selectedVersion)
-		if err != nil {
-			return nil, fmt.Errorf("failed to find artifact for current OS: %w", err)
-		}
-
-		// Step 4: Download the artifact to a temp location
-		tempFilePath, err := m.downloadArtifact(ctx, artifact.URL)
-		if err != nil {
-			return nil, fmt.Errorf("failed to download artifact: %w", err)
-		}
-
-		// Clean up the temp file after all scenarios
-		defer os.Remove(tempFilePath)
-
-		// Step 5: Validate the checksum if provided
-		if err := validateChecksum(tempFilePath, artifact.Checksum); err != nil {
-			return nil, fmt.Errorf("checksum validation failed: %w", err)
-		}
-
+	// Calculate relative path for storage in user config
+	if result.HasArtifacts {
 		userConfigDir, err := config.GetUserConfigDir()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get user config directory: %w", err)
 		}
 
-		targetDir := filepath.Join(userConfigDir, "extensions", extension.Id)
-		if err := os.MkdirAll(targetDir, os.ModePerm); err != nil {
-			return nil, fmt.Errorf("failed to create target directory: %w", err)
-		}
-
-		// Step 6: Copy the artifact to the target directory
-		// Check if artifact is a zip file, if so extract it to the target directory
-		if strings.HasSuffix(tempFilePath, ".zip") {
-			if err := rzip.ExtractToDirectory(tempFilePath, targetDir); err != nil {
-				return nil, fmt.Errorf("failed to extract zip file: %w", err)
-			}
-		} else if strings.HasSuffix(tempFilePath, ".tar.gz") {
-			if err := rzip.ExtractTarGzToDirectory(tempFilePath, targetDir); err != nil {
-				return nil, fmt.Errorf("failed to extract tar.gz file: %w", err)
-			}
-		} else {
-			targetPath = filepath.Join(targetDir, filepath.Base(tempFilePath))
-			if err := copyFile(tempFilePath, targetPath); err != nil {
-				return nil, fmt.Errorf("failed to copy artifact to target location: %w", err)
-			}
-		}
-
-		entryPoint := selectedVersion.EntryPoint
-		if platformEntryPoint, has := artifact.AdditionalMetadata["entryPoint"]; has {
-			entryPoint = fmt.Sprint(platformEntryPoint)
-		}
-		if entryPoint == "" {
-			switch runtime.GOOS {
-			case "windows":
-				entryPoint = fmt.Sprintf("%s.exe", extension.Id)
-			default:
-				entryPoint = extension.Id
-			}
-		}
-
-		targetPath := filepath.Join(targetDir, entryPoint)
-
-		// Need to set the executable permission for the binary
-		// This change is specifically required for Linux but will apply consistently across all platforms
-		if err := os.Chmod(targetPath, osutil.PermissionExecutableFile); err != nil {
-			return nil, fmt.Errorf("failed to set executable permission: %w", err)
-		}
-
-		relativeExtensionPath, err = filepath.Rel(userConfigDir, targetPath)
+		relativeExtensionPath, err = filepath.Rel(userConfigDir, result.ExtensionPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get relative path: %w", err)
 		}
+	}
+
+	// Get extension metadata (already retrieved in Acquire, but we need it here for the Extension struct)
+	extension, err = m.GetFromRegistry(ctx, id, options)
+	if err != nil {
+		return nil, err
 	}
 
 	// Step 7: Update the user config with the installed extension
@@ -486,7 +367,7 @@ func (m *Manager) Install(ctx context.Context, id string, options *FilterOptions
 		return nil, fmt.Errorf("failed to save user config: %w", err)
 	}
 
-	log.Printf("Extension '%s' (version %s) installed successfully to %s\n", id, selectedVersion.Version, targetPath)
+	log.Printf("Extension '%s' (version %s) installed successfully to %s\n", id, selectedVersion.Version, result.ExtensionPath)
 
 	return selectedVersion, nil
 }
@@ -555,6 +436,229 @@ func (m *Manager) Upgrade(ctx context.Context, extensionId string, options *Filt
 	}
 
 	return extensionVersion, nil
+}
+
+// AcquireOptions defines options for acquiring an extension
+type AcquireOptions struct {
+	// FilterOptions contains version and source filtering options
+	FilterOptions *FilterOptions
+	// InstallDependencies determines whether to install extension dependencies
+	InstallDependencies bool
+	// TargetDir specifies the directory where artifacts should be downloaded
+	// If empty, uses the default user config directory
+	TargetDir string
+	// Source specifies the extension source to use when acquiring the extension
+	// If provided, this overrides the source in FilterOptions
+	Source string
+}
+
+// AcquireResult contains the results of acquiring an extension
+type AcquireResult struct {
+	// ExtensionVersion is the selected version that was acquired
+	ExtensionVersion *ExtensionVersion
+	// ExtensionPath is the path to the main extension binary/executable
+	ExtensionPath string
+	// TargetDir is the directory where the extension was downloaded
+	TargetDir string
+	// HasArtifacts indicates whether the extension had downloadable artifacts
+	HasArtifacts bool
+}
+
+// Acquire downloads and prepares an extension without installing it in the user's configuration.
+// This method provides the core logic for extension acquisition that can be used by Install
+// and other methods that need to temporarily download extensions.
+func (m *Manager) Acquire(ctx context.Context, id string, options *AcquireOptions) (*AcquireResult, error) {
+	if options == nil {
+		options = &AcquireOptions{
+			FilterOptions:       &FilterOptions{},
+			InstallDependencies: true,
+		}
+	}
+	if options.FilterOptions == nil {
+		options.FilterOptions = &FilterOptions{}
+	}
+
+	// Step 1: Find the extension by name
+	// Use the source from AcquireOptions if provided, otherwise use FilterOptions
+	filterOptions := options.FilterOptions
+	if options.Source != "" {
+		// Create a copy of FilterOptions with the source override
+		filterOptions = &FilterOptions{
+			Version: options.FilterOptions.Version,
+			Source:  options.Source,
+		}
+	}
+
+	extension, err := m.GetFromRegistry(ctx, id, filterOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 2: Determine the version to install
+	var selectedVersion *ExtensionVersion
+
+	availableVersions := []*semver.Version{}
+	availableVersionMap := map[*semver.Version]*ExtensionVersion{}
+
+	// Create a map of available versions and sort them
+	// This sorts the version from lowest to highest
+	for _, extensionVersion := range extension.Versions {
+		version, err := semver.NewVersion(extensionVersion.Version)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse version: %w", err)
+		}
+
+		availableVersionMap[version] = &extensionVersion
+		availableVersions = append(availableVersions, version)
+	}
+
+	sort.Sort(semver.Collection(availableVersions))
+
+	if options.FilterOptions.Version == "" || options.FilterOptions.Version == "latest" {
+		latestVersion := availableVersions[len(availableVersions)-1]
+		selectedVersion = availableVersionMap[latestVersion]
+	} else {
+		// Find the best match for the version constraint
+		constraint, err := semver.NewConstraint(options.FilterOptions.Version)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse version constraint: %w", err)
+		}
+
+		var bestMatch *semver.Version
+		for _, v := range availableVersions {
+			// Find the highest version that satisfies the constraint
+			if constraint.Check(v) {
+				bestMatch = v
+			}
+		}
+
+		if bestMatch == nil {
+			return nil, fmt.Errorf(
+				"no matching version found for extension: %s and constraint: %s",
+				id, options.FilterOptions.Version,
+			)
+		}
+
+		selectedVersion = availableVersionMap[bestMatch]
+	}
+
+	if selectedVersion == nil {
+		return nil, fmt.Errorf("no compatible version found for extension: %s", id)
+	}
+
+	// Binaries are optional as long as dependencies are provided
+	// This allows for extensions that are just extension packs
+	if len(selectedVersion.Artifacts) == 0 && len(selectedVersion.Dependencies) == 0 {
+		return nil, fmt.Errorf("no binaries or dependencies available for this version")
+	}
+
+	// Install dependencies if requested
+	if options.InstallDependencies && len(selectedVersion.Dependencies) > 0 {
+		// Use the effective source (either from options.Source or FilterOptions.Source)
+		sourceToUse := options.Source
+		if sourceToUse == "" {
+			sourceToUse = options.FilterOptions.Source
+		}
+
+		for _, dependency := range selectedVersion.Dependencies {
+			dependencyInstallOptions := &FilterOptions{
+				Version: dependency.Version,
+				Source:  sourceToUse,
+			}
+			if _, err := m.Install(ctx, dependency.Id, dependencyInstallOptions); err != nil {
+				if !errors.Is(err, ErrExtensionInstalled) {
+					return nil, fmt.Errorf("failed to install dependency: %w", err)
+				}
+			}
+		}
+	}
+
+	hasArtifact := len(selectedVersion.Artifacts) > 0
+	var extensionPath string
+	var actualTargetDir string
+
+	// Download the artifacts if they exist
+	if hasArtifact {
+		// Step 3: Find the artifact for the current OS
+		artifact, err := findArtifactForCurrentOS(selectedVersion)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find artifact for current OS: %w", err)
+		}
+
+		// Step 4: Download the artifact to a temp location
+		tempFilePath, err := m.downloadArtifact(ctx, artifact.URL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to download artifact: %w", err)
+		}
+
+		// Clean up the temp file after all scenarios
+		defer os.Remove(tempFilePath)
+
+		// Step 5: Validate the checksum if provided
+		if err := validateChecksum(tempFilePath, artifact.Checksum); err != nil {
+			return nil, fmt.Errorf("checksum validation failed: %w", err)
+		}
+
+		// Determine target directory
+		if options.TargetDir != "" {
+			actualTargetDir = filepath.Join(options.TargetDir, extension.Id)
+		} else {
+			userConfigDir, err := config.GetUserConfigDir()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get user config directory: %w", err)
+			}
+			actualTargetDir = filepath.Join(userConfigDir, "extensions", extension.Id)
+		}
+
+		if err := os.MkdirAll(actualTargetDir, os.ModePerm); err != nil {
+			return nil, fmt.Errorf("failed to create target directory: %w", err)
+		}
+
+		// Step 6: Copy the artifact to the target directory
+		// Check if artifact is a zip file, if so extract it to the target directory
+		if strings.HasSuffix(tempFilePath, ".zip") {
+			if err := rzip.ExtractToDirectory(tempFilePath, actualTargetDir); err != nil {
+				return nil, fmt.Errorf("failed to extract zip file: %w", err)
+			}
+		} else if strings.HasSuffix(tempFilePath, ".tar.gz") {
+			if err := rzip.ExtractTarGzToDirectory(tempFilePath, actualTargetDir); err != nil {
+				return nil, fmt.Errorf("failed to extract tar.gz file: %w", err)
+			}
+		} else {
+			targetPath := filepath.Join(actualTargetDir, filepath.Base(tempFilePath))
+			if err := copyFile(tempFilePath, targetPath); err != nil {
+				return nil, fmt.Errorf("failed to copy artifact to target location: %w", err)
+			}
+		}
+
+		entryPoint := selectedVersion.EntryPoint
+		if platformEntryPoint, has := artifact.AdditionalMetadata["entryPoint"]; has {
+			entryPoint = fmt.Sprint(platformEntryPoint)
+		}
+		if entryPoint == "" {
+			switch runtime.GOOS {
+			case "windows":
+				entryPoint = fmt.Sprintf("%s.exe", extension.Id)
+			default:
+				entryPoint = extension.Id
+			}
+		}
+
+		extensionPath = filepath.Join(actualTargetDir, entryPoint)
+
+		// Need to set the executable permission for the binary
+		// This change is specifically required for Linux but will apply consistently across all platforms
+		if err := os.Chmod(extensionPath, osutil.PermissionExecutableFile); err != nil {
+			return nil, fmt.Errorf("failed to set executable permission: %w", err)
+		}
+	}
+
+	return &AcquireResult{
+		ExtensionVersion: selectedVersion,
+		ExtensionPath:    extensionPath,
+		TargetDir:        actualTargetDir,
+		HasArtifacts:     hasArtifact,
+	}, nil
 }
 
 // Helper function to find the artifact for the current OS
@@ -651,10 +755,6 @@ func (m *Manager) copyFromLocalPath(artifactPath string) (string, error) {
 }
 
 func (tm *Manager) getSources(ctx context.Context, filter sourceFilterPredicate) ([]Source, error) {
-	if tm.sources != nil {
-		return tm.sources, nil
-	}
-
 	configs, err := tm.sourceManager.List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing extension sources: %w", err)

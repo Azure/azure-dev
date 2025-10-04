@@ -128,8 +128,8 @@ func checkForMatchingExtensions(
 		return nil, nil
 	}
 
-	options := &extensions.ListOptions{}
-	registryExtensions, err := extensionManager.ListFromRegistry(ctx, options)
+	options := &extensions.FilterOptions{}
+	registryExtensions, err := extensionManager.FindExtensions(ctx, options)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +220,7 @@ func tryAutoInstallExtension(
 	extension extensions.ExtensionMetadata) (bool, error) {
 
 	// Check if the extension is already installed
-	_, err := extensionManager.GetInstalled(extensions.LookupOptions{
+	_, err := extensionManager.GetInstalled(extensions.FilterOptions{
 		Id: extension.Id,
 	})
 	if err == nil {
@@ -257,8 +257,7 @@ func tryAutoInstallExtension(
 
 	// Install the extension
 	console.Message(ctx, fmt.Sprintf("Installing extension '%s'...\n", extension.Id))
-	filterOptions := &extensions.FilterOptions{}
-	_, err = extensionManager.Install(ctx, extension.Id, filterOptions)
+	_, err = extensionManager.Install(ctx, &extension, "")
 	if err != nil {
 		return false, fmt.Errorf("failed to install extension: %w", err)
 	}

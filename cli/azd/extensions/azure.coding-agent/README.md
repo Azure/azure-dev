@@ -23,8 +23,10 @@ This includes:
 Assuming 'azd' is in your path, run the following commands to install the extension for the first time:
 
 ```shell
+# first, you'll need to enable extensions
+azd config set alpha.extensions on
 
-# install the coding-agent
+# now we can install the coding-agent
 azd extension install azure.coding-agent
 ```
 

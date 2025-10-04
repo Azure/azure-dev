@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -21,6 +20,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	azd_exec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
@@ -29,7 +29,6 @@ import (
 	azd_git "github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	azd_github "github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
-	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -44,6 +43,9 @@ var mcpJson string
 
 //go:embed templates/copilot-setup-steps.yml
 var copilotSetupStepsYml string
+
+//go:embed templates/pr-body.md
+var prBodyMD string
 
 const copilotEnv = "copilot"
 
@@ -221,12 +223,12 @@ func newConfigCommand() *cobra.Command {
 			return fmt.Errorf("failed to push files to git: %w", err)
 		}
 
-		codingAgentURL := fmt.Sprintf("https://github.com/%s/settings/copilot/coding_agent", repoSlug)
+		codingAgentURL := fmt.Sprintf("https://github.com/%s/settings/copilot/coding_agent#:~:text=JSON%%20MCP%%20configuration-,MCP%%20configuration,-1", repoSlug)
 
 		fmt.Println("")
 		fmt.Println(output.WithHighLightFormat("(!) NOTE: Some tasks must still be completed, manually:"))
 		fmt.Printf("1. The branch created at %s/%s must be merged to %s/main\n", remote, flagValues.BranchName, repoSlug)
-		fmt.Printf("2. Visit %s and update the \"MCP configuration\" field with this JSON:\n\n", codingAgentURL)
+		fmt.Printf("2. Visit '%s' and update the \"MCP configuration\" field with this JSON:\n\n", codingAgentURL)
 
 		fmt.Println(mcpJson)
 
@@ -245,7 +247,7 @@ func openBrowserWindows(ctx context.Context,
 	codingAgentURL string, gitRepoRoot string) error {
 	resp, err := prompter.Confirm(ctx, &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
-			Message:      "Open browser windows for pull request and coding agent configuration?",
+			Message:      "Open browser window to create a pull request?",
 			DefaultValue: to.Ptr(true),
 		},
 	})
@@ -254,31 +256,24 @@ func openBrowserWindows(ctx context.Context,
 		return fmt.Errorf("failed to get confirm response for browser/pr option: %w", err)
 	}
 
-	var errs []error
-
-	if *resp.Value {
-		if err := browser.OpenURL(codingAgentURL); err != nil {
-			errs = append(errs, err)
-		}
-
-		//nolint:gosec	// defaultGitHubCLI.BinaryPath is derived from our own code, shouldn't be considered tainted.
-		cmd := exec.CommandContext(
-			ctx,
-			githubCLI.BinaryPath(),
-			"pr", "create", "--fill",
-			"--title", "Updating/adding copilot-setup-steps.yaml to enable the Copilot coding agent to access Azure",
-			"--web")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Dir = gitRepoRoot
-
-		if err := cmd.Run(); err != nil {
-			errs = append(errs, fmt.Errorf("failed to launch gh pr: %w", err))
-		}
+	if !*resp.Value {
+		return nil
 	}
 
-	if len(errs) > 0 {
-		return errors.Join(errs...)
+	//nolint:gosec	// defaultGitHubCLI.BinaryPath is derived from our own code, shouldn't be considered tainted.
+	cmd := exec.CommandContext(
+		ctx,
+		githubCLI.BinaryPath(),
+		"pr", "create",
+		"--title", "Updating/adding copilot-setup-steps.yaml to enable the Copilot coding agent to access Azure",
+		"--body", fmt.Sprintf(prBodyMD, codingAgentURL, mcpJson),
+		"--web")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Dir = gitRepoRoot
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to launch gh pr: %w", err)
 	}
 
 	return nil
@@ -460,7 +455,7 @@ func pickOrCreateMSI(ctx context.Context,
 
 	taskList := ux.NewTaskList(nil)
 
-	var msIdentity rm_armmsi.Identity
+	var managedIdentity rm_armmsi.Identity
 
 	if *selectedOption.Value == 0 {
 		// pick a resource group and location for the new MSI
@@ -520,7 +515,7 @@ func pickOrCreateMSI(ctx context.Context,
 					return ux.Error, fmt.Errorf("failed to create User Managed Identity (MSI): %w", err)
 				}
 
-				msIdentity = newMSI
+				managedIdentity = newMSI
 				return ux.Success, nil
 			},
 		})
@@ -558,7 +553,7 @@ func pickOrCreateMSI(ctx context.Context,
 		if err != nil {
 			return nil, fmt.Errorf("prompting for existing MSI: %w", err)
 		}
-		msIdentity = msIdentities[*selectedOption.Value]
+		managedIdentity = msIdentities[*selectedOption.Value]
 	}
 
 	if err := taskList.Run(); err != nil {
@@ -566,6 +561,11 @@ func pickOrCreateMSI(ctx context.Context,
 	}
 
 	roleNameStrings := strings.Join(roleNames, ", ")
+	parsedID, err := arm.ParseResourceID(*managedIdentity.ID)
+
+	if err != nil {
+		return nil, fmt.Errorf("invalid format for managed identity resource id: %w", err)
+	}
 
 	taskList.AddTask(ux.TaskOptions{
 		Title: fmt.Sprintf("Assigning roles (%s) to User Managed Identity (MSI)", roleNameStrings),
@@ -574,12 +574,12 @@ func pickOrCreateMSI(ctx context.Context,
 				ctx,
 				subscriptionId,
 				roleNames,
-				// EnsureRoleAssignments uses the ServicePrincipal ID and the DisplayName.
-				// We are adapting the MSI to work with the same method as a regular Service Principal,
-				// by pulling name and ID.
 				&graphsdk.ServicePrincipal{
-					Id:          msIdentity.Properties.PrincipalID,
-					DisplayName: *msIdentity.Name,
+					Id:          managedIdentity.Properties.PrincipalID,
+					DisplayName: *managedIdentity.Name,
+				},
+				&entraid.EnsureRoleAssignmentsOptions{
+					Scope: to.Ptr(azure.ResourceGroupRID(subscriptionId, parsedID.ResourceGroupName)),
 				},
 			)
 
@@ -596,10 +596,10 @@ func pickOrCreateMSI(ctx context.Context,
 	}
 
 	return &authConfiguration{
-		TenantId:       *msIdentity.Properties.TenantID,
+		TenantId:       *managedIdentity.Properties.TenantID,
 		SubscriptionId: subscriptionId,
-		ResourceID:     *msIdentity.ID,
-		ClientId:       *msIdentity.Properties.ClientID,
+		ResourceID:     *managedIdentity.ID,
+		ClientId:       *managedIdentity.Properties.ClientID,
 	}, nil
 }
 
@@ -688,7 +688,7 @@ func gitPushChanges(ctx context.Context,
 
 	resp, err := prompter.Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: "Which git remote would you like to push the our changes to?",
+			Message: "Which git remote would you like to push the changes to?",
 			Choices: choices,
 		},
 	})

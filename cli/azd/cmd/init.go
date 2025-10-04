@@ -768,10 +768,30 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 				installConstraint = *versionConstraint
 			}
 
+			// Find the extension first
 			filterOptions := &extensions.FilterOptions{
-				Version: installConstraint,
+				Id: extensionId,
 			}
-			extensionVersion, err := i.extensionsManager.Install(ctx, extensionId, filterOptions)
+
+			extensionMatches, err := i.extensionsManager.FindExtensions(ctx, filterOptions)
+			if err != nil {
+				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return fmt.Errorf("finding extension %s: %w", extensionId, err)
+			}
+
+			if len(extensionMatches) == 0 {
+				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return fmt.Errorf("extension %s not found", extensionId)
+			}
+
+			if len(extensionMatches) > 1 {
+				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return fmt.Errorf("extension %s found in multiple sources, specify exact source", extensionId)
+			}
+
+			extensionMetadata := extensionMatches[0]
+
+			extensionVersion, err := i.extensionsManager.Install(ctx, extensionMetadata, installConstraint)
 			if err != nil {
 				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return fmt.Errorf("installing extension %s: %w", extensionId, err)

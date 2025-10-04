@@ -157,13 +157,13 @@ func Test_List_Install_Uninstall_Flow(t *testing.T) {
 	require.Equal(t, 0, len(installed))
 
 	// List extensions from the registry (expect at least 1)
-	extensions, err := manager.ListFromRegistry(*mockContext.Context, nil)
+	extensions, err := manager.FindExtensions(*mockContext.Context, nil)
 	require.NoError(t, err)
 	require.NotNil(t, extensions)
 	require.Greater(t, len(extensions), 0)
 
 	// Install the first extension
-	extensionVersion, err := manager.Install(*mockContext.Context, extensions[0].Id, nil)
+	extensionVersion, err := manager.Install(*mockContext.Context, extensions[0], "")
 	require.NoError(t, err)
 	require.NotNil(t, extensionVersion)
 
@@ -263,10 +263,12 @@ func Test_Install_With_SemverConstraints(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.Constraint, func(t *testing.T) {
-			filterOptions := &FilterOptions{
-				Version: tc.Constraint,
-			}
-			extensionVersion, err := manager.Install(*mockContext.Context, "test.extension", filterOptions)
+			// Find the extension first
+			extensions, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.extension"})
+			require.NoError(t, err)
+			require.Len(t, extensions, 1)
+
+			extensionVersion, err := manager.Install(*mockContext.Context, extensions[0], tc.Constraint)
 			if tc.Expected == "" {
 				require.Error(t, err)
 			} else {
@@ -539,7 +541,7 @@ func Test_FindArtifactForCurrentOS_ErrorMessage_Format(t *testing.T) {
 	require.Contains(t, err.Error(), "no artifact available for platform:")
 }
 
-func Test_GetFromRegistry_MultipleMatches_ErrorWithSuggestion(t *testing.T) {
+func Test_FindExtensions_MultipleMatches_ErrorHandling(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
 	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
@@ -603,12 +605,20 @@ func Test_GetFromRegistry_MultipleMatches_ErrorWithSuggestion(t *testing.T) {
 	// Override the sources with our mocks
 	manager.sources = []Source{mockSource1, mockSource2}
 
-	// Try to get the extension - should return error with suggestion
-	extension, err := manager.GetFromRegistry(*mockContext.Context, "duplicate.extension", nil)
+	// Try to find the extension - should return multiple matches
+	extensions, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "duplicate.extension"})
 
-	// Verify we got the expected error
-	require.Error(t, err)
-	require.Nil(t, extension)
+	// Verify we got multiple matches (this is expected behavior for FindExtensions)
+	require.NoError(t, err)
+	require.Len(t, extensions, 2)
+
+	// Verify both sources are represented
+	sourceNames := make(map[string]bool)
+	for _, ext := range extensions {
+		sourceNames[ext.Source] = true
+	}
+	require.True(t, sourceNames["source1"])
+	require.True(t, sourceNames["source2"])
 }
 
 // mockSource is a test implementation of the Source interface
@@ -646,7 +656,11 @@ func Test_Install_WithMcpConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	// Install extension with MCP configuration
-	extensionVersion, err := manager.Install(*mockContext.Context, "test.mcp.extension", nil)
+	extensions, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.mcp.extension"})
+	require.NoError(t, err)
+	require.Len(t, extensions, 1)
+
+	extensionVersion, err := manager.Install(*mockContext.Context, extensions[0], "")
 	require.NoError(t, err)
 	require.NotNil(t, extensionVersion)
 

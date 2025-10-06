@@ -13,6 +13,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -285,10 +286,13 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 // azd extension show
 type extensionShowFlags struct {
 	source string
+	global *internal.GlobalCommandOptions
 }
 
-func newExtensionShowFlags(cmd *cobra.Command) *extensionShowFlags {
-	flags := &extensionShowFlags{}
+func newExtensionShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *extensionShowFlags {
+	flags := &extensionShowFlags{
+		global: global,
+	}
 	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use.")
 	return flags
 }
@@ -387,7 +391,7 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, fmt.Errorf("failed to find extension: %w", err)
 	}
 
-	registryExtension, err := selectDistinctExtension(ctx, a.console, extensionId, extensionMatches)
+	registryExtension, err := selectDistinctExtension(ctx, a.console, extensionId, extensionMatches, a.flags.global)
 	if err != nil {
 		return nil, err
 	}
@@ -436,10 +440,14 @@ type extensionInstallFlags struct {
 	version string
 	source  string
 	force   bool
+	global  *internal.GlobalCommandOptions
 }
 
-func newExtensionInstallFlags(cmd *cobra.Command) *extensionInstallFlags {
-	flags := &extensionInstallFlags{}
+func newExtensionInstallFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *extensionInstallFlags {
+	flags := &extensionInstallFlags{
+		global: global,
+	}
+
 	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use for installs")
 	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to install")
 	cmd.Flags().
@@ -515,7 +523,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 			return nil, fmt.Errorf("failed to find extension: %w", err)
 		}
 
-		selectedExtension, err := selectDistinctExtension(ctx, a.console, extensionId, extensionMatches)
+		selectedExtension, err := selectDistinctExtension(ctx, a.console, extensionId, extensionMatches, a.flags.global)
 		if err != nil {
 			a.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
@@ -698,10 +706,13 @@ type extensionUpgradeFlags struct {
 	version string
 	source  string
 	all     bool
+	global  *internal.GlobalCommandOptions
 }
 
-func newExtensionUpgradeFlags(cmd *cobra.Command) *extensionUpgradeFlags {
-	flags := &extensionUpgradeFlags{}
+func newExtensionUpgradeFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *extensionUpgradeFlags {
+	flags := &extensionUpgradeFlags{
+		global: global,
+	}
 	cmd.Flags().StringVarP(&flags.version, "version", "v", "", "The version of the extension to upgrade to")
 	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "The extension source to use for upgrades")
 	cmd.Flags().BoolVar(&flags.all, "all", false, "Upgrade all installed extensions")
@@ -799,7 +810,7 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 			return nil, fmt.Errorf("extension %s not found", extensionId)
 		}
 
-		selectedExtension, err := selectDistinctExtension(ctx, a.console, extensionId, matches)
+		selectedExtension, err := selectDistinctExtension(ctx, a.console, extensionId, matches, a.flags.global)
 		if err != nil {
 			return nil, err
 		}
@@ -1049,6 +1060,7 @@ func selectDistinctExtension(
 	console input.Console,
 	extensionId string,
 	matches []*extensions.ExtensionMetadata,
+	global *internal.GlobalCommandOptions,
 ) (*extensions.ExtensionMetadata, error) {
 	if len(matches) == 0 {
 		return nil, fmt.Errorf("no extensions found")
@@ -1056,6 +1068,13 @@ func selectDistinctExtension(
 
 	if len(matches) == 1 {
 		return matches[0], nil
+	}
+
+	if global.NoPrompt {
+		return nil, &internal.ErrorWithSuggestion{
+			Err:        fmt.Errorf("the %s extension was found in multiple sources.", extensionId),
+			Suggestion: "Specify the extension source using the --source flag.",
+		}
 	}
 
 	console.StopSpinner(ctx, "", input.Step)
@@ -1069,7 +1088,10 @@ func selectDistinctExtension(
 	}
 
 	selectSource := uxlib.NewSelect(&uxlib.SelectOptions{
-		Message: fmt.Sprintf("The %s extension was found in multiple sources.\nSelect the source to continue", extensionId),
+		Message: fmt.Sprintf(
+			"The %s extension was found in multiple sources.\nSelect the source to continue",
+			output.WithHighLightFormat(extensionId),
+		),
 		Choices: sourceChoices,
 	})
 

@@ -176,6 +176,8 @@ func (m *Manager) GetInstalled(options FilterOptions) (*Extension, error) {
 		return nil, err
 	}
 
+	isExtensionMatch := createExtensionFilter(&options)
+
 	// Convert installed extensions to ExtensionMetadata for filtering
 	for _, extension := range extensions {
 		// Create metadata representation for filtering
@@ -187,8 +189,7 @@ func (m *Manager) GetInstalled(options FilterOptions) (*Extension, error) {
 		}
 
 		// Apply the same filter logic as other methods
-		filter := createExtensionFilter(&options)
-		if filter(metadata) {
+		if isExtensionMatch(metadata) {
 			return extension, nil
 		}
 	}

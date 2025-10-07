@@ -287,17 +287,12 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		return rootCmd.ExecuteContext(ctx)
 	}
 
-	// rootCmd.Find() returns the root command if no subcommand is identified. Cobra checks all the registered commands
-	// and returns the longest matching command. If no subcommand is found, it returns the root command itself.
+	// rootCmd.Find() returns error if the command is not identified. Cobra checks all the registered commands
+	// and returns error if the input command is not registered.
 	// This allows us to determine if a subcommand was provided or not or if the command is unknown.
-	topCommand, originalArgs, err := rootCmd.Find(os.Args[1:])
-	if err != nil {
-		// If we can't parse the command, just proceed to normal execution
-		log.Println("Error: parse command. Skipping auto-install:", err)
-		return rootCmd.ExecuteContext(ctx)
-	}
-	if topCommand != rootCmd || len(originalArgs) == 0 {
-		// known command to be run OR no subcommand provided - skip auto-install
+	_, originalArgs, err := rootCmd.Find(os.Args[1:])
+	if err == nil {
+		// Known command, no need to auto-install
 		return rootCmd.ExecuteContext(ctx)
 	}
 

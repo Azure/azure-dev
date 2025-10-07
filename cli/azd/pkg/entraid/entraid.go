@@ -64,6 +64,11 @@ func (e *ServiceTreeInvalidError) Unwrap() error {
 	return e.Err
 }
 
+type EnsureRoleAssignmentsOptions struct {
+	// Scope overrides the implicit Subscription level scope used by EnsureRoleAssignments.
+	Scope *string
+}
+
 // EntraIdService provides actions on top of Azure Active Directory (AD)
 type EntraIdService interface {
 	GetServicePrincipal(
@@ -94,6 +99,7 @@ type EntraIdService interface {
 		subscriptionId string,
 		roleNames []string,
 		servicePrincipal *graphsdk.ServicePrincipal,
+		options *EnsureRoleAssignmentsOptions,
 	) error
 }
 
@@ -180,7 +186,7 @@ func (ad *entraIdService) CreateOrUpdateServicePrincipal(
 	}
 
 	// Apply specified role assignments
-	err = ad.EnsureRoleAssignments(ctx, subscriptionId, options.RolesToAssign, servicePrincipal)
+	err = ad.EnsureRoleAssignments(ctx, subscriptionId, options.RolesToAssign, servicePrincipal, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed applying role assignment: %w", err)
 	}
@@ -493,9 +499,16 @@ func (ad *entraIdService) EnsureRoleAssignments(
 	subscriptionId string,
 	roleNames []string,
 	servicePrincipal *graphsdk.ServicePrincipal,
+	options *EnsureRoleAssignmentsOptions,
 ) error {
+	var scope *string
+
+	if options != nil {
+		scope = options.Scope
+	}
+
 	for _, roleName := range roleNames {
-		err := ad.ensureRoleAssignment(ctx, subscriptionId, roleName, servicePrincipal)
+		err := ad.ensureRoleAssignment(ctx, subscriptionId, roleName, servicePrincipal, scope)
 		if err != nil {
 			return err
 		}
@@ -510,16 +523,20 @@ func (ad *entraIdService) ensureRoleAssignment(
 	subscriptionId string,
 	roleName string,
 	servicePrincipal *graphsdk.ServicePrincipal,
+	scope *string,
 ) error {
-	// Find the specified role in the subscription scope
-	scope := azure.SubscriptionRID(subscriptionId)
-	roleDefinition, err := ad.getRoleDefinition(ctx, subscriptionId, scope, roleName)
+	if scope == nil {
+		// Find the specified role in the subscription scope
+		scope = to.Ptr(azure.SubscriptionRID(subscriptionId))
+	}
+
+	roleDefinition, err := ad.getRoleDefinition(ctx, subscriptionId, *scope, roleName)
 	if err != nil {
 		return err
 	}
 
 	// Create the new role assignment
-	err = ad.applyRoleAssignmentWithRetry(ctx, subscriptionId, roleDefinition, servicePrincipal)
+	err = ad.applyRoleAssignmentWithRetry(ctx, subscriptionId, roleDefinition, servicePrincipal, scope)
 	if err != nil {
 		return err
 	}
@@ -550,9 +567,13 @@ func (ad *entraIdService) applyRoleAssignmentWithRetry(
 	subscriptionId string,
 	roleDefinition *armauthorization.RoleDefinition,
 	servicePrincipal *graphsdk.ServicePrincipal,
+	scope *string,
 ) error {
-	scope := azure.SubscriptionRID(subscriptionId)
-	return ad.applyRoleAssignmentWithRetryImpl(ctx, subscriptionId, scope, roleDefinition, servicePrincipal)
+	if scope == nil {
+		scope = to.Ptr(azure.SubscriptionRID(subscriptionId))
+	}
+
+	return ad.applyRoleAssignmentWithRetryImpl(ctx, subscriptionId, *scope, roleDefinition, servicePrincipal)
 }
 
 func (ad *entraIdService) applyRoleAssignmentWithRetryImpl(
@@ -573,6 +594,7 @@ func (ad *entraIdService) applyRoleAssignmentWithRetryImpl(
 	return retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(time.Second*5)), func(ctx context.Context) error {
 		_, err = roleAssignmentsClient.Create(ctx, scope, roleAssignmentId, armauthorization.RoleAssignmentCreateParameters{
 			Properties: &armauthorization.RoleAssignmentProperties{
+				Scope:            &scope,
 				PrincipalID:      servicePrincipal.Id,
 				RoleDefinitionID: roleDefinition.ID,
 			},

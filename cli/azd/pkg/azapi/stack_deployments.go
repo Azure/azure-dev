@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"maps"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,7 +16,6 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -784,9 +782,6 @@ func (d *StackDeployments) ValidatePreflightToResourceGroup(
 		return err
 	}
 
-	var rawResponse *http.Response
-	ctx = policy.WithCaptureResponse(ctx, &rawResponse)
-
 	validateResult, err := client.BeginValidateStackAtResourceGroup(ctx, resourceGroup, deploymentName, stack, nil)
 	if err != nil {
 		return fmt.Errorf("validating deployment to resource group:\n\nValidation Error Details:\n%w", err)
@@ -862,9 +857,6 @@ func (d *StackDeployments) ValidatePreflightToSubscription(
 	if err != nil {
 		return err
 	}
-
-	var rawResponse *http.Response
-	ctx = policy.WithCaptureResponse(ctx, &rawResponse)
 
 	validateResult, err := client.BeginValidateStackAtSubscription(ctx, deploymentName, stack, nil)
 	if err != nil {

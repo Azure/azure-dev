@@ -133,7 +133,7 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 
 				// Check for missing optional but generally recommended fields
 				if schema.Usage == "" {
-					warnings = append(warnings, "Missing usage information - helps users understand how to use the extension")
+					warnings = append(warnings, "Missing usage information")
 				}
 
 				progress("Validation complete")
@@ -141,13 +141,19 @@ func runBuildAction(ctx context.Context, flags *buildFlags) error {
 				// If we have errors, this is a failure
 				if len(errors) > 0 {
 					// Create aggregated error
-					aggregatedError := fmt.Errorf("Extension contains validation failures: %s", strings.Join(errors, "; "))
+					aggregatedError := fmt.Errorf(
+						"Extension contains validation failures: %s",
+						strings.Join(errors, "; "),
+					)
 					return ux.Error, common.NewDetailedError("Validation failed", aggregatedError)
 				}
 
 				// If we have warnings, return warning state but no error
 				if len(warnings) > 0 {
-					aggregatedWarning := fmt.Errorf("Extension contains validation warnings: %s", strings.Join(warnings, "\n - "))
+					aggregatedWarning := fmt.Errorf(
+						"Extension contains validation warnings: %s",
+						strings.Join(warnings, "\n - "),
+					)
 					return ux.Warning, common.NewDetailedError("Validation warnings", aggregatedWarning)
 				}
 

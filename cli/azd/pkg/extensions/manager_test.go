@@ -850,7 +850,7 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 			Provider:   "containerapp",
 		})
 		require.NoError(t, err)
-		require.Len(t, extensions, 2, "Should find exactly 2 extensions with service-target capability AND containerapp provider")
+		require.Len(t, extensions, 2, "Should find exactly 2 extensions")
 
 		assertExtensionIds(t, extensions,
 			[]string{"azure.containerapp", "foundry.multi.target"},
@@ -863,7 +863,7 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 			Provider:   "kubernetes",
 		})
 		require.NoError(t, err)
-		require.Len(t, extensions, 1, "Should find exactly 1 extension with service-target capability AND kubernetes provider")
+		require.Len(t, extensions, 1, "Should find exactly 1 extension")
 
 		assertExtensionIds(t, extensions,
 			[]string{"kubernetes.deploy"},
@@ -909,6 +909,6 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 			Provider:   "containerapp",
 		})
 		require.NoError(t, err)
-		require.Len(t, extensions, 0, "Should find no extensions with MCP capability AND containerapp provider (invalid combination)")
+		require.Len(t, extensions, 0, "Should find no extensions with MCP capability AND containerapp provider")
 	})
 }

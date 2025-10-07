@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -343,11 +344,18 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 // supportsPublish checks if the service host supports publishing.
 func (pa *PublishAction) supportsPublish(ctx context.Context, serviceConfig *project.ServiceConfig) bool {
+	// Built-in container targets support publish
 	if serviceConfig.Host.RequiresContainer() {
 		return true
 	}
 
-	// Treat extension-provided targets as supported
+	// Check if this is a built-in target
+	if slices.Contains(project.BuiltInServiceTargetKinds(), serviceConfig.Host) {
+		// Built-in non-container targets do not support publish
+		return false
+	}
+
+	// For extension-provided targets, check if they are registered
 	var target project.ServiceTarget
 	if err := pa.serviceLocator.ResolveNamed(string(serviceConfig.Host), &target); err == nil {
 		return true

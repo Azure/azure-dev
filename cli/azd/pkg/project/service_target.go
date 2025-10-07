@@ -50,6 +50,11 @@ func builtInServiceTargetNames() []string {
 	return names
 }
 
+// BuiltInServiceTargetKinds returns the slice of built-in service target kinds
+func BuiltInServiceTargetKinds() []ServiceTargetKind {
+	return builtInServiceTargetKinds
+}
+
 // RequiresContainer returns true if the service target runs a container image.
 func (stk ServiceTargetKind) RequiresContainer() bool {
 	switch stk {

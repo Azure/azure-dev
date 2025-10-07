@@ -511,3 +511,83 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 		})
 	}
 }
+
+func TestGetResourceTypeDisplayNameForRedisEnterprise(t *testing.T) {
+	const SUBSCRIPTION_ID = "273f1e6b-6c19-4c9e-8b67-5fbe78b14063"
+
+	tests := []struct {
+		name         string
+		kind         string
+		expectedName string
+	}{
+		{
+			name:         "Azure Managed Redis (v2)",
+			kind:         "v2",
+			expectedName: "Azure Managed Redis",
+		},
+		{
+			name:         "Redis Enterprise (v1)",
+			kind:         "v1",
+			expectedName: "Redis Enterprise",
+		},
+		{
+			name:         "Redis Enterprise (default/empty)",
+			kind:         "",
+			expectedName: "Redis Enterprise",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			resourceService := azapi.NewResourceService(
+				mockContext.SubscriptionCredentialProvider,
+				mockContext.ArmClientOptions,
+			)
+			deploymentService := mockazapi.NewStandardDeploymentsFromMockContext(mockContext)
+
+			resourceId := fmt.Sprintf(
+				"/subscriptions/%s/resourceGroups/test-rg/providers/Microsoft.Cache/redisEnterprise/test-redis",
+				SUBSCRIPTION_ID,
+			)
+
+			mockContext.HttpClient.When(func(request *http.Request) bool {
+				return request.Method == http.MethodGet &&
+					strings.Contains(request.URL.Path, "/Microsoft.Cache/redisEnterprise/test-redis")
+			}).RespondFn(func(request *http.Request) (*http.Response, error) {
+				response := map[string]interface{}{
+					"id":       resourceId,
+					"name":     "test-redis",
+					"type":     "Microsoft.Cache/redisEnterprise",
+					"location": "eastus2",
+					"kind":     tt.kind,
+				}
+
+				body, err := json.Marshal(response)
+				if err != nil {
+					return nil, err
+				}
+
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewReader(body)),
+					Request: &http.Request{
+						Method: http.MethodGet,
+						URL:    request.URL,
+					},
+				}, nil
+			})
+
+			arm := NewAzureResourceManager(resourceService, deploymentService)
+			displayName, err := arm.GetResourceTypeDisplayName(
+				*mockContext.Context,
+				SUBSCRIPTION_ID,
+				resourceId,
+				azapi.AzureResourceTypeRedisEnterprise,
+			)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedName, displayName)
+		})
+	}
+}

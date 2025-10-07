@@ -39,6 +39,7 @@ const (
 	frameworkPackageCalled     contextKey = "frameworkPackageCalled"
 	serviceTargetPackageCalled contextKey = "serviceTargetPackageCalled"
 	serviceTargetDeployCalled  contextKey = "serviceTargetDeployCalled"
+	serviceTargetPublishCalled contextKey = "serviceTargetPublishCalled"
 )
 
 func createServiceManager(
@@ -214,7 +215,7 @@ func Test_ServiceManager_Deploy(t *testing.T) {
 	ctx := context.WithValue(*mockContext.Context, serviceTargetDeployCalled, deployCalled)
 
 	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-		return sm.Deploy(ctx, serviceConfig, nil, progess)
+		return sm.Deploy(ctx, serviceConfig, nil, nil, progess)
 	})
 
 	require.NoError(t, err)
@@ -222,6 +223,42 @@ func Test_ServiceManager_Deploy(t *testing.T) {
 	require.True(t, *deployCalled)
 	require.True(t, raisedPreDeployEvent)
 	require.True(t, raisedPostDeployEvent)
+}
+
+func Test_ServiceManager_Publish(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	setupMocksForServiceManager(mockContext)
+	env := environment.NewWithValues("test", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+
+	raisedPrePublishEvent := false
+	raisedPostPublishEvent := false
+
+	_ = serviceConfig.AddHandler("prepublish", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+		raisedPrePublishEvent = true
+		return nil
+	})
+
+	_ = serviceConfig.AddHandler("postpublish", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+		raisedPostPublishEvent = true
+		return nil
+	})
+
+	publishCalled := to.Ptr(false)
+	ctx := context.WithValue(*mockContext.Context, serviceTargetPublishCalled, publishCalled)
+
+	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
+		return sm.Publish(ctx, serviceConfig, nil, progess, nil)
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, *publishCalled)
+	require.True(t, raisedPrePublishEvent)
+	require.True(t, raisedPostPublishEvent)
 }
 
 func Test_ServiceManager_GetFrameworkService(t *testing.T) {
@@ -279,6 +316,18 @@ func Test_ServiceManager_GetServiceTarget(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, serviceTarget)
 	require.IsType(t, new(fakeServiceTarget), serviceTarget)
+}
+
+func Test_ServiceManager_GetServiceTarget_UnsupportedHost(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	setupMocksForServiceManager(mockContext)
+	env := environment.New("test")
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetKind("missing-target"), ServiceLanguageFake)
+
+	_, err := sm.GetServiceTarget(*mockContext.Context, serviceConfig)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "service host 'missing-target' for service 'api' is unsupported")
 }
 
 func Test_ServiceManager_CacheResults(t *testing.T) {
@@ -381,7 +430,7 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
 				return logProgress(
 					t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-						return serviceManager.Deploy(ctx, serviceConfig, nil, progress)
+						return serviceManager.Deploy(ctx, serviceConfig, nil, nil, progress)
 					})
 			},
 		},
@@ -614,10 +663,26 @@ func (st *fakeServiceTarget) Package(
 	}, nil
 }
 
+func (st *fakeServiceTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+	options *PublishOptions,
+) (*ServicePublishResult, error) {
+	publishCalled, ok := ctx.Value(serviceTargetPublishCalled).(*bool)
+	if ok {
+		*publishCalled = true
+	}
+	return &ServicePublishResult{}, nil
+}
+
 func (st *fakeServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
+	publishOutput *ServicePublishResult,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {

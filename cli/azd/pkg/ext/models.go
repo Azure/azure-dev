@@ -59,6 +59,8 @@ type HookConfig struct {
 	cwd string
 	// When location is `inline` a script must be defined inline
 	script string
+	// Indicates if the shell was automatically detected based on OS (used for warnings)
+	usingDefaultShell bool
 
 	// Internal name of the hook running for a given command
 	Name string `yaml:",omitempty"`
@@ -104,8 +106,10 @@ func (hc *HookConfig) validate() error {
 		hc.script = hc.Run
 	}
 
+	// If shell is not specified and it's an inline script, use OS default
 	if hc.Shell == ScriptTypeUnknown && hc.path == "" {
-		return ErrScriptTypeUnknown
+		hc.Shell = getDefaultShellForOS()
+		hc.usingDefaultShell = true
 	}
 
 	if hc.location == ScriptLocationUnknown {
@@ -164,6 +168,12 @@ func (hc *HookConfig) IsPowerShellHook() bool {
 	return false
 }
 
+// IsUsingDefaultShell returns true if the hook is using the OS default shell
+// because no shell was explicitly configured
+func (hc *HookConfig) IsUsingDefaultShell() bool {
+	return hc.usingDefaultShell
+}
+
 func InferHookType(name string) (HookType, string) {
 	// Validate name length so go doesn't PANIC for string slicing below
 	if len(name) < 4 {
@@ -175,6 +185,14 @@ func InferHookType(name string) (HookType, string) {
 	}
 
 	return HookTypeNone, name
+}
+
+// getDefaultShellForOS returns the default shell type based on the operating system
+func getDefaultShellForOS() ShellType {
+	if runtime.GOOS == "windows" {
+		return ShellTypePowershell
+	}
+	return ShellTypeBash
 }
 
 func inferScriptTypeFromFilePath(path string) (ShellType, error) {

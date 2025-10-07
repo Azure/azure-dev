@@ -4,13 +4,15 @@
 package common
 
 import (
+	"context"
+
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/tmc/langchaingo/tools"
 )
 
 // ToolLoader provides an interface for loading tools from different categories
 type ToolLoader interface {
-	LoadTools() ([]AnnotatedTool, error)
+	LoadTools(ctx context.Context) ([]AnnotatedTool, error)
 }
 
 // ErrorResponse represents a JSON error response structure that can be reused across all tools

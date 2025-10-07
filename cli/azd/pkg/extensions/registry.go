@@ -24,6 +24,10 @@ const (
 	CustomCommandCapability CapabilityType = "custom-commands"
 	// Lifecycle events enable extensions to subscribe to AZD project & service lifecycle events
 	LifecycleEventsCapability CapabilityType = "lifecycle-events"
+	// McpServerCapability enables extensions to start an MCP server
+	McpServerCapability CapabilityType = "mcp-server"
+	// Service target providers enable extensions to package, publish, and deploy to custom service targets
+	ServiceTargetProviderCapability CapabilityType = "service-target-provider"
 )
 
 // Extension represents an extension in the registry
@@ -54,6 +58,20 @@ type ExtensionDependency struct {
 	Version string `json:"version,omitempty"`
 }
 
+// McpConfig represents the MCP server configuration for an extension
+type McpConfig struct {
+	// Server contains configuration for starting the extension's MCP server
+	Server McpServerConfig `json:"server"`
+}
+
+// McpServerConfig represents the configuration for starting an extension's MCP server
+type McpServerConfig struct {
+	// Args are the command-line arguments to pass when starting the MCP server
+	Args []string `json:"args"`
+	// Env are additional environment variables to set when starting the MCP server
+	Env []string `json:"env,omitempty"`
+}
+
 // ExtensionVersion represents a version of an extension
 type ExtensionVersion struct {
 	// Capabilities is a list of capabilities that the extension provides
@@ -73,6 +91,8 @@ type ExtensionVersion struct {
 	// Entry point is the entry point for the extension
 	// This will typically be the name of the executable or script to run
 	EntryPoint string `json:"entryPoint,omitempty"`
+	// McpConfig is the MCP server configuration for this extension version
+	McpConfig *McpConfig `json:"mcp,omitempty"`
 }
 
 // ExtensionArtifact represents the artifact information of an extension

@@ -31,6 +31,11 @@ func TestGetResourceTypeDisplayName(t *testing.T) {
 			expected:     "Key Vault",
 		},
 		{
+			name:         "ContainerAppJob",
+			resourceType: AzureResourceTypeContainerAppJob,
+			expected:     "Container App Job",
+		},
+		{
 			name:         "UnknownResourceType",
 			resourceType: AzureResourceType("Microsoft.Unknown/unknownResource"),
 			expected:     "",

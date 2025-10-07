@@ -251,6 +251,8 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 
 		var packageResult *project.ServicePackageResult
+		var publishResult *project.ServicePublishResult
+
 		if da.flags.fromPackage != "" {
 			// --from-package set, skip packaging
 			packageResult = &project.ServicePackageResult{
@@ -260,7 +262,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			//  --from-package not set, automatically package the application
 			packageResult, err = async.RunWithProgress(
 				func(packageProgress project.ServiceProgress) {
-					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, packageProgress.Message)
+					progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
 					da.console.ShowSpinner(ctx, progressMessage, input.Step)
 				},
 				func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePackageResult, error) {
@@ -268,11 +270,27 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				},
 			)
 
-			// do not stop progress here as next step is to deploy
+			// do not stop progress here as next step is to publish
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, err
 			}
+		}
+
+		publishResult, err = async.RunWithProgress(
+			func(publishProgress project.ServiceProgress) {
+				progressMessage := fmt.Sprintf("Publishing service %s (%s)", svc.Name, publishProgress.Message)
+				da.console.ShowSpinner(ctx, progressMessage, input.Step)
+			},
+			func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePublishResult, error) {
+				return da.serviceManager.Publish(ctx, svc, packageResult, progress, nil)
+			},
+		)
+
+		// do not stop progress here as next step is to deploy
+		if err != nil {
+			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, err
 		}
 
 		deployResult, err := async.RunWithProgress(
@@ -281,7 +299,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				da.console.ShowSpinner(ctx, progressMessage, input.Step)
 			},
 			func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceDeployResult, error) {
-				return da.serviceManager.Deploy(ctx, svc, packageResult, progress)
+				return da.serviceManager.Deploy(ctx, svc, packageResult, publishResult, progress)
 			},
 		)
 

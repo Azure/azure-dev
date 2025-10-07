@@ -3,12 +3,16 @@ words:
   - azcloud
   - azdext
   - azurefd
+  - azcontainerregistry
   - backoff
   - Canonicalize
+  - Chans
   - chinacloudapi
   - Codespace
   - Codespaces
+  - customtype
   - devcontainers
+  - errgroup
   - extendee
   - eiannone
   # CDN host name
@@ -32,6 +36,9 @@ words:
   - usgovcloudapi
   - jdbc
   - springframework
+  - santhosh
+  - tekuri
+  - jsonschema
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -164,6 +171,9 @@ overrides:
       - dall
       - datasource
       - vectorizing
+  - filename: extensions/azure.foundry.ai.agents/internal/cmd/listen.go
+    words:
+      - hostedagent
   - filename: docs/new-azd-command.md
     words:
       - pflag
@@ -187,6 +197,9 @@ overrides:
       - santhosh
       - tekuri
       - jsonschema
+  - filename: internal/mcp/host.go
+    words:
+      - Streamable
   - filename: cmd/completion.go
     words:
       - compinit

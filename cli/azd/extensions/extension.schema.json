@@ -78,7 +78,7 @@
     "capabilities": {
       "type": "array",
       "title": "Capabilities",
-      "description": "List of capabilities provided by the extension. Supported values: custom-commands, lifecycle-events. Select one or more from the allowed list. Each value must be unique.",
+      "description": "List of capabilities provided by the extension. Supported values: custom-commands, lifecycle-events, mcp-server. Select one or more from the allowed list. Each value must be unique.",
       "minItems": 1,
       "uniqueItems": true,
       "items": {
@@ -94,6 +94,18 @@
             "const": "lifecycle-events",
             "title": "Lifecycle Events",
             "description": "Lifecycle events enable extensions to subscribe to AZD project and service lifecycle events."
+          },
+          {
+            "type": "string",
+            "const": "mcp-server",
+            "title": "MCP Server",
+            "description": "MCP server capability enables extensions to provide Model Context Protocol tools that can be used by AI agents."
+          },
+          {
+            "type": "string",
+            "const": "service-target-provider",
+            "title": "Service Target Provider",
+            "description": "Service target provider enables extensions to provide custom service deployment targets."
           }
         ]
       }
@@ -147,6 +159,40 @@
         "description": "Custom metadata for a particular platform.",
         "additionalProperties": true
       }
+    },
+    "mcp": {
+      "type": "object",
+      "title": "MCP Configuration",
+      "description": "Configuration for Model Context Protocol server functionality. Required when mcp-server capability is declared.",
+      "properties": {
+        "serve": {
+          "type": "object",
+          "title": "MCP Server Configuration",
+          "description": "Configuration for starting the extension's MCP server.",
+          "properties": {
+            "args": {
+              "type": "array",
+              "title": "Server Arguments",
+              "description": "Command-line arguments to pass when starting the MCP server. Typically ['mcp', 'serve'] or similar.",
+              "items": {
+                "type": "string"
+              },
+              "default": ["mcp", "serve"]
+            },
+            "env": {
+              "type": "array",
+              "title": "Environment Variables",
+              "description": "Additional environment variables to set when starting the MCP server.",
+              "items": {
+                "type": "string"
+              },
+              "default": []
+            }
+          },
+          "required": ["args"]
+        }
+      },
+      "required": ["serve"]
     }
   },
   "required": [

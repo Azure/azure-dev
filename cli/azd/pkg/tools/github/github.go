@@ -37,7 +37,7 @@ func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec
 
 // Version is the minimum version of GitHub cli that we require (and the one we fetch when we fetch gh on
 // behalf of a user).
-var Version semver.Version = semver.MustParse("2.75.1")
+var Version semver.Version = semver.MustParse("2.80.0")
 
 // newGitHubCliImplementation is like NewGitHubCli but allows providing a custom transport to use when downloading the
 // GitHub CLI, for testing purposes.
@@ -261,8 +261,13 @@ type ListVariablesOptions struct {
 	Environment string
 }
 
+//
 //nolint:lll
-func (cli *Cli) ListVariables(ctx context.Context, repoSlug string, options *ListVariablesOptions) (map[string]string, error) {
+func (cli *Cli) ListVariables(
+	ctx context.Context,
+	repoSlug string,
+	options *ListVariablesOptions,
+) (map[string]string, error) {
 	args := []string{"-R", repoSlug, "variable", "list"}
 
 	if options != nil && options.Environment != "" {
@@ -290,8 +295,15 @@ type SetVariableOptions struct {
 	Environment string
 }
 
+//
 //nolint:lll
-func (cli *Cli) SetVariable(ctx context.Context, repoSlug string, name string, value string, options *SetVariableOptions) error {
+func (cli *Cli) SetVariable(
+	ctx context.Context,
+	repoSlug string,
+	name string,
+	value string,
+	options *SetVariableOptions,
+) error {
 	args := []string{"-R", repoSlug, "variable", "set", name}
 
 	if options != nil && options.Environment != "" {
@@ -647,7 +659,7 @@ func downloadGh(
 		return fmt.Errorf("unsupported platform")
 	}
 
-	// example: https://github.com/cli/cli/releases/download/v2.75.1/gh_2.75.1_linux_arm64.rpm
+	// example: https://github.com/cli/cli/releases/download/v2.80.0/gh_2.80.0_linux_arm64.rpm
 	ghReleaseUrl := fmt.Sprintf("https://github.com/cli/cli/releases/download/v%s/%s", ghVersion, releaseName)
 
 	log.Printf("downloading github cli release %s -> %s", ghReleaseUrl, releaseName)

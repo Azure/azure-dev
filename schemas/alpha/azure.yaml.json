@@ -192,7 +192,7 @@
                         "type": "string",
                         "title": "Required. The type of Azure resource used for service implementation",
                         "description": "The Azure service that will be used as the target for deployment operations for the service.",
-                        "enum": [
+                        "examples": [
                             "appservice",
                             "containerapp",
                             "function",
@@ -219,8 +219,8 @@
                     },
                     "module": {
                         "type": "string",
-                        "title": "(DEPRECATED) Path of the infrastructure module used to deploy the service relative to the root infra folder",
-                        "description": "If omitted, the CLI will assume the module name is the same as the service name. This property will be deprecated in a future release."
+                        "title": "Path of the infrastructure module used to deploy the service relative to the root infra folder",
+                        "description": "If omitted, the CLI will assume the module name is the same as the service name."
                     },
                     "dist": {
                         "type": "string",
@@ -280,6 +280,16 @@
                             "postpackage": {
                                 "title": "post package hook",
                                 "description": "Runs after the service is deployment package is created",
+                                "$ref": "#/definitions/hooks"
+                            },
+                            "prepublish": {
+                                "title": "pre publish hook",
+                                "description": "Runs before the service is published",
+                                "$ref": "#/definitions/hooks"
+                            },
+                            "postpublish": {
+                                "title": "post publish hook",
+                                "description": "Runs after the service is published",
                                 "$ref": "#/definitions/hooks"
                             }
                         }
@@ -602,6 +612,16 @@
                 "postpackage": {
                     "title": "post package hook",
                     "description": "Runs after the `package` command",
+                    "$ref": "#/definitions/hooks"
+                },
+                "prepublish": {
+                    "title": "pre publish hook",
+                    "description": "Runs before the `publish` command",
+                    "$ref": "#/definitions/hooks"
+                },
+                "postpublish": {
+                    "title": "post publish hook",
+                    "description": "Runs after the `publish` command",
                     "$ref": "#/definitions/hooks"
                 },
                 "predeploy": {

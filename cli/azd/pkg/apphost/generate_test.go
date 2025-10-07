@@ -80,7 +80,8 @@ func TestAspireBicepGenerationAppHostOwnsCompute(t *testing.T) {
 	mockCtx := mocks.NewMockContext(ctx)
 	filesFromManifest := make(map[string]string)
 	ignoredBicepContent := "bicep file contents"
-	filesFromManifest["test.bicep"] = ignoredBicepContent
+	filesFromManifest["aspire-owned-env.bicep"] = ignoredBicepContent
+	filesFromManifest["bicepModule.bicep"] = ignoredBicepContent
 	filesFromManifest["aspire.hosting.azure.bicep.postgres.bicep"] = ignoredBicepContent
 	filesFromManifest["aspire.hosting.azure.bicep.servicebus.bicep"] = ignoredBicepContent
 	filesFromManifest["aspire.hosting.azure.bicep.appinsights.bicep"] = ignoredBicepContent

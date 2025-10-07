@@ -112,7 +112,7 @@
                     "language": {
                         "type": "string",
                         "title": "Service implementation language",
-                        "enum": [
+                        "examples": [
                             "dotnet",
                             "csharp",
                             "fsharp",
@@ -207,9 +207,6 @@
                                     "required": [
                                         "image"
                                     ],
-                                    "properties": {
-                                        "language": false
-                                    },
                                     "not": {
                                         "required": [
                                             "project"
@@ -261,8 +258,7 @@
                         },
                         "then": {
                             "required": [
-                                "project",
-                                "language"
+                                "project"
                             ],
                             "properties": {
                                 "docker": false

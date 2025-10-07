@@ -361,6 +361,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		header = fmt.Sprintf("Initialized environment %s.", env.Name())
 		followUp = ""
 	case initWithAgent:
+		tracing.SetUsageAttributes(fields.InitMethod.String("agent"))
 		if err := i.initAppWithAgent(ctx); err != nil {
 			return nil, err
 		}

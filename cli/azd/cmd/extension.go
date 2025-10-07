@@ -373,11 +373,9 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 		if err := tabs.Flush(); err != nil {
 			return err
 		}
-		_, err = fmt.Fprintf(writer, "\n")
+		_, err = fmt.Fprintln(writer)
 		return err
 	}
-
-	fmt.Fprintln(writer)
 
 	// Extension Information section
 	extensionInfo := [][]string{

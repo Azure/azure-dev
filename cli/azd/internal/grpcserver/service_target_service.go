@@ -54,7 +54,7 @@ func (s *ServiceTargetService) Stream(
 		return fmt.Errorf("failed to get extension claims: %w", err)
 	}
 
-	options := extensions.LookupOptions{
+	options := extensions.FilterOptions{
 		Id: extensionClaims.Subject,
 	}
 

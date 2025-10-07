@@ -52,6 +52,10 @@ type FilterOptions struct {
 	Source string
 	// Tags is used to specify the tags of the extension to install
 	Tags []string
+	// Capability is used to filter extensions by capability type
+	Capability CapabilityType
+	// Provider is used to filter extensions by provider name
+	Provider string
 }
 
 type sourceFilterPredicate func(config *SourceConfig) bool
@@ -100,6 +104,28 @@ func createExtensionFilter(options *FilterOptions) extensionFilterPredicate {
 				if !hasTag {
 					return false
 				}
+			}
+		}
+
+		// Check Capability filter - extension must have at least one version with the specified capability
+		if options.Capability != "" {
+			hasCapability := slices.ContainsFunc(extension.Versions, func(version ExtensionVersion) bool {
+				return slices.Contains(version.Capabilities, options.Capability)
+			})
+			if !hasCapability {
+				return false
+			}
+		}
+
+		// Check Provider filter - extension must have at least one version with a provider matching the specified name
+		if options.Provider != "" {
+			hasProvider := slices.ContainsFunc(extension.Versions, func(version ExtensionVersion) bool {
+				return slices.ContainsFunc(version.Providers, func(provider Provider) bool {
+					return strings.EqualFold(provider.Name, options.Provider)
+				})
+			})
+			if !hasProvider {
+				return false
 			}
 		}
 
@@ -451,6 +477,7 @@ func (m *Manager) Install(
 		Usage:        selectedVersion.Usage,
 		Path:         relativeExtensionPath,
 		Source:       extension.Source,
+		Providers:    selectedVersion.Providers,
 		McpConfig:    selectedVersion.McpConfig,
 	}
 

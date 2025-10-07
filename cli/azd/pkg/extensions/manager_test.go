@@ -417,10 +417,9 @@ func createRegistryMocks(mockContext *mocks.MockContext) {
 		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, testRegistry)
 	})
 
-	// Return some mock file for both test extensions
+	// Return mock file for any extension artifact download
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/test.extension") ||
-			strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/test.mcp.extension")
+		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
 	})
@@ -512,6 +511,74 @@ var testRegistry = Registry{
 						Server: McpServerConfig{
 							Args: []string{"custom", "mcp", "start"},
 							Env:  []string{"CUSTOM_VAR=test", "DEBUG=${HOME}/debug"},
+						},
+					},
+				},
+			},
+		},
+		{
+			Id:          "azure.containerapp",
+			Namespace:   "azure",
+			DisplayName: "Azure Container Apps Extension",
+			Description: "Extension for deploying to Azure Container Apps",
+			Tags:        []string{"azure", "containerapp", "service"},
+			Versions: []ExtensionVersion{
+				{
+					Version:      "1.0.0",
+					Artifacts:    sampleArtifacts,
+					Capabilities: []CapabilityType{ServiceTargetProviderCapability},
+					Providers: []Provider{
+						{
+							Name:        "containerapp",
+							Type:        ServiceTargetProviderType,
+							Description: "Deploys to Azure Container Apps",
+						},
+					},
+				},
+			},
+		},
+		{
+			Id:          "kubernetes.deploy",
+			Namespace:   "kubernetes",
+			DisplayName: "Kubernetes Deployment Extension",
+			Description: "Extension with Kubernetes deployment and MCP capabilities",
+			Tags:        []string{"kubernetes", "multi", "service", "mcp"},
+			Versions: []ExtensionVersion{
+				{
+					Version:      "1.0.0",
+					Artifacts:    sampleArtifacts,
+					Capabilities: []CapabilityType{ServiceTargetProviderCapability, McpServerCapability},
+					Providers: []Provider{
+						{
+							Name:        "kubernetes",
+							Type:        ServiceTargetProviderType,
+							Description: "Deploys to Kubernetes",
+						},
+					},
+				},
+			},
+		},
+		{
+			Id:          "foundry.multi.target",
+			Namespace:   "foundry",
+			DisplayName: "Multi-Target Foundry Extension",
+			Description: "Extension supporting multiple deployment targets",
+			Tags:        []string{"foundry", "multi", "providers"},
+			Versions: []ExtensionVersion{
+				{
+					Version:      "1.0.0",
+					Artifacts:    sampleArtifacts,
+					Capabilities: []CapabilityType{ServiceTargetProviderCapability},
+					Providers: []Provider{
+						{
+							Name:        "foundry.hostedagent",
+							Type:        ServiceTargetProviderType,
+							Description: "Deploys to Azure AI Foundry hosted agents",
+						},
+						{
+							Name:        "containerapp",
+							Type:        ServiceTargetProviderType,
+							Description: "Deploys to Azure Container Apps",
 						},
 					},
 				},
@@ -682,4 +749,166 @@ func Test_Install_WithMcpConfig(t *testing.T) {
 
 	// Verify the extension has MCP server capability
 	require.True(t, installedExtension.HasCapability(McpServerCapability))
+}
+
+// Helper function to convert extension slice to ID set
+func extensionIdsToSet(extensions []*ExtensionMetadata) map[string]bool {
+	ids := make(map[string]bool)
+	for _, ext := range extensions {
+		ids[ext.Id] = true
+	}
+	return ids
+}
+
+// Helper function to assert extension IDs match expectations
+func assertExtensionIds(t *testing.T, extensions []*ExtensionMetadata, expectedIds []string, unexpectedIds []string) {
+	t.Helper()
+	ids := extensionIdsToSet(extensions)
+
+	for _, expectedId := range expectedIds {
+		require.True(t, ids[expectedId], "Expected to find extension: %s", expectedId)
+	}
+
+	for _, unexpectedId := range unexpectedIds {
+		require.False(t, ids[unexpectedId], "Expected NOT to find extension: %s", unexpectedId)
+	}
+}
+
+// Test_FilterExtensions_ByCapabilityAndProvider tests the capability and provider filtering functionality
+func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	createRegistryMocks(mockContext)
+
+	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
+	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
+	manager, err := NewManager(userConfigManager, sourceManager, mockContext.HttpClient)
+	require.NoError(t, err)
+
+	t.Run("filter by service-target-provider capability", func(t *testing.T) {
+		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+			Capability: ServiceTargetProviderCapability,
+		})
+		require.NoError(t, err)
+		require.Len(t, extensions, 3, "Should find 3 extensions with service-target-provider capability")
+
+		assertExtensionIds(t, extensions,
+			[]string{"azure.containerapp", "kubernetes.deploy", "foundry.multi.target"},
+			[]string{"test.mcp.extension"})
+	})
+
+	t.Run("filter by MCP capability", func(t *testing.T) {
+		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+			Capability: McpServerCapability,
+		})
+		require.NoError(t, err)
+		require.Len(t, extensions, 2, "Should find 2 extensions with MCP capability")
+
+		assertExtensionIds(t, extensions,
+			[]string{"test.mcp.extension", "kubernetes.deploy"},
+			[]string{"azure.containerapp", "foundry.multi.target"})
+	})
+
+	t.Run("find extension with containerapp provider", func(t *testing.T) {
+		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+			Provider: "containerapp",
+		})
+		require.NoError(t, err)
+		require.Len(t, extensions, 2, "Should find exactly 2 extensions with containerapp provider")
+
+		assertExtensionIds(t, extensions,
+			[]string{"azure.containerapp", "foundry.multi.target"},
+			[]string{"test.mcp.extension", "kubernetes.deploy"})
+	})
+
+	t.Run("find extension with kubernetes provider", func(t *testing.T) {
+		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+			Provider: "kubernetes",
+		})
+		require.NoError(t, err)
+		require.Len(t, extensions, 1, "Should find exactly 1 extension with kubernetes provider")
+
+		assertExtensionIds(t, extensions,
+			[]string{"kubernetes.deploy"},
+			[]string{"azure.containerapp", "test.mcp.extension", "foundry.multi.target"})
+	})
+
+	t.Run("find extension with foundry.hostedagent provider", func(t *testing.T) {
+		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+			Provider: "foundry.hostedagent",
+		})
+		require.NoError(t, err)
+		require.Len(t, extensions, 1, "Should find exactly 1 extension with foundry.hostedagent provider")
+
+		assertExtensionIds(t, extensions,
+			[]string{"foundry.multi.target"},
+			[]string{"azure.containerapp", "test.mcp.extension", "kubernetes.deploy"})
+	})
+
+	t.Run("find service target extension for containerapp", func(t *testing.T) {
+		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+			Capability: ServiceTargetProviderCapability,
+			Provider:   "containerapp",
+		})
+		require.NoError(t, err)
+		require.Len(t, extensions, 2, "Should find exactly 2 extensions with service-target capability AND containerapp provider")
+
+		assertExtensionIds(t, extensions,
+			[]string{"azure.containerapp", "foundry.multi.target"},
+			[]string{"test.mcp.extension", "kubernetes.deploy"})
+	})
+
+	t.Run("find service target extension for kubernetes", func(t *testing.T) {
+		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+			Capability: ServiceTargetProviderCapability,
+			Provider:   "kubernetes",
+		})
+		require.NoError(t, err)
+		require.Len(t, extensions, 1, "Should find exactly 1 extension with service-target capability AND kubernetes provider")
+
+		assertExtensionIds(t, extensions,
+			[]string{"kubernetes.deploy"},
+			[]string{"azure.containerapp", "test.mcp.extension", "foundry.multi.target"})
+	})
+
+	t.Run("case-insensitive provider matching", func(t *testing.T) {
+		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+			Provider: "KUBERNETES",
+		})
+		require.NoError(t, err)
+		require.Len(t, extensions, 1, "Should find extension with case-insensitive provider matching")
+
+		assertExtensionIds(t, extensions,
+			[]string{"kubernetes.deploy"},
+			[]string{"azure.containerapp", "test.mcp.extension", "foundry.multi.target"})
+	})
+
+	t.Run("filter with no matches", func(t *testing.T) {
+		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+			Provider: "nonexistent-provider",
+		})
+		require.NoError(t, err)
+		require.Len(t, extensions, 0, "Should find no extensions with nonexistent provider")
+	})
+
+	t.Run("combine capability and tag filters", func(t *testing.T) {
+		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+			Capability: ServiceTargetProviderCapability,
+			Tags:       []string{"multi"},
+		})
+		require.NoError(t, err)
+		require.Len(t, extensions, 2, "Should find extensions with both capability and tag filters")
+
+		assertExtensionIds(t, extensions,
+			[]string{"kubernetes.deploy", "foundry.multi.target"},
+			[]string{"azure.containerapp", "test.mcp.extension"})
+	})
+
+	t.Run("invalid capability and provider combination", func(t *testing.T) {
+		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
+			Capability: McpServerCapability,
+			Provider:   "containerapp",
+		})
+		require.NoError(t, err)
+		require.Len(t, extensions, 0, "Should find no extensions with MCP capability AND containerapp provider (invalid combination)")
+	})
 }

@@ -29,9 +29,6 @@ func NewDemoServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTar
 
 // Initialize initializes the service target provider with service configuration
 func (p *DemoServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
-	if serviceConfig != nil {
-		fmt.Printf("Demo extension initializing for service: %s\n", serviceConfig.GetName())
-	}
 	p.serviceConfig = serviceConfig
 	return nil
 }
@@ -68,7 +65,6 @@ func (p *DemoServiceTargetProvider) GetTargetResource(
 		ResourceType:      "Microsoft.Resources/resourceGroups",
 	}
 
-	fmt.Printf("Target resource: %s\n", targetResource.ResourceName)
 	return targetResource, nil
 }
 
@@ -83,7 +79,6 @@ func (p *DemoServiceTargetProvider) Package(
 	time.Sleep(500 * time.Millisecond)
 
 	packagePath := "demo/package:latest"
-	fmt.Printf("\nPackage created: %s\n", packagePath)
 
 	return &azdext.ServicePackageResult{
 		PackagePath: packagePath,
@@ -114,7 +109,6 @@ func (p *DemoServiceTargetProvider) Publish(
 	time.Sleep(500 * time.Millisecond)
 
 	remotePackage := fmt.Sprintf("registry.example.com/%s", packagePath)
-	fmt.Printf("\nPackage published: %s\n", remotePackage)
 
 	return &azdext.ServicePublishResult{
 		Details: map[string]string{

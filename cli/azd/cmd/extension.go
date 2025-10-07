@@ -335,6 +335,7 @@ type extensionShowItem struct {
 	AvailableVersions []string
 	Usage             string
 	Examples          []extensions.ExtensionExample
+	Providers         []extensions.Provider
 }
 
 func (t *extensionShowItem) Display(writer io.Writer) error {
@@ -361,6 +362,16 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 
 	for _, example := range t.Examples {
 		text = append(text, []string{"", "", example.Usage})
+	}
+
+	// Add providers information if available
+	if len(t.Providers) > 0 {
+		text = append(text, []string{"", "", ""})
+		text = append(text, []string{"Providers", ":", ""})
+		for _, provider := range t.Providers {
+			providerInfo := fmt.Sprintf("%s (%s) - %s", provider.Name, provider.Type, provider.Description)
+			text = append(text, []string{"", "", providerInfo})
+		}
 	}
 
 	for _, line := range text {
@@ -415,6 +426,7 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 		AvailableVersions: otherVersions,
 		Usage:             latestVersion.Usage,
 		Examples:          latestVersion.Examples,
+		Providers:         latestVersion.Providers,
 		InstalledVersion:  "N/A",
 	}
 

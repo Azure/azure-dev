@@ -111,7 +111,8 @@ func newInitCommand() *cobra.Command {
 	initCmd.Flags().StringSliceVar(
 		&flags.capabilities,
 		"capabilities", []string{},
-		"The list of capabilities for the extension (e.g., custom-commands,lifecycle-events).",
+		"The list of capabilities for the extension "+
+			"(e.g., custom-commands,lifecycle-events,mcp-server,service-target-provider).",
 	)
 
 	initCmd.Flags().StringVar(
@@ -349,6 +350,24 @@ func collectExtensionMetadataFromFlags(flags *initFlags) (*models.ExtensionSchem
 		)
 	}
 
+	// Validate capabilities
+	validCapabilities := map[string]bool{
+		"custom-commands":         true,
+		"lifecycle-events":        true,
+		"mcp-server":              true,
+		"service-target-provider": true,
+	}
+
+	for _, cap := range flags.capabilities {
+		if !validCapabilities[cap] {
+			return nil, fmt.Errorf(
+				"invalid capability '%s', supported capabilities are: "+
+					"custom-commands, lifecycle-events, mcp-server, service-target-provider",
+				cap,
+			)
+		}
+	}
+
 	// Convert capabilities from string slice to CapabilityType slice
 	capabilities := make([]extensions.CapabilityType, len(flags.capabilities))
 	for i, cap := range flags.capabilities {
@@ -472,6 +491,14 @@ func collectExtensionMetadata(ctx context.Context, azdClient *azdext.AzdClient) 
 				{
 					Label: "Lifecycle Events",
 					Value: "lifecycle-events",
+				},
+				{
+					Label: "MCP Server",
+					Value: "mcp-server",
+				},
+				{
+					Label: "Service Target Provider",
+					Value: "service-target-provider",
 				},
 			},
 			EnableFiltering: internal.ToPtr(false),

@@ -1,0 +1,15 @@
+capabilities:
+    - service-target-provider
+description: Extension with service target providers
+displayName: Test Extension
+id: test-extension
+providers:
+    - name: azure-container-apps
+      type: service-target
+      description: Deploys applications to Azure Container Apps
+    - name: kubernetes
+      type: service-target
+      description: Deploys applications to Kubernetes clusters
+usage: Testing provider marshaling
+version: 1.0.0
+

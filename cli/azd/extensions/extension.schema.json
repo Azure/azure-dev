@@ -50,6 +50,36 @@
         "id",
         "version"
       ]
+    },
+    "Provider": {
+      "type": "object",
+      "title": "Provider",
+      "description": "A provider registered by this extension.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "Provider Name",
+          "description": "Unique identifier for this provider within the extension."
+        },
+        "type": {
+          "type": "string",
+          "title": "Provider Type",
+          "description": "The type of provider.",
+          "enum": [
+            "service-target"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "title": "Description",
+          "description": "Description of what this provider does."
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "description"
+      ]
     }
   },
   "type": "object",
@@ -78,7 +108,7 @@
     "capabilities": {
       "type": "array",
       "title": "Capabilities",
-      "description": "List of capabilities provided by the extension. Supported values: custom-commands, lifecycle-events, mcp-server. Select one or more from the allowed list. Each value must be unique.",
+      "description": "List of capabilities provided by the extension. Supported values: custom-commands, lifecycle-events, mcp-server, service-target-provider. Select one or more from the allowed list. Each value must be unique.",
       "minItems": 1,
       "uniqueItems": true,
       "items": {
@@ -147,6 +177,14 @@
       "description": "List of other extensions that this extension depends on. These will be resolved and installed automatically.",
       "items": {
         "$ref": "#/definitions/ExtensionDependency"
+      }
+    },
+    "providers": {
+      "type": "array",
+      "title": "Providers",
+      "description": "List of providers that this extension registers. Each provider must have a corresponding capability declared.",
+      "items": {
+        "$ref": "#/definitions/Provider"
       }
     },
     "platforms": {

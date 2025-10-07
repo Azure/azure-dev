@@ -23,6 +23,7 @@ type Extension struct {
 	Usage        string           `json:"usage"`
 	Path         string           `json:"path"`
 	Source       string           `json:"source"`
+	Providers    []Provider       `json:"providers,omitempty"`
 	McpConfig    *McpConfig       `json:"mcp,omitempty"`
 
 	stdin  *bytes.Buffer

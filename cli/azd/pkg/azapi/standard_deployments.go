@@ -232,7 +232,7 @@ func (ds *StandardDeployments) DeployToSubscription(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err))
+		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err, "Deployment"))
 	}
 
 	return ds.convertFromArmDeployment(&deployResult.DeploymentExtended), nil
@@ -268,7 +268,7 @@ func (ds *StandardDeployments) DeployToResourceGroup(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err))
+		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err, "Deployment"))
 	}
 
 	return ds.convertFromArmDeployment(&deployResult.DeploymentExtended), nil
@@ -555,7 +555,7 @@ func (ds *StandardDeployments) WhatIfDeployToSubscription(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err))
+		return nil, fmt.Errorf("deploying to subscription: %w", createDeploymentError(err, "Deployment"))
 	}
 
 	return &deployResult.WhatIfOperationResult, nil
@@ -588,7 +588,7 @@ func (ds *StandardDeployments) WhatIfDeployToResourceGroup(
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err))
+		return nil, fmt.Errorf("deploying to resource group: %w", createDeploymentError(err, "Deployment"))
 	}
 
 	return &deployResult.WhatIfOperationResult, nil
@@ -709,7 +709,7 @@ func (ds *StandardDeployments) ValidatePreflightToSubscription(
 	}
 	_, err = validateResult.PollUntilDone(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("validating deployment to subscription:\n\nValidation Error Details:\n%w", err)
+		return fmt.Errorf("validating deployment to subscription: %w", createDeploymentError(err, "Validation"))
 	}
 
 	return nil
@@ -744,7 +744,7 @@ func (ds *StandardDeployments) ValidatePreflightToResourceGroup(
 	}
 	_, err = validateResult.PollUntilDone(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("validating deployment to resource group:\n\nValidation Error Details:\n%w", err)
+		return fmt.Errorf("validating deployment to resource group: %w", createDeploymentError(err, "Validation"))
 	}
 
 	return nil

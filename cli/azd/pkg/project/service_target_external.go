@@ -61,11 +61,20 @@ func (est *ExternalServiceTarget) Publish(
 	}
 
 	protoServicePackage := &azdext.ServicePackageResult{}
-	mapper.Convert(frameworkPackageOutput, protoServicePackage)
+	err = mapper.Convert(frameworkPackageOutput, protoServicePackage)
+	if err != nil {
+		return nil, err
+	}
 	protoTargetResource := &azdext.TargetResource{}
-	mapper.Convert(targetResource, protoTargetResource)
+	err = mapper.Convert(targetResource, protoTargetResource)
+	if err != nil {
+		return nil, err
+	}
 	protoPublishOptions := &azdext.PublishOptions{}
-	mapper.Convert(publishOptions, protoPublishOptions)
+	err = mapper.Convert(publishOptions, protoPublishOptions)
+	if err != nil {
+		return nil, err
+	}
 
 	req := &azdext.ServiceTargetMessage{
 		RequestId: uuid.NewString(),
@@ -182,7 +191,10 @@ func (est *ExternalServiceTarget) Package(
 	}
 
 	protoFrameworkPackage := &azdext.ServicePackageResult{}
-	mapper.Convert(frameworkPackageOutput, protoFrameworkPackage)
+	err = mapper.Convert(frameworkPackageOutput, protoFrameworkPackage)
+	if err != nil {
+		return nil, err
+	}
 
 	req := &azdext.ServiceTargetMessage{
 		RequestId: uuid.NewString(),
@@ -248,11 +260,20 @@ func (est *ExternalServiceTarget) Deploy(
 	}
 
 	protoServicePackage := &azdext.ServicePackageResult{}
-	mapper.Convert(servicePackage, protoServicePackage)
+	err = mapper.Convert(servicePackage, protoServicePackage)
+	if err != nil {
+		return nil, err
+	}
 	protoServicePublish := &azdext.ServicePublishResult{}
-	mapper.Convert(publishResult, protoServicePublish)
+	err = mapper.Convert(publishResult, protoServicePublish)
+	if err != nil {
+		return nil, err
+	}
 	protoTargetResource := &azdext.TargetResource{}
-	mapper.Convert(targetResource, protoTargetResource)
+	err = mapper.Convert(targetResource, protoTargetResource)
+	if err != nil {
+		return nil, err
+	}
 
 	// Create Deploy request message
 	requestId := uuid.NewString()
@@ -311,7 +332,10 @@ func (est *ExternalServiceTarget) Endpoints(
 	}
 
 	protoTargetResource := &azdext.TargetResource{}
-	mapper.Convert(targetResource, protoTargetResource)
+	err = mapper.Convert(targetResource, protoTargetResource)
+	if err != nil {
+		return nil, err
+	}
 	req := &azdext.ServiceTargetMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.ServiceTargetMessage_EndpointsRequest{
@@ -364,7 +388,10 @@ func (est *ExternalServiceTarget) ResolveTargetResource(
 			defaultError = err.Error()
 		} else if defaultTarget != nil {
 			protoDefaultTarget = &azdext.TargetResource{}
-			mapper.Convert(defaultTarget, protoDefaultTarget)
+			err = mapper.Convert(defaultTarget, protoDefaultTarget)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 

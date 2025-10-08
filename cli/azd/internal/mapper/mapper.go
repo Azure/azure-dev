@@ -5,7 +5,6 @@ package mapper
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -14,58 +13,6 @@ import (
 type Resolver func(key string) string
 
 type MapperFunc func(ctx context.Context, src any, dst any) error
-
-// NoMapperError is returned when no mapper is registered for the given types.
-// Callers can check for this error in multiple ways:
-//
-// 1. Using errors.Is() with the sentinel:
-//
-//	if errors.Is(err, ErrNoMapper) {
-//		// Handle missing mapper case
-//	}
-//
-// 2. Using errors.As() for detailed inspection:
-//
-//	var noMapperErr *NoMapperError
-//	if errors.As(err, &noMapperErr) {
-//		log.Printf("Missing mapper from %v to %v", noMapperErr.SrcType, noMapperErr.DstType)
-//	}
-//
-// 3. Using the provided helper:
-//
-//	if IsNoMapperError(err) {
-//		// Handle missing mapper case
-//	}
-type NoMapperError struct {
-	SrcType reflect.Type
-	DstType reflect.Type
-}
-
-// ErrNoMapper is a sentinel error for use with errors.Is()
-var ErrNoMapper = &NoMapperError{}
-
-// ErrDuplicateRegistration is returned when trying to register a mapper for types that already have a mapper
-var ErrDuplicateRegistration = errors.New("mapper already registered for these types")
-
-// ErrInvalidRegistration is returned when trying to register a nil function
-var ErrInvalidRegistration = errors.New("cannot register nil mapper function")
-
-func (e *NoMapperError) Error() string {
-	return fmt.Sprintf("no mapper registered from %v to %v", e.SrcType, e.DstType)
-}
-
-// Is implements error equality for errors.Is() support.
-// It returns true if the target error is also a NoMapperError.
-func (e *NoMapperError) Is(target error) bool {
-	_, ok := target.(*NoMapperError)
-	return ok
-}
-
-// IsNoMapperError returns true if the error is a NoMapperError
-func IsNoMapperError(err error) bool {
-	var noMapperErr *NoMapperError
-	return err != nil && errors.As(err, &noMapperErr)
-}
 
 type resolverKeyType struct{}
 
@@ -160,7 +107,15 @@ func (m *Mapper) Convert(src any, dst any) error {
 		}
 	}
 
-	return fn(m.ctx, src, dst)
+	err := fn(m.ctx, src, dst)
+	if err != nil {
+		return &ConversionError{
+			SrcType: srcType,
+			DstType: dstType,
+			Err:     err,
+		}
+	}
+	return nil
 }
 
 // GetResolver retrieves the resolver from context, returns nil if not present

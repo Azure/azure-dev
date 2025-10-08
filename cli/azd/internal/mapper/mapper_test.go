@@ -558,3 +558,217 @@ func TestWithResolverNilHandling(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "test", result) // No prefix since resolver is nil
 }
+
+func TestConversionError(t *testing.T) {
+	clearRegistry()
+
+	// Register a mapper that always fails
+	expectedErr := errors.New("conversion failed for testing")
+	MustRegister(func(ctx context.Context, src string) (int, error) {
+		return 0, expectedErr
+	})
+
+	var result int
+	err := Convert("test", &result)
+
+	// Verify we get a ConversionError
+	require.Error(t, err)
+	var convErr *ConversionError
+	require.True(t, errors.As(err, &convErr))
+
+	// Check the error message includes type information
+	assert.Contains(t, err.Error(), "conversion failed from string to int")
+	assert.Contains(t, err.Error(), "conversion failed for testing")
+
+	// Check the wrapped error
+	assert.Equal(t, expectedErr, convErr.Err)
+	assert.Equal(t, expectedErr, errors.Unwrap(err))
+
+	// Check type information
+	assert.Equal(t, reflect.TypeOf(""), convErr.SrcType)
+	assert.Equal(t, reflect.TypeOf(0), convErr.DstType)
+}
+
+func TestConversionErrorUnwrap(t *testing.T) {
+	clearRegistry()
+
+	// Register a mapper that returns a specific error
+	innerErr := fmt.Errorf("inner error: %w", errors.New("root cause"))
+	MustRegister(func(ctx context.Context, src string) (int, error) {
+		return 0, innerErr
+	})
+
+	var result int
+	err := Convert("test", &result)
+
+	// Verify error chain can be unwrapped
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, innerErr))
+
+	// Test that errors.Unwrap works
+	unwrapped := errors.Unwrap(err)
+	assert.Equal(t, innerErr, unwrapped)
+}
+
+func TestIsConversionError(t *testing.T) {
+	clearRegistry()
+
+	// Register a mapper that fails
+	MustRegister(func(ctx context.Context, src string) (int, error) {
+		return 0, errors.New("test error")
+	})
+
+	var result int
+	err := Convert("test", &result)
+
+	// Test the helper function
+	require.Error(t, err)
+	assert.True(t, IsConversionError(err))
+	assert.False(t, IsConversionError(nil))
+	assert.False(t, IsConversionError(errors.New("not a conversion error")))
+
+	// Test with NoMapperError (should not be a ConversionError)
+	clearRegistry()
+	err2 := Convert("unmapped", &result)
+	require.Error(t, err2)
+	assert.False(t, IsConversionError(err2))
+	assert.True(t, IsNoMapperError(err2))
+}
+
+func TestConversionErrorIs(t *testing.T) {
+	clearRegistry()
+
+	// Test errors.Is() with ConversionError
+	t.Run("ConversionError matches ConversionError", func(t *testing.T) {
+		MustRegister(func(ctx context.Context, src string) (int, error) {
+			return 0, errors.New("test error")
+		})
+
+		var result int
+		err := Convert("test", &result)
+		require.Error(t, err)
+
+		// Should match another ConversionError
+		var convErr *ConversionError
+		require.True(t, errors.As(err, &convErr))
+		assert.True(t, errors.Is(err, &ConversionError{}))
+	})
+
+	t.Run("ConversionError matches wrapped error", func(t *testing.T) {
+		clearRegistry()
+
+		// Create a specific error to wrap
+		specificErr := errors.New("specific validation error")
+		MustRegister(func(ctx context.Context, src string) (int, error) {
+			return 0, fmt.Errorf("validation failed: %w", specificErr)
+		})
+
+		var result int
+		err := Convert("test", &result)
+		require.Error(t, err)
+
+		// Should match the specific wrapped error
+		assert.True(t, errors.Is(err, specificErr))
+	})
+
+	t.Run("ConversionError chain with multiple wrapping", func(t *testing.T) {
+		clearRegistry()
+
+		// Create a chain of wrapped errors
+		rootErr := errors.New("root cause")
+		midErr := fmt.Errorf("middle layer: %w", rootErr)
+
+		MustRegister(func(ctx context.Context, src string) (int, error) {
+			return 0, fmt.Errorf("top layer: %w", midErr)
+		})
+
+		var result int
+		err := Convert("test", &result)
+		require.Error(t, err)
+
+		// Should match all errors in the chain
+		assert.True(t, errors.Is(err, rootErr))
+		assert.True(t, errors.Is(err, midErr))
+		assert.True(t, errors.Is(err, &ConversionError{}))
+	})
+
+	t.Run("ConversionError does not match unrelated errors", func(t *testing.T) {
+		clearRegistry()
+
+		MustRegister(func(ctx context.Context, src string) (int, error) {
+			return 0, errors.New("conversion error")
+		})
+
+		var result int
+		err := Convert("test", &result)
+		require.Error(t, err)
+
+		// Should not match unrelated errors
+		unrelatedErr := errors.New("unrelated error")
+		assert.False(t, errors.Is(err, unrelatedErr))
+		assert.False(t, errors.Is(err, &NoMapperError{}))
+	})
+
+	t.Run("ConversionError matches sentinel error", func(t *testing.T) {
+		clearRegistry()
+
+		MustRegister(func(ctx context.Context, src string) (int, error) {
+			return 0, errors.New("conversion error")
+		})
+
+		var result int
+		err := Convert("test", &result)
+		require.Error(t, err)
+
+		// Should match the sentinel error
+		assert.True(t, errors.Is(err, ErrConversionFailure))
+	})
+}
+
+func TestConversionErrorTypes(t *testing.T) {
+	clearRegistry()
+
+	// Test with different error types
+	testCases := []struct {
+		name        string
+		setupError  error
+		expectTypes []reflect.Type
+	}{
+		{
+			name:        "simple error",
+			setupError:  errors.New("simple"),
+			expectTypes: []reflect.Type{reflect.TypeOf(""), reflect.TypeOf(0)},
+		},
+		{
+			name:        "formatted error",
+			setupError:  fmt.Errorf("formatted: %s", "value"),
+			expectTypes: []reflect.Type{reflect.TypeOf(""), reflect.TypeOf(0)},
+		},
+		{
+			name:        "wrapped error",
+			setupError:  fmt.Errorf("wrapper: %w", errors.New("inner")),
+			expectTypes: []reflect.Type{reflect.TypeOf(""), reflect.TypeOf(0)},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			clearRegistry()
+
+			MustRegister(func(ctx context.Context, src string) (int, error) {
+				return 0, tc.setupError
+			})
+
+			var result int
+			err := Convert("test", &result)
+			require.Error(t, err)
+
+			var convErr *ConversionError
+			require.True(t, errors.As(err, &convErr))
+
+			assert.Equal(t, tc.expectTypes[0], convErr.SrcType)
+			assert.Equal(t, tc.expectTypes[1], convErr.DstType)
+			assert.Equal(t, tc.setupError, convErr.Err)
+		})
+	}
+}

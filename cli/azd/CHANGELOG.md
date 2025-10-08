@@ -10,7 +10,7 @@
 
 ### Other Changes
 
-## 1.20.0 (TBD)
+## 1.20.0 (2025-10-08)
 
 ### Features Added
 

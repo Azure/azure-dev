@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: minimal-declarative
+services:
+    learn-french-agent:
+        project: src/learn-french-agent
+        host: ai.endpoint
+        language: python
+infra:
+    path: infra
+    module: main
+resources:
+    ai-project:
+        type: ai.project
+        models:
+            - name: gpt-4o-mini
+              version: "2024-07-18"
+              format: OpenAI
+              sku:
+                name: Standard
+                usageName: OpenAI.Standard.gpt-4o-mini
+                capacity: 10

@@ -61,13 +61,20 @@ func AspireDashboardUrl(
 	alphaFeatureManager *alpha.FeatureManager) *AspireDashboard {
 
 	ContainersManagedEnvHost, exists := env.LookupEnv("AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN")
-	if !exists {
-		return nil
+	if exists {
+		return &AspireDashboard{
+			Link: fmt.Sprintf("https://aspire-dashboard.ext.%s", ContainersManagedEnvHost),
+		}
 	}
 
-	return &AspireDashboard{
-		Link: fmt.Sprintf("https://aspire-dashboard.ext.%s", ContainersManagedEnvHost),
+	AppServiceAspireDashboardUrl, exists := env.LookupEnv("AZURE_APP_SERVICE_DASHBOARD_URI")
+	if exists {
+		return &AspireDashboard{
+			Link: AppServiceAspireDashboardUrl,
+		}
 	}
+
+	return nil
 }
 
 func init() {

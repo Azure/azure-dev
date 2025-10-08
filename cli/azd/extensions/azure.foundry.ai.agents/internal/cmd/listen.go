@@ -28,7 +28,7 @@ func newListenCommand() *cobra.Command {
 
 			provider := project.NewAgentServiceTargetProvider(azdClient)
 			host := azdext.NewExtensionHost(azdClient).
-				WithServiceTarget("foundry.hostedagent", provider)
+				WithServiceTarget("foundry.containeragent", provider)
 
 			// Start listening for events
 			// This is a blocking call and will not return until the server connection is closed.

@@ -25,36 +25,22 @@
 - [[#5798]](https://github.com/Azure/azure-dev/pull/5798) Add elicitation support for azd agent.
 - [[#5771]](https://github.com/Azure/azure-dev/pull/5771) Add custom language support.
 - [[#5874]](https://github.com/Azure/azure-dev/pull/5874) Update `azd ext show` command UX with improved extension source display.
+- [[#5809]](https://github.com/Azure/azure-dev/pull/5809) Make hook `shell` attribute optional with OS-based defaults.
 
 ### Bugs Fixed
 
-- [[#5859]](https://github.com/Azure/azure-dev/pull/5859) Fix `publish` for custom service targets and add container related fields.
 - [[#5736]](https://github.com/Azure/azure-dev/pull/5736) Fix `azd x publish` to automatically set up local extension registry.
 - [[#5812]](https://github.com/Azure/azure-dev/pull/5812) Use the name of the compute env from Aspire Manifest when Aspire owns the env instead of the hardcoded string "resources".
-- [[#5809]](https://github.com/Azure/azure-dev/pull/5809) Make hook shell optional with OS-based defaults.
-- [[#5818]](https://github.com/Azure/azure-dev/pull/5818) Fix typo in check that prevented remapping to os.Stderr.
 - [[#5827]](https://github.com/Azure/azure-dev/pull/5827) Bypass agentic error handling flow in non-interactive scenarios.
-- [[#5808]](https://github.com/Azure/azure-dev/pull/5808) Improve UX for agentic azd init.
-- [[#5877]](https://github.com/Azure/azure-dev/pull/5877) Fix azd init agent UX to show "Next step..." only in agent mode.
-- [[#5879]](https://github.com/Azure/azure-dev/pull/5879) Set usage attribute for agent tracing.
-- [[#5862]](https://github.com/Azure/azure-dev/pull/5862) Fix role assignment scope to be scoped to the resource group.
-- [[#5854]](https://github.com/Azure/azure-dev/pull/5854) Fix auto install using find.
-- [[#5804]](https://github.com/Azure/azure-dev/pull/5804) Remove cgo requirement for osversion on Darwin.
+- [[#5808]](https://github.com/Azure/azure-dev/pull/5808), [[#5877]](https://github.com/Azure/azure-dev/pull/5877) Improve UX for agentic azd init.
 - [[#5870]](https://github.com/Azure/azure-dev/pull/5870) Update preflight error handling for standard deployment.
 
 ### Other Changes
 
 - [[#5869]](https://github.com/Azure/azure-dev/pull/5869) Update Bicep from 0.38.3 to 0.38.33.
 - [[#5867]](https://github.com/Azure/azure-dev/pull/5867) Make language optional in the schema.
-- [[#5860]](https://github.com/Azure/azure-dev/pull/5860) Allow for passing in a scope when setting role assignments.
-- [[#5802]](https://github.com/Azure/azure-dev/pull/5802) Bump dependencies to latest.
-- [[#5800]](https://github.com/Azure/azure-dev/pull/5800) Bump version to mitigate CVE-2025-41249.
 - [[#5770]](https://github.com/Azure/azure-dev/pull/5770) Update gh CLI to latest 2.80.
-- [[#5760]](https://github.com/Azure/azure-dev/pull/5760) Update `microsoft.azd.extensions` in registry to 0.5.1.
 - [[#5823]](https://github.com/Azure/azure-dev/pull/5823) Differentiate Azure Managed Redis from Redis Enterprise in provisioning progress.
-- [[#5822]](https://github.com/Azure/azure-dev/pull/5822) Update Bicep CLI.
-- [[#5777]](https://github.com/Azure/azure-dev/pull/5777) Remove feature flag block for MCP server.
-- [[#5773]](https://github.com/Azure/azure-dev/pull/5773) Add guiding principles for extending azd.
 
 ## 1.19.0 (2025-09-12)
 

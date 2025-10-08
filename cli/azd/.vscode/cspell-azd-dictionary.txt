@@ -78,6 +78,7 @@ cmdsubst
 cognitiveservices
 conditionalize
 consolesize
+containeragent
 containerapp
 containerapps
 containerd

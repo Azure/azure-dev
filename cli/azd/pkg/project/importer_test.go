@@ -487,3 +487,264 @@ var aspireAppHostSniffResult string = `{
     ]
   }
 }`
+
+func TestImportManagerServiceStableWithDependencyOrdering(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	mockEnv := &mockenv.MockEnvManager{}
+	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+	manager := NewImportManager(&DotNetImporter{
+		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
+		console:   mockContext.Console,
+		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+			return environment.NewWithValues("env", map[string]string{}), nil
+		}),
+		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
+			return mockEnv, nil
+		}),
+	})
+
+	tests := []struct {
+		name        string
+		services    map[string]*ServiceConfig
+		resources   map[string]*ResourceConfig
+		expected    []string
+		shouldError bool
+		errorMsg    string
+	}{
+		{
+			name: "no dependencies - alphabetical order maintained",
+			services: map[string]*ServiceConfig{
+				"zebra": {Name: "zebra", Uses: []string{}},
+				"alpha": {Name: "alpha", Uses: []string{}},
+				"beta":  {Name: "beta", Uses: []string{}},
+			},
+			expected: []string{"alpha", "beta", "zebra"}, // Alphabetical order when no dependencies
+		},
+		{
+			name: "simple dependency chain",
+			services: map[string]*ServiceConfig{
+				"frontend": {Name: "frontend", Uses: []string{"backend"}},
+				"backend":  {Name: "backend", Uses: []string{"database"}},
+				"database": {Name: "database", Uses: []string{}},
+			},
+			expected: []string{"database", "backend", "frontend"},
+		},
+		{
+			name: "complex dependencies",
+			services: map[string]*ServiceConfig{
+				"api":      {Name: "api", Uses: []string{"auth", "storage"}},
+				"web":      {Name: "web", Uses: []string{"api"}},
+				"auth":     {Name: "auth", Uses: []string{"database"}},
+				"storage":  {Name: "storage", Uses: []string{"database"}},
+				"database": {Name: "database", Uses: []string{}},
+			},
+			expected: []string{"database", "auth", "storage", "api", "web"},
+		},
+		{
+			name: "service depending on resource",
+			services: map[string]*ServiceConfig{
+				"api": {Name: "api", Uses: []string{"database"}},
+				"web": {Name: "web", Uses: []string{"api"}},
+			},
+			resources: map[string]*ResourceConfig{
+				"database": {Name: "database", Type: "db.postgres"},
+			},
+			expected: []string{"api", "web"}, // Resource dependencies don't affect service ordering
+		},
+		{
+			name: "circular dependency",
+			services: map[string]*ServiceConfig{
+				"service1": {Name: "service1", Uses: []string{"service2"}},
+				"service2": {Name: "service2", Uses: []string{"service1"}},
+			},
+			shouldError: true,
+			errorMsg:    "circular dependency detected",
+		},
+		{
+			name: "self dependency",
+			services: map[string]*ServiceConfig{
+				"api": {Name: "api", Uses: []string{"api"}},
+			},
+			shouldError: true,
+			errorMsg:    "circular dependency detected",
+		},
+		{
+			name: "missing dependency",
+			services: map[string]*ServiceConfig{
+				"api": {Name: "api", Uses: []string{"nonexistent"}},
+			},
+			shouldError: true,
+			errorMsg:    "does not exist as a service or resource",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectConfig := &ProjectConfig{
+				Services:  tt.services,
+				Resources: tt.resources,
+			}
+
+			result, err := manager.ServiceStable(*mockContext.Context, projectConfig)
+
+			if tt.shouldError {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				require.NoError(t, err)
+				require.Len(t, result, len(tt.expected))
+
+				// Check exact order for all test cases
+				for i, expected := range tt.expected {
+					assert.Equal(t, expected, result[i].Name,
+						"Service at position %d should be %s, got %s", i, expected, result[i].Name)
+				}
+			}
+		})
+	}
+}
+
+func TestImportManagerServiceStableValidation(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	mockEnv := &mockenv.MockEnvManager{}
+
+	manager := NewImportManager(&DotNetImporter{
+		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
+		console:   mockContext.Console,
+		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+			return environment.NewWithValues("env", map[string]string{}), nil
+		}),
+		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
+			return mockEnv, nil
+		}),
+	})
+
+	tests := []struct {
+		name      string
+		services  map[string]*ServiceConfig
+		resources map[string]*ResourceConfig
+		expectErr bool
+		errorMsg  string
+	}{
+		{
+			name: "valid service dependencies",
+			services: map[string]*ServiceConfig{
+				"frontend": {Name: "frontend", Uses: []string{"backend"}},
+				"backend":  {Name: "backend", Uses: []string{}},
+			},
+			expectErr: false,
+		},
+		{
+			name: "valid resource dependencies",
+			services: map[string]*ServiceConfig{
+				"api": {Name: "api", Uses: []string{"database"}},
+			},
+			resources: map[string]*ResourceConfig{
+				"database": {Name: "database", Type: "db.postgres"},
+			},
+			expectErr: false,
+		},
+		{
+			name: "invalid dependency",
+			services: map[string]*ServiceConfig{
+				"api": {Name: "api", Uses: []string{"nonexistent"}},
+			},
+			expectErr: true,
+			errorMsg:  "does not exist as a service or resource",
+		},
+		{
+			name: "mixed valid and invalid dependencies",
+			services: map[string]*ServiceConfig{
+				"api":      {Name: "api", Uses: []string{"database", "nonexistent"}},
+				"frontend": {Name: "frontend", Uses: []string{"api"}},
+			},
+			resources: map[string]*ResourceConfig{
+				"database": {Name: "database", Type: "db.postgres"},
+			},
+			expectErr: true,
+			errorMsg:  "does not exist as a service or resource",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectConfig := &ProjectConfig{
+				Services:  tt.services,
+				Resources: tt.resources,
+			}
+
+			_, err := manager.ServiceStable(*mockContext.Context, projectConfig)
+
+			if tt.expectErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestImportManagerServiceStableWithDependencies(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	mockEnv := &mockenv.MockEnvManager{}
+	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+	manager := NewImportManager(&DotNetImporter{
+		dotnetCli: dotnet.NewCli(mockContext.CommandRunner),
+		console:   mockContext.Console,
+		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
+			return environment.NewWithValues("env", map[string]string{}), nil
+		}),
+		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
+			return mockEnv, nil
+		}),
+	})
+
+	// Test that ServiceStable returns services in dependency order
+	projectConfig := &ProjectConfig{
+		Services: map[string]*ServiceConfig{
+			"frontend": {
+				Name: "frontend",
+				Uses: []string{"backend", "auth"},
+			},
+			"backend": {
+				Name: "backend",
+				Uses: []string{"database"},
+			},
+			"auth": {
+				Name: "auth",
+				Uses: []string{"database"},
+			},
+			"database": {
+				Name: "database",
+				Uses: []string{},
+			},
+		},
+		Resources: map[string]*ResourceConfig{
+			"storage": {Name: "storage", Type: "storage"},
+		},
+	}
+
+	services, err := manager.ServiceStable(*mockContext.Context, projectConfig)
+	require.NoError(t, err)
+	require.Len(t, services, 4)
+
+	// Verify dependency order: database should come first, frontend should come last
+	serviceNames := make([]string, len(services))
+	for i, svc := range services {
+		serviceNames[i] = svc.Name
+	}
+
+	// Check that dependencies come before dependents
+	databaseIdx := slices.Index(serviceNames, "database")
+	backendIdx := slices.Index(serviceNames, "backend")
+	authIdx := slices.Index(serviceNames, "auth")
+	frontendIdx := slices.Index(serviceNames, "frontend")
+
+	assert.True(t, databaseIdx < backendIdx, "database should come before backend")
+	assert.True(t, databaseIdx < authIdx, "database should come before auth")
+	assert.True(t, backendIdx < frontendIdx, "backend should come before frontend")
+	assert.True(t, authIdx < frontendIdx, "auth should come before frontend")
+}

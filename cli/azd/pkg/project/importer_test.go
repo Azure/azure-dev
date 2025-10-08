@@ -562,6 +562,14 @@ func TestImportManagerServiceStableWithDependencyOrdering(t *testing.T) {
 			errorMsg:    "circular dependency detected",
 		},
 		{
+			name: "self dependency",
+			services: map[string]*ServiceConfig{
+				"api": {Name: "api", Uses: []string{"api"}},
+			},
+			shouldError: true,
+			errorMsg:    "circular dependency detected",
+		},
+		{
 			name: "missing dependency",
 			services: map[string]*ServiceConfig{
 				"api": {Name: "api", Uses: []string{"nonexistent"}},

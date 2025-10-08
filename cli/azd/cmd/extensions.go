@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
@@ -24,7 +23,6 @@ import (
 
 // bindExtension binds the extension to the root command
 func bindExtension(
-	serviceLocator ioc.ServiceLocator,
 	root *actions.ActionDescriptor,
 	extension *extensions.Extension,
 ) error {
@@ -127,7 +125,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("extension id not found")
 	}
 
-	extension, err := a.extensionManager.GetInstalled(extensions.LookupOptions{
+	extension, err := a.extensionManager.GetInstalled(extensions.FilterOptions{
 		Id: extensionId,
 	})
 	if err != nil {

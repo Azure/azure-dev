@@ -62,7 +62,9 @@ func main() {
 
 	rootContainer := ioc.NewNestedContainer(nil)
 	ioc.RegisterInstance(rootContainer, ctx)
-	cmdErr := cmd.NewRootCmd(false, nil, rootContainer).ExecuteContext(ctx)
+
+	// Execute command with auto-installation support for extensions
+	cmdErr := cmd.ExecuteWithAutoInstall(ctx, rootContainer)
 
 	oneauth.Shutdown()
 
@@ -320,7 +322,7 @@ func isDebugEnabled() bool {
 	// running). Setting UnknownFlags instructs `flags.Parse` to continue parsing the command line
 	// even if a flag is not in the flag set (instead of just returning an error saying the flag was not
 	// found).
-	flags.ParseErrorsWhitelist.UnknownFlags = true
+	flags.ParseErrorsAllowlist.UnknownFlags = true
 	flags.BoolVar(&debug, "debug", false, "")
 
 	// if flag `-h` of `--help` is within the command, the usage is automatically shown.
@@ -341,7 +343,7 @@ func isJsonOutput() bool {
 	// running). Setting UnknownFlags instructs `flags.Parse` to continue parsing the command line
 	// even if a flag is not in the flag set (instead of just returning an error saying the flag was not
 	// found).
-	flags.ParseErrorsWhitelist.UnknownFlags = true
+	flags.ParseErrorsAllowlist.UnknownFlags = true
 	flags.StringVarP(&output, "output", "o", "", "")
 
 	// if flag `-h` of `--help` is within the command, the usage is automatically shown.

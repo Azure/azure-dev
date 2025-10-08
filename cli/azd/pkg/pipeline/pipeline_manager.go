@@ -539,6 +539,7 @@ func (pm *PipelineManager) Configure(
 				Id:          msIdentity.Properties.PrincipalID,
 				DisplayName: *msIdentity.Name,
 			},
+			nil,
 		)
 		pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 		if err != nil {

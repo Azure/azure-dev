@@ -64,11 +64,23 @@ func (st *appServiceTarget) Package(
 	}, nil
 }
 
+func (st *appServiceTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+	publishOptions *PublishOptions,
+) (*ServicePublishResult, error) {
+	return &ServicePublishResult{}, nil
+}
+
 // Deploys the prepared zip archive using Zip deploy to the Azure App Service resource
 func (st *appServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
+	servicePublishResult *ServicePublishResult,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {

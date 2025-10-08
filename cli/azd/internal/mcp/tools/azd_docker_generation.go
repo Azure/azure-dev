@@ -15,7 +15,7 @@ import (
 func NewAzdDockerGenerationTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
-			"azd_docker_generation",
+			"docker_generation",
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(false),

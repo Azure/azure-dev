@@ -36,7 +36,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/fatih/color"
 	"github.com/joho/godotenv"
@@ -502,7 +501,7 @@ Do not stop until all tasks are complete and fully resolved.
 				"Keep it concise and focus on high-level accomplishments, not implementation details.",
 		}, "\n"))
 
-		agentOutput, err := i.sendMessageWithRetry(ctx, azdAgent, fullTaskInput)
+		agentOutput, err := azdAgent.SendMessageWithRetry(ctx, fullTaskInput)
 		if err != nil {
 			if agentOutput != "" {
 				i.console.Message(ctx, output.WithMarkdown(agentOutput))
@@ -525,50 +524,6 @@ Do not stop until all tasks are complete and fully resolved.
 	}
 
 	return nil
-}
-
-// sendMessageWithRetry sends a message to the agent with retry logic for error recovery
-func (i *initAction) sendMessageWithRetry(ctx context.Context, azdAgent agent.Agent, input string) (string, error) {
-	for {
-		agentOutput, err := azdAgent.SendMessage(ctx, input)
-		if err != nil {
-			if agentOutput != "" {
-				i.console.Message(ctx, output.WithMarkdown(agentOutput))
-			}
-
-			// Display error and ask if user wants to retry
-			if shouldRetry := i.handleErrorWithRetryPrompt(ctx, err); shouldRetry {
-				continue // Retry the same operation
-			}
-
-			return "", err // User chose not to retry, return original error
-		}
-
-		return agentOutput, nil
-	}
-}
-
-// handleErrorWithRetryPrompt displays an error and prompts user for retry
-func (i *initAction) handleErrorWithRetryPrompt(ctx context.Context, err error) bool {
-	// Display error in error format
-	i.console.Message(ctx, "")
-	i.console.Message(ctx, output.WithErrorFormat("Error occurred: %s", err.Error()))
-	i.console.Message(ctx, "")
-
-	// Prompt user if they want to try again
-	retryPrompt := uxlib.NewConfirm(&uxlib.ConfirmOptions{
-		Message:      "Oops, my reply didn’t quite fit what was needed. Want me to try again?",
-		DefaultValue: uxlib.Ptr(true),
-		HelpMessage:  "Choose 'yes' to retry the current step, or 'no' to stop the initialization.",
-	})
-
-	shouldRetry, promptErr := retryPrompt.Ask(ctx)
-	if promptErr != nil {
-		// If we can't prompt, don't retry
-		return false
-	}
-
-	return shouldRetry != nil && *shouldRetry
 }
 
 // collectAndApplyFeedback prompts for user feedback and applies it using the agent in a loop
@@ -604,7 +559,7 @@ func (i *initAction) postCompletionSummary(
 	summaryPrompt := fmt.Sprintf(`Based on the following summaries of the azd init process, please provide
 	a comprehensive overall summary of what was accomplished in bullet point format:\n%s`, combinedSummaries)
 
-	agentOutput, err := i.sendMessageWithRetry(ctx, azdAgent, summaryPrompt)
+	agentOutput, err := azdAgent.SendMessageWithRetry(ctx, summaryPrompt)
 	if err != nil {
 		if agentOutput != "" {
 			i.console.Message(ctx, output.WithMarkdown(agentOutput))
@@ -781,10 +736,6 @@ func (i *initAction) initializeEnv(
 
 // initializeExtensions installs extensions specified in the project config
 func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
-	if !i.featuresManager.IsEnabled(extensions.FeatureExtensions) {
-		return nil
-	}
-
 	projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
 	if err != nil {
 		return fmt.Errorf("loading project config: %w", err)
@@ -817,10 +768,30 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 				installConstraint = *versionConstraint
 			}
 
+			// Find the extension first
 			filterOptions := &extensions.FilterOptions{
-				Version: installConstraint,
+				Id: extensionId,
 			}
-			extensionVersion, err := i.extensionsManager.Install(ctx, extensionId, filterOptions)
+
+			extensionMatches, err := i.extensionsManager.FindExtensions(ctx, filterOptions)
+			if err != nil {
+				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return fmt.Errorf("finding extension %s: %w", extensionId, err)
+			}
+
+			if len(extensionMatches) == 0 {
+				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return fmt.Errorf("extension %s not found", extensionId)
+			}
+
+			if len(extensionMatches) > 1 {
+				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return fmt.Errorf("extension %s found in multiple sources, specify exact source", extensionId)
+			}
+
+			extensionMetadata := extensionMatches[0]
+
+			extensionVersion, err := i.extensionsManager.Install(ctx, extensionMetadata, installConstraint)
 			if err != nil {
 				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return fmt.Errorf("installing extension %s: %w", extensionId, err)

@@ -400,6 +400,7 @@ func addOrUpdateExtension(
 				Usage:        extensionMetadata.Usage,
 				Examples:     extensionMetadata.Examples,
 				Dependencies: extensionMetadata.Dependencies,
+				Providers:    extensionMetadata.Providers,
 				Artifacts:    artifacts,
 			}
 
@@ -415,6 +416,7 @@ func addOrUpdateExtension(
 		Usage:        extensionMetadata.Usage,
 		Examples:     extensionMetadata.Examples,
 		Dependencies: extensionMetadata.Dependencies,
+		Providers:    extensionMetadata.Providers,
 		Artifacts:    artifacts,
 	})
 }

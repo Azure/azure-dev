@@ -46,14 +46,18 @@ steps:
 
   - pwsh: |
       $version = "${{ parameters.TagVersion }}"
-      $prereleaseFlag = if ($version -match "-(alpha|beta|preview)") { "--prerelease" } else { "" }
+      $createArgs = @(
+        "$(GH_RELEASE_TAG)",
+        "--title", "$(GH_RELEASE_TAG)",
+        "--notes-file", "changelog/CHANGELOG.md",
+        "--repo", "$(Build.Repository.Name)"
+      )
 
-      gh release create `
-        "$(GH_RELEASE_TAG)" `
-        --title "$(GH_RELEASE_TAG)" `
-        --notes-file changelog/CHANGELOG.md `
-        --repo $(Build.Repository.Name) `
-        $prereleaseFlag
+      if ($version -match "-(alpha|beta|preview)") {
+        $createArgs += "--prerelease"
+      }
+
+      gh release create @createArgs
 
       gh release upload $(GH_RELEASE_TAG) release/* --repo $(Build.Repository.Name)
     displayName: Create GitHub Release and upload artifacts

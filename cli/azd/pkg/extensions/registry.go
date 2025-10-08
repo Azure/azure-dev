@@ -11,6 +11,16 @@ type ExtensionExample struct {
 	Usage       string `json:"usage"`
 }
 
+// Provider represents a provider registered by an extension
+type Provider struct {
+	// Name is the unique identifier for this provider within the extension
+	Name string `json:"name"`
+	// Type is the type of provider
+	Type ProviderType `json:"type"`
+	// Description is the description of what this provider does
+	Description string `json:"description"`
+}
+
 // Registry represents the registry.json structure
 type Registry struct {
 	// Extensions is a list of extensions in the registry
@@ -30,6 +40,13 @@ const (
 	ServiceTargetProviderCapability CapabilityType = "service-target-provider"
 	// Framework service providers enable extensions to provide custom language frameworks and build systems
 	FrameworkServiceProviderCapability CapabilityType = "framework-service-provider"
+)
+
+type ProviderType string
+
+const (
+	// Service target provider type for custom deployment targets
+	ServiceTargetProviderType ProviderType = "service-target"
 )
 
 // Extension represents an extension in the registry
@@ -76,10 +93,12 @@ type McpServerConfig struct {
 
 // ExtensionVersion represents a version of an extension
 type ExtensionVersion struct {
-	// Capabilities is a list of capabilities that the extension provides
-	Capabilities []CapabilityType `json:"capabilities,omitempty"`
 	// Version is the version of the extension
 	Version string `json:"version"`
+	// Capabilities is a list of capabilities that the extension provides
+	Capabilities []CapabilityType `json:"capabilities,omitempty"`
+	// Providers is a list of providers that this extension version registers
+	Providers []Provider `json:"providers,omitempty"`
 	// Usage is show how to use the extension
 	Usage string `json:"usage"`
 	// Examples is a list of examples for the extension

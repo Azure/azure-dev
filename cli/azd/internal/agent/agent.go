@@ -18,15 +18,15 @@ import (
 // agentBase represents an AI agent that can execute tools and interact with language models.
 // It manages multiple models for different purposes and maintains an executor for tool execution.
 type agentBase struct {
-	debug                bool
-	fileWatchingDisabled bool
-	defaultModel         llms.Model
-	executor             *agents.Executor
-	tools                []common.AnnotatedTool
-	callbacksHandler     callbacks.Handler
-	thoughtChan          chan logging.Thought
-	cleanupFunc          AgentCleanup
-	maxIterations        int
+	debug               bool
+	watchForFileChanges bool
+	defaultModel        llms.Model
+	executor            *agents.Executor
+	tools               []common.AnnotatedTool
+	callbacksHandler    callbacks.Handler
+	thoughtChan         chan logging.Thought
+	cleanupFunc         AgentCleanup
+	maxIterations       int
 }
 
 // AgentCleanup is a function that performs cleanup tasks for an agent.
@@ -36,6 +36,10 @@ type AgentCleanup func() error
 type Agent interface {
 	// SendMessage sends a message to the agent and returns the response
 	SendMessage(ctx context.Context, args ...string) (string, error)
+
+	// SendMessageWithRetry sends a message to the agent but prompts the user to retry
+	// when the agent replies with an invalid response format (Not ReAct)
+	SendMessageWithRetry(ctx context.Context, args ...string) (string, error)
 
 	// Stop terminates the agent and performs any necessary cleanup
 	Stop() error
@@ -60,10 +64,10 @@ func WithDebug(debug bool) AgentCreateOption {
 	}
 }
 
-// DisableFileWatching returns an option that enables or disables file watching for the agent
-func DisableFileWatching(fileWatchingDisable bool) AgentCreateOption {
+// WithFileWatching returns an option that enables or disables file watching for the agent
+func WithFileWatching(enabled bool) AgentCreateOption {
 	return func(agent *agentBase) {
-		agent.fileWatchingDisabled = fileWatchingDisable
+		agent.watchForFileChanges = enabled
 	}
 }
 

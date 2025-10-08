@@ -5,9 +5,9 @@ package grpcserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -67,19 +67,16 @@ func (c *composeService) AddResource(
 		projectConfig.Resources = make(map[string]*project.ResourceConfig)
 	}
 
-	resourceProps, err := createResourceProps(req.Resource.Type, req.Resource.Config)
+	// Convert proto resource to ResourceConfig using mapper
+	// The mapper now handles creating properly typed Props based on resource type
+	var resourceConfig *project.ResourceConfig
+	err = mapper.Convert(req.Resource, &resourceConfig)
 	if err != nil {
-		return nil, fmt.Errorf("creating resource props: %w", err)
+		return nil, fmt.Errorf("converting resource from proto: %w", err)
 	}
 
 	resourceId := req.Resource.ResourceId
-	projectConfig.Resources[req.Resource.Name] = &project.ResourceConfig{
-		Name:       req.Resource.Name,
-		Type:       project.ResourceType(req.Resource.Type),
-		Props:      resourceProps,
-		Uses:       req.Resource.Uses,
-		ResourceId: resourceId,
-	}
+	projectConfig.Resources[req.Resource.Name] = resourceConfig
 
 	if resourceId != "" {
 		// add existing:true to azure.yaml
@@ -125,16 +122,10 @@ func (c *composeService) GetResource(
 		return nil, status.Errorf(codes.NotFound, "resource %s not found", req.Name)
 	}
 
-	resourceConfigBytes, err := json.Marshal(existingResource.Props)
+	var composedResource *azdext.ComposedResource
+	err = mapper.Convert(existingResource, &composedResource)
 	if err != nil {
-		return nil, fmt.Errorf("marshaling resource config: %w", err)
-	}
-
-	composedResource := &azdext.ComposedResource{
-		Name:   existingResource.Name,
-		Type:   string(existingResource.Type),
-		Config: resourceConfigBytes,
-		Uses:   existingResource.Uses,
+		return nil, fmt.Errorf("converting resource to proto: %w", err)
 	}
 
 	return &azdext.GetResourceResponse{
@@ -158,11 +149,10 @@ func (c *composeService) ListResourceTypes(
 	resourceType := project.AllResourceTypes()
 	var composedResourceTypes []*azdext.ComposedResourceType
 	for _, resource := range resourceType {
-		composedResourceType := &azdext.ComposedResourceType{
-			Name:        string(resource),
-			DisplayName: project.ResourceType(resource).String(),
-			Type:        project.ResourceType(resource).AzureResourceType(),
-			Kinds:       addListResourcesKind(resource),
+		var composedResourceType *azdext.ComposedResourceType
+		err := mapper.Convert(resource, &composedResourceType)
+		if err != nil {
+			return nil, fmt.Errorf("converting resource type to proto: %w", err)
 		}
 		composedResourceTypes = append(composedResourceTypes, composedResourceType)
 	}
@@ -190,16 +180,10 @@ func (c *composeService) ListResources(
 	composedResources := make([]*azdext.ComposedResource, 0, len(existingResources))
 
 	for _, resource := range existingResources {
-		resourceConfigBytes, err := json.Marshal(resource.Props)
+		var composedResource *azdext.ComposedResource
+		err := mapper.Convert(resource, &composedResource)
 		if err != nil {
-			return nil, fmt.Errorf("marshaling resource config: %w", err)
-		}
-		composedResource := &azdext.ComposedResource{
-			Name:       resource.Name,
-			Type:       string(resource.Type),
-			Config:     resourceConfigBytes,
-			Uses:       resource.Uses,
-			ResourceId: resource.ResourceId,
+			return nil, fmt.Errorf("converting resource to proto: %w", err)
 		}
 		composedResources = append(composedResources, composedResource)
 	}
@@ -207,99 +191,4 @@ func (c *composeService) ListResources(
 	return &azdext.ListResourcesResponse{
 		Resources: composedResources,
 	}, nil
-}
-
-// createResourceProps unmarshals the resource configuration bytes into the appropriate struct based on the resource type.
-// For the short term this marshalling of resource properties needs to stay in sync with `pkg\project\resources.go`
-// In the future we will converge this into a common component.
-func createResourceProps(resourceType string, config []byte) (any, error) {
-	switch project.ResourceType(resourceType) {
-	case project.ResourceTypeHostAppService:
-		props := project.AppServiceProps{}
-		if len(config) == 0 {
-			return props, nil
-		}
-		if err := json.Unmarshal(config, &props); err != nil {
-			return nil, err
-		}
-		return props, nil
-	case project.ResourceTypeHostContainerApp:
-		props := project.ContainerAppProps{}
-		if len(config) == 0 {
-			return props, nil
-		}
-		if err := json.Unmarshal(config, &props); err != nil {
-			return nil, err
-		}
-		return props, nil
-	case project.ResourceTypeDbCosmos:
-		props := project.CosmosDBProps{}
-		if len(config) == 0 {
-			return props, nil
-		}
-		if err := json.Unmarshal(config, &props); err != nil {
-			return nil, err
-		}
-		return props, nil
-	case project.ResourceTypeStorage:
-		props := project.StorageProps{}
-		if len(config) == 0 {
-			return props, nil
-		}
-		if err := json.Unmarshal(config, &props); err != nil {
-			return nil, err
-		}
-		return props, nil
-	case project.ResourceTypeAiProject:
-		props := project.AiFoundryModelProps{}
-		if len(config) == 0 {
-			return props, nil
-		}
-		if err := json.Unmarshal(config, &props); err != nil {
-			return nil, err
-		}
-		return props, nil
-	case project.ResourceTypeDbMongo:
-		props := project.CosmosDBProps{}
-		if len(config) == 0 {
-			return props, nil
-		}
-		if err := json.Unmarshal(config, &props); err != nil {
-			return nil, err
-		}
-		return props, nil
-	case project.ResourceTypeMessagingEventHubs:
-		props := project.EventHubsProps{}
-		if len(config) == 0 {
-			return props, nil
-		}
-		if err := json.Unmarshal(config, &props); err != nil {
-			return nil, err
-		}
-		return props, nil
-	case project.ResourceTypeMessagingServiceBus:
-		props := project.ServiceBusProps{}
-		if len(config) == 0 {
-			return props, nil
-		}
-		if err := json.Unmarshal(config, &props); err != nil {
-			return nil, err
-		}
-		return props, nil
-	default:
-		return nil, nil
-	}
-}
-
-func addListResourcesKind(resourceType project.ResourceType) []string {
-	switch resourceType {
-	case project.ResourceTypeDbCosmos:
-		return []string{"GlobalDocumentDB"}
-	case project.ResourceTypeDbMongo:
-		return []string{"MongoDB"}
-	case project.ResourceTypeHostAppService:
-		return []string{"app", "app,linux"}
-	default:
-		return []string{}
-	}
 }

@@ -5,7 +5,9 @@ package grpcserver
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -28,44 +30,6 @@ func NewProjectService(
 		lazyAzdContext: lazyAzdContext,
 		lazyEnvManager: lazyEnvManager,
 	}
-}
-
-// toDockerOptions converts a project.DockerProjectOptions to azdext.DockerProjectOptions.
-// Returns nil if no docker options are configured.
-func toDockerOptions(docker *project.DockerProjectOptions, envKeyMapper func(string) string) *azdext.DockerProjectOptions {
-	// Check if any docker configuration is present
-	if docker.Path == "" &&
-		docker.Context == "" &&
-		docker.Platform == "" &&
-		docker.Target == "" &&
-		docker.Registry.Empty() &&
-		docker.Image.Empty() &&
-		docker.Tag.Empty() &&
-		!docker.RemoteBuild &&
-		len(docker.BuildArgs) == 0 {
-		return nil
-	}
-
-	options := &azdext.DockerProjectOptions{
-		Path:        docker.Path,
-		Context:     docker.Context,
-		Platform:    docker.Platform,
-		Target:      docker.Target,
-		Registry:    docker.Registry.MustEnvsubst(envKeyMapper),
-		Image:       docker.Image.MustEnvsubst(envKeyMapper),
-		Tag:         docker.Tag.MustEnvsubst(envKeyMapper),
-		RemoteBuild: docker.RemoteBuild,
-	}
-
-	// Convert build args with env substitution
-	if len(docker.BuildArgs) > 0 {
-		options.BuildArgs = make([]string, len(docker.BuildArgs))
-		for i, arg := range docker.BuildArgs {
-			options.BuildArgs[i] = arg.MustEnvsubst(envKeyMapper)
-		}
-	}
-
-	return options
 }
 
 func (s *projectService) Get(ctx context.Context, req *azdext.EmptyRequest) (*azdext.GetProjectResponse, error) {
@@ -119,21 +83,11 @@ func (s *projectService) Get(ctx context.Context, req *azdext.EmptyRequest) (*az
 	}
 
 	for name, service := range projectConfig.Services {
-		protoService := &azdext.ServiceConfig{
-			Name:              service.Name,
-			ResourceGroupName: service.ResourceGroupName.MustEnvsubst(envKeyMapper),
-			ResourceName:      service.ResourceName.MustEnvsubst(envKeyMapper),
-			ApiVersion:        service.ApiVersion,
-			RelativePath:      service.RelativePath,
-			Host:              string(service.Host),
-			Language:          string(service.Language),
-			OutputPath:        service.OutputPath,
-			Image:             service.Image.MustEnvsubst(envKeyMapper),
-		}
+		var protoService *azdext.ServiceConfig
 
-		// Populate docker options with env substitution
-		if dockerOptions := toDockerOptions(&service.Docker, envKeyMapper); dockerOptions != nil {
-			protoService.Docker = dockerOptions
+		// Use mapper with environment variable resolver
+		if err := mapper.WithResolver(envKeyMapper).Convert(service, &protoService); err != nil {
+			return nil, fmt.Errorf("converting service config to proto: %w", err)
 		}
 
 		project.Services[name] = protoService
@@ -155,12 +109,9 @@ func (s *projectService) AddService(ctx context.Context, req *azdext.AddServiceR
 		return nil, err
 	}
 
-	serviceConfig := &project.ServiceConfig{
-		Project:      projectConfig,
-		Name:         req.Service.Name,
-		RelativePath: req.Service.RelativePath,
-		Language:     project.ServiceLanguageKind(req.Service.Language),
-		Host:         project.ServiceTargetKind(req.Service.Host),
+	serviceConfig := &project.ServiceConfig{}
+	if err := mapper.Convert(req.Service, &serviceConfig); err != nil {
+		return nil, fmt.Errorf("failed converting service configuration, %w", err)
 	}
 
 	if projectConfig.Services == nil {

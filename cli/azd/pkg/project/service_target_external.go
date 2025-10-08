@@ -5,11 +5,11 @@ package project
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
 
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -32,6 +32,16 @@ type ExternalServiceTarget struct {
 	responseChans sync.Map
 }
 
+func envResolver(env *environment.Environment) mapper.Resolver {
+	return func(key string) string {
+		if env == nil {
+			return ""
+		}
+
+		return env.Getenv(key)
+	}
+}
+
 // Publish implements ServiceTarget.
 func (est *ExternalServiceTarget) Publish(
 	ctx context.Context,
@@ -44,14 +54,18 @@ func (est *ExternalServiceTarget) Publish(
 	cleanup := est.wireConsole()
 	defer cleanup()
 
-	protoServiceConfig, err := est.toProtoServiceConfig(serviceConfig)
+	protoServiceConfig := &azdext.ServiceConfig{}
+	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	protoServicePackage := toProtoServicePackageResult(frameworkPackageOutput)
-	protoTargetResource := toProtoTargetResource(targetResource)
-	protoPublishOptions := toProtoPublishOptions(publishOptions)
+	protoServicePackage := &azdext.ServicePackageResult{}
+	mapper.Convert(frameworkPackageOutput, protoServicePackage)
+	protoTargetResource := &azdext.TargetResource{}
+	mapper.Convert(targetResource, protoTargetResource)
+	protoPublishOptions := &azdext.PublishOptions{}
+	mapper.Convert(publishOptions, protoPublishOptions)
 
 	req := &azdext.ServiceTargetMessage{
 		RequestId: uuid.NewString(),
@@ -77,7 +91,11 @@ func (est *ExternalServiceTarget) Publish(
 		return &ServicePublishResult{Package: frameworkPackageOutput}, nil
 	}
 
-	result := fromProtoServicePublishResult(publishResp.PublishResult)
+	var result *ServicePublishResult
+	err = mapper.Convert(publishResp.PublishResult, &result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert publish result: %w", err)
+	}
 	result.Package = frameworkPackageOutput
 
 	return result, nil
@@ -118,7 +136,8 @@ func (est *ExternalServiceTarget) Initialize(ctx context.Context, serviceConfig 
 		return errors.New("service configuration is required")
 	}
 
-	protoServiceConfig, err := est.toProtoServiceConfig(serviceConfig)
+	protoServiceConfig := &azdext.ServiceConfig{}
+	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
 	if err != nil {
 		return err
 	}
@@ -156,12 +175,14 @@ func (est *ExternalServiceTarget) Package(
 	cleanup := est.wireConsole()
 	defer cleanup()
 
-	protoServiceConfig, err := est.toProtoServiceConfig(serviceConfig)
+	protoServiceConfig := &azdext.ServiceConfig{}
+	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	protoFrameworkPackage := toProtoServicePackageResult(frameworkPackageOutput)
+	protoFrameworkPackage := &azdext.ServicePackageResult{}
+	mapper.Convert(frameworkPackageOutput, protoFrameworkPackage)
 
 	req := &azdext.ServiceTargetMessage{
 		RequestId: uuid.NewString(),
@@ -185,8 +206,26 @@ func (est *ExternalServiceTarget) Package(
 		return frameworkPackageOutput, nil
 	}
 
-	result := fromProtoServicePackageResult(packageResp.PackageResult, frameworkPackageOutput)
-	return result, nil
+	// Convert proto result using mapper
+	var convertedResult *ServicePackageResult
+	convertErr := mapper.Convert(packageResp.PackageResult, &convertedResult)
+	if convertErr != nil {
+		return nil, fmt.Errorf("failed to convert package result: %w", convertErr)
+	}
+
+	// Merge with framework package output (apply fallback/default logic)
+	if frameworkPackageOutput != nil {
+		// If the converted result is empty but we have a framework package output, use it as base
+		if convertedResult.PackagePath == "" && frameworkPackageOutput.PackagePath != "" {
+			convertedResult.PackagePath = frameworkPackageOutput.PackagePath
+		}
+		// If the converted result has no details but framework package has details, use them
+		if convertedResult.Details == nil && frameworkPackageOutput.Details != nil {
+			convertedResult.Details = frameworkPackageOutput.Details
+		}
+	}
+
+	return convertedResult, nil
 }
 
 // Deploy deploys the given deployment artifact to the target resource
@@ -202,14 +241,18 @@ func (est *ExternalServiceTarget) Deploy(
 	defer cleanup()
 
 	// Convert project types to protobuf types
-	protoServiceConfig, err := est.toProtoServiceConfig(serviceConfig)
+	protoServiceConfig := &azdext.ServiceConfig{}
+	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	protoServicePackage := toProtoServicePackageResult(servicePackage)
-	protoServicePublish := toProtoServicePublishResult(publishResult)
-	protoTargetResource := toProtoTargetResource(targetResource)
+	protoServicePackage := &azdext.ServicePackageResult{}
+	mapper.Convert(servicePackage, protoServicePackage)
+	protoServicePublish := &azdext.ServicePublishResult{}
+	mapper.Convert(publishResult, protoServicePublish)
+	protoTargetResource := &azdext.TargetResource{}
+	mapper.Convert(targetResource, protoTargetResource)
 
 	// Create Deploy request message
 	requestId := uuid.NewString()
@@ -261,12 +304,14 @@ func (est *ExternalServiceTarget) Endpoints(
 	cleanup := est.wireConsole()
 	defer cleanup()
 
-	protoServiceConfig, err := est.toProtoServiceConfig(serviceConfig)
+	protoServiceConfig := &azdext.ServiceConfig{}
+	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	protoTargetResource := toProtoTargetResource(targetResource)
+	protoTargetResource := &azdext.TargetResource{}
+	mapper.Convert(targetResource, protoTargetResource)
 	req := &azdext.ServiceTargetMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.ServiceTargetMessage_EndpointsRequest{
@@ -303,7 +348,8 @@ func (est *ExternalServiceTarget) ResolveTargetResource(
 	cleanup := est.wireConsole()
 	defer cleanup()
 
-	protoServiceConfig, err := est.toProtoServiceConfig(serviceConfig)
+	protoServiceConfig := &azdext.ServiceConfig{}
+	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -317,7 +363,8 @@ func (est *ExternalServiceTarget) ResolveTargetResource(
 			// Capture error so extension can decide how to handle it
 			defaultError = err.Error()
 		} else if defaultTarget != nil {
-			protoDefaultTarget = toProtoTargetResource(defaultTarget)
+			protoDefaultTarget = &azdext.TargetResource{}
+			mapper.Convert(defaultTarget, protoDefaultTarget)
 		}
 	}
 
@@ -450,6 +497,15 @@ func (est *ExternalServiceTarget) startResponseDispatcher() {
 	}()
 }
 
+// stringMapToDetailsInterface converts string map to interface (helper for proto conversions)
+func stringMapToDetailsInterface(details map[string]string) interface{} {
+	if len(details) == 0 {
+		return nil
+	}
+
+	return details
+}
+
 func (est *ExternalServiceTarget) wireConsole() func() {
 	stdOut := est.extension.StdOut()
 	stdErr := est.extension.StdErr()
@@ -460,219 +516,4 @@ func (est *ExternalServiceTarget) wireConsole() func() {
 		stdOut.RemoveWriter(est.console.Handles().Stdout)
 		stdErr.RemoveWriter(est.console.Handles().Stderr)
 	}
-}
-
-func (est *ExternalServiceTarget) toProtoServiceConfig(serviceConfig *ServiceConfig) (*azdext.ServiceConfig, error) {
-	resolver := func(env string) string {
-		return ""
-	}
-
-	if est.env != nil {
-		resolver = est.env.Getenv
-	}
-
-	resourceGroupName, err := serviceConfig.ResourceGroupName.Envsubst(resolver)
-	if err != nil {
-		return nil, fmt.Errorf("envsubst service resource group name: %w", err)
-	}
-
-	resourceName, err := serviceConfig.ResourceName.Envsubst(resolver)
-	if err != nil {
-		return nil, fmt.Errorf("envsubst service resource name: %w", err)
-	}
-
-	image, err := serviceConfig.Image.Envsubst(resolver)
-	if err != nil {
-		return nil, fmt.Errorf("envsubst image: %w", err)
-	}
-
-	return &azdext.ServiceConfig{
-		Name:              serviceConfig.Name,
-		ResourceGroupName: resourceGroupName,
-		ResourceName:      resourceName,
-		ApiVersion:        serviceConfig.ApiVersion,
-		RelativePath:      serviceConfig.RelativePath,
-		Host:              string(serviceConfig.Host),
-		Language:          string(serviceConfig.Language),
-		OutputPath:        serviceConfig.OutputPath,
-		Image:             image,
-	}, nil
-}
-
-func toProtoServicePackageResult(result *ServicePackageResult) *azdext.ServicePackageResult {
-	if result == nil {
-		return nil
-	}
-
-	protoResult := &azdext.ServicePackageResult{PackagePath: result.PackagePath}
-
-	if dockerDetails, ok := result.Details.(*dockerPackageResult); ok {
-		protoResult.DockerPackageResult = &azdext.DockerPackageResult{
-			ImageHash:   dockerDetails.ImageHash,
-			SourceImage: dockerDetails.SourceImage,
-			TargetImage: dockerDetails.TargetImage,
-		}
-		return protoResult
-	}
-
-	details := detailsInterfaceToStringMap(result.Details)
-	if len(details) > 0 {
-		protoResult.Details = details
-	}
-
-	return protoResult
-}
-
-func fromProtoServicePackageResult(
-	protoResult *azdext.ServicePackageResult,
-	fallback *ServicePackageResult,
-) *ServicePackageResult {
-	if protoResult == nil {
-		return fallback
-	}
-
-	result := &ServicePackageResult{}
-	if fallback != nil {
-		result.PackagePath = fallback.PackagePath
-		result.Details = fallback.Details
-	}
-
-	if protoResult.PackagePath != "" {
-		result.PackagePath = protoResult.PackagePath
-	}
-
-	if protoResult.DockerPackageResult != nil {
-		result.Details = &dockerPackageResult{
-			ImageHash:   protoResult.DockerPackageResult.ImageHash,
-			SourceImage: protoResult.DockerPackageResult.SourceImage,
-			TargetImage: protoResult.DockerPackageResult.TargetImage,
-		}
-		return result
-	}
-
-	if len(protoResult.Details) > 0 {
-		result.Details = stringMapToDetailsInterface(protoResult.Details)
-	}
-
-	return result
-}
-
-func toProtoServicePublishResult(result *ServicePublishResult) *azdext.ServicePublishResult {
-	if result == nil {
-		return nil
-	}
-
-	protoResult := &azdext.ServicePublishResult{}
-
-	if containerDetails, ok := result.Details.(*ContainerPublishDetails); ok {
-		if containerDetails.RemoteImage != "" {
-			protoResult.ContainerDetails = &azdext.ContainerPublishDetails{
-				RemoteImage: containerDetails.RemoteImage,
-			}
-		}
-		return protoResult
-	}
-
-	details := detailsInterfaceToStringMap(result.Details)
-	if len(details) > 0 {
-		protoResult.Details = details
-	}
-
-	if protoResult.ContainerDetails == nil && len(protoResult.Details) == 0 {
-		return nil
-	}
-
-	return protoResult
-}
-
-func fromProtoServicePublishResult(protoResult *azdext.ServicePublishResult) *ServicePublishResult {
-	if protoResult == nil {
-		return &ServicePublishResult{}
-	}
-
-	result := &ServicePublishResult{}
-
-	if protoResult.ContainerDetails != nil && protoResult.ContainerDetails.RemoteImage != "" {
-		result.Details = &ContainerPublishDetails{
-			RemoteImage: protoResult.ContainerDetails.RemoteImage,
-		}
-		return result
-	}
-
-	if len(protoResult.Details) > 0 {
-		result.Details = stringMapToDetailsInterface(protoResult.Details)
-	}
-
-	return result
-}
-
-func toProtoTargetResource(target *environment.TargetResource) *azdext.TargetResource {
-	if target == nil {
-		return nil
-	}
-
-	protoTarget := &azdext.TargetResource{
-		SubscriptionId:    target.SubscriptionId(),
-		ResourceGroupName: target.ResourceGroupName(),
-		ResourceName:      target.ResourceName(),
-		ResourceType:      target.ResourceType(),
-	}
-
-	if metadata := target.Metadata(); metadata != nil {
-		protoTarget.Metadata = metadata
-	}
-
-	return protoTarget
-}
-
-func toProtoPublishOptions(options *PublishOptions) *azdext.PublishOptions {
-	if options == nil {
-		return nil
-	}
-
-	return &azdext.PublishOptions{
-		Image: options.Image,
-	}
-}
-
-func detailsInterfaceToStringMap(details interface{}) map[string]string {
-	if details == nil {
-		return nil
-	}
-
-	// Fast path for already-converted maps
-	if m, ok := details.(map[string]string); ok {
-		return m
-	}
-
-	// Use JSON as the serialization format for all types
-	data, err := json.Marshal(details)
-	if err != nil {
-		// Fallback: convert to string representation
-		value := fmt.Sprint(details)
-		if value == "" || value == "<nil>" {
-			return nil
-		}
-		return map[string]string{"value": value}
-	}
-
-	var result map[string]string
-	if err := json.Unmarshal(data, &result); err != nil {
-		// Fallback
-		return map[string]string{"json": string(data)}
-	}
-
-	if len(result) == 0 {
-		return nil
-	}
-
-	return result
-}
-
-func stringMapToDetailsInterface(details map[string]string) interface{} {
-	if len(details) == 0 {
-		return nil
-	}
-
-	return details
 }

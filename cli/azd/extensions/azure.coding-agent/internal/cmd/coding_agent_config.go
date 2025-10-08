@@ -223,7 +223,10 @@ func newConfigCommand() *cobra.Command {
 			return fmt.Errorf("failed to push files to git: %w", err)
 		}
 
-		codingAgentURL := fmt.Sprintf("https://github.com/%s/settings/copilot/coding_agent#:~:text=JSON%%20MCP%%20configuration-,MCP%%20configuration,-1", repoSlug)
+		codingAgentURL := fmt.Sprintf(
+			"https://github.com/%s/settings/copilot/coding_agent#:~:text=JSON%%20MCP%%20configuration-,MCP%%20configuration,-1",
+			repoSlug,
+		)
 
 		fmt.Println("")
 		fmt.Println(output.WithHighLightFormat("(!) NOTE: Some tasks must still be completed, manually:"))
@@ -390,8 +393,12 @@ type credentialProviderAdapter struct {
 	tokenCred azcore.TokenCredential
 }
 
+//
 //nolint:lll
-func (cp *credentialProviderAdapter) CredentialForSubscription(ctx context.Context, subscriptionId string) (azcore.TokenCredential, error) {
+func (cp *credentialProviderAdapter) CredentialForSubscription(
+	ctx context.Context,
+	subscriptionId string,
+) (azcore.TokenCredential, error) {
 	return cp.tokenCred, nil
 }
 
@@ -450,7 +457,10 @@ func pickOrCreateMSI(ctx context.Context,
 	})
 	if err != nil {
 		//nolint:lll
-		return nil, fmt.Errorf("failed when prompting for MSI option. Try logging in manually with 'azd auth login' before running this command. Error: %w", err)
+		return nil, fmt.Errorf(
+			"failed when prompting for MSI option. Try logging in manually with 'azd auth login' before running this command. Error: %w",
+			err,
+		)
 	}
 
 	taskList := ux.NewTaskList(nil)
@@ -469,7 +479,10 @@ func pickOrCreateMSI(ctx context.Context,
 
 		if err != nil {
 			//nolint:lll
-			return nil, fmt.Errorf("failed when prompting for MSI location. Try logging in manually with 'azd auth login' before running this command. Error: %w", err)
+			return nil, fmt.Errorf(
+				"failed when prompting for MSI location. Try logging in manually with 'azd auth login' before running this command. Error: %w",
+				err,
+			)
 		}
 
 		shouldCreate, rgName, err := promptForResourceGroup(ctx, prompter, subscriptionId, location.Location.Name)
@@ -699,7 +712,12 @@ func gitPushChanges(ctx context.Context,
 
 	if int64(*resp.Value) == int64(len(choices)-1) {
 		// they're going to do the push themselves.
-		fmt.Println(output.WithWarningFormat("(!) NOTE: copilot-setup-steps.yml must be committed to the main branch of %s before it will take effect!", repoSlug)) //nolint:lll
+		fmt.Println(
+			output.WithWarningFormat(
+				"(!) NOTE: copilot-setup-steps.yml must be committed to the main branch of %s before it will take effect!",
+				repoSlug,
+			),
+		) //nolint:lll
 		return "", nil
 	}
 
@@ -766,7 +784,8 @@ func gitPushChanges(ctx context.Context,
 	return chosenRemote, nil
 }
 
-func loginToGitHubIfNeeded(ctx context.Context,
+func loginToGitHubIfNeeded(
+	ctx context.Context,
 	githubHostName string,
 	//nolint:lll
 	newCommandRunnerFn func(showOutput bool) (azd_exec.CommandRunner, input.Console), // Just an alias of [newCommandRunner], for testing
@@ -792,7 +811,9 @@ func loginToGitHubIfNeeded(ctx context.Context,
 
 	if !authStatus.LoggedIn {
 		//nolint:lll
-		fmt.Println(output.WithWarningFormat("(!) Not currently logged in GitHub CLI, attempting to login using `gh auth login`"))
+		fmt.Println(
+			output.WithWarningFormat("(!) Not currently logged in GitHub CLI, attempting to login using `gh auth login`"),
+		)
 
 		if err := githubCLI.Login(context.Background(), githubHostName); err != nil {
 			return err

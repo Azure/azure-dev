@@ -343,7 +343,7 @@ func (ch *ContainerHelper) runLocalBuild(
 	var sourceImage string
 	targetImage := packageOutput.PackagePath
 
-	packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
+	packageDetails, ok := packageOutput.Details.(*DockerPackageResult)
 	if ok && packageDetails != nil {
 		sourceImage = packageDetails.SourceImage
 		targetImage = packageDetails.TargetImage

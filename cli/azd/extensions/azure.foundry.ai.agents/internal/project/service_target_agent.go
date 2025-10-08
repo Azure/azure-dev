@@ -4,16 +4,17 @@
 package project
 
 import (
-	"bufio"
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 )
@@ -59,18 +60,21 @@ func findYAMLFiles(rootPath string) ([]string, error) {
 }
 
 // promptUserConfirmation asks the user to confirm if the found file is the agent definition
-func promptUserConfirmation(filePath string) (bool, error) {
+func (p *AgentServiceTargetProvider) promptUserConfirmation(ctx context.Context, filePath string) (bool, error) {
 	fmt.Printf("Found agent definition file: %s\n", color.New(color.FgHiYellow).Sprint(filePath))
 	fmt.Print("Is this the agent definition file you want to use? (y/N): ")
 
-	reader := bufio.NewReader(os.Stdin)
-	response, err := reader.ReadString('\n')
+	response, err := p.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
+			Message:      "Is this the agent definition file you want to use?",
+			DefaultValue: to.Ptr(true),
+		},
+	})
 	if err != nil {
 		return false, err
 	}
 
-	response = strings.TrimSpace(strings.ToLower(response))
-	return response == "y" || response == "yes", nil
+	return *response.Value, nil
 }
 
 // promptUserSelection asks the user to select from multiple YAML files
@@ -82,35 +86,36 @@ func (p *AgentServiceTargetProvider) promptUserSelection(ctx context.Context, ya
 
 	fmt.Print("Please select the agent definition file (enter number): ")
 
-	selectedFiles, err := p.azdClient.Prompt().Select("Select the agent definition file", yamlFiles, nil)
+	choices := make([]*azdext.SelectChoice, 0, len(yamlFiles))
+	for i, file := range yamlFiles {
+		choices = append(choices, &azdext.SelectChoice{
+			Label: fmt.Sprintf("%d. %s", i+1, file),
+			Value: file,
+		})
+	}
+
+	selectedFilesResponse, err := p.azdClient.Prompt().Select(
+		ctx,
+		&azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message: "Select the agent definition file:",
+				Choices: choices,
+			},
+		})
 	if err != nil {
 		return "", err
 	}
-	if len(selectedFiles.) == 0 {
-		return "", fmt.Errorf("no file selected")
-	}
 
-	reader := bufio.NewReader(os.Stdin)
-	response, err := reader.ReadString('\n')
-	if err != nil {
-		return "", err
-	}
-
-	response = strings.TrimSpace(response)
-	selection, err := strconv.Atoi(response)
-	if err != nil {
-		return "", fmt.Errorf("invalid selection: %s", response)
-	}
-
-	if selection < 1 || selection > len(yamlFiles) {
-		return "", fmt.Errorf("selection out of range: %d", selection)
-	}
-
-	return yamlFiles[selection-1], nil
+	return yamlFiles[*selectedFilesResponse.Value], nil
 }
 
-// Initialize initializes the service target provider with service configuration
+// Initialize initializes the service target by looking for the agent definition file
 func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
+	if p.agentDefinitionPath != "" {
+		// Already initialized
+		return nil
+	}
+
 	p.serviceConfig = serviceConfig
 
 	proj, err := p.azdClient.Project().Get(ctx, nil)
@@ -147,17 +152,19 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 
 	switch len(yamlFiles) {
 	case 0:
-		return fmt.Errorf("no YAML/YML files found in %s. Please ensure an agent definition file exists or set FOUNDRY_AGENT_DEFINITION_PATH environment variable", fullPath)
+		return fmt.Errorf("no YAML/YML files found in %s. Please ensure an agent definition file exists or set "+
+			"FOUNDRY_AGENT_DEFINITION_PATH environment variable", fullPath)
 
 	case 1:
 		// Ask user to confirm if this is the agent definition file
-		confirmed, err := promptUserConfirmation(yamlFiles[0])
+		confirmed, err := p.promptUserConfirmation(ctx, yamlFiles[0])
 		if err != nil {
 			return fmt.Errorf("failed to get user confirmation: %w", err)
 		}
 
 		if !confirmed {
-			return fmt.Errorf("user declined to use the found YAML file. Please set FOUNDRY_AGENT_DEFINITION_PATH environment variable to specify the correct agent definition file")
+			return fmt.Errorf("user declined to use the found YAML file. Please set FOUNDRY_AGENT_DEFINITION_PATH " +
+				"environment variable to specify the correct agent definition file")
 		}
 
 		p.agentDefinitionPath = yamlFiles[0]
@@ -165,7 +172,7 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 
 	default:
 		// Multiple files found, ask user to select
-		selectedFile, err := promptUserSelection(yamlFiles)
+		selectedFile, err := p.promptUserSelection(ctx, yamlFiles)
 		if err != nil {
 			return fmt.Errorf("failed to get user selection: %w", err)
 		}
@@ -175,15 +182,15 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	}
 
 	return nil
-} // Endpoints returns endpoints exposed by the agent service
+}
+
+// Endpoints returns endpoints exposed by the agent service
 func (p *AgentServiceTargetProvider) Endpoints(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	targetResource *azdext.TargetResource,
 ) ([]string, error) {
-	return []string{
-		fmt.Sprintf("https://%s.%s.azurecontainerapps.io/api", targetResource.ResourceName, "region"),
-	}, nil
+	return []string{}, fmt.Errorf("not implemented")
 }
 
 // GetTargetResource returns a custom target resource for the agent service
@@ -193,39 +200,7 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
-	serviceName := ""
-	if serviceConfig != nil {
-		serviceName = serviceConfig.Name
-	}
-	targetResource := &azdext.TargetResource{
-		SubscriptionId:    subscriptionId,
-		ResourceGroupName: "rg-agent-demo",
-		ResourceName:      "ca-" + serviceName + "-agent",
-		ResourceType:      "Microsoft.App/containerApps",
-		Metadata: map[string]string{
-			"agentId":   "asst_xYZ",
-			"agentName": "Agent 007",
-		},
-	}
-
-	fmt.Printf("Agent target resource: %s\n", color.New(color.FgHiBlue).Sprint(targetResource.ResourceName))
-
-	// Log all fields of ServiceConfig
-	if serviceConfig != nil {
-		fmt.Printf("Service Config Details:\n")
-		fmt.Printf("  Name: %s\n", color.New(color.FgHiBlue).Sprint(serviceConfig.Name))
-		fmt.Printf("  ResourceGroupName: %s\n", color.New(color.FgHiBlue).Sprint(serviceConfig.ResourceGroupName))
-		fmt.Printf("  ResourceName: %s\n", color.New(color.FgHiBlue).Sprint(serviceConfig.ResourceName))
-		fmt.Printf("  ApiVersion: %s\n", color.New(color.FgHiBlue).Sprint(serviceConfig.ApiVersion))
-		fmt.Printf("  RelativePath: %s\n", color.New(color.FgHiBlue).Sprint(serviceConfig.RelativePath))
-		fmt.Printf("  Host: %s\n", color.New(color.FgHiBlue).Sprint(serviceConfig.Host))
-		fmt.Printf("  Language: %s\n", color.New(color.FgHiBlue).Sprint(serviceConfig.Language))
-		fmt.Printf("  OutputPath: %s\n", color.New(color.FgHiBlue).Sprint(serviceConfig.OutputPath))
-		fmt.Printf("  Image: %s\n", color.New(color.FgHiBlue).Sprint(serviceConfig.Image))
-
-		fmt.Println()
-	}
-	return targetResource, nil
+	return &azdext.TargetResource{}, nil
 }
 
 // Package performs packaging for the agent service
@@ -235,22 +210,9 @@ func (p *AgentServiceTargetProvider) Package(
 	frameworkPackageOutput *azdext.ServicePackageResult,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
-	var targetImage string
-
-	// Check for structured docker package result first
-	if frameworkPackageOutput.DockerPackageResult != nil {
-		targetImage = frameworkPackageOutput.DockerPackageResult.TargetImage
-	}
-
-	fmt.Printf("\nPackage path: %s\n", color.New(color.FgHiBlue).Sprint(frameworkPackageOutput.PackagePath))
-	fmt.Printf("\nDockerPackageResult: %s\n", color.New(color.FgHiBlue).Sprint(targetImage))
-
 	return &azdext.ServicePackageResult{
 		PackagePath:         frameworkPackageOutput.PackagePath,
-		DockerPackageResult: frameworkPackageOutput.DockerPackageResult,
-		Details: map[string]string{
-			"timestamp": time.Now().Format(time.RFC3339),
-		},
+		DockerPackageResult: &azdext.DockerPackageResult{},
 	}, nil
 }
 
@@ -299,62 +261,262 @@ func (p *AgentServiceTargetProvider) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	if packageResult == nil {
-		return nil, fmt.Errorf("packageResult is nil")
-	}
-
-	if publishResult == nil {
-		return nil, fmt.Errorf("publishResult is nil")
-	}
-
-	progress("Parsing details")
-	time.Sleep(1000 * time.Millisecond) // Simulate work
-
-	// Print package result details
-	fmt.Printf("\nPackage Details:\n")
-	fmt.Printf("  Package Path: %s\n", color.New(color.FgHiBlue).Sprint(packageResult.GetPackagePath()))
-	if packageResult.DockerPackageResult != nil {
-		fmt.Printf("  Docker Package Result:\n")
-		fmt.Printf("    Image Hash: %s\n", color.New(color.FgHiBlue).Sprint(packageResult.DockerPackageResult.ImageHash))
-		fmt.Printf("    Source Image: %s\n", color.New(color.FgHiBlue).Sprint(packageResult.DockerPackageResult.SourceImage))
-		fmt.Printf("    Target Image: %s\n", color.New(color.FgHiBlue).Sprint(packageResult.DockerPackageResult.TargetImage))
-	}
-
-	// Print publish result details
-	fmt.Printf("\nPublish Details:\n")
-	if publishResult.ContainerDetails != nil {
-		fmt.Printf("  Remote Image: %s\n", color.New(color.FgHiBlue).Sprint(publishResult.ContainerDetails.RemoteImage))
-	}
-	fmt.Println()
-
-	progress("Deploying service to target resource")
-	time.Sleep(2000 * time.Millisecond) // Simulate work
-
-	progress("Verifying deployment health")
-	time.Sleep(1000 * time.Millisecond) // Simulate work
-
-	// Construct resource ID
-	resourceId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/%s/%s",
-		targetResource.SubscriptionId,
-		targetResource.ResourceGroupName,
-		targetResource.ResourceType,
-		targetResource.ResourceName)
-
-	// Resolve endpoints
-	endpoints, err := p.Endpoints(ctx, serviceConfig, targetResource)
+	// Get env from azd
+	azdEnvClient := p.azdClient.Environment()
+	currEnv, err := azdEnvClient.GetCurrent(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get current environment: %w", err)
 	}
 
-	// Return deployment result
-	deployResult := &azdext.ServiceDeployResult{
-		TargetResourceId: resourceId,
+	resp, err := azdEnvClient.GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: currEnv.Environment.Name,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get environment values: %w", err)
+	}
+	azdEnv := make(map[string]string, len(resp.KeyValues))
+	for _, kval := range resp.KeyValues {
+		azdEnv[kval.Key] = kval.Value
+	}
+
+	// *************************************Step 1: Build Agent Image*************************************
+	registryEndpoint := azdEnv["AZURE_CONTAINER_REGISTRY_ENDPOINT"]
+	if registryEndpoint == "" {
+		return nil, fmt.Errorf("AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable is required")
+	}
+
+	// Parse agent YAML to get agent ID
+	agentYAMLPath := p.agentDefinitionPath
+	agentConfig, err := parseAgentYAML(agentYAMLPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse agent YAML: %w", err)
+	}
+
+	// Find Dockerfile in the same directory as agent.yaml
+	agentDir := filepath.Dir(agentYAMLPath)
+	dockerfilePath := filepath.Join(agentDir, "Dockerfile")
+
+	// Check if Dockerfile exists
+	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("dockerfile not found in agent directory: %s", dockerfilePath)
+	}
+
+	fmt.Fprintf(os.Stderr, "Building image for agent: %s (ID: %s)\n", agentConfig.Name, agentConfig.ID)
+	fmt.Fprintf(os.Stderr, "Using Dockerfile: %s\n", dockerfilePath)
+	fmt.Fprintf(os.Stderr, "Using Azure Container Registry: %s\n", registryEndpoint)
+
+	// Create Azure credential
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
+	}
+
+	// Create build context (tar archive)
+	buildContext, err := createBuildContext(dockerfilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create build context: %w", err)
+	}
+
+	// Generate image names with custom version (or timestamp) and latest tags
+	// TODO: add support for custom version
+	imageNames := generateImageNamesFromAgent(agentConfig, "")
+
+	fmt.Fprintf(os.Stderr, "Starting remote build for images: %v\n", imageNames)
+
+	// Start the build
+	runID, err := startRemoteBuildWithAPI(ctx, cred, registryEndpoint, buildContext, imageNames, dockerfilePath, azdEnv)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start remote build: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Build started with run ID: %s\n", runID)
+
+	// Monitor the build status with log streaming
+	err = monitorBuildWithLogs(ctx, cred, registryEndpoint, runID, azdEnv)
+	if err != nil {
+		return nil, fmt.Errorf("build monitoring failed: %w", err)
+	}
+
+	// Output the full image URL (use the first image name which has the version tag)
+	registryHost := strings.TrimPrefix(registryEndpoint, "https://")
+	fullImageURL := fmt.Sprintf("%s/%s", registryHost, imageNames[0])
+
+	fmt.Fprintf(os.Stderr, "Build completed successfully!\n")
+	fmt.Fprintf(os.Stderr, "Built image: %s\n", fullImageURL)
+
+	// Output just the image URL to stdout for script consumption
+	fmt.Print(fullImageURL)
+
+	// *************************************Step 2: Create Agent*************************************
+	// Check if environment variable is set
+	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
+		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required")
+	}
+
+	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", agentYAMLPath)
+	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
+	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentConfig.Name)
+
+	request, err := agentRequest(agentYAMLPath, fullImageURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create agent request: %w", err)
+	}
+
+	description := "No description"
+	if request.Description != nil {
+		desc := *request.Description
+		if len(desc) > 50 {
+			description = desc[:50] + "..."
+		} else {
+			description = desc
+		}
+	}
+	fmt.Fprintf(os.Stderr, "Description: %s\n", description)
+
+	isHosted := false
+	// Display agent-specific information
+	if promptDef, ok := request.Definition.(PromptAgentDefinition); ok {
+		fmt.Fprintf(os.Stderr, "Model: %s\n", promptDef.ModelName)
+		instructions := "No instructions"
+		if promptDef.Instructions != nil {
+			inst := *promptDef.Instructions
+			if len(inst) > 50 {
+				instructions = inst[:50] + "..."
+			} else {
+				instructions = inst
+			}
+		}
+		fmt.Fprintf(os.Stderr, "Instructions: %s\n", instructions)
+	} else if hostedDef, ok := request.Definition.(HostedAgentDefinition); ok {
+		isHosted = true
+		fmt.Fprintf(os.Stderr, "Image: %s\n", hostedDef.Image)
+		fmt.Fprintf(os.Stderr, "CPU: %s\n", hostedDef.CPU)
+		fmt.Fprintf(os.Stderr, "Memory: %s\n", hostedDef.Memory)
+		fmt.Fprintf(os.Stderr, "Protocol Versions: %+v\n", hostedDef.ContainerProtocolVersions)
+	}
+	fmt.Fprintln(os.Stderr)
+
+	// Create agent
+	agentResponse, err := createAgent(ctx, "2025-05-15-preview", request, cred, azdEnv)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create agent: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Agent '%s' created successfully!\n", agentResponse.Name)
+
+	// Register the agent name and version as azd environment variables
+	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: currEnv.Environment.Name,
+		Key:     "AGENT_NAME",
+		Value:   agentResponse.Name,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to set environment variable: %w", err)
+	}
+
+	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: currEnv.Environment.Name,
+		Key:     "AGENT_VERSION",
+		Value:   agentResponse.Version,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to set environment variable: %w", err)
+	}
+
+	// *************************************Step 3: Start agent for HOBO*************************************
+	if !isHosted {
+		// Return deployment result
+		return &azdext.ServiceDeployResult{
+			TargetResourceId: "",
+			Kind:             "agent",
+			Endpoints:        nil,
+			Details: map[string]string{
+				"message": "Agent service deployed successfully using custom extension logic",
+			},
+		}, nil
+	}
+
+	// Start the agent if it's a hosted agent
+	fmt.Fprintln(os.Stderr, "Azure AI Agent Container Management Script")
+	fmt.Fprintln(os.Stderr, "============================================")
+
+	// Define command line flags
+	var (
+		minReplicas  = flag.Int("min-replicas", 1, "Minimum number of replicas (default: 1)")
+		maxReplicas  = flag.Int("max-replicas", 1, "Maximum number of replicas (default: 1)")
+		apiVersion   = flag.String("api-version", "2025-05-15-preview", "API version to use")
+		waitForReady = flag.Bool("wait", true, "Wait for container to be ready (default: true)")
+		maxWaitTime  = flag.Duration(
+			"max-wait-time", 10*time.Minute, "Maximum time to wait for container to be ready (default: 10m)")
+	)
+
+	flag.Parse()
+
+	// Validate replica counts
+	if *minReplicas < 0 {
+		log.Fatal("Error: --min-replicas must be non-negative")
+	}
+	if *maxReplicas < 0 {
+		log.Fatal("Error: --max-replicas must be non-negative")
+	}
+	if *minReplicas > *maxReplicas {
+		log.Fatal("Error: --min-replicas cannot be greater than --max-replicas")
+	}
+
+	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
+	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentResponse.Name)
+	fmt.Fprintf(os.Stderr, "Agent Version: %s\n", agentResponse.Version)
+	fmt.Fprintf(os.Stderr, "Min Replicas: %d\n", *minReplicas)
+	fmt.Fprintf(os.Stderr, "Max Replicas: %d\n", *maxReplicas)
+	fmt.Fprintf(os.Stderr, "Wait for Ready: %t\n", *waitForReady)
+	if *waitForReady {
+		fmt.Fprintf(os.Stderr, "Max Wait Time: %v\n", *maxWaitTime)
+	}
+	fmt.Fprintln(os.Stderr)
+
+	// Convert int to *int32 for the API
+	minReplicasInt32 := *minReplicas
+	maxReplicasInt32 := *maxReplicas
+
+	// Start agent container
+	operation, err := startAgentContainer(
+		ctx, *apiVersion, agentResponse.Name, agentResponse.Version, &minReplicasInt32, &maxReplicasInt32, azdEnv, cred)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start agent container: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Agent container start operation initiated successfully!\n")
+
+	// Wait for operation to complete if requested
+	if *waitForReady {
+		completedOperation, err := waitForOperationComplete(
+			ctx, *apiVersion, agentResponse.Name, operation.Body.ID, *maxWaitTime, azdEnv, cred)
+		if err != nil {
+			return nil, fmt.Errorf("failed waiting for operation to complete: %w", err)
+		}
+
+		if completedOperation.Container != nil {
+			fmt.Fprintf(os.Stderr, "Agent container '%s' (version: %s) operation completed! Container status: %s\n",
+				agentResponse.Name, agentResponse.Version, completedOperation.Container.Status)
+		} else {
+			fmt.Fprintf(
+				os.Stderr,
+				"Agent container '%s' (version: %s) operation completed successfully!\n",
+				agentResponse.Name, agentResponse.Version)
+		}
+	} else {
+		fmt.Fprintf(
+			os.Stderr,
+			"Agent container '%s' (version: %s) start operation initiated (ID: %s).\n",
+			agentResponse.Name, agentResponse.Version, operation.Body.ID)
+	}
+
+	return &azdext.ServiceDeployResult{
+		TargetResourceId: "",
 		Kind:             "agent",
-		Endpoints:        endpoints,
+		Endpoints:        nil,
 		Details: map[string]string{
 			"message": "Agent service deployed successfully using custom extension logic",
 		},
-	}
-
-	return deployResult, nil
+	}, nil
 }

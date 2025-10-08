@@ -23,14 +23,7 @@ func registerProjectMappings() {
 	// ServiceConfig -> proto ServiceConfig conversion
 	mapper.MustRegister(func(ctx context.Context, src *ServiceConfig) (*azdext.ServiceConfig, error) {
 		resolver := mapper.GetResolver(ctx)
-
-		// Handle environment variable resolution
-		var envResolver func(string) string
-		if resolver != nil {
-			envResolver = func(key string) string { return resolver(key) }
-		} else {
-			envResolver = func(string) string { return "" }
-		}
+		envResolver := getEnvResolver(resolver)
 
 		resourceGroupName, err := src.ResourceGroupName.Envsubst(envResolver)
 		if err != nil {
@@ -71,14 +64,7 @@ func registerProjectMappings() {
 	// DockerProjectOptions -> proto DockerProjectOptions conversion
 	mapper.MustRegister(func(ctx context.Context, src DockerProjectOptions) (*azdext.DockerProjectOptions, error) {
 		resolver := mapper.GetResolver(ctx)
-
-		// Handle environment variable resolution
-		var envResolver func(string) string
-		if resolver != nil {
-			envResolver = func(key string) string { return resolver(key) }
-		} else {
-			envResolver = func(string) string { return "" }
-		}
+		envResolver := getEnvResolver(resolver)
 
 		registry, err := src.Registry.Envsubst(envResolver)
 		if err != nil {
@@ -375,6 +361,15 @@ func registerProjectMappings() {
 
 		return result, nil
 	})
+}
+
+// getEnvResolver returns a resolver function that either uses the provided resolver or returns empty strings.
+// This centralizes the common pattern of handling optional environment variable resolution.
+func getEnvResolver(resolver mapper.Resolver) func(string) string {
+	if resolver != nil {
+		return func(key string) string { return resolver(key) }
+	}
+	return func(string) string { return "" }
 }
 
 func detailsInterfaceToStringMap(details interface{}) map[string]string {

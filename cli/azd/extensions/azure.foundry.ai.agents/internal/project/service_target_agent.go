@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -36,77 +35,6 @@ func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTa
 	return &AgentServiceTargetProvider{
 		azdClient: azdClient,
 	}
-}
-
-// findYAMLFiles recursively searches for YAML/YML files in the given directory
-func findYAMLFiles(rootPath string) ([]string, error) {
-	var yamlFiles []string
-
-	err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if !info.IsDir() {
-			ext := strings.ToLower(filepath.Ext(path))
-			if ext == ".yaml" || ext == ".yml" {
-				yamlFiles = append(yamlFiles, path)
-			}
-		}
-		return nil
-	})
-
-	return yamlFiles, err
-}
-
-// promptUserConfirmation asks the user to confirm if the found file is the agent definition
-func (p *AgentServiceTargetProvider) promptUserConfirmation(ctx context.Context, filePath string) (bool, error) {
-	fmt.Printf("Found agent definition file: %s\n", color.New(color.FgHiYellow).Sprint(filePath))
-	fmt.Print("Is this the agent definition file you want to use? (y/N): ")
-
-	response, err := p.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-		Options: &azdext.ConfirmOptions{
-			Message:      "Is this the agent definition file you want to use?",
-			DefaultValue: to.Ptr(true),
-		},
-	})
-	if err != nil {
-		return false, err
-	}
-
-	return *response.Value, nil
-}
-
-// promptUserSelection asks the user to select from multiple YAML files
-func (p *AgentServiceTargetProvider) promptUserSelection(ctx context.Context, yamlFiles []string) (string, error) {
-	fmt.Printf("Found multiple YAML/YML files:\n")
-	for i, file := range yamlFiles {
-		fmt.Printf("  %d. %s\n", i+1, color.New(color.FgHiYellow).Sprint(file))
-	}
-
-	fmt.Print("Please select the agent definition file (enter number): ")
-
-	choices := make([]*azdext.SelectChoice, 0, len(yamlFiles))
-	for i, file := range yamlFiles {
-		choices = append(choices, &azdext.SelectChoice{
-			Label: fmt.Sprintf("%d. %s", i+1, file),
-			Value: file,
-		})
-	}
-
-	selectedFilesResponse, err := p.azdClient.Prompt().Select(
-		ctx,
-		&azdext.SelectRequest{
-			Options: &azdext.SelectOptions{
-				Message: "Select the agent definition file:",
-				Choices: choices,
-			},
-		})
-	if err != nil {
-		return "", err
-	}
-
-	return yamlFiles[*selectedFilesResponse.Value], nil
 }
 
 // Initialize initializes the service target by looking for the agent definition file
@@ -144,44 +72,24 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 		return nil
 	}
 
-	// Search for YAML/YML files in the service directory
-	yamlFiles, err := findYAMLFiles(fullPath)
-	if err != nil {
-		return fmt.Errorf("failed to search for YAML files: %w", err)
+	// Look for agent.yaml or agent.yml in the service directory root
+	agentYamlPath := filepath.Join(fullPath, "agent.yaml")
+	agentYmlPath := filepath.Join(fullPath, "agent.yml")
+
+	if _, err := os.Stat(agentYamlPath); err == nil {
+		p.agentDefinitionPath = agentYamlPath
+		fmt.Printf("Using agent definition: %s\n", color.New(color.FgHiGreen).Sprint(agentYamlPath))
+		return nil
 	}
 
-	switch len(yamlFiles) {
-	case 0:
-		return fmt.Errorf("no YAML/YML files found in %s. Please ensure an agent definition file exists or set "+
-			"FOUNDRY_AGENT_DEFINITION_PATH environment variable", fullPath)
-
-	case 1:
-		// Ask user to confirm if this is the agent definition file
-		confirmed, err := p.promptUserConfirmation(ctx, yamlFiles[0])
-		if err != nil {
-			return fmt.Errorf("failed to get user confirmation: %w", err)
-		}
-
-		if !confirmed {
-			return fmt.Errorf("user declined to use the found YAML file. Please set FOUNDRY_AGENT_DEFINITION_PATH " +
-				"environment variable to specify the correct agent definition file")
-		}
-
-		p.agentDefinitionPath = yamlFiles[0]
-		fmt.Printf("Using agent definition: %s\n", color.New(color.FgHiGreen).Sprint(yamlFiles[0]))
-
-	default:
-		// Multiple files found, ask user to select
-		selectedFile, err := p.promptUserSelection(ctx, yamlFiles)
-		if err != nil {
-			return fmt.Errorf("failed to get user selection: %w", err)
-		}
-
-		p.agentDefinitionPath = selectedFile
-		fmt.Printf("Using selected agent definition: %s\n", color.New(color.FgHiGreen).Sprint(selectedFile))
+	if _, err := os.Stat(agentYmlPath); err == nil {
+		p.agentDefinitionPath = agentYmlPath
+		fmt.Printf("Using agent definition: %s\n", color.New(color.FgHiGreen).Sprint(agentYmlPath))
+		return nil
 	}
 
-	return nil
+	return fmt.Errorf("agent definition file (agent.yaml or agent.yml) not found in %s. "+
+		"Please ensure the file exists or set FOUNDRY_AGENT_DEFINITION_PATH environment variable", fullPath)
 }
 
 // Endpoints returns endpoints exposed by the agent service

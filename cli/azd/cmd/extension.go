@@ -336,52 +336,118 @@ type extensionShowItem struct {
 	Usage             string
 	Examples          []extensions.ExtensionExample
 	Providers         []extensions.Provider
+	Capabilities      []extensions.CapabilityType
 }
 
 func (t *extensionShowItem) Display(writer io.Writer) error {
-	tabs := tabwriter.NewWriter(
-		writer,
-		0,
-		output.TableTabSize,
-		1,
-		output.TablePadCharacter,
-		output.TableFlags)
-	text := [][]string{
+	// Helper function to write a section with its own tabwriter
+	writeSection := func(header string, rows [][]string) error {
+		if len(rows) == 0 {
+			return nil
+		}
+
+		// Write bold and underlined header
+		underlinedHeader := output.WithUnderline("%s", header)
+		boldUnderlinedHeader := output.WithBold("%s", underlinedHeader)
+		_, err := fmt.Fprintf(writer, "%s\n", boldUnderlinedHeader)
+		if err != nil {
+			return err
+		} // Create tabwriter for this section
+		tabs := tabwriter.NewWriter(
+			writer,
+			0,
+			output.TableTabSize,
+			1,
+			output.TablePadCharacter,
+			output.TableFlags)
+
+		// Write rows
+		for _, row := range rows {
+			_, err := tabs.Write([]byte(strings.Join(row, "\t") + "\n"))
+			if err != nil {
+				return err
+			}
+		}
+
+		// Flush and add spacing
+		if err := tabs.Flush(); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(writer)
+		return err
+	}
+
+	// Extension Information section
+	extensionInfo := [][]string{
 		{"Id", ":", t.Id},
 		{"Source", ":", t.Source},
 		{"Namespace", ":", t.Namespace},
 		{"Description", ":", t.Description},
+	}
+	if err := writeSection("Extension Information", extensionInfo); err != nil {
+		return err
+	}
+
+	// Version Information section
+	versionInfo := [][]string{
 		{"Latest Version", ":", t.LatestVersion},
 		{"Installed Version", ":", t.InstalledVersion},
-		{"Available Versions", ":", strings.Join(t.AvailableVersions, ", ")},
-		{"Tags", ":", strings.Join(t.Tags, ", ")},
-		{"", "", ""},
-		{"Usage", ":", t.Usage},
-		{"Examples", ":", ""},
+	}
+	// Only add Available Versions if there are any
+	if len(t.AvailableVersions) > 0 {
+		versionInfo = append(versionInfo, []string{"Available Versions", ":", strings.Join(t.AvailableVersions, ", ")})
+	}
+	// Only add Tags if they are defined
+	if len(t.Tags) > 0 {
+		versionInfo = append(versionInfo, []string{"Tags", ":", strings.Join(t.Tags, ", ")})
+	}
+	if err := writeSection("Version Information", versionInfo); err != nil {
+		return err
 	}
 
-	for _, example := range t.Examples {
-		text = append(text, []string{"", "", example.Usage})
-	}
-
-	// Add providers information if available
-	if len(t.Providers) > 0 {
-		text = append(text, []string{"", "", ""})
-		text = append(text, []string{"Providers", ":", ""})
-		for _, provider := range t.Providers {
-			providerInfo := fmt.Sprintf("%s (%s) - %s", provider.Name, provider.Type, provider.Description)
-			text = append(text, []string{"", "", providerInfo})
+	// Capabilities section - only if there are capabilities
+	if len(t.Capabilities) > 0 {
+		capabilityRows := [][]string{}
+		for _, capability := range t.Capabilities {
+			capabilityRows = append(capabilityRows, []string{"-", string(capability)})
 		}
-	}
-
-	for _, line := range text {
-		_, err := tabs.Write([]byte(strings.Join(line, "\t") + "\n"))
-		if err != nil {
+		if err := writeSection("Capabilities", capabilityRows); err != nil {
 			return err
 		}
 	}
 
-	return tabs.Flush()
+	// Providers section - only if there are providers
+	if len(t.Providers) > 0 {
+		providerRows := [][]string{}
+		for _, provider := range t.Providers {
+			providerInfo := fmt.Sprintf("%s (%s) - %s", provider.Name, provider.Type, provider.Description)
+			providerRows = append(providerRows, []string{"", "", providerInfo})
+		}
+		if err := writeSection("Providers", providerRows); err != nil {
+			return err
+		}
+	}
+
+	// Usage section
+	usageRows := [][]string{
+		{"", "", t.Usage},
+	}
+	if err := writeSection("Usage", usageRows); err != nil {
+		return err
+	}
+
+	// Examples section - only if there are examples
+	if len(t.Examples) > 0 {
+		exampleRows := [][]string{}
+		for _, example := range t.Examples {
+			exampleRows = append(exampleRows, []string{"", "", example.Usage})
+		}
+		if err := writeSection("Examples", exampleRows); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -427,6 +493,7 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 		Usage:             latestVersion.Usage,
 		Examples:          latestVersion.Examples,
 		Providers:         latestVersion.Providers,
+		Capabilities:      latestVersion.Capabilities,
 		InstalledVersion:  "N/A",
 	}
 

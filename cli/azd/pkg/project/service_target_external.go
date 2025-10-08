@@ -51,6 +51,7 @@ func (est *ExternalServiceTarget) Publish(
 
 	protoServicePackage := toProtoServicePackageResult(frameworkPackageOutput)
 	protoTargetResource := toProtoTargetResource(targetResource)
+	protoPublishOptions := toProtoPublishOptions(publishOptions)
 
 	req := &azdext.ServiceTargetMessage{
 		RequestId: uuid.NewString(),
@@ -59,6 +60,7 @@ func (est *ExternalServiceTarget) Publish(
 				ServiceConfig:  protoServiceConfig,
 				ServicePackage: protoServicePackage,
 				TargetResource: protoTargetResource,
+				PublishOptions: protoPublishOptions,
 			},
 		},
 	}
@@ -71,13 +73,12 @@ func (est *ExternalServiceTarget) Publish(
 	}
 
 	publishResp := resp.GetPublishResponse()
-	result := &ServicePublishResult{
-		Package: frameworkPackageOutput,
+	if publishResp == nil || publishResp.PublishResult == nil {
+		return &ServicePublishResult{Package: frameworkPackageOutput}, nil
 	}
 
-	if publishResp != nil && publishResp.PublishResult != nil {
-		result.Details = stringMapToDetailsInterface(publishResp.PublishResult.Details)
-	}
+	result := fromProtoServicePublishResult(publishResp.PublishResult)
+	result.Package = frameworkPackageOutput
 
 	return result, nil
 }
@@ -503,8 +504,18 @@ func toProtoServicePackageResult(result *ServicePackageResult) *azdext.ServicePa
 		return nil
 	}
 
-	details := detailsInterfaceToStringMap(result.Details)
 	protoResult := &azdext.ServicePackageResult{PackagePath: result.PackagePath}
+
+	if dockerDetails, ok := result.Details.(*dockerPackageResult); ok {
+		protoResult.DockerPackageResult = &azdext.DockerPackageResult{
+			ImageHash:   dockerDetails.ImageHash,
+			SourceImage: dockerDetails.SourceImage,
+			TargetImage: dockerDetails.TargetImage,
+		}
+		return protoResult
+	}
+
+	details := detailsInterfaceToStringMap(result.Details)
 	if len(details) > 0 {
 		protoResult.Details = details
 	}
@@ -530,6 +541,15 @@ func fromProtoServicePackageResult(
 		result.PackagePath = protoResult.PackagePath
 	}
 
+	if protoResult.DockerPackageResult != nil {
+		result.Details = &dockerPackageResult{
+			ImageHash:   protoResult.DockerPackageResult.ImageHash,
+			SourceImage: protoResult.DockerPackageResult.SourceImage,
+			TargetImage: protoResult.DockerPackageResult.TargetImage,
+		}
+		return result
+	}
+
 	if len(protoResult.Details) > 0 {
 		result.Details = stringMapToDetailsInterface(protoResult.Details)
 	}
@@ -542,14 +562,48 @@ func toProtoServicePublishResult(result *ServicePublishResult) *azdext.ServicePu
 		return nil
 	}
 
+	protoResult := &azdext.ServicePublishResult{}
+
+	if containerDetails, ok := result.Details.(*ContainerPublishDetails); ok {
+		if containerDetails.RemoteImage != "" {
+			protoResult.ContainerDetails = &azdext.ContainerPublishDetails{
+				RemoteImage: containerDetails.RemoteImage,
+			}
+		}
+		return protoResult
+	}
+
 	details := detailsInterfaceToStringMap(result.Details)
-	if len(details) == 0 {
+	if len(details) > 0 {
+		protoResult.Details = details
+	}
+
+	if protoResult.ContainerDetails == nil && len(protoResult.Details) == 0 {
 		return nil
 	}
 
-	return &azdext.ServicePublishResult{
-		Details: details,
+	return protoResult
+}
+
+func fromProtoServicePublishResult(protoResult *azdext.ServicePublishResult) *ServicePublishResult {
+	if protoResult == nil {
+		return &ServicePublishResult{}
 	}
+
+	result := &ServicePublishResult{}
+
+	if protoResult.ContainerDetails != nil && protoResult.ContainerDetails.RemoteImage != "" {
+		result.Details = &ContainerPublishDetails{
+			RemoteImage: protoResult.ContainerDetails.RemoteImage,
+		}
+		return result
+	}
+
+	if len(protoResult.Details) > 0 {
+		result.Details = stringMapToDetailsInterface(protoResult.Details)
+	}
+
+	return result
 }
 
 func toProtoTargetResource(target *environment.TargetResource) *azdext.TargetResource {
@@ -569,6 +623,16 @@ func toProtoTargetResource(target *environment.TargetResource) *azdext.TargetRes
 	}
 
 	return protoTarget
+}
+
+func toProtoPublishOptions(options *PublishOptions) *azdext.PublishOptions {
+	if options == nil {
+		return nil
+	}
+
+	return &azdext.PublishOptions{
+		Image: options.Image,
+	}
 }
 
 func detailsInterfaceToStringMap(details interface{}) map[string]string {

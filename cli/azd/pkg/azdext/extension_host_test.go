@@ -165,6 +165,7 @@ func (stubServiceTargetProvider) Publish(
 	serviceConfig *ServiceConfig,
 	servicePackage *ServicePackageResult,
 	targetResource *TargetResource,
+	publishOptions *PublishOptions,
 	progress ProgressReporter,
 ) (*ServicePublishResult, error) {
 	return nil, nil

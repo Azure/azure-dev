@@ -51,3 +51,12 @@ type githubCLI interface {
 		options *azd_github.SetVariableOptions,
 	) error
 }
+
+// gitCLI is an interface over [internalGitCLI], for testing
+type gitCLI interface {
+	AddFile(ctx context.Context, repositoryPath string, filespec string) error
+	Commit(ctx context.Context, repositoryPath string, message string) error
+	GetRemoteUrl(ctx context.Context, repositoryPath string, remoteName string) (string, error)
+	ListRemotes(ctx context.Context, repositoryPath string) ([]string, error)
+	PushUpstream(ctx context.Context, repositoryPath string, origin string, branch string) error
+}

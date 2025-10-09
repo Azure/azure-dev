@@ -53,6 +53,7 @@ azruntime
 azsdk
 azureai
 AZURECLI
+azurecodingagent
 azureedge
 azureml
 azurestaticapps

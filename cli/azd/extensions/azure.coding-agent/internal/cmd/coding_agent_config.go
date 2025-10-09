@@ -23,11 +23,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
 	azd_exec "github.com/azure/azure-dev/cli/azd/pkg/exec"
+	azd_github "github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	azd_git "github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	azd_github "github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	azd_tools_github "github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -135,12 +136,6 @@ func newConfigCommand() *cobra.Command {
 			return fmt.Errorf("failed to get azd project: %w", err)
 		}
 
-		repoSlug, err := getRepoSlug(ctx, flagValues.RepoSlug, promptClient)
-
-		if err != nil {
-			return fmt.Errorf("failed getting the <owner>/<repository>: %w", err)
-		}
-
 		if err := loginToGitHubIfNeeded(ctx, flagValues.GitHubHostName, newCommandRunner, newGitHubCLI); err != nil {
 			return fmt.Errorf("failed to log in to GitHub. Login manually using `gh auth login`: %w", err)
 		}
@@ -175,18 +170,23 @@ func newConfigCommand() *cobra.Command {
 		// the defaults follow along with whatever the user has chosen for --debug. So if --debug is
 		// _off_ then you don't see all the console output from sub-commands.
 		defaultCommandRunner, defaultConsole := newCommandRunner(flagValues.Debug)
-		defaultGitHubCLI, err := azd_github.NewGitHubCli(ctx, defaultConsole, defaultCommandRunner)
+		defaultGitHubCLI, err := azd_tools_github.NewGitHubCli(ctx, defaultConsole, defaultCommandRunner)
 
 		if err != nil {
 			return fmt.Errorf("failed to get the github CLI: %w", err)
 		}
 
-		gitCLI := azd_git.NewCli(defaultCommandRunner)
-
+		gitCLI := newInternalGitCLI(defaultCommandRunner)
 		gitRepoRoot, err := gitCLI.GetRepoRoot(ctx, getProjectResponse.Project.Path)
 
 		if err != nil {
 			return fmt.Errorf("failed to get git repository root: %w", err)
+		}
+
+		repoSlug, err := promptForRepoSlug(ctx, promptClient, gitCLI, gitRepoRoot, flagValues.RepoSlug)
+
+		if err != nil {
+			return fmt.Errorf("failed getting the <owner>/<repository>: %w", err)
 		}
 
 		authConfig, err := pickOrCreateMSI(ctx,
@@ -246,7 +246,7 @@ func newConfigCommand() *cobra.Command {
 }
 
 func openBrowserWindows(ctx context.Context,
-	prompter azdext.PromptServiceClient, githubCLI *azd_github.Cli,
+	prompter azdext.PromptServiceClient, githubCLI *azd_tools_github.Cli,
 	codingAgentURL string, gitRepoRoot string) error {
 	resp, err := prompter.Confirm(ctx, &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
@@ -282,23 +282,58 @@ func openBrowserWindows(ctx context.Context,
 	return nil
 }
 
-func getRepoSlug(ctx context.Context, currentRepoSlug string, promptClient azdext.PromptServiceClient) (string, error) {
-	if currentRepoSlug != "" {
-		return currentRepoSlug, nil
+func promptForRepoSlug(ctx context.Context,
+	promptClient azdext.PromptServiceClient,
+	gitCLI gitCLI,
+	gitRepoRoot string,
+	repoSlug string,
+) (string, error) {
+	if repoSlug != "" {
+		return repoSlug, nil
 	}
 
-	res, err := promptClient.Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:     "Enter the <owner>/<repository> where the Copilot Coding Agent will run",
-			Placeholder: "<owner>/<repository>",
-		},
-	})
+	var choices []*azdext.SelectChoice
+
+	remotes, err := gitCLI.ListRemotes(ctx, gitRepoRoot)
 
 	if err != nil {
 		return "", err
 	}
 
-	return res.Value, nil
+	var repoSlugs []string
+
+	for _, remote := range remotes {
+		remoteURL, err := gitCLI.GetRemoteUrl(context.Background(), gitRepoRoot, remote)
+
+		if err != nil {
+			return "", err
+		}
+
+		repoSlug, err := azd_github.GetSlugForRemote(remoteURL)
+
+		if err != nil {
+			return "", err
+		}
+
+		choices = append(choices, &azdext.SelectChoice{
+			Label: remote + ": " + repoSlug,
+		})
+
+		repoSlugs = append(repoSlugs, repoSlug)
+	}
+
+	resp, err := promptClient.Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message: "Which git repository will use the Copilot coding agent?",
+			Choices: choices,
+		},
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed to get selection: %w", err)
+	}
+
+	return repoSlugs[*resp.Value], nil
 }
 
 func writeCopilotSetupStepsYaml(gitRepoRoot string) error {
@@ -320,9 +355,9 @@ func writeCopilotSetupStepsYaml(gitRepoRoot string) error {
 	return nil
 }
 
-// newGitHubCLI is a thin wrapper around [azd_github.NewGitHubCli], for testing
+// newGitHubCLI is a thin wrapper around [azd_tools_github.NewGitHubCli], for testing
 func newGitHubCLI(ctx context.Context, console input.Console, commandRunner azd_exec.CommandRunner) (githubCLI, error) {
-	cli, err := azd_github.NewGitHubCli(ctx, console, commandRunner)
+	cli, err := azd_tools_github.NewGitHubCli(ctx, console, commandRunner)
 	return cli, err
 }
 
@@ -376,7 +411,7 @@ func setCopilotEnvVars(ctx context.Context, githubCLI githubCLI, repoSlug string
 					repoSlug,
 					name,
 					value,
-					&azd_github.SetVariableOptions{Environment: copilotEnv}); err != nil {
+					&azd_tools_github.SetVariableOptions{Environment: copilotEnv}); err != nil {
 					return ux.Error, err
 				}
 
@@ -662,7 +697,7 @@ type authConfiguration struct {
 
 // gitPushChanges walks the user through pushing a branch with their changes to git.
 func gitPushChanges(ctx context.Context,
-	prompter azdext.PromptServiceClient, gitCLI *azd_git.Cli, commandRunner azd_exec.CommandRunner,
+	prompter azdext.PromptServiceClient, gitCLI gitCLI, commandRunner azd_exec.CommandRunner,
 	gitRepoRoot string, repoSlug string, branchName string,
 ) (remote string, err error) {
 	copilotFileRelative := ".github/workflows/copilot-setup-steps.yml"
@@ -701,7 +736,7 @@ func gitPushChanges(ctx context.Context,
 
 	resp, err := prompter.Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: "Which git remote would you like to push the changes to?",
+			Message: fmt.Sprintf("Which git repository would you like push the branch (%s) to?", branchName),
 			Choices: choices,
 		},
 	})
@@ -822,4 +857,35 @@ func loginToGitHubIfNeeded(
 
 	fmt.Println(output.WithSuccessFormat("✓ GitHub CLI is logged in"))
 	return nil
+}
+
+type internalGitCLI struct {
+	*azd_git.Cli
+	commandRunner azd_exec.CommandRunner
+}
+
+var _ gitCLI = &internalGitCLI{}
+
+func newInternalGitCLI(commandRunner azd_exec.CommandRunner) *internalGitCLI {
+	gitCLI := azd_git.NewCli(commandRunner)
+
+	return &internalGitCLI{
+		Cli:           gitCLI,
+		commandRunner: commandRunner,
+	}
+}
+
+func (cli *internalGitCLI) ListRemotes(ctx context.Context, gitRepoRoot string) ([]string, error) {
+	runResult, err := cli.commandRunner.Run(ctx, azd_exec.RunArgs{
+		Cmd:  "git",
+		Args: []string{"remote"},
+		Cwd:  gitRepoRoot,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get list of git remotes for the current repository: %w", err)
+	}
+
+	remotes := strings.Split(strings.TrimSpace(runResult.Stdout), "\n")
+	return remotes, nil
 }

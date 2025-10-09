@@ -192,7 +192,7 @@
                         "type": "string",
                         "title": "Required. The type of Azure resource used for service implementation",
                         "description": "The Azure service that will be used as the target for deployment operations for the service.",
-                        "enum": [
+                        "examples": [
                             "appservice",
                             "containerapp",
                             "function",
@@ -205,7 +205,7 @@
                     "language": {
                         "type": "string",
                         "title": "Service implementation language",
-                        "enum": [
+                        "examples": [
                             "dotnet",
                             "csharp",
                             "fsharp",
@@ -214,13 +214,14 @@
                             "js",
                             "ts",
                             "java",
-                            "docker"
+                            "docker",
+                            "custom"
                         ]
                     },
                     "module": {
                         "type": "string",
-                        "title": "(DEPRECATED) Path of the infrastructure module used to deploy the service relative to the root infra folder",
-                        "description": "If omitted, the CLI will assume the module name is the same as the service name. This property will be deprecated in a future release."
+                        "title": "Path of the infrastructure module used to deploy the service relative to the root infra folder",
+                        "description": "If omitted, the CLI will assume the module name is the same as the service name."
                     },
                     "dist": {
                         "type": "string",
@@ -235,6 +236,14 @@
                     "config": {
                         "type": "object",
                         "additionalProperties": true
+                    },
+                    "uses": {
+                        "type": "array",
+                        "title": "Dependencies on other services and resources",
+                        "description": "List of service names and resource names that this service depends on.",
+                        "items": {
+                            "type": "string"
+                        }
                     },
                     "hooks": {
                         "type": "object",
@@ -310,9 +319,6 @@
                                     "required": [
                                         "image"
                                     ],
-                                    "properties": {
-                                        "language": false
-                                    },
                                     "not": {
                                         "required": [
                                             "project"
@@ -364,8 +370,7 @@
                         },
                         "then": {
                             "required": [
-                                "project",
-                                "language"
+                                "project"
                             ],
                             "properties": {
                                 "docker": false

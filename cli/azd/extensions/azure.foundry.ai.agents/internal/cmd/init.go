@@ -14,10 +14,10 @@ import (
 	"path/filepath"
 	"slices"
 
-	"azure.foundry.ai.agents/internal/pkg/azure"
-	"azure.foundry.ai.agents/internal/pkg/azure/ai"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/pkg/azure/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"

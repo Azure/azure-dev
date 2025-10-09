@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/feedback"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -50,7 +51,12 @@ func NewErrorMiddleware(
 
 func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
 	actionResult, err := next(ctx)
-	if !e.featuresManager.IsEnabled(llm.FeatureLlm) {
+
+	// Short-circuit agentic error handling in non-interactive scenarios:
+	// - LLM feature is disabled
+	// - User specified --no-prompt (non-interactive mode)
+	// - Running in CI/CD environment where user interaction is not possible
+	if !e.featuresManager.IsEnabled(llm.FeatureLlm) || e.global.NoPrompt || resource.IsRunningOnCI() {
 		return actionResult, err
 	}
 

@@ -25,6 +25,7 @@ Commands
 
   Beta commands
     add       	: Add a component to your project.
+    extension 	: Manage azd extensions.
     hooks     	: Develop, test and run hooks for a project.
     infra     	: Manage your Infrastructure as Code (IaC).
     monitor   	: Monitor a deployed project.

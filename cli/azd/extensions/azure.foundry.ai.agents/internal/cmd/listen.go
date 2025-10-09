@@ -4,10 +4,9 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
-	"time"
 
+	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -27,30 +26,14 @@ func newListenCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			eventManager := azdext.NewEventManager(azdClient)
-			defer eventManager.Close()
-
-			// Hook into preprovision event
-			err = eventManager.AddProjectEventHandler(
-				ctx,
-				"preprovision",
-				func(ctx context.Context, args *azdext.ProjectEventArgs) error {
-					for i := 1; i <= 20; i++ {
-						fmt.Printf("%d. Doing important work in extension...\n", i)
-						time.Sleep(250 * time.Millisecond)
-					}
-
-					return nil
-				},
-			)
-			if err != nil {
-				return fmt.Errorf("failed to add preprovision project event handler: %w", err)
-			}
+			provider := project.NewAgentServiceTargetProvider(azdClient)
+			host := azdext.NewExtensionHost(azdClient).
+				WithServiceTarget("foundry.containeragent", provider)
 
 			// Start listening for events
 			// This is a blocking call and will not return until the server connection is closed.
-			if err := eventManager.Receive(ctx); err != nil {
-				return fmt.Errorf("failed to receive events: %w", err)
+			if err := host.Run(ctx); err != nil {
+				return fmt.Errorf("failed to run extension: %w", err)
 			}
 
 			return nil

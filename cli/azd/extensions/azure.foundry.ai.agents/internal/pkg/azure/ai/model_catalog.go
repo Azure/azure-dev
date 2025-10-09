@@ -10,10 +10,10 @@ import (
 	"strings"
 	"sync"
 
-	"azure.foundry.ai.agents/internal/pkg/azure"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/pkg/azure"
 )
 
 type AiModel struct {

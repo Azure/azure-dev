@@ -92,7 +92,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 				serviceConfig,
 				&ServicePackageResult{
 					PackagePath: "test-app/api-test:azd-deploy-0",
-					Details: &dockerPackageResult{
+					Details: &DockerPackageResult{
 						ImageHash:   "IMAGE_HASH",
 						TargetImage: "test-app/api-test:azd-deploy-0",
 					},
@@ -104,7 +104,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
-	require.IsType(t, new(dockerPackageResult), packageResult.Details)
+	require.IsType(t, new(DockerPackageResult), packageResult.Details)
 
 	scope := environment.NewTargetResource(
 		"SUBSCRIPTION_ID",
@@ -154,7 +154,7 @@ func Test_ContainerApp_Publish(t *testing.T) {
 				serviceConfig,
 				&ServicePackageResult{
 					PackagePath: "test-app/api-test:azd-deploy-0",
-					Details: &dockerPackageResult{
+					Details: &DockerPackageResult{
 						ImageHash:   "IMAGE_HASH",
 						TargetImage: "test-app/api-test:azd-deploy-0",
 					},
@@ -166,7 +166,7 @@ func Test_ContainerApp_Publish(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
-	require.IsType(t, new(dockerPackageResult), packageResult.Details)
+	require.IsType(t, new(DockerPackageResult), packageResult.Details)
 
 	scope := environment.NewTargetResource(
 		"SUBSCRIPTION_ID",
@@ -250,6 +250,9 @@ func createContainerAppServiceTarget(
 		containerHelper,
 		containerAppService,
 		resourceManager,
+		deploymentService,
+		mockContext.Console,
+		mockContext.CommandRunner,
 	)
 }
 

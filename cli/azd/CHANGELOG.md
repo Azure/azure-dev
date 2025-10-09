@@ -1,6 +1,6 @@
 # Release History
 
-## 1.20.0-beta.1 (Unreleased)
+## 1.21.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,38 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.20.0 (2025-10-08)
+
+### Features Added
+
+- [[#5856]](https://github.com/Azure/azure-dev/pull/5856) Add service dependencies support with `uses` property for automatic deployment ordering.
+- [[#5663]](https://github.com/Azure/azure-dev/pull/5663) Add `azd publish` command to separate publishing to container registries from deployment.
+- [[#5815]](https://github.com/Azure/azure-dev/pull/5815) Add custom service target support in extension framework.
+- [[#5753]](https://github.com/Azure/azure-dev/pull/5753) Implement auto-installation workflow for extensions.
+- [[#5723]](https://github.com/Azure/azure-dev/pull/5723) Add Container App Jobs support to azd Aspire deployments.
+- [[#5694]](https://github.com/Azure/azure-dev/pull/5694) Support Bicep Container App revisions.
+- [[#5858]](https://github.com/Azure/azure-dev/pull/5858) Promote extensions from alpha to beta.
+- [[#5807]](https://github.com/Azure/azure-dev/pull/5807) Enable MCP Server capability in extension framework.
+- [[#5798]](https://github.com/Azure/azure-dev/pull/5798) Add elicitation support for azd agent.
+- [[#5771]](https://github.com/Azure/azure-dev/pull/5771) Add custom language support.
+- [[#5874]](https://github.com/Azure/azure-dev/pull/5874) Update `azd ext show` command UX with improved extension source display.
+- [[#5809]](https://github.com/Azure/azure-dev/pull/5809) Make hook `shell` attribute optional with OS-based defaults.
+
+### Bugs Fixed
+
+- [[#5736]](https://github.com/Azure/azure-dev/pull/5736) Fix `azd x publish` to automatically set up local extension registry.
+- [[#5812]](https://github.com/Azure/azure-dev/pull/5812) Use the name of the compute env from Aspire Manifest when Aspire owns the env instead of the hardcoded string "resources".
+- [[#5827]](https://github.com/Azure/azure-dev/pull/5827) Bypass agentic error handling flow in non-interactive scenarios.
+- [[#5808]](https://github.com/Azure/azure-dev/pull/5808), [[#5877]](https://github.com/Azure/azure-dev/pull/5877) Improve UX for agentic azd init.
+- [[#5870]](https://github.com/Azure/azure-dev/pull/5870) Update preflight error handling for standard deployment.
+
+### Other Changes
+
+- [[#5869]](https://github.com/Azure/azure-dev/pull/5869) Update Bicep from 0.38.3 to 0.38.33.
+- [[#5867]](https://github.com/Azure/azure-dev/pull/5867) Make language optional in the schema.
+- [[#5770]](https://github.com/Azure/azure-dev/pull/5770) Update gh CLI to latest 2.80.
+- [[#5823]](https://github.com/Azure/azure-dev/pull/5823) Differentiate Azure Managed Redis from Redis Enterprise in provisioning progress.
 
 ## 1.19.0 (2025-09-12)
 

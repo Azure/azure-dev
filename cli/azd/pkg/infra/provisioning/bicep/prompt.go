@@ -33,7 +33,7 @@ func (p *BicepProvider) promptDialogItemForParameter(
 	param azure.ArmTemplateParameterDefinition,
 ) input.PromptDialogItem {
 	help, _ := param.Description()
-	paramType := p.mapBicepTypeToInterfaceType(param.Type)
+	paramType := provisioning.ParameterTypeFromArmType(param.Type)
 
 	var dialogItem input.PromptDialogItem
 	dialogItem.ID = key
@@ -239,7 +239,7 @@ func (p *BicepProvider) promptForParameter(
 	msg := fmt.Sprintf("Enter a value for the '%s' infrastructure %s:", key, securedParam)
 	help, _ := param.Description()
 	azdMetadata, _ := param.AzdMetadata()
-	paramType := p.mapBicepTypeToInterfaceType(param.Type)
+	paramType := provisioning.ParameterTypeFromArmType(param.Type)
 
 	var value any
 
@@ -448,7 +448,7 @@ func (p *BicepProvider) promptForParameter(
 			}
 			value = userValue
 		default:
-			panic(fmt.Sprintf("unknown parameter type: %s", p.mapBicepTypeToInterfaceType(param.Type)))
+			panic(fmt.Sprintf("unknown parameter type: %s", provisioning.ParameterTypeFromArmType(param.Type)))
 		}
 	}
 

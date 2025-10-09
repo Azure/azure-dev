@@ -64,7 +64,7 @@ func (s *eventService) EventStream(stream grpc.BidiStreamingServer[azdext.EventM
 		return fmt.Errorf("failed to get extension claims: %w", err)
 	}
 
-	options := extensions.LookupOptions{
+	options := extensions.FilterOptions{
 		Id: extensionClaims.Subject,
 	}
 

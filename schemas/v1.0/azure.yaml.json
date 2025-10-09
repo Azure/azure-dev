@@ -196,6 +196,16 @@
                                 "title": "post package hook",
                                 "description": "Runs after the service is deployment package is created",
                                 "$ref": "#/definitions/hooks"
+                            },
+                            "prepublish": {
+                                "title": "pre publish hook",
+                                "description": "Runs before the service is published",
+                                "$ref": "#/definitions/hooks"
+                            },
+                            "postpublish": {
+                                "title": "post publish hook",
+                                "description": "Runs after the service is published",
+                                "$ref": "#/definitions/hooks"
                             }
                         }
                     }
@@ -513,6 +523,16 @@
                 "postpackage": {
                     "title": "post package hook",
                     "description": "Runs after the `package` command",
+                    "$ref": "#/definitions/hooks"
+                },
+                "prepublish": {
+                    "title": "pre publish hook",
+                    "description": "Runs before the `publish` command",
+                    "$ref": "#/definitions/hooks"
+                },
+                "postpublish": {
+                    "title": "post publish hook",
+                    "description": "Runs after the `publish` command",
                     "$ref": "#/definitions/hooks"
                 },
                 "predeploy": {

@@ -14,4 +14,5 @@
   description: "Enables provisioning with layers."
 - id: llm
   description: "Enables the use of LLMs in the CLI."
-  
+- id: language.custom
+  description: "Enables support for services to use custom language."

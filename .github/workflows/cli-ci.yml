@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - "cli/**"
-      - "!cli/azd/extensions/**"
       - ".github/workflows/cli-ci.yml"
       - "go.mod"
     branches: [main]

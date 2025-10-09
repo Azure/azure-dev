@@ -7,7 +7,8 @@ import (
 	"context"
 	"os"
 
-	"Azure.CodingAgent/internal/cmd"
+	"azurecodingagent/internal/cmd"
+
 	"github.com/fatih/color"
 )
 

@@ -432,7 +432,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 		image                   string
 		project                 string
 		packagePath             string
-		dockerDetails           *dockerPackageResult
+		dockerDetails           *DockerPackageResult
 		expectedRemoteImage     string
 		expectDockerLoginCalled bool
 		expectDockerPullCalled  bool
@@ -444,7 +444,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			name:     "Source code and registry",
 			project:  "./src/api",
 			registry: osutil.NewExpandableString("contoso.azurecr.io"),
-			dockerDetails: &dockerPackageResult{
+			dockerDetails: &DockerPackageResult{
 				ImageHash:   "IMAGE_ID",
 				SourceImage: "",
 				TargetImage: "my-project/my-service:azd-deploy-0",
@@ -459,7 +459,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 		{
 			name:    "Source code and no registry",
 			project: "./src/api",
-			dockerDetails: &dockerPackageResult{
+			dockerDetails: &DockerPackageResult{
 				ImageHash:   "IMAGE_ID",
 				SourceImage: "",
 				TargetImage: "my-project/my-service:azd-deploy-0",
@@ -486,7 +486,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			name:     "Source image and registry",
 			image:    "nginx",
 			registry: osutil.NewExpandableString("contoso.azurecr.io"),
-			dockerDetails: &dockerPackageResult{
+			dockerDetails: &DockerPackageResult{
 				ImageHash:   "",
 				SourceImage: "nginx",
 				TargetImage: "my-project/nginx:azd-deploy-0",
@@ -502,7 +502,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			name:     "Source image and external registry",
 			image:    "nginx",
 			registry: osutil.NewExpandableString("docker.io/custom"),
-			dockerDetails: &dockerPackageResult{
+			dockerDetails: &DockerPackageResult{
 				ImageHash:   "",
 				SourceImage: "nginx",
 				TargetImage: "my-project/nginx:azd-deploy-0",
@@ -517,7 +517,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 		{
 			name:  "Source image and no registry",
 			image: "nginx",
-			dockerDetails: &dockerPackageResult{
+			dockerDetails: &DockerPackageResult{
 				ImageHash:   "",
 				SourceImage: "nginx",
 				TargetImage: "my-project/nginx:azd-deploy-0",
@@ -542,7 +542,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 		},
 		{
 			name:                    "Empty package details",
-			dockerDetails:           &dockerPackageResult{},
+			dockerDetails:           &DockerPackageResult{},
 			expectError:             true,
 			expectDockerLoginCalled: false,
 			expectDockerPullCalled:  false,
@@ -956,7 +956,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 		image                   string
 		project                 string
 		packagePath             string
-		dockerDetails           *dockerPackageResult
+		dockerDetails           *DockerPackageResult
 		publishOptions          *PublishOptions
 		expectedRemoteImage     string
 		expectDockerLoginCalled bool
@@ -969,7 +969,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			name:     "Source code and registry",
 			project:  "./src/api",
 			registry: osutil.NewExpandableString("contoso.azurecr.io"),
-			dockerDetails: &dockerPackageResult{
+			dockerDetails: &DockerPackageResult{
 				ImageHash:   "IMAGE_ID",
 				SourceImage: "",
 				TargetImage: "my-project/my-service:azd-publish-0",
@@ -985,7 +985,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 		{
 			name:    "Source code and no registry",
 			project: "./src/api",
-			dockerDetails: &dockerPackageResult{
+			dockerDetails: &DockerPackageResult{
 				ImageHash:   "IMAGE_ID",
 				SourceImage: "",
 				TargetImage: "my-project/my-service:azd-publish-0",
@@ -1001,7 +1001,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			name:     "Source image and registry",
 			image:    "nginx",
 			registry: osutil.NewExpandableString("contoso.azurecr.io"),
-			dockerDetails: &dockerPackageResult{
+			dockerDetails: &DockerPackageResult{
 				ImageHash:   "",
 				SourceImage: "nginx",
 				TargetImage: "my-project/nginx:azd-publish-0",
@@ -1017,7 +1017,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 		{
 			name:  "Source image and no registry",
 			image: "nginx",
-			dockerDetails: &dockerPackageResult{
+			dockerDetails: &DockerPackageResult{
 				ImageHash:   "",
 				SourceImage: "nginx",
 				TargetImage: "my-project/nginx:azd-publish-0",
@@ -1034,7 +1034,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			name:     "With publish options overwrite",
 			project:  "./src/api",
 			registry: osutil.NewExpandableString("contoso.azurecr.io"),
-			dockerDetails: &dockerPackageResult{
+			dockerDetails: &DockerPackageResult{
 				ImageHash:   "IMAGE_ID",
 				SourceImage: "",
 				TargetImage: "my-project/my-service:azd-publish-0",
@@ -1051,7 +1051,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			name:     "With publish options image override",
 			project:  "./src/api",
 			registry: osutil.NewExpandableString("contoso.azurecr.io"),
-			dockerDetails: &dockerPackageResult{
+			dockerDetails: &DockerPackageResult{
 				ImageHash:   "IMAGE_ID",
 				SourceImage: "",
 				TargetImage: "my-project/my-service:azd-publish-0",
@@ -1066,7 +1066,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 		},
 		{
 			name:                    "Empty package details",
-			dockerDetails:           &dockerPackageResult{},
+			dockerDetails:           &DockerPackageResult{},
 			publishOptions:          &PublishOptions{},
 			expectError:             true,
 			expectDockerLoginCalled: false,

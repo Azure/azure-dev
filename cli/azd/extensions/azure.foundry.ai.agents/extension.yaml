@@ -9,7 +9,12 @@ language: go
 capabilities:
   - custom-commands
   - lifecycle-events
+  - mcp-server
   - service-target-provider
+providers:
+  - name: foundry.containeragent
+    type: service-target
+    description: Deploys agents to AI Foundry container agent service.
 examples:
   - name: init
     description: Initialize a new AI agent project.
@@ -17,3 +22,6 @@ examples:
   - name: deploy
     description: Deploy AI agents to Azure.
     usage: azd ai agent deploy
+  - name: mcp
+    description: Start MCP server with AI Foundry agent tools.
+    usage: azd ai agent mcp start

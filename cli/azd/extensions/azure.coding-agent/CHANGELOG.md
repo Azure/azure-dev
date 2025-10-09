@@ -2,6 +2,10 @@
 
 ## 0.2.0
 
+### Features Added
+
+- Use the existing remotes on the git repo when asking for the coding agent repository.
+
 ### Bugs Fixed
 
 - Coding agent rule is scoped to the resource group that was created, and not the entire subscription.

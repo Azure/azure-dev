@@ -1,4 +1,4 @@
-module Azure.CodingAgent
+module azurecodingagent
 
 go 1.25
 

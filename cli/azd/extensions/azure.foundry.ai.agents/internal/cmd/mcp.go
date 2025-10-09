@@ -39,11 +39,14 @@ func runMcpServer(ctx context.Context) error {
 	s := server.NewMCPServer(
 		"AZD AI Foundry Agents Extension MCP Server", "1.0.0",
 		server.WithToolCapabilities(true),
+		server.WithElicitation(),
 	)
+
+	s.EnableSampling()
 
 	// Add AI Foundry agent tools
 	agentTools := []server.ServerTool{
-		tools.NewAddAIFoundryAgentTool(),
+		tools.NewAddAgentTool(),
 	}
 
 	s.AddTools(agentTools...)

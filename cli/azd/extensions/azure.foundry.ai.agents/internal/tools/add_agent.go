@@ -12,8 +12,8 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// NewAddAIFoundryAgentTool creates a tool for adding AI Foundry agents to a project
-func NewAddAIFoundryAgentTool() server.ServerTool {
+// NewAddAgentTool creates a tool for adding AI Foundry agents to a project
+func NewAddAgentTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"add_agent",

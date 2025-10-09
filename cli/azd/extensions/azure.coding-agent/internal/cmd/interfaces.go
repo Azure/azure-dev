@@ -20,7 +20,10 @@ type azdMSIService interface {
 		subscriptionId, msiResourceId string,
 		federatedCredentials []azure_armmsi.FederatedIdentityCredential) ([]azure_armmsi.FederatedIdentityCredential, error)
 	//nolint:lll
-	CreateUserIdentity(ctx context.Context, subscriptionId, resourceGroup, location, name string) (azure_armmsi.Identity, error)
+	CreateUserIdentity(
+		ctx context.Context,
+		subscriptionId, resourceGroup, location, name string,
+	) (azure_armmsi.Identity, error)
 	ListUserIdentities(
 		ctx context.Context, subscriptionId string) ([]azure_armmsi.Identity, error)
 }
@@ -40,5 +43,11 @@ type githubCLI interface {
 	GetAuthStatus(ctx context.Context, hostname string) (azd_github.AuthStatus, error)
 	Login(ctx context.Context, hostname string) error
 	//nolint:lll
-	SetVariable(ctx context.Context, repoSlug string, name string, value string, options *azd_github.SetVariableOptions) error
+	SetVariable(
+		ctx context.Context,
+		repoSlug string,
+		name string,
+		value string,
+		options *azd_github.SetVariableOptions,
+	) error
 }

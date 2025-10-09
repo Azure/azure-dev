@@ -508,14 +508,14 @@ func Test_DockerProject_Package(t *testing.T) {
 		image                  string
 		project                string
 		docker                 DockerProjectOptions
-		expectedPackageResult  dockerPackageResult
+		expectedPackageResult  DockerPackageResult
 		expectDockerPullCalled bool
 		expectDockerTagCalled  bool
 	}{
 		{
 			name:    "source with defaults",
 			project: "./src/api",
-			expectedPackageResult: dockerPackageResult{
+			expectedPackageResult: DockerPackageResult{
 				ImageHash:   "IMAGE_ID",
 				SourceImage: "",
 				TargetImage: "test-app/api-test:azd-deploy-0",
@@ -530,7 +530,7 @@ func Test_DockerProject_Package(t *testing.T) {
 				Image: osutil.NewExpandableString("foo/bar"),
 				Tag:   osutil.NewExpandableString("latest"),
 			},
-			expectedPackageResult: dockerPackageResult{
+			expectedPackageResult: DockerPackageResult{
 				ImageHash:   "IMAGE_ID",
 				SourceImage: "",
 				TargetImage: "foo/bar:latest",
@@ -541,7 +541,7 @@ func Test_DockerProject_Package(t *testing.T) {
 		{
 			name:  "image with defaults",
 			image: "nginx:latest",
-			expectedPackageResult: dockerPackageResult{
+			expectedPackageResult: DockerPackageResult{
 				ImageHash:   "",
 				SourceImage: "nginx:latest",
 				TargetImage: "test-app/api-test:azd-deploy-0",
@@ -556,7 +556,7 @@ func Test_DockerProject_Package(t *testing.T) {
 				Image: osutil.NewExpandableString("foo/bar"),
 				Tag:   osutil.NewExpandableString("latest"),
 			},
-			expectedPackageResult: dockerPackageResult{
+			expectedPackageResult: DockerPackageResult{
 				ImageHash:   "",
 				SourceImage: "nginx:latest",
 				TargetImage: "foo/bar:latest",
@@ -571,7 +571,7 @@ func Test_DockerProject_Package(t *testing.T) {
 				Image: osutil.NewExpandableString("myapp-service"),
 				Tag:   osutil.NewExpandableString("latest"),
 			},
-			expectedPackageResult: dockerPackageResult{
+			expectedPackageResult: DockerPackageResult{
 				ImageHash:   "",
 				SourceImage: "docker.io/repository/image:latest",
 				TargetImage: "myapp-service:latest",
@@ -634,7 +634,7 @@ func Test_DockerProject_Package(t *testing.T) {
 			)
 
 			require.NoError(t, err)
-			dockerDetails, ok := result.Details.(*dockerPackageResult)
+			dockerDetails, ok := result.Details.(*DockerPackageResult)
 			require.True(t, ok)
 			require.Equal(t, tt.expectedPackageResult, *dockerDetails)
 

@@ -61,18 +61,15 @@ func (est *ExternalServiceTarget) Publish(
 	}
 
 	protoServicePackage := &azdext.ServicePackageResult{}
-	err = mapper.Convert(frameworkPackageOutput, protoServicePackage)
-	if err != nil {
+	if err := mapper.Convert(frameworkPackageOutput, &protoServicePackage); err != nil {
 		return nil, err
 	}
 	protoTargetResource := &azdext.TargetResource{}
-	err = mapper.Convert(targetResource, protoTargetResource)
-	if err != nil {
+	if err := mapper.Convert(targetResource, &protoTargetResource); err != nil {
 		return nil, err
 	}
 	protoPublishOptions := &azdext.PublishOptions{}
-	err = mapper.Convert(publishOptions, protoPublishOptions)
-	if err != nil {
+	if err := mapper.Convert(publishOptions, &protoPublishOptions); err != nil {
 		return nil, err
 	}
 
@@ -101,8 +98,7 @@ func (est *ExternalServiceTarget) Publish(
 	}
 
 	var result *ServicePublishResult
-	err = mapper.Convert(publishResp.PublishResult, &result)
-	if err != nil {
+	if err := mapper.Convert(publishResp.PublishResult, &result); err != nil {
 		return nil, fmt.Errorf("failed to convert publish result: %w", err)
 	}
 	result.Package = frameworkPackageOutput
@@ -191,8 +187,7 @@ func (est *ExternalServiceTarget) Package(
 	}
 
 	protoFrameworkPackage := &azdext.ServicePackageResult{}
-	err = mapper.Convert(frameworkPackageOutput, protoFrameworkPackage)
-	if err != nil {
+	if err := mapper.Convert(frameworkPackageOutput, &protoFrameworkPackage); err != nil {
 		return nil, err
 	}
 
@@ -220,9 +215,8 @@ func (est *ExternalServiceTarget) Package(
 
 	// Convert proto result using mapper
 	var convertedResult *ServicePackageResult
-	convertErr := mapper.Convert(packageResp.PackageResult, &convertedResult)
-	if convertErr != nil {
-		return nil, fmt.Errorf("failed to convert package result: %w", convertErr)
+	if err := mapper.Convert(packageResp.PackageResult, &convertedResult); err != nil {
+		return nil, err
 	}
 
 	// Merge with framework package output (apply fallback/default logic)
@@ -260,18 +254,15 @@ func (est *ExternalServiceTarget) Deploy(
 	}
 
 	protoServicePackage := &azdext.ServicePackageResult{}
-	err = mapper.Convert(servicePackage, protoServicePackage)
-	if err != nil {
+	if err = mapper.Convert(servicePackage, &protoServicePackage); err != nil {
 		return nil, err
 	}
 	protoServicePublish := &azdext.ServicePublishResult{}
-	err = mapper.Convert(publishResult, protoServicePublish)
-	if err != nil {
+	if err = mapper.Convert(publishResult, &protoServicePublish); err != nil {
 		return nil, err
 	}
 	protoTargetResource := &azdext.TargetResource{}
-	err = mapper.Convert(targetResource, protoTargetResource)
-	if err != nil {
+	if err = mapper.Convert(targetResource, &protoTargetResource); err != nil {
 		return nil, err
 	}
 
@@ -332,8 +323,7 @@ func (est *ExternalServiceTarget) Endpoints(
 	}
 
 	protoTargetResource := &azdext.TargetResource{}
-	err = mapper.Convert(targetResource, protoTargetResource)
-	if err != nil {
+	if err = mapper.Convert(targetResource, &protoTargetResource); err != nil {
 		return nil, err
 	}
 	req := &azdext.ServiceTargetMessage{
@@ -388,8 +378,7 @@ func (est *ExternalServiceTarget) ResolveTargetResource(
 			defaultError = err.Error()
 		} else if defaultTarget != nil {
 			protoDefaultTarget = &azdext.TargetResource{}
-			err = mapper.Convert(defaultTarget, protoDefaultTarget)
-			if err != nil {
+			if err = mapper.Convert(defaultTarget, &protoDefaultTarget); err != nil {
 				return nil, err
 			}
 		}

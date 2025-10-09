@@ -70,9 +70,8 @@ func (c *composeService) AddResource(
 	// Convert proto resource to ResourceConfig using mapper
 	// The mapper now handles creating properly typed Props based on resource type
 	var resourceConfig *project.ResourceConfig
-	err = mapper.Convert(req.Resource, &resourceConfig)
-	if err != nil {
-		return nil, fmt.Errorf("converting resource from proto: %w", err)
+	if err := mapper.Convert(req.Resource, &resourceConfig); err != nil {
+		return nil, err
 	}
 
 	resourceId := req.Resource.ResourceId
@@ -123,9 +122,8 @@ func (c *composeService) GetResource(
 	}
 
 	var composedResource *azdext.ComposedResource
-	err = mapper.Convert(existingResource, &composedResource)
-	if err != nil {
-		return nil, fmt.Errorf("converting resource to proto: %w", err)
+	if err := mapper.Convert(existingResource, &composedResource); err != nil {
+		return nil, err
 	}
 
 	return &azdext.GetResourceResponse{
@@ -150,9 +148,8 @@ func (c *composeService) ListResourceTypes(
 	var composedResourceTypes []*azdext.ComposedResourceType
 	for _, resource := range resourceType {
 		var composedResourceType *azdext.ComposedResourceType
-		err := mapper.Convert(resource, &composedResourceType)
-		if err != nil {
-			return nil, fmt.Errorf("converting resource type to proto: %w", err)
+		if err := mapper.Convert(resource, &composedResourceType); err != nil {
+			return nil, err
 		}
 		composedResourceTypes = append(composedResourceTypes, composedResourceType)
 	}
@@ -181,9 +178,8 @@ func (c *composeService) ListResources(
 
 	for _, resource := range existingResources {
 		var composedResource *azdext.ComposedResource
-		err := mapper.Convert(resource, &composedResource)
-		if err != nil {
-			return nil, fmt.Errorf("converting resource to proto: %w", err)
+		if err := mapper.Convert(resource, &composedResource); err != nil {
+			return nil, err
 		}
 		composedResources = append(composedResources, composedResource)
 	}

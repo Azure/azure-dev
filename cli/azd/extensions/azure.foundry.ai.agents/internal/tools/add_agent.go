@@ -16,7 +16,7 @@ import (
 func NewAddAIFoundryAgentTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
-			"add_ai_foundry_agent",
+			"add_agent",
 			mcp.WithDescription("Add an AI Foundry agent to the current azd project using an agent manifest"),
 			mcp.WithReadOnlyHintAnnotation(false),
 			mcp.WithIdempotentHintAnnotation(false),

@@ -11,6 +11,8 @@ trigger:
       - /eng/pipelines/templates/jobs/build-cli.yml
       - /eng/pipelines/templates/jobs/cross-build-cli.yml
       - /eng/pipelines/templates/variables/image.yml
+    exclude:
+      - cli/azd/extensions/**
 
 pr:
   paths:
@@ -21,6 +23,7 @@ pr:
       - eng/pipelines/templates/steps/publish-cli.yml
     exclude:
       - cli/azd/docs/**
+      - cli/azd/extensions/**
 
 extends: 
   template: /eng/pipelines/templates/stages/1es-redirect.yml

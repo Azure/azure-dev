@@ -152,16 +152,18 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 	}
 
 	agentId := agentYaml["id"].(string)
+	agentKind := agentYaml["kind"].(string)
 
 	// Add the agent to the azd project (azure.yaml) services
-	if err := a.addToProject(ctx, agentId, targetDir, flags); err != nil {
+	if err := a.addToProject(ctx, targetDir, agentId, agentKind); err != nil {
 		return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 	}
 
 	// Populate the "resources" section of the azure.yaml
-	if err := a.validateResources(ctx, agentYaml); err != nil {
-		return fmt.Errorf("updating resources in azure.yaml: %w", err)
-	}
+	// TODO: Add back in once we move forward with composability support
+	// if err := a.validateResources(ctx, agentYaml); err != nil {
+	// 	return fmt.Errorf("updating resources in azure.yaml: %w", err)
+	// }
 
 	color.Green("\nAI agent project initialized successfully!")
 	return nil
@@ -426,13 +428,20 @@ func (a *InitAction) downloadAgentYaml(ctx context.Context, uri string, targetDi
 	return yamlData, targetDir, nil
 }
 
-func (a *InitAction) addToProject(ctx context.Context, agentId string, targetDir string, flags *initFlags) error {
+func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentId string, agentKind string) error {
+	var host string
+	switch agentKind {
+	case "container":
+		host = "containerapp"
+	default:
+		host = "foundry.agent"
+	}
+
 	serviceConfig := &azdext.ServiceConfig{
 		Name:         agentId,
 		RelativePath: targetDir,
-		//Host:         "foundry.hostedagent",
-		Host:     "ai.endpoint",
-		Language: "python",
+		Host:         host,
+		Language:     "python",
 	}
 
 	req := &azdext.AddServiceRequest{Service: serviceConfig}

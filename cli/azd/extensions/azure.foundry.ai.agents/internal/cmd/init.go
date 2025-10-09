@@ -151,12 +151,27 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 		return fmt.Errorf("downloading agent.yaml: %w", err)
 	}
 
-	agentId := agentYaml["id"].(string)
-	agentKind := agentYaml["kind"].(string)
+	agentId, ok := agentYaml["id"].(string)
+	if !ok || agentId == "" {
+		return fmt.Errorf("extracting id from agent YAML: id missing or empty")
+	}
+	agentKind, ok := agentYaml["kind"].(string)
+	if !ok || agentKind == "" {
+		return fmt.Errorf("extracting kind from agent YAML: kind missing or empty")
+	}
+	agentModelName, ok := agentYaml["model"].(string)
+	if !ok || agentModelName == "" {
+		return fmt.Errorf("extracting model name from agent YAML: model name missing or empty")
+	}
 
 	// Add the agent to the azd project (azure.yaml) services
 	if err := a.addToProject(ctx, targetDir, agentId, agentKind); err != nil {
 		return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
+	}
+
+	// Update environment with necessary env vars
+	if err := a.updateEnvironment(ctx, agentKind, agentModelName); err != nil {
+		return fmt.Errorf("failed to update environment: %w", err)
 	}
 
 	// Populate the "resources" section of the azure.yaml
@@ -714,4 +729,56 @@ func selectFromList(
 
 	chosen := options[selectedIndex]
 	return chosen, nil
+}
+
+func (a *InitAction) updateEnvironment(ctx context.Context, agentKind string, agentModelName string) error {
+	fmt.Printf("Updating environment variables for agent kind: %s\n", agentKind)
+
+	// Get current environment
+	envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("failed to get current environment: %w", err)
+	}
+
+	if envResponse.Environment == nil {
+		return fmt.Errorf("no current environment found")
+	}
+
+	envName := envResponse.Environment.Name
+
+	// Set environment variables based on agent kind
+	switch agentKind {
+	case "hosted":
+		// Set environment variables for hosted agents
+		if err := a.setEnvVar(ctx, envName, "ENABLE_HOSTED_AGENTS", "true"); err != nil {
+			return err
+		}
+	case "container":
+		// Set environment variables for foundry agents
+		if err := a.setEnvVar(ctx, envName, "ENABLE_CONTAINER_AGENTS", "true"); err != nil {
+			return err
+		}
+	}
+
+	// Model information should be set regardless of agent kind
+	if err := a.setEnvVar(ctx, envName, "AZURE_AI_FOUNDRY_MODEL_NAME", agentModelName); err != nil {
+		return err
+	}
+
+	fmt.Printf("Successfully updated environment variables for agent kind: %s\n", agentKind)
+	return nil
+}
+
+func (a *InitAction) setEnvVar(ctx context.Context, envName, key, value string) error {
+	_, err := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: envName,
+		Key:     key,
+		Value:   value,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to set environment variable %s=%s: %w", key, value, err)
+	}
+
+	fmt.Printf("Set environment variable: %s=%s\n", key, value)
+	return nil
 }

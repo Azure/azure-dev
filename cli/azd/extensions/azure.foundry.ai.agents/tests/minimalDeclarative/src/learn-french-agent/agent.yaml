@@ -1,6 +1,7 @@
 id: learn-french-agent
 version: 1.0.0
 name: Learn French Agent
+kind: prompt
 description: |-
   This Agent helps users learn French by providing vocabulary, grammar tips, and practice exercises.
 metadata:
@@ -28,3 +29,4 @@ instructions: |-
   You are a helpful assistant that specializes in teaching French.
   Provide clear explanations, examples,
   and practice exercises to help users improve their French language skills.
+

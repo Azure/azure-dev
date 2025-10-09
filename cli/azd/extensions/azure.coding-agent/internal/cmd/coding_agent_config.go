@@ -176,15 +176,14 @@ func newConfigCommand() *cobra.Command {
 			return fmt.Errorf("failed to get the github CLI: %w", err)
 		}
 
-		gitCLI := azd_git.NewCli(defaultCommandRunner)
-
+		gitCLI := newInternalGitCLI(defaultCommandRunner)
 		gitRepoRoot, err := gitCLI.GetRepoRoot(ctx, getProjectResponse.Project.Path)
 
 		if err != nil {
 			return fmt.Errorf("failed to get git repository root: %w", err)
 		}
 
-		repoSlug, err := promptForRepoSlug(ctx, promptClient, gitCLI, defaultCommandRunner, gitRepoRoot)
+		repoSlug, err := promptForRepoSlug(ctx, promptClient, gitCLI, gitRepoRoot, flagValues.RepoSlug)
 
 		if err != nil {
 			return fmt.Errorf("failed getting the <owner>/<repository>: %w", err)
@@ -282,13 +281,17 @@ func openBrowserWindows(ctx context.Context,
 
 func promptForRepoSlug(ctx context.Context,
 	promptClient azdext.PromptServiceClient,
-	gitCLI *azd_git.Cli,
-	commandRunner azd_exec.CommandRunner,
+	gitCLI gitCLI,
 	gitRepoRoot string,
-) (repoSlug string, err error) {
+	repoSlug string,
+) (string, error) {
+	if repoSlug != "" {
+		return repoSlug, nil
+	}
+
 	var choices []*azdext.SelectChoice
 
-	remotes, err := gitRemotes(ctx, commandRunner, gitRepoRoot)
+	remotes, err := gitCLI.ListRemotes(ctx, gitRepoRoot)
 
 	if err != nil {
 		return "", err
@@ -328,21 +331,6 @@ func promptForRepoSlug(ctx context.Context,
 	}
 
 	return repoSlugs[*resp.Value], nil
-}
-
-func gitRemotes(ctx context.Context, commandRunner azd_exec.CommandRunner, gitRepoRoot string) ([]string, error) {
-	runResult, err := commandRunner.Run(ctx, azd_exec.RunArgs{
-		Cmd:  "git",
-		Args: []string{"remote"},
-		Cwd:  gitRepoRoot,
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get list of git remotes for the current repository: %w", err)
-	}
-
-	remotes := strings.Split(strings.TrimSpace(runResult.Stdout), "\n")
-	return remotes, nil
 }
 
 func writeCopilotSetupStepsYaml(gitRepoRoot string) error {
@@ -696,7 +684,7 @@ type authConfiguration struct {
 
 // gitPushChanges walks the user through pushing a branch with their changes to git.
 func gitPushChanges(ctx context.Context,
-	prompter azdext.PromptServiceClient, gitCLI *azd_git.Cli, commandRunner azd_exec.CommandRunner,
+	prompter azdext.PromptServiceClient, gitCLI gitCLI, commandRunner azd_exec.CommandRunner,
 	gitRepoRoot string, repoSlug string, branchName string,
 ) (remote string, err error) {
 	copilotFileRelative := ".github/workflows/copilot-setup-steps.yml"
@@ -848,4 +836,35 @@ func loginToGitHubIfNeeded(ctx context.Context,
 
 	fmt.Println(output.WithSuccessFormat("✓ GitHub CLI is logged in"))
 	return nil
+}
+
+type internalGitCLI struct {
+	*azd_git.Cli
+	commandRunner azd_exec.CommandRunner
+}
+
+var _ gitCLI = &internalGitCLI{}
+
+func newInternalGitCLI(commandRunner azd_exec.CommandRunner) *internalGitCLI {
+	gitCLI := azd_git.NewCli(commandRunner)
+
+	return &internalGitCLI{
+		Cli:           gitCLI,
+		commandRunner: commandRunner,
+	}
+}
+
+func (cli *internalGitCLI) ListRemotes(ctx context.Context, gitRepoRoot string) ([]string, error) {
+	runResult, err := cli.commandRunner.Run(ctx, azd_exec.RunArgs{
+		Cmd:  "git",
+		Args: []string{"remote"},
+		Cwd:  gitRepoRoot,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get list of git remotes for the current repository: %w", err)
+	}
+
+	remotes := strings.Split(strings.TrimSpace(runResult.Stdout), "\n")
+	return remotes, nil
 }

@@ -15,7 +15,6 @@ import (
 	"slices"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/pkg/azure/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -69,18 +68,18 @@ func newInitCommand() *cobra.Command {
 				return fmt.Errorf("failed to ensure azure context: %w", err)
 			}
 
-			getComposedResourcesResponse, err := azdClient.Compose().ListResources(ctx, &azdext.EmptyRequest{})
-			if err != nil {
-				return fmt.Errorf("failed to get composed resources: %w", err)
-			}
+			// getComposedResourcesResponse, err := azdClient.Compose().ListResources(ctx, &azdext.EmptyRequest{})
+			// if err != nil {
+			// 	return fmt.Errorf("failed to get composed resources: %w", err)
+			// }
 
-			credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-				TenantID:                   azureContext.Scope.TenantId,
-				AdditionallyAllowedTenants: []string{"*"},
-			})
-			if err != nil {
-				return fmt.Errorf("failed to create azure credential: %w", err)
-			}
+			// credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+			// 	TenantID:                   azureContext.Scope.TenantId,
+			// 	AdditionallyAllowedTenants: []string{"*"},
+			// })
+			// if err != nil {
+			// 	return fmt.Errorf("failed to create azure credential: %w", err)
+			// }
 
 			console := input.NewConsole(
 				false, // noPrompt
@@ -96,14 +95,14 @@ func newInitCommand() *cobra.Command {
 			)
 
 			action := &InitAction{
-				azdClient:           azdClient,
-				azureClient:         azure.NewAzureClient(credential),
-				azureContext:        azureContext,
-				composedResources:   getComposedResourcesResponse.Resources,
-				console:             console,
-				credential:          credential,
-				modelCatalogService: ai.NewModelCatalogService(credential),
-				projectConfig:       projectConfig,
+				azdClient: azdClient,
+				// azureClient:         azure.NewAzureClient(credential),
+				azureContext: azureContext,
+				// composedResources:   getComposedResourcesResponse.Resources,
+				console: console,
+				// credential:          credential,
+				// modelCatalogService: ai.NewModelCatalogService(credential),
+				projectConfig: projectConfig,
 			}
 
 			if err := action.Run(ctx, flags); err != nil {

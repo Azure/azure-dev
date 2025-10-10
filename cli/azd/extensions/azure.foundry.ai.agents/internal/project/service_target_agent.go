@@ -15,6 +15,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/braydonk/yaml"
 	"github.com/fatih/color"
 )
 
@@ -187,78 +188,47 @@ func (p *AgentServiceTargetProvider) Deploy(
 		azdEnv[kval.Key] = kval.Value
 	}
 
-	// *************************************Step 1: Build Agent Image*************************************
-	registryEndpoint := azdEnv["AZURE_CONTAINER_REGISTRY_ENDPOINT"]
-	if registryEndpoint == "" {
-		return nil, fmt.Errorf("AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable is required")
-	}
-
-	// Parse agent YAML to get agent ID
 	agentYAMLPath := p.agentDefinitionPath
-	agentConfig, err := parseAgentYAML(agentYAMLPath)
+	data, err := os.ReadFile(agentYAMLPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse agent YAML: %w", err)
+		return nil, fmt.Errorf("failed to read YAML file: %w", err)
 	}
 
-	// Find Dockerfile in the same directory as agent.yaml
-	agentDir := filepath.Dir(agentYAMLPath)
-	dockerfilePath := filepath.Join(agentDir, "Dockerfile")
-
-	// Check if Dockerfile exists
-	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("dockerfile not found in agent directory: %s", dockerfilePath)
+	var agentConfigDetails AgentYAMLConfig
+	isHosted := false
+	if err := yaml.Unmarshal(data, &agentConfigDetails); err != nil {
+		return nil, fmt.Errorf("failed to parse YAML: %w", err)
+	}
+	if AgentKind(agentConfigDetails.Kind) == AgentKindHosted {
+		isHosted = true
 	}
 
-	fmt.Fprintf(os.Stderr, "Building image for agent: %s (ID: %s)\n", agentConfig.Name, agentConfig.ID)
-	fmt.Fprintf(os.Stderr, "Using Dockerfile: %s\n", dockerfilePath)
-	fmt.Fprintf(os.Stderr, "Using Azure Container Registry: %s\n", registryEndpoint)
-
-	// Create Azure credential
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
+	// *************************************Step 1: Build Agent Image (Hosted agents only)************
+	var fullImageURL string
+	if isHosted {
+		var err error
+		fullImageURL, err = p.buildAgentImage(ctx, agentYAMLPath, azdEnv)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build agent image: %w", err)
+		}
 	}
-
-	// Create build context (tar archive)
-	buildContext, err := createBuildContext(dockerfilePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create build context: %w", err)
-	}
-
-	// Generate image names with custom version (or timestamp) and latest tags
-	// TODO: add support for custom version
-	imageNames := generateImageNamesFromAgent(agentConfig, "")
-
-	fmt.Fprintf(os.Stderr, "Starting remote build for images: %v\n", imageNames)
-
-	// Start the build
-	runID, err := startRemoteBuildWithAPI(ctx, cred, registryEndpoint, buildContext, imageNames, dockerfilePath, azdEnv)
-	if err != nil {
-		return nil, fmt.Errorf("failed to start remote build: %w", err)
-	}
-
-	fmt.Fprintf(os.Stderr, "Build started with run ID: %s\n", runID)
-
-	// Monitor the build status with log streaming
-	err = monitorBuildWithLogs(ctx, cred, registryEndpoint, runID, azdEnv)
-	if err != nil {
-		return nil, fmt.Errorf("build monitoring failed: %w", err)
-	}
-
-	// Output the full image URL (use the first image name which has the version tag)
-	registryHost := strings.TrimPrefix(registryEndpoint, "https://")
-	fullImageURL := fmt.Sprintf("%s/%s", registryHost, imageNames[0])
-
-	fmt.Fprintf(os.Stderr, "Build completed successfully!\n")
-	fmt.Fprintf(os.Stderr, "Built image: %s\n", fullImageURL)
-
-	// Output just the image URL to stdout for script consumption
-	fmt.Print(fullImageURL)
 
 	// *************************************Step 2: Create Agent*************************************
 	// Check if environment variable is set
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
 		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required")
+	}
+
+	// Parse agent YAML to get agent config for logging and request creation
+	agentConfig, err := parseAgentYAML(agentYAMLPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse agent YAML: %w", err)
+	}
+
+	// Create Azure credential
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", agentYAMLPath)
@@ -281,7 +251,6 @@ func (p *AgentServiceTargetProvider) Deploy(
 	}
 	fmt.Fprintf(os.Stderr, "Description: %s\n", description)
 
-	isHosted := false
 	// Display agent-specific information
 	if promptDef, ok := request.Definition.(PromptAgentDefinition); ok {
 		fmt.Fprintf(os.Stderr, "Model: %s\n", promptDef.ModelName)
@@ -331,7 +300,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, fmt.Errorf("failed to set environment variable: %w", err)
 	}
 
-	// *************************************Step 3: Start agent for HOBO*************************************
+	// *************************************Step 3: Start agent for HOBO (hosted agents only)************
 	if !isHosted {
 		// Return deployment result
 		return &azdext.ServiceDeployResult{
@@ -427,4 +396,76 @@ func (p *AgentServiceTargetProvider) Deploy(
 			"message": "Agent service deployed successfully using custom extension logic",
 		},
 	}, nil
+}
+
+// buildAgentImage builds a container image for hosted agents
+func (p *AgentServiceTargetProvider) buildAgentImage(
+	ctx context.Context, agentYAMLPath string, azdEnv map[string]string) (string, error) {
+	registryEndpoint := azdEnv["AZURE_CONTAINER_REGISTRY_ENDPOINT"]
+	if registryEndpoint == "" {
+		return "", fmt.Errorf("AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable is required")
+	}
+
+	// Parse agent YAML to get agent ID
+	agentConfig, err := parseAgentYAML(agentYAMLPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse agent YAML: %w", err)
+	}
+
+	// Find Dockerfile in the same directory as agent.yaml
+	agentDir := filepath.Dir(agentYAMLPath)
+	dockerfilePath := filepath.Join(agentDir, "Dockerfile")
+
+	// Check if Dockerfile exists
+	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
+		return "", fmt.Errorf("dockerfile not found in agent directory: %s", dockerfilePath)
+	}
+
+	fmt.Fprintf(os.Stderr, "Building image for agent: %s (ID: %s)\n", agentConfig.Name, agentConfig.ID)
+	fmt.Fprintf(os.Stderr, "Using Dockerfile: %s\n", dockerfilePath)
+	fmt.Fprintf(os.Stderr, "Using Azure Container Registry: %s\n", registryEndpoint)
+
+	// Create Azure credential
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create Azure credential: %w", err)
+	}
+
+	// Create build context (tar archive)
+	buildContext, err := createBuildContext(dockerfilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create build context: %w", err)
+	}
+
+	// Generate image names with custom version (or timestamp) and latest tags
+	// TODO: add support for custom version
+	imageNames := generateImageNamesFromAgent(agentConfig, "")
+
+	fmt.Fprintf(os.Stderr, "Starting remote build for images: %v\n", imageNames)
+
+	// Start the build
+	runID, err := startRemoteBuildWithAPI(ctx, cred, registryEndpoint, buildContext, imageNames, dockerfilePath, azdEnv)
+	if err != nil {
+		return "", fmt.Errorf("failed to start remote build: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Build started with run ID: %s\n", runID)
+
+	// Monitor the build status with log streaming
+	err = monitorBuildWithLogs(ctx, cred, registryEndpoint, runID, azdEnv)
+	if err != nil {
+		return "", fmt.Errorf("build monitoring failed: %w", err)
+	}
+
+	// Output the full image URL (use the first image name which has the version tag)
+	registryHost := strings.TrimPrefix(registryEndpoint, "https://")
+	fullImageURL := fmt.Sprintf("%s/%s", registryHost, imageNames[0])
+
+	fmt.Fprintf(os.Stderr, "Build completed successfully!\n")
+	fmt.Fprintf(os.Stderr, "Built image: %s\n", fullImageURL)
+
+	// Output just the image URL to stdout for script consumption
+	fmt.Print(fullImageURL)
+
+	return fullImageURL, nil
 }

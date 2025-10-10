@@ -5,7 +5,6 @@ trigger:
       - main
   paths:
     include:
-      - go.mod
       - cli/azd/extensions/azure.coding-agent
       - eng/pipelines/release-azd-extension.yml
       - /eng/pipelines/templates/jobs/build-azd-extension.yml
@@ -15,7 +14,6 @@ trigger:
 pr:
   paths:
     include:
-      - go.mod
       - cli/azd/extensions/azure.coding-agent
       - eng/pipelines/release-azd-extension.yml
       - eng/pipelines/templates/steps/publish-cli.yml

@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
@@ -178,28 +178,36 @@ func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig
 func (t *aksTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	return packageOutput, nil
+	return &ServicePackageResult{}, nil
 }
 
 // Publish pushes the container image to ACR for AKS targets
 func (t *aksTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
 ) (*ServicePublishResult, error) {
+	// Extract package output from service context
+	var hasPackage bool
+	if artifact, found := serviceContext.Package.FindFirst(); found {
+		if artifact.Kind == ArtifactKindDirectory || artifact.Kind == ArtifactKindArchive || artifact.Kind == ArtifactKindContainer {
+			hasPackage = true
+		}
+	}
+
 	// Only publish the container image if a package output has been defined
 	// Empty package details is a valid scenario for any AKS deployment that does not build any containers
 	// Ex) Helm charts, or other manifests that reference external images
-	if serviceConfig.Docker.RemoteBuild || packageOutput.Details != nil || packageOutput.PackagePath != "" {
+	if serviceConfig.Docker.RemoteBuild || hasPackage {
 		// Login, tag & push container image to ACR
 		publishResult, err := t.containerHelper.Publish(
-			ctx, serviceConfig, packageOutput, targetResource, progress, publishOptions)
+			ctx, serviceConfig, serviceContext, targetResource, progress, publishOptions)
 		if err != nil {
 			return nil, err
 		}
@@ -207,11 +215,14 @@ func (t *aksTarget) Publish(
 		// Save the name of the image we pushed into the environment with a well known key.
 		log.Printf("writing image name to environment")
 
-		containerDetails, ok := publishResult.Details.(*ContainerPublishDetails)
-		if !ok {
-			return nil, fmt.Errorf("expected ContainerPublishDetails but got %T", publishResult.Details)
+		// Extract container details from publish artifacts
+		var remoteImage string
+		if artifact, found := publishResult.Artifacts.FindFirst(WithKind(ArtifactKindContainer)); found {
+			remoteImage = artifact.Location
 		}
-		t.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", containerDetails.RemoteImage)
+		if remoteImage != "" {
+			t.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteImage)
+		}
 
 		if err := t.envManager.Save(ctx, t.env); err != nil {
 			return nil, fmt.Errorf("saving image name to environment: %w", err)
@@ -227,8 +238,7 @@ func (t *aksTarget) Publish(
 func (t *aksTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
-	servicePublishResult *ServicePublishResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -236,9 +246,7 @@ func (t *aksTarget) Deploy(
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
-	if packageOutput == nil {
-		return nil, errors.New("missing package output")
-	}
+	artifacts := ArtifactCollection{}
 
 	// Sync environment
 	t.kubectl.SetEnv(t.env.Dotenv())
@@ -271,7 +279,7 @@ func (t *aksTarget) Deploy(
 	deployed = deployed || kustomizeDeployed
 
 	// Vanilla k8s manifests with minimal templating support
-	manifestsDeployed, deployment, err := t.deployManifests(ctx, serviceConfig, progress)
+	manifestsDeployed, _, err := t.deployManifests(ctx, serviceConfig, progress)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
@@ -299,19 +307,27 @@ func (t *aksTarget) Deploy(
 				return nil, fmt.Errorf("failed updating environment with endpoint url, %w", err)
 			}
 		}
+
+		for _, endpoint := range endpoints {
+			if err := artifacts.Add(Artifact{
+				Kind:         ArtifactKindEndpoint,
+				Location:     endpoint,
+				LocationKind: LocationKindRemote,
+			}); err != nil {
+				return nil, fmt.Errorf("failed to add endpoint artifact: %w", err)
+			}
+		}
+	}
+
+	resourceArtifact := Artifact{}
+	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
+		if err := artifacts.Add(resourceArtifact); err != nil {
+			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
+		}
 	}
 
 	return &ServiceDeployResult{
-		Package: packageOutput,
-		Publish: servicePublishResult,
-		TargetResourceId: azure.KubernetesServiceRID(
-			targetResource.SubscriptionId(),
-			targetResource.ResourceGroupName(),
-			targetResource.ResourceName(),
-		),
-		Kind:      AksTarget,
-		Details:   deployment,
-		Endpoints: endpoints,
+		Artifacts: artifacts,
 	}, nil
 }
 

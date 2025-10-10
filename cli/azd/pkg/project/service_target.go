@@ -5,7 +5,6 @@ package project
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -91,7 +90,7 @@ type ServiceTarget interface {
 	Package(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		frameworkPackageOutput *ServicePackageResult,
+		serviceContext *ServiceContext,
 		progress *async.Progress[ServiceProgress],
 	) (*ServicePackageResult, error)
 
@@ -99,7 +98,7 @@ type ServiceTarget interface {
 	Publish(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		frameworkPackageOutput *ServicePackageResult,
+		serviceContext *ServiceContext,
 		targetResource *environment.TargetResource,
 		progress *async.Progress[ServiceProgress],
 		publishOptions *PublishOptions,
@@ -109,8 +108,7 @@ type ServiceTarget interface {
 	Deploy(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		servicePackage *ServicePackageResult,
-		servicePublishResult *ServicePublishResult,
+		serviceContext *ServiceContext,
 		targetResource *environment.TargetResource,
 		progress *async.Progress[ServiceProgress],
 	) (*ServiceDeployResult, error)
@@ -121,32 +119,6 @@ type ServiceTarget interface {
 		serviceConfig *ServiceConfig,
 		targetResource *environment.TargetResource,
 	) ([]string, error)
-}
-
-// NewServiceDeployResult is a helper function to create a new ServiceDeployResult
-func NewServiceDeployResult(
-	relatedResourceId string,
-	kind ServiceTargetKind,
-	rawResult string,
-	endpoints []string,
-) *ServiceDeployResult {
-	returnValue := &ServiceDeployResult{
-		TargetResourceId: relatedResourceId,
-		Kind:             kind,
-		Endpoints:        endpoints,
-	}
-
-	// If the result can be parsed as JSON, store it as such.
-	// Otherwise, just preserve in raw (string) format.
-	var detailsObj interface{}
-	err := json.Unmarshal([]byte(rawResult), &detailsObj)
-	if err != nil {
-		returnValue.Details = rawResult
-	} else {
-		returnValue.Details = detailsObj
-	}
-
-	return returnValue
 }
 
 func resourceTypeMismatchError(

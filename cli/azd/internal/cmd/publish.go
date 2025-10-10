@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -272,22 +273,30 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			continue
 		}
 
-		var packageResult *project.ServicePackageResult
+		// Initialize service context for tracking artifacts across operations
+		serviceContext := &project.ServiceContext{}
 
 		if pa.flags.FromPackage != "" {
-			// --from-package set, skip packaging
-			packageResult = &project.ServicePackageResult{
-				PackagePath: pa.flags.FromPackage,
+			// --from-package set, skip packaging and create package artifact
+			err = serviceContext.Package.Add(project.Artifact{
+				Kind:         determineArtifactKind(pa.flags.FromPackage),
+				Location:     pa.flags.FromPackage,
+				LocationKind: project.LocationKindLocal,
+			})
+
+			if err != nil {
+				pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return nil, err
 			}
 		} else {
 			//  --from-package not set, automatically package the application
-			packageResult, err = async.RunWithProgress(
+			packageResult, err := async.RunWithProgress(
 				func(packageProgress project.ServiceProgress) {
 					progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
 					pa.console.ShowSpinner(ctx, progressMessage, input.Step)
 				},
 				func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePackageResult, error) {
-					return pa.serviceManager.Package(ctx, svc, nil, progress, nil)
+					return pa.serviceManager.Package(ctx, svc, serviceContext, progress, nil)
 				},
 			)
 
@@ -295,6 +304,9 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 				pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, err
 			}
+
+			// Package result is now stored in serviceContext.Package
+			_ = packageResult
 		}
 
 		publishResult, err := async.RunWithProgress(
@@ -303,14 +315,18 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 				pa.console.ShowSpinner(ctx, progressMessage, input.Step)
 			},
 			func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePublishResult, error) {
-				return pa.serviceManager.Publish(ctx, svc, packageResult, progress, publishOptions)
+				return pa.serviceManager.Publish(ctx, svc, serviceContext, progress, publishOptions)
 			},
 		)
 
 		// clean up for packages automatically created in temp dir
-		if pa.flags.FromPackage == "" && strings.HasPrefix(packageResult.PackagePath, os.TempDir()) {
-			if err := os.RemoveAll(packageResult.PackagePath); err != nil {
-				log.Printf("failed to remove temporary package: %s : %s", packageResult.PackagePath, err)
+		if pa.flags.FromPackage == "" {
+			for _, artifact := range serviceContext.Package {
+				if strings.HasPrefix(artifact.Location, os.TempDir()) {
+					if err := os.RemoveAll(artifact.Location); err != nil {
+						log.Printf("failed to remove temporary package: %s : %s", artifact.Location, err)
+					}
+				}
 			}
 		}
 
@@ -362,6 +378,30 @@ func (pa *PublishAction) supportsPublish(ctx context.Context, serviceConfig *pro
 	}
 
 	return false
+}
+
+// determineArtifactKind identifies the type of artifact based on the fromPackage value.
+// It can be one of three types:
+// 1. Archive (zip file) - checks if it exists and matches popular archive extensions
+// 2. Directory - checks if it is an existing directory (absolute or relative)
+// 3. Container - otherwise, it's likely a local container reference
+func determineArtifactKind(fromPackage string) project.ArtifactKind {
+	// Check if it's an existing file with archive extension
+	if info, err := os.Stat(fromPackage); err == nil && !info.IsDir() {
+		ext := strings.ToLower(filepath.Ext(fromPackage))
+		switch ext {
+		case ".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz":
+			return project.ArtifactKindArchive
+		}
+	}
+
+	// Check if it's an existing directory
+	if info, err := os.Stat(fromPackage); err == nil && info.IsDir() {
+		return project.ArtifactKindDirectory
+	}
+
+	// Otherwise, assume it's a container reference
+	return project.ArtifactKindContainer
 }
 
 func GetCmdPublishHelpDescription(*cobra.Command) string {

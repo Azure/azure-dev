@@ -46,7 +46,7 @@ func envResolver(env *environment.Environment) mapper.Resolver {
 func (est *ExternalServiceTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	frameworkPackageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
@@ -60,8 +60,8 @@ func (est *ExternalServiceTarget) Publish(
 		return nil, err
 	}
 
-	protoServicePackage := &azdext.ServicePackageResult{}
-	if err := mapper.Convert(frameworkPackageOutput, &protoServicePackage); err != nil {
+	protoServiceContext := &azdext.ServiceContext{}
+	if err := mapper.Convert(serviceContext, &protoServiceContext); err != nil {
 		return nil, err
 	}
 	protoTargetResource := &azdext.TargetResource{}
@@ -78,7 +78,7 @@ func (est *ExternalServiceTarget) Publish(
 		MessageType: &azdext.ServiceTargetMessage_PublishRequest{
 			PublishRequest: &azdext.ServiceTargetPublishRequest{
 				ServiceConfig:  protoServiceConfig,
-				ServicePackage: protoServicePackage,
+				ServiceContext: protoServiceContext,
 				TargetResource: protoTargetResource,
 				PublishOptions: protoPublishOptions,
 			},
@@ -93,15 +93,14 @@ func (est *ExternalServiceTarget) Publish(
 	}
 
 	publishResp := resp.GetPublishResponse()
-	if publishResp == nil || publishResp.PublishResult == nil {
-		return &ServicePublishResult{Package: frameworkPackageOutput}, nil
+	if publishResp == nil || publishResp.Result == nil {
+		return &ServicePublishResult{}, nil
 	}
 
 	var result *ServicePublishResult
-	if err := mapper.Convert(publishResp.PublishResult, &result); err != nil {
+	if err := mapper.Convert(publishResp.Result, &result); err != nil {
 		return nil, fmt.Errorf("failed to convert publish result: %w", err)
 	}
-	result.Package = frameworkPackageOutput
 
 	return result, nil
 }
@@ -174,7 +173,7 @@ func (est *ExternalServiceTarget) RequiredExternalTools(
 func (est *ExternalServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	frameworkPackageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	cleanup := est.wireConsole()
@@ -186,8 +185,8 @@ func (est *ExternalServiceTarget) Package(
 		return nil, err
 	}
 
-	protoFrameworkPackage := &azdext.ServicePackageResult{}
-	if err := mapper.Convert(frameworkPackageOutput, &protoFrameworkPackage); err != nil {
+	protoServiceContext := &azdext.ServiceContext{}
+	if err := mapper.Convert(serviceContext, &protoServiceContext); err != nil {
 		return nil, err
 	}
 
@@ -195,8 +194,8 @@ func (est *ExternalServiceTarget) Package(
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.ServiceTargetMessage_PackageRequest{
 			PackageRequest: &azdext.ServiceTargetPackageRequest{
-				ServiceConfig:    protoServiceConfig,
-				FrameworkPackage: protoFrameworkPackage,
+				ServiceConfig:  protoServiceConfig,
+				ServiceContext: protoServiceContext,
 			},
 		},
 	}
@@ -209,26 +208,14 @@ func (est *ExternalServiceTarget) Package(
 	}
 
 	packageResp := resp.GetPackageResponse()
-	if packageResp == nil || packageResp.PackageResult == nil {
-		return frameworkPackageOutput, nil
+	if packageResp == nil || packageResp.Result == nil {
+		return &ServicePackageResult{}, nil
 	}
 
 	// Convert proto result using mapper
 	var convertedResult *ServicePackageResult
-	if err := mapper.Convert(packageResp.PackageResult, &convertedResult); err != nil {
+	if err := mapper.Convert(packageResp.Result, &convertedResult); err != nil {
 		return nil, err
-	}
-
-	// Merge with framework package output (apply fallback/default logic)
-	if frameworkPackageOutput != nil {
-		// If the converted result is empty but we have a framework package output, use it as base
-		if convertedResult.PackagePath == "" && frameworkPackageOutput.PackagePath != "" {
-			convertedResult.PackagePath = frameworkPackageOutput.PackagePath
-		}
-		// If the converted result has no details but framework package has details, use them
-		if convertedResult.Details == nil && frameworkPackageOutput.Details != nil {
-			convertedResult.Details = frameworkPackageOutput.Details
-		}
 	}
 
 	return convertedResult, nil
@@ -238,8 +225,7 @@ func (est *ExternalServiceTarget) Package(
 func (est *ExternalServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	servicePackage *ServicePackageResult,
-	publishResult *ServicePublishResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -253,12 +239,8 @@ func (est *ExternalServiceTarget) Deploy(
 		return nil, err
 	}
 
-	protoServicePackage := &azdext.ServicePackageResult{}
-	if err = mapper.Convert(servicePackage, &protoServicePackage); err != nil {
-		return nil, err
-	}
-	protoServicePublish := &azdext.ServicePublishResult{}
-	if err = mapper.Convert(publishResult, &protoServicePublish); err != nil {
+	protoServiceContext := &azdext.ServiceContext{}
+	if err = mapper.Convert(serviceContext, &protoServiceContext); err != nil {
 		return nil, err
 	}
 	protoTargetResource := &azdext.TargetResource{}
@@ -273,9 +255,8 @@ func (est *ExternalServiceTarget) Deploy(
 		MessageType: &azdext.ServiceTargetMessage_DeployRequest{
 			DeployRequest: &azdext.ServiceTargetDeployRequest{
 				ServiceConfig:  protoServiceConfig,
-				ServicePackage: protoServicePackage,
+				ServiceContext: protoServiceContext,
 				TargetResource: protoTargetResource,
-				ServicePublish: protoServicePublish,
 			},
 		},
 	}
@@ -290,21 +271,17 @@ func (est *ExternalServiceTarget) Deploy(
 	}
 
 	deployResponse := resp.GetDeployResponse()
-	if deployResponse == nil || deployResponse.DeployResult == nil {
+	if deployResponse == nil || deployResponse.Result == nil {
 		return nil, errors.New("invalid deploy response: missing deploy result")
 	}
 
-	// Convert protobuf result back to project types
-	result := deployResponse.DeployResult
+	// Convert protobuf result back to project types using mapper
+	var result *ServiceDeployResult
+	if err := mapper.Convert(deployResponse.Result, &result); err != nil {
+		return nil, fmt.Errorf("failed to convert deploy result: %w", err)
+	}
 
-	return &ServiceDeployResult{
-		Package:          servicePackage,
-		Publish:          publishResult,
-		TargetResourceId: result.TargetResourceId,
-		Kind:             ServiceTargetKind(result.Kind),
-		Endpoints:        result.Endpoints,
-		Details:          stringMapToDetailsInterface(result.Details),
-	}, nil
+	return result, nil
 }
 
 // Endpoints gets the endpoints a service exposes.

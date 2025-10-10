@@ -65,6 +65,7 @@ func (m *mavenProject) Initialize(ctx context.Context, serviceConfig *ServiceCon
 func (m *mavenProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
 	progress.SetProgress(NewServiceProgress("Resolving maven dependencies"))
@@ -72,31 +73,53 @@ func (m *mavenProject) Restore(
 		return nil, fmt.Errorf("resolving maven dependencies: %w", err)
 	}
 
-	return &ServiceRestoreResult{}, nil
+	// Create restore artifact for the project directory with resolved dependencies
+	restoreArtifact := Artifact{
+		Kind:         ArtifactKindDirectory,
+		Location:     serviceConfig.Path(),
+		LocationKind: LocationKindLocal,
+		Metadata: map[string]string{
+			"projectPath":  serviceConfig.Path(),
+			"framework":    "maven",
+			"dependencies": ".m2/repository",
+		},
+	}
+
+	return &ServiceRestoreResult{Artifacts: []Artifact{restoreArtifact}}, nil
 }
 
 // Builds the maven project
 func (m *mavenProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	restoreOutput *ServiceRestoreResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	progress.SetProgress(NewServiceProgress("Compiling maven project"))
 	if err := m.mavenCli.Compile(ctx, serviceConfig.Path()); err != nil {
 		return nil, err
 	}
+	// Create build artifact for maven compile output
+	buildArtifact := Artifact{
+		Kind:         ArtifactKindDirectory,
+		Location:     serviceConfig.Path(),
+		LocationKind: LocationKindLocal,
+		Metadata: map[string]string{
+			"buildPath": serviceConfig.Path(),
+			"framework": "maven",
+			"target":    "target",
+		},
+	}
 
 	return &ServiceBuildResult{
-		Restore:         restoreOutput,
-		BuildOutputPath: serviceConfig.Path(),
+		Artifacts: []Artifact{buildArtifact},
 	}, nil
 }
 
 func (m *mavenProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	progress.SetProgress(NewServiceProgress("Packaging maven project"))
@@ -107,9 +130,17 @@ func (m *mavenProject) Package(
 	if serviceConfig.Host == AzureFunctionTarget {
 		if serviceConfig.OutputPath != "" {
 			// If the 'dist' property is specified, we use it directly.
+			packageArtifact := Artifact{
+				Kind:         ArtifactKindDirectory,
+				Location:     filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath),
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"host":      "azure-function",
+					"framework": "maven",
+				},
+			}
 			return &ServicePackageResult{
-				Build:       buildOutput,
-				PackagePath: filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath),
+				Artifacts: []Artifact{packageArtifact},
 			}, nil
 		}
 
@@ -118,9 +149,18 @@ func (m *mavenProject) Package(
 			return nil, err
 		}
 
+		funcAppArtifact := Artifact{
+			Kind:         ArtifactKindDirectory,
+			Location:     funcAppDir,
+			LocationKind: LocationKindLocal,
+			Metadata: map[string]string{
+				"host":       "azure-function",
+				"funcAppDir": funcAppDir,
+				"framework":  "maven",
+			},
+		}
 		return &ServicePackageResult{
-			Build:       buildOutput,
-			PackagePath: funcAppDir,
+			Artifacts: []Artifact{funcAppArtifact},
 		}, nil
 	}
 
@@ -129,9 +169,10 @@ func (m *mavenProject) Package(
 		return nil, fmt.Errorf("creating staging directory: %w", err)
 	}
 
-	packageSrcPath := buildOutput.BuildOutputPath
-	if packageSrcPath == "" {
-		packageSrcPath = serviceConfig.Path()
+	// Get package source path from build artifacts or default to service path
+	packageSrcPath := serviceConfig.Path()
+	if artifact, found := serviceContext.Build.FindFirst(WithKind(ArtifactKindDirectory)); found && artifact.Location != "" {
+		packageSrcPath = artifact.Location
 	}
 
 	if serviceConfig.OutputPath != "" {
@@ -171,9 +212,19 @@ func (m *mavenProject) Package(
 		return nil, fmt.Errorf("copying to staging directory failed: %w", err)
 	}
 
+	// Create package artifact for maven package output
+	packageArtifact := Artifact{
+		Kind:         ArtifactKindDirectory,
+		Location:     packageDest,
+		LocationKind: LocationKindLocal,
+		Metadata: map[string]string{
+			"packageDest": packageDest,
+			"framework":   "maven",
+		},
+	}
+
 	return &ServicePackageResult{
-		Build:       buildOutput,
-		PackagePath: packageDest,
+		Artifacts: []Artifact{packageArtifact},
 	}, nil
 }
 

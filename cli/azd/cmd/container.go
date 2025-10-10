@@ -635,8 +635,17 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(containerregistry.NewRemoteBuildManager)
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
 	container.MustRegisterSingleton(storage.NewFileShareService)
-	container.MustRegisterScoped(project.NewContainerHelper)
 	container.MustRegisterSingleton(azapi.NewSpringService)
+
+	container.MustRegisterScoped(project.NewContainerHelper)
+	container.MustRegisterScoped(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*project.ContainerHelper] {
+		return lazy.NewLazy(func() (*project.ContainerHelper, error) {
+			var containerHelper *project.ContainerHelper
+			err := serviceLocator.Resolve(&containerHelper)
+
+			return containerHelper, err
+		})
+	})
 
 	container.MustRegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
 		return subManager
@@ -874,6 +883,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(grpcserver.NewPromptService)
 	container.MustRegisterScoped(grpcserver.NewDeploymentService)
 	container.MustRegisterScoped(grpcserver.NewEventService)
+	container.MustRegisterScoped(grpcserver.NewContainerService)
 	container.MustRegisterSingleton(grpcserver.NewUserConfigService)
 	container.MustRegisterSingleton(grpcserver.NewComposeService)
 	container.MustRegisterSingleton(grpcserver.NewWorkflowService)

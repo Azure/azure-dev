@@ -100,6 +100,15 @@ func StaticWebAppRID(subscriptionId, resourceGroupName, staticSiteName string) s
 	return returnValue
 }
 
+func WorkspaceRID(subscriptionId, resourceGroupName, workspaceName string) string {
+	returnValue := fmt.Sprintf(
+		"%s/providers/Microsoft.MachineLearningServices/workspaces/%s",
+		ResourceGroupRID(subscriptionId, resourceGroupName),
+		workspaceName,
+	)
+	return returnValue
+}
+
 var resourceIdRegex = regexp.MustCompile("/.+/(?i)resourceGroups/(.+?)/.+")
 
 // Find the resource group name from the resource id

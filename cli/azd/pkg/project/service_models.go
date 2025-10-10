@@ -11,11 +11,32 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
 // Some endpoints include a discriminator suffix that should be displayed instead of the default 'Endpoint' label.
 var endpointPattern = regexp.MustCompile(`(.+):\s(.+)`)
+
+// ServiceContext defines the shared pipeline state across all phases of the Azure Developer CLI (azd) service lifecycle.
+// It captures the results of each phase (Restore, Build, Package, Publish, Deploy) in a consistent, extensible format
+// that is accessible to both core and external extension providers.
+type ServiceContext struct {
+	Restore ArtifactCollection `json:"restore"`
+	Build   ArtifactCollection `json:"build"`
+	Package ArtifactCollection `json:"package"`
+	Publish ArtifactCollection `json:"publish"`
+	Deploy  ArtifactCollection `json:"deploy"`
+}
+
+// NewServiceContext creates a new ServiceContext with initialized maps and slices
+func NewServiceContext() *ServiceContext {
+	return &ServiceContext{
+		Restore: make(ArtifactCollection, 0),
+		Build:   make(ArtifactCollection, 0),
+		Package: make(ArtifactCollection, 0),
+		Publish: make(ArtifactCollection, 0),
+		Deploy:  make(ArtifactCollection, 0),
+	}
+}
 
 // ServiceLifecycleEventArgs are the event arguments available when
 // any service lifecycle event has been triggered
@@ -43,24 +64,27 @@ func NewServiceProgress(message string) ServiceProgress {
 
 // ServiceRestoreResult is the result of a successful Restore operation
 type ServiceRestoreResult struct {
-	Details interface{} `json:"details"`
+	Artifacts ArtifactCollection `json:"artifacts"`
 }
 
 // ServiceBuildResult is the result of a successful Build operation
 type ServiceBuildResult struct {
-	Restore         *ServiceRestoreResult `json:"restore"`
-	BuildOutputPath string                `json:"buildOutputPath"`
-	Details         interface{}           `json:"details"`
+	Artifacts ArtifactCollection `json:"artifacts"`
 }
 
 // Supports rendering messages for UX items
 func (sbr *ServiceBuildResult) ToString(currentIndentation string) string {
-	uxItem, ok := sbr.Details.(ux.UxItem)
-	if ok {
-		return uxItem.ToString(currentIndentation)
+	if len(sbr.Artifacts) == 0 {
+		return ""
 	}
 
-	return fmt.Sprintf("%s- Build Output: %s", currentIndentation, output.WithLinkFormat(sbr.BuildOutputPath))
+	// Get location from first artifact
+	artifact := sbr.Artifacts[0]
+	if artifact.Location != "" {
+		return fmt.Sprintf("%s- Build Output: %s", currentIndentation, output.WithLinkFormat(artifact.Location))
+	}
+
+	return ""
 }
 
 func (sbr *ServiceBuildResult) MarshalJSON() ([]byte, error) {
@@ -73,20 +97,19 @@ type PackageOptions struct {
 
 // ServicePackageResult is the result of a successful Package operation
 type ServicePackageResult struct {
-	Build       *ServiceBuildResult `json:"build"`
-	PackagePath string              `json:"packagePath"`
-	Details     interface{}         `json:"details"`
+	Artifacts ArtifactCollection `json:"artifacts"`
 }
 
 // Supports rendering messages for UX items
 func (spr *ServicePackageResult) ToString(currentIndentation string) string {
-	uxItem, ok := spr.Details.(ux.UxItem)
-	if ok {
-		return uxItem.ToString(currentIndentation)
+	if len(spr.Artifacts) == 0 {
+		return ""
 	}
 
-	if spr.PackagePath != "" {
-		return fmt.Sprintf("%s- Package Output: %s", currentIndentation, output.WithLinkFormat(spr.PackagePath))
+	// Get location from first artifact
+	artifact := spr.Artifacts[0]
+	if artifact.Location != "" {
+		return fmt.Sprintf("%s- Package Output: %s", currentIndentation, output.WithLinkFormat(artifact.Location))
 	}
 
 	return ""
@@ -98,21 +121,15 @@ func (spr *ServicePackageResult) MarshalJSON() ([]byte, error) {
 
 // ServicePublishResult is the result of a successful Publish operation for services.
 type ServicePublishResult struct {
-	Package *ServicePackageResult `json:"package"`
-	// For container services: ContainerPublishDetails
-	Details interface{} `json:"details,omitempty"`
-}
-
-// ContainerPublishDetails contains publish information specific to container-based services
-type ContainerPublishDetails struct {
-	// Fully qualified image name that was pushed
-	RemoteImage string `json:"remoteImage"`
+	Artifacts ArtifactCollection `json:"artifacts"`
 }
 
 // Supports rendering messages for UX items
 func (spr *ServicePublishResult) ToString(currentIndentation string) string {
-	if containerDetails, ok := spr.Details.(*ContainerPublishDetails); ok && containerDetails.RemoteImage != "" {
-		return fmt.Sprintf("%s- Remote Image: %s\n", currentIndentation, output.WithLinkFormat(containerDetails.RemoteImage))
+	// Look for container image artifacts to display remote image information
+	containerImage, ok := spr.Artifacts.FindFirst(WithKind(ArtifactKindContainer))
+	if ok && containerImage.Location != "" {
+		return fmt.Sprintf("%s- Remote Image: %s\n", currentIndentation, output.WithLinkFormat(containerImage.Location))
 	}
 
 	// Empty since there's no relevant publish information to display
@@ -125,33 +142,24 @@ func (spr *ServicePublishResult) MarshalJSON() ([]byte, error) {
 
 // ServiceDeployResult is the result of a successful Deploy operation
 type ServiceDeployResult struct {
-	Package *ServicePackageResult `json:"package"`
-	Publish *ServicePublishResult `json:"publish"`
-	// Related Azure resource ID
-	TargetResourceId string            `json:"targetResourceId"`
-	Kind             ServiceTargetKind `json:"kind"`
-	Endpoints        []string          `json:"endpoints"`
-	Details          interface{}       `json:"details"`
+	Artifacts ArtifactCollection `json:"artifacts"`
 }
 
 // Supports rendering messages for UX items
 func (spr *ServiceDeployResult) ToString(currentIndentation string) string {
-	uxItem, ok := spr.Details.(ux.UxItem)
-	if ok {
-		return uxItem.ToString(currentIndentation)
-	}
-
 	builder := strings.Builder{}
 
-	if len(spr.Endpoints) == 0 {
+	// Extract endpoints from artifacts
+	endpoints := spr.Artifacts.Find(WithKind(ArtifactKindEndpoint))
+	if len(endpoints) == 0 {
 		builder.WriteString(fmt.Sprintf("%s- No endpoints were found\n", currentIndentation))
 	} else {
-		for _, endpoint := range spr.Endpoints {
+		for _, endpointArtifact := range endpoints {
 			label := "Endpoint"
-			url := endpoint
+			url := endpointArtifact.Location
 
 			// When the endpoint pattern is matched used the first sub match as the endpoint label.
-			matches := endpointPattern.FindStringSubmatch(endpoint)
+			matches := endpointPattern.FindStringSubmatch(url)
 			if len(matches) == 3 {
 				label = matches[1]
 				url = matches[2]

@@ -33,6 +33,7 @@ func Test_Server_Start(t *testing.T) {
 		azdext.UnimplementedExtensionServiceServer{},
 		azdext.UnimplementedServiceTargetServiceServer{},
 		azdext.UnimplementedFrameworkServiceServer{},
+		azdext.UnimplementedContainerServiceServer{},
 	)
 
 	serverInfo, err := server.Start()

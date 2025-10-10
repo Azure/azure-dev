@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
@@ -20,6 +22,61 @@ func init() {
 // registerProjectMappings registers all project type conversions with the mapper.
 // This allows other packages to convert project types to proto types via the mapper.
 func registerProjectMappings() {
+	// Artifact -> proto Artifact conversion
+	mapper.MustRegister(func(ctx context.Context, src Artifact) (*azdext.Artifact, error) {
+		return &azdext.Artifact{
+			Kind:         string(src.Kind),
+			Location:     src.Location,
+			LocationKind: string(src.LocationKind),
+			Metadata:     src.Metadata,
+		}, nil
+	})
+
+	// proto Artifact -> Artifact conversion
+	mapper.MustRegister(func(ctx context.Context, src *azdext.Artifact) (Artifact, error) {
+		if src == nil {
+			return Artifact{}, nil
+		}
+
+		artifact := Artifact{
+			Kind:         ArtifactKind(src.Kind),
+			Location:     src.Location,
+			LocationKind: LocationKind(src.LocationKind),
+			Metadata:     src.Metadata,
+		}
+		if artifact.Metadata == nil {
+			artifact.Metadata = make(map[string]string)
+		}
+		return artifact, nil
+	})
+
+	// ArtifactCollection -> []proto Artifact conversion
+	mapper.MustRegister(func(ctx context.Context, src ArtifactCollection) ([]*azdext.Artifact, error) {
+		artifacts := make([]*azdext.Artifact, len(src))
+		for i, artifact := range src {
+			var proto *azdext.Artifact
+			m := mapper.WithResolver(nil)
+			if err := m.Convert(artifact, &proto); err != nil {
+				return nil, err
+			}
+			artifacts[i] = proto
+		}
+		return artifacts, nil
+	})
+
+	// []proto Artifact -> ArtifactCollection conversion
+	mapper.MustRegister(func(ctx context.Context, src []*azdext.Artifact) (ArtifactCollection, error) {
+		artifacts := make(ArtifactCollection, len(src))
+		for i, protoArtifact := range src {
+			var artifact Artifact
+			m := mapper.WithResolver(nil)
+			if err := m.Convert(protoArtifact, &artifact); err != nil {
+				return nil, err
+			}
+			artifacts[i] = artifact
+		}
+		return artifacts, nil
+	})
 	// ServiceConfig -> proto ServiceConfig conversion
 	mapper.MustRegister(func(ctx context.Context, src *ServiceConfig) (*azdext.ServiceConfig, error) {
 		resolver := mapper.GetResolver(ctx)
@@ -104,57 +161,33 @@ func registerProjectMappings() {
 	})
 
 	// ServicePackageResult -> proto ServicePackageResult conversion
-	mapper.MustRegister(func(ctx context.Context, src *ServicePackageResult) (*azdext.ServicePackageResult, error) {
-		if src == nil {
-			return nil, nil
-		}
-
-		protoResult := &azdext.ServicePackageResult{PackagePath: src.PackagePath}
-
-		if dockerDetails, ok := src.Details.(*DockerPackageResult); ok {
-			protoResult.DockerPackageResult = &azdext.DockerPackageResult{
-				ImageHash:   dockerDetails.ImageHash,
-				SourceImage: dockerDetails.SourceImage,
-				TargetImage: dockerDetails.TargetImage,
+	mapper.MustRegister(func(ctx context.Context, src ServicePackageResult) (*azdext.ServicePackageResult, error) {
+		artifacts := make([]*azdext.Artifact, len(src.Artifacts))
+		for i, artifact := range src.Artifacts {
+			var proto *azdext.Artifact
+			m := mapper.WithResolver(nil)
+			if err := m.Convert(artifact, &proto); err != nil {
+				return nil, err
 			}
-			return protoResult, nil
+			artifacts[i] = proto
 		}
-
-		details := detailsInterfaceToStringMap(src.Details)
-		if len(details) > 0 {
-			protoResult.Details = details
-		}
-
-		return protoResult, nil
-	})
-
-	// ServicePublishResult -> proto ServicePublishResult conversion
-	mapper.MustRegister(func(ctx context.Context, src *ServicePublishResult) (*azdext.ServicePublishResult, error) {
-		if src == nil {
-			return nil, nil
-		}
-
-		protoResult := &azdext.ServicePublishResult{}
-
-		if containerDetails, ok := src.Details.(*ContainerPublishDetails); ok {
-			if containerDetails.RemoteImage != "" {
-				protoResult.ContainerDetails = &azdext.ContainerPublishDetails{
-					RemoteImage: containerDetails.RemoteImage,
-				}
+		return &azdext.ServicePackageResult{
+			Artifacts: artifacts,
+		}, nil
+	}) // ServicePublishResult -> proto ServicePublishResult conversion
+	mapper.MustRegister(func(ctx context.Context, src ServicePublishResult) (*azdext.ServicePublishResult, error) {
+		artifacts := make([]*azdext.Artifact, len(src.Artifacts))
+		for i, artifact := range src.Artifacts {
+			var proto *azdext.Artifact
+			m := mapper.WithResolver(nil)
+			if err := m.Convert(artifact, &proto); err != nil {
+				return nil, err
 			}
-			return protoResult, nil
+			artifacts[i] = proto
 		}
-
-		details := detailsInterfaceToStringMap(src.Details)
-		if len(details) > 0 {
-			protoResult.Details = details
-		}
-
-		if protoResult.ContainerDetails == nil && len(protoResult.Details) == 0 {
-			return nil, nil
-		}
-
-		return protoResult, nil
+		return &azdext.ServicePublishResult{
+			Artifacts: artifacts,
+		}, nil
 	})
 
 	// PublishOptions -> proto PublishOptions conversion
@@ -315,26 +348,24 @@ func registerProjectMappings() {
 	// proto ServicePackageResult -> ServicePackageResult conversion
 	mapper.MustRegister(func(ctx context.Context, src *azdext.ServicePackageResult) (*ServicePackageResult, error) {
 		if src == nil {
-			return &ServicePackageResult{}, nil
+			return &ServicePackageResult{Artifacts: []Artifact{}}, nil
 		}
 
 		result := &ServicePackageResult{
-			PackagePath: src.PackagePath,
+			Artifacts: make([]Artifact, 0, len(src.Artifacts)),
 		}
 
-		if src.DockerPackageResult != nil {
-			result.Details = &DockerPackageResult{
-				ImageHash:   src.DockerPackageResult.ImageHash,
-				SourceImage: src.DockerPackageResult.SourceImage,
-				TargetImage: src.DockerPackageResult.TargetImage,
+		// Convert artifacts
+		for _, protoArtifact := range src.Artifacts {
+			var artifact Artifact
+			m := mapper.WithResolver(nil)
+			if err := m.Convert(protoArtifact, &artifact); err != nil {
+				return nil, err
 			}
-			return result, nil
+			result.Artifacts = append(result.Artifacts, artifact)
 		}
 
-		if len(src.Details) > 0 {
-			// Convert string map to interface for Details field
-			result.Details = src.Details
-		}
+		// TODO: Legacy docker details handling removed - metadata is now stored in artifact metadata
 
 		return result, nil
 	})
@@ -342,24 +373,109 @@ func registerProjectMappings() {
 	// proto ServicePublishResult -> ServicePublishResult conversion
 	mapper.MustRegister(func(ctx context.Context, src *azdext.ServicePublishResult) (*ServicePublishResult, error) {
 		if src == nil {
-			return &ServicePublishResult{}, nil
+			return &ServicePublishResult{Artifacts: []Artifact{}}, nil
 		}
 
-		result := &ServicePublishResult{}
+		result := &ServicePublishResult{
+			Artifacts: make([]Artifact, 0, len(src.Artifacts)),
+		}
 
-		if src.ContainerDetails != nil && src.ContainerDetails.RemoteImage != "" {
-			result.Details = &ContainerPublishDetails{
-				RemoteImage: src.ContainerDetails.RemoteImage,
+		// Convert artifacts
+		for _, protoArtifact := range src.Artifacts {
+			var artifact Artifact
+			m := mapper.WithResolver(nil)
+			if err := m.Convert(protoArtifact, &artifact); err != nil {
+				return nil, err
 			}
-			return result, nil
+			result.Artifacts = append(result.Artifacts, artifact)
 		}
 
-		if len(src.Details) > 0 {
-			// Convert string map to interface for Details field
-			result.Details = src.Details
+		// TODO: Legacy container details handling removed - metadata is now stored in artifact metadata
+
+		return result, nil
+	})
+
+	// ServiceDeployResult -> proto ServiceDeployResult conversion
+	mapper.MustRegister(func(ctx context.Context, src *ServiceDeployResult) (*azdext.ServiceDeployResult, error) {
+		if src == nil {
+			return nil, nil
+		}
+
+		protoResult := &azdext.ServiceDeployResult{}
+
+		// Convert artifacts
+		for _, artifact := range src.Artifacts {
+			var proto *azdext.Artifact
+			m := mapper.WithResolver(nil)
+			if err := m.Convert(artifact, &proto); err != nil {
+				return nil, err
+			}
+			protoResult.Artifacts = append(protoResult.Artifacts, proto)
+		}
+
+		return protoResult, nil
+	})
+
+	// proto ServiceDeployResult -> ServiceDeployResult conversion
+	mapper.MustRegister(func(ctx context.Context, src *azdext.ServiceDeployResult) (*ServiceDeployResult, error) {
+		if src == nil {
+			return &ServiceDeployResult{Artifacts: []Artifact{}}, nil
+		}
+
+		result := &ServiceDeployResult{
+			Artifacts: make([]Artifact, 0, len(src.Artifacts)),
+			// Note: TargetResourceId, Kind, and Endpoints are not available in simplified proto
+			// Extensions using the external service target may need to store this info in artifact metadata
+		}
+
+		// Convert artifacts
+		for _, protoArtifact := range src.Artifacts {
+			var artifact Artifact
+			m := mapper.WithResolver(nil)
+			if err := m.Convert(protoArtifact, &artifact); err != nil {
+				return nil, err
+			}
+			result.Artifacts = append(result.Artifacts, artifact)
 		}
 
 		return result, nil
+	})
+
+	mapper.MustRegister(func(ctx context.Context, src *environment.TargetResource) (Artifact, error) {
+		if src == nil {
+			return Artifact{}, nil
+		}
+
+		resourceType, err := arm.ParseResourceType(src.ResourceType())
+		if err != nil {
+			return Artifact{}, fmt.Errorf("failed parsing resource type '%s'", resourceType)
+		}
+
+		resourceId := &arm.ResourceID{
+			SubscriptionID:    src.SubscriptionId(),
+			ResourceGroupName: src.ResourceGroupName(),
+			ResourceType:      resourceType,
+			Name:              src.ResourceName(),
+		}
+
+		metadata := src.Metadata()
+		if metadata == nil {
+			metadata = map[string]string{}
+		}
+
+		metadata["subscriptionId"] = src.SubscriptionId()
+		metadata["resourceGroup"] = src.ResourceGroupName()
+		metadata["name"] = src.ResourceName()
+		metadata["type"] = src.ResourceType()
+
+		artifact := Artifact{
+			Kind:         ArtifactKindResource,
+			Location:     resourceId.String(),
+			LocationKind: LocationKindRemote,
+			Metadata:     metadata,
+		}
+
+		return artifact, nil
 	})
 }
 

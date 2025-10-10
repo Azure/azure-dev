@@ -61,13 +61,20 @@ func AspireDashboardUrl(
 	alphaFeatureManager *alpha.FeatureManager) *AspireDashboard {
 
 	ContainersManagedEnvHost, exists := env.LookupEnv("AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN")
-	if !exists {
-		return nil
+	if exists {
+		return &AspireDashboard{
+			Link: fmt.Sprintf("https://aspire-dashboard.ext.%s", ContainersManagedEnvHost),
+		}
 	}
 
-	return &AspireDashboard{
-		Link: fmt.Sprintf("https://aspire-dashboard.ext.%s", ContainersManagedEnvHost),
+	AppServiceAspireDashboardUrl, exists := env.LookupEnv(environment.AppServiceAspireDashboardUrlEnvVarName)
+	if exists {
+		return &AspireDashboard{
+			Link: AppServiceAspireDashboardUrl,
+		}
 	}
+
+	return nil
 }
 
 func init() {
@@ -579,10 +586,20 @@ func evaluateForOutputs(value string, appHostOwnsCompute bool) (map[string]genOu
 				Value: noBrackets,
 			}
 		}
+
 		// Same for AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN as it is required to display the Aspire Dashboard link
 		// at the end of the deployment.
 		if strings.Contains(outputName, environment.ContainerEnvironmentEndpointEnvVarName) && appHostOwnsCompute {
 			outputs[environment.ContainerEnvironmentEndpointEnvVarName] = genOutputParameter{
+				Type:  "string",
+				Value: noBrackets,
+			}
+		}
+
+		// Same for AZURE_APP_SERVICE_DASHBOARD_URI as it is required to display the Aspire Dashboard link
+		// at the end of the deployment.
+		if strings.Contains(outputName, environment.AppServiceAspireDashboardUrlEnvVarName) && appHostOwnsCompute {
+			outputs[environment.AppServiceAspireDashboardUrlEnvVarName] = genOutputParameter{
 				Type:  "string",
 				Value: noBrackets,
 			}

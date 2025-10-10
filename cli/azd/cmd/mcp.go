@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -18,6 +19,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/mcp"
 	"github.com/azure/azure-dev/cli/azd/internal/mcp/tools"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -25,6 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/drone/envsubst"
 	"github.com/fatih/color"
+	mmcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -175,11 +180,48 @@ func (a *mcpStartAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	defer mcpHost.Stop()
 
+	ts := telemetry.GetTelemetrySystem()
+	if ts != nil {
+		uploadTelemetry := func() {
+			ticker := time.NewTicker(5 * time.Second)
+			for {
+				err := ts.RunBackgroundUpload(ctx, false)
+				if err != nil {
+					log.Printf("telemetry upload failed: %v", err)
+				}
+
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}
+		go uploadTelemetry()
+	}
+
 	mcpServer := server.NewMCPServer(
 		"AZD MCP Server 🚀", "1.0.0",
 		server.WithToolCapabilities(true),
 		server.WithElicitation(),
 		server.WithHooks(mcpHost.Hooks()),
+		server.WithToolHandlerMiddleware(func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+			return func(ctx context.Context, request mmcp.CallToolRequest) (result *mmcp.CallToolResult, err error) {
+				ctx, span := tracing.Start(ctx, "mcp."+request.Params.Name)
+				if session := server.ClientSessionFromContext(ctx); session != nil {
+					if sessionWithClientInfo, ok := session.(server.SessionWithClientInfo); ok {
+						clientInfo := sessionWithClientInfo.GetClientInfo()
+						span.SetAttributes(fields.McpClientName.String(clientInfo.Name))
+						span.SetAttributes(fields.McpClientVersion.String(clientInfo.Version))
+					}
+				}
+
+				result, err = next(ctx, request)
+				span.EndWithStatus(err)
+
+				return result, err
+			}
+		}),
 	)
 	mcpServer.EnableSampling()
 

@@ -67,7 +67,7 @@ func AspireDashboardUrl(
 		}
 	}
 
-	AppServiceAspireDashboardUrl, exists := env.LookupEnv("AZURE_APP_SERVICE_DASHBOARD_URI")
+	AppServiceAspireDashboardUrl, exists := env.LookupEnv(environment.AppServiceAspireDashboardUrlEnvVarName)
 	if exists {
 		return &AspireDashboard{
 			Link: AppServiceAspireDashboardUrl,

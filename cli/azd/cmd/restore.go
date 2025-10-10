@@ -172,13 +172,16 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			continue
 		}
 
+		// Initialize service context for restore operation
+		serviceContext := &project.ServiceContext{}
+
 		restoreResult, err := async.RunWithProgress(
 			func(buildProgress project.ServiceProgress) {
 				progressMessage := fmt.Sprintf("Building service %s (%s)", svc.Name, buildProgress.Message)
 				ra.console.ShowSpinner(ctx, progressMessage, input.Step)
 			},
 			func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceRestoreResult, error) {
-				return ra.serviceManager.Restore(ctx, svc, progress)
+				return ra.serviceManager.Restore(ctx, svc, serviceContext, progress)
 			},
 		)
 

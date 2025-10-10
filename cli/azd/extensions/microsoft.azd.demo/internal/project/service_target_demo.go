@@ -75,16 +75,17 @@ func (p *DemoServiceTargetProvider) Package(
 	packageResult *azdext.ServicePackageResult,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
-	progress("Preparing package")
-	time.Sleep(500 * time.Millisecond)
-
-	packagePath := "demo/package:latest"
+	packageResponse, err := p.azdClient.Container().
+		Package(ctx, &azdext.ContainerPackageRequest{
+			ServiceName: serviceConfig.Name,
+		})
+	if err != nil {
+		return nil, err
+	}
 
 	return &azdext.ServicePackageResult{
-		PackagePath: packagePath,
-		Details: map[string]string{
-			"timestamp": time.Now().Format(time.RFC3339),
-		},
+		PackagePath: packageResponse.Result.PackagePath,
+		Details:     packageResult.Details,
 	}, nil
 }
 
@@ -97,24 +98,20 @@ func (p *DemoServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
-	if packageResult == nil {
-		return nil, fmt.Errorf("packageResult is nil")
+	publishResponse, err := p.azdClient.Container().
+		Publish(ctx, &azdext.ContainerPublishRequest{
+			ServiceName: serviceConfig.Name,
+			Package: &azdext.ServicePackageResult{
+				PackagePath: packageResult.PackagePath,
+				Details:     packageResult.Details,
+			},
+		})
+	if err != nil {
+		return nil, err
 	}
-
-	packagePath := packageResult.GetPackagePath()
-	if packagePath == "" {
-		return nil, fmt.Errorf("package path is empty")
-	}
-
-	progress(fmt.Sprintf("Publishing %s...", packagePath))
-	time.Sleep(500 * time.Millisecond)
-
-	remotePackage := fmt.Sprintf("registry.example.com/%s", packagePath)
 
 	return &azdext.ServicePublishResult{
-		Details: map[string]string{
-			"remotePackage": remotePackage,
-		},
+		Details: publishResponse.Result.Details,
 	}, nil
 }
 

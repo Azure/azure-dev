@@ -84,6 +84,7 @@ type FrameworkService interface {
 	Restore(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
+		serviceContext *ServiceContext,
 		progress *async.Progress[ServiceProgress],
 	) (*ServiceRestoreResult, error)
 
@@ -91,7 +92,7 @@ type FrameworkService interface {
 	Build(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		restoreOutput *ServiceRestoreResult,
+		serviceContext *ServiceContext,
 		progress *async.Progress[ServiceProgress],
 	) (*ServiceBuildResult, error)
 
@@ -100,7 +101,7 @@ type FrameworkService interface {
 	Package(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		buildOutput *ServiceBuildResult,
+		serviceContext *ServiceContext,
 		progress *async.Progress[ServiceProgress],
 	) (*ServicePackageResult, error)
 }

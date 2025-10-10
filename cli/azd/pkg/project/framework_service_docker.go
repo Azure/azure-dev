@@ -56,24 +56,6 @@ type DockerProjectOptions struct {
 	InMemDockerfile []byte `yaml:"-" json:"-"`
 }
 
-type dockerBuildResult struct {
-	ImageId   string `json:"imageId"`
-	ImageName string `json:"imageName"`
-}
-
-func (dbr *dockerBuildResult) ToString(currentIndentation string) string {
-	lines := []string{
-		fmt.Sprintf("%s- Image ID: %s", currentIndentation, output.WithLinkFormat(dbr.ImageId)),
-		fmt.Sprintf("%s- Image Name: %s", currentIndentation, output.WithLinkFormat(dbr.ImageName)),
-	}
-
-	return strings.Join(lines, "\n")
-}
-
-func (dbr *dockerBuildResult) MarshalJSON() ([]byte, error) {
-	return json.Marshal(*dbr)
-}
-
 type DockerPackageResult struct {
 	// The image hash that is generated from a docker build
 	ImageHash string `json:"imageHash"`
@@ -188,22 +170,23 @@ func (p *dockerProject) SetSource(inner FrameworkService) {
 func (p *dockerProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
 	// When the program runs the restore actions for the underlying project (containerapp),
 	// the dependencies are installed locally
-	return p.framework.Restore(ctx, serviceConfig, progress)
+	return p.framework.Restore(ctx, serviceConfig, serviceContext, progress)
 }
 
 // Builds the docker project based on the docker options specified within the Service configuration
 func (p *dockerProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	restoreOutput *ServiceRestoreResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
-		return &ServiceBuildResult{Restore: restoreOutput}, nil
+		return &ServiceBuildResult{Artifacts: serviceContext.Build}, nil
 	}
 
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
@@ -294,7 +277,6 @@ func (p *dockerProject) Build(
 			return nil, err
 		}
 
-		res.Restore = restoreOutput
 		return res, nil
 	}
 
@@ -361,13 +343,20 @@ func (p *dockerProject) Build(
 
 	log.Printf("built image %s for %s", imageId, serviceConfig.Name)
 
-	return &ServiceBuildResult{
-		Restore:         restoreOutput,
-		BuildOutputPath: imageId,
-		Details: &dockerBuildResult{
-			ImageId:   imageId,
-			ImageName: imageName,
+	// Create container image artifact for build output
+	buildArtifact := Artifact{
+		Kind:         ArtifactKindContainer,
+		Location:     imageId,
+		LocationKind: LocationKindLocal,
+		Metadata: map[string]string{
+			"imageId":   imageId,
+			"imageName": imageName,
+			"framework": "docker",
 		},
+	}
+
+	return &ServiceBuildResult{
+		Artifacts: []Artifact{buildArtifact},
 	}, nil
 }
 
@@ -404,66 +393,10 @@ func useDotnetPublishForDockerBuild(serviceConfig *ServiceConfig) bool {
 func (p *dockerProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
-		return &ServicePackageResult{Build: buildOutput}, nil
-	}
-
-	var imageId string
-
-	if buildOutput != nil {
-		imageId = buildOutput.BuildOutputPath
-	}
-
-	packageDetails := &DockerPackageResult{
-		ImageHash: imageId,
-	}
-
-	// If we don't have an image ID from a docker build then an external source image is being used
-	if imageId == "" {
-		sourceImageValue, err := serviceConfig.Image.Envsubst(p.env.Getenv)
-		if err != nil {
-			return nil, fmt.Errorf("substituting environment variables in image: %w", err)
-		}
-
-		sourceImage, err := docker.ParseContainerImage(sourceImageValue)
-		if err != nil {
-			return nil, fmt.Errorf("parsing source container image: %w", err)
-		}
-
-		remoteImageUrl := sourceImage.Remote()
-
-		progress.SetProgress(NewServiceProgress("Pulling container source image"))
-		if err := p.docker.Pull(ctx, remoteImageUrl); err != nil {
-			return nil, fmt.Errorf("pulling source container image: %w", err)
-		}
-
-		imageId = remoteImageUrl
-		packageDetails.SourceImage = remoteImageUrl
-	}
-
-	// Generate a local tag from the 'docker' configuration section of the service
-	imageWithTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
-	if err != nil {
-		return nil, fmt.Errorf("generating local image tag: %w", err)
-	}
-
-	// Tag image.
-	log.Printf("tagging image %s as %s", imageId, imageWithTag)
-	progress.SetProgress(NewServiceProgress("Tagging container image"))
-	if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, imageWithTag); err != nil {
-		return nil, fmt.Errorf("tagging image: %w", err)
-	}
-
-	packageDetails.TargetImage = imageWithTag
-
-	return &ServicePackageResult{
-		Build:       buildOutput,
-		PackagePath: packageDetails.SourceImage,
-		Details:     packageDetails,
-	}, nil
+	return p.containerHelper.Package(ctx, serviceConfig, serviceContext, progress)
 }
 
 // Default builder image to produce container images from source, needn't java jdk storage, use the standard bp
@@ -616,12 +549,20 @@ func (p *dockerProject) packBuild(
 	}
 	imageId = strings.TrimSpace(imageId)
 
-	return &ServiceBuildResult{
-		BuildOutputPath: imageId,
-		Details: &dockerBuildResult{
-			ImageId:   imageId,
-			ImageName: imageName,
+	// Create container image artifact for build output
+	buildArtifact := Artifact{
+		Kind:         ArtifactKindContainer,
+		Location:     imageId,
+		LocationKind: LocationKindLocal,
+		Metadata: map[string]string{
+			"imageId":   imageId,
+			"imageName": imageName,
+			"framework": "docker",
 		},
+	}
+
+	return &ServiceBuildResult{
+		Artifacts: []Artifact{buildArtifact},
 	}, nil
 }
 

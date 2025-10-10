@@ -1006,11 +1006,11 @@ func (x *ServiceRestoreResult) GetDetails() map[string]string {
 
 // Build request and response
 type FrameworkServiceBuildRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ServiceConfig *ServiceConfig         `protobuf:"bytes,1,opt,name=service_config,json=serviceConfig,proto3" json:"service_config,omitempty"`
-	RestoreOutput *ServiceRestoreResult  `protobuf:"bytes,2,opt,name=restore_output,json=restoreOutput,proto3" json:"restore_output,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ServiceConfig  *ServiceConfig         `protobuf:"bytes,1,opt,name=service_config,json=serviceConfig,proto3" json:"service_config,omitempty"`
+	ServiceContext *ServiceContext        `protobuf:"bytes,2,opt,name=service_context,json=serviceContext,proto3" json:"service_context,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *FrameworkServiceBuildRequest) Reset() {
@@ -1050,16 +1050,16 @@ func (x *FrameworkServiceBuildRequest) GetServiceConfig() *ServiceConfig {
 	return nil
 }
 
-func (x *FrameworkServiceBuildRequest) GetRestoreOutput() *ServiceRestoreResult {
+func (x *FrameworkServiceBuildRequest) GetServiceContext() *ServiceContext {
 	if x != nil {
-		return x.RestoreOutput
+		return x.ServiceContext
 	}
 	return nil
 }
 
 type FrameworkServiceBuildResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	BuildResult   *ServiceBuildResult    `protobuf:"bytes,1,opt,name=build_result,json=buildResult,proto3" json:"build_result,omitempty"`
+	Result        *ServiceBuildResult    `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1094,18 +1094,16 @@ func (*FrameworkServiceBuildResponse) Descriptor() ([]byte, []int) {
 	return file_framework_service_proto_rawDescGZIP(), []int{17}
 }
 
-func (x *FrameworkServiceBuildResponse) GetBuildResult() *ServiceBuildResult {
+func (x *FrameworkServiceBuildResponse) GetResult() *ServiceBuildResult {
 	if x != nil {
-		return x.BuildResult
+		return x.Result
 	}
 	return nil
 }
 
-// Service build result
 type ServiceBuildResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Restore       *ServiceRestoreResult  `protobuf:"bytes,1,opt,name=restore,proto3" json:"restore,omitempty"`
-	Details       map[string]string      `protobuf:"bytes,2,rep,name=details,proto3" json:"details,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Artifacts     []*Artifact            `protobuf:"bytes,1,rep,name=artifacts,proto3" json:"artifacts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1140,27 +1138,20 @@ func (*ServiceBuildResult) Descriptor() ([]byte, []int) {
 	return file_framework_service_proto_rawDescGZIP(), []int{18}
 }
 
-func (x *ServiceBuildResult) GetRestore() *ServiceRestoreResult {
+func (x *ServiceBuildResult) GetArtifacts() []*Artifact {
 	if x != nil {
-		return x.Restore
-	}
-	return nil
-}
-
-func (x *ServiceBuildResult) GetDetails() map[string]string {
-	if x != nil {
-		return x.Details
+		return x.Artifacts
 	}
 	return nil
 }
 
 // Package request and response
 type FrameworkServicePackageRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ServiceConfig *ServiceConfig         `protobuf:"bytes,1,opt,name=service_config,json=serviceConfig,proto3" json:"service_config,omitempty"`
-	BuildOutput   *ServiceBuildResult    `protobuf:"bytes,2,opt,name=build_output,json=buildOutput,proto3" json:"build_output,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ServiceConfig  *ServiceConfig         `protobuf:"bytes,1,opt,name=service_config,json=serviceConfig,proto3" json:"service_config,omitempty"`
+	ServiceContext *ServiceContext        `protobuf:"bytes,2,opt,name=service_context,json=serviceContext,proto3" json:"service_context,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *FrameworkServicePackageRequest) Reset() {
@@ -1200,9 +1191,9 @@ func (x *FrameworkServicePackageRequest) GetServiceConfig() *ServiceConfig {
 	return nil
 }
 
-func (x *FrameworkServicePackageRequest) GetBuildOutput() *ServiceBuildResult {
+func (x *FrameworkServicePackageRequest) GetServiceContext() *ServiceContext {
 	if x != nil {
-		return x.BuildOutput
+		return x.ServiceContext
 	}
 	return nil
 }
@@ -1371,21 +1362,17 @@ const file_framework_service_proto_rawDesc = "" +
 	"\adetails\x18\x01 \x03(\v2).azdext.ServiceRestoreResult.DetailsEntryR\adetails\x1a:\n" +
 	"\fDetailsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa1\x01\n" +
-	"\x1cFrameworkServiceBuildRequest\x12<\n" +
-	"\x0eservice_config\x18\x01 \x01(\v2\x15.azdext.ServiceConfigR\rserviceConfig\x12C\n" +
-	"\x0erestore_output\x18\x02 \x01(\v2\x1c.azdext.ServiceRestoreResultR\rrestoreOutput\"^\n" +
-	"\x1dFrameworkServiceBuildResponse\x12=\n" +
-	"\fbuild_result\x18\x01 \x01(\v2\x1a.azdext.ServiceBuildResultR\vbuildResult\"\xcb\x01\n" +
-	"\x12ServiceBuildResult\x126\n" +
-	"\arestore\x18\x01 \x01(\v2\x1c.azdext.ServiceRestoreResultR\arestore\x12A\n" +
-	"\adetails\x18\x02 \x03(\v2'.azdext.ServiceBuildResult.DetailsEntryR\adetails\x1a:\n" +
-	"\fDetailsEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9d\x01\n" +
+	"\x1cFrameworkServiceBuildRequest\x12<\n" +
+	"\x0eservice_config\x18\x01 \x01(\v2\x15.azdext.ServiceConfigR\rserviceConfig\x12?\n" +
+	"\x0fservice_context\x18\x02 \x01(\v2\x16.azdext.ServiceContextR\x0eserviceContext\"S\n" +
+	"\x1dFrameworkServiceBuildResponse\x122\n" +
+	"\x06result\x18\x01 \x01(\v2\x1a.azdext.ServiceBuildResultR\x06result\"D\n" +
+	"\x12ServiceBuildResult\x12.\n" +
+	"\tartifacts\x18\x01 \x03(\v2\x10.azdext.ArtifactR\tartifacts\"\x9f\x01\n" +
 	"\x1eFrameworkServicePackageRequest\x12<\n" +
-	"\x0eservice_config\x18\x01 \x01(\v2\x15.azdext.ServiceConfigR\rserviceConfig\x12=\n" +
-	"\fbuild_output\x18\x02 \x01(\v2\x1a.azdext.ServiceBuildResultR\vbuildOutput\"f\n" +
+	"\x0eservice_config\x18\x01 \x01(\v2\x15.azdext.ServiceConfigR\rserviceConfig\x12?\n" +
+	"\x0fservice_context\x18\x02 \x01(\v2\x16.azdext.ServiceContextR\x0eserviceContext\"f\n" +
 	"\x1fFrameworkServicePackageResponse\x12C\n" +
 	"\x0epackage_result\x18\x01 \x01(\v2\x1c.azdext.ServicePackageResultR\rpackageResult\"x\n" +
 	"\x1fFrameworkServiceProgressMessage\x12\x1d\n" +
@@ -1408,7 +1395,7 @@ func file_framework_service_proto_rawDescGZIP() []byte {
 	return file_framework_service_proto_rawDescData
 }
 
-var file_framework_service_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_framework_service_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_framework_service_proto_goTypes = []any{
 	(*FrameworkServiceMessage)(nil),                       // 0: azdext.FrameworkServiceMessage
 	(*FrameworkServiceErrorMessage)(nil),                  // 1: azdext.FrameworkServiceErrorMessage
@@ -1433,9 +1420,10 @@ var file_framework_service_proto_goTypes = []any{
 	(*FrameworkServicePackageResponse)(nil),               // 20: azdext.FrameworkServicePackageResponse
 	(*FrameworkServiceProgressMessage)(nil),               // 21: azdext.FrameworkServiceProgressMessage
 	nil,                                                   // 22: azdext.ServiceRestoreResult.DetailsEntry
-	nil,                                                   // 23: azdext.ServiceBuildResult.DetailsEntry
-	(*ServiceConfig)(nil),                                 // 24: azdext.ServiceConfig
-	(*ServicePackageResult)(nil),                          // 25: azdext.ServicePackageResult
+	(*ServiceConfig)(nil),                                 // 23: azdext.ServiceConfig
+	(*ServiceContext)(nil),                                // 24: azdext.ServiceContext
+	(*Artifact)(nil),                                      // 25: azdext.Artifact
+	(*ServicePackageResult)(nil),                          // 26: azdext.ServicePackageResult
 }
 var file_framework_service_proto_depIdxs = []int32{
 	1,  // 0: azdext.FrameworkServiceMessage.error:type_name -> azdext.FrameworkServiceErrorMessage
@@ -1454,29 +1442,28 @@ var file_framework_service_proto_depIdxs = []int32{
 	19, // 13: azdext.FrameworkServiceMessage.package_request:type_name -> azdext.FrameworkServicePackageRequest
 	20, // 14: azdext.FrameworkServiceMessage.package_response:type_name -> azdext.FrameworkServicePackageResponse
 	21, // 15: azdext.FrameworkServiceMessage.progress_message:type_name -> azdext.FrameworkServiceProgressMessage
-	24, // 16: azdext.FrameworkServiceInitializeRequest.service_config:type_name -> azdext.ServiceConfig
-	24, // 17: azdext.FrameworkServiceRequiredExternalToolsRequest.service_config:type_name -> azdext.ServiceConfig
+	23, // 16: azdext.FrameworkServiceInitializeRequest.service_config:type_name -> azdext.ServiceConfig
+	23, // 17: azdext.FrameworkServiceRequiredExternalToolsRequest.service_config:type_name -> azdext.ServiceConfig
 	8,  // 18: azdext.FrameworkServiceRequiredExternalToolsResponse.tools:type_name -> azdext.ExternalTool
 	11, // 19: azdext.FrameworkServiceRequirementsResponse.requirements:type_name -> azdext.FrameworkRequirements
 	12, // 20: azdext.FrameworkRequirements.package:type_name -> azdext.FrameworkPackageRequirements
-	24, // 21: azdext.FrameworkServiceRestoreRequest.service_config:type_name -> azdext.ServiceConfig
+	23, // 21: azdext.FrameworkServiceRestoreRequest.service_config:type_name -> azdext.ServiceConfig
 	15, // 22: azdext.FrameworkServiceRestoreResponse.restore_result:type_name -> azdext.ServiceRestoreResult
 	22, // 23: azdext.ServiceRestoreResult.details:type_name -> azdext.ServiceRestoreResult.DetailsEntry
-	24, // 24: azdext.FrameworkServiceBuildRequest.service_config:type_name -> azdext.ServiceConfig
-	15, // 25: azdext.FrameworkServiceBuildRequest.restore_output:type_name -> azdext.ServiceRestoreResult
-	18, // 26: azdext.FrameworkServiceBuildResponse.build_result:type_name -> azdext.ServiceBuildResult
-	15, // 27: azdext.ServiceBuildResult.restore:type_name -> azdext.ServiceRestoreResult
-	23, // 28: azdext.ServiceBuildResult.details:type_name -> azdext.ServiceBuildResult.DetailsEntry
-	24, // 29: azdext.FrameworkServicePackageRequest.service_config:type_name -> azdext.ServiceConfig
-	18, // 30: azdext.FrameworkServicePackageRequest.build_output:type_name -> azdext.ServiceBuildResult
-	25, // 31: azdext.FrameworkServicePackageResponse.package_result:type_name -> azdext.ServicePackageResult
-	0,  // 32: azdext.FrameworkService.Stream:input_type -> azdext.FrameworkServiceMessage
-	0,  // 33: azdext.FrameworkService.Stream:output_type -> azdext.FrameworkServiceMessage
-	33, // [33:34] is the sub-list for method output_type
-	32, // [32:33] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	23, // 24: azdext.FrameworkServiceBuildRequest.service_config:type_name -> azdext.ServiceConfig
+	24, // 25: azdext.FrameworkServiceBuildRequest.service_context:type_name -> azdext.ServiceContext
+	18, // 26: azdext.FrameworkServiceBuildResponse.result:type_name -> azdext.ServiceBuildResult
+	25, // 27: azdext.ServiceBuildResult.artifacts:type_name -> azdext.Artifact
+	23, // 28: azdext.FrameworkServicePackageRequest.service_config:type_name -> azdext.ServiceConfig
+	24, // 29: azdext.FrameworkServicePackageRequest.service_context:type_name -> azdext.ServiceContext
+	26, // 30: azdext.FrameworkServicePackageResponse.package_result:type_name -> azdext.ServicePackageResult
+	0,  // 31: azdext.FrameworkService.Stream:input_type -> azdext.FrameworkServiceMessage
+	0,  // 32: azdext.FrameworkService.Stream:output_type -> azdext.FrameworkServiceMessage
+	32, // [32:33] is the sub-list for method output_type
+	31, // [31:32] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_framework_service_proto_init() }
@@ -1509,7 +1496,7 @@ func file_framework_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_framework_service_proto_rawDesc), len(file_framework_service_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   24,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

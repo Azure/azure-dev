@@ -598,14 +598,24 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			serviceConfig.Docker.Registry = tt.registry
 
 			packageOutput := &ServicePackageResult{
-				Details:     tt.dockerDetails,
-				PackagePath: tt.packagePath,
+				Artifacts: []Artifact{
+					{
+						Kind:         "docker-image",
+						Location:     tt.packagePath,
+						LocationKind: "local",
+						Metadata:     map[string]string{},
+					},
+				},
+			}
+
+			serviceContext := &ServiceContext{
+				Package: packageOutput.Artifacts,
 			}
 
 			publishResult, err := logProgress(
 				t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
 					return containerHelper.Publish(
-						*mockContext.Context, serviceConfig, packageOutput, targetResource, progress, &PublishOptions{})
+						*mockContext.Context, serviceConfig, serviceContext, targetResource, progress, &PublishOptions{})
 				},
 			)
 
@@ -613,9 +623,10 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
-				containerDetails, ok := publishResult.Details.(*ContainerPublishDetails)
-				require.True(t, ok)
-				require.Equal(t, tt.expectedRemoteImage, containerDetails.RemoteImage)
+				require.Len(t, publishResult.Artifacts, 1)
+				artifact := publishResult.Artifacts[0]
+				require.Equal(t, "container-image", artifact.Kind)
+				require.Equal(t, tt.expectedRemoteImage, artifact.Metadata["remoteImage"])
 			}
 
 			_, dockerPullCalled := mockResults["docker-pull"]
@@ -1124,14 +1135,24 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			serviceConfig.Docker.Registry = tt.registry
 
 			packageOutput := &ServicePackageResult{
-				Details:     tt.dockerDetails,
-				PackagePath: tt.packagePath,
+				Artifacts: []Artifact{
+					{
+						Kind:         "docker-image",
+						Location:     tt.packagePath,
+						LocationKind: "local",
+						Metadata:     map[string]string{},
+					},
+				},
+			}
+
+			serviceContext := &ServiceContext{
+				Package: packageOutput.Artifacts,
 			}
 
 			publishResult, err := logProgress(
 				t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
 					return containerHelper.Publish(
-						*mockContext.Context, serviceConfig, packageOutput, targetResource, progress, tt.publishOptions)
+						*mockContext.Context, serviceConfig, serviceContext, targetResource, progress, tt.publishOptions)
 				},
 			)
 

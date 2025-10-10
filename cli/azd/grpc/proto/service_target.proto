@@ -73,7 +73,7 @@ message ServiceTargetOptions {
 }
 
 message RegisterServiceTargetRequest {
-  string host = 1; // unique identifier for the provider
+  string host = 1;// unique identifier for the provider
 }
 
 message RegisterServiceTargetResponse {
@@ -101,6 +101,29 @@ message GetTargetResourceResponse {
   TargetResource target_resource = 1;
 }
 
+// ServiceContext defines the shared pipeline state across all phases of the service lifecycle
+message ServiceContext {
+  repeated Artifact restore = 1;
+  repeated Artifact build = 2;
+  repeated Artifact package = 3;
+  repeated Artifact publish = 4;
+  repeated Artifact deploy = 5;
+  map<string, ArtifactList> extras = 6; // Escape hatch for provider-specific or experimental phases
+}
+
+// ArtifactList represents a list of artifacts for map values in ServiceContext
+message ArtifactList {
+  repeated Artifact artifacts = 1;
+}
+
+// Artifact represents a build, package, or deployment artifact with its location and metadata
+message Artifact {
+  string kind = 1;                        // Required: "zip", "container-image", "blob", "helm-chart", etc.
+  string location = 2;                    // Optional: location of the artifact (local path or remote reference)
+  string location_kind = 3;               // Required: "local" or "remote"
+  map<string, string> metadata = 4;       // Optional: arbitrary key/value pairs for extension-specific data
+}
+
 // TargetResource represents the resolved target resource
 message TargetResource {
   string subscription_id = 1;
@@ -113,76 +136,49 @@ message TargetResource {
 // Deploy request and response
 message ServiceTargetDeployRequest {
   ServiceConfig service_config = 1;
-  ServicePackageResult service_package = 2;
+  ServiceContext service_context = 2;
   TargetResource target_resource = 3;
-  ServicePublishResult service_publish = 4;
 }
 
 message ServiceTargetDeployResponse {
-  ServiceDeployResult deploy_result = 1;
+  ServiceDeployResult result = 1;
 }
 
 // ServicePackageResult represents the package result for deployment
 message ServicePackageResult {
-  string package_path = 1;
-  map<string, string> details = 2;
-  
-  // Known structured details for specific service types
-  DockerPackageResult docker_package_result = 3;
-}
+  repeated Artifact artifacts = 1;
+  }
 
 // ServicePublishResult represents the result of a publish operation
 message ServicePublishResult {
-  map<string, string> details = 1;
-  
-  // Known structured details for specific service types
-  ContainerPublishDetails container_details = 2;
-}
-
-// ContainerPublishDetails contains publish information specific to container-based services
-message ContainerPublishDetails {
-  // Fully qualified image name that was pushed (e.g., "myregistry.azurecr.io/myapp:v1.0")
-  string remote_image = 1;
-}
-
-// DockerPackageResult contains package information specific to container-based services
-message DockerPackageResult {
-  // The image hash/ID of the locally built container image
-  string image_hash = 1;
-  // The remote image URL when using an external/pre-built image
-  string source_image = 2;
-  // The local image tag to be used for pushing to a container registry (e.g., "myapp:azd-deploy-1234567890")
-  string target_image = 3;
+  repeated Artifact artifacts = 1;
 }
 
 // ServiceDeployResult represents the result of a deployment operation
 message ServiceDeployResult {
-  string target_resource_id = 1;
-  string kind = 2;
-  repeated string endpoints = 3;
-  map<string, string> details = 4;
+  repeated Artifact artifacts = 1;
 }
 
 // ServiceTargetPackageRequest represents a request to package a service
 message ServiceTargetPackageRequest {
   ServiceConfig service_config = 1;
-  ServicePackageResult framework_package = 2;
+  ServiceContext service_context = 2;
 }
 
 message ServiceTargetPackageResponse {
-  ServicePackageResult package_result = 1;
+  ServicePackageResult result = 1;
 }
 
 // ServiceTargetPublishRequest represents a request to publish a service package
 message ServiceTargetPublishRequest {
   ServiceConfig service_config = 1;
-  ServicePackageResult service_package = 2;
+  ServiceContext service_context = 2;
   TargetResource target_resource = 3;
   PublishOptions publish_options = 4;
 }
 
 message ServiceTargetPublishResponse {
-  ServicePublishResult publish_result = 1;
+  ServicePublishResult result = 1;
 }
 
 // PublishOptions holds options for publish operations
@@ -205,7 +201,7 @@ message ServiceTargetEndpointsResponse {
 message ServiceTargetProgressMessage {
   string request_id = 1;
   string message = 2;
-  int64 timestamp = 3; // Unix timestamp in milliseconds
+  int64 timestamp = 3;// Unix timestamp in milliseconds
 }
 
 

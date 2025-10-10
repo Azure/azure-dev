@@ -37,27 +37,28 @@ func (n *noOpProject) Initialize(ctx context.Context, serviceConfig *ServiceConf
 func (n *noOpProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
 	_ *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
-	return &ServiceRestoreResult{}, nil
+	return &ServiceRestoreResult{Artifacts: []Artifact{}}, nil
 }
 
 func (n *noOpProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	restoreOutput *ServiceRestoreResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
-	return &ServiceBuildResult{}, nil
+	return &ServiceBuildResult{Artifacts: []Artifact{}}, nil
 }
 
 func (n *noOpProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	return &ServicePackageResult{}, nil
+	return &ServicePackageResult{Artifacts: []Artifact{}}, nil
 }
 
 type noOpProject struct{}

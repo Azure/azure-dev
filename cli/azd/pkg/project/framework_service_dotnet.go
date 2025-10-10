@@ -85,6 +85,7 @@ func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 func (dp *dotnetProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
 	progress.SetProgress(NewServiceProgress("Restoring .NET project dependencies"))
@@ -97,14 +98,25 @@ func (dp *dotnetProject) Restore(
 		return nil, err
 	}
 
-	return &ServiceRestoreResult{}, nil
+	// Create restore artifact for the project directory that was restored
+	restoreArtifact := Artifact{
+		Kind:         ArtifactKindDirectory,
+		Location:     serviceConfig.Path(),
+		LocationKind: LocationKindLocal,
+		Metadata: map[string]string{
+			"projectFile": projFile,
+			"framework":   "dotnet",
+		},
+	}
+
+	return &ServiceRestoreResult{Artifacts: []Artifact{restoreArtifact}}, nil
 }
 
 // Builds the dotnet project using the dotnet CLI
 func (dp *dotnetProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	restoreOutput *ServiceRestoreResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	progress.SetProgress(NewServiceProgress("Building .NET project"))
@@ -134,16 +146,27 @@ func (dp *dotnetProject) Build(
 		}
 	}
 
+	// Create build artifact for dotnet build output
+	buildArtifact := Artifact{
+		Kind:         ArtifactKindDirectory,
+		Location:     buildOutputDir,
+		LocationKind: LocationKindLocal,
+		Metadata: map[string]string{
+			"buildOutputDir": buildOutputDir,
+			"configuration":  defaultDotNetBuildConfiguration,
+			"framework":      "dotnet",
+		},
+	}
+
 	return &ServiceBuildResult{
-		Restore:         restoreOutput,
-		BuildOutputPath: buildOutputDir,
+		Artifacts: []Artifact{buildArtifact},
 	}, nil
 }
 
 func (dp *dotnetProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	if serviceConfig.Host == DotNetContainerAppTarget {
@@ -155,7 +178,7 @@ func (dp *dotnetProject) Package(
 		// "produce the tgz" of the image, as would be done by `docker save`, but this is currently not supported.
 		//
 		// See related comment in cmd/package.go.
-		return &ServicePackageResult{}, nil
+		return &ServicePackageResult{Artifacts: []Artifact{}}, nil
 	}
 
 	packageDest, err := os.MkdirTemp("", "azd")
@@ -180,9 +203,20 @@ func (dp *dotnetProject) Package(
 		return nil, err
 	}
 
+	// Create package artifact for dotnet publish output
+	packageArtifact := Artifact{
+		Kind:         ArtifactKindDirectory,
+		Location:     packageDest,
+		LocationKind: LocationKindLocal,
+		Metadata: map[string]string{
+			"packagePath":   packageDest,
+			"framework":     "dotnet",
+			"configuration": defaultDotNetBuildConfiguration,
+		},
+	}
+
 	return &ServicePackageResult{
-		Build:       buildOutput,
-		PackagePath: packageDest,
+		Artifacts: []Artifact{packageArtifact},
 	}, nil
 }
 

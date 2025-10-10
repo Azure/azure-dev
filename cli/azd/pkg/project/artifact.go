@@ -4,9 +4,13 @@
 package project
 
 import (
+	"encoding/json"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // ArtifactKind represents well-known artifact types in the Azure Developer CLI
@@ -57,6 +61,10 @@ var validArtifactKinds = []ArtifactKind{
 	ArtifactKindOutput,
 }
 
+// endpointPattern matches endpoints with discriminator suffix that should be displayed instead of the default 'Endpoint' label.
+// Pattern: "label: url" where label becomes the display name
+var endpointPattern = regexp.MustCompile(`(.+):\s(.+)`)
+
 // Artifact represents a build, package, or deployment artifact with its location and metadata.
 type Artifact struct {
 	Kind         ArtifactKind      `json:"kind"`               // Required: artifact type
@@ -65,17 +73,65 @@ type Artifact struct {
 	Metadata     map[string]string `json:"metadata,omitempty"` // Optional: arbitrary key/value pairs for extension-specific data
 }
 
+// ToString implements the UxItem interface for display output
+func (a *Artifact) ToString(currentIndentation string) string {
+	if a.Location == "" {
+		return ""
+	}
+
+	// Format output based on artifact kind
+	switch a.Kind {
+	case ArtifactKindEndpoint:
+		// Handle endpoint with optional discriminator suffix pattern
+		label := "Endpoint"
+		url := a.Location
+
+		// When the endpoint pattern is matched, use the first sub match as the endpoint label.
+		matches := endpointPattern.FindStringSubmatch(url)
+		if len(matches) == 3 {
+			label = matches[1]
+			url = matches[2]
+		}
+
+		return fmt.Sprintf("%s- %s: %s", currentIndentation, label, output.WithLinkFormat(url))
+
+	case ArtifactKindContainer:
+		if a.LocationKind == LocationKindRemote {
+			return fmt.Sprintf("%s- Remote Image: %s", currentIndentation, output.WithLinkFormat(a.Location))
+		}
+		return fmt.Sprintf("%s- Container: %s", currentIndentation, output.WithLinkFormat(a.Location))
+
+	case ArtifactKindArchive:
+		return fmt.Sprintf("%s- Package Output: %s", currentIndentation, output.WithLinkFormat(a.Location))
+
+	case ArtifactKindDirectory:
+		return fmt.Sprintf("%s- Build Output: %s", currentIndentation, output.WithLinkFormat(a.Location))
+
+	// Ignore other artifact kinds for now
+	default:
+		return ""
+	}
+}
+
+// MarshalJSON implements the UxItem interface JSON marshaling
+func (a *Artifact) MarshalJSON() ([]byte, error) {
+	return json.Marshal(*a)
+}
+
 // ArtifactCollection provides typed operations on a collection of artifacts
 type ArtifactCollection []Artifact
 
 // Add appends an artifact to the collection with validation
-func (ac *ArtifactCollection) Add(artifact Artifact) error {
-	// Validate required fields
-	if err := validateArtifact(artifact); err != nil {
-		return fmt.Errorf("invalid artifact: %w", err)
+func (ac *ArtifactCollection) Add(artifacts ...Artifact) error {
+	for _, artifact := range artifacts {
+		// Validate required fields
+		if err := validateArtifact(artifact); err != nil {
+			return fmt.Errorf("invalid artifact: %w", err)
+		}
 	}
 
-	*ac = append(*ac, artifact)
+	*ac = append(*ac, artifacts...)
+
 	return nil
 }
 
@@ -84,6 +140,10 @@ func validateArtifact(artifact Artifact) error {
 	// Validate Kind is not empty
 	if strings.TrimSpace(string(artifact.Kind)) == "" {
 		return fmt.Errorf("kind is required and cannot be empty")
+	}
+
+	if strings.TrimSpace(artifact.Location) == "" {
+		return fmt.Errorf("location is required and cannot be empty")
 	}
 
 	// Validate Kind is a known value
@@ -168,4 +228,28 @@ func (ac ArtifactCollection) FindFirst(opts ...FindOpts) (Artifact, bool) {
 		}
 	}
 	return Artifact{}, false
+}
+
+// ToString implements the UxItem interface for ArtifactCollection display output
+func (ac ArtifactCollection) ToString(currentIndentation string) string {
+	if len(ac) == 0 {
+		return fmt.Sprintf("%s- No artifacts were found\n", currentIndentation)
+	}
+
+	var builder strings.Builder
+	for _, artifact := range ac {
+		if output := artifact.ToString(currentIndentation); output != "" {
+			builder.WriteString(output)
+			if !strings.HasSuffix(output, "\n") {
+				builder.WriteString("\n")
+			}
+		}
+	}
+
+	return builder.String()
+}
+
+// MarshalJSON implements the UxItem interface JSON marshaling for ArtifactCollection
+func (ac ArtifactCollection) MarshalJSON() ([]byte, error) {
+	return json.Marshal([]Artifact(ac))
 }

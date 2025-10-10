@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/pkg/azure"
@@ -81,25 +82,25 @@ func newInitCommand() *cobra.Command {
 			// 	return fmt.Errorf("failed to create azure credential: %w", err)
 			// }
 
-			console := input.NewConsole(
-				false, // noPrompt
-				true,  // isTerminal
-				input.Writers{Output: os.Stdout},
-				input.ConsoleHandles{
-					Stderr: os.Stderr,
-					Stdin:  os.Stdin,
-					Stdout: os.Stdout,
-				},
-				nil, // formatter
-				nil, // externalPromptCfg
-			)
+			// console := input.NewConsole(
+			// 	false, // noPrompt
+			// 	true,  // isTerminal
+			// 	input.Writers{Output: os.Stdout},
+			// 	input.ConsoleHandles{
+			// 		Stderr: os.Stderr,
+			// 		Stdin:  os.Stdin,
+			// 		Stdout: os.Stdout,
+			// 	},
+			// 	nil, // formatter
+			// 	nil, // externalPromptCfg
+			// )
 
 			action := &InitAction{
 				azdClient: azdClient,
 				// azureClient:         azure.NewAzureClient(credential),
 				azureContext: azureContext,
 				// composedResources:   getComposedResourcesResponse.Resources,
-				console: console,
+				// console: console,
 				// credential:          credential,
 				// modelCatalogService: ai.NewModelCatalogService(credential),
 				projectConfig: projectConfig,
@@ -381,34 +382,60 @@ func (a *InitAction) promptForMissingValues(ctx context.Context, azdClient *azde
 	return nil
 }
 
-// downloadAgentYaml downloads the agent.yaml file from the provided URI,
-// saves it to the specified target directory (or "src" if not provided), and returns the parsed YAML content as a map
-func (a *InitAction) downloadAgentYaml(ctx context.Context, uri string, targetDir string) (map[string]interface{}, string, error) {
-	if uri == "" {
-		return nil, "", fmt.Errorf("URI cannot be empty")
+func (a *InitAction) isLocalFilePath(path string) bool {
+	// Check if it starts with http:// or https://
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+		return false
+	} else if _, err := os.Stat(path); err == nil {
+		return true
 	}
 
-	// Download the file from the URI
-	req, err := http.NewRequestWithContext(ctx, "GET", uri, nil)
-	if err != nil {
-		return nil, "", fmt.Errorf("creating request for URI %s: %w", uri, err)
+	return false
+}
+
+func (a *InitAction) downloadAgentYaml(ctx context.Context, manifestPointer string, targetDir string) (map[string]interface{}, string, error) {
+	if manifestPointer == "" {
+		return nil, "", fmt.Errorf("manifestPointer cannot be empty")
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, "", fmt.Errorf("downloading file from URI %s: %w", uri, err)
-	}
-	defer resp.Body.Close()
+	var content []byte
+	var err error
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("failed to download file: HTTP %d", resp.StatusCode)
-	}
+	// Check if manifestPointer is a local file path or a URI
+	if a.isLocalFilePath(manifestPointer) {
+		// Handle local file path
+		fmt.Printf("Reading agent.yaml from local file: %s\n", manifestPointer)
+		content, err = os.ReadFile(manifestPointer)
+		if err != nil {
+			return nil, "", fmt.Errorf("reading local file %s: %w", manifestPointer, err)
+		}
+		targetDir = filepath.Dir(manifestPointer)
+	} else {
+		// Handle URI - existing logic
+		fmt.Printf("Downloading agent.yaml from URI: %s\n", manifestPointer)
 
-	// Read the response body
-	content, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, "", fmt.Errorf("reading response body: %w", err)
+		// Download the file from the URI
+		req, err := http.NewRequestWithContext(ctx, "GET", manifestPointer, nil)
+		if err != nil {
+			return nil, "", fmt.Errorf("creating request for URI %s: %w", manifestPointer, err)
+		}
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, "", fmt.Errorf("downloading file from URI %s: %w", manifestPointer, err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, "", fmt.Errorf("failed to download file: HTTP %d", resp.StatusCode)
+		}
+
+		// Read the response body
+		content, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, "", fmt.Errorf("reading response body: %w", err)
+		}
 	}
 
 	// Parse the YAML content into a map
@@ -422,7 +449,7 @@ func (a *InitAction) downloadAgentYaml(ctx context.Context, uri string, targetDi
 		return nil, "", fmt.Errorf("missing or invalid 'id' field in YAML content")
 	}
 
-	// Use targetDir if provided, otherwise default to "src/{agentId}"
+	// Use targetDir if provided or set to local file pointer, otherwise default to "src/{agentId}"
 	if targetDir == "" {
 		targetDir = filepath.Join("src", agentId)
 	}
@@ -438,7 +465,7 @@ func (a *InitAction) downloadAgentYaml(ctx context.Context, uri string, targetDi
 		return nil, "", fmt.Errorf("saving file to %s: %w", filePath, err)
 	}
 
-	fmt.Printf("Downloaded and saved agent.yaml to %s\n", filePath)
+	fmt.Printf("Processed agent.yaml at %s\n", filePath)
 	return yamlData, targetDir, nil
 }
 

@@ -1,5 +1,5 @@
 # Release History
 
-## 0.0.1-preview (2026-09-15)
+## 0.0.1 (2025-10-09)
 
 - Initial release

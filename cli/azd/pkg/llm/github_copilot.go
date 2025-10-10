@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+//go:build ghCopilot
+
 package llm
 
 import (
@@ -50,15 +52,73 @@ const (
 	tokenCachePath    = "gh-cp"
 	ghTokenFileName   = "gh"
 	ghCopilotFileName = "cp"
-	clientID          = "Iv1.b507a08c87ecfe98"
 	scope             = "read:user"
 )
+
+// copilotIntegrationID is set at compile time using -ldflags
+// This file is only included when built with -tags ghCopilot
+// Example: go build -tags ghCopilot -ldflags "-X github.com/azure/azure-dev/cli/azd/pkg/llm.copilotIntegrationID=azd-cli -X github.com/azure/azure-dev/cli/azd/pkg/llm.clientID=Iv1.b507a08c87ecfe98"
+var copilotIntegrationID = mustSetCopilotIntegrationID
+
+// clientID is set at compile time using -ldflags
+// This must be provided along with copilotIntegrationID when using -tags ghCopilot
+var clientID = mustSetClientID
+
+// mustSetCopilotIntegrationID is a placeholder that will cause a compile error
+// if copilotIntegrationID is not overridden via ldflags
+// The ldflags will replace this entire variable, so this value should never be used
+const mustSetCopilotIntegrationID = "COPILOT_INTEGRATION_ID_NOT_SET_VIA_LDFLAGS_BUILD_WILL_FAIL"
+
+// mustSetClientID is a placeholder that will cause a compile error
+// if clientID is not overridden via ldflags
+// The ldflags will replace this entire variable, so this value should never be used
+const mustSetClientID = "CLIENT_ID_NOT_SET_VIA_LDFLAGS_BUILD_WILL_FAIL"
+
+func init() {
+	// This check ensures that if someone tries to use this without proper ldflags,
+	// it will fail immediately with a clear error message
+	// This is effectively a "compile-time" check from a developer experience perspective
+	// because the program fails immediately on startup
+
+	integrationIDMissing := copilotIntegrationID == mustSetCopilotIntegrationID
+	clientIDMissing := clientID == mustSetClientID
+
+	if integrationIDMissing || clientIDMissing {
+		var missingParams []string
+		if integrationIDMissing {
+			missingParams = append(missingParams, "copilotIntegrationID")
+		}
+		if clientIDMissing {
+			missingParams = append(missingParams, "clientID")
+		}
+
+		log.Fatalf("\n"+
+			"===============================================================================\n"+
+			"BUILD ERROR: GitHub Copilot parameters not set during compilation!\n"+
+			"===============================================================================\n"+
+			"Missing parameters: %s\n"+
+			"\n"+
+			"When using -tags ghCopilot, you MUST provide both parameters via ldflags:\n"+
+			"\n"+
+			"With environment variables (recommended):\n"+
+			"  export COPILOT_INTEGRATION_ID=\"your-integration-id\"\n"+
+			"  export COPILOT_CLIENT_ID=\"your-client-id\"\n"+
+			"  go build -tags ghCopilot -ldflags \"-X github.com/azure/azure-dev/cli/azd/pkg/llm.copilotIntegrationID=$COPILOT_INTEGRATION_ID -X github.com/azure/azure-dev/cli/azd/pkg/llm.clientID=$COPILOT_CLIENT_ID\"\n"+
+			"\n"+
+			"Or with direct values:\n"+
+			"  go build -tags ghCopilot -ldflags \"-X github.com/azure/azure-dev/cli/azd/pkg/llm.copilotIntegrationID=your-integration-id -X github.com/azure/azure-dev/cli/azd/pkg/llm.clientID=your-client-id\"\n"+
+			"===============================================================================",
+			strings.Join(missingParams, ", "))
+	}
+}
 
 // CreateModelContainer creates a model container for GitHub Copilot with configuration
 // loaded from user settings. It validates required fields and applies optional parameters
 // like temperature and max tokens before creating the GitHub Copilot client.
 func (p *GitHubCopilotModelProvider) CreateModelContainer(
 	ctx context.Context, opts ...ModelOption) (*ModelContainer, error) {
+	// GitHub Copilot integration is enabled - copilotIntegrationID is set at compile time
+
 	modelContainer := &ModelContainer{
 		Type:    LlmTypeGhCp,
 		IsLocal: false,
@@ -97,11 +157,7 @@ type httpClient struct {
 }
 
 func (c *httpClient) Do(req *http.Request) (*http.Response, error) {
-	// Set headers to mimic an approved Copilot client
-	// The copilot-integration-id header is used by GitHub to identify the client application.
-	// "vscode-chat" is a known valid value used by the official GitHub Copilot extension for VS Code.
-	// Using this value helps ensure compatibility with GitHub's Copilot service.
-	req.Header.Set("copilot-integration-id", "vscode-chat")
+	req.Header.Set("copilot-integration-id", copilotIntegrationID)
 	return http.DefaultClient.Do(req)
 }
 

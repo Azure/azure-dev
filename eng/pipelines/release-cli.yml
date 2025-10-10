@@ -38,6 +38,8 @@ extends:
             OS: windows
             ImageKey: image
             UploadArtifact: true
+            GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
+            GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
             Variables:
               BuildTarget: azd-windows-amd64.exe
               BuildOutputName: azd.exe
@@ -52,6 +54,8 @@ extends:
             OS: linux
             ImageKey: image
             UploadArtifact: true
+            GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
+            GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
             Variables:
               BuildTarget: azd-linux-amd64
               BuildOutputName: azd
@@ -72,6 +76,8 @@ extends:
             OS: macOS
             ImageKey: vmImage
             UploadArtifact: true
+            GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
+            GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
             Variables:
               BuildTarget: azd-darwin-amd64
               BuildOutputName: azd
@@ -89,6 +95,8 @@ extends:
               OS: macOS
               ImageKey: vmImage
               UploadArtifact: false
+              GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
+              GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
               Variables:
                 BuildTarget: azd-darwin-amd64
                 BuildOutputName: azd

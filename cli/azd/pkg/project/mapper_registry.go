@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -362,7 +361,9 @@ func registerProjectMappings() {
 			if err := m.Convert(protoArtifact, &artifact); err != nil {
 				return nil, err
 			}
-			result.Artifacts = append(result.Artifacts, artifact)
+			if err := result.Artifacts.Add(artifact); err != nil {
+				return nil, fmt.Errorf("failed to add artifact: %w", err)
+			}
 		}
 
 		// TODO: Legacy docker details handling removed - metadata is now stored in artifact metadata
@@ -387,7 +388,9 @@ func registerProjectMappings() {
 			if err := m.Convert(protoArtifact, &artifact); err != nil {
 				return nil, err
 			}
-			result.Artifacts = append(result.Artifacts, artifact)
+			if err := result.Artifacts.Add(artifact); err != nil {
+				return nil, fmt.Errorf("failed to add artifact: %w", err)
+			}
 		}
 
 		// TODO: Legacy container details handling removed - metadata is now stored in artifact metadata
@@ -435,7 +438,9 @@ func registerProjectMappings() {
 			if err := m.Convert(protoArtifact, &artifact); err != nil {
 				return nil, err
 			}
-			result.Artifacts = append(result.Artifacts, artifact)
+			if err := result.Artifacts.Add(artifact); err != nil {
+				return nil, fmt.Errorf("failed to add artifact: %w", err)
+			}
 		}
 
 		return result, nil
@@ -446,17 +451,14 @@ func registerProjectMappings() {
 			return Artifact{}, nil
 		}
 
-		resourceType, err := arm.ParseResourceType(src.ResourceType())
-		if err != nil {
-			return Artifact{}, fmt.Errorf("failed parsing resource type '%s'", resourceType)
-		}
-
-		resourceId := &arm.ResourceID{
-			SubscriptionID:    src.SubscriptionId(),
-			ResourceGroupName: src.ResourceGroupName(),
-			ResourceType:      resourceType,
-			Name:              src.ResourceName(),
-		}
+		// Build the Azure resource ID manually since arm.ResourceID.String() might not work correctly
+		// Azure resource IDs follow the pattern: /subscriptions/{id}/resourceGroups/{rg}/providers/{provider}/{type}/{name}
+		resourceIdString := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/%s/%s",
+			src.SubscriptionId(),
+			src.ResourceGroupName(),
+			src.ResourceType(),
+			src.ResourceName(),
+		)
 
 		metadata := src.Metadata()
 		if metadata == nil {
@@ -470,7 +472,7 @@ func registerProjectMappings() {
 
 		artifact := Artifact{
 			Kind:         ArtifactKindResource,
-			Location:     resourceId.String(),
+			Location:     resourceIdString,
 			LocationKind: LocationKindRemote,
 			Metadata:     metadata,
 		}

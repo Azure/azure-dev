@@ -239,7 +239,9 @@ func (sm *serviceManager) Restore(
 	}
 
 	// Update service context with restore artifacts
-	serviceContext.Restore = append(serviceContext.Restore, restoreResult.Artifacts...)
+	if err := serviceContext.Restore.Add(restoreResult.Artifacts...); err != nil {
+		return nil, fmt.Errorf("failed to add restore artifacts: %w", err)
+	}
 
 	sm.setOperationResult(serviceConfig, string(ServiceEventRestore), restoreResult)
 	return restoreResult, nil
@@ -281,7 +283,9 @@ func (sm *serviceManager) Build(
 	}
 
 	// Update service context with build artifacts
-	serviceContext.Build = append(serviceContext.Build, buildResult.Artifacts...)
+	if err := serviceContext.Build.Add(buildResult.Artifacts...); err != nil {
+		return nil, fmt.Errorf("failed to add build artifacts: %w", err)
+	}
 
 	sm.setOperationResult(serviceConfig, string(ServiceEventBuild), buildResult)
 	return buildResult, nil
@@ -347,20 +351,30 @@ func (sm *serviceManager) Package(
 	var packageResult *ServicePackageResult
 
 	err = serviceConfig.Invoke(ctx, ServiceEventPackage, eventArgs, func() error {
+		packageArtifacts := ArtifactCollection{}
+
 		frameworkPackageResult, err := frameworkService.Package(ctx, serviceConfig, serviceContext, progress)
 		if err != nil {
 			return err
 		}
 
-		// Add framework artifacts to service context
-		serviceContext.Package = append(serviceContext.Package, frameworkPackageResult.Artifacts...)
+		if err := packageArtifacts.Add(frameworkPackageResult.Artifacts...); err != nil {
+			return fmt.Errorf("framework package artifacts failed validation")
+		}
 
 		serviceTargetPackageResult, err := serviceTarget.Package(ctx, serviceConfig, serviceContext, progress)
 		if err != nil {
 			return err
 		}
 
-		packageResult = serviceTargetPackageResult
+		if err := packageArtifacts.Add(serviceTargetPackageResult.Artifacts...); err != nil {
+			return fmt.Errorf("framework package artifacts failed validation")
+		}
+
+		packageResult = &ServicePackageResult{
+			Artifacts: packageArtifacts,
+		}
+
 		sm.setOperationResult(serviceConfig, string(ServiceEventPackage), packageResult)
 
 		return nil
@@ -371,7 +385,9 @@ func (sm *serviceManager) Package(
 	}
 
 	// Update service context with package artifacts
-	serviceContext.Package = append(serviceContext.Package, packageResult.Artifacts...)
+	if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
+		return nil, fmt.Errorf("failed to add package artifacts: %w", err)
+	}
 
 	return packageResult, nil
 }
@@ -398,7 +414,9 @@ func (sm *serviceManager) Publish(
 			return nil, err
 		}
 
-		serviceContext.Package = append(serviceContext.Package, packageResult.Artifacts...)
+		if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
+			return nil, fmt.Errorf("failed to add package artifacts to service context: %w", err)
+		}
 	}
 
 	serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
@@ -429,7 +447,9 @@ func (sm *serviceManager) Publish(
 	}
 
 	// Update service context with publish artifacts
-	serviceContext.Publish = append(serviceContext.Publish, publishResult.Artifacts...)
+	if err := serviceContext.Publish.Add(publishResult.Artifacts...); err != nil {
+		return nil, fmt.Errorf("failed to add publish artifacts: %w", err)
+	}
 
 	sm.setOperationResult(serviceConfig, string(ServiceEventPublish), publishResult)
 	return publishResult, nil
@@ -493,21 +513,25 @@ func (sm *serviceManager) Deploy(
 	}
 
 	// Update service context with deploy artifacts
-	serviceContext.Deploy = append(serviceContext.Deploy, deployResult.Artifacts...)
+	if err := serviceContext.Deploy.Add(deployResult.Artifacts...); err != nil {
+		return nil, fmt.Errorf("failed to add deploy artifacts: %w", err)
+	}
 
 	// Allow users to specify their own endpoints, in cases where they've configured their own front-end load balancers,
 	// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
 	overriddenEndpoints := OverriddenEndpoints(ctx, serviceConfig, sm.env)
 	if len(overriddenEndpoints) > 0 {
 		for _, endpoint := range overriddenEndpoints {
-			deployResult.Artifacts = append(deployResult.Artifacts, Artifact{
+			if err := deployResult.Artifacts.Add(Artifact{
 				Kind:         ArtifactKindEndpoint,
 				LocationKind: LocationKindRemote,
 				Location:     endpoint,
 				Metadata: map[string]string{
 					"overridden": "true",
 				},
-			})
+			}); err != nil {
+				return nil, fmt.Errorf("failed to add overridden endpoint artifact: %w", err)
+			}
 		}
 	}
 

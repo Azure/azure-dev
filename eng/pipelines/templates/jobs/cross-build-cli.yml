@@ -13,6 +13,10 @@ parameters:
   - name: Variables
     type: object
     default: {}
+  - name: ghCopilotClientId
+    type: string
+  - name: ghCopilotIntegrationId
+    type: string    
 
 jobs:
   - job: CrossBuildCLI_${{ parameters.NameSuffix }}
@@ -64,6 +68,8 @@ jobs:
           arguments: >-
             -Version $(CLI_VERSION)
             -SourceVersion $(Build.SourceVersion)
+            -GitHubCopilotClientId "${{ parameters.ghCopilotClientId }}"
+            -GitHubCopilotIntegrationId "${{ parameters.ghCopilotIntegrationId }}"
           workingDirectory: cli/azd
         displayName: Build Go Binary (cross compile)
 

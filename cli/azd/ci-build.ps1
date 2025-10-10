@@ -3,9 +3,28 @@ param(
     [string] $SourceVersion = (git rev-parse HEAD),
     [switch] $CodeCoverageEnabled,
     [switch] $BuildRecordMode,
-    [string] $MSYS2Shell # path to msys2_shell.cmd
+    [string] $MSYS2Shell, # path to msys2_shell.cmd
+    [string] $GitHubCopilotClientId,
+    [string] $GitHubCopilotIntegrationId
 )
 $PSNativeCommandArgumentPassing = 'Legacy'
+
+# Validate GitHub Copilot parameters - both must be provided together or not at all
+$GitHubCopilotEnabled = $false
+if ($GitHubCopilotClientId -or $GitHubCopilotIntegrationId) {
+    if ([string]::IsNullOrWhiteSpace($GitHubCopilotClientId)) {
+        Write-Host "Error: GitHubCopilotClientId parameter is required when enabling GitHub Copilot integration" -ForegroundColor Red
+        Write-Host "Usage: -GitHubCopilotClientId 'your-client-id' -GitHubCopilotIntegrationId 'your-integration-id'" -ForegroundColor Yellow
+        exit 1
+    }
+    if ([string]::IsNullOrWhiteSpace($GitHubCopilotIntegrationId)) {
+        Write-Host "Error: GitHubCopilotIntegrationId parameter is required when enabling GitHub Copilot integration" -ForegroundColor Red
+        Write-Host "Usage: -GitHubCopilotClientId 'your-client-id' -GitHubCopilotIntegrationId 'your-integration-id'" -ForegroundColor Yellow
+        exit 1
+    }
+    $GitHubCopilotEnabled = $true
+    Write-Host "GitHub Copilot integration enabled with ClientId: $GitHubCopilotClientId and IntegrationId: $GitHubCopilotIntegrationId" -ForegroundColor Green
+}
 
 # specifying $MSYS2Shell implies building with OneAuth integration
 $OneAuth = $MSYS2Shell.length -gt 0 -and $IsWindows
@@ -113,27 +132,56 @@ if ($CodeCoverageEnabled) {
 # cfi: Enable Control Flow Integrity (CFI),
 # cfg: Enable Control Flow Guard (CFG),
 # osusergo: Optimize for OS user accounts
-$tagsFlag = "-tags=cfi,cfg,osusergo"
+# ghCopilot: Enable GitHub Copilot integration (when parameters provided)
+$tags = @("cfi", "cfg", "osusergo")
+if ($GitHubCopilotEnabled) {
+    $tags += "ghCopilot"
+}
+$tagsFlag = "-tags=$($tags -join ',')"
 
 # ld linker flags
 # -s: Omit symbol table and debug information
 # -w: Omit DWARF symbol table
 # -X: Set variable at link time. Used to set the version in source.
-$ldFlag = "-ldflags=-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)' "
+$ldFlags = @(
+    "-s",
+    "-w",
+    "-X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)'"
+)
+
+# Add GitHub Copilot linker flags if enabled
+if ($GitHubCopilotEnabled) {
+    $ldFlags += "-X 'github.com/azure/azure-dev/cli/azd/pkg/llm.clientID=$GitHubCopilotClientId'"
+    $ldFlags += "-X 'github.com/azure/azure-dev/cli/azd/pkg/llm.copilotIntegrationID=$GitHubCopilotIntegrationId'"
+}
+
+$ldFlag = "-ldflags=$($ldFlags -join ' ')"
 
 if ($IsWindows) {
     $msg = "Building for Windows"
     if ($OneAuth) {
         $msg += " with OneAuth integration"
-        $tagsFlag += ",oneauth"
+        $tags += "oneauth"
+        $tagsFlag = "-tags=$($tags -join ',')"
+    }
+    if ($GitHubCopilotEnabled) {
+        $msg += " with GitHub Copilot integration"
     }
     Write-Host $msg
 }
 elseif ($IsLinux) {
-    Write-Host "Building for linux"
+    $msg = "Building for Linux"
+    if ($GitHubCopilotEnabled) {
+        $msg += " with GitHub Copilot integration"
+    }
+    Write-Host $msg
 }
 elseif ($IsMacOS) {
-    Write-Host "Building for macOS"
+    $msg = "Building for macOS"
+    if ($GitHubCopilotEnabled) {
+        $msg += " with GitHub Copilot integration"
+    }
+    Write-Host $msg
 }
 
 # collect flags
@@ -196,7 +244,8 @@ try {
         }
     
         if (-not $recordFlagPresent) {
-            $buildFlags[$i] += "-tags=record"
+            $recordTags = $tags + @("record")
+            $buildFlags += "-tags=$($recordTags -join ',')"
         }
     
         $outputFlag = "-o=azd-record"

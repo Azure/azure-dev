@@ -5,7 +5,9 @@ parameters:
     type: object
     default:
       # Compliant image name required
-      LinuxARM64: 
+      LinuxARM64:
+        GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
+        GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
         Pool: $(LINUXPOOL)
         OSVmImage: $(LINUXVMIMAGE)
         OS: linux
@@ -25,6 +27,8 @@ parameters:
           GOARCH: arm64
           BuildLinuxPackages: true
       MacARM64:
+        GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
+        GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
         Pool: Azure Pipelines
         OSVmImage: $(MACVMIMAGE)
         OS: macOS
@@ -38,6 +42,8 @@ parameters:
           # CGO_ENABLED is required on MacOS to cross-compile pkg/outil/osversion
           CGO_ENABLED: 1
       WindowsARM64:
+        GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
+        GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
         Pool: $(WINDOWSPOOL)
         OSVmImage: $(WINDOWSVMIMAGE)
         OS: windows
@@ -73,6 +79,8 @@ stages:
             OS: ${{ build.value.OS }}
             UploadArtifact: ${{ build.value.UploadArtifact}}
             Variables: ${{ build.value.Variables }}
+            ghCopilotClientId: ${{ build.value.GhCopilotClientId }}
+            ghCopilotIntegrationId: ${{ build.value.GhCopilotIntegrationId }}
 
       # This is separated today because Skip.LiveTest is a queue-time variable
       # and cannot be set in a matrix entry.       
@@ -85,6 +93,8 @@ stages:
             OSVmImage: ${{ build.value.OSVmImage }} 
             OS: ${{ build.value.OS }}
             Variables: ${{ build.value.Variables }}
+            ghCopilotClientId: ${{ build.value.GhCopilotClientId }}
+            ghCopilotIntegrationId: ${{ build.value.GhCopilotIntegrationId }}
 
       - job: MergeLinuxPackages
         pool:

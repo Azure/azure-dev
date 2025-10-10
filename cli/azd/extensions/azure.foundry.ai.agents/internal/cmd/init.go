@@ -5,22 +5,16 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/pkg/azure/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -37,15 +31,15 @@ type AiProjectResourceConfig struct {
 }
 
 type InitAction struct {
-	azdClient           *azdext.AzdClient
-	azureClient         *azure.AzureClient
-	azureContext        *azdext.AzureContext
-	composedResources   []*azdext.ComposedResource
-	console             input.Console
-	credential          azcore.TokenCredential
-	modelCatalog        map[string]*ai.AiModel
-	modelCatalogService *ai.ModelCatalogService
-	projectConfig       *azdext.ProjectConfig
+	azdClient *azdext.AzdClient
+	//azureClient       *azure.AzureClient
+	azureContext *azdext.AzureContext
+	//composedResources []*azdext.ComposedResource
+	//console           input.Console
+	//credential        azcore.TokenCredential
+	//modelCatalog      map[string]*ai.AiModel
+	//modelCatalogService *ai.ModelCatalogService
+	projectConfig *azdext.ProjectConfig
 }
 
 func newInitCommand() *cobra.Command {
@@ -393,7 +387,8 @@ func (a *InitAction) isLocalFilePath(path string) bool {
 	return false
 }
 
-func (a *InitAction) downloadAgentYaml(ctx context.Context, manifestPointer string, targetDir string) (map[string]interface{}, string, error) {
+func (a *InitAction) downloadAgentYaml(
+	ctx context.Context, manifestPointer string, targetDir string) (map[string]interface{}, string, error) {
 	if manifestPointer == "" {
 		return nil, "", fmt.Errorf("manifestPointer cannot be empty")
 	}
@@ -461,7 +456,7 @@ func (a *InitAction) downloadAgentYaml(ctx context.Context, manifestPointer stri
 
 	// Save the file to the target directory
 	filePath := filepath.Join(targetDir, "agent.yaml")
-	if err := os.WriteFile(filePath, content, 0644); err != nil {
+	if err := os.WriteFile(filePath, content, osutil.PermissionFile); err != nil {
 		return nil, "", fmt.Errorf("saving file to %s: %w", filePath, err)
 	}
 
@@ -495,267 +490,267 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentId
 	return nil
 }
 
-func (a *InitAction) validateResources(ctx context.Context, agentYaml map[string]interface{}) error {
-	fmt.Println("Reading model name from agent.yaml...")
+// func (a *InitAction) validateResources(ctx context.Context, agentYaml map[string]interface{}) error {
+// 	fmt.Println("Reading model name from agent.yaml...")
 
-	// Extract the model name from agentYaml
-	agentModelName, ok := agentYaml["model"].(string)
-	if !ok || agentModelName == "" {
-		return fmt.Errorf("extracting model name from agent YAML: model name missing or empty")
-	}
+// 	// Extract the model name from agentYaml
+// 	agentModelName, ok := agentYaml["model"].(string)
+// 	if !ok || agentModelName == "" {
+// 		return fmt.Errorf("extracting model name from agent YAML: model name missing or empty")
+// 	}
 
-	fmt.Println("Reading current azd project resources...")
+// 	fmt.Println("Reading current azd project resources...")
 
-	// Check if the ai.project resource already exists and has the required model
-	existingResourceName, err := a.checkResourceExistsAndHasModel(agentModelName)
-	if err != nil {
-		return fmt.Errorf("checking if ai.project resource has model '%s': %w", agentModelName, err)
-	}
+// 	// Check if the ai.project resource already exists and has the required model
+// 	existingResourceName, err := a.checkResourceExistsAndHasModel(agentModelName)
+// 	if err != nil {
+// 		return fmt.Errorf("checking if ai.project resource has model '%s': %w", agentModelName, err)
+// 	}
 
-	if existingResourceName == "" {
-		return a.addResource(ctx, agentModelName)
-	}
+// 	if existingResourceName == "" {
+// 		return a.addResource(ctx, agentModelName)
+// 	}
 
-	fmt.Printf("Validated: ai.project resource '%s' has required model '%s'\n", existingResourceName, agentModelName)
-	return nil
-}
+// 	fmt.Printf("Validated: ai.project resource '%s' has required model '%s'\n", existingResourceName, agentModelName)
+// 	return nil
+// }
 
-// checkResourceExistsAndHasModel checks if the given ai.project resource has the specified model
-func (a *InitAction) checkResourceExistsAndHasModel(modelName string) (string, error) {
-	// Look for ai.project resource
-	var aiProjectResource *azdext.ComposedResource
-	for _, resource := range a.composedResources {
-		if resource.Type == "ai.project" {
-			aiProjectResource = resource
-			break
-		}
-	}
+// // checkResourceExistsAndHasModel checks if the given ai.project resource has the specified model
+// func (a *InitAction) checkResourceExistsAndHasModel(modelName string) (string, error) {
+// 	// Look for ai.project resource
+// 	var aiProjectResource *azdext.ComposedResource
+// 	for _, resource := range a.composedResources {
+// 		if resource.Type == "ai.project" {
+// 			aiProjectResource = resource
+// 			break
+// 		}
+// 	}
 
-	if aiProjectResource == nil {
-		fmt.Println("No 'ai.project' resource found in current azd project.")
-		return "", nil
-	}
+// 	if aiProjectResource == nil {
+// 		fmt.Println("No 'ai.project' resource found in current azd project.")
+// 		return "", nil
+// 	}
 
-	fmt.Println("'ai.project' resource found in current azd project. Checking for required model...")
+// 	fmt.Println("'ai.project' resource found in current azd project. Checking for required model...")
 
-	// Parse the resource config to check for models
-	if len(aiProjectResource.Config) > 0 {
-		var config map[string]interface{}
-		if err := yaml.Unmarshal(aiProjectResource.Config, &config); err != nil {
-			return "", fmt.Errorf("parsing resource config: %w", err)
-		}
+// 	// Parse the resource config to check for models
+// 	if len(aiProjectResource.Config) > 0 {
+// 		var config map[string]interface{}
+// 		if err := yaml.Unmarshal(aiProjectResource.Config, &config); err != nil {
+// 			return "", fmt.Errorf("parsing resource config: %w", err)
+// 		}
 
-		// Check the models array - based on azure.yaml format: models[].name
-		if models, ok := config["Models"].([]interface{}); ok {
-			for _, model := range models {
-				if modelObj, ok := model.(map[string]interface{}); ok {
-					if name, ok := modelObj["Name"].(string); ok {
-						if name == modelName {
-							fmt.Printf("Found matching model: %s\n", name)
-							return aiProjectResource.Name, nil
-						}
-					}
-				}
-			}
-		}
-	}
+// 		// Check the models array - based on azure.yaml format: models[].name
+// 		if models, ok := config["Models"].([]interface{}); ok {
+// 			for _, model := range models {
+// 				if modelObj, ok := model.(map[string]interface{}); ok {
+// 					if name, ok := modelObj["Name"].(string); ok {
+// 						if name == modelName {
+// 							fmt.Printf("Found matching model: %s\n", name)
+// 							return aiProjectResource.Name, nil
+// 						}
+// 					}
+// 				}
+// 			}
+// 		}
+// 	}
 
-	fmt.Printf("Model '%s' not found in resource '%s'\n", modelName, aiProjectResource.Name)
-	return "", nil
-}
+// 	fmt.Printf("Model '%s' not found in resource '%s'\n", modelName, aiProjectResource.Name)
+// 	return "", nil
+// }
 
-func (a *InitAction) addResource(ctx context.Context, agentModelName string) error {
-	// Look for existing ai.project resource
-	var aiProject *azdext.ComposedResource
-	var aiProjectConfig *AiProjectResourceConfig
+// func (a *InitAction) addResource(ctx context.Context, agentModelName string) error {
+// 	// Look for existing ai.project resource
+// 	var aiProject *azdext.ComposedResource
+// 	var aiProjectConfig *AiProjectResourceConfig
 
-	for _, resource := range a.composedResources {
-		if resource.Type == "ai.project" {
-			aiProject = resource
+// 	for _, resource := range a.composedResources {
+// 		if resource.Type == "ai.project" {
+// 			aiProject = resource
 
-			// Parse existing config if it exists
-			if len(resource.Config) > 0 {
-				if err := yaml.Unmarshal(resource.Config, &aiProjectConfig); err != nil {
-					return fmt.Errorf("failed to unmarshal AI project config: %w", err)
-				}
-			}
-			break
-		}
-	}
+// 			// Parse existing config if it exists
+// 			if len(resource.Config) > 0 {
+// 				if err := yaml.Unmarshal(resource.Config, &aiProjectConfig); err != nil {
+// 					return fmt.Errorf("failed to unmarshal AI project config: %w", err)
+// 				}
+// 			}
+// 			break
+// 		}
+// 	}
 
-	// Create new ai.project resource if it doesn't exist
-	if aiProject == nil {
-		fmt.Println("Adding new 'ai.project' resource to azd project.")
-		aiProject = &azdext.ComposedResource{
-			Name: generateResourceName("ai-project", a.composedResources),
-			Type: "ai.project",
-		}
-		aiProjectConfig = &AiProjectResourceConfig{}
-	}
+// 	// Create new ai.project resource if it doesn't exist
+// 	if aiProject == nil {
+// 		fmt.Println("Adding new 'ai.project' resource to azd project.")
+// 		aiProject = &azdext.ComposedResource{
+// 			Name: generateResourceName("ai-project", a.composedResources),
+// 			Type: "ai.project",
+// 		}
+// 		aiProjectConfig = &AiProjectResourceConfig{}
+// 	}
 
-	// Prompt user for model details
-	modelDetails, err := a.promptForModelDetails(ctx, agentModelName)
-	if err != nil {
-		return fmt.Errorf("failed to get model details: %w", err)
-	}
+// 	// Prompt user for model details
+// 	modelDetails, err := a.promptForModelDetails(ctx, agentModelName)
+// 	if err != nil {
+// 		return fmt.Errorf("failed to get model details: %w", err)
+// 	}
 
-	fmt.Println("Got model details, adding to ai.project resource.")
-	// Convert the ai.AiModelDeployment to the map format expected by AiProjectResourceConfig
-	defaultModel := map[string]interface{}{
-		"name":    modelDetails.Name,
-		"format":  modelDetails.Format,
-		"version": modelDetails.Version,
-		"sku": map[string]interface{}{
-			"name":      modelDetails.Sku.Name,
-			"usageName": modelDetails.Sku.UsageName,
-			"capacity":  modelDetails.Sku.Capacity,
-		},
-	}
-	aiProjectConfig.Models = append(aiProjectConfig.Models, defaultModel)
+// 	fmt.Println("Got model details, adding to ai.project resource.")
+// 	// Convert the ai.AiModelDeployment to the map format expected by AiProjectResourceConfig
+// 	defaultModel := map[string]interface{}{
+// 		"name":    modelDetails.Name,
+// 		"format":  modelDetails.Format,
+// 		"version": modelDetails.Version,
+// 		"sku": map[string]interface{}{
+// 			"name":      modelDetails.Sku.Name,
+// 			"usageName": modelDetails.Sku.UsageName,
+// 			"capacity":  modelDetails.Sku.Capacity,
+// 		},
+// 	}
+// 	aiProjectConfig.Models = append(aiProjectConfig.Models, defaultModel)
 
-	// Marshal the config as JSON (since the struct has json tags)
-	configJson, err := json.Marshal(aiProjectConfig)
-	if err != nil {
-		return fmt.Errorf("failed to marshal AI project config: %w", err)
-	}
+// 	// Marshal the config as JSON (since the struct has json tags)
+// 	configJson, err := json.Marshal(aiProjectConfig)
+// 	if err != nil {
+// 		return fmt.Errorf("failed to marshal AI project config: %w", err)
+// 	}
 
-	// Update the resource config
-	aiProject.Config = configJson
+// 	// Update the resource config
+// 	aiProject.Config = configJson
 
-	// Add the resource to the project
-	_, err = a.azdClient.Compose().AddResource(ctx, &azdext.AddResourceRequest{
-		Resource: aiProject,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to add resource %s: %w", aiProject.Name, err)
-	}
+// 	// Add the resource to the project
+// 	_, err = a.azdClient.Compose().AddResource(ctx, &azdext.AddResourceRequest{
+// 		Resource: aiProject,
+// 	})
+// 	if err != nil {
+// 		return fmt.Errorf("failed to add resource %s: %w", aiProject.Name, err)
+// 	}
 
-	fmt.Printf("Added AI project resource '%s' to azure.yaml\n", aiProject.Name)
-	return nil
-}
+// 	fmt.Printf("Added AI project resource '%s' to azure.yaml\n", aiProject.Name)
+// 	return nil
+// }
 
-func (a *InitAction) promptForModelDetails(ctx context.Context, modelName string) (*ai.AiModelDeployment, error) {
-	// Load the AI model catalog if not already loaded
-	if err := a.loadAiCatalog(ctx); err != nil {
-		return nil, err
-	}
+// func (a *InitAction) promptForModelDetails(ctx context.Context, modelName string) (*ai.AiModelDeployment, error) {
+// 	// Load the AI model catalog if not already loaded
+// 	if err := a.loadAiCatalog(ctx); err != nil {
+// 		return nil, err
+// 	}
 
-	// Check if the model exists in the catalog
-	var model *ai.AiModel
-	model, exists := a.modelCatalog[modelName]
-	if !exists {
-		return nil, fmt.Errorf("model '%s' not found in AI model catalog", modelName)
-	}
+// 	// Check if the model exists in the catalog
+// 	var model *ai.AiModel
+// 	model, exists := a.modelCatalog[modelName]
+// 	if !exists {
+// 		return nil, fmt.Errorf("model '%s' not found in AI model catalog", modelName)
+// 	}
 
-	availableVersions, err := a.modelCatalogService.ListModelVersions(ctx, model)
-	if err != nil {
-		return nil, fmt.Errorf("listing versions for model '%s': %w", modelName, err)
-	}
+// 	availableVersions, err := a.modelCatalogService.ListModelVersions(ctx, model)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("listing versions for model '%s': %w", modelName, err)
+// 	}
 
-	availableSkus, err := a.modelCatalogService.ListModelSkus(ctx, model)
-	if err != nil {
-		return nil, fmt.Errorf("listing SKUs for model '%s': %w", modelName, err)
-	}
+// 	availableSkus, err := a.modelCatalogService.ListModelSkus(ctx, model)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("listing SKUs for model '%s': %w", modelName, err)
+// 	}
 
-	modelVersionSelection, err := selectFromList(
-		ctx, a.console, "Which model version do you want to use?", availableVersions, nil)
-	if err != nil {
-		return nil, err
-	}
+// 	modelVersionSelection, err := selectFromList(
+// 		ctx, a.console, "Which model version do you want to use?", availableVersions, nil)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	skuSelection, err := selectFromList(ctx, a.console, "Select model SKU", availableSkus, nil)
-	if err != nil {
-		return nil, err
-	}
+// 	skuSelection, err := selectFromList(ctx, a.console, "Select model SKU", availableSkus, nil)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	deploymentOptions := ai.AiModelDeploymentOptions{
-		Versions: []string{modelVersionSelection},
-		Skus:     []string{skuSelection},
-	}
+// 	deploymentOptions := ai.AiModelDeploymentOptions{
+// 		Versions: []string{modelVersionSelection},
+// 		Skus:     []string{skuSelection},
+// 	}
 
-	modelDeployment, err := a.modelCatalogService.GetModelDeployment(ctx, model, &deploymentOptions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get model deployment: %w", err)
-	}
+// 	modelDeployment, err := a.modelCatalogService.GetModelDeployment(ctx, model, &deploymentOptions)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to get model deployment: %w", err)
+// 	}
 
-	return modelDeployment, nil
-}
+// 	return modelDeployment, nil
+// }
 
-func (a *InitAction) loadAiCatalog(ctx context.Context) error {
-	if a.modelCatalog != nil {
-		return nil
-	}
+// func (a *InitAction) loadAiCatalog(ctx context.Context) error {
+// 	if a.modelCatalog != nil {
+// 		return nil
+// 	}
 
-	spinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text:        "Loading AI Model Catalog",
-		ClearOnStop: true,
-	})
+// 	spinner := ux.NewSpinner(&ux.SpinnerOptions{
+// 		Text:        "Loading AI Model Catalog",
+// 		ClearOnStop: true,
+// 	})
 
-	if err := spinner.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start spinner: %w", err)
-	}
+// 	if err := spinner.Start(ctx); err != nil {
+// 		return fmt.Errorf("failed to start spinner: %w", err)
+// 	}
 
-	aiModelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId)
-	if err != nil {
-		return fmt.Errorf("failed to load AI model catalog: %w", err)
-	}
+// 	aiModelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId)
+// 	if err != nil {
+// 		return fmt.Errorf("failed to load AI model catalog: %w", err)
+// 	}
 
-	if err := spinner.Stop(ctx); err != nil {
-		return err
-	}
+// 	if err := spinner.Stop(ctx); err != nil {
+// 		return err
+// 	}
 
-	a.modelCatalog = aiModelCatalog
-	return nil
-}
+// 	a.modelCatalog = aiModelCatalog
+// 	return nil
+// }
 
-// generateResourceName generates a unique resource name, similar to the AI builder pattern
-func generateResourceName(desiredName string, existingResources []*azdext.ComposedResource) string {
-	resourceMap := map[string]struct{}{}
-	for _, resource := range existingResources {
-		resourceMap[resource.Name] = struct{}{}
-	}
+// // generateResourceName generates a unique resource name, similar to the AI builder pattern
+// func generateResourceName(desiredName string, existingResources []*azdext.ComposedResource) string {
+// 	resourceMap := map[string]struct{}{}
+// 	for _, resource := range existingResources {
+// 		resourceMap[resource.Name] = struct{}{}
+// 	}
 
-	if _, exists := resourceMap[desiredName]; !exists {
-		return desiredName
-	}
-	// If the desired name already exists, append a number (always 2 digits) to the name
-	nextIndex := 1
-	for {
-		newName := fmt.Sprintf("%s-%02d", desiredName, nextIndex)
-		if _, exists := resourceMap[newName]; !exists {
-			return newName
-		}
-		nextIndex++
-	}
-}
+// 	if _, exists := resourceMap[desiredName]; !exists {
+// 		return desiredName
+// 	}
+// 	// If the desired name already exists, append a number (always 2 digits) to the name
+// 	nextIndex := 1
+// 	for {
+// 		newName := fmt.Sprintf("%s-%02d", desiredName, nextIndex)
+// 		if _, exists := resourceMap[newName]; !exists {
+// 			return newName
+// 		}
+// 		nextIndex++
+// 	}
+// }
 
-func selectFromList(
-	ctx context.Context, console input.Console, q string, options []string, defaultOpt *string) (string, error) {
+// func selectFromList(
+// 	ctx context.Context, console input.Console, q string, options []string, defaultOpt *string) (string, error) {
 
-	if len(options) == 1 {
-		return options[0], nil
-	}
+// 	if len(options) == 1 {
+// 		return options[0], nil
+// 	}
 
-	defOpt := options[0]
+// 	defOpt := options[0]
 
-	if defaultOpt != nil {
-		defOpt = *defaultOpt
-	}
+// 	if defaultOpt != nil {
+// 		defOpt = *defaultOpt
+// 	}
 
-	slices.Sort(options)
-	selectedIndex, err := console.Select(ctx, input.ConsoleOptions{
-		Message:      q,
-		Options:      options,
-		DefaultValue: defOpt,
-	})
+// 	slices.Sort(options)
+// 	selectedIndex, err := console.Select(ctx, input.ConsoleOptions{
+// 		Message:      q,
+// 		Options:      options,
+// 		DefaultValue: defOpt,
+// 	})
 
-	if err != nil {
-		return "", err
-	}
+// 	if err != nil {
+// 		return "", err
+// 	}
 
-	chosen := options[selectedIndex]
-	return chosen, nil
-}
+// 	chosen := options[selectedIndex]
+// 	return chosen, nil
+// }
 
 func (a *InitAction) updateEnvironment(ctx context.Context, agentKind string, agentModelName string) error {
 	fmt.Printf("Updating environment variables for agent kind: %s\n", agentKind)

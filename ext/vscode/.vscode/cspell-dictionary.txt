@@ -12,3 +12,4 @@ appservice
 containerapp
 staticwebapp
 devcenter
+processutils

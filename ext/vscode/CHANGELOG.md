@@ -1,6 +1,6 @@
 # Release History
 
-## 0.10.0-alpha.1 (Unreleased)
+## 0.11.0-alpha.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,17 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 0.10.0 (2025-09-22)
+
+### Bugs Fixed
+
+- [[#5692]](https://github.com/Azure/azure-dev/pull/5692) Fixed an issue handling movement of `azure.yaml` files
+
+### Other Changes
+
+- [[#5740]](https://github.com/Azure/azure-dev/pull/5740) Improvements to execution of external processes
+- The minimum required Visual Studio Code version is now 1.90.0 (May 2024)
 
 ## 0.9.0 (2025-04-10)
 

@@ -1,13 +1,14 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import * as vscode from 'vscode';
 import { IActionContext, IAzureQuickPickItem } from '@microsoft/vscode-azext-utils';
-import { createAzureDevCli } from '../utils/azureDevCli';
-import { quickPickWorkspaceFolder } from '../utils/quickPickWorkspaceFolder';
-import { executeAsTask } from '../utils/executeAsTask';
-import { getAzDevTerminalTitle, selectApplicationTemplate, showReadmeFile } from './cmdUtil';
+import { composeArgs, withArg, withFlagArg, withNamedArg } from '@microsoft/vscode-processutils';
+import * as vscode from 'vscode';
 import { TelemetryId } from '../telemetry/telemetryId';
+import { createAzureDevCli } from '../utils/azureDevCli';
+import { executeAsTask } from '../utils/executeAsTask';
+import { quickPickWorkspaceFolder } from '../utils/quickPickWorkspaceFolder';
+import { getAzDevTerminalTitle, selectApplicationTemplate, showReadmeFile } from './cmdUtil';
 
 interface InitCommandOptions {
     templateUrl?: string;
@@ -52,36 +53,24 @@ export async function init(context: IActionContext, selectedFile?: vscode.Uri, a
     }
 
     const azureCli = await createAzureDevCli(context);
-    const command = azureCli.commandBuilder
-        .withArg('init');
+    const args = composeArgs(
+        withArg('init'),
+        withFlagArg('--from-code', useExistingSource),
+        withNamedArg('-t', useExistingSource ? undefined : templateUrl, { shouldQuote: true }),
+        withNamedArg('-e', options?.environmentName, { shouldQuote: true }),
+        withFlagArg('--up', options?.up),
+    )();
 
-    if (useExistingSource) {
-        context.telemetry.properties.useExistingSource = 'true';
-        command.withArg('--from-code');
-    } else {
-        // Telemetry property is set inside selectApplicationTemplate
-        command.withNamedArg('-t', {value: templateUrl!, quoting: vscode.ShellQuoting.Strong});
-    }
-
-    const workspacePath = folder?.uri;
-
-    if (options?.environmentName) {
-        command.withNamedArg('-e', {value: options.environmentName, quoting: vscode.ShellQuoting.Strong});
-    }
-
-    if (options?.up) {
-        command.withArg('--up');
-    }
+    context.telemetry.properties.useExistingSource = useExistingSource.toString();
 
     // Don't wait
-    void executeAsTask(command.build(), getAzDevTerminalTitle(), {
+    void executeAsTask(azureCli.invocation, args, getAzDevTerminalTitle(), azureCli.spawnOptions(folder?.uri.fsPath), {
         focus: true,
         alwaysRunNew: true,
-        cwd: workspacePath.fsPath,
-        env: azureCli.env
+        workspaceFolder: folder,
     }, TelemetryId.InitCli).then(() => {
         if (!options?.suppressReadme) {
-            void showReadmeFile(workspacePath);
+            void showReadmeFile(folder?.uri);
         }
     });
 }

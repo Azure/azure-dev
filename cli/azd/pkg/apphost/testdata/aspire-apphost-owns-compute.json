@@ -16,9 +16,19 @@
           }
         }
       },
-      "test": {
+      "aspire-owned-env": {
         "type": "azure.bicep.v1",
-        "path": "test.bicep",
+        "path": "aspire-owned-env.bicep",
+        "params": {
+          "userPrincipalId": ""
+        },
+        "scope": {
+          "resourceGroup": "{rg-scope.value}"
+        }
+      },
+      "bicepModule": {
+        "type": "azure.bicep.v1",
+        "path": "bicepModule.bicep",
         "params": {
           "test": "{parameter.value}",
           "url": "{frontend.bindings.http.url}",
@@ -26,8 +36,7 @@
           "values": [
             "one",
             "two"
-          ],
-          "userPrincipalId": ""
+          ]
         },
         "scope": {
           "resourceGroup": "{rg-scope.value}"
@@ -132,13 +141,13 @@
           "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
           "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
           "ConnectionStrings__db2": "{db2.connectionString}",
-          "bicepValue_test": "{test.outputs.test}",
-          "bicepValue0": "{test.outputs.val0}",
+          "bicepValue_test": "{aspire-owned-env.outputs.test}",
+          "bicepValue0": "{aspire-owned-env.outputs.val0}",
           "ConnectionStrings__s-b": "{s-b.connectionString}",
           "APPLICATIONINSIGHTS_CONNECTION_STRING": "{ai.connectionString}",
           "ConnectionStrings__db": "{db.connectionString}",
-          "ACR": "{test.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT}",
-          "ACE": "{test.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}"
+          "ACR": "{aspire-owned-env.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT}",
+          "ACE": "{aspire-owned-env.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN}"
         },
         "bindings": {
           "http": {

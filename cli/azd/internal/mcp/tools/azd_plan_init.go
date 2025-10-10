@@ -15,7 +15,7 @@ import (
 func NewAzdPlanInitTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
-			"azd_plan_init",
+			"plan_init",
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(false),

@@ -13,10 +13,13 @@ package azdcli
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -91,6 +94,14 @@ func NewCLI(t *testing.T, opts ...Options) *CLI {
 			if subId, has := opt.Session.Variables[recording.SubscriptionIdKey]; has {
 				cli.Env = append(cli.Env, fmt.Sprintf("AZD_DEBUG_SYNTHETIC_SUBSCRIPTION=%s", subId))
 			}
+
+			// Start test credential server for Playback mode
+			credentialServer := startTestCredentialServer(t)
+			t.Cleanup(func() {
+				credentialServer.Close()
+			})
+
+			cli.Env = append(cli.Env, fmt.Sprintf("AZD_AUTH_ENDPOINT=%s", credentialServer.URL))
 		}
 	}
 
@@ -325,4 +336,108 @@ func (cred *TestCredential) GetToken(ctx context.Context, options policy.TokenRe
 	}
 
 	return accessToken, nil
+}
+
+type tokenRequestBody struct {
+	Scopes   []string `json:"scopes"`
+	TenantId string   `json:"tenantId,omitempty"`
+}
+
+// startTestCredentialServer creates a mock HTTP server that implements the remote credential protocol.
+// This is used in Playback mode to provide OAuth tokens for functional tests
+func startTestCredentialServer(t *testing.T) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check method and path
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		if r.URL.Path != "/token" {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read request body", http.StatusBadRequest)
+			return
+		}
+
+		var reqBody tokenRequestBody
+		err = json.Unmarshal(body, &reqBody)
+		if err != nil {
+			http.Error(w, "Failed to parse request body", http.StatusBadRequest)
+			return
+		}
+
+		// Return a mock successful token response with a proper JWT token
+		expiresOn := time.Now().Add(1 * time.Hour)
+
+		// Create a mock JWT token with proper claims
+		mockJWT, err := createMockJWTToken(reqBody, expiresOn)
+		if err != nil {
+			http.Error(w, "Failed to create mock token", http.StatusInternalServerError)
+			return
+		}
+
+		tokenResponse := struct {
+			Status    string `json:"status"`
+			Token     string `json:"token"`
+			ExpiresOn string `json:"expiresOn"`
+		}{
+			Status:    "success",
+			Token:     mockJWT,
+			ExpiresOn: expiresOn.Format(time.RFC3339),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if encodeErr := json.NewEncoder(w).Encode(tokenResponse); encodeErr != nil {
+			t.Logf("Failed to write test credential response: %v", encodeErr)
+		}
+	}))
+}
+
+// createMockJWTToken creates a mock JWT token
+func createMockJWTToken(reqBody tokenRequestBody, expiryTime time.Time) (string, error) {
+	// Create mock JWT header (not validated, but needed for JWT format)
+	header := map[string]interface{}{
+		"typ": "JWT",
+		"alg": "RS256",
+		"kid": "test-playback-key-id",
+	}
+	headerJSON, err := json.Marshal(header)
+	if err != nil {
+		return "", err
+	}
+	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
+
+	// Create mock JWT payload with required claims
+	now := time.Now().Unix()
+	payload := map[string]interface{}{
+		"aud":                "https://management.azure.com/",
+		"iss":                fmt.Sprintf("https://sts.windows.net/%s/", reqBody.TenantId),
+		"iat":                now,
+		"nbf":                now,
+		"exp":                expiryTime.Unix(), // 1 hour from now
+		"sub":                "test-subject-id",
+		"oid":                "test-object-id",
+		"tid":                reqBody.TenantId,
+		"preferred_username": "test-user@example.com",
+		"name":               "Test User",
+		"unique_name":        "test-user@example.com",
+		"upn":                "test-user@example.com",
+		"email":              "test-user@example.com",
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
+
+	// Create mock signature (not validated, but needed for JWT format)
+	signature := base64.RawURLEncoding.EncodeToString([]byte("test-mock-signature"))
+
+	// Combine into JWT format: header.payload.signature
+	return fmt.Sprintf("%s.%s.%s", headerB64, payloadB64, signature), nil
 }

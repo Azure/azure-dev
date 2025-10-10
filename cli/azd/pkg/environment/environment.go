@@ -44,6 +44,10 @@ const ContainerRegistryEndpointEnvVarName = "AZURE_CONTAINER_REGISTRY_ENDPOINT"
 // that specifies the default domain for Azure Container Apps environments.
 const ContainerEnvironmentEndpointEnvVarName = "AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN"
 
+// AppServiceAspireDashboardUrlEnvVarName is the name of the environment variable
+// that specifies the url for the App Service Aspire Dashboard.
+const AppServiceAspireDashboardUrlEnvVarName = "AZURE_APP_SERVICE_DASHBOARD_URI"
+
 // AksClusterEnvVarName is the name of they key used to store the endpoint of the AKS cluster to push to.
 const AksClusterEnvVarName = "AZURE_AKS_CLUSTER_NAME"
 

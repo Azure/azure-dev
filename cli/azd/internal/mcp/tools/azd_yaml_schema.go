@@ -22,7 +22,7 @@ import (
 func NewAzdYamlSchemaTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
-			"azd_validate_azure_yaml",
+			"validate_azure_yaml",
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(false),

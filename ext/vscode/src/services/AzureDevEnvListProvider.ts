@@ -2,11 +2,11 @@
 // Licensed under the MIT License.
 
 import { IActionContext } from '@microsoft/vscode-azext-utils';
+import { composeArgs, withArg, withNamedArg } from '@microsoft/vscode-processutils';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { createAzureDevCli } from '../utils/azureDevCli';
-import { execAsync } from '../utils/process';
-import { withTimeout } from '../utils/withTimeout';
+import { execAsync } from '../utils/execAsync';
 
 interface AzureDevEnvironment {
     readonly Name: string;
@@ -26,18 +26,13 @@ export class WorkspaceAzureDevEnvListProvider implements AzureDevEnvListProvider
 
         const configurationFileDirectory = path.dirname(configurationFile.fsPath);
 
-        const command = azureCli.commandBuilder
-            .withArg('env')
-            .withArg('list')
-            .withArg('--no-prompt')
-            .withNamedArg('--cwd', configurationFileDirectory)
-            .withNamedArg('--output', 'json')
-            .build();
+        const args = composeArgs(
+            withArg('env', 'list', '--no-prompt'),
+            withNamedArg('--cwd', configurationFileDirectory, { shouldQuote: true }),
+            withNamedArg('--output', 'json'),
+        )();
 
-        const options = azureCli.spawnOptions(configurationFileDirectory);
-
-        const envListResultsJson = await withTimeout(execAsync(command, options), 30000);
-
-        return JSON.parse(envListResultsJson.stdout) as AzDevEnvListResults;
+        const { stdout } = await execAsync(azureCli.invocation, args, azureCli.spawnOptions(configurationFileDirectory));
+        return JSON.parse(stdout) as AzDevEnvListResults;
     }
 }

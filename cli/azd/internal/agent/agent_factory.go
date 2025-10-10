@@ -5,6 +5,9 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/logging"
@@ -12,6 +15,7 @@ import (
 	localtools "github.com/azure/azure-dev/cli/azd/internal/agent/tools"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	mcptools "github.com/azure/azure-dev/cli/azd/internal/agent/tools/mcp"
+	"github.com/azure/azure-dev/cli/azd/internal/mcp"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 )
@@ -41,6 +45,18 @@ func NewAgentFactory(
 
 // CreateAgent creates a new agent instance
 func (f *AgentFactory) Create(ctx context.Context, opts ...AgentCreateOption) (Agent, error) {
+	cleanupTasks := map[string]func() error{}
+
+	cleanup := func() error {
+		for name, task := range cleanupTasks {
+			if err := task(); err != nil {
+				log.Printf("failed to cleanup %s: %v", name, err)
+			}
+		}
+
+		return nil
+	}
+
 	// Create a daily log file for all agent activity
 	fileLogger, loggerCleanup, err := logging.NewFileLoggerDefault()
 	if err != nil {
@@ -48,14 +64,16 @@ func (f *AgentFactory) Create(ctx context.Context, opts ...AgentCreateOption) (A
 		return nil, err
 	}
 
+	cleanupTasks["logger"] = loggerCleanup
+
 	// Create a channel for logging thoughts & actions
 	thoughtChan := make(chan logging.Thought)
 	thoughtHandler := logging.NewThoughtLogger(thoughtChan)
 	chainedHandler := logging.NewChainedHandler(fileLogger, thoughtHandler)
 
-	cleanup := func() error {
+	cleanupTasks["thoughtChan"] = func() error {
 		close(thoughtChan)
-		return loggerCleanup()
+		return nil
 	}
 
 	// Default model gets the chained handler to expose the UX experience for the agent
@@ -73,30 +91,54 @@ func (f *AgentFactory) Create(ctx context.Context, opts ...AgentCreateOption) (A
 		return nil, err
 	}
 
-	// Create sampling handler for MCP
+	// Create sampling & elicitation handlers for MCP
 	samplingHandler := mcptools.NewMcpSamplingHandler(
 		f.consentManager,
 		f.console,
 		samplingModelContainer,
 	)
 
+	elicitationHandler := mcptools.NewMcpElicitationHandler(
+		f.consentManager,
+		f.console,
+	)
+
+	var mcpConfig *mcp.McpConfig
+	if err := json.Unmarshal([]byte(mcptools.McpJson), &mcpConfig); err != nil {
+		defer cleanup()
+		return nil, fmt.Errorf("failed parsing mcp.json")
+	}
+
+	mcpHost := mcp.NewMcpHost(
+		mcp.WithServers(mcpConfig.Servers),
+		mcp.WithCapabilities(mcp.Capabilities{
+			Sampling:    samplingHandler,
+			Elicitation: elicitationHandler,
+		}),
+	)
+
+	if err := mcpHost.Start(ctx); err != nil {
+		defer cleanup()
+		return nil, fmt.Errorf("failed to start MCP host, %w", err)
+	}
+
+	cleanupTasks["mcp-host"] = mcpHost.Stop
+
 	// Loads build-in tools & any referenced MCP servers
 	toolLoaders := []common.ToolLoader{
 		localtools.NewLocalToolsLoader(f.securityManager),
-		mcptools.NewMcpToolsLoader(samplingHandler),
+		mcptools.NewMcpToolsLoader(mcpHost),
 	}
 
 	// Define block list of excluded tools
 	excludedTools := map[string]bool{
-		"extension_az":  true,
-		"extension_azd": true,
-		// Add more excluded tools here as needed
+		"azd": true,
 	}
 
 	allTools := []common.AnnotatedTool{}
 
 	for _, toolLoader := range toolLoaders {
-		categoryTools, err := toolLoader.LoadTools()
+		categoryTools, err := toolLoader.LoadTools(ctx)
 		if err != nil {
 			defer cleanup()
 			return nil, err
@@ -123,7 +165,7 @@ func (f *AgentFactory) Create(ctx context.Context, opts ...AgentCreateOption) (A
 		WithCleanup(cleanup),
 	)
 
-	azdAgent, err := NewConversationalAzdAiAgent(defaultModelContainer.Model, allOptions...)
+	azdAgent, err := NewConversationalAzdAiAgent(defaultModelContainer.Model, f.console, allOptions...)
 	if err != nil {
 		return nil, err
 	}

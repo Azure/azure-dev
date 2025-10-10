@@ -42,11 +42,12 @@ func newPublishCommand() *cobra.Command {
 				"Publishes the azd extension project and updates the registry",
 			)
 
-			if err := defaultPublishFlags(flags); err != nil {
+			defaultRegistryUsed, err := defaultPublishFlags(flags)
+			if err != nil {
 				return err
 			}
 
-			err := runPublishAction(cmd.Context(), flags)
+			err = runPublishAction(cmd.Context(), flags, defaultRegistryUsed)
 			if err != nil {
 				return err
 			}
@@ -80,7 +81,7 @@ func newPublishCommand() *cobra.Command {
 	return publishCmd
 }
 
-func runPublishAction(ctx context.Context, flags *publishFlags) error {
+func runPublishAction(ctx context.Context, flags *publishFlags, defaultRegistryUsed bool) error {
 	absExtensionPath, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get absolute path for extension directory: %w", err)
@@ -314,6 +315,27 @@ func runPublishAction(ctx context.Context, flags *publishFlags) error {
 			},
 		}).
 		AddTask(ux.TaskOptions{
+			Title: "Ensuring local extension source registry exists",
+			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
+				if !defaultRegistryUsed {
+					return ux.Skipped, nil
+				}
+
+				if has, err := internal.HasLocalRegistry(); err == nil && has {
+					return ux.Skipped, nil
+				}
+
+				if err := internal.CreateLocalRegistry(); err != nil {
+					return ux.Error, common.NewDetailedError(
+						"Registry creation failed",
+						fmt.Errorf("failed to create local registry: %w", err),
+					)
+				}
+
+				return ux.Success, nil
+			},
+		}).
+		AddTask(ux.TaskOptions{
 			Title: "Updating extension source registry",
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 				registry, err := models.LoadRegistry(flags.registryPath)
@@ -378,6 +400,7 @@ func addOrUpdateExtension(
 				Usage:        extensionMetadata.Usage,
 				Examples:     extensionMetadata.Examples,
 				Dependencies: extensionMetadata.Dependencies,
+				Providers:    extensionMetadata.Providers,
 				Artifacts:    artifacts,
 			}
 
@@ -393,6 +416,7 @@ func addOrUpdateExtension(
 		Usage:        extensionMetadata.Usage,
 		Examples:     extensionMetadata.Examples,
 		Dependencies: extensionMetadata.Dependencies,
+		Providers:    extensionMetadata.Providers,
 		Artifacts:    artifacts,
 	})
 }
@@ -439,17 +463,20 @@ func createPlatformMetadata(
 	return platformMetadata, nil
 }
 
-func defaultPublishFlags(flags *publishFlags) error {
+// defaultPublishFlags sets flags.registryPath to <azd config>/registry.json if unset.
+// Returns true when that default was applied.
+func defaultPublishFlags(flags *publishFlags) (bool, error) {
 	if flags.registryPath == "" {
 		azdConfigDir, err := internal.AzdConfigDir()
 		if err != nil {
-			return err
+			return false, err
 		}
 
 		flags.registryPath = filepath.Join(azdConfigDir, "registry.json")
+		return true, nil
 	}
 
-	return nil
+	return false, nil
 }
 
 var (

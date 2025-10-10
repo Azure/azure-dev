@@ -3,7 +3,7 @@
 
 import * as path from 'path';
 import * as Mocha from 'mocha';
-import * as glob from 'glob';
+import { glob } from 'glob';
 
 export function run(): Promise<void> {
     const opts: Mocha.MochaOptions = {
@@ -12,31 +12,31 @@ export function run(): Promise<void> {
         timeout: process.env.TEST_TIMEOUT ?? "10s",
         slow: 200
     };
-    
+
     const mocha = new Mocha(opts);
 
     const testsRoot = path.resolve(__dirname, '..');
 
     return new Promise((c, e) => {
-        glob('suite/unit/**/**.test.js', { cwd: testsRoot }, (err, files) => {
-            if (err) {
+        glob('suite/unit/**/**.test.js', { cwd: testsRoot })
+            .then(files => {
+                files.forEach(f => mocha.addFile(path.resolve(testsRoot, f)));
+
+                try {
+                    mocha.run(failures => {
+                        if (failures > 0) {
+                            e(new Error(`${failures} tests failed.`));
+                        } else {
+                            c();
+                        }
+                    });
+                } catch (err) {
+                    console.error(err);
+                    e(err);
+                }
+            })
+            .catch(err => {
                 return e(err);
-            }
-
-            files.forEach(f => mocha.addFile(path.resolve(testsRoot, f)));
-
-            try {
-                mocha.run(failures => {
-                    if (failures > 0) {
-                        e(new Error(`${failures} tests failed.`));
-                    } else {
-                        c();
-                    }
-                });
-            } catch (err) {
-                console.error(err);
-                e(err);
-            }
-        });
+            });
     });
 }

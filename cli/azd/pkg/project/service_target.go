@@ -29,6 +29,32 @@ const (
 	AiEndpointTarget         ServiceTargetKind = "ai.endpoint"
 )
 
+// DotNetContainerAppTarget is intentionally omitted because it is only used internally when
+// containerizing .NET projects and is not a valid service host value in azure.yaml.
+var builtInServiceTargetKinds = []ServiceTargetKind{
+	AppServiceTarget,
+	ContainerAppTarget,
+	AzureFunctionTarget,
+	StaticWebAppTarget,
+	SpringAppTarget,
+	AksTarget,
+	AiEndpointTarget,
+}
+
+func builtInServiceTargetNames() []string {
+	names := make([]string, 0, len(builtInServiceTargetKinds))
+	for _, kind := range builtInServiceTargetKinds {
+		names = append(names, string(kind))
+	}
+
+	return names
+}
+
+// BuiltInServiceTargetKinds returns the slice of built-in service target kinds
+func BuiltInServiceTargetKinds() []ServiceTargetKind {
+	return builtInServiceTargetKinds
+}
+
 // RequiresContainer returns true if the service target runs a container image.
 func (stk ServiceTargetKind) RequiresContainer() bool {
 	switch stk {
@@ -41,23 +67,15 @@ func (stk ServiceTargetKind) RequiresContainer() bool {
 }
 
 func parseServiceHost(kind ServiceTargetKind) (ServiceTargetKind, error) {
-	switch kind {
-
-	// NOTE: We do not support DotNetContainerAppTarget as a listed service host type in azure.yaml, hence
-	// it not include in this switch statement. We should think about if we should support this in azure.yaml because
-	// presently it's the only service target that is tied to a language.
-	case AppServiceTarget,
-		ContainerAppTarget,
-		AzureFunctionTarget,
-		StaticWebAppTarget,
-		SpringAppTarget,
-		AksTarget,
-		AiEndpointTarget:
-
+	// Allow any non-empty service target kind through.
+	// Built-in kinds are handled by the hardcoded service target constructors in container.go
+	// External kinds are handled by extensions that register via gRPC
+	// If a kind is not supported, resolution will fail later with a clear error message
+	if string(kind) != "" {
 		return kind, nil
 	}
 
-	return ServiceTargetKind(""), fmt.Errorf("unsupported host '%s'", kind)
+	return ServiceTargetKind(""), fmt.Errorf("host cannot be empty")
 }
 
 type ServiceTarget interface {
@@ -77,11 +95,22 @@ type ServiceTarget interface {
 		progress *async.Progress[ServiceProgress],
 	) (*ServicePackageResult, error)
 
+	// Publish pushes the prepared artifacts without performing deployment.
+	Publish(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		frameworkPackageOutput *ServicePackageResult,
+		targetResource *environment.TargetResource,
+		progress *async.Progress[ServiceProgress],
+		publishOptions *PublishOptions,
+	) (*ServicePublishResult, error)
+
 	// Deploys the given deployment artifact to the target resource
 	Deploy(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		servicePackage *ServicePackageResult,
+		servicePublishResult *ServicePublishResult,
 		targetResource *environment.TargetResource,
 		progress *async.Progress[ServiceProgress],
 	) (*ServiceDeployResult, error)
@@ -152,7 +181,7 @@ func (st ServiceTargetKind) IgnoreFile() string {
 // As an example, ContainerAppTarget is able to provision the container app as part of deployment,
 // and thus returns true.
 func (st ServiceTargetKind) SupportsDelayedProvisioning() bool {
-	return st == AksTarget
+	return st == AksTarget || st == ContainerAppTarget
 }
 
 func checkResourceType(resource *environment.TargetResource, expectedResourceType azapi.AzureResourceType) error {

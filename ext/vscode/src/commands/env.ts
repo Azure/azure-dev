@@ -1,18 +1,19 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import * as vscode from 'vscode';
 import { IActionContext, IAzureQuickPickItem, parseError } from '@microsoft/vscode-azext-utils';
+import { composeArgs, withArg, withNamedArg, withQuotedArg } from '@microsoft/vscode-processutils';
+import * as vscode from 'vscode';
 import ext from '../ext';
+import { TelemetryId } from '../telemetry/telemetryId';
 import { createAzureDevCli } from '../utils/azureDevCli';
-import { quickPickWorkspaceFolder } from '../utils/quickPickWorkspaceFolder';
-import { EnvironmentInfo, getAzDevTerminalTitle, getEnvironments } from './cmdUtil';
+import { execAsync } from '../utils/execAsync';
 import { executeAsTask } from '../utils/executeAsTask';
-import { spawnAsync } from '../utils/process';
 import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
+import { quickPickWorkspaceFolder } from '../utils/quickPickWorkspaceFolder';
 import { AzureDevCliEnvironments } from '../views/workspace/AzureDevCliEnvironments';
 import { AzureDevCliEnvironment } from '../views/workspace/AzureDevCliEnvironment';
-import { TelemetryId } from '../telemetry/telemetryId';
+import { EnvironmentInfo, getAzDevTerminalTitle, getEnvironments } from './cmdUtil';
 
 export async function editEnvironment(context: IActionContext, selectedEnvironment?: TreeViewModel): Promise<void> {
     if (selectedEnvironment) {
@@ -144,8 +145,11 @@ export async function selectEnvironment(context: IActionContext, selectedItem?: 
     }
 
     const azureCli = await createAzureDevCli(context);
-    azureCli.commandBuilder.withArg('env').withArg('select').withQuotedArg(name);
-    await spawnAsync(azureCli.commandBuilder.build(), azureCli.spawnOptions(cwd));
+    const args = composeArgs(
+        withArg('env', 'select'),
+        withQuotedArg(name),
+    )();
+    await execAsync(azureCli.invocation, args, azureCli.spawnOptions(cwd));
 
     void vscode.window.showInformationMessage(
         vscode.l10n.t("'{0}' is now the default environment.", name));
@@ -164,13 +168,14 @@ export async function newEnvironment(context: IActionContext, selectedItem?: vsc
     }
 
     const azureCli = await createAzureDevCli(context);
-    const command = azureCli.commandBuilder.withArg('env').withArg('new');
+    const args = composeArgs(
+        withArg('env', 'new'),
+    )();
 
-    void executeAsTask(command.build(), getAzDevTerminalTitle(), {
+    void executeAsTask(azureCli.invocation, args, getAzDevTerminalTitle(), azureCli.spawnOptions(folder.uri.fsPath), {
         focus: true,
         alwaysRunNew: true,
-        cwd: folder.uri.fsPath,
-        env: azureCli.env
+        workspaceFolder: folder,
     }, TelemetryId.EnvNewCli).then(() => {
         if (environmentsNode) {
             environmentsNode.context.refreshEnvironments();
@@ -187,16 +192,15 @@ export async function refreshEnvironment(context: IActionContext, selectedItem?:
     }
 
     const azureCli = await createAzureDevCli(context);
-    let command = azureCli.commandBuilder.withArg('env').withArg('refresh');
-    if (selectedEnvironment) {
-        command = command.withNamedArg('--environment', selectedEnvironment.name);
-    }
+    const args = composeArgs(
+        withArg('env', 'refresh'),
+        withNamedArg('--environment', selectedEnvironment?.name, { shouldQuote: true }),
+    )();
 
-    void executeAsTask(command.build(), getAzDevTerminalTitle(), {
+    void executeAsTask(azureCli.invocation, args, getAzDevTerminalTitle(), azureCli.spawnOptions(folder.uri.fsPath), {
         focus: true,
         alwaysRunNew: true,
-        cwd: folder.uri.fsPath,
-        env: azureCli.env
+        workspaceFolder: folder,
     }, TelemetryId.EnvRefreshCli).then(() => {
         if (selectedEnvironment) {
             selectedEnvironment.context.refreshEnvironments();
@@ -211,13 +215,14 @@ export async function listEnvironments(context: IActionContext, selectedFile?: v
     }
 
     const azureCli = await createAzureDevCli(context);
-    const command = azureCli.commandBuilder.withArg('env').withArg('list');
+    const args = composeArgs(
+        withArg('env', 'list'),
+    )();
 
-    void executeAsTask(command.build(), getAzDevTerminalTitle(), {
+    void executeAsTask(azureCli.invocation, args, getAzDevTerminalTitle(), azureCli.spawnOptions(folder.uri.fsPath), {
         focus: true,
         alwaysRunNew: true,
-        cwd: folder.uri.fsPath,
-        env: azureCli.env
+        workspaceFolder: folder,
     }, TelemetryId.EnvListCli);
 }
 

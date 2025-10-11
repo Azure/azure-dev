@@ -81,30 +81,40 @@ func TestDockerProjectOptionsMapping(t *testing.T) {
 
 func TestServicePackageResultMapping(t *testing.T) {
 	packageResult := &ServicePackageResult{
-		PackagePath: "./dist",
-		Details: &DockerPackageResult{
-			ImageHash:   "sha256:abc123",
-			SourceImage: "local:latest",
-			TargetImage: "registry.io/app:v1.0.0",
+		Artifacts: []Artifact{
+			{
+				Kind:         ArtifactKindArchive,
+				Location:     "./dist",
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"imageHash":   "sha256:abc123",
+					"sourceImage": "local:latest",
+					"targetImage": "registry.io/app:v1.0.0",
+				},
+			},
 		},
 	}
 
 	var protoResult *azdext.ServicePackageResult
-	err := mapper.Convert(packageResult, &protoResult)
+	err := mapper.Convert(*packageResult, &protoResult)
 	require.NoError(t, err)
 	require.NotNil(t, protoResult)
-	require.Equal(t, "./dist", protoResult.PackagePath)
-	require.NotNil(t, protoResult.DockerPackageResult)
-	require.Equal(t, "sha256:abc123", protoResult.DockerPackageResult.ImageHash)
-	require.Equal(t, "local:latest", protoResult.DockerPackageResult.SourceImage)
-	require.Equal(t, "registry.io/app:v1.0.0", protoResult.DockerPackageResult.TargetImage)
+	require.Len(t, protoResult.Artifacts, 1)
+	require.Equal(t, "./dist", protoResult.Artifacts[0].Location)
 }
 
 func TestFromProtoServicePublishResultMapping(t *testing.T) {
 	// ServicePublishResult should be automatically registered via init()
 	protoResult := &azdext.ServicePublishResult{
-		ContainerDetails: &azdext.ContainerPublishDetails{
-			RemoteImage: "example.azurecr.io/app:latest",
+		Artifacts: []*azdext.Artifact{
+			{
+				Kind:         string(ArtifactKindEndpoint),
+				Location:     "example.azurecr.io/app:latest",
+				LocationKind: string(LocationKindRemote),
+				Metadata: map[string]string{
+					"imageHash": "sha256:abc123",
+				},
+			},
 		},
 	}
 
@@ -114,19 +124,24 @@ func TestFromProtoServicePublishResultMapping(t *testing.T) {
 	require.NotNil(t, result)
 
 	// Verify the conversion worked correctly
-	containerDetails, ok := result.Details.(*ContainerPublishDetails)
-	require.True(t, ok)
-	require.Equal(t, "example.azurecr.io/app:latest", containerDetails.RemoteImage)
+	require.Len(t, result.Artifacts, 1)
+	require.Equal(t, "example.azurecr.io/app:latest", result.Artifacts[0].Location)
 }
 
 func TestFromProtoServicePackageResultMapping(t *testing.T) {
 	// Create test input
 	protoResult := &azdext.ServicePackageResult{
-		PackagePath: "/app/output.tar",
-		DockerPackageResult: &azdext.DockerPackageResult{
-			ImageHash:   "sha256:abc123",
-			SourceImage: "app:local",
-			TargetImage: "example.azurecr.io/app:latest",
+		Artifacts: []*azdext.Artifact{
+			{
+				Kind:         string(ArtifactKindArchive),
+				Location:     "/app/output.tar",
+				LocationKind: string(LocationKindLocal),
+				Metadata: map[string]string{
+					"imageHash":   "sha256:abc123",
+					"sourceImage": "app:local",
+					"targetImage": "example.azurecr.io/app:latest",
+				},
+			},
 		},
 	}
 
@@ -136,12 +151,8 @@ func TestFromProtoServicePackageResultMapping(t *testing.T) {
 	require.NotNil(t, result)
 
 	// Verify the conversion worked correctly
-	require.Equal(t, "/app/output.tar", result.PackagePath)
-	dockerDetails, ok := result.Details.(*DockerPackageResult)
-	require.True(t, ok)
-	require.Equal(t, "sha256:abc123", dockerDetails.ImageHash)
-	require.Equal(t, "app:local", dockerDetails.SourceImage)
-	require.Equal(t, "example.azurecr.io/app:latest", dockerDetails.TargetImage)
+	require.Len(t, result.Artifacts, 1)
+	require.Equal(t, "/app/output.tar", result.Artifacts[0].Location)
 }
 
 func TestFromProtoServicePackageResultMappingNilProto(t *testing.T) {
@@ -150,8 +161,7 @@ func TestFromProtoServicePackageResultMappingNilProto(t *testing.T) {
 	err := mapper.Convert((*azdext.ServicePackageResult)(nil), &result)
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, "", result.PackagePath)
-	require.Nil(t, result.Details)
+	require.Len(t, result.Artifacts, 0)
 }
 
 func TestResourceConfigMapping(t *testing.T) {

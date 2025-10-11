@@ -72,7 +72,7 @@ func (p *DemoServiceTargetProvider) GetTargetResource(
 func (p *DemoServiceTargetProvider) Package(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
-	packageResult *azdext.ServicePackageResult,
+	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
 	packageResponse, err := p.azdClient.Container().
@@ -84,8 +84,7 @@ func (p *DemoServiceTargetProvider) Package(
 	}
 
 	return &azdext.ServicePackageResult{
-		PackagePath: packageResponse.Result.PackagePath,
-		Details:     packageResult.Details,
+		Artifacts: packageResponse.Result.Artifacts,
 	}, nil
 }
 
@@ -93,7 +92,7 @@ func (p *DemoServiceTargetProvider) Package(
 func (p *DemoServiceTargetProvider) Publish(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
-	packageResult *azdext.ServicePackageResult,
+	serviceContext *azdext.ServiceContext,
 	targetResource *azdext.TargetResource,
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
@@ -102,8 +101,7 @@ func (p *DemoServiceTargetProvider) Publish(
 		Publish(ctx, &azdext.ContainerPublishRequest{
 			ServiceName: serviceConfig.Name,
 			Package: &azdext.ServicePackageResult{
-				PackagePath: packageResult.PackagePath,
-				Details:     packageResult.Details,
+				Artifacts: []*azdext.Artifact{},
 			},
 		})
 	if err != nil {
@@ -111,7 +109,7 @@ func (p *DemoServiceTargetProvider) Publish(
 	}
 
 	return &azdext.ServicePublishResult{
-		Details: publishResponse.Result.Details,
+		Artifacts: publishResponse.Result.Artifacts,
 	}, nil
 }
 
@@ -119,19 +117,10 @@ func (p *DemoServiceTargetProvider) Publish(
 func (p *DemoServiceTargetProvider) Deploy(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
-	packageResult *azdext.ServicePackageResult,
-	publishResult *azdext.ServicePublishResult,
+	serviceContext *azdext.ServiceContext,
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	if packageResult == nil {
-		return nil, fmt.Errorf("packageResult is nil")
-	}
-
-	if publishResult == nil {
-		return nil, fmt.Errorf("publishResult is nil")
-	}
-
 	progress("Deploying service")
 	time.Sleep(1000 * time.Millisecond)
 
@@ -148,13 +137,19 @@ func (p *DemoServiceTargetProvider) Deploy(
 		return nil, err
 	}
 
-	// Return deployment result
+	// Return deployment result with artifacts
 	deployResult := &azdext.ServiceDeployResult{
-		TargetResourceId: resourceId,
-		Kind:             "demo",
-		Endpoints:        endpoints,
-		Details: map[string]string{
-			"message": "Service deployed successfully",
+		Artifacts: []*azdext.Artifact{
+			{
+				Kind:         "deployment",
+				Location:     resourceId,
+				LocationKind: "remote",
+				Metadata: map[string]string{
+					"kind":      "demo",
+					"endpoints": fmt.Sprintf("%v", endpoints),
+					"message":   "Service deployed successfully",
+				},
+			},
 		},
 	}
 

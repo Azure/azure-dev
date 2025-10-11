@@ -87,16 +87,22 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 
 	packageResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+			serviceContext := NewServiceContext()
+			serviceContext.Package = ArtifactCollection{
+				{
+					Kind:         ArtifactKindContainer,
+					Location:     "test-app/api-test:azd-deploy-0",
+					LocationKind: LocationKindRemote,
+					Metadata: map[string]string{
+						"imageHash":   "IMAGE_HASH",
+						"targetImage": "test-app/api-test:azd-deploy-0",
+					},
+				},
+			}
 			return serviceTarget.Package(
 				*mockContext.Context,
 				serviceConfig,
-				&ServicePackageResult{
-					PackagePath: "test-app/api-test:azd-deploy-0",
-					Details: &DockerPackageResult{
-						ImageHash:   "IMAGE_HASH",
-						TargetImage: "test-app/api-test:azd-deploy-0",
-					},
-				},
+				serviceContext,
 				progress,
 			)
 		},
@@ -104,7 +110,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
-	require.IsType(t, new(DockerPackageResult), packageResult.Details)
+	require.Len(t, packageResult.Artifacts, 1)
 
 	scope := environment.NewTargetResource(
 		"SUBSCRIPTION_ID",
@@ -115,24 +121,34 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 
 	// Create a mock publish result that would normally come from a Publish operation
 	publishResult := &ServicePublishResult{
-		Details: &ContainerPublishDetails{
-			RemoteImage: "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0",
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindContainer,
+				Location:     "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0",
+				LocationKind: LocationKindRemote,
+				Metadata: map[string]string{
+					"remoteImage": "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0",
+				},
+			},
 		},
 	}
 
 	deployResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-			return serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, publishResult, scope, progress)
+			serviceContext := NewServiceContext()
+			serviceContext.Package = packageResult.Artifacts
+			serviceContext.Publish = publishResult.Artifacts
+			return serviceTarget.Deploy(*mockContext.Context, serviceConfig, serviceContext, scope, progress)
 		},
 	)
 
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
-	require.Equal(t, ContainerAppTarget, deployResult.Kind)
-	require.Greater(t, len(deployResult.Endpoints), 0)
+	require.Greater(t, len(deployResult.Artifacts), 0)
 
-	require.NotNil(t, deployResult.Publish)
-	require.Equal(t, publishResult, deployResult.Publish)
+	// Verify we have deployment artifacts
+	deployArtifacts := deployResult.Artifacts.Find()
+	require.Greater(t, len(deployArtifacts), 0)
 }
 
 func Test_ContainerApp_Publish(t *testing.T) {
@@ -149,16 +165,22 @@ func Test_ContainerApp_Publish(t *testing.T) {
 
 	packageResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+			serviceContext := NewServiceContext()
+			serviceContext.Package = ArtifactCollection{
+				{
+					Kind:         ArtifactKindContainer,
+					Location:     "test-app/api-test:azd-deploy-0",
+					LocationKind: LocationKindRemote,
+					Metadata: map[string]string{
+						"imageHash":   "IMAGE_HASH",
+						"targetImage": "test-app/api-test:azd-deploy-0",
+					},
+				},
+			}
 			return serviceTarget.Package(
 				*mockContext.Context,
 				serviceConfig,
-				&ServicePackageResult{
-					PackagePath: "test-app/api-test:azd-deploy-0",
-					Details: &DockerPackageResult{
-						ImageHash:   "IMAGE_HASH",
-						TargetImage: "test-app/api-test:azd-deploy-0",
-					},
-				},
+				serviceContext,
 				progress,
 			)
 		},
@@ -166,7 +188,7 @@ func Test_ContainerApp_Publish(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
-	require.IsType(t, new(DockerPackageResult), packageResult.Details)
+	require.Len(t, packageResult.Artifacts, 1)
 
 	scope := environment.NewTargetResource(
 		"SUBSCRIPTION_ID",
@@ -177,25 +199,24 @@ func Test_ContainerApp_Publish(t *testing.T) {
 
 	publishResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
+			serviceContext := NewServiceContext()
+			serviceContext.Package = packageResult.Artifacts
 			return serviceTarget.Publish(
-				*mockContext.Context, serviceConfig, packageResult, scope, progress, &PublishOptions{})
+				*mockContext.Context, serviceConfig, serviceContext, scope, progress, &PublishOptions{})
 		},
 	)
 
 	require.NoError(t, err)
 	require.NotNil(t, publishResult)
-	require.IsType(t, new(ContainerPublishDetails), publishResult.Details)
-
-	// Verify the Package field is set correctly
-	require.NotNil(t, publishResult.Package)
-	require.Equal(t, packageResult, publishResult.Package)
+	require.Len(t, publishResult.Artifacts, 1)
 
 	// Verify the environment variable was set correctly
 	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])
 
-	// Verify the publish result contains the expected image name
-	containerDetails := publishResult.Details.(*ContainerPublishDetails)
-	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", containerDetails.RemoteImage)
+	// Verify the publish result contains the expected image location
+	publishArtifacts := publishResult.Artifacts.Find()
+	require.Greater(t, len(publishArtifacts), 0)
+	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", publishArtifacts[0].Location)
 }
 
 func createContainerAppServiceTarget(

@@ -300,14 +300,11 @@ func (ch *ContainerHelper) Package(
 	}
 
 	var imageId string
+	var sourceImage string
 
 	// Find the container image artifact from build results
 	if artifact, found := serviceContext.Build.FindFirst(WithKind(ArtifactKindContainer)); found && artifact.Location != "" {
 		imageId = artifact.Location
-	}
-
-	packageDetails := &DockerPackageResult{
-		ImageHash: imageId,
 	}
 
 	// If we don't have an image ID from a docker build then an external source image is being used
@@ -317,12 +314,12 @@ func (ch *ContainerHelper) Package(
 			return nil, fmt.Errorf("substituting environment variables in image: %w", err)
 		}
 
-		sourceImage, err := docker.ParseContainerImage(sourceImageValue)
+		sourceImageContainer, err := docker.ParseContainerImage(sourceImageValue)
 		if err != nil {
 			return nil, fmt.Errorf("parsing source container image: %w", err)
 		}
 
-		remoteImageUrl := sourceImage.Remote()
+		remoteImageUrl := sourceImageContainer.Remote()
 
 		progress.SetProgress(NewServiceProgress("Pulling container source image"))
 		if err := ch.docker.Pull(ctx, remoteImageUrl); err != nil {
@@ -330,7 +327,7 @@ func (ch *ContainerHelper) Package(
 		}
 
 		imageId = remoteImageUrl
-		packageDetails.SourceImage = remoteImageUrl
+		sourceImage = remoteImageUrl
 	}
 
 	// Generate a local tag from the 'docker' configuration section of the service
@@ -346,7 +343,7 @@ func (ch *ContainerHelper) Package(
 		return nil, fmt.Errorf("tagging image: %w", err)
 	}
 
-	packageDetails.TargetImage = imageWithTag
+	targetImage := imageWithTag
 
 	// Create container image artifact
 	packageArtifact := Artifact{
@@ -354,9 +351,9 @@ func (ch *ContainerHelper) Package(
 		Location:     imageWithTag,
 		LocationKind: LocationKindLocal, // Local during package phase
 		Metadata: map[string]string{
-			"imageHash":   packageDetails.ImageHash,
-			"sourceImage": packageDetails.SourceImage,
-			"targetImage": packageDetails.TargetImage,
+			"imageHash":   imageId,
+			"sourceImage": sourceImage,
+			"targetImage": targetImage,
 		},
 	}
 

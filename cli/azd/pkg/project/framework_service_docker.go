@@ -5,7 +5,6 @@ package project
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -54,46 +53,6 @@ type DockerProjectOptions struct {
 	// This is used by projects like Aspire that can generate a dockerfile on the fly and don't want to write it to disk.
 	// When this is set, whatever value in Path is ignored and the dockerfile contents in this property is used instead.
 	InMemDockerfile []byte `yaml:"-" json:"-"`
-}
-
-type DockerPackageResult struct {
-	// The image hash that is generated from a docker build
-	ImageHash string `json:"imageHash"`
-	// The external source image specified when not building from source
-	SourceImage string `json:"sourceImage"`
-	// The target image with tag that is used for publishing and deployment when targeting a container registry
-	TargetImage string `json:"targetImage"`
-}
-
-func (dpr *DockerPackageResult) ToString(currentIndentation string) string {
-	builder := strings.Builder{}
-	if dpr.ImageHash != "" {
-		builder.WriteString(fmt.Sprintf("%s- Image Hash: %s\n", currentIndentation, output.WithLinkFormat(dpr.ImageHash)))
-	}
-
-	if dpr.SourceImage != "" {
-		builder.WriteString(
-			fmt.Sprintf("%s- Source Image: %s\n",
-				currentIndentation,
-				output.WithLinkFormat(dpr.SourceImage),
-			),
-		)
-	}
-
-	if dpr.TargetImage != "" {
-		builder.WriteString(
-			fmt.Sprintf("%s- Target Image: %s\n",
-				currentIndentation,
-				output.WithLinkFormat(dpr.TargetImage),
-			),
-		)
-	}
-
-	return builder.String()
-}
-
-func (dpr *DockerPackageResult) MarshalJSON() ([]byte, error) {
-	return json.Marshal(*dpr)
 }
 
 type dockerProject struct {

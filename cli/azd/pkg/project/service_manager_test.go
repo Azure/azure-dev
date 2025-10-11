@@ -108,7 +108,8 @@ func Test_ServiceManager_Restore(t *testing.T) {
 	restoreCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkRestoreCalled, restoreCalled)
 	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
-		return sm.Restore(ctx, serviceConfig, progess)
+		serviceContext := NewServiceContext()
+		return sm.Restore(ctx, serviceConfig, serviceContext, progess)
 	})
 
 	require.NoError(t, err)
@@ -215,7 +216,8 @@ func Test_ServiceManager_Deploy(t *testing.T) {
 	ctx := context.WithValue(*mockContext.Context, serviceTargetDeployCalled, deployCalled)
 
 	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-		return sm.Deploy(ctx, serviceConfig, nil, nil, progess)
+		serviceContext := NewServiceContext()
+		return sm.Deploy(ctx, serviceConfig, serviceContext, progess)
 	})
 
 	require.NoError(t, err)
@@ -250,8 +252,11 @@ func Test_ServiceManager_Publish(t *testing.T) {
 	publishCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, serviceTargetPublishCalled, publishCalled)
 
+	// Create a proper ServiceContext for the publish operation
+	serviceContext := NewServiceContext()
+
 	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
-		return sm.Publish(ctx, serviceConfig, nil, progess, nil)
+		return sm.Publish(ctx, serviceConfig, serviceContext, progess, nil)
 	})
 
 	require.NoError(t, err)
@@ -403,7 +408,8 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
 				return logProgress(
 					t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
-						return serviceManager.Restore(ctx, serviceConfig, progess)
+						serviceContext := NewServiceContext()
+						return serviceManager.Restore(ctx, serviceConfig, serviceContext, progess)
 					})
 			},
 		},
@@ -430,7 +436,8 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
 				return logProgress(
 					t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-						return serviceManager.Deploy(ctx, serviceConfig, nil, nil, progress)
+						serviceContext := NewServiceContext()
+						return serviceManager.Deploy(ctx, serviceConfig, serviceContext, progress)
 					})
 			},
 		},
@@ -557,6 +564,7 @@ func (f *fakeFramework) Initialize(ctx context.Context, serviceConfig *ServiceCo
 func (f *fakeFramework) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
 	_ *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
 	restoreCalled, ok := ctx.Value(frameworkRestoreCalled).(*bool)
@@ -571,14 +579,23 @@ func (f *fakeFramework) Restore(
 	}
 
 	return &ServiceRestoreResult{
-		Details: result,
+		Artifacts: []Artifact{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     "/fake/restore/path",
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"command": result.Stdout,
+				},
+			},
+		},
 	}, nil
 }
 
 func (f *fakeFramework) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	restoreOutput *ServiceRestoreResult,
+	serviceContext *ServiceContext,
 	_ *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	buildCalled, ok := ctx.Value(frameworkBuildCalled).(*bool)
@@ -593,15 +610,23 @@ func (f *fakeFramework) Build(
 	}
 
 	return &ServiceBuildResult{
-		Restore: restoreOutput,
-		Details: result,
+		Artifacts: []Artifact{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     "/fake/build/path",
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"command": result.Stdout,
+				},
+			},
+		},
 	}, nil
 }
 
 func (f *fakeFramework) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	serviceContext *ServiceContext,
 	_ *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	packageCalled, ok := ctx.Value(frameworkPackageCalled).(*bool)
@@ -616,8 +641,16 @@ func (f *fakeFramework) Package(
 	}
 
 	return &ServicePackageResult{
-		Build:   buildOutput,
-		Details: result,
+		Artifacts: []Artifact{
+			{
+				Kind:         ArtifactKindArchive,
+				Location:     "/fake/package/path",
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"command": result.Stdout,
+				},
+			},
+		},
 	}, nil
 }
 
@@ -643,7 +676,7 @@ func (st *fakeServiceTarget) RequiredExternalTools(ctx context.Context, serviceC
 func (st *fakeServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	packageCalled, ok := ctx.Value(serviceTargetPackageCalled).(*bool)
@@ -658,15 +691,23 @@ func (st *fakeServiceTarget) Package(
 	}
 
 	return &ServicePackageResult{
-		Build:   packageOutput.Build,
-		Details: result,
+		Artifacts: []Artifact{
+			{
+				Kind:         ArtifactKindArchive,
+				Location:     "/fake/service-target/package/path",
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"command": result.Stdout,
+				},
+			},
+		},
 	}, nil
 }
 
 func (st *fakeServiceTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 	options *PublishOptions,
@@ -675,14 +716,24 @@ func (st *fakeServiceTarget) Publish(
 	if ok {
 		*publishCalled = true
 	}
-	return &ServicePublishResult{}, nil
+	return &ServicePublishResult{
+		Artifacts: []Artifact{
+			{
+				Kind:         ArtifactKindEndpoint,
+				Location:     "https://fake-published.azurewebsites.net",
+				LocationKind: LocationKindRemote,
+				Metadata: map[string]string{
+					"imageHash": "sha256:fake123",
+				},
+			},
+		},
+	}, nil
 }
 
 func (st *fakeServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
-	publishOutput *ServicePublishResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -698,8 +749,16 @@ func (st *fakeServiceTarget) Deploy(
 	}
 
 	return &ServiceDeployResult{
-		Package: packageOutput,
-		Details: result,
+		Artifacts: []Artifact{
+			{
+				Kind:         ArtifactKindDeployment,
+				Location:     "https://fake-app.azurewebsites.net",
+				LocationKind: LocationKindRemote,
+				Metadata: map[string]string{
+					"command": result.Stdout,
+				},
+			},
+		},
 	}, nil
 }
 

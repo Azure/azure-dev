@@ -50,7 +50,8 @@ func Test_PythonProject_Restore(t *testing.T) {
 
 	pythonProject := NewPythonProject(pythonCli, env)
 	result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
-		return pythonProject.Restore(*mockContext.Context, serviceConfig, progess)
+		serviceContext := NewServiceContext()
+		return pythonProject.Restore(*mockContext.Context, serviceConfig, serviceContext, progess)
 	})
 
 	require.NoError(t, err)
@@ -107,21 +108,30 @@ func Test_PythonProject_Package(t *testing.T) {
 	pythonProject := NewPythonProject(pythonCli, env)
 
 	result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+		serviceContext := NewServiceContext()
+		serviceContext.Build = ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     serviceConfig.Path(),
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"framework": "python",
+				},
+			},
+		}
 		return pythonProject.Package(
 			*mockContext.Context,
 			serviceConfig,
-			&ServiceBuildResult{
-				BuildOutputPath: serviceConfig.Path(),
-			},
+			serviceContext,
 			progress,
 		)
 	})
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.NotEmpty(t, result.PackagePath)
+	require.NotEmpty(t, result.Artifacts[0].Location)
 
-	_, err = os.Stat(result.PackagePath)
+	_, err = os.Stat(result.Artifacts[0].Location)
 	require.NoError(t, err)
 }
 

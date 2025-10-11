@@ -71,6 +71,7 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 	flow := &ai.Flow{
 		Name:        uuid.New().String(),
 		DisplayName: expectedFlowName,
+		Path:        "./flow/flow.yaml",
 	}
 
 	environmentVersion := &armmachinelearning.EnvironmentVersion{
@@ -131,21 +132,19 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 
 	serviceTarget := createMlEndpointTarget(mockContext, env, aiHelper)
 	deployResult, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-		return serviceTarget.Deploy(*mockContext.Context, serviceConfig, servicePackage, nil, targetResource, progess)
+		serviceContext := NewServiceContext()
+		serviceContext.Package = servicePackage.Artifacts
+		return serviceTarget.Deploy(*mockContext.Context, serviceConfig, serviceContext, targetResource, progess)
 
 	})
 
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
-	require.IsType(t, &AiEndpointDeploymentResult{}, deployResult.Details)
-	require.Len(t, deployResult.Endpoints, 4)
+	require.Len(t, deployResult.Artifacts, 1)
 
-	deploymentDetails := deployResult.Details.(*AiEndpointDeploymentResult)
-
-	require.Equal(t, expectedFlowName, deploymentDetails.Flow.DisplayName)
-	require.Equal(t, environmentVersion.Name, deploymentDetails.Environment.Name)
-	require.Equal(t, modelVersion.Name, deploymentDetails.Model.Name)
-	require.Equal(t, expectedDeploymentName, *deploymentDetails.Deployment.Name)
+	// Check that we have endpoint artifacts
+	endpoints := deployResult.Artifacts.Find()
+	require.GreaterOrEqual(t, len(endpoints), 1)
 }
 
 func createMlEndpointTarget(

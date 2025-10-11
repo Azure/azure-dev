@@ -181,7 +181,10 @@ func (t *aksTarget) Package(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	return &ServicePackageResult{}, nil
+	// Return the artifacts from the service context as the package result
+	return &ServicePackageResult{
+		Artifacts: []Artifact(serviceContext.Package),
+	}, nil
 }
 
 // Publish pushes the container image to ACR for AKS targets

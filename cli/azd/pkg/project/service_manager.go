@@ -407,6 +407,10 @@ func (sm *serviceManager) Publish(
 		return cachedResult.(*ServicePublishResult), nil
 	}
 
+	if serviceContext == nil {
+		serviceContext = NewServiceContext()
+	}
+
 	// Ensure package has been performed if no package artifacts exist
 	if len(serviceContext.Package) == 0 {
 		packageResult, err := sm.Package(ctx, serviceConfig, serviceContext, progress, &PackageOptions{})
@@ -427,10 +431,6 @@ func (sm *serviceManager) Publish(
 	targetResource, err := sm.getTargetResourceForService(ctx, serviceConfig, serviceTarget)
 	if err != nil {
 		return nil, fmt.Errorf("getting target resource: %w", err)
-	}
-
-	if serviceContext == nil {
-		serviceContext = NewServiceContext()
 	}
 
 	publishResult, err := runCommand(

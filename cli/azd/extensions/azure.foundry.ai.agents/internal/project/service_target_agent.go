@@ -116,12 +116,11 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 func (p *AgentServiceTargetProvider) Package(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
-	frameworkPackageOutput *azdext.ServicePackageResult,
+	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
 	return &azdext.ServicePackageResult{
-		PackagePath:         frameworkPackageOutput.PackagePath,
-		DockerPackageResult: &azdext.DockerPackageResult{},
+		Artifacts: []*azdext.Artifact{},
 	}, nil
 }
 
@@ -129,20 +128,12 @@ func (p *AgentServiceTargetProvider) Package(
 func (p *AgentServiceTargetProvider) Publish(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
-	packageResult *azdext.ServicePackageResult,
+	serviceContext *azdext.ServiceContext,
 	targetResource *azdext.TargetResource,
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
-	if packageResult == nil {
-		return nil, fmt.Errorf("packageResult is nil")
-	}
-
-	if packageResult.DockerPackageResult == nil {
-		return nil, fmt.Errorf("docker package result is nil")
-	}
-
-	localImageTag := packageResult.DockerPackageResult.TargetImage
+	localImageTag := "agent-service:latest"
 
 	// E.g. Given `azd publish svc --to acr.io/my/img:tag12`, publishOptions.Image would be "acr.io/my/img:tag12"
 	if publishOptions != nil && publishOptions.Image != "" {
@@ -155,8 +146,15 @@ func (p *AgentServiceTargetProvider) Publish(
 	fmt.Printf("\nAgent image published: %s\n", color.New(color.FgHiBlue).Sprint(remoteImage))
 
 	return &azdext.ServicePublishResult{
-		ContainerDetails: &azdext.ContainerPublishDetails{
-			RemoteImage: remoteImage,
+		Artifacts: []*azdext.Artifact{
+			{
+				Kind:         "container-image",
+				Location:     remoteImage,
+				LocationKind: "remote",
+				Metadata: map[string]string{
+					"remoteImage": remoteImage,
+				},
+			},
 		},
 	}, nil
 }
@@ -165,8 +163,7 @@ func (p *AgentServiceTargetProvider) Publish(
 func (p *AgentServiceTargetProvider) Deploy(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
-	packageResult *azdext.ServicePackageResult,
-	publishResult *azdext.ServicePublishResult,
+	serviceContext *azdext.ServiceContext,
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
@@ -258,14 +255,17 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	fmt.Fprintf(os.Stderr, "Prompt agent '%s' deployed successfully!\n", agentVersionResponse.Name)
 
 	return &azdext.ServiceDeployResult{
-		TargetResourceId: "",
-		Kind:             "agent",
-		Endpoints:        nil,
-		Details: map[string]string{
-			"message": "Prompt agent deployed successfully",
-			"agentName": agentVersionResponse.Name,
+			Artifacts: []*azdext.Artifact{
+				{
+					Kind:         "agent",
+					Location:     "",
+					LocationKind: "remote",
+					Metadata: map[string]string{
+						"message": "Agent service deployed successfully using custom extension logic",
 			"agentVersion": agentVersionResponse.Version,
-		},
+					},
+				},
+			},
 	}, nil
 }
 
@@ -329,13 +329,15 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	fmt.Fprintf(os.Stderr, "Hosted agent '%s' deployed successfully!\n", agentVersionResponse.Name)
 
 	return &azdext.ServiceDeployResult{
-		TargetResourceId: "",
-		Kind:             "agent",
-		Endpoints:        nil,
-		Details: map[string]string{
-			"message": "Hosted agent deployed successfully",
-			"agentName": agentVersionResponse.Name,
-			"agentVersion": agentVersionResponse.Version,
+		Artifacts: []*azdext.Artifact{
+			{
+				Kind:         "agent",
+				Location:     "",
+				LocationKind: "remote",
+				Metadata: map[string]string{
+					"message": "Agent service deployed successfully using custom extension logic",
+				},
+			},
 		},
 	}, nil
 }

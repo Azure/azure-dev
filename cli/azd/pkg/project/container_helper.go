@@ -426,8 +426,14 @@ func (ch *ContainerHelper) runLocalBuild(
 	// Find the container image artifact from package results
 	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer)); found {
 		targetImage = artifact.Location
-		if sourceImage := artifact.Metadata["sourceImage"]; sourceImage != "" {
-			sourceImage = sourceImage
+		if sourceImageValue := artifact.Metadata["sourceImage"]; sourceImageValue != "" {
+			sourceImage = sourceImageValue
+		}
+		// Fall back to metadata targetImage if Location is empty
+		if targetImage == "" {
+			if targetImageValue := artifact.Metadata["targetImage"]; targetImageValue != "" {
+				targetImage = targetImageValue
+			}
 		}
 	}
 

@@ -11,6 +11,7 @@ capabilities:
   - lifecycle-events
   - mcp-server
   - service-target-provider
+  - framework-service-provider
 providers:
   - name: demo
     type: service-target

@@ -39,6 +39,7 @@ words:
   - santhosh
   - tekuri
   - jsonschema
+  - rustc
 languageSettings:
   - languageId: go
     ignoreRegExpList:

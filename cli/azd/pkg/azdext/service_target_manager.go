@@ -6,6 +6,7 @@ package azdext
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"time"
@@ -17,6 +18,30 @@ import (
 
 // ProgressReporter defines a function type for reporting progress updates from extensions
 type ProgressReporter func(message string)
+
+// FrameworkServiceProvider defines the interface for framework service logic.
+type FrameworkServiceProvider interface {
+	Initialize(ctx context.Context, serviceConfig *ServiceConfig) error
+	RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) ([]*ExternalTool, error)
+	Requirements() (*FrameworkRequirements, error)
+	Restore(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		progress ProgressReporter,
+	) (*ServiceRestoreResult, error)
+	Build(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		restoreOutput *ServiceRestoreResult,
+		progress ProgressReporter,
+	) (*ServiceBuildResult, error)
+	Package(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		buildOutput *ServiceBuildResult,
+		progress ProgressReporter,
+	) (*ServicePackageResult, error)
+}
 
 // ServiceTargetProvider defines the interface for service target logic.
 type ServiceTargetProvider interface {
@@ -54,6 +79,304 @@ type ServiceTargetProvider interface {
 		targetResource *TargetResource,
 		progress ProgressReporter,
 	) (*ServiceDeployResult, error)
+}
+
+// FrameworkServiceManager handles registration and request forwarding for a framework service provider.
+type FrameworkServiceManager struct {
+	client *AzdClient
+	stream FrameworkService_StreamClient
+}
+
+// NewFrameworkServiceManager creates a new FrameworkServiceManager for an AzdClient.
+func NewFrameworkServiceManager(client *AzdClient) *FrameworkServiceManager {
+	return &FrameworkServiceManager{
+		client: client,
+	}
+}
+
+// Register registers a framework service provider with the specified language name.
+func (m *FrameworkServiceManager) Register(ctx context.Context, provider FrameworkServiceProvider, language string) error {
+	client := m.client.FrameworkService()
+	stream, err := client.Stream(ctx)
+	if err != nil {
+		return err
+	}
+
+	m.stream = stream
+
+	// Send registration request
+	err = stream.Send(&FrameworkServiceMessage{
+		RequestId: "register",
+		MessageType: &FrameworkServiceMessage_RegisterFrameworkServiceRequest{
+			RegisterFrameworkServiceRequest: &RegisterFrameworkServiceRequest{
+				Language: language,
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	// Wait for registration response
+	resp, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+
+	if resp.Error != nil {
+		return fmt.Errorf("framework service registration error: %s", resp.Error.Message)
+	}
+
+	if resp.GetRegisterFrameworkServiceResponse() == nil {
+		return fmt.Errorf("expected RegisterFrameworkServiceResponse, got %T", resp.GetMessageType())
+	}
+
+	// Start handling the framework service stream
+
+	// Add a small delay to ensure the stream handler is ready before the server can use the stream
+	ready := make(chan struct{})
+	go func() {
+		close(ready) // Signal that we're about to start
+		m.handleFrameworkServiceStream(ctx, provider)
+	}()
+	<-ready // Wait for the goroutine to start
+
+	return nil
+}
+
+// handleFrameworkServiceStream handles the bidirectional stream for framework service operations
+func (m *FrameworkServiceManager) handleFrameworkServiceStream(ctx context.Context, provider FrameworkServiceProvider) {
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("Context cancelled by caller, exiting framework service stream")
+			return
+		default:
+			msg, err := m.stream.Recv()
+			if err != nil {
+				log.Printf("framework service stream closed: %v", err)
+				return
+			}
+			// Process message synchronously to avoid race condition with stream.Recv()
+			resp := m.buildFrameworkServiceResponseMsg(ctx, provider, msg)
+			if resp != nil {
+				if err := m.stream.Send(resp); err != nil {
+					log.Printf("failed to send framework service response: %v", err)
+				} else {
+					// Don't immediately go back to stream.Recv() - let the receiver process first
+					time.Sleep(200 * time.Millisecond)
+				}
+			} else {
+				log.Printf("buildFrameworkServiceResponseMsg returned nil response")
+			}
+		}
+	}
+}
+
+// Close closes the framework service manager stream.
+func (m *FrameworkServiceManager) Close() error {
+	if m.stream != nil {
+		return m.stream.CloseSend()
+	}
+	return nil
+}
+
+// buildFrameworkServiceResponseMsg handles individual framework service requests and builds responses
+func (m *FrameworkServiceManager) buildFrameworkServiceResponseMsg(
+	ctx context.Context,
+	provider FrameworkServiceProvider,
+	msg *FrameworkServiceMessage,
+) *FrameworkServiceMessage {
+	var resp *FrameworkServiceMessage
+	switch r := msg.MessageType.(type) {
+	case *FrameworkServiceMessage_InitializeRequest:
+		initReq := r.InitializeRequest
+		var serviceConfig *ServiceConfig
+		if initReq != nil {
+			serviceConfig = initReq.ServiceConfig
+		}
+
+		err := provider.Initialize(ctx, serviceConfig)
+
+		resp = &FrameworkServiceMessage{
+			RequestId: msg.RequestId,
+			MessageType: &FrameworkServiceMessage_InitializeResponse{
+				InitializeResponse: &FrameworkServiceInitializeResponse{},
+			},
+		}
+		if err != nil {
+			resp.Error = &FrameworkServiceErrorMessage{
+				Message: err.Error(),
+			}
+		}
+
+	case *FrameworkServiceMessage_RequiredExternalToolsRequest:
+
+		reqReq := r.RequiredExternalToolsRequest
+		var serviceConfig *ServiceConfig
+		if reqReq != nil {
+			serviceConfig = reqReq.ServiceConfig
+		}
+
+		tools, err := provider.RequiredExternalTools(ctx, serviceConfig)
+		resp = &FrameworkServiceMessage{
+			RequestId: msg.RequestId,
+			MessageType: &FrameworkServiceMessage_RequiredExternalToolsResponse{
+				RequiredExternalToolsResponse: &FrameworkServiceRequiredExternalToolsResponse{
+					Tools: tools,
+				},
+			},
+		}
+		if err != nil {
+			resp.Error = &FrameworkServiceErrorMessage{
+				Message: err.Error(),
+			}
+		}
+
+	case *FrameworkServiceMessage_RequirementsRequest:
+		requirements, err := provider.Requirements()
+		resp = &FrameworkServiceMessage{
+			RequestId: msg.RequestId,
+			MessageType: &FrameworkServiceMessage_RequirementsResponse{
+				RequirementsResponse: &FrameworkServiceRequirementsResponse{
+					Requirements: requirements,
+				},
+			},
+		}
+		if err != nil {
+			resp.Error = &FrameworkServiceErrorMessage{
+				Message: err.Error(),
+			}
+		}
+
+	case *FrameworkServiceMessage_RestoreRequest:
+		progressReporter := func(message string) {
+			progressMsg := &FrameworkServiceMessage{
+				RequestId: msg.RequestId,
+				MessageType: &FrameworkServiceMessage_ProgressMessage{
+					ProgressMessage: &FrameworkServiceProgressMessage{
+						RequestId: msg.RequestId,
+						Message:   message,
+						Timestamp: time.Now().UnixMilli(),
+					},
+				},
+			}
+			if err := m.stream.Send(progressMsg); err != nil {
+				log.Printf("failed to send progress message: %v", err)
+			}
+		}
+
+		restoreReq := r.RestoreRequest
+		var serviceConfig *ServiceConfig
+		if restoreReq != nil {
+			serviceConfig = restoreReq.ServiceConfig
+		}
+
+		result, err := provider.Restore(ctx, serviceConfig, progressReporter)
+		resp = &FrameworkServiceMessage{
+			RequestId: msg.RequestId,
+			MessageType: &FrameworkServiceMessage_RestoreResponse{
+				RestoreResponse: &FrameworkServiceRestoreResponse{
+					RestoreResult: result,
+				},
+			},
+		}
+		if err != nil {
+			resp.Error = &FrameworkServiceErrorMessage{
+				Message: err.Error(),
+			}
+		}
+
+	case *FrameworkServiceMessage_BuildRequest:
+		progressReporter := func(message string) {
+			progressMsg := &FrameworkServiceMessage{
+				RequestId: msg.RequestId,
+				MessageType: &FrameworkServiceMessage_ProgressMessage{
+					ProgressMessage: &FrameworkServiceProgressMessage{
+						RequestId: msg.RequestId,
+						Message:   message,
+						Timestamp: time.Now().UnixMilli(),
+					},
+				},
+			}
+			if err := m.stream.Send(progressMsg); err != nil {
+				log.Printf("failed to send progress message: %v", err)
+			}
+		}
+
+		buildReq := r.BuildRequest
+		var serviceConfig *ServiceConfig
+		var restoreOutput *ServiceRestoreResult
+		if buildReq != nil {
+			serviceConfig = buildReq.ServiceConfig
+			restoreOutput = buildReq.RestoreOutput
+		}
+
+		result, err := provider.Build(ctx, serviceConfig, restoreOutput, progressReporter)
+		resp = &FrameworkServiceMessage{
+			RequestId: msg.RequestId,
+			MessageType: &FrameworkServiceMessage_BuildResponse{
+				BuildResponse: &FrameworkServiceBuildResponse{
+					BuildResult: result,
+				},
+			},
+		}
+		if err != nil {
+			resp.Error = &FrameworkServiceErrorMessage{
+				Message: err.Error(),
+			}
+		}
+
+	case *FrameworkServiceMessage_PackageRequest:
+		progressReporter := func(message string) {
+			progressMsg := &FrameworkServiceMessage{
+				RequestId: msg.RequestId,
+				MessageType: &FrameworkServiceMessage_ProgressMessage{
+					ProgressMessage: &FrameworkServiceProgressMessage{
+						RequestId: msg.RequestId,
+						Message:   message,
+						Timestamp: time.Now().UnixMilli(),
+					},
+				},
+			}
+			if err := m.stream.Send(progressMsg); err != nil {
+				log.Printf("failed to send progress message: %v", err)
+			}
+		}
+
+		packageReq := r.PackageRequest
+		var serviceConfig *ServiceConfig
+		var buildOutput *ServiceBuildResult
+		if packageReq != nil {
+			serviceConfig = packageReq.ServiceConfig
+			buildOutput = packageReq.BuildOutput
+		}
+
+		result, err := provider.Package(ctx, serviceConfig, buildOutput, progressReporter)
+		resp = &FrameworkServiceMessage{
+			RequestId: msg.RequestId,
+			MessageType: &FrameworkServiceMessage_PackageResponse{
+				PackageResponse: &FrameworkServicePackageResponse{
+					PackageResult: result,
+				},
+			},
+		}
+		if err != nil {
+			resp.Error = &FrameworkServiceErrorMessage{
+				Message: err.Error(),
+			}
+		}
+
+	default:
+		resp = &FrameworkServiceMessage{
+			RequestId: msg.RequestId,
+			Error: &FrameworkServiceErrorMessage{
+				Message: fmt.Sprintf("unsupported message type: %T", r),
+			},
+		}
+	}
+
+	return resp
 }
 
 // ServiceTargetManager handles registration and provisioning request forwarding for a provider.

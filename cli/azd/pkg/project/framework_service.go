@@ -50,7 +50,9 @@ func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error)
 		return kind, nil
 	}
 
-	return ServiceLanguageKind("Unsupported"), fmt.Errorf("unsupported language '%s'", kind)
+	// Allow unknown languages during parsing - they will be validated later by serviceManager.GetFrameworkService()
+	// This enables framework service extensions to provide custom languages not built into azd core
+	return kind, nil
 }
 
 type FrameworkRequirements struct {

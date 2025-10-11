@@ -136,6 +136,12 @@
             "const": "service-target-provider",
             "title": "Service Target Provider",
             "description": "Service target provider enables extensions to provide custom service deployment targets."
+          },
+          {
+            "type": "string",
+            "const": "framework-service-provider",
+            "title": "Framework Service Provider",
+            "description": "Framework service provider enables extensions to provide custom language frameworks and build systems."
           }
         ]
       }

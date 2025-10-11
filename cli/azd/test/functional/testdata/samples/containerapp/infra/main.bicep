@@ -30,6 +30,6 @@ module resources 'resources.bicep' = {
 
 
 output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.containerRegistryName
-output AZURE_CONTAINER_ENVIRONMENT_NAME string = resources.outputs.containerAppsEnvironmentName
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.containerRegistryloginServer
+output AZURE_CONTAINER_ENVIRONMENT_ID string = resources.outputs.containerAppsEnvironmentId
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.containerRegistryLoginServer
 output SERVICE_WEB_IDENTITY_ID string = resources.outputs.managedIdentityId

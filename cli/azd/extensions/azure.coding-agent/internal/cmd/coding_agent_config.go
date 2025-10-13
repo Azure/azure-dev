@@ -593,7 +593,7 @@ func pickOrCreateMSI(ctx context.Context,
 
 		selectedOption, err := prompter.Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
-				Message: "Select an existing User Managed Identity (MSI) to use:",
+				Message: "Select an existing User Managed Identity (MSI) to use",
 				Choices: choices,
 			},
 		})

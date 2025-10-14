@@ -8,17 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"os"
-	"os/exec"
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -26,7 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"google.golang.org/grpc"
 )
 
 // extractFlagsWithValues extracts flags that take values from a cobra command.
@@ -494,36 +488,34 @@ func DiscoverServiceTargetCapabilities(
 
 			// Check if extension has service target provider capability
 			// Check the latest version's capabilities
-			hasServiceTargetCapability := false
 			if len(extension.Versions) > 0 {
 				// Use the first version (typically the latest)
 				latestVersion := extension.Versions[0]
-				for _, capability := range latestVersion.Capabilities {
-					if capability == extensions.ServiceTargetProviderCapability {
-						hasServiceTargetCapability = true
-						break
+				if slices.Contains(latestVersion.Capabilities, extensions.ServiceTargetProviderCapability) {
+					serviceTargets := make([]string, 0)
+					for _, provider := range latestVersion.Providers {
+						if provider.Type == extensions.ServiceTargetProviderType {
+							serviceTargets = append(serviceTargets, provider.Name)
+						}
 					}
+					resultChan <- discoveryResult{
+						extensionName:     extension.DisplayName,
+						extensionMetadata: extension,
+						serviceTargets:    serviceTargets,
+						err:               err,
+					}
+					return
 				}
 			}
 
-			if !hasServiceTargetCapability {
-				resultChan <- discoveryResult{
-					extensionName:     extension.Id,
-					extensionMetadata: extension,
-					serviceTargets:    nil,
-					err:               nil,
-				}
-				return
-			}
-
-			// Try to discover service targets from this extension
-			serviceTargets, err := discoverServiceTargetsFromExtension(ctx, extensionManager, extension)
+			// no service target provider capability
 			resultChan <- discoveryResult{
-				extensionName:     extension.DisplayName,
+				extensionName:     extension.Id,
 				extensionMetadata: extension,
-				serviceTargets:    serviceTargets,
-				err:               err,
+				serviceTargets:    nil,
+				err:               nil,
 			}
+
 		}(ext)
 	}
 
@@ -546,239 +538,4 @@ func DiscoverServiceTargetCapabilities(
 	}
 
 	return discoveryResults, nil
-}
-
-// discoverServiceTargetsFromExtension attempts to discover service targets provided by an extension
-// by temporarily downloading its binary and analyzing its capabilities
-func discoverServiceTargetsFromExtension(
-	ctx context.Context, extensionManager *extensions.Manager, extension *extensions.ExtensionMetadata) ([]string, error) {
-	// Create a temporary directory for the extension binary
-	tempDir, err := os.MkdirTemp("", fmt.Sprintf("azd-ext-discovery-%s-*", extension.Id))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp directory: %w", err)
-	}
-	defer func() {
-		if removeErr := os.RemoveAll(tempDir); removeErr != nil {
-			log.Printf("Warning: failed to clean up temp directory %s: %v", tempDir, removeErr)
-		}
-	}()
-
-	// Use the new Acquire method to download the extension binary without installing dependencies
-	acquireOptions := &extensions.AcquireOptions{
-		FilterOptions: &extensions.FilterOptions{
-			Version: "latest", // Get the latest version
-		},
-		InstallDependencies: false,            // Don't install dependencies for discovery
-		TargetDir:           tempDir,          // Download to our temp directory
-		Source:              extension.Source, // Use the source from the extension metadata
-	}
-
-	result, err := extensionManager.Acquire(ctx, extension.Id, acquireOptions)
-	if err != nil {
-		// If acquisition fails, fall back to simulation
-		log.Printf("Failed to acquire extension %s for discovery: %v", extension.Id, err)
-		return nil, nil
-	}
-
-	// For now, we'll still simulate this process but with the actual binary available
-	// In a real implementation, you would execute the binary and parse its output
-	serviceTargets, err := discoverServiceTargetsFromBinary(result.ExtensionPath, extension)
-	if err != nil {
-		// Fall back to simulation if binary execution fails
-		log.Printf("Failed to discover service targets from binary %s: %v", result.ExtensionPath, err)
-	}
-
-	return serviceTargets, nil
-}
-
-// discoverServiceTargetsFromBinary attempts to discover service targets by executing the extension binary
-// with a listen command and intercepting the service target registration requests
-func discoverServiceTargetsFromBinary(binaryPath string, extension *extensions.ExtensionMetadata) ([]string, error) {
-	// Check if the binary exists and is executable
-	if _, err := os.Stat(binaryPath); err != nil {
-		return nil, fmt.Errorf("binary not found at path %s: %w", binaryPath, err)
-	}
-
-	// Start a temporary gRPC server to capture service target registrations
-	discoveryServer, err := newServiceTargetDiscoveryServer()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create discovery server: %w", err)
-	}
-	defer discoveryServer.Stop()
-
-	serverInfo, err := discoveryServer.Start()
-	if err != nil {
-		return nil, fmt.Errorf("failed to start discovery server: %w", err)
-	}
-
-	// Generate a temporary JWT token for the extension
-	tempExtension := &extensions.Extension{
-		Id:           extension.Id,
-		Capabilities: []extensions.CapabilityType{extensions.ServiceTargetProviderCapability},
-	}
-
-	jwtToken, err := grpcserver.GenerateExtensionToken(tempExtension, serverInfo)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate JWT token: %w", err)
-	}
-
-	// Execute the extension binary with listen command
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, binaryPath, "listen")
-	cmd.Env = append(os.Environ(),
-		fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
-		fmt.Sprintf("AZD_ACCESS_TOKEN=%s", jwtToken),
-	)
-
-	// Start the extension process
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start extension binary: %w", err)
-	}
-
-	// Wait for service target registrations or timeout
-	serviceTargets := discoveryServer.WaitForServiceTargets(ctx)
-
-	// Terminate the extension process
-	if cmd.Process != nil {
-		_ = cmd.Process.Kill()
-	}
-
-	log.Printf("Discovered %d service targets from extension %s: %v", len(serviceTargets), extension.Id, serviceTargets)
-	return serviceTargets, nil
-}
-
-// serviceTargetDiscoveryServer is a lightweight gRPC server that captures service target registrations
-type serviceTargetDiscoveryServer struct {
-	azdext.UnimplementedServiceTargetServiceServer
-	server         *grpc.Server
-	listener       net.Listener
-	serviceTargets []string
-	mu             sync.Mutex
-	done           chan struct{}
-}
-
-// newServiceTargetDiscoveryServer creates a new service target discovery server
-func newServiceTargetDiscoveryServer() (*serviceTargetDiscoveryServer, error) {
-	return &serviceTargetDiscoveryServer{
-		done: make(chan struct{}),
-	}, nil
-}
-
-// Start starts the discovery server and returns server info
-func (s *serviceTargetDiscoveryServer) Start() (*grpcserver.ServerInfo, error) {
-	// Use ":0" to let the system assign an available random port
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return nil, fmt.Errorf("failed to listen: %w", err)
-	}
-	s.listener = listener
-
-	// Get the assigned random port
-	randomPort := listener.Addr().(*net.TCPAddr).Port
-
-	// Create gRPC server
-	s.server = grpc.NewServer()
-	azdext.RegisterServiceTargetServiceServer(s.server, s)
-
-	// Generate a simple signing key for testing
-	signingKey := []byte("test-signing-key-for-discovery")
-
-	serverInfo := &grpcserver.ServerInfo{
-		Address:    fmt.Sprintf("localhost:%d", randomPort),
-		Port:       randomPort,
-		SigningKey: signingKey,
-	}
-
-	// Start the server in a goroutine
-	go func() {
-		if err := s.server.Serve(listener); err != nil {
-			log.Printf("Discovery server error: %v", err)
-		}
-	}()
-
-	log.Printf("Service target discovery server listening on port %d", randomPort)
-	return serverInfo, nil
-}
-
-// Stop stops the discovery server
-func (s *serviceTargetDiscoveryServer) Stop() {
-	if s.server != nil {
-		s.server.Stop()
-	}
-	if s.listener != nil {
-		s.listener.Close()
-	}
-	close(s.done)
-}
-
-// Stream implements the ServiceTargetService Stream method to capture registrations
-func (s *serviceTargetDiscoveryServer) Stream(stream azdext.ServiceTargetService_StreamServer) error {
-	// Wait for the registration request
-	msg, err := stream.Recv()
-	if err != nil {
-		return err
-	}
-
-	regRequest := msg.GetRegisterServiceTargetRequest()
-	if regRequest != nil {
-		hostType := regRequest.GetHost()
-		log.Printf("Discovered service target: %s", hostType)
-
-		s.mu.Lock()
-		s.serviceTargets = append(s.serviceTargets, hostType)
-		s.mu.Unlock()
-
-		// Send a response to acknowledge the registration
-		resp := &azdext.ServiceTargetMessage{
-			RequestId: msg.RequestId,
-			MessageType: &azdext.ServiceTargetMessage_RegisterServiceTargetResponse{
-				RegisterServiceTargetResponse: &azdext.RegisterServiceTargetResponse{},
-			},
-		}
-
-		if err := stream.Send(resp); err != nil {
-			return err
-		}
-	}
-
-	// Keep the stream open until the context is done
-	<-stream.Context().Done()
-	return nil
-}
-
-// WaitForServiceTargets waits for service target registrations with a timeout
-func (s *serviceTargetDiscoveryServer) WaitForServiceTargets(ctx context.Context) []string {
-	// Wait for a reasonable amount of time for registrations
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	timeout := time.After(5 * time.Second)
-
-	for {
-		select {
-		case <-ctx.Done():
-			s.mu.Lock()
-			result := make([]string, len(s.serviceTargets))
-			copy(result, s.serviceTargets)
-			s.mu.Unlock()
-			return result
-		case <-timeout:
-			s.mu.Lock()
-			result := make([]string, len(s.serviceTargets))
-			copy(result, s.serviceTargets)
-			s.mu.Unlock()
-			return result
-		case <-ticker.C:
-			s.mu.Lock()
-			if len(s.serviceTargets) > 0 {
-				result := make([]string, len(s.serviceTargets))
-				copy(result, s.serviceTargets)
-				s.mu.Unlock()
-				return result
-			}
-			s.mu.Unlock()
-		}
-	}
 }

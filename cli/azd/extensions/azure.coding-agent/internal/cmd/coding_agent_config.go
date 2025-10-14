@@ -229,13 +229,18 @@ func newConfigCommand() *cobra.Command {
 		)
 
 		fmt.Println("")
+		fmt.Println(output.WithHighLightFormat("(!)"))
 		fmt.Println(output.WithHighLightFormat("(!) NOTE: Some tasks must still be completed, manually:"))
+		fmt.Println(output.WithHighLightFormat("(!)"))
+		fmt.Println("")
 		fmt.Printf("1. The branch created at %s/%s must be merged to %s/main\n", remote, flagValues.BranchName, repoSlug)
 		fmt.Printf("2. Visit '%s' and update the \"MCP configuration\" field with this JSON:\n\n", codingAgentURL)
 
 		fmt.Println(mcpJson)
 
-		if err := openBrowserWindows(ctx, promptClient, defaultGitHubCLI, codingAgentURL, gitRepoRoot); err != nil {
+		managedIdentityPortalURL := formatPortalLinkForManagedIdentity(tenantID, subscriptionID, authConfig.ResourceGroup, authConfig.Name)
+
+		if err := openBrowserWindows(ctx, promptClient, defaultGitHubCLI, codingAgentURL, managedIdentityPortalURL, authConfig.Name, gitRepoRoot); err != nil {
 			return err
 		}
 
@@ -246,8 +251,12 @@ func newConfigCommand() *cobra.Command {
 }
 
 func openBrowserWindows(ctx context.Context,
-	prompter azdext.PromptServiceClient, githubCLI *azd_tools_github.Cli,
-	codingAgentURL string, gitRepoRoot string) error {
+	prompter azdext.PromptServiceClient,
+	githubCLI *azd_tools_github.Cli,
+	codingAgentURL string,
+	managedIdentityPortalURL string,
+	managedIdentityName string,
+	gitRepoRoot string) error {
 	resp, err := prompter.Confirm(ctx, &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
 			Message:      "Open browser window to create a pull request?",
@@ -269,7 +278,7 @@ func openBrowserWindows(ctx context.Context,
 		githubCLI.BinaryPath(),
 		"pr", "create",
 		"--title", "Updating/adding copilot-setup-steps.yaml to enable the Copilot coding agent to access Azure",
-		"--body", fmt.Sprintf(prBodyMD, codingAgentURL, mcpJson),
+		"--body", fmt.Sprintf(prBodyMD, codingAgentURL, mcpJson, managedIdentityName, managedIdentityPortalURL),
 		"--web")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -324,7 +333,7 @@ func promptForRepoSlug(ctx context.Context,
 
 	resp, err := promptClient.Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: "Which git repository will use the Copilot coding agent?",
+			Message: "Which GitHub repository will use the Copilot coding agent?",
 			Choices: choices,
 		},
 	})
@@ -644,6 +653,8 @@ func pickOrCreateMSI(ctx context.Context,
 	}
 
 	return &authConfiguration{
+		Name:           *managedIdentity.Name,
+		ResourceGroup:  parsedID.ResourceGroupName,
 		TenantId:       *managedIdentity.Properties.TenantID,
 		SubscriptionId: subscriptionId,
 		ResourceID:     *managedIdentity.ID,
@@ -689,6 +700,8 @@ func promptForResourceGroup(ctx context.Context,
 }
 
 type authConfiguration struct {
+	Name           string
+	ResourceGroup  string
 	ClientId       string
 	SubscriptionId string
 	TenantId       string
@@ -888,4 +901,14 @@ func (cli *internalGitCLI) ListRemotes(ctx context.Context, gitRepoRoot string) 
 
 	remotes := strings.Split(strings.TrimSpace(runResult.Stdout), "\n")
 	return remotes, nil
+}
+
+// formatPortalLinkForManagedIdentity takes you to the Azure portal blade, for your managed identity, that lets you see its role assignments.
+func formatPortalLinkForManagedIdentity(tenantID string, subscriptionID string, resourceGroupName string, managedIdentityName string) string {
+	// https://portal.azure.com/#@TME01.onmicrosoft.com/resource/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/SSS3PT_rg-ripark-these-are-a-few-of-my-favorite-things/providers/Microsoft.ManagedIdentity/userAssignedIdentities/msi-copilot-azd-starter/overview
+	return fmt.Sprintf("https://portal.azure.com/#@%s/resource/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s/azure_resources",
+		tenantID,
+		subscriptionID,
+		resourceGroupName,
+		managedIdentityName)
 }

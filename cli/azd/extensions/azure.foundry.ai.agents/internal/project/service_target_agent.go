@@ -15,6 +15,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/pkg/agents"
+	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/pkg/agents/api"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
 	"github.com/fatih/color"
@@ -275,7 +276,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	fmt.Fprintln(os.Stderr)
 
 	// Create agent
-	agentResponse, err := createAgent(ctx, "2025-05-15-preview", request, cred, azdEnv)
+	agentResponse, err := api.CreateAgent(ctx, "2025-05-15-preview", request, cred, azdEnv)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent: %w", err)
 	}
@@ -357,7 +358,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	maxReplicasInt32 := *maxReplicas
 
 	// Start agent container
-	operation, err := startAgentContainer(
+	operation, err := api.StartAgentContainer(
 		ctx, *apiVersion, agentResponse.Name, agentResponse.Version, &minReplicasInt32, &maxReplicasInt32, azdEnv, cred)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start agent container: %w", err)
@@ -367,7 +368,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	// Wait for operation to complete if requested
 	if *waitForReady {
-		completedOperation, err := waitForOperationComplete(
+		completedOperation, err := api.WaitForOperationComplete(
 			ctx, *apiVersion, agentResponse.Name, operation.Body.ID, *maxWaitTime, azdEnv, cred)
 		if err != nil {
 			return nil, fmt.Errorf("failed waiting for operation to complete: %w", err)

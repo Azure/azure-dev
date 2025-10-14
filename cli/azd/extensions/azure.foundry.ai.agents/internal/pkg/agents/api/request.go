@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package project
+package api
 
 import (
 	"bytes"
@@ -18,22 +18,21 @@ import (
 	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/pkg/agents"
 )
 
-// AgentKind represents the kind of agent
-
-type createAgentResponse struct {
+// CreateAgentResponse represents the response from creating an agent
+type CreateAgentResponse struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Version string `json:"version"`
 	Status  string `json:"status"`
 }
 
-// createAgent creates an agent using the Azure AI Agent API
-func createAgent(
+// CreateAgent creates an agent using the Azure AI Agent API
+func CreateAgent(
 	ctx context.Context,
 	apiVersion string,
 	request *agents.CreateAgentRequest,
 	cred azcore.TokenCredential,
-	env map[string]string) (*createAgentResponse, error) {
+	env map[string]string) (*CreateAgentResponse, error) {
 	// Get Azure token
 	authToken, err := getAzureToken(ctx, cred)
 	if err != nil {
@@ -105,8 +104,8 @@ func createAgent(
 		fmt.Fprintln(os.Stderr, "Agent created successfully!")
 		fmt.Fprintln(os.Stderr, "Response:")
 
-		// Parse the JSON response into createAgentResponse struct
-		var agentResponse createAgentResponse
+		// Parse the JSON response into CreateAgentResponse struct
+		var agentResponse CreateAgentResponse
 		if err := json.Unmarshal(body, &agentResponse); err != nil {
 			return nil, fmt.Errorf("failed to parse response JSON: %w", err)
 		}
@@ -189,8 +188,8 @@ type ContainerStatus struct {
 	Details       map[string]interface{} `json:"details,omitempty"`
 }
 
-// startAgentContainer starts a container for a specific version of a hosted agent
-func startAgentContainer(
+// StartAgentContainer starts a container for a specific version of a hosted agent
+func StartAgentContainer(
 	ctx context.Context,
 	apiVersion,
 	agentName,
@@ -303,7 +302,8 @@ func startAgentContainer(
 	}
 }
 
-func waitForOperationComplete(
+// WaitForOperationComplete waits for an operation to complete
+func WaitForOperationComplete(
 	ctx context.Context,
 	apiVersion,
 	agentName,
@@ -324,7 +324,7 @@ func waitForOperationComplete(
 		case <-time.After(maxWaitTime):
 			return nil, fmt.Errorf("timeout waiting for operation to complete after %v", maxWaitTime)
 		case <-ticker.C:
-			operation, err := checkOperationStatus(ctx, apiVersion, agentName, operationID, env, cred)
+			operation, err := CheckOperationStatus(ctx, apiVersion, agentName, operationID, env, cred)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error checking operation status: %v\n", err)
 				continue
@@ -357,8 +357,8 @@ func waitForOperationComplete(
 	}
 }
 
-// checkOperationStatus checks the status of a container operation
-func checkOperationStatus(
+// CheckOperationStatus checks the status of a container operation
+func CheckOperationStatus(
 	ctx context.Context,
 	apiVersion,
 	agentName,

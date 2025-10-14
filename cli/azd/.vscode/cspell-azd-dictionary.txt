@@ -112,6 +112,7 @@ envlist
 envname
 envsubst
 errcheck
+Errorf
 errorinfo
 errorlint
 eventhub

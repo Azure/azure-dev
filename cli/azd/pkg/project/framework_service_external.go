@@ -10,6 +10,7 @@ import (
 	"log"
 	"sync"
 
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -231,7 +232,13 @@ func (efs *ExternalFrameworkService) Restore(
 		return nil, fmt.Errorf("received empty restore response")
 	}
 
-	return efs.fromProtoServiceRestoreResult(restoreResp.RestoreResult), nil
+	var result *ServiceRestoreResult
+	err = mapper.Convert(restoreResp.RestoreResult, &result)
+	if err != nil {
+		return nil, fmt.Errorf("converting restore result: %w", err)
+	}
+
+	return result, nil
 }
 
 // Build builds the source for the framework service
@@ -273,7 +280,13 @@ func (efs *ExternalFrameworkService) Build(
 		return nil, fmt.Errorf("received empty build response")
 	}
 
-	return efs.fromProtoServiceBuildResult(buildResp.BuildResult), nil
+	var result *ServiceBuildResult
+	err = mapper.Convert(buildResp.BuildResult, &result)
+	if err != nil {
+		return nil, fmt.Errorf("converting build result: %w", err)
+	}
+
+	return result, nil
 }
 
 // Package packages the source suitable for deployment
@@ -315,7 +328,13 @@ func (efs *ExternalFrameworkService) Package(
 		return nil, fmt.Errorf("received empty package response")
 	}
 
-	return fromProtoServicePackageResult(packageResp.PackageResult, nil), nil
+	var result *ServicePackageResult
+	err = mapper.Convert(packageResp.PackageResult, &result)
+	if err != nil {
+		return nil, fmt.Errorf("converting package result: %w", err)
+	}
+
+	return result, nil
 }
 
 // Private methods for gRPC communication
@@ -445,37 +464,13 @@ func (efs *ExternalFrameworkService) toProtoServiceConfig(serviceConfig *Service
 		return nil, nil
 	}
 
-	image, err := serviceConfig.Image.Envsubst(func(name string) string {
-		return "" // Use empty resolver for now, similar to service_target_external.go
-	})
+	var protoConfig *azdext.ServiceConfig
+	err := mapper.Convert(serviceConfig, &protoConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve image value: %w", err)
+		return nil, fmt.Errorf("converting service config: %w", err)
 	}
 
-	return &azdext.ServiceConfig{
-		Name:         serviceConfig.Name,
-		RelativePath: serviceConfig.RelativePath,
-		Host:         string(serviceConfig.Host),
-		Language:     string(serviceConfig.Language),
-		OutputPath:   serviceConfig.OutputPath,
-		Image:        image,
-	}, nil
-}
-
-// Convert proto ServiceRestoreResult to local type
-func (efs *ExternalFrameworkService) fromProtoServiceRestoreResult(
-	protoResult *azdext.ServiceRestoreResult,
-) *ServiceRestoreResult {
-	if protoResult == nil {
-		return nil
-	}
-
-	result := &ServiceRestoreResult{}
-	if len(protoResult.Details) > 0 {
-		result.Details = stringMapToDetailsInterface(protoResult.Details)
-	}
-
-	return result
+	return protoConfig, nil
 }
 
 // Convert ServiceRestoreResult to proto message
@@ -484,32 +479,18 @@ func (efs *ExternalFrameworkService) toProtoServiceRestoreResult(result *Service
 		return nil
 	}
 
-	details := detailsInterfaceToStringMap(result.Details)
-	protoResult := &azdext.ServiceRestoreResult{}
-	if len(details) > 0 {
-		protoResult.Details = details
+	var protoResult *azdext.ServiceRestoreResult
+	err := mapper.Convert(result, &protoResult)
+	if err != nil {
+		// Fallback to basic conversion
+		details := detailsInterfaceToStringMap(result.Details)
+		protoResult = &azdext.ServiceRestoreResult{}
+		if len(details) > 0 {
+			protoResult.Details = details
+		}
 	}
 
 	return protoResult
-}
-
-// Convert proto ServiceBuildResult to local type
-func (efs *ExternalFrameworkService) fromProtoServiceBuildResult(
-	protoResult *azdext.ServiceBuildResult,
-) *ServiceBuildResult {
-	if protoResult == nil {
-		return nil
-	}
-
-	result := &ServiceBuildResult{
-		Restore: efs.fromProtoServiceRestoreResult(protoResult.Restore),
-	}
-
-	if len(protoResult.Details) > 0 {
-		result.Details = stringMapToDetailsInterface(protoResult.Details)
-	}
-
-	return result
 }
 
 // Convert ServiceBuildResult to proto message
@@ -518,13 +499,18 @@ func (efs *ExternalFrameworkService) toProtoServiceBuildResult(result *ServiceBu
 		return nil
 	}
 
-	details := detailsInterfaceToStringMap(result.Details)
-	protoResult := &azdext.ServiceBuildResult{
-		Restore: efs.toProtoServiceRestoreResult(result.Restore),
-	}
+	var protoResult *azdext.ServiceBuildResult
+	err := mapper.Convert(result, &protoResult)
+	if err != nil {
+		// Fallback to basic conversion
+		details := detailsInterfaceToStringMap(result.Details)
+		protoResult = &azdext.ServiceBuildResult{
+			Restore: efs.toProtoServiceRestoreResult(result.Restore),
+		}
 
-	if len(details) > 0 {
-		protoResult.Details = details
+		if len(details) > 0 {
+			protoResult.Details = details
+		}
 	}
 
 	return protoResult

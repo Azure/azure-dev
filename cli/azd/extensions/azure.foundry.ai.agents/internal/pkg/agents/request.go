@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package api
+package agents
 
 import (
 	"bytes"
@@ -15,7 +15,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/pkg/agents"
 )
 
 // CreateAgentResponse represents the response from creating an agent
@@ -30,7 +29,7 @@ type CreateAgentResponse struct {
 func CreateAgent(
 	ctx context.Context,
 	apiVersion string,
-	request *agents.CreateAgentRequest,
+	request *CreateAgentRequest,
 	cred azcore.TokenCredential,
 	env map[string]string) (*CreateAgentResponse, error) {
 	// Get Azure token
@@ -57,9 +56,9 @@ func CreateAgent(
 
 	// Debug output to stderr
 	fmt.Fprintf(os.Stderr, "Definition object: %+v\n", request.Definition)
-	if promptDef, ok := request.Definition.(agents.PromptAgentDefinition); ok {
+	if promptDef, ok := request.Definition.(PromptAgentDefinition); ok {
 		fmt.Fprintf(os.Stderr, "Definition model_name: %s\n", promptDef.ModelName)
-	} else if hostedDef, ok := request.Definition.(agents.HostedAgentDefinition); ok {
+	} else if hostedDef, ok := request.Definition.(HostedAgentDefinition); ok {
 		fmt.Fprintf(os.Stderr, "Definition image: %s\n", hostedDef.Image)
 	}
 

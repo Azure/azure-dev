@@ -8,7 +8,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/tools"
+	"azureaiagent/internal/tools"
+
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 )

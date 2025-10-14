@@ -6,7 +6,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/project"
+	"azureaiagent/internal/project"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )

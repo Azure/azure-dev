@@ -17,6 +17,11 @@ type serviceTargetRegistrar interface {
 	Close() error
 }
 
+type frameworkServiceRegistrar interface {
+	Register(ctx context.Context, provider FrameworkServiceProvider, language string) error
+	Close() error
+}
+
 type extensionEventManager interface {
 	AddProjectEventHandler(ctx context.Context, eventName string, handler ProjectEventHandler) error
 	AddServiceEventHandler(
@@ -30,6 +35,12 @@ type extensionEventManager interface {
 type ServiceTargetRegistration struct {
 	Host     string
 	Provider ServiceTargetProvider
+}
+
+// FrameworkServiceRegistration describes a framework service provider to register with azd core.
+type FrameworkServiceRegistration struct {
+	Language string
+	Provider FrameworkServiceProvider
 }
 
 // ProjectEventRegistration describes a project-level event handler to register.
@@ -49,13 +60,15 @@ type ServiceEventRegistration struct {
 type ExtensionHost struct {
 	client *AzdClient
 
-	serviceTargets  []ServiceTargetRegistration
-	projectHandlers []ProjectEventRegistration
-	serviceHandlers []ServiceEventRegistration
+	serviceTargets    []ServiceTargetRegistration
+	frameworkServices []FrameworkServiceRegistration
+	projectHandlers   []ProjectEventRegistration
+	serviceHandlers   []ServiceEventRegistration
 
-	newServiceTargetManager func(*AzdClient) serviceTargetRegistrar
-	newEventManager         func(*AzdClient) extensionEventManager
-	readyFn                 func(context.Context) error
+	newServiceTargetManager    func(*AzdClient) serviceTargetRegistrar
+	newFrameworkServiceManager func(*AzdClient) frameworkServiceRegistrar
+	newEventManager            func(*AzdClient) extensionEventManager
+	readyFn                    func(context.Context) error
 }
 
 // NewExtensionHost creates a new ExtensionHost for the supplied azd client.
@@ -64,6 +77,9 @@ func NewExtensionHost(client *AzdClient) *ExtensionHost {
 		client: client,
 		newServiceTargetManager: func(c *AzdClient) serviceTargetRegistrar {
 			return NewServiceTargetManager(c)
+		},
+		newFrameworkServiceManager: func(c *AzdClient) frameworkServiceRegistrar {
+			return NewFrameworkServiceManager(c)
 		},
 		newEventManager: func(c *AzdClient) extensionEventManager {
 			return NewEventManager(c)
@@ -77,6 +93,12 @@ func NewExtensionHost(client *AzdClient) *ExtensionHost {
 // WithServiceTarget registers a service target provider to be wired when Run is invoked.
 func (er *ExtensionHost) WithServiceTarget(host string, provider ServiceTargetProvider) *ExtensionHost {
 	er.serviceTargets = append(er.serviceTargets, ServiceTargetRegistration{Host: host, Provider: provider})
+	return er
+}
+
+// WithFrameworkService registers a framework service provider to be wired when Run is invoked.
+func (er *ExtensionHost) WithFrameworkService(language string, provider FrameworkServiceProvider) *ExtensionHost {
+	er.frameworkServices = append(er.frameworkServices, FrameworkServiceRegistration{Language: language, Provider: provider})
 	return er
 }
 
@@ -103,6 +125,7 @@ func (er *ExtensionHost) WithServiceEventHandler(
 // Run wires the configured service targets and event handlers, signals readiness, and blocks until shutdown.
 func (er *ExtensionHost) Run(ctx context.Context) error {
 	var serviceManagers []serviceTargetRegistrar
+	var frameworkManagers []frameworkServiceRegistrar
 
 	for _, reg := range er.serviceTargets {
 		if reg.Provider == nil {
@@ -123,10 +146,40 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		serviceManagers = append(serviceManagers, manager)
 	}
 
+	for _, reg := range er.frameworkServices {
+		if reg.Provider == nil {
+			return fmt.Errorf("framework service provider for language '%s' is nil", reg.Language)
+		}
+
+		manager := er.newFrameworkServiceManager(er.client)
+		if err := manager.Register(ctx, reg.Provider, reg.Language); err != nil {
+			_ = manager.Close()
+
+			for _, registered := range frameworkManagers {
+				_ = registered.Close()
+			}
+			for _, registered := range serviceManagers {
+				_ = registered.Close()
+			}
+
+			return fmt.Errorf("failed to register framework service '%s': %w", reg.Language, err)
+		}
+
+		frameworkManagers = append(frameworkManagers, manager)
+	}
+
 	if len(serviceManagers) > 0 {
 		defer func() {
 			for i := len(serviceManagers) - 1; i >= 0; i-- {
 				_ = serviceManagers[i].Close()
+			}
+		}()
+	}
+
+	if len(frameworkManagers) > 0 {
+		defer func() {
+			for i := len(frameworkManagers) - 1; i >= 0; i-- {
+				_ = frameworkManagers[i].Close()
 			}
 		}()
 	}

@@ -12,42 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/braydonk/yaml"
 )
 
-// agentYAMLConfig represents the structure of the agent YAML configuration file
-type agentYAMLConfig struct {
-	ID           string                 `yaml:"id"`
-	Version      string                 `yaml:"version"`
-	Name         string                 `yaml:"name"`
-	Description  string                 `yaml:"description"`
-	Model        string                 `yaml:"model"`
-	Instructions string                 `yaml:"instructions"`
-	Metadata     map[string]interface{} `yaml:"metadata"`
-}
 
-// parseAgentYAML parses the agent YAML file and returns the configuration
-func parseAgentYAML(yamlFilePath string) (*agentYAMLConfig, error) {
-	// Read the YAML file
-	data, err := os.ReadFile(yamlFilePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read YAML file: %w", err)
-	}
-
-	// Parse YAML
-	var agentConfig agentYAMLConfig
-	if err := yaml.Unmarshal(data, &agentConfig); err != nil {
-		return nil, fmt.Errorf("failed to parse YAML: %w", err)
-	}
-
-	// Validate required fields
-	if agentConfig.ID == "" {
-		return nil, fmt.Errorf("agent ID is required in YAML file")
-	}
-
-	return &agentConfig, nil
-}
 
 func createBuildContext(dockerfilePath string) ([]byte, error) {
 	var buf bytes.Buffer
@@ -108,10 +75,10 @@ func createBuildContext(dockerfilePath string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// generateImageNamesFromAgent generates image names using the agent ID from YAML config
-func generateImageNamesFromAgent(agentConfig *agentYAMLConfig, customVersion string) []string {
+// GenerateImageNamesFromAgent generates image names using the agent ID
+func GenerateImageNamesFromAgent(agentID string, customVersion string) []string {
 	// Use agent ID as the base image name
-	imageName := strings.ToLower(strings.ReplaceAll(agentConfig.ID, "_", "-"))
+	imageName := strings.ToLower(strings.ReplaceAll(agentID, "_", "-"))
 
 	// Use custom version if provided, otherwise use timestamp
 	var version string

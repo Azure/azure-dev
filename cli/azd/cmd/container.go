@@ -880,6 +880,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(grpcserver.NewWorkflowService)
 	container.MustRegisterSingleton(grpcserver.NewExtensionService)
 	container.MustRegisterSingleton(grpcserver.NewServiceTargetService)
+	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")

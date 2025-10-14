@@ -53,6 +53,7 @@ azruntime
 azsdk
 azureai
 AZURECLI
+azurecodingagent
 azureedge
 azureml
 azurestaticapps
@@ -78,6 +79,7 @@ cmdsubst
 cognitiveservices
 conditionalize
 consolesize
+containeragent
 containerapp
 containerapps
 containerd
@@ -110,6 +112,7 @@ envlist
 envname
 envsubst
 errcheck
+Errorf
 errorinfo
 errorlint
 eventhub
@@ -157,6 +160,7 @@ mgmt
 mgutz
 microsoftonline
 missingkey
+mmcp
 moby
 mockarmresources
 mockazcli

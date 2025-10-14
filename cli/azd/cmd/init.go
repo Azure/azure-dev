@@ -262,11 +262,14 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	header := "New project initialized!"
 	followUp := heredoc.Docf(`
 	You can view the template code in your directory: %s
-	Learn more about running 3rd party code on our DevHub: %s
-	%s Run azd up to deploy project to the cloud.`,
+	Learn more about running 3rd party code on our DevHub: %s`,
 		output.WithLinkFormat("%s", wd),
-		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"),
-		color.HiMagentaString("Next steps:"))
+		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
+
+	if i.featuresManager.IsEnabled(llm.FeatureLlm) {
+		followUp += fmt.Sprintf("\n%s Run azd up to deploy project to the cloud.`",
+			color.HiMagentaString("Next steps:"))
+	}
 
 	switch initTypeSelect {
 	case initAppTemplate:
@@ -361,6 +364,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		header = fmt.Sprintf("Initialized environment %s.", env.Name())
 		followUp = ""
 	case initWithAgent:
+		tracing.SetUsageAttributes(fields.InitMethod.String("agent"))
 		if err := i.initAppWithAgent(ctx); err != nil {
 			return nil, err
 		}
@@ -736,10 +740,6 @@ func (i *initAction) initializeEnv(
 
 // initializeExtensions installs extensions specified in the project config
 func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
-	if !i.featuresManager.IsEnabled(extensions.FeatureExtensions) {
-		return nil
-	}
-
 	projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
 	if err != nil {
 		return fmt.Errorf("loading project config: %w", err)
@@ -772,10 +772,30 @@ func (i *initAction) initializeExtensions(ctx context.Context, azdCtx *azdcontex
 				installConstraint = *versionConstraint
 			}
 
+			// Find the extension first
 			filterOptions := &extensions.FilterOptions{
-				Version: installConstraint,
+				Id: extensionId,
 			}
-			extensionVersion, err := i.extensionsManager.Install(ctx, extensionId, filterOptions)
+
+			extensionMatches, err := i.extensionsManager.FindExtensions(ctx, filterOptions)
+			if err != nil {
+				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return fmt.Errorf("finding extension %s: %w", extensionId, err)
+			}
+
+			if len(extensionMatches) == 0 {
+				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return fmt.Errorf("extension %s not found", extensionId)
+			}
+
+			if len(extensionMatches) > 1 {
+				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return fmt.Errorf("extension %s found in multiple sources, specify exact source", extensionId)
+			}
+
+			extensionMetadata := extensionMatches[0]
+
+			extensionVersion, err := i.extensionsManager.Install(ctx, extensionMetadata, installConstraint)
 			if err != nil {
 				i.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return fmt.Errorf("installing extension %s: %w", extensionId, err)

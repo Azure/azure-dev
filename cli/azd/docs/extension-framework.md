@@ -21,9 +21,6 @@ Table of Contents
 
 `azd` extensions are currently an alpha feature within `azd`.
 
-> [!IMPORTANT]
-> Enable `azd` extensions alpha feature by running `azd config set alpha.extensions on`
-
 - Initially official extensions will start shipping at //BUILD 2025.
 - Official extensions must be developed in a fork of the [azure/azure-dev](https://github.com/azure/azure-dev) github repo.
 - Extension binaries are shipped as Github releases to the same repo through our official pipelines.

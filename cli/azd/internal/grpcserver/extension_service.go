@@ -36,7 +36,7 @@ func (s *ExtensionService) Ready(ctx context.Context, req *azdext.ReadyRequest) 
 		return nil, fmt.Errorf("failed to get extension claims: %w", err)
 	}
 
-	options := extensions.LookupOptions{
+	options := extensions.FilterOptions{
 		Id: extensionClaims.Subject,
 	}
 

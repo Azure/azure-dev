@@ -6,4 +6,5 @@ id: azure.coding-agent
 language: go
 namespace: coding-agent
 usage: azd coding-agent <command> [options]
-version: 0.1.0
+# NOTE: Make sure version.txt is in sync with this version.
+version: 0.2.0

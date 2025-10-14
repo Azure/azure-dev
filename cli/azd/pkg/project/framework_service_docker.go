@@ -69,7 +69,7 @@ func (dbr *dockerBuildResult) MarshalJSON() ([]byte, error) {
 	return json.Marshal(*dbr)
 }
 
-type dockerPackageResult struct {
+type DockerPackageResult struct {
 	// The image hash that is generated from a docker build
 	ImageHash string `json:"imageHash"`
 	// The external source image specified when not building from source
@@ -78,7 +78,7 @@ type dockerPackageResult struct {
 	TargetImage string `json:"targetImage"`
 }
 
-func (dpr *dockerPackageResult) ToString(currentIndentation string) string {
+func (dpr *DockerPackageResult) ToString(currentIndentation string) string {
 	builder := strings.Builder{}
 	if dpr.ImageHash != "" {
 		builder.WriteString(fmt.Sprintf("%s- Image Hash: %s\n", currentIndentation, output.WithLinkFormat(dpr.ImageHash)))
@@ -105,7 +105,7 @@ func (dpr *dockerPackageResult) ToString(currentIndentation string) string {
 	return builder.String()
 }
 
-func (dpr *dockerPackageResult) MarshalJSON() ([]byte, error) {
+func (dpr *DockerPackageResult) MarshalJSON() ([]byte, error) {
 	return json.Marshal(*dpr)
 }
 
@@ -385,7 +385,7 @@ func (p *dockerProject) Package(
 		imageId = buildOutput.BuildOutputPath
 	}
 
-	packageDetails := &dockerPackageResult{
+	packageDetails := &DockerPackageResult{
 		ImageHash: imageId,
 	}
 

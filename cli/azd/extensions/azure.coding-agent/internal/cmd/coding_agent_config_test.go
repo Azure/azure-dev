@@ -17,7 +17,7 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-//go:generate go tool mockgen -destination mocks_internal_test.go -copyright_file ./testdata/mock_copyright.txt -package cmd . githubCLI,resourceService,azdMSIService
+//go:generate go tool mockgen -destination mocks_internal_test.go -copyright_file ./testdata/mock_copyright.txt -package cmd . githubCLI,resourceService,azdMSIService,gitCLI
 
 //go:generate go tool mockgen -destination mocks_azdext_test.go -copyright_file ./testdata/mock_copyright.txt -package cmd github.com/azure/azure-dev/cli/azd/pkg/azdext PromptServiceClient
 
@@ -90,12 +90,13 @@ func TestCodingAgent_createFederatedCredential(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestCodingAgent_getRepoSlug(t *testing.T) {
+func TestCodingAgent_promptForRepoSlug(t *testing.T) {
 	t.Run("repoSlugFromCommandLineDoesntPrompt", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		promptClient := NewMockPromptServiceClient(ctrl)
+		gitCLI := NewMockgitCLI(ctrl)
 
-		slug, err := getRepoSlug(context.Background(), repoSlugForTests, promptClient)
+		slug, err := promptForRepoSlug(context.Background(), promptClient, gitCLI, "repo-root-ignored", repoSlugForTests)
 
 		require.Equal(t, slug, repoSlugForTests)
 		require.NoError(t, err)
@@ -104,12 +105,20 @@ func TestCodingAgent_getRepoSlug(t *testing.T) {
 	t.Run("noSlugShouldPrompt", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		promptClient := NewMockPromptServiceClient(ctrl)
+		gitCLI := NewMockgitCLI(ctrl)
 
-		promptClient.EXPECT().Prompt(gomock.Any(), gomock.Any()).Return(&azdext.PromptResponse{
-			Value: "slugs/tawnygardenslug",
+		gitCLI.EXPECT().ListRemotes(gomock.Any(), "repo-root-used").Return([]string{"origin", "upstream"}, nil)
+		//nolint:lll
+		gitCLI.EXPECT().GetRemoteUrl(gomock.Any(), "repo-root-used", "origin").Return("https://github.com/richardpark-msft/tawnygardenslug", nil)
+		//nolint:lll
+		gitCLI.EXPECT().GetRemoteUrl(gomock.Any(), "repo-root-used", "upstream").Return("https://github.com/slugs/tawnygardenslug", nil)
+
+		promptClient.EXPECT().Select(gomock.Any(), gomock.Any()).Return(&azdext.SelectResponse{
+			// simulate they chose option 1
+			Value: to.Ptr(int32(1)),
 		}, nil)
 
-		slug, err := getRepoSlug(context.Background(), "", promptClient)
+		slug, err := promptForRepoSlug(context.Background(), promptClient, gitCLI, "repo-root-used", "")
 
 		require.Equal(t, slug, "slugs/tawnygardenslug")
 		require.NoError(t, err)

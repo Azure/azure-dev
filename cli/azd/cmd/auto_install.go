@@ -18,7 +18,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -140,8 +139,8 @@ func checkForMatchingExtensions(
 		return nil, nil
 	}
 
-	options := &extensions.ListOptions{}
-	registryExtensions, err := extensionManager.ListFromRegistry(ctx, options)
+	options := &extensions.FilterOptions{}
+	registryExtensions, err := extensionManager.FindExtensions(ctx, options)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +226,7 @@ func tryAutoInstallExtension(
 	extension extensions.ExtensionMetadata) (bool, error) {
 
 	// Check if the extension is already installed
-	_, err := extensionManager.GetInstalled(extensions.LookupOptions{
+	_, err := extensionManager.GetInstalled(extensions.FilterOptions{
 		Id: extension.Id,
 	})
 	if err == nil {
@@ -266,10 +265,7 @@ func tryAutoInstallExtension(
 
 	// Install the extension
 	console.Message(ctx, fmt.Sprintf("Installing extension '%s'...\n", extension.Id))
-	filterOptions := &extensions.FilterOptions{
-		Source: extension.Source,
-	}
-	_, err = extensionManager.Install(ctx, extension.Id, filterOptions)
+	_, err = extensionManager.Install(ctx, &extension, "")
 	if err != nil {
 		return false, fmt.Errorf("failed to install extension: %w", err)
 	}
@@ -290,20 +286,6 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	var console input.Console
 	if err := rootContainer.Resolve(&console); err != nil {
 		log.Panic("failed to resolve console for unknown flags error:", err)
-	}
-
-	// Continue only if extensions feature is enabled
-	err := rootContainer.Invoke(func(alphaFeatureManager *alpha.FeatureManager) error {
-		if !alphaFeatureManager.IsEnabled(extensions.FeatureExtensions) {
-			return fmt.Errorf("extensions feature is not enabled")
-		}
-		return nil
-	})
-	if err != nil {
-		// Error here means extensions are not enabled or failed to resolve the feature manager
-		// In either case, we just proceed to normal execution
-		log.Println("auto-install extensions: ", err)
-		return rootCmd.ExecuteContext(ctx)
 	}
 
 	// rootCmd.Find() returns error if the command is not identified. Cobra checks all the registered commands
@@ -479,8 +461,8 @@ type discoveryResult struct {
 func DiscoverServiceTargetCapabilities(
 	ctx context.Context, extensionManager *extensions.Manager) ([]discoveryResult, error) {
 	// Get all extensions from registry
-	options := &extensions.ListOptions{}
-	registryExtensions, err := extensionManager.ListFromRegistry(ctx, options)
+	options := &extensions.FilterOptions{}
+	registryExtensions, err := extensionManager.FindExtensions(ctx, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list extensions from registry: %w", err)
 	}
@@ -488,7 +470,7 @@ func DiscoverServiceTargetCapabilities(
 	// Filter out already installed extensions
 	var nonInstalledExtensions []*extensions.ExtensionMetadata
 	for _, ext := range registryExtensions {
-		_, err := extensionManager.GetInstalled(extensions.LookupOptions{
+		_, err := extensionManager.GetInstalled(extensions.FilterOptions{
 			Id: ext.Id,
 		})
 		if err != nil {

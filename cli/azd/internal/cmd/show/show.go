@@ -539,8 +539,12 @@ func showTypeFromLanguage(language project.ServiceLanguageKind) contracts.ShowTy
 		return contracts.ShowTypeNode
 	case project.ServiceLanguageJava:
 		return contracts.ShowTypeJava
+	case project.ServiceLanguageCustom:
+		return contracts.ShowTypeCustom
 	default:
-		panic(fmt.Sprintf("unknown language %s", language))
+		// Handle extension languages gracefully by returning a generic type
+		// Extension framework services will handle the actual operations
+		return contracts.ShowTypeNone
 	}
 }
 

@@ -112,7 +112,7 @@
                     "language": {
                         "type": "string",
                         "title": "Service implementation language",
-                        "enum": [
+                        "examples": [
                             "dotnet",
                             "csharp",
                             "fsharp",
@@ -142,6 +142,14 @@
                     "config": {
                         "type": "object",
                         "additionalProperties": true
+                    },
+                    "uses": {
+                        "type": "array",
+                        "title": "Dependencies on other services and resources",
+                        "description": "List of service names and resource names that this service depends on.",
+                        "items": {
+                            "type": "string"
+                        }
                     },
                     "hooks": {
                         "type": "object",
@@ -188,6 +196,16 @@
                                 "title": "post package hook",
                                 "description": "Runs after the service is deployment package is created",
                                 "$ref": "#/definitions/hooks"
+                            },
+                            "prepublish": {
+                                "title": "pre publish hook",
+                                "description": "Runs before the service is published",
+                                "$ref": "#/definitions/hooks"
+                            },
+                            "postpublish": {
+                                "title": "post publish hook",
+                                "description": "Runs after the service is published",
+                                "$ref": "#/definitions/hooks"
                             }
                         }
                     }
@@ -207,9 +225,6 @@
                                     "required": [
                                         "image"
                                     ],
-                                    "properties": {
-                                        "language": false
-                                    },
                                     "not": {
                                         "required": [
                                             "project"
@@ -261,8 +276,7 @@
                         },
                         "then": {
                             "required": [
-                                "project",
-                                "language"
+                                "project"
                             ],
                             "properties": {
                                 "docker": false
@@ -511,6 +525,16 @@
                     "description": "Runs after the `package` command",
                     "$ref": "#/definitions/hooks"
                 },
+                "prepublish": {
+                    "title": "pre publish hook",
+                    "description": "Runs before the `publish` command",
+                    "$ref": "#/definitions/hooks"
+                },
+                "postpublish": {
+                    "title": "post publish hook",
+                    "description": "Runs after the `publish` command",
+                    "$ref": "#/definitions/hooks"
+                },
                 "predeploy": {
                     "title": "pre deploy hook",
                     "description": "Runs before the `deploy` command",
@@ -536,6 +560,7 @@
         "requiredVersions": {
             "type": "object",
             "additionalProperties": false,
+            "description": "Optional. Provides additional configuration for required versions of `azd` and extensions.",
             "properties": {
                 "azd": {
                     "type": "string",
@@ -544,6 +569,21 @@
                     "examples": [
                         ">= 0.6.0-beta.3"
                     ]
+                },
+                "extensions": {
+                    "type": "object",
+                    "title": "A map of required extensions and version constraints for this project.",
+                    "description": "A map of required extensions and version constraints for this project. Supports semver constraints. If version is omitted the latest version will be installed.",
+                    "additionalProperties": {
+                        "type": "string",
+                        "examples": [
+                            "latest",
+                            ">=1.0.0",
+                            "~2.0.0",
+                            "=3.1.2",
+                            ">= 1.0.0 < 2.0.0"
+                        ]
+                    }
                 }
             }
         },

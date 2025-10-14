@@ -386,6 +386,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		func(
 			ctx context.Context,
 			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
+			alphaManager *alpha.FeatureManager,
 		) *lazy.Lazy[*project.ProjectConfig] {
 			return lazy.NewLazy(func() (*project.ProjectConfig, error) {
 				azdCtx, err := lazyAzdContext.GetValue()
@@ -396,6 +397,18 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 				projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
 				if err != nil {
 					return nil, err
+				}
+
+				featureCustomLanguage := alpha.MustFeatureKey("language.custom")
+				for sName, sConfig := range projectConfig.Services {
+					if sConfig.Language == project.ServiceLanguageCustom &&
+						!alphaManager.IsEnabled(featureCustomLanguage) {
+						return nil, fmt.Errorf(
+							"%s service is using language 'custom' (alpha) but it is not enabled.\n"+
+								"Please enable it using the command: \"%s\"",
+							sName,
+							alpha.GetEnableCommand(featureCustomLanguage))
+					}
 				}
 
 				return projectConfig, nil
@@ -726,6 +739,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		project.ServiceLanguageJava:       project.NewMavenProject,
 		project.ServiceLanguageDocker:     project.NewDockerProject,
 		project.ServiceLanguageSwa:        project.NewSwaProject,
+		project.ServiceLanguageCustom:     project.NewCustomProject,
 	}
 
 	for language, constructor := range frameworkServiceMap {
@@ -865,6 +879,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(grpcserver.NewWorkflowService)
 	container.MustRegisterSingleton(grpcserver.NewExtensionService)
 	container.MustRegisterSingleton(grpcserver.NewServiceTargetService)
+	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")

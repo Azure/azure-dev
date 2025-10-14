@@ -126,7 +126,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 			serviceConfig,
 			&ServicePackageResult{
 				PackagePath: "test-app/api-test:azd-deploy-0",
-				Details: &dockerPackageResult{
+				Details: &DockerPackageResult{
 					ImageHash:   "IMAGE_HASH",
 					TargetImage: "test-app/api-test:azd-deploy-0",
 				},
@@ -137,7 +137,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
-	require.IsType(t, new(dockerPackageResult), packageResult.Details)
+	require.IsType(t, new(DockerPackageResult), packageResult.Details)
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
 
@@ -186,7 +186,7 @@ func Test_AKS_Publish(t *testing.T) {
 			serviceConfig,
 			&ServicePackageResult{
 				PackagePath: "test-app/api-test:azd-deploy-0",
-				Details: &dockerPackageResult{
+				Details: &DockerPackageResult{
 					ImageHash:   "IMAGE_HASH",
 					TargetImage: "test-app/api-test:azd-deploy-0",
 				},
@@ -197,7 +197,7 @@ func Test_AKS_Publish(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
-	require.IsType(t, new(dockerPackageResult), packageResult.Details)
+	require.IsType(t, new(DockerPackageResult), packageResult.Details)
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
 

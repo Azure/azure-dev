@@ -23,10 +23,7 @@ This includes:
 Assuming 'azd' is in your path, run the following commands to install the extension for the first time:
 
 ```shell
-# first, you'll need to enable extensions
-azd config set alpha.extensions on
-
-# now we can install the coding-agent
+# install the coding-agent
 azd extension install azure.coding-agent
 ```
 
@@ -44,6 +41,22 @@ You can start the installation process, by typing the following in your terminal
 cd <azure dev project directory>
 azd coding-agent config
 ```
+
+## Troubleshooting
+
+### The managed identity doesn't have permissions to do 'x'
+
+By default, the `coding-agent` command assigns the Reader role to the created managed identity, scoped to the resource group that was created (or chosen). If you want to add more roles, or expand the scope to more resources you'll need to update the managed identity's assigned roles.
+
+Some further resources:
+
+- [Using the Azure portal to assign roles](https://learn.microsoft.com/azure/role-based-access-control/role-assignments-portal-managed-identity)
+- [Using the Azure CLI to assign roles](https://learn.microsoft.com/azure/role-based-access-control/role-assignments-cli)
+- [Azure built-in roles](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles)
+
+### An internal command is failing, but there's no command output
+
+Use the `--debug` command line option. This will make it so each command (and it's output) is printed to the console, which can give you a better idea of where the overall process is failing.
 
 ## Data Collection
 

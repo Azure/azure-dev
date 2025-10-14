@@ -204,6 +204,8 @@ func (sm *serviceManager) Initialize(ctx context.Context, serviceConfig *Service
 		}
 
 		sm.initialized[serviceConfig][frameworkService] = true
+	} else {
+		log.Printf("frameworkService already initialized for service: %s", serviceConfig.Name)
 	}
 
 	if ok := sm.isComponentInitialized(serviceConfig, serviceTarget); !ok {
@@ -594,13 +596,26 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 		serviceConfig.Language = ServiceLanguageDocker
 	}
 
+	log.Printf("Attempting to resolve language '%s' for service '%s'", serviceConfig.Language, serviceConfig.Name)
 	if err := sm.serviceLocator.ResolveNamed(string(serviceConfig.Language), &frameworkService); err != nil {
-		return nil, fmt.Errorf(
-			"failed to resolve language '%s' for service '%s', %w",
-			serviceConfig.Language,
-			serviceConfig.Name,
-			err,
-		)
+		log.Printf("Failed to resolve language '%s' from IoC container: %v", serviceConfig.Language, err)
+		// Try to resolve as external framework service from extensions
+		if errors.Is(err, ioc.ErrResolveInstance) {
+			// External framework services are not yet implemented
+			return nil, fmt.Errorf(
+				"language '%s' is not supported by built-in framework services and no extensions are currently providing it",
+				serviceConfig.Language,
+			)
+		} else {
+			return nil, fmt.Errorf(
+				"failed to resolve language '%s' for service '%s', %w",
+				serviceConfig.Language,
+				serviceConfig.Name,
+				err,
+			)
+		}
+	} else {
+		log.Printf("Successfully resolved language '%s' for service '%s'", serviceConfig.Language, serviceConfig.Name)
 	}
 
 	var compositeFramework CompositeFrameworkService

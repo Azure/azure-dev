@@ -156,6 +156,12 @@ func (c *AzdClient) ServiceTarget() ServiceTargetServiceClient {
 	return c.serviceTargetClient
 }
 
+// FrameworkService returns the framework service client.
+func (c *AzdClient) FrameworkService() FrameworkServiceClient {
+	// Create framework service client directly as it's not yet added to the client struct
+	return NewFrameworkServiceClient(c.connection)
+}
+
 func (c *AzdClient) extensionService() ExtensionServiceClient {
 	if c.extensionClient == nil {
 		c.extensionClient = NewExtensionServiceClient(c.connection)

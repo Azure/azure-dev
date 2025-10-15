@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/pkg/agents"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/azure/azure-dev/cli/azd/extensions/azure.foundry.ai.agents/internal/pkg/agents"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
 	"github.com/fatih/color"

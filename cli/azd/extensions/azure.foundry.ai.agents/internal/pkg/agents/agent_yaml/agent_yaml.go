@@ -13,14 +13,15 @@ import (
 // The specification includes metadata about the agent, model configuration, input parameters, expected outputs,
 // available tools, and template configurations for prompt rendering.
 type AgentDefinition struct {
-	Kind        string                 `json:"kind"`                  // Kind represented by the document
-	Name        string                 `json:"name"`                  // Human-readable name of the agent
-	Description string                 `json:"description,omitempty"` // Description of the agent's capabilities and purpose
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`    // Additional metadata including authors, tags, and other arbitrary properties
-	Model       Model                  `json:"model"`                 // Primary AI model configuration for the agent
-	InputSchema InputSchema            `json:"inputSchema,omitempty"` // Input parameters that participate in template rendering
-	OutputSchema OutputSchema          `json:"outputSchema,omitempty"` // Expected output format and structure from the agent
-	Tools       []Tool                 `json:"tools,omitempty"`       // Tools available to the agent for extended functionality
+	Kind         string                 `json:"kind"`                   // Kind represented by the document
+	Name         string                 `json:"name"`                   // Human-readable name of the agent
+	Description  string                 `json:"description,omitempty"`  // Description of the agent's capabilities and purpose
+	Instructions string                 `json:"instructions,omitempty"` // Give your agent clear directions on what to do and how to do it
+	Metadata     map[string]interface{} `json:"metadata,omitempty"`     // Additional metadata including authors, tags, and other arbitrary properties
+	Model        Model                  `json:"model"`                  // Primary AI model configuration for the agent
+	InputSchema  InputSchema            `json:"inputSchema,omitempty"`  // Input parameters that participate in template rendering
+	OutputSchema OutputSchema           `json:"outputSchema,omitempty"` // Expected output format and structure from the agent
+	Tools        []Tool                 `json:"tools,omitempty"`        // Tools available to the agent for extended functionality
 }
 
 // PromptAgent represents Prompt based agent definition. Used to create agents that can be executed directly.
@@ -67,7 +68,7 @@ type ContainerAgent struct {
 // (This notation is used elsewhere, but only the `param` scope is supported here)
 type AgentManifest struct {
 	Agent      AgentDefinition `json:"agent"`      // The agent that this manifest is based on
-	Models     []Model         `json:"models"`     // Additional models that are known to work with this prompt
+	// Models     []Model         `json:"models"`     // Additional models that are known to work with this prompt
 	Parameters []interface{}   `json:"parameters"` // Parameters for configuring the agent's behavior and execution
 }
 
@@ -390,11 +391,6 @@ func ValidateAgentManifest(manifest *AgentManifest) error {
 	}
 	if manifest.Agent.Model.Id == "" {
 		errors = append(errors, "agent.model.id is required")
-	}
-
-	// Validate at least one model is specified
-	if len(manifest.Models) == 0 {
-		errors = append(errors, "at least one model must be specified in models array")
 	}
 
 	if len(errors) > 0 {

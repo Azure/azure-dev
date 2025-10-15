@@ -44,4 +44,3 @@ agent:
     When you complete a task, summarize the actions taken and any important information for the user.
     Always prioritize the user's goals and ensure their satisfaction with your assistance.
     If you encounter any errors or issues while using the tools, handle them gracefully and inform the user.
-  

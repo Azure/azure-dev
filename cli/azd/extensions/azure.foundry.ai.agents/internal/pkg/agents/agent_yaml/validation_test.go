@@ -24,11 +24,6 @@ func TestValidateAgentManifest(t *testing.T) {
 						Id: "gpt-4",
 					},
 				},
-				Models: []Model{
-					{
-						Id: "gpt-4",
-					},
-				},
 			},
 			expectValid: true,
 		},
@@ -41,7 +36,6 @@ func TestValidateAgentManifest(t *testing.T) {
 						Id: "gpt-4",
 					},
 				},
-				Models: []Model{{Id: "gpt-4"}},
 			},
 			expectValid: false,
 			errorSubstr: "agent.name is required",
@@ -55,7 +49,6 @@ func TestValidateAgentManifest(t *testing.T) {
 						Id: "gpt-4",
 					},
 				},
-				Models: []Model{{Id: "gpt-4"}},
 			},
 			expectValid: false,
 			errorSubstr: "agent.kind is required",
@@ -68,23 +61,9 @@ func TestValidateAgentManifest(t *testing.T) {
 					Kind: "prompt",
 					Model: Model{},
 				},
-				Models: []Model{{Id: "gpt-4"}},
 			},
 			expectValid: false,
 			errorSubstr: "agent.model.id is required",
-		},
-		{
-			name: "Empty models array",
-			manifest: &AgentManifest{
-				Agent: AgentDefinition{
-					Name: "Test Agent",
-					Kind: "prompt",
-					Model: Model{Id: "gpt-4"},
-				},
-				Models: []Model{},
-			},
-			expectValid: false,
-			errorSubstr: "at least one model must be specified",
 		},
 	}
 

@@ -228,19 +228,20 @@ func newConfigCommand() *cobra.Command {
 			repoSlug,
 		)
 
+		managedIdentityPortalURL := formatPortalLinkForManagedIdentity(tenantID, subscriptionID, authConfig.ResourceGroup, authConfig.Name)
+
 		fmt.Println("")
 		fmt.Println(output.WithHighLightFormat("(!)"))
 		fmt.Println(output.WithHighLightFormat("(!) NOTE: Some tasks must still be completed, manually:"))
 		fmt.Println(output.WithHighLightFormat("(!)"))
 		fmt.Println("")
 		fmt.Printf("1. The branch created at %s/%s must be merged to %s/main\n", remote, flagValues.BranchName, repoSlug)
-		fmt.Printf("2. Visit '%s' and update the \"MCP configuration\" field with this JSON:\n\n", codingAgentURL)
+		fmt.Printf("2. Configure Copilot coding agent's managed identity roles in the Azure portal: %s\n", managedIdentityPortalURL)
+		fmt.Printf("3. Visit '%s' and update the \"MCP configuration\" field with this JSON:\n\n", codingAgentURL)
 
 		fmt.Println(mcpJson)
 
-		managedIdentityPortalURL := formatPortalLinkForManagedIdentity(tenantID, subscriptionID, authConfig.ResourceGroup, authConfig.Name)
-
-		if err := openBrowserWindows(ctx, promptClient, defaultGitHubCLI, codingAgentURL, managedIdentityPortalURL, authConfig.Name, gitRepoRoot); err != nil {
+		if err := openBrowserWindows(ctx, promptClient, defaultGitHubCLI, codingAgentURL, gitRepoRoot); err != nil {
 			return err
 		}
 
@@ -254,8 +255,6 @@ func openBrowserWindows(ctx context.Context,
 	prompter azdext.PromptServiceClient,
 	githubCLI *azd_tools_github.Cli,
 	codingAgentURL string,
-	managedIdentityPortalURL string,
-	managedIdentityName string,
 	gitRepoRoot string) error {
 	resp, err := prompter.Confirm(ctx, &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
@@ -278,7 +277,7 @@ func openBrowserWindows(ctx context.Context,
 		githubCLI.BinaryPath(),
 		"pr", "create",
 		"--title", "Updating/adding copilot-setup-steps.yaml to enable the Copilot coding agent to access Azure",
-		"--body", fmt.Sprintf(prBodyMD, codingAgentURL, mcpJson, managedIdentityName, managedIdentityPortalURL),
+		"--body", fmt.Sprintf(prBodyMD, codingAgentURL, mcpJson),
 		"--web")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

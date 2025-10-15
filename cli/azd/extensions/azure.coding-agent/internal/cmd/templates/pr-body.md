@@ -15,8 +15,6 @@ the following JSON to activate the Azure MCP server:
 
 By default, the identity is configured with the Reader role, on the resource group you created/selected. You can expand the role and scope for the identity, to fit better with your needs:
 
-The managed identity used for the Copilot coding agent is available here: ([%s in portal.azure.com](%s)).
-
 Some further instructions on how to assign roles:
 
 - [Using the Azure portal to assign roles](https://learn.microsoft.com/azure/role-based-access-control/role-assignments-portal-managed-identity)

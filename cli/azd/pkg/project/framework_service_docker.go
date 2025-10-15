@@ -316,7 +316,7 @@ func (p *dockerProject) Build(
 			Title:        "Docker Output",
 		})
 
-	defaultPathForDockerfile := dockerOptions.Path
+	dockerFilePath := dockerOptions.Path
 	if dockerOptions.InMemDockerfile != nil {
 		// when using an in-memory dockerfile, we write it to a temp file and use that path for the build
 		tempDir, err := os.MkdirTemp("", "dockerfile-for-"+serviceConfig.Name)
@@ -324,12 +324,12 @@ func (p *dockerProject) Build(
 			return nil, fmt.Errorf("creating temp dir for dockerfile for service %s: %w", serviceConfig.Name, err)
 		}
 		// use the name of the original dockerfile path
-		dockerfilePath = filepath.Join(tempDir, filepath.Base(defaultPathForDockerfile))
+		dockerfilePath = filepath.Join(tempDir, filepath.Base(dockerFilePath))
 		err = os.WriteFile(dockerfilePath, dockerOptions.InMemDockerfile, osutil.PermissionFileOwnerOnly)
 		if err != nil {
 			return nil, fmt.Errorf("writing dockerfile for service %s: %w", serviceConfig.Name, err)
 		}
-		defaultPathForDockerfile = dockerfilePath
+		dockerFilePath = dockerfilePath
 
 		log.Println("using in-memory dockerfile for build", dockerfilePath)
 
@@ -344,7 +344,7 @@ func (p *dockerProject) Build(
 	imageId, err := p.docker.Build(
 		ctx,
 		serviceConfig.Path(),
-		defaultPathForDockerfile,
+		dockerFilePath,
 		dockerOptions.Platform,
 		dockerOptions.Target,
 		dockerOptions.Context,

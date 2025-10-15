@@ -331,7 +331,7 @@ func (ai *DotNetImporter) Services(
 			// If the dockerfile is not in disk, it could have been manually deleted (after infra gen) or
 			// infra gen was never run. In any case, use the in-memory generated dockerfile to build the container.
 			var inMemDockerfile []byte
-			if _, err := os.Stat(bContainer.Build.Dockerfile); os.IsNotExist(err) {
+			if _, err := os.Stat(bContainer.Build.Dockerfile); errors.Is(err, os.ErrNotExist) {
 				// write file in the temp folder
 				fileName := filepath.Base(bContainer.Build.Dockerfile)
 				// read content from memory fs in the manifest

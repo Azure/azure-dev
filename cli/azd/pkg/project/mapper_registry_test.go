@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -334,4 +335,212 @@ func TestFromProtoResourceConfigMapping(t *testing.T) {
 	emptyStorageProps, ok := resourceConfigEmpty.Props.(StorageProps)
 	require.True(t, ok, "Expected StorageProps but got %T", resourceConfigEmpty.Props)
 	require.Empty(t, emptyStorageProps.Containers)
+}
+
+func TestServiceContextMapping(t *testing.T) {
+	// Mappings are already registered via init() in mapper_registry.go
+
+	// Create a sample project ServiceContext
+	projectContext := ServiceContext{
+		Restore: ArtifactCollection{
+			{
+				Kind:         ArtifactKindConfig,
+				Location:     "/tmp/restored.txt",
+				LocationKind: LocationKindLocal,
+				Metadata:     map[string]string{"type": "dependencies"},
+			},
+		},
+		Build: ArtifactCollection{
+			{
+				Kind:         ArtifactKindContainer,
+				Location:     "my-app:latest",
+				LocationKind: LocationKindLocal,
+				Metadata:     map[string]string{"type": "docker"},
+			},
+		},
+		Package: ArtifactCollection{
+			{
+				Kind:         ArtifactKindContainer,
+				Location:     "registry.azurecr.io/my-app:v1.0.0",
+				LocationKind: LocationKindRemote,
+				Metadata:     map[string]string{"registry": "azurecr.io"},
+			},
+		},
+		Publish: make(ArtifactCollection, 0),
+		Deploy: ArtifactCollection{
+			{
+				Kind:         ArtifactKindResource,
+				Location:     "/subscriptions/123/resourceGroups/rg/providers/Microsoft.ContainerInstance/containerGroups/my-app",
+				LocationKind: LocationKindRemote,
+				Metadata:     map[string]string{"resourceGroup": "rg"},
+			},
+		},
+	}
+
+	t.Run("project.ServiceContext -> azdext.ServiceContext", func(t *testing.T) {
+		// Convert to azdext.ServiceContext
+		var protoContext *azdext.ServiceContext
+		err := mapper.Convert(&projectContext, &protoContext)
+		require.NoError(t, err)
+		require.NotNil(t, protoContext)
+
+		// Verify the conversion
+		assert.Len(t, protoContext.Restore, 1)
+		assert.Equal(t, "dependencies", protoContext.Restore[0].Metadata["type"])
+		assert.Equal(t, "/tmp/restored.txt", protoContext.Restore[0].Location)
+
+		assert.Len(t, protoContext.Build, 1)
+		assert.Equal(t, "docker", protoContext.Build[0].Metadata["type"])
+		assert.Equal(t, "my-app:latest", protoContext.Build[0].Location)
+
+		assert.Len(t, protoContext.Package, 1)
+		assert.Equal(t, "azurecr.io", protoContext.Package[0].Metadata["registry"])
+		assert.Equal(t, "registry.azurecr.io/my-app:v1.0.0", protoContext.Package[0].Location)
+
+		assert.Len(t, protoContext.Publish, 0)
+
+		assert.Len(t, protoContext.Deploy, 1)
+		assert.Equal(t, "rg", protoContext.Deploy[0].Metadata["resourceGroup"])
+		assert.Equal(t, "/subscriptions/123/resourceGroups/rg/providers/Microsoft.ContainerInstance/containerGroups/my-app", protoContext.Deploy[0].Location)
+	})
+
+	t.Run("azdext.ServiceContext -> project.ServiceContext", func(t *testing.T) {
+		// Create azdext.ServiceContext
+		protoContext := &azdext.ServiceContext{
+			Restore: []*azdext.Artifact{
+				{
+					Kind:         string(ArtifactKindConfig),
+					Location:     "/tmp/deps.txt",
+					LocationKind: string(LocationKindLocal),
+					Metadata:     map[string]string{"restored": "true"},
+				},
+			},
+			Build: []*azdext.Artifact{
+				{
+					Kind:         string(ArtifactKindContainer),
+					Location:     "test-image:latest",
+					LocationKind: string(LocationKindLocal),
+					Metadata:     map[string]string{"built": "true"},
+				},
+			},
+			Package: []*azdext.Artifact{},
+			Publish: []*azdext.Artifact{
+				{
+					Kind:         string(ArtifactKindContainer),
+					Location:     "registry.azurecr.io/test-image:v2.0.0",
+					LocationKind: string(LocationKindRemote),
+					Metadata:     map[string]string{"published": "true"},
+				},
+			},
+			Deploy: []*azdext.Artifact{
+				{
+					Kind:         string(ArtifactKindResource),
+					Location:     "/subscriptions/456/resourceGroups/test-rg/providers/Microsoft.Web/sites/test-app",
+					LocationKind: string(LocationKindRemote),
+					Metadata:     map[string]string{"deployed": "true"},
+				},
+			},
+		}
+
+		// Convert to project.ServiceContext
+		var resultContext *ServiceContext
+		err := mapper.Convert(protoContext, &resultContext)
+		require.NoError(t, err)
+		require.NotNil(t, resultContext)
+
+		// Verify the conversion
+		assert.Len(t, resultContext.Restore, 1)
+		assert.Equal(t, "true", resultContext.Restore[0].Metadata["restored"])
+		assert.Equal(t, "/tmp/deps.txt", resultContext.Restore[0].Location)
+
+		assert.Len(t, resultContext.Build, 1)
+		assert.Equal(t, "true", resultContext.Build[0].Metadata["built"])
+		assert.Equal(t, "test-image:latest", resultContext.Build[0].Location)
+
+		assert.Len(t, resultContext.Package, 0)
+
+		assert.Len(t, resultContext.Publish, 1)
+		assert.Equal(t, "true", resultContext.Publish[0].Metadata["published"])
+		assert.Equal(t, "registry.azurecr.io/test-image:v2.0.0", resultContext.Publish[0].Location)
+
+		assert.Len(t, resultContext.Deploy, 1)
+		assert.Equal(t, "true", resultContext.Deploy[0].Metadata["deployed"])
+		assert.Equal(t, "/subscriptions/456/resourceGroups/test-rg/providers/Microsoft.Web/sites/test-app", resultContext.Deploy[0].Location)
+	})
+
+	t.Run("round-trip mapping", func(t *testing.T) {
+		// Start with project context, convert to proto, then back to project
+
+		// Project -> Proto
+		var protoContext *azdext.ServiceContext
+		err := mapper.Convert(&projectContext, &protoContext)
+		require.NoError(t, err)
+
+		// Proto -> Project
+		var roundTripContext *ServiceContext
+		err = mapper.Convert(protoContext, &roundTripContext)
+		require.NoError(t, err)
+		require.NotNil(t, roundTripContext)
+
+		// Verify round-trip integrity
+		assert.Len(t, roundTripContext.Restore, len(projectContext.Restore))
+		assert.Len(t, roundTripContext.Build, len(projectContext.Build))
+		assert.Len(t, roundTripContext.Package, len(projectContext.Package))
+		assert.Len(t, roundTripContext.Publish, len(projectContext.Publish))
+		assert.Len(t, roundTripContext.Deploy, len(projectContext.Deploy))
+
+		// Check specific artifact integrity
+		if len(roundTripContext.Build) > 0 && len(projectContext.Build) > 0 {
+			assert.Equal(t, projectContext.Build[0].Kind, roundTripContext.Build[0].Kind)
+			assert.Equal(t, projectContext.Build[0].Location, roundTripContext.Build[0].Location)
+			assert.Equal(t, projectContext.Build[0].LocationKind, roundTripContext.Build[0].LocationKind)
+			assert.Equal(t, projectContext.Build[0].Metadata["type"], roundTripContext.Build[0].Metadata["type"])
+		}
+	})
+}
+
+func TestArtifactListMapping(t *testing.T) {
+	// Mappings are already registered via init() in mapper_registry.go
+
+	t.Run("ArtifactCollection -> ArtifactList", func(t *testing.T) {
+		collection := ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     "/tmp/test.txt",
+				LocationKind: LocationKindLocal,
+				Metadata:     map[string]string{"test": "value"},
+			},
+		}
+
+		var artifactList *azdext.ArtifactList
+		err := mapper.Convert(collection, &artifactList)
+		require.NoError(t, err)
+		require.NotNil(t, artifactList)
+
+		assert.Len(t, artifactList.Artifacts, 1)
+		assert.Equal(t, "value", artifactList.Artifacts[0].Metadata["test"])
+		assert.Equal(t, "/tmp/test.txt", artifactList.Artifacts[0].Location)
+	})
+
+	t.Run("ArtifactList -> ArtifactCollection", func(t *testing.T) {
+		artifactList := &azdext.ArtifactList{
+			Artifacts: []*azdext.Artifact{
+				{
+					Kind:         string(ArtifactKindContainer),
+					Location:     "test:latest",
+					LocationKind: string(LocationKindLocal),
+					Metadata:     map[string]string{"image": "test"},
+				},
+			},
+		}
+
+		var collection ArtifactCollection
+		err := mapper.Convert(artifactList, &collection)
+		require.NoError(t, err)
+
+		assert.Len(t, collection, 1)
+		assert.Equal(t, "test", collection[0].Metadata["image"])
+		assert.Equal(t, "test:latest", collection[0].Location)
+		assert.Equal(t, ArtifactKindContainer, collection[0].Kind)
+	})
 }

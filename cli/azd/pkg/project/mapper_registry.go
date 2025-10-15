@@ -54,8 +54,7 @@ func registerProjectMappings() {
 		artifacts := make([]*azdext.Artifact, len(src))
 		for i, artifact := range src {
 			var proto *azdext.Artifact
-			m := mapper.WithResolver(nil)
-			if err := m.Convert(artifact, &proto); err != nil {
+			if err := mapper.Convert(artifact, &proto); err != nil {
 				return nil, err
 			}
 			artifacts[i] = proto
@@ -68,8 +67,7 @@ func registerProjectMappings() {
 		artifacts := make(ArtifactCollection, len(src))
 		for i, protoArtifact := range src {
 			var artifact Artifact
-			m := mapper.WithResolver(nil)
-			if err := m.Convert(protoArtifact, &artifact); err != nil {
+			if err := mapper.Convert(protoArtifact, &artifact); err != nil {
 				return nil, err
 			}
 			artifacts[i] = artifact
@@ -164,8 +162,7 @@ func registerProjectMappings() {
 		artifacts := make([]*azdext.Artifact, len(src.Artifacts))
 		for i, artifact := range src.Artifacts {
 			var proto *azdext.Artifact
-			m := mapper.WithResolver(nil)
-			if err := m.Convert(artifact, &proto); err != nil {
+			if err := mapper.Convert(artifact, &proto); err != nil {
 				return nil, err
 			}
 			artifacts[i] = proto
@@ -173,13 +170,14 @@ func registerProjectMappings() {
 		return &azdext.ServicePackageResult{
 			Artifacts: artifacts,
 		}, nil
-	}) // ServicePublishResult -> proto ServicePublishResult conversion
+	})
+
+	// ServicePublishResult -> proto ServicePublishResult conversion
 	mapper.MustRegister(func(ctx context.Context, src ServicePublishResult) (*azdext.ServicePublishResult, error) {
 		artifacts := make([]*azdext.Artifact, len(src.Artifacts))
 		for i, artifact := range src.Artifacts {
 			var proto *azdext.Artifact
-			m := mapper.WithResolver(nil)
-			if err := m.Convert(artifact, &proto); err != nil {
+			if err := mapper.Convert(artifact, &proto); err != nil {
 				return nil, err
 			}
 			artifacts[i] = proto
@@ -357,8 +355,7 @@ func registerProjectMappings() {
 		// Convert artifacts
 		for _, protoArtifact := range src.Artifacts {
 			var artifact Artifact
-			m := mapper.WithResolver(nil)
-			if err := m.Convert(protoArtifact, &artifact); err != nil {
+			if err := mapper.Convert(protoArtifact, &artifact); err != nil {
 				return nil, err
 			}
 			if err := result.Artifacts.Add(artifact); err != nil {
@@ -384,8 +381,7 @@ func registerProjectMappings() {
 		// Convert artifacts
 		for _, protoArtifact := range src.Artifacts {
 			var artifact Artifact
-			m := mapper.WithResolver(nil)
-			if err := m.Convert(protoArtifact, &artifact); err != nil {
+			if err := mapper.Convert(protoArtifact, &artifact); err != nil {
 				return nil, err
 			}
 			if err := result.Artifacts.Add(artifact); err != nil {
@@ -409,8 +405,7 @@ func registerProjectMappings() {
 		// Convert artifacts
 		for _, artifact := range src.Artifacts {
 			var proto *azdext.Artifact
-			m := mapper.WithResolver(nil)
-			if err := m.Convert(artifact, &proto); err != nil {
+			if err := mapper.Convert(artifact, &proto); err != nil {
 				return nil, err
 			}
 			protoResult.Artifacts = append(protoResult.Artifacts, proto)
@@ -434,8 +429,7 @@ func registerProjectMappings() {
 		// Convert artifacts
 		for _, protoArtifact := range src.Artifacts {
 			var artifact Artifact
-			m := mapper.WithResolver(nil)
-			if err := m.Convert(protoArtifact, &artifact); err != nil {
+			if err := mapper.Convert(protoArtifact, &artifact); err != nil {
 				return nil, err
 			}
 			if err := result.Artifacts.Add(artifact); err != nil {
@@ -478,6 +472,127 @@ func registerProjectMappings() {
 		}
 
 		return artifact, nil
+	})
+
+	// ServiceContext bi-directional mappings
+	mapper.MustRegister(func(ctx context.Context, src *ServiceContext) (*azdext.ServiceContext, error) {
+		if src == nil {
+			return &azdext.ServiceContext{}, nil
+		}
+
+		result := &azdext.ServiceContext{}
+
+		// Convert ArtifactCollection fields to []*Artifact using existing mappers
+
+		if len(src.Restore) > 0 {
+			if err := mapper.Convert(src.Restore, &result.Restore); err != nil {
+				return nil, fmt.Errorf("failed to convert Restore artifacts: %w", err)
+			}
+		}
+
+		if len(src.Build) > 0 {
+			if err := mapper.Convert(src.Build, &result.Build); err != nil {
+				return nil, fmt.Errorf("failed to convert Build artifacts: %w", err)
+			}
+		}
+
+		if len(src.Package) > 0 {
+			if err := mapper.Convert(src.Package, &result.Package); err != nil {
+				return nil, fmt.Errorf("failed to convert Package artifacts: %w", err)
+			}
+		}
+
+		if len(src.Publish) > 0 {
+			if err := mapper.Convert(src.Publish, &result.Publish); err != nil {
+				return nil, fmt.Errorf("failed to convert Publish artifacts: %w", err)
+			}
+		}
+
+		if len(src.Deploy) > 0 {
+			if err := mapper.Convert(src.Deploy, &result.Deploy); err != nil {
+				return nil, fmt.Errorf("failed to convert Deploy artifacts: %w", err)
+			}
+		}
+
+		return result, nil
+	})
+
+	mapper.MustRegister(func(ctx context.Context, src *azdext.ServiceContext) (*ServiceContext, error) {
+		if src == nil {
+			return &ServiceContext{}, nil
+		}
+
+		result := &ServiceContext{
+			Restore: make(ArtifactCollection, 0),
+			Build:   make(ArtifactCollection, 0),
+			Package: make(ArtifactCollection, 0),
+			Publish: make(ArtifactCollection, 0),
+			Deploy:  make(ArtifactCollection, 0),
+		}
+
+		// Convert []*Artifact fields to ArtifactCollection using existing mappers
+
+		if len(src.Restore) > 0 {
+			if err := mapper.Convert(src.Restore, &result.Restore); err != nil {
+				return nil, fmt.Errorf("failed to convert Restore artifacts: %w", err)
+			}
+		}
+
+		if len(src.Build) > 0 {
+			if err := mapper.Convert(src.Build, &result.Build); err != nil {
+				return nil, fmt.Errorf("failed to convert Build artifacts: %w", err)
+			}
+		}
+
+		if len(src.Package) > 0 {
+			if err := mapper.Convert(src.Package, &result.Package); err != nil {
+				return nil, fmt.Errorf("failed to convert Package artifacts: %w", err)
+			}
+		}
+
+		if len(src.Publish) > 0 {
+			if err := mapper.Convert(src.Publish, &result.Publish); err != nil {
+				return nil, fmt.Errorf("failed to convert Publish artifacts: %w", err)
+			}
+		}
+
+		if len(src.Deploy) > 0 {
+			if err := mapper.Convert(src.Deploy, &result.Deploy); err != nil {
+				return nil, fmt.Errorf("failed to convert Deploy artifacts: %w", err)
+			}
+		}
+
+		// Handle Extras map - convert ArtifactList to ArtifactCollection
+		// Note: project.ServiceContext doesn't have an Extras field, so we skip this
+		// for now. This is an escape hatch for provider-specific phases.
+
+		return result, nil
+	})
+
+	// ArtifactList bi-directional mappings for completeness
+	mapper.MustRegister(func(ctx context.Context, src ArtifactCollection) (*azdext.ArtifactList, error) {
+		result := &azdext.ArtifactList{}
+
+		if len(src) > 0 {
+			if err := mapper.Convert(src, &result.Artifacts); err != nil {
+				return nil, fmt.Errorf("failed to convert ArtifactCollection: %w", err)
+			}
+		}
+
+		return result, nil
+	})
+
+	mapper.MustRegister(func(ctx context.Context, src *azdext.ArtifactList) (ArtifactCollection, error) {
+		if src == nil || len(src.Artifacts) == 0 {
+			return make(ArtifactCollection, 0), nil
+		}
+
+		var result ArtifactCollection
+		if err := mapper.Convert(src.Artifacts, &result); err != nil {
+			return ArtifactCollection{}, fmt.Errorf("failed to convert azdext artifacts: %w", err)
+		}
+
+		return result, nil
 	})
 }
 

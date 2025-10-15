@@ -237,6 +237,15 @@ const (
 	PackBuilderTag = attribute.Key("pack.builder.tag")
 )
 
+// Mcp related fields
+const (
+	// The name of the MCP client.
+	McpClientName = attribute.Key("mcp.client.name")
+
+	// The version of the MCP client.
+	McpClientVersion = attribute.Key("mcp.client.version")
+)
+
 // Initialization from app related fields
 const (
 	InitMethod = attribute.Key("init.method")

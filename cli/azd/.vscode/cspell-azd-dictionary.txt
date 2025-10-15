@@ -52,6 +52,7 @@ azfile
 azruntime
 azsdk
 azureai
+azureaiagent
 AZURECLI
 azurecodingagent
 azureedge
@@ -112,6 +113,7 @@ envlist
 envname
 envsubst
 errcheck
+Errorf
 errorinfo
 errorlint
 eventhub
@@ -159,6 +161,7 @@ mgmt
 mgutz
 microsoftonline
 missingkey
+mmcp
 moby
 mockarmresources
 mockazcli

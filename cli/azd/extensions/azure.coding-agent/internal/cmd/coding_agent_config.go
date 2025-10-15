@@ -51,11 +51,12 @@ var prBodyMD string
 const copilotEnv = "copilot"
 
 type flagValues struct {
-	Debug          bool
-	RepoSlug       string
-	RoleNames      []string
-	BranchName     string
-	GitHubHostName string
+	Debug               bool
+	ManagedIdentityName string
+	RepoSlug            string
+	RoleNames           []string
+	BranchName          string
+	GitHubHostName      string
 }
 
 func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
@@ -82,6 +83,13 @@ func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
 		"branch-name",
 		"azd-enable-copilot-coding-agent-with-azure",
 		"The branch name to use when pushing changes to the copilot-setup-steps.yml",
+	)
+
+	commandFlags.StringVar(
+		&flagValues.ManagedIdentityName,
+		"managed-identity-name",
+		"mi-copilot-coding-agent",
+		"The name to use for the managed identity, if created.",
 	)
 
 	commandFlags.StringVar(
@@ -129,13 +137,6 @@ func newConfigCommand() *cobra.Command {
 
 		promptClient := azdClient.Prompt()
 
-		// Get the azd project to retrieve the project path
-		getProjectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-
-		if err != nil {
-			return fmt.Errorf("failed to get azd project: %w", err)
-		}
-
 		if err := loginToGitHubIfNeeded(ctx, flagValues.GitHubHostName, newCommandRunner, newGitHubCLI); err != nil {
 			return fmt.Errorf("failed to log in to GitHub. Login manually using `gh auth login`: %w", err)
 		}
@@ -177,7 +178,7 @@ func newConfigCommand() *cobra.Command {
 		}
 
 		gitCLI := newInternalGitCLI(defaultCommandRunner)
-		gitRepoRoot, err := gitCLI.GetRepoRoot(ctx, getProjectResponse.Project.Path)
+		gitRepoRoot, err := gitCLI.GetRepoRoot(ctx, ".")
 
 		if err != nil {
 			return fmt.Errorf("failed to get git repository root: %w", err)
@@ -194,7 +195,7 @@ func newConfigCommand() *cobra.Command {
 			&msiService,
 			entraIDService,
 			rgClient,
-			getProjectResponse.Project.Name, subscriptionID, flagValues.RoleNames)
+			flagValues.ManagedIdentityName, subscriptionID, flagValues.RoleNames)
 
 		if err != nil {
 			return err
@@ -228,10 +229,16 @@ func newConfigCommand() *cobra.Command {
 			repoSlug,
 		)
 
+		managedIdentityPortalURL := formatPortalLinkForManagedIdentity(tenantID, subscriptionID, authConfig.ResourceGroup, authConfig.Name)
+
 		fmt.Println("")
+		fmt.Println(output.WithHighLightFormat("(!)"))
 		fmt.Println(output.WithHighLightFormat("(!) NOTE: Some tasks must still be completed, manually:"))
+		fmt.Println(output.WithHighLightFormat("(!)"))
+		fmt.Println("")
 		fmt.Printf("1. The branch created at %s/%s must be merged to %s/main\n", remote, flagValues.BranchName, repoSlug)
-		fmt.Printf("2. Visit '%s' and update the \"MCP configuration\" field with this JSON:\n\n", codingAgentURL)
+		fmt.Printf("2. Configure Copilot coding agent's managed identity roles in the Azure portal: %s\n", managedIdentityPortalURL)
+		fmt.Printf("3. Visit '%s' and update the \"MCP configuration\" field with this JSON:\n\n", codingAgentURL)
 
 		fmt.Println(mcpJson)
 
@@ -246,8 +253,10 @@ func newConfigCommand() *cobra.Command {
 }
 
 func openBrowserWindows(ctx context.Context,
-	prompter azdext.PromptServiceClient, githubCLI *azd_tools_github.Cli,
-	codingAgentURL string, gitRepoRoot string) error {
+	prompter azdext.PromptServiceClient,
+	githubCLI *azd_tools_github.Cli,
+	codingAgentURL string,
+	gitRepoRoot string) error {
 	resp, err := prompter.Confirm(ctx, &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
 			Message:      "Open browser window to create a pull request?",
@@ -324,7 +333,7 @@ func promptForRepoSlug(ctx context.Context,
 
 	resp, err := promptClient.Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: "Which git repository will use the Copilot coding agent?",
+			Message: "Which GitHub repository will use the Copilot coding agent?",
 			Choices: choices,
 		},
 	})
@@ -476,7 +485,7 @@ func pickOrCreateMSI(ctx context.Context,
 	msiService azdMSIService,
 	entraIDService entraid.EntraIdService,
 	resourceService resourceService,
-	projectName string, subscriptionId string, roleNames []string) (*authConfiguration, error) {
+	identityName string, subscriptionId string, roleNames []string) (*authConfiguration, error) {
 
 	// ************************** Pick or create a new MSI **************************
 
@@ -548,8 +557,6 @@ func pickOrCreateMSI(ctx context.Context,
 			resourceGroupName = rgName
 		}
 
-		identityName := "msi-copilot-" + projectName
-
 		taskList.AddTask(ux.TaskOptions{
 			Title: fmt.Sprintf("Creating User Managed Identity (MSI) '%s'", identityName),
 			Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
@@ -593,7 +600,7 @@ func pickOrCreateMSI(ctx context.Context,
 
 		selectedOption, err := prompter.Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
-				Message: "Select an existing User Managed Identity (MSI) to use:",
+				Message: "Select an existing User Managed Identity (MSI) to use",
 				Choices: choices,
 			},
 		})
@@ -644,6 +651,8 @@ func pickOrCreateMSI(ctx context.Context,
 	}
 
 	return &authConfiguration{
+		Name:           *managedIdentity.Name,
+		ResourceGroup:  parsedID.ResourceGroupName,
 		TenantId:       *managedIdentity.Properties.TenantID,
 		SubscriptionId: subscriptionId,
 		ResourceID:     *managedIdentity.ID,
@@ -689,6 +698,8 @@ func promptForResourceGroup(ctx context.Context,
 }
 
 type authConfiguration struct {
+	Name           string
+	ResourceGroup  string
 	ClientId       string
 	SubscriptionId string
 	TenantId       string
@@ -888,4 +899,13 @@ func (cli *internalGitCLI) ListRemotes(ctx context.Context, gitRepoRoot string) 
 
 	remotes := strings.Split(strings.TrimSpace(runResult.Stdout), "\n")
 	return remotes, nil
+}
+
+// formatPortalLinkForManagedIdentity takes you to the Azure portal blade, for your managed identity, that lets you see its role assignments.
+func formatPortalLinkForManagedIdentity(tenantID string, subscriptionID string, resourceGroupName string, managedIdentityName string) string {
+	return fmt.Sprintf("https://portal.azure.com/#@%s/resource/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s/azure_resources",
+		tenantID,
+		subscriptionID,
+		resourceGroupName,
+		managedIdentityName)
 }

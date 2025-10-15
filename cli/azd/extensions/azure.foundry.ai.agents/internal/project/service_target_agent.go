@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/pkg/agents"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
@@ -194,12 +195,12 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, fmt.Errorf("failed to read YAML file: %w", err)
 	}
 
-	var agentConfigDetails AgentYAMLConfig
+	var agentConfigDetails agents.AgentYAMLConfig
 	isHosted := false
 	if err := yaml.Unmarshal(data, &agentConfigDetails); err != nil {
 		return nil, fmt.Errorf("failed to parse YAML: %w", err)
 	}
-	if AgentKind(agentConfigDetails.Kind) == AgentKindHosted {
+	if agents.AgentKind(agentConfigDetails.Kind) == agents.AgentKindHosted {
 		isHosted = true
 	}
 
@@ -220,7 +221,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	}
 
 	// Parse agent YAML to get agent config for logging and request creation
-	agentConfig, err := parseAgentYAML(agentYAMLPath)
+	agentConfig, err := agents.ParseAgentYAML(agentYAMLPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse agent YAML: %w", err)
 	}
@@ -235,7 +236,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentConfig.Name)
 
-	request, err := agentRequest(agentYAMLPath, fullImageURL)
+	request, err := agents.CreateAgentRequestFromYAML(agentYAMLPath, fullImageURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent request: %w", err)
 	}
@@ -252,7 +253,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	fmt.Fprintf(os.Stderr, "Description: %s\n", description)
 
 	// Display agent-specific information
-	if promptDef, ok := request.Definition.(PromptAgentDefinition); ok {
+	if promptDef, ok := request.Definition.(agents.PromptAgentDefinition); ok {
 		fmt.Fprintf(os.Stderr, "Model: %s\n", promptDef.ModelName)
 		instructions := "No instructions"
 		if promptDef.Instructions != nil {
@@ -264,7 +265,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 			}
 		}
 		fmt.Fprintf(os.Stderr, "Instructions: %s\n", instructions)
-	} else if hostedDef, ok := request.Definition.(HostedAgentDefinition); ok {
+	} else if hostedDef, ok := request.Definition.(agents.HostedAgentDefinition); ok {
 		isHosted = true
 		fmt.Fprintf(os.Stderr, "Image: %s\n", hostedDef.Image)
 		fmt.Fprintf(os.Stderr, "CPU: %s\n", hostedDef.CPU)
@@ -274,7 +275,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	fmt.Fprintln(os.Stderr)
 
 	// Create agent
-	agentResponse, err := createAgent(ctx, "2025-05-15-preview", request, cred, azdEnv)
+	agentResponse, err := agents.CreateAgent(ctx, "2025-05-15-preview", request, cred, azdEnv)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent: %w", err)
 	}
@@ -356,7 +357,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	maxReplicasInt32 := *maxReplicas
 
 	// Start agent container
-	operation, err := startAgentContainer(
+	operation, err := agents.StartAgentContainer(
 		ctx, *apiVersion, agentResponse.Name, agentResponse.Version, &minReplicasInt32, &maxReplicasInt32, azdEnv, cred)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start agent container: %w", err)
@@ -366,7 +367,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	// Wait for operation to complete if requested
 	if *waitForReady {
-		completedOperation, err := waitForOperationComplete(
+		completedOperation, err := agents.WaitForOperationComplete(
 			ctx, *apiVersion, agentResponse.Name, operation.Body.ID, *maxWaitTime, azdEnv, cred)
 		if err != nil {
 			return nil, fmt.Errorf("failed waiting for operation to complete: %w", err)
@@ -407,7 +408,7 @@ func (p *AgentServiceTargetProvider) buildAgentImage(
 	}
 
 	// Parse agent YAML to get agent ID
-	agentConfig, err := parseAgentYAML(agentYAMLPath)
+	agentConfig, err := agents.ParseAgentYAML(agentYAMLPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse agent YAML: %w", err)
 	}
@@ -439,7 +440,7 @@ func (p *AgentServiceTargetProvider) buildAgentImage(
 
 	// Generate image names with custom version (or timestamp) and latest tags
 	// TODO: add support for custom version
-	imageNames := generateImageNamesFromAgent(agentConfig, "")
+	imageNames := GenerateImageNamesFromAgent(agentConfig.ID, "")
 
 	fmt.Fprintf(os.Stderr, "Starting remote build for images: %v\n", imageNames)
 

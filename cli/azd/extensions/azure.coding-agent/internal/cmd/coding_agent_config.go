@@ -905,7 +905,6 @@ func (cli *internalGitCLI) ListRemotes(ctx context.Context, gitRepoRoot string) 
 
 // formatPortalLinkForManagedIdentity takes you to the Azure portal blade, for your managed identity, that lets you see its role assignments.
 func formatPortalLinkForManagedIdentity(tenantID string, subscriptionID string, resourceGroupName string, managedIdentityName string) string {
-	// https://portal.azure.com/#@TME01.onmicrosoft.com/resource/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/SSS3PT_rg-ripark-these-are-a-few-of-my-favorite-things/providers/Microsoft.ManagedIdentity/userAssignedIdentities/msi-copilot-azd-starter/overview
 	return fmt.Sprintf("https://portal.azure.com/#@%s/resource/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s/azure_resources",
 		tenantID,
 		subscriptionID,

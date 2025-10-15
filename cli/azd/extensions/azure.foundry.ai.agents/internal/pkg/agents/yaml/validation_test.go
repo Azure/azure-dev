@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft. All rights reserved.
 
-package agent_yaml
+package yaml
 
 import (
 	"strings"
@@ -64,6 +64,20 @@ func TestValidateAgentManifest(t *testing.T) {
 			},
 			expectValid: false,
 			errorSubstr: "agent.model.id is required",
+		},
+		{
+			name: "Invalid agent kind",
+			manifest: &AgentManifest{
+				Agent: AgentDefinition{
+					Name: "Test Agent",
+					Kind: "invalid_kind",
+					Model: Model{
+						Id: "gpt-4",
+					},
+				},
+			},
+			expectValid: false,
+			errorSubstr: "agent.kind must be one of:",
 		},
 	}
 

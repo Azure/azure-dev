@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft. All rights reserved.
 
-package agent_yaml
+package yaml
 
 import (
 	"fmt"
@@ -8,12 +8,42 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// AgentKind represents the type of agent
+type AgentKind string
+
+const (
+	AgentKindPrompt       AgentKind = "prompt"
+	AgentKindHosted       AgentKind = "hosted"
+	AgentKindContainerApp AgentKind = "container_app"
+	AgentKindWorkflow     AgentKind = "workflow"
+)
+
+// IsValidAgentKind checks if the provided AgentKind is valid
+func IsValidAgentKind(kind AgentKind) bool {
+	switch kind {
+	case AgentKindPrompt, AgentKindHosted, AgentKindContainerApp, AgentKindWorkflow:
+		return true
+	default:
+		return false
+	}
+}
+
+// ValidAgentKinds returns a slice of all valid AgentKind values
+func ValidAgentKinds() []AgentKind {
+	return []AgentKind{
+		AgentKindPrompt,
+		AgentKindHosted,
+		AgentKindContainerApp,
+		AgentKindWorkflow,
+	}
+}
+
 // AgentDefinition represents The following is a specification for defining AI agents with structured metadata, inputs, outputs, tools, and templates.
 // It provides a way to create reusable and composable AI agents that can be executed with specific configurations.
 // The specification includes metadata about the agent, model configuration, input parameters, expected outputs,
 // available tools, and template configurations for prompt rendering.
 type AgentDefinition struct {
-	Kind         string                 `json:"kind"`                   // Kind represented by the document
+	Kind         AgentKind              `json:"kind"`                   // Kind represented by the document
 	Name         string                 `json:"name"`                   // Human-readable name of the agent
 	Description  string                 `json:"description,omitempty"`  // Description of the agent's capabilities and purpose
 	Instructions string                 `json:"instructions,omitempty"` // Give your agent clear directions on what to do and how to do it
@@ -29,10 +59,10 @@ type AgentDefinition struct {
 // They are designed to be straightforward and easy to use for various applications.
 type PromptAgent struct {
 	AgentDefinition
-	Kind                   string   `json:"kind"`                             // Type of agent, e.g., 'prompt'
-	Template               Template `json:"template,omitempty"`               // Template configuration for prompt rendering
-	Instructions           string   `json:"instructions,omitempty"`           // Give your agent clear directions on what to do and how to do it. Include specific tasks, their order, and any special instructions like tone or engagement style. (can use this for a pure yaml declaration or as content in the markdown format)
-	AdditionalInstructions string   `json:"additionalInstructions,omitempty"` // Additional instructions or context for the agent, can be used to provide extra guidance (can use this for a pure yaml declaration)
+	Kind                   AgentKind `json:"kind"`                             // Type of agent, e.g., 'prompt'
+	Template               Template  `json:"template,omitempty"`               // Template configuration for prompt rendering
+	Instructions           string    `json:"instructions,omitempty"`           // Give your agent clear directions on what to do and how to do it. Include specific tasks, their order, and any special instructions like tone or engagement style. (can use this for a pure yaml declaration or as content in the markdown format)
+	AdditionalInstructions string    `json:"additionalInstructions,omitempty"` // Additional instructions or context for the agent, can be used to provide extra guidance (can use this for a pure yaml declaration)
 }
 
 // ContainerAgent represents The following represents a containerized agent that can be deployed and hosted.
@@ -47,7 +77,7 @@ type PromptAgent struct {
 // app hosting platform that they manage.
 type ContainerAgent struct {
 	AgentDefinition
-	Kind     string                 `json:"kind"`               // Type of agent, e.g., 'container'
+	Kind     AgentKind              `json:"kind"`               // Type of agent, e.g., 'container'
 	Protocol string                 `json:"protocol"`           // Protocol used by the containerized agent
 	Options  map[string]interface{} `json:"options,omitempty"`  // Container definition including image, registry, and scaling information
 }
@@ -388,6 +418,13 @@ func ValidateAgentManifest(manifest *AgentManifest) error {
 	}
 	if manifest.Agent.Kind == "" {
 		errors = append(errors, "agent.kind is required")
+	} else if !IsValidAgentKind(manifest.Agent.Kind) {
+		validKinds := ValidAgentKinds()
+		validKindStrings := make([]string, len(validKinds))
+		for i, kind := range validKinds {
+			validKindStrings[i] = string(kind)
+		}
+		errors = append(errors, fmt.Sprintf("agent.kind must be one of: %v, got '%s'", validKindStrings, manifest.Agent.Kind))
 	}
 	if manifest.Agent.Model.Id == "" {
 		errors = append(errors, "agent.model.id is required")

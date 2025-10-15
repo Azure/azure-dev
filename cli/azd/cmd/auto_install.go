@@ -9,9 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"slices"
 	"strings"
-	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -293,34 +291,37 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		// auto-install for target service
 		var unsupportedErr *project.UnsupportedServiceHostError
 		if errors.As(err, &unsupportedErr) {
-			discoveryResults, capErr := DiscoverServiceTargetCapabilities(ctx, extensionManager)
-			if capErr != nil {
-				log.Printf("failed to discover service target capabilities: %v", capErr)
-				log.Printf("ignoring auto-install for service target")
-				return err
+			requiredHost := unsupportedErr.Host
+			availableExtensionsForHost, err := extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
+				Capability: extensions.ServiceTargetProviderCapability,
+				Provider:   requiredHost,
+			})
+			if err != nil {
+				// Do not fail if we couldn't check for extensions - just proceed to normal execution
+				log.Println("Error: check for extensions. Skipping auto-install:", err)
+				console.Message(ctx, unsupportedErr.ErrorMessage)
+				return nil
 			}
-			filterMatches := []*extensions.ExtensionMetadata{}
-			for _, result := range discoveryResults {
-				if slices.Contains(result.serviceTargets, unsupportedErr.Host) {
-					filterMatches = append(filterMatches, result.extensionMetadata)
-				}
-			}
-			if len(filterMatches) == 0 {
+			// Note: We don't need to filter or check which extensions are installed.
+			// If any of these extensions would be installed, the auto-install wouldn't have been triggered because
+			// there would be at least one extensions providing the capability and provider.
+			if len(availableExtensionsForHost) == 0 {
 				// did not find an extension with the capability, just print the original error message
 				console.Message(ctx, unsupportedErr.ErrorMessage)
+				return nil
 			}
 
 			console.Message(ctx,
 				fmt.Sprintf("Your project is using host '%s' which is not supported by default.\n", unsupportedErr.Host))
 
 			var extensionIdToInstall extensions.ExtensionMetadata
-			if len(filterMatches) == 1 {
-				extensionIdToInstall = *filterMatches[0]
+			if len(availableExtensionsForHost) == 1 {
+				extensionIdToInstall = *availableExtensionsForHost[0]
 				console.Message(ctx, "An extension was found that provides support for this host.")
 			} else {
 				console.Message(ctx, "There are multiple extensions that provide support for this host.")
 				// Multiple matches found, prompt user to choose
-				chosenExtension, err := promptForExtensionChoice(ctx, console, filterMatches)
+				chosenExtension, err := promptForExtensionChoice(ctx, console, availableExtensionsForHost)
 				if err != nil {
 					console.Message(ctx, fmt.Sprintf("Error selecting extension: %v", err))
 					return err
@@ -441,101 +442,4 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 
 	// Normal execution path - either no args, no matching extension, or user declined install
 	return rootCmd.ExecuteContext(ctx)
-}
-
-type discoveryResult struct {
-	extensionName     string
-	extensionMetadata *extensions.ExtensionMetadata
-	serviceTargets    []string
-	err               error
-}
-
-// DiscoverServiceTargetCapabilities discovers service target capabilities from all non-installed extensions
-// by temporarily pulling their binaries and checking what service targets they provide.
-func DiscoverServiceTargetCapabilities(
-	ctx context.Context, extensionManager *extensions.Manager) ([]discoveryResult, error) {
-	// Get all extensions from registry
-	options := &extensions.FilterOptions{}
-	registryExtensions, err := extensionManager.FindExtensions(ctx, options)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list extensions from registry: %w", err)
-	}
-
-	// Filter out already installed extensions
-	var nonInstalledExtensions []*extensions.ExtensionMetadata
-	for _, ext := range registryExtensions {
-		_, err := extensionManager.GetInstalled(extensions.FilterOptions{
-			Id: ext.Id,
-		})
-		if err != nil {
-			// Extension is not installed, add to list
-			nonInstalledExtensions = append(nonInstalledExtensions, ext)
-		}
-	}
-
-	if len(nonInstalledExtensions) == 0 {
-		return nil, nil
-	}
-
-	resultChan := make(chan discoveryResult, len(nonInstalledExtensions))
-	var wg sync.WaitGroup
-
-	// Launch a goroutine for each non-installed extension
-	for _, ext := range nonInstalledExtensions {
-		wg.Add(1)
-		go func(extension *extensions.ExtensionMetadata) {
-			defer wg.Done()
-
-			// Check if extension has service target provider capability
-			// Check the latest version's capabilities
-			if len(extension.Versions) > 0 {
-				// Use the first version (typically the latest)
-				latestVersion := extension.Versions[0]
-				if slices.Contains(latestVersion.Capabilities, extensions.ServiceTargetProviderCapability) {
-					serviceTargets := make([]string, 0)
-					for _, provider := range latestVersion.Providers {
-						if provider.Type == extensions.ServiceTargetProviderType {
-							serviceTargets = append(serviceTargets, provider.Name)
-						}
-					}
-					resultChan <- discoveryResult{
-						extensionName:     extension.DisplayName,
-						extensionMetadata: extension,
-						serviceTargets:    serviceTargets,
-						err:               err,
-					}
-					return
-				}
-			}
-
-			// no service target provider capability
-			resultChan <- discoveryResult{
-				extensionName:     extension.Id,
-				extensionMetadata: extension,
-				serviceTargets:    nil,
-				err:               nil,
-			}
-
-		}(ext)
-	}
-
-	// Wait for all goroutines to complete
-	go func() {
-		wg.Wait()
-		close(resultChan)
-	}()
-
-	// Collect results
-	var discoveryResults []discoveryResult
-	for result := range resultChan {
-		if result.err != nil {
-			log.Printf("Error discovering service targets for extension %s: %v", result.extensionName, result.err)
-			continue
-		}
-		if len(result.serviceTargets) > 0 {
-			discoveryResults = append(discoveryResults, result)
-		}
-	}
-
-	return discoveryResults, nil
 }

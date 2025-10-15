@@ -170,7 +170,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	// Get env from azd
+	// Get environment variables from azd
 	azdEnvClient := p.azdClient.Environment()
 	currEnv, err := azdEnvClient.GetCurrent(ctx, nil)
 	if err != nil {
@@ -183,12 +183,13 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get environment values: %w", err)
 	}
+	
 	azdEnv := make(map[string]string, len(resp.KeyValues))
 	for _, kval := range resp.KeyValues {
 		azdEnv[kval.Key] = kval.Value
 	}
 
-	// Reload the agent manifest from file to ensure we have the latest version
+	// Load and validate the agent manifest
 	data, err := os.ReadFile(p.agentDefinitionPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read YAML file: %w", err)
@@ -198,23 +199,24 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse and validate YAML: %w", err)
 	}
-	
-	isHosted := false
-	if agent_api.AgentKind(agentManifest.Agent.Kind) == agent_api.AgentKindHosted {
-		isHosted = true
-	}
 
-	// *************************************Step 1: Build Agent Image (Hosted agents only)************
-	var fullImageURL string
-	if isHosted {
-		var err error
-		fullImageURL, err = p.buildAgentImage(ctx, agentManifest, azdEnv)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build agent image: %w", err)
-		}
+	// Determine agent type and delegate to appropriate deployment method
+	switch agent_api.AgentKind(agentManifest.Agent.Kind) {
+	case agent_api.AgentKindPrompt:
+		return p.deployPromptAgent(ctx, agentManifest, azdEnv)
+	case agent_api.AgentKindHosted:
+		return p.deployHostedAgent(ctx, agentManifest, azdEnv)
+	default:
+		return nil, fmt.Errorf("unsupported agent kind: %s", agentManifest.Agent.Kind)
 	}
+}
 
-	// *************************************Step 2: Create Agent*************************************
+// deployPromptAgent handles deployment of prompt-based agents
+func (p *AgentServiceTargetProvider) deployPromptAgent(
+	ctx context.Context,
+	agentManifest *agent_yaml.AgentManifest,
+	azdEnv map[string]string,
+) (*azdext.ServiceDeployResult, error) {
 	// Check if environment variable is set
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
 		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required")
@@ -226,61 +228,128 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 
+	fmt.Fprintf(os.Stderr, "Deploying Prompt Agent\n")
+	fmt.Fprintf(os.Stderr, "======================\n")
 	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentManifest.Agent.Name)
 
-	// Option 1: Use the new structured approach (recommended)
+	// Create agent request (no image URL needed for prompt agents)
+	request, err := agent_yaml.CreateAgentAPIRequestFromManifest(*agentManifest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create agent request: %w", err)
+	}
+
+	// Display agent information
+	p.displayAgentInfo(request)
+
+	// Create and deploy agent
+	agentResponse, err := p.createAgent(ctx, request, azdEnv, cred)
+	if err != nil {
+		return nil, err
+	}
+
+	// Register agent info in environment
+	err = p.registerAgentEnvironmentVariables(ctx, agentResponse)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Fprintf(os.Stderr, "Prompt agent '%s' deployed successfully!\n", agentResponse.Name)
+
+	return &azdext.ServiceDeployResult{
+		TargetResourceId: "",
+		Kind:             "agent",
+		Endpoints:        nil,
+		Details: map[string]string{
+			"message": "Prompt agent deployed successfully",
+			"agentName": agentResponse.Name,
+			"agentVersion": agentResponse.Versions.Latest.Version,
+		},
+	}, nil
+}
+
+// deployHostedAgent handles deployment of hosted container agents
+func (p *AgentServiceTargetProvider) deployHostedAgent(
+	ctx context.Context,
+	agentManifest *agent_yaml.AgentManifest,
+	azdEnv map[string]string,
+) (*azdext.ServiceDeployResult, error) {
+	// Check if environment variable is set
+	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
+		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required")
+	}
+
+	fmt.Fprintf(os.Stderr, "Deploying Hosted Agent\n")
+	fmt.Fprintf(os.Stderr, "======================\n")
+
+	// Step 1: Build container image
+	fullImageURL, err := p.buildAgentImage(ctx, agentManifest, azdEnv)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build agent image: %w", err)
+	}
+
+	// Create Azure credential
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
+	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
+	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentManifest.Agent.Name)
+
+	// Step 2: Create agent request with image URL
 	request, err := agent_yaml.CreateAgentAPIRequestFromManifest(*agentManifest, agent_yaml.WithImageURL(fullImageURL))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent request: %w", err)
 	}
 
-	// Option 2: Use the two-step approach if you need the intermediate objects
-	// definition, buildConfig, err := agent_yaml.BuildAgentDefinitionFromManifest(*agentManifest, agent_yaml.WithImageURL(fullImageURL))
-	// if err != nil {
-	//     return nil, fmt.Errorf("failed to build agent definition: %w", err)
-	// }
-	// request, err := agent_yaml.CreateAgentAPIRequestFromAgentDefinition(definition, buildConfig)
-	// if err != nil {
-	//     return nil, fmt.Errorf("failed to create agent request: %w", err)
-	// }
+	// Display agent information
+	p.displayAgentInfo(request)
 
-	description := "No description"
-	if request.Description != nil {
-		desc := *request.Description
-		if len(desc) > 50 {
-			description = desc[:50] + "..."
-		} else {
-			description = desc
-		}
+	// Step 3: Create agent
+	agentResponse, err := p.createAgent(ctx, request, azdEnv, cred)
+	if err != nil {
+		return nil, err
 	}
-	fmt.Fprintf(os.Stderr, "Description: %s\n", description)
 
-	// Display agent-specific information
-	if promptDef, ok := request.Definition.(agent_api.PromptAgentDefinition); ok {
-		fmt.Fprintf(os.Stderr, "Model: %s\n", promptDef.Model)
-		instructions := "No instructions"
-		if promptDef.Instructions != nil {
-			inst := *promptDef.Instructions
-			if len(inst) > 50 {
-				instructions = inst[:50] + "..."
-			} else {
-				instructions = inst
-			}
-		}
-		fmt.Fprintf(os.Stderr, "Instructions: %s\n", instructions)
-	} else if imageHostedDef, ok := request.Definition.(agent_api.ImageBasedHostedAgentDefinition); ok {
-		isHosted = true
-		fmt.Fprintf(os.Stderr, "Image: %s\n", imageHostedDef.Image)
-		fmt.Fprintf(os.Stderr, "CPU: %s\n", imageHostedDef.CPU)
-		fmt.Fprintf(os.Stderr, "Memory: %s\n", imageHostedDef.Memory)
-		fmt.Fprintf(os.Stderr, "Protocol Versions: %+v\n", imageHostedDef.ContainerProtocolVersions)
+	// Register agent info in environment
+	err = p.registerAgentEnvironmentVariables(ctx, agentResponse)
+	if err != nil {
+		return nil, err
 	}
-	fmt.Fprintln(os.Stderr)
 
+	// Step 4: Start agent container
+	err = p.startAgentContainer(ctx, agentManifest, agentResponse, azdEnv, cred)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Fprintf(os.Stderr, "Hosted agent '%s' deployed successfully!\n", agentResponse.Name)
+
+	return &azdext.ServiceDeployResult{
+		TargetResourceId: "",
+		Kind:             "agent",
+		Endpoints:        nil,
+		Details: map[string]string{
+			"message": "Hosted agent deployed successfully",
+			"agentName": agentResponse.Name,
+			"agentVersion": agentResponse.Versions.Latest.Version,
+		},
+	}, nil
+}
+
+// createAgent creates the agent using the API
+func (p *AgentServiceTargetProvider) createAgent(
+	ctx context.Context,
+	request *agent_api.CreateAgentRequest,
+	azdEnv map[string]string,
+	cred *azidentity.DefaultAzureCredential,
+) (*agent_api.AgentObject, error) {
 	// Create agent client
 	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], cred)
+	
 	// Use constant API version
 	const apiVersion = "2025-05-15-preview"
 	
@@ -291,162 +360,9 @@ func (p *AgentServiceTargetProvider) Deploy(
 	}
 
 	fmt.Fprintf(os.Stderr, "Agent '%s' created successfully!\n", agentResponse.Name)
-
-	// Register the agent name and version as azd environment variables
-	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: currEnv.Environment.Name,
-		Key:     "AGENT_NAME",
-		Value:   agentResponse.Name,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to set environment variable: %w", err)
-	}
-
-	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: currEnv.Environment.Name,
-		Key:     "AGENT_VERSION",
-		Value:   agentResponse.Versions.Latest.Version,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to set environment variable: %w", err)
-	}
-
-	// *************************************Step 3: Start agent for HOBO (hosted agents only)************
-	if !isHosted {
-		// Return deployment result
-		return &azdext.ServiceDeployResult{
-			TargetResourceId: "",
-			Kind:             "agent",
-			Endpoints:        nil,
-			Details: map[string]string{
-				"message": "Agent service deployed successfully using custom extension logic",
-			},
-		}, nil
-	}
-
-	// Start the agent if it's a hosted agent
-	fmt.Fprintln(os.Stderr, "Azure AI Agent Container Management Script")
-	fmt.Fprintln(os.Stderr, "============================================")
-
-	// Use constants for wait configuration
-	const waitForReady = true
-	const maxWaitTime = 10 * time.Minute
-	
-	// Extract replica configuration from agent manifest
-	minReplicas := int32(1) // Default values
-	maxReplicas := int32(1)
-	
-	// Check if the agent definition has scale configuration
-	if containerAgent, ok := interface{}(agentManifest.Agent).(agent_yaml.ContainerAgent); ok {
-		// For ContainerAgent, check if Options contains scale information
-		if options, exists := containerAgent.Options["scale"]; exists {
-			if scaleMap, ok := options.(map[string]interface{}); ok {
-				if minReplicasFloat, exists := scaleMap["minReplicas"]; exists {
-					if minReplicasVal, ok := minReplicasFloat.(float64); ok {
-						minReplicas = int32(minReplicasVal)
-					}
-				}
-				if maxReplicasFloat, exists := scaleMap["maxReplicas"]; exists {
-					if maxReplicasVal, ok := maxReplicasFloat.(float64); ok {
-						maxReplicas = int32(maxReplicasVal)
-					}
-				}
-			}
-		}
-	}
-	
-	// Validate replica counts
-	if minReplicas < 0 {
-		return nil, fmt.Errorf("minReplicas must be non-negative, got: %d", minReplicas)
-	}
-	if maxReplicas < 0 {
-		return nil, fmt.Errorf("maxReplicas must be non-negative, got: %d", maxReplicas)
-	}
-	if minReplicas > maxReplicas {
-		return nil, fmt.Errorf("minReplicas (%d) cannot be greater than maxReplicas (%d)", minReplicas, maxReplicas)
-	}
-
-	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
-	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentResponse.Name)
-	fmt.Fprintf(os.Stderr, "Agent Version: %s\n", agentResponse.Versions.Latest.Version)
-	fmt.Fprintf(os.Stderr, "Min Replicas: %d\n", minReplicas)
-	fmt.Fprintf(os.Stderr, "Max Replicas: %d\n", maxReplicas)
-	fmt.Fprintf(os.Stderr, "Wait for Ready: %t\n", waitForReady)
-	if waitForReady {
-		fmt.Fprintf(os.Stderr, "Max Wait Time: %v\n", maxWaitTime)
-	}
-	fmt.Fprintln(os.Stderr)
-
-	// Start agent container (minReplicas and maxReplicas are already int32)
-	operation, err := agentClient.StartAgentContainer(
-		ctx, agentResponse.Name, agentResponse.Versions.Latest.Version, &minReplicas, &maxReplicas, apiVersion)
-	if err != nil {
-		return nil, fmt.Errorf("failed to start agent container: %w", err)
-	}
-
-	fmt.Fprintf(os.Stderr, "Agent container start operation initiated successfully!\n")
-
-	// Wait for operation to complete if requested
-	if waitForReady {
-		fmt.Fprintf(os.Stderr, "Waiting for operation to complete (timeout: %v)...\n", maxWaitTime)
-		
-		// Poll the operation status
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		
-		timeout := time.After(maxWaitTime)
-		
-		for {
-			select {
-			case <-timeout:
-				return nil, fmt.Errorf("timeout waiting for operation to complete after %v", maxWaitTime)
-			case <-ticker.C:
-				completedOperation, err := agentClient.GetAgentContainerOperation(
-					ctx, agentResponse.Name, operation.Body.ID, apiVersion)
-				if err != nil {
-					return nil, fmt.Errorf("failed to get operation status: %w", err)
-				}
-
-				// Check if operation is complete
-				if completedOperation.Status == "Succeeded" || completedOperation.Status == "Failed" {
-					if completedOperation.Status == "Failed" {
-						return nil, fmt.Errorf("operation failed: %s", completedOperation.Error)
-					}
-					
-					if completedOperation.Container != nil {
-						fmt.Fprintf(os.Stderr, "Agent container '%s' (version: %s) operation completed! Container status: %s\n",
-							agentResponse.Name, agentResponse.Versions.Latest.Version, completedOperation.Container.Status)
-					} else {
-						fmt.Fprintf(
-							os.Stderr,
-							"Agent container '%s' (version: %s) operation completed successfully!\n",
-							agentResponse.Name, agentResponse.Versions.Latest.Version)
-					}
-					goto operationComplete
-				}
-				
-				fmt.Fprintf(os.Stderr, "Operation status: %s\n", completedOperation.Status)
-			}
-		}
-		operationComplete:
-	} else {
-		fmt.Fprintf(
-			os.Stderr,
-			"Agent container '%s' (version: %s) start operation initiated (ID: %s).\n",
-			agentResponse.Name, agentResponse.Versions.Latest.Version, operation.Body.ID)
-	}
-
-	return &azdext.ServiceDeployResult{
-		TargetResourceId: "",
-		Kind:             "agent",
-		Endpoints:        nil,
-		Details: map[string]string{
-			"message": "Agent service deployed successfully using custom extension logic",
-		},
-	}, nil
+	return agentResponse, nil
 }
 
-// buildAgentImage builds a container image for hosted agents
 func (p *AgentServiceTargetProvider) buildAgentImage(
 	ctx context.Context, agentManifest *agent_yaml.AgentManifest, azdEnv map[string]string) (string, error) {
 	registryEndpoint := azdEnv["AZURE_CONTAINER_REGISTRY_ENDPOINT"]
@@ -510,4 +426,198 @@ func (p *AgentServiceTargetProvider) buildAgentImage(
 	fmt.Print(fullImageURL)
 
 	return fullImageURL, nil
+}
+
+// startAgentContainer starts the hosted agent container
+func (p *AgentServiceTargetProvider) startAgentContainer(
+	ctx context.Context,
+	agentManifest *agent_yaml.AgentManifest,
+	agentResponse *agent_api.AgentObject,
+	azdEnv map[string]string,
+	cred *azidentity.DefaultAzureCredential,
+) error {
+	fmt.Fprintln(os.Stderr, "Starting Agent Container")
+	fmt.Fprintln(os.Stderr, "=======================")
+
+	// Use constants for wait configuration
+	const waitForReady = true
+	const maxWaitTime = 10 * time.Minute
+	const apiVersion = "2025-05-15-preview"
+	
+	// Extract replica configuration from agent manifest
+	minReplicas := int32(1) // Default values
+	maxReplicas := int32(1)
+	
+	// Check if the agent definition has scale configuration
+	if containerAgent, ok := interface{}(agentManifest.Agent).(agent_yaml.ContainerAgent); ok {
+		// For ContainerAgent, check if Options contains scale information
+		if options, exists := containerAgent.Options["scale"]; exists {
+			if scaleMap, ok := options.(map[string]interface{}); ok {
+				if minReplicasFloat, exists := scaleMap["minReplicas"]; exists {
+					if minReplicasVal, ok := minReplicasFloat.(float64); ok {
+						minReplicas = int32(minReplicasVal)
+					}
+				}
+				if maxReplicasFloat, exists := scaleMap["maxReplicas"]; exists {
+					if maxReplicasVal, ok := maxReplicasFloat.(float64); ok {
+						maxReplicas = int32(maxReplicasVal)
+					}
+				}
+			}
+		}
+	}
+	
+	// Validate replica counts
+	if minReplicas < 0 {
+		return fmt.Errorf("minReplicas must be non-negative, got: %d", minReplicas)
+	}
+	if maxReplicas < 0 {
+		return fmt.Errorf("maxReplicas must be non-negative, got: %d", maxReplicas)
+	}
+	if minReplicas > maxReplicas {
+		return fmt.Errorf("minReplicas (%d) cannot be greater than maxReplicas (%d)", minReplicas, maxReplicas)
+	}
+
+	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
+	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentResponse.Name)
+	fmt.Fprintf(os.Stderr, "Agent Version: %s\n", agentResponse.Versions.Latest.Version)
+	fmt.Fprintf(os.Stderr, "Min Replicas: %d\n", minReplicas)
+	fmt.Fprintf(os.Stderr, "Max Replicas: %d\n", maxReplicas)
+	fmt.Fprintf(os.Stderr, "Wait for Ready: %t\n", waitForReady)
+	if waitForReady {
+		fmt.Fprintf(os.Stderr, "Max Wait Time: %v\n", maxWaitTime)
+	}
+	fmt.Fprintln(os.Stderr)
+
+	// Create agent client
+	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], cred)
+
+	// Start agent container (minReplicas and maxReplicas are already int32)
+	operation, err := agentClient.StartAgentContainer(
+		ctx, agentResponse.Name, agentResponse.Versions.Latest.Version, &minReplicas, &maxReplicas, apiVersion)
+	if err != nil {
+		return fmt.Errorf("failed to start agent container: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Agent container start operation initiated successfully!\n")
+
+	// Wait for operation to complete if requested
+	if waitForReady {
+		fmt.Fprintf(os.Stderr, "Waiting for operation to complete (timeout: %v)...\n", maxWaitTime)
+		
+		// Poll the operation status
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		
+		timeout := time.After(maxWaitTime)
+		
+		for {
+			select {
+			case <-timeout:
+				return fmt.Errorf("timeout waiting for operation to complete after %v", maxWaitTime)
+			case <-ticker.C:
+				completedOperation, err := agentClient.GetAgentContainerOperation(
+					ctx, agentResponse.Name, operation.Body.ID, apiVersion)
+				if err != nil {
+					return fmt.Errorf("failed to get operation status: %w", err)
+				}
+
+				// Check if operation is complete
+				if completedOperation.Status == "Succeeded" || completedOperation.Status == "Failed" {
+					if completedOperation.Status == "Failed" {
+						return fmt.Errorf("operation failed: %s", completedOperation.Error)
+					}
+					
+					if completedOperation.Container != nil {
+						fmt.Fprintf(os.Stderr, "Agent container '%s' (version: %s) operation completed! Container status: %s\n",
+							agentResponse.Name, agentResponse.Versions.Latest.Version, completedOperation.Container.Status)
+					} else {
+						fmt.Fprintf(
+							os.Stderr,
+							"Agent container '%s' (version: %s) operation completed successfully!\n",
+							agentResponse.Name, agentResponse.Versions.Latest.Version)
+					}
+					return nil
+				}
+				
+				fmt.Fprintf(os.Stderr, "Operation status: %s\n", completedOperation.Status)
+			}
+		}
+	} else {
+		fmt.Fprintf(
+			os.Stderr,
+			"Agent container '%s' (version: %s) start operation initiated (ID: %s).\n",
+			agentResponse.Name, agentResponse.Versions.Latest.Version, operation.Body.ID)
+	}
+
+	return nil
+}
+
+
+// displayAgentInfo displays information about the agent being deployed
+func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateAgentRequest) {
+	description := "No description"
+	if request.Description != nil {
+		desc := *request.Description
+		if len(desc) > 50 {
+			description = desc[:50] + "..."
+		} else {
+			description = desc
+		}
+	}
+	fmt.Fprintf(os.Stderr, "Description: %s\n", description)
+
+	// Display agent-specific information
+	if promptDef, ok := request.Definition.(agent_api.PromptAgentDefinition); ok {
+		fmt.Fprintf(os.Stderr, "Model: %s\n", promptDef.Model)
+		instructions := "No instructions"
+		if promptDef.Instructions != nil {
+			inst := *promptDef.Instructions
+			if len(inst) > 50 {
+				instructions = inst[:50] + "..."
+			} else {
+				instructions = inst
+			}
+		}
+		fmt.Fprintf(os.Stderr, "Instructions: %s\n", instructions)
+	} else if imageHostedDef, ok := request.Definition.(agent_api.ImageBasedHostedAgentDefinition); ok {
+		fmt.Fprintf(os.Stderr, "Image: %s\n", imageHostedDef.Image)
+		fmt.Fprintf(os.Stderr, "CPU: %s\n", imageHostedDef.CPU)
+		fmt.Fprintf(os.Stderr, "Memory: %s\n", imageHostedDef.Memory)
+		fmt.Fprintf(os.Stderr, "Protocol Versions: %+v\n", imageHostedDef.ContainerProtocolVersions)
+	}
+	fmt.Fprintln(os.Stderr)
+}
+
+// registerAgentEnvironmentVariables registers agent information as azd environment variables
+func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
+	ctx context.Context,
+	agentResponse *agent_api.AgentObject,
+) error {
+	azdEnvClient := p.azdClient.Environment()
+	currEnv, err := azdEnvClient.GetCurrent(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get current environment: %w", err)
+	}
+
+	// Register the agent name and version as azd environment variables
+	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: currEnv.Environment.Name,
+		Key:     "AGENT_NAME",
+		Value:   agentResponse.Name,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to set AGENT_NAME environment variable: %w", err)
+	}
+
+	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: currEnv.Environment.Name,
+		Key:     "AGENT_VERSION",
+		Value:   agentResponse.Versions.Latest.Version,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to set AGENT_VERSION environment variable: %w", err)
+	}
+
+	return nil
 }

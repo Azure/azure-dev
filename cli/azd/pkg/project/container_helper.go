@@ -301,10 +301,12 @@ func (ch *ContainerHelper) Package(
 
 	var imageId string
 	var sourceImage string
+	var imageHash string
 
 	// Find the container image artifact from build results
 	if artifact, found := serviceContext.Build.FindFirst(WithKind(ArtifactKindContainer)); found && artifact.Location != "" {
 		imageId = artifact.Location
+		imageHash = imageId // For built images, the location is the image hash
 	}
 
 	// If we don't have an image ID from a docker build then an external source image is being used
@@ -326,8 +328,9 @@ func (ch *ContainerHelper) Package(
 			return nil, fmt.Errorf("pulling source container image: %w", err)
 		}
 
-		imageId = remoteImageUrl
+		imageId = remoteImageUrl // For tagging purposes
 		sourceImage = remoteImageUrl
+		imageHash = "" // External images don't have a known image hash
 	}
 
 	// Generate a local tag from the 'docker' configuration section of the service
@@ -351,7 +354,7 @@ func (ch *ContainerHelper) Package(
 		Location:     imageWithTag,
 		LocationKind: LocationKindLocal, // Local during package phase
 		Metadata: map[string]string{
-			"imageHash":   imageId,
+			"imageHash":   imageHash,
 			"sourceImage": sourceImage,
 			"targetImage": targetImage,
 		},

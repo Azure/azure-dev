@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"azureaiagents/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"

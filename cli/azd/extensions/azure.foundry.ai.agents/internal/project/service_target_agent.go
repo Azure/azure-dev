@@ -5,18 +5,17 @@ package project
 
 import (
 	"context"
-	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"azureaiagent/internal/pkg/agents"
+	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/braydonk/yaml"
 	"github.com/fatih/color"
 )
 
@@ -55,7 +54,7 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	servicePath := serviceConfig.RelativePath
 	fullPath := filepath.Join(proj.Project.Path, servicePath)
 
-	log.Println(proj.Project.Path, fullPath)
+	fmt.Fprintf(os.Stderr, "Project path: %s, Service path: %s\n", proj.Project.Path, fullPath)
 
 	// Check if user has specified agent definition path via environment variable
 	if envPath := os.Getenv("FOUNDRY_AGENT_DEFINITION_PATH"); envPath != "" {
@@ -189,18 +188,19 @@ func (p *AgentServiceTargetProvider) Deploy(
 		azdEnv[kval.Key] = kval.Value
 	}
 
-	agentYAMLPath := p.agentDefinitionPath
-	data, err := os.ReadFile(agentYAMLPath)
+	// Reload the agent manifest from file to ensure we have the latest version
+	data, err := os.ReadFile(p.agentDefinitionPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read YAML file: %w", err)
 	}
 
-	var agentConfigDetails agents.AgentYAMLConfig
-	isHosted := false
-	if err := yaml.Unmarshal(data, &agentConfigDetails); err != nil {
-		return nil, fmt.Errorf("failed to parse YAML: %w", err)
+	agentManifest, err := agent_yaml.LoadAndValidateAgentManifest(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse and validate YAML: %w", err)
 	}
-	if agents.AgentKind(agentConfigDetails.Kind) == agents.AgentKindHosted {
+	
+	isHosted := false
+	if agent_api.AgentKind(agentManifest.Agent.Kind) == agent_api.AgentKindHosted {
 		isHosted = true
 	}
 
@@ -208,7 +208,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	var fullImageURL string
 	if isHosted {
 		var err error
-		fullImageURL, err = p.buildAgentImage(ctx, agentYAMLPath, azdEnv)
+		fullImageURL, err = p.buildAgentImage(ctx, agentManifest, azdEnv)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build agent image: %w", err)
 		}
@@ -219,27 +219,32 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
 		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required")
 	}
-
-	// Parse agent YAML to get agent config for logging and request creation
-	agentConfig, err := agents.ParseAgentYAML(agentYAMLPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse agent YAML: %w", err)
-	}
-
+	
 	// Create Azure credential
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", agentYAMLPath)
+	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
-	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentConfig.Name)
+	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentManifest.Agent.Name)
 
-	request, err := agents.CreateAgentRequestFromYAML(agentYAMLPath, fullImageURL)
+	// Option 1: Use the new structured approach (recommended)
+	request, err := agent_yaml.CreateAgentAPIRequestFromManifest(*agentManifest, agent_yaml.WithImageURL(fullImageURL))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent request: %w", err)
 	}
+
+	// Option 2: Use the two-step approach if you need the intermediate objects
+	// definition, buildConfig, err := agent_yaml.BuildAgentDefinitionFromManifest(*agentManifest, agent_yaml.WithImageURL(fullImageURL))
+	// if err != nil {
+	//     return nil, fmt.Errorf("failed to build agent definition: %w", err)
+	// }
+	// request, err := agent_yaml.CreateAgentAPIRequestFromAgentDefinition(definition, buildConfig)
+	// if err != nil {
+	//     return nil, fmt.Errorf("failed to create agent request: %w", err)
+	// }
 
 	description := "No description"
 	if request.Description != nil {
@@ -253,8 +258,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 	fmt.Fprintf(os.Stderr, "Description: %s\n", description)
 
 	// Display agent-specific information
-	if promptDef, ok := request.Definition.(agents.PromptAgentDefinition); ok {
-		fmt.Fprintf(os.Stderr, "Model: %s\n", promptDef.ModelName)
+	if promptDef, ok := request.Definition.(agent_api.PromptAgentDefinition); ok {
+		fmt.Fprintf(os.Stderr, "Model: %s\n", promptDef.Model)
 		instructions := "No instructions"
 		if promptDef.Instructions != nil {
 			inst := *promptDef.Instructions
@@ -265,17 +270,22 @@ func (p *AgentServiceTargetProvider) Deploy(
 			}
 		}
 		fmt.Fprintf(os.Stderr, "Instructions: %s\n", instructions)
-	} else if hostedDef, ok := request.Definition.(agents.HostedAgentDefinition); ok {
+	} else if imageHostedDef, ok := request.Definition.(agent_api.ImageBasedHostedAgentDefinition); ok {
 		isHosted = true
-		fmt.Fprintf(os.Stderr, "Image: %s\n", hostedDef.Image)
-		fmt.Fprintf(os.Stderr, "CPU: %s\n", hostedDef.CPU)
-		fmt.Fprintf(os.Stderr, "Memory: %s\n", hostedDef.Memory)
-		fmt.Fprintf(os.Stderr, "Protocol Versions: %+v\n", hostedDef.ContainerProtocolVersions)
+		fmt.Fprintf(os.Stderr, "Image: %s\n", imageHostedDef.Image)
+		fmt.Fprintf(os.Stderr, "CPU: %s\n", imageHostedDef.CPU)
+		fmt.Fprintf(os.Stderr, "Memory: %s\n", imageHostedDef.Memory)
+		fmt.Fprintf(os.Stderr, "Protocol Versions: %+v\n", imageHostedDef.ContainerProtocolVersions)
 	}
 	fmt.Fprintln(os.Stderr)
 
+	// Create agent client
+	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], cred)
+	// Use constant API version
+	const apiVersion = "2025-05-15-preview"
+	
 	// Create agent
-	agentResponse, err := agents.CreateAgent(ctx, "2025-05-15-preview", request, cred, azdEnv)
+	agentResponse, err := agentClient.CreateAgent(ctx, request, apiVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent: %w", err)
 	}
@@ -295,7 +305,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: currEnv.Environment.Name,
 		Key:     "AGENT_VERSION",
-		Value:   agentResponse.Version,
+		Value:   agentResponse.Versions.Latest.Version,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to set environment variable: %w", err)
@@ -318,47 +328,58 @@ func (p *AgentServiceTargetProvider) Deploy(
 	fmt.Fprintln(os.Stderr, "Azure AI Agent Container Management Script")
 	fmt.Fprintln(os.Stderr, "============================================")
 
-	// Define command line flags
-	var (
-		minReplicas  = flag.Int("min-replicas", 1, "Minimum number of replicas (default: 1)")
-		maxReplicas  = flag.Int("max-replicas", 1, "Maximum number of replicas (default: 1)")
-		apiVersion   = flag.String("api-version", "2025-05-15-preview", "API version to use")
-		waitForReady = flag.Bool("wait", true, "Wait for container to be ready (default: true)")
-		maxWaitTime  = flag.Duration(
-			"max-wait-time", 10*time.Minute, "Maximum time to wait for container to be ready (default: 10m)")
-	)
-
-	flag.Parse()
-
+	// Use constants for wait configuration
+	const waitForReady = true
+	const maxWaitTime = 10 * time.Minute
+	
+	// Extract replica configuration from agent manifest
+	minReplicas := int32(1) // Default values
+	maxReplicas := int32(1)
+	
+	// Check if the agent definition has scale configuration
+	if containerAgent, ok := interface{}(agentManifest.Agent).(agent_yaml.ContainerAgent); ok {
+		// For ContainerAgent, check if Options contains scale information
+		if options, exists := containerAgent.Options["scale"]; exists {
+			if scaleMap, ok := options.(map[string]interface{}); ok {
+				if minReplicasFloat, exists := scaleMap["minReplicas"]; exists {
+					if minReplicasVal, ok := minReplicasFloat.(float64); ok {
+						minReplicas = int32(minReplicasVal)
+					}
+				}
+				if maxReplicasFloat, exists := scaleMap["maxReplicas"]; exists {
+					if maxReplicasVal, ok := maxReplicasFloat.(float64); ok {
+						maxReplicas = int32(maxReplicasVal)
+					}
+				}
+			}
+		}
+	}
+	
 	// Validate replica counts
-	if *minReplicas < 0 {
-		log.Fatal("Error: --min-replicas must be non-negative")
+	if minReplicas < 0 {
+		return nil, fmt.Errorf("minReplicas must be non-negative, got: %d", minReplicas)
 	}
-	if *maxReplicas < 0 {
-		log.Fatal("Error: --max-replicas must be non-negative")
+	if maxReplicas < 0 {
+		return nil, fmt.Errorf("maxReplicas must be non-negative, got: %d", maxReplicas)
 	}
-	if *minReplicas > *maxReplicas {
-		log.Fatal("Error: --min-replicas cannot be greater than --max-replicas")
+	if minReplicas > maxReplicas {
+		return nil, fmt.Errorf("minReplicas (%d) cannot be greater than maxReplicas (%d)", minReplicas, maxReplicas)
 	}
 
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentResponse.Name)
-	fmt.Fprintf(os.Stderr, "Agent Version: %s\n", agentResponse.Version)
-	fmt.Fprintf(os.Stderr, "Min Replicas: %d\n", *minReplicas)
-	fmt.Fprintf(os.Stderr, "Max Replicas: %d\n", *maxReplicas)
-	fmt.Fprintf(os.Stderr, "Wait for Ready: %t\n", *waitForReady)
-	if *waitForReady {
-		fmt.Fprintf(os.Stderr, "Max Wait Time: %v\n", *maxWaitTime)
+	fmt.Fprintf(os.Stderr, "Agent Version: %s\n", agentResponse.Versions.Latest.Version)
+	fmt.Fprintf(os.Stderr, "Min Replicas: %d\n", minReplicas)
+	fmt.Fprintf(os.Stderr, "Max Replicas: %d\n", maxReplicas)
+	fmt.Fprintf(os.Stderr, "Wait for Ready: %t\n", waitForReady)
+	if waitForReady {
+		fmt.Fprintf(os.Stderr, "Max Wait Time: %v\n", maxWaitTime)
 	}
 	fmt.Fprintln(os.Stderr)
 
-	// Convert int to *int32 for the API
-	minReplicasInt32 := *minReplicas
-	maxReplicasInt32 := *maxReplicas
-
-	// Start agent container
-	operation, err := agents.StartAgentContainer(
-		ctx, *apiVersion, agentResponse.Name, agentResponse.Version, &minReplicasInt32, &maxReplicasInt32, azdEnv, cred)
+	// Start agent container (minReplicas and maxReplicas are already int32)
+	operation, err := agentClient.StartAgentContainer(
+		ctx, agentResponse.Name, agentResponse.Versions.Latest.Version, &minReplicas, &maxReplicas, apiVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start agent container: %w", err)
 	}
@@ -366,27 +387,53 @@ func (p *AgentServiceTargetProvider) Deploy(
 	fmt.Fprintf(os.Stderr, "Agent container start operation initiated successfully!\n")
 
 	// Wait for operation to complete if requested
-	if *waitForReady {
-		completedOperation, err := agents.WaitForOperationComplete(
-			ctx, *apiVersion, agentResponse.Name, operation.Body.ID, *maxWaitTime, azdEnv, cred)
-		if err != nil {
-			return nil, fmt.Errorf("failed waiting for operation to complete: %w", err)
-		}
+	if waitForReady {
+		fmt.Fprintf(os.Stderr, "Waiting for operation to complete (timeout: %v)...\n", maxWaitTime)
+		
+		// Poll the operation status
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		
+		timeout := time.After(maxWaitTime)
+		
+		for {
+			select {
+			case <-timeout:
+				return nil, fmt.Errorf("timeout waiting for operation to complete after %v", maxWaitTime)
+			case <-ticker.C:
+				completedOperation, err := agentClient.GetAgentContainerOperation(
+					ctx, agentResponse.Name, operation.Body.ID, apiVersion)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get operation status: %w", err)
+				}
 
-		if completedOperation.Container != nil {
-			fmt.Fprintf(os.Stderr, "Agent container '%s' (version: %s) operation completed! Container status: %s\n",
-				agentResponse.Name, agentResponse.Version, completedOperation.Container.Status)
-		} else {
-			fmt.Fprintf(
-				os.Stderr,
-				"Agent container '%s' (version: %s) operation completed successfully!\n",
-				agentResponse.Name, agentResponse.Version)
+				// Check if operation is complete
+				if completedOperation.Status == "Succeeded" || completedOperation.Status == "Failed" {
+					if completedOperation.Status == "Failed" {
+						return nil, fmt.Errorf("operation failed: %s", completedOperation.Error)
+					}
+					
+					if completedOperation.Container != nil {
+						fmt.Fprintf(os.Stderr, "Agent container '%s' (version: %s) operation completed! Container status: %s\n",
+							agentResponse.Name, agentResponse.Versions.Latest.Version, completedOperation.Container.Status)
+					} else {
+						fmt.Fprintf(
+							os.Stderr,
+							"Agent container '%s' (version: %s) operation completed successfully!\n",
+							agentResponse.Name, agentResponse.Versions.Latest.Version)
+					}
+					goto operationComplete
+				}
+				
+				fmt.Fprintf(os.Stderr, "Operation status: %s\n", completedOperation.Status)
+			}
 		}
+		operationComplete:
 	} else {
 		fmt.Fprintf(
 			os.Stderr,
 			"Agent container '%s' (version: %s) start operation initiated (ID: %s).\n",
-			agentResponse.Name, agentResponse.Version, operation.Body.ID)
+			agentResponse.Name, agentResponse.Versions.Latest.Version, operation.Body.ID)
 	}
 
 	return &azdext.ServiceDeployResult{
@@ -401,20 +448,14 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 // buildAgentImage builds a container image for hosted agents
 func (p *AgentServiceTargetProvider) buildAgentImage(
-	ctx context.Context, agentYAMLPath string, azdEnv map[string]string) (string, error) {
+	ctx context.Context, agentManifest *agent_yaml.AgentManifest, azdEnv map[string]string) (string, error) {
 	registryEndpoint := azdEnv["AZURE_CONTAINER_REGISTRY_ENDPOINT"]
 	if registryEndpoint == "" {
 		return "", fmt.Errorf("AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable is required")
 	}
 
-	// Parse agent YAML to get agent ID
-	agentConfig, err := agents.ParseAgentYAML(agentYAMLPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse agent YAML: %w", err)
-	}
-
 	// Find Dockerfile in the same directory as agent.yaml
-	agentDir := filepath.Dir(agentYAMLPath)
+	agentDir := filepath.Dir(p.agentDefinitionPath)
 	dockerfilePath := filepath.Join(agentDir, "Dockerfile")
 
 	// Check if Dockerfile exists
@@ -422,7 +463,7 @@ func (p *AgentServiceTargetProvider) buildAgentImage(
 		return "", fmt.Errorf("dockerfile not found in agent directory: %s", dockerfilePath)
 	}
 
-	fmt.Fprintf(os.Stderr, "Building image for agent: %s (ID: %s)\n", agentConfig.Name, agentConfig.ID)
+	fmt.Fprintf(os.Stderr, "Building image for agent: %s (ID: %s)\n", agentManifest.Agent.Name, agentManifest.Agent.Name)
 	fmt.Fprintf(os.Stderr, "Using Dockerfile: %s\n", dockerfilePath)
 	fmt.Fprintf(os.Stderr, "Using Azure Container Registry: %s\n", registryEndpoint)
 
@@ -440,7 +481,7 @@ func (p *AgentServiceTargetProvider) buildAgentImage(
 
 	// Generate image names with custom version (or timestamp) and latest tags
 	// TODO: add support for custom version
-	imageNames := GenerateImageNamesFromAgent(agentConfig.ID, "")
+	imageNames := GenerateImageNamesFromAgent(agentManifest.Agent.Name, "")
 
 	fmt.Fprintf(os.Stderr, "Starting remote build for images: %v\n", imageNames)
 

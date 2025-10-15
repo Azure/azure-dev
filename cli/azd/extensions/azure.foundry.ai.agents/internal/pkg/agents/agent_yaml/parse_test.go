@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft. All rights reserved.
 
-package yaml
+package agent_yaml
 
 import (
 	"strings"

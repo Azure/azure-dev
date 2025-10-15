@@ -51,11 +51,12 @@ var prBodyMD string
 const copilotEnv = "copilot"
 
 type flagValues struct {
-	Debug          bool
-	RepoSlug       string
-	RoleNames      []string
-	BranchName     string
-	GitHubHostName string
+	Debug               bool
+	ManagedIdentityName string
+	RepoSlug            string
+	RoleNames           []string
+	BranchName          string
+	GitHubHostName      string
 }
 
 func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
@@ -82,6 +83,13 @@ func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
 		"branch-name",
 		"azd-enable-copilot-coding-agent-with-azure",
 		"The branch name to use when pushing changes to the copilot-setup-steps.yml",
+	)
+
+	commandFlags.StringVar(
+		&flagValues.ManagedIdentityName,
+		"managed-identity-name",
+		"mi-copilot-coding-agent",
+		"The name to use for the managed identity, if created.",
 	)
 
 	commandFlags.StringVar(
@@ -129,13 +137,6 @@ func newConfigCommand() *cobra.Command {
 
 		promptClient := azdClient.Prompt()
 
-		// Get the azd project to retrieve the project path
-		getProjectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-
-		if err != nil {
-			return fmt.Errorf("failed to get azd project: %w", err)
-		}
-
 		if err := loginToGitHubIfNeeded(ctx, flagValues.GitHubHostName, newCommandRunner, newGitHubCLI); err != nil {
 			return fmt.Errorf("failed to log in to GitHub. Login manually using `gh auth login`: %w", err)
 		}
@@ -177,7 +178,7 @@ func newConfigCommand() *cobra.Command {
 		}
 
 		gitCLI := newInternalGitCLI(defaultCommandRunner)
-		gitRepoRoot, err := gitCLI.GetRepoRoot(ctx, getProjectResponse.Project.Path)
+		gitRepoRoot, err := gitCLI.GetRepoRoot(ctx, ".")
 
 		if err != nil {
 			return fmt.Errorf("failed to get git repository root: %w", err)
@@ -194,7 +195,7 @@ func newConfigCommand() *cobra.Command {
 			&msiService,
 			entraIDService,
 			rgClient,
-			getProjectResponse.Project.Name, subscriptionID, flagValues.RoleNames)
+			flagValues.ManagedIdentityName, subscriptionID, flagValues.RoleNames)
 
 		if err != nil {
 			return err
@@ -484,7 +485,7 @@ func pickOrCreateMSI(ctx context.Context,
 	msiService azdMSIService,
 	entraIDService entraid.EntraIdService,
 	resourceService resourceService,
-	projectName string, subscriptionId string, roleNames []string) (*authConfiguration, error) {
+	identityName string, subscriptionId string, roleNames []string) (*authConfiguration, error) {
 
 	// ************************** Pick or create a new MSI **************************
 
@@ -555,8 +556,6 @@ func pickOrCreateMSI(ctx context.Context,
 		} else {
 			resourceGroupName = rgName
 		}
-
-		identityName := "msi-copilot-" + projectName
 
 		taskList.AddTask(ux.TaskOptions{
 			Title: fmt.Sprintf("Creating User Managed Identity (MSI) '%s'", identityName),

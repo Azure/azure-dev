@@ -1,0 +1,30 @@
+id: echo-agent
+version: 1
+name: echo-agent
+description: |-
+  This Agent just returns an echo from the user input.
+  It is useful for testing and debugging.
+metadata:
+  example:
+    - role: user
+      content: |-
+        Can you help me learn some basic French phrases for traveling?
+    - role: assistant
+      content: |-
+        Can you help me learn some basic French phrases for traveling?
+  tags:
+    - example
+    - learning
+  authors:
+    - jeomhove
+
+model: gpt-4o-mini
+
+kind: hosted
+
+# container:
+#   path: Dockerfile
+#   context: .
+
+environment_variables:
+  LOG_LEVEL: "debug"

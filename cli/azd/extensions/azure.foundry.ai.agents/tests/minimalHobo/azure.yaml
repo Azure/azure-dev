@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: minimal-hobo
+services:
+    echo-agent:
+        project: src/echo-agent
+        host: foundry.agent
+        language: python
+infra:
+    path: infra
+    module: main

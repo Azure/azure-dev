@@ -4,6 +4,8 @@ package agent_yaml
 
 import (
 	"fmt"
+
+	"gopkg.in/yaml.v3"
 )
 
 // AgentDefinition represents The following is a specification for defining AI agents with structured metadata, inputs, outputs, tools, and templates.
@@ -359,262 +361,49 @@ type CodeInterpreterTool struct {
 	FileIds []interface{} `json:"fileIds"` // The IDs of the files to be used by the code interpreter tool.
 }
 
-// ValidationError represents a single validation error
-type ValidationError struct {
-	Field   string `json:"field"`   // The field path that failed validation
-	Message string `json:"message"` // The validation error message
-}
-
-// ValidationReport represents the result of validating an AgentManifest
-type ValidationReport struct {
-	IsValid bool              `json:"isValid"` // Whether the manifest passed all validations
-	Errors  []ValidationError `json:"errors"`  // List of validation errors found
-}
-
-// AddError adds a validation error to the report
-func (r *ValidationReport) AddError(field, message string) {
-	r.Errors = append(r.Errors, ValidationError{
-		Field:   field,
-		Message: message,
-	})
-	r.IsValid = false
-}
-
-// HasErrors returns true if there are any validation errors
-func (r *ValidationReport) HasErrors() bool {
-	return len(r.Errors) > 0
-}
-
-// GetErrorSummary returns a formatted string with all validation errors
-func (r *ValidationReport) GetErrorSummary() string {
-	if r.IsValid {
-		return "✓ AgentManifest validation passed successfully"
+// LoadAndValidateAgentManifest parses YAML content and validates it as an AgentManifest
+// Returns the parsed manifest and any validation errors
+func LoadAndValidateAgentManifest(yamlContent []byte) (*AgentManifest, error) {
+	var manifest AgentManifest
+	if err := yaml.Unmarshal(yamlContent, &manifest); err != nil {
+		return nil, fmt.Errorf("YAML content does not conform to AgentManifest format: %w", err)
 	}
 
-	result := "✗ AgentManifest validation failed with the following issues:\n"
-	for i, err := range r.Errors {
-		result += fmt.Sprintf("  %d. %s: %s\n", i+1, err.Field, err.Message)
+	if err := ValidateAgentManifest(&manifest); err != nil {
+		return nil, err
 	}
-	return result
+
+	return &manifest, nil
 }
 
-// ValidateAgentManifest performs comprehensive validation of an AgentManifest
-func ValidateAgentManifest(manifest *AgentManifest) *ValidationReport {
-	report := &ValidationReport{
-		IsValid: true,
-		Errors:  []ValidationError{},
+// ValidateAgentManifest performs basic validation of an AgentManifest
+// Returns an error if the manifest is invalid, nil if valid
+func ValidateAgentManifest(manifest *AgentManifest) error {
+	var errors []string
+
+	// Validate Agent Definition - only the essential fields
+	if manifest.Agent.Name == "" {
+		errors = append(errors, "agent.name is required")
+	}
+	if manifest.Agent.Kind == "" {
+		errors = append(errors, "agent.kind is required")
+	}
+	if manifest.Agent.Model.Id == "" {
+		errors = append(errors, "agent.model.id is required")
 	}
 
-	// Validate Agent Definition
-	validateAgentDefinition(&manifest.Agent, report)
-
-	// Validate Models array
+	// Validate at least one model is specified
 	if len(manifest.Models) == 0 {
-		report.AddError("models", "at least one model must be specified")
-	} else {
-		for i, model := range manifest.Models {
-			validateModel(&model, fmt.Sprintf("models[%d]", i), report)
+		errors = append(errors, "at least one model must be specified in models array")
+	}
+
+	if len(errors) > 0 {
+		errorMsg := "validation failed:"
+		for _, err := range errors {
+			errorMsg += fmt.Sprintf("\n  - %s", err)
 		}
+		return fmt.Errorf("%s", errorMsg)
 	}
 
-	// Validate Parameters (if provided)
-	if manifest.Parameters != nil && len(manifest.Parameters) > 0 {
-		validateParameters(manifest.Parameters, "parameters", report)
-	}
-
-	return report
-}
-
-// validateAgentDefinition validates the core agent definition
-func validateAgentDefinition(agent *AgentDefinition, report *ValidationReport) {
-	// Required fields
-	if agent.Name == "" {
-		report.AddError("agent.name", "agent name is required")
-	}
-	if agent.Kind == "" {
-		report.AddError("agent.kind", "agent kind is required")
-	}
-
-	// Validate Kind is one of the expected values
-	validKinds := []string{"prompt", "container"}
-	isValidKind := false
-	for _, validKind := range validKinds {
-		if agent.Kind == validKind {
-			isValidKind = true
-			break
-		}
-	}
-	if agent.Kind != "" && !isValidKind {
-		report.AddError("agent.kind", fmt.Sprintf("agent kind must be one of: %v", validKinds))
-	}
-
-	// Validate Model
-	validateModel(&agent.Model, "agent.model", report)
-
-	// Validate InputSchema if provided
-	if agent.InputSchema.Properties != nil {
-		validateInputSchema(&agent.InputSchema, "agent.inputSchema", report)
-	}
-
-	// Validate OutputSchema if provided
-	if agent.OutputSchema.Properties != nil {
-		validateOutputSchema(&agent.OutputSchema, "agent.outputSchema", report)
-	}
-
-	// Validate Tools if provided
-	if len(agent.Tools) > 0 {
-		for i, tool := range agent.Tools {
-			validateTool(&tool, fmt.Sprintf("agent.tools[%d]", i), report)
-		}
-	}
-}
-
-// validateModel validates a model configuration
-func validateModel(model *Model, fieldPath string, report *ValidationReport) {
-	if model.Id == "" {
-		report.AddError(fmt.Sprintf("%s.id", fieldPath), "model ID is required")
-	}
-
-	// Validate publisher if provided
-	if model.Publisher != "" {
-		validPublishers := []string{"openai", "azure", "anthropic", "microsoft"}
-		isValidPublisher := false
-		for _, validPublisher := range validPublishers {
-			if model.Publisher == validPublisher {
-				isValidPublisher = true
-				break
-			}
-		}
-		if !isValidPublisher {
-			report.AddError(fmt.Sprintf("%s.publisher", fieldPath), fmt.Sprintf("publisher should be one of: %v", validPublishers))
-		}
-	}
-
-	// Validate connection if provided
-	if model.Connection.Kind != "" {
-		validateConnection(&model.Connection, fmt.Sprintf("%s.connection", fieldPath), report)
-	}
-}
-
-// validateConnection validates a connection configuration
-func validateConnection(conn *Connection, fieldPath string, report *ValidationReport) {
-	if conn.Kind == "" {
-		report.AddError(fmt.Sprintf("%s.kind", fieldPath), "connection kind is required")
-	}
-
-	validKinds := []string{"key", "oauth", "reference", "generic"}
-	isValidKind := false
-	for _, validKind := range validKinds {
-		if conn.Kind == validKind {
-			isValidKind = true
-			break
-		}
-	}
-	if conn.Kind != "" && !isValidKind {
-		report.AddError(fmt.Sprintf("%s.kind", fieldPath), fmt.Sprintf("connection kind must be one of: %v", validKinds))
-	}
-
-	if conn.Authority == "" {
-		report.AddError(fmt.Sprintf("%s.authority", fieldPath), "connection authority is required")
-	}
-}
-
-// validateInputSchema validates input schema
-func validateInputSchema(schema *InputSchema, fieldPath string, report *ValidationReport) {
-	if len(schema.Properties) == 0 {
-		report.AddError(fmt.Sprintf("%s.properties", fieldPath), "input schema must have at least one property")
-	}
-
-	for i, prop := range schema.Properties {
-		validateInput(&prop, fmt.Sprintf("%s.properties[%d]", fieldPath, i), report)
-	}
-}
-
-// validateOutputSchema validates output schema
-func validateOutputSchema(schema *OutputSchema, fieldPath string, report *ValidationReport) {
-	if len(schema.Properties) == 0 {
-		report.AddError(fmt.Sprintf("%s.properties", fieldPath), "output schema must have at least one property")
-	}
-
-	for i, prop := range schema.Properties {
-		validateOutput(&prop, fmt.Sprintf("%s.properties[%d]", fieldPath, i), report)
-	}
-}
-
-// validateInput validates an input property
-func validateInput(input *Input, fieldPath string, report *ValidationReport) {
-	if input.Name == "" {
-		report.AddError(fmt.Sprintf("%s.name", fieldPath), "input name is required")
-	}
-	if input.Kind == "" {
-		report.AddError(fmt.Sprintf("%s.kind", fieldPath), "input kind is required")
-	}
-
-	// Validate kind is a valid type
-	validKinds := []string{"string", "number", "boolean", "array", "object"}
-	isValidKind := false
-	for _, validKind := range validKinds {
-		if input.Kind == validKind {
-			isValidKind = true
-			break
-		}
-	}
-	if input.Kind != "" && !isValidKind {
-		report.AddError(fmt.Sprintf("%s.kind", fieldPath), fmt.Sprintf("input kind must be one of: %v", validKinds))
-	}
-}
-
-// validateOutput validates an output property
-func validateOutput(output *Output, fieldPath string, report *ValidationReport) {
-	if output.Name == "" {
-		report.AddError(fmt.Sprintf("%s.name", fieldPath), "output name is required")
-	}
-	if output.Kind == "" {
-		report.AddError(fmt.Sprintf("%s.kind", fieldPath), "output kind is required")
-	}
-
-	// Validate kind is a valid type
-	validKinds := []string{"string", "number", "boolean", "array", "object"}
-	isValidKind := false
-	for _, validKind := range validKinds {
-		if output.Kind == validKind {
-			isValidKind = true
-			break
-		}
-	}
-	if output.Kind != "" && !isValidKind {
-		report.AddError(fmt.Sprintf("%s.kind", fieldPath), fmt.Sprintf("output kind must be one of: %v", validKinds))
-	}
-}
-
-// validateTool validates a tool configuration
-func validateTool(tool *Tool, fieldPath string, report *ValidationReport) {
-	if tool.Name == "" {
-		report.AddError(fmt.Sprintf("%s.name", fieldPath), "tool name is required")
-	}
-	if tool.Kind == "" {
-		report.AddError(fmt.Sprintf("%s.kind", fieldPath), "tool kind is required")
-	}
-
-	// Validate kind is a valid tool type
-	validKinds := []string{"function", "server", "bing_search", "file_search", "mcp", "model", "openapi", "code_interpreter"}
-	isValidKind := false
-	for _, validKind := range validKinds {
-		if tool.Kind == validKind {
-			isValidKind = true
-			break
-		}
-	}
-	if tool.Kind != "" && !isValidKind {
-		report.AddError(fmt.Sprintf("%s.kind", fieldPath), fmt.Sprintf("tool kind must be one of: %v", validKinds))
-	}
-}
-
-// validateParameters validates the parameters array
-func validateParameters(params []interface{}, fieldPath string, report *ValidationReport) {
-	for i, param := range params {
-		if param == nil {
-			report.AddError(fmt.Sprintf("%s[%d]", fieldPath, i), "parameter cannot be null")
-		}
-	}
+	return nil
 }

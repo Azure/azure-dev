@@ -9,10 +9,10 @@ import (
 
 func TestValidateAgentManifest(t *testing.T) {
 	tests := []struct {
-		name          string
-		manifest      *AgentManifest
-		expectValid   bool
-		expectedErrors []string
+		name        string
+		manifest    *AgentManifest
+		expectValid bool
+		errorSubstr string
 	}{
 		{
 			name: "Valid manifest",
@@ -30,96 +30,79 @@ func TestValidateAgentManifest(t *testing.T) {
 					},
 				},
 			},
-			expectValid:    true,
-			expectedErrors: []string{},
+			expectValid: true,
 		},
 		{
-			name: "Missing required fields",
+			name: "Missing agent name",
 			manifest: &AgentManifest{
 				Agent: AgentDefinition{
-					// Missing Name, Kind, and Model.Id
+					Kind: "prompt",
+					Model: Model{
+						Id: "gpt-4",
+					},
 				},
-				Models: []Model{}, // Empty models array
+				Models: []Model{{Id: "gpt-4"}},
 			},
 			expectValid: false,
-			expectedErrors: []string{
-				"agent.name: agent name is required",
-				"agent.kind: agent kind is required",
-				"agent.model.id: model ID is required",
-				"models: at least one model must be specified",
-			},
+			errorSubstr: "agent.name is required",
 		},
 		{
-			name: "Invalid kind and publisher",
+			name: "Missing agent kind",
 			manifest: &AgentManifest{
 				Agent: AgentDefinition{
 					Name: "Test Agent",
-					Kind: "invalid_kind",
 					Model: Model{
-						Id:        "gpt-4",
-						Publisher: "invalid_publisher",
+						Id: "gpt-4",
 					},
 				},
-				Models: []Model{
-					{
-						Id:        "gpt-4",
-						Publisher: "invalid_publisher",
-					},
-				},
+				Models: []Model{{Id: "gpt-4"}},
 			},
 			expectValid: false,
-			expectedErrors: []string{
-				"agent.kind: agent kind must be one of",
-				"agent.model.publisher: publisher should be one of",
-				"models[0].publisher: publisher should be one of",
+			errorSubstr: "agent.kind is required",
+		},
+		{
+			name: "Missing model ID",
+			manifest: &AgentManifest{
+				Agent: AgentDefinition{
+					Name: "Test Agent",
+					Kind: "prompt",
+					Model: Model{},
+				},
+				Models: []Model{{Id: "gpt-4"}},
 			},
+			expectValid: false,
+			errorSubstr: "agent.model.id is required",
+		},
+		{
+			name: "Empty models array",
+			manifest: &AgentManifest{
+				Agent: AgentDefinition{
+					Name: "Test Agent",
+					Kind: "prompt",
+					Model: Model{Id: "gpt-4"},
+				},
+				Models: []Model{},
+			},
+			expectValid: false,
+			errorSubstr: "at least one model must be specified",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			report := ValidateAgentManifest(tt.manifest)
+			err := ValidateAgentManifest(tt.manifest)
 
-			if report.IsValid != tt.expectValid {
-				t.Errorf("Expected IsValid=%v, got %v", tt.expectValid, report.IsValid)
-			}
-
-			if tt.expectValid && report.HasErrors() {
-				t.Errorf("Expected no errors for valid manifest, but got: %s", report.GetErrorSummary())
-			}
-
-			if !tt.expectValid {
-				summary := report.GetErrorSummary()
-				for _, expectedError := range tt.expectedErrors {
-					if !strings.Contains(summary, expectedError) {
-						t.Errorf("Expected error containing '%s' not found in summary: %s", expectedError, summary)
-					}
+			if tt.expectValid {
+				if err != nil {
+					t.Errorf("Expected no error for valid manifest, but got: %v", err)
+				}
+			} else {
+				if err == nil {
+					t.Error("Expected error for invalid manifest, but got none")
+				} else if !strings.Contains(err.Error(), tt.errorSubstr) {
+					t.Errorf("Expected error containing '%s', but got: %v", tt.errorSubstr, err)
 				}
 			}
 		})
-	}
-}
-
-func TestValidationReportMethods(t *testing.T) {
-	report := &ValidationReport{IsValid: true}
-	
-	// Test adding errors
-	if report.HasErrors() {
-		t.Error("New report should not have errors")
-	}
-
-	report.AddError("test.field", "test error message")
-	
-	if !report.HasErrors() {
-		t.Error("Report should have errors after adding one")
-	}
-
-	if report.IsValid {
-		t.Error("Report should not be valid after adding error")
-	}
-
-	summary := report.GetErrorSummary()
-	if !strings.Contains(summary, "test.field") || !strings.Contains(summary, "test error message") {
-		t.Errorf("Error summary should contain field and message: %s", summary)
 	}
 }

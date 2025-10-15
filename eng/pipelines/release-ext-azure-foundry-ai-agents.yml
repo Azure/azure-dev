@@ -15,7 +15,6 @@ trigger:
 pr:
   paths:
     include:
-      - go.mod
       - cli/azd/extensions/azure.foundry.ai.agents
       - eng/pipelines/release-azd-extension.yml
       - eng/pipelines/templates/steps/publish-cli.yml

@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/fatih/color"
@@ -438,6 +440,20 @@ func (a *InitAction) downloadAgentYaml(
 	if err := yaml.Unmarshal(content, &yamlData); err != nil {
 		return nil, "", fmt.Errorf("parsing YAML content: %w", err)
 	}
+
+	// Parse and validate the YAML content against AgentManifest structure
+	var agentManifest agent_yaml.AgentManifest
+	if err := yaml.Unmarshal(content, &agentManifest); err != nil {
+		return nil, "", fmt.Errorf("YAML content does not conform to AgentManifest format: %w", err)
+	}
+
+	// Perform comprehensive validation
+	validationReport := agent_yaml.ValidateAgentManifest(&agentManifest)
+	if validationReport.HasErrors() {
+		return nil, "", fmt.Errorf("AgentManifest validation failed:\n%s", validationReport.GetErrorSummary())
+	}
+
+	fmt.Println(validationReport.GetErrorSummary())
 
 	agentId, ok := yamlData["id"].(string)
 	if !ok {

@@ -120,19 +120,21 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	err = setupK8sManifests(t, serviceConfig)
 	require.NoError(t, err)
 
-	packageResult, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
-		serviceContext := NewServiceContext()
-		serviceContext.Package = ArtifactCollection{
-			{
-				Kind:         ArtifactKindContainer,
-				Location:     "test-app/api-test:azd-deploy-0",
-				LocationKind: LocationKindRemote,
-				Metadata: map[string]string{
-					"imageHash":   "IMAGE_HASH",
-					"targetImage": "test-app/api-test:azd-deploy-0",
-				},
+	// Create shared serviceContext for all phases
+	serviceContext := NewServiceContext()
+	serviceContext.Package = ArtifactCollection{
+		{
+			Kind:         ArtifactKindContainer,
+			Location:     "test-app/api-test:azd-deploy-0",
+			LocationKind: LocationKindRemote,
+			Metadata: map[string]string{
+				"imageHash":   "IMAGE_HASH",
+				"targetImage": "test-app/api-test:azd-deploy-0",
 			},
-		}
+		},
+	}
+
+	packageResult, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 		return serviceTarget.Package(
 			*mockContext.Context,
 			serviceConfig,
@@ -147,25 +149,19 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
 
-	// Create a mock publish result that would normally come from a Publish operation
-	publishResult := &ServicePublishResult{
-		Artifacts: ArtifactCollection{
-			{
-				Kind:         ArtifactKindContainer,
-				Location:     "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0",
-				LocationKind: LocationKindRemote,
-				Metadata: map[string]string{
-					"remoteImage": "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0",
-				},
-			},
-		},
-	}
-
 	deployResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-			serviceContext := NewServiceContext()
-			serviceContext.Package = packageResult.Artifacts
-			serviceContext.Publish = publishResult.Artifacts
+			// Add mock publish artifacts to the shared serviceContext
+			serviceContext.Publish = ArtifactCollection{
+				{
+					Kind:         ArtifactKindContainer,
+					Location:     "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0",
+					LocationKind: LocationKindRemote,
+					Metadata: map[string]string{
+						"remoteImage": "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0",
+					},
+				},
+			}
 			return serviceTarget.Deploy(*mockContext.Context, serviceConfig, serviceContext, scope, progress)
 		},
 	)
@@ -194,19 +190,21 @@ func Test_AKS_Publish(t *testing.T) {
 	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 	require.NoError(t, err)
 
-	packageResult, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
-		serviceContext := NewServiceContext()
-		serviceContext.Package = ArtifactCollection{
-			{
-				Kind:         ArtifactKindContainer,
-				Location:     "test-app/api-test:azd-deploy-0",
-				LocationKind: LocationKindRemote,
-				Metadata: map[string]string{
-					"imageHash":   "IMAGE_HASH",
-					"targetImage": "test-app/api-test:azd-deploy-0",
-				},
+	// Create shared serviceContext for all phases
+	serviceContext := NewServiceContext()
+	serviceContext.Package = ArtifactCollection{
+		{
+			Kind:         ArtifactKindContainer,
+			Location:     "test-app/api-test:azd-deploy-0",
+			LocationKind: LocationKindRemote,
+			Metadata: map[string]string{
+				"imageHash":   "IMAGE_HASH",
+				"targetImage": "test-app/api-test:azd-deploy-0",
 			},
-		}
+		},
+	}
+
+	packageResult, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 		return serviceTarget.Package(
 			*mockContext.Context,
 			serviceConfig,
@@ -223,8 +221,6 @@ func Test_AKS_Publish(t *testing.T) {
 
 	publishResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
-			serviceContext := NewServiceContext()
-			serviceContext.Package = packageResult.Artifacts
 			return serviceTarget.Publish(
 				*mockContext.Context, serviceConfig, serviceContext, scope, progress, &PublishOptions{})
 		},
@@ -258,17 +254,14 @@ func Test_AKS_Publish_NoContainer(t *testing.T) {
 	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 	require.NoError(t, err)
 
-	// Create a package result with no artifacts (indicating no container to publish)
-	packageResult := &ServicePackageResult{
-		Artifacts: ArtifactCollection{},
-	}
+	// Create serviceContext with no package artifacts (indicating no container to publish)
+	serviceContext := NewServiceContext()
+	serviceContext.Package = ArtifactCollection{}
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
 
 	publishResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
-			serviceContext := NewServiceContext()
-			serviceContext.Package = packageResult.Artifacts
 			return serviceTarget.Publish(
 				*mockContext.Context, serviceConfig, serviceContext, scope, progress, &PublishOptions{})
 		},
@@ -414,15 +407,13 @@ func Test_Deploy_Helm(t *testing.T) {
 	err = simulateInitliaze(*mockContext.Context, serviceTarget, &serviceConfig)
 	require.NoError(t, err)
 
-	packageResult := &ServicePackageResult{
-		Artifacts: ArtifactCollection{},
-	}
+	// Create serviceContext with empty package artifacts
+	serviceContext := NewServiceContext()
+	serviceContext.Package = ArtifactCollection{}
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
 	deployResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-			serviceContext := NewServiceContext()
-			serviceContext.Package = packageResult.Artifacts
 			return serviceTarget.Deploy(*mockContext.Context, &serviceConfig, serviceContext, scope, progress)
 		},
 	)
@@ -480,15 +471,13 @@ func Test_Deploy_Kustomize(t *testing.T) {
 	err = simulateInitliaze(*mockContext.Context, serviceTarget, &serviceConfig)
 	require.NoError(t, err)
 
-	packageResult := &ServicePackageResult{
-		Artifacts: ArtifactCollection{},
-	}
+	// Create serviceContext with empty package artifacts
+	serviceContext := NewServiceContext()
+	serviceContext.Package = ArtifactCollection{}
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
 	deployResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
-			serviceContext := NewServiceContext()
-			serviceContext.Package = packageResult.Artifacts
 			return serviceTarget.Deploy(*mockContext.Context, &serviceConfig, serviceContext, scope, progress)
 		},
 	)

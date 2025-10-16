@@ -41,7 +41,6 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 	expectedDeploymentName := fmt.Sprintf("%s-%d", deploymentName, mockContext.Clock.Now().Unix())
 	expectedFlowName := fmt.Sprintf("%s-%d", flowName, mockContext.Clock.Now().Unix())
 
-	servicePackage := &ServicePackageResult{}
 	targetResource := environment.NewTargetResource(
 		env.GetSubscriptionId(),
 		env.Getenv(environment.ResourceGroupEnvVarName),
@@ -76,14 +75,26 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 
 	environmentVersion := &armmachinelearning.EnvironmentVersion{
 		Name: to.Ptr("1"),
+		Properties: &armmachinelearning.EnvironmentVersionProperties{
+			EnvironmentType: to.Ptr(armmachinelearning.EnvironmentTypeUserCreated),
+		},
+		ID:   to.Ptr("/subscriptions/test/resourceGroups/test/providers/Microsoft.MachineLearningServices/workspaces/test/environments/test/versions/1"),
+		Type: to.Ptr("Microsoft.MachineLearningServices/workspaces/environments/versions"),
 	}
 
 	modelVersion := &armmachinelearning.ModelVersion{
 		Name: to.Ptr("1"),
+		ID:   to.Ptr("/subscriptions/test/resourceGroups/test/providers/Microsoft.MachineLearningServices/workspaces/test/models/test/versions/1"),
+		Type: to.Ptr("Microsoft.MachineLearningServices/workspaces/models/versions"),
+		Properties: &armmachinelearning.ModelVersionProperties{
+			ModelType: to.Ptr("CustomModel"),
+		},
 	}
 
 	onlineDeployment := &armmachinelearning.OnlineDeployment{
 		Name: &expectedDeploymentName,
+		ID:   to.Ptr("/subscriptions/test/resourceGroups/test/providers/Microsoft.MachineLearningServices/workspaces/test/onlineEndpoints/test/deployments/" + expectedDeploymentName),
+		Type: to.Ptr("Microsoft.MachineLearningServices/workspaces/onlineEndpoints/deployments"),
 	}
 
 	onlineEndpoint := &armmachinelearning.OnlineEndpoint{
@@ -133,14 +144,60 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 	serviceTarget := createMlEndpointTarget(mockContext, env, aiHelper)
 	deployResult, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceDeployResult, error) {
 		serviceContext := NewServiceContext()
-		serviceContext.Package = servicePackage.Artifacts
+		serviceContext.Package = ArtifactCollection{
+			{
+				Kind:         ArtifactKindContainer,
+				Location:     "test-flow-package",
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"name": "test-package",
+					"type": "flow",
+				},
+			},
+		}
 		return serviceTarget.Deploy(*mockContext.Context, serviceConfig, serviceContext, targetResource, progess)
 
 	})
 
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
-	require.Len(t, deployResult.Artifacts, 1)
+	require.GreaterOrEqual(t, len(deployResult.Artifacts), 1)
+
+	// Check that we have the expected deployment artifacts
+	deploymentArtifacts := deployResult.Artifacts.Find(WithKind(ArtifactKindDeployment))
+	require.Len(t, deploymentArtifacts, 4, "Should have exactly 4 deployment artifacts: flow, environment, model, and online deployment")
+
+	// Verify specific deployment artifacts are present
+	var flowArtifact, environmentArtifact, modelArtifact, onlineDeploymentArtifact *Artifact
+	for _, artifact := range deploymentArtifacts {
+		if artifact.LocationKind == LocationKindLocal && artifact.Location == "./flow/flow.yaml" {
+			flowArtifact = &artifact
+		} else if artifact.LocationKind == LocationKindRemote {
+			if artifact.Metadata["type"] == "Microsoft.MachineLearningServices/workspaces/environments/versions" {
+				environmentArtifact = &artifact
+			} else if artifact.Metadata["type"] == "Microsoft.MachineLearningServices/workspaces/models/versions" {
+				modelArtifact = &artifact
+			} else if artifact.Metadata["type"] == "Microsoft.MachineLearningServices/workspaces/onlineEndpoints/deployments" {
+				onlineDeploymentArtifact = &artifact
+			}
+		}
+	}
+
+	// Assert that all expected deployment artifacts are present
+	require.NotNil(t, flowArtifact, "Flow deployment artifact should be present")
+	require.Equal(t, "./flow/flow.yaml", flowArtifact.Location, "Flow location should be correct")
+	require.NotEmpty(t, flowArtifact.Metadata["name"], "Flow artifact should have a name")
+	require.NotNil(t, environmentArtifact, "Environment version deployment artifact should be present")
+	require.Equal(t, "1", environmentArtifact.Metadata["name"], "Environment version name should match")
+	require.Contains(t, environmentArtifact.Location, "/environments/test/versions/1", "Environment version location should be correct")
+
+	require.NotNil(t, modelArtifact, "Model version deployment artifact should be present")
+	require.Equal(t, "1", modelArtifact.Metadata["name"], "Model version name should match")
+	require.Contains(t, modelArtifact.Location, "/models/test/versions/1", "Model version location should be correct")
+
+	require.NotNil(t, onlineDeploymentArtifact, "Online deployment artifact should be present")
+	require.Equal(t, expectedDeploymentName, onlineDeploymentArtifact.Metadata["name"], "Online deployment name should match expected deployment name")
+	require.Contains(t, onlineDeploymentArtifact.Location, "/deployments/"+expectedDeploymentName, "Online deployment location should contain deployment name")
 
 	// Check that we have endpoint artifacts
 	endpoints := deployResult.Artifacts.Find()

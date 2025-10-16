@@ -272,13 +272,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	rootCmd := NewRootCmd(false, nil, rootContainer)
 
 	var extensionManager *extensions.Manager
-	if err := rootContainer.Resolve(&extensionManager); err != nil {
-		log.Panic("failed to resolve extension manager for auto-install:", err)
-	}
 	var console input.Console
-	if err := rootContainer.Resolve(&console); err != nil {
-		log.Panic("failed to resolve console for unknown flags error:", err)
-	}
 
 	// rootCmd.Find() returns error if the command is not identified. Cobra checks all the registered commands
 	// and returns error if the input command is not registered.
@@ -288,59 +282,68 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		// Known command, no need to auto-install
 		err := rootCmd.ExecuteContext(ctx)
 
+		if err := rootContainer.Resolve(&extensionManager); err != nil {
+			log.Panic("failed to resolve extension manager for auto-install:", err)
+		}
+		if err := rootContainer.Resolve(&console); err != nil {
+			log.Panic("failed to resolve console for unknown flags error:", err)
+		}
+
 		// auto-install for target service
 		var unsupportedErr *project.UnsupportedServiceHostError
-		if errors.As(err, &unsupportedErr) {
-			requiredHost := unsupportedErr.Host
-			availableExtensionsForHost, err := extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
-				Capability: extensions.ServiceTargetProviderCapability,
-				Provider:   requiredHost,
-			})
+		if !errors.As(err, &unsupportedErr) {
+			return err
+		}
+
+		requiredHost := unsupportedErr.Host
+		availableExtensionsForHost, err := extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
+			Capability: extensions.ServiceTargetProviderCapability,
+			Provider:   requiredHost,
+		})
+		if err != nil {
+			// Do not fail if we couldn't check for extensions - just proceed to normal execution
+			log.Println("Error: check for extensions. Skipping auto-install:", err)
+			console.Message(ctx, unsupportedErr.ErrorMessage)
+			return nil
+		}
+		// Note: We don't need to filter or check which extensions are installed.
+		// If any of these extensions would be installed, the auto-install wouldn't have been triggered because
+		// there would be at least one extensions providing the capability and provider.
+		if len(availableExtensionsForHost) == 0 {
+			// did not find an extension with the capability, just print the original error message
+			console.Message(ctx, unsupportedErr.ErrorMessage)
+			return nil
+		}
+
+		console.Message(ctx,
+			fmt.Sprintf("Your project is using host '%s' which is not supported by default.\n", unsupportedErr.Host))
+
+		var extensionIdToInstall extensions.ExtensionMetadata
+		if len(availableExtensionsForHost) == 1 {
+			extensionIdToInstall = *availableExtensionsForHost[0]
+			console.Message(ctx, "An extension was found that provides support for this host.")
+		} else {
+			console.Message(ctx, "There are multiple extensions that provide support for this host.")
+			// Multiple matches found, prompt user to choose
+			chosenExtension, err := promptForExtensionChoice(ctx, console, availableExtensionsForHost)
 			if err != nil {
-				// Do not fail if we couldn't check for extensions - just proceed to normal execution
-				log.Println("Error: check for extensions. Skipping auto-install:", err)
-				console.Message(ctx, unsupportedErr.ErrorMessage)
-				return nil
+				console.Message(ctx, fmt.Sprintf("Error selecting extension: %v", err))
+				return err
 			}
-			// Note: We don't need to filter or check which extensions are installed.
-			// If any of these extensions would be installed, the auto-install wouldn't have been triggered because
-			// there would be at least one extensions providing the capability and provider.
-			if len(availableExtensionsForHost) == 0 {
-				// did not find an extension with the capability, just print the original error message
-				console.Message(ctx, unsupportedErr.ErrorMessage)
-				return nil
-			}
+			extensionIdToInstall = *chosenExtension
+		}
 
-			console.Message(ctx,
-				fmt.Sprintf("Your project is using host '%s' which is not supported by default.\n", unsupportedErr.Host))
+		installed, installErr := tryAutoInstallExtension(ctx, console, extensionManager, extensionIdToInstall)
+		if installErr != nil {
+			// Error needs to be printed here or else it will be hidden b/c the error printing is handled inside runtime
+			console.Message(ctx, installErr.Error())
+			return installErr
+		}
 
-			var extensionIdToInstall extensions.ExtensionMetadata
-			if len(availableExtensionsForHost) == 1 {
-				extensionIdToInstall = *availableExtensionsForHost[0]
-				console.Message(ctx, "An extension was found that provides support for this host.")
-			} else {
-				console.Message(ctx, "There are multiple extensions that provide support for this host.")
-				// Multiple matches found, prompt user to choose
-				chosenExtension, err := promptForExtensionChoice(ctx, console, availableExtensionsForHost)
-				if err != nil {
-					console.Message(ctx, fmt.Sprintf("Error selecting extension: %v", err))
-					return err
-				}
-				extensionIdToInstall = *chosenExtension
-			}
-
-			installed, installErr := tryAutoInstallExtension(ctx, console, extensionManager, extensionIdToInstall)
-			if installErr != nil {
-				// Error needs to be printed here or else it will be hidden b/c the error printing is handled inside runtime
-				console.Message(ctx, installErr.Error())
-				return installErr
-			}
-
-			if installed {
-				// Extension was installed, build command tree and execute
-				rootCmd := NewRootCmd(false, nil, rootContainer)
-				return rootCmd.ExecuteContext(ctx)
-			}
+		if installed {
+			// Extension was installed, build command tree and execute
+			rootCmd := NewRootCmd(false, nil, rootContainer)
+			return rootCmd.ExecuteContext(ctx)
 		}
 
 		return err
@@ -358,6 +361,13 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 		if isBuiltInCommand(rootCmd, unknownCommand) {
 			// This is a built-in command, proceed with normal execution without checking for extensions
 			return rootCmd.ExecuteContext(ctx)
+		}
+
+		if err := rootContainer.Resolve(&extensionManager); err != nil {
+			log.Panic("failed to resolve extension manager for auto-install:", err)
+		}
+		if err := rootContainer.Resolve(&console); err != nil {
+			log.Panic("failed to resolve console for unknown flags error:", err)
 		}
 
 		// If unknown flags were found before a non-built-in command, return an error with helpful guidance

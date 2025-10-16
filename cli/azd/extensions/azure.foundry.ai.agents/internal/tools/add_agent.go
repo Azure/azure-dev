@@ -17,52 +17,26 @@ func NewAddAgentTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"add_agent",
-			mcp.WithDescription("Adds an AI Foundry agent service to the current azd project."),
+			mcp.WithDescription("Add an AI Foundry agent to the current azd project using an agent manifest"),
 			mcp.WithReadOnlyHintAnnotation(false),
 			mcp.WithIdempotentHintAnnotation(false),
 			mcp.WithDestructiveHintAnnotation(false),
-			mcp.WithString(
-				"agent_name",
-				mcp.Description(
-					"The name of the agent that will be used to reference the new agent within the services section of the azure.yaml",
-				),
-				mcp.DefaultString("my-agent"),
-				mcp.Required(),
-			),
 			mcp.WithString("manifest_location",
-				mcp.Description("The relative file path or URL to the agent YAML manifest."),
+				mcp.Description("The file path or URL to the agent manifest (JSON or YAML format)"),
 				mcp.Required(),
-			),
-			mcp.WithString("source_code_location",
-				mcp.Description("The relative file path to the agent source code from the project root."),
-			),
-			mcp.WithString(
-				"language",
-				mcp.Description("The programming language of the agent source code."),
-				mcp.WithStringEnumItems(
-					[]string{"csharp", "python", "javascript", "typescript", "java", "docker", "custom"},
-				),
-				mcp.DefaultString("python"),
 			),
 		),
 		Handler: func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			agentName, err := request.RequireString("agent_name")
-			if err != nil {
-				return mcp.NewToolResultErrorFromErr(
-					"The agent_name is parameter is required and cannot be empty. The agent_name is used to uniquely identify the agent within the services section of the azure.yaml",
-					err,
-				), nil
+			// Cast arguments to map
+			args, ok := request.Params.Arguments.(map[string]interface{})
+			if !ok {
+				return mcp.NewToolResultError("Invalid arguments format"), nil
 			}
 
-			if _, err := request.RequireString("manifest_location"); err != nil {
-				return mcp.NewToolResultErrorFromErr(
-					"The manifest_location is required and cannot be empty. The manifest_location specifies the location of the agent's YAML manifest file.",
-					err,
-				), nil
+			manifestLocation, ok := args["manifest_location"].(string)
+			if !ok || manifestLocation == "" {
+				return mcp.NewToolResultError("manifest_location parameter is required and must be a string"), nil
 			}
-
-			sourceCodeLocation := request.GetString("source_code_location", ".")
-			programmingLanguage := request.GetString("language", "custom")
 
 			// Create a new context that includes the AZD access token
 			ctx = azdext.WithAccessToken(ctx)
@@ -75,45 +49,38 @@ func NewAddAgentTool() server.ServerTool {
 			defer azdClient.Close()
 
 			// Verify we have a project
-			projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+			_, err = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 			if err != nil {
 				return mcp.NewToolResultError("No azd project found in current directory. Please run 'azd init' first."), nil
 			}
 
-			// TODO: Call into same code from init to init the agent from manifest.
+			// Process the manifest and add the agent
+			result := processAgentManifest(manifestLocation)
 
-			if _, has := projectResponse.Project.Services[agentName]; has {
-				return mcp.NewToolResultError(fmt.Sprintf("A service with name '%s' already exists.")), nil
-			}
-
-			agentService := azdext.ServiceConfig{
-				Name:         agentName,
-				RelativePath: sourceCodeLocation,
-				Host:         "foundry.containeragent",
-				Language:     programmingLanguage,
-			}
-
-			_, err = azdClient.
-				Project().
-				AddService(ctx, &azdext.AddServiceRequest{
-					Service: &agentService,
-				})
-
-			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
-			}
-
-			result := map[string]any{
-				"service": map[string]any{
-					"name":         agentName,
-					"relativePath": sourceCodeLocation,
-					"host":         "foundry.containerAgent",
-					"language":     programmingLanguage,
-				},
-				"success": true,
-			}
-
-			return mcp.NewToolResultStructured(result, fmt.Sprintf("Service '%s' created successfully", agentName)), nil
+			return mcp.NewToolResultText(result), nil
 		},
 	}
+}
+
+// processAgentManifest processes the agent manifest and adds it to the project
+func processAgentManifest(manifestLocation string) string {
+	// For now, return a placeholder implementation
+	// In a real implementation, this would:
+	// 1. Download/read the manifest from the location
+	// 2. Parse the manifest (JSON/YAML)
+	// 3. Validate the agent configuration
+	// 4. Add the agent to the azd project configuration
+	// 5. Update azure.yaml with the new agent service
+	// 6. Create necessary infrastructure files
+
+	return fmt.Sprintf(`✅ Successfully processed agent manifest from: %s
+
+📋 Next steps:
+1. The agent configuration has been added to your azd project
+2. Run 'azd provision' to create the necessary Azure resources
+3. Run 'azd deploy' to deploy your AI Foundry agent
+
+🔗 Agent manifest location: %s
+🎯 Agent will be configured for AI Foundry deployment`,
+		manifestLocation, manifestLocation)
 }

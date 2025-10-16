@@ -224,12 +224,8 @@ func newConfigCommand() *cobra.Command {
 			return fmt.Errorf("failed to push files to git: %w", err)
 		}
 
-		codingAgentURL := fmt.Sprintf(
-			"https://github.com/%s/settings/copilot/coding_agent#:~:text=JSON%%20MCP%%20configuration-,MCP%%20configuration,-1",
-			repoSlug,
-		)
-
-		managedIdentityPortalURL := formatPortalLinkForManagedIdentity(tenantID, subscriptionID, authConfig.ResourceGroup, authConfig.Name)
+		codingAgentURL := ux.Hyperlink(fmt.Sprintf("https://github.com/%s/settings/copilot/coding_agent#:~:text=JSON%%20MCP%%20configuration-,MCP%%20configuration,-1", repoSlug))
+		managedIdentityPortalURL := ux.Hyperlink(formatPortalLinkForManagedIdentity(tenantID, subscriptionID, authConfig.ResourceGroup, authConfig.Name))
 
 		fmt.Println("")
 		fmt.Println(output.WithHighLightFormat("(!)"))

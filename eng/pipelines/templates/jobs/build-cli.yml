@@ -16,6 +16,10 @@ parameters:
   - name: UploadArtifact
     type: boolean
     default: true
+  - name: ghCopilotClientId
+    type: string
+  - name: ghCopilotIntegrationId
+    type: string
 
 jobs: 
   - job: BuildCLI_${{ parameters.NameSuffix }}
@@ -63,6 +67,8 @@ jobs:
             -SourceVersion $(Build.SourceVersion)
             -CodeCoverageEnabled
             -BuildRecordMode
+            -GitHubCopilotClientId "${{ parameters.ghCopilotClientId }}"
+            -GitHubCopilotIntegrationId "${{ parameters.ghCopilotIntegrationId }}"
           workingDirectory: cli/azd
         displayName: Build Go Binary (For tests)
 
@@ -174,6 +180,8 @@ jobs:
           arguments: >-
             -Version $(CLI_VERSION)
             -SourceVersion $(Build.SourceVersion)
+            -GitHubCopilotClientId "${{ parameters.ghCopilotClientId }}"
+            -GitHubCopilotIntegrationId "${{ parameters.ghCopilotIntegrationId }}"
           workingDirectory: cli/azd
         displayName: Build Go Binary
 

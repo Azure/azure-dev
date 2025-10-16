@@ -4,6 +4,7 @@
 package llm
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -25,7 +26,8 @@ func NewModelFactory(serviceLocator ioc.ServiceLocator) *ModelFactory {
 // CreateModelContainer creates a model container for the specified model type.
 // It resolves the appropriate model provider and delegates container creation to it.
 // Returns an error with suggestions if the model type is not supported.
-func (f *ModelFactory) CreateModelContainer(modelType LlmType, opts ...ModelOption) (*ModelContainer, error) {
+func (f *ModelFactory) CreateModelContainer(
+	ctx context.Context, modelType LlmType, opts ...ModelOption) (*ModelContainer, error) {
 	var modelProvider ModelProvider
 	if err := f.serviceLocator.ResolveNamed(string(modelType), &modelProvider); err != nil {
 		return nil, &internal.ErrorWithSuggestion{
@@ -35,10 +37,10 @@ func (f *ModelFactory) CreateModelContainer(modelType LlmType, opts ...ModelOpti
 		}
 	}
 
-	return modelProvider.CreateModelContainer(opts...)
+	return modelProvider.CreateModelContainer(ctx, opts...)
 }
 
 // ModelProvider defines the interface for creating model containers
 type ModelProvider interface {
-	CreateModelContainer(opts ...ModelOption) (*ModelContainer, error)
+	CreateModelContainer(ctx context.Context, opts ...ModelOption) (*ModelContainer, error)
 }

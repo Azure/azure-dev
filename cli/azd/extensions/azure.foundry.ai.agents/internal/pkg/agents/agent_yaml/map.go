@@ -274,7 +274,7 @@ func createAgentAPIRequest(agentDefinition AgentDefinition, agentDef interface{}
 	// Determine agent name (use name from agent definition)
 	agentName := agentDefinition.Name
 	if agentName == "" {
-		agentName = "default-agent"
+		agentName = "unspecified-agent-name"
 	}
 
 	// Create the agent request

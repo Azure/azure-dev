@@ -356,7 +356,7 @@ func (at *containerAppTarget) addPreProvisionChecks(_ context.Context, serviceCo
 
 		// Check if the target resource already exists
 		targetResource, err := at.resourceManager.GetTargetResource(ctx, at.env.GetSubscriptionId(), serviceConfig)
-		if targetResource != nil && err == nil {
+		if err == nil && targetResource != nil && targetResource.ResourceName() != "" {
 			exists = true
 		}
 

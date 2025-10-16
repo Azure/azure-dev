@@ -61,16 +61,17 @@ var validArtifactKinds = []ArtifactKind{
 	ArtifactKindOutput,
 }
 
-// endpointPattern matches endpoints with discriminator suffix that should be displayed instead of the default 'Endpoint' label.
+// endpointPattern matches endpoints with discriminator suffix that should be displayed
+// instead of the default 'Endpoint' label.
 // Pattern: "label: url" where label becomes the display name
 var endpointPattern = regexp.MustCompile(`(.+):\s(.+)`)
 
 // Artifact represents a build, package, or deployment artifact with its location and metadata.
 type Artifact struct {
-	Kind         ArtifactKind      `json:"kind"`               // Required: artifact type
-	Location     string            `json:"location,omitempty"` // Optional: location of the artifact (local path or remote reference)
-	LocationKind LocationKind      `json:"locationKind"`       // Required: whether location is local or remote
-	Metadata     map[string]string `json:"metadata,omitempty"` // Optional: arbitrary key/value pairs for extension-specific data
+	Kind         ArtifactKind      `json:"kind"`                   // Required: artifact type
+	Location     string            `json:"location,omitempty"`     // Optional: location of the artifact
+	LocationKind LocationKind      `json:"locationKind,omitempty"` // Optional: local, remote, or other
+	Metadata     map[string]string `json:"metadata,omitempty"`     // Optional: arbitrary key/value pairs
 }
 
 // ToString implements the UxItem interface for display output

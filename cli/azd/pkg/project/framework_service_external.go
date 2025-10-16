@@ -75,9 +75,6 @@ func (efs *ExternalFrameworkService) RequiredExternalTools(
 	serviceConfig *ServiceConfig,
 ) []tools.ExternalTool {
 	// Convert serviceConfig to gRPC proto
-	cleanup := efs.wireConsole()
-	defer cleanup()
-
 	protoServiceConfig, err := efs.toProtoServiceConfig(serviceConfig)
 	if err != nil {
 		return nil
@@ -119,9 +116,6 @@ func (efs *ExternalFrameworkService) RequiredExternalTools(
 
 // Initialize initializes the framework service for the specified service configuration
 func (efs *ExternalFrameworkService) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	cleanup := efs.wireConsole()
-	defer cleanup()
-
 	if serviceConfig == nil {
 		return errors.New("service configuration is required")
 	}
@@ -149,9 +143,6 @@ func (efs *ExternalFrameworkService) Initialize(ctx context.Context, serviceConf
 // Requirements gets the requirements for the language or framework service
 func (efs *ExternalFrameworkService) Requirements() FrameworkRequirements {
 	ctx := context.Background()
-	cleanup := efs.wireConsole()
-	defer cleanup()
-
 	req := &azdext.FrameworkServiceMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.FrameworkServiceMessage_RequirementsRequest{
@@ -204,9 +195,6 @@ func (efs *ExternalFrameworkService) Restore(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
-	cleanup := efs.wireConsole()
-	defer cleanup()
-
 	protoServiceConfig, err := efs.toProtoServiceConfig(serviceConfig)
 	if err != nil {
 		return nil, err
@@ -249,9 +237,6 @@ func (efs *ExternalFrameworkService) Build(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
-	cleanup := efs.wireConsole()
-	defer cleanup()
-
 	protoServiceConfig := &azdext.ServiceConfig{}
 	if err := mapper.Convert(serviceConfig, &protoServiceConfig); err != nil {
 		return nil, err
@@ -300,9 +285,6 @@ func (efs *ExternalFrameworkService) Package(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	cleanup := efs.wireConsole()
-	defer cleanup()
-
 	protoServiceConfig := &azdext.ServiceConfig{}
 	if err := mapper.Convert(serviceConfig, &protoServiceConfig); err != nil {
 		return nil, err
@@ -451,18 +433,6 @@ func (efs *ExternalFrameworkService) startResponseDispatcher() {
 			}
 		}
 	}()
-}
-
-func (efs *ExternalFrameworkService) wireConsole() func() {
-	stdOut := efs.extension.StdOut()
-	stdErr := efs.extension.StdErr()
-	stdOut.AddWriter(efs.console.Handles().Stdout)
-	stdErr.AddWriter(efs.console.Handles().Stderr)
-
-	return func() {
-		stdOut.RemoveWriter(efs.console.Handles().Stdout)
-		stdErr.RemoveWriter(efs.console.Handles().Stderr)
-	}
 }
 
 // Convert ServiceConfig to proto message

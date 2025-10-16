@@ -8,9 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
-	"os"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -301,10 +299,6 @@ func (sm *serviceManager) Package(
 	progress *async.Progress[ServiceProgress],
 	options *PackageOptions,
 ) (*ServicePackageResult, error) {
-	if options == nil {
-		options = &PackageOptions{}
-	}
-
 	cachedResult, ok := sm.getOperationResult(serviceConfig, string(ServiceEventPackage))
 	if ok && cachedResult != nil {
 		return cachedResult.(*ServicePackageResult), nil
@@ -798,32 +792,4 @@ func (sm *serviceManager) getTargetResourceForService(
 	}
 
 	return sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
-}
-
-// Copies a file from the source path to the destination path
-// Deletes the source file after the copy is complete
-func moveFile(sourcePath string, destinationPath string) error {
-	sourceFile, err := os.Open(sourcePath)
-	if err != nil {
-		return fmt.Errorf("opening source file: %w", err)
-	}
-	defer sourceFile.Close()
-
-	// Create or truncate the destination file
-	destinationFile, err := os.Create(destinationPath)
-	if err != nil {
-		return fmt.Errorf("creating destination file: %w", err)
-	}
-	defer destinationFile.Close()
-
-	// Copy the contents of the source file to the destination file
-	_, err = io.Copy(destinationFile, sourceFile)
-	if err != nil {
-		return fmt.Errorf("copying file: %w", err)
-	}
-
-	// Remove the source file (optional)
-	defer os.Remove(sourcePath)
-
-	return nil
 }

@@ -99,10 +99,8 @@ func (p *DemoServiceTargetProvider) Publish(
 ) (*azdext.ServicePublishResult, error) {
 	publishResponse, err := p.azdClient.Container().
 		Publish(ctx, &azdext.ContainerPublishRequest{
-			ServiceName: serviceConfig.Name,
-			Package: &azdext.ServicePackageResult{
-				Artifacts: []*azdext.Artifact{},
-			},
+			ServiceName:    serviceConfig.Name,
+			ServiceContext: serviceContext,
 		})
 	if err != nil {
 		return nil, err
@@ -141,9 +139,9 @@ func (p *DemoServiceTargetProvider) Deploy(
 	deployResult := &azdext.ServiceDeployResult{
 		Artifacts: []*azdext.Artifact{
 			{
-				Kind:         "deployment",
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_DEPLOYMENT,
 				Location:     resourceId,
-				LocationKind: "remote",
+				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
 				Metadata: map[string]string{
 					"kind":      "demo",
 					"endpoints": fmt.Sprintf("%v", endpoints),

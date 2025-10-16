@@ -413,7 +413,11 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Len(t, result.Artifacts, 1)
-		require.Equal(t, filepath.Join(svc.Path(), "target", "azure-functions", mvnFuncAppNameProperty), result.Artifacts[0].Location)
+		require.Equal(
+			t,
+			filepath.Join(svc.Path(), "target", "azure-functions", mvnFuncAppNameProperty),
+			result.Artifacts[0].Location,
+		)
 	})
 
 	t.Run("uses target/azure-functions when maven property functionAppName not available", func(t *testing.T) {

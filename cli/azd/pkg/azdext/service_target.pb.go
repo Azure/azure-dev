@@ -25,6 +25,124 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Artifact kinds - matching the existing Go ArtifactKind enum
+type ArtifactKind int32
+
+const (
+	ArtifactKind_ARTIFACT_KIND_UNSPECIFIED ArtifactKind = 0 // Default/unknown artifact kind
+	ArtifactKind_ARTIFACT_KIND_DIRECTORY   ArtifactKind = 1 // Directory containing project or build artifacts
+	ArtifactKind_ARTIFACT_KIND_CONFIG      ArtifactKind = 2 // Configuration file
+	ArtifactKind_ARTIFACT_KIND_ARCHIVE     ArtifactKind = 3 // Zip/archive package
+	ArtifactKind_ARTIFACT_KIND_CONTAINER   ArtifactKind = 4 // Docker/container image
+	ArtifactKind_ARTIFACT_KIND_ENDPOINT    ArtifactKind = 5 // Service endpoint URL
+	ArtifactKind_ARTIFACT_KIND_DEPLOYMENT  ArtifactKind = 6 // Deployment result or endpoint
+	ArtifactKind_ARTIFACT_KIND_RESOURCE    ArtifactKind = 7 // Azure Resource
+	ArtifactKind_ARTIFACT_KIND_OUTPUT      ArtifactKind = 8 // Output from deploy command
+)
+
+// Enum value maps for ArtifactKind.
+var (
+	ArtifactKind_name = map[int32]string{
+		0: "ARTIFACT_KIND_UNSPECIFIED",
+		1: "ARTIFACT_KIND_DIRECTORY",
+		2: "ARTIFACT_KIND_CONFIG",
+		3: "ARTIFACT_KIND_ARCHIVE",
+		4: "ARTIFACT_KIND_CONTAINER",
+		5: "ARTIFACT_KIND_ENDPOINT",
+		6: "ARTIFACT_KIND_DEPLOYMENT",
+		7: "ARTIFACT_KIND_RESOURCE",
+		8: "ARTIFACT_KIND_OUTPUT",
+	}
+	ArtifactKind_value = map[string]int32{
+		"ARTIFACT_KIND_UNSPECIFIED": 0,
+		"ARTIFACT_KIND_DIRECTORY":   1,
+		"ARTIFACT_KIND_CONFIG":      2,
+		"ARTIFACT_KIND_ARCHIVE":     3,
+		"ARTIFACT_KIND_CONTAINER":   4,
+		"ARTIFACT_KIND_ENDPOINT":    5,
+		"ARTIFACT_KIND_DEPLOYMENT":  6,
+		"ARTIFACT_KIND_RESOURCE":    7,
+		"ARTIFACT_KIND_OUTPUT":      8,
+	}
+)
+
+func (x ArtifactKind) Enum() *ArtifactKind {
+	p := new(ArtifactKind)
+	*p = x
+	return p
+}
+
+func (x ArtifactKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ArtifactKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_service_target_proto_enumTypes[0].Descriptor()
+}
+
+func (ArtifactKind) Type() protoreflect.EnumType {
+	return &file_service_target_proto_enumTypes[0]
+}
+
+func (x ArtifactKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ArtifactKind.Descriptor instead.
+func (ArtifactKind) EnumDescriptor() ([]byte, []int) {
+	return file_service_target_proto_rawDescGZIP(), []int{0}
+}
+
+// Location kinds - matching the existing Go LocationKind enum
+type LocationKind int32
+
+const (
+	LocationKind_LOCATION_KIND_UNSPECIFIED LocationKind = 0 // Default/unknown location
+	LocationKind_LOCATION_KIND_LOCAL       LocationKind = 1 // Local file system path
+	LocationKind_LOCATION_KIND_REMOTE      LocationKind = 2 // Remote URL/URI
+)
+
+// Enum value maps for LocationKind.
+var (
+	LocationKind_name = map[int32]string{
+		0: "LOCATION_KIND_UNSPECIFIED",
+		1: "LOCATION_KIND_LOCAL",
+		2: "LOCATION_KIND_REMOTE",
+	}
+	LocationKind_value = map[string]int32{
+		"LOCATION_KIND_UNSPECIFIED": 0,
+		"LOCATION_KIND_LOCAL":       1,
+		"LOCATION_KIND_REMOTE":      2,
+	}
+)
+
+func (x LocationKind) Enum() *LocationKind {
+	p := new(LocationKind)
+	*p = x
+	return p
+}
+
+func (x LocationKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (LocationKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_service_target_proto_enumTypes[1].Descriptor()
+}
+
+func (LocationKind) Type() protoreflect.EnumType {
+	return &file_service_target_proto_enumTypes[1]
+}
+
+func (x LocationKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use LocationKind.Descriptor instead.
+func (LocationKind) EnumDescriptor() ([]byte, []int) {
+	return file_service_target_proto_rawDescGZIP(), []int{1}
+}
+
 // Envelope for all possible service target messages (requests and responses)
 type ServiceTargetMessage struct {
 	state     protoimpl.MessageState     `protogen:"open.v1"`
@@ -1038,9 +1156,9 @@ func (x *ArtifactList) GetArtifacts() []*Artifact {
 // Artifact represents a build, package, or deployment artifact with its location and metadata
 type Artifact struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`                                                                                   // Required: "zip", "container-image", "blob", "helm-chart", etc.
+	Kind          ArtifactKind           `protobuf:"varint,1,opt,name=kind,proto3,enum=azdext.ArtifactKind" json:"kind,omitempty"`                                                         // Required: type of artifact
 	Location      string                 `protobuf:"bytes,2,opt,name=location,proto3" json:"location,omitempty"`                                                                           // Optional: location of the artifact (local path or remote reference)
-	LocationKind  string                 `protobuf:"bytes,3,opt,name=location_kind,json=locationKind,proto3" json:"location_kind,omitempty"`                                               // Required: "local" or "remote"
+	LocationKind  LocationKind           `protobuf:"varint,3,opt,name=location_kind,json=locationKind,proto3,enum=azdext.LocationKind" json:"location_kind,omitempty"`                     // Required: where the artifact is stored
 	Metadata      map[string]string      `protobuf:"bytes,4,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Optional: arbitrary key/value pairs for extension-specific data
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1076,11 +1194,11 @@ func (*Artifact) Descriptor() ([]byte, []int) {
 	return file_service_target_proto_rawDescGZIP(), []int{14}
 }
 
-func (x *Artifact) GetKind() string {
+func (x *Artifact) GetKind() ArtifactKind {
 	if x != nil {
 		return x.Kind
 	}
-	return ""
+	return ArtifactKind_ARTIFACT_KIND_UNSPECIFIED
 }
 
 func (x *Artifact) GetLocation() string {
@@ -1090,11 +1208,11 @@ func (x *Artifact) GetLocation() string {
 	return ""
 }
 
-func (x *Artifact) GetLocationKind() string {
+func (x *Artifact) GetLocationKind() LocationKind {
 	if x != nil {
 		return x.LocationKind
 	}
-	return ""
+	return LocationKind_LOCATION_KIND_UNSPECIFIED
 }
 
 func (x *Artifact) GetMetadata() map[string]string {
@@ -1907,11 +2025,11 @@ const file_service_target_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
 	"\x05value\x18\x02 \x01(\v2\x14.azdext.ArtifactListR\x05value:\x028\x01\">\n" +
 	"\fArtifactList\x12.\n" +
-	"\tartifacts\x18\x01 \x03(\v2\x10.azdext.ArtifactR\tartifacts\"\xd8\x01\n" +
-	"\bArtifact\x12\x12\n" +
-	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x1a\n" +
-	"\blocation\x18\x02 \x01(\tR\blocation\x12#\n" +
-	"\rlocation_kind\x18\x03 \x01(\tR\flocationKind\x12:\n" +
+	"\tartifacts\x18\x01 \x03(\v2\x10.azdext.ArtifactR\tartifacts\"\x84\x02\n" +
+	"\bArtifact\x12(\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x14.azdext.ArtifactKindR\x04kind\x12\x1a\n" +
+	"\blocation\x18\x02 \x01(\tR\blocation\x129\n" +
+	"\rlocation_kind\x18\x03 \x01(\x0e2\x14.azdext.LocationKindR\flocationKind\x12:\n" +
 	"\bmetadata\x18\x04 \x03(\v2\x1e.azdext.Artifact.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
@@ -1960,7 +2078,21 @@ const file_service_target_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
-	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp2`\n" +
+	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp*\x8c\x02\n" +
+	"\fArtifactKind\x12\x1d\n" +
+	"\x19ARTIFACT_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17ARTIFACT_KIND_DIRECTORY\x10\x01\x12\x18\n" +
+	"\x14ARTIFACT_KIND_CONFIG\x10\x02\x12\x19\n" +
+	"\x15ARTIFACT_KIND_ARCHIVE\x10\x03\x12\x1b\n" +
+	"\x17ARTIFACT_KIND_CONTAINER\x10\x04\x12\x1a\n" +
+	"\x16ARTIFACT_KIND_ENDPOINT\x10\x05\x12\x1c\n" +
+	"\x18ARTIFACT_KIND_DEPLOYMENT\x10\x06\x12\x1a\n" +
+	"\x16ARTIFACT_KIND_RESOURCE\x10\a\x12\x18\n" +
+	"\x14ARTIFACT_KIND_OUTPUT\x10\b*`\n" +
+	"\fLocationKind\x12\x1d\n" +
+	"\x19LOCATION_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13LOCATION_KIND_LOCAL\x10\x01\x12\x18\n" +
+	"\x14LOCATION_KIND_REMOTE\x10\x022`\n" +
 	"\x14ServiceTargetService\x12H\n" +
 	"\x06Stream\x12\x1c.azdext.ServiceTargetMessage\x1a\x1c.azdext.ServiceTargetMessage(\x010\x01B/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
@@ -1976,101 +2108,106 @@ func file_service_target_proto_rawDescGZIP() []byte {
 	return file_service_target_proto_rawDescData
 }
 
+var file_service_target_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_service_target_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
 var file_service_target_proto_goTypes = []any{
-	(*ServiceTargetMessage)(nil),            // 0: azdext.ServiceTargetMessage
-	(*ServiceTargetInputParameter)(nil),     // 1: azdext.ServiceTargetInputParameter
-	(*ServiceTargetOutputParameter)(nil),    // 2: azdext.ServiceTargetOutputParameter
-	(*ServiceTargetResource)(nil),           // 3: azdext.ServiceTargetResource
-	(*ServiceTargetInitializeRequest)(nil),  // 4: azdext.ServiceTargetInitializeRequest
-	(*ServiceTargetInitializeResponse)(nil), // 5: azdext.ServiceTargetInitializeResponse
-	(*ServiceTargetOptions)(nil),            // 6: azdext.ServiceTargetOptions
-	(*RegisterServiceTargetRequest)(nil),    // 7: azdext.RegisterServiceTargetRequest
-	(*RegisterServiceTargetResponse)(nil),   // 8: azdext.RegisterServiceTargetResponse
-	(*ServiceTargetErrorMessage)(nil),       // 9: azdext.ServiceTargetErrorMessage
-	(*GetTargetResourceRequest)(nil),        // 10: azdext.GetTargetResourceRequest
-	(*GetTargetResourceResponse)(nil),       // 11: azdext.GetTargetResourceResponse
-	(*ServiceContext)(nil),                  // 12: azdext.ServiceContext
-	(*ArtifactList)(nil),                    // 13: azdext.ArtifactList
-	(*Artifact)(nil),                        // 14: azdext.Artifact
-	(*TargetResource)(nil),                  // 15: azdext.TargetResource
-	(*ServiceTargetDeployRequest)(nil),      // 16: azdext.ServiceTargetDeployRequest
-	(*ServiceTargetDeployResponse)(nil),     // 17: azdext.ServiceTargetDeployResponse
-	(*ServicePackageResult)(nil),            // 18: azdext.ServicePackageResult
-	(*ServicePublishResult)(nil),            // 19: azdext.ServicePublishResult
-	(*ServiceDeployResult)(nil),             // 20: azdext.ServiceDeployResult
-	(*ServiceTargetPackageRequest)(nil),     // 21: azdext.ServiceTargetPackageRequest
-	(*ServiceTargetPackageResponse)(nil),    // 22: azdext.ServiceTargetPackageResponse
-	(*ServiceTargetPublishRequest)(nil),     // 23: azdext.ServiceTargetPublishRequest
-	(*ServiceTargetPublishResponse)(nil),    // 24: azdext.ServiceTargetPublishResponse
-	(*PublishOptions)(nil),                  // 25: azdext.PublishOptions
-	(*ServiceTargetEndpointsRequest)(nil),   // 26: azdext.ServiceTargetEndpointsRequest
-	(*ServiceTargetEndpointsResponse)(nil),  // 27: azdext.ServiceTargetEndpointsResponse
-	(*ServiceTargetProgressMessage)(nil),    // 28: azdext.ServiceTargetProgressMessage
-	nil,                                     // 29: azdext.ServiceTargetOptions.DeploymentStacksEntry
-	nil,                                     // 30: azdext.ServiceContext.ExtrasEntry
-	nil,                                     // 31: azdext.Artifact.MetadataEntry
-	nil,                                     // 32: azdext.TargetResource.MetadataEntry
-	(*ServiceConfig)(nil),                   // 33: azdext.ServiceConfig
-	(*structpb.Struct)(nil),                 // 34: google.protobuf.Struct
+	(ArtifactKind)(0),                       // 0: azdext.ArtifactKind
+	(LocationKind)(0),                       // 1: azdext.LocationKind
+	(*ServiceTargetMessage)(nil),            // 2: azdext.ServiceTargetMessage
+	(*ServiceTargetInputParameter)(nil),     // 3: azdext.ServiceTargetInputParameter
+	(*ServiceTargetOutputParameter)(nil),    // 4: azdext.ServiceTargetOutputParameter
+	(*ServiceTargetResource)(nil),           // 5: azdext.ServiceTargetResource
+	(*ServiceTargetInitializeRequest)(nil),  // 6: azdext.ServiceTargetInitializeRequest
+	(*ServiceTargetInitializeResponse)(nil), // 7: azdext.ServiceTargetInitializeResponse
+	(*ServiceTargetOptions)(nil),            // 8: azdext.ServiceTargetOptions
+	(*RegisterServiceTargetRequest)(nil),    // 9: azdext.RegisterServiceTargetRequest
+	(*RegisterServiceTargetResponse)(nil),   // 10: azdext.RegisterServiceTargetResponse
+	(*ServiceTargetErrorMessage)(nil),       // 11: azdext.ServiceTargetErrorMessage
+	(*GetTargetResourceRequest)(nil),        // 12: azdext.GetTargetResourceRequest
+	(*GetTargetResourceResponse)(nil),       // 13: azdext.GetTargetResourceResponse
+	(*ServiceContext)(nil),                  // 14: azdext.ServiceContext
+	(*ArtifactList)(nil),                    // 15: azdext.ArtifactList
+	(*Artifact)(nil),                        // 16: azdext.Artifact
+	(*TargetResource)(nil),                  // 17: azdext.TargetResource
+	(*ServiceTargetDeployRequest)(nil),      // 18: azdext.ServiceTargetDeployRequest
+	(*ServiceTargetDeployResponse)(nil),     // 19: azdext.ServiceTargetDeployResponse
+	(*ServicePackageResult)(nil),            // 20: azdext.ServicePackageResult
+	(*ServicePublishResult)(nil),            // 21: azdext.ServicePublishResult
+	(*ServiceDeployResult)(nil),             // 22: azdext.ServiceDeployResult
+	(*ServiceTargetPackageRequest)(nil),     // 23: azdext.ServiceTargetPackageRequest
+	(*ServiceTargetPackageResponse)(nil),    // 24: azdext.ServiceTargetPackageResponse
+	(*ServiceTargetPublishRequest)(nil),     // 25: azdext.ServiceTargetPublishRequest
+	(*ServiceTargetPublishResponse)(nil),    // 26: azdext.ServiceTargetPublishResponse
+	(*PublishOptions)(nil),                  // 27: azdext.PublishOptions
+	(*ServiceTargetEndpointsRequest)(nil),   // 28: azdext.ServiceTargetEndpointsRequest
+	(*ServiceTargetEndpointsResponse)(nil),  // 29: azdext.ServiceTargetEndpointsResponse
+	(*ServiceTargetProgressMessage)(nil),    // 30: azdext.ServiceTargetProgressMessage
+	nil,                                     // 31: azdext.ServiceTargetOptions.DeploymentStacksEntry
+	nil,                                     // 32: azdext.ServiceContext.ExtrasEntry
+	nil,                                     // 33: azdext.Artifact.MetadataEntry
+	nil,                                     // 34: azdext.TargetResource.MetadataEntry
+	(*ServiceConfig)(nil),                   // 35: azdext.ServiceConfig
+	(*structpb.Struct)(nil),                 // 36: google.protobuf.Struct
 }
 var file_service_target_proto_depIdxs = []int32{
-	9,  // 0: azdext.ServiceTargetMessage.error:type_name -> azdext.ServiceTargetErrorMessage
-	7,  // 1: azdext.ServiceTargetMessage.register_service_target_request:type_name -> azdext.RegisterServiceTargetRequest
-	8,  // 2: azdext.ServiceTargetMessage.register_service_target_response:type_name -> azdext.RegisterServiceTargetResponse
-	4,  // 3: azdext.ServiceTargetMessage.initialize_request:type_name -> azdext.ServiceTargetInitializeRequest
-	5,  // 4: azdext.ServiceTargetMessage.initialize_response:type_name -> azdext.ServiceTargetInitializeResponse
-	10, // 5: azdext.ServiceTargetMessage.get_target_resource_request:type_name -> azdext.GetTargetResourceRequest
-	11, // 6: azdext.ServiceTargetMessage.get_target_resource_response:type_name -> azdext.GetTargetResourceResponse
-	16, // 7: azdext.ServiceTargetMessage.deploy_request:type_name -> azdext.ServiceTargetDeployRequest
-	17, // 8: azdext.ServiceTargetMessage.deploy_response:type_name -> azdext.ServiceTargetDeployResponse
-	28, // 9: azdext.ServiceTargetMessage.progress_message:type_name -> azdext.ServiceTargetProgressMessage
-	21, // 10: azdext.ServiceTargetMessage.package_request:type_name -> azdext.ServiceTargetPackageRequest
-	22, // 11: azdext.ServiceTargetMessage.package_response:type_name -> azdext.ServiceTargetPackageResponse
-	23, // 12: azdext.ServiceTargetMessage.publish_request:type_name -> azdext.ServiceTargetPublishRequest
-	24, // 13: azdext.ServiceTargetMessage.publish_response:type_name -> azdext.ServiceTargetPublishResponse
-	26, // 14: azdext.ServiceTargetMessage.endpoints_request:type_name -> azdext.ServiceTargetEndpointsRequest
-	27, // 15: azdext.ServiceTargetMessage.endpoints_response:type_name -> azdext.ServiceTargetEndpointsResponse
-	33, // 16: azdext.ServiceTargetInitializeRequest.service_config:type_name -> azdext.ServiceConfig
-	29, // 17: azdext.ServiceTargetOptions.deployment_stacks:type_name -> azdext.ServiceTargetOptions.DeploymentStacksEntry
-	34, // 18: azdext.ServiceTargetOptions.config:type_name -> google.protobuf.Struct
-	33, // 19: azdext.GetTargetResourceRequest.service_config:type_name -> azdext.ServiceConfig
-	15, // 20: azdext.GetTargetResourceRequest.default_target_resource:type_name -> azdext.TargetResource
-	15, // 21: azdext.GetTargetResourceResponse.target_resource:type_name -> azdext.TargetResource
-	14, // 22: azdext.ServiceContext.restore:type_name -> azdext.Artifact
-	14, // 23: azdext.ServiceContext.build:type_name -> azdext.Artifact
-	14, // 24: azdext.ServiceContext.package:type_name -> azdext.Artifact
-	14, // 25: azdext.ServiceContext.publish:type_name -> azdext.Artifact
-	14, // 26: azdext.ServiceContext.deploy:type_name -> azdext.Artifact
-	30, // 27: azdext.ServiceContext.extras:type_name -> azdext.ServiceContext.ExtrasEntry
-	14, // 28: azdext.ArtifactList.artifacts:type_name -> azdext.Artifact
-	31, // 29: azdext.Artifact.metadata:type_name -> azdext.Artifact.MetadataEntry
-	32, // 30: azdext.TargetResource.metadata:type_name -> azdext.TargetResource.MetadataEntry
-	33, // 31: azdext.ServiceTargetDeployRequest.service_config:type_name -> azdext.ServiceConfig
-	12, // 32: azdext.ServiceTargetDeployRequest.service_context:type_name -> azdext.ServiceContext
-	15, // 33: azdext.ServiceTargetDeployRequest.target_resource:type_name -> azdext.TargetResource
-	20, // 34: azdext.ServiceTargetDeployResponse.result:type_name -> azdext.ServiceDeployResult
-	14, // 35: azdext.ServicePackageResult.artifacts:type_name -> azdext.Artifact
-	14, // 36: azdext.ServicePublishResult.artifacts:type_name -> azdext.Artifact
-	14, // 37: azdext.ServiceDeployResult.artifacts:type_name -> azdext.Artifact
-	33, // 38: azdext.ServiceTargetPackageRequest.service_config:type_name -> azdext.ServiceConfig
-	12, // 39: azdext.ServiceTargetPackageRequest.service_context:type_name -> azdext.ServiceContext
-	18, // 40: azdext.ServiceTargetPackageResponse.result:type_name -> azdext.ServicePackageResult
-	33, // 41: azdext.ServiceTargetPublishRequest.service_config:type_name -> azdext.ServiceConfig
-	12, // 42: azdext.ServiceTargetPublishRequest.service_context:type_name -> azdext.ServiceContext
-	15, // 43: azdext.ServiceTargetPublishRequest.target_resource:type_name -> azdext.TargetResource
-	25, // 44: azdext.ServiceTargetPublishRequest.publish_options:type_name -> azdext.PublishOptions
-	19, // 45: azdext.ServiceTargetPublishResponse.result:type_name -> azdext.ServicePublishResult
-	33, // 46: azdext.ServiceTargetEndpointsRequest.service_config:type_name -> azdext.ServiceConfig
-	15, // 47: azdext.ServiceTargetEndpointsRequest.target_resource:type_name -> azdext.TargetResource
-	13, // 48: azdext.ServiceContext.ExtrasEntry.value:type_name -> azdext.ArtifactList
-	0,  // 49: azdext.ServiceTargetService.Stream:input_type -> azdext.ServiceTargetMessage
-	0,  // 50: azdext.ServiceTargetService.Stream:output_type -> azdext.ServiceTargetMessage
-	50, // [50:51] is the sub-list for method output_type
-	49, // [49:50] is the sub-list for method input_type
-	49, // [49:49] is the sub-list for extension type_name
-	49, // [49:49] is the sub-list for extension extendee
-	0,  // [0:49] is the sub-list for field type_name
+	11, // 0: azdext.ServiceTargetMessage.error:type_name -> azdext.ServiceTargetErrorMessage
+	9,  // 1: azdext.ServiceTargetMessage.register_service_target_request:type_name -> azdext.RegisterServiceTargetRequest
+	10, // 2: azdext.ServiceTargetMessage.register_service_target_response:type_name -> azdext.RegisterServiceTargetResponse
+	6,  // 3: azdext.ServiceTargetMessage.initialize_request:type_name -> azdext.ServiceTargetInitializeRequest
+	7,  // 4: azdext.ServiceTargetMessage.initialize_response:type_name -> azdext.ServiceTargetInitializeResponse
+	12, // 5: azdext.ServiceTargetMessage.get_target_resource_request:type_name -> azdext.GetTargetResourceRequest
+	13, // 6: azdext.ServiceTargetMessage.get_target_resource_response:type_name -> azdext.GetTargetResourceResponse
+	18, // 7: azdext.ServiceTargetMessage.deploy_request:type_name -> azdext.ServiceTargetDeployRequest
+	19, // 8: azdext.ServiceTargetMessage.deploy_response:type_name -> azdext.ServiceTargetDeployResponse
+	30, // 9: azdext.ServiceTargetMessage.progress_message:type_name -> azdext.ServiceTargetProgressMessage
+	23, // 10: azdext.ServiceTargetMessage.package_request:type_name -> azdext.ServiceTargetPackageRequest
+	24, // 11: azdext.ServiceTargetMessage.package_response:type_name -> azdext.ServiceTargetPackageResponse
+	25, // 12: azdext.ServiceTargetMessage.publish_request:type_name -> azdext.ServiceTargetPublishRequest
+	26, // 13: azdext.ServiceTargetMessage.publish_response:type_name -> azdext.ServiceTargetPublishResponse
+	28, // 14: azdext.ServiceTargetMessage.endpoints_request:type_name -> azdext.ServiceTargetEndpointsRequest
+	29, // 15: azdext.ServiceTargetMessage.endpoints_response:type_name -> azdext.ServiceTargetEndpointsResponse
+	35, // 16: azdext.ServiceTargetInitializeRequest.service_config:type_name -> azdext.ServiceConfig
+	31, // 17: azdext.ServiceTargetOptions.deployment_stacks:type_name -> azdext.ServiceTargetOptions.DeploymentStacksEntry
+	36, // 18: azdext.ServiceTargetOptions.config:type_name -> google.protobuf.Struct
+	35, // 19: azdext.GetTargetResourceRequest.service_config:type_name -> azdext.ServiceConfig
+	17, // 20: azdext.GetTargetResourceRequest.default_target_resource:type_name -> azdext.TargetResource
+	17, // 21: azdext.GetTargetResourceResponse.target_resource:type_name -> azdext.TargetResource
+	16, // 22: azdext.ServiceContext.restore:type_name -> azdext.Artifact
+	16, // 23: azdext.ServiceContext.build:type_name -> azdext.Artifact
+	16, // 24: azdext.ServiceContext.package:type_name -> azdext.Artifact
+	16, // 25: azdext.ServiceContext.publish:type_name -> azdext.Artifact
+	16, // 26: azdext.ServiceContext.deploy:type_name -> azdext.Artifact
+	32, // 27: azdext.ServiceContext.extras:type_name -> azdext.ServiceContext.ExtrasEntry
+	16, // 28: azdext.ArtifactList.artifacts:type_name -> azdext.Artifact
+	0,  // 29: azdext.Artifact.kind:type_name -> azdext.ArtifactKind
+	1,  // 30: azdext.Artifact.location_kind:type_name -> azdext.LocationKind
+	33, // 31: azdext.Artifact.metadata:type_name -> azdext.Artifact.MetadataEntry
+	34, // 32: azdext.TargetResource.metadata:type_name -> azdext.TargetResource.MetadataEntry
+	35, // 33: azdext.ServiceTargetDeployRequest.service_config:type_name -> azdext.ServiceConfig
+	14, // 34: azdext.ServiceTargetDeployRequest.service_context:type_name -> azdext.ServiceContext
+	17, // 35: azdext.ServiceTargetDeployRequest.target_resource:type_name -> azdext.TargetResource
+	22, // 36: azdext.ServiceTargetDeployResponse.result:type_name -> azdext.ServiceDeployResult
+	16, // 37: azdext.ServicePackageResult.artifacts:type_name -> azdext.Artifact
+	16, // 38: azdext.ServicePublishResult.artifacts:type_name -> azdext.Artifact
+	16, // 39: azdext.ServiceDeployResult.artifacts:type_name -> azdext.Artifact
+	35, // 40: azdext.ServiceTargetPackageRequest.service_config:type_name -> azdext.ServiceConfig
+	14, // 41: azdext.ServiceTargetPackageRequest.service_context:type_name -> azdext.ServiceContext
+	20, // 42: azdext.ServiceTargetPackageResponse.result:type_name -> azdext.ServicePackageResult
+	35, // 43: azdext.ServiceTargetPublishRequest.service_config:type_name -> azdext.ServiceConfig
+	14, // 44: azdext.ServiceTargetPublishRequest.service_context:type_name -> azdext.ServiceContext
+	17, // 45: azdext.ServiceTargetPublishRequest.target_resource:type_name -> azdext.TargetResource
+	27, // 46: azdext.ServiceTargetPublishRequest.publish_options:type_name -> azdext.PublishOptions
+	21, // 47: azdext.ServiceTargetPublishResponse.result:type_name -> azdext.ServicePublishResult
+	35, // 48: azdext.ServiceTargetEndpointsRequest.service_config:type_name -> azdext.ServiceConfig
+	17, // 49: azdext.ServiceTargetEndpointsRequest.target_resource:type_name -> azdext.TargetResource
+	15, // 50: azdext.ServiceContext.ExtrasEntry.value:type_name -> azdext.ArtifactList
+	2,  // 51: azdext.ServiceTargetService.Stream:input_type -> azdext.ServiceTargetMessage
+	2,  // 52: azdext.ServiceTargetService.Stream:output_type -> azdext.ServiceTargetMessage
+	52, // [52:53] is the sub-list for method output_type
+	51, // [51:52] is the sub-list for method input_type
+	51, // [51:51] is the sub-list for extension type_name
+	51, // [51:51] is the sub-list for extension extendee
+	0,  // [0:51] is the sub-list for field type_name
 }
 
 func init() { file_service_target_proto_init() }
@@ -2101,13 +2238,14 @@ func file_service_target_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_service_target_proto_rawDesc), len(file_service_target_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      2,
 			NumMessages:   33,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_service_target_proto_goTypes,
 		DependencyIndexes: file_service_target_proto_depIdxs,
+		EnumInfos:         file_service_target_proto_enumTypes,
 		MessageInfos:      file_service_target_proto_msgTypes,
 	}.Build()
 	File_service_target_proto = out.File

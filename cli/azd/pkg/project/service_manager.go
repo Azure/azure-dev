@@ -351,15 +351,13 @@ func (sm *serviceManager) Package(
 	var packageResult *ServicePackageResult
 
 	err = serviceConfig.Invoke(ctx, ServiceEventPackage, eventArgs, func() error {
-		packageArtifacts := ArtifactCollection{}
-
 		frameworkPackageResult, err := frameworkService.Package(ctx, serviceConfig, serviceContext, progress)
 		if err != nil {
 			return err
 		}
 
-		if err := packageArtifacts.Add(frameworkPackageResult.Artifacts...); err != nil {
-			return fmt.Errorf("framework package artifacts failed validation")
+		if err := serviceContext.Package.Add(frameworkPackageResult.Artifacts...); err != nil {
+			return fmt.Errorf("failed to add framework package artifacts to service context: %w", err)
 		}
 
 		serviceTargetPackageResult, err := serviceTarget.Package(ctx, serviceConfig, serviceContext, progress)
@@ -367,12 +365,12 @@ func (sm *serviceManager) Package(
 			return err
 		}
 
-		if err := packageArtifacts.Add(serviceTargetPackageResult.Artifacts...); err != nil {
-			return fmt.Errorf("framework package artifacts failed validation")
+		if err := serviceContext.Package.Add(serviceTargetPackageResult.Artifacts...); err != nil {
+			return fmt.Errorf("failed to add service target package artifacts to service context: %w", err)
 		}
 
 		packageResult = &ServicePackageResult{
-			Artifacts: packageArtifacts,
+			Artifacts: serviceContext.Package,
 		}
 
 		sm.setOperationResult(serviceConfig, string(ServiceEventPackage), packageResult)
@@ -382,11 +380,6 @@ func (sm *serviceManager) Package(
 
 	if err != nil {
 		return nil, fmt.Errorf("failed packaging service '%s': %w", serviceConfig.Name, err)
-	}
-
-	// Update service context with package artifacts
-	if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
-		return nil, fmt.Errorf("failed to add package artifacts: %w", err)
 	}
 
 	return packageResult, nil

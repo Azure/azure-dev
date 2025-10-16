@@ -444,7 +444,7 @@ func (a *InitAction) downloadAgentYaml(
 	}
 
 	fmt.Printf("Processed agent.yaml at %s\n", filePath)
-	
+
 	return agentManifest, targetDir, nil
 }
 

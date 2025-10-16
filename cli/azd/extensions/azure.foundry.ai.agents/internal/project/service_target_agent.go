@@ -150,16 +150,15 @@ func (p *AgentServiceTargetProvider) Publish(
 	remoteImage := fmt.Sprintf("contoso.azurecr.io/%s", localImageTag)
 	fmt.Printf("\nAgent image published: %s\n", color.New(color.FgHiBlue).Sprint(remoteImage))
 
-	// TODO: Add artifacts to ServiceContext when ready:
-	// serviceContext.Publish.Artifacts = append(serviceContext.Publish.Artifacts, &azdext.Artifact{
-	//     Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
-	//     Location:     remoteImage,
-	//     LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
-	//     Metadata: map[string]string{
-	//         "remoteImage": remoteImage,
-	//     },
-	// })
-	return &azdext.ServicePublishResult{}, nil
+	return &azdext.ServicePublishResult{
+		Artifacts: []*azdext.Artifact{
+			{
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+				Location:     remoteImage,
+				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+			},
+		},
+	}, nil
 }
 
 // Deploy performs the deployment operation for the agent service
@@ -183,7 +182,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get environment values: %w", err)
 	}
-	
+
 	azdEnv := make(map[string]string, len(resp.KeyValues))
 	for _, pair := range resp.KeyValues {
 		azdEnv[pair.Key] = pair.Value
@@ -221,7 +220,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
 		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required")
 	}
-	
+
 	// Create Azure credential
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
@@ -251,27 +250,13 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 
 	// Register agent info in environment
 	err = p.registerAgentEnvironmentVariables(ctx, agentVersionResponse)
-		EnvName: currentEnv.Environment.Name,
 	if err != nil {
 		return nil, err
 	}
 
 	fmt.Fprintf(os.Stderr, "Prompt agent '%s' deployed successfully!\n", agentVersionResponse.Name)
-		EnvName: currentEnv.Environment.Name,
 
-	return &azdext.ServiceDeployResult{
-		// Artifacts: []*Artifact{
-		//     {
-		//         Kind:         azdext.ArtifactKind_ARTIFACT_KIND_RESOURCE,
-		//         Location:     "",
-		//         LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
-		//         Metadata: map[string]string{
-		//             "message": "Agent service deployed successfully using custom extension logic",
-		//         },
-		//     },
-		// }
-		return &azdext.ServiceDeployResult{}, nil
-	}, nil
+	return &azdext.ServiceDeployResult{}, nil
 }
 
 // deployHostedAgent handles deployment of hosted container agents
@@ -354,17 +339,17 @@ func (p *AgentServiceTargetProvider) createAgent(
 ) (*agent_api.AgentVersionObject, error) {
 	// Create agent client
 	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], cred)
-	
+
 	// Use constant API version
 	const apiVersion = "2025-05-15-preview"
-	
+
 	// Extract CreateAgentVersionRequest from CreateAgentRequest
 	versionRequest := &agent_api.CreateAgentVersionRequest{
 		Description: request.Description,
 		Metadata:    request.Metadata,
 		Definition:  request.Definition,
 	}
-	
+
 	// Create agent version
 	agentVersionResponse, err := agentClient.CreateAgentVersion(ctx, request.Name, versionRequest, apiVersion)
 	if err != nil {
@@ -455,11 +440,11 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	const waitForReady = true
 	const maxWaitTime = 10 * time.Minute
 	const apiVersion = "2025-05-15-preview"
-	
+
 	// Extract replica configuration from agent manifest
 	minReplicas := int32(1) // Default values
 	maxReplicas := int32(1)
-	
+
 	// Check if the agent definition has scale configuration
 	if containerAgent, ok := interface{}(agentManifest.Agent).(agent_yaml.ContainerAgent); ok {
 		// For ContainerAgent, check if Options contains scale information
@@ -478,7 +463,7 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 			}
 		}
 	}
-	
+
 	// Validate replica counts
 	if minReplicas < 0 {
 		return fmt.Errorf("minReplicas must be non-negative, got: %d", minReplicas)
@@ -516,13 +501,13 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	// Wait for operation to complete if requested
 	if waitForReady {
 		fmt.Fprintf(os.Stderr, "Waiting for operation to complete (timeout: %v)...\n", maxWaitTime)
-		
+
 		// Poll the operation status
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
-		
+
 		timeout := time.After(maxWaitTime)
-		
+
 		for {
 			select {
 			case <-timeout:
@@ -539,10 +524,15 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 					if completedOperation.Status == "Failed" {
 						return fmt.Errorf("operation failed: %s", completedOperation.Error)
 					}
-					
+
 					if completedOperation.Container != nil {
-						fmt.Fprintf(os.Stderr, "Agent container '%s' (version: %s) operation completed! Container status: %s\n",
-							agentVersionResponse.Name, agentVersionResponse.Version, completedOperation.Container.Status)
+						fmt.Fprintf(
+							os.Stderr,
+							"Agent container '%s' (version: %s) operation completed! Container status: %s\n",
+							agentVersionResponse.Name,
+							agentVersionResponse.Version,
+							completedOperation.Container.Status,
+						)
 					} else {
 						fmt.Fprintf(
 							os.Stderr,
@@ -551,7 +541,7 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 					}
 					return nil
 				}
-				
+
 				fmt.Fprintf(os.Stderr, "Operation status: %s\n", completedOperation.Status)
 			}
 		}
@@ -564,7 +554,6 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 
 	return nil
 }
-
 
 // displayAgentInfo displays information about the agent being deployed
 func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateAgentRequest) {
@@ -607,14 +596,14 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	agentVersionResponse *agent_api.AgentVersionObject,
 ) error {
 	azdEnvClient := p.azdClient.Environment()
-	currEnv, err := azdEnvClient.GetCurrent(ctx, nil)
+	currentEnv, err := azdEnvClient.GetCurrent(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to get current environment: %w", err)
 	}
 
 	// Register the agent name and version as azd environment variables
 	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: currEnv.Environment.Name,
+		EnvName: currentEnv.Environment.Name,
 		Key:     "AGENT_NAME",
 		Value:   agentVersionResponse.Name,
 	})
@@ -623,7 +612,7 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	}
 
 	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: currEnv.Environment.Name,
+		EnvName: currentEnv.Environment.Name,
 		Key:     "AGENT_VERSION",
 		Value:   agentVersionResponse.Version,
 	})

@@ -289,8 +289,8 @@ type AgentContainerObject struct {
 	MaxReplicas  *int32                `json:"max_replicas,omitempty"`
 	MinReplicas  *int32                `json:"min_replicas,omitempty"`
 	ErrorMessage *string               `json:"error_message,omitempty"`
-	CreatedAt    int64                 `json:"created_at"`
-	UpdatedAt    int64                 `json:"updated_at"`
+	CreatedAt    string                `json:"created_at"`
+	UpdatedAt    string                `json:"updated_at"`
 }
 
 // AgentContainerOperationObject represents a container operation

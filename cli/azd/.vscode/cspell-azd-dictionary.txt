@@ -116,6 +116,7 @@ errcheck
 Errorf
 errorinfo
 errorlint
+evals
 eventhub
 eventhubs
 executil

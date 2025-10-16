@@ -3,8 +3,6 @@
 
 package agent_api
 
-import "time"
-
 // AgentProtocol represents the protocol types supported by agents
 type AgentProtocol string
 
@@ -183,7 +181,7 @@ type AgentVersionObject struct {
 	Version     string                 `json:"version"`
 	Description *string                `json:"description,omitempty"`
 	Metadata    map[string]string      `json:"metadata,omitempty"`
-	CreatedAt   time.Time              `json:"created_at"`
+	CreatedAt   string                 `json:"created_at"`
 	Definition  interface{}            `json:"definition"` // Can be any of the agent definition types
 }
 
@@ -264,7 +262,7 @@ type AgentEventHandlerObject struct {
 	ID          string                        `json:"id"`
 	Name        string                        `json:"name"`
 	Metadata    map[string]string             `json:"metadata,omitempty"`
-	CreatedAt   time.Time                     `json:"created_at"`
+	CreatedAt   string                        `json:"created_at"`
 	EventTypes  []AgentEventType              `json:"event_types"`
 	Filter      *AgentEventHandlerFilter      `json:"filter,omitempty"`
 	Destination AgentEventHandlerDestination  `json:"destination"`
@@ -291,8 +289,8 @@ type AgentContainerObject struct {
 	MaxReplicas  *int32                `json:"max_replicas,omitempty"`
 	MinReplicas  *int32                `json:"min_replicas,omitempty"`
 	ErrorMessage *string               `json:"error_message,omitempty"`
-	CreatedAt    time.Time             `json:"created_at"`
-	UpdatedAt    time.Time             `json:"updated_at"`
+	CreatedAt    string                `json:"created_at"`
+	UpdatedAt    string                `json:"updated_at"`
 }
 
 // AgentContainerOperationObject represents a container operation

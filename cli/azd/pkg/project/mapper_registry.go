@@ -582,10 +582,6 @@ func registerProjectMappings() {
 			}
 		}
 
-		// Handle Extras map - convert ArtifactList to ArtifactCollection
-		// Note: project.ServiceContext doesn't have an Extras field, so we skip this
-		// for now. This is an escape hatch for provider-specific phases.
-
 		return result, nil
 	})
 

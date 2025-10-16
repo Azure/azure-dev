@@ -108,7 +108,6 @@ message ServiceContext {
   repeated Artifact package = 3;
   repeated Artifact publish = 4;
   repeated Artifact deploy = 5;
-  map<string, ArtifactList> extras = 6; // Escape hatch for provider-specific or experimental phases
 }
 
 // ArtifactList represents a list of artifacts for map values in ServiceContext

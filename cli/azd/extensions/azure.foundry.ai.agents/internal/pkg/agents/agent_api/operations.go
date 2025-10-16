@@ -837,7 +837,7 @@ func (c *AgentClient) GetAgentContainerOperation(ctx context.Context, agentName,
 
 // setAuthHeader sets the authorization header using the credential
 func (c *AgentClient) setAuthHeader(ctx context.Context, req *http.Request) error {
-	token, err := c.getAzureToken(ctx, c.cred)
+	token, err := c.getAiFoundryAzureToken(ctx, c.cred)
 	if err != nil {
 		return fmt.Errorf("failed to get Azure token: %w", err)
 	}
@@ -846,10 +846,10 @@ func (c *AgentClient) setAuthHeader(ctx context.Context, req *http.Request) erro
 	return nil
 }
 
-// getAzureToken gets an Azure access token using the provided credential
-func (c *AgentClient) getAzureToken(ctx context.Context, cred azcore.TokenCredential) (string, error) {
+// getAiFoundryAzureToken gets an Azure access token using the provided credential
+func (c *AgentClient) getAiFoundryAzureToken(ctx context.Context, cred azcore.TokenCredential) (string, error) {
 	tokenRequestOptions := policy.TokenRequestOptions{
-		Scopes: []string{"https://cognitiveservices.azure.com/.default"},
+		Scopes: []string{"https://ai.azure.com/.default"},
 	}
 	
 	token, err := cred.GetToken(ctx, tokenRequestOptions)

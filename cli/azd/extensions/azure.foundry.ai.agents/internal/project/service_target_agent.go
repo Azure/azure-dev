@@ -244,18 +244,18 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	p.displayAgentInfo(request)
 
 	// Create and deploy agent
-	agentResponse, err := p.createAgent(ctx, request, azdEnv, cred)
+	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv, cred)
 	if err != nil {
 		return nil, err
 	}
 
 	// Register agent info in environment
-	err = p.registerAgentEnvironmentVariables(ctx, agentResponse)
+	err = p.registerAgentEnvironmentVariables(ctx, agentVersionResponse)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Fprintf(os.Stderr, "Prompt agent '%s' deployed successfully!\n", agentResponse.Name)
+	fmt.Fprintf(os.Stderr, "Prompt agent '%s' deployed successfully!\n", agentVersionResponse.Name)
 
 	return &azdext.ServiceDeployResult{
 		TargetResourceId: "",
@@ -263,8 +263,8 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		Endpoints:        nil,
 		Details: map[string]string{
 			"message": "Prompt agent deployed successfully",
-			"agentName": agentResponse.Name,
-			"agentVersion": agentResponse.Versions.Latest.Version,
+			"agentName": agentVersionResponse.Name,
+			"agentVersion": agentVersionResponse.Version,
 		},
 	}, nil
 }
@@ -309,24 +309,24 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	p.displayAgentInfo(request)
 
 	// Step 3: Create agent
-	agentResponse, err := p.createAgent(ctx, request, azdEnv, cred)
+	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv, cred)
 	if err != nil {
 		return nil, err
 	}
 
 	// Register agent info in environment
-	err = p.registerAgentEnvironmentVariables(ctx, agentResponse)
+	err = p.registerAgentEnvironmentVariables(ctx, agentVersionResponse)
 	if err != nil {
 		return nil, err
 	}
 
 	// Step 4: Start agent container
-	err = p.startAgentContainer(ctx, agentManifest, agentResponse, azdEnv, cred)
+	err = p.startAgentContainer(ctx, agentManifest, agentVersionResponse, azdEnv, cred)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Fprintf(os.Stderr, "Hosted agent '%s' deployed successfully!\n", agentResponse.Name)
+	fmt.Fprintf(os.Stderr, "Hosted agent '%s' deployed successfully!\n", agentVersionResponse.Name)
 
 	return &azdext.ServiceDeployResult{
 		TargetResourceId: "",
@@ -334,33 +334,40 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		Endpoints:        nil,
 		Details: map[string]string{
 			"message": "Hosted agent deployed successfully",
-			"agentName": agentResponse.Name,
-			"agentVersion": agentResponse.Versions.Latest.Version,
+			"agentName": agentVersionResponse.Name,
+			"agentVersion": agentVersionResponse.Version,
 		},
 	}, nil
 }
 
-// createAgent creates the agent using the API
+// createAgent creates a new version of the agent using the API
 func (p *AgentServiceTargetProvider) createAgent(
 	ctx context.Context,
 	request *agent_api.CreateAgentRequest,
 	azdEnv map[string]string,
 	cred *azidentity.DefaultAzureCredential,
-) (*agent_api.AgentObject, error) {
+) (*agent_api.AgentVersionObject, error) {
 	// Create agent client
 	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], cred)
 	
 	// Use constant API version
 	const apiVersion = "2025-05-15-preview"
 	
-	// Create agent
-	agentResponse, err := agentClient.CreateAgent(ctx, request, apiVersion)
+	// Extract CreateAgentVersionRequest from CreateAgentRequest
+	versionRequest := &agent_api.CreateAgentVersionRequest{
+		Description: request.Description,
+		Metadata:    request.Metadata,
+		Definition:  request.Definition,
+	}
+	
+	// Create agent version
+	agentVersionResponse, err := agentClient.CreateAgentVersion(ctx, request.Name, versionRequest, apiVersion)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create agent: %w", err)
+		return nil, fmt.Errorf("failed to create agent version: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Agent '%s' created successfully!\n", agentResponse.Name)
-	return agentResponse, nil
+	fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
+	return agentVersionResponse, nil
 }
 
 func (p *AgentServiceTargetProvider) buildAgentImage(
@@ -432,7 +439,7 @@ func (p *AgentServiceTargetProvider) buildAgentImage(
 func (p *AgentServiceTargetProvider) startAgentContainer(
 	ctx context.Context,
 	agentManifest *agent_yaml.AgentManifest,
-	agentResponse *agent_api.AgentObject,
+	agentVersionResponse *agent_api.AgentVersionObject,
 	azdEnv map[string]string,
 	cred *azidentity.DefaultAzureCredential,
 ) error {
@@ -479,8 +486,8 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	}
 
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
-	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentResponse.Name)
-	fmt.Fprintf(os.Stderr, "Agent Version: %s\n", agentResponse.Versions.Latest.Version)
+	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentVersionResponse.Name)
+	fmt.Fprintf(os.Stderr, "Agent Version: %s\n", agentVersionResponse.Version)
 	fmt.Fprintf(os.Stderr, "Min Replicas: %d\n", minReplicas)
 	fmt.Fprintf(os.Stderr, "Max Replicas: %d\n", maxReplicas)
 	fmt.Fprintf(os.Stderr, "Wait for Ready: %t\n", waitForReady)
@@ -494,7 +501,7 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 
 	// Start agent container (minReplicas and maxReplicas are already int32)
 	operation, err := agentClient.StartAgentContainer(
-		ctx, agentResponse.Name, agentResponse.Versions.Latest.Version, &minReplicas, &maxReplicas, apiVersion)
+		ctx, agentVersionResponse.Name, agentVersionResponse.Version, &minReplicas, &maxReplicas, apiVersion)
 	if err != nil {
 		return fmt.Errorf("failed to start agent container: %w", err)
 	}
@@ -517,7 +524,7 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 				return fmt.Errorf("timeout waiting for operation to complete after %v", maxWaitTime)
 			case <-ticker.C:
 				completedOperation, err := agentClient.GetAgentContainerOperation(
-					ctx, agentResponse.Name, operation.Body.ID, apiVersion)
+					ctx, agentVersionResponse.Name, operation.Body.ID, apiVersion)
 				if err != nil {
 					return fmt.Errorf("failed to get operation status: %w", err)
 				}
@@ -530,12 +537,12 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 					
 					if completedOperation.Container != nil {
 						fmt.Fprintf(os.Stderr, "Agent container '%s' (version: %s) operation completed! Container status: %s\n",
-							agentResponse.Name, agentResponse.Versions.Latest.Version, completedOperation.Container.Status)
+							agentVersionResponse.Name, agentVersionResponse.Version, completedOperation.Container.Status)
 					} else {
 						fmt.Fprintf(
 							os.Stderr,
 							"Agent container '%s' (version: %s) operation completed successfully!\n",
-							agentResponse.Name, agentResponse.Versions.Latest.Version)
+							agentVersionResponse.Name, agentVersionResponse.Version)
 					}
 					return nil
 				}
@@ -547,7 +554,7 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 		fmt.Fprintf(
 			os.Stderr,
 			"Agent container '%s' (version: %s) start operation initiated (ID: %s).\n",
-			agentResponse.Name, agentResponse.Versions.Latest.Version, operation.Body.ID)
+			agentVersionResponse.Name, agentVersionResponse.Version, operation.Body.ID)
 	}
 
 	return nil
@@ -592,7 +599,7 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 // registerAgentEnvironmentVariables registers agent information as azd environment variables
 func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	ctx context.Context,
-	agentResponse *agent_api.AgentObject,
+	agentVersionResponse *agent_api.AgentVersionObject,
 ) error {
 	azdEnvClient := p.azdClient.Environment()
 	currEnv, err := azdEnvClient.GetCurrent(ctx, nil)
@@ -604,7 +611,7 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: currEnv.Environment.Name,
 		Key:     "AGENT_NAME",
-		Value:   agentResponse.Name,
+		Value:   agentVersionResponse.Name,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to set AGENT_NAME environment variable: %w", err)
@@ -613,7 +620,7 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: currEnv.Environment.Name,
 		Key:     "AGENT_VERSION",
-		Value:   agentResponse.Versions.Latest.Version,
+		Value:   agentVersionResponse.Version,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to set AGENT_VERSION environment variable: %w", err)

@@ -199,7 +199,8 @@ func (t *aksTarget) Publish(
 	// Extract package output from service context
 	var hasPackage bool
 	if artifact, found := serviceContext.Package.FindFirst(); found {
-		if artifact.Kind == ArtifactKindDirectory || artifact.Kind == ArtifactKindArchive || artifact.Kind == ArtifactKindContainer {
+		if artifact.Kind == ArtifactKindDirectory || artifact.Kind == ArtifactKindArchive ||
+			artifact.Kind == ArtifactKindContainer {
 			hasPackage = true
 		}
 	}

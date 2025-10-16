@@ -109,9 +109,13 @@ func TestCodingAgent_promptForRepoSlug(t *testing.T) {
 
 		gitCLI.EXPECT().ListRemotes(gomock.Any(), "repo-root-used").Return([]string{"origin", "upstream"}, nil)
 		//nolint:lll
-		gitCLI.EXPECT().GetRemoteUrl(gomock.Any(), "repo-root-used", "origin").Return("https://github.com/richardpark-msft/tawnygardenslug", nil)
+		gitCLI.EXPECT().
+			GetRemoteUrl(gomock.Any(), "repo-root-used", "origin").
+			Return("https://github.com/richardpark-msft/tawnygardenslug", nil)
 		//nolint:lll
-		gitCLI.EXPECT().GetRemoteUrl(gomock.Any(), "repo-root-used", "upstream").Return("https://github.com/slugs/tawnygardenslug", nil)
+		gitCLI.EXPECT().
+			GetRemoteUrl(gomock.Any(), "repo-root-used", "upstream").
+			Return("https://github.com/slugs/tawnygardenslug", nil)
 
 		promptClient.EXPECT().Select(gomock.Any(), gomock.Any()).Return(&azdext.SelectResponse{
 			// simulate they chose option 1

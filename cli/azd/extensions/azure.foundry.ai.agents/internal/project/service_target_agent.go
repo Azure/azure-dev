@@ -119,9 +119,14 @@ func (p *AgentServiceTargetProvider) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
-	return &azdext.ServicePackageResult{
-		Artifacts: []*azdext.Artifact{},
-	}, nil
+	// TODO: Add artifacts to ServiceContext when ready:
+	// serviceContext.Package.Artifacts = append(serviceContext.Package.Artifacts, &azdext.Artifact{
+	//     Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+	//     Location:     "...",
+	//     LocationKind: azdext.LocationKind_LOCATION_KIND_LOCAL,
+	//     Metadata:     map[string]string{},
+	// })
+	return &azdext.ServicePackageResult{}, nil
 }
 
 // Publish performs the publish operation for the agent service
@@ -145,18 +150,16 @@ func (p *AgentServiceTargetProvider) Publish(
 	remoteImage := fmt.Sprintf("contoso.azurecr.io/%s", localImageTag)
 	fmt.Printf("\nAgent image published: %s\n", color.New(color.FgHiBlue).Sprint(remoteImage))
 
-	return &azdext.ServicePublishResult{
-		Artifacts: []*azdext.Artifact{
-			{
-				Kind:         "container-image",
-				Location:     remoteImage,
-				LocationKind: "remote",
-				Metadata: map[string]string{
-					"remoteImage": remoteImage,
-				},
-			},
-		},
-	}, nil
+	// TODO: Add artifacts to ServiceContext when ready:
+	// serviceContext.Publish.Artifacts = append(serviceContext.Publish.Artifacts, &azdext.Artifact{
+	//     Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+	//     Location:     remoteImage,
+	//     LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+	//     Metadata: map[string]string{
+	//         "remoteImage": remoteImage,
+	//     },
+	// })
+	return &azdext.ServicePublishResult{}, nil
 }
 
 // Deploy performs the deployment operation for the agent service
@@ -169,21 +172,21 @@ func (p *AgentServiceTargetProvider) Deploy(
 ) (*azdext.ServiceDeployResult, error) {
 	// Get environment variables from azd
 	azdEnvClient := p.azdClient.Environment()
-	currEnv, err := azdEnvClient.GetCurrent(ctx, nil)
+	currentEnv, err := azdEnvClient.GetCurrent(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current environment: %w", err)
 	}
 
 	resp, err := azdEnvClient.GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: currEnv.Environment.Name,
+		Name: currentEnv.Environment.Name,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get environment values: %w", err)
 	}
 	
 	azdEnv := make(map[string]string, len(resp.KeyValues))
-	for _, kval := range resp.KeyValues {
-		azdEnv[kval.Key] = kval.Value
+	for _, pair := range resp.KeyValues {
+		azdEnv[pair.Key] = pair.Value
 	}
 
 	// Load and validate the agent manifest
@@ -248,24 +251,26 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 
 	// Register agent info in environment
 	err = p.registerAgentEnvironmentVariables(ctx, agentVersionResponse)
+		EnvName: currentEnv.Environment.Name,
 	if err != nil {
 		return nil, err
 	}
 
 	fmt.Fprintf(os.Stderr, "Prompt agent '%s' deployed successfully!\n", agentVersionResponse.Name)
+		EnvName: currentEnv.Environment.Name,
 
 	return &azdext.ServiceDeployResult{
-			Artifacts: []*azdext.Artifact{
-				{
-					Kind:         "agent",
-					Location:     "",
-					LocationKind: "remote",
-					Metadata: map[string]string{
-						"message": "Agent service deployed successfully using custom extension logic",
-			"agentVersion": agentVersionResponse.Version,
-					},
-				},
-			},
+		// Artifacts: []*Artifact{
+		//     {
+		//         Kind:         azdext.ArtifactKind_ARTIFACT_KIND_RESOURCE,
+		//         Location:     "",
+		//         LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+		//         Metadata: map[string]string{
+		//             "message": "Agent service deployed successfully using custom extension logic",
+		//         },
+		//     },
+		// }
+		return &azdext.ServiceDeployResult{}, nil
 	}, nil
 }
 
@@ -326,20 +331,18 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, err
 	}
 
-	fmt.Fprintf(os.Stderr, "Hosted agent '%s' deployed successfully!\n", agentVersionResponse.Name)
-
-	return &azdext.ServiceDeployResult{
-		Artifacts: []*azdext.Artifact{
-			{
-				Kind:         "agent",
-				Location:     "",
-				LocationKind: "remote",
-				Metadata: map[string]string{
-					"message": "Agent service deployed successfully using custom extension logic",
-				},
-			},
-		},
-	}, nil
+	// TODO: When azdext.ServiceDeployResult has Artifacts field, update this to use:
+	// Artifacts: []*Artifact{
+	//     {
+	//         Kind:         azdext.ArtifactKind_ARTIFACT_KIND_RESOURCE,
+	//         Location:     "",
+	//         LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+	//         Metadata: map[string]string{
+	//             "message": "Agent service deployed successfully using custom extension logic",
+	//         },
+	//     },
+	// }
+	return &azdext.ServiceDeployResult{}, nil
 }
 
 // createAgent creates a new version of the agent using the API

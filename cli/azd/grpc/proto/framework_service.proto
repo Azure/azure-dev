@@ -98,6 +98,7 @@ message FrameworkPackageRequirements {
 // Restore request and response
 message FrameworkServiceRestoreRequest {
   ServiceConfig service_config = 1;
+  ServiceContext service_context = 2;
 }
 
 message FrameworkServiceRestoreResponse {
@@ -106,7 +107,7 @@ message FrameworkServiceRestoreResponse {
 
 // Service restore result
 message ServiceRestoreResult {
-  map<string, string> details = 1;
+  repeated Artifact artifacts = 1;
 }
 
 // Build request and response

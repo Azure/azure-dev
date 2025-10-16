@@ -23,10 +23,20 @@ func init() {
 func registerProjectMappings() {
 	// Artifact -> proto Artifact conversion
 	mapper.MustRegister(func(ctx context.Context, src Artifact) (*azdext.Artifact, error) {
+		protoKind, err := artifactKindToProto(src.Kind)
+		if err != nil {
+			return nil, fmt.Errorf("converting artifact kind: %w", err)
+		}
+
+		protoLocationKind, err := locationKindToProto(src.LocationKind)
+		if err != nil {
+			return nil, fmt.Errorf("converting location kind: %w", err)
+		}
+
 		return &azdext.Artifact{
-			Kind:         string(src.Kind),
+			Kind:         protoKind,
 			Location:     src.Location,
-			LocationKind: string(src.LocationKind),
+			LocationKind: protoLocationKind,
 			Metadata:     src.Metadata,
 		}, nil
 	})
@@ -37,10 +47,20 @@ func registerProjectMappings() {
 			return Artifact{}, nil
 		}
 
+		goKind, err := protoToArtifactKind(src.Kind)
+		if err != nil {
+			return Artifact{}, fmt.Errorf("converting proto artifact kind: %w", err)
+		}
+
+		goLocationKind, err := protoToLocationKind(src.LocationKind)
+		if err != nil {
+			return Artifact{}, fmt.Errorf("converting proto location kind: %w", err)
+		}
+
 		artifact := Artifact{
-			Kind:         ArtifactKind(src.Kind),
+			Kind:         goKind,
 			Location:     src.Location,
-			LocationKind: LocationKind(src.LocationKind),
+			LocationKind: goLocationKind,
 			Metadata:     src.Metadata,
 		}
 		if artifact.Metadata == nil {
@@ -605,40 +625,6 @@ func getEnvResolver(resolver mapper.Resolver) func(string) string {
 	return func(string) string { return "" }
 }
 
-func detailsInterfaceToStringMap(details interface{}) map[string]string {
-	if details == nil {
-		return nil
-	}
-
-	// Fast path for already-converted maps
-	if m, ok := details.(map[string]string); ok {
-		return m
-	}
-
-	// Use JSON as the serialization format for all types
-	data, err := json.Marshal(details)
-	if err != nil {
-		// Fallback: convert to string representation
-		value := fmt.Sprint(details)
-		if value == "" || value == "<nil>" {
-			return nil
-		}
-		return map[string]string{"value": value}
-	}
-
-	var result map[string]string
-	if err := json.Unmarshal(data, &result); err != nil {
-		// Fallback
-		return map[string]string{"json": string(data)}
-	}
-
-	if len(result) == 0 {
-		return nil
-	}
-
-	return result
-}
-
 // getResourceTypeKinds returns the kinds for a given resource type.
 // This corresponds to the addListResourcesKind function in grpcserver/compose_service.go.
 func getResourceTypeKinds(resourceType ResourceType) []string {
@@ -732,5 +718,81 @@ func createTypedResourceProps(resourceType ResourceType, config []byte) (any, er
 		return props, nil
 	default:
 		return nil, nil
+	}
+}
+
+// artifactKindToProto converts Go ArtifactKind to protobuf ArtifactKind
+func artifactKindToProto(kind ArtifactKind) (azdext.ArtifactKind, error) {
+	switch kind {
+	case ArtifactKindDirectory:
+		return azdext.ArtifactKind_ARTIFACT_KIND_DIRECTORY, nil
+	case ArtifactKindConfig:
+		return azdext.ArtifactKind_ARTIFACT_KIND_CONFIG, nil
+	case ArtifactKindArchive:
+		return azdext.ArtifactKind_ARTIFACT_KIND_ARCHIVE, nil
+	case ArtifactKindContainer:
+		return azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER, nil
+	case ArtifactKindEndpoint:
+		return azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT, nil
+	case ArtifactKindDeployment:
+		return azdext.ArtifactKind_ARTIFACT_KIND_DEPLOYMENT, nil
+	case ArtifactKindResource:
+		return azdext.ArtifactKind_ARTIFACT_KIND_RESOURCE, nil
+	case ArtifactKindOutput:
+		return azdext.ArtifactKind_ARTIFACT_KIND_OUTPUT, nil
+	default:
+		return azdext.ArtifactKind_ARTIFACT_KIND_UNSPECIFIED, fmt.Errorf("unknown artifact kind: %s", kind)
+	}
+}
+
+// protoToArtifactKind converts protobuf ArtifactKind to Go ArtifactKind
+func protoToArtifactKind(kind azdext.ArtifactKind) (ArtifactKind, error) {
+	switch kind {
+	case azdext.ArtifactKind_ARTIFACT_KIND_DIRECTORY:
+		return ArtifactKindDirectory, nil
+	case azdext.ArtifactKind_ARTIFACT_KIND_CONFIG:
+		return ArtifactKindConfig, nil
+	case azdext.ArtifactKind_ARTIFACT_KIND_ARCHIVE:
+		return ArtifactKindArchive, nil
+	case azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER:
+		return ArtifactKindContainer, nil
+	case azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT:
+		return ArtifactKindEndpoint, nil
+	case azdext.ArtifactKind_ARTIFACT_KIND_DEPLOYMENT:
+		return ArtifactKindDeployment, nil
+	case azdext.ArtifactKind_ARTIFACT_KIND_RESOURCE:
+		return ArtifactKindResource, nil
+	case azdext.ArtifactKind_ARTIFACT_KIND_OUTPUT:
+		return ArtifactKindOutput, nil
+	case azdext.ArtifactKind_ARTIFACT_KIND_UNSPECIFIED:
+		return "", fmt.Errorf("unspecified artifact kind")
+	default:
+		return "", fmt.Errorf("unknown proto artifact kind: %v", kind)
+	}
+}
+
+// locationKindToProto converts Go LocationKind to protobuf LocationKind
+func locationKindToProto(kind LocationKind) (azdext.LocationKind, error) {
+	switch kind {
+	case LocationKindLocal:
+		return azdext.LocationKind_LOCATION_KIND_LOCAL, nil
+	case LocationKindRemote:
+		return azdext.LocationKind_LOCATION_KIND_REMOTE, nil
+	default:
+		return azdext.LocationKind_LOCATION_KIND_UNSPECIFIED, fmt.Errorf("unknown location kind: %s", kind)
+	}
+}
+
+// protoToLocationKind converts protobuf LocationKind to Go LocationKind
+func protoToLocationKind(kind azdext.LocationKind) (LocationKind, error) {
+	switch kind {
+	case azdext.LocationKind_LOCATION_KIND_LOCAL:
+		return LocationKindLocal, nil
+	case azdext.LocationKind_LOCATION_KIND_REMOTE:
+		return LocationKindRemote, nil
+	case azdext.LocationKind_LOCATION_KIND_UNSPECIFIED:
+		return "", fmt.Errorf("unspecified location kind")
+	default:
+		return "", fmt.Errorf("unknown proto location kind: %v", kind)
 	}
 }

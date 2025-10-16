@@ -207,8 +207,12 @@ func startRemoteBuildWithAPI(
 
 	// Construct the ACR Tasks API URL for scheduling a run with stable api-version
 	// nolint:lll
-	apiURL := fmt.Sprintf("https://management.azure.com/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ContainerRegistry/registries/%s/scheduleRun?api-version=2019-04-01",
-		subscriptionID, resourceGroup, registryName)
+	apiURL := fmt.Sprintf(
+		"https://management.azure.com/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ContainerRegistry/registries/%s/scheduleRun?api-version=2019-04-01",
+		subscriptionID,
+		resourceGroup,
+		registryName,
+	)
 
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, requestBodyReader)
@@ -277,8 +281,12 @@ func uploadBuildContextToACR(
 
 	// Step 1: Get upload URL from ACR using stable API version
 	// nolint:lll
-	uploadURL := fmt.Sprintf("https://management.azure.com/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ContainerRegistry/registries/%s/listBuildSourceUploadUrl?api-version=2019-04-01",
-		subscriptionID, resourceGroup, registryName)
+	uploadURL := fmt.Sprintf(
+		"https://management.azure.com/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ContainerRegistry/registries/%s/listBuildSourceUploadUrl?api-version=2019-04-01",
+		subscriptionID,
+		resourceGroup,
+		registryName,
+	)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", uploadURL, nil)
 	if err != nil {
@@ -389,8 +397,13 @@ func monitorBuildWithLogs(
 	// Monitor build status
 	client := &http.Client{Timeout: 10 * time.Second}
 	// nolint:lll
-	apiURL := fmt.Sprintf("https://management.azure.com/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ContainerRegistry/registries/%s/runs/%s?api-version=2019-06-01-preview",
-		subscriptionID, resourceGroup, registryName, runID)
+	apiURL := fmt.Sprintf(
+		"https://management.azure.com/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ContainerRegistry/registries/%s/runs/%s?api-version=2019-06-01-preview",
+		subscriptionID,
+		resourceGroup,
+		registryName,
+		runID,
+	)
 
 	for {
 		req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)

@@ -51,9 +51,6 @@ func (est *ExternalServiceTarget) Publish(
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
 ) (*ServicePublishResult, error) {
-	cleanup := est.wireConsole()
-	defer cleanup()
-
 	protoServiceConfig := &azdext.ServiceConfig{}
 	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
 	if err != nil {
@@ -133,9 +130,6 @@ func NewExternalServiceTarget(
 // Initialize initializes the service target for the specified service configuration.
 // This allows service targets to opt-in to service lifecycle events
 func (est *ExternalServiceTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	cleanup := est.wireConsole()
-	defer cleanup()
-
 	if serviceConfig == nil {
 		return errors.New("service configuration is required")
 	}
@@ -176,9 +170,6 @@ func (est *ExternalServiceTarget) Package(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	cleanup := est.wireConsole()
-	defer cleanup()
-
 	protoServiceConfig := &azdext.ServiceConfig{}
 	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
 	if err != nil {
@@ -229,9 +220,6 @@ func (est *ExternalServiceTarget) Deploy(
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
-	cleanup := est.wireConsole()
-	defer cleanup()
-
 	// Convert project types to protobuf types
 	protoServiceConfig := &azdext.ServiceConfig{}
 	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
@@ -290,9 +278,6 @@ func (est *ExternalServiceTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
-	cleanup := est.wireConsole()
-	defer cleanup()
-
 	protoServiceConfig := &azdext.ServiceConfig{}
 	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
 	if err != nil {
@@ -336,9 +321,6 @@ func (est *ExternalServiceTarget) ResolveTargetResource(
 	serviceConfig *ServiceConfig,
 	defaultResolver func() (*environment.TargetResource, error),
 ) (*environment.TargetResource, error) {
-	cleanup := est.wireConsole()
-	defer cleanup()
-
 	protoServiceConfig := &azdext.ServiceConfig{}
 	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
 	if err != nil {
@@ -488,25 +470,4 @@ func (est *ExternalServiceTarget) startResponseDispatcher() {
 			}
 		}
 	}()
-}
-
-// stringMapToDetailsInterface converts string map to interface (helper for proto conversions)
-func stringMapToDetailsInterface(details map[string]string) interface{} {
-	if len(details) == 0 {
-		return nil
-	}
-
-	return details
-}
-
-func (est *ExternalServiceTarget) wireConsole() func() {
-	stdOut := est.extension.StdOut()
-	stdErr := est.extension.StdErr()
-	stdOut.AddWriter(est.console.Handles().Stdout)
-	stdErr.AddWriter(est.console.Handles().Stderr)
-
-	return func() {
-		stdOut.RemoveWriter(est.console.Handles().Stdout)
-		stdErr.RemoveWriter(est.console.Handles().Stderr)
-	}
 }

@@ -53,7 +53,8 @@ func (st *appServiceTarget) Package(
 
 	// Get package path from the service context
 	var packagePath string
-	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindDirectory)); found && artifact.Location != "" {
+	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindDirectory)); found &&
+		artifact.Location != "" {
 		packagePath = artifact.Location
 	}
 

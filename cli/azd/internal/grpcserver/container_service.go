@@ -38,7 +38,10 @@ func NewContainerService(
 }
 
 // Package implements azdext.ContainerServiceServer.
-func (c *containerService) Package(ctx context.Context, req *azdext.ContainerPackageRequest) (*azdext.ContainerPackageResponse, error) {
+func (c *containerService) Package(
+	ctx context.Context,
+	req *azdext.ContainerPackageRequest,
+) (*azdext.ContainerPackageResponse, error) {
 	projectConfig, err := c.lazyProject.GetValue()
 	if err != nil {
 		return nil, err
@@ -78,7 +81,10 @@ func (c *containerService) Package(ctx context.Context, req *azdext.ContainerPac
 }
 
 // Publish implements azdext.ContainerServiceServer.
-func (c *containerService) Publish(ctx context.Context, req *azdext.ContainerPublishRequest) (*azdext.ContainerPublishResponse, error) {
+func (c *containerService) Publish(
+	ctx context.Context,
+	req *azdext.ContainerPublishRequest,
+) (*azdext.ContainerPublishResponse, error) {
 	projectConfig, err := c.lazyProject.GetValue()
 	if err != nil {
 		return nil, err

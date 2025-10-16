@@ -116,11 +116,31 @@ message ArtifactList {
   repeated Artifact artifacts = 1;
 }
 
+// Artifact kinds - matching the existing Go ArtifactKind enum
+enum ArtifactKind {
+  ARTIFACT_KIND_UNSPECIFIED = 0;         // Default/unknown artifact kind
+  ARTIFACT_KIND_DIRECTORY = 1;           // Directory containing project or build artifacts  
+  ARTIFACT_KIND_CONFIG = 2;              // Configuration file
+  ARTIFACT_KIND_ARCHIVE = 3;             // Zip/archive package
+  ARTIFACT_KIND_CONTAINER = 4;           // Docker/container image
+  ARTIFACT_KIND_ENDPOINT = 5;            // Service endpoint URL
+  ARTIFACT_KIND_DEPLOYMENT = 6;          // Deployment result or endpoint
+  ARTIFACT_KIND_RESOURCE = 7;            // Azure Resource
+  ARTIFACT_KIND_OUTPUT = 8;              // Output from deploy command
+}
+
+// Location kinds - matching the existing Go LocationKind enum
+enum LocationKind {
+  LOCATION_KIND_UNSPECIFIED = 0;         // Default/unknown location
+  LOCATION_KIND_LOCAL = 1;               // Local file system path
+  LOCATION_KIND_REMOTE = 2;              // Remote URL/URI
+}
+
 // Artifact represents a build, package, or deployment artifact with its location and metadata
 message Artifact {
-  string kind = 1;                        // Required: "zip", "container-image", "blob", "helm-chart", etc.
+  ArtifactKind kind = 1;                  // Required: type of artifact
   string location = 2;                    // Optional: location of the artifact (local path or remote reference)
-  string location_kind = 3;               // Required: "local" or "remote"
+  LocationKind location_kind = 3;         // Required: where the artifact is stored
   map<string, string> metadata = 4;       // Optional: arbitrary key/value pairs for extension-specific data
 }
 

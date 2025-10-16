@@ -109,9 +109,9 @@ func TestFromProtoServicePublishResultMapping(t *testing.T) {
 	protoResult := &azdext.ServicePublishResult{
 		Artifacts: []*azdext.Artifact{
 			{
-				Kind:         string(ArtifactKindEndpoint),
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
 				Location:     "example.azurecr.io/app:latest",
-				LocationKind: string(LocationKindRemote),
+				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
 				Metadata: map[string]string{
 					"imageHash": "sha256:abc123",
 				},
@@ -134,9 +134,9 @@ func TestFromProtoServicePackageResultMapping(t *testing.T) {
 	protoResult := &azdext.ServicePackageResult{
 		Artifacts: []*azdext.Artifact{
 			{
-				Kind:         string(ArtifactKindArchive),
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ARCHIVE,
 				Location:     "/app/output.tar",
-				LocationKind: string(LocationKindLocal),
+				LocationKind: azdext.LocationKind_LOCATION_KIND_LOCAL,
 				Metadata: map[string]string{
 					"imageHash":   "sha256:abc123",
 					"sourceImage": "app:local",
@@ -369,7 +369,8 @@ func TestServiceContextMapping(t *testing.T) {
 		Publish: make(ArtifactCollection, 0),
 		Deploy: ArtifactCollection{
 			{
-				Kind:         ArtifactKindResource,
+				Kind: ArtifactKindResource,
+				//nolint:lll
 				Location:     "/subscriptions/123/resourceGroups/rg/providers/Microsoft.ContainerInstance/containerGroups/my-app",
 				LocationKind: LocationKindRemote,
 				Metadata:     map[string]string{"resourceGroup": "rg"},
@@ -401,7 +402,11 @@ func TestServiceContextMapping(t *testing.T) {
 
 		assert.Len(t, protoContext.Deploy, 1)
 		assert.Equal(t, "rg", protoContext.Deploy[0].Metadata["resourceGroup"])
-		assert.Equal(t, "/subscriptions/123/resourceGroups/rg/providers/Microsoft.ContainerInstance/containerGroups/my-app", protoContext.Deploy[0].Location)
+		assert.Equal(
+			t,
+			"/subscriptions/123/resourceGroups/rg/providers/Microsoft.ContainerInstance/containerGroups/my-app",
+			protoContext.Deploy[0].Location,
+		)
 	})
 
 	t.Run("azdext.ServiceContext -> project.ServiceContext", func(t *testing.T) {
@@ -409,34 +414,34 @@ func TestServiceContextMapping(t *testing.T) {
 		protoContext := &azdext.ServiceContext{
 			Restore: []*azdext.Artifact{
 				{
-					Kind:         string(ArtifactKindConfig),
+					Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONFIG,
 					Location:     "/tmp/deps.txt",
-					LocationKind: string(LocationKindLocal),
+					LocationKind: azdext.LocationKind_LOCATION_KIND_LOCAL,
 					Metadata:     map[string]string{"restored": "true"},
 				},
 			},
 			Build: []*azdext.Artifact{
 				{
-					Kind:         string(ArtifactKindContainer),
+					Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
 					Location:     "test-image:latest",
-					LocationKind: string(LocationKindLocal),
+					LocationKind: azdext.LocationKind_LOCATION_KIND_LOCAL,
 					Metadata:     map[string]string{"built": "true"},
 				},
 			},
 			Package: []*azdext.Artifact{},
 			Publish: []*azdext.Artifact{
 				{
-					Kind:         string(ArtifactKindContainer),
+					Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
 					Location:     "registry.azurecr.io/test-image:v2.0.0",
-					LocationKind: string(LocationKindRemote),
+					LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
 					Metadata:     map[string]string{"published": "true"},
 				},
 			},
 			Deploy: []*azdext.Artifact{
 				{
-					Kind:         string(ArtifactKindResource),
+					Kind:         azdext.ArtifactKind_ARTIFACT_KIND_RESOURCE,
 					Location:     "/subscriptions/456/resourceGroups/test-rg/providers/Microsoft.Web/sites/test-app",
-					LocationKind: string(LocationKindRemote),
+					LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
 					Metadata:     map[string]string{"deployed": "true"},
 				},
 			},
@@ -465,7 +470,11 @@ func TestServiceContextMapping(t *testing.T) {
 
 		assert.Len(t, resultContext.Deploy, 1)
 		assert.Equal(t, "true", resultContext.Deploy[0].Metadata["deployed"])
-		assert.Equal(t, "/subscriptions/456/resourceGroups/test-rg/providers/Microsoft.Web/sites/test-app", resultContext.Deploy[0].Location)
+		assert.Equal(
+			t,
+			"/subscriptions/456/resourceGroups/test-rg/providers/Microsoft.Web/sites/test-app",
+			resultContext.Deploy[0].Location,
+		)
 	})
 
 	t.Run("round-trip mapping", func(t *testing.T) {
@@ -526,9 +535,9 @@ func TestArtifactListMapping(t *testing.T) {
 		artifactList := &azdext.ArtifactList{
 			Artifacts: []*azdext.Artifact{
 				{
-					Kind:         string(ArtifactKindContainer),
+					Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
 					Location:     "test:latest",
-					LocationKind: string(LocationKindLocal),
+					LocationKind: azdext.LocationKind_LOCATION_KIND_LOCAL,
 					Metadata:     map[string]string{"image": "test"},
 				},
 			},

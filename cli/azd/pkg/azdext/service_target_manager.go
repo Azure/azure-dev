@@ -27,6 +27,7 @@ type FrameworkServiceProvider interface {
 	Restore(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
+		serviceContext *ServiceContext,
 		progress ProgressReporter,
 	) (*ServiceRestoreResult, error)
 	Build(
@@ -267,11 +268,13 @@ func (m *FrameworkServiceManager) buildFrameworkServiceResponseMsg(
 
 		restoreReq := r.RestoreRequest
 		var serviceConfig *ServiceConfig
+		var serviceContext *ServiceContext
 		if restoreReq != nil {
 			serviceConfig = restoreReq.ServiceConfig
+			serviceContext = restoreReq.ServiceContext
 		}
 
-		result, err := provider.Restore(ctx, serviceConfig, progressReporter)
+		result, err := provider.Restore(ctx, serviceConfig, serviceContext, progressReporter)
 		resp = &FrameworkServiceMessage{
 			RequestId: msg.RequestId,
 			MessageType: &FrameworkServiceMessage_RestoreResponse{

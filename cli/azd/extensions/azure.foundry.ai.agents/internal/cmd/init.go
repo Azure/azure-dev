@@ -406,8 +406,8 @@ func (a *InitAction) isGitHubUrl(manifestPointer string) bool {
 	hostname := parsedURL.Hostname()
 
 	// Check for GitHub URL patterns as defined in downloadGithubManifest
-	return strings.HasPrefix(hostname, "raw.") ||
-		strings.HasPrefix(hostname, "api.") ||
+	return strings.HasPrefix(hostname, "raw.githubusercontent") ||
+		strings.HasPrefix(hostname, "api.github") ||
 		strings.Contains(hostname, "github")
 }
 
@@ -503,6 +503,7 @@ func (a *InitAction) downloadAgentYaml(
 				return nil, "", fmt.Errorf("creating target directory %s: %w", targetDir, err)
 			}
 
+			fmt.Println("Downloading full directory for hosted agent")
 			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console)
 			if err != nil {
 				return nil, "", fmt.Errorf("downloading parent directory: %w", err)

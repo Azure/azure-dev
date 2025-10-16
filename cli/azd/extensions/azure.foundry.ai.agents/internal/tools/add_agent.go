@@ -21,8 +21,11 @@ func NewAddAgentTool() server.ServerTool {
 			mcp.WithReadOnlyHintAnnotation(false),
 			mcp.WithIdempotentHintAnnotation(false),
 			mcp.WithDestructiveHintAnnotation(false),
-			mcp.WithString("agent_name",
-				mcp.Description("The name of the agent that will be used to reference the new agent within the services section of the azure.yaml"),
+			mcp.WithString(
+				"agent_name",
+				mcp.Description(
+					"The name of the agent that will be used to reference the new agent within the services section of the azure.yaml",
+				),
 				mcp.DefaultString("my-agent"),
 				mcp.Required(),
 			),
@@ -33,20 +36,29 @@ func NewAddAgentTool() server.ServerTool {
 			mcp.WithString("source_code_location",
 				mcp.Description("The relative file path to the agent source code from the project root."),
 			),
-			mcp.WithString("language",
+			mcp.WithString(
+				"language",
 				mcp.Description("The programming language of the agent source code."),
-				mcp.WithStringEnumItems([]string{"csharp", "python", "javascript", "typescript", "java", "docker", "custom"}),
+				mcp.WithStringEnumItems(
+					[]string{"csharp", "python", "javascript", "typescript", "java", "docker", "custom"},
+				),
 				mcp.DefaultString("python"),
 			),
 		),
 		Handler: func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			agentName, err := request.RequireString("agent_name")
 			if err != nil {
-				return mcp.NewToolResultErrorFromErr("The agent_name is parameter is required and cannot be empty. The agent_name is used to uniquely identify the agent within the services section of the azure.yaml", err), nil
+				return mcp.NewToolResultErrorFromErr(
+					"The agent_name is parameter is required and cannot be empty. The agent_name is used to uniquely identify the agent within the services section of the azure.yaml",
+					err,
+				), nil
 			}
 
 			if _, err := request.RequireString("manifest_location"); err != nil {
-				return mcp.NewToolResultErrorFromErr("The manifest_location is required and cannot be empty. The manifest_location specifies the location of the agent's YAML manifest file.", err), nil
+				return mcp.NewToolResultErrorFromErr(
+					"The manifest_location is required and cannot be empty. The manifest_location specifies the location of the agent's YAML manifest file.",
+					err,
+				), nil
 			}
 
 			sourceCodeLocation := request.GetString("source_code_location", ".")

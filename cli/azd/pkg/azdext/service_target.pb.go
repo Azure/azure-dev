@@ -1025,13 +1025,12 @@ func (x *GetTargetResourceResponse) GetTargetResource() *TargetResource {
 
 // ServiceContext defines the shared pipeline state across all phases of the service lifecycle
 type ServiceContext struct {
-	state         protoimpl.MessageState   `protogen:"open.v1"`
-	Restore       []*Artifact              `protobuf:"bytes,1,rep,name=restore,proto3" json:"restore,omitempty"`
-	Build         []*Artifact              `protobuf:"bytes,2,rep,name=build,proto3" json:"build,omitempty"`
-	Package       []*Artifact              `protobuf:"bytes,3,rep,name=package,proto3" json:"package,omitempty"`
-	Publish       []*Artifact              `protobuf:"bytes,4,rep,name=publish,proto3" json:"publish,omitempty"`
-	Deploy        []*Artifact              `protobuf:"bytes,5,rep,name=deploy,proto3" json:"deploy,omitempty"`
-	Extras        map[string]*ArtifactList `protobuf:"bytes,6,rep,name=extras,proto3" json:"extras,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Escape hatch for provider-specific or experimental phases
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Restore       []*Artifact            `protobuf:"bytes,1,rep,name=restore,proto3" json:"restore,omitempty"`
+	Build         []*Artifact            `protobuf:"bytes,2,rep,name=build,proto3" json:"build,omitempty"`
+	Package       []*Artifact            `protobuf:"bytes,3,rep,name=package,proto3" json:"package,omitempty"`
+	Publish       []*Artifact            `protobuf:"bytes,4,rep,name=publish,proto3" json:"publish,omitempty"`
+	Deploy        []*Artifact            `protobuf:"bytes,5,rep,name=deploy,proto3" json:"deploy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1097,13 +1096,6 @@ func (x *ServiceContext) GetPublish() []*Artifact {
 func (x *ServiceContext) GetDeploy() []*Artifact {
 	if x != nil {
 		return x.Deploy
-	}
-	return nil
-}
-
-func (x *ServiceContext) GetExtras() map[string]*ArtifactList {
-	if x != nil {
-		return x.Extras
 	}
 	return nil
 }
@@ -2013,17 +2005,13 @@ const file_service_target_proto_rawDesc = "" +
 	"\x17default_target_resource\x18\x03 \x01(\v2\x16.azdext.TargetResourceR\x15defaultTargetResource\x12#\n" +
 	"\rdefault_error\x18\x04 \x01(\tR\fdefaultError\"\\\n" +
 	"\x19GetTargetResourceResponse\x12?\n" +
-	"\x0ftarget_resource\x18\x01 \x01(\v2\x16.azdext.TargetResourceR\x0etargetResource\"\xf3\x02\n" +
+	"\x0ftarget_resource\x18\x01 \x01(\v2\x16.azdext.TargetResourceR\x0etargetResource\"\xe6\x01\n" +
 	"\x0eServiceContext\x12*\n" +
 	"\arestore\x18\x01 \x03(\v2\x10.azdext.ArtifactR\arestore\x12&\n" +
 	"\x05build\x18\x02 \x03(\v2\x10.azdext.ArtifactR\x05build\x12*\n" +
 	"\apackage\x18\x03 \x03(\v2\x10.azdext.ArtifactR\apackage\x12*\n" +
 	"\apublish\x18\x04 \x03(\v2\x10.azdext.ArtifactR\apublish\x12(\n" +
-	"\x06deploy\x18\x05 \x03(\v2\x10.azdext.ArtifactR\x06deploy\x12:\n" +
-	"\x06extras\x18\x06 \x03(\v2\".azdext.ServiceContext.ExtrasEntryR\x06extras\x1aO\n" +
-	"\vExtrasEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12*\n" +
-	"\x05value\x18\x02 \x01(\v2\x14.azdext.ArtifactListR\x05value:\x028\x01\">\n" +
+	"\x06deploy\x18\x05 \x03(\v2\x10.azdext.ArtifactR\x06deploy\">\n" +
 	"\fArtifactList\x12.\n" +
 	"\tartifacts\x18\x01 \x03(\v2\x10.azdext.ArtifactR\tartifacts\"\x84\x02\n" +
 	"\bArtifact\x12(\n" +
@@ -2109,7 +2097,7 @@ func file_service_target_proto_rawDescGZIP() []byte {
 }
 
 var file_service_target_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_service_target_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
+var file_service_target_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_service_target_proto_goTypes = []any{
 	(ArtifactKind)(0),                       // 0: azdext.ArtifactKind
 	(LocationKind)(0),                       // 1: azdext.LocationKind
@@ -2143,11 +2131,10 @@ var file_service_target_proto_goTypes = []any{
 	(*ServiceTargetEndpointsResponse)(nil),  // 29: azdext.ServiceTargetEndpointsResponse
 	(*ServiceTargetProgressMessage)(nil),    // 30: azdext.ServiceTargetProgressMessage
 	nil,                                     // 31: azdext.ServiceTargetOptions.DeploymentStacksEntry
-	nil,                                     // 32: azdext.ServiceContext.ExtrasEntry
-	nil,                                     // 33: azdext.Artifact.MetadataEntry
-	nil,                                     // 34: azdext.TargetResource.MetadataEntry
-	(*ServiceConfig)(nil),                   // 35: azdext.ServiceConfig
-	(*structpb.Struct)(nil),                 // 36: google.protobuf.Struct
+	nil,                                     // 32: azdext.Artifact.MetadataEntry
+	nil,                                     // 33: azdext.TargetResource.MetadataEntry
+	(*ServiceConfig)(nil),                   // 34: azdext.ServiceConfig
+	(*structpb.Struct)(nil),                 // 35: google.protobuf.Struct
 }
 var file_service_target_proto_depIdxs = []int32{
 	11, // 0: azdext.ServiceTargetMessage.error:type_name -> azdext.ServiceTargetErrorMessage
@@ -2166,10 +2153,10 @@ var file_service_target_proto_depIdxs = []int32{
 	26, // 13: azdext.ServiceTargetMessage.publish_response:type_name -> azdext.ServiceTargetPublishResponse
 	28, // 14: azdext.ServiceTargetMessage.endpoints_request:type_name -> azdext.ServiceTargetEndpointsRequest
 	29, // 15: azdext.ServiceTargetMessage.endpoints_response:type_name -> azdext.ServiceTargetEndpointsResponse
-	35, // 16: azdext.ServiceTargetInitializeRequest.service_config:type_name -> azdext.ServiceConfig
+	34, // 16: azdext.ServiceTargetInitializeRequest.service_config:type_name -> azdext.ServiceConfig
 	31, // 17: azdext.ServiceTargetOptions.deployment_stacks:type_name -> azdext.ServiceTargetOptions.DeploymentStacksEntry
-	36, // 18: azdext.ServiceTargetOptions.config:type_name -> google.protobuf.Struct
-	35, // 19: azdext.GetTargetResourceRequest.service_config:type_name -> azdext.ServiceConfig
+	35, // 18: azdext.ServiceTargetOptions.config:type_name -> google.protobuf.Struct
+	34, // 19: azdext.GetTargetResourceRequest.service_config:type_name -> azdext.ServiceConfig
 	17, // 20: azdext.GetTargetResourceRequest.default_target_resource:type_name -> azdext.TargetResource
 	17, // 21: azdext.GetTargetResourceResponse.target_resource:type_name -> azdext.TargetResource
 	16, // 22: azdext.ServiceContext.restore:type_name -> azdext.Artifact
@@ -2177,37 +2164,35 @@ var file_service_target_proto_depIdxs = []int32{
 	16, // 24: azdext.ServiceContext.package:type_name -> azdext.Artifact
 	16, // 25: azdext.ServiceContext.publish:type_name -> azdext.Artifact
 	16, // 26: azdext.ServiceContext.deploy:type_name -> azdext.Artifact
-	32, // 27: azdext.ServiceContext.extras:type_name -> azdext.ServiceContext.ExtrasEntry
-	16, // 28: azdext.ArtifactList.artifacts:type_name -> azdext.Artifact
-	0,  // 29: azdext.Artifact.kind:type_name -> azdext.ArtifactKind
-	1,  // 30: azdext.Artifact.location_kind:type_name -> azdext.LocationKind
-	33, // 31: azdext.Artifact.metadata:type_name -> azdext.Artifact.MetadataEntry
-	34, // 32: azdext.TargetResource.metadata:type_name -> azdext.TargetResource.MetadataEntry
-	35, // 33: azdext.ServiceTargetDeployRequest.service_config:type_name -> azdext.ServiceConfig
-	14, // 34: azdext.ServiceTargetDeployRequest.service_context:type_name -> azdext.ServiceContext
-	17, // 35: azdext.ServiceTargetDeployRequest.target_resource:type_name -> azdext.TargetResource
-	22, // 36: azdext.ServiceTargetDeployResponse.result:type_name -> azdext.ServiceDeployResult
-	16, // 37: azdext.ServicePackageResult.artifacts:type_name -> azdext.Artifact
-	16, // 38: azdext.ServicePublishResult.artifacts:type_name -> azdext.Artifact
-	16, // 39: azdext.ServiceDeployResult.artifacts:type_name -> azdext.Artifact
-	35, // 40: azdext.ServiceTargetPackageRequest.service_config:type_name -> azdext.ServiceConfig
-	14, // 41: azdext.ServiceTargetPackageRequest.service_context:type_name -> azdext.ServiceContext
-	20, // 42: azdext.ServiceTargetPackageResponse.result:type_name -> azdext.ServicePackageResult
-	35, // 43: azdext.ServiceTargetPublishRequest.service_config:type_name -> azdext.ServiceConfig
-	14, // 44: azdext.ServiceTargetPublishRequest.service_context:type_name -> azdext.ServiceContext
-	17, // 45: azdext.ServiceTargetPublishRequest.target_resource:type_name -> azdext.TargetResource
-	27, // 46: azdext.ServiceTargetPublishRequest.publish_options:type_name -> azdext.PublishOptions
-	21, // 47: azdext.ServiceTargetPublishResponse.result:type_name -> azdext.ServicePublishResult
-	35, // 48: azdext.ServiceTargetEndpointsRequest.service_config:type_name -> azdext.ServiceConfig
-	17, // 49: azdext.ServiceTargetEndpointsRequest.target_resource:type_name -> azdext.TargetResource
-	15, // 50: azdext.ServiceContext.ExtrasEntry.value:type_name -> azdext.ArtifactList
-	2,  // 51: azdext.ServiceTargetService.Stream:input_type -> azdext.ServiceTargetMessage
-	2,  // 52: azdext.ServiceTargetService.Stream:output_type -> azdext.ServiceTargetMessage
-	52, // [52:53] is the sub-list for method output_type
-	51, // [51:52] is the sub-list for method input_type
-	51, // [51:51] is the sub-list for extension type_name
-	51, // [51:51] is the sub-list for extension extendee
-	0,  // [0:51] is the sub-list for field type_name
+	16, // 27: azdext.ArtifactList.artifacts:type_name -> azdext.Artifact
+	0,  // 28: azdext.Artifact.kind:type_name -> azdext.ArtifactKind
+	1,  // 29: azdext.Artifact.location_kind:type_name -> azdext.LocationKind
+	32, // 30: azdext.Artifact.metadata:type_name -> azdext.Artifact.MetadataEntry
+	33, // 31: azdext.TargetResource.metadata:type_name -> azdext.TargetResource.MetadataEntry
+	34, // 32: azdext.ServiceTargetDeployRequest.service_config:type_name -> azdext.ServiceConfig
+	14, // 33: azdext.ServiceTargetDeployRequest.service_context:type_name -> azdext.ServiceContext
+	17, // 34: azdext.ServiceTargetDeployRequest.target_resource:type_name -> azdext.TargetResource
+	22, // 35: azdext.ServiceTargetDeployResponse.result:type_name -> azdext.ServiceDeployResult
+	16, // 36: azdext.ServicePackageResult.artifacts:type_name -> azdext.Artifact
+	16, // 37: azdext.ServicePublishResult.artifacts:type_name -> azdext.Artifact
+	16, // 38: azdext.ServiceDeployResult.artifacts:type_name -> azdext.Artifact
+	34, // 39: azdext.ServiceTargetPackageRequest.service_config:type_name -> azdext.ServiceConfig
+	14, // 40: azdext.ServiceTargetPackageRequest.service_context:type_name -> azdext.ServiceContext
+	20, // 41: azdext.ServiceTargetPackageResponse.result:type_name -> azdext.ServicePackageResult
+	34, // 42: azdext.ServiceTargetPublishRequest.service_config:type_name -> azdext.ServiceConfig
+	14, // 43: azdext.ServiceTargetPublishRequest.service_context:type_name -> azdext.ServiceContext
+	17, // 44: azdext.ServiceTargetPublishRequest.target_resource:type_name -> azdext.TargetResource
+	27, // 45: azdext.ServiceTargetPublishRequest.publish_options:type_name -> azdext.PublishOptions
+	21, // 46: azdext.ServiceTargetPublishResponse.result:type_name -> azdext.ServicePublishResult
+	34, // 47: azdext.ServiceTargetEndpointsRequest.service_config:type_name -> azdext.ServiceConfig
+	17, // 48: azdext.ServiceTargetEndpointsRequest.target_resource:type_name -> azdext.TargetResource
+	2,  // 49: azdext.ServiceTargetService.Stream:input_type -> azdext.ServiceTargetMessage
+	2,  // 50: azdext.ServiceTargetService.Stream:output_type -> azdext.ServiceTargetMessage
+	50, // [50:51] is the sub-list for method output_type
+	49, // [49:50] is the sub-list for method input_type
+	49, // [49:49] is the sub-list for extension type_name
+	49, // [49:49] is the sub-list for extension extendee
+	0,  // [0:49] is the sub-list for field type_name
 }
 
 func init() { file_service_target_proto_init() }
@@ -2239,7 +2224,7 @@ func file_service_target_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_service_target_proto_rawDesc), len(file_service_target_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   33,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

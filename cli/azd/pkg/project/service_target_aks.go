@@ -183,7 +183,7 @@ func (t *aksTarget) Package(
 ) (*ServicePackageResult, error) {
 	// Return the artifacts from the service context as the package result
 	return &ServicePackageResult{
-		Artifacts: []Artifact(serviceContext.Package),
+		Artifacts: serviceContext.Package,
 	}, nil
 }
 

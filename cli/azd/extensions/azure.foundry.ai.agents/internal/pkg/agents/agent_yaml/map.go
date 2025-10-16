@@ -130,6 +130,9 @@ func CreatePromptAgentAPIRequest(agentDefinition AgentDefinition, buildConfig *A
 	// The AgentDefinition has all the fields but PromptAgent might have additional prompt-specific fields
 	
 	promptDef := agent_api.PromptAgentDefinition{
+		AgentDefinition: agent_api.AgentDefinition{
+        	Kind: agent_api.AgentKindPrompt, // This sets Kind to "prompt"
+    	},
 		Model: agentDefinition.Model.Id, // TODO QUESTION: Is Model.Id the right field to use?
 		Instructions: &agentDefinition.Instructions,
 		
@@ -229,6 +232,9 @@ func CreateHostedAgentAPIRequest(agentDefinition AgentDefinition, buildConfig *A
 	}
 
 	hostedDef := agent_api.HostedAgentDefinition{
+		AgentDefinition: agent_api.AgentDefinition{
+        	Kind: agent_api.AgentKindHosted, // This sets Kind to "hosted"
+    	},
 		ContainerProtocolVersions: protocolVersions,
 		CPU:                       cpu,
 		Memory:                    memory,

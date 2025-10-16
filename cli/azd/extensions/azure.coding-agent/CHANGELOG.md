@@ -1,5 +1,17 @@
 # Release History
 
+## 0.4.0
+
+### Features Added
+
+### Bugs fixed
+
+## 0.3.0
+
+### Bugs fixed
+
+- No longer require an azd project. You only need a GitHub repository.
+
 ## 0.2.0
 
 ### Features Added

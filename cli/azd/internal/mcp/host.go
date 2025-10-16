@@ -215,32 +215,16 @@ func (h *McpHost) Hooks() *server.Hooks {
 
 // createExtensionProxyTool creates a proxy tool that forwards calls to the extension's MCP server
 func createProxyTool(toolName string, mcpTool mcp.Tool, mcpClient client.MCPClient) server.ServerTool {
-	// Build tool options starting with description
-	toolOptions := []mcp.ToolOption{
-		mcp.WithDescription(mcpTool.Description),
-	}
-
-	// Copy annotations from the original tool if they exist
-	if mcpTool.Annotations.ReadOnlyHint != nil {
-		toolOptions = append(toolOptions, mcp.WithReadOnlyHintAnnotation(*mcpTool.Annotations.ReadOnlyHint))
-	}
-	if mcpTool.Annotations.IdempotentHint != nil {
-		toolOptions = append(toolOptions, mcp.WithIdempotentHintAnnotation(*mcpTool.Annotations.IdempotentHint))
-	}
-	if mcpTool.Annotations.DestructiveHint != nil {
-		toolOptions = append(toolOptions, mcp.WithDestructiveHintAnnotation(*mcpTool.Annotations.DestructiveHint))
-	}
-	if mcpTool.Annotations.OpenWorldHint != nil {
-		toolOptions = append(toolOptions, mcp.WithOpenWorldHintAnnotation(*mcpTool.Annotations.OpenWorldHint))
-	}
+	originalToolName := mcpTool.Name
+	mcpTool.Name = toolName
 
 	return server.ServerTool{
-		Tool: mcp.NewTool(toolName, toolOptions...),
+		Tool: mcpTool,
 		Handler: func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			// Forward the tool call to the extension's MCP server
 			// Note: We need to use the original tool name when forwarding
 			originalRequest := request
-			originalRequest.Params.Name = mcpTool.Name
+			originalRequest.Params.Name = originalToolName
 
 			return mcpClient.CallTool(ctx, originalRequest)
 		},

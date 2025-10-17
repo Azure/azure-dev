@@ -842,7 +842,7 @@ func gitPushChanges(ctx context.Context,
 			var lastErr error
 
 			for range 3 {
-				// copying this idea from pipelineconfig, which pushes multiple times
+				// copying this idea from azd pipeline config, which pushes multiple times
 				// to allow for the "push once, fail, authenticate" workflow.
 				if err := gitCLI.PushUpstream(ctx, gitRepoRoot, chosenRemote, branchName); err != nil {
 					lastErr = err

@@ -30,7 +30,6 @@ const (
 	ArtifactKindEndpoint   ArtifactKind = "endpoint"   // Service endpoint URL
 	ArtifactKindDeployment ArtifactKind = "deployment" // Deployment result or endpoint
 	ArtifactKindResource   ArtifactKind = "resource"   // Azure Resource
-	ArtifactKindOutput     ArtifactKind = "output"     // Output from deploy command
 )
 
 // LocationKind represents the type of location for an artifact
@@ -59,7 +58,6 @@ var validArtifactKinds = []ArtifactKind{
 	ArtifactKindEndpoint,
 	ArtifactKindDeployment,
 	ArtifactKindResource,
-	ArtifactKindOutput,
 }
 
 // Artifact represents a build, package, or deployment artifact with its location and metadata.

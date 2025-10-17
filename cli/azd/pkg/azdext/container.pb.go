@@ -227,7 +227,7 @@ var File_container_proto protoreflect.FileDescriptor
 
 const file_container_proto_rawDesc = "" +
 	"\n" +
-	"\x0fcontainer.proto\x12\x06azdext\x1a\x14service_target.proto\"}\n" +
+	"\x0fcontainer.proto\x12\x06azdext\x1a\fmodels.proto\x1a\x14service_target.proto\"}\n" +
 	"\x17ContainerPackageRequest\x12!\n" +
 	"\fservice_name\x18\x01 \x01(\tR\vserviceName\x12?\n" +
 	"\x0fservice_context\x18\x03 \x01(\v2\x16.azdext.ServiceContextR\x0eserviceContext\"P\n" +
@@ -285,6 +285,7 @@ func file_container_proto_init() {
 	if File_container_proto != nil {
 		return
 	}
+	file_models_proto_init()
 	file_service_target_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{

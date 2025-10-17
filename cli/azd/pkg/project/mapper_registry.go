@@ -699,8 +699,6 @@ func artifactKindToProto(kind ArtifactKind) (azdext.ArtifactKind, error) {
 		return azdext.ArtifactKind_ARTIFACT_KIND_DEPLOYMENT, nil
 	case ArtifactKindResource:
 		return azdext.ArtifactKind_ARTIFACT_KIND_RESOURCE, nil
-	case ArtifactKindOutput:
-		return azdext.ArtifactKind_ARTIFACT_KIND_OUTPUT, nil
 	default:
 		return azdext.ArtifactKind_ARTIFACT_KIND_UNSPECIFIED, fmt.Errorf("unknown artifact kind: %s", kind)
 	}
@@ -723,8 +721,6 @@ func protoToArtifactKind(kind azdext.ArtifactKind) (ArtifactKind, error) {
 		return ArtifactKindDeployment, nil
 	case azdext.ArtifactKind_ARTIFACT_KIND_RESOURCE:
 		return ArtifactKindResource, nil
-	case azdext.ArtifactKind_ARTIFACT_KIND_OUTPUT:
-		return ArtifactKindOutput, nil
 	case azdext.ArtifactKind_ARTIFACT_KIND_UNSPECIFIED:
 		return "", fmt.Errorf("unspecified artifact kind")
 	default:

@@ -4,7 +4,11 @@
 
 ### Features Added
 
+- Small improvements: underlining hyperlinks in the console, and improving error messages.
+
 ### Bugs fixed
+
+- Do more prerequisite checks, like checking if any git remotes are registered, up front.
 
 ## 0.3.0
 

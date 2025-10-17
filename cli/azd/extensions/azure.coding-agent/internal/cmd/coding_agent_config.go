@@ -113,6 +113,7 @@ func newConfigCommand() *cobra.Command {
 	cc := &cobra.Command{
 		Use:   "config",
 		Short: "Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP",
+		Long:  "Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP.\n\nFor more information about this command, including prerequisites and troubleshooting, view the readme at " + ux.Hyperlink("https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.coding-agent/README.md"),
 	}
 
 	flagValues := setupFlags(cc.Flags())

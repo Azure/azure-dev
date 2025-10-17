@@ -69,6 +69,17 @@ git remote add origin <http or ssh link to your repository>
 
 If this is **not** a GitHub repository, then you'll want to create one before using this command. For information on how to create a repository see the GitHub documentation: [https://docs.github.com/repositories/creating-and-managing-repositories/creating-a-new-repository](https://docs.github.com/repositories/creating-and-managing-repositories/creating-a-new-repository).
 
+### The refresh token has expired
+
+This can happen if your azd login token has expired. You can fix this by logging in again, like this:
+
+```bash
+# NOTE: for some situations, like logging in to a tenant that is not your home tenant, or
+# authenticating in docker containers, you might need additional flags, like --tenant-id, or
+# --use-device-code, respectively.
+azd auth login
+```
+
 ### An internal command is failing, but there's no command output
 
 Use the `--debug` command line option. This will make it so each command (and it's output) is printed to the console, which can give you a better idea of where the overall process is failing.

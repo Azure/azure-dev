@@ -119,7 +119,7 @@ func newConfigCommand() *cobra.Command {
 
 	cc.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := runConfigCommand(cmd, flagValues); err != nil {
-			message := fmt.Sprintf("(!) An error occurred, see the readme for troubleshooting and prerequisites:\n    %s", ux.Hyperlink(readmeURL))
+			message := fmt.Sprintf("(!) An error occurred, see the readme for troubleshooting and prerequisites:\n    %s", ux.Hyperlink(readmeURL)) //nolint:lll
 			fmt.Println(ux.BoldString(message))
 			return err
 		}
@@ -175,10 +175,12 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 		return fmt.Errorf("failed to log in to GitHub. Login manually using `gh auth login`: %w", err)
 	}
 
+	// this spot also serves as the "the user has `azd auth login`'d into Azure already"
 	subscriptionResponse, err := promptClient.PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
 
 	if err != nil {
-		return fmt.Errorf("failed getting a subscription from prompt: %w", err)
+		//nolint:lll
+		return fmt.Errorf("failed getting a subscription from prompt. Try logging in manually with 'azd auth login' before running this command %w", err)
 	}
 
 	tenantID := subscriptionResponse.Subscription.TenantId
@@ -242,8 +244,8 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 		return fmt.Errorf("failed to push files to git: %w", err)
 	}
 
-	codingAgentURL := ux.Hyperlink(fmt.Sprintf("https://github.com/%s/settings/copilot/coding_agent#:~:text=JSON%%20MCP%%20configuration-,MCP%%20configuration,-1", repoSlug))
-	managedIdentityPortalURL := ux.Hyperlink(formatPortalLinkForManagedIdentity(tenantID, subscriptionID, authConfig.ResourceGroup, authConfig.Name))
+	codingAgentURL := fmt.Sprintf("https://github.com/%s/settings/copilot/coding_agent#:~:text=JSON%%20MCP%%20configuration-,MCP%%20configuration,-1", repoSlug) //nolint:lll
+	managedIdentityPortalURL := formatPortalLinkForManagedIdentity(tenantID, subscriptionID, authConfig.ResourceGroup, authConfig.Name)                          //nolint:lll
 
 	fmt.Println("")
 	fmt.Println(output.WithHighLightFormat("(!)"))
@@ -251,8 +253,8 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 	fmt.Println(output.WithHighLightFormat("(!)"))
 	fmt.Println("")
 	fmt.Printf("1. The branch created at %s/%s must be merged to %s/main\n", remote, flagValues.BranchName, repoSlug)
-	fmt.Printf("2. Configure Copilot coding agent's managed identity roles in the Azure portal: %s\n", managedIdentityPortalURL)
-	fmt.Printf("3. Visit '%s' and update the \"MCP configuration\" field with this JSON:\n\n", codingAgentURL)
+	fmt.Printf("2. Configure Copilot coding agent's managed identity roles in the Azure portal: %s\n", ux.Hyperlink(managedIdentityPortalURL)) // nolint:lll
+	fmt.Printf("3. Visit '%s' and update the \"MCP configuration\" field with this JSON:\n\n", ux.Hyperlink(codingAgentURL))
 
 	fmt.Println(mcpJson)
 
@@ -938,8 +940,13 @@ func (cli *internalGitCLI) ListRemotes(ctx context.Context, gitRepoRoot string) 
 	return remotes, nil
 }
 
-// formatPortalLinkForManagedIdentity takes you to the Azure portal blade, for your managed identity, that lets you see its role assignments.
-func formatPortalLinkForManagedIdentity(tenantID string, subscriptionID string, resourceGroupName string, managedIdentityName string) string {
+// formatPortalLinkForManagedIdentity takes you to the Azure portal blade, for your managed identity,
+// that lets you see its role assignments.
+func formatPortalLinkForManagedIdentity(tenantID string,
+	subscriptionID string,
+	resourceGroupName string,
+	managedIdentityName string) string {
+	//nolint:lll
 	return fmt.Sprintf("https://portal.azure.com/#@%s/resource/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s/azure_resources",
 		tenantID,
 		subscriptionID,

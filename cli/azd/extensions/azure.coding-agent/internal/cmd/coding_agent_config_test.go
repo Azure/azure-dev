@@ -96,7 +96,7 @@ func TestCodingAgent_promptForRepoSlug(t *testing.T) {
 		promptClient := NewMockPromptServiceClient(ctrl)
 		gitCLI := NewMockgitCLI(ctrl)
 
-		slug, err := promptForCodingAgentRepoSlug(context.Background(), promptClient, gitCLI, "repo-root-ignored", repoSlugForTests)
+		slug, err := promptForCodingAgentRepoSlug(context.Background(), promptClient, gitCLI, "repo-root-ignored", repoSlugForTests) //nolint:lll
 
 		require.Equal(t, slug, repoSlugForTests)
 		require.NoError(t, err)

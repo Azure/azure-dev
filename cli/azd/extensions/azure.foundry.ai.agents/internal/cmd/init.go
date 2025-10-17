@@ -403,6 +403,10 @@ func (a *InitAction) downloadAgentYaml(
 
 	var content []byte
 	var err error
+	var isGitHubUrl bool
+	var urlInfo *GitHubUrlInfo
+	var ghCli *github.Cli
+	var console input.Console
 
 	// Check if manifestPointer is a local file path or a URI
 	if a.isLocalFilePath(manifestPointer) {
@@ -416,6 +420,7 @@ func (a *InitAction) downloadAgentYaml(
 	} else if a.isGitHubUrl(manifestPointer) {
 		// Handle GitHub URLs using downloadGithubManifest
 		fmt.Printf("Downloading agent.yaml from GitHub: %s\n", manifestPointer)
+		isGitHubUrl = true
 
 		// Create a simple console and command runner for GitHub CLI
 		commandRunner := exec.NewCommandRunner(&exec.RunnerOptions{
@@ -423,7 +428,7 @@ func (a *InitAction) downloadAgentYaml(
 			Stderr: os.Stderr,
 		})
 
-		console := input.NewConsole(
+		console = input.NewConsole(
 			false, // noPrompt
 			true,  // isTerminal
 			input.Writers{Output: os.Stdout},
@@ -436,12 +441,12 @@ func (a *InitAction) downloadAgentYaml(
 			nil, // externalPromptCfg
 		)
 
-		ghCli, err := github.NewGitHubCli(ctx, console, commandRunner)
+		ghCli, err = github.NewGitHubCli(ctx, console, commandRunner)
 		if err != nil {
 			return nil, "", fmt.Errorf("creating GitHub CLI: %w", err)
 		}
 
-		urlInfo, err := parseGitHubUrl(manifestPointer)
+		urlInfo, err = parseGitHubUrl(manifestPointer)
 		if err != nil {
 			return nil, "", err
 		}
@@ -458,41 +463,6 @@ func (a *InitAction) downloadAgentYaml(
 		}
 
 		content = []byte(contentStr)
-
-		// Parse the YAML content into a map
-		var yamlData map[string]interface{}
-		if err := yaml.Unmarshal(content, &yamlData); err != nil {
-			return nil, "", fmt.Errorf("parsing YAML content: %w", err)
-		}
-
-		agentKind, ok := yamlData["kind"].(string)
-		if !ok {
-			return nil, "", fmt.Errorf("missing or invalid 'kind' field in YAML content")
-		}
-
-		if agentKind == "hosted" {
-			// For hosted agents, download the entire parent directory
-			agentId, ok := yamlData["id"].(string)
-			if !ok {
-				return nil, "", fmt.Errorf("missing or invalid 'id' field in YAML content")
-			}
-
-			// Use targetDir if provided or set to local file pointer, otherwise default to "src/{agentId}"
-			if targetDir == "" {
-				targetDir = filepath.Join("src", agentId)
-			}
-
-			// Create target directory if it doesn't exist
-			if err := os.MkdirAll(targetDir, 0755); err != nil {
-				return nil, "", fmt.Errorf("creating target directory %s: %w", targetDir, err)
-			}
-
-			fmt.Println("Downloading full directory for hosted agent")
-			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console)
-			if err != nil {
-				return nil, "", fmt.Errorf("downloading parent directory: %w", err)
-			}
-		}
 	}
 
 	// Parse and validate the YAML content against AgentManifest structure
@@ -521,8 +491,17 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", fmt.Errorf("saving file to %s: %w", filePath, err)
 	}
 
+	if isGitHubUrl && agentManifest.Agent.Kind == agent_yaml.AgentKindHosted {
+		// For hosted agents, download the entire parent directory
+		fmt.Println("Downloading full directory for hosted agent")
+		err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console)
+		if err != nil {
+			return nil, "", fmt.Errorf("downloading parent directory: %w", err)
+		}
+	}
+
 	fmt.Printf("Processed agent.yaml at %s\n", filePath)
-	
+
 	return agentManifest, targetDir, nil
 }
 
@@ -588,6 +567,7 @@ func downloadGithubManifest(
 }
 
 // parseGitHubUrl extracts repository information from various GitHub URL formats
+// TODO: This will fail if the branch contains a slash. Update to handle that case if needed.
 func parseGitHubUrl(manifestPointer string) (*GitHubUrlInfo, error) {
 	parsedURL, err := url.Parse(manifestPointer)
 	if err != nil {

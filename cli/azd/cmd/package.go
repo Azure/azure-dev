@@ -213,7 +213,7 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		packageResults[svc.Name] = packageResult
 
 		// report package output
-		pa.console.MessageUxItem(ctx, packageResult)
+		pa.console.MessageUxItem(ctx, packageResult.Artifacts)
 		if index < serviceCount-1 {
 			pa.console.Message(ctx, "")
 		}

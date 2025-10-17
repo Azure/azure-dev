@@ -365,7 +365,7 @@ func registerProjectMappings() {
 	// proto ServicePackageResult -> ServicePackageResult conversion
 	mapper.MustRegister(func(ctx context.Context, src *azdext.ServicePackageResult) (*ServicePackageResult, error) {
 		if src == nil {
-			return &ServicePackageResult{Artifacts: []Artifact{}}, nil
+			return &ServicePackageResult{}, nil
 		}
 
 		result := &ServicePackageResult{
@@ -391,7 +391,7 @@ func registerProjectMappings() {
 	// proto ServicePublishResult -> ServicePublishResult conversion
 	mapper.MustRegister(func(ctx context.Context, src *azdext.ServicePublishResult) (*ServicePublishResult, error) {
 		if src == nil {
-			return &ServicePublishResult{Artifacts: []Artifact{}}, nil
+			return &ServicePublishResult{}, nil
 		}
 
 		result := &ServicePublishResult{
@@ -437,7 +437,7 @@ func registerProjectMappings() {
 	// proto ServiceDeployResult -> ServiceDeployResult conversion
 	mapper.MustRegister(func(ctx context.Context, src *azdext.ServiceDeployResult) (*ServiceDeployResult, error) {
 		if src == nil {
-			return &ServiceDeployResult{Artifacts: []Artifact{}}, nil
+			return &ServiceDeployResult{}, nil
 		}
 
 		result := &ServiceDeployResult{

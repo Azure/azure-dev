@@ -93,7 +93,7 @@ func (st *appServiceTarget) Publish(
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
 ) (*ServicePublishResult, error) {
-	return &ServicePublishResult{Artifacts: []Artifact{}}, nil
+	return &ServicePublishResult{}, nil
 }
 
 // Deploys the prepared zip archive using Zip deploy to the Azure App Service resource

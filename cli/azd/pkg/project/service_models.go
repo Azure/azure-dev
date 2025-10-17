@@ -4,7 +4,6 @@
 package project
 
 import (
-	"encoding/json"
 	"time"
 )
 
@@ -64,15 +63,6 @@ type ServiceBuildResult struct {
 	Artifacts ArtifactCollection `json:"artifacts"`
 }
 
-// Supports rendering messages for UX items
-func (sbr *ServiceBuildResult) ToString(currentIndentation string) string {
-	return sbr.Artifacts.ToString(currentIndentation)
-}
-
-func (sbr *ServiceBuildResult) MarshalJSON() ([]byte, error) {
-	return json.Marshal(*sbr)
-}
-
 type PackageOptions struct {
 	OutputPath string
 }
@@ -82,39 +72,12 @@ type ServicePackageResult struct {
 	Artifacts ArtifactCollection `json:"artifacts"`
 }
 
-// Supports rendering messages for UX items
-func (spr *ServicePackageResult) ToString(currentIndentation string) string {
-	return spr.Artifacts.ToString(currentIndentation)
-}
-
-func (spr *ServicePackageResult) MarshalJSON() ([]byte, error) {
-	return json.Marshal(*spr)
-}
-
 // ServicePublishResult is the result of a successful Publish operation for services.
 type ServicePublishResult struct {
 	Artifacts ArtifactCollection `json:"artifacts"`
 }
 
-// Supports rendering messages for UX items
-func (spr *ServicePublishResult) ToString(currentIndentation string) string {
-	return spr.Artifacts.ToString(currentIndentation)
-}
-
-func (spr *ServicePublishResult) MarshalJSON() ([]byte, error) {
-	return json.Marshal(*spr)
-}
-
 // ServiceDeployResult is the result of a successful Deploy operation
 type ServiceDeployResult struct {
 	Artifacts ArtifactCollection `json:"artifacts"`
-}
-
-// Supports rendering messages for UX items
-func (sdr *ServiceDeployResult) ToString(currentIndentation string) string {
-	return sdr.Artifacts.ToString(currentIndentation)
-}
-
-func (spr *ServiceDeployResult) MarshalJSON() ([]byte, error) {
-	return json.Marshal(*spr)
 }

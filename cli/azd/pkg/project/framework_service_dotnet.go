@@ -178,7 +178,7 @@ func (dp *dotnetProject) Package(
 		// "produce the tgz" of the image, as would be done by `docker save`, but this is currently not supported.
 		//
 		// See related comment in cmd/package.go.
-		return &ServicePackageResult{Artifacts: []Artifact{}}, nil
+		return &ServicePackageResult{}, nil
 	}
 
 	packageDest, err := os.MkdirTemp("", "azd")

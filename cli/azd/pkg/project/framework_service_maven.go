@@ -171,7 +171,7 @@ func (m *mavenProject) Package(
 
 	// Get package source path from build artifacts or default to service path
 	packageSrcPath := serviceConfig.Path()
-	if artifact, found := serviceContext.Build.FindFirst(WithKind(ArtifactKindDirectory)); found && artifact.Location != "" {
+	if artifact, found := serviceContext.Build.FindFirst(WithKind(ArtifactKindDirectory)); found {
 		packageSrcPath = artifact.Location
 	}
 

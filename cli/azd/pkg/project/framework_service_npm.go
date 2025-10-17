@@ -130,7 +130,7 @@ func (np *npmProject) Package(
 	// Copy directory rooted by dist to package root.
 	packagePath := serviceConfig.Path()
 	// Get package path from build artifacts
-	if artifact, found := serviceContext.Build.FindFirst(WithKind(ArtifactKindDirectory)); found && artifact.Location != "" {
+	if artifact, found := serviceContext.Build.FindFirst(WithKind(ArtifactKindDirectory)); found {
 		packagePath = artifact.Location
 	}
 	if packagePath == serviceConfig.Path() && serviceConfig.OutputPath != "" {

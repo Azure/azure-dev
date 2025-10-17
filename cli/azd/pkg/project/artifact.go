@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -63,11 +62,6 @@ var validArtifactKinds = []ArtifactKind{
 	ArtifactKindOutput,
 }
 
-// endpointPattern matches endpoints with discriminator suffix that should be displayed
-// instead of the default 'Endpoint' label.
-// Pattern: "label: url" where label becomes the display name
-var endpointPattern = regexp.MustCompile(`(.+):\s(.+)`)
-
 // Artifact represents a build, package, or deployment artifact with its location and metadata.
 type Artifact struct {
 	Kind         ArtifactKind      `json:"kind"`                   // Required: artifact type
@@ -92,18 +86,24 @@ func (a *Artifact) ToString(currentIndentation string) string {
 	// Format output based on artifact kind
 	switch a.Kind {
 	case ArtifactKindEndpoint:
-		// Handle endpoint with optional discriminator suffix pattern
 		label := "Endpoint"
-		url := location
+		discriminator := ""
 
-		// When the endpoint pattern is matched, use the first sub match as the endpoint label.
-		matches := endpointPattern.FindStringSubmatch(url)
-		if len(matches) == 3 {
-			label = matches[1]
-			url = matches[2]
+		if customLabel, has := a.Metadata["label"]; has {
+			label = customLabel
 		}
 
-		return fmt.Sprintf("%s- %s: %s", currentIndentation, label, output.WithHyperlink(url, url))
+		if customDiscriminator, has := a.Metadata["discriminator"]; has {
+			discriminator = customDiscriminator
+		}
+
+		return fmt.Sprintf(
+			"%s- %s: %s %s",
+			currentIndentation,
+			label,
+			output.WithHyperlink(location, location),
+			discriminator,
+		)
 
 	case ArtifactKindContainer:
 		if a.LocationKind == LocationKindRemote {

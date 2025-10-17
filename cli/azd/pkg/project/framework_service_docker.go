@@ -49,6 +49,11 @@ type DockerProjectOptions struct {
 	// Aspire would pass the secret keys, which are env vars that azd will set just to run docker build.
 	BuildSecrets []string `yaml:"-"                     json:"-"`
 	BuildEnv     []string `yaml:"-"                     json:"-"`
+	//InMemDockerfile allow projects to specify a dockerfile contents directly instead of a path on disk.
+	// This is not supported from azure.yaml.
+	// This is used by projects like Aspire that can generate a dockerfile on the fly and don't want to write it to disk.
+	// When this is set, whatever value in Path is ignored and the dockerfile contents in this property is used instead.
+	InMemDockerfile []byte `yaml:"-" json:"-"`
 }
 
 type dockerBuildResult struct {
@@ -310,10 +315,36 @@ func (p *dockerProject) Build(
 			MaxLineCount: 8,
 			Title:        "Docker Output",
 		})
+
+	dockerFilePath := dockerOptions.Path
+	if dockerOptions.InMemDockerfile != nil {
+		// when using an in-memory dockerfile, we write it to a temp file and use that path for the build
+		tempDir, err := os.MkdirTemp("", "dockerfile-for-"+serviceConfig.Name)
+		if err != nil {
+			return nil, fmt.Errorf("creating temp dir for dockerfile for service %s: %w", serviceConfig.Name, err)
+		}
+		// use the name of the original dockerfile path
+		dockerfilePath = filepath.Join(tempDir, filepath.Base(dockerFilePath))
+		err = os.WriteFile(dockerfilePath, dockerOptions.InMemDockerfile, osutil.PermissionFileOwnerOnly)
+		if err != nil {
+			return nil, fmt.Errorf("writing dockerfile for service %s: %w", serviceConfig.Name, err)
+		}
+		dockerFilePath = dockerfilePath
+
+		log.Println("using in-memory dockerfile for build", dockerfilePath)
+
+		// ensure we clean up the temp dockerfile after the build
+		defer func() {
+			if err := os.RemoveAll(tempDir); err != nil {
+				log.Printf("removing temp dockerfile dir %s: %v", tempDir, err)
+			}
+		}()
+	}
+
 	imageId, err := p.docker.Build(
 		ctx,
 		serviceConfig.Path(),
-		dockerOptions.Path,
+		dockerFilePath,
 		dockerOptions.Platform,
 		dockerOptions.Target,
 		dockerOptions.Context,
@@ -329,6 +360,7 @@ func (p *dockerProject) Build(
 	}
 
 	log.Printf("built image %s for %s", imageId, serviceConfig.Name)
+
 	return &ServiceBuildResult{
 		Restore:         restoreOutput,
 		BuildOutputPath: imageId,

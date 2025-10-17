@@ -307,7 +307,7 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 	// use the filesystem coming from the manifest
 	// the in-memory filesystem from the manifest is guaranteed to be initialized and contains all the bicep files
 	// referenced by the Aspire manifest.
-	fs := manifest.BicepFiles
+	fs := manifest.Files
 
 	// bicepContext merges the bicepContext with the inputs from the manifest to execute the main.bicep template
 	// this allows the template to access the auto-gen inputs from the generator

@@ -323,7 +323,26 @@ func (ai *DotNetImporter) Services(
 
 		if bContainer.Build != nil {
 			defaultLanguage = ServiceLanguageDocker
-			relPath, err := filepath.Rel(p.Path, filepath.Dir(bContainer.Build.Dockerfile))
+			// dockerfiles are copied to the infra folder like bicep files to ensure
+			// provision and deploy works after infra gen.
+			bContainer.Build.Dockerfile = filepath.Join(
+				svcConfig.Project.Path, svcConfig.Project.Infra.Path, name, filepath.Base(bContainer.Build.Dockerfile))
+
+			// If the dockerfile is not in disk, it could have been manually deleted (after infra gen) or
+			// infra gen was never run. In any case, use the in-memory generated dockerfile to build the container.
+			var inMemDockerfile []byte
+			if _, err := os.Stat(bContainer.Build.Dockerfile); errors.Is(err, os.ErrNotExist) {
+				// write file in the temp folder
+				fileName := filepath.Base(bContainer.Build.Dockerfile)
+				// read content from memory fs in the manifest
+				data, err := fs.ReadFile(manifest.Files, filepath.Join(name, fileName))
+				if err != nil {
+					return nil, fmt.Errorf("reading dockerfile for service %s: %w", name, err)
+				}
+				inMemDockerfile = data
+			}
+
+			relPath, err := filepath.Rel(p.Path, filepath.Dir(bContainer.Build.Context))
 			if err != nil {
 				return nil, err
 			}
@@ -339,11 +358,12 @@ func (ai *DotNetImporter) Services(
 			}
 
 			dOptions = DockerProjectOptions{
-				Path:         bContainer.Build.Dockerfile,
-				Context:      bContainer.Build.Context,
-				BuildArgs:    mapToExpandableStringSlice(bArgs, "="),
-				BuildSecrets: bArgsArray,
-				BuildEnv:     reqEnv,
+				Path:            bContainer.Build.Dockerfile,
+				Context:         bContainer.Build.Context,
+				BuildArgs:       mapToExpandableStringSlice(bArgs, "="),
+				BuildSecrets:    bArgsArray,
+				BuildEnv:        reqEnv,
+				InMemDockerfile: inMemDockerfile,
 			}
 		}
 

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -22,8 +23,9 @@ import (
 )
 
 type initFlags struct {
-	manifestPointer string
-	src             string
+	projectResourceId string
+	manifestPointer   string
+	src               string
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -109,8 +111,11 @@ func newInitCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.manifestPointer, "", "m", "",
-		"Pointer to the manifest to use for the agent")
+	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
+		"Azure AI Foundry Project Id to set your environment to")
+
+	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
+		"Path or URI to an agent manifest to add to your project")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"[Optional] Directory to download the agent yaml to (defaults to 'src/<agent-id>')")
@@ -121,6 +126,16 @@ func newInitCommand() *cobra.Command {
 func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 	color.Green("Initializing AI agent project...")
 	fmt.Println()
+
+	// If --project-id is given
+	if flags.projectResourceId != "" {
+		// projectResourceId is a string of the format 
+		// /subscriptions/[AZURE_SUBSCRIPTION]/resourceGroups/[AZURE_RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT_NAME]/projects/[AI_PROJECT_NAME]
+		// extract each of those fields from the string, issue an error if it doesn't match the format
+		if err := a.parseAndSetProjectResourceId(ctx, flags.projectResourceId); err != nil {
+			return fmt.Errorf("failed to parse project resource ID: %w", err)
+		}
+	}
 
 	// Validate command flags
 	if err := a.validateFlags(flags); err != nil {
@@ -334,8 +349,12 @@ func ensureAzureContext(
 
 func (a *InitAction) validateFlags(flags *initFlags) error {
 	if flags.manifestPointer != "" {
+		// Check if it's a valid URL
 		if _, err := url.ParseRequestURI(flags.manifestPointer); err != nil {
-			return fmt.Errorf("invalid URI '%s': %w", flags.manifestPointer, err)
+			// If not a valid URL, check if it's an existing local file path
+			if _, fileErr := os.Stat(flags.manifestPointer); fileErr != nil {
+				return fmt.Errorf("manifest pointer '%s' is neither a valid URI nor an existing file path", flags.manifestPointer)
+			}
 		}
 	}
 
@@ -785,5 +804,64 @@ func (a *InitAction) setEnvVar(ctx context.Context, envName, key, value string) 
 	}
 
 	fmt.Printf("Set environment variable: %s=%s\n", key, value)
+	return nil
+}
+
+func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context, projectResourceId string) error {
+	// Define the regex pattern for the project resource ID
+	pattern := `^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`
+	
+	regex, err := regexp.Compile(pattern)
+	if err != nil {
+		return fmt.Errorf("failed to compile regex pattern: %w", err)
+	}
+
+	matches := regex.FindStringSubmatch(projectResourceId)
+	if matches == nil || len(matches) != 5 {
+		return fmt.Errorf("project resource ID does not match expected format: /subscriptions/[SUBSCRIPTION]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT]/projects/[AI_PROJECT]")
+	}
+
+	// Extract the components
+	subscriptionId := matches[1]
+	resourceGroupName := matches[2]
+	aiAccountName := matches[3]
+	aiProjectName := matches[4]
+
+	// Get current environment
+	envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("failed to get current environment: %w", err)
+	}
+
+	if envResponse.Environment == nil {
+		return fmt.Errorf("no current environment found")
+	}
+
+	envName := envResponse.Environment.Name
+
+	// Set the extracted values as environment variables
+	if err := a.setEnvVar(ctx, envName, "AZURE_SUBSCRIPTION_ID", subscriptionId); err != nil {
+		return err
+	}
+
+	if err := a.setEnvVar(ctx, envName, "AZURE_RESOURCE_GROUP", resourceGroupName); err != nil {
+		return err
+	}
+
+	if err := a.setEnvVar(ctx, envName, "AZURE_AI_ACCOUNT_NAME", aiAccountName); err != nil {
+		return err
+	}
+
+	if err := a.setEnvVar(ctx, envName, "AZURE_AI_PROJECT_NAME", aiProjectName); err != nil {
+		return err
+	}
+
+	// Set the AI Foundry endpoint URL
+	aiFoundryEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", aiAccountName, aiProjectName)
+	if err := a.setEnvVar(ctx, envName, "AZURE_AI_FOUNDRY_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
+		return err
+	}
+
+	fmt.Printf("Successfully parsed and set environment variables from project resource ID\n")
 	return nil
 }

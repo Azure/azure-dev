@@ -177,7 +177,7 @@ func (at *staticWebAppTarget) Deploy(
 		dOptions.OutputRelativeFolderPath = packagePath
 		cwd = serviceConfig.Project.Path
 	}
-	res, err := at.swa.Deploy(ctx,
+	_, err = at.swa.Deploy(ctx,
 		cwd,
 		at.env.GetTenantId(),
 		targetResource.SubscriptionId(),
@@ -203,17 +203,6 @@ func (at *staticWebAppTarget) Deploy(
 	}
 
 	artifacts := ArtifactCollection{}
-
-	// Add deployment result as artifact
-	if res != "" {
-		if err := artifacts.Add(&Artifact{
-			Kind:         ArtifactKindOutput,
-			Location:     res,
-			LocationKind: LocationKindRemote,
-		}); err != nil {
-			return nil, fmt.Errorf("failed to add deployment output artifact: %w", err)
-		}
-	}
 
 	// Add endpoints as artifacts
 	for _, endpoint := range endpoints {

@@ -4,6 +4,7 @@ package azdext;
 
 option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
 
+import "models.proto";
 import "service_target.proto";
 
 // ContainerService provides container build, package, and publish operations

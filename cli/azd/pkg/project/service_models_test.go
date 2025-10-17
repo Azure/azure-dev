@@ -80,7 +80,6 @@ func TestArtifactKindEnums(t *testing.T) {
 		ArtifactKindConfig,
 		ArtifactKindEndpoint,
 		ArtifactKindResource,
-		ArtifactKindOutput,
 	}
 
 	for _, kind := range kinds {

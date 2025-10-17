@@ -8,7 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -18,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 )
@@ -304,6 +308,10 @@ func (sm *serviceManager) Package(
 		return cachedResult.(*ServicePackageResult), nil
 	}
 
+	if options == nil {
+		options = &PackageOptions{}
+	}
+
 	frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
 	if err != nil {
 		return nil, fmt.Errorf("getting framework service: %w", err)
@@ -328,16 +336,24 @@ func (sm *serviceManager) Package(
 
 	// Ensure restore has been performed if required
 	if frameworkRequirements.Package.RequireRestore && len(serviceContext.Restore) == 0 {
-		_, err := sm.Restore(ctx, serviceConfig, serviceContext, progress)
+		restoreResult, err := sm.Restore(ctx, serviceConfig, serviceContext, progress)
 		if err != nil {
+			return nil, err
+		}
+
+		if err := serviceContext.Restore.Add(restoreResult.Artifacts...); err != nil {
 			return nil, err
 		}
 	}
 
 	// Ensure build has been performed if required
 	if frameworkRequirements.Package.RequireBuild && len(serviceContext.Build) == 0 {
-		_, err := sm.Build(ctx, serviceConfig, serviceContext, progress)
+		buildResult, err := sm.Build(ctx, serviceConfig, serviceContext, progress)
 		if err != nil {
+			return nil, err
+		}
+
+		if err := serviceContext.Build.Add(buildResult.Artifacts...); err != nil {
 			return nil, err
 		}
 	}
@@ -374,6 +390,44 @@ func (sm *serviceManager) Package(
 
 	if err != nil {
 		return nil, fmt.Errorf("failed packaging service '%s': %w", serviceConfig.Name, err)
+	}
+
+	// Package path can be a file path or a container image name
+	// We only move to desired output path for file based packages
+	if packageArtifact, has := serviceContext.Package.FindFirst(); has {
+		_, err = os.Stat(packageArtifact.Location)
+		hasPackageFile := err == nil
+
+		if hasPackageFile && options.OutputPath != "" {
+			var destFilePath string
+			var destDirectory string
+
+			isFilePath := filepath.Ext(options.OutputPath) != ""
+			if isFilePath {
+				destFilePath = options.OutputPath
+				destDirectory = filepath.Dir(options.OutputPath)
+			} else {
+				destFilePath = filepath.Join(options.OutputPath, filepath.Base(packageArtifact.Location))
+				destDirectory = options.OutputPath
+			}
+
+			_, err := os.Stat(destDirectory)
+			if errors.Is(err, os.ErrNotExist) {
+				// Create the desired output directory if it does not already exist
+				if err := os.MkdirAll(destDirectory, osutil.PermissionDirectory); err != nil {
+					return nil, fmt.Errorf("failed creating output directory '%s': %w", destDirectory, err)
+				}
+			}
+
+			// Move the package file to the desired path
+			// We can't use os.Rename here since that does not work across disks
+			if err := moveFile(packageArtifact.Location, destFilePath); err != nil {
+				return nil, fmt.Errorf(
+					"failed moving package file '%s' to '%s': %w", packageArtifact.Location, destFilePath, err)
+			}
+
+			packageArtifact.Location = destFilePath
+		}
 	}
 
 	return packageResult, nil
@@ -462,16 +516,24 @@ func (sm *serviceManager) Deploy(
 
 	// Ensure package has been performed if no package artifacts exist
 	if len(serviceContext.Package) == 0 {
-		_, err := sm.Package(ctx, serviceConfig, serviceContext, progress, &PackageOptions{})
+		packageResult, err := sm.Package(ctx, serviceConfig, serviceContext, progress, &PackageOptions{})
 		if err != nil {
+			return nil, err
+		}
+
+		if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
 			return nil, err
 		}
 	}
 
 	// Ensure publish has been performed if no publish artifacts exist
 	if len(serviceContext.Publish) == 0 {
-		_, err := sm.Publish(ctx, serviceConfig, serviceContext, progress, &PublishOptions{})
+		publishResult, err := sm.Publish(ctx, serviceConfig, serviceContext, progress, &PublishOptions{})
 		if err != nil {
+			return nil, err
+		}
+
+		if err := serviceContext.Publish.Add(publishResult.Artifacts...); err != nil {
 			return nil, err
 		}
 	}
@@ -792,4 +854,32 @@ func (sm *serviceManager) getTargetResourceForService(
 	}
 
 	return sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
+}
+
+// Copies a file from the source path to the destination path
+// Deletes the source file after the copy is complete
+func moveFile(sourcePath string, destinationPath string) error {
+	sourceFile, err := os.Open(sourcePath)
+	if err != nil {
+		return fmt.Errorf("opening source file: %w", err)
+	}
+	defer sourceFile.Close()
+
+	// Create or truncate the destination file
+	destinationFile, err := os.Create(destinationPath)
+	if err != nil {
+		return fmt.Errorf("creating destination file: %w", err)
+	}
+	defer destinationFile.Close()
+
+	// Copy the contents of the source file to the destination file
+	_, err = io.Copy(destinationFile, sourceFile)
+	if err != nil {
+		return fmt.Errorf("copying file: %w", err)
+	}
+
+	// Remove the source file (optional)
+	defer os.Remove(sourcePath)
+
+	return nil
 }

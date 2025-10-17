@@ -323,8 +323,7 @@ func (at *containerAppTarget) Deploy(
 			Location:     endpoint,
 			LocationKind: LocationKindRemote,
 			Metadata: map[string]string{
-				"service":  serviceConfig.Name,
-				"endpoint": endpoint,
+				"service": serviceConfig.Name,
 			},
 		})
 	}

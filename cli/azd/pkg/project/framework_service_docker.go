@@ -145,7 +145,7 @@ func (p *dockerProject) Build(
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
-		return &ServiceBuildResult{Artifacts: serviceContext.Build}, nil
+		return &ServiceBuildResult{}, nil
 	}
 
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)

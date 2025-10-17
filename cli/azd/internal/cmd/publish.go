@@ -305,8 +305,11 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 				return nil, err
 			}
 
-			// Package result is now stored in serviceContext.Package
-			_ = packageResult
+			// Append package artifacts
+			if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
+				pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return nil, err
+			}
 		}
 
 		publishResult, err := async.RunWithProgress(
@@ -318,6 +321,16 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 				return pa.serviceManager.Publish(ctx, svc, serviceContext, progress, publishOptions)
 			},
 		)
+
+		if err != nil {
+			pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, err
+		}
+
+		if err := serviceContext.Publish.Add(publishResult.Artifacts...); err != nil {
+			pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, err
+		}
 
 		// clean up for packages automatically created in temp dir
 		if pa.flags.FromPackage == "" {
@@ -331,12 +344,9 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		}
 
 		pa.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
-		if err != nil {
-			return nil, err
-		}
 
 		publishResults[svc.Name] = publishResult
-		pa.console.MessageUxItem(ctx, publishResult)
+		pa.console.MessageUxItem(ctx, publishResult.Artifacts)
 	}
 
 	if pa.formatter.Kind() == output.JsonFormat {

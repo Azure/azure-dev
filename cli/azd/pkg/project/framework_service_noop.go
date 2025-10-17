@@ -40,7 +40,7 @@ func (n *noOpProject) Restore(
 	serviceContext *ServiceContext,
 	_ *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
-	return &ServiceRestoreResult{Artifacts: []Artifact{}}, nil
+	return &ServiceRestoreResult{}, nil
 }
 
 func (n *noOpProject) Build(
@@ -49,7 +49,7 @@ func (n *noOpProject) Build(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
-	return &ServiceBuildResult{Artifacts: []Artifact{}}, nil
+	return &ServiceBuildResult{}, nil
 }
 
 func (n *noOpProject) Package(
@@ -58,7 +58,7 @@ func (n *noOpProject) Package(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	return &ServicePackageResult{Artifacts: []Artifact{}}, nil
+	return &ServicePackageResult{}, nil
 }
 
 type noOpProject struct{}

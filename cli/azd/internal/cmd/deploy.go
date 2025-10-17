@@ -283,11 +283,13 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				return nil, err
 			}
 
-			// Package result is now stored in serviceContext.Package
-			_ = packageResult
+			// Append package artifacts
+			if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
+				return nil, err
+			}
 		}
 
-		_, err := async.RunWithProgress(
+		publishResult, err := async.RunWithProgress(
 			func(publishProgress project.ServiceProgress) {
 				progressMessage := fmt.Sprintf("Publishing service %s (%s)", svc.Name, publishProgress.Message)
 				da.console.ShowSpinner(ctx, progressMessage, input.Step)
@@ -303,6 +305,9 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			return nil, err
 		}
 
+		// Append publish artifacts
+		serviceContext.Publish.Add(publishResult.Artifacts...)
+
 		deployResult, err := async.RunWithProgress(
 			func(deployProgress project.ServiceProgress) {
 				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
@@ -312,6 +317,14 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				return da.serviceManager.Deploy(ctx, svc, serviceContext, progress)
 			},
 		)
+
+		if err != nil {
+			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, err
+		}
+
+		// Append deploy artifacts
+		serviceContext.Deploy.Add(deployResult.Artifacts...)
 
 		// clean up for packages automatically created in temp dir
 		if da.flags.fromPackage == "" {
@@ -325,14 +338,10 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 
 		da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
-		if err != nil {
-			return nil, err
-		}
-
 		deployResults[svc.Name] = deployResult
 
 		// report deploy outputs
-		da.console.MessageUxItem(ctx, deployResult)
+		da.console.MessageUxItem(ctx, deployResult.Artifacts)
 	}
 
 	aspireDashboardUrl := apphost.AspireDashboardUrl(ctx, da.env, da.alphaFeatureManager)

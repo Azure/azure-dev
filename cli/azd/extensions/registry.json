@@ -547,6 +547,93 @@
           }
         }
       ]
+    },
+    {
+      "id": "azure.foundry.ai.agents",
+      "namespace": "ai.agent",
+      "displayName": "AI Foundry Agents",
+      "description": "This extension provides custom commands for working with agents using Azure Developer CLI.",
+      "versions": [
+        {
+          "version": "0.0.1",
+          "capabilities": [
+            "custom-commands",
+            "lifecycle-events",
+            "mcp-server",
+            "service-target-provider"
+          ],
+          "providers": [
+            {
+              "name": "foundry.containeragent",
+              "type": "service-target",
+              "description": "Deploys agents to AI Foundry container agent service."
+            }
+          ],
+          "usage": "azd ai agent \u003ccommand\u003e [options]",
+          "examples": [
+            {
+              "name": "init",
+              "description": "Initialize a new AI agent project.",
+              "usage": "azd ai agent init"
+            },
+            {
+              "name": "mcp",
+              "description": "Start MCP server with AI Foundry agent tools.",
+              "usage": "azd ai agent mcp start"
+            }
+          ],
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "4eecb4a37a9f76ea8e137994b258e5342ecaae06b770c983dc57fabc96c7f783"
+              },
+              "entryPoint": "azure-foundry-ai-agents-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-foundry-ai-agents_0.0.1/azure-foundry-ai-agents-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "a56189b7ed77415e663b3d98c2c868ee01dfb29ab07a4e6e69bc08b0aaca8796"
+              },
+              "entryPoint": "azure-foundry-ai-agents-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-foundry-ai-agents_0.0.1/azure-foundry-ai-agents-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d9fcf204d228a9914ee683d8418aef783ba71289cc6f66a2bb5fa74d41da937f"
+              },
+              "entryPoint": "azure-foundry-ai-agents-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-foundry-ai-agents_0.0.1/azure-foundry-ai-agents-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "91281f8a773c34464834943aed513df4bff145bd04af15b5512b410c28ecf70f"
+              },
+              "entryPoint": "azure-foundry-ai-agents-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-foundry-ai-agents_0.0.1/azure-foundry-ai-agents-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "efd206ee8950507488b0d1627801317c295fbd128a4cc1f4f080c50bb653181f"
+              },
+              "entryPoint": "azure-foundry-ai-agents-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-foundry-ai-agents_0.0.1/azure-foundry-ai-agents-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "4b49a0105ed1186c8283690b4e94582b7e1addb8fba9b79bcc42b6487150f2e9"
+              },
+              "entryPoint": "azure-foundry-ai-agents-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-foundry-ai-agents_0.0.1/azure-foundry-ai-agents-windows-arm64.zip"
+            }
+          }
+        }
+      ]
     }
   ]
 }

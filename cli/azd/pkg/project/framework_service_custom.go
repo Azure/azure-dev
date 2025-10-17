@@ -47,10 +47,21 @@ func (pp *customProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 func (pp *customProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
 	return &ServiceRestoreResult{
-		Details: "Custom language - restore not supported",
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     serviceConfig.Path(),
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"projectPath": serviceConfig.Path(),
+					"framework":   "custom",
+				},
+			},
+		},
 	}, nil
 }
 
@@ -58,24 +69,44 @@ func (pp *customProject) Restore(
 func (pp *customProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	restoreOutput *ServiceRestoreResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	return &ServiceBuildResult{
-		Details: "Custom language - build not supported",
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     serviceConfig.Path(),
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"buildPath": serviceConfig.Path(),
+					"framework": "custom",
+				},
+			},
+		},
 	}, nil
 }
 
 func (pp *customProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	if serviceConfig.OutputPath == "" {
 		return nil, fmt.Errorf("'dist' required for custom language")
 	}
+
+	// Create directory artifact for custom language output
 	return &ServicePackageResult{
-		PackagePath: serviceConfig.OutputPath,
+		Artifacts: ArtifactCollection{{
+			Kind:         ArtifactKindDirectory,
+			Location:     serviceConfig.OutputPath,
+			LocationKind: LocationKindLocal,
+			Metadata: map[string]string{
+				"language":  "custom",
+				"framework": "custom",
+			},
+		}},
 	}, nil
 }

@@ -24,6 +24,121 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Artifact kinds - matching the existing Go ArtifactKind enum
+type ArtifactKind int32
+
+const (
+	ArtifactKind_ARTIFACT_KIND_UNSPECIFIED ArtifactKind = 0 // Default/unknown artifact kind
+	ArtifactKind_ARTIFACT_KIND_DIRECTORY   ArtifactKind = 1 // Directory containing project or build artifacts
+	ArtifactKind_ARTIFACT_KIND_CONFIG      ArtifactKind = 2 // Configuration file
+	ArtifactKind_ARTIFACT_KIND_ARCHIVE     ArtifactKind = 3 // Zip/archive package
+	ArtifactKind_ARTIFACT_KIND_CONTAINER   ArtifactKind = 4 // Docker/container image
+	ArtifactKind_ARTIFACT_KIND_ENDPOINT    ArtifactKind = 5 // Service endpoint URL
+	ArtifactKind_ARTIFACT_KIND_DEPLOYMENT  ArtifactKind = 6 // Deployment result or endpoint
+	ArtifactKind_ARTIFACT_KIND_RESOURCE    ArtifactKind = 7 // Azure Resource
+)
+
+// Enum value maps for ArtifactKind.
+var (
+	ArtifactKind_name = map[int32]string{
+		0: "ARTIFACT_KIND_UNSPECIFIED",
+		1: "ARTIFACT_KIND_DIRECTORY",
+		2: "ARTIFACT_KIND_CONFIG",
+		3: "ARTIFACT_KIND_ARCHIVE",
+		4: "ARTIFACT_KIND_CONTAINER",
+		5: "ARTIFACT_KIND_ENDPOINT",
+		6: "ARTIFACT_KIND_DEPLOYMENT",
+		7: "ARTIFACT_KIND_RESOURCE",
+	}
+	ArtifactKind_value = map[string]int32{
+		"ARTIFACT_KIND_UNSPECIFIED": 0,
+		"ARTIFACT_KIND_DIRECTORY":   1,
+		"ARTIFACT_KIND_CONFIG":      2,
+		"ARTIFACT_KIND_ARCHIVE":     3,
+		"ARTIFACT_KIND_CONTAINER":   4,
+		"ARTIFACT_KIND_ENDPOINT":    5,
+		"ARTIFACT_KIND_DEPLOYMENT":  6,
+		"ARTIFACT_KIND_RESOURCE":    7,
+	}
+)
+
+func (x ArtifactKind) Enum() *ArtifactKind {
+	p := new(ArtifactKind)
+	*p = x
+	return p
+}
+
+func (x ArtifactKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ArtifactKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_models_proto_enumTypes[0].Descriptor()
+}
+
+func (ArtifactKind) Type() protoreflect.EnumType {
+	return &file_models_proto_enumTypes[0]
+}
+
+func (x ArtifactKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ArtifactKind.Descriptor instead.
+func (ArtifactKind) EnumDescriptor() ([]byte, []int) {
+	return file_models_proto_rawDescGZIP(), []int{0}
+}
+
+// Location kinds - matching the existing Go LocationKind enum
+type LocationKind int32
+
+const (
+	LocationKind_LOCATION_KIND_UNSPECIFIED LocationKind = 0 // Default/unknown location
+	LocationKind_LOCATION_KIND_LOCAL       LocationKind = 1 // Local file system path
+	LocationKind_LOCATION_KIND_REMOTE      LocationKind = 2 // Remote URL/URI
+)
+
+// Enum value maps for LocationKind.
+var (
+	LocationKind_name = map[int32]string{
+		0: "LOCATION_KIND_UNSPECIFIED",
+		1: "LOCATION_KIND_LOCAL",
+		2: "LOCATION_KIND_REMOTE",
+	}
+	LocationKind_value = map[string]int32{
+		"LOCATION_KIND_UNSPECIFIED": 0,
+		"LOCATION_KIND_LOCAL":       1,
+		"LOCATION_KIND_REMOTE":      2,
+	}
+)
+
+func (x LocationKind) Enum() *LocationKind {
+	p := new(LocationKind)
+	*p = x
+	return p
+}
+
+func (x LocationKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (LocationKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_models_proto_enumTypes[1].Descriptor()
+}
+
+func (LocationKind) Type() protoreflect.EnumType {
+	return &file_models_proto_enumTypes[1]
+}
+
+func (x LocationKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use LocationKind.Descriptor instead.
+func (LocationKind) EnumDescriptor() ([]byte, []int) {
+	return file_models_proto_rawDescGZIP(), []int{1}
+}
+
 // Messages for requests and responses
 type EmptyRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1021,6 +1136,197 @@ func (x *DockerProjectOptions) GetBuildArgs() []string {
 	return nil
 }
 
+// ServiceContext defines the shared pipeline state across all phases of the service lifecycle
+type ServiceContext struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Restore       []*Artifact            `protobuf:"bytes,1,rep,name=restore,proto3" json:"restore,omitempty"`
+	Build         []*Artifact            `protobuf:"bytes,2,rep,name=build,proto3" json:"build,omitempty"`
+	Package       []*Artifact            `protobuf:"bytes,3,rep,name=package,proto3" json:"package,omitempty"`
+	Publish       []*Artifact            `protobuf:"bytes,4,rep,name=publish,proto3" json:"publish,omitempty"`
+	Deploy        []*Artifact            `protobuf:"bytes,5,rep,name=deploy,proto3" json:"deploy,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServiceContext) Reset() {
+	*x = ServiceContext{}
+	mi := &file_models_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServiceContext) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServiceContext) ProtoMessage() {}
+
+func (x *ServiceContext) ProtoReflect() protoreflect.Message {
+	mi := &file_models_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServiceContext.ProtoReflect.Descriptor instead.
+func (*ServiceContext) Descriptor() ([]byte, []int) {
+	return file_models_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ServiceContext) GetRestore() []*Artifact {
+	if x != nil {
+		return x.Restore
+	}
+	return nil
+}
+
+func (x *ServiceContext) GetBuild() []*Artifact {
+	if x != nil {
+		return x.Build
+	}
+	return nil
+}
+
+func (x *ServiceContext) GetPackage() []*Artifact {
+	if x != nil {
+		return x.Package
+	}
+	return nil
+}
+
+func (x *ServiceContext) GetPublish() []*Artifact {
+	if x != nil {
+		return x.Publish
+	}
+	return nil
+}
+
+func (x *ServiceContext) GetDeploy() []*Artifact {
+	if x != nil {
+		return x.Deploy
+	}
+	return nil
+}
+
+// ArtifactList represents a list of artifacts for map values in ServiceContext
+type ArtifactList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Artifacts     []*Artifact            `protobuf:"bytes,1,rep,name=artifacts,proto3" json:"artifacts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ArtifactList) Reset() {
+	*x = ArtifactList{}
+	mi := &file_models_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArtifactList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArtifactList) ProtoMessage() {}
+
+func (x *ArtifactList) ProtoReflect() protoreflect.Message {
+	mi := &file_models_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArtifactList.ProtoReflect.Descriptor instead.
+func (*ArtifactList) Descriptor() ([]byte, []int) {
+	return file_models_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ArtifactList) GetArtifacts() []*Artifact {
+	if x != nil {
+		return x.Artifacts
+	}
+	return nil
+}
+
+// Artifact represents a build, package, or deployment artifact with its location and metadata
+type Artifact struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          ArtifactKind           `protobuf:"varint,1,opt,name=kind,proto3,enum=azdext.ArtifactKind" json:"kind,omitempty"`                                                         // Required: type of artifact
+	Location      string                 `protobuf:"bytes,2,opt,name=location,proto3" json:"location,omitempty"`                                                                           // Optional: location of the artifact (local path or remote reference)
+	LocationKind  LocationKind           `protobuf:"varint,3,opt,name=location_kind,json=locationKind,proto3,enum=azdext.LocationKind" json:"location_kind,omitempty"`                     // Required: where the artifact is stored
+	Metadata      map[string]string      `protobuf:"bytes,4,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Optional: arbitrary key/value pairs for extension-specific data
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Artifact) Reset() {
+	*x = Artifact{}
+	mi := &file_models_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Artifact) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Artifact) ProtoMessage() {}
+
+func (x *Artifact) ProtoReflect() protoreflect.Message {
+	mi := &file_models_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Artifact.ProtoReflect.Descriptor instead.
+func (*Artifact) Descriptor() ([]byte, []int) {
+	return file_models_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *Artifact) GetKind() ArtifactKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ArtifactKind_ARTIFACT_KIND_UNSPECIFIED
+}
+
+func (x *Artifact) GetLocation() string {
+	if x != nil {
+		return x.Location
+	}
+	return ""
+}
+
+func (x *Artifact) GetLocationKind() LocationKind {
+	if x != nil {
+		return x.LocationKind
+	}
+	return LocationKind_LOCATION_KIND_UNSPECIFIED
+}
+
+func (x *Artifact) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
 var File_models_proto protoreflect.FileDescriptor
 
 const file_models_proto_rawDesc = "" +
@@ -1105,7 +1411,36 @@ const file_models_proto_rawDesc = "" +
 	"\x03tag\x18\a \x01(\tR\x03tag\x12!\n" +
 	"\fremote_build\x18\b \x01(\bR\vremoteBuild\x12\x1d\n" +
 	"\n" +
-	"build_args\x18\t \x03(\tR\tbuildArgsB6Z4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdextb\x06proto3"
+	"build_args\x18\t \x03(\tR\tbuildArgs\"\xe6\x01\n" +
+	"\x0eServiceContext\x12*\n" +
+	"\arestore\x18\x01 \x03(\v2\x10.azdext.ArtifactR\arestore\x12&\n" +
+	"\x05build\x18\x02 \x03(\v2\x10.azdext.ArtifactR\x05build\x12*\n" +
+	"\apackage\x18\x03 \x03(\v2\x10.azdext.ArtifactR\apackage\x12*\n" +
+	"\apublish\x18\x04 \x03(\v2\x10.azdext.ArtifactR\apublish\x12(\n" +
+	"\x06deploy\x18\x05 \x03(\v2\x10.azdext.ArtifactR\x06deploy\">\n" +
+	"\fArtifactList\x12.\n" +
+	"\tartifacts\x18\x01 \x03(\v2\x10.azdext.ArtifactR\tartifacts\"\x84\x02\n" +
+	"\bArtifact\x12(\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x14.azdext.ArtifactKindR\x04kind\x12\x1a\n" +
+	"\blocation\x18\x02 \x01(\tR\blocation\x129\n" +
+	"\rlocation_kind\x18\x03 \x01(\x0e2\x14.azdext.LocationKindR\flocationKind\x12:\n" +
+	"\bmetadata\x18\x04 \x03(\v2\x1e.azdext.Artifact.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xf2\x01\n" +
+	"\fArtifactKind\x12\x1d\n" +
+	"\x19ARTIFACT_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17ARTIFACT_KIND_DIRECTORY\x10\x01\x12\x18\n" +
+	"\x14ARTIFACT_KIND_CONFIG\x10\x02\x12\x19\n" +
+	"\x15ARTIFACT_KIND_ARCHIVE\x10\x03\x12\x1b\n" +
+	"\x17ARTIFACT_KIND_CONTAINER\x10\x04\x12\x1a\n" +
+	"\x16ARTIFACT_KIND_ENDPOINT\x10\x05\x12\x1c\n" +
+	"\x18ARTIFACT_KIND_DEPLOYMENT\x10\x06\x12\x1a\n" +
+	"\x16ARTIFACT_KIND_RESOURCE\x10\a*`\n" +
+	"\fLocationKind\x12\x1d\n" +
+	"\x19LOCATION_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13LOCATION_KIND_LOCAL\x10\x01\x12\x18\n" +
+	"\x14LOCATION_KIND_REMOTE\x10\x02B6Z4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdextb\x06proto3"
 
 var (
 	file_models_proto_rawDescOnce sync.Once
@@ -1119,37 +1454,53 @@ func file_models_proto_rawDescGZIP() []byte {
 	return file_models_proto_rawDescData
 }
 
-var file_models_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_models_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_models_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_models_proto_goTypes = []any{
-	(*EmptyRequest)(nil),         // 0: azdext.EmptyRequest
-	(*EmptyResponse)(nil),        // 1: azdext.EmptyResponse
-	(*Subscription)(nil),         // 2: azdext.Subscription
-	(*ResourceGroup)(nil),        // 3: azdext.ResourceGroup
-	(*Location)(nil),             // 4: azdext.Location
-	(*AzureScope)(nil),           // 5: azdext.AzureScope
-	(*AzureContext)(nil),         // 6: azdext.AzureContext
-	(*Resource)(nil),             // 7: azdext.Resource
-	(*ResourceExtended)(nil),     // 8: azdext.ResourceExtended
-	(*ProjectConfig)(nil),        // 9: azdext.ProjectConfig
-	(*RequiredVersions)(nil),     // 10: azdext.RequiredVersions
-	(*ProjectMetadata)(nil),      // 11: azdext.ProjectMetadata
-	(*ServiceConfig)(nil),        // 12: azdext.ServiceConfig
-	(*InfraOptions)(nil),         // 13: azdext.InfraOptions
-	(*DockerProjectOptions)(nil), // 14: azdext.DockerProjectOptions
-	nil,                          // 15: azdext.ProjectConfig.ServicesEntry
+	(ArtifactKind)(0),            // 0: azdext.ArtifactKind
+	(LocationKind)(0),            // 1: azdext.LocationKind
+	(*EmptyRequest)(nil),         // 2: azdext.EmptyRequest
+	(*EmptyResponse)(nil),        // 3: azdext.EmptyResponse
+	(*Subscription)(nil),         // 4: azdext.Subscription
+	(*ResourceGroup)(nil),        // 5: azdext.ResourceGroup
+	(*Location)(nil),             // 6: azdext.Location
+	(*AzureScope)(nil),           // 7: azdext.AzureScope
+	(*AzureContext)(nil),         // 8: azdext.AzureContext
+	(*Resource)(nil),             // 9: azdext.Resource
+	(*ResourceExtended)(nil),     // 10: azdext.ResourceExtended
+	(*ProjectConfig)(nil),        // 11: azdext.ProjectConfig
+	(*RequiredVersions)(nil),     // 12: azdext.RequiredVersions
+	(*ProjectMetadata)(nil),      // 13: azdext.ProjectMetadata
+	(*ServiceConfig)(nil),        // 14: azdext.ServiceConfig
+	(*InfraOptions)(nil),         // 15: azdext.InfraOptions
+	(*DockerProjectOptions)(nil), // 16: azdext.DockerProjectOptions
+	(*ServiceContext)(nil),       // 17: azdext.ServiceContext
+	(*ArtifactList)(nil),         // 18: azdext.ArtifactList
+	(*Artifact)(nil),             // 19: azdext.Artifact
+	nil,                          // 20: azdext.ProjectConfig.ServicesEntry
+	nil,                          // 21: azdext.Artifact.MetadataEntry
 }
 var file_models_proto_depIdxs = []int32{
-	5,  // 0: azdext.AzureContext.scope:type_name -> azdext.AzureScope
-	11, // 1: azdext.ProjectConfig.metadata:type_name -> azdext.ProjectMetadata
-	15, // 2: azdext.ProjectConfig.services:type_name -> azdext.ProjectConfig.ServicesEntry
-	13, // 3: azdext.ProjectConfig.infra:type_name -> azdext.InfraOptions
-	14, // 4: azdext.ServiceConfig.docker:type_name -> azdext.DockerProjectOptions
-	12, // 5: azdext.ProjectConfig.ServicesEntry.value:type_name -> azdext.ServiceConfig
-	6,  // [6:6] is the sub-list for method output_type
-	6,  // [6:6] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	7,  // 0: azdext.AzureContext.scope:type_name -> azdext.AzureScope
+	13, // 1: azdext.ProjectConfig.metadata:type_name -> azdext.ProjectMetadata
+	20, // 2: azdext.ProjectConfig.services:type_name -> azdext.ProjectConfig.ServicesEntry
+	15, // 3: azdext.ProjectConfig.infra:type_name -> azdext.InfraOptions
+	16, // 4: azdext.ServiceConfig.docker:type_name -> azdext.DockerProjectOptions
+	19, // 5: azdext.ServiceContext.restore:type_name -> azdext.Artifact
+	19, // 6: azdext.ServiceContext.build:type_name -> azdext.Artifact
+	19, // 7: azdext.ServiceContext.package:type_name -> azdext.Artifact
+	19, // 8: azdext.ServiceContext.publish:type_name -> azdext.Artifact
+	19, // 9: azdext.ServiceContext.deploy:type_name -> azdext.Artifact
+	19, // 10: azdext.ArtifactList.artifacts:type_name -> azdext.Artifact
+	0,  // 11: azdext.Artifact.kind:type_name -> azdext.ArtifactKind
+	1,  // 12: azdext.Artifact.location_kind:type_name -> azdext.LocationKind
+	21, // 13: azdext.Artifact.metadata:type_name -> azdext.Artifact.MetadataEntry
+	14, // 14: azdext.ProjectConfig.ServicesEntry.value:type_name -> azdext.ServiceConfig
+	15, // [15:15] is the sub-list for method output_type
+	15, // [15:15] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_models_proto_init() }
@@ -1162,13 +1513,14 @@ func file_models_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_models_proto_rawDesc), len(file_models_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   16,
+			NumEnums:      2,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_models_proto_goTypes,
 		DependencyIndexes: file_models_proto_depIdxs,
+		EnumInfos:         file_models_proto_enumTypes,
 		MessageInfos:      file_models_proto_msgTypes,
 	}.Build()
 	File_models_proto = out.File

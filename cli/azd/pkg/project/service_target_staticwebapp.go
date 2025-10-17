@@ -6,14 +6,13 @@ package project
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
@@ -56,43 +55,69 @@ func (at *staticWebAppTarget) Initialize(ctx context.Context, serviceConfig *Ser
 func (at *staticWebAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	if usingSwaConfig(packageOutput) {
-		// The swa framework service does not set a packageOutput.PackagePath during package b/c the output
-		// is governed by the swa-cli.config.json file.
-		return packageOutput, nil
+	// Extract package result from service context
+	var packagePath string
+	var hasSwaConfig bool
+
+	// Check for SWA config
+	if _, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindConfig)); found {
+		hasSwaConfig = true
 	}
 
-	// packageOutput.PackagePath != "" -> This means swa framework service is not used to build/deploy and there
+	// Get build output path
+	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindDirectory)); found {
+		packagePath = artifact.Location
+	}
+
+	if hasSwaConfig {
+		// The swa framework service does not set a packagePath during package b/c the output
+		// is governed by the swa-cli.config.json file.
+		return &ServicePackageResult{
+			Artifacts: ArtifactCollection{
+				{
+					Kind:         ArtifactKindConfig,
+					Location:     "saw-cli.config.json",
+					LocationKind: LocationKindLocal,
+				},
+			},
+		}, nil
+	}
+
+	// packagePath != "" -> This means swa framework service is not used to build/deploy and there
 	// is no a swa-cli.config.json file to govern the output.
 	// In this case, the serviceConfig.OutputPath (azure.yaml -> service -> dist) defines where is the output from
 	// the language framework service.
 	// If serviceConfig.OutputPath is not defined, azd should use the package path defined by the language framework
 	// service.
 
-	packagePath := serviceConfig.OutputPath
-	if strings.TrimSpace(packagePath) == "" {
-		packagePath = packageOutput.PackagePath
+	if strings.TrimSpace(serviceConfig.OutputPath) != "" {
+		packagePath = serviceConfig.OutputPath
 	}
 
 	return &ServicePackageResult{
-		Build:       packageOutput.Build,
-		PackagePath: packagePath,
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     packagePath,
+				LocationKind: LocationKindLocal,
+			},
+		},
 	}, nil
 }
 
-func usingSwaConfig(packageResult *ServicePackageResult) bool {
-	// The swa framework service does not set a packageOutput.PackagePath during package b/c the output
-	// is governed by the swa-cli.config.json file.
-	return packageResult.PackagePath == "" && packageResult.Details != nil
+func usingSwaConfig(artifacts ArtifactCollection) bool {
+	// Check if swa-config artifact exists in the package result
+	_, found := artifacts.FindFirst(WithKind(ArtifactKindConfig))
+	return found
 }
 
 func (at *staticWebAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
@@ -104,8 +129,7 @@ func (at *staticWebAppTarget) Publish(
 func (at *staticWebAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
-	servicePublishResult *ServicePublishResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -129,9 +153,14 @@ func (at *staticWebAppTarget) Deploy(
 	progress.SetProgress(NewServiceProgress("swa cli deploy"))
 	dOptions := swa.DeployOptions{}
 	cwd := serviceConfig.Path()
-	if !usingSwaConfig(packageOutput) {
+	if !usingSwaConfig(serviceContext.Package) {
+		// Extract package path from artifacts
+		var packagePath string
+		if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindDirectory)); found {
+			packagePath = artifact.Location
+		}
 
-		if (packageOutput.PackagePath == "" || cwd == packageOutput.PackagePath) &&
+		if (packagePath == "" || cwd == packagePath) &&
 			cwd == serviceConfig.Project.Path {
 			return nil, &internal.ErrorWithSuggestion{
 				Err: fmt.Errorf("service source and output folder cannot be at the root: %s", serviceConfig.RelativePath),
@@ -145,10 +174,10 @@ func (at *staticWebAppTarget) Deploy(
 		}
 
 		dOptions.AppFolderPath = serviceConfig.RelativePath
-		dOptions.OutputRelativeFolderPath = packageOutput.PackagePath
+		dOptions.OutputRelativeFolderPath = packagePath
 		cwd = serviceConfig.Project.Path
 	}
-	res, err := at.swa.Deploy(ctx,
+	_, err = at.swa.Deploy(ctx,
 		cwd,
 		at.env.GetTenantId(),
 		targetResource.SubscriptionId(),
@@ -157,8 +186,6 @@ func (at *staticWebAppTarget) Deploy(
 		DefaultStaticWebAppEnvironmentName,
 		*deploymentToken,
 		dOptions)
-
-	log.Println(res)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed deploying static web app: %w", err)
@@ -175,19 +202,30 @@ func (at *staticWebAppTarget) Deploy(
 		return nil, err
 	}
 
-	sdr := NewServiceDeployResult(
-		azure.StaticWebAppRID(
-			targetResource.SubscriptionId(),
-			targetResource.ResourceGroupName(),
-			targetResource.ResourceName(),
-		),
-		StaticWebAppTarget,
-		res,
-		endpoints,
-	)
-	sdr.Package = packageOutput
+	artifacts := ArtifactCollection{}
 
-	return sdr, nil
+	// Add endpoints as artifacts
+	for _, endpoint := range endpoints {
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindEndpoint,
+			Location:     endpoint,
+			LocationKind: LocationKindRemote,
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add endpoint artifact: %w", err)
+		}
+	}
+
+	// Add resource artifact
+	resourceArtifact := Artifact{}
+	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
+		if err := artifacts.Add(&resourceArtifact); err != nil {
+			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
+		}
+	}
+
+	return &ServiceDeployResult{
+		Artifacts: artifacts,
+	}, nil
 }
 
 // Gets the endpoints for the static web app

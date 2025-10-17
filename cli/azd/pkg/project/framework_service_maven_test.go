@@ -53,8 +53,9 @@ func Test_MavenProject(t *testing.T) {
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
+		serviceContext := NewServiceContext()
 		result, err := logProgress(t, func(progess *async.Progress[ServiceProgress]) (*ServiceRestoreResult, error) {
-			return mavenProject.Restore(*mockContext.Context, serviceConfig, progess)
+			return mavenProject.Restore(*mockContext.Context, serviceConfig, serviceContext, progess)
 		})
 
 		require.NoError(t, err)
@@ -133,20 +134,31 @@ func Test_MavenProject(t *testing.T) {
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
+		serviceContext := NewServiceContext()
+		serviceContext.Build = ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     serviceConfig.Path(),
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"framework": "maven",
+				},
+			},
+		}
+
 		result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 			return mavenProject.Package(
 				*mockContext.Context,
 				serviceConfig,
-				&ServiceBuildResult{
-					BuildOutputPath: serviceConfig.Path(),
-				},
+				serviceContext,
 				progress,
 			)
 		})
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		require.NotEmpty(t, result.PackagePath)
+		require.Len(t, result.Artifacts, 1)
+		require.NotEmpty(t, result.Artifacts[0].Location)
 		require.Contains(t, runArgs.Cmd, getMvnwCmd())
 		require.Equal(t,
 			[]string{"package", "-DskipTests"},
@@ -297,10 +309,11 @@ func Test_MavenProject_AppService_Package(t *testing.T) {
 
 			result, err := logProgress(
 				t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+					serviceContext := NewServiceContext()
 					return mavenProject.Package(
 						*mockContext.Context,
 						tt.args.svc,
-						&ServiceBuildResult{},
+						serviceContext,
 						progress,
 					)
 				},
@@ -311,7 +324,8 @@ func Test_MavenProject_AppService_Package(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				require.NotNil(t, result)
-				require.NotEmpty(t, result.PackagePath)
+				require.Len(t, result.Artifacts, 1)
+				require.NotEmpty(t, result.Artifacts[0].Location)
 				require.Contains(t, runArgs.Cmd, getMvnwCmd())
 				require.Equal(t,
 					[]string{"package", "-DskipTests"},
@@ -375,20 +389,35 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 			osutil.PermissionDirectory)
 		require.NoError(t, err)
 
+		serviceContext := NewServiceContext()
+		serviceContext.Build = ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     svc.Path(),
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"framework": "maven",
+				},
+			},
+		}
+
 		result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 			return mavenProject.Package(
 				*mockContext.Context,
 				&svc,
-				&ServiceBuildResult{
-					BuildOutputPath: svc.Path(),
-				},
+				serviceContext,
 				progress,
 			)
 		})
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		require.Equal(t, result.PackagePath, filepath.Join(svc.Path(), "target", "azure-functions", mvnFuncAppNameProperty))
+		require.Len(t, result.Artifacts, 1)
+		require.Equal(
+			t,
+			filepath.Join(svc.Path(), "target", "azure-functions", mvnFuncAppNameProperty),
+			result.Artifacts[0].Location,
+		)
 	})
 
 	t.Run("uses target/azure-functions when maven property functionAppName not available", func(t *testing.T) {
@@ -403,13 +432,23 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 			osutil.PermissionDirectory)
 		require.NoError(t, err)
 
+		serviceContext := NewServiceContext()
+		serviceContext.Build = ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     svc.Path(),
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"framework": "maven",
+				},
+			},
+		}
+
 		result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
 			return mavenProject.Package(
 				*mockContext.Context,
 				&svc,
-				&ServiceBuildResult{
-					BuildOutputPath: svc.Path(),
-				},
+				serviceContext,
 				progress,
 			)
 		})
@@ -417,7 +456,8 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 		// returns single staging directory
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		require.Equal(t, result.PackagePath, filepath.Join(svc.Path(), "target", "azure-functions", "any"))
+		require.Len(t, result.Artifacts, 1)
+		require.Equal(t, filepath.Join(svc.Path(), "target", "azure-functions", "any"), result.Artifacts[0].Location)
 
 		// errors when multiple staging directories are found
 		err = os.MkdirAll(
@@ -426,12 +466,21 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+			serviceContext := NewServiceContext()
+			serviceContext.Build = ArtifactCollection{
+				{
+					Kind:         ArtifactKindDirectory,
+					Location:     svc.Path(),
+					LocationKind: LocationKindLocal,
+					Metadata: map[string]string{
+						"framework": "maven",
+					},
+				},
+			}
 			return mavenProject.Package(
 				*mockContext.Context,
 				&svc,
-				&ServiceBuildResult{
-					BuildOutputPath: svc.Path(),
-				},
+				serviceContext,
 				progress,
 			)
 		})
@@ -445,19 +494,28 @@ func Test_MavenProject_FuncApp_Package(t *testing.T) {
 
 		svc.OutputPath = "my-custom-dir"
 		result, err := logProgress(t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
+			serviceContext := NewServiceContext()
+			serviceContext.Build = ArtifactCollection{
+				{
+					Kind:         ArtifactKindDirectory,
+					Location:     svc.Path(),
+					LocationKind: LocationKindLocal,
+					Metadata: map[string]string{
+						"framework": "maven",
+					},
+				},
+			}
 			return mavenProject.Package(
 				*mockContext.Context,
 				&svc,
-				&ServiceBuildResult{
-					BuildOutputPath: svc.Path(),
-				},
+				serviceContext,
 				progress,
 			)
 		})
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		require.Equal(t, result.PackagePath, filepath.Join(svc.Path(), svc.OutputPath))
+		require.Equal(t, result.Artifacts[0].Location, filepath.Join(svc.Path(), svc.OutputPath))
 	})
 }
 

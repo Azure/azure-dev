@@ -113,3 +113,44 @@ message DockerProjectOptions {
   bool remote_build = 8;
   repeated string build_args = 9;
 }
+
+// ServiceContext defines the shared pipeline state across all phases of the service lifecycle
+message ServiceContext {
+  repeated Artifact restore = 1;
+  repeated Artifact build = 2;
+  repeated Artifact package = 3;
+  repeated Artifact publish = 4;
+  repeated Artifact deploy = 5;
+}
+
+// ArtifactList represents a list of artifacts for map values in ServiceContext
+message ArtifactList {
+  repeated Artifact artifacts = 1;
+}
+
+// Artifact kinds - matching the existing Go ArtifactKind enum
+enum ArtifactKind {
+  ARTIFACT_KIND_UNSPECIFIED = 0;         // Default/unknown artifact kind
+  ARTIFACT_KIND_DIRECTORY = 1;           // Directory containing project or build artifacts  
+  ARTIFACT_KIND_CONFIG = 2;              // Configuration file
+  ARTIFACT_KIND_ARCHIVE = 3;             // Zip/archive package
+  ARTIFACT_KIND_CONTAINER = 4;           // Docker/container image
+  ARTIFACT_KIND_ENDPOINT = 5;            // Service endpoint URL
+  ARTIFACT_KIND_DEPLOYMENT = 6;          // Deployment result or endpoint
+  ARTIFACT_KIND_RESOURCE = 7;            // Azure Resource
+}
+
+// Location kinds - matching the existing Go LocationKind enum
+enum LocationKind {
+  LOCATION_KIND_UNSPECIFIED = 0;         // Default/unknown location
+  LOCATION_KIND_LOCAL = 1;               // Local file system path
+  LOCATION_KIND_REMOTE = 2;              // Remote URL/URI
+}
+
+// Artifact represents a build, package, or deployment artifact with its location and metadata
+message Artifact {
+  ArtifactKind kind = 1;                  // Required: type of artifact
+  string location = 2;                    // Optional: location of the artifact (local path or remote reference)
+  LocationKind location_kind = 3;         // Required: where the artifact is stored
+  map<string, string> metadata = 4;       // Optional: arbitrary key/value pairs for extension-specific data
+}

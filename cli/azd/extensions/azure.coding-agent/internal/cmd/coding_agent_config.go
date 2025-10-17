@@ -229,7 +229,12 @@ func newConfigCommand() *cobra.Command {
 			repoSlug,
 		)
 
-		managedIdentityPortalURL := formatPortalLinkForManagedIdentity(tenantID, subscriptionID, authConfig.ResourceGroup, authConfig.Name)
+		managedIdentityPortalURL := formatPortalLinkForManagedIdentity(
+			tenantID,
+			subscriptionID,
+			authConfig.ResourceGroup,
+			authConfig.Name,
+		)
 
 		fmt.Println("")
 		fmt.Println(output.WithHighLightFormat("(!)"))
@@ -237,7 +242,10 @@ func newConfigCommand() *cobra.Command {
 		fmt.Println(output.WithHighLightFormat("(!)"))
 		fmt.Println("")
 		fmt.Printf("1. The branch created at %s/%s must be merged to %s/main\n", remote, flagValues.BranchName, repoSlug)
-		fmt.Printf("2. Configure Copilot coding agent's managed identity roles in the Azure portal: %s\n", managedIdentityPortalURL)
+		fmt.Printf(
+			"2. Configure Copilot coding agent's managed identity roles in the Azure portal: %s\n",
+			managedIdentityPortalURL,
+		)
 		fmt.Printf("3. Visit '%s' and update the \"MCP configuration\" field with this JSON:\n\n", codingAgentURL)
 
 		fmt.Println(mcpJson)
@@ -902,10 +910,17 @@ func (cli *internalGitCLI) ListRemotes(ctx context.Context, gitRepoRoot string) 
 }
 
 // formatPortalLinkForManagedIdentity takes you to the Azure portal blade, for your managed identity, that lets you see its role assignments.
-func formatPortalLinkForManagedIdentity(tenantID string, subscriptionID string, resourceGroupName string, managedIdentityName string) string {
-	return fmt.Sprintf("https://portal.azure.com/#@%s/resource/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s/azure_resources",
+func formatPortalLinkForManagedIdentity(
+	tenantID string,
+	subscriptionID string,
+	resourceGroupName string,
+	managedIdentityName string,
+) string {
+	return fmt.Sprintf(
+		"https://portal.azure.com/#@%s/resource/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s/azure_resources",
 		tenantID,
 		subscriptionID,
 		resourceGroupName,
-		managedIdentityName)
+		managedIdentityName,
+	)
 }

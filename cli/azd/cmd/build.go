@@ -199,7 +199,7 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		buildResults[svc.Name] = buildResult
 
 		// report build outputs
-		ba.console.MessageUxItem(ctx, buildResult)
+		ba.console.MessageUxItem(ctx, buildResult.Artifacts)
 	}
 
 	if ba.formatter.Kind() == output.JsonFormat {

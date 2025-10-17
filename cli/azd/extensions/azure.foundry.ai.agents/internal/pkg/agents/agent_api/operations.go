@@ -71,7 +71,11 @@ func (c *AgentClient) GetAgent(ctx context.Context, agentName, apiVersion string
 }
 
 // CreateAgent creates a new agent
-func (c *AgentClient) CreateAgent(ctx context.Context, request *CreateAgentRequest, apiVersion string) (*AgentObject, error) {
+func (c *AgentClient) CreateAgent(
+	ctx context.Context,
+	request *CreateAgentRequest,
+	apiVersion string,
+) (*AgentObject, error) {
 	url := fmt.Sprintf("%s/agents?api-version=%s", c.endpoint, apiVersion)
 
 	payload, err := json.Marshal(request)
@@ -116,7 +120,12 @@ func (c *AgentClient) CreateAgent(ctx context.Context, request *CreateAgentReque
 }
 
 // UpdateAgent updates an existing agent
-func (c *AgentClient) UpdateAgent(ctx context.Context, agentName string, request *UpdateAgentRequest, apiVersion string) (*AgentObject, error) {
+func (c *AgentClient) UpdateAgent(
+	ctx context.Context,
+	agentName string,
+	request *UpdateAgentRequest,
+	apiVersion string,
+) (*AgentObject, error) {
 	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
 
 	payload, err := json.Marshal(request)
@@ -197,9 +206,13 @@ func (c *AgentClient) DeleteAgent(ctx context.Context, agentName, apiVersion str
 }
 
 // ListAgents returns a list of all agents
-func (c *AgentClient) ListAgents(ctx context.Context, params *ListAgentQueryParameters, apiVersion string) (*AgentList, error) {
+func (c *AgentClient) ListAgents(
+	ctx context.Context,
+	params *ListAgentQueryParameters,
+	apiVersion string,
+) (*AgentList, error) {
 	baseURL := fmt.Sprintf("%s/agents", c.endpoint)
-	
+
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse base URL: %w", err)
@@ -261,7 +274,12 @@ func (c *AgentClient) ListAgents(ctx context.Context, params *ListAgentQueryPara
 }
 
 // CreateAgentVersion creates a new version of an agent
-func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, request *CreateAgentVersionRequest, apiVersion string) (*AgentVersionObject, error) {
+func (c *AgentClient) CreateAgentVersion(
+	ctx context.Context,
+	agentName string,
+	request *CreateAgentVersionRequest,
+	apiVersion string,
+) (*AgentVersionObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions?api-version=%s", c.endpoint, agentName, apiVersion)
 
 	payload, err := json.Marshal(request)
@@ -293,7 +311,11 @@ func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, 
 	}
 
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
-		return nil, fmt.Errorf("failed to create agent version. Status code: %d, Response: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf(
+			"failed to create agent version. Status code: %d, Response: %s",
+			resp.StatusCode,
+			string(body),
+		)
 	}
 
 	var agentVersion AgentVersionObject
@@ -306,7 +328,10 @@ func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, 
 }
 
 // GetAgentVersion retrieves a specific version of an agent
-func (c *AgentClient) GetAgentVersion(ctx context.Context, agentName, agentVersion, apiVersion string) (*AgentVersionObject, error) {
+func (c *AgentClient) GetAgentVersion(
+	ctx context.Context,
+	agentName, agentVersion, apiVersion string,
+) (*AgentVersionObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -342,7 +367,10 @@ func (c *AgentClient) GetAgentVersion(ctx context.Context, agentName, agentVersi
 }
 
 // DeleteAgentVersion deletes a specific version of an agent
-func (c *AgentClient) DeleteAgentVersion(ctx context.Context, agentName, agentVersion, apiVersion string) (*DeleteAgentVersionResponse, error) {
+func (c *AgentClient) DeleteAgentVersion(
+	ctx context.Context,
+	agentName, agentVersion, apiVersion string,
+) (*DeleteAgentVersionResponse, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
 	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
@@ -366,7 +394,11 @@ func (c *AgentClient) DeleteAgentVersion(ctx context.Context, agentName, agentVe
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to delete agent version. Status code: %d, Response: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf(
+			"failed to delete agent version. Status code: %d, Response: %s",
+			resp.StatusCode,
+			string(body),
+		)
 	}
 
 	var deleteResponse DeleteAgentVersionResponse
@@ -386,9 +418,14 @@ type CommonPageQueryParameters struct {
 }
 
 // ListAgentVersions returns a list of versions for a specific agent
-func (c *AgentClient) ListAgentVersions(ctx context.Context, agentName string, params *CommonPageQueryParameters, apiVersion string) (*AgentVersionList, error) {
+func (c *AgentClient) ListAgentVersions(
+	ctx context.Context,
+	agentName string,
+	params *CommonPageQueryParameters,
+	apiVersion string,
+) (*AgentVersionList, error) {
 	baseURL := fmt.Sprintf("%s/agents/%s/versions", c.endpoint, agentName)
-	
+
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse base URL: %w", err)
@@ -449,7 +486,12 @@ func (c *AgentClient) ListAgentVersions(ctx context.Context, agentName string, p
 // Event Handler Operations
 
 // CreateOrUpdateAgentEventHandler creates or updates an event handler for an agent
-func (c *AgentClient) CreateOrUpdateAgentEventHandler(ctx context.Context, agentName, eventHandlerName string, request *AgentEventHandlerRequest, apiVersion string) (*AgentEventHandlerObject, error) {
+func (c *AgentClient) CreateOrUpdateAgentEventHandler(
+	ctx context.Context,
+	agentName, eventHandlerName string,
+	request *AgentEventHandlerRequest,
+	apiVersion string,
+) (*AgentEventHandlerObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/event_handlers/%s?api-version=%s", c.endpoint, agentName, eventHandlerName, apiVersion)
 
 	payload, err := json.Marshal(request)
@@ -479,7 +521,11 @@ func (c *AgentClient) CreateOrUpdateAgentEventHandler(ctx context.Context, agent
 	}
 
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
-		return nil, fmt.Errorf("failed to create/update event handler. Status code: %d, Response: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf(
+			"failed to create/update event handler. Status code: %d, Response: %s",
+			resp.StatusCode,
+			string(body),
+		)
 	}
 
 	var eventHandler AgentEventHandlerObject
@@ -491,7 +537,10 @@ func (c *AgentClient) CreateOrUpdateAgentEventHandler(ctx context.Context, agent
 }
 
 // GetAgentEventHandler retrieves a specific event handler
-func (c *AgentClient) GetAgentEventHandler(ctx context.Context, agentName, eventHandlerName, apiVersion string) (*AgentEventHandlerObject, error) {
+func (c *AgentClient) GetAgentEventHandler(
+	ctx context.Context,
+	agentName, eventHandlerName, apiVersion string,
+) (*AgentEventHandlerObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/event_handlers/%s?api-version=%s", c.endpoint, agentName, eventHandlerName, apiVersion)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -527,7 +576,10 @@ func (c *AgentClient) GetAgentEventHandler(ctx context.Context, agentName, event
 }
 
 // DeleteAgentEventHandler deletes an event handler
-func (c *AgentClient) DeleteAgentEventHandler(ctx context.Context, agentName, eventHandlerName, apiVersion string) (*DeleteAgentEventHandlerResponse, error) {
+func (c *AgentClient) DeleteAgentEventHandler(
+	ctx context.Context,
+	agentName, eventHandlerName, apiVersion string,
+) (*DeleteAgentEventHandlerResponse, error) {
 	url := fmt.Sprintf("%s/agents/%s/event_handlers/%s?api-version=%s", c.endpoint, agentName, eventHandlerName, apiVersion)
 
 	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
@@ -551,7 +603,11 @@ func (c *AgentClient) DeleteAgentEventHandler(ctx context.Context, agentName, ev
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to delete event handler. Status code: %d, Response: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf(
+			"failed to delete event handler. Status code: %d, Response: %s",
+			resp.StatusCode,
+			string(body),
+		)
 	}
 
 	var deleteResponse DeleteAgentEventHandlerResponse
@@ -565,8 +621,19 @@ func (c *AgentClient) DeleteAgentEventHandler(ctx context.Context, agentName, ev
 // Container Operations
 
 // StartAgentContainer starts a container for a specific version of an agent
-func (c *AgentClient) StartAgentContainer(ctx context.Context, agentName, agentVersion string, minReplicas, maxReplicas *int32, apiVersion string) (*AcceptedAgentContainerOperation, error) {
-	url := fmt.Sprintf("%s/agents/%s/versions/%s/containers/default:start?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
+func (c *AgentClient) StartAgentContainer(
+	ctx context.Context,
+	agentName, agentVersion string,
+	minReplicas, maxReplicas *int32,
+	apiVersion string,
+) (*AcceptedAgentContainerOperation, error) {
+	url := fmt.Sprintf(
+		"%s/agents/%s/versions/%s/containers/default:start?api-version=%s",
+		c.endpoint,
+		agentName,
+		agentVersion,
+		apiVersion,
+	)
 
 	requestBody := map[string]interface{}{}
 	if minReplicas != nil {
@@ -605,7 +672,11 @@ func (c *AgentClient) StartAgentContainer(ctx context.Context, agentName, agentV
 	}
 
 	if resp.StatusCode != 202 {
-		return nil, fmt.Errorf("failed to start agent container. Status code: %d, Response: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf(
+			"failed to start agent container. Status code: %d, Response: %s",
+			resp.StatusCode,
+			string(body),
+		)
 	}
 
 	var operation AgentContainerOperationObject
@@ -623,8 +694,19 @@ func (c *AgentClient) StartAgentContainer(ctx context.Context, agentName, agentV
 }
 
 // UpdateAgentContainer updates a container for a specific version of an agent
-func (c *AgentClient) UpdateAgentContainer(ctx context.Context, agentName, agentVersion string, minReplicas, maxReplicas *int32, apiVersion string) (*AcceptedAgentContainerOperation, error) {
-	url := fmt.Sprintf("%s/agents/%s/versions/%s/containers/default:update?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
+func (c *AgentClient) UpdateAgentContainer(
+	ctx context.Context,
+	agentName, agentVersion string,
+	minReplicas, maxReplicas *int32,
+	apiVersion string,
+) (*AcceptedAgentContainerOperation, error) {
+	url := fmt.Sprintf(
+		"%s/agents/%s/versions/%s/containers/default:update?api-version=%s",
+		c.endpoint,
+		agentName,
+		agentVersion,
+		apiVersion,
+	)
 
 	requestBody := map[string]interface{}{}
 	if minReplicas != nil {
@@ -661,7 +743,11 @@ func (c *AgentClient) UpdateAgentContainer(ctx context.Context, agentName, agent
 	}
 
 	if resp.StatusCode != 202 {
-		return nil, fmt.Errorf("failed to update agent container. Status code: %d, Response: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf(
+			"failed to update agent container. Status code: %d, Response: %s",
+			resp.StatusCode,
+			string(body),
+		)
 	}
 
 	var operation AgentContainerOperationObject
@@ -678,8 +764,17 @@ func (c *AgentClient) UpdateAgentContainer(ctx context.Context, agentName, agent
 }
 
 // StopAgentContainer stops a container for a specific version of an agent
-func (c *AgentClient) StopAgentContainer(ctx context.Context, agentName, agentVersion, apiVersion string) (*AcceptedAgentContainerOperation, error) {
-	url := fmt.Sprintf("%s/agents/%s/versions/%s/containers/default:stop?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
+func (c *AgentClient) StopAgentContainer(
+	ctx context.Context,
+	agentName, agentVersion, apiVersion string,
+) (*AcceptedAgentContainerOperation, error) {
+	url := fmt.Sprintf(
+		"%s/agents/%s/versions/%s/containers/default:stop?api-version=%s",
+		c.endpoint,
+		agentName,
+		agentVersion,
+		apiVersion,
+	)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer([]byte("{}")))
 	if err != nil {
@@ -703,7 +798,11 @@ func (c *AgentClient) StopAgentContainer(ctx context.Context, agentName, agentVe
 	}
 
 	if resp.StatusCode != 202 {
-		return nil, fmt.Errorf("failed to stop agent container. Status code: %d, Response: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf(
+			"failed to stop agent container. Status code: %d, Response: %s",
+			resp.StatusCode,
+			string(body),
+		)
 	}
 
 	var operation AgentContainerOperationObject
@@ -720,8 +819,17 @@ func (c *AgentClient) StopAgentContainer(ctx context.Context, agentName, agentVe
 }
 
 // DeleteAgentContainer deletes a container for a specific version of an agent
-func (c *AgentClient) DeleteAgentContainer(ctx context.Context, agentName, agentVersion, apiVersion string) (*AcceptedAgentContainerOperation, error) {
-	url := fmt.Sprintf("%s/agents/%s/versions/%s/containers/default:delete?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
+func (c *AgentClient) DeleteAgentContainer(
+	ctx context.Context,
+	agentName, agentVersion, apiVersion string,
+) (*AcceptedAgentContainerOperation, error) {
+	url := fmt.Sprintf(
+		"%s/agents/%s/versions/%s/containers/default:delete?api-version=%s",
+		c.endpoint,
+		agentName,
+		agentVersion,
+		apiVersion,
+	)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer([]byte("{}")))
 	if err != nil {
@@ -745,7 +853,11 @@ func (c *AgentClient) DeleteAgentContainer(ctx context.Context, agentName, agent
 	}
 
 	if resp.StatusCode != 202 {
-		return nil, fmt.Errorf("failed to delete agent container. Status code: %d, Response: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf(
+			"failed to delete agent container. Status code: %d, Response: %s",
+			resp.StatusCode,
+			string(body),
+		)
 	}
 
 	var operation AgentContainerOperationObject
@@ -762,8 +874,17 @@ func (c *AgentClient) DeleteAgentContainer(ctx context.Context, agentName, agent
 }
 
 // GetAgentContainer retrieves container information for a specific agent version
-func (c *AgentClient) GetAgentContainer(ctx context.Context, agentName, agentVersion, apiVersion string) (*AgentContainerObject, error) {
-	url := fmt.Sprintf("%s/agents/%s/versions/%s/containers/default?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
+func (c *AgentClient) GetAgentContainer(
+	ctx context.Context,
+	agentName, agentVersion, apiVersion string,
+) (*AgentContainerObject, error) {
+	url := fmt.Sprintf(
+		"%s/agents/%s/versions/%s/containers/default?api-version=%s",
+		c.endpoint,
+		agentName,
+		agentVersion,
+		apiVersion,
+	)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -798,7 +919,10 @@ func (c *AgentClient) GetAgentContainer(ctx context.Context, agentName, agentVer
 }
 
 // GetAgentContainerOperation retrieves the status of a container operation
-func (c *AgentClient) GetAgentContainerOperation(ctx context.Context, agentName, operationID, apiVersion string) (*AgentContainerOperationObject, error) {
+func (c *AgentClient) GetAgentContainerOperation(
+	ctx context.Context,
+	agentName, operationID, apiVersion string,
+) (*AgentContainerOperationObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/operations/%s?api-version=%s", c.endpoint, agentName, operationID, apiVersion)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -822,7 +946,11 @@ func (c *AgentClient) GetAgentContainerOperation(ctx context.Context, agentName,
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get container operation. Status code: %d, Response: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf(
+			"failed to get container operation. Status code: %d, Response: %s",
+			resp.StatusCode,
+			string(body),
+		)
 	}
 
 	var operation AgentContainerOperationObject
@@ -851,12 +979,12 @@ func (c *AgentClient) getAiFoundryAzureToken(ctx context.Context, cred azcore.To
 	tokenRequestOptions := policy.TokenRequestOptions{
 		Scopes: []string{"https://ai.azure.com/.default"},
 	}
-	
+
 	token, err := cred.GetToken(ctx, tokenRequestOptions)
 	if err != nil {
 		return "", err
 	}
-	
+
 	return token.Token, nil
 }
 

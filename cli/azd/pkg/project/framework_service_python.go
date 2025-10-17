@@ -54,6 +54,7 @@ func (pp *pythonProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 func (pp *pythonProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
 	progress.SetProgress(NewServiceProgress("Checking for Python virtual environment"))
@@ -84,14 +85,29 @@ func (pp *pythonProject) Restore(
 		return nil, fmt.Errorf("requirements for project '%s' could not be installed: %w", serviceConfig.Path(), err)
 	}
 
-	return &ServiceRestoreResult{}, nil
+	// Create restore artifact for the project directory with virtual environment
+	return &ServiceRestoreResult{
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     serviceConfig.Path(),
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"projectPath":        serviceConfig.Path(),
+					"framework":          "python",
+					"virtualEnvironment": vEnvName,
+					"requirements":       "requirements.txt",
+				},
+			},
+		},
+	}, nil
 }
 
 // Build for Python apps performs a no-op and returns the service path with an optional output path when specified.
 func (pp *pythonProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	restoreOutput *ServiceRestoreResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	buildSource := serviceConfig.Path()
@@ -100,20 +116,35 @@ func (pp *pythonProject) Build(
 		buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
 	}
 
+	// Create build artifact for python build output
 	return &ServiceBuildResult{
-		Restore:         restoreOutput,
-		BuildOutputPath: buildSource,
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     buildSource,
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"buildSource": buildSource,
+					"framework":   "python",
+					"outputPath":  serviceConfig.OutputPath,
+				},
+			},
+		},
 	}, nil
 }
 
 func (pp *pythonProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	packagePath := buildOutput.BuildOutputPath
-	if packagePath == "" {
+	packagePath := serviceConfig.Path()
+	// Get package path from build artifacts
+	if artifact, found := serviceContext.Build.FindFirst(WithKind(ArtifactKindDirectory)); found {
+		packagePath = artifact.Location
+	}
+	if packagePath == serviceConfig.Path() && serviceConfig.OutputPath != "" {
 		packagePath = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
 	}
 
@@ -121,9 +152,19 @@ func (pp *pythonProject) Package(
 		return nil, fmt.Errorf("package source '%s' is empty or does not exist", packagePath)
 	}
 
+	// Create package artifact for python package output
 	return &ServicePackageResult{
-		Build:       buildOutput,
-		PackagePath: packagePath,
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     packagePath,
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"packagePath": packagePath,
+					"framework":   "python",
+				},
+			},
+		},
 	}, nil
 }
 

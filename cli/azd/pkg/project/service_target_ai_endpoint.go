@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -35,14 +35,6 @@ func NewAiEndpointTarget(
 	}
 }
 
-// AiEndpointDeploymentResult is a struct to hold the result of an online endpoint deployment
-type AiEndpointDeploymentResult struct {
-	Environment *armmachinelearning.EnvironmentVersion
-	Model       *armmachinelearning.ModelVersion
-	Flow        *ai.Flow
-	Deployment  *armmachinelearning.OnlineDeployment
-}
-
 // Initialize initializes the aiEndpointTarget
 func (m *aiEndpointTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	return nil
@@ -58,7 +50,7 @@ func (m *aiEndpointTarget) RequiredExternalTools(ctx context.Context, serviceCon
 func (m *aiEndpointTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	frameworkPackageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	return &ServicePackageResult{}, nil
@@ -67,7 +59,7 @@ func (m *aiEndpointTarget) Package(
 func (m *aiEndpointTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
@@ -79,8 +71,7 @@ func (m *aiEndpointTarget) Publish(
 func (m *aiEndpointTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	servicePackage *ServicePackageResult,
-	servicePublishResult *ServicePublishResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -94,7 +85,7 @@ func (m *aiEndpointTarget) Deploy(
 		return nil, err
 	}
 
-	deployResult := &AiEndpointDeploymentResult{}
+	artifacts := ArtifactCollection{}
 
 	// Initialize the AI project that will be used for the python bridge
 	progress.SetProgress(NewServiceProgress("Initializing AI project"))
@@ -120,7 +111,17 @@ func (m *aiEndpointTarget) Deploy(
 			return nil, err
 		}
 
-		deployResult.Flow = flow
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindDeployment,
+			Location:     flow.Path,
+			LocationKind: LocationKindLocal,
+			Metadata: map[string]string{
+				"name": flow.Name,
+				"type": flow.Type,
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add flow artifact: %w", err)
+		}
 	}
 
 	// Deploy environment
@@ -136,7 +137,17 @@ func (m *aiEndpointTarget) Deploy(
 			return nil, err
 		}
 
-		deployResult.Environment = envVersion
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindDeployment,
+			Location:     *envVersion.ID,
+			LocationKind: LocationKindRemote,
+			Metadata: map[string]string{
+				"name": *envVersion.Name,
+				"type": *envVersion.Type,
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add environment version artifact: %w", err)
+		}
 	}
 
 	// Deploy model
@@ -147,7 +158,17 @@ func (m *aiEndpointTarget) Deploy(
 			return nil, err
 		}
 
-		deployResult.Model = modelVersion
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindDeployment,
+			Location:     *modelVersion.ID,
+			LocationKind: LocationKindRemote,
+			Metadata: map[string]string{
+				"name": *modelVersion.Name,
+				"type": *modelVersion.Type,
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add model version artifact: %w", err)
+		}
 	}
 
 	// Deploy to endpoint
@@ -185,7 +206,17 @@ func (m *aiEndpointTarget) Deploy(
 			return nil, fmt.Errorf("failed deleting previous deployments: %w", err)
 		}
 
-		deployResult.Deployment = onlineDeployment
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindDeployment,
+			Location:     *onlineDeployment.ID,
+			LocationKind: LocationKindRemote,
+			Metadata: map[string]string{
+				"name": *onlineDeployment.Name,
+				"type": *onlineDeployment.Type,
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add online deployment artifact: %w", err)
+		}
 	}
 
 	endpoints, err := m.Endpoints(ctx, serviceConfig, targetResource)
@@ -193,14 +224,41 @@ func (m *aiEndpointTarget) Deploy(
 		return nil, err
 	}
 
+	for _, endpoint := range endpoints {
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindEndpoint,
+			Location:     endpoint,
+			LocationKind: LocationKindRemote,
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add endpoint artifact: %w", err)
+		}
+	}
+
 	if err := m.envManager.Save(ctx, m.env); err != nil {
 		return nil, fmt.Errorf("failed saving environment: %w", err)
 	}
 
+	workspaceResourceId := azure.WorkspaceRID(
+		workspaceScope.SubscriptionId(),
+		workspaceScope.ResourceGroup(),
+		workspaceScope.Workspace(),
+	)
+
+	if err := artifacts.Add(&Artifact{
+		Kind:         ArtifactKindResource,
+		Location:     workspaceResourceId,
+		LocationKind: LocationKindRemote,
+		Metadata: map[string]string{
+			"subscriptionId": workspaceScope.SubscriptionId(),
+			"resourceGroup":  workspaceScope.ResourceGroup(),
+			"workspaceScope": workspaceScope.Workspace(),
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("failed to add workspace resource artifact: %w", err)
+	}
+
 	return &ServiceDeployResult{
-		Details:   deployResult,
-		Package:   servicePackage,
-		Endpoints: endpoints,
+		Artifacts: artifacts,
 	}, nil
 }
 

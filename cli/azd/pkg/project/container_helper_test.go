@@ -432,7 +432,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 		image                   string
 		project                 string
 		packagePath             string
-		dockerDetails           *DockerPackageResult
+		dockerArtifact          *Artifact
 		expectedRemoteImage     string
 		expectDockerLoginCalled bool
 		expectDockerPullCalled  bool
@@ -444,10 +444,14 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			name:     "Source code and registry",
 			project:  "./src/api",
 			registry: osutil.NewExpandableString("contoso.azurecr.io"),
-			dockerDetails: &DockerPackageResult{
-				ImageHash:   "IMAGE_ID",
-				SourceImage: "",
-				TargetImage: "my-project/my-service:azd-deploy-0",
+			dockerArtifact: &Artifact{
+				Kind:     ArtifactKindContainer,
+				Location: "my-project/my-service:azd-deploy-0",
+				Metadata: map[string]string{
+					"imageHash":   "IMAGE_ID",
+					"sourceImage": "",
+					"targetImage": "my-project/my-service:azd-deploy-0",
+				},
 			},
 			expectDockerLoginCalled: true,
 			expectDockerPullCalled:  false,
@@ -459,10 +463,14 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 		{
 			name:    "Source code and no registry",
 			project: "./src/api",
-			dockerDetails: &DockerPackageResult{
-				ImageHash:   "IMAGE_ID",
-				SourceImage: "",
-				TargetImage: "my-project/my-service:azd-deploy-0",
+			dockerArtifact: &Artifact{
+				Kind:     ArtifactKindContainer,
+				Location: "my-project/my-service:azd-deploy-0",
+				Metadata: map[string]string{
+					"imageHash":   "IMAGE_ID",
+					"sourceImage": "",
+					"targetImage": "my-project/my-service:azd-deploy-0",
+				},
 			},
 			expectError:             true,
 			expectDockerLoginCalled: false,
@@ -486,10 +494,14 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			name:     "Source image and registry",
 			image:    "nginx",
 			registry: osutil.NewExpandableString("contoso.azurecr.io"),
-			dockerDetails: &DockerPackageResult{
-				ImageHash:   "",
-				SourceImage: "nginx",
-				TargetImage: "my-project/nginx:azd-deploy-0",
+			dockerArtifact: &Artifact{
+				Kind:     ArtifactKindContainer,
+				Location: "my-project/nginx:azd-deploy-0",
+				Metadata: map[string]string{
+					"imageHash":   "",
+					"sourceImage": "nginx",
+					"targetImage": "my-project/nginx:azd-deploy-0",
+				},
 			},
 			expectDockerLoginCalled: true,
 			expectDockerPullCalled:  true,
@@ -502,10 +514,14 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			name:     "Source image and external registry",
 			image:    "nginx",
 			registry: osutil.NewExpandableString("docker.io/custom"),
-			dockerDetails: &DockerPackageResult{
-				ImageHash:   "",
-				SourceImage: "nginx",
-				TargetImage: "my-project/nginx:azd-deploy-0",
+			dockerArtifact: &Artifact{
+				Kind:     ArtifactKindContainer,
+				Location: "my-project/nginx:azd-deploy-0",
+				Metadata: map[string]string{
+					"imageHash":   "",
+					"sourceImage": "nginx",
+					"targetImage": "my-project/nginx:azd-deploy-0",
+				},
 			},
 			expectDockerLoginCalled: false,
 			expectDockerPullCalled:  true,
@@ -517,10 +533,14 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 		{
 			name:  "Source image and no registry",
 			image: "nginx",
-			dockerDetails: &DockerPackageResult{
-				ImageHash:   "",
-				SourceImage: "nginx",
-				TargetImage: "my-project/nginx:azd-deploy-0",
+			dockerArtifact: &Artifact{
+				Kind:     ArtifactKindContainer,
+				Location: "my-project/nginx:azd-deploy-0",
+				Metadata: map[string]string{
+					"imageHash":   "",
+					"sourceImage": "nginx",
+					"targetImage": "my-project/nginx:azd-deploy-0",
+				},
 			},
 			expectDockerLoginCalled: false,
 			expectDockerPullCalled:  false,
@@ -542,7 +562,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 		},
 		{
 			name:                    "Empty package details",
-			dockerDetails:           &DockerPackageResult{},
+			dockerArtifact:          &Artifact{Kind: ArtifactKindContainer, Location: "", Metadata: map[string]string{}},
 			expectError:             true,
 			expectDockerLoginCalled: false,
 			expectDockerPullCalled:  false,
@@ -551,7 +571,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 		},
 		{
 			name:                    "Nil package details",
-			dockerDetails:           nil,
+			dockerArtifact:          nil,
 			expectError:             true,
 			expectDockerLoginCalled: false,
 			expectDockerPullCalled:  false,
@@ -597,15 +617,32 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			serviceConfig.RelativePath = tt.project
 			serviceConfig.Docker.Registry = tt.registry
 
+			var packageArtifacts ArtifactCollection
+			if tt.dockerArtifact != nil {
+				packageArtifacts = ArtifactCollection{tt.dockerArtifact}
+			} else if tt.packagePath != "" {
+				packageArtifacts = ArtifactCollection{
+					{
+						Kind:         ArtifactKindContainer,
+						Location:     tt.packagePath,
+						LocationKind: LocationKindLocal,
+						Metadata:     map[string]string{},
+					},
+				}
+			}
+
 			packageOutput := &ServicePackageResult{
-				Details:     tt.dockerDetails,
-				PackagePath: tt.packagePath,
+				Artifacts: packageArtifacts,
+			}
+
+			serviceContext := &ServiceContext{
+				Package: packageOutput.Artifacts,
 			}
 
 			publishResult, err := logProgress(
 				t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
 					return containerHelper.Publish(
-						*mockContext.Context, serviceConfig, packageOutput, targetResource, progress, &PublishOptions{})
+						*mockContext.Context, serviceConfig, serviceContext, targetResource, progress, &PublishOptions{})
 				},
 			)
 
@@ -613,9 +650,10 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
-				containerDetails, ok := publishResult.Details.(*ContainerPublishDetails)
-				require.True(t, ok)
-				require.Equal(t, tt.expectedRemoteImage, containerDetails.RemoteImage)
+				require.Len(t, publishResult.Artifacts, 1)
+				artifact := publishResult.Artifacts[0]
+				require.Equal(t, ArtifactKindContainer, artifact.Kind)
+				require.Equal(t, tt.expectedRemoteImage, artifact.Metadata["remoteImage"])
 			}
 
 			_, dockerPullCalled := mockResults["docker-pull"]
@@ -642,9 +680,10 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			require.Equal(t, tt.expectDockerPushCalled, dockerPushCalled)
 
 			if !tt.expectError {
-				containerDetails, ok := publishResult.Details.(*ContainerPublishDetails)
-				require.True(t, ok)
-				require.Equal(t, tt.expectedRemoteImage, containerDetails.RemoteImage)
+				require.Len(t, publishResult.Artifacts, 1)
+				artifact := publishResult.Artifacts[0]
+				require.Equal(t, ArtifactKindContainer, artifact.Kind)
+				require.Equal(t, tt.expectedRemoteImage, artifact.Metadata["remoteImage"])
 			}
 		})
 	}
@@ -956,7 +995,9 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 		image                   string
 		project                 string
 		packagePath             string
-		dockerDetails           *DockerPackageResult
+		imageHash               string
+		sourceImage             string
+		targetImage             string
 		publishOptions          *PublishOptions
 		expectedRemoteImage     string
 		expectDockerLoginCalled bool
@@ -966,14 +1007,13 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 		expectError             bool
 	}{
 		{
-			name:     "Source code and registry",
-			project:  "./src/api",
-			registry: osutil.NewExpandableString("contoso.azurecr.io"),
-			dockerDetails: &DockerPackageResult{
-				ImageHash:   "IMAGE_ID",
-				SourceImage: "",
-				TargetImage: "my-project/my-service:azd-publish-0",
-			},
+			name:                    "Source code and registry",
+			project:                 "./src/api",
+			registry:                osutil.NewExpandableString("contoso.azurecr.io"),
+			packagePath:             "my-project/my-service:azd-publish-0",
+			imageHash:               "IMAGE_ID",
+			sourceImage:             "",
+			targetImage:             "my-project/my-service:azd-publish-0",
 			publishOptions:          &PublishOptions{},
 			expectDockerLoginCalled: true,
 			expectDockerPullCalled:  false,
@@ -983,13 +1023,12 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			expectError:             false,
 		},
 		{
-			name:    "Source code and no registry",
-			project: "./src/api",
-			dockerDetails: &DockerPackageResult{
-				ImageHash:   "IMAGE_ID",
-				SourceImage: "",
-				TargetImage: "my-project/my-service:azd-publish-0",
-			},
+			name:                    "Source code and no registry",
+			project:                 "./src/api",
+			packagePath:             "my-project/my-service:azd-publish-0",
+			imageHash:               "IMAGE_ID",
+			sourceImage:             "",
+			targetImage:             "my-project/my-service:azd-publish-0",
 			publishOptions:          &PublishOptions{},
 			expectError:             true,
 			expectDockerLoginCalled: false,
@@ -998,14 +1037,13 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			expectDockerPushCalled:  false,
 		},
 		{
-			name:     "Source image and registry",
-			image:    "nginx",
-			registry: osutil.NewExpandableString("contoso.azurecr.io"),
-			dockerDetails: &DockerPackageResult{
-				ImageHash:   "",
-				SourceImage: "nginx",
-				TargetImage: "my-project/nginx:azd-publish-0",
-			},
+			name:                    "Source image and registry",
+			image:                   "nginx",
+			registry:                osutil.NewExpandableString("contoso.azurecr.io"),
+			packagePath:             "my-project/nginx:azd-publish-0",
+			imageHash:               "",
+			sourceImage:             "nginx",
+			targetImage:             "my-project/nginx:azd-publish-0",
 			publishOptions:          &PublishOptions{},
 			expectDockerLoginCalled: true,
 			expectDockerPullCalled:  true,
@@ -1015,13 +1053,12 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			expectError:             false,
 		},
 		{
-			name:  "Source image and no registry",
-			image: "nginx",
-			dockerDetails: &DockerPackageResult{
-				ImageHash:   "",
-				SourceImage: "nginx",
-				TargetImage: "my-project/nginx:azd-publish-0",
-			},
+			name:                    "Source image and no registry",
+			image:                   "nginx",
+			packagePath:             "my-project/nginx:azd-publish-0",
+			imageHash:               "",
+			sourceImage:             "nginx",
+			targetImage:             "my-project/nginx:azd-publish-0",
 			publishOptions:          &PublishOptions{},
 			expectDockerLoginCalled: false,
 			expectDockerPullCalled:  false,
@@ -1031,14 +1068,12 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			expectError:             false,
 		},
 		{
-			name:     "With publish options overwrite",
-			project:  "./src/api",
-			registry: osutil.NewExpandableString("contoso.azurecr.io"),
-			dockerDetails: &DockerPackageResult{
-				ImageHash:   "IMAGE_ID",
-				SourceImage: "",
-				TargetImage: "my-project/my-service:azd-publish-0",
-			},
+			name:                    "With publish options overwrite",
+			project:                 "./src/api",
+			registry:                osutil.NewExpandableString("contoso.azurecr.io"),
+			imageHash:               "IMAGE_ID",
+			sourceImage:             "",
+			targetImage:             "my-project/my-service:azd-publish-0",
 			publishOptions:          nil,
 			expectDockerLoginCalled: true,
 			expectDockerPullCalled:  false,
@@ -1048,14 +1083,13 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			expectError:             false,
 		},
 		{
-			name:     "With publish options image override",
-			project:  "./src/api",
-			registry: osutil.NewExpandableString("contoso.azurecr.io"),
-			dockerDetails: &DockerPackageResult{
-				ImageHash:   "IMAGE_ID",
-				SourceImage: "",
-				TargetImage: "my-project/my-service:azd-publish-0",
-			},
+			name:                    "With publish options image override",
+			project:                 "./src/api",
+			registry:                osutil.NewExpandableString("contoso.azurecr.io"),
+			packagePath:             "my-project/my-service:azd-publish-0",
+			imageHash:               "IMAGE_ID",
+			sourceImage:             "",
+			targetImage:             "my-project/my-service:azd-publish-0",
 			publishOptions:          &PublishOptions{Image: "myregistry.azurecr.io/myapp/myservice:v2.0.0"},
 			expectDockerLoginCalled: true,
 			expectDockerPullCalled:  false,
@@ -1066,7 +1100,10 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 		},
 		{
 			name:                    "Empty package details",
-			dockerDetails:           &DockerPackageResult{},
+			packagePath:             "",
+			imageHash:               "",
+			sourceImage:             "",
+			targetImage:             "",
 			publishOptions:          &PublishOptions{},
 			expectError:             true,
 			expectDockerLoginCalled: false,
@@ -1076,7 +1113,10 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 		},
 		{
 			name:                    "Nil package details",
-			dockerDetails:           nil,
+			packagePath:             "",
+			imageHash:               "",
+			sourceImage:             "",
+			targetImage:             "",
 			publishOptions:          &PublishOptions{},
 			expectError:             true,
 			expectDockerLoginCalled: false,
@@ -1124,14 +1164,28 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			serviceConfig.Docker.Registry = tt.registry
 
 			packageOutput := &ServicePackageResult{
-				Details:     tt.dockerDetails,
-				PackagePath: tt.packagePath,
+				Artifacts: ArtifactCollection{
+					{
+						Kind:         ArtifactKindContainer,
+						Location:     tt.packagePath,
+						LocationKind: LocationKindLocal,
+						Metadata: map[string]string{
+							"imageHash":   tt.imageHash,
+							"sourceImage": tt.sourceImage,
+							"targetImage": tt.targetImage,
+						},
+					},
+				},
+			}
+
+			serviceContext := &ServiceContext{
+				Package: packageOutput.Artifacts,
 			}
 
 			publishResult, err := logProgress(
 				t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
 					return containerHelper.Publish(
-						*mockContext.Context, serviceConfig, packageOutput, targetResource, progress, tt.publishOptions)
+						*mockContext.Context, serviceConfig, serviceContext, targetResource, progress, tt.publishOptions)
 				},
 			)
 
@@ -1166,9 +1220,10 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			require.Equal(t, tt.expectDockerPushCalled, dockerPushCalled)
 
 			if !tt.expectError {
-				containerDetails, ok := publishResult.Details.(*ContainerPublishDetails)
-				require.True(t, ok)
-				require.Equal(t, tt.expectedRemoteImage, containerDetails.RemoteImage)
+				require.Len(t, publishResult.Artifacts, 1)
+				artifact := publishResult.Artifacts[0]
+				require.Equal(t, ArtifactKindContainer, artifact.Kind)
+				require.Equal(t, tt.expectedRemoteImage, artifact.Metadata["remoteImage"])
 			}
 		})
 	}

@@ -181,7 +181,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		// semantics to follow.
 		envValue, err := cmd.Flags().GetString(internal.EnvironmentNameFlagName)
 		if err != nil {
-			log.Printf("'%s'command asked for envFlag, but envFlag was not included in cmd.Flags().", cmd.CommandPath())
+			log.Printf("'%s' command did not include --environment so using default environment instead.", cmd.CommandPath())
 			envValue = ""
 		}
 
@@ -570,6 +570,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(consent.NewConsentManager)
 	container.MustRegisterNamedSingleton("ollama", llm.NewOllamaModelProvider)
 	container.MustRegisterNamedSingleton("azure", llm.NewAzureOpenAiModelProvider)
+	registerGitHubCopilotProvider(container)
 
 	// Agent security manager
 	container.MustRegisterSingleton(func() (*security.Manager, error) {

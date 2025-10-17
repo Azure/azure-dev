@@ -52,6 +52,7 @@ azfile
 azruntime
 azsdk
 azureai
+azureaiagent
 AZURECLI
 azurecodingagent
 azureedge
@@ -115,6 +116,7 @@ errcheck
 Errorf
 errorinfo
 errorlint
+evals
 eventhub
 eventhubs
 executil

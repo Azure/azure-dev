@@ -77,7 +77,7 @@ func (f *AgentFactory) Create(ctx context.Context, opts ...AgentCreateOption) (A
 	}
 
 	// Default model gets the chained handler to expose the UX experience for the agent
-	defaultModelContainer, err := f.llmManager.GetDefaultModel(llm.WithLogger(chainedHandler))
+	defaultModelContainer, err := f.llmManager.GetDefaultModel(ctx, llm.WithLogger(chainedHandler))
 	if err != nil {
 		defer cleanup()
 		return nil, err
@@ -85,7 +85,7 @@ func (f *AgentFactory) Create(ctx context.Context, opts ...AgentCreateOption) (A
 
 	// Sampling model only gets the file logger to output sampling actions
 	// We don't need UX for sampling requests right now
-	samplingModelContainer, err := f.llmManager.GetDefaultModel(llm.WithLogger(fileLogger))
+	samplingModelContainer, err := f.llmManager.GetDefaultModel(ctx, llm.WithLogger(fileLogger))
 	if err != nil {
 		defer cleanup()
 		return nil, err

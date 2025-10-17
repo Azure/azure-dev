@@ -81,7 +81,7 @@ import (
 //	    // Return defaults for known keys
 //	    switch key {
 //	    case "REGISTRY":
-//	        return "myregistry.azurecr.io"
+//	        return "registry.azurecr.io"
 //	    default:
 //	        return ""
 //	    }

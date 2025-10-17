@@ -3,18 +3,24 @@ parameters:
     type: object
     default:
       Windows:
+        GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
+        GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
         Pool: azsdk-pool
         OSVmImage: windows-2022
         Variables:
           BuildTarget: azd-windows-amd64.exe
           BuildOutputName: azd.exe
       Linux:
+        GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
+        GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
         Pool: azsdk-pool
         OSVmImage: ubuntu-22.04
         Variables:
           BuildTarget: azd-linux-amd64
           BuildOutputName: azd
       Mac:
+        GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
+        GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
         Pool: Azure Pipelines
         OSVmImage: macOS-latest
         OS: mac
@@ -49,6 +55,8 @@ jobs:
             arguments: >-
               -Version $(CLI_VERSION)
               -SourceVersion $(Build.SourceVersion)
+              -GitHubCopilotClientId ${{ build.value.GhCopilotClientId }}
+              -GitHubCopilotIntegrationId ${{ build.value.GhCopilotIntegrationId }}
             workingDirectory: cli/azd
           displayName: Build Go Binary
 

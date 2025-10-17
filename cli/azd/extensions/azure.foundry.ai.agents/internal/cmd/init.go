@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azureaiagent/internal/pkg/agents/agent_yaml"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -19,7 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 type initFlags struct {
@@ -146,35 +147,18 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 	fmt.Println()
 
 	// Download agent.yaml file from the provided URI and save it to project's "agents" directory
-	var agentYaml map[string]interface{}
-	var targetDir string
-	var err error
-
-	agentYaml, targetDir, err = a.downloadAgentYaml(ctx, flags.manifestPointer, flags.src)
+	agentManifest, targetDir, err := a.downloadAgentYaml(ctx, flags.manifestPointer, flags.src)
 	if err != nil {
 		return fmt.Errorf("downloading agent.yaml: %w", err)
 	}
 
-	agentId, ok := agentYaml["id"].(string)
-	if !ok || agentId == "" {
-		return fmt.Errorf("extracting id from agent YAML: id missing or empty")
-	}
-	agentKind, ok := agentYaml["kind"].(string)
-	if !ok || agentKind == "" {
-		return fmt.Errorf("extracting kind from agent YAML: kind missing or empty")
-	}
-	agentModelName, ok := agentYaml["model"].(string)
-	if !ok || agentModelName == "" {
-		return fmt.Errorf("extracting model name from agent YAML: model name missing or empty")
-	}
-
 	// Add the agent to the azd project (azure.yaml) services
-	if err := a.addToProject(ctx, targetDir, agentId, agentKind); err != nil {
+	if err := a.addToProject(ctx, targetDir, agentManifest); err != nil {
 		return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 	}
 
 	// Update environment with necessary env vars
-	if err := a.updateEnvironment(ctx, agentKind, agentModelName); err != nil {
+	if err := a.updateEnvironment(ctx, agentManifest); err != nil {
 		return fmt.Errorf("failed to update environment: %w", err)
 	}
 
@@ -412,7 +396,7 @@ func (a *InitAction) isGitHubUrl(manifestPointer string) bool {
 }
 
 func (a *InitAction) downloadAgentYaml(
-	ctx context.Context, manifestPointer string, targetDir string) (map[string]interface{}, string, error) {
+	ctx context.Context, manifestPointer string, targetDir string) (*agent_yaml.AgentManifest, string, error) {
 	if manifestPointer == "" {
 		return nil, "", fmt.Errorf("manifestPointer cannot be empty")
 	}
@@ -511,16 +495,15 @@ func (a *InitAction) downloadAgentYaml(
 		}
 	}
 
-	// Parse the YAML content into a map
-	var yamlData map[string]interface{}
-	if err := yaml.Unmarshal(content, &yamlData); err != nil {
-		return nil, "", fmt.Errorf("parsing YAML content: %w", err)
+	// Parse and validate the YAML content against AgentManifest structure
+	agentManifest, err := agent_yaml.LoadAndValidateAgentManifest(content)
+	if err != nil {
+		return nil, "", fmt.Errorf("AgentManifest %w", err)
 	}
 
-	agentId, ok := yamlData["id"].(string)
-	if !ok {
-		return nil, "", fmt.Errorf("missing or invalid 'id' field in YAML content")
-	}
+	fmt.Println("✓ YAML content successfully validated against AgentManifest format")
+
+	agentId := agentManifest.Agent.Name
 
 	// Use targetDir if provided or set to local file pointer, otherwise default to "src/{agentId}"
 	if targetDir == "" {
@@ -539,12 +522,13 @@ func (a *InitAction) downloadAgentYaml(
 	}
 
 	fmt.Printf("Processed agent.yaml at %s\n", filePath)
-	return yamlData, targetDir, nil
+	
+	return agentManifest, targetDir, nil
 }
 
-func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentId string, agentKind string) error {
+func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest) error {
 	var host string
-	switch agentKind {
+	switch agentManifest.Agent.Kind {
 	case "container":
 		host = "containerapp"
 	default:
@@ -552,7 +536,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentId
 	}
 
 	serviceConfig := &azdext.ServiceConfig{
-		Name:         agentId,
+		Name:         agentManifest.Agent.Name,
 		RelativePath: targetDir,
 		Host:         host,
 		Language:     "python",
@@ -564,7 +548,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentId
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
 
-	fmt.Printf("Added service '%s' to azure.yaml\n", agentId)
+	fmt.Printf("Added service '%s' to azure.yaml\n", agentManifest.Agent.Name)
 	return nil
 }
 
@@ -1029,8 +1013,8 @@ func downloadDirectoryContents(
 // 	return chosen, nil
 // }
 
-func (a *InitAction) updateEnvironment(ctx context.Context, agentKind string, agentModelName string) error {
-	fmt.Printf("Updating environment variables for agent kind: %s\n", agentKind)
+func (a *InitAction) updateEnvironment(ctx context.Context, agentManifest *agent_yaml.AgentManifest) error {
+	fmt.Printf("Updating environment variables for agent kind: %s\n", agentManifest.Agent.Kind)
 
 	// Get current environment
 	envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
@@ -1045,7 +1029,7 @@ func (a *InitAction) updateEnvironment(ctx context.Context, agentKind string, ag
 	envName := envResponse.Environment.Name
 
 	// Set environment variables based on agent kind
-	switch agentKind {
+	switch agentManifest.Agent.Kind {
 	case "hosted":
 		// Set environment variables for hosted agents
 		if err := a.setEnvVar(ctx, envName, "ENABLE_HOSTED_AGENTS", "true"); err != nil {
@@ -1059,11 +1043,11 @@ func (a *InitAction) updateEnvironment(ctx context.Context, agentKind string, ag
 	}
 
 	// Model information should be set regardless of agent kind
-	if err := a.setEnvVar(ctx, envName, "AZURE_AI_FOUNDRY_MODEL_NAME", agentModelName); err != nil {
+	if err := a.setEnvVar(ctx, envName, "AZURE_AI_FOUNDRY_MODEL_NAME", agentManifest.Agent.Model.Id); err != nil {
 		return err
 	}
 
-	fmt.Printf("Successfully updated environment variables for agent kind: %s\n", agentKind)
+	fmt.Printf("Successfully updated environment variables for agent kind: %s\n", agentManifest.Agent.Kind)
 	return nil
 }
 

@@ -1,12 +1,18 @@
 # Release History
 
-## 1.21.0-beta.1 (Unreleased)
+## 1.20.1 (2025-10-17)
 
 ### Features Added
 
-### Breaking Changes
+- [[#5693]](https://github.com/Azure/azure-dev/pull/5693) Add GitHub Copilot LLM backend integration for AI-assisted development workflows.
+- [[#5847]](https://github.com/Azure/azure-dev/pull/5847) Add support for language frameworks from extensions.
+- [[#5881]](https://github.com/Azure/azure-dev/pull/5881) Display Aspire dashboard URL for App Service deployments.
+- [[#5841]](https://github.com/Azure/azure-dev/pull/5841) Add `prepublish` and `postpublish` hooks to v1.0 azure.yaml schema.
 
 ### Bugs Fixed
+
+- [[#5939]](https://github.com/Azure/azure-dev/pull/5939) Fix Container App resource existence check returning incorrect results.
+- [[#5930]](https://github.com/Azure/azure-dev/pull/5930) Improve diagnostic message clarity for missing --environment flag.
 
 ### Other Changes
 

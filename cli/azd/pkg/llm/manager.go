@@ -4,6 +4,7 @@
 package llm
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -58,6 +59,8 @@ func (l LlmType) String() string {
 		return "Ollama"
 	case LlmTypeOpenAIAzure:
 		return "OpenAI Azure"
+	case LlmTypeGhCp:
+		return "GitHub Copilot"
 	default:
 		return string(l)
 	}
@@ -68,6 +71,8 @@ const (
 	LlmTypeOpenAIAzure LlmType = "azure"
 	// LlmTypeOllama represents the Ollama model type.
 	LlmTypeOllama LlmType = "ollama"
+	// LlmTypeGhCp represents the GitHub Copilot model type.
+	LlmTypeGhCp LlmType = "github-copilot"
 )
 
 // ModelMetadata represents a language model with its name and version information.
@@ -122,7 +127,7 @@ func (e InvalidLlmConfiguration) Error() string {
 }
 
 // GetDefaultModel returns the configured model from the global azd user configuration
-func (m Manager) GetDefaultModel(opts ...ModelOption) (*ModelContainer, error) {
+func (m Manager) GetDefaultModel(ctx context.Context, opts ...ModelOption) (*ModelContainer, error) {
 	userConfig, err := m.userConfigManager.Load()
 	if err != nil {
 		return nil, err
@@ -133,10 +138,5 @@ func (m Manager) GetDefaultModel(opts ...ModelOption) (*ModelContainer, error) {
 		return nil, fmt.Errorf("Default model type has not been set")
 	}
 
-	return m.ModelFactory.CreateModelContainer(LlmType(defaultModelType), opts...)
-}
-
-// GetModel returns the specified model type from the global azd user configuration
-func (m Manager) GetModel(modelType LlmType, opts ...ModelOption) (*ModelContainer, error) {
-	return m.ModelFactory.CreateModelContainer(modelType, opts...)
+	return m.ModelFactory.CreateModelContainer(ctx, LlmType(defaultModelType), opts...)
 }

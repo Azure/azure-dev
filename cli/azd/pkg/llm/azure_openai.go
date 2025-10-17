@@ -4,6 +4,7 @@
 package llm
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -37,7 +38,7 @@ func NewAzureOpenAiModelProvider(userConfigManager config.UserConfigManager) Mod
 // CreateModelContainer creates a model container for Azure OpenAI with configuration
 // loaded from user settings. It validates required fields and applies optional parameters
 // like temperature and max tokens before creating the OpenAI client.
-func (p *AzureOpenAiModelProvider) CreateModelContainer(opts ...ModelOption) (*ModelContainer, error) {
+func (p *AzureOpenAiModelProvider) CreateModelContainer(_ context.Context, opts ...ModelOption) (*ModelContainer, error) {
 	userConfig, err := p.userConfigManager.Load()
 	if err != nil {
 		return nil, err

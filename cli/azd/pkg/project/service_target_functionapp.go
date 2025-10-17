@@ -128,7 +128,8 @@ func (f *functionAppTarget) Deploy(
 	remoteBuild := serviceConfig.Language == ServiceLanguageJavaScript ||
 		serviceConfig.Language == ServiceLanguageTypeScript ||
 		serviceConfig.Language == ServiceLanguagePython
-	deployResult, err := f.cli.DeployFunctionAppUsingZipFile(
+
+	_, err = f.cli.DeployFunctionAppUsingZipFile(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
@@ -147,26 +148,6 @@ func (f *functionAppTarget) Deploy(
 	}
 
 	artifacts := ArtifactCollection{}
-
-	// Add deployment result as artifact
-	if deployResult != nil {
-		if err := artifacts.Add(&Artifact{
-			Kind:         ArtifactKindDeployment,
-			Location:     *deployResult,
-			LocationKind: LocationKindRemote,
-			Metadata: map[string]string{
-				"status":        *deployResult,
-				"serviceName":   serviceConfig.Name,
-				"resourceName":  targetResource.ResourceName(),
-				"resourceType":  targetResource.ResourceType(),
-				"subscription":  targetResource.SubscriptionId(),
-				"resourceGroup": targetResource.ResourceGroupName(),
-				"remoteBuild":   fmt.Sprintf("%t", remoteBuild),
-			},
-		}); err != nil {
-			return nil, fmt.Errorf("failed to add deployment artifact: %w", err)
-		}
-	}
 
 	// Add endpoints as artifacts
 	for _, endpoint := range endpoints {

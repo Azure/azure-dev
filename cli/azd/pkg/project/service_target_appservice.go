@@ -126,7 +126,7 @@ func (st *appServiceTarget) Deploy(
 	defer zipFile.Close()
 
 	progress.SetProgress(NewServiceProgress("Uploading deployment package"))
-	deployResult, err := st.cli.DeployAppServiceZip(
+	_, err = st.cli.DeployAppServiceZip(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
@@ -145,17 +145,6 @@ func (st *appServiceTarget) Deploy(
 	}
 
 	artifacts := ArtifactCollection{}
-
-	// Add deployment result as artifact
-	if deployResult != nil {
-		if err := artifacts.Add(&Artifact{
-			Kind:         ArtifactKindOutput,
-			Location:     *deployResult,
-			LocationKind: LocationKindRemote,
-		}); err != nil {
-			return nil, fmt.Errorf("failed to add deployment output artifact: %w", err)
-		}
-	}
 
 	// Add endpoints as artifacts
 	for _, endpoint := range endpoints {

@@ -14,6 +14,7 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
+        "github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -395,8 +396,49 @@ func (a *InitAction) isGitHubUrl(manifestPointer string) bool {
 		strings.Contains(hostname, "github")
 }
 
+type RegistryManifest struct {
+	registryName    string
+	manifestName    string
+	manifestVersion string
+}
+
+func (a *InitAction) isRegistryUrl(manifestPointer string) (bool, *RegistryManifest) {
+	// Check if it matches the format "azureml://registries/{registryName}/agentmanifests/{manifestName}/versions/{manifestVersion}"
+	if !strings.HasPrefix(manifestPointer, "azureml://") {
+		return false, nil
+	}
+
+	// Remove the "azureml://" prefix
+	path := strings.TrimPrefix(manifestPointer, "azureml://")
+
+	// Split by "/" to get all path components
+	parts := strings.Split(path, "/")
+
+	// Should have exactly 6 parts: "registries", registryName, "agentmanifests", manifestName, "versions", manifestVersion
+	if len(parts) != 6 {
+		return false, nil
+	}
+
+	// Validate the expected path structure
+	if parts[0] != "registries" || parts[2] != "agentmanifests" || parts[4] != "versions" {
+		return false, nil
+	}
+
+	// All variable parts should be non-empty
+	registryName := strings.TrimSpace(parts[1])
+	manifestName := strings.TrimSpace(parts[3])
+	manifestVersion := strings.TrimSpace(parts[5])
+
+	return registryName != "" && manifestName != "" && manifestVersion != "",
+		&RegistryManifest{
+			registryName:    registryName,
+			manifestName:    manifestName,
+			manifestVersion: manifestVersion,
+		}
+}
+
 func (a *InitAction) downloadAgentYaml(
-	ctx context.Context, manifestPointer string, targetDir string) (*agent_yaml.AgentManifest, string, error) {
+	ctx context.Context, manifestPointer string, targetDir string) (map[string]interface{}, string, error) {
 	if manifestPointer == "" {
 		return nil, "", fmt.Errorf("manifestPointer cannot be empty")
 	}
@@ -463,6 +505,22 @@ func (a *InitAction) downloadAgentYaml(
 		}
 
 		content = []byte(contentStr)
+	} else if isRegistry, registryManifest := a.isRegistryUrl(manifestPointer); isRegistry {
+		// Create Azure credential
+		cred, err := azidentity.NewDefaultAzureCredential(nil)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to create Azure credential: %w", err)
+		}
+
+		manifestClient := agents.NewRegistryAgentManifestClient(registryManifest.registryName, cred)
+
+		versionResult, err := manifestClient.GetAllLatest(ctx)
+		if err != nil {
+			return nil, "", fmt.Errorf("getting all latest manifests: %w", err)
+		}
+
+		fmt.Printf("Retrieved versioned result from registry: %s\n", string(versionResult))
+		return nil, "", fmt.Errorf("fetching from registry not yet implemented")
 	}
 
 	// Parse and validate the YAML content against AgentManifest structure

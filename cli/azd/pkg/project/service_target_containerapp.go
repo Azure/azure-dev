@@ -122,7 +122,7 @@ func (at *containerAppTarget) Publish(
 	if parsedImage, err := docker.ParseContainerImage(packagePath); err == nil {
 		if parsedImage.Registry != "" {
 			publishResult = &ServicePublishResult{
-				Artifacts: []Artifact{
+				Artifacts: ArtifactCollection{
 					{
 						Kind:         ArtifactKindContainer,
 						Location:     packagePath,
@@ -304,7 +304,7 @@ func (at *containerAppTarget) Deploy(
 		resourceName,
 		string(resourceTypeContainer))
 
-	resourceArtifact := Artifact{}
+	resourceArtifact := &Artifact{}
 	if err := mapper.Convert(target, &resourceArtifact); err == nil {
 		if err := deployArtifacts.Add(resourceArtifact); err != nil {
 			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
@@ -318,7 +318,7 @@ func (at *containerAppTarget) Deploy(
 
 	// Add endpoint artifacts
 	for _, endpoint := range endpoints {
-		deployArtifacts = append(deployArtifacts, Artifact{
+		deployArtifacts = append(deployArtifacts, &Artifact{
 			Kind:         ArtifactKindEndpoint,
 			Location:     endpoint,
 			LocationKind: LocationKindRemote,

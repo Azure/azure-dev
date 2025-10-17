@@ -32,7 +32,7 @@ func TestArtifactCollection(t *testing.T) {
 	ctx := NewServiceContext()
 
 	// Add some artifacts using the available Add method
-	err := ctx.Build.Add(Artifact{
+	err := ctx.Build.Add(&Artifact{
 		Kind:         ArtifactKindDirectory,
 		Location:     "/path/to/app.exe",
 		LocationKind: LocationKindLocal,
@@ -40,7 +40,7 @@ func TestArtifactCollection(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = ctx.Package.Add(Artifact{
+	err = ctx.Package.Add(&Artifact{
 		Kind:         ArtifactKindArchive,
 		Location:     "/path/to/package.zip",
 		LocationKind: LocationKindLocal,
@@ -48,7 +48,7 @@ func TestArtifactCollection(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = ctx.Package.Add(Artifact{
+	err = ctx.Package.Add(&Artifact{
 		Kind:         ArtifactKindContainer,
 		Location:     "registry.io/myapp:latest",
 		LocationKind: LocationKindRemote,

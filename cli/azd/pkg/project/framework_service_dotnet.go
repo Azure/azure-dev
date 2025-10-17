@@ -99,17 +99,16 @@ func (dp *dotnetProject) Restore(
 	}
 
 	// Create restore artifact for the project directory that was restored
-	restoreArtifact := Artifact{
-		Kind:         ArtifactKindDirectory,
-		Location:     serviceConfig.Path(),
-		LocationKind: LocationKindLocal,
-		Metadata: map[string]string{
-			"projectFile": projFile,
-			"framework":   "dotnet",
-		},
-	}
-
-	return &ServiceRestoreResult{Artifacts: []Artifact{restoreArtifact}}, nil
+	return &ServiceRestoreResult{Artifacts: ArtifactCollection{
+		{
+			Kind:         ArtifactKindDirectory,
+			Location:     serviceConfig.Path(),
+			LocationKind: LocationKindLocal,
+			Metadata: map[string]string{
+				"projectFile": projFile,
+				"framework":   "dotnet",
+			},
+		}}}, nil
 }
 
 // Builds the dotnet project using the dotnet CLI
@@ -147,19 +146,18 @@ func (dp *dotnetProject) Build(
 	}
 
 	// Create build artifact for dotnet build output
-	buildArtifact := Artifact{
-		Kind:         ArtifactKindDirectory,
-		Location:     buildOutputDir,
-		LocationKind: LocationKindLocal,
-		Metadata: map[string]string{
-			"buildOutputDir": buildOutputDir,
-			"configuration":  defaultDotNetBuildConfiguration,
-			"framework":      "dotnet",
-		},
-	}
-
 	return &ServiceBuildResult{
-		Artifacts: []Artifact{buildArtifact},
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     buildOutputDir,
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"buildOutputDir": buildOutputDir,
+					"configuration":  defaultDotNetBuildConfiguration,
+					"framework":      "dotnet",
+				},
+			}},
 	}, nil
 }
 
@@ -204,19 +202,18 @@ func (dp *dotnetProject) Package(
 	}
 
 	// Create package artifact for dotnet publish output
-	packageArtifact := Artifact{
-		Kind:         ArtifactKindDirectory,
-		Location:     packageDest,
-		LocationKind: LocationKindLocal,
-		Metadata: map[string]string{
-			"packagePath":   packageDest,
-			"framework":     "dotnet",
-			"configuration": defaultDotNetBuildConfiguration,
-		},
-	}
-
 	return &ServicePackageResult{
-		Artifacts: []Artifact{packageArtifact},
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     packageDest,
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"packagePath":   packageDest,
+					"framework":     "dotnet",
+					"configuration": defaultDotNetBuildConfiguration,
+				},
+			}},
 	}, nil
 }
 

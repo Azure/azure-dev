@@ -617,11 +617,11 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			serviceConfig.RelativePath = tt.project
 			serviceConfig.Docker.Registry = tt.registry
 
-			var packageArtifacts []Artifact
+			var packageArtifacts ArtifactCollection
 			if tt.dockerArtifact != nil {
-				packageArtifacts = []Artifact{*tt.dockerArtifact}
+				packageArtifacts = ArtifactCollection{tt.dockerArtifact}
 			} else if tt.packagePath != "" {
-				packageArtifacts = []Artifact{
+				packageArtifacts = ArtifactCollection{
 					{
 						Kind:         ArtifactKindContainer,
 						Location:     tt.packagePath,
@@ -1164,7 +1164,7 @@ func Test_ContainerHelper_Publish(t *testing.T) {
 			serviceConfig.Docker.Registry = tt.registry
 
 			packageOutput := &ServicePackageResult{
-				Artifacts: []Artifact{
+				Artifacts: ArtifactCollection{
 					{
 						Kind:         ArtifactKindContainer,
 						Location:     tt.packagePath,

@@ -51,7 +51,7 @@ func (pp *customProject) Restore(
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
 	return &ServiceRestoreResult{
-		Artifacts: []Artifact{
+		Artifacts: ArtifactCollection{
 			{
 				Kind:         ArtifactKindDirectory,
 				Location:     serviceConfig.Path(),
@@ -73,7 +73,7 @@ func (pp *customProject) Build(
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	return &ServiceBuildResult{
-		Artifacts: []Artifact{
+		Artifacts: ArtifactCollection{
 			{
 				Kind:         ArtifactKindDirectory,
 				Location:     serviceConfig.Path(),
@@ -98,17 +98,15 @@ func (pp *customProject) Package(
 	}
 
 	// Create directory artifact for custom language output
-	packageArtifact := Artifact{
-		Kind:         ArtifactKindDirectory,
-		Location:     serviceConfig.OutputPath,
-		LocationKind: LocationKindLocal,
-		Metadata: map[string]string{
-			"language":  "custom",
-			"framework": "custom",
-		},
-	}
-
 	return &ServicePackageResult{
-		Artifacts: []Artifact{packageArtifact},
+		Artifacts: ArtifactCollection{{
+			Kind:         ArtifactKindDirectory,
+			Location:     serviceConfig.OutputPath,
+			LocationKind: LocationKindLocal,
+			Metadata: map[string]string{
+				"language":  "custom",
+				"framework": "custom",
+			},
+		}},
 	}, nil
 }

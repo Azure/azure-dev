@@ -313,7 +313,7 @@ func (t *aksTarget) Deploy(
 		}
 
 		for _, endpoint := range endpoints {
-			if err := artifacts.Add(Artifact{
+			if err := artifacts.Add(&Artifact{
 				Kind:         ArtifactKindEndpoint,
 				Location:     endpoint,
 				LocationKind: LocationKindRemote,
@@ -323,7 +323,7 @@ func (t *aksTarget) Deploy(
 		}
 	}
 
-	resourceArtifact := Artifact{}
+	resourceArtifact := &Artifact{}
 	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
 		if err := artifacts.Add(resourceArtifact); err != nil {
 			return nil, fmt.Errorf("failed to add resource artifact: %w", err)

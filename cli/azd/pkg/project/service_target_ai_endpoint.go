@@ -111,7 +111,7 @@ func (m *aiEndpointTarget) Deploy(
 			return nil, err
 		}
 
-		if err := artifacts.Add(Artifact{
+		if err := artifacts.Add(&Artifact{
 			Kind:         ArtifactKindDeployment,
 			Location:     flow.Path,
 			LocationKind: LocationKindLocal,
@@ -137,7 +137,7 @@ func (m *aiEndpointTarget) Deploy(
 			return nil, err
 		}
 
-		if err := artifacts.Add(Artifact{
+		if err := artifacts.Add(&Artifact{
 			Kind:         ArtifactKindDeployment,
 			Location:     *envVersion.ID,
 			LocationKind: LocationKindRemote,
@@ -158,7 +158,7 @@ func (m *aiEndpointTarget) Deploy(
 			return nil, err
 		}
 
-		if err := artifacts.Add(Artifact{
+		if err := artifacts.Add(&Artifact{
 			Kind:         ArtifactKindDeployment,
 			Location:     *modelVersion.ID,
 			LocationKind: LocationKindRemote,
@@ -206,7 +206,7 @@ func (m *aiEndpointTarget) Deploy(
 			return nil, fmt.Errorf("failed deleting previous deployments: %w", err)
 		}
 
-		if err := artifacts.Add(Artifact{
+		if err := artifacts.Add(&Artifact{
 			Kind:         ArtifactKindDeployment,
 			Location:     *onlineDeployment.ID,
 			LocationKind: LocationKindRemote,
@@ -225,7 +225,7 @@ func (m *aiEndpointTarget) Deploy(
 	}
 
 	for _, endpoint := range endpoints {
-		if err := artifacts.Add(Artifact{
+		if err := artifacts.Add(&Artifact{
 			Kind:         ArtifactKindEndpoint,
 			Location:     endpoint,
 			LocationKind: LocationKindRemote,
@@ -244,7 +244,7 @@ func (m *aiEndpointTarget) Deploy(
 		workspaceScope.Workspace(),
 	)
 
-	if err := artifacts.Add(Artifact{
+	if err := artifacts.Add(&Artifact{
 		Kind:         ArtifactKindResource,
 		Location:     workspaceResourceId,
 		LocationKind: LocationKindRemote,

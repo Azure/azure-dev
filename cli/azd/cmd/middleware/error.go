@@ -13,6 +13,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/agent"
 	"github.com/azure/azure-dev/cli/azd/internal/agent/feedback"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -21,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type ErrorMiddleware struct {
@@ -88,6 +92,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 	// Warn user that this is an alpha feature
 	e.console.WarnForFeature(ctx, llm.FeatureLlm)
+	ctx, span := tracing.Start(ctx, events.AgentTroubleshootEvent)
+	defer span.End()
 
 	originalError := err
 	azdAgent, err := e.agentFactory.Create(
@@ -95,6 +101,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		agent.WithDebug(e.global.EnableDebugLogging),
 	)
 	if err != nil {
+		span.SetStatus(codes.Error, "agent.creation.failed")
 		return nil, err
 	}
 
@@ -108,6 +115,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 	for {
 		if originalError == nil {
+			span.SetStatus(codes.Ok, "agent.fix.succeeded")
 			break
 		}
 
@@ -115,9 +123,12 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 		if previousError != nil && originalError.Error() == previousError.Error() {
 			attempt++
+			span.SetAttributes(fields.AgentFixAttempts.Int(attempt))
+
 			if attempt >= 3 {
 				e.console.Message(ctx, fmt.Sprintf("Please review the error and fix it manually, "+
 					"%s was unable to resolve the error after multiple attempts.", agentName))
+				span.SetStatus(codes.Error, "agent.fix.max_attempts_reached")
 				return actionResult, originalError
 			}
 		}
@@ -129,7 +140,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		errorInput := originalError.Error()
 
 		e.console.Message(ctx, "")
-		confirm, err := e.checkErrorHandlingConsent(
+		confirmTroubleshoot, err := e.checkErrorHandlingConsent(
 			ctx,
 			"mcp.errorHandling.troubleshooting",
 			fmt.Sprintf("Generate troubleshooting steps using %s?", agentName),
@@ -139,10 +150,11 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			true,
 		)
 		if err != nil {
+			span.SetStatus(codes.Error, "agent.consent.failed")
 			return nil, fmt.Errorf("prompting to provide troubleshooting steps: %w", err)
 		}
 
-		if confirm {
+		if confirmTroubleshoot {
 			// Provide manual steps for troubleshooting
 			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 				`Steps to follow:
@@ -157,6 +169,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 					e.console.Message(ctx, output.WithMarkdown(agentOutput))
 				}
 
+				span.SetStatus(codes.Error, "agent.send_message.failed")
 				return nil, err
 			}
 
@@ -168,7 +181,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		}
 
 		// Ask user if they want to let AI fix the
-		confirm, err = e.checkErrorHandlingConsent(
+		confirmFix, err := e.checkErrorHandlingConsent(
 			ctx,
 			"mcp.errorHandling.fix",
 			fmt.Sprintf("Fix this error using %s?", agentName),
@@ -178,10 +191,16 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			false,
 		)
 		if err != nil {
+			span.SetStatus(codes.Error, "agent.consent.failed")
 			return nil, fmt.Errorf("prompting to fix error using %s: %w", agentName, err)
 		}
 
-		if !confirm {
+		if !confirmFix {
+			if confirmTroubleshoot {
+				span.SetStatus(codes.Ok, "agent.troubleshoot.only")
+			} else {
+				span.SetStatus(codes.Error, "agent.fix.declined")
+			}
 			return actionResult, err
 		}
 
@@ -200,11 +219,13 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				e.console.Message(ctx, output.WithMarkdown(agentOutput))
 			}
 
+			span.SetStatus(codes.Error, "agent.send_message.failed")
 			return nil, err
 		}
 
 		// Ask the user to add feedback
 		if err := e.collectAndApplyFeedback(ctx, azdAgent, AIDisclaimer); err != nil {
+			span.SetStatus(codes.Error, "agent.collect_feedback.failed")
 			return nil, err
 		}
 

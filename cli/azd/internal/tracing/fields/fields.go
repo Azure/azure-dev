@@ -281,3 +281,9 @@ const (
 	// `error_code` property of JSON-RPC request or response. Type: int.
 	JsonRpcErrorCode = semconv.RPCJSONRPCErrorCodeKey
 )
+
+// Agent-troubleshooting related fields
+const (
+	// Number of auto-fix.attempts
+	AgentFixAttempts = attribute.Key("agent.fix.attempts")
+)

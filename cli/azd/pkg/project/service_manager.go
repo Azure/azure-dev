@@ -336,24 +336,14 @@ func (sm *serviceManager) Package(
 
 	// Ensure restore has been performed if required
 	if frameworkRequirements.Package.RequireRestore && len(serviceContext.Restore) == 0 {
-		restoreResult, err := sm.Restore(ctx, serviceConfig, serviceContext, progress)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := serviceContext.Restore.Add(restoreResult.Artifacts...); err != nil {
+		if _, err := sm.Restore(ctx, serviceConfig, serviceContext, progress); err != nil {
 			return nil, err
 		}
 	}
 
 	// Ensure build has been performed if required
 	if frameworkRequirements.Package.RequireBuild && len(serviceContext.Build) == 0 {
-		buildResult, err := sm.Build(ctx, serviceConfig, serviceContext, progress)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := serviceContext.Build.Add(buildResult.Artifacts...); err != nil {
+		if _, err := sm.Build(ctx, serviceConfig, serviceContext, progress); err != nil {
 			return nil, err
 		}
 	}
@@ -394,7 +384,7 @@ func (sm *serviceManager) Package(
 
 	// Package path can be a file path or a container image name
 	// We only move to desired output path for file based packages
-	if packageArtifact, has := serviceContext.Package.FindFirst(); has {
+	if packageArtifact, has := serviceContext.Package.FindLast(); has {
 		_, err = os.Stat(packageArtifact.Location)
 		hasPackageFile := err == nil
 
@@ -454,13 +444,8 @@ func (sm *serviceManager) Publish(
 
 	// Ensure package has been performed if no package artifacts exist
 	if len(serviceContext.Package) == 0 {
-		packageResult, err := sm.Package(ctx, serviceConfig, serviceContext, progress, &PackageOptions{})
-		if err != nil {
+		if _, err := sm.Package(ctx, serviceConfig, serviceContext, progress, &PackageOptions{}); err != nil {
 			return nil, err
-		}
-
-		if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
-			return nil, fmt.Errorf("failed to add package artifacts to service context: %w", err)
 		}
 	}
 
@@ -516,24 +501,14 @@ func (sm *serviceManager) Deploy(
 
 	// Ensure package has been performed if no package artifacts exist
 	if len(serviceContext.Package) == 0 {
-		packageResult, err := sm.Package(ctx, serviceConfig, serviceContext, progress, &PackageOptions{})
-		if err != nil {
-			return nil, err
-		}
-
-		if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
+		if _, err := sm.Package(ctx, serviceConfig, serviceContext, progress, &PackageOptions{}); err != nil {
 			return nil, err
 		}
 	}
 
 	// Ensure publish has been performed if no publish artifacts exist
 	if len(serviceContext.Publish) == 0 {
-		publishResult, err := sm.Publish(ctx, serviceConfig, serviceContext, progress, &PublishOptions{})
-		if err != nil {
-			return nil, err
-		}
-
-		if err := serviceContext.Publish.Add(publishResult.Artifacts...); err != nil {
+		if _, err := sm.Publish(ctx, serviceConfig, serviceContext, progress, &PublishOptions{}); err != nil {
 			return nil, err
 		}
 	}
@@ -571,7 +546,7 @@ func (sm *serviceManager) Deploy(
 	overriddenEndpoints := OverriddenEndpoints(ctx, serviceConfig, sm.env)
 	if len(overriddenEndpoints) > 0 {
 		for _, endpoint := range overriddenEndpoints {
-			if err := deployResult.Artifacts.Add(Artifact{
+			if err := deployResult.Artifacts.Add(&Artifact{
 				Kind:         ArtifactKindEndpoint,
 				LocationKind: LocationKindRemote,
 				Location:     endpoint,

@@ -22,7 +22,7 @@ func init() {
 // This allows other packages to convert project types to proto types via the mapper.
 func registerProjectMappings() {
 	// Artifact -> proto Artifact conversion
-	mapper.MustRegister(func(ctx context.Context, src Artifact) (*azdext.Artifact, error) {
+	mapper.MustRegister(func(ctx context.Context, src *Artifact) (*azdext.Artifact, error) {
 		protoKind, err := artifactKindToProto(src.Kind)
 		if err != nil {
 			return nil, fmt.Errorf("converting artifact kind: %w", err)
@@ -90,7 +90,7 @@ func registerProjectMappings() {
 			if err := mapper.Convert(protoArtifact, &artifact); err != nil {
 				return nil, err
 			}
-			artifacts[i] = artifact
+			artifacts[i] = &artifact
 		}
 		return artifacts, nil
 	})
@@ -179,13 +179,9 @@ func registerProjectMappings() {
 
 	// ServicePackageResult -> proto ServicePackageResult conversion
 	mapper.MustRegister(func(ctx context.Context, src ServicePackageResult) (*azdext.ServicePackageResult, error) {
-		artifacts := make([]*azdext.Artifact, len(src.Artifacts))
-		for i, artifact := range src.Artifacts {
-			var proto *azdext.Artifact
-			if err := mapper.Convert(artifact, &proto); err != nil {
-				return nil, err
-			}
-			artifacts[i] = proto
+		var artifacts []*azdext.Artifact
+		if err := mapper.Convert(src.Artifacts, &artifacts); err != nil {
+			return nil, err
 		}
 		return &azdext.ServicePackageResult{
 			Artifacts: artifacts,
@@ -194,13 +190,9 @@ func registerProjectMappings() {
 
 	// ServicePublishResult -> proto ServicePublishResult conversion
 	mapper.MustRegister(func(ctx context.Context, src ServicePublishResult) (*azdext.ServicePublishResult, error) {
-		artifacts := make([]*azdext.Artifact, len(src.Artifacts))
-		for i, artifact := range src.Artifacts {
-			var proto *azdext.Artifact
-			if err := mapper.Convert(artifact, &proto); err != nil {
-				return nil, err
-			}
-			artifacts[i] = proto
+		var artifacts []*azdext.Artifact
+		if err := mapper.Convert(src.Artifacts, &artifacts); err != nil {
+			return nil, err
 		}
 		return &azdext.ServicePublishResult{
 			Artifacts: artifacts,
@@ -368,19 +360,11 @@ func registerProjectMappings() {
 			return &ServicePackageResult{}, nil
 		}
 
-		result := &ServicePackageResult{
-			Artifacts: make([]Artifact, 0, len(src.Artifacts)),
-		}
+		result := &ServicePackageResult{}
 
 		// Convert artifacts
-		for _, protoArtifact := range src.Artifacts {
-			var artifact Artifact
-			if err := mapper.Convert(protoArtifact, &artifact); err != nil {
-				return nil, err
-			}
-			if err := result.Artifacts.Add(artifact); err != nil {
-				return nil, fmt.Errorf("failed to add artifact: %w", err)
-			}
+		if err := mapper.Convert(src.Artifacts, &result.Artifacts); err != nil {
+			return nil, fmt.Errorf("failed to convert artifacts: %w", err)
 		}
 
 		// TODO: Legacy docker details handling removed - metadata is now stored in artifact metadata
@@ -394,19 +378,11 @@ func registerProjectMappings() {
 			return &ServicePublishResult{}, nil
 		}
 
-		result := &ServicePublishResult{
-			Artifacts: make([]Artifact, 0, len(src.Artifacts)),
-		}
+		result := &ServicePublishResult{}
 
 		// Convert artifacts
-		for _, protoArtifact := range src.Artifacts {
-			var artifact Artifact
-			if err := mapper.Convert(protoArtifact, &artifact); err != nil {
-				return nil, err
-			}
-			if err := result.Artifacts.Add(artifact); err != nil {
-				return nil, fmt.Errorf("failed to add artifact: %w", err)
-			}
+		if err := mapper.Convert(src.Artifacts, &result.Artifacts); err != nil {
+			return nil, fmt.Errorf("failed to convert artifacts: %w", err)
 		}
 
 		// TODO: Legacy container details handling removed - metadata is now stored in artifact metadata
@@ -420,18 +396,14 @@ func registerProjectMappings() {
 			return nil, nil
 		}
 
-		protoResult := &azdext.ServiceDeployResult{}
-
-		// Convert artifacts
-		for _, artifact := range src.Artifacts {
-			var proto *azdext.Artifact
-			if err := mapper.Convert(artifact, &proto); err != nil {
-				return nil, err
-			}
-			protoResult.Artifacts = append(protoResult.Artifacts, proto)
+		var artifacts []*azdext.Artifact
+		if err := mapper.Convert(src.Artifacts, &artifacts); err != nil {
+			return nil, err
 		}
 
-		return protoResult, nil
+		return &azdext.ServiceDeployResult{
+			Artifacts: artifacts,
+		}, nil
 	})
 
 	// proto ServiceDeployResult -> ServiceDeployResult conversion
@@ -441,20 +413,13 @@ func registerProjectMappings() {
 		}
 
 		result := &ServiceDeployResult{
-			Artifacts: make([]Artifact, 0, len(src.Artifacts)),
 			// Note: TargetResourceId, Kind, and Endpoints are not available in simplified proto
 			// Extensions using the external service target may need to store this info in artifact metadata
 		}
 
 		// Convert artifacts
-		for _, protoArtifact := range src.Artifacts {
-			var artifact Artifact
-			if err := mapper.Convert(protoArtifact, &artifact); err != nil {
-				return nil, err
-			}
-			if err := result.Artifacts.Add(artifact); err != nil {
-				return nil, fmt.Errorf("failed to add artifact: %w", err)
-			}
+		if err := mapper.Convert(src.Artifacts, &result.Artifacts); err != nil {
+			return nil, fmt.Errorf("failed to convert artifacts: %w", err)
 		}
 
 		return result, nil

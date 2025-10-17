@@ -74,18 +74,20 @@ func (m *mavenProject) Restore(
 	}
 
 	// Create restore artifact for the project directory with resolved dependencies
-	restoreArtifact := Artifact{
-		Kind:         ArtifactKindDirectory,
-		Location:     serviceConfig.Path(),
-		LocationKind: LocationKindLocal,
-		Metadata: map[string]string{
-			"projectPath":  serviceConfig.Path(),
-			"framework":    "maven",
-			"dependencies": ".m2/repository",
+	return &ServiceRestoreResult{
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     serviceConfig.Path(),
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"projectPath":  serviceConfig.Path(),
+					"framework":    "maven",
+					"dependencies": ".m2/repository",
+				},
+			},
 		},
-	}
-
-	return &ServiceRestoreResult{Artifacts: []Artifact{restoreArtifact}}, nil
+	}, nil
 }
 
 // Builds the maven project
@@ -100,19 +102,19 @@ func (m *mavenProject) Build(
 		return nil, err
 	}
 	// Create build artifact for maven compile output
-	buildArtifact := Artifact{
-		Kind:         ArtifactKindDirectory,
-		Location:     serviceConfig.Path(),
-		LocationKind: LocationKindLocal,
-		Metadata: map[string]string{
-			"buildPath": serviceConfig.Path(),
-			"framework": "maven",
-			"target":    "target",
-		},
-	}
-
 	return &ServiceBuildResult{
-		Artifacts: []Artifact{buildArtifact},
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     serviceConfig.Path(),
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"buildPath": serviceConfig.Path(),
+					"framework": "maven",
+					"target":    "target",
+				},
+			},
+		},
 	}, nil
 }
 
@@ -130,17 +132,18 @@ func (m *mavenProject) Package(
 	if serviceConfig.Host == AzureFunctionTarget {
 		if serviceConfig.OutputPath != "" {
 			// If the 'dist' property is specified, we use it directly.
-			packageArtifact := Artifact{
-				Kind:         ArtifactKindDirectory,
-				Location:     filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath),
-				LocationKind: LocationKindLocal,
-				Metadata: map[string]string{
-					"host":      "azure-function",
-					"framework": "maven",
-				},
-			}
 			return &ServicePackageResult{
-				Artifacts: []Artifact{packageArtifact},
+				Artifacts: ArtifactCollection{
+					{
+						Kind:         ArtifactKindDirectory,
+						Location:     filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath),
+						LocationKind: LocationKindLocal,
+						Metadata: map[string]string{
+							"host":      "azure-function",
+							"framework": "maven",
+						},
+					},
+				},
 			}, nil
 		}
 
@@ -149,18 +152,19 @@ func (m *mavenProject) Package(
 			return nil, err
 		}
 
-		funcAppArtifact := Artifact{
-			Kind:         ArtifactKindDirectory,
-			Location:     funcAppDir,
-			LocationKind: LocationKindLocal,
-			Metadata: map[string]string{
-				"host":       "azure-function",
-				"funcAppDir": funcAppDir,
-				"framework":  "maven",
-			},
-		}
 		return &ServicePackageResult{
-			Artifacts: []Artifact{funcAppArtifact},
+			Artifacts: ArtifactCollection{
+				{
+					Kind:         ArtifactKindDirectory,
+					Location:     funcAppDir,
+					LocationKind: LocationKindLocal,
+					Metadata: map[string]string{
+						"host":       "azure-function",
+						"funcAppDir": funcAppDir,
+						"framework":  "maven",
+					},
+				},
+			},
 		}, nil
 	}
 
@@ -213,18 +217,18 @@ func (m *mavenProject) Package(
 	}
 
 	// Create package artifact for maven package output
-	packageArtifact := Artifact{
-		Kind:         ArtifactKindDirectory,
-		Location:     packageDest,
-		LocationKind: LocationKindLocal,
-		Metadata: map[string]string{
-			"packageDest": packageDest,
-			"framework":   "maven",
-		},
-	}
-
 	return &ServicePackageResult{
-		Artifacts: []Artifact{packageArtifact},
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     packageDest,
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"packageDest": packageDest,
+					"framework":   "maven",
+				},
+			},
+		},
 	}, nil
 }
 

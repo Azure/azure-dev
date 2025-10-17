@@ -82,7 +82,7 @@ func TestDockerProjectOptionsMapping(t *testing.T) {
 
 func TestServicePackageResultMapping(t *testing.T) {
 	packageResult := &ServicePackageResult{
-		Artifacts: []Artifact{
+		Artifacts: ArtifactCollection{
 			{
 				Kind:         ArtifactKindArchive,
 				Location:     "./dist",

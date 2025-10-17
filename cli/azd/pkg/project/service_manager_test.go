@@ -579,7 +579,7 @@ func (f *fakeFramework) Restore(
 	}
 
 	return &ServiceRestoreResult{
-		Artifacts: []Artifact{
+		Artifacts: ArtifactCollection{
 			{
 				Kind:         ArtifactKindDirectory,
 				Location:     "/fake/restore/path",
@@ -610,7 +610,7 @@ func (f *fakeFramework) Build(
 	}
 
 	return &ServiceBuildResult{
-		Artifacts: []Artifact{
+		Artifacts: ArtifactCollection{
 			{
 				Kind:         ArtifactKindDirectory,
 				Location:     "/fake/build/path",
@@ -641,7 +641,7 @@ func (f *fakeFramework) Package(
 	}
 
 	return &ServicePackageResult{
-		Artifacts: []Artifact{
+		Artifacts: ArtifactCollection{
 			{
 				Kind:         ArtifactKindArchive,
 				Location:     "/fake/package/path",
@@ -691,7 +691,7 @@ func (st *fakeServiceTarget) Package(
 	}
 
 	return &ServicePackageResult{
-		Artifacts: []Artifact{
+		Artifacts: ArtifactCollection{
 			{
 				Kind:         ArtifactKindArchive,
 				Location:     "/fake/service-target/package/path",
@@ -717,7 +717,7 @@ func (st *fakeServiceTarget) Publish(
 		*publishCalled = true
 	}
 	return &ServicePublishResult{
-		Artifacts: []Artifact{
+		Artifacts: ArtifactCollection{
 			{
 				Kind:         ArtifactKindEndpoint,
 				Location:     "https://fake-published.azurewebsites.net",
@@ -749,7 +749,7 @@ func (st *fakeServiceTarget) Deploy(
 	}
 
 	return &ServiceDeployResult{
-		Artifacts: []Artifact{
+		Artifacts: ArtifactCollection{
 			{
 				Kind:         ArtifactKindDeployment,
 				Location:     "https://fake-app.azurewebsites.net",

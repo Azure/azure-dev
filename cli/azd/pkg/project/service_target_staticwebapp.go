@@ -76,7 +76,7 @@ func (at *staticWebAppTarget) Package(
 		// The swa framework service does not set a packagePath during package b/c the output
 		// is governed by the swa-cli.config.json file.
 		return &ServicePackageResult{
-			Artifacts: []Artifact{
+			Artifacts: ArtifactCollection{
 				{
 					Kind:         ArtifactKindConfig,
 					Location:     "saw-cli.config.json",
@@ -98,7 +98,7 @@ func (at *staticWebAppTarget) Package(
 	}
 
 	return &ServicePackageResult{
-		Artifacts: []Artifact{
+		Artifacts: ArtifactCollection{
 			{
 				Kind:         ArtifactKindDirectory,
 				Location:     packagePath,
@@ -206,7 +206,7 @@ func (at *staticWebAppTarget) Deploy(
 
 	// Add deployment result as artifact
 	if res != "" {
-		if err := artifacts.Add(Artifact{
+		if err := artifacts.Add(&Artifact{
 			Kind:         ArtifactKindOutput,
 			Location:     res,
 			LocationKind: LocationKindRemote,
@@ -217,7 +217,7 @@ func (at *staticWebAppTarget) Deploy(
 
 	// Add endpoints as artifacts
 	for _, endpoint := range endpoints {
-		if err := artifacts.Add(Artifact{
+		if err := artifacts.Add(&Artifact{
 			Kind:         ArtifactKindEndpoint,
 			Location:     endpoint,
 			LocationKind: LocationKindRemote,
@@ -229,7 +229,7 @@ func (at *staticWebAppTarget) Deploy(
 	// Add resource artifact
 	resourceArtifact := Artifact{}
 	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
-		if err := artifacts.Add(resourceArtifact); err != nil {
+		if err := artifacts.Add(&resourceArtifact); err != nil {
 			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
 		}
 	}

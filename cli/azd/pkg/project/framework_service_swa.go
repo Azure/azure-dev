@@ -114,7 +114,7 @@ func (p *swaProject) Build(
 	}
 
 	return &ServiceBuildResult{
-		Artifacts: []Artifact{
+		Artifacts: ArtifactCollection{
 			{
 				Kind:         ArtifactKindDirectory,
 				Location:     serviceConfig.Path(),
@@ -135,7 +135,7 @@ func (p *swaProject) Package(
 	_ *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	return &ServicePackageResult{
-		Artifacts: []Artifact{
+		Artifacts: ArtifactCollection{
 			{
 				Kind:         ArtifactKindDirectory,
 				Location:     serviceConfig.Path(),

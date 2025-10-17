@@ -460,7 +460,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 	// Add deployment result as artifact if Bicep deployment was used
 	if bicepDeploymentResult != nil {
-		if err := artifacts.Add(Artifact{
+		if err := artifacts.Add(&Artifact{
 			Kind:         ArtifactKindDeployment,
 			Location:     bicepDeploymentResult.Name,
 			LocationKind: LocationKindRemote,
@@ -480,7 +480,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 		}
 	} else if yamlDeploymentError == nil {
 		// Add YAML deployment artifact if YAML deployment was successful
-		if err := artifacts.Add(Artifact{
+		if err := artifacts.Add(&Artifact{
 			Kind:         ArtifactKindDeployment,
 			Location:     "yaml-deployment-completed",
 			LocationKind: LocationKindRemote,
@@ -499,7 +499,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 	// Add endpoints as artifacts
 	for _, endpoint := range endpoints {
-		if err := artifacts.Add(Artifact{
+		if err := artifacts.Add(&Artifact{
 			Kind:         ArtifactKindEndpoint,
 			Location:     endpoint,
 			LocationKind: LocationKindRemote,
@@ -509,7 +509,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 	}
 
 	// Add resource artifact
-	resourceArtifact := Artifact{}
+	resourceArtifact := &Artifact{}
 	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
 		if err := artifacts.Add(resourceArtifact); err != nil {
 			return nil, fmt.Errorf("failed to add resource artifact: %w", err)

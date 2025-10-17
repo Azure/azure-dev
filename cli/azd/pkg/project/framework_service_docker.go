@@ -272,19 +272,17 @@ func (p *dockerProject) Build(
 	log.Printf("built image %s for %s", imageId, serviceConfig.Name)
 
 	// Create container image artifact for build output
-	buildArtifact := Artifact{
-		Kind:         ArtifactKindContainer,
-		Location:     imageId,
-		LocationKind: LocationKindLocal,
-		Metadata: map[string]string{
-			"imageId":   imageId,
-			"imageName": imageName,
-			"framework": "docker",
-		},
-	}
-
 	return &ServiceBuildResult{
-		Artifacts: []Artifact{buildArtifact},
+		Artifacts: ArtifactCollection{{
+			Kind:         ArtifactKindContainer,
+			Location:     imageId,
+			LocationKind: LocationKindLocal,
+			Metadata: map[string]string{
+				"imageId":   imageId,
+				"imageName": imageName,
+				"framework": "docker",
+			},
+		}},
 	}, nil
 }
 
@@ -478,19 +476,18 @@ func (p *dockerProject) packBuild(
 	imageId = strings.TrimSpace(imageId)
 
 	// Create container image artifact for build output
-	buildArtifact := Artifact{
-		Kind:         ArtifactKindContainer,
-		Location:     imageId,
-		LocationKind: LocationKindLocal,
-		Metadata: map[string]string{
-			"imageId":   imageId,
-			"imageName": imageName,
-			"framework": "docker",
-		},
-	}
-
 	return &ServiceBuildResult{
-		Artifacts: []Artifact{buildArtifact},
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindContainer,
+				Location:     imageId,
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"imageId":   imageId,
+					"imageName": imageName,
+					"framework": "docker",
+				},
+			}},
 	}, nil
 }
 

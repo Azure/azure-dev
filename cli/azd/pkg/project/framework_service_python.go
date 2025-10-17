@@ -86,19 +86,21 @@ func (pp *pythonProject) Restore(
 	}
 
 	// Create restore artifact for the project directory with virtual environment
-	restoreArtifact := Artifact{
-		Kind:         ArtifactKindDirectory,
-		Location:     serviceConfig.Path(),
-		LocationKind: LocationKindLocal,
-		Metadata: map[string]string{
-			"projectPath":        serviceConfig.Path(),
-			"framework":          "python",
-			"virtualEnvironment": vEnvName,
-			"requirements":       "requirements.txt",
+	return &ServiceRestoreResult{
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     serviceConfig.Path(),
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"projectPath":        serviceConfig.Path(),
+					"framework":          "python",
+					"virtualEnvironment": vEnvName,
+					"requirements":       "requirements.txt",
+				},
+			},
 		},
-	}
-
-	return &ServiceRestoreResult{Artifacts: []Artifact{restoreArtifact}}, nil
+	}, nil
 }
 
 // Build for Python apps performs a no-op and returns the service path with an optional output path when specified.
@@ -115,19 +117,19 @@ func (pp *pythonProject) Build(
 	}
 
 	// Create build artifact for python build output
-	buildArtifact := Artifact{
-		Kind:         ArtifactKindDirectory,
-		Location:     buildSource,
-		LocationKind: LocationKindLocal,
-		Metadata: map[string]string{
-			"buildSource": buildSource,
-			"framework":   "python",
-			"outputPath":  serviceConfig.OutputPath,
-		},
-	}
-
 	return &ServiceBuildResult{
-		Artifacts: []Artifact{buildArtifact},
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     buildSource,
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"buildSource": buildSource,
+					"framework":   "python",
+					"outputPath":  serviceConfig.OutputPath,
+				},
+			},
+		},
 	}, nil
 }
 
@@ -151,18 +153,18 @@ func (pp *pythonProject) Package(
 	}
 
 	// Create package artifact for python package output
-	packageArtifact := Artifact{
-		Kind:         ArtifactKindDirectory,
-		Location:     packagePath,
-		LocationKind: LocationKindLocal,
-		Metadata: map[string]string{
-			"packagePath": packagePath,
-			"framework":   "python",
-		},
-	}
-
 	return &ServicePackageResult{
-		Artifacts: []Artifact{packageArtifact},
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     packagePath,
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"packagePath": packagePath,
+					"framework":   "python",
+				},
+			},
+		},
 	}, nil
 }
 

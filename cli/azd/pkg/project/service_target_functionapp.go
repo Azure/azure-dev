@@ -54,7 +54,7 @@ func (f *functionAppTarget) Package(
 ) (*ServicePackageResult, error) {
 	// Extract build artifact from service context
 	var buildPath string
-	if artifact, found := serviceContext.Build.FindFirst(WithKind(ArtifactKindDirectory)); found {
+	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindDirectory)); found {
 		buildPath = artifact.Location
 	}
 	if buildPath == "" {
@@ -75,7 +75,7 @@ func (f *functionAppTarget) Package(
 	}
 
 	return &ServicePackageResult{
-		Artifacts: []Artifact{
+		Artifacts: ArtifactCollection{
 			{
 				Kind:         ArtifactKindArchive,
 				Location:     zipFilePath,
@@ -150,7 +150,7 @@ func (f *functionAppTarget) Deploy(
 
 	// Add deployment result as artifact
 	if deployResult != nil {
-		if err := artifacts.Add(Artifact{
+		if err := artifacts.Add(&Artifact{
 			Kind:         ArtifactKindDeployment,
 			Location:     *deployResult,
 			LocationKind: LocationKindRemote,
@@ -170,7 +170,7 @@ func (f *functionAppTarget) Deploy(
 
 	// Add endpoints as artifacts
 	for _, endpoint := range endpoints {
-		if err := artifacts.Add(Artifact{
+		if err := artifacts.Add(&Artifact{
 			Kind:         ArtifactKindEndpoint,
 			Location:     endpoint,
 			LocationKind: LocationKindRemote,
@@ -180,7 +180,7 @@ func (f *functionAppTarget) Deploy(
 	}
 
 	// Add resource artifact
-	resourceArtifact := Artifact{}
+	resourceArtifact := &Artifact{}
 	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
 		if err := artifacts.Add(resourceArtifact); err != nil {
 			return nil, fmt.Errorf("failed to add resource artifact: %w", err)

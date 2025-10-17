@@ -6,6 +6,8 @@ package project
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -80,12 +82,19 @@ func (a *Artifact) ToString(currentIndentation string) string {
 		return ""
 	}
 
+	location := a.Location
+	if _, err := os.Stat(location); err == nil && !filepath.IsAbs(location) {
+		if absLocation, err := filepath.Abs(location); err == nil {
+			location = absLocation
+		}
+	}
+
 	// Format output based on artifact kind
 	switch a.Kind {
 	case ArtifactKindEndpoint:
 		// Handle endpoint with optional discriminator suffix pattern
 		label := "Endpoint"
-		url := a.Location
+		url := location
 
 		// When the endpoint pattern is matched, use the first sub match as the endpoint label.
 		matches := endpointPattern.FindStringSubmatch(url)
@@ -94,19 +103,19 @@ func (a *Artifact) ToString(currentIndentation string) string {
 			url = matches[2]
 		}
 
-		return fmt.Sprintf("%s- %s: %s", currentIndentation, label, output.WithLinkFormat(url))
+		return fmt.Sprintf("%s- %s: %s", currentIndentation, label, output.WithHyperlink(url, url))
 
 	case ArtifactKindContainer:
 		if a.LocationKind == LocationKindRemote {
-			return fmt.Sprintf("%s- Remote Image: %s", currentIndentation, output.WithLinkFormat(a.Location))
+			return fmt.Sprintf("%s- Remote Image: %s", currentIndentation, output.WithLinkFormat(location))
 		}
-		return fmt.Sprintf("%s- Container: %s", currentIndentation, output.WithLinkFormat(a.Location))
+		return fmt.Sprintf("%s- Container: %s", currentIndentation, output.WithLinkFormat(location))
 
 	case ArtifactKindArchive:
-		return fmt.Sprintf("%s- Package Output: %s", currentIndentation, output.WithLinkFormat(a.Location))
+		return fmt.Sprintf("%s- Package Output: %s", currentIndentation, output.WithHyperlink(location, a.Location))
 
 	case ArtifactKindDirectory:
-		return fmt.Sprintf("%s- Build Output: %s", currentIndentation, output.WithLinkFormat(a.Location))
+		return fmt.Sprintf("%s- Build Output: %s", currentIndentation, output.WithHyperlink(location, a.Location))
 
 	// Ignore other artifact kinds for now
 	default:
@@ -120,10 +129,10 @@ func (a *Artifact) MarshalJSON() ([]byte, error) {
 }
 
 // ArtifactCollection provides typed operations on a collection of artifacts
-type ArtifactCollection []Artifact
+type ArtifactCollection []*Artifact
 
 // Add appends an artifact to the collection with validation
-func (ac *ArtifactCollection) Add(artifacts ...Artifact) error {
+func (ac *ArtifactCollection) Add(artifacts ...*Artifact) error {
 	for _, artifact := range artifacts {
 		// Validate required fields
 		if err := validateArtifact(artifact); err != nil {
@@ -137,7 +146,7 @@ func (ac *ArtifactCollection) Add(artifacts ...Artifact) error {
 }
 
 // validateArtifact ensures artifact has valid required fields
-func validateArtifact(artifact Artifact) error {
+func validateArtifact(artifact *Artifact) error {
 	// Validate Kind is not empty
 	if strings.TrimSpace(string(artifact.Kind)) == "" {
 		return fmt.Errorf("kind is required and cannot be empty")
@@ -173,12 +182,19 @@ type FindOpts func(*findFilter)
 type findFilter struct {
 	kind         *ArtifactKind
 	locationKind *LocationKind
+	take         *int
 }
 
 // WithKind filters artifacts by the specified kind
 func WithKind(kind ArtifactKind) FindOpts {
 	return func(c *findFilter) {
 		c.kind = &kind
+	}
+}
+
+func WithTake(length int) FindOpts {
+	return func(c *findFilter) {
+		c.take = &length
 	}
 }
 
@@ -190,45 +206,59 @@ func WithLocationKind(locationKind LocationKind) FindOpts {
 }
 
 // matches checks if an artifact matches the given criteria (all criteria must match)
-func (c *findFilter) matches(artifact Artifact) bool {
+func (c *findFilter) matches(artifact *Artifact) bool {
 	if c.kind != nil && artifact.Kind != *c.kind {
 		return false
 	}
 	if c.locationKind != nil && artifact.LocationKind != *c.locationKind {
 		return false
 	}
+
 	return true
 }
 
 // Find returns all artifacts matching the specified criteria
-func (ac ArtifactCollection) Find(opts ...FindOpts) []Artifact {
+func (ac ArtifactCollection) Find(opts ...FindOpts) []*Artifact {
 	criteria := &findFilter{}
 	for _, opt := range opts {
 		opt(criteria)
 	}
 
-	var result []Artifact
+	var results []*Artifact
 	for _, artifact := range ac {
 		if criteria.matches(artifact) {
-			result = append(result, artifact)
+			results = append(results, artifact)
+		}
+
+		if criteria.take != nil && len(results) >= *criteria.take {
+			return results
 		}
 	}
-	return result
+
+	return results
 }
 
 // FindFirst returns the first artifact matching the specified criteria
-func (ac ArtifactCollection) FindFirst(opts ...FindOpts) (Artifact, bool) {
-	criteria := &findFilter{}
-	for _, opt := range opts {
-		opt(criteria)
+func (ac ArtifactCollection) FindFirst(opts ...FindOpts) (*Artifact, bool) {
+	allOpts := append(opts, WithTake(1))
+	results := ac.Find(allOpts...)
+
+	if len(results) > 0 {
+		return results[0], true
 	}
 
-	for _, artifact := range ac {
-		if criteria.matches(artifact) {
-			return artifact, true
-		}
+	return nil, false
+}
+
+// FindLast returns the lsat artifact matching the specified criteria
+func (ac ArtifactCollection) FindLast(opts ...FindOpts) (*Artifact, bool) {
+	results := ac.Find(opts...)
+
+	if len(results) > 0 {
+		return results[len(results)-1], true
 	}
-	return Artifact{}, false
+
+	return nil, false
 }
 
 // ToString implements the UxItem interface for ArtifactCollection display output
@@ -252,5 +282,5 @@ func (ac ArtifactCollection) ToString(currentIndentation string) string {
 
 // MarshalJSON implements the UxItem interface JSON marshaling for ArtifactCollection
 func (ac ArtifactCollection) MarshalJSON() ([]byte, error) {
-	return json.Marshal([]Artifact(ac))
+	return json.Marshal([]*Artifact(ac))
 }

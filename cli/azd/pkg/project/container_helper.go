@@ -349,7 +349,7 @@ func (ch *ContainerHelper) Package(
 	targetImage := imageWithTag
 
 	// Create container image artifact
-	packageArtifact := Artifact{
+	packageArtifact := &Artifact{
 		Kind:         ArtifactKindContainer,
 		Location:     imageWithTag,
 		LocationKind: LocationKindLocal, // Local during package phase
@@ -361,7 +361,7 @@ func (ch *ContainerHelper) Package(
 	}
 
 	return &ServicePackageResult{
-		Artifacts: []Artifact{packageArtifact},
+		Artifacts: ArtifactCollection{packageArtifact},
 	}, nil
 }
 
@@ -395,7 +395,7 @@ func (ch *ContainerHelper) Publish(
 	}
 
 	// Create publish artifact with remote image reference
-	publishArtifact := Artifact{
+	publishArtifact := &Artifact{
 		Kind:         ArtifactKindContainer,
 		Location:     remoteImage,
 		LocationKind: LocationKindRemote, // Remote after publish
@@ -405,7 +405,7 @@ func (ch *ContainerHelper) Publish(
 	}
 
 	return &ServicePublishResult{
-		Artifacts: []Artifact{publishArtifact},
+		Artifacts: ArtifactCollection{publishArtifact},
 	}, nil
 }
 

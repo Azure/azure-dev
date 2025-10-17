@@ -278,7 +278,7 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 		if pa.flags.FromPackage != "" {
 			// --from-package set, skip packaging and create package artifact
-			err = serviceContext.Package.Add(project.Artifact{
+			err = serviceContext.Package.Add(&project.Artifact{
 				Kind:         determineArtifactKind(pa.flags.FromPackage),
 				Location:     pa.flags.FromPackage,
 				LocationKind: project.LocationKindLocal,

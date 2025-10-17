@@ -61,18 +61,20 @@ func (np *npmProject) Restore(
 	}
 
 	// Create restore artifact for the project directory with node_modules
-	restoreArtifact := Artifact{
-		Kind:         ArtifactKindDirectory,
-		Location:     serviceConfig.Path(),
-		LocationKind: LocationKindLocal,
-		Metadata: map[string]string{
-			"projectPath":  serviceConfig.Path(),
-			"framework":    "npm",
-			"dependencies": "node_modules",
+	return &ServiceRestoreResult{
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     serviceConfig.Path(),
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"projectPath":  serviceConfig.Path(),
+					"framework":    "npm",
+					"dependencies": "node_modules",
+				},
+			},
 		},
-	}
-
-	return &ServiceRestoreResult{Artifacts: []Artifact{restoreArtifact}}, nil
+	}, nil
 }
 
 // Builds the project executing the npm `build` script defined within the project package.json
@@ -96,19 +98,19 @@ func (np *npmProject) Build(
 	}
 
 	// Create build artifact for npm build output
-	buildArtifact := Artifact{
-		Kind:         ArtifactKindDirectory,
-		Location:     buildSource,
-		LocationKind: LocationKindLocal,
-		Metadata: map[string]string{
-			"buildSource": buildSource,
-			"framework":   "npm",
-			"outputPath":  serviceConfig.OutputPath,
-		},
-	}
-
 	return &ServiceBuildResult{
-		Artifacts: []Artifact{buildArtifact},
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     buildSource,
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"buildSource": buildSource,
+					"framework":   "npm",
+					"outputPath":  serviceConfig.OutputPath,
+				},
+			},
+		},
 	}, nil
 }
 
@@ -149,16 +151,16 @@ func (np *npmProject) Package(
 	}
 
 	// Create package artifact for npm package output
-	packageArtifact := Artifact{
-		Kind:         ArtifactKindDirectory,
-		Location:     packagePath,
-		LocationKind: LocationKindLocal,
-		Metadata: map[string]string{
-			"packagePath": packagePath,
-		},
-	}
-
 	return &ServicePackageResult{
-		Artifacts: []Artifact{packageArtifact},
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     packagePath,
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"packagePath": packagePath,
+				},
+			},
+		},
 	}, nil
 }

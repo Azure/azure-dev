@@ -185,15 +185,15 @@ func Test_MlEndpointTarget_Deploy(t *testing.T) {
 	var flowArtifact, environmentArtifact, modelArtifact, onlineDeploymentArtifact *Artifact
 	for _, artifact := range deploymentArtifacts {
 		if artifact.LocationKind == LocationKindLocal && artifact.Location == "./flow/flow.yaml" {
-			flowArtifact = &artifact
+			flowArtifact = artifact
 		} else if artifact.LocationKind == LocationKindRemote {
 			if artifact.Metadata["type"] == "Microsoft.MachineLearningServices/workspaces/environments/versions" {
-				environmentArtifact = &artifact
+				environmentArtifact = artifact
 			} else if artifact.Metadata["type"] == "Microsoft.MachineLearningServices/workspaces/models/versions" {
-				modelArtifact = &artifact
+				modelArtifact = artifact
 			} else if artifact.Metadata["type"] ==
 				"Microsoft.MachineLearningServices/workspaces/onlineEndpoints/deployments" {
-				onlineDeploymentArtifact = &artifact
+				onlineDeploymentArtifact = artifact
 			}
 		}
 	}

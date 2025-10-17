@@ -260,7 +260,7 @@ func Test_DockerProject_Build(t *testing.T) {
 			language:      ServiceLanguageJavaScript,
 			hasDockerFile: true,
 			expectedBuildResult: &ServiceBuildResult{
-				Artifacts: []Artifact{
+				Artifacts: ArtifactCollection{
 					{
 						Kind:         ArtifactKindContainer,
 						Location:     "IMAGE_ID",
@@ -296,7 +296,7 @@ func Test_DockerProject_Build(t *testing.T) {
 				Target:   "custom-target",
 			},
 			expectedBuildResult: &ServiceBuildResult{
-				Artifacts: []Artifact{
+				Artifacts: ArtifactCollection{
 					{
 						Kind:         ArtifactKindContainer,
 						Location:     "IMAGE_ID",
@@ -328,7 +328,7 @@ func Test_DockerProject_Build(t *testing.T) {
 			language:      ServiceLanguageDocker,
 			hasDockerFile: true,
 			expectedBuildResult: &ServiceBuildResult{
-				Artifacts: []Artifact{
+				Artifacts: ArtifactCollection{
 					{
 						Kind:         ArtifactKindContainer,
 						Location:     "IMAGE_ID",
@@ -367,7 +367,7 @@ func Test_DockerProject_Build(t *testing.T) {
 			language:      ServiceLanguageJavaScript,
 			hasDockerFile: false,
 			expectedBuildResult: &ServiceBuildResult{
-				Artifacts: []Artifact{
+				Artifacts: ArtifactCollection{
 					{
 						Kind:         ArtifactKindContainer,
 						Location:     "IMAGE_ID",

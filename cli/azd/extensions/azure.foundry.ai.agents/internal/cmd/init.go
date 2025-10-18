@@ -193,12 +193,6 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 	// 	return fmt.Errorf("collecting required information: %w", err)
 	// }
 
-	// Populate the "resources" section of the azure.yaml
-	// TODO: Add back in once we move forward with composability support
-	// if err := a.validateResources(ctx, agentYaml); err != nil {
-	// 	return fmt.Errorf("updating resources in azure.yaml: %w", err)
-	// }
-
 	return nil
 }
 
@@ -208,7 +202,7 @@ func ensureProject(ctx context.Context, azdClient *azdext.AzdClient) (*azdext.Pr
 		fmt.Println("Lets get your project initialized.")
 
 		// We don't have a project yet
-		// Dispatch a workflow to init the project and create a new environment
+		// Dispatch a workflow to init the project
 		workflow := &azdext.Workflow{
 			Name: "init",
 			Steps: []*azdext.WorkflowStep{

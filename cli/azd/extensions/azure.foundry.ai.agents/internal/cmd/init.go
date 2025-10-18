@@ -36,13 +36,14 @@ type AiProjectResourceConfig struct {
 type InitAction struct {
 	azdClient *azdext.AzdClient
 	//azureClient       *azure.AzureClient
-	azureContext *azdext.AzureContext
+	// azureContext *azdext.AzureContext
 	//composedResources []*azdext.ComposedResource
 	//console           input.Console
 	//credential        azcore.TokenCredential
 	//modelCatalog      map[string]*ai.AiModel
 	//modelCatalogService *ai.ModelCatalogService
 	projectConfig *azdext.ProjectConfig
+	environment    *azdext.Environment
 }
 
 func newInitCommand() *cobra.Command {
@@ -61,9 +62,15 @@ func newInitCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			azureContext, projectConfig, err := ensureAzureContext(ctx, azdClient)
+			//azureContext, projectConfig, err := ensureAzureContext(ctx, azdClient)
+			projectConfig, err := ensureProject(ctx, azdClient)
 			if err != nil {
-				return fmt.Errorf("failed to ensure azure context: %w", err)
+				return fmt.Errorf("failed to ground into a project context: %w", err)
+			}
+
+			environment, err := ensureEnvironment(ctx, azdClient)
+			if err != nil {
+				return fmt.Errorf("failed to ground into an environment: %w", err)
 			}
 
 			// getComposedResourcesResponse, err := azdClient.Compose().ListResources(ctx, &azdext.EmptyRequest{})
@@ -95,12 +102,13 @@ func newInitCommand() *cobra.Command {
 			action := &InitAction{
 				azdClient: azdClient,
 				// azureClient:         azure.NewAzureClient(credential),
-				azureContext: azureContext,
+				// azureContext: azureContext,
 				// composedResources:   getComposedResourcesResponse.Resources,
 				// console: console,
 				// credential:          credential,
 				// modelCatalogService: ai.NewModelCatalogService(credential),
 				projectConfig: projectConfig,
+				environment:   environment,
 			}
 
 			if err := action.Run(ctx, flags); err != nil {
@@ -132,40 +140,58 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 		// projectResourceId is a string of the format 
 		// /subscriptions/[AZURE_SUBSCRIPTION]/resourceGroups/[AZURE_RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT_NAME]/projects/[AI_PROJECT_NAME]
 		// extract each of those fields from the string, issue an error if it doesn't match the format
+		fmt.Println("Setting up your azd environment to use the provided AI Foundry project resource ID...")
 		if err := a.parseAndSetProjectResourceId(ctx, flags.projectResourceId); err != nil {
 			return fmt.Errorf("failed to parse project resource ID: %w", err)
 		}
+
+		color.Green("\nAI agent project initialized successfully!")
+	}
+
+	// If --manifest is given
+	if flags.manifestPointer != "" {
+		// Validate that the manifest pointer is either a valid URL or existing file path
+		isValidURL := false
+		isValidFile := false
+
+		if _, err := url.ParseRequestURI(flags.manifestPointer); err == nil {
+			isValidURL = true
+		} else if _, fileErr := os.Stat(flags.manifestPointer); fileErr == nil {
+			isValidFile = true
+		}
+
+		if !isValidURL && !isValidFile {
+			return fmt.Errorf("manifest pointer '%s' is neither a valid URI nor an existing file path", flags.manifestPointer)
+		}
+
+		// Download/read agent.yaml file from the provided URI or file path and save it to project's "agents" directory
+		agentManifest, targetDir, err := a.downloadAgentYaml(ctx, flags.manifestPointer, flags.src)
+		if err != nil {
+			return fmt.Errorf("downloading agent.yaml: %w", err)
+		}
+
+		// Add the agent to the azd project (azure.yaml) services
+		if err := a.addToProject(ctx, targetDir, agentManifest); err != nil {
+			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
+		}
+
+		// Update environment with necessary env vars
+		if err := a.updateEnvironment(ctx, agentManifest); err != nil {
+			return fmt.Errorf("failed to update environment: %w", err)
+		}
+
+		color.Green("\nAI agent added to your project successfully!")
 	}
 
 	// Validate command flags
-	if err := a.validateFlags(flags); err != nil {
-		return err
-	}
+	// if err := a.validateFlags(flags); err != nil {
+	// 	return err
+	// }
 
 	// Prompt for any missing input values
-	if err := a.promptForMissingValues(ctx, a.azdClient, flags); err != nil {
-		return fmt.Errorf("collecting required information: %w", err)
-	}
-
-	fmt.Println("Configuration:")
-	fmt.Printf("  URI: %s\n", flags.manifestPointer)
-	fmt.Println()
-
-	// Download agent.yaml file from the provided URI and save it to project's "agents" directory
-	agentManifest, targetDir, err := a.downloadAgentYaml(ctx, flags.manifestPointer, flags.src)
-	if err != nil {
-		return fmt.Errorf("downloading agent.yaml: %w", err)
-	}
-
-	// Add the agent to the azd project (azure.yaml) services
-	if err := a.addToProject(ctx, targetDir, agentManifest); err != nil {
-		return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
-	}
-
-	// Update environment with necessary env vars
-	if err := a.updateEnvironment(ctx, agentManifest); err != nil {
-		return fmt.Errorf("failed to update environment: %w", err)
-	}
+	// if err := a.promptForMissingValues(ctx, a.azdClient, flags); err != nil {
+	// 	return fmt.Errorf("collecting required information: %w", err)
+	// }
 
 	// Populate the "resources" section of the azure.yaml
 	// TODO: Add back in once we move forward with composability support
@@ -173,7 +199,6 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 	// 	return fmt.Errorf("updating resources in azure.yaml: %w", err)
 	// }
 
-	color.Green("\nAI agent project initialized successfully!")
 	return nil
 }
 
@@ -376,6 +401,65 @@ func (a *InitAction) promptForMissingValues(ctx context.Context, azdClient *azde
 		flags.manifestPointer = resp.Value
 	}
 
+	return nil
+}
+
+func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context, projectResourceId string) error {
+	// Define the regex pattern for the project resource ID
+	pattern := `^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`
+	
+	regex, err := regexp.Compile(pattern)
+	if err != nil {
+		return fmt.Errorf("failed to compile regex pattern: %w", err)
+	}
+
+	matches := regex.FindStringSubmatch(projectResourceId)
+	if matches == nil || len(matches) != 5 {
+		return fmt.Errorf("project resource ID does not match expected format: /subscriptions/[SUBSCRIPTION]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT]/projects/[AI_PROJECT]")
+	}
+
+	// Extract the components
+	subscriptionId := matches[1]
+	resourceGroupName := matches[2]
+	aiAccountName := matches[3]
+	aiProjectName := matches[4]
+
+	// Get current environment
+	envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("failed to get current environment: %w", err)
+	}
+
+	if envResponse.Environment == nil {
+		return fmt.Errorf("no current environment found")
+	}
+
+	envName := envResponse.Environment.Name
+
+	// Set the extracted values as environment variables
+	if err := a.setEnvVar(ctx, envName, "AZURE_SUBSCRIPTION_ID", subscriptionId); err != nil {
+		return err
+	}
+
+	if err := a.setEnvVar(ctx, envName, "AZURE_RESOURCE_GROUP", resourceGroupName); err != nil {
+		return err
+	}
+
+	if err := a.setEnvVar(ctx, envName, "AZURE_AI_ACCOUNT_NAME", aiAccountName); err != nil {
+		return err
+	}
+
+	if err := a.setEnvVar(ctx, envName, "AZURE_AI_PROJECT_NAME", aiProjectName); err != nil {
+		return err
+	}
+
+	// Set the AI Foundry endpoint URL
+	aiFoundryEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", aiAccountName, aiProjectName)
+	if err := a.setEnvVar(ctx, envName, "AZURE_AI_FOUNDRY_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
+		return err
+	}
+
+	fmt.Printf("Successfully parsed and set environment variables from project resource ID\n")
 	return nil
 }
 
@@ -807,61 +891,3 @@ func (a *InitAction) setEnvVar(ctx context.Context, envName, key, value string) 
 	return nil
 }
 
-func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context, projectResourceId string) error {
-	// Define the regex pattern for the project resource ID
-	pattern := `^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`
-	
-	regex, err := regexp.Compile(pattern)
-	if err != nil {
-		return fmt.Errorf("failed to compile regex pattern: %w", err)
-	}
-
-	matches := regex.FindStringSubmatch(projectResourceId)
-	if matches == nil || len(matches) != 5 {
-		return fmt.Errorf("project resource ID does not match expected format: /subscriptions/[SUBSCRIPTION]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT]/projects/[AI_PROJECT]")
-	}
-
-	// Extract the components
-	subscriptionId := matches[1]
-	resourceGroupName := matches[2]
-	aiAccountName := matches[3]
-	aiProjectName := matches[4]
-
-	// Get current environment
-	envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
-	}
-
-	if envResponse.Environment == nil {
-		return fmt.Errorf("no current environment found")
-	}
-
-	envName := envResponse.Environment.Name
-
-	// Set the extracted values as environment variables
-	if err := a.setEnvVar(ctx, envName, "AZURE_SUBSCRIPTION_ID", subscriptionId); err != nil {
-		return err
-	}
-
-	if err := a.setEnvVar(ctx, envName, "AZURE_RESOURCE_GROUP", resourceGroupName); err != nil {
-		return err
-	}
-
-	if err := a.setEnvVar(ctx, envName, "AZURE_AI_ACCOUNT_NAME", aiAccountName); err != nil {
-		return err
-	}
-
-	if err := a.setEnvVar(ctx, envName, "AZURE_AI_PROJECT_NAME", aiProjectName); err != nil {
-		return err
-	}
-
-	// Set the AI Foundry endpoint URL
-	aiFoundryEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", aiAccountName, aiProjectName)
-	if err := a.setEnvVar(ctx, envName, "AZURE_AI_FOUNDRY_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
-		return err
-	}
-
-	fmt.Printf("Successfully parsed and set environment variables from project resource ID\n")
-	return nil
-}

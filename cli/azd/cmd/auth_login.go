@@ -125,7 +125,7 @@ func (p *boolPtr) String() string {
 }
 
 func (p *boolPtr) Type() string {
-	return "boolptr"
+	return ""
 }
 
 const (

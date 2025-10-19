@@ -6,16 +6,20 @@ interface AzdEnvListItem {
 	IsDefault: boolean;
 }
 
-interface AzdShowResponse {
-	name: string;
-	services: Record<string, unknown>;
-}
-
 interface AzdTemplateListItem {
 	name: string;
 	description: string;
 	repositoryPath: string;
 	tags: string[];
+}
+
+interface AzdExtensionListItem {
+	id: string;
+	name: string;
+	namespace: string;
+	version: string;
+	installedVersion: string;
+	source: string;
 }
 
 const azdGenerators: Record<string, Fig.Generator> = {
@@ -45,23 +49,6 @@ const azdGenerators: Record<string, Fig.Generator> = {
 				return [];
 			}
 		},
-	},
-	listServices: {
-		script: ['azd', 'show', '--output', 'json'],
-		postProcess: (out) => {
-			try {
-				const data: AzdShowResponse = JSON.parse(out);
-				return Object.keys(data.services).map((serviceName) => ({
-					name: serviceName,
-				}));
-			} catch {
-				return [];
-			}
-		},
-		cache: {
-			cacheByDirectory: true,
-			strategy: 'stale-while-revalidate',
-		}
 	},
 	listTemplates: {
 		script: ['azd', 'template', 'list', '--output', 'json'],
@@ -141,6 +128,53 @@ const azdGenerators: Record<string, Fig.Generator> = {
 		cache: {
 			strategy: 'stale-while-revalidate',
 		}
+	},
+	listExtensions: {
+		script: ['azd', 'ext', 'list', '--output', 'json'],
+		postProcess: (out) => {
+			try {
+				const extensions: AzdExtensionListItem[] = JSON.parse(out);
+				const uniqueExtensions = new Map<string, AzdExtensionListItem>();
+
+				extensions.forEach((ext) => {
+					if (!uniqueExtensions.has(ext.id)) {
+						uniqueExtensions.set(ext.id, ext);
+					}
+				});
+
+				return Array.from(uniqueExtensions.values()).map((ext) => ({
+					name: ext.id,
+					description: ext.name,
+				}));
+			} catch {
+				return [];
+			}
+		},
+		cache: {
+			strategy: 'stale-while-revalidate',
+		}
+	},
+	listInstalledExtensions: {
+		script: ['azd', 'ext', 'list', '--installed', '--output', 'json'],
+		postProcess: (out) => {
+			try {
+				const extensions: AzdExtensionListItem[] = JSON.parse(out);
+				const uniqueExtensions = new Map<string, AzdExtensionListItem>();
+
+				extensions.forEach((ext) => {
+					if (!uniqueExtensions.has(ext.id)) {
+						uniqueExtensions.set(ext.id, ext);
+					}
+				});
+
+				return Array.from(uniqueExtensions.values()).map((ext) => ({
+					name: ext.id,
+					description: ext.name,
+				}));
+			} catch {
+				return [];
+			}
+		},
 	},
 };
 
@@ -246,12 +280,6 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['fig'],
 					description: 'Generate Fig autocomplete spec.',
-					options: [
-						{
-							name: ['--include-hidden'],
-							description: 'Include hidden commands in the Fig spec',
-						},
-					],
 				},
 				{
 					name: ['fish'],
@@ -348,7 +376,6 @@ const completionSpec: Fig.Spec = {
 			args: {
 				name: 'service',
 				isOptional: true,
-				generators: azdGenerators.listServices,
 			},
 		},
 		{
@@ -567,7 +594,8 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 					args: {
-						name: 'extension-name',
+						name: 'extension-id',
+						generators: azdGenerators.listExtensions,
 					},
 				},
 				{
@@ -677,8 +705,9 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 					args: {
-						name: 'extension-name',
+						name: 'extension-id',
 						isOptional: true,
+						generators: azdGenerators.listInstalledExtensions,
 					},
 				},
 				{
@@ -709,8 +738,9 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 					args: {
-						name: 'extension-name',
+						name: 'extension-id',
 						isOptional: true,
+						generators: azdGenerators.listInstalledExtensions,
 					},
 				},
 			],
@@ -1127,7 +1157,6 @@ const completionSpec: Fig.Spec = {
 			args: {
 				name: 'service',
 				isOptional: true,
-				generators: azdGenerators.listServices,
 			},
 		},
 		{
@@ -1279,7 +1308,6 @@ const completionSpec: Fig.Spec = {
 			args: {
 				name: 'service',
 				isOptional: true,
-				generators: azdGenerators.listServices,
 			},
 		},
 		{
@@ -1303,7 +1331,6 @@ const completionSpec: Fig.Spec = {
 			args: {
 				name: 'service',
 				isOptional: true,
-				generators: azdGenerators.listServices,
 			},
 		},
 		{
@@ -1774,4 +1801,3 @@ const completionSpec: Fig.Spec = {
 };
 
 export default completionSpec;
-

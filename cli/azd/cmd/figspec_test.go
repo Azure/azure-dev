@@ -11,6 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestFigSpec generates a Fig autocomplete spec for azd, powering VS Code terminal IntelliSense.
+// The generated TypeScript spec must be committed to the vscode repository to enable completions.
+//
 // To update snapshots (assuming your current directory is cli/azd):
 //
 // For Bash,
@@ -21,8 +24,8 @@ import (
 func TestFigSpec(t *testing.T) {
 	root := NewRootCmd(false, nil, nil)
 
-	generator := figspec.NewGenerator(false)
-	spec := generator.GenerateSpec(root)
+	builder := figspec.NewSpecBuilder(false)
+	spec := builder.BuildSpec(root)
 
 	typescript, err := spec.ToTypeScript()
 	require.NoError(t, err)

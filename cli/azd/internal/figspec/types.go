@@ -2,6 +2,22 @@
 // Licensed under the MIT License.
 
 // Package figspec generates Fig autocomplete specifications from Cobra commands.
+//
+// Fig specs are declarative TypeScript objects that define shell autocomplete behavior for CLI tools.
+// They power command-line completions for VS Code's terminal
+// IntelliSense feature (https://code.visualstudio.com/docs/terminal/shell-integration#_intellisense-preview).
+//
+// This package generates Fig specs by introspecting Cobra command structures and converting them to
+// TypeScript completion specs. The generated spec defines:
+//   - Commands and subcommands with descriptions
+//   - Flags/options with their arguments
+//   - Positional arguments with optional/required status
+//   - Dynamic generators for context-aware suggestions (environments, services, templates)
+//   - Static suggestion lists for fixed value sets
+//
+// The azd Fig spec needs to be added to the vscode repository for Intellisense to work:
+// https://github.com/microsoft/vscode/tree/main/extensions/terminal-suggest/src/completions
+
 package figspec
 
 import (

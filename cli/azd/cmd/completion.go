@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal/figspec"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
@@ -92,7 +93,6 @@ See each sub-command's help for details on how to use the generated script.`,
 		},
 	})
 
-	// Add hidden Fig completion command
 	figCmd := &cobra.Command{
 		Short:                 "Generate Fig autocomplete spec.",
 		DisableFlagsInUseLine: true,
@@ -135,6 +135,7 @@ type completionFigFlags struct {
 func newCompletionFigFlags(cmd *cobra.Command) *completionFigFlags {
 	flags := &completionFigFlags{}
 	cmd.Flags().BoolVar(&flags.includeHidden, "include-hidden", false, "Include hidden commands in the Fig spec")
+	_ = cmd.Flags().MarkHidden("include-hidden")
 	return flags
 }
 
@@ -178,8 +179,8 @@ func (a *completionFigAction) Run(ctx context.Context) (*actions.ActionResult, e
 	rootCmd := a.cmd.Root()
 
 	// Generate the Fig spec
-	generator := NewFigGenerator(a.flags.includeHidden)
-	spec := generator.GenerateSpec(rootCmd)
+	builder := figspec.NewSpecBuilder(a.flags.includeHidden)
+	spec := builder.BuildSpec(rootCmd)
 
 	// Convert to TypeScript
 	tsCode, err := spec.ToTypeScript()

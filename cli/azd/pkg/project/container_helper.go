@@ -289,11 +289,87 @@ func (ch *ContainerHelper) Credentials(
 	return credential, credentialsError
 }
 
+func (ch *ContainerHelper) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	progress *async.Progress[ServiceProgress],
+) (*ServicePackageResult, error) {
+	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
+		return &ServicePackageResult{}, nil
+	}
+
+	var imageId string
+	var sourceImage string
+	var imageHash string
+
+	// Find the container image artifact from build results
+	if artifact, found := serviceContext.Build.FindFirst(WithKind(ArtifactKindContainer)); found && artifact.Location != "" {
+		imageId = artifact.Location
+		imageHash = imageId // For built images, the location is the image hash
+	}
+
+	// If we don't have an image ID from a docker build then an external source image is being used
+	if imageId == "" {
+		sourceImageValue, err := serviceConfig.Image.Envsubst(ch.env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("substituting environment variables in image: %w", err)
+		}
+
+		sourceImageContainer, err := docker.ParseContainerImage(sourceImageValue)
+		if err != nil {
+			return nil, fmt.Errorf("parsing source container image: %w", err)
+		}
+
+		remoteImageUrl := sourceImageContainer.Remote()
+
+		progress.SetProgress(NewServiceProgress("Pulling container source image"))
+		if err := ch.docker.Pull(ctx, remoteImageUrl); err != nil {
+			return nil, fmt.Errorf("pulling source container image: %w", err)
+		}
+
+		imageId = remoteImageUrl // For tagging purposes
+		sourceImage = remoteImageUrl
+		imageHash = "" // External images don't have a known image hash
+	}
+
+	// Generate a local tag from the 'docker' configuration section of the service
+	imageWithTag, err := ch.LocalImageTag(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("generating local image tag: %w", err)
+	}
+
+	// Tag image.
+	log.Printf("tagging image %s as %s", imageId, imageWithTag)
+	progress.SetProgress(NewServiceProgress("Tagging container image"))
+	if err := ch.docker.Tag(ctx, serviceConfig.Path(), imageId, imageWithTag); err != nil {
+		return nil, fmt.Errorf("tagging image: %w", err)
+	}
+
+	targetImage := imageWithTag
+
+	// Create container image artifact
+	packageArtifact := &Artifact{
+		Kind:         ArtifactKindContainer,
+		Location:     imageWithTag,
+		LocationKind: LocationKindLocal, // Local during package phase
+		Metadata: map[string]string{
+			"imageHash":   imageHash,
+			"sourceImage": sourceImage,
+			"targetImage": targetImage,
+		},
+	}
+
+	return &ServicePackageResult{
+		Artifacts: ArtifactCollection{packageArtifact},
+	}, nil
+}
+
 // Publish pushes an image to a remote server and returns the fully qualified remote image name.
 func (ch *ContainerHelper) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 	options *PublishOptions,
@@ -312,17 +388,24 @@ func (ch *ContainerHelper) Publish(
 	} else if useDotnetPublishForDockerBuild(serviceConfig) {
 		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, progress)
 	} else {
-		remoteImage, err = ch.runLocalBuild(ctx, serviceConfig, packageOutput, progress, imageOverride)
+		remoteImage, err = ch.runLocalBuild(ctx, serviceConfig, serviceContext, progress, imageOverride)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	return &ServicePublishResult{
-		Package: packageOutput,
-		Details: &ContainerPublishDetails{
-			RemoteImage: remoteImage,
+	// Create publish artifact with remote image reference
+	publishArtifact := &Artifact{
+		Kind:         ArtifactKindContainer,
+		Location:     remoteImage,
+		LocationKind: LocationKindRemote, // Remote after publish
+		Metadata: map[string]string{
+			"remoteImage": remoteImage,
 		},
+	}
+
+	return &ServicePublishResult{
+		Artifacts: ArtifactCollection{publishArtifact},
 	}, nil
 }
 
@@ -330,7 +413,7 @@ func (ch *ContainerHelper) Publish(
 func (ch *ContainerHelper) runLocalBuild(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 	imageOverride *imageOverride,
 ) (string, error) {
@@ -341,12 +424,20 @@ func (ch *ContainerHelper) runLocalBuild(
 	}
 
 	var sourceImage string
-	targetImage := packageOutput.PackagePath
+	var targetImage string
 
-	packageDetails, ok := packageOutput.Details.(*DockerPackageResult)
-	if ok && packageDetails != nil {
-		sourceImage = packageDetails.SourceImage
-		targetImage = packageDetails.TargetImage
+	// Find the container image artifact from package results
+	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer)); found {
+		targetImage = artifact.Location
+		if sourceImageValue := artifact.Metadata["sourceImage"]; sourceImageValue != "" {
+			sourceImage = sourceImageValue
+		}
+		// Fall back to metadata targetImage if Location is empty
+		if targetImage == "" {
+			if targetImageValue := artifact.Metadata["targetImage"]; targetImageValue != "" {
+				targetImage = targetImageValue
+			}
+		}
 	}
 
 	// Default to the local image tag
@@ -366,7 +457,7 @@ func (ch *ContainerHelper) runLocalBuild(
 			// When the project does not contain source and we are using an external image we first need to pull the
 			// image before we're able to push it to a remote registry
 			// In most cases this pull will have already been part of the package step
-			if packageDetails != nil && serviceConfig.RelativePath == "" {
+			if sourceImage != "" && serviceConfig.RelativePath == "" {
 				progress.SetProgress(NewServiceProgress("Pulling container image"))
 				err = ch.docker.Pull(ctx, sourceImage)
 				if err != nil {

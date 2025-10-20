@@ -145,7 +145,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
-	require.Len(t, packageResult.Artifacts, 1)
+	require.Len(t, packageResult.Artifacts, 0)
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
 
@@ -215,7 +215,7 @@ func Test_AKS_Publish(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
-	require.Len(t, packageResult.Artifacts, 1)
+	require.Len(t, packageResult.Artifacts, 0)
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(azapi.AzureResourceTypeManagedCluster))
 

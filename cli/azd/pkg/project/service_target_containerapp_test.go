@@ -110,7 +110,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
-	require.Len(t, packageResult.Artifacts, 1)
+	require.Len(t, packageResult.Artifacts, 0)
 
 	scope := environment.NewTargetResource(
 		"SUBSCRIPTION_ID",
@@ -163,20 +163,21 @@ func Test_ContainerApp_Publish(t *testing.T) {
 
 	serviceTarget := createContainerAppServiceTarget(mockContext, env)
 
+	serviceContext := NewServiceContext()
+	serviceContext.Package = ArtifactCollection{
+		{
+			Kind:         ArtifactKindContainer,
+			Location:     "test-app/api-test:azd-deploy-0",
+			LocationKind: LocationKindRemote,
+			Metadata: map[string]string{
+				"imageHash":   "IMAGE_HASH",
+				"targetImage": "test-app/api-test:azd-deploy-0",
+			},
+		},
+	}
+
 	packageResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServicePackageResult, error) {
-			serviceContext := NewServiceContext()
-			serviceContext.Package = ArtifactCollection{
-				{
-					Kind:         ArtifactKindContainer,
-					Location:     "test-app/api-test:azd-deploy-0",
-					LocationKind: LocationKindRemote,
-					Metadata: map[string]string{
-						"imageHash":   "IMAGE_HASH",
-						"targetImage": "test-app/api-test:azd-deploy-0",
-					},
-				},
-			}
 			return serviceTarget.Package(
 				*mockContext.Context,
 				serviceConfig,
@@ -185,10 +186,9 @@ func Test_ContainerApp_Publish(t *testing.T) {
 			)
 		},
 	)
-
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
-	require.Len(t, packageResult.Artifacts, 1)
+	require.Len(t, packageResult.Artifacts, 0)
 
 	scope := environment.NewTargetResource(
 		"SUBSCRIPTION_ID",
@@ -199,13 +199,10 @@ func Test_ContainerApp_Publish(t *testing.T) {
 
 	publishResult, err := logProgress(
 		t, func(progress *async.Progress[ServiceProgress]) (*ServicePublishResult, error) {
-			serviceContext := NewServiceContext()
-			serviceContext.Package = packageResult.Artifacts
 			return serviceTarget.Publish(
 				*mockContext.Context, serviceConfig, serviceContext, scope, progress, &PublishOptions{})
 		},
 	)
-
 	require.NoError(t, err)
 	require.NotNil(t, publishResult)
 	require.Len(t, publishResult.Artifacts, 1)

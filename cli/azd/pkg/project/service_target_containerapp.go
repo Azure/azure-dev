@@ -86,10 +86,9 @@ func (at *containerAppTarget) Package(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	// Return the artifacts from the service context as the package result
-	return &ServicePackageResult{
-		Artifacts: serviceContext.Package,
-	}, nil
+	// Container reference already handled by the underlying framework service
+	// No particular additional package requirements for ACA
+	return &ServicePackageResult{}, nil
 }
 
 // Publish pushes the container image to ACR

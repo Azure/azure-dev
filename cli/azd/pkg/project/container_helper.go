@@ -296,7 +296,7 @@ func (ch *ContainerHelper) Package(
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	if serviceConfig.Docker.RemoteBuild || useDotnetPublishForDockerBuild(serviceConfig) {
-		return &ServicePackageResult{Artifacts: serviceContext.Build}, nil
+		return &ServicePackageResult{}, nil
 	}
 
 	var imageId string

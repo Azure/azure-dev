@@ -288,6 +288,32 @@ func newLoginAction(
 }
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	loginMode, err := la.authManager.Mode()
+	if err != nil {
+		return nil, err
+	}
+	if loginMode != auth.AzdBuiltIn {
+		la.console.MessageUxItem(ctx, &ux.WarningAltMessage{
+			Message: fmt.Sprintf(
+				"Azd is not using the built-in authentication mode, but rather '%s'", loginMode),
+		})
+		la.console.Message(ctx, "If you want to use 'azd auth login', you need to disable the current auth mode.")
+		response, err := la.console.Confirm(ctx, input.ConsoleOptions{
+			Message:      "Do you want to switch back to azd built-in authentication?",
+			DefaultValue: "N",
+			Help:         "",
+		})
+		if err != nil {
+			return nil, err
+		}
+		if !response {
+			return nil, fmt.Errorf("log in is not supported on current mode: %s", loginMode)
+		}
+		if err := la.authManager.SetMode(ctx, auth.AzdBuiltIn); err != nil {
+			return nil, fmt.Errorf("setting auth mode: %w", err)
+		}
+	}
+
 	if len(la.flags.scopes) == 0 {
 		la.flags.scopes = la.authManager.LoginScopes()
 	}

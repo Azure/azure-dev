@@ -1409,3 +1409,46 @@ func (m *Manager) LogInDetails(ctx context.Context) (*LogInDetails, error) {
 
 	return nil, ErrNoCurrentUser
 }
+
+type AuthMode string
+
+const (
+	AzdBuiltIn      AuthMode = "azd built in"
+	AzDelegated     AuthMode = "delegated to az cli"
+	ExternalRequest AuthMode = "external token request"
+)
+
+func (m *Manager) Mode() (AuthMode, error) {
+	// Check external
+	if m.UseExternalAuth() {
+		return ExternalRequest, nil
+	}
+
+	// check az delegation
+	cfg, err := m.userConfigManager.Load()
+	if err != nil {
+		return "", fmt.Errorf("fetching current user: %w", err)
+	}
+
+	if shouldUseLegacyAuth(cfg) {
+		return AzDelegated, nil
+	}
+
+	// default to azd
+	return AzdBuiltIn, nil
+}
+
+func (m *Manager) SetMode(mode AuthMode) error {
+	currentMode, err := m.Mode()
+	if err != nil {
+		return fmt.Errorf("fetching current auth mode: %w", err)
+	}
+
+	if currentMode == mode {
+		return nil
+	}
+
+	if currentMode == ExternalRequest {
+
+	}
+}

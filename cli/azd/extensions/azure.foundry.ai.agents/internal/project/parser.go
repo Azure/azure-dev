@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -729,20 +730,14 @@ func deactivateHelloWorldRevision(ctx context.Context, resourceID string) error 
 	fmt.Println()
 
 	// Parse resource ID
-	parts := strings.Split(resourceID, "/")
-	var subscription, resourceGroup, appName string
-
-	for i, part := range parts {
-		if part == "subscriptions" && i+1 < len(parts) {
-			subscription = parts[i+1]
-		}
-		if part == "resourceGroups" && i+1 < len(parts) {
-			resourceGroup = parts[i+1]
-		}
-		if part == "containerApps" && i+1 < len(parts) {
-			appName = parts[i+1]
-		}
+	parsedResource, err := arm.ParseResourceID(resourceID)
+	if err != nil {
+		return fmt.Errorf("failed to parse resource ID: %w", err)
 	}
+
+	subscription := parsedResource.SubscriptionID
+	resourceGroup := parsedResource.ResourceGroupName
+	appName := parsedResource.Name
 
 	if subscription == "" || resourceGroup == "" || appName == "" {
 		return fmt.Errorf("could not parse subscription, resource group or app name from resource ID: %s", resourceID)
@@ -866,20 +861,14 @@ func verifyAuthConfiguration(ctx context.Context, resourceID string) error {
 	fmt.Println("======================================")
 
 	// Parse resource ID
-	parts := strings.Split(resourceID, "/")
-	var subscription, resourceGroup, appName string
-
-	for i, part := range parts {
-		if part == "subscriptions" && i+1 < len(parts) {
-			subscription = parts[i+1]
-		}
-		if part == "resourceGroups" && i+1 < len(parts) {
-			resourceGroup = parts[i+1]
-		}
-		if part == "containerApps" && i+1 < len(parts) {
-			appName = parts[i+1]
-		}
+	parsedResource, err := arm.ParseResourceID(resourceID)
+	if err != nil {
+		return fmt.Errorf("failed to parse resource ID: %w", err)
 	}
+
+	subscription := parsedResource.SubscriptionID
+	resourceGroup := parsedResource.ResourceGroupName
+	appName := parsedResource.Name
 
 	if subscription == "" || resourceGroup == "" || appName == "" {
 		return fmt.Errorf("could not parse subscription, resource group or app name from resource ID: %s", resourceID)
@@ -952,17 +941,13 @@ func verifyAuthConfiguration(ctx context.Context, resourceID string) error {
 // getContainerAppEndpoint retrieves the Container App FQDN using Azure SDK
 func getContainerAppEndpoint(ctx context.Context, resourceID, subscriptionID, tenantID string) (string, error) {
 	// Parse resource ID
-	parts := strings.Split(resourceID, "/")
-	var resourceGroup, appName string
-
-	for i, part := range parts {
-		if part == "resourceGroups" && i+1 < len(parts) {
-			resourceGroup = parts[i+1]
-		}
-		if part == "containerApps" && i+1 < len(parts) {
-			appName = parts[i+1]
-		}
+	parsedResource, err := arm.ParseResourceID(resourceID)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse resource ID: %w", err)
 	}
+
+	resourceGroup := parsedResource.ResourceGroupName
+	appName := parsedResource.Name
 
 	if resourceGroup == "" || appName == "" {
 		return "", fmt.Errorf("could not parse resource group or app name from resource ID: %s", resourceID)
@@ -1074,17 +1059,13 @@ func getAccessToken(ctx context.Context, resource string) (string, error) {
 // getLatestRevisionName retrieves the latest revision name for a Container App using Azure SDK
 func getLatestRevisionName(ctx context.Context, resourceID, subscriptionID, tenantID string) (string, error) {
 	// Parse resource ID
-	parts := strings.Split(resourceID, "/")
-	var resourceGroup, appName string
-
-	for i, part := range parts {
-		if part == "resourceGroups" && i+1 < len(parts) {
-			resourceGroup = parts[i+1]
-		}
-		if part == "containerApps" && i+1 < len(parts) {
-			appName = parts[i+1]
-		}
+	parsedResource, err := arm.ParseResourceID(resourceID)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse resource ID: %w", err)
 	}
+
+	resourceGroup := parsedResource.ResourceGroupName
+	appName := parsedResource.Name
 
 	if resourceGroup == "" || appName == "" {
 		return "", fmt.Errorf("could not parse resource group or app name from resource ID: %s", resourceID)

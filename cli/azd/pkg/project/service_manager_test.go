@@ -95,15 +95,21 @@ func Test_ServiceManager_Restore(t *testing.T) {
 	raisedPreRestoreEvent := false
 	raisedPostRestoreEvent := false
 
-	_ = serviceConfig.AddHandler("prerestore", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPreRestoreEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"prerestore",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPreRestoreEvent = true
+			return nil
+		})
 
-	_ = serviceConfig.AddHandler("postrestore", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPostRestoreEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"postrestore",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPostRestoreEvent = true
+			return nil
+		})
 
 	restoreCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkRestoreCalled, restoreCalled)
@@ -129,15 +135,21 @@ func Test_ServiceManager_Build(t *testing.T) {
 	raisedPreBuildEvent := false
 	raisedPostBuildEvent := false
 
-	_ = serviceConfig.AddHandler("prebuild", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPreBuildEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"prebuild",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPreBuildEvent = true
+			return nil
+		})
 
-	_ = serviceConfig.AddHandler("postbuild", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPostBuildEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"postbuild",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPostBuildEvent = true
+			return nil
+		})
 
 	buildCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, frameworkBuildCalled, buildCalled)
@@ -163,15 +175,21 @@ func Test_ServiceManager_Package(t *testing.T) {
 	raisedPrePackageEvent := false
 	raisedPostPackageEvent := false
 
-	_ = serviceConfig.AddHandler("prepackage", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPrePackageEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"prepackage",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPrePackageEvent = true
+			return nil
+		})
 
-	_ = serviceConfig.AddHandler("postpackage", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPostPackageEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"postpackage",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPostPackageEvent = true
+			return nil
+		})
 
 	fakeFrameworkPackageCalled := to.Ptr(false)
 	fakeServiceTargetPackageCalled := to.Ptr(false)
@@ -202,15 +220,21 @@ func Test_ServiceManager_Deploy(t *testing.T) {
 	raisedPreDeployEvent := false
 	raisedPostDeployEvent := false
 
-	_ = serviceConfig.AddHandler("predeploy", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPreDeployEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"predeploy",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPreDeployEvent = true
+			return nil
+		})
 
-	_ = serviceConfig.AddHandler("postdeploy", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPostDeployEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"postdeploy",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPostDeployEvent = true
+			return nil
+		})
 
 	deployCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, serviceTargetDeployCalled, deployCalled)
@@ -239,15 +263,21 @@ func Test_ServiceManager_Publish(t *testing.T) {
 	raisedPrePublishEvent := false
 	raisedPostPublishEvent := false
 
-	_ = serviceConfig.AddHandler("prepublish", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPrePublishEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"prepublish",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPrePublishEvent = true
+			return nil
+		})
 
-	_ = serviceConfig.AddHandler("postpublish", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPostPublishEvent = true
-		return nil
-	})
+	_ = serviceConfig.AddHandler(
+		*mockContext.Context,
+		"postpublish",
+		func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			raisedPostPublishEvent = true
+			return nil
+		})
 
 	publishCalled := to.Ptr(false)
 	ctx := context.WithValue(*mockContext.Context, serviceTargetPublishCalled, publishCalled)
@@ -458,6 +488,7 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 				t.Run(test.eventName, func(t *testing.T) {
 					test.eventName = eventType + test.name
 					_ = serviceConfig.AddHandler(
+						*mockContext.Context,
 						ext.Event(test.eventName),
 						func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 							return errors.New("error")

@@ -130,7 +130,7 @@ func Test_Automatic_Handler_Removal_On_Context_Done(t *testing.T) {
 	// Attempt to raise the event again - handler should not be called
 	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
 	require.NoError(t, err)
-	require.Equal(t, 0, callCount, "Handler should not be called after context cancellation - it should be automatically removed")
+	require.Equal(t, 0, callCount, "Handler should not be called after context cancellation")
 
 	// Verify the handler was actually removed from the internal handlers map
 	ed.mu.RLock()

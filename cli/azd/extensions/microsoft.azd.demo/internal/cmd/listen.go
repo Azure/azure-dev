@@ -41,17 +41,43 @@ func newListenCommand() *cobra.Command {
 
 					return nil
 				}).
+				WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+					for i := 1; i <= 20; i++ {
+						fmt.Printf("%d. Doing important predeploy project work in extension...\n", i)
+						time.Sleep(250 * time.Millisecond)
+					}
+
+					return nil
+				}).
+				WithProjectEventHandler("postdeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+					for i := 1; i <= 20; i++ {
+						fmt.Printf("%d. Doing important postdeploy project work in extension...\n", i)
+						time.Sleep(250 * time.Millisecond)
+					}
+
+					return nil
+				}).
 				WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 					for i := 1; i <= 20; i++ {
-						fmt.Printf("%d. Doing important work in extension...\n", i)
+						fmt.Printf("%d. Doing important prepackage service work in extension...\n", i)
 						time.Sleep(250 * time.Millisecond)
 					}
 
 					return nil
 				}, &azdext.ServerEventOptions{
 					// Optionally filter your subscription by service host and/or language
-					Host:     "containerapp",
-					Language: "python",
+					Host: "containerapp",
+				}).
+				WithServiceEventHandler("postpackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+					for i := 1; i <= 20; i++ {
+						fmt.Printf("%d. Doing important postpackage service work in extension...\n", i)
+						time.Sleep(250 * time.Millisecond)
+					}
+
+					return nil
+				}, &azdext.ServerEventOptions{
+					// Optionally filter your subscription by service host and/or language
+					Host: "containerapp",
 				})
 
 			// Start listening for events

@@ -72,19 +72,19 @@ func (p *DemoServiceTargetProvider) GetTargetResource(
 func (p *DemoServiceTargetProvider) Package(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
-	packageResult *azdext.ServicePackageResult,
+	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
-	progress("Preparing package")
-	time.Sleep(500 * time.Millisecond)
-
-	packagePath := "demo/package:latest"
+	packageResponse, err := p.azdClient.Container().
+		Package(ctx, &azdext.ContainerPackageRequest{
+			ServiceName: serviceConfig.Name,
+		})
+	if err != nil {
+		return nil, err
+	}
 
 	return &azdext.ServicePackageResult{
-		PackagePath: packagePath,
-		Details: map[string]string{
-			"timestamp": time.Now().Format(time.RFC3339),
-		},
+		Artifacts: packageResponse.Result.Artifacts,
 	}, nil
 }
 
@@ -92,29 +92,22 @@ func (p *DemoServiceTargetProvider) Package(
 func (p *DemoServiceTargetProvider) Publish(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
-	packageResult *azdext.ServicePackageResult,
+	serviceContext *azdext.ServiceContext,
 	targetResource *azdext.TargetResource,
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
-	if packageResult == nil {
-		return nil, fmt.Errorf("packageResult is nil")
+	publishResponse, err := p.azdClient.Container().
+		Publish(ctx, &azdext.ContainerPublishRequest{
+			ServiceName:    serviceConfig.Name,
+			ServiceContext: serviceContext,
+		})
+	if err != nil {
+		return nil, err
 	}
-
-	packagePath := packageResult.GetPackagePath()
-	if packagePath == "" {
-		return nil, fmt.Errorf("package path is empty")
-	}
-
-	progress(fmt.Sprintf("Publishing %s...", packagePath))
-	time.Sleep(500 * time.Millisecond)
-
-	remotePackage := fmt.Sprintf("registry.example.com/%s", packagePath)
 
 	return &azdext.ServicePublishResult{
-		Details: map[string]string{
-			"remotePackage": remotePackage,
-		},
+		Artifacts: publishResponse.Result.Artifacts,
 	}, nil
 }
 
@@ -122,19 +115,10 @@ func (p *DemoServiceTargetProvider) Publish(
 func (p *DemoServiceTargetProvider) Deploy(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
-	packageResult *azdext.ServicePackageResult,
-	publishResult *azdext.ServicePublishResult,
+	serviceContext *azdext.ServiceContext,
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	if packageResult == nil {
-		return nil, fmt.Errorf("packageResult is nil")
-	}
-
-	if publishResult == nil {
-		return nil, fmt.Errorf("publishResult is nil")
-	}
-
 	progress("Deploying service")
 	time.Sleep(1000 * time.Millisecond)
 
@@ -151,13 +135,19 @@ func (p *DemoServiceTargetProvider) Deploy(
 		return nil, err
 	}
 
-	// Return deployment result
+	// Return deployment result with artifacts
 	deployResult := &azdext.ServiceDeployResult{
-		TargetResourceId: resourceId,
-		Kind:             "demo",
-		Endpoints:        endpoints,
-		Details: map[string]string{
-			"message": "Service deployed successfully",
+		Artifacts: []*azdext.Artifact{
+			{
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_DEPLOYMENT,
+				Location:     resourceId,
+				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+				Metadata: map[string]string{
+					"kind":      "demo",
+					"endpoints": fmt.Sprintf("%v", endpoints),
+					"message":   "Service deployed successfully",
+				},
+			},
 		},
 	}
 

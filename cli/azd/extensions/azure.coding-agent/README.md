@@ -11,9 +11,9 @@ This includes:
 
 ## Prerequisites
 
-- The Azure Dev CLI (azd) installed. See here for instructions on installing it: [azdev installation instructions](https://github.com/richardpark-msft/azure-dev/blob/main/README.md#installupgrade-azure-developer-cli).
+- The Azure Dev CLI (azd) installed. See here for instructions on installing it: [azdev installation instructions](https://github.com/Azure/azure-dev/blob/main/README.md#installupgrade-azure-developer-cli).
 - An Azure subscription where you have permissions to create resource groups and managed identities.
-- A GitHub repository, where you have permissions to:
+- A local clone of a GitHub repository, where you have permissions to:
   - Update the `copilot` Github environment.
   - Update Copilot coding agent settings.
   - Push changes made to the .github/workflows folder.
@@ -23,7 +23,6 @@ This includes:
 Assuming 'azd' is in your path, run the following commands to install the extension for the first time:
 
 ```shell
-# install the coding-agent
 azd extension install azure.coding-agent
 ```
 
@@ -38,7 +37,7 @@ azd extension upgrade azure.coding-agent
 You can start the installation process, by typing the following in your terminal:
 
 ```
-cd <azure dev project directory>
+cd <local GitHub repository clone folder>
 azd coding-agent config
 ```
 
@@ -46,13 +45,40 @@ azd coding-agent config
 
 ### The managed identity doesn't have permissions to do 'x'
 
-By default, the `coding-agent` command assigns the Reader role to the created managed identity, scoped to the resource group that was created (or chosen). If you want to add more roles, or expand the scope to more resources you'll need to update the managed identity's assigned roles.
+By default, the `coding-agent` command assigns the Reader role to the created managed identity, scoped to the resource group that was created (or chosen).
+
+If you want to add more roles, or expand the scope to more resources you'll need to update the managed identity's assigned roles.
 
 Some further resources:
 
 - [Using the Azure portal to assign roles](https://learn.microsoft.com/azure/role-based-access-control/role-assignments-portal-managed-identity)
 - [Using the Azure CLI to assign roles](https://learn.microsoft.com/azure/role-based-access-control/role-assignments-cli)
 - [Azure built-in roles](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles)
+
+### no git remotes are configured
+
+This command requires the local git repository to have at least one remote, which we use to configure the managed identity's federated credentials.
+
+If this repository is a GitHub repository, then you need to setup a git remote on this repo.
+
+Typically, you'll do something like this:
+
+```bash
+git remote add origin <http or ssh link to your repository>
+```
+
+If this is **not** a GitHub repository, then you'll want to create one before using this command. For information on how to create a repository see the GitHub documentation: [https://docs.github.com/repositories/creating-and-managing-repositories/creating-a-new-repository](https://docs.github.com/repositories/creating-and-managing-repositories/creating-a-new-repository).
+
+### The refresh token has expired
+
+This can happen if your azd login token has expired. You can fix this by logging in again, like this:
+
+```bash
+# NOTE: for some situations, like logging in to a tenant that is not your home tenant, or
+# authenticating in docker containers, you might need additional flags, like --tenant-id, or
+# --use-device-code, respectively.
+azd auth login
+```
 
 ### An internal command is failing, but there's no command output
 

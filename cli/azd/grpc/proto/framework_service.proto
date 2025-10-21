@@ -98,6 +98,7 @@ message FrameworkPackageRequirements {
 // Restore request and response
 message FrameworkServiceRestoreRequest {
   ServiceConfig service_config = 1;
+  ServiceContext service_context = 2;
 }
 
 message FrameworkServiceRestoreResponse {
@@ -106,29 +107,27 @@ message FrameworkServiceRestoreResponse {
 
 // Service restore result
 message ServiceRestoreResult {
-  map<string, string> details = 1;
+  repeated Artifact artifacts = 1;
 }
 
 // Build request and response
 message FrameworkServiceBuildRequest {
   ServiceConfig service_config = 1;
-  ServiceRestoreResult restore_output = 2;
+  ServiceContext service_context = 2;
 }
 
 message FrameworkServiceBuildResponse {
-  ServiceBuildResult build_result = 1;
+  ServiceBuildResult result = 1;
 }
 
-// Service build result
 message ServiceBuildResult {
-  ServiceRestoreResult restore = 1;
-  map<string, string> details = 2;
+  repeated Artifact artifacts = 1;
 }
 
 // Package request and response
 message FrameworkServicePackageRequest {
   ServiceConfig service_config = 1;
-  ServiceBuildResult build_output = 2;
+  ServiceContext service_context = 2;
 }
 
 message FrameworkServicePackageResponse {

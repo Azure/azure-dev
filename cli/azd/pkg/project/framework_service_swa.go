@@ -81,18 +81,19 @@ func (p *swaProject) SetSource(inner FrameworkService) {
 func (p *swaProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
 	// When the program runs the restore actions for the underlying project (containerapp),
 	// the dependencies are installed locally
-	return p.framework.Restore(ctx, serviceConfig, progress)
+	return p.framework.Restore(ctx, serviceConfig, serviceContext, progress)
 }
 
 // Builds the swa project based on the swa-cli.config.json options specified within the Service path
 func (p *swaProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	restoreOutput *ServiceRestoreResult,
+	serviceContext *ServiceContext,
 	_ *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	previewerWriter := p.console.ShowPreviewer(ctx,
@@ -113,18 +114,37 @@ func (p *swaProject) Build(
 	}
 
 	return &ServiceBuildResult{
-		Restore: restoreOutput,
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     serviceConfig.Path(),
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"buildPath": serviceConfig.Path(),
+					"framework": "swa",
+				},
+			},
+		},
 	}, nil
 }
 
 func (p *swaProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	serviceContext *ServiceContext,
 	_ *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	return &ServicePackageResult{
-		Build:   buildOutput,
-		Details: "using swa-cli.config.json",
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     serviceConfig.Path(),
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"packagePath": serviceConfig.Path(),
+					"framework":   "swa",
+				},
+			},
+		},
 	}, nil
 }

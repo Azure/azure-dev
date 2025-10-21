@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -27,8 +28,9 @@ import (
 )
 
 type initFlags struct {
-	manifestPointer string
-	src             string
+	projectResourceId string
+	manifestPointer   string
+	src               string
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -39,13 +41,14 @@ type AiProjectResourceConfig struct {
 type InitAction struct {
 	azdClient *azdext.AzdClient
 	//azureClient       *azure.AzureClient
-	azureContext *azdext.AzureContext
+	// azureContext *azdext.AzureContext
 	//composedResources []*azdext.ComposedResource
 	//console           input.Console
 	//credential        azcore.TokenCredential
 	//modelCatalog      map[string]*ai.AiModel
 	//modelCatalogService *ai.ModelCatalogService
 	projectConfig *azdext.ProjectConfig
+	environment    *azdext.Environment
 }
 
 // GitHubUrlInfo holds parsed information from a GitHub URL
@@ -72,9 +75,15 @@ func newInitCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			azureContext, projectConfig, err := ensureAzureContext(ctx, azdClient)
+			//azureContext, projectConfig, err := ensureAzureContext(ctx, azdClient)
+			projectConfig, err := ensureProject(ctx, azdClient)
 			if err != nil {
-				return fmt.Errorf("failed to ensure azure context: %w", err)
+				return fmt.Errorf("failed to ground into a project context: %w", err)
+			}
+
+			environment, err := ensureEnvironment(ctx, azdClient)
+			if err != nil {
+				return fmt.Errorf("failed to ground into an environment: %w", err)
 			}
 
 			// getComposedResourcesResponse, err := azdClient.Compose().ListResources(ctx, &azdext.EmptyRequest{})
@@ -106,12 +115,13 @@ func newInitCommand() *cobra.Command {
 			action := &InitAction{
 				azdClient: azdClient,
 				// azureClient:         azure.NewAzureClient(credential),
-				azureContext: azureContext,
+				// azureContext: azureContext,
 				// composedResources:   getComposedResourcesResponse.Resources,
 				// console: console,
 				// credential:          credential,
 				// modelCatalogService: ai.NewModelCatalogService(credential),
 				projectConfig: projectConfig,
+				environment:   environment,
 			}
 
 			if err := action.Run(ctx, flags); err != nil {
@@ -122,8 +132,11 @@ func newInitCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.manifestPointer, "", "m", "",
-		"Pointer to the manifest to use for the agent")
+	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
+		"Azure AI Foundry Project Id to set your environment to")
+
+	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
+		"Path or URI to an agent manifest to add to your project")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"[Optional] Directory to download the agent yaml to (defaults to 'src/<agent-id>')")
@@ -135,43 +148,64 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 	color.Green("Initializing AI agent project...")
 	fmt.Println()
 
+	// If --project-id is given
+	if flags.projectResourceId != "" {
+		// projectResourceId is a string of the format 
+		// /subscriptions/[AZURE_SUBSCRIPTION]/resourceGroups/[AZURE_RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT_NAME]/projects/[AI_PROJECT_NAME]
+		// extract each of those fields from the string, issue an error if it doesn't match the format
+		fmt.Println("Setting up your azd environment to use the provided AI Foundry project resource ID...")
+		if err := a.parseAndSetProjectResourceId(ctx, flags.projectResourceId); err != nil {
+			return fmt.Errorf("failed to parse project resource ID: %w", err)
+		}
+
+		color.Green("\nAI agent project initialized successfully!")
+	}
+
+	// If --manifest is given
+	if flags.manifestPointer != "" {
+		// Validate that the manifest pointer is either a valid URL or existing file path
+		isValidURL := false
+		isValidFile := false
+
+		if _, err := url.ParseRequestURI(flags.manifestPointer); err == nil {
+			isValidURL = true
+		} else if _, fileErr := os.Stat(flags.manifestPointer); fileErr == nil {
+			isValidFile = true
+		}
+
+		if !isValidURL && !isValidFile {
+			return fmt.Errorf("manifest pointer '%s' is neither a valid URI nor an existing file path", flags.manifestPointer)
+		}
+
+		// Download/read agent.yaml file from the provided URI or file path and save it to project's "agents" directory
+		agentManifest, targetDir, err := a.downloadAgentYaml(ctx, flags.manifestPointer, flags.src)
+		if err != nil {
+			return fmt.Errorf("downloading agent.yaml: %w", err)
+		}
+
+		// Add the agent to the azd project (azure.yaml) services
+		if err := a.addToProject(ctx, targetDir, agentManifest); err != nil {
+			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
+		}
+
+		// Update environment with necessary env vars
+		if err := a.updateEnvironment(ctx, agentManifest); err != nil {
+			return fmt.Errorf("failed to update environment: %w", err)
+		}
+
+		color.Green("\nAI agent added to your project successfully!")
+	}
+
 	// Validate command flags
-	if err := a.validateFlags(flags); err != nil {
-		return err
-	}
-
-	// Prompt for any missing input values
-	if err := a.promptForMissingValues(ctx, a.azdClient, flags); err != nil {
-		return fmt.Errorf("collecting required information: %w", err)
-	}
-
-	fmt.Println("Configuration:")
-	fmt.Printf("  URI: %s\n", flags.manifestPointer)
-	fmt.Println()
-
-	// Download agent.yaml file from the provided URI and save it to project's "agents" directory
-	agentManifest, targetDir, err := a.downloadAgentYaml(ctx, flags.manifestPointer, flags.src)
-	if err != nil {
-		return fmt.Errorf("downloading agent.yaml: %w", err)
-	}
-
-	// Add the agent to the azd project (azure.yaml) services
-	if err := a.addToProject(ctx, targetDir, agentManifest); err != nil {
-		return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
-	}
-
-	// Update environment with necessary env vars
-	if err := a.updateEnvironment(ctx, agentManifest); err != nil {
-		return fmt.Errorf("failed to update environment: %w", err)
-	}
-
-	// Populate the "resources" section of the azure.yaml
-	// TODO: Add back in once we move forward with composability support
-	// if err := a.validateResources(ctx, agentYaml); err != nil {
-	// 	return fmt.Errorf("updating resources in azure.yaml: %w", err)
+	// if err := a.validateFlags(flags); err != nil {
+	// 	return err
 	// }
 
-	color.Green("\nAI agent project initialized successfully!")
+	// Prompt for any missing input values
+	// if err := a.promptForMissingValues(ctx, a.azdClient, flags); err != nil {
+	// 	return fmt.Errorf("collecting required information: %w", err)
+	// }
+
 	return nil
 }
 
@@ -181,7 +215,7 @@ func ensureProject(ctx context.Context, azdClient *azdext.AzdClient) (*azdext.Pr
 		fmt.Println("Lets get your project initialized.")
 
 		// We don't have a project yet
-		// Dispatch a workflow to init the project and create a new environment
+		// Dispatch a workflow to init the project
 		workflow := &azdext.Workflow{
 			Name: "init",
 			Steps: []*azdext.WorkflowStep{
@@ -347,8 +381,12 @@ func ensureAzureContext(
 
 func (a *InitAction) validateFlags(flags *initFlags) error {
 	if flags.manifestPointer != "" {
+		// Check if it's a valid URL
 		if _, err := url.ParseRequestURI(flags.manifestPointer); err != nil {
-			return fmt.Errorf("invalid URI '%s': %w", flags.manifestPointer, err)
+			// If not a valid URL, check if it's an existing local file path
+			if _, fileErr := os.Stat(flags.manifestPointer); fileErr != nil {
+				return fmt.Errorf("manifest pointer '%s' is neither a valid URI nor an existing file path", flags.manifestPointer)
+			}
 		}
 	}
 
@@ -370,6 +408,65 @@ func (a *InitAction) promptForMissingValues(ctx context.Context, azdClient *azde
 		flags.manifestPointer = resp.Value
 	}
 
+	return nil
+}
+
+func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context, projectResourceId string) error {
+	// Define the regex pattern for the project resource ID
+	pattern := `^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`
+	
+	regex, err := regexp.Compile(pattern)
+	if err != nil {
+		return fmt.Errorf("failed to compile regex pattern: %w", err)
+	}
+
+	matches := regex.FindStringSubmatch(projectResourceId)
+	if matches == nil || len(matches) != 5 {
+		return fmt.Errorf("project resource ID does not match expected format: /subscriptions/[SUBSCRIPTION]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT]/projects/[AI_PROJECT]")
+	}
+
+	// Extract the components
+	subscriptionId := matches[1]
+	resourceGroupName := matches[2]
+	aiAccountName := matches[3]
+	aiProjectName := matches[4]
+
+	// Get current environment
+	envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("failed to get current environment: %w", err)
+	}
+
+	if envResponse.Environment == nil {
+		return fmt.Errorf("no current environment found")
+	}
+
+	envName := envResponse.Environment.Name
+
+	// Set the extracted values as environment variables
+	if err := a.setEnvVar(ctx, envName, "AZURE_SUBSCRIPTION_ID", subscriptionId); err != nil {
+		return err
+	}
+
+	if err := a.setEnvVar(ctx, envName, "AZURE_RESOURCE_GROUP", resourceGroupName); err != nil {
+		return err
+	}
+
+	if err := a.setEnvVar(ctx, envName, "AZURE_AI_ACCOUNT_NAME", aiAccountName); err != nil {
+		return err
+	}
+
+	if err := a.setEnvVar(ctx, envName, "AZURE_AI_PROJECT_NAME", aiProjectName); err != nil {
+		return err
+	}
+
+	// Set the AI Foundry endpoint URL
+	aiFoundryEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", aiAccountName, aiProjectName)
+	if err := a.setEnvVar(ctx, envName, "AZURE_AI_FOUNDRY_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
+		return err
+	}
+
+	fmt.Printf("Successfully parsed and set environment variables from project resource ID\n")
 	return nil
 }
 
@@ -1134,3 +1231,4 @@ func (a *InitAction) setEnvVar(ctx context.Context, envName, key, value string) 
 	fmt.Printf("Set environment variable: %s=%s\n", key, value)
 	return nil
 }
+

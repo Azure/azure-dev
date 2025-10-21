@@ -2,6 +2,7 @@ AADSTS
 ABRT
 ACCESSTOKEN
 Agentic
+agentmanifests
 aiomysql
 aiopg
 akvs

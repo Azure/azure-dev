@@ -52,6 +52,7 @@ func (np *npmProject) Initialize(ctx context.Context, serviceConfig *ServiceConf
 func (np *npmProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
 	progress.SetProgress(NewServiceProgress("Installing NPM dependencies"))
@@ -59,14 +60,28 @@ func (np *npmProject) Restore(
 		return nil, err
 	}
 
-	return &ServiceRestoreResult{}, nil
+	// Create restore artifact for the project directory with node_modules
+	return &ServiceRestoreResult{
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     serviceConfig.Path(),
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"projectPath":  serviceConfig.Path(),
+					"framework":    "npm",
+					"dependencies": "node_modules",
+				},
+			},
+		},
+	}, nil
 }
 
 // Builds the project executing the npm `build` script defined within the project package.json
 func (np *npmProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	restoreOutput *ServiceRestoreResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	// Exec custom `build` script if available
@@ -82,16 +97,27 @@ func (np *npmProject) Build(
 		buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
 	}
 
+	// Create build artifact for npm build output
 	return &ServiceBuildResult{
-		Restore:         restoreOutput,
-		BuildOutputPath: buildSource,
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     buildSource,
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"buildSource": buildSource,
+					"framework":   "npm",
+					"outputPath":  serviceConfig.OutputPath,
+				},
+			},
+		},
 	}, nil
 }
 
 func (np *npmProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	progress.SetProgress(NewServiceProgress("Running NPM package script"))
@@ -104,8 +130,12 @@ func (np *npmProject) Package(
 	}
 
 	// Copy directory rooted by dist to package root.
-	packagePath := buildOutput.BuildOutputPath
-	if packagePath == "" {
+	packagePath := serviceConfig.Path()
+	// Get package path from build artifacts
+	if artifact, found := serviceContext.Build.FindFirst(WithKind(ArtifactKindDirectory)); found {
+		packagePath = artifact.Location
+	}
+	if packagePath == serviceConfig.Path() && serviceConfig.OutputPath != "" {
 		packagePath = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
 	}
 
@@ -120,8 +150,17 @@ func (np *npmProject) Package(
 		)
 	}
 
+	// Create package artifact for npm package output
 	return &ServicePackageResult{
-		Build:       buildOutput,
-		PackagePath: packagePath,
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     packagePath,
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"packagePath": packagePath,
+				},
+			},
+		},
 	}, nil
 }

@@ -140,6 +140,7 @@ func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig
 	// Ensure that the k8s context has been configured by the time a deploy operation is performed.
 	// We attach to "postprovision" so that any predeploy or postprovision hooks can take advantage of the configuration
 	err := serviceConfig.Project.AddHandler(
+		ctx,
 		"postprovision",
 		func(ctx context.Context, args ProjectLifecycleEventArgs) error {
 			// Only set the k8s context if we are not in preview mode
@@ -158,7 +159,7 @@ func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig
 
 	// Ensure that the k8s context has been configured by the time a deploy operation is performed.
 	// We attach to "predeploy" so that any predeploy hooks can take advantage of the configuration
-	err = serviceConfig.AddHandler("predeploy", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+	err = serviceConfig.AddHandler(ctx, "predeploy", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 		return t.setK8sContext(ctx, serviceConfig, "predeploy")
 	})
 

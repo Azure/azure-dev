@@ -376,11 +376,11 @@ func (at *containerAppTarget) validateTargetResource(
 	return nil
 }
 
-func (at *containerAppTarget) addPreProvisionChecks(_ context.Context, serviceConfig *ServiceConfig) error {
+func (at *containerAppTarget) addPreProvisionChecks(ctx context.Context, serviceConfig *ServiceConfig) error {
 	// Attempt to retrieve the target resource for the current service
 	// This allows the resource deployment to detect whether or not to pull existing container image during
 	// provision operation to avoid resetting the container app back to a default image
-	return serviceConfig.Project.AddHandler("preprovision", func(ctx context.Context, args ProjectLifecycleEventArgs) error {
+	return serviceConfig.Project.AddHandler(ctx, "preprovision", func(ctx context.Context, args ProjectLifecycleEventArgs) error {
 		exists := false
 
 		// Check if the target resource already exists

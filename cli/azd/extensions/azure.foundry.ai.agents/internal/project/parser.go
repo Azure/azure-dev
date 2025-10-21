@@ -20,7 +20,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
@@ -606,67 +606,111 @@ func assignAzureAIRole(ctx context.Context, principalID, scope string) error {
 		return fmt.Errorf("failed to create role assignments client: %w", err)
 	}
 
-	// Generate a unique name for the role assignment
-	roleAssignmentName := uuid.New().String()
-
 	// Construct full role definition ID
 	fullRoleDefinitionID := fmt.Sprintf("%s/providers/Microsoft.Authorization/roleDefinitions/%s", scope, roleDefinitionID)
 
-	// Create role assignment
-	parameters := armauthorization.RoleAssignmentCreateParameters{
-		Properties: &armauthorization.RoleAssignmentProperties{
-			RoleDefinitionID: to.Ptr(fullRoleDefinitionID),
-			PrincipalID:      to.Ptr(principalID),
-		},
-	}
-
-	resp, err := client.Create(ctx, scope, roleAssignmentName, parameters, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create role assignment: %w", err)
-	}
-
-	fmt.Println("✓ Successfully assigned 'Azure AI User' role")
-
-	if resp.Name != nil {
-		fmt.Printf("  Assignment ID: %s\n", *resp.Name)
-	}
-
-	fmt.Println()
-	fmt.Println("⏳ Waiting 30 seconds for RBAC propagation...")
-	time.Sleep(30 * time.Second)
-
-	// Validate the assignment
-	fmt.Println("Validating role assignment...")
-	filter := fmt.Sprintf("principalId eq '%s'", principalID)
+	// Check if the role assignment already exists
+	// Use atScope() to list all role assignments at this scope, then filter in code
 	pager := client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-		Filter: to.Ptr(filter),
+		Filter: to.Ptr("atScope()"),
 	})
 
-	validated := false
+	assignmentExists := false
+	var existingAssignmentId string
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Warning: Could not validate role assignment. It may still be propagating.")
-			break
+			return fmt.Errorf("failed to list role assignments: %w", err)
 		}
-
 		for _, assignment := range page.Value {
-			if assignment.Properties != nil && assignment.Properties.RoleDefinitionID != nil {
-				if strings.Contains(*assignment.Properties.RoleDefinitionID, roleDefinitionID) {
-					fmt.Println("✓ Role assignment validated successfully")
-					fmt.Printf("  Role: Azure AI User\n")
-					validated = true
+			if assignment.Properties != nil && assignment.Properties.PrincipalID != nil && assignment.Properties.RoleDefinitionID != nil {
+				// Filter by both principal ID and role definition ID
+				if *assignment.Properties.PrincipalID == principalID && *assignment.Properties.RoleDefinitionID == fullRoleDefinitionID {
+					assignmentExists = true
+					if assignment.Name != nil {
+						existingAssignmentId = *assignment.Name
+					}
 					break
 				}
 			}
 		}
-		if validated {
+		if assignmentExists {
 			break
 		}
 	}
 
-	if !validated {
-		fmt.Fprintln(os.Stderr, "Warning: Could not validate role assignment. It may still be propagating.")
+	if assignmentExists {
+		fmt.Println("✓ Role assignment already exists")
+		if existingAssignmentId != "" {
+			fmt.Printf("  Assignment ID: %s\n", existingAssignmentId)
+		}
+	} else {
+		// Generate a unique name for the role assignment
+		roleAssignmentName := uuid.New().String()
+		// Create role assignment
+		parameters := armauthorization.RoleAssignmentCreateParameters{
+			Properties: &armauthorization.RoleAssignmentProperties{
+				RoleDefinitionID: to.Ptr(fullRoleDefinitionID),
+				PrincipalID:      to.Ptr(principalID),
+			},
+		}
+
+		resp, err := client.Create(ctx, scope, roleAssignmentName, parameters, nil)
+		if err != nil {
+			// Check if the error is due to role assignment already existing (409 Conflict)
+			if strings.Contains(err.Error(), "RoleAssignmentExists") || strings.Contains(err.Error(), "409") {
+				fmt.Println("✓ Role assignment already exists (detected during creation)")
+				assignmentExists = true // Mark as existing so we skip waiting
+			} else {
+				return fmt.Errorf("failed to create role assignment: %w", err)
+			}
+		} else {
+			fmt.Println("✓ Successfully assigned 'Azure AI User' role")
+
+			if resp.Name != nil {
+				fmt.Printf("  Assignment ID: %s\n", *resp.Name)
+			}
+		}
+	}
+
+	// Only wait for propagation if we just created a new assignment
+	if !assignmentExists {
+		fmt.Println()
+		fmt.Println("⏳ Waiting 30 seconds for RBAC propagation...")
+		time.Sleep(30 * time.Second)
+
+		// Validate the assignment
+		fmt.Println("Validating role assignment...")
+		pager = client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
+			Filter: to.Ptr("atScope()"),
+		})
+
+		validated := false
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "Warning: Could not validate role assignment. It may still be propagating.")
+				break
+			}
+
+			for _, assignment := range page.Value {
+				if assignment.Properties != nil && assignment.Properties.RoleDefinitionID != nil {
+					if strings.Contains(*assignment.Properties.RoleDefinitionID, roleDefinitionID) {
+						fmt.Println("✓ Role assignment validated successfully")
+						fmt.Printf("  Role: Azure AI User\n")
+						validated = true
+						break
+					}
+				}
+			}
+			if validated {
+				break
+			}
+		}
+
+		if !validated {
+			fmt.Fprintln(os.Stderr, "Warning: Could not validate role assignment. It may still be propagating.")
+		}
 	}
 
 	return nil

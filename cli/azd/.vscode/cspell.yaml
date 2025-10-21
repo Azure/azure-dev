@@ -43,6 +43,7 @@ words:
   - tekuri
   - jsonschema
   - rustc
+  - figspec
 languageSettings:
   - languageId: go
     ignoreRegExpList:

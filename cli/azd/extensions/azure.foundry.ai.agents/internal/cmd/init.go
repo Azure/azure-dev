@@ -48,7 +48,7 @@ type InitAction struct {
 	//modelCatalog      map[string]*ai.AiModel
 	//modelCatalogService *ai.ModelCatalogService
 	projectConfig *azdext.ProjectConfig
-	environment    *azdext.Environment
+	environment   *azdext.Environment
 }
 
 // GitHubUrlInfo holds parsed information from a GitHub URL
@@ -150,7 +150,7 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 
 	// If --project-id is given
 	if flags.projectResourceId != "" {
-		// projectResourceId is a string of the format 
+		// projectResourceId is a string of the format
 		// /subscriptions/[AZURE_SUBSCRIPTION]/resourceGroups/[AZURE_RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT_NAME]/projects/[AI_PROJECT_NAME]
 		// extract each of those fields from the string, issue an error if it doesn't match the format
 		fmt.Println("Setting up your azd environment to use the provided AI Foundry project resource ID...")
@@ -414,7 +414,7 @@ func (a *InitAction) promptForMissingValues(ctx context.Context, azdClient *azde
 func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context, projectResourceId string) error {
 	// Define the regex pattern for the project resource ID
 	pattern := `^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`
-	
+
 	regex, err := regexp.Compile(pattern)
 	if err != nil {
 		return fmt.Errorf("failed to compile regex pattern: %w", err)
@@ -1231,4 +1231,3 @@ func (a *InitAction) setEnvVar(ctx context.Context, envName, key, value string) 
 	fmt.Printf("Set environment variable: %s=%s\n", key, value)
 	return nil
 }
-

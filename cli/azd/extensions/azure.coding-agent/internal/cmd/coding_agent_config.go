@@ -524,17 +524,18 @@ func pickOrCreateMSI(ctx context.Context,
 	// Prompt for pick or create a new MSI
 	selectedOption, err := prompter.Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: "Do you want to create a new User Managed Identity (MSI) or use an existing one?",
+			Message: "Do you want to create a new Azure user-assigned managed identity or use an existing one?",
 			Choices: []*azdext.SelectChoice{
-				{Label: "Create new User Managed Identity (MSI)"},
-				{Label: "Use existing User Managed Identity (MSI)"},
+				{Label: "Create new user-assigned managed identity"},
+				{Label: "Use existing user-assigned managed identity"},
 			},
+			HelpMessage: "",
 		},
 	})
 	if err != nil {
 		//nolint:lll
 		return nil, fmt.Errorf(
-			"failed when prompting for MSI option. Try logging in manually with 'azd auth login' before running this command. Error: %w",
+			"failed when prompting for managed identity option. Try logging in manually with 'azd auth login' before running this command. Error: %w",
 			err,
 		)
 	}
@@ -773,7 +774,7 @@ func gitPushChanges(ctx context.Context,
 
 	resp, err := prompter.Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: fmt.Sprintf("Which git repository would you like push the branch (%s) to?", branchName),
+			Message: fmt.Sprintf("Which git repository should we push the '%s' branch to?", branchName),
 			Choices: choices,
 		},
 	})

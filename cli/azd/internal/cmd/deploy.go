@@ -250,23 +250,30 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			da.console.WarnForFeature(ctx, alphaFeatureId)
 		}
 
-		var packageResult *project.ServicePackageResult
-		var publishResult *project.ServicePublishResult
+		// Initialize service context for tracking artifacts across operations
+		serviceContext := &project.ServiceContext{}
 
 		if da.flags.fromPackage != "" {
-			// --from-package set, skip packaging
-			packageResult = &project.ServicePackageResult{
-				PackagePath: da.flags.fromPackage,
+			// --from-package set, skip packaging and create package artifact
+			err = serviceContext.Package.Add(&project.Artifact{
+				Kind:         determineArtifactKind(da.flags.fromPackage),
+				Location:     da.flags.fromPackage,
+				LocationKind: project.LocationKindLocal,
+			})
+
+			if err != nil {
+				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return nil, err
 			}
 		} else {
 			//  --from-package not set, automatically package the application
-			packageResult, err = async.RunWithProgress(
+			packageResult, err := async.RunWithProgress(
 				func(packageProgress project.ServiceProgress) {
 					progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
 					da.console.ShowSpinner(ctx, progressMessage, input.Step)
 				},
 				func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePackageResult, error) {
-					return da.serviceManager.Package(ctx, svc, nil, progress, nil)
+					return da.serviceManager.Package(ctx, svc, serviceContext, progress, nil)
 				},
 			)
 
@@ -275,15 +282,20 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, err
 			}
+
+			// Append package artifacts
+			if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
+				return nil, err
+			}
 		}
 
-		publishResult, err = async.RunWithProgress(
+		publishResult, err := async.RunWithProgress(
 			func(publishProgress project.ServiceProgress) {
 				progressMessage := fmt.Sprintf("Publishing service %s (%s)", svc.Name, publishProgress.Message)
 				da.console.ShowSpinner(ctx, progressMessage, input.Step)
 			},
 			func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePublishResult, error) {
-				return da.serviceManager.Publish(ctx, svc, packageResult, progress, nil)
+				return da.serviceManager.Publish(ctx, svc, serviceContext, progress, nil)
 			},
 		)
 
@@ -293,32 +305,43 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			return nil, err
 		}
 
+		// Append publish artifacts
+		serviceContext.Publish.Add(publishResult.Artifacts...)
+
 		deployResult, err := async.RunWithProgress(
 			func(deployProgress project.ServiceProgress) {
 				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
 				da.console.ShowSpinner(ctx, progressMessage, input.Step)
 			},
 			func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceDeployResult, error) {
-				return da.serviceManager.Deploy(ctx, svc, packageResult, publishResult, progress)
+				return da.serviceManager.Deploy(ctx, svc, serviceContext, progress)
 			},
 		)
 
+		if err != nil {
+			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			return nil, err
+		}
+
+		// Append deploy artifacts
+		serviceContext.Deploy.Add(deployResult.Artifacts...)
+
 		// clean up for packages automatically created in temp dir
-		if da.flags.fromPackage == "" && strings.HasPrefix(packageResult.PackagePath, os.TempDir()) {
-			if err := os.RemoveAll(packageResult.PackagePath); err != nil {
-				log.Printf("failed to remove temporary package: %s : %s", packageResult.PackagePath, err)
+		if da.flags.fromPackage == "" {
+			for _, artifact := range serviceContext.Package {
+				if strings.HasPrefix(artifact.Location, os.TempDir()) {
+					if err := os.RemoveAll(artifact.Location); err != nil {
+						log.Printf("failed to remove temporary package: %s : %s", artifact.Location, err)
+					}
+				}
 			}
 		}
 
 		da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
-		if err != nil {
-			return nil, err
-		}
-
 		deployResults[svc.Name] = deployResult
 
 		// report deploy outputs
-		da.console.MessageUxItem(ctx, deployResult)
+		da.console.MessageUxItem(ctx, deployResult.Artifacts)
 	}
 
 	aspireDashboardUrl := apphost.AspireDashboardUrl(ctx, da.env, da.alphaFeatureManager)

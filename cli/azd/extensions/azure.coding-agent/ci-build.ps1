@@ -48,7 +48,7 @@ $tagsFlag = "-tags=cfi,cfg,osusergo"
 # -X: Set variable at link time. Used to set the version in source.
 
 # TODO: set version properly
-$ldFlag = "-ldflags=-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)' "
+$ldFlag = "-ldflags=-s -w -X 'azurecodingagent/internal/cmd.Version=$Version (commit $SourceVersion)' "
 
 if ($IsWindows) {
     $msg = "Building for Windows"

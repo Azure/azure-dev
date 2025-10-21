@@ -75,9 +75,6 @@ func (efs *ExternalFrameworkService) RequiredExternalTools(
 	serviceConfig *ServiceConfig,
 ) []tools.ExternalTool {
 	// Convert serviceConfig to gRPC proto
-	cleanup := efs.wireConsole()
-	defer cleanup()
-
 	protoServiceConfig, err := efs.toProtoServiceConfig(serviceConfig)
 	if err != nil {
 		return nil
@@ -119,9 +116,6 @@ func (efs *ExternalFrameworkService) RequiredExternalTools(
 
 // Initialize initializes the framework service for the specified service configuration
 func (efs *ExternalFrameworkService) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	cleanup := efs.wireConsole()
-	defer cleanup()
-
 	if serviceConfig == nil {
 		return errors.New("service configuration is required")
 	}
@@ -149,9 +143,6 @@ func (efs *ExternalFrameworkService) Initialize(ctx context.Context, serviceConf
 // Requirements gets the requirements for the language or framework service
 func (efs *ExternalFrameworkService) Requirements() FrameworkRequirements {
 	ctx := context.Background()
-	cleanup := efs.wireConsole()
-	defer cleanup()
-
 	req := &azdext.FrameworkServiceMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.FrameworkServiceMessage_RequirementsRequest{
@@ -201,11 +192,9 @@ func (efs *ExternalFrameworkService) Requirements() FrameworkRequirements {
 func (efs *ExternalFrameworkService) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
-	cleanup := efs.wireConsole()
-	defer cleanup()
-
 	protoServiceConfig, err := efs.toProtoServiceConfig(serviceConfig)
 	if err != nil {
 		return nil, err
@@ -245,25 +234,25 @@ func (efs *ExternalFrameworkService) Restore(
 func (efs *ExternalFrameworkService) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	restoreOutput *ServiceRestoreResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
-	cleanup := efs.wireConsole()
-	defer cleanup()
-
-	protoServiceConfig, err := efs.toProtoServiceConfig(serviceConfig)
-	if err != nil {
+	protoServiceConfig := &azdext.ServiceConfig{}
+	if err := mapper.Convert(serviceConfig, &protoServiceConfig); err != nil {
 		return nil, err
 	}
 
-	protoRestoreOutput := efs.toProtoServiceRestoreResult(restoreOutput)
+	protoServiceContext := &azdext.ServiceContext{}
+	if err := mapper.Convert(serviceContext, &protoServiceContext); err != nil {
+		return nil, err
+	}
 
 	req := &azdext.FrameworkServiceMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.FrameworkServiceMessage_BuildRequest{
 			BuildRequest: &azdext.FrameworkServiceBuildRequest{
-				ServiceConfig: protoServiceConfig,
-				RestoreOutput: protoRestoreOutput,
+				ServiceConfig:  protoServiceConfig,
+				ServiceContext: protoServiceContext,
 			},
 		},
 	}
@@ -281,7 +270,7 @@ func (efs *ExternalFrameworkService) Build(
 	}
 
 	var result *ServiceBuildResult
-	err = mapper.Convert(buildResp.BuildResult, &result)
+	err = mapper.Convert(buildResp.Result, &result)
 	if err != nil {
 		return nil, fmt.Errorf("converting build result: %w", err)
 	}
@@ -293,25 +282,25 @@ func (efs *ExternalFrameworkService) Build(
 func (efs *ExternalFrameworkService) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	cleanup := efs.wireConsole()
-	defer cleanup()
-
-	protoServiceConfig, err := efs.toProtoServiceConfig(serviceConfig)
-	if err != nil {
+	protoServiceConfig := &azdext.ServiceConfig{}
+	if err := mapper.Convert(serviceConfig, &protoServiceConfig); err != nil {
 		return nil, err
 	}
 
-	protoBuildOutput := efs.toProtoServiceBuildResult(buildOutput)
+	protoServiceContext := &azdext.ServiceContext{}
+	if err := mapper.Convert(serviceContext, &protoServiceContext); err != nil {
+		return nil, err
+	}
 
 	req := &azdext.FrameworkServiceMessage{
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.FrameworkServiceMessage_PackageRequest{
 			PackageRequest: &azdext.FrameworkServicePackageRequest{
-				ServiceConfig: protoServiceConfig,
-				BuildOutput:   protoBuildOutput,
+				ServiceConfig:  protoServiceConfig,
+				ServiceContext: protoServiceContext,
 			},
 		},
 	}
@@ -446,18 +435,6 @@ func (efs *ExternalFrameworkService) startResponseDispatcher() {
 	}()
 }
 
-func (efs *ExternalFrameworkService) wireConsole() func() {
-	stdOut := efs.extension.StdOut()
-	stdErr := efs.extension.StdErr()
-	stdOut.AddWriter(efs.console.Handles().Stdout)
-	stdErr.AddWriter(efs.console.Handles().Stderr)
-
-	return func() {
-		stdOut.RemoveWriter(efs.console.Handles().Stdout)
-		stdErr.RemoveWriter(efs.console.Handles().Stderr)
-	}
-}
-
 // Convert ServiceConfig to proto message
 func (efs *ExternalFrameworkService) toProtoServiceConfig(serviceConfig *ServiceConfig) (*azdext.ServiceConfig, error) {
 	if serviceConfig == nil {
@@ -477,47 +454,4 @@ func (efs *ExternalFrameworkService) toProtoServiceConfig(serviceConfig *Service
 	}
 
 	return protoConfig, nil
-}
-
-// Convert ServiceRestoreResult to proto message
-func (efs *ExternalFrameworkService) toProtoServiceRestoreResult(result *ServiceRestoreResult) *azdext.ServiceRestoreResult {
-	if result == nil {
-		return nil
-	}
-
-	var protoResult *azdext.ServiceRestoreResult
-	err := mapper.Convert(result, &protoResult)
-	if err != nil {
-		// Fallback to basic conversion
-		details := detailsInterfaceToStringMap(result.Details)
-		protoResult = &azdext.ServiceRestoreResult{}
-		if len(details) > 0 {
-			protoResult.Details = details
-		}
-	}
-
-	return protoResult
-}
-
-// Convert ServiceBuildResult to proto message
-func (efs *ExternalFrameworkService) toProtoServiceBuildResult(result *ServiceBuildResult) *azdext.ServiceBuildResult {
-	if result == nil {
-		return nil
-	}
-
-	var protoResult *azdext.ServiceBuildResult
-	err := mapper.Convert(result, &protoResult)
-	if err != nil {
-		// Fallback to basic conversion
-		details := detailsInterfaceToStringMap(result.Details)
-		protoResult = &azdext.ServiceBuildResult{
-			Restore: efs.toProtoServiceRestoreResult(result.Restore),
-		}
-
-		if len(details) > 0 {
-			protoResult.Details = details
-		}
-	}
-
-	return protoResult
 }

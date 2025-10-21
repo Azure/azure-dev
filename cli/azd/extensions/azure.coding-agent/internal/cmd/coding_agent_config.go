@@ -49,6 +49,7 @@ var copilotSetupStepsYml string
 var prBodyMD string
 
 const copilotEnv = "copilot"
+const readmeURL = "https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.coding-agent/README.md"
 
 type flagValues struct {
 	Debug               bool
@@ -112,137 +113,15 @@ func newConfigCommand() *cobra.Command {
 	cc := &cobra.Command{
 		Use:   "config",
 		Short: "Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP",
+		Long:  "Configure the GitHub Copilot coding agent to access Azure resources via the Azure MCP.\n\nFor more information about this command, including prerequisites and troubleshooting, view the readme at " + ux.Hyperlink("https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.coding-agent/README.md"),
 	}
 
 	flagValues := setupFlags(cc.Flags())
 
 	cc.RunE = func(cmd *cobra.Command, args []string) error {
-		if flagValues.Debug {
-			log.SetOutput(os.Stderr)
-		} else {
-			log.SetOutput(io.Discard)
-		}
-
-		// Create a new context that includes the AZD access token
-		ctx := azdext.WithAccessToken(cmd.Context())
-
-		// Create a new AZD client
-		azdClient, err := azdext.NewAzdClient()
-
-		if err != nil {
-			return fmt.Errorf("failed to create azd client: %w", err)
-		}
-
-		defer azdClient.Close()
-
-		promptClient := azdClient.Prompt()
-
-		if err := loginToGitHubIfNeeded(ctx, flagValues.GitHubHostName, newCommandRunner, newGitHubCLI); err != nil {
-			return fmt.Errorf("failed to log in to GitHub. Login manually using `gh auth login`: %w", err)
-		}
-
-		subscriptionResponse, err := promptClient.PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
-
-		if err != nil {
-			return fmt.Errorf("failed getting a subscription from prompt: %w", err)
-		}
-
-		tenantID := subscriptionResponse.Subscription.TenantId
-		subscriptionID := subscriptionResponse.Subscription.Id
-
-		cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-			TenantID: tenantID,
-		})
-
-		if err != nil {
-			return fmt.Errorf("failed to get the Azure Developer CLI credential: %w", err)
-		}
-
-		cp := &credentialProviderAdapter{tokenCred: cred}
-
-		msiService := azd_armmsi.NewArmMsiService(cp, nil)
-		entraIDService := entraid.NewEntraIdService(cp, nil, nil)
-		rgClient, err := armresources.NewResourceGroupsClient(subscriptionID, cred, nil)
-
-		if err != nil {
-			return fmt.Errorf("failed to create the resource group client: %w", err)
-		}
-
-		// the defaults follow along with whatever the user has chosen for --debug. So if --debug is
-		// _off_ then you don't see all the console output from sub-commands.
-		defaultCommandRunner, defaultConsole := newCommandRunner(flagValues.Debug)
-		defaultGitHubCLI, err := azd_tools_github.NewGitHubCli(ctx, defaultConsole, defaultCommandRunner)
-
-		if err != nil {
-			return fmt.Errorf("failed to get the github CLI: %w", err)
-		}
-
-		gitCLI := newInternalGitCLI(defaultCommandRunner)
-		gitRepoRoot, err := gitCLI.GetRepoRoot(ctx, ".")
-
-		if err != nil {
-			return fmt.Errorf("failed to get git repository root: %w", err)
-		}
-
-		repoSlug, err := promptForRepoSlug(ctx, promptClient, gitCLI, gitRepoRoot, flagValues.RepoSlug)
-
-		if err != nil {
-			return fmt.Errorf("failed getting the <owner>/<repository>: %w", err)
-		}
-
-		authConfig, err := pickOrCreateMSI(ctx,
-			promptClient,
-			&msiService,
-			entraIDService,
-			rgClient,
-			flagValues.ManagedIdentityName, subscriptionID, flagValues.RoleNames)
-
-		if err != nil {
-			return err
-		}
-
-		if err := createFederatedCredential(ctx,
-			&msiService,
-			repoSlug, copilotEnv, subscriptionID, authConfig.ResourceID); err != nil {
-			return err
-		}
-
-		if err := setCopilotEnvVars(ctx, defaultGitHubCLI, repoSlug, *authConfig); err != nil {
-			return err
-		}
-
-		if err := writeCopilotSetupStepsYaml(gitRepoRoot); err != nil {
-			return err
-		}
-
-		remote, err := gitPushChanges(ctx, promptClient, gitCLI, defaultCommandRunner,
-			gitRepoRoot,
-			repoSlug,
-			flagValues.BranchName)
-
-		if err != nil {
-			return fmt.Errorf("failed to push files to git: %w", err)
-		}
-
-		codingAgentURL := fmt.Sprintf(
-			"https://github.com/%s/settings/copilot/coding_agent#:~:text=JSON%%20MCP%%20configuration-,MCP%%20configuration,-1",
-			repoSlug,
-		)
-
-		managedIdentityPortalURL := formatPortalLinkForManagedIdentity(tenantID, subscriptionID, authConfig.ResourceGroup, authConfig.Name)
-
-		fmt.Println("")
-		fmt.Println(output.WithHighLightFormat("(!)"))
-		fmt.Println(output.WithHighLightFormat("(!) NOTE: Some tasks must still be completed, manually:"))
-		fmt.Println(output.WithHighLightFormat("(!)"))
-		fmt.Println("")
-		fmt.Printf("1. The branch created at %s/%s must be merged to %s/main\n", remote, flagValues.BranchName, repoSlug)
-		fmt.Printf("2. Configure Copilot coding agent's managed identity roles in the Azure portal: %s\n", managedIdentityPortalURL)
-		fmt.Printf("3. Visit '%s' and update the \"MCP configuration\" field with this JSON:\n\n", codingAgentURL)
-
-		fmt.Println(mcpJson)
-
-		if err := openBrowserWindows(ctx, promptClient, defaultGitHubCLI, codingAgentURL, gitRepoRoot); err != nil {
+		if err := runConfigCommand(cmd, flagValues); err != nil {
+			message := fmt.Sprintf("(!) An error occurred, see the readme for troubleshooting and prerequisites:\n    %s", ux.Hyperlink(readmeURL)) //nolint:lll
+			fmt.Println(ux.BoldString(message))
 			return err
 		}
 
@@ -250,6 +129,141 @@ func newConfigCommand() *cobra.Command {
 	}
 
 	return cc
+}
+
+func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
+	if flagValues.Debug {
+		log.SetOutput(os.Stderr)
+	} else {
+		log.SetOutput(io.Discard)
+	}
+
+	// Create a new context that includes the AZD access token
+	ctx := azdext.WithAccessToken(cmd.Context())
+
+	// Create a new AZD client
+	azdClient, err := azdext.NewAzdClient()
+
+	if err != nil {
+		return fmt.Errorf("failed to create azd client: %w", err)
+	}
+
+	defer azdClient.Close()
+
+	promptClient := azdClient.Prompt()
+
+	// the defaults follow along with whatever the user has chosen for --debug. So if --debug is
+	// _off_ then you don't see all the console output from sub-commands.
+	defaultCommandRunner, defaultConsole := newCommandRunner(flagValues.Debug)
+	defaultGitHubCLI, err := azd_tools_github.NewGitHubCli(ctx, defaultConsole, defaultCommandRunner)
+
+	if err != nil {
+		return fmt.Errorf("failed to get the github CLI: %w", err)
+	}
+
+	gitCLI := newInternalGitCLI(defaultCommandRunner)
+	gitRepoRoot, err := gitCLI.GetRepoRoot(ctx, ".")
+
+	if err != nil {
+		return fmt.Errorf("failed to get git repository root: %w", err)
+	}
+
+	if _, err := listRemotes(ctx, gitCLI, gitRepoRoot); err != nil {
+		return err
+	}
+
+	if err := loginToGitHubIfNeeded(ctx, flagValues.GitHubHostName, newCommandRunner, newGitHubCLI); err != nil {
+		return fmt.Errorf("failed to log in to GitHub. Login manually using `gh auth login`: %w", err)
+	}
+
+	// this spot also serves as the "the user has `azd auth login`'d into Azure already"
+	subscriptionResponse, err := promptClient.PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
+
+	if err != nil {
+		//nolint:lll
+		return fmt.Errorf("failed getting a subscription from prompt. Try logging in manually with 'azd auth login' before running this command %w", err)
+	}
+
+	tenantID := subscriptionResponse.Subscription.TenantId
+	subscriptionID := subscriptionResponse.Subscription.Id
+
+	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID: tenantID,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to get the Azure Developer CLI credential: %w", err)
+	}
+
+	cp := &credentialProviderAdapter{tokenCred: cred}
+
+	msiService := azd_armmsi.NewArmMsiService(cp, nil)
+	entraIDService := entraid.NewEntraIdService(cp, nil, nil)
+	rgClient, err := armresources.NewResourceGroupsClient(subscriptionID, cred, nil)
+
+	if err != nil {
+		return fmt.Errorf("failed to create the resource group client: %w", err)
+	}
+
+	repoSlug, err := promptForCodingAgentRepoSlug(ctx, promptClient, gitCLI, gitRepoRoot, flagValues.RepoSlug)
+
+	if err != nil {
+		return fmt.Errorf("failed getting the <owner>/<repository>: %w", err)
+	}
+
+	authConfig, err := pickOrCreateMSI(ctx,
+		promptClient,
+		&msiService,
+		entraIDService,
+		rgClient,
+		flagValues.ManagedIdentityName, subscriptionID, flagValues.RoleNames)
+
+	if err != nil {
+		return err
+	}
+
+	if err := createFederatedCredential(ctx,
+		&msiService,
+		repoSlug, copilotEnv, subscriptionID, authConfig.ResourceID); err != nil {
+		return err
+	}
+
+	if err := setCopilotEnvVars(ctx, defaultGitHubCLI, repoSlug, *authConfig); err != nil {
+		return err
+	}
+
+	if err := writeCopilotSetupStepsYaml(gitRepoRoot); err != nil {
+		return err
+	}
+
+	remote, err := gitPushChanges(ctx, promptClient, gitCLI, defaultCommandRunner,
+		gitRepoRoot,
+		repoSlug,
+		flagValues.BranchName)
+
+	if err != nil {
+		return fmt.Errorf("failed to push files to git: %w", err)
+	}
+
+	codingAgentURL := fmt.Sprintf("https://github.com/%s/settings/copilot/coding_agent#:~:text=JSON%%20MCP%%20configuration-,MCP%%20configuration,-1", repoSlug) //nolint:lll
+	managedIdentityPortalURL := formatPortalLinkForManagedIdentity(tenantID, subscriptionID, authConfig.ResourceGroup, authConfig.Name)                          //nolint:lll
+
+	fmt.Println("")
+	fmt.Println(output.WithHighLightFormat("(!)"))
+	fmt.Println(output.WithHighLightFormat("(!) NOTE: Some tasks must still be completed, manually:"))
+	fmt.Println(output.WithHighLightFormat("(!)"))
+	fmt.Println("")
+	fmt.Printf("1. The branch created at %s/%s must be merged to %s/main\n", remote, flagValues.BranchName, repoSlug)
+	fmt.Printf("2. Configure Copilot coding agent's managed identity roles in the Azure portal: %s\n", ux.Hyperlink(managedIdentityPortalURL)) // nolint:lll
+	fmt.Printf("3. Visit '%s' and update the \"MCP configuration\" field with this JSON:\n\n", ux.Hyperlink(codingAgentURL))
+
+	fmt.Println(mcpJson)
+
+	if err := openBrowserWindows(ctx, promptClient, defaultGitHubCLI, codingAgentURL, gitRepoRoot); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func openBrowserWindows(ctx context.Context,
@@ -291,7 +305,10 @@ func openBrowserWindows(ctx context.Context,
 	return nil
 }
 
-func promptForRepoSlug(ctx context.Context,
+// promptForCodingAgentRepoSlug gets the repo slug (<owner>/<repository>) for the repository
+// where the coding agent will run. This isn't necessarily the same as the repository the user
+// normally works in if, for instance, they're working in a fork.
+func promptForCodingAgentRepoSlug(ctx context.Context,
 	promptClient azdext.PromptServiceClient,
 	gitCLI gitCLI,
 	gitRepoRoot string,
@@ -303,7 +320,7 @@ func promptForRepoSlug(ctx context.Context,
 
 	var choices []*azdext.SelectChoice
 
-	remotes, err := gitCLI.ListRemotes(ctx, gitRepoRoot)
+	remotes, err := listRemotes(ctx, gitCLI, gitRepoRoot)
 
 	if err != nil {
 		return "", err
@@ -343,6 +360,21 @@ func promptForRepoSlug(ctx context.Context,
 	}
 
 	return repoSlugs[*resp.Value], nil
+}
+
+func listRemotes(ctx context.Context, gitCLI gitCLI, gitRepoRoot string) ([]string, error) {
+	remotes, err := gitCLI.ListRemotes(ctx, gitRepoRoot)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if len(remotes) == 0 {
+		return nil, fmt.Errorf("no git remotes are configured")
+
+	}
+
+	return remotes, nil
 }
 
 func writeCopilotSetupStepsYaml(gitRepoRoot string) error {
@@ -715,17 +747,11 @@ func gitPushChanges(ctx context.Context,
 
 	chosenRemote := ""
 
-	runResult, err := commandRunner.Run(ctx, azd_exec.RunArgs{
-		Cmd:  "git",
-		Args: []string{"remote"},
-		Cwd:  gitRepoRoot,
-	})
+	remotes, err := listRemotes(ctx, gitCLI, gitRepoRoot)
 
 	if err != nil {
-		return "", fmt.Errorf("failed to get list of git remotes for the current repository: %w", err)
+		return "", fmt.Errorf("failed to list git remotes for this repository: %w", err)
 	}
-
-	remotes := strings.Split(strings.TrimSpace(runResult.Stdout), "\n")
 
 	var choices []*azdext.SelectChoice
 
@@ -772,11 +798,11 @@ func gitPushChanges(ctx context.Context,
 	taskList := ux.NewTaskList(nil)
 
 	taskList.AddTask(ux.TaskOptions{
-		Title: fmt.Sprintf("Creating branch (%s)", branchName),
+		Title: fmt.Sprintf("Creating/switch to branch (%s)", branchName),
 		Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
 			_, err := commandRunner.Run(ctx, azd_exec.RunArgs{
 				Cmd:  "git",
-				Args: []string{"checkout", "-b", branchName},
+				Args: []string{"checkout", "-B", branchName},
 				Cwd:  gitRepoRoot,
 			})
 
@@ -813,11 +839,20 @@ func gitPushChanges(ctx context.Context,
 	taskList.AddTask(ux.TaskOptions{
 		Title: fmt.Sprintf("Pushing changes to %s/%s", chosenRemote, branchName),
 		Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-			if err := gitCLI.PushUpstream(ctx, gitRepoRoot, chosenRemote, branchName); err != nil {
-				return ux.Error, err
+			var lastErr error
+
+			for range 3 {
+				// copying this idea from azd pipeline config, which pushes multiple times
+				// to allow for the "push once, fail, authenticate" workflow.
+				if err := gitCLI.PushUpstream(ctx, gitRepoRoot, chosenRemote, branchName); err != nil {
+					lastErr = err
+					continue
+				}
+
+				return ux.Success, nil
 			}
 
-			return ux.Success, nil
+			return ux.Error, lastErr
 		},
 	})
 
@@ -898,11 +933,21 @@ func (cli *internalGitCLI) ListRemotes(ctx context.Context, gitRepoRoot string) 
 	}
 
 	remotes := strings.Split(strings.TrimSpace(runResult.Stdout), "\n")
+
+	if len(remotes) == 1 && remotes[0] == "" {
+		return nil, nil
+	}
+
 	return remotes, nil
 }
 
-// formatPortalLinkForManagedIdentity takes you to the Azure portal blade, for your managed identity, that lets you see its role assignments.
-func formatPortalLinkForManagedIdentity(tenantID string, subscriptionID string, resourceGroupName string, managedIdentityName string) string {
+// formatPortalLinkForManagedIdentity takes you to the Azure portal blade, for your managed identity,
+// that lets you see its role assignments.
+func formatPortalLinkForManagedIdentity(tenantID string,
+	subscriptionID string,
+	resourceGroupName string,
+	managedIdentityName string) string {
+	//nolint:lll
 	return fmt.Sprintf("https://portal.azure.com/#@%s/resource/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ManagedIdentity/userAssignedIdentities/%s/azure_resources",
 		tenantID,
 		subscriptionID,

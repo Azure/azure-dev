@@ -1452,7 +1452,7 @@ func (m *Manager) SetBuiltInAuthMode() error {
 			"https://github.com/Azure/azure-dev/blob/main/cli/azd/docs/external-authentication.md")
 	}
 
-	// protecting against unexpected modes. There should be only azDelegsated left.
+	// protecting against unexpected modes. There should be only azDelegated left.
 	if currentMode != AzDelegated {
 		return fmt.Errorf("Unexpected mode found: %s", currentMode)
 	}

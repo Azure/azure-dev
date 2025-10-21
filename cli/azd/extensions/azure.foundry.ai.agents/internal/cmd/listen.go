@@ -28,8 +28,11 @@ func newListenCommand() *cobra.Command {
 			defer azdClient.Close()
 
 			provider := project.NewAgentServiceTargetProvider(azdClient)
+			projectParser := &project.FoundryParser{AzdClient: azdClient}
 			host := azdext.NewExtensionHost(azdClient).
-				WithServiceTarget("foundry.agent", provider)
+				WithServiceTarget("foundry.agent", provider).
+				WithProjectEventHandler("preprovision", projectParser.SetIdentity).
+				WithProjectEventHandler("postdeploy", projectParser.CoboPostDeploy)
 
 			// Start listening for events
 			// This is a blocking call and will not return until the server connection is closed.

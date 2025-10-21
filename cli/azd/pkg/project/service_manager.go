@@ -46,6 +46,19 @@ var (
 	}
 )
 
+// UnsupportedServiceHostError represents an error when a service host is not supported,
+// including the specific host name and service name for context
+type UnsupportedServiceHostError struct {
+	Host         string
+	ServiceName  string
+	ErrorMessage string
+}
+
+// Error implements the error interface
+func (e *UnsupportedServiceHostError) Error() string {
+	return fmt.Sprintf("service host '%s' for service '%s' is unsupported", e.Host, e.ServiceName)
+}
+
 // ServiceManager provides a management layer for performing operations against an azd service within a project
 // The component performs all of the heavy lifting for executing all lifecycle operations for a service.
 //
@@ -581,12 +594,12 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 
 	if err := sm.serviceLocator.ResolveNamed(host, &target); err != nil {
 		if errors.Is(err, ioc.ErrResolveInstance) {
+			unsupportedErr := &UnsupportedServiceHostError{
+				Host:        host,
+				ServiceName: serviceConfig.Name,
+			}
 			return nil, &internal.ErrorWithSuggestion{
-				Err: fmt.Errorf(
-					"service host '%s' for service '%s' is unsupported",
-					host,
-					serviceConfig.Name,
-				),
+				Err: unsupportedErr,
 				Suggestion: fmt.Sprintf(
 					"Suggestion: install an extension that provides this host or update azure.yaml "+
 						"to use one of the supported hosts: %s",

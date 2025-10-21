@@ -300,8 +300,9 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		la.console.Message(ctx, "If you want to use 'azd auth login', you need to disable the current auth mode.")
 		response, err := la.console.Confirm(ctx, input.ConsoleOptions{
 			Message:      "Do you want to switch back to azd built-in authentication?",
-			DefaultValue: "N",
-			Help:         "",
+			DefaultValue: false,
+			Help: "Azd supports multiple authentication modes, including Azure CLI authentication and External " +
+				"request for Auth. Switching back to azd built-in authentication will try to disable the current mode.",
 		})
 		if err != nil {
 			return nil, err

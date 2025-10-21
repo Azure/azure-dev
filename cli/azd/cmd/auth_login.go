@@ -309,9 +309,10 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if !response {
 			return nil, fmt.Errorf("log in is not supported on current mode: %s", loginMode)
 		}
-		if err := la.authManager.SetMode(ctx, auth.AzdBuiltIn); err != nil {
+		if err := la.authManager.SetBuiltInAuthMode(); err != nil {
 			return nil, fmt.Errorf("setting auth mode: %w", err)
 		}
+		la.console.Message(ctx, "Authentication mode set to azd built-in. Continuing login...")
 	}
 
 	if len(la.flags.scopes) == 0 {

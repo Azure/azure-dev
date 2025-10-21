@@ -1438,17 +1438,38 @@ func (m *Manager) Mode() (AuthMode, error) {
 	return AzdBuiltIn, nil
 }
 
-func (m *Manager) SetMode(mode AuthMode) error {
+func (m *Manager) SetBuiltInAuthMode() error {
 	currentMode, err := m.Mode()
 	if err != nil {
 		return fmt.Errorf("fetching current auth mode: %w", err)
 	}
-
-	if currentMode == mode {
+	if currentMode == AzdBuiltIn {
 		return nil
 	}
 
 	if currentMode == ExternalRequest {
-
+		return fmt.Errorf("cannot change auth mode when external token mode is set. See %s",
+			"https://github.com/Azure/azure-dev/blob/main/cli/azd/docs/external-authentication.md")
 	}
+
+	// protecting against unexpected modes. There should be only azDelegsated left.
+	if currentMode != AzDelegated {
+		return fmt.Errorf("Unexpected mode found: %s", currentMode)
+	}
+
+	// Unset the useAzCliAuthKey flag
+	cfg, err := m.userConfigManager.Load()
+	if err != nil {
+		return fmt.Errorf("reading user config: %w", err)
+	}
+
+	if err := cfg.Unset(useAzCliAuthKey); err != nil {
+		return fmt.Errorf("unsetting %s: %w", useAzCliAuthKey, err)
+	}
+
+	if err := m.userConfigManager.Save(cfg); err != nil {
+		return fmt.Errorf("saving user config: %w", err)
+	}
+
+	return nil
 }

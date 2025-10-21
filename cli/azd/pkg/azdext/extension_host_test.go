@@ -155,7 +155,7 @@ func (stubServiceTargetProvider) GetTargetResource(
 func (stubServiceTargetProvider) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	frameworkPackage *ServicePackageResult,
+	serviceContext *ServiceContext,
 	progress ProgressReporter,
 ) (*ServicePackageResult, error) {
 	return nil, nil
@@ -163,7 +163,7 @@ func (stubServiceTargetProvider) Package(
 func (stubServiceTargetProvider) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	servicePackage *ServicePackageResult,
+	serviceContext *ServiceContext,
 	targetResource *TargetResource,
 	publishOptions *PublishOptions,
 	progress ProgressReporter,
@@ -173,8 +173,7 @@ func (stubServiceTargetProvider) Publish(
 func (stubServiceTargetProvider) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	servicePackage *ServicePackageResult,
-	servicePublish *ServicePublishResult,
+	serviceContext *ServiceContext,
 	targetResource *TargetResource,
 	progress ProgressReporter,
 ) (*ServiceDeployResult, error) {

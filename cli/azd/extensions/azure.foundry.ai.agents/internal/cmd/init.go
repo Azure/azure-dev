@@ -5,25 +5,29 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
 type initFlags struct {
-	manifestPointer string
-	src             string
+	projectResourceId string
+	manifestPointer   string
+	src               string
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -34,13 +38,22 @@ type AiProjectResourceConfig struct {
 type InitAction struct {
 	azdClient *azdext.AzdClient
 	//azureClient       *azure.AzureClient
-	azureContext *azdext.AzureContext
+	// azureContext *azdext.AzureContext
 	//composedResources []*azdext.ComposedResource
 	//console           input.Console
 	//credential        azcore.TokenCredential
 	//modelCatalog      map[string]*ai.AiModel
 	//modelCatalogService *ai.ModelCatalogService
 	projectConfig *azdext.ProjectConfig
+	environment    *azdext.Environment
+}
+
+// GitHubUrlInfo holds parsed information from a GitHub URL
+type GitHubUrlInfo struct {
+	RepoSlug string
+	Branch   string
+	FilePath string
+	Hostname string
 }
 
 func newInitCommand() *cobra.Command {
@@ -59,9 +72,15 @@ func newInitCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			azureContext, projectConfig, err := ensureAzureContext(ctx, azdClient)
+			//azureContext, projectConfig, err := ensureAzureContext(ctx, azdClient)
+			projectConfig, err := ensureProject(ctx, azdClient)
 			if err != nil {
-				return fmt.Errorf("failed to ensure azure context: %w", err)
+				return fmt.Errorf("failed to ground into a project context: %w", err)
+			}
+
+			environment, err := ensureEnvironment(ctx, azdClient)
+			if err != nil {
+				return fmt.Errorf("failed to ground into an environment: %w", err)
 			}
 
 			// getComposedResourcesResponse, err := azdClient.Compose().ListResources(ctx, &azdext.EmptyRequest{})
@@ -93,12 +112,13 @@ func newInitCommand() *cobra.Command {
 			action := &InitAction{
 				azdClient: azdClient,
 				// azureClient:         azure.NewAzureClient(credential),
-				azureContext: azureContext,
+				// azureContext: azureContext,
 				// composedResources:   getComposedResourcesResponse.Resources,
 				// console: console,
 				// credential:          credential,
 				// modelCatalogService: ai.NewModelCatalogService(credential),
 				projectConfig: projectConfig,
+				environment:   environment,
 			}
 
 			if err := action.Run(ctx, flags); err != nil {
@@ -109,8 +129,11 @@ func newInitCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.manifestPointer, "", "m", "",
-		"Pointer to the manifest to use for the agent")
+	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
+		"Azure AI Foundry Project Id to set your environment to")
+
+	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
+		"Path or URI to an agent manifest to add to your project")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"[Optional] Directory to download the agent yaml to (defaults to 'src/<agent-id>')")
@@ -122,43 +145,64 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 	color.Green("Initializing AI agent project...")
 	fmt.Println()
 
+	// If --project-id is given
+	if flags.projectResourceId != "" {
+		// projectResourceId is a string of the format 
+		// /subscriptions/[AZURE_SUBSCRIPTION]/resourceGroups/[AZURE_RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT_NAME]/projects/[AI_PROJECT_NAME]
+		// extract each of those fields from the string, issue an error if it doesn't match the format
+		fmt.Println("Setting up your azd environment to use the provided AI Foundry project resource ID...")
+		if err := a.parseAndSetProjectResourceId(ctx, flags.projectResourceId); err != nil {
+			return fmt.Errorf("failed to parse project resource ID: %w", err)
+		}
+
+		color.Green("\nAI agent project initialized successfully!")
+	}
+
+	// If --manifest is given
+	if flags.manifestPointer != "" {
+		// Validate that the manifest pointer is either a valid URL or existing file path
+		isValidURL := false
+		isValidFile := false
+
+		if _, err := url.ParseRequestURI(flags.manifestPointer); err == nil {
+			isValidURL = true
+		} else if _, fileErr := os.Stat(flags.manifestPointer); fileErr == nil {
+			isValidFile = true
+		}
+
+		if !isValidURL && !isValidFile {
+			return fmt.Errorf("manifest pointer '%s' is neither a valid URI nor an existing file path", flags.manifestPointer)
+		}
+
+		// Download/read agent.yaml file from the provided URI or file path and save it to project's "agents" directory
+		agentManifest, targetDir, err := a.downloadAgentYaml(ctx, flags.manifestPointer, flags.src)
+		if err != nil {
+			return fmt.Errorf("downloading agent.yaml: %w", err)
+		}
+
+		// Add the agent to the azd project (azure.yaml) services
+		if err := a.addToProject(ctx, targetDir, agentManifest); err != nil {
+			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
+		}
+
+		// Update environment with necessary env vars
+		if err := a.updateEnvironment(ctx, agentManifest); err != nil {
+			return fmt.Errorf("failed to update environment: %w", err)
+		}
+
+		color.Green("\nAI agent added to your project successfully!")
+	}
+
 	// Validate command flags
-	if err := a.validateFlags(flags); err != nil {
-		return err
-	}
-
-	// Prompt for any missing input values
-	if err := a.promptForMissingValues(ctx, a.azdClient, flags); err != nil {
-		return fmt.Errorf("collecting required information: %w", err)
-	}
-
-	fmt.Println("Configuration:")
-	fmt.Printf("  URI: %s\n", flags.manifestPointer)
-	fmt.Println()
-
-	// Download agent.yaml file from the provided URI and save it to project's "agents" directory
-	agentManifest, targetDir, err := a.downloadAgentYaml(ctx, flags.manifestPointer, flags.src)
-	if err != nil {
-		return fmt.Errorf("downloading agent.yaml: %w", err)
-	}
-
-	// Add the agent to the azd project (azure.yaml) services
-	if err := a.addToProject(ctx, targetDir, agentManifest); err != nil {
-		return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
-	}
-
-	// Update environment with necessary env vars
-	if err := a.updateEnvironment(ctx, agentManifest); err != nil {
-		return fmt.Errorf("failed to update environment: %w", err)
-	}
-
-	// Populate the "resources" section of the azure.yaml
-	// TODO: Add back in once we move forward with composability support
-	// if err := a.validateResources(ctx, agentYaml); err != nil {
-	// 	return fmt.Errorf("updating resources in azure.yaml: %w", err)
+	// if err := a.validateFlags(flags); err != nil {
+	// 	return err
 	// }
 
-	color.Green("\nAI agent project initialized successfully!")
+	// Prompt for any missing input values
+	// if err := a.promptForMissingValues(ctx, a.azdClient, flags); err != nil {
+	// 	return fmt.Errorf("collecting required information: %w", err)
+	// }
+
 	return nil
 }
 
@@ -168,7 +212,7 @@ func ensureProject(ctx context.Context, azdClient *azdext.AzdClient) (*azdext.Pr
 		fmt.Println("Lets get your project initialized.")
 
 		// We don't have a project yet
-		// Dispatch a workflow to init the project and create a new environment
+		// Dispatch a workflow to init the project
 		workflow := &azdext.Workflow{
 			Name: "init",
 			Steps: []*azdext.WorkflowStep{
@@ -334,8 +378,12 @@ func ensureAzureContext(
 
 func (a *InitAction) validateFlags(flags *initFlags) error {
 	if flags.manifestPointer != "" {
+		// Check if it's a valid URL
 		if _, err := url.ParseRequestURI(flags.manifestPointer); err != nil {
-			return fmt.Errorf("invalid URI '%s': %w", flags.manifestPointer, err)
+			// If not a valid URL, check if it's an existing local file path
+			if _, fileErr := os.Stat(flags.manifestPointer); fileErr != nil {
+				return fmt.Errorf("manifest pointer '%s' is neither a valid URI nor an existing file path", flags.manifestPointer)
+			}
 		}
 	}
 
@@ -360,6 +408,65 @@ func (a *InitAction) promptForMissingValues(ctx context.Context, azdClient *azde
 	return nil
 }
 
+func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context, projectResourceId string) error {
+	// Define the regex pattern for the project resource ID
+	pattern := `^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`
+	
+	regex, err := regexp.Compile(pattern)
+	if err != nil {
+		return fmt.Errorf("failed to compile regex pattern: %w", err)
+	}
+
+	matches := regex.FindStringSubmatch(projectResourceId)
+	if matches == nil || len(matches) != 5 {
+		return fmt.Errorf("project resource ID does not match expected format: /subscriptions/[SUBSCRIPTION]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT]/projects/[AI_PROJECT]")
+	}
+
+	// Extract the components
+	subscriptionId := matches[1]
+	resourceGroupName := matches[2]
+	aiAccountName := matches[3]
+	aiProjectName := matches[4]
+
+	// Get current environment
+	envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("failed to get current environment: %w", err)
+	}
+
+	if envResponse.Environment == nil {
+		return fmt.Errorf("no current environment found")
+	}
+
+	envName := envResponse.Environment.Name
+
+	// Set the extracted values as environment variables
+	if err := a.setEnvVar(ctx, envName, "AZURE_SUBSCRIPTION_ID", subscriptionId); err != nil {
+		return err
+	}
+
+	if err := a.setEnvVar(ctx, envName, "AZURE_RESOURCE_GROUP", resourceGroupName); err != nil {
+		return err
+	}
+
+	if err := a.setEnvVar(ctx, envName, "AZURE_AI_ACCOUNT_NAME", aiAccountName); err != nil {
+		return err
+	}
+
+	if err := a.setEnvVar(ctx, envName, "AZURE_AI_PROJECT_NAME", aiProjectName); err != nil {
+		return err
+	}
+
+	// Set the AI Foundry endpoint URL
+	aiFoundryEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", aiAccountName, aiProjectName)
+	if err := a.setEnvVar(ctx, envName, "AZURE_AI_FOUNDRY_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
+		return err
+	}
+
+	fmt.Printf("Successfully parsed and set environment variables from project resource ID\n")
+	return nil
+}
+
 func (a *InitAction) isLocalFilePath(path string) bool {
 	// Check if it starts with http:// or https://
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
@@ -371,6 +478,20 @@ func (a *InitAction) isLocalFilePath(path string) bool {
 	return false
 }
 
+func (a *InitAction) isGitHubUrl(manifestPointer string) bool {
+	// Check if it's a GitHub URL based on the patterns from downloadGithubManifest
+	parsedURL, err := url.Parse(manifestPointer)
+	if err != nil {
+		return false
+	}
+	hostname := parsedURL.Hostname()
+
+	// Check for GitHub URL patterns as defined in downloadGithubManifest
+	return strings.HasPrefix(hostname, "raw.githubusercontent") ||
+		strings.HasPrefix(hostname, "api.github") ||
+		strings.Contains(hostname, "github")
+}
+
 func (a *InitAction) downloadAgentYaml(
 	ctx context.Context, manifestPointer string, targetDir string) (*agent_yaml.AgentManifest, string, error) {
 	if manifestPointer == "" {
@@ -379,6 +500,10 @@ func (a *InitAction) downloadAgentYaml(
 
 	var content []byte
 	var err error
+	var isGitHubUrl bool
+	var urlInfo *GitHubUrlInfo
+	var ghCli *github.Cli
+	var console input.Console
 
 	// Check if manifestPointer is a local file path or a URI
 	if a.isLocalFilePath(manifestPointer) {
@@ -389,32 +514,52 @@ func (a *InitAction) downloadAgentYaml(
 			return nil, "", fmt.Errorf("reading local file %s: %w", manifestPointer, err)
 		}
 		targetDir = filepath.Dir(manifestPointer)
-	} else {
-		// Handle URI - existing logic
-		fmt.Printf("Downloading agent.yaml from URI: %s\n", manifestPointer)
+	} else if a.isGitHubUrl(manifestPointer) {
+		// Handle GitHub URLs using downloadGithubManifest
+		fmt.Printf("Downloading agent.yaml from GitHub: %s\n", manifestPointer)
+		isGitHubUrl = true
 
-		// Download the file from the URI
-		req, err := http.NewRequestWithContext(ctx, "GET", manifestPointer, nil)
+		// Create a simple console and command runner for GitHub CLI
+		commandRunner := exec.NewCommandRunner(&exec.RunnerOptions{
+			Stdout: os.Stdout,
+			Stderr: os.Stderr,
+		})
+
+		console = input.NewConsole(
+			false, // noPrompt
+			true,  // isTerminal
+			input.Writers{Output: os.Stdout},
+			input.ConsoleHandles{
+				Stderr: os.Stderr,
+				Stdin:  os.Stdin,
+				Stdout: os.Stdout,
+			},
+			nil, // formatter
+			nil, // externalPromptCfg
+		)
+
+		ghCli, err = github.NewGitHubCli(ctx, console, commandRunner)
 		if err != nil {
-			return nil, "", fmt.Errorf("creating request for URI %s: %w", manifestPointer, err)
+			return nil, "", fmt.Errorf("creating GitHub CLI: %w", err)
 		}
 
-		client := &http.Client{}
-		resp, err := client.Do(req)
+		urlInfo, err = parseGitHubUrl(manifestPointer)
 		if err != nil {
-			return nil, "", fmt.Errorf("downloading file from URI %s: %w", manifestPointer, err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, "", fmt.Errorf("failed to download file: HTTP %d", resp.StatusCode)
+			return nil, "", err
 		}
 
-		// Read the response body
-		content, err = io.ReadAll(resp.Body)
+		apiPath := fmt.Sprintf("/repos/%s/contents/%s", urlInfo.RepoSlug, urlInfo.FilePath)
+		if urlInfo.Branch != "" {
+			fmt.Printf("Downloaded manifest from branch: %s\n", urlInfo.Branch)
+			apiPath += fmt.Sprintf("?ref=%s", urlInfo.Branch)
+		}
+
+		contentStr, err := downloadGithubManifest(ctx, urlInfo, apiPath, ghCli, console)
 		if err != nil {
-			return nil, "", fmt.Errorf("reading response body: %w", err)
+			return nil, "", fmt.Errorf("downloading from GitHub: %w", err)
 		}
+
+		content = []byte(contentStr)
 	}
 
 	// Parse and validate the YAML content against AgentManifest structure
@@ -443,8 +588,17 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", fmt.Errorf("saving file to %s: %w", filePath, err)
 	}
 
+	if isGitHubUrl && agentManifest.Agent.Kind == agent_yaml.AgentKindHosted {
+		// For hosted agents, download the entire parent directory
+		fmt.Println("Downloading full directory for hosted agent")
+		err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console)
+		if err != nil {
+			return nil, "", fmt.Errorf("downloading parent directory: %w", err)
+		}
+	}
+
 	fmt.Printf("Processed agent.yaml at %s\n", filePath)
-	
+
 	return agentManifest, targetDir, nil
 }
 
@@ -471,6 +625,206 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	}
 
 	fmt.Printf("Added service '%s' to azure.yaml\n", agentManifest.Agent.Name)
+	return nil
+}
+
+func downloadGithubManifest(
+	ctx context.Context, urlInfo *GitHubUrlInfo, apiPath string, ghCli *github.Cli, console input.Console) (string, error) {
+	// manifestPointer validation:
+	// - accepts only URLs with the following format:
+	//  - https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/<path>/<file>.json
+	//    - This url comes from a user clicking the `raw` button on a file in a GitHub repository (web view).
+	//  - https://<hostname>/<owner>/<repo>/blob/<branch>/<path>/<file>.json
+	//    - This url comes from a user browsing GitHub repository and copy-pasting the url from the browser.
+	//  - https://api.<hostname>/repos/<owner>/<repo>/contents/<path>/<file>.json
+	//    - This url comes from users familiar with the GitHub API. Usually for programmatic registration of templates.
+
+	authResult, err := ghCli.GetAuthStatus(ctx, urlInfo.Hostname)
+	if err != nil {
+		return "", fmt.Errorf("failed to get auth status: %w", err)
+	}
+	if !authResult.LoggedIn {
+		// ensure no spinner is shown when logging in, as this is interactive operation
+		console.StopSpinner(ctx, "", input.Step)
+		err := ghCli.Login(ctx, urlInfo.Hostname)
+		if err != nil {
+			return "", fmt.Errorf("failed to login: %w", err)
+		}
+		console.ShowSpinner(ctx, "Validating template source", input.Step)
+	}
+
+	content, err := ghCli.ApiCall(ctx, urlInfo.Hostname, apiPath, github.ApiCallOptions{
+		Headers: []string{"Accept: application/vnd.github.v3.raw"},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to get content: %w", err)
+	}
+
+	return content, nil
+}
+
+// parseGitHubUrl extracts repository information from various GitHub URL formats
+// TODO: This will fail if the branch contains a slash. Update to handle that case if needed.
+func parseGitHubUrl(manifestPointer string) (*GitHubUrlInfo, error) {
+	parsedURL, err := url.Parse(manifestPointer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	hostname := parsedURL.Hostname()
+	var repoSlug, branch, filePath string
+
+	if strings.HasPrefix(hostname, "raw.") {
+		// https://raw.githubusercontent.com/<owner>/<repo>/refs/heads/<branch>/[...path]/<file>.yaml
+		pathParts := strings.Split(parsedURL.Path, "/")
+		if len(pathParts) < 7 {
+			return nil, fmt.Errorf("invalid URL format using 'raw.'. Expected the form of " +
+				"'https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/[...path]/<fileName>.json'")
+		}
+		if pathParts[3] != "refs" || pathParts[4] != "heads" {
+			return nil, fmt.Errorf("invalid raw GitHub URL format. Expected 'refs/heads' in the URL path")
+		}
+		repoSlug = fmt.Sprintf("%s/%s", pathParts[1], pathParts[2])
+		branch = pathParts[5]
+		filePath = strings.Join(pathParts[6:], "/")
+	} else if strings.HasPrefix(hostname, "api.") {
+		// https://api.github.com/repos/<owner>/<repo>/contents/[...path]/<file>.yaml
+		pathParts := strings.Split(parsedURL.Path, "/")
+		if len(pathParts) < 6 {
+			return nil, fmt.Errorf("invalid URL format using 'api.'. Expected the form of " +
+				"'https://api.<hostname>/repos/<owner>/<repo>/contents/[...path]/<fileName>.json[?ref=<branch>]'")
+		}
+		repoSlug = fmt.Sprintf("%s/%s", pathParts[2], pathParts[3])
+		filePath = strings.Join(pathParts[5:], "/")
+		// For API URLs, branch is specified in the query parameter ref
+		branch = parsedURL.Query().Get("ref")
+		if branch == "" {
+			branch = "main" // default branch if not specified
+		}
+	} else if strings.HasPrefix(manifestPointer, "https://") {
+		// https://github.com/<owner>/<repo>/blob/<branch>/[...path]/<file>.yaml
+		pathParts := strings.Split(parsedURL.Path, "/")
+		if len(pathParts) < 6 {
+			return nil, fmt.Errorf("invalid URL format. Expected the form of " +
+				"'https://<hostname>/<owner>/<repo>/blob/<branch>/[...path]/<fileName>.json'")
+		}
+		if pathParts[3] != "blob" {
+			return nil, fmt.Errorf("invalid GitHub URL format. Expected 'blob' in the URL path")
+		}
+		repoSlug = fmt.Sprintf("%s/%s", pathParts[1], pathParts[2])
+		branch = pathParts[4]
+		filePath = strings.Join(pathParts[5:], "/")
+	} else {
+		return nil, fmt.Errorf(
+			"invalid URL format. Expected formats are:\n" +
+				"  - 'https://raw.<hostname>/<owner>/<repo>/refs/heads/<branch>/[...path]/<fileName>.json'\n" +
+				"  - 'https://<hostname>/<owner>/<repo>/blob/<branch>/[...path]/<fileName>.json'\n" +
+				"  - 'https://api.<hostname>/repos/<owner>/<repo>/contents/[...path]/<fileName>.json[?ref=<branch>]'",
+		)
+	}
+
+	// Normalize hostname for API calls
+	if hostname == "raw.githubusercontent.com" {
+		hostname = "github.com"
+	}
+
+	return &GitHubUrlInfo{
+		RepoSlug: repoSlug,
+		Branch:   branch,
+		FilePath: filePath,
+		Hostname: hostname,
+	}, nil
+}
+
+func downloadParentDirectory(
+	ctx context.Context, urlInfo *GitHubUrlInfo, targetDir string, ghCli *github.Cli, console input.Console) error {
+
+	// Get parent directory by removing the filename from the file path
+	pathParts := strings.Split(urlInfo.FilePath, "/")
+	if len(pathParts) <= 1 {
+		fmt.Println("Agent.yaml is at repository root, no parent directory to download")
+		return nil
+	}
+
+	parentDirPath := strings.Join(pathParts[:len(pathParts)-1], "/")
+	fmt.Printf("Downloading parent directory '%s' from repository '%s', branch '%s'\n", parentDirPath, urlInfo.RepoSlug, urlInfo.Branch)
+
+	// Download directory contents
+	if err := downloadDirectoryContents(ctx, urlInfo.Hostname, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir, ghCli, console); err != nil {
+		return fmt.Errorf("failed to download directory contents: %w", err)
+	}
+
+	fmt.Printf("Successfully downloaded parent directory to: %s\n", targetDir)
+	return nil
+}
+
+func downloadDirectoryContents(
+	ctx context.Context, hostname string, repoSlug string, dirPath string, branch string, localPath string, ghCli *github.Cli, console input.Console) error {
+
+	// Get directory contents using GitHub API
+	apiPath := fmt.Sprintf("/repos/%s/contents/%s", repoSlug, dirPath)
+	if branch != "" {
+		apiPath += fmt.Sprintf("?ref=%s", branch)
+	}
+
+	dirContentsJson, err := ghCli.ApiCall(ctx, hostname, apiPath, github.ApiCallOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get directory contents: %w", err)
+	}
+
+	// Parse the directory contents JSON
+	var dirContents []map[string]interface{}
+	if err := json.Unmarshal([]byte(dirContentsJson), &dirContents); err != nil {
+		return fmt.Errorf("failed to parse directory contents JSON: %w", err)
+	}
+
+	// Download each file and subdirectory
+	for _, item := range dirContents {
+		name, ok := item["name"].(string)
+		if !ok {
+			continue
+		}
+
+		itemType, ok := item["type"].(string)
+		if !ok {
+			continue
+		}
+
+		itemPath := fmt.Sprintf("%s/%s", dirPath, name)
+		itemLocalPath := filepath.Join(localPath, name)
+
+		if itemType == "file" {
+			// Download file
+			fmt.Printf("Downloading file: %s\n", itemPath)
+			fileApiPath := fmt.Sprintf("/repos/%s/contents/%s", repoSlug, itemPath)
+			if branch != "" {
+				fileApiPath += fmt.Sprintf("?ref=%s", branch)
+			}
+
+			fileContent, err := ghCli.ApiCall(ctx, hostname, fileApiPath, github.ApiCallOptions{
+				Headers: []string{"Accept: application/vnd.github.v3.raw"},
+			})
+			if err != nil {
+				return fmt.Errorf("failed to download file %s: %w", itemPath, err)
+			}
+
+			if err := os.WriteFile(itemLocalPath, []byte(fileContent), 0644); err != nil {
+				return fmt.Errorf("failed to write file %s: %w", itemLocalPath, err)
+			}
+		} else if itemType == "dir" {
+			// Recursively download subdirectory
+			fmt.Printf("Downloading directory: %s\n", itemPath)
+			if err := os.MkdirAll(itemLocalPath, 0755); err != nil {
+				return fmt.Errorf("failed to create directory %s: %w", itemLocalPath, err)
+			}
+
+			// Recursively download directory contents
+			if err := downloadDirectoryContents(ctx, hostname, repoSlug, itemPath, branch, itemLocalPath, ghCli, console); err != nil {
+				return fmt.Errorf("failed to download subdirectory %s: %w", itemPath, err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -787,3 +1141,4 @@ func (a *InitAction) setEnvVar(ctx context.Context, envName, key, value string) 
 	fmt.Printf("Set environment variable: %s=%s\n", key, value)
 	return nil
 }
+

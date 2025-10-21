@@ -27,18 +27,19 @@ type FrameworkServiceProvider interface {
 	Restore(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
+		serviceContext *ServiceContext,
 		progress ProgressReporter,
 	) (*ServiceRestoreResult, error)
 	Build(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		restoreOutput *ServiceRestoreResult,
+		serviceContext *ServiceContext,
 		progress ProgressReporter,
 	) (*ServiceBuildResult, error)
 	Package(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		buildOutput *ServiceBuildResult,
+		serviceContext *ServiceContext,
 		progress ProgressReporter,
 	) (*ServicePackageResult, error)
 }
@@ -60,13 +61,13 @@ type ServiceTargetProvider interface {
 	Package(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		frameworkPackageOutput *ServicePackageResult,
+		serviceContext *ServiceContext,
 		progress ProgressReporter,
 	) (*ServicePackageResult, error)
 	Publish(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		packageResult *ServicePackageResult,
+		serviceContext *ServiceContext,
 		targetResource *TargetResource,
 		publishOptions *PublishOptions,
 		progress ProgressReporter,
@@ -74,8 +75,7 @@ type ServiceTargetProvider interface {
 	Deploy(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		packageResult *ServicePackageResult,
-		publishResult *ServicePublishResult,
+		serviceContext *ServiceContext,
 		targetResource *TargetResource,
 		progress ProgressReporter,
 	) (*ServiceDeployResult, error)
@@ -268,11 +268,13 @@ func (m *FrameworkServiceManager) buildFrameworkServiceResponseMsg(
 
 		restoreReq := r.RestoreRequest
 		var serviceConfig *ServiceConfig
+		var serviceContext *ServiceContext
 		if restoreReq != nil {
 			serviceConfig = restoreReq.ServiceConfig
+			serviceContext = restoreReq.ServiceContext
 		}
 
-		result, err := provider.Restore(ctx, serviceConfig, progressReporter)
+		result, err := provider.Restore(ctx, serviceConfig, serviceContext, progressReporter)
 		resp = &FrameworkServiceMessage{
 			RequestId: msg.RequestId,
 			MessageType: &FrameworkServiceMessage_RestoreResponse{
@@ -306,18 +308,18 @@ func (m *FrameworkServiceManager) buildFrameworkServiceResponseMsg(
 
 		buildReq := r.BuildRequest
 		var serviceConfig *ServiceConfig
-		var restoreOutput *ServiceRestoreResult
+		var serviceContext *ServiceContext
 		if buildReq != nil {
 			serviceConfig = buildReq.ServiceConfig
-			restoreOutput = buildReq.RestoreOutput
+			serviceContext = buildReq.ServiceContext
 		}
 
-		result, err := provider.Build(ctx, serviceConfig, restoreOutput, progressReporter)
+		result, err := provider.Build(ctx, serviceConfig, serviceContext, progressReporter)
 		resp = &FrameworkServiceMessage{
 			RequestId: msg.RequestId,
 			MessageType: &FrameworkServiceMessage_BuildResponse{
 				BuildResponse: &FrameworkServiceBuildResponse{
-					BuildResult: result,
+					Result: result,
 				},
 			},
 		}
@@ -346,13 +348,13 @@ func (m *FrameworkServiceManager) buildFrameworkServiceResponseMsg(
 
 		packageReq := r.PackageRequest
 		var serviceConfig *ServiceConfig
-		var buildOutput *ServiceBuildResult
+		var serviceContext *ServiceContext
 		if packageReq != nil {
 			serviceConfig = packageReq.ServiceConfig
-			buildOutput = packageReq.BuildOutput
+			serviceContext = packageReq.ServiceContext
 		}
 
-		result, err := provider.Package(ctx, serviceConfig, buildOutput, progressReporter)
+		result, err := provider.Package(ctx, serviceConfig, serviceContext, progressReporter)
 		resp = &FrameworkServiceMessage{
 			RequestId: msg.RequestId,
 			MessageType: &FrameworkServiceMessage_PackageResponse{
@@ -541,13 +543,13 @@ func buildServiceTargetResponseMsg(
 		result, err := provider.Package(
 			ctx,
 			r.PackageRequest.ServiceConfig,
-			r.PackageRequest.FrameworkPackage,
+			r.PackageRequest.ServiceContext,
 			progressReporter,
 		)
 		resp = &ServiceTargetMessage{
 			RequestId: msg.RequestId,
 			MessageType: &ServiceTargetMessage_PackageResponse{
-				PackageResponse: &ServiceTargetPackageResponse{PackageResult: result},
+				PackageResponse: &ServiceTargetPackageResponse{Result: result},
 			},
 		}
 		if err != nil {
@@ -575,7 +577,7 @@ func buildServiceTargetResponseMsg(
 		result, err := provider.Publish(
 			ctx,
 			r.PublishRequest.ServiceConfig,
-			r.PublishRequest.ServicePackage,
+			r.PublishRequest.ServiceContext,
 			r.PublishRequest.TargetResource,
 			r.PublishRequest.PublishOptions,
 			progressReporter,
@@ -583,7 +585,7 @@ func buildServiceTargetResponseMsg(
 		resp = &ServiceTargetMessage{
 			RequestId: msg.RequestId,
 			MessageType: &ServiceTargetMessage_PublishResponse{
-				PublishResponse: &ServiceTargetPublishResponse{PublishResult: result},
+				PublishResponse: &ServiceTargetPublishResponse{Result: result},
 			},
 		}
 		if err != nil {
@@ -612,15 +614,14 @@ func buildServiceTargetResponseMsg(
 		result, err := provider.Deploy(
 			ctx,
 			r.DeployRequest.ServiceConfig,
-			r.DeployRequest.ServicePackage,
-			r.DeployRequest.ServicePublish,
+			r.DeployRequest.ServiceContext,
 			r.DeployRequest.TargetResource,
 			progressReporter,
 		)
 		resp = &ServiceTargetMessage{
 			RequestId: msg.RequestId,
 			MessageType: &ServiceTargetMessage_DeployResponse{
-				DeployResponse: &ServiceTargetDeployResponse{DeployResult: result},
+				DeployResponse: &ServiceTargetDeployResponse{Result: result},
 			},
 		}
 		if err != nil {

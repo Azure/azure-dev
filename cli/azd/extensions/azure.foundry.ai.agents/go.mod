@@ -7,8 +7,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices v1.8.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
-	github.com/azure/azure-dev v0.0.0-20251010020145-2ca7331629ef
-	github.com/braydonk/yaml v0.9.0
+	github.com/azure/azure-dev v0.0.0-20251020231858-e118c23d7f65
 	github.com/fatih/color v1.18.0
 	github.com/mark3labs/mcp-go v0.41.1
 	github.com/spf13/cobra v1.10.1
@@ -25,6 +24,7 @@ require (
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
+	github.com/braydonk/yaml v0.9.0 // indirect
 	github.com/buger/goterm v1.0.4 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/charmbracelet/colorprofile v0.3.2 // indirect

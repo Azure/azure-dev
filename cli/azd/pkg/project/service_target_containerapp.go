@@ -380,16 +380,20 @@ func (at *containerAppTarget) addPreProvisionChecks(ctx context.Context, service
 	// Attempt to retrieve the target resource for the current service
 	// This allows the resource deployment to detect whether or not to pull existing container image during
 	// provision operation to avoid resetting the container app back to a default image
-	return serviceConfig.Project.AddHandler(ctx, "preprovision", func(ctx context.Context, args ProjectLifecycleEventArgs) error {
-		exists := false
+	return serviceConfig.Project.AddHandler(
+		ctx,
+		"preprovision",
+		func(ctx context.Context, args ProjectLifecycleEventArgs) error {
+			exists := false
 
-		// Check if the target resource already exists
-		targetResource, err := at.resourceManager.GetTargetResource(ctx, at.env.GetSubscriptionId(), serviceConfig)
-		if err == nil && targetResource != nil && targetResource.ResourceName() != "" {
-			exists = true
-		}
+			// Check if the target resource already exists
+			targetResource, err := at.resourceManager.GetTargetResource(ctx, at.env.GetSubscriptionId(), serviceConfig)
+			if err == nil && targetResource != nil && targetResource.ResourceName() != "" {
+				exists = true
+			}
 
-		at.env.SetServiceProperty(serviceConfig.Name, "RESOURCE_EXISTS", strconv.FormatBool(exists))
-		return at.envManager.Save(ctx, at.env)
-	})
+			at.env.SetServiceProperty(serviceConfig.Name, "RESOURCE_EXISTS", strconv.FormatBool(exists))
+			return at.envManager.Save(ctx, at.env)
+		},
+	)
 }

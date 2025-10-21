@@ -13,8 +13,9 @@ import (
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/agents/registry_api"
 
-        "github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -22,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 type initFlags struct {
@@ -438,7 +440,7 @@ func (a *InitAction) isRegistryUrl(manifestPointer string) (bool, *RegistryManif
 }
 
 func (a *InitAction) downloadAgentYaml(
-	ctx context.Context, manifestPointer string, targetDir string) (map[string]interface{}, string, error) {
+	ctx context.Context, manifestPointer string, targetDir string) (*agent_yaml.AgentManifest, string, error) {
 	if manifestPointer == "" {
 		return nil, "", fmt.Errorf("manifestPointer cannot be empty")
 	}
@@ -506,21 +508,51 @@ func (a *InitAction) downloadAgentYaml(
 
 		content = []byte(contentStr)
 	} else if isRegistry, registryManifest := a.isRegistryUrl(manifestPointer); isRegistry {
+		// Handle registry URLs
+		fmt.Printf("Downloading agent.yaml from registry: %s\n", manifestPointer)
+
 		// Create Azure credential
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to create Azure credential: %w", err)
 		}
 
-		manifestClient := agents.NewRegistryAgentManifestClient(registryManifest.registryName, cred)
+		manifestClient := registry_api.NewRegistryAgentManifestClient(registryManifest.registryName, cred)
 
-		versionResult, err := manifestClient.GetAllLatest(ctx)
+		versionResult, err := manifestClient.GetManifest(ctx, registryManifest.manifestName, registryManifest.manifestVersion)
 		if err != nil {
-			return nil, "", fmt.Errorf("getting all latest manifests: %w", err)
+			return nil, "", fmt.Errorf("getting materialized manifest: %w", err)
 		}
 
-		fmt.Printf("Retrieved versioned result from registry: %s\n", string(versionResult))
-		return nil, "", fmt.Errorf("fetching from registry not yet implemented")
+		// Process the manifest with parameter prompting and template injection
+		processedTemplate, err := registry_api.ProcessRegistryManifest(ctx, versionResult, a.azdClient)
+		if err != nil {
+			return nil, "", fmt.Errorf("processing manifest with parameters: %w", err)
+		}
+
+		fmt.Println("Retrieved and processed template from registry")
+		content = processedTemplate
+
+		// Create AgentDefinition from processed template
+		var agentDefinition agent_yaml.AgentDefinition
+		if err := json.Unmarshal(processedTemplate, &agentDefinition); err != nil {
+			return nil, "", fmt.Errorf("unmarshaling processed template: %w", err)
+		}
+
+		// Merge manifest properties into agent definition for any empty fields
+		mergedAgentDefinition := registry_api.MergeManifestIntoAgentDefinition(versionResult, &agentDefinition)
+
+		// Create AgentManifest with the merged agent definition
+		agentManifest := &agent_yaml.AgentManifest{
+			Agent: *mergedAgentDefinition,
+		}
+
+		// Convert to YAML bytes for the content variable
+		manifestBytes, err := yaml.Marshal(agentManifest)
+		if err != nil {
+			return nil, "", fmt.Errorf("marshaling agent manifest to YAML: %w", err)
+		}
+		content = manifestBytes
 	}
 
 	// Parse and validate the YAML content against AgentManifest structure

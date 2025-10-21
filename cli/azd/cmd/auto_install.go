@@ -235,7 +235,7 @@ func tryAutoInstallExtension(
 	}
 
 	console.MessageUxItem(ctx, &ux.WarningMessage{
-		Description: "You are about to install an extension !!",
+		Description: "You are about to install an extension!",
 	})
 	console.Message(ctx, fmt.Sprintf("Source: %s", extension.Source))
 	console.Message(ctx, fmt.Sprintf("Id: %s", extension.Id))

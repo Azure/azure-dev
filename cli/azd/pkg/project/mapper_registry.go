@@ -188,48 +188,6 @@ func registerProjectMappings() {
 		}, nil
 	})
 
-	// ServiceRestoreResult -> proto ServiceRestoreResult conversion
-	mapper.MustRegister(func(ctx context.Context, src *ServiceRestoreResult) (*azdext.ServiceRestoreResult, error) {
-		if src == nil {
-			return nil, nil
-		}
-
-		protoResult := &azdext.ServiceRestoreResult{}
-
-		details := detailsInterfaceToStringMap(src.Details)
-		if len(details) > 0 {
-			protoResult.Details = details
-		}
-
-		return protoResult, nil
-	})
-
-	// ServiceBuildResult -> proto ServiceBuildResult conversion
-	mapper.MustRegister(func(ctx context.Context, src *ServiceBuildResult) (*azdext.ServiceBuildResult, error) {
-		if src == nil {
-			return nil, nil
-		}
-
-		protoResult := &azdext.ServiceBuildResult{}
-
-		// Convert nested Restore result if present
-		if src.Restore != nil {
-			var restoreResult *azdext.ServiceRestoreResult
-			err := mapper.Convert(src.Restore, &restoreResult)
-			if err != nil {
-				return nil, fmt.Errorf("converting restore result: %w", err)
-			}
-			protoResult.Restore = restoreResult
-		}
-
-		details := detailsInterfaceToStringMap(src.Details)
-		if len(details) > 0 {
-			protoResult.Details = details
-		}
-
-		return protoResult, nil
-	})
-
 	// ServicePublishResult -> proto ServicePublishResult conversion
 	mapper.MustRegister(func(ctx context.Context, src ServicePublishResult) (*azdext.ServicePublishResult, error) {
 		var artifacts []*azdext.Artifact

@@ -1,14 +1,10 @@
 # Release History
 
-## 1.21.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.20.2 (2025-10-22)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#5964]](https://github.com/Azure/azure-dev/pull/5964) Fixes issue where project level events not invoked from extensions.
 
 ## 1.20.1 (2025-10-17)
 

@@ -231,122 +231,135 @@ func (pa *PublishAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	startTime := time.Now()
 
-	publishResults := map[string]*project.ServicePublishResult{}
 	stableServices, err := pa.importManager.ServiceStable(ctx, pa.projectConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, svc := range stableServices {
-		stepMessage := fmt.Sprintf("Publishing service %s", svc.Name)
-		pa.console.ShowSpinner(ctx, stepMessage, input.Step)
+	projectEventArgs := project.ProjectLifecycleEventArgs{
+		Project: pa.projectConfig,
+	}
 
-		// Skip this service if both cases are true:
-		// 1. The user specified a service name
-		// 2. This service is not the one the user specified
-		if targetServiceName != "" && targetServiceName != svc.Name {
-			pa.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
-			continue
-		}
+	publishResults := map[string]*project.ServicePublishResult{}
 
-		if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(svc.Host)); isAlphaFeature {
-			// alpha feature on/off detection for host is done during initialization.
-			// This is just for displaying the warning during publishing.
-			pa.console.WarnForFeature(ctx, alphaFeatureId)
-		}
+	err = pa.projectConfig.Invoke(ctx, project.ProjectEventPublish, projectEventArgs, func() error {
+		for _, svc := range stableServices {
+			stepMessage := fmt.Sprintf("Publishing service %s", svc.Name)
+			pa.console.ShowSpinner(ctx, stepMessage, input.Step)
 
-		if !pa.supportsPublish(ctx, svc) {
-			pa.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+			// Skip this service if both cases are true:
+			// 1. The user specified a service name
+			// 2. This service is not the one the user specified
+			if targetServiceName != "" && targetServiceName != svc.Name {
+				pa.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+				continue
+			}
 
-			var message string
-			if svc.Host == project.DotNetContainerAppTarget {
-				message = "'publish' does not currently support Aspire projects"
+			if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(svc.Host)); isAlphaFeature {
+				// alpha feature on/off detection for host is done during initialization.
+				// This is just for displaying the warning during publishing.
+				pa.console.WarnForFeature(ctx, alphaFeatureId)
+			}
+
+			if !pa.supportsPublish(ctx, svc) {
+				pa.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+
+				var message string
+				if svc.Host == project.DotNetContainerAppTarget {
+					message = "'publish' does not currently support Aspire projects"
+				} else {
+					message = fmt.Sprintf(
+						"'publish' only supports '%s' and '%s' services, but '%s' has host type '%s'",
+						project.ContainerAppTarget, project.AksTarget, svc.Name, svc.Host)
+				}
+
+				pa.console.MessageUxItem(ctx, &ux.WarningMessage{
+					Description: message,
+				})
+				continue
+			}
+
+			// Initialize service context for tracking artifacts across operations
+			serviceContext := &project.ServiceContext{}
+
+			if pa.flags.FromPackage != "" {
+				// --from-package set, skip packaging and create package artifact
+				err = serviceContext.Package.Add(&project.Artifact{
+					Kind:         determineArtifactKind(pa.flags.FromPackage),
+					Location:     pa.flags.FromPackage,
+					LocationKind: project.LocationKindLocal,
+				})
+
+				if err != nil {
+					pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+					return err
+				}
 			} else {
-				message = fmt.Sprintf(
-					"'publish' only supports '%s' and '%s' services, but '%s' has host type '%s'",
-					project.ContainerAppTarget, project.AksTarget, svc.Name, svc.Host)
+				//  --from-package not set, automatically package the application
+				packageResult, err := async.RunWithProgress(
+					func(packageProgress project.ServiceProgress) {
+						progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
+						pa.console.ShowSpinner(ctx, progressMessage, input.Step)
+					},
+					func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePackageResult, error) {
+						return pa.serviceManager.Package(ctx, svc, serviceContext, progress, nil)
+					},
+				)
+
+				if err != nil {
+					pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+					return err
+				}
+
+				// Append package artifacts
+				if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
+					pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+					return err
+				}
 			}
 
-			pa.console.MessageUxItem(ctx, &ux.WarningMessage{
-				Description: message,
-			})
-			continue
-		}
-
-		// Initialize service context for tracking artifacts across operations
-		serviceContext := &project.ServiceContext{}
-
-		if pa.flags.FromPackage != "" {
-			// --from-package set, skip packaging and create package artifact
-			err = serviceContext.Package.Add(&project.Artifact{
-				Kind:         determineArtifactKind(pa.flags.FromPackage),
-				Location:     pa.flags.FromPackage,
-				LocationKind: project.LocationKindLocal,
-			})
-
-			if err != nil {
-				pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return nil, err
-			}
-		} else {
-			//  --from-package not set, automatically package the application
-			packageResult, err := async.RunWithProgress(
-				func(packageProgress project.ServiceProgress) {
-					progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
+			publishResult, err := async.RunWithProgress(
+				func(publishProgress project.ServiceProgress) {
+					progressMessage := fmt.Sprintf("Publishing service %s (%s)", svc.Name, publishProgress.Message)
 					pa.console.ShowSpinner(ctx, progressMessage, input.Step)
 				},
-				func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePackageResult, error) {
-					return pa.serviceManager.Package(ctx, svc, serviceContext, progress, nil)
+				func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePublishResult, error) {
+					return pa.serviceManager.Publish(ctx, svc, serviceContext, progress, publishOptions)
 				},
 			)
 
 			if err != nil {
 				pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return nil, err
+				return err
 			}
 
-			// Append package artifacts
-			if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
+			if err := serviceContext.Publish.Add(publishResult.Artifacts...); err != nil {
 				pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return nil, err
+				return err
 			}
-		}
 
-		publishResult, err := async.RunWithProgress(
-			func(publishProgress project.ServiceProgress) {
-				progressMessage := fmt.Sprintf("Publishing service %s (%s)", svc.Name, publishProgress.Message)
-				pa.console.ShowSpinner(ctx, progressMessage, input.Step)
-			},
-			func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePublishResult, error) {
-				return pa.serviceManager.Publish(ctx, svc, serviceContext, progress, publishOptions)
-			},
-		)
-
-		if err != nil {
-			pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, err
-		}
-
-		if err := serviceContext.Publish.Add(publishResult.Artifacts...); err != nil {
-			pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, err
-		}
-
-		// clean up for packages automatically created in temp dir
-		if pa.flags.FromPackage == "" {
-			for _, artifact := range serviceContext.Package {
-				if strings.HasPrefix(artifact.Location, os.TempDir()) {
-					if err := os.RemoveAll(artifact.Location); err != nil {
-						log.Printf("failed to remove temporary package: %s : %s", artifact.Location, err)
+			// clean up for packages automatically created in temp dir
+			if pa.flags.FromPackage == "" {
+				for _, artifact := range serviceContext.Package {
+					if strings.HasPrefix(artifact.Location, os.TempDir()) {
+						if err := os.RemoveAll(artifact.Location); err != nil {
+							log.Printf("failed to remove temporary package: %s : %s", artifact.Location, err)
+						}
 					}
 				}
 			}
+
+			pa.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
+
+			publishResults[svc.Name] = publishResult
+			pa.console.MessageUxItem(ctx, publishResult.Artifacts)
 		}
 
-		pa.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
+		return nil
+	})
 
-		publishResults[svc.Name] = publishResult
-		pa.console.MessageUxItem(ctx, publishResult.Artifacts)
+	if err != nil {
+		return nil, err
 	}
 
 	if pa.formatter.Kind() == output.JsonFormat {

@@ -181,12 +181,12 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			//
 			// With .NET 8, we'll be able to build just the container image, by setting ContainerArchiveOutputPath
 			// as a property when we run `dotnet publish`.  If we set this to the filepath of a tgz (doesn't need to exist)
-			// the the action will just produce a container image and save it to that tgz, as `docker save` would have. It will
-			// not push the container image.
+			// the the action will just produce a container image and save it to that tgz, as `docker save` would have.
+			// It will not push the container image.
 			//
-			// It's probably right for us to think about "package" for a containerized application as meaning "produce the tgz"
-			// of the image, as would be done by `docker save` and then do this for both DotNetContainerAppTargets and
-			// ContainerAppTargets.
+			// It's probably right for us to think about "package" for a containerized application as meaning
+			// "produce the tgz" of the image, as would be done by `docker save` and then do this for both
+			// DotNetContainerAppTargets and ContainerAppTargets.
 			if svc.Host == project.DotNetContainerAppTarget {
 				continue
 			}

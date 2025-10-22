@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -24,6 +25,7 @@ type FrameworkService struct {
 	container        *ioc.NestedContainer
 	extensionManager *extensions.Manager
 	providerMap      map[string]azdext.FrameworkService_StreamServer
+	providerMapMu    sync.Mutex
 }
 
 // NewFrameworkService creates a new FrameworkService instance.
@@ -81,7 +83,9 @@ func (s *FrameworkService) Stream(
 	}
 
 	language := regRequest.GetLanguage()
+	s.providerMapMu.Lock()
 	if _, has := s.providerMap[language]; has {
+		s.providerMapMu.Unlock()
 		return status.Errorf(codes.AlreadyExists, "provider %s already registered", language)
 	}
 
@@ -99,6 +103,7 @@ func (s *FrameworkService) Stream(
 	})
 
 	if err != nil {
+		s.providerMapMu.Unlock()
 		return status.Errorf(codes.Internal, "failed to register framework service: %s", err.Error())
 	}
 
@@ -113,8 +118,10 @@ func (s *FrameworkService) Stream(
 	}
 
 	if err := stream.Send(response); err != nil {
+		s.providerMapMu.Unlock()
 		return err
 	}
+	s.providerMapMu.Unlock()
 
 	// The stream is now handled by the ExternalFrameworkService, so we don't consume messages here.
 	// We need to wait for the stream to close without consuming messages.
@@ -126,7 +133,9 @@ func (s *FrameworkService) Stream(
 	}
 
 	// Clean up when stream closes
+	s.providerMapMu.Lock()
 	delete(s.providerMap, language)
+	s.providerMapMu.Unlock()
 
 	return nil
 }

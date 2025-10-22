@@ -51,18 +51,14 @@ func (p *DemoServiceTargetProvider) GetTargetResource(
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
-	// Example: Call defaultResolver() if you want to use azd's default resource lookup
-	// defaultTarget, err := defaultResolver()
-	// if err != nil {
-	//     return nil, err
-	// }
-
-	// For this demo, we completely override with custom logic
-	targetResource := &azdext.TargetResource{
-		SubscriptionId:    subscriptionId,
-		ResourceGroupName: "rg-demo",
-		ResourceName:      serviceConfig.Name + "-demo",
-		ResourceType:      "Microsoft.Resources/resourceGroups",
+	targetResource, err := defaultResolver()
+	if err != nil {
+		// For this demo, we completely override with custom logic
+		targetResource = &azdext.TargetResource{
+			SubscriptionId:    subscriptionId,
+			ResourceGroupName: serviceConfig.ResourceGroupName,
+			ResourceName:      serviceConfig.ResourceName,
+		}
 	}
 
 	return targetResource, nil

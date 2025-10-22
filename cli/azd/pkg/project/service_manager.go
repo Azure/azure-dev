@@ -124,6 +124,13 @@ type ServiceManager interface {
 		progress *async.Progress[ServiceProgress],
 	) (*ServiceDeployResult, error)
 
+	/// GetTargetResource finds and resolves the target Azure resource for the specified service configuration and host
+	GetTargetResource(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		serviceTarget ServiceTarget,
+	) (*environment.TargetResource, error)
+
 	// Gets the framework service for the specified service config
 	// The framework service performs the restoration and building of the service app code
 	GetFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) (FrameworkService, error)
@@ -467,7 +474,7 @@ func (sm *serviceManager) Publish(
 		return nil, fmt.Errorf("getting service target: %w", err)
 	}
 
-	targetResource, err := sm.getTargetResourceForService(ctx, serviceConfig, serviceTarget)
+	targetResource, err := sm.GetTargetResource(ctx, serviceConfig, serviceTarget)
 	if err != nil {
 		return nil, fmt.Errorf("getting target resource: %w", err)
 	}
@@ -531,7 +538,7 @@ func (sm *serviceManager) Deploy(
 		return nil, fmt.Errorf("getting service target: %w", err)
 	}
 
-	targetResource, err := sm.getTargetResourceForService(ctx, serviceConfig, serviceTarget)
+	targetResource, err := sm.GetTargetResource(ctx, serviceConfig, serviceTarget)
 	if err != nil {
 		return nil, fmt.Errorf("getting target resource: %w", err)
 	}
@@ -772,7 +779,8 @@ type targetResourceResolver interface {
 	) (*environment.TargetResource, error)
 }
 
-func (sm *serviceManager) getTargetResourceForService(
+// / GetTargetResource finds and resolves the target Azure resource for the specified service configuration and host
+func (sm *serviceManager) GetTargetResource(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceTarget ServiceTarget,

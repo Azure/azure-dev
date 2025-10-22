@@ -581,7 +581,7 @@ func (ch *ContainerHelper) Publish(
 	} else if useDotnetPublishForDockerBuild(serviceConfig) {
 		remoteImage, err = ch.runDotnetPublish(ctx, serviceConfig, targetResource, progress)
 	} else {
-		remoteImage, err = ch.runLocalBuild(ctx, serviceConfig, serviceContext, progress, imageOverride)
+		remoteImage, err = ch.publishLocalImage(ctx, serviceConfig, serviceContext, progress, imageOverride)
 	}
 	if err != nil {
 		return nil, err
@@ -602,8 +602,8 @@ func (ch *ContainerHelper) Publish(
 	}, nil
 }
 
-// runLocalBuild builds the image locally and pushes it to the remote registry, it returns the full remote image name.
-func (ch *ContainerHelper) runLocalBuild(
+// publishLocalImage builds the image locally and pushes it to the remote registry, it returns the full remote image name.
+func (ch *ContainerHelper) publishLocalImage(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,

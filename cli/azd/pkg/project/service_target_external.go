@@ -336,7 +336,6 @@ func (est *ExternalServiceTarget) ResolveTargetResource(
 			// Capture error so extension can decide how to handle it
 			defaultError = err.Error()
 		} else if defaultTarget != nil {
-			var protoDefaultTarget *azdext.TargetResource
 			if err = mapper.Convert(defaultTarget, &protoDefaultTarget); err != nil {
 				return nil, err
 			}

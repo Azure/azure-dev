@@ -20,7 +20,7 @@ type containerService struct {
 	azdext.UnimplementedContainerServiceServer
 	console             input.Console
 	lazyContainerHelper *lazy.Lazy[*project.ContainerHelper]
-	lazyResourceManager *lazy.Lazy[project.ResourceManager]
+	lazyServiceManager  *lazy.Lazy[project.ServiceManager]
 	lazyProject         *lazy.Lazy[*project.ProjectConfig]
 	lazyEnvironment     *lazy.Lazy[*environment.Environment]
 }
@@ -28,14 +28,14 @@ type containerService struct {
 func NewContainerService(
 	console input.Console,
 	lazyContainerHelper *lazy.Lazy[*project.ContainerHelper],
-	lazyResourceManager *lazy.Lazy[project.ResourceManager],
+	lazyServiceManager *lazy.Lazy[project.ServiceManager],
 	lazyProjectConf *lazy.Lazy[*project.ProjectConfig],
 	lazyEnvironment *lazy.Lazy[*environment.Environment],
 ) azdext.ContainerServiceServer {
 	return &containerService{
 		console:             console,
 		lazyContainerHelper: lazyContainerHelper,
-		lazyResourceManager: lazyResourceManager,
+		lazyServiceManager:  lazyServiceManager,
 		lazyProject:         lazyProjectConf,
 		lazyEnvironment:     lazyEnvironment,
 	}
@@ -153,22 +153,22 @@ func (c *containerService) Publish(
 		return nil, fmt.Errorf("service %q not found in project configuration", req.ServiceName)
 	}
 
-	env, err := c.lazyEnvironment.GetValue()
-	if err != nil {
-		return nil, err
-	}
-
-	resourceManager, err := c.lazyResourceManager.GetValue()
-	if err != nil {
-		return nil, err
-	}
-
 	containerHelper, err := c.lazyContainerHelper.GetValue()
 	if err != nil {
 		return nil, err
 	}
 
-	targetResource, err := resourceManager.GetTargetResource(ctx, env.GetSubscriptionId(), serviceConfig)
+	serviceManager, err := c.lazyServiceManager.GetValue()
+	if err != nil {
+		return nil, err
+	}
+
+	serviceTarget, err := serviceManager.GetServiceTarget(ctx, serviceConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	targetResource, err := serviceManager.GetTargetResource(ctx, serviceConfig, serviceTarget)
 	if err != nil {
 		return nil, err
 	}

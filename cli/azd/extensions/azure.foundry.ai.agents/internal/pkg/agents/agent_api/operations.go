@@ -199,7 +199,7 @@ func (c *AgentClient) DeleteAgent(ctx context.Context, agentName, apiVersion str
 // ListAgents returns a list of all agents
 func (c *AgentClient) ListAgents(ctx context.Context, params *ListAgentQueryParameters, apiVersion string) (*AgentList, error) {
 	baseURL := fmt.Sprintf("%s/agents", c.endpoint)
-	
+
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse base URL: %w", err)
@@ -388,7 +388,7 @@ type CommonPageQueryParameters struct {
 // ListAgentVersions returns a list of versions for a specific agent
 func (c *AgentClient) ListAgentVersions(ctx context.Context, agentName string, params *CommonPageQueryParameters, apiVersion string) (*AgentVersionList, error) {
 	baseURL := fmt.Sprintf("%s/agents/%s/versions", c.endpoint, agentName)
-	
+
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse base URL: %w", err)
@@ -851,12 +851,12 @@ func (c *AgentClient) getAiFoundryAzureToken(ctx context.Context, cred azcore.To
 	tokenRequestOptions := policy.TokenRequestOptions{
 		Scopes: []string{"https://ai.azure.com/.default"},
 	}
-	
+
 	token, err := cred.GetToken(ctx, tokenRequestOptions)
 	if err != nil {
 		return "", err
 	}
-	
+
 	return token.Token, nil
 }
 

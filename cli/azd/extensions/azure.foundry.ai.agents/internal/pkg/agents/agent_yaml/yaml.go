@@ -72,9 +72,9 @@ type PromptAgent struct {
 // app hosting platform that they manage.
 type ContainerAgent struct {
 	AgentDefinition
-	Kind     AgentKind              `json:"kind"`               // Type of agent, e.g., 'container'
-	Protocol string                 `json:"protocol"`           // Protocol used by the containerized agent
-	Options  map[string]interface{} `json:"options,omitempty"`  // Container definition including image, registry, and scaling information
+	Kind     AgentKind              `json:"kind"`              // Type of agent, e.g., 'container'
+	Protocol string                 `json:"protocol"`          // Protocol used by the containerized agent
+	Options  map[string]interface{} `json:"options,omitempty"` // Container definition including image, registry, and scaling information
 }
 
 // AgentManifest represents The following represents a manifest that can be used to create agents dynamically.
@@ -92,9 +92,9 @@ type ContainerAgent struct {
 // This allows for dynamic configuration of the agent based on the provided parameters.
 // (This notation is used elsewhere, but only the `param` scope is supported here)
 type AgentManifest struct {
-	Agent      AgentDefinition `json:"agent"`      // The agent that this manifest is based on
+	Agent AgentDefinition `json:"agent"` // The agent that this manifest is based on
 	// Models     []Model         `json:"models"`     // Additional models that are known to work with this prompt
-	Parameters []interface{}   `json:"parameters"` // Parameters for configuring the agent's behavior and execution
+	Parameters []interface{} `json:"parameters"` // Parameters for configuring the agent's behavior and execution
 }
 
 // Binding represents Represents a binding between an input property and a tool parameter.
@@ -124,8 +124,8 @@ type Connection struct {
 // GenericConnection represents Generic connection configuration for AI services.
 type GenericConnection struct {
 	Connection
-	Kind    string                 `json:"kind"`               // The Authentication kind for the AI service (e.g., 'key' for API key, 'oauth' for OAuth tokens)
-	Options map[string]interface{} `json:"options,omitempty"`  // Additional options for the connection
+	Kind    string                 `json:"kind"`              // The Authentication kind for the AI service (e.g., 'key' for API key, 'oauth' for OAuth tokens)
+	Options map[string]interface{} `json:"options,omitempty"` // Additional options for the connection
 }
 
 // ReferenceConnection represents Connection configuration for AI services using named connections.
@@ -156,9 +156,9 @@ type OAuthConnection struct {
 
 // Format represents Template format definition
 type Format struct {
-	Kind    string                 `json:"kind"`               // Template rendering engine used for slot filling prompts (e.g., mustache, jinja2)
-	Strict  bool                   `json:"strict,omitempty"`   // Whether the template can emit structural text for parsing output
-	Options map[string]interface{} `json:"options,omitempty"`  // Options for the template engine
+	Kind    string                 `json:"kind"`              // Template rendering engine used for slot filling prompts (e.g., mustache, jinja2)
+	Strict  bool                   `json:"strict,omitempty"`  // Whether the template can emit structural text for parsing output
+	Options map[string]interface{} `json:"options,omitempty"` // Options for the template engine
 }
 
 // HostedContainerDefinition represents Definition for a containerized AI agent hosted by the provider.
@@ -174,13 +174,13 @@ type HostedContainerDefinition struct {
 // * It allows for the definition of dynamic inputs that can be filled with data
 // and processed to generate prompts for AI models.
 type Input struct {
-	Name        string      `json:"name"`                 // Name of the input property
-	Kind        string      `json:"kind"`                 // The data type of the input property
+	Name        string      `json:"name"`                  // Name of the input property
+	Kind        string      `json:"kind"`                  // The data type of the input property
 	Description string      `json:"description,omitempty"` // A short description of the input property
-	Required    bool        `json:"required,omitempty"`   // Whether the input property is required
-	Strict      bool        `json:"strict,omitempty"`     // Whether the input property can emit structural text when parsing output
-	Default     interface{} `json:"default,omitempty"`    // The default value of the input - this represents the default value if none is provided
-	Sample      interface{} `json:"sample,omitempty"`     // A sample value of the input for examples and tooling
+	Required    bool        `json:"required,omitempty"`    // Whether the input property is required
+	Strict      bool        `json:"strict,omitempty"`      // Whether the input property can emit structural text when parsing output
+	Default     interface{} `json:"default,omitempty"`     // The default value of the input - this represents the default value if none is provided
+	Sample      interface{} `json:"sample,omitempty"`      // A sample value of the input for examples and tooling
 }
 
 // ArrayInput represents Represents an array output property.
@@ -202,9 +202,9 @@ type ObjectInput struct {
 // InputSchema represents Definition for the input schema of a prompt.
 // This includes the properties and example records.
 type InputSchema struct {
-	Examples   []interface{} `json:"examples,omitempty"`  // Example records for the input schema
-	Strict     bool          `json:"strict,omitempty"`    // Whether the input schema is strict - if true, only the defined properties are allowed
-	Properties []Input       `json:"properties"`          // The input properties for the schema
+	Examples   []interface{} `json:"examples,omitempty"` // Example records for the input schema
+	Strict     bool          `json:"strict,omitempty"`   // Whether the input schema is strict - if true, only the defined properties are allowed
+	Properties []Input       `json:"properties"`         // The input properties for the schema
 }
 
 // Model represents Model for defining the structure and behavior of AI agents.
@@ -226,10 +226,10 @@ type ModelOptions struct {
 // Output represents Represents the output properties of an AI agent.
 // Each output property can be a simple kind, an array, or an object.
 type Output struct {
-	Name        string `json:"name"`                 // Name of the output property
-	Kind        string `json:"kind"`                 // The data kind of the output property
+	Name        string `json:"name"`                  // Name of the output property
+	Kind        string `json:"kind"`                  // The data kind of the output property
 	Description string `json:"description,omitempty"` // A short description of the output property
-	Required    bool   `json:"required,omitempty"`   // Whether the output property is required
+	Required    bool   `json:"required,omitempty"`    // Whether the output property is required
 }
 
 // ArrayOutput represents Represents an array output property.
@@ -257,13 +257,13 @@ type OutputSchema struct {
 
 // Parameter represents Represents a parameter for a tool.
 type Parameter struct {
-	Name        string        `json:"name"`                 // Name of the parameter
-	Kind        string        `json:"kind"`                 // The data type of the parameter
+	Name        string        `json:"name"`                  // Name of the parameter
+	Kind        string        `json:"kind"`                  // The data type of the parameter
 	Description string        `json:"description,omitempty"` // A short description of the property
-	Required    bool          `json:"required,omitempty"`   // Whether the tool parameter is required
-	Default     interface{}   `json:"default,omitempty"`    // The default value of the parameter - this represents the default value if none is provided
-	Value       interface{}   `json:"value,omitempty"`      // Parameter value used for initializing manifest examples and tooling
-	Enum        []interface{} `json:"enum,omitempty"`       // Allowed enumeration values for the parameter
+	Required    bool          `json:"required,omitempty"`    // Whether the tool parameter is required
+	Default     interface{}   `json:"default,omitempty"`     // The default value of the parameter - this represents the default value if none is provided
+	Value       interface{}   `json:"value,omitempty"`       // Parameter value used for initializing manifest examples and tooling
+	Enum        []interface{} `json:"enum,omitempty"`        // Allowed enumeration values for the parameter
 }
 
 // ObjectParameter represents Represents an object parameter for a tool.
@@ -282,8 +282,8 @@ type ArrayParameter struct {
 
 // Parser represents Template parser definition
 type Parser struct {
-	Kind    string                 `json:"kind"`               // Parser used to process the rendered template into API-compatible format
-	Options map[string]interface{} `json:"options,omitempty"`  // Options for the parser
+	Kind    string                 `json:"kind"`              // Parser used to process the rendered template into API-compatible format
+	Options map[string]interface{} `json:"options,omitempty"` // Options for the parser
 }
 
 // Scale represents Configuration for scaling container instances.
@@ -309,10 +309,10 @@ type Template struct {
 
 // Tool represents Represents a tool that can be used in prompts.
 type Tool struct {
-	Name        string    `json:"name"`                 // Name of the tool. If a function tool, this is the function name, otherwise it is the type
-	Kind        string    `json:"kind"`                 // The kind identifier for the tool
+	Name        string    `json:"name"`                  // Name of the tool. If a function tool, this is the function name, otherwise it is the type
+	Kind        string    `json:"kind"`                  // The kind identifier for the tool
 	Description string    `json:"description,omitempty"` // A short description of the tool for metadata purposes
-	Bindings    []Binding `json:"bindings,omitempty"`   // Tool argument bindings to input properties
+	Bindings    []Binding `json:"bindings,omitempty"`    // Tool argument bindings to input properties
 }
 
 // FunctionTool represents Represents a local function tool.
@@ -346,12 +346,12 @@ type BingSearchTool struct {
 // This tool allows an AI agent to search for files based on a query.
 type FileSearchTool struct {
 	Tool
-	Kind           string        `json:"kind"`                     // The kind identifier for file search tools
-	Connection     interface{}   `json:"connection"`               // The connection configuration for the file search tool
-	MaxNumResults  int32         `json:"maxNumResults,omitempty"`  // The maximum number of search results to return.
-	Ranker         string        `json:"ranker"`                   // File search ranker.
-	ScoreThreshold float32       `json:"scoreThreshold"`           // Ranker search threshold.
-	VectorStoreIds []interface{} `json:"vectorStoreIds"`           // The IDs of the vector stores to search within.
+	Kind           string        `json:"kind"`                    // The kind identifier for file search tools
+	Connection     interface{}   `json:"connection"`              // The connection configuration for the file search tool
+	MaxNumResults  int32         `json:"maxNumResults,omitempty"` // The maximum number of search results to return.
+	Ranker         string        `json:"ranker"`                  // File search ranker.
+	ScoreThreshold float32       `json:"scoreThreshold"`          // Ranker search threshold.
+	VectorStoreIds []interface{} `json:"vectorStoreIds"`          // The IDs of the vector stores to search within.
 }
 
 // McpTool represents The MCP Server tool.
@@ -371,7 +371,7 @@ type ModelTool struct {
 	Model interface{} `json:"model"` // The connection configuration for the model tool
 }
 
-// OpenApiTool represents 
+// OpenApiTool represents
 type OpenApiTool struct {
 	Tool
 	Kind          string      `json:"kind"`          // The kind identifier for OpenAPI tools

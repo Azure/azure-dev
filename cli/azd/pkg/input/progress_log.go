@@ -5,9 +5,14 @@ package input
 
 import (
 	"bufio"
+	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/adam-lavrik/go-imath/ix"
 	tm "github.com/buger/goterm"
@@ -37,6 +42,8 @@ import (
 *      title length. The left line represent 1/10 of the entire line, leaving the rest for the right line.
 *    - The less space on the screen, the shorter the lines will be. Lines won't be displayed if there is not enough room.
 * - The title and the logs are truncated with the symbol `...` at the end when it is bigger than the screen width.
+* - When AZD_DEBUG_PROGRESS_LOGS environment variable is set, all logs are written to a file in the current working
+*   directory with a name based on the title and timestamp (e.g., "title-20060102-150405.log").
  */
 type progressLog struct {
 	// The initial top wording. This value can be updated using Header() method.
@@ -58,6 +65,10 @@ type progressLog struct {
 	// This function is used to find out what's the terminal width. The log progress is disabled if this function
 	// returns a number <= 0.
 	terminalWidthFn TerminalWidthFn
+	// File handle for debug logging when AZD_DEBUG_PROGRESS_LOGS is set
+	debugLogFile *os.File
+	// Full content buffer for writing to debug log file
+	debugLogBuffer strings.Builder
 }
 
 /****************** Exported method ****************
@@ -95,6 +106,12 @@ func (p *progressLog) Start() {
 		return
 	}
 	p.output = make([]string, p.lines)
+
+	// Initialize debug logging if AZD_DEBUG_PROGRESS_LOGS is set
+	if os.Getenv("AZD_DEBUG_PROGRESS_LOGS") != "" {
+		p.initDebugLogFile()
+	}
+
 	// title is created on Start() because it depends on terminal width
 	// if terminal is resized between stop and start, the previewer will
 	// react to it and update the size.
@@ -106,12 +123,24 @@ func (p *progressLog) Start() {
 		tm.Println(p.header)
 		// margin after title
 		tm.Println("")
+
+		// Write header to debug log file
+		if p.debugLogFile != nil {
+			p.debugLogBuffer.WriteString(p.header)
+			p.debugLogBuffer.WriteString("\n\n")
+		}
 	}
 
 	// title
 	tm.Print(tm.ResetLine(""))
 	tm.Println(p.displayTitle)
 	tm.Println("")
+
+	// Write title to debug log file
+	if p.debugLogFile != nil {
+		p.debugLogBuffer.WriteString(p.displayTitle)
+		p.debugLogBuffer.WriteString("\n\n")
+	}
 
 	p.printLogs()
 }
@@ -126,6 +155,23 @@ func (p *progressLog) Stop(keepLogs bool) {
 
 	p.outputMutex.Lock()
 	defer p.outputMutex.Unlock()
+
+	// Write debug log file if enabled
+	if p.debugLogFile != nil {
+		p.debugLogBuffer.WriteString("\n")
+		p.debugLogBuffer.WriteString(p.footerLine)
+		p.debugLogBuffer.WriteString("\n")
+
+		if _, err := p.debugLogFile.WriteString(p.debugLogBuffer.String()); err != nil {
+			log.Printf("error writing debug log file: %v", err)
+		}
+
+		if err := p.debugLogFile.Close(); err != nil {
+			log.Printf("error closing debug log file: %v", err)
+		}
+		p.debugLogFile = nil
+		p.debugLogBuffer.Reset() // Reset buffer for next use
+	}
 
 	if !keepLogs {
 		p.clearContentAndFlush()
@@ -148,9 +194,18 @@ func (p *progressLog) Stop(keepLogs bool) {
 // Write implements oi.Writer and updates the internal buffer before flushing it into the screen.
 // Calling Write() before Start() or after Stop() is a no-op
 func (p *progressLog) Write(logBytes []byte) (int, error) {
+	p.outputMutex.Lock()
+	defer p.outputMutex.Unlock()
+
 	if p.output == nil {
 		return len(logBytes), nil
 	}
+
+	// Write to debug log file if enabled (inside mutex for thread safety)
+	if p.debugLogFile != nil {
+		p.debugLogBuffer.Write(logBytes)
+	}
+
 	maxWidth := p.terminalWidthFn()
 	if maxWidth <= 0 {
 		// maxWidth <= 0 means there's no terminal to write and the stdout pipe is mostly connected to a file or a buffer
@@ -158,9 +213,12 @@ func (p *progressLog) Write(logBytes []byte) (int, error) {
 		return len(logBytes), nil
 	}
 
+	// Safety check: ensure output buffer has at least one element
+	if len(p.output) == 0 {
+		p.output = make([]string, p.lines)
+	}
+
 	logsScanner := bufio.NewScanner(strings.NewReader(string(logBytes)))
-	p.outputMutex.Lock()
-	defer p.outputMutex.Unlock()
 
 	var afterFirstLine bool
 	for logsScanner.Scan() {
@@ -224,6 +282,8 @@ func (p *progressLog) Header(header string) {
 
 	p.outputMutex.Lock()
 	defer p.outputMutex.Unlock()
+
+	oldHeader := p.header
 	p.header = header
 
 	p.clearContentAndFlush()
@@ -232,11 +292,77 @@ func (p *progressLog) Header(header string) {
 		clearLine()
 		tm.Println(p.header)
 		tm.MoveCursorDown(3)
+
+		// Update debug log file if enabled
+		if p.debugLogFile != nil {
+			// Replace old header in buffer with new header
+			bufferContent := p.debugLogBuffer.String()
+			if oldHeader != "" {
+				bufferContent = strings.Replace(bufferContent, oldHeader+"\n\n", p.header+"\n\n", 1)
+			} else {
+				// If there was no old header, prepend the new header
+				bufferContent = p.header + "\n\n" + bufferContent
+			}
+			p.debugLogBuffer.Reset()
+			p.debugLogBuffer.WriteString(bufferContent)
+		}
 	}
 	p.printLogs()
 }
 
 /****************** Not exported method ****************/
+
+// initDebugLogFile creates a debug log file if AZD_DEBUG_PROGRESS_LOGS environment variable is set.
+// The file is created in the current working directory with a unique name based on the title and timestamp.
+func (p *progressLog) initDebugLogFile() {
+	// Get current working directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Printf("error getting current directory for debug log: %v", err)
+		return
+	}
+
+	// Create a safe filename from the title
+	safeTitle := p.sanitizeFilename(p.title)
+	if safeTitle == "" {
+		safeTitle = "progress"
+	}
+
+	// Generate unique filename with timestamp
+	timestamp := time.Now().Format("20060102-150405")
+	filename := fmt.Sprintf("%s-%s.log", safeTitle, timestamp)
+	filePath := filepath.Join(cwd, filename)
+
+	// Create the file
+	file, err := os.Create(filePath)
+	if err != nil {
+		log.Printf("error creating debug log file %s: %v", filePath, err)
+		return
+	}
+
+	p.debugLogFile = file
+	log.Printf("Debug progress logs will be written to: %s", filePath)
+}
+
+// sanitizeFilename converts a string into a safe filename by removing or replacing invalid characters.
+func (p *progressLog) sanitizeFilename(s string) string {
+	// Replace spaces with underscores
+	s = strings.ReplaceAll(s, " ", "_")
+
+	// Remove or replace invalid filename characters
+	invalidChars := regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)
+	s = invalidChars.ReplaceAllString(s, "")
+
+	// Limit length to avoid filesystem issues
+	if len(s) > 100 {
+		s = s[:100]
+	}
+
+	// Remove leading/trailing dots and spaces
+	s = strings.Trim(s, ". ")
+
+	return s
+}
 
 // clearLine override text with empty spaces.
 func clearLine() {

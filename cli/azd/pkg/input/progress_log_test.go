@@ -7,10 +7,13 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/bradleyjkemp/cupaloy/v2"
@@ -329,4 +332,162 @@ func Test_progressChangeHeader(t *testing.T) {
 
 	snConfig.SnapshotT(t, bufHandler.snap())
 	pg.Stop(false)
+}
+
+func Test_progressLogDebugFile(t *testing.T) {
+	// Set the environment variable for debug logging
+	t.Setenv("AZD_DEBUG_PROGRESS_LOGS", "1")
+
+	// Create a temporary directory for the test
+	tempDir := t.TempDir()
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+
+	// Change to temp directory
+	err = os.Chdir(tempDir)
+	require.NoError(t, err)
+	defer func() {
+		err := os.Chdir(originalWd)
+		require.NoError(t, err)
+	}()
+
+	screenWidth := 40
+	sizeFn := func() int {
+		return screenWidth
+	}
+
+	testTitle := "Test Debug Logs"
+	pg := newProgressLogWithWidthFn(5, prefix, testTitle, header, sizeFn)
+
+	var bufHandler testBufferHandler
+	tm.Screen = &bufHandler.Buffer
+	pg.Start()
+	bufHandler.page()
+
+	// Write some test data
+	testData := []string{
+		"First log line\n",
+		"Second log line\n",
+		"Third log line\n",
+	}
+
+	for _, data := range testData {
+		_, err := pg.Write([]byte(data))
+		require.NoError(t, err)
+		bufHandler.page()
+	}
+
+	pg.Stop(false)
+
+	// Check that a log file was created
+	files, err := filepath.Glob("*.log")
+	require.NoError(t, err)
+	require.Len(t, files, 1, "Expected exactly one log file to be created")
+
+	// Verify the filename contains sanitized title
+	expectedPrefix := "Test_Debug_Logs-"
+	require.True(
+		t,
+		strings.HasPrefix(filepath.Base(files[0]), expectedPrefix),
+		"Expected filename to start with '%s', got '%s'",
+		expectedPrefix,
+		filepath.Base(files[0]),
+	)
+
+	// Read the file content and verify it contains the expected data
+	content, err := os.ReadFile(files[0])
+	require.NoError(t, err)
+
+	contentStr := string(content)
+	// Check that all test data is in the file
+	for _, data := range testData {
+		require.Contains(t, contentStr, strings.TrimSpace(data), "Expected log file to contain: %s", data)
+	}
+
+	// Verify the file contains the header and title
+	require.Contains(t, contentStr, header, "Expected log file to contain header")
+}
+
+func Test_progressLogReuseWithDebugFile(t *testing.T) {
+	// Set the environment variable for debug logging
+	t.Setenv("AZD_DEBUG_PROGRESS_LOGS", "1")
+
+	// Create a temporary directory for the test
+	tempDir := t.TempDir()
+	originalWd, err := os.Getwd()
+	require.NoError(t, err)
+
+	// Change to temp directory
+	err = os.Chdir(tempDir)
+	require.NoError(t, err)
+	defer func() {
+		err := os.Chdir(originalWd)
+		require.NoError(t, err)
+	}()
+
+	screenWidth := 40
+	sizeFn := func() int {
+		return screenWidth
+	}
+
+	testTitle := "Reuse Test"
+	pg := newProgressLogWithWidthFn(5, prefix, testTitle, header, sizeFn)
+
+	var bufHandler testBufferHandler
+	tm.Screen = &bufHandler.Buffer
+
+	// First use
+	pg.Start()
+	bufHandler.page()
+	_, err = pg.Write([]byte("First use line 1\n"))
+	require.NoError(t, err)
+	bufHandler.page()
+	_, err = pg.Write([]byte("First use line 2\n"))
+	require.NoError(t, err)
+	bufHandler.page()
+	pg.Stop(false)
+
+	// Wait a bit to ensure different timestamp
+	time.Sleep(1100 * time.Millisecond)
+
+	// Second use - this should not panic
+	pg.Start()
+	bufHandler.page()
+	_, err = pg.Write([]byte("Second use line 1\n"))
+	require.NoError(t, err)
+	bufHandler.page()
+	_, err = pg.Write([]byte("Second use line 2\n"))
+	require.NoError(t, err)
+	bufHandler.page()
+	pg.Stop(false)
+
+	// Wait a bit to ensure different timestamp
+	time.Sleep(1100 * time.Millisecond)
+
+	// Third use - just to be sure
+	pg.Start()
+	bufHandler.page()
+	_, err = pg.Write([]byte("Third use line 1\n"))
+	require.NoError(t, err)
+	bufHandler.page()
+	pg.Stop(false)
+
+	// Check that log files were created (should be at least 1, might be up to 3 depending on timing)
+	files, err := filepath.Glob("*.log")
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(files), 1, "Expected at least one log file to be created")
+	require.LessOrEqual(t, len(files), 3, "Expected at most three log files to be created")
+
+	// Verify that at least one file contains content from each use
+	allContent := ""
+	for _, file := range files {
+		content, err := os.ReadFile(file)
+		require.NoError(t, err)
+		allContent += string(content)
+	}
+
+	// Each use should have written something
+	require.Contains(t, allContent, "First use line 1", "Expected log to contain first use content")
+	require.Contains(t, allContent, "Second use line 1", "Expected log to contain second use content")
+	require.Contains(t, allContent, "Third use line 1", "Expected log to contain third use content")
 }

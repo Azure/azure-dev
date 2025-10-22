@@ -252,6 +252,7 @@ func createContainerAppServiceTarget(
 		clock.NewMock(),
 		containerRegistryService,
 		remoteBuildManager,
+		nil,
 		dockerCli,
 		dotnetCli,
 		mockContext.Console,

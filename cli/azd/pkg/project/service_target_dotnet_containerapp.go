@@ -509,7 +509,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 	}
 
 	// Add resource artifact
-	resourceArtifact := &Artifact{}
+	var resourceArtifact *Artifact
 	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
 		if err := artifacts.Add(resourceArtifact); err != nil {
 			return nil, fmt.Errorf("failed to add resource artifact: %w", err)

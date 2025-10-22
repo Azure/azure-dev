@@ -983,6 +983,7 @@ func createAksServiceTarget(
 		clock.NewMock(),
 		containerRegistryService,
 		remoteBuildManager,
+		nil,
 		dockerCli,
 		dotnetCli,
 		mockContext.Console,

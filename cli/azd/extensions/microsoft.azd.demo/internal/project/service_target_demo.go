@@ -75,10 +75,35 @@ func (p *DemoServiceTargetProvider) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
+	var containerArtifact *azdext.Artifact
+
+	for _, artifact := range serviceContext.Package {
+		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER {
+			containerArtifact = artifact
+			break
+		}
+	}
+
+	if containerArtifact == nil {
+		buildResponse, err := p.azdClient.Container().
+			Build(ctx, &azdext.ContainerBuildRequest{
+				ServiceName:    serviceConfig.Name,
+				ServiceContext: serviceContext,
+			},
+			)
+		if err != nil {
+			return nil, err
+		}
+
+		serviceContext.Build = append(serviceContext.Build, buildResponse.Result.Artifacts...)
+	}
+
 	packageResponse, err := p.azdClient.Container().
 		Package(ctx, &azdext.ContainerPackageRequest{
-			ServiceName: serviceConfig.Name,
-		})
+			ServiceName:    serviceConfig.Name,
+			ServiceContext: serviceContext,
+		},
+		)
 	if err != nil {
 		return nil, err
 	}
@@ -119,8 +144,8 @@ func (p *DemoServiceTargetProvider) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	progress("Deploying service")
-	time.Sleep(1000 * time.Millisecond)
+	progress("Deploying demo service")
+	time.Sleep(5 * time.Second)
 
 	// Construct resource ID
 	resourceId := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/%s/%s",
@@ -135,20 +160,31 @@ func (p *DemoServiceTargetProvider) Deploy(
 		return nil, err
 	}
 
-	// Return deployment result with artifacts
-	deployResult := &azdext.ServiceDeployResult{
-		Artifacts: []*azdext.Artifact{
-			{
-				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_DEPLOYMENT,
-				Location:     resourceId,
-				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
-				Metadata: map[string]string{
-					"kind":      "demo",
-					"endpoints": fmt.Sprintf("%v", endpoints),
-					"message":   "Service deployed successfully",
-				},
+	artifacts := []*azdext.Artifact{
+		{
+			Kind:         azdext.ArtifactKind_ARTIFACT_KIND_RESOURCE,
+			Location:     resourceId,
+			LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+			Metadata: map[string]string{
+				"subscription":  targetResource.SubscriptionId,
+				"resourceGroup": targetResource.ResourceGroupName,
+				"type":          targetResource.ResourceType,
+				"name":          targetResource.ResourceName,
 			},
 		},
+	}
+
+	for _, endpoint := range endpoints {
+		artifacts = append(artifacts, &azdext.Artifact{
+			Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+			Location:     endpoint,
+			LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+		})
+	}
+
+	// Return deployment result with artifacts
+	deployResult := &azdext.ServiceDeployResult{
+		Artifacts: artifacts,
 	}
 
 	return deployResult, nil

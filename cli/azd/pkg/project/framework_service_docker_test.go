@@ -110,7 +110,8 @@ services:
 		env,
 		docker,
 		NewContainerHelper(
-			env, envManager, clock.NewMock(), nil, nil, docker, dotnetCli, mockContext.Console, cloud.AzurePublic()),
+			env, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+			docker, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -217,7 +218,8 @@ services:
 		env,
 		docker,
 		NewContainerHelper(
-			env, envManager, clock.NewMock(), nil, nil, docker, dotnetCli, mockContext.Console, cloud.AzurePublic()),
+			env, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+			docker, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -502,8 +504,8 @@ func Test_DockerProject_Build(t *testing.T) {
 				env,
 				dockerCli,
 				NewContainerHelper(
-					env, envManager, clock.NewMock(), nil, nil, dockerCli, dotnetCli, mockContext.Console,
-					cloud.AzurePublic()),
+					env, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+					dockerCli, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
 				mockContext.CommandRunner)
@@ -646,13 +648,11 @@ func Test_DockerProject_Package(t *testing.T) {
 				env,
 				dockerCli,
 				NewContainerHelper(
-					env, envManager, clock.NewMock(), nil, nil, dockerCli, dotnetCli, mockContext.Console,
-					cloud.AzurePublic()),
+					env, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+					dockerCli, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
-				mockContext.CommandRunner)
-
-			// Set the custom test options
+				mockContext.CommandRunner) // Set the custom test options
 			serviceConfig.Docker = tt.docker
 			serviceConfig.RelativePath = tt.project
 			serviceConfig.Image = osutil.NewExpandableString(tt.image)

@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -260,7 +259,11 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 
 	fmt.Println(mcpJson)
 
-	if err := openBrowserWindows(ctx, promptClient, defaultGitHubCLI, codingAgentURL, gitRepoRoot); err != nil {
+	if err := openBrowserWindows(ctx,
+		promptClient,
+		defaultConsole,
+		codingAgentURL,
+		repoSlug); err != nil {
 		return err
 	}
 
@@ -269,9 +272,9 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 
 func openBrowserWindows(ctx context.Context,
 	prompter azdext.PromptServiceClient,
-	githubCLI *azd_tools_github.Cli,
+	defaultConsole input.Console,
 	codingAgentURL string,
-	gitRepoRoot string) error {
+	repoSlug string) error {
 	resp, err := prompter.Confirm(ctx, &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
 			Message:      "Open browser window to create a pull request?",
@@ -287,21 +290,13 @@ func openBrowserWindows(ctx context.Context,
 		return nil
 	}
 
-	//nolint:gosec	// defaultGitHubCLI.BinaryPath is derived from our own code, shouldn't be considered tainted.
-	cmd := exec.CommandContext(
-		ctx,
-		githubCLI.BinaryPath(),
-		"pr", "create",
-		"--title", "Updating/adding copilot-setup-steps.yaml to enable the Copilot coding agent to access Azure",
-		"--body", fmt.Sprintf(prBodyMD, codingAgentURL, mcpJson),
-		"--web")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Dir = gitRepoRoot
+	fullURL := fmt.Sprintf("https://github.com/%s/compare/main...azd-enable-copilot-coding-agent-with-azure?body=%s&expand=1&title=%s",
+		repoSlug,
+		url.QueryEscape(fmt.Sprintf(prBodyMD, codingAgentURL, mcpJson)),
+		url.QueryEscape("Updating/adding copilot-setup-steps.yaml to enable the Copilot coding agent to access Azure"),
+	)
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to launch gh pr: %w", err)
-	}
+	openWithDefaultBrowser(ctx, defaultConsole, fullURL)
 
 	// if we don't pause here, on Windows, it can kill the child process that's actually starting up the browser.
 	time.Sleep(5 * time.Second)

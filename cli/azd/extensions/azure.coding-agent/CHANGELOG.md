@@ -1,5 +1,11 @@
 # Release History
 
+## 0.5.0
+
+### Bugs fixed
+
+- Browser now launches properly on Windows
+
 ## 0.4.0
 
 ### Features Added

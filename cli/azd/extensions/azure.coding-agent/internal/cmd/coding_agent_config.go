@@ -10,9 +10,9 @@ import (
 	"log"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -259,7 +259,11 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 
 	fmt.Println(mcpJson)
 
-	if err := openBrowserWindows(ctx, promptClient, defaultGitHubCLI, codingAgentURL, gitRepoRoot); err != nil {
+	if err := openBrowserWindows(ctx,
+		promptClient,
+		defaultConsole,
+		codingAgentURL,
+		repoSlug); err != nil {
 		return err
 	}
 
@@ -268,9 +272,9 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 
 func openBrowserWindows(ctx context.Context,
 	prompter azdext.PromptServiceClient,
-	githubCLI *azd_tools_github.Cli,
+	defaultConsole input.Console,
 	codingAgentURL string,
-	gitRepoRoot string) error {
+	repoSlug string) error {
 	resp, err := prompter.Confirm(ctx, &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
 			Message:      "Open browser window to create a pull request?",
@@ -286,21 +290,16 @@ func openBrowserWindows(ctx context.Context,
 		return nil
 	}
 
-	//nolint:gosec	// defaultGitHubCLI.BinaryPath is derived from our own code, shouldn't be considered tainted.
-	cmd := exec.CommandContext(
-		ctx,
-		githubCLI.BinaryPath(),
-		"pr", "create",
-		"--title", "Updating/adding copilot-setup-steps.yaml to enable the Copilot coding agent to access Azure",
-		"--body", fmt.Sprintf(prBodyMD, codingAgentURL, mcpJson),
-		"--web")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Dir = gitRepoRoot
+	fullURL := fmt.Sprintf("https://github.com/%s/compare/main...azd-enable-copilot-coding-agent-with-azure?body=%s&expand=1&title=%s",
+		repoSlug,
+		url.QueryEscape(fmt.Sprintf(prBodyMD, codingAgentURL, mcpJson)),
+		url.QueryEscape("Updating/adding copilot-setup-steps.yaml to enable the Copilot coding agent to access Azure"),
+	)
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to launch gh pr: %w", err)
-	}
+	openWithDefaultBrowser(ctx, defaultConsole, fullURL)
+
+	// if we don't pause here, on Windows, it can kill the child process that's actually starting up the browser.
+	time.Sleep(5 * time.Second)
 
 	return nil
 }
@@ -524,17 +523,18 @@ func pickOrCreateMSI(ctx context.Context,
 	// Prompt for pick or create a new MSI
 	selectedOption, err := prompter.Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: "Do you want to create a new User Managed Identity (MSI) or use an existing one?",
+			Message: "Do you want to create a new Azure user-assigned managed identity or use an existing one?",
 			Choices: []*azdext.SelectChoice{
-				{Label: "Create new User Managed Identity (MSI)"},
-				{Label: "Use existing User Managed Identity (MSI)"},
+				{Label: "Create new user-assigned managed identity"},
+				{Label: "Use existing user-assigned managed identity"},
 			},
+			HelpMessage: "",
 		},
 	})
 	if err != nil {
 		//nolint:lll
 		return nil, fmt.Errorf(
-			"failed when prompting for MSI option. Try logging in manually with 'azd auth login' before running this command. Error: %w",
+			"failed when prompting for managed identity option. Try logging in manually with 'azd auth login' before running this command. Error: %w",
 			err,
 		)
 	}
@@ -773,7 +773,7 @@ func gitPushChanges(ctx context.Context,
 
 	resp, err := prompter.Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
-			Message: fmt.Sprintf("Which git repository would you like push the branch (%s) to?", branchName),
+			Message: fmt.Sprintf("Which git repository should we push the '%s' branch to?", branchName),
 			Choices: choices,
 		},
 	})

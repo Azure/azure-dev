@@ -29,8 +29,9 @@ func newListenCommand() *cobra.Command {
 
 			provider := project.NewAgentServiceTargetProvider(azdClient)
 			projectParser := &project.FoundryParser{AzdClient: azdClient}
+			// IMPORTANT: service target name here must match the name used in the extension manifest.
 			host := azdext.NewExtensionHost(azdClient).
-				WithServiceTarget("foundry.agent", provider).
+				WithServiceTarget("foundry.containeragent", provider).
 				WithProjectEventHandler("preprovision", projectParser.SetIdentity).
 				WithProjectEventHandler("postdeploy", projectParser.CoboPostDeploy)
 

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -159,22 +162,17 @@ func promptForExtensionChoice(
 	extensions []*extensions.ExtensionMetadata) (*extensions.ExtensionMetadata, error) {
 
 	if len(extensions) == 0 {
-		return nil, nil
+		return nil, fmt.Errorf("no extensions to choose from")
 	}
 
 	if len(extensions) == 1 {
 		return extensions[0], nil
 	}
 
-	console.Message(ctx, "Multiple extensions found that match your command:")
-	console.Message(ctx, "")
-
 	options := make([]string, len(extensions))
 	for i, ext := range extensions {
-		options[i] = fmt.Sprintf("%s (%s) - %s", ext.Namespace, ext.DisplayName, ext.Description)
-		console.Message(ctx, fmt.Sprintf("  %d. %s", i+1, options[i]))
+		options[i] = fmt.Sprintf("%s (%s) - %s", ext.DisplayName, ext.Source, ext.Description)
 	}
-	console.Message(ctx, "")
 
 	choice, err := console.Select(ctx, input.ConsoleOptions{
 		Message: "Which extension would you like to install?",
@@ -231,21 +229,23 @@ func tryAutoInstallExtension(
 	if resource.IsRunningOnCI() {
 		return false,
 			fmt.Errorf(
-				"Command '%s' not found, but there's an available extension that provides it.\n"+
-					"However, auto-installation is not supported in CI/CD environments.\n"+
+				"Auto-installation is not supported in CI/CD environments.\n"+
 					"Run '%s' to install it manually.",
-				extension.Namespace,
 				fmt.Sprintf("azd extension install %s", extension.Id))
 	}
 
+	console.MessageUxItem(ctx, &ux.WarningMessage{
+		Description: "You are about to install an extension!",
+	})
+	console.Message(ctx, fmt.Sprintf("Source: %s", extension.Source))
+	console.Message(ctx, fmt.Sprintf("Id: %s", extension.Id))
+	console.Message(ctx, fmt.Sprintf("Name: %s", extension.DisplayName))
+	console.Message(ctx, fmt.Sprintf("Description: %s", extension.Description))
+
 	// Ask user for permission to auto-install the extension
-	console.Message(ctx,
-		fmt.Sprintf("Command '%s' not found, but there's an available extension that provides it.\n", extension.Namespace))
-	console.Message(ctx,
-		fmt.Sprintf("Extension: %s (%s)\n", extension.DisplayName, extension.Description))
 	shouldInstall, err := console.Confirm(ctx, input.ConsoleOptions{
 		DefaultValue: true,
-		Message:      "Would you like to install it?",
+		Message:      "Confirm installation",
 	})
 	if err != nil {
 		return false, nil
@@ -271,13 +271,82 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	// Creating the RootCmd takes care of registering common dependencies in rootContainer
 	rootCmd := NewRootCmd(false, nil, rootContainer)
 
+	var extensionManager *extensions.Manager
+	var console input.Console
+
 	// rootCmd.Find() returns error if the command is not identified. Cobra checks all the registered commands
 	// and returns error if the input command is not registered.
 	// This allows us to determine if a subcommand was provided or not or if the command is unknown.
 	_, originalArgs, err := rootCmd.Find(os.Args[1:])
 	if err == nil {
 		// Known command, no need to auto-install
-		return rootCmd.ExecuteContext(ctx)
+		err := rootCmd.ExecuteContext(ctx)
+
+		if err := rootContainer.Resolve(&extensionManager); err != nil {
+			log.Panic("failed to resolve extension manager for auto-install:", err)
+		}
+		if err := rootContainer.Resolve(&console); err != nil {
+			log.Panic("failed to resolve console for unknown flags error:", err)
+		}
+
+		// auto-install for target service
+		var unsupportedErr *project.UnsupportedServiceHostError
+		if !errors.As(err, &unsupportedErr) {
+			return err
+		}
+
+		requiredHost := unsupportedErr.Host
+		availableExtensionsForHost, err := extensionManager.FindExtensions(ctx, &extensions.FilterOptions{
+			Capability: extensions.ServiceTargetProviderCapability,
+			Provider:   requiredHost,
+		})
+		if err != nil {
+			// Do not fail if we couldn't check for extensions - just proceed to normal execution
+			log.Println("Error: check for extensions. Skipping auto-install:", err)
+			console.Message(ctx, unsupportedErr.ErrorMessage)
+			return nil
+		}
+		// Note: We don't need to filter or check which extensions are installed.
+		// If any of these extensions would be installed, the auto-install wouldn't have been triggered because
+		// there would be at least one extensions providing the capability and provider.
+		if len(availableExtensionsForHost) == 0 {
+			// did not find an extension with the capability, just print the original error message
+			console.Message(ctx, unsupportedErr.ErrorMessage)
+			return nil
+		}
+
+		console.Message(ctx,
+			fmt.Sprintf("Your project is using host '%s' which is not supported by default.\n", unsupportedErr.Host))
+
+		var extensionIdToInstall extensions.ExtensionMetadata
+		if len(availableExtensionsForHost) == 1 {
+			extensionIdToInstall = *availableExtensionsForHost[0]
+			console.Message(ctx, "An extension was found that provides support for this host.")
+		} else {
+			console.Message(ctx, "There are multiple extensions that provide support for this host.")
+			// Multiple matches found, prompt user to choose
+			chosenExtension, err := promptForExtensionChoice(ctx, console, availableExtensionsForHost)
+			if err != nil {
+				console.Message(ctx, fmt.Sprintf("Error selecting extension: %v", err))
+				return err
+			}
+			extensionIdToInstall = *chosenExtension
+		}
+
+		installed, installErr := tryAutoInstallExtension(ctx, console, extensionManager, extensionIdToInstall)
+		if installErr != nil {
+			// Error needs to be printed here or else it will be hidden b/c the error printing is handled inside runtime
+			console.Message(ctx, installErr.Error())
+			return installErr
+		}
+
+		if installed {
+			// Extension was installed, build command tree and execute
+			rootCmd := NewRootCmd(false, nil, rootContainer)
+			return rootCmd.ExecuteContext(ctx)
+		}
+
+		return err
 	}
 
 	// Extract flags that take values from the root command
@@ -294,13 +363,15 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			return rootCmd.ExecuteContext(ctx)
 		}
 
+		if err := rootContainer.Resolve(&extensionManager); err != nil {
+			log.Panic("failed to resolve extension manager for auto-install:", err)
+		}
+		if err := rootContainer.Resolve(&console); err != nil {
+			log.Panic("failed to resolve console for unknown flags error:", err)
+		}
+
 		// If unknown flags were found before a non-built-in command, return an error with helpful guidance
 		if len(unknownFlags) > 0 {
-			var console input.Console
-			if err := rootContainer.Resolve(&console); err != nil {
-				log.Panic("failed to resolve console for unknown flags error:", err)
-			}
-
 			flagsList := strings.Join(unknownFlags, ", ")
 			errorMsg := fmt.Sprintf(
 				"Unknown flags detected before command '%s': %s\n\n"+
@@ -316,11 +387,6 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 
 			console.Message(ctx, errorMsg)
 			return fmt.Errorf("unknown flags before command: %s", flagsList)
-		}
-
-		var extensionManager *extensions.Manager
-		if err := rootContainer.Resolve(&extensionManager); err != nil {
-			log.Panic("failed to resolve extension manager for auto-install:", err)
 		}
 
 		// Get all remaining arguments starting from the command for namespace matching
@@ -351,6 +417,10 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 			if err := rootContainer.Resolve(&console); err != nil {
 				log.Panic("failed to resolve console for auto-install:", err)
 			}
+
+			console.Message(ctx,
+				fmt.Sprintf("Command '%s' was not found, but there's an available extension that provides it\n",
+					strings.Join(argsForMatching, " ")))
 
 			// Prompt user to choose if multiple extensions match
 			chosenExtension, err := promptForExtensionChoice(ctx, console, extensionMatches)

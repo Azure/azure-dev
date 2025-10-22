@@ -441,8 +441,14 @@ func (efs *ExternalFrameworkService) toProtoServiceConfig(serviceConfig *Service
 		return nil, nil
 	}
 
+	// Use an empty resolver since ExternalFrameworkService doesn't have access to environment
+	// The extension is responsible for handling environment variable substitution
+	emptyResolver := func(key string) string {
+		return ""
+	}
+
 	var protoConfig *azdext.ServiceConfig
-	err := mapper.Convert(serviceConfig, &protoConfig)
+	err := mapper.WithResolver(emptyResolver).Convert(serviceConfig, &protoConfig)
 	if err != nil {
 		return nil, fmt.Errorf("converting service config: %w", err)
 	}

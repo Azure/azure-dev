@@ -116,33 +116,26 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 func (p *AgentServiceTargetProvider) Package(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
-	frameworkPackageOutput *azdext.ServicePackageResult,
+	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
-	return &azdext.ServicePackageResult{
-		PackagePath:         frameworkPackageOutput.PackagePath,
-		DockerPackageResult: &azdext.DockerPackageResult{},
-	}, nil
+	return &azdext.ServicePackageResult{}, nil
 }
 
 // Publish performs the publish operation for the agent service
 func (p *AgentServiceTargetProvider) Publish(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
-	packageResult *azdext.ServicePackageResult,
+	serviceContext *azdext.ServiceContext,
 	targetResource *azdext.TargetResource,
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
-	if packageResult == nil {
-		return nil, fmt.Errorf("packageResult is nil")
+	if serviceContext == nil || len(serviceContext.Package) == 0 {
+		return nil, fmt.Errorf("package not found")
 	}
 
-	if packageResult.DockerPackageResult == nil {
-		return nil, fmt.Errorf("docker package result is nil")
-	}
-
-	localImageTag := packageResult.DockerPackageResult.TargetImage
+	localImageTag := serviceContext.Package[0].Location
 
 	// E.g. Given `azd publish svc --to acr.io/my/img:tag12`, publishOptions.Image would be "acr.io/my/img:tag12"
 	if publishOptions != nil && publishOptions.Image != "" {
@@ -155,8 +148,12 @@ func (p *AgentServiceTargetProvider) Publish(
 	fmt.Printf("\nAgent image published: %s\n", color.New(color.FgHiBlue).Sprint(remoteImage))
 
 	return &azdext.ServicePublishResult{
-		ContainerDetails: &azdext.ContainerPublishDetails{
-			RemoteImage: remoteImage,
+		Artifacts: []*azdext.Artifact{
+			{
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
+				Location:     remoteImage,
+				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+			},
 		},
 	}, nil
 }
@@ -165,8 +162,7 @@ func (p *AgentServiceTargetProvider) Publish(
 func (p *AgentServiceTargetProvider) Deploy(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
-	packageResult *azdext.ServicePackageResult,
-	publishResult *azdext.ServicePublishResult,
+	serviceContext *azdext.ServiceContext,
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
@@ -258,13 +254,16 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	fmt.Fprintf(os.Stderr, "Prompt agent '%s' deployed successfully!\n", agentVersionResponse.Name)
 
 	return &azdext.ServiceDeployResult{
-		TargetResourceId: "",
-		Kind:             "agent",
-		Endpoints:        nil,
-		Details: map[string]string{
-			"message":      "Prompt agent deployed successfully",
-			"agentName":    agentVersionResponse.Name,
-			"agentVersion": agentVersionResponse.Version,
+		Artifacts: []*azdext.Artifact{
+			{
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_DEPLOYMENT,
+				Location:     agentVersionResponse.ID,
+				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+				Metadata: map[string]string{
+					"agentName":    agentVersionResponse.Name,
+					"agentVersion": agentVersionResponse.Version,
+				},
+			},
 		},
 	}, nil
 }
@@ -329,13 +328,16 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	fmt.Fprintf(os.Stderr, "Hosted agent '%s' deployed successfully!\n", agentVersionResponse.Name)
 
 	return &azdext.ServiceDeployResult{
-		TargetResourceId: "",
-		Kind:             "agent",
-		Endpoints:        nil,
-		Details: map[string]string{
-			"message":      "Hosted agent deployed successfully",
-			"agentName":    agentVersionResponse.Name,
-			"agentVersion": agentVersionResponse.Version,
+		Artifacts: []*azdext.Artifact{
+			{
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_DEPLOYMENT,
+				Location:     agentVersionResponse.ID,
+				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+				Metadata: map[string]string{
+					"agentName":    agentVersionResponse.Name,
+					"agentVersion": agentVersionResponse.Version,
+				},
+			},
 		},
 	}, nil
 }

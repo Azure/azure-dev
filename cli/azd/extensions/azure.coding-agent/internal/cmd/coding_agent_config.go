@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -301,6 +302,9 @@ func openBrowserWindows(ctx context.Context,
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to launch gh pr: %w", err)
 	}
+
+	// if we don't pause here, on Windows, it can kill the child process that's actually starting up the browser.
+	time.Sleep(5 * time.Second)
 
 	return nil
 }

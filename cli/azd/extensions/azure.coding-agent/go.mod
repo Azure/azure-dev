@@ -7,7 +7,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi v1.3.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
-	github.com/azure/azure-dev v0.0.0-20251008233622-cd0da10ec625
+	github.com/azure/azure-dev v0.0.0-20251022214358-2063759a9d97
 	github.com/cli/browser v1.3.0
 	github.com/fatih/color v1.18.0
 	github.com/spf13/cobra v1.10.1

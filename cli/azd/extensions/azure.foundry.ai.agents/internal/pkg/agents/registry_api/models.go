@@ -4,6 +4,7 @@
 package registry_api
 
 import (
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"encoding/json"
 )
 
@@ -32,7 +33,7 @@ type Manifest struct {
 	CatalogData json.RawMessage `json:"catalogData,omitempty"`
 
 	// AgentV2 schema
-	Template json.RawMessage `json:"template"`
+	Template agent_api.PromptAgentDefinition `json:"template"`
 
 	// OpenAPI parameter definitions
 	Parameters map[string]OpenApiParameter `json:"parameters"`

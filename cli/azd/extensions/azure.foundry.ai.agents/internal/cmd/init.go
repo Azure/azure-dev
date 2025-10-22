@@ -196,12 +196,12 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 		color.Green("\nAI agent added to your project successfully!")
 	}
 
-	// Validate command flags
+	// // Validate command flags
 	// if err := a.validateFlags(flags); err != nil {
 	// 	return err
 	// }
 
-	// Prompt for any missing input values
+	// // Prompt for any missing input values
 	// if err := a.promptForMissingValues(ctx, a.azdClient, flags); err != nil {
 	// 	return fmt.Errorf("collecting required information: %w", err)
 	// }
@@ -621,31 +621,16 @@ func (a *InitAction) downloadAgentYaml(
 			return nil, "", fmt.Errorf("getting materialized manifest: %w", err)
 		}
 
-		// Process the manifest with parameter prompting and template injection
-		processedTemplate, err := registry_api.ProcessRegistryManifest(ctx, versionResult, a.azdClient)
+		// Process the manifest into a maml format
+		processedManifest, err := registry_api.ProcessRegistryManifest(ctx, versionResult, a.azdClient)
 		if err != nil {
 			return nil, "", fmt.Errorf("processing manifest with parameters: %w", err)
 		}
 
-		fmt.Println("Retrieved and processed template from registry")
-		content = processedTemplate
-
-		// Create AgentDefinition from processed template
-		var agentDefinition agent_yaml.AgentDefinition
-		if err := json.Unmarshal(processedTemplate, &agentDefinition); err != nil {
-			return nil, "", fmt.Errorf("unmarshaling processed template: %w", err)
-		}
-
-		// Merge manifest properties into agent definition for any empty fields
-		mergedAgentDefinition := registry_api.MergeManifestIntoAgentDefinition(versionResult, &agentDefinition)
-
-		// Create AgentManifest with the merged agent definition
-		agentManifest := &agent_yaml.AgentManifest{
-			Agent: *mergedAgentDefinition,
-		}
+		fmt.Println("Retrieved and processed manifest from registry")
 
 		// Convert to YAML bytes for the content variable
-		manifestBytes, err := yaml.Marshal(agentManifest)
+		manifestBytes, err := yaml.Marshal(processedManifest)
 		if err != nil {
 			return nil, "", fmt.Errorf("marshaling agent manifest to YAML: %w", err)
 		}
@@ -659,6 +644,11 @@ func (a *InitAction) downloadAgentYaml(
 	}
 
 	fmt.Println("✓ YAML content successfully validated against AgentManifest format")
+
+	agentManifest, err = registry_api.ProcessManifestParameters(ctx, agentManifest, a.azdClient)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to process manifest parameters: %w", err)
+	}
 
 	agentId := agentManifest.Agent.Name
 

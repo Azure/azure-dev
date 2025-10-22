@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -19,47 +20,145 @@ import (
 // ParameterValues represents the user-provided values for manifest parameters
 type ParameterValues map[string]interface{}
 
-func ProcessRegistryManifest(ctx context.Context, manifest *Manifest, azdClient *azdext.AzdClient) (json.RawMessage, error) {
-	processedTemplate, err := ProcessManifestWithParameters(ctx, manifest, azdClient)
+func ProcessRegistryManifest(ctx context.Context, manifest *Manifest, azdClient *azdext.AzdClient) (*agent_yaml.AgentManifest, error) {
+	// Convert the agent API defintion into a MAML definition
+	agentDef, err := ConvertAgentDefinition(manifest.Template)
 	if err != nil {
-		return nil, fmt.Errorf("failed to process manifest: %w", err)
+		return nil, fmt.Errorf("failed to convert agentDefinition: %w", err)
 	}
 
-	processedTemplate, err = transformModelField(processedTemplate)
+	// Inject Agent API Manifest properties into MAML Agent properties as needed
+	agentDef = MergeManifestIntoAgentDefinition(manifest, agentDef)
+
+	// Convert the agent API parameters into MAML parameters
+	parameters, err := ConvertParameters(manifest.Parameters)
 	if err != nil {
-		return nil, fmt.Errorf("failed to transform model field: %w", err)
+		return nil, fmt.Errorf("failed to convert parameters: %w", err)
 	}
 
-	return processedTemplate, nil
+	// Create the AgentManifest with the converted AgentDefinition
+	result := &agent_yaml.AgentManifest{
+		Agent:      *agentDef,
+		Parameters: parameters,
+	}
+
+	return result, nil
 }
 
-// ProcessManifestWithParameters prompts the user for parameter values and injects them into the template
-func ProcessManifestWithParameters(ctx context.Context, manifest *Manifest, azdClient *azdext.AzdClient) (json.RawMessage, error) {
-	// If no parameters are defined, return the template as-is
+func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_yaml.AgentDefinition, error) {
+	// Convert the model string to Model struct
+	model := agent_yaml.Model{
+		Id: template.Model,
+	}
+
+	// Convert tools from agent_api.Tool to agent_yaml.Tool
+	var tools []agent_yaml.Tool
+	for _, apiTool := range template.Tools {
+		yamlTool := agent_yaml.Tool{
+			Name: apiTool.Type, // Use Type as Name
+			Kind: "",           // TODO: Where does this come from?
+		}
+		tools = append(tools, yamlTool)
+	}
+
+	// Get instructions, defaulting to empty string if nil
+	instructions := ""
+	if template.Instructions != nil {
+		instructions = *template.Instructions
+	}
+
+	// Create the AgentDefinition
+	agentDef := &agent_yaml.AgentDefinition{
+		Kind:         agent_yaml.AgentKindPrompt, // Set to prompt kind
+		Name:         "",                         // Will be set later from manifest or user input
+		Description:  "",                         // Will be set later from manifest or user input
+		Instructions: instructions,
+		Model:        model,
+		Tools:        tools,
+		// Metadata:     make(map[string]interface{}), // TODO, Where does this come from?
+	}
+
+	return agentDef, nil
+}
+
+func ConvertParameters(parameters map[string]OpenApiParameter) ([]interface{}, error) {
+	if len(parameters) == 0 {
+		return []interface{}{}, nil
+	}
+
+	result := make([]interface{}, 0, len(parameters))
+
+	for paramName, openApiParam := range parameters {
+		// Create a basic Parameter from the OpenApiParameter
+		param := agent_yaml.Parameter{
+			Name:        paramName,
+			Description: openApiParam.Description,
+			Required:    openApiParam.Required,
+		}
+
+		// Extract type/kind from schema if available
+		if openApiParam.Schema != nil {
+			param.Kind = openApiParam.Schema.Type
+			param.Default = openApiParam.Schema.Default
+
+			// Convert enum values if present
+			if len(openApiParam.Schema.Enum) > 0 {
+				param.Enum = openApiParam.Schema.Enum
+			}
+		}
+
+		// Use example as default if no schema default is provided
+		if param.Default == nil && openApiParam.Example != nil {
+			param.Default = openApiParam.Example
+		}
+
+		// Fallback to string type if no type specified
+		if param.Kind == "" {
+			param.Kind = "string"
+		}
+
+		result = append(result, param)
+	}
+
+	return result, nil
+}
+
+// ProcessManifestParameters prompts the user for parameter values and injects them into the template
+func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentManifest, azdClient *azdext.AzdClient) (*agent_yaml.AgentManifest, error) {
+	// If no parameters are defined, return the manifest as-is
 	if len(manifest.Parameters) == 0 {
-		return manifest.Template, nil
+		fmt.Println("The manifest does not contain parameters that need to be configured.")
+		return manifest, nil
 	}
 
 	fmt.Println("The manifest contains parameters that need to be configured:")
 	fmt.Println()
 
+	// Convert Parameters to the expected format for prompting
+	paramMap := make(map[string]agent_yaml.Parameter)
+	for _, param := range manifest.Parameters {
+		if yamlParam, ok := param.(agent_yaml.Parameter); ok {
+			paramMap[yamlParam.Name] = yamlParam
+		}
+	}
+
 	// Collect parameter values from user
-	paramValues, err := promptForParameterValues(ctx, manifest.Parameters, azdClient)
+	paramValues, err := promptForYamlParameterValues(ctx, paramMap, azdClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect parameter values: %w", err)
 	}
 
-	// Inject parameter values into the template
-	processedTemplate, err := injectParameterValues(manifest.Template, paramValues)
+	// Inject parameter values into the manifest
+	processedManifest, err := injectParameterValuesIntoManifest(manifest, paramValues)
 	if err != nil {
-		return nil, fmt.Errorf("failed to inject parameter values into template: %w", err)
+		return nil, fmt.Errorf("failed to inject parameter values into manifest: %w", err)
 	}
 
-	return json.RawMessage(processedTemplate), nil
+	return processedManifest, nil
 }
 
-// promptForParameterValues prompts the user for values for each parameter
-func promptForParameterValues(ctx context.Context, parameters map[string]OpenApiParameter, azdClient *azdext.AzdClient) (ParameterValues, error) {
+// promptForYamlParameterValues prompts the user for values for each YAML parameter
+func promptForYamlParameterValues(ctx context.Context, parameters map[string]agent_yaml.Parameter, azdClient *azdext.AzdClient) (ParameterValues, error) {
 	paramValues := make(ParameterValues)
 
 	for paramName, param := range parameters {
@@ -68,16 +167,16 @@ func promptForParameterValues(ctx context.Context, parameters map[string]OpenApi
 			fmt.Printf("  Description: %s\n", param.Description)
 		}
 
-		// Get default value from schema if available
-		defaultValue, err := getDefaultValueFromSchema(param.Schema)
-		if err != nil {
-			fmt.Printf("  Warning: Could not parse schema for parameter %s: %v\n", paramName, err)
-		}
+		// Get default value
+		defaultValue := param.Default
 
 		// Get enum values if available
-		enumValues, err := getEnumValuesFromSchema(param.Schema)
-		if err != nil {
-			fmt.Printf("  Warning: Could not parse enum values for parameter %s: %v\n", paramName, err)
+		var enumValues []string
+		if len(param.Enum) > 0 {
+			enumValues = make([]string, len(param.Enum))
+			for i, val := range param.Enum {
+				enumValues[i] = fmt.Sprintf("%v", val)
+			}
 		}
 
 		// Show available options if it's an enum
@@ -94,6 +193,7 @@ func promptForParameterValues(ctx context.Context, parameters map[string]OpenApi
 
 		// Prompt for value
 		var value interface{}
+		var err error
 		if len(enumValues) > 0 {
 			// Use selection for enum parameters
 			value, err = promptForEnumValue(ctx, paramName, enumValues, defaultValue, azdClient)
@@ -110,6 +210,29 @@ func promptForParameterValues(ctx context.Context, parameters map[string]OpenApi
 	}
 
 	return paramValues, nil
+}
+
+// injectParameterValuesIntoManifest replaces parameter placeholders in the manifest with actual values
+func injectParameterValuesIntoManifest(manifest *agent_yaml.AgentManifest, paramValues ParameterValues) (*agent_yaml.AgentManifest, error) {
+	// Convert manifest to JSON for processing
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal manifest: %w", err)
+	}
+
+	// Inject parameter values
+	processedBytes, err := injectParameterValues(json.RawMessage(manifestBytes), paramValues)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inject parameter values: %w", err)
+	}
+
+	// Convert back to AgentManifest
+	var processedManifest agent_yaml.AgentManifest
+	if err := json.Unmarshal(processedBytes, &processedManifest); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal processed manifest: %w", err)
+	}
+
+	return &processedManifest, nil
 }
 
 // promptForEnumValue prompts the user to select from enumerated values
@@ -185,29 +308,6 @@ func promptForTextValue(ctx context.Context, paramName string, defaultValue inte
 	}
 
 	return resp.Value, nil
-}
-
-// getDefaultValueFromSchema extracts the default value from an OpenAPI schema
-func getDefaultValueFromSchema(schema *OpenApiSchema) (interface{}, error) {
-	if schema == nil {
-		return nil, nil
-	}
-
-	return schema.Default, nil
-}
-
-// getEnumValuesFromSchema extracts enum values from an OpenAPI schema
-func getEnumValuesFromSchema(schema *OpenApiSchema) ([]string, error) {
-	if schema == nil || len(schema.Enum) == 0 {
-		return nil, nil
-	}
-
-	enumValues := make([]string, len(schema.Enum))
-	for i, val := range schema.Enum {
-		enumValues[i] = fmt.Sprintf("%v", val)
-	}
-
-	return enumValues, nil
 }
 
 // injectParameterValues replaces parameter placeholders in the template with actual values
@@ -315,33 +415,6 @@ func validateEnum(value interface{}, enumValues []interface{}) error {
 	}
 
 	return fmt.Errorf("value '%v' is not one of the allowed values: %v", value, enumValues)
-}
-
-// transformModelField converts a string "model" field to an object with "id" field
-func transformModelField(template json.RawMessage) (json.RawMessage, error) {
-	// Parse the template JSON
-	var templateData map[string]interface{}
-	if err := json.Unmarshal(template, &templateData); err != nil {
-		return nil, fmt.Errorf("failed to parse template JSON: %w", err)
-	}
-
-	// Check if the model field exists and is a string
-	if modelValue, exists := templateData["model"]; exists {
-		if modelStr, isString := modelValue.(string); isString {
-			// Transform string to object with "id" field
-			templateData["model"] = map[string]interface{}{
-				"id": modelStr,
-			}
-		}
-	}
-
-	// Convert back to JSON
-	transformedJSON, err := json.Marshal(templateData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal transformed template: %w", err)
-	}
-
-	return json.RawMessage(transformedJSON), nil
 }
 
 // MergeManifestIntoAgentDefinition takes a Manifest and an AgentDefinition and updates

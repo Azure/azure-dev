@@ -35,14 +35,7 @@ type FoundryParser struct {
 }
 
 // Check if there is a service using containerapp host and contains agent.yaml file in the service path
-func (p *FoundryParser) shouldAttach(ctx context.Context) (bool, error) {
-	projectClient := p.AzdClient.Project()
-	projectResponse, err := projectClient.Get(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return false, fmt.Errorf("failed to get project: %w", err)
-	}
-	project := projectResponse.Project
-
+func shouldRun(ctx context.Context, project *azdext.ProjectConfig) (bool, error) {
 	projectPath := project.Path
 	for _, service := range project.Services {
 		if service.Host == "containerapp" {
@@ -80,7 +73,7 @@ func (p *FoundryParser) shouldAttach(ctx context.Context) (bool, error) {
 }
 
 func (p *FoundryParser) SetIdentity(ctx context.Context, args *azdext.ProjectEventArgs) error {
-	shouldRun, err := p.shouldAttach(ctx)
+	shouldRun, err := shouldRun(ctx, args.Project)
 	if err != nil {
 		return fmt.Errorf("failed to determine if extension should attach: %w", err)
 	}
@@ -374,7 +367,7 @@ type DataPlaneResponse struct {
 }
 
 func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.ProjectEventArgs) error {
-	shouldRun, err := p.shouldAttach(ctx)
+	shouldRun, err := shouldRun(ctx, args.Project)
 	if err != nil {
 		return fmt.Errorf("failed to determine if extension should attach: %w", err)
 	}

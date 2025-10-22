@@ -37,7 +37,10 @@ service PromptService {
   rpc PromptResourceGroupResource(PromptResourceGroupResourceRequest) returns (PromptResourceGroupResourceResponse);
 }
 
-message PromptSubscriptionRequest {}
+message PromptSubscriptionRequest {
+  string Message = 1;
+  string HelpMessage = 2;
+}
 
 message PromptSubscriptionResponse {
   Subscription subscription = 1;

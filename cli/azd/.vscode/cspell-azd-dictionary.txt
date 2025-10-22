@@ -156,6 +156,7 @@ lechnerc77
 libc
 llms
 localtools
+maml
 mcptools
 memfs
 mergo

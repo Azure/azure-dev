@@ -21,7 +21,7 @@ import (
 type ParameterValues map[string]interface{}
 
 func ProcessRegistryManifest(ctx context.Context, manifest *Manifest, azdClient *azdext.AzdClient) (*agent_yaml.AgentManifest, error) {
-	// Convert the agent API defintion into a MAML definition
+	// Convert the agent API definition into a MAML definition
 	agentDef, err := ConvertAgentDefinition(manifest.Template)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert agentDefinition: %w", err)

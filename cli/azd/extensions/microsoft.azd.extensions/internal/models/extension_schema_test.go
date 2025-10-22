@@ -9,7 +9,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // TestExtensionSchema_MarshalYAML_OmitsEmptyCollections verifies that empty slices and maps

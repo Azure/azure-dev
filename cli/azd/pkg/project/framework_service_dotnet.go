@@ -73,7 +73,7 @@ func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 		handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 			return dp.setUserSecretsFromOutputs(ctx, serviceConfig, args)
 		}
-		if err := serviceConfig.AddHandler(ServiceEventEnvUpdated, handler); err != nil {
+		if err := serviceConfig.AddHandler(ctx, ServiceEventEnvUpdated, handler); err != nil {
 			return err
 		}
 	}

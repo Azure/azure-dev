@@ -52,7 +52,7 @@ type DockerProjectOptions struct {
 	// This is not supported from azure.yaml.
 	// This is used by projects like Aspire that can generate a dockerfile on the fly and don't want to write it to disk.
 	// When this is set, whatever value in Path is ignored and the dockerfile contents in this property is used instead.
-	InMemDockerfile []byte `yaml:"-" json:"-"`
+	InMemDockerfile []byte `yaml:"-"                     json:"-"`
 }
 
 type dockerProject struct {

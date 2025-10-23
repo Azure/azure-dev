@@ -96,7 +96,7 @@ type ContainerAgent struct {
 type AgentManifest struct {
 	Agent AgentDefinition `json:"agent"` // The agent that this manifest is based on
 	// Models     []Model         `json:"models"`     // Additional models that are known to work with this prompt
-	Parameters []interface{} `json:"parameters"` // Parameters for configuring the agent's behavior and execution
+	Parameters []Parameter `json:"parameters"` // Parameters for configuring the agent's behavior and execution
 }
 
 // Binding represents Represents a binding between an input property and a tool parameter.

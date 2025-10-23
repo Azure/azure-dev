@@ -14,7 +14,9 @@ import (
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/agents/registry_api"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -22,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 type initFlags struct {
@@ -45,7 +48,7 @@ type InitAction struct {
 	//modelCatalog      map[string]*ai.AiModel
 	//modelCatalogService *ai.ModelCatalogService
 	projectConfig *azdext.ProjectConfig
-	environment    *azdext.Environment
+	environment   *azdext.Environment
 }
 
 // GitHubUrlInfo holds parsed information from a GitHub URL
@@ -147,7 +150,7 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 
 	// If --project-id is given
 	if flags.projectResourceId != "" {
-		// projectResourceId is a string of the format 
+		// projectResourceId is a string of the format
 		// /subscriptions/[AZURE_SUBSCRIPTION]/resourceGroups/[AZURE_RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT_NAME]/projects/[AI_PROJECT_NAME]
 		// extract each of those fields from the string, issue an error if it doesn't match the format
 		fmt.Println("Setting up your azd environment to use the provided AI Foundry project resource ID...")
@@ -193,12 +196,12 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 		color.Green("\nAI agent added to your project successfully!")
 	}
 
-	// Validate command flags
+	// // Validate command flags
 	// if err := a.validateFlags(flags); err != nil {
 	// 	return err
 	// }
 
-	// Prompt for any missing input values
+	// // Prompt for any missing input values
 	// if err := a.promptForMissingValues(ctx, a.azdClient, flags); err != nil {
 	// 	return fmt.Errorf("collecting required information: %w", err)
 	// }
@@ -411,7 +414,7 @@ func (a *InitAction) promptForMissingValues(ctx context.Context, azdClient *azde
 func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context, projectResourceId string) error {
 	// Define the regex pattern for the project resource ID
 	pattern := `^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`
-	
+
 	regex, err := regexp.Compile(pattern)
 	if err != nil {
 		return fmt.Errorf("failed to compile regex pattern: %w", err)
@@ -492,6 +495,67 @@ func (a *InitAction) isGitHubUrl(manifestPointer string) bool {
 		strings.Contains(hostname, "github")
 }
 
+type RegistryManifest struct {
+	registryName    string
+	manifestName    string
+	manifestVersion string // Defaults to "" if not specified in URL
+}
+
+func (a *InitAction) isRegistryUrl(manifestPointer string) (bool, *RegistryManifest) {
+	// Check if it matches the format "azureml://registries/{registryName}/agentmanifests/{manifestName}[/versions/{manifestVersion}]"
+	if !strings.HasPrefix(manifestPointer, "azureml://") {
+		return false, nil
+	}
+
+	// Remove the "azureml://" prefix
+	path := strings.TrimPrefix(manifestPointer, "azureml://")
+
+	// Split by "/" to get all path components
+	parts := strings.Split(path, "/")
+
+	// Should have either 4 parts (without version) or 6 parts (with version)
+	// Format 1: "registries", registryName, "agentmanifests", manifestName
+	// Format 2: "registries", registryName, "agentmanifests", manifestName, "versions", manifestVersion
+	if len(parts) != 4 && len(parts) != 6 {
+		return false, nil
+	}
+
+	// Validate the expected path structure for the first 4 parts
+	if parts[0] != "registries" || parts[2] != "agentmanifests" {
+		return false, nil
+	}
+
+	// All basic parts should be non-empty
+	registryName := strings.TrimSpace(parts[1])
+	manifestName := strings.TrimSpace(parts[3])
+
+	if registryName == "" || manifestName == "" {
+		return false, nil
+	}
+
+	var manifestVersion string
+
+	// If we have 6 parts, validate the version structure
+	if len(parts) == 6 {
+		if parts[4] != "versions" {
+			return false, nil
+		}
+		manifestVersion = strings.TrimSpace(parts[5])
+		if manifestVersion == "" {
+			return false, nil
+		}
+	} else {
+		// If no version specified, default to ""
+		manifestVersion = ""
+	}
+
+	return true, &RegistryManifest{
+		registryName:    registryName,
+		manifestName:    manifestName,
+		manifestVersion: manifestVersion,
+	}
+}
+
 func (a *InitAction) downloadAgentYaml(
 	ctx context.Context, manifestPointer string, targetDir string) (*agent_yaml.AgentManifest, string, error) {
 	if manifestPointer == "" {
@@ -560,6 +624,63 @@ func (a *InitAction) downloadAgentYaml(
 		}
 
 		content = []byte(contentStr)
+	} else if isRegistry, registryManifest := a.isRegistryUrl(manifestPointer); isRegistry {
+		// Handle registry URLs
+
+		// Create Azure credential
+		cred, err := azidentity.NewDefaultAzureCredential(nil)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to create Azure credential: %w", err)
+		}
+
+		manifestClient := registry_api.NewRegistryAgentManifestClient(registryManifest.registryName, cred)
+
+		var versionResult *registry_api.Manifest
+		if registryManifest.manifestVersion == "" {
+			// No version specified, get latest version from GetAllLatest
+			fmt.Printf("No version provided for manifest '%s', retrieving latest version\n", registryManifest.manifestName)
+
+			allManifests, err := manifestClient.GetAllLatest(ctx)
+			if err != nil {
+				return nil, "", fmt.Errorf("getting latest manifests: %w", err)
+			}
+
+			// Find the manifest with matching name
+			for _, manifest := range allManifests {
+				if manifest.Name == registryManifest.manifestName {
+					versionResult = &manifest
+					break
+				}
+			}
+
+			if versionResult == nil {
+				return nil, "", fmt.Errorf("manifest '%s' not found in registry '%s'", registryManifest.manifestName, registryManifest.registryName)
+			}
+		} else {
+			// Specific version requested
+			fmt.Printf("Downloading agent.yaml from registry: %s\n", manifestPointer)
+
+			manifest, err := manifestClient.GetManifest(ctx, registryManifest.manifestName, registryManifest.manifestVersion)
+			if err != nil {
+				return nil, "", fmt.Errorf("getting materialized manifest: %w", err)
+			}
+			versionResult = manifest
+		}
+
+		// Process the manifest into a maml format
+		processedManifest, err := registry_api.ProcessRegistryManifest(ctx, versionResult, a.azdClient)
+		if err != nil {
+			return nil, "", fmt.Errorf("processing manifest with parameters: %w", err)
+		}
+
+		fmt.Println("Retrieved and processed manifest from registry")
+
+		// Convert to YAML bytes for the content variable
+		manifestBytes, err := yaml.Marshal(processedManifest)
+		if err != nil {
+			return nil, "", fmt.Errorf("marshaling agent manifest to YAML: %w", err)
+		}
+		content = manifestBytes
 	}
 
 	// Parse and validate the YAML content against AgentManifest structure
@@ -569,6 +690,16 @@ func (a *InitAction) downloadAgentYaml(
 	}
 
 	fmt.Println("✓ YAML content successfully validated against AgentManifest format")
+
+	agentManifest, err = registry_api.ProcessManifestParameters(ctx, agentManifest, a.azdClient)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to process manifest parameters: %w", err)
+	}
+
+	content, err = yaml.Marshal(agentManifest)
+	if err != nil {
+		return nil, "", fmt.Errorf("marshaling agent manifest to YAML after parameter processing: %w", err)
+	}
 
 	agentId := agentManifest.Agent.Name
 
@@ -1141,4 +1272,3 @@ func (a *InitAction) setEnvVar(ctx context.Context, envName, key, value string) 
 	fmt.Printf("Set environment variable: %s=%s\n", key, value)
 	return nil
 }
-

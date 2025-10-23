@@ -90,7 +90,7 @@ func (m *ServiceTargetManager) Close() error {
 
 // Register registers the provider with the server, waits for the response,
 // then starts background handling of provisioning requests.
-func (m *ServiceTargetManager) Register(ctx context.Context, factory func() ServiceTargetProvider, hostType string) error {
+func (m *ServiceTargetManager) Register(ctx context.Context, factory ServiceTargetFactory, hostType string) error {
 	stream, err := m.client.ServiceTarget().Stream(ctx)
 	if err != nil {
 		return err

@@ -59,7 +59,7 @@ func NewFrameworkServiceManager(client *AzdClient) *FrameworkServiceManager {
 // Register registers a framework service provider with the specified language name.
 func (m *FrameworkServiceManager) Register(
 	ctx context.Context,
-	factory func() FrameworkServiceProvider,
+	factory FrameworkServiceFactory,
 	language string,
 ) error {
 	client := m.client.FrameworkService()

@@ -13,12 +13,12 @@ import (
 )
 
 type serviceTargetRegistrar interface {
-	Register(ctx context.Context, factory func() ServiceTargetProvider, hostType string) error
+	Register(ctx context.Context, factory ServiceTargetFactory, hostType string) error
 	Close() error
 }
 
 type frameworkServiceRegistrar interface {
-	Register(ctx context.Context, factory func() FrameworkServiceProvider, language string) error
+	Register(ctx context.Context, factory FrameworkServiceFactory, language string) error
 	Close() error
 }
 

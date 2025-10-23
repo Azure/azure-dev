@@ -40,7 +40,7 @@ func (p *DemoServiceTargetProvider) Endpoints(
 	targetResource *azdext.TargetResource,
 ) ([]string, error) {
 	return []string{
-		fmt.Sprintf("https://%s.demo.com", serviceConfig.Name),
+		fmt.Sprintf("https://%s.example.com", targetResource.ResourceName),
 	}, nil
 }
 

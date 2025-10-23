@@ -32,9 +32,6 @@ func newListenCommand() *cobra.Command {
 				WithServiceTarget("demo", func() azdext.ServiceTargetProvider {
 					return project.NewDemoServiceTargetProvider(azdClient)
 				}).
-				WithServiceTarget("sample", func() azdext.ServiceTargetProvider {
-					return project.NewSampleServiceTargetProvider(azdClient)
-				}).
 				WithFrameworkService("rust", func() azdext.FrameworkServiceProvider {
 					return project.NewDemoFrameworkServiceProvider(azdClient)
 				}).

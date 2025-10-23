@@ -16,9 +16,6 @@ providers:
   - name: demo
     type: service-target
     description: Deploys application components to demo
-  - name: sample
-    type: service-target
-    description: Deploys application components to sample
 examples:
   - name: context
     description: Displays the current `azd` project & environment context.

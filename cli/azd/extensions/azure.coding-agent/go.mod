@@ -7,7 +7,8 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi v1.3.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
-	github.com/azure/azure-dev v0.0.0-20251008233622-cd0da10ec625
+	github.com/azure/azure-dev v0.0.0-20251022214358-2063759a9d97
+	github.com/cli/browser v1.3.0
 	github.com/fatih/color v1.18.0
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/pflag v1.0.10
@@ -37,7 +38,6 @@ require (
 	github.com/charmbracelet/x/cellbuf v0.0.13 // indirect
 	github.com/charmbracelet/x/exp/slice v0.0.0-20251008171431-5d3777519489 // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
-	github.com/cli/browser v1.3.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect

@@ -24,7 +24,7 @@ func TestServiceConfigAddHandler(t *testing.T) {
 		return nil
 	}
 
-	err := service.AddHandler(ServiceEventDeploy, handler)
+	err := service.AddHandler(ctx, ServiceEventDeploy, handler)
 	require.Nil(t, err)
 
 	err = service.RaiseEvent(ctx, ServiceEventDeploy, ServiceLifecycleEventArgs{Service: service})
@@ -49,14 +49,14 @@ func TestServiceConfigRemoveHandler(t *testing.T) {
 	}
 
 	// Only handler 1 was registered
-	err := service.AddHandler(ServiceEventDeploy, handler1)
+	err := service.AddHandler(ctx, ServiceEventDeploy, handler1)
 	require.Nil(t, err)
 
-	err = service.RemoveHandler(ServiceEventDeploy, handler1)
+	err = service.RemoveHandler(ctx, ServiceEventDeploy, handler1)
 	require.Nil(t, err)
 
 	// Handler 2 wasn't registered so should error on remove
-	err = service.RemoveHandler(ServiceEventDeploy, handler2)
+	err = service.RemoveHandler(ctx, ServiceEventDeploy, handler2)
 	require.NotNil(t, err)
 
 	// No events are registered at the time event was raised
@@ -86,9 +86,9 @@ func TestServiceConfigWithMultipleEventHandlers(t *testing.T) {
 		return nil
 	}
 
-	err := service.AddHandler(ServiceEventDeploy, handler1)
+	err := service.AddHandler(ctx, ServiceEventDeploy, handler1)
 	require.Nil(t, err)
-	err = service.AddHandler(ServiceEventDeploy, handler2)
+	err = service.AddHandler(ctx, ServiceEventDeploy, handler2)
 	require.Nil(t, err)
 
 	err = service.RaiseEvent(ctx, ServiceEventDeploy, ServiceLifecycleEventArgs{
@@ -117,9 +117,9 @@ func TestServiceConfigWithMultipleEvents(t *testing.T) {
 		return nil
 	}
 
-	err := service.AddHandler(ServiceEventPackage, provisionHandler)
+	err := service.AddHandler(ctx, ServiceEventPackage, provisionHandler)
 	require.Nil(t, err)
-	err = service.AddHandler(ServiceEventDeploy, deployHandler)
+	err = service.AddHandler(ctx, ServiceEventDeploy, deployHandler)
 	require.Nil(t, err)
 
 	err = service.RaiseEvent(ctx, ServiceEventPackage, ServiceLifecycleEventArgs{Service: service})
@@ -141,9 +141,9 @@ func TestServiceConfigWithEventHandlerErrors(t *testing.T) {
 		return errors.New("sample error 2")
 	}
 
-	err := service.AddHandler(ServiceEventPackage, handler1)
+	err := service.AddHandler(ctx, ServiceEventPackage, handler1)
 	require.Nil(t, err)
-	err = service.AddHandler(ServiceEventPackage, handler2)
+	err = service.AddHandler(ctx, ServiceEventPackage, handler2)
 	require.Nil(t, err)
 
 	err = service.RaiseEvent(ctx, ServiceEventPackage, ServiceLifecycleEventArgs{Service: service})
@@ -182,7 +182,7 @@ func TestServiceConfigRaiseEventWithoutArgs(t *testing.T) {
 		return nil
 	}
 
-	err := service.AddHandler(ServiceEventDeploy, handler)
+	err := service.AddHandler(ctx, ServiceEventDeploy, handler)
 	require.Nil(t, err)
 
 	err = service.RaiseEvent(ctx, ServiceEventDeploy, ServiceLifecycleEventArgs{Service: service})
@@ -205,7 +205,7 @@ func TestServiceConfigRaiseEventWithArgs(t *testing.T) {
 		return nil
 	}
 
-	err := service.AddHandler(ServiceEventDeploy, handler)
+	err := service.AddHandler(ctx, ServiceEventDeploy, handler)
 	require.Nil(t, err)
 
 	err = service.RaiseEvent(ctx, ServiceEventDeploy, eventArgs)

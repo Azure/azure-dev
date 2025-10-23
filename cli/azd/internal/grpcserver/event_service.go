@@ -11,6 +11,7 @@ import (
 	"log"
 	"sync"
 
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
@@ -95,12 +96,12 @@ func (s *eventService) EventStream(stream grpc.BidiStreamingServer[azdext.EventM
 			switch msg.MessageType.(type) {
 			case *azdext.EventMessage_SubscribeProjectEvent:
 				subscribeMsg := msg.GetSubscribeProjectEvent()
-				if err := s.handleSubscribeProjectEvent(extension, subscribeMsg, stream); err != nil {
+				if err := s.handleSubscribeProjectEvent(ctx, extension, subscribeMsg, stream); err != nil {
 					log.Println(err.Error())
 				}
 			case *azdext.EventMessage_SubscribeServiceEvent:
 				subscribeMsg := msg.GetSubscribeServiceEvent()
-				if err := s.handleSubscribeServiceEvent(extension, subscribeMsg, stream); err != nil {
+				if err := s.handleSubscribeServiceEvent(ctx, extension, subscribeMsg, stream); err != nil {
 					log.Println(err.Error())
 				}
 			case *azdext.EventMessage_ProjectHandlerStatus:
@@ -123,6 +124,7 @@ func (s *eventService) handleReadyEvent(extension *extensions.Extension) {
 // ----- Project Event Handlers -----
 
 func (s *eventService) handleSubscribeProjectEvent(
+	ctx context.Context,
 	extension *extensions.Extension,
 	subscribeMsg *azdext.SubscribeProjectEvent,
 	stream grpc.BidiStreamingServer[azdext.EventMessage, azdext.EventMessage],
@@ -141,7 +143,7 @@ func (s *eventService) handleSubscribeProjectEvent(
 
 		evt := ext.Event(eventName)
 		handler := s.createProjectEventHandler(stream, extension, eventName)
-		if err := projectConfig.AddHandler(evt, handler); err != nil {
+		if err := projectConfig.AddHandler(ctx, evt, handler); err != nil {
 			return fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 		}
 	}
@@ -172,11 +174,22 @@ func (s *eventService) sendProjectInvokeMessage(
 	eventName string,
 	proj *project.ProjectConfig,
 ) error {
+	resolver := noEnvResolver
+	env, err := s.lazyEnv.GetValue()
+	if err == nil && env != nil {
+		resolver = env.Getenv
+	}
+
+	var protoProjectConfig *azdext.ProjectConfig
+	if err := mapper.WithResolver(resolver).Convert(proj, &protoProjectConfig); err != nil {
+		return err
+	}
+
 	return stream.Send(&azdext.EventMessage{
 		MessageType: &azdext.EventMessage_InvokeProjectHandler{
 			InvokeProjectHandler: &azdext.InvokeProjectHandler{
 				EventName: eventName,
-				Project:   s.createProjectConfig(proj),
+				Project:   protoProjectConfig,
 			},
 		},
 	})
@@ -209,6 +222,7 @@ func (s *eventService) waitForProjectStatus(ctx context.Context, eventName strin
 // ----- Service Event Handlers -----
 
 func (s *eventService) handleSubscribeServiceEvent(
+	ctx context.Context,
 	extension *extensions.Extension,
 	subscribeMsg *azdext.SubscribeServiceEvent,
 	stream grpc.BidiStreamingServer[azdext.EventMessage, azdext.EventMessage],
@@ -235,7 +249,7 @@ func (s *eventService) handleSubscribeServiceEvent(
 			s.serviceEvents.Store(fullEventName, make(chan *azdext.ServiceHandlerStatus, 1))
 
 			handler := s.createServiceEventHandler(stream, serviceConfig, extension, eventName)
-			if err := serviceConfig.AddHandler(evt, handler); err != nil {
+			if err := serviceConfig.AddHandler(ctx, evt, handler); err != nil {
 				return fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 			}
 		}
@@ -271,12 +285,28 @@ func (s *eventService) sendServiceInvokeMessage(
 	proj *project.ProjectConfig,
 	svc *project.ServiceConfig,
 ) error {
+	resolver := noEnvResolver
+	env, err := s.lazyEnv.GetValue()
+	if err == nil && env != nil {
+		resolver = env.Getenv
+	}
+
+	var protoProjectConfig *azdext.ProjectConfig
+	if err := mapper.WithResolver(resolver).Convert(proj, &protoProjectConfig); err != nil {
+		return err
+	}
+
+	var protoServiceConfig *azdext.ServiceConfig
+	if err := mapper.WithResolver(resolver).Convert(svc, &protoServiceConfig); err != nil {
+		return err
+	}
+
 	return stream.Send(&azdext.EventMessage{
 		MessageType: &azdext.EventMessage_InvokeServiceHandler{
 			InvokeServiceHandler: &azdext.InvokeServiceHandler{
 				EventName: eventName,
-				Project:   s.createProjectConfig(proj),
-				Service:   s.createServiceConfig(svc),
+				Project:   protoProjectConfig,
+				Service:   protoServiceConfig,
 			},
 		},
 	})
@@ -328,83 +358,6 @@ func (s *eventService) handleServiceHandlerStatus(
 	if val, ok := s.serviceEvents.Load(fullEventName); ok {
 		ch := val.(chan *azdext.ServiceHandlerStatus)
 		ch <- statusMessage
-	}
-}
-
-// createProjectConfig converts a project.ProjectConfig into the azdext.ProjectConfig wire format.
-func (s *eventService) createProjectConfig(proj *project.ProjectConfig) *azdext.ProjectConfig {
-	resolver := noEnvResolver
-
-	env, err := s.lazyEnv.GetValue()
-	if err == nil && env != nil {
-		resolver = env.Getenv
-	}
-
-	resourceGroupName, err := proj.ResourceGroupName.Envsubst(resolver)
-	if err != nil {
-		log.Printf("failed to envsubst resource group name: %v", err)
-	}
-
-	services := make(map[string]*azdext.ServiceConfig, len(proj.Services))
-	for i, svc := range proj.Services {
-		services[i] = s.createServiceConfig(svc)
-	}
-
-	projectConfig := &azdext.ProjectConfig{
-		Name:              proj.Name,
-		ResourceGroupName: resourceGroupName,
-		Path:              proj.Path,
-		Metadata: func() *azdext.ProjectMetadata {
-			if proj.Metadata != nil {
-				return &azdext.ProjectMetadata{Template: proj.Metadata.Template}
-			}
-			return nil
-		}(),
-		Infra: &azdext.InfraOptions{
-			Provider: string(proj.Infra.Provider),
-			Path:     proj.Infra.Path,
-			Module:   proj.Infra.Module,
-		},
-		Services: services,
-	}
-
-	return projectConfig
-}
-
-// createServiceConfig converts a project.ServiceConfig into the azdext.ServiceConfig wire format.
-func (s *eventService) createServiceConfig(svc *project.ServiceConfig) *azdext.ServiceConfig {
-	resolver := noEnvResolver
-
-	env, err := s.lazyEnv.GetValue()
-	if err == nil && env != nil {
-		resolver = env.Getenv
-	}
-
-	resourceGroupName, err := svc.ResourceGroupName.Envsubst(resolver)
-	if err != nil {
-		log.Printf("failed to envsubst resource group name: %v", err)
-	}
-
-	resourceName, err := svc.ResourceName.Envsubst(resolver)
-	if err != nil {
-		log.Printf("failed to envsubst resource name: %v", err)
-	}
-
-	image, err := svc.Image.Envsubst(resolver)
-	if err != nil {
-		log.Printf("failed to envsubst image: %v", err)
-	}
-
-	return &azdext.ServiceConfig{
-		Name:              svc.Name,
-		ResourceGroupName: resourceGroupName,
-		ResourceName:      resourceName,
-		ApiVersion:        svc.ApiVersion,
-		RelativePath:      svc.RelativePath,
-		Host:              string(svc.Host),
-		Language:          string(svc.Language),
-		OutputPath:        svc.OutputPath,
-		Image:             image,
 	}
 }
 

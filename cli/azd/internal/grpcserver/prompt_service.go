@@ -136,7 +136,10 @@ func (s *promptService) PromptSubscription(
 	ctx context.Context,
 	req *azdext.PromptSubscriptionRequest,
 ) (*azdext.PromptSubscriptionResponse, error) {
-	selectedSubscription, err := s.prompter.PromptSubscription(ctx, nil)
+	selectedSubscription, err := s.prompter.PromptSubscription(ctx, &prompt.SelectOptions{
+		Message:     req.Message,
+		HelpMessage: req.HelpMessage,
+	})
 	if err != nil {
 		return nil, err
 	}

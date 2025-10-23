@@ -10,13 +10,15 @@ const (
 	AgentKindPrompt       AgentKind = "prompt"
 	AgentKindHosted       AgentKind = "hosted"
 	AgentKindContainerApp AgentKind = "container_app"
-	AgentKindWorkflow     AgentKind = "workflow"
+	// Same as AgentKindContainerApp but this is the expected way to refer to container based agents in yaml files
+	AgentKindYamlContainerApp AgentKind = "container"
+	AgentKindWorkflow         AgentKind = "workflow"
 )
 
 // IsValidAgentKind checks if the provided AgentKind is valid
 func IsValidAgentKind(kind AgentKind) bool {
 	switch kind {
-	case AgentKindPrompt, AgentKindHosted, AgentKindContainerApp, AgentKindWorkflow:
+	case AgentKindPrompt, AgentKindHosted, AgentKindContainerApp, AgentKindWorkflow, AgentKindYamlContainerApp:
 		return true
 	default:
 		return false

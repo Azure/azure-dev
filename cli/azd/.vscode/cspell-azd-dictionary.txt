@@ -78,6 +78,7 @@ charmbracelet
 circleci
 cmdrecord
 cmdsubst
+Cobo
 cognitiveservices
 conditionalize
 consolesize

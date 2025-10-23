@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
@@ -206,6 +207,17 @@ func registerProjectMappings() {
 		}
 
 		return &azdext.PublishOptions{
+			Image: src.Image,
+		}, nil
+	})
+
+	// proto PublishOptions -> PublishOptions conversion
+	mapper.MustRegister(func(ctx context.Context, src *azdext.PublishOptions) (*PublishOptions, error) {
+		if src == nil {
+			return nil, nil
+		}
+
+		return &PublishOptions{
 			Image: src.Image,
 		}, nil
 	})
@@ -571,6 +583,87 @@ func registerProjectMappings() {
 		var result ArtifactCollection
 		if err := mapper.Convert(src.Artifacts, &result); err != nil {
 			return ArtifactCollection{}, fmt.Errorf("failed to convert azdext artifacts: %w", err)
+		}
+
+		return result, nil
+	})
+
+	mapper.MustRegister(func(ctx context.Context, src *ProjectConfig) (*azdext.ProjectConfig, error) {
+		resolver := mapper.GetResolver(ctx)
+		envResolver := getEnvResolver(resolver)
+
+		resourceGroupName, err := src.ResourceGroupName.Envsubst(envResolver)
+		if err != nil {
+			return nil, fmt.Errorf("failed resolving ResourceGroupName, %w", err)
+		}
+
+		services := make(map[string]*azdext.ServiceConfig, len(src.Services))
+		for i, svc := range src.Services {
+			var serviceConfig *azdext.ServiceConfig
+			if err := mapper.Convert(svc, &serviceConfig); err != nil {
+				return nil, err
+			}
+
+			services[i] = serviceConfig
+		}
+
+		projectConfig := &azdext.ProjectConfig{
+			Name:              src.Name,
+			ResourceGroupName: resourceGroupName,
+			Path:              src.Path,
+			Metadata: func() *azdext.ProjectMetadata {
+				if src.Metadata != nil {
+					return &azdext.ProjectMetadata{Template: src.Metadata.Template}
+				}
+				return nil
+			}(),
+			Infra: &azdext.InfraOptions{
+				Provider: string(src.Infra.Provider),
+				Path:     src.Infra.Path,
+				Module:   src.Infra.Module,
+			},
+			Services: services,
+		}
+
+		return projectConfig, nil
+	})
+
+	// proto ProjectConfig -> ProjectConfig conversion
+	mapper.MustRegister(func(ctx context.Context, src *azdext.ProjectConfig) (*ProjectConfig, error) {
+		if src == nil {
+			return &ProjectConfig{}, nil
+		}
+
+		services := make(map[string]*ServiceConfig, len(src.Services))
+		for name, protoSvc := range src.Services {
+			var serviceConfig *ServiceConfig
+			if err := mapper.Convert(protoSvc, &serviceConfig); err != nil {
+				return nil, fmt.Errorf("converting service %s: %w", name, err)
+			}
+			services[name] = serviceConfig
+		}
+
+		result := &ProjectConfig{
+			Name:              src.Name,
+			ResourceGroupName: osutil.NewExpandableString(src.ResourceGroupName),
+			Path:              src.Path,
+			Services:          services,
+		}
+
+		// Convert metadata if present
+		if src.Metadata != nil {
+			result.Metadata = &ProjectMetadata{
+				Template: src.Metadata.Template,
+			}
+		}
+
+		// Convert infra options if present
+		if src.Infra != nil {
+			result.Infra = provisioning.Options{
+				Provider: provisioning.ProviderKind(src.Infra.Provider),
+				Path:     src.Infra.Path,
+				Module:   src.Infra.Module,
+			}
 		}
 
 		return result, nil

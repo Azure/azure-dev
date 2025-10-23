@@ -5,53 +5,140 @@ package azdext
 
 import (
 	"context"
-	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-type readyClientStub struct {
-	err error
+// MockExtensionServiceClient implements ExtensionServiceClient using testify/mock
+type MockExtensionServiceClient struct {
+	mock.Mock
 }
 
-func (s *readyClientStub) Ready(ctx context.Context, in *ReadyRequest, opts ...grpc.CallOption) (*ReadyResponse, error) {
-	return &ReadyResponse{}, s.err
+func (m *MockExtensionServiceClient) Ready(
+	ctx context.Context,
+	in *ReadyRequest,
+	opts ...grpc.CallOption,
+) (*ReadyResponse, error) {
+	args := m.Called(ctx, in, opts)
+	return args.Get(0).(*ReadyResponse), args.Error(1)
+}
+
+// MockServiceTargetRegistrar implements serviceTargetRegistrar using testify/mock
+type MockServiceTargetRegistrar struct {
+	mock.Mock
+}
+
+func (m *MockServiceTargetRegistrar) Register(ctx context.Context, factory ServiceTargetFactory, hostType string) error {
+	args := m.Called(ctx, factory, hostType)
+	return args.Error(0)
+}
+
+func (m *MockServiceTargetRegistrar) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+// MockFrameworkServiceRegistrar implements frameworkServiceRegistrar using testify/mock
+type MockFrameworkServiceRegistrar struct {
+	mock.Mock
+}
+
+func (m *MockFrameworkServiceRegistrar) Register(
+	ctx context.Context,
+	factory FrameworkServiceFactory,
+	language string,
+) error {
+	args := m.Called(ctx, factory, language)
+	return args.Error(0)
+}
+
+func (m *MockFrameworkServiceRegistrar) Close() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+// MockExtensionEventManager implements extensionEventManager using testify/mock
+type MockExtensionEventManager struct {
+	mock.Mock
+}
+
+func (m *MockExtensionEventManager) AddProjectEventHandler(
+	ctx context.Context,
+	eventName string,
+	handler ProjectEventHandler,
+) error {
+	args := m.Called(ctx, eventName, handler)
+	return args.Error(0)
+}
+
+func (m *MockExtensionEventManager) AddServiceEventHandler(
+	ctx context.Context,
+	eventName string,
+	handler ServiceEventHandler,
+	options *ServerEventOptions,
+) error {
+	args := m.Called(ctx, eventName, handler, options)
+	return args.Error(0)
+}
+
+func (m *MockExtensionEventManager) Receive(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+func (m *MockExtensionEventManager) Close() error {
+	args := m.Called()
+	return args.Error(0)
 }
 
 func TestCallReady(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		client  *AzdClient
-		wantErr bool
-		message string
+		name           string
+		setupMock      func(*MockExtensionServiceClient)
+		wantErr        bool
+		expectedErrMsg string
 	}{
 		{
-			name:    "success",
-			client:  &AzdClient{extensionClient: &readyClientStub{}},
+			name: "success",
+			setupMock: func(mockClient *MockExtensionServiceClient) {
+				mockClient.On("Ready", mock.Anything, mock.Anything, mock.Anything).
+					Return(&ReadyResponse{}, nil)
+			},
 			wantErr: false,
 		},
 		{
-			name:    "canceled",
-			client:  &AzdClient{extensionClient: &readyClientStub{err: status.Error(codes.Canceled, "ctx cancelled")}},
+			name: "canceled - no error",
+			setupMock: func(mockClient *MockExtensionServiceClient) {
+				mockClient.On("Ready", mock.Anything, mock.Anything, mock.Anything).
+					Return((*ReadyResponse)(nil), status.Error(codes.Canceled, "ctx cancelled"))
+			},
 			wantErr: false,
 		},
 		{
-			name:    "unavailable",
-			client:  &AzdClient{extensionClient: &readyClientStub{err: status.Error(codes.Unavailable, "shutdown")}},
+			name: "unavailable - no error",
+			setupMock: func(mockClient *MockExtensionServiceClient) {
+				mockClient.On("Ready", mock.Anything, mock.Anything, mock.Anything).
+					Return((*ReadyResponse)(nil), status.Error(codes.Unavailable, "shutdown"))
+			},
 			wantErr: false,
 		},
 		{
-			name:    "other error",
-			client:  &AzdClient{extensionClient: &readyClientStub{err: status.Error(codes.Internal, "boom")}},
-			wantErr: true,
-			message: "status=Internal",
+			name: "internal error",
+			setupMock: func(mockClient *MockExtensionServiceClient) {
+				mockClient.On("Ready", mock.Anything, mock.Anything, mock.Anything).
+					Return((*ReadyResponse)(nil), status.Error(codes.Internal, "boom"))
+			},
+			wantErr:        true,
+			expectedErrMsg: "status=Internal",
 		},
 	}
 
@@ -60,171 +147,92 @@ func TestCallReady(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := callReady(context.Background(), tt.client)
+			mockClient := &MockExtensionServiceClient{}
+			tt.setupMock(mockClient)
+
+			client := &AzdClient{extensionClient: mockClient}
+			err := callReady(context.Background(), client)
+
 			if tt.wantErr {
 				require.Error(t, err)
-				if tt.message != "" {
-					require.ErrorContains(t, err, tt.message)
+				if tt.expectedErrMsg != "" {
+					assert.Contains(t, err.Error(), tt.expectedErrMsg)
 				}
-				return
+			} else {
+				require.NoError(t, err)
 			}
 
-			require.NoError(t, err)
+			mockClient.AssertExpectations(t)
 		})
 	}
-}
-
-type fakeServiceTargetManager struct {
-	registerCount atomic.Int32
-	lastHost      atomic.Value
-	err           error
-	closed        atomic.Bool
-}
-
-func (f *fakeServiceTargetManager) Register(ctx context.Context, provider ServiceTargetProvider, hostType string) error {
-	f.registerCount.Add(1)
-	f.lastHost.Store(hostType)
-	if f.err != nil {
-		return f.err
-	}
-	return nil
-}
-
-func (f *fakeServiceTargetManager) Close() error {
-	f.closed.Store(true)
-	return nil
-}
-
-type fakeEventManager struct {
-	projectHandlers map[string]ProjectEventHandler
-	serviceHandlers map[string]ServiceEventHandler
-	receiveErr      error
-	closed          atomic.Bool
-}
-
-func newFakeEventManager() *fakeEventManager {
-	return &fakeEventManager{
-		projectHandlers: make(map[string]ProjectEventHandler),
-		serviceHandlers: make(map[string]ServiceEventHandler),
-	}
-}
-
-func (f *fakeEventManager) AddProjectEventHandler(ctx context.Context, eventName string, handler ProjectEventHandler) error {
-	f.projectHandlers[eventName] = handler
-	return nil
-}
-
-func (f *fakeEventManager) AddServiceEventHandler(
-	ctx context.Context, eventName string, handler ServiceEventHandler, options *ServerEventOptions,
-) error {
-	f.serviceHandlers[eventName] = handler
-	return nil
-}
-
-func (f *fakeEventManager) Receive(ctx context.Context) error {
-	<-ctx.Done()
-	if f.receiveErr != nil {
-		return f.receiveErr
-	}
-	return nil
-}
-
-func (f *fakeEventManager) Close() error {
-	f.closed.Store(true)
-	return nil
-}
-
-type stubServiceTargetProvider struct{}
-
-func (stubServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	return nil
-}
-func (stubServiceTargetProvider) Endpoints(
-	ctx context.Context, serviceConfig *ServiceConfig, targetResource *TargetResource,
-) ([]string, error) {
-	return nil, nil
-}
-func (stubServiceTargetProvider) GetTargetResource(
-	ctx context.Context,
-	subscriptionId string,
-	serviceConfig *ServiceConfig,
-	defaultResolver func() (*TargetResource, error),
-) (*TargetResource, error) {
-	return nil, nil
-}
-func (stubServiceTargetProvider) Package(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	serviceContext *ServiceContext,
-	progress ProgressReporter,
-) (*ServicePackageResult, error) {
-	return nil, nil
-}
-func (stubServiceTargetProvider) Publish(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	serviceContext *ServiceContext,
-	targetResource *TargetResource,
-	publishOptions *PublishOptions,
-	progress ProgressReporter,
-) (*ServicePublishResult, error) {
-	return nil, nil
-}
-func (stubServiceTargetProvider) Deploy(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	serviceContext *ServiceContext,
-	targetResource *TargetResource,
-	progress ProgressReporter,
-) (*ServiceDeployResult, error) {
-	return nil, nil
 }
 
 func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
 	t.Parallel()
 
+	// Setup mocks
+	mockServiceTargetManager := &MockServiceTargetRegistrar{}
+	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, "demo").Return(nil)
+	mockServiceTargetManager.On("Close").Return(nil)
+
+	// Setup extension host
 	client := &AzdClient{}
 	runner := NewExtensionHost(client)
+	runner.newServiceTargetManager = func(*AzdClient) serviceTargetRegistrar {
+		return mockServiceTargetManager
+	}
 
-	fakeManager := &fakeServiceTargetManager{}
-	runner.newServiceTargetManager = func(*AzdClient) serviceTargetRegistrar { return fakeManager }
-
-	readyCalled := atomic.Bool{}
+	readyCalled := false
 	runner.readyFn = func(ctx context.Context) error {
-		readyCalled.Store(true)
+		readyCalled = true
 		<-ctx.Done()
 		return nil
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	runner.WithServiceTarget("demo", &stubServiceTargetProvider{})
+	// Register service target
+	runner.WithServiceTarget("demo", func() ServiceTargetProvider {
+		// Return the reusable MockServiceTargetProvider
+		return &MockServiceTargetProvider{}
+	})
 
+	// Run test
+	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		time.Sleep(10 * time.Millisecond)
 		cancel()
 	}()
 
-	require.NoError(t, runner.Run(ctx))
-	require.Equal(t, int32(1), fakeManager.registerCount.Load())
-	require.True(t, readyCalled.Load())
-	require.True(t, fakeManager.closed.Load())
+	err := runner.Run(ctx)
+
+	// Assertions
+	require.NoError(t, err)
+	assert.True(t, readyCalled)
+	mockServiceTargetManager.AssertExpectations(t)
 }
 
 func TestExtensionHost_EventHandlersOnly(t *testing.T) {
 	t.Parallel()
 
+	// Setup mocks
+	mockEventManager := &MockExtensionEventManager{}
+	mockEventManager.On("AddProjectEventHandler", mock.Anything, "preprovision", mock.Anything).Return(nil)
+	mockEventManager.On("AddServiceEventHandler", mock.Anything, "prepackage", mock.Anything,
+		(*ServerEventOptions)(nil)).Return(nil)
+	mockEventManager.On("Receive", mock.Anything).Return(nil)
+	mockEventManager.On("Close").Return(nil)
+
+	// Setup extension host
 	client := &AzdClient{}
 	runner := NewExtensionHost(client)
-
-	fakeManager := newFakeEventManager()
-	runner.newEventManager = func(*AzdClient) extensionEventManager { return fakeManager }
+	runner.newEventManager = func(*AzdClient) extensionEventManager {
+		return mockEventManager
+	}
 	runner.readyFn = func(ctx context.Context) error {
 		<-ctx.Done()
 		return nil
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-
+	// Register event handlers
 	runner.WithProjectEventHandler("preprovision", func(ctx context.Context, args *ProjectEventArgs) error {
 		return nil
 	})
@@ -232,66 +240,206 @@ func TestExtensionHost_EventHandlersOnly(t *testing.T) {
 		return nil
 	}, nil)
 
+	// Run test
+	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		time.Sleep(10 * time.Millisecond)
 		cancel()
 	}()
 
-	require.NoError(t, runner.Run(ctx))
-	require.Contains(t, fakeManager.projectHandlers, "preprovision")
-	require.Contains(t, fakeManager.serviceHandlers, "prepackage")
-	require.True(t, fakeManager.closed.Load())
+	err := runner.Run(ctx)
+
+	// Assertions
+	require.NoError(t, err)
+	mockEventManager.AssertExpectations(t)
 }
 
 func TestExtensionHost_ServiceTargetsAndEvents(t *testing.T) {
 	t.Parallel()
 
+	// Setup mocks
+	mockServiceTargetManager := &MockServiceTargetRegistrar{}
+	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, "foundryagent").Return(nil)
+	mockServiceTargetManager.On("Close").Return(nil)
+
+	mockEventManager := &MockExtensionEventManager{}
+	mockEventManager.On("AddProjectEventHandler", mock.Anything, "preprovision", mock.Anything).Return(nil)
+	mockEventManager.On("Receive", mock.Anything).Return(nil)
+	mockEventManager.On("Close").Return(nil)
+
+	// Setup extension host
 	client := &AzdClient{}
 	runner := NewExtensionHost(client)
-
-	serviceManager := &fakeServiceTargetManager{}
-	eventManager := newFakeEventManager()
-
-	runner.newServiceTargetManager = func(*AzdClient) serviceTargetRegistrar { return serviceManager }
-	runner.newEventManager = func(*AzdClient) extensionEventManager { return eventManager }
+	runner.newServiceTargetManager = func(*AzdClient) serviceTargetRegistrar {
+		return mockServiceTargetManager
+	}
+	runner.newEventManager = func(*AzdClient) extensionEventManager {
+		return mockEventManager
+	}
 	runner.readyFn = func(ctx context.Context) error {
 		<-ctx.Done()
 		return nil
 	}
 
+	// Register both service target and event handler
+	runner.WithServiceTarget("foundryagent", func() ServiceTargetProvider {
+		return &MockServiceTargetProvider{}
+	})
+	runner.WithProjectEventHandler("preprovision", func(ctx context.Context, args *ProjectEventArgs) error {
+		return nil
+	})
+
+	// Run test
 	ctx, cancel := context.WithCancel(context.Background())
-
-	runner.WithServiceTarget("foundryagent", &stubServiceTargetProvider{})
-	runner.WithProjectEventHandler("preprovision", func(ctx context.Context, args *ProjectEventArgs) error { return nil })
-
 	go func() {
 		time.Sleep(10 * time.Millisecond)
 		cancel()
 	}()
 
-	require.NoError(t, runner.Run(ctx))
-	require.Equal(t, int32(1), serviceManager.registerCount.Load())
-	require.Contains(t, eventManager.projectHandlers, "preprovision")
-	require.True(t, serviceManager.closed.Load())
+	err := runner.Run(ctx)
+
+	// Assertions
+	require.NoError(t, err)
+	mockServiceTargetManager.AssertExpectations(t)
+	mockEventManager.AssertExpectations(t)
 }
 
 func TestExtensionHost_ServiceTargetRegistrationError(t *testing.T) {
 	t.Parallel()
 
+	// Setup mock with error
+	expectedError := status.Error(codes.Internal, "boom")
+	mockServiceTargetManager := &MockServiceTargetRegistrar{}
+	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, "bad").Return(expectedError)
+	mockServiceTargetManager.On("Close").Return(nil)
+
+	// Setup extension host
 	client := &AzdClient{}
 	runner := NewExtensionHost(client)
+	runner.newServiceTargetManager = func(*AzdClient) serviceTargetRegistrar {
+		return mockServiceTargetManager
+	}
+	runner.readyFn = func(ctx context.Context) error {
+		return nil
+	}
 
-	serviceManager := &fakeServiceTargetManager{err: status.Error(codes.Internal, "boom")}
-	runner.newServiceTargetManager = func(*AzdClient) serviceTargetRegistrar { return serviceManager }
-	runner.readyFn = func(ctx context.Context) error { return nil }
+	// Register service target that will fail
+	runner.WithServiceTarget("bad", func() ServiceTargetProvider {
+		return &MockServiceTargetProvider{}
+	})
 
+	// Run test
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	runner.WithServiceTarget("bad", &stubServiceTargetProvider{})
+	err := runner.Run(ctx)
+
+	// Assertions
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to register service target")
+	mockServiceTargetManager.AssertExpectations(t)
+}
+
+func TestExtensionHost_WithFrameworkService(t *testing.T) {
+	t.Parallel()
+
+	// Setup mocks
+	mockFrameworkServiceManager := &MockFrameworkServiceRegistrar{}
+	mockFrameworkServiceManager.On("Register", mock.Anything, mock.Anything, "python").Return(nil)
+	mockFrameworkServiceManager.On("Close").Return(nil)
+
+	// Setup extension host
+	client := &AzdClient{}
+	runner := NewExtensionHost(client)
+	runner.newFrameworkServiceManager = func(*AzdClient) frameworkServiceRegistrar {
+		return mockFrameworkServiceManager
+	}
+
+	readyCalled := false
+	runner.readyFn = func(ctx context.Context) error {
+		readyCalled = true
+		<-ctx.Done()
+		return nil
+	}
+
+	// Register framework service
+	runner.WithFrameworkService("python", func() FrameworkServiceProvider {
+		// Reuse mock from framework_service_manager_test.go
+		return &MockFrameworkServiceProvider{}
+	})
+
+	// Run test
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	}()
 
 	err := runner.Run(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to register service target")
-	require.True(t, serviceManager.closed.Load())
+
+	// Assertions
+	require.NoError(t, err)
+	assert.True(t, readyCalled)
+	mockFrameworkServiceManager.AssertExpectations(t)
+}
+
+func TestExtensionHost_MultipleServiceTypes(t *testing.T) {
+	t.Parallel()
+
+	// Setup mocks for all service types
+	mockServiceTargetManager := &MockServiceTargetRegistrar{}
+	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, "web").Return(nil)
+	mockServiceTargetManager.On("Close").Return(nil)
+
+	mockFrameworkServiceManager := &MockFrameworkServiceRegistrar{}
+	mockFrameworkServiceManager.On("Register", mock.Anything, mock.Anything, "node").Return(nil)
+	mockFrameworkServiceManager.On("Close").Return(nil)
+
+	mockEventManager := &MockExtensionEventManager{}
+	mockEventManager.On("AddProjectEventHandler", mock.Anything, "predeploy", mock.Anything).Return(nil)
+	mockEventManager.On("Receive", mock.Anything).Return(nil)
+	mockEventManager.On("Close").Return(nil)
+
+	// Setup extension host
+	client := &AzdClient{}
+	runner := NewExtensionHost(client)
+	runner.newServiceTargetManager = func(*AzdClient) serviceTargetRegistrar {
+		return mockServiceTargetManager
+	}
+	runner.newFrameworkServiceManager = func(*AzdClient) frameworkServiceRegistrar {
+		return mockFrameworkServiceManager
+	}
+	runner.newEventManager = func(*AzdClient) extensionEventManager {
+		return mockEventManager
+	}
+	runner.readyFn = func(ctx context.Context) error {
+		<-ctx.Done()
+		return nil
+	}
+
+	// Register all service types
+	runner.WithServiceTarget("web", func() ServiceTargetProvider {
+		return &MockServiceTargetProvider{}
+	})
+	runner.WithFrameworkService("node", func() FrameworkServiceProvider {
+		return &MockFrameworkServiceProvider{}
+	})
+	runner.WithProjectEventHandler("predeploy", func(ctx context.Context, args *ProjectEventArgs) error {
+		return nil
+	})
+
+	// Run test
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	}()
+
+	err := runner.Run(ctx)
+
+	// Assertions
+	require.NoError(t, err)
+	mockServiceTargetManager.AssertExpectations(t)
+	mockFrameworkServiceManager.AssertExpectations(t)
+	mockEventManager.AssertExpectations(t)
 }

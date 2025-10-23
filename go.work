@@ -1,0 +1,7 @@
+go 1.25.0
+
+use (
+	.
+	./cli/azd/extensions/azure.coding-agent
+	./cli/azd/extensions/azure.foundry.ai.agents
+)

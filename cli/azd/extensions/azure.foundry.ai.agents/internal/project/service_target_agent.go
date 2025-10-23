@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -119,7 +120,59 @@ func (p *AgentServiceTargetProvider) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
-	return &azdext.ServicePackageResult{}, nil
+	if !p.isContainerAgent() {
+		return &azdext.ServicePackageResult{}, nil
+	}
+
+	var packageArtifact *azdext.Artifact
+	var newArtifacts []*azdext.Artifact
+
+	for _, artifact := range serviceContext.Package {
+		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER {
+			packageArtifact = artifact
+			break
+		}
+	}
+
+	if packageArtifact == nil {
+		var buildArtifact *azdext.Artifact
+		for _, artifact := range serviceContext.Build {
+			if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER {
+				buildArtifact = artifact
+				break
+			}
+		}
+
+		if buildArtifact == nil {
+			buildResponse, err := p.azdClient.
+				Container().
+				Build(ctx, &azdext.ContainerBuildRequest{
+					ServiceName:    serviceConfig.Name,
+					ServiceContext: serviceContext,
+				})
+			if err != nil {
+				return nil, fmt.Errorf("failed building container: %w", err)
+			}
+
+			serviceContext.Build = append(serviceContext.Build, buildResponse.Result.Artifacts...)
+		}
+
+		packageResponse, err := p.azdClient.
+			Container().
+			Package(ctx, &azdext.ContainerPackageRequest{
+				ServiceName:    serviceConfig.Name,
+				ServiceContext: serviceContext,
+			})
+		if err != nil {
+			return nil, fmt.Errorf("failed packaging container: %w", err)
+		}
+
+		newArtifacts = append(newArtifacts, packageResponse.Result.Artifacts...)
+	}
+
+	return &azdext.ServicePackageResult{
+		Artifacts: newArtifacts,
+	}, nil
 }
 
 // Publish performs the publish operation for the agent service
@@ -131,30 +184,23 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
-	if serviceContext == nil || len(serviceContext.Package) == 0 {
-		return nil, fmt.Errorf("package not found")
+	if !p.isContainerAgent() {
+		return &azdext.ServicePublishResult{}, nil
 	}
 
-	localImageTag := serviceContext.Package[0].Location
+	publishResponse, err := p.azdClient.
+		Container().
+		Publish(ctx, &azdext.ContainerPublishRequest{
+			ServiceName:    serviceConfig.Name,
+			ServiceContext: serviceContext,
+		})
 
-	// E.g. Given `azd publish svc --to acr.io/my/img:tag12`, publishOptions.Image would be "acr.io/my/img:tag12"
-	if publishOptions != nil && publishOptions.Image != "" {
-		// To actually use this, you may need to parse out the registry, image name, and tag components
-		// See parseImageOverride in container_helper.go
-		fmt.Printf("Using publish options with image: %s\n", publishOptions.Image)
+	if err != nil {
+		return nil, fmt.Errorf("failed publishing container: %w", err)
 	}
-
-	remoteImage := fmt.Sprintf("contoso.azurecr.io/%s", localImageTag)
-	fmt.Printf("\nAgent image published: %s\n", color.New(color.FgHiBlue).Sprint(remoteImage))
 
 	return &azdext.ServicePublishResult{
-		Artifacts: []*azdext.Artifact{
-			{
-				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER,
-				Location:     remoteImage,
-				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
-			},
-		},
+		Artifacts: publishResponse.Result.Artifacts,
 	}, nil
 }
 
@@ -201,10 +247,25 @@ func (p *AgentServiceTargetProvider) Deploy(
 	case agent_api.AgentKindPrompt:
 		return p.deployPromptAgent(ctx, agentManifest, azdEnv)
 	case agent_api.AgentKindHosted:
-		return p.deployHostedAgent(ctx, agentManifest, azdEnv)
+		return p.deployHostedAgent(ctx, serviceContext, progress, agentManifest, azdEnv)
 	default:
 		return nil, fmt.Errorf("unsupported agent kind: %s", agentManifest.Agent.Kind)
 	}
+}
+
+func (p *AgentServiceTargetProvider) isContainerAgent() bool {
+	// Load and validate the agent manifest
+	data, err := os.ReadFile(p.agentDefinitionPath)
+	if err != nil {
+		return false
+	}
+
+	agentManifest, err := agent_yaml.LoadAndValidateAgentManifest(data)
+	if err != nil {
+		return false
+	}
+
+	return agentManifest.Agent.Kind == agent_yaml.AgentKind(agent_api.AgentKindHosted)
 }
 
 // deployPromptAgent handles deployment of prompt-based agents
@@ -271,6 +332,8 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 // deployHostedAgent handles deployment of hosted container agents
 func (p *AgentServiceTargetProvider) deployHostedAgent(
 	ctx context.Context,
+	serviceContext *azdext.ServiceContext,
+	progress azdext.ProgressReporter,
 	agentManifest *agent_yaml.AgentManifest,
 	azdEnv map[string]string,
 ) (*azdext.ServiceDeployResult, error) {
@@ -279,13 +342,18 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required")
 	}
 
-	fmt.Fprintf(os.Stderr, "Deploying Hosted Agent\n")
-	fmt.Fprintf(os.Stderr, "======================\n")
+	progress("Deploying Hosted Agent")
 
 	// Step 1: Build container image
-	fullImageURL, err := p.buildAgentImage(ctx, agentManifest, azdEnv)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build agent image: %w", err)
+	var fullImageURL string
+	for _, artifact := range serviceContext.Publish {
+		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER && artifact.LocationKind == azdext.LocationKind_LOCATION_KIND_REMOTE {
+			fullImageURL = artifact.Location
+			break
+		}
+	}
+	if fullImageURL == "" {
+		return nil, errors.New("published container artifact not found")
 	}
 
 	// Create Azure credential
@@ -370,71 +438,6 @@ func (p *AgentServiceTargetProvider) createAgent(
 
 	fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
 	return agentVersionResponse, nil
-}
-
-func (p *AgentServiceTargetProvider) buildAgentImage(
-	ctx context.Context, agentManifest *agent_yaml.AgentManifest, azdEnv map[string]string) (string, error) {
-	registryEndpoint := azdEnv["AZURE_CONTAINER_REGISTRY_ENDPOINT"]
-	if registryEndpoint == "" {
-		return "", fmt.Errorf("AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable is required")
-	}
-
-	// Find Dockerfile in the same directory as agent.yaml
-	agentDir := filepath.Dir(p.agentDefinitionPath)
-	dockerfilePath := filepath.Join(agentDir, "Dockerfile")
-
-	// Check if Dockerfile exists
-	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
-		return "", fmt.Errorf("dockerfile not found in agent directory: %s", dockerfilePath)
-	}
-
-	fmt.Fprintf(os.Stderr, "Building image for agent: %s (ID: %s)\n", agentManifest.Agent.Name, agentManifest.Agent.Name)
-	fmt.Fprintf(os.Stderr, "Using Dockerfile: %s\n", dockerfilePath)
-	fmt.Fprintf(os.Stderr, "Using Azure Container Registry: %s\n", registryEndpoint)
-
-	// Create Azure credential
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create Azure credential: %w", err)
-	}
-
-	// Create build context (tar archive)
-	buildContext, err := createBuildContext(dockerfilePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to create build context: %w", err)
-	}
-
-	// Generate image names with custom version (or timestamp) and latest tags
-	// TODO: add support for custom version
-	imageNames := GenerateImageNamesFromAgent(agentManifest.Agent.Name, "")
-
-	fmt.Fprintf(os.Stderr, "Starting remote build for images: %v\n", imageNames)
-
-	// Start the build
-	runID, err := startRemoteBuildWithAPI(ctx, cred, registryEndpoint, buildContext, imageNames, dockerfilePath, azdEnv)
-	if err != nil {
-		return "", fmt.Errorf("failed to start remote build: %w", err)
-	}
-
-	fmt.Fprintf(os.Stderr, "Build started with run ID: %s\n", runID)
-
-	// Monitor the build status with log streaming
-	err = monitorBuildWithLogs(ctx, cred, registryEndpoint, runID, azdEnv)
-	if err != nil {
-		return "", fmt.Errorf("build monitoring failed: %w", err)
-	}
-
-	// Output the full image URL (use the first image name which has the version tag)
-	registryHost := strings.TrimPrefix(registryEndpoint, "https://")
-	fullImageURL := fmt.Sprintf("%s/%s", registryHost, imageNames[0])
-
-	fmt.Fprintf(os.Stderr, "Build completed successfully!\n")
-	fmt.Fprintf(os.Stderr, "Built image: %s\n", fullImageURL)
-
-	// Output just the image URL to stdout for script consumption
-	fmt.Print(fullImageURL)
-
-	return fullImageURL, nil
 }
 
 // startAgentContainer starts the hosted agent container

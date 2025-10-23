@@ -15,37 +15,37 @@ import (
 var _ azdext.ServiceTargetProvider = &DemoServiceTargetProvider{}
 
 // DemoServiceTargetProvider is a minimal implementation of ServiceTargetProvider for demonstration
-type DemoServiceTargetProvider struct {
+type SampleServiceTargetProvider struct {
 	azdClient     *azdext.AzdClient
 	serviceConfig *azdext.ServiceConfig
 }
 
-// NewDemoServiceTargetProvider creates a new DemoServiceTargetProvider instance
-func NewDemoServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
-	return &DemoServiceTargetProvider{
+// NewSampleServiceTargetProvider creates a new SampleServiceTargetProvider instance
+func NewSampleServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
+	return &SampleServiceTargetProvider{
 		azdClient: azdClient,
 	}
 }
 
 // Initialize initializes the service target provider with service configuration
-func (p *DemoServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
+func (p *SampleServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
 	p.serviceConfig = serviceConfig
 	return nil
 }
 
 // Endpoints returns endpoints exposed by the service
-func (p *DemoServiceTargetProvider) Endpoints(
+func (p *SampleServiceTargetProvider) Endpoints(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	targetResource *azdext.TargetResource,
 ) ([]string, error) {
 	return []string{
-		fmt.Sprintf("https://%s.demo.com", serviceConfig.Name),
+		fmt.Sprintf("https://%s.sample.com", serviceConfig.Name),
 	}, nil
 }
 
 // GetTargetResource returns a target resource for the service
-func (p *DemoServiceTargetProvider) GetTargetResource(
+func (p *SampleServiceTargetProvider) GetTargetResource(
 	ctx context.Context,
 	subscriptionId string,
 	serviceConfig *azdext.ServiceConfig,
@@ -65,7 +65,7 @@ func (p *DemoServiceTargetProvider) GetTargetResource(
 }
 
 // Package performs packaging for the service
-func (p *DemoServiceTargetProvider) Package(
+func (p *SampleServiceTargetProvider) Package(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
@@ -110,7 +110,7 @@ func (p *DemoServiceTargetProvider) Package(
 }
 
 // Publish performs the publish operation for the service
-func (p *DemoServiceTargetProvider) Publish(
+func (p *SampleServiceTargetProvider) Publish(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
@@ -133,14 +133,14 @@ func (p *DemoServiceTargetProvider) Publish(
 }
 
 // Deploy performs the deployment operation for the service
-func (p *DemoServiceTargetProvider) Deploy(
+func (p *SampleServiceTargetProvider) Deploy(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	progress("Deploying demo service")
+	progress("Deploying sample service")
 	time.Sleep(5 * time.Second)
 
 	// Construct resource ID

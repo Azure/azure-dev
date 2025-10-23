@@ -285,6 +285,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 		// allows to update the logic of pulling secret parameters in the future, if azd changes the way it
 		// stores the parameter value.
 		"securedParameter": fns.Parameter,
+		"uriEncode":        url.QueryEscape,
 		"secretOutput":     fns.kvSecret,
 		"targetPortOrDefault": func(targetPortFromManifest int) int {
 			// portNumber is 0 for dockerfile.v0, so we use the targetPort from the manifest

@@ -136,6 +136,9 @@ type Resource struct {
 	// parameter.v0 uses value field to define the value of the parameter.
 	Value string
 
+	// annotated.string uses filter to define the filter to apply to the string.
+	Filter string `json:"filter,omitempty"`
+
 	// container.v0 uses volumes field to define the volumes of the container.
 	Volumes []*Volume `json:"volumes,omitempty"`
 

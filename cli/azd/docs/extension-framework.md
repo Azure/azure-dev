@@ -743,6 +743,7 @@ The following are a list of available gRPC services for extension developer to i
 - [Event Service](#event-service)
 - [Compose Service](#compose-service)
 - [Workflow Service](#workflow-service)
+- [Account Service](#account-service)
 
 ---
 
@@ -1246,3 +1247,79 @@ Executes a workflow consisting of sequential steps.
   - Contains:
     - `workflow`: _Workflow_ (with `name` and `steps`)
 - **Response:** _EmptyResponse_
+
+---
+
+### Account Service
+
+This service provides information about the currently logged-in user or identity.
+
+> See [account.proto](../grpc/proto/account.proto) for more details.
+
+#### ListSubscriptions
+
+Lists all subscriptions accessible by the current account.
+
+- **Request:** _ListSubscriptionsRequest_
+  - Contains:
+    - `tenant_id` (optional string): Filter subscriptions by tenant ID
+- **Response:** _ListSubscriptionsResponse_
+  - Contains a list of **Subscription**:
+    - `id` (string): Subscription ID (GUID)
+    - `name` (string): Subscription display name
+    - `tenant_id` (string): The tenant that owns the subscription
+    - `user_tenant_id` (string): The tenant under which the user has access to the subscription
+    - `is_default` (bool): Whether this is the user's default subscription
+
+**Example Usage (Go):**
+
+```go
+// List all subscriptions
+response, err := azdClient.Account().ListSubscriptions(ctx, &azdext.ListSubscriptionsRequest{})
+if err != nil {
+    return fmt.Errorf("failed to list subscriptions: %w", err)
+}
+
+for _, sub := range response.Subscriptions {
+    fmt.Printf("%s (%s)\n", sub.Name, sub.Id)
+}
+
+// Filter by tenant ID
+tenantId := "your-tenant-id"
+response, err := azdClient.Account().ListSubscriptions(ctx, &azdext.ListSubscriptionsRequest{
+    TenantId: &tenantId,
+})
+```
+
+**Use Cases:**
+- List available subscriptions for user selection
+- Filter subscriptions by tenant in multi-tenant scenarios
+
+#### LookupTenant
+
+Resolves the tenant ID required by the current account to access a given subscription. This is useful in multi-tenant scenarios where a user may have access to subscriptions through different tenants.
+
+- **Request:** _LookupTenantRequest_
+  - Contains:
+    - `subscription_id` (string): The subscription ID to look up
+- **Response:** _LookupTenantResponse_
+  - Contains:
+    - `tenant_id` (string): The tenant ID that provides access to the subscription
+
+**Example Usage (Go):**
+
+```go
+// Look up the tenant for a specific subscription
+response, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+    SubscriptionId: "12345678-1234-1234-1234-123456789abc",
+})
+if err != nil {
+    return fmt.Errorf("failed to lookup tenant: %w", err)
+}
+
+fmt.Printf("Access subscription via tenant: %s\n", response.TenantId)
+```
+
+**Use Cases:**
+- Determine which tenant ID to use when making Azure API calls for a subscription
+- Handle multi-tenant scenarios

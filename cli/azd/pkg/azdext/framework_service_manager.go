@@ -129,9 +129,6 @@ func (m *FrameworkServiceManager) handleFrameworkServiceStream(ctx context.Conte
 			if resp != nil {
 				if err := m.stream.Send(resp); err != nil {
 					log.Printf("failed to send framework service response: %v", err)
-				} else {
-					// Don't immediately go back to stream.Recv() - let the receiver process first
-					time.Sleep(200 * time.Millisecond)
 				}
 			} else {
 				log.Printf("buildFrameworkServiceResponseMsg returned nil response")

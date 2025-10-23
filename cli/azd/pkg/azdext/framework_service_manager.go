@@ -57,7 +57,11 @@ func NewFrameworkServiceManager(client *AzdClient) *FrameworkServiceManager {
 }
 
 // Register registers a framework service provider with the specified language name.
-func (m *FrameworkServiceManager) Register(ctx context.Context, factory func() FrameworkServiceProvider, language string) error {
+func (m *FrameworkServiceManager) Register(
+	ctx context.Context,
+	factory func() FrameworkServiceProvider,
+	language string,
+) error {
 	client := m.client.FrameworkService()
 	stream, err := client.Stream(ctx)
 	if err != nil {
@@ -207,7 +211,8 @@ func (m *FrameworkServiceManager) buildFrameworkServiceResponseMsg(
 			resp = &FrameworkServiceMessage{
 				RequestId: msg.RequestId,
 				Error: &FrameworkServiceErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first", serviceConfig.Name),
+					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
+						serviceConfig.Name),
 				},
 			}
 			return resp
@@ -280,7 +285,8 @@ func (m *FrameworkServiceManager) buildFrameworkServiceResponseMsg(
 			resp = &FrameworkServiceMessage{
 				RequestId: msg.RequestId,
 				Error: &FrameworkServiceErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first", serviceConfig.Name),
+					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
+						serviceConfig.Name),
 				},
 			}
 			return resp
@@ -341,7 +347,8 @@ func (m *FrameworkServiceManager) buildFrameworkServiceResponseMsg(
 			resp = &FrameworkServiceMessage{
 				RequestId: msg.RequestId,
 				Error: &FrameworkServiceErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first", serviceConfig.Name),
+					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
+						serviceConfig.Name),
 				},
 			}
 			return resp
@@ -402,7 +409,8 @@ func (m *FrameworkServiceManager) buildFrameworkServiceResponseMsg(
 			resp = &FrameworkServiceMessage{
 				RequestId: msg.RequestId,
 				Error: &FrameworkServiceErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first", serviceConfig.Name),
+					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
+						serviceConfig.Name),
 				},
 			}
 			return resp

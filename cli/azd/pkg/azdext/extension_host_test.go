@@ -81,7 +81,11 @@ type fakeServiceTargetManager struct {
 	closed        atomic.Bool
 }
 
-func (f *fakeServiceTargetManager) Register(ctx context.Context, factory func() ServiceTargetProvider, hostType string) error {
+func (f *fakeServiceTargetManager) Register(
+	ctx context.Context,
+	factory func() ServiceTargetProvider,
+	hostType string,
+) error {
 	f.registerCount.Add(1)
 	f.lastHost.Store(hostType)
 	if f.err != nil {

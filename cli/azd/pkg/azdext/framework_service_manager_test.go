@@ -23,7 +23,10 @@ func (m *MockFrameworkServiceProvider) Initialize(ctx context.Context, serviceCo
 	return args.Error(0)
 }
 
-func (m *MockFrameworkServiceProvider) RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) ([]*ExternalTool, error) {
+func (m *MockFrameworkServiceProvider) RequiredExternalTools(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) ([]*ExternalTool, error) {
 	args := m.Called(ctx, serviceConfig)
 	return args.Get(0).([]*ExternalTool), args.Error(1)
 }

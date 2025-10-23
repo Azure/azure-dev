@@ -206,7 +206,8 @@ func (m *ServiceTargetManager) buildServiceTargetResponseMsg(
 			resp = &ServiceTargetMessage{
 				RequestId: msg.RequestId,
 				Error: &ServiceTargetErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first", serviceConfig.Name),
+					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
+						serviceConfig.Name),
 				},
 			}
 			return resp
@@ -257,7 +258,8 @@ func (m *ServiceTargetManager) buildServiceTargetResponseMsg(
 			resp = &ServiceTargetMessage{
 				RequestId: msg.RequestId,
 				Error: &ServiceTargetErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first", serviceConfig.Name),
+					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
+						serviceConfig.Name),
 				},
 			}
 			return resp
@@ -313,7 +315,8 @@ func (m *ServiceTargetManager) buildServiceTargetResponseMsg(
 			resp = &ServiceTargetMessage{
 				RequestId: msg.RequestId,
 				Error: &ServiceTargetErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first", serviceConfig.Name),
+					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
+						serviceConfig.Name),
 				},
 			}
 			return resp
@@ -371,7 +374,8 @@ func (m *ServiceTargetManager) buildServiceTargetResponseMsg(
 			resp = &ServiceTargetMessage{
 				RequestId: msg.RequestId,
 				Error: &ServiceTargetErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first", serviceConfig.Name),
+					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
+						serviceConfig.Name),
 				},
 			}
 			return resp
@@ -429,7 +433,8 @@ func (m *ServiceTargetManager) buildServiceTargetResponseMsg(
 			resp = &ServiceTargetMessage{
 				RequestId: msg.RequestId,
 				Error: &ServiceTargetErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first", serviceConfig.Name),
+					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
+						serviceConfig.Name),
 				},
 			}
 			return resp

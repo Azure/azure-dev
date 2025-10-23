@@ -303,7 +303,7 @@ func (at *containerAppTarget) Deploy(
 		resourceName,
 		string(resourceTypeContainer))
 
-	resourceArtifact := &Artifact{}
+	var resourceArtifact *Artifact
 	if err := mapper.Convert(target, &resourceArtifact); err == nil {
 		if err := deployArtifacts.Add(resourceArtifact); err != nil {
 			return nil, fmt.Errorf("failed to add resource artifact: %w", err)

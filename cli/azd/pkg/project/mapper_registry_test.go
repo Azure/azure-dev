@@ -82,6 +82,39 @@ func TestDockerProjectOptionsMapping(t *testing.T) {
 	require.True(t, protoOptions.RemoteBuild)
 }
 
+func TestServiceBuildResultMapping(t *testing.T) {
+	buildResult := &ServiceBuildResult{
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     "./build",
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"buildOutput": "success",
+					"buildTime":   "2023-01-01T10:00:00Z",
+				},
+			},
+		},
+	}
+
+	var protoResult *azdext.ServiceBuildResult
+	err := mapper.Convert(buildResult, &protoResult)
+	require.NoError(t, err)
+	require.NotNil(t, protoResult)
+	require.Len(t, protoResult.Artifacts, 1)
+	require.Equal(t, "./build", protoResult.Artifacts[0].Location)
+	require.Equal(t, azdext.ArtifactKind_ARTIFACT_KIND_DIRECTORY, protoResult.Artifacts[0].Kind)
+	require.Equal(t, "success", protoResult.Artifacts[0].Metadata["buildOutput"])
+}
+
+func TestServiceBuildResultMappingNil(t *testing.T) {
+	// Test with nil input - should return nil
+	var protoResult *azdext.ServiceBuildResult
+	err := mapper.Convert((*ServiceBuildResult)(nil), &protoResult)
+	require.NoError(t, err)
+	require.Nil(t, protoResult)
+}
+
 func TestServicePackageResultMapping(t *testing.T) {
 	packageResult := &ServicePackageResult{
 		Artifacts: ArtifactCollection{
@@ -99,11 +132,47 @@ func TestServicePackageResultMapping(t *testing.T) {
 	}
 
 	var protoResult *azdext.ServicePackageResult
-	err := mapper.Convert(*packageResult, &protoResult)
+	err := mapper.Convert(packageResult, &protoResult)
 	require.NoError(t, err)
 	require.NotNil(t, protoResult)
 	require.Len(t, protoResult.Artifacts, 1)
 	require.Equal(t, "./dist", protoResult.Artifacts[0].Location)
+}
+
+func TestFromProtoServiceBuildResultMapping(t *testing.T) {
+	// Create test input
+	protoResult := &azdext.ServiceBuildResult{
+		Artifacts: []*azdext.Artifact{
+			{
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_DIRECTORY,
+				Location:     "/app/build",
+				LocationKind: azdext.LocationKind_LOCATION_KIND_LOCAL,
+				Metadata: map[string]string{
+					"buildOutput": "success",
+					"buildTime":   "2023-01-01T10:00:00Z",
+				},
+			},
+		},
+	}
+
+	var result *ServiceBuildResult
+	err := mapper.Convert(protoResult, &result)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	// Verify the conversion worked correctly
+	require.Len(t, result.Artifacts, 1)
+	require.Equal(t, "/app/build", result.Artifacts[0].Location)
+	require.Equal(t, ArtifactKindDirectory, result.Artifacts[0].Kind)
+	require.Equal(t, "success", result.Artifacts[0].Metadata["buildOutput"])
+}
+
+func TestFromProtoServiceBuildResultMappingNilProto(t *testing.T) {
+	// Test with nil proto result - should return empty result
+	var result *ServiceBuildResult
+	err := mapper.Convert((*azdext.ServiceBuildResult)(nil), &result)
+	require.NoError(t, err)
+	require.Nil(t, result)
 }
 
 func TestFromProtoServicePublishResultMapping(t *testing.T) {
@@ -163,8 +232,7 @@ func TestFromProtoServicePackageResultMappingNilProto(t *testing.T) {
 	var result *ServicePackageResult
 	err := mapper.Convert((*azdext.ServicePackageResult)(nil), &result)
 	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Len(t, result.Artifacts, 0)
+	require.Nil(t, result)
 }
 
 func TestResourceConfigMapping(t *testing.T) {
@@ -760,8 +828,7 @@ func TestServiceDeployResultMapping(t *testing.T) {
 		var deployResult *ServiceDeployResult
 		err := mapper.Convert((*azdext.ServiceDeployResult)(nil), &deployResult)
 		require.NoError(t, err)
-		require.NotNil(t, deployResult)
-		require.Len(t, deployResult.Artifacts, 0)
+		require.Nil(t, deployResult)
 	})
 
 	t.Run("round-trip ServiceDeployResult mapping", func(t *testing.T) {
@@ -805,7 +872,7 @@ func TestTargetResourceToArtifactMapping(t *testing.T) {
 		"Microsoft.Web/sites",
 	)
 
-	var artifact Artifact
+	var artifact *Artifact
 	err := mapper.Convert(targetResource, &artifact)
 	require.NoError(t, err)
 

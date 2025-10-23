@@ -828,8 +828,7 @@ func TestServiceDeployResultMapping(t *testing.T) {
 		var deployResult *ServiceDeployResult
 		err := mapper.Convert((*azdext.ServiceDeployResult)(nil), &deployResult)
 		require.NoError(t, err)
-		require.NotNil(t, deployResult)
-		require.Len(t, deployResult.Artifacts, 0)
+		require.Nil(t, deployResult)
 	})
 
 	t.Run("round-trip ServiceDeployResult mapping", func(t *testing.T) {
@@ -873,7 +872,7 @@ func TestTargetResourceToArtifactMapping(t *testing.T) {
 		"Microsoft.Web/sites",
 	)
 
-	var artifact Artifact
+	var artifact *Artifact
 	err := mapper.Convert(targetResource, &artifact)
 	require.NoError(t, err)
 

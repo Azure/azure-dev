@@ -177,7 +177,10 @@ func runConfigCommand(cmd *cobra.Command, flagValues *flagValues) error {
 	}
 
 	// this spot also serves as the "the user has `azd auth login`'d into Azure already"
-	subscriptionResponse, err := promptClient.PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
+	subscriptionResponse, err := promptClient.PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{
+		Message:     "Select an Azure subscription to use with the Copilot coding agent",
+		HelpMessage: "The Copilot coding agent will only be given access to a resource group within the Azure subscription you choose",
+	})
 
 	if err != nil {
 		//nolint:lll

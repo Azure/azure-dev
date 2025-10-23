@@ -1,5 +1,11 @@
 # Release History
 
+## 0.5.1
+
+### Bugs fixed
+
+- Updated message, and help message, when prompting for the Azure subscription to be more descriptive.
+
 ## 0.5.0
 
 ### Bugs fixed

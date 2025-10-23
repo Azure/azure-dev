@@ -1,5 +1,11 @@
 # Release History
 
+## 0.6.0 (2025-10-14)
+
+- Improve extension metadata validation
+- Update `publish` command to include `providers` field in extension schema and registry
+- Add MCP and service target provider capabilities to `init` command
+
 ## 0.5.1 (2025-09-22)
 
 - Updates `azd x publish` to automatically set up local registry if not configured

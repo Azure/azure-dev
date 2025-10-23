@@ -81,7 +81,7 @@ type fakeServiceTargetManager struct {
 	closed        atomic.Bool
 }
 
-func (f *fakeServiceTargetManager) Register(ctx context.Context, provider ServiceTargetProvider, hostType string) error {
+func (f *fakeServiceTargetManager) Register(ctx context.Context, factory func() ServiceTargetProvider, hostType string) error {
 	f.registerCount.Add(1)
 	f.lastHost.Store(hostType)
 	if f.err != nil {
@@ -197,7 +197,9 @@ func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	runner.WithServiceTarget("demo", &stubServiceTargetProvider{})
+	runner.WithServiceTarget("demo", func() ServiceTargetProvider {
+		return &stubServiceTargetProvider{}
+	})
 
 	go func() {
 		time.Sleep(10 * time.Millisecond)
@@ -261,7 +263,9 @@ func TestExtensionHost_ServiceTargetsAndEvents(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	runner.WithServiceTarget("foundryagent", &stubServiceTargetProvider{})
+	runner.WithServiceTarget("foundryagent", func() ServiceTargetProvider {
+		return &stubServiceTargetProvider{}
+	})
 	runner.WithProjectEventHandler("preprovision", func(ctx context.Context, args *ProjectEventArgs) error { return nil })
 
 	go func() {
@@ -288,7 +292,9 @@ func TestExtensionHost_ServiceTargetRegistrationError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	runner.WithServiceTarget("bad", &stubServiceTargetProvider{})
+	runner.WithServiceTarget("bad", func() ServiceTargetProvider {
+		return &stubServiceTargetProvider{}
+	})
 
 	err := runner.Run(ctx)
 	require.Error(t, err)

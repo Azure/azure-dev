@@ -498,11 +498,11 @@ func (a *InitAction) isGitHubUrl(manifestPointer string) bool {
 type RegistryManifest struct {
 	registryName    string
 	manifestName    string
-	manifestVersion string
+	manifestVersion string // Defaults to "" if not specified in URL
 }
 
 func (a *InitAction) isRegistryUrl(manifestPointer string) (bool, *RegistryManifest) {
-	// Check if it matches the format "azureml://registries/{registryName}/agentmanifests/{manifestName}/versions/{manifestVersion}"
+	// Check if it matches the format "azureml://registries/{registryName}/agentmanifests/{manifestName}[/versions/{manifestVersion}]"
 	if !strings.HasPrefix(manifestPointer, "azureml://") {
 		return false, nil
 	}
@@ -513,27 +513,47 @@ func (a *InitAction) isRegistryUrl(manifestPointer string) (bool, *RegistryManif
 	// Split by "/" to get all path components
 	parts := strings.Split(path, "/")
 
-	// Should have exactly 6 parts: "registries", registryName, "agentmanifests", manifestName, "versions", manifestVersion
-	if len(parts) != 6 {
+	// Should have either 4 parts (without version) or 6 parts (with version)
+	// Format 1: "registries", registryName, "agentmanifests", manifestName
+	// Format 2: "registries", registryName, "agentmanifests", manifestName, "versions", manifestVersion
+	if len(parts) != 4 && len(parts) != 6 {
 		return false, nil
 	}
 
-	// Validate the expected path structure
-	if parts[0] != "registries" || parts[2] != "agentmanifests" || parts[4] != "versions" {
+	// Validate the expected path structure for the first 4 parts
+	if parts[0] != "registries" || parts[2] != "agentmanifests" {
 		return false, nil
 	}
 
-	// All variable parts should be non-empty
+	// All basic parts should be non-empty
 	registryName := strings.TrimSpace(parts[1])
 	manifestName := strings.TrimSpace(parts[3])
-	manifestVersion := strings.TrimSpace(parts[5])
 
-	return registryName != "" && manifestName != "" && manifestVersion != "",
-		&RegistryManifest{
-			registryName:    registryName,
-			manifestName:    manifestName,
-			manifestVersion: manifestVersion,
+	if registryName == "" || manifestName == "" {
+		return false, nil
+	}
+
+	var manifestVersion string
+
+	// If we have 6 parts, validate the version structure
+	if len(parts) == 6 {
+		if parts[4] != "versions" {
+			return false, nil
 		}
+		manifestVersion = strings.TrimSpace(parts[5])
+		if manifestVersion == "" {
+			return false, nil
+		}
+	} else {
+		// If no version specified, default to ""
+		manifestVersion = ""
+	}
+
+	return true, &RegistryManifest{
+		registryName:    registryName,
+		manifestName:    manifestName,
+		manifestVersion: manifestVersion,
+	}
 }
 
 func (a *InitAction) downloadAgentYaml(
@@ -606,7 +626,6 @@ func (a *InitAction) downloadAgentYaml(
 		content = []byte(contentStr)
 	} else if isRegistry, registryManifest := a.isRegistryUrl(manifestPointer); isRegistry {
 		// Handle registry URLs
-		fmt.Printf("Downloading agent.yaml from registry: %s\n", manifestPointer)
 
 		// Create Azure credential
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
@@ -616,9 +635,36 @@ func (a *InitAction) downloadAgentYaml(
 
 		manifestClient := registry_api.NewRegistryAgentManifestClient(registryManifest.registryName, cred)
 
-		versionResult, err := manifestClient.GetManifest(ctx, registryManifest.manifestName, registryManifest.manifestVersion)
-		if err != nil {
-			return nil, "", fmt.Errorf("getting materialized manifest: %w", err)
+		var versionResult *registry_api.Manifest
+		if registryManifest.manifestVersion == "" {
+			// No version specified, get latest version from GetAllLatest
+			fmt.Printf("No version provided for manifest '%s', retrieving latest version\n", registryManifest.manifestName)
+
+			allManifests, err := manifestClient.GetAllLatest(ctx)
+			if err != nil {
+				return nil, "", fmt.Errorf("getting latest manifests: %w", err)
+			}
+
+			// Find the manifest with matching name
+			for _, manifest := range allManifests {
+				if manifest.Name == registryManifest.manifestName {
+					versionResult = &manifest
+					break
+				}
+			}
+
+			if versionResult == nil {
+				return nil, "", fmt.Errorf("manifest '%s' not found in registry '%s'", registryManifest.manifestName, registryManifest.registryName)
+			}
+		} else {
+			// Specific version requested
+			fmt.Printf("Downloading agent.yaml from registry: %s\n", manifestPointer)
+
+			manifest, err := manifestClient.GetManifest(ctx, registryManifest.manifestName, registryManifest.manifestVersion)
+			if err != nil {
+				return nil, "", fmt.Errorf("getting materialized manifest: %w", err)
+			}
+			versionResult = manifest
 		}
 
 		// Process the manifest into a maml format
@@ -648,6 +694,11 @@ func (a *InitAction) downloadAgentYaml(
 	agentManifest, err = registry_api.ProcessManifestParameters(ctx, agentManifest, a.azdClient)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to process manifest parameters: %w", err)
+	}
+
+	content, err = yaml.Marshal(agentManifest)
+	if err != nil {
+		return nil, "", fmt.Errorf("marshaling agent manifest to YAML after parameter processing: %w", err)
 	}
 
 	agentId := agentManifest.Agent.Name

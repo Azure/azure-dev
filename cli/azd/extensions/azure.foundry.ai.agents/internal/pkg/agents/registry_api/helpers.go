@@ -81,12 +81,12 @@ func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_ya
 	return agentDef, nil
 }
 
-func ConvertParameters(parameters map[string]OpenApiParameter) ([]interface{}, error) {
+func ConvertParameters(parameters map[string]OpenApiParameter) ([]agent_yaml.Parameter, error) {
 	if len(parameters) == 0 {
-		return []interface{}{}, nil
+		return []agent_yaml.Parameter{}, nil
 	}
 
-	result := make([]interface{}, 0, len(parameters))
+	result := make([]agent_yaml.Parameter, 0, len(parameters))
 
 	for paramName, openApiParam := range parameters {
 		// Create a basic Parameter from the OpenApiParameter
@@ -134,16 +134,8 @@ func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentMa
 	fmt.Println("The manifest contains parameters that need to be configured:")
 	fmt.Println()
 
-	// Convert Parameters to the expected format for prompting
-	paramMap := make(map[string]agent_yaml.Parameter)
-	for _, param := range manifest.Parameters {
-		if yamlParam, ok := param.(agent_yaml.Parameter); ok {
-			paramMap[yamlParam.Name] = yamlParam
-		}
-	}
-
 	// Collect parameter values from user
-	paramValues, err := promptForYamlParameterValues(ctx, paramMap, azdClient)
+	paramValues, err := promptForYamlParameterValues(ctx, manifest.Parameters, azdClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect parameter values: %w", err)
 	}
@@ -158,11 +150,11 @@ func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentMa
 }
 
 // promptForYamlParameterValues prompts the user for values for each YAML parameter
-func promptForYamlParameterValues(ctx context.Context, parameters map[string]agent_yaml.Parameter, azdClient *azdext.AzdClient) (ParameterValues, error) {
+func promptForYamlParameterValues(ctx context.Context, parameters []agent_yaml.Parameter, azdClient *azdext.AzdClient) (ParameterValues, error) {
 	paramValues := make(ParameterValues)
 
-	for paramName, param := range parameters {
-		fmt.Printf("Parameter: %s\n", paramName)
+	for _, param := range parameters {
+		fmt.Printf("Parameter: %s\n", param.Name)
 		if param.Description != "" {
 			fmt.Printf("  Description: %s\n", param.Description)
 		}
@@ -196,17 +188,17 @@ func promptForYamlParameterValues(ctx context.Context, parameters map[string]age
 		var err error
 		if len(enumValues) > 0 {
 			// Use selection for enum parameters
-			value, err = promptForEnumValue(ctx, paramName, enumValues, defaultValue, azdClient)
+			value, err = promptForEnumValue(ctx, param.Name, enumValues, defaultValue, azdClient)
 		} else {
 			// Use text input for other parameters
-			value, err = promptForTextValue(ctx, paramName, defaultValue, param.Required, azdClient)
+			value, err = promptForTextValue(ctx, param.Name, defaultValue, param.Required, azdClient)
 		}
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to get value for parameter %s: %w", paramName, err)
+			return nil, fmt.Errorf("failed to get value for parameter %s: %w", param.Name, err)
 		}
 
-		paramValues[paramName] = value
+		paramValues[param.Name] = value
 	}
 
 	return paramValues, nil

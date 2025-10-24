@@ -24,7 +24,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/google/uuid"
@@ -111,15 +110,25 @@ func (p *FoundryParser) SetIdentity(ctx context.Context, args *azdext.ProjectEve
 		return fmt.Errorf("subscription ID not found in resource ID: %s", aiFoundryProjectResourceID)
 	}
 
-	// Get the tenant id for the subscription
-	tenantID, err := getTenantID(ctx, subscriptionID)
+	// Get the tenant ID
+	tenantResponse, err := p.AzdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+		SubscriptionId: subscriptionID,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
 
+	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID:                   tenantResponse.TenantId,
+		AdditionallyAllowedTenants: []string{"*"},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create Azure credential: %w", err)
+	}
+
 	// Get AI Foundry Project's managed identity
 	fmt.Println("Retrieving AI Foundry Project identity...")
-	projectPrincipalID, err := getProjectPrincipalID(ctx, aiFoundryProjectResourceID, subscriptionID, tenantID)
+	projectPrincipalID, err := getProjectPrincipalID(ctx, cred, aiFoundryProjectResourceID, subscriptionID)
 	if err != nil {
 		return fmt.Errorf("failed to get Project principal ID: %w", err)
 	}
@@ -127,7 +136,7 @@ func (p *FoundryParser) SetIdentity(ctx context.Context, args *azdext.ProjectEve
 
 	// Get Application ID from Principal ID
 	fmt.Println("Retrieving Application ID...")
-	projectClientID, err := getApplicationID(context.Background(), projectPrincipalID, tenantID)
+	projectClientID, err := getApplicationID(context.Background(), cred, projectPrincipalID)
 	if err != nil {
 		return fmt.Errorf("failed to get Application ID: %w", err)
 	}
@@ -154,79 +163,8 @@ func (p *FoundryParser) SetIdentity(ctx context.Context, args *azdext.ProjectEve
 	return nil
 }
 
-func getTenantID(ctx context.Context, subscriptionID string) (string, error) {
-	// Create Azure credential
-	cred, err := azidentity.NewAzureDeveloperCLICredential(nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create Azure credential: %w", err)
-	}
-
-	// Create subscriptions client
-	client, err := armsubscriptions.NewClient(cred, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create subscriptions client: %w", err)
-	}
-
-	// Get the subscription
-	resp, err := client.Get(ctx, subscriptionID, nil)
-	if err != nil {
-		// Check if the err contains the actual tenant Id. If the error contains this:
-		// `It must match the tenant 'https://sts.windows.net/XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX/' associated with this subscription`
-		// Then extract the tenant Id from the error message
-		errMsg := err.Error()
-
-		// Look for the specific pattern that indicates the tenant associated with the subscription
-		const tenantPattern = "It must match the tenant '"
-		if strings.Contains(errMsg, tenantPattern) {
-			// Find the start of the tenant URL
-			startIdx := strings.Index(errMsg, tenantPattern)
-			if startIdx != -1 {
-				// Move past the pattern to get to the URL
-				startIdx += len(tenantPattern)
-
-				// Find the end (the closing quote)
-				remaining := errMsg[startIdx:]
-				endIdx := strings.Index(remaining, "'")
-
-				if endIdx != -1 {
-					tenantURL := remaining[:endIdx]
-
-					// Extract the tenant ID from the URL (format: https://sts.windows.net/{tenantId}/)
-					if strings.HasPrefix(tenantURL, "https://sts.windows.net/") {
-						tenantID := strings.TrimPrefix(tenantURL, "https://sts.windows.net/")
-						tenantID = strings.TrimSuffix(tenantID, "/")
-
-						// Validate that it looks like a GUID
-						if len(tenantID) == 36 && strings.Count(tenantID, "-") == 4 {
-							return tenantID, nil
-						}
-					}
-				}
-			}
-		}
-
-		return "", fmt.Errorf("failed to get subscription and could not extract tenant ID from error: %w", err)
-	}
-
-	// Extract tenant ID from subscription
-	tenantID := *resp.TenantID
-	if tenantID == "" {
-		return "", fmt.Errorf("tenant ID is empty")
-	}
-
-	return tenantID, nil
-}
-
 // getProjectPrincipalID retrieves the principal ID from the AI Foundry Project using Azure SDK
-func getProjectPrincipalID(ctx context.Context, resourceID, subscriptionID, tenantID string) (string, error) {
-	// Create Azure credential
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID: tenantID,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to create Azure credential: %w", err)
-	}
-
+func getProjectPrincipalID(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resourceID, subscriptionID string) (string, error) {
 	// Create resources client
 	client, err := armresources.NewClient(subscriptionID, cred, nil)
 	if err != nil {
@@ -259,15 +197,7 @@ func getProjectPrincipalID(ctx context.Context, resourceID, subscriptionID, tena
 }
 
 // getApplicationID retrieves the application ID from the principal ID using Microsoft Graph API
-func getApplicationID(ctx context.Context, principalID, tenantId string) (string, error) {
-	// Create Azure credential
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID: tenantId,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to create Azure credential: %w", err)
-	}
-
+func getApplicationID(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, principalID string) (string, error) {
 	// Create Graph client
 	graphClient, err := graphsdk.NewGraphClient(cred, nil)
 	if err != nil {
@@ -292,15 +222,7 @@ func getApplicationID(ctx context.Context, principalID, tenantId string) (string
 }
 
 // getCognitiveServicesAccountLocation retrieves the location of a Cognitive Services account using Azure SDK
-func getCognitiveServicesAccountLocation(ctx context.Context, subscriptionID, resourceGroupName, accountName, tenantID string) (string, error) {
-	// Create Azure credential with tenant ID
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID: tenantID,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to create Azure credential: %w", err)
-	}
-
+func getCognitiveServicesAccountLocation(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, subscriptionID, resourceGroupName, accountName string) (string, error) {
 	// Create cognitive services accounts client
 	client, err := armcognitiveservices.NewAccountsClient(subscriptionID, cred, nil)
 	if err != nil {
@@ -430,14 +352,24 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 	projectAIFoundryName := parts[8]
 	projectName := parts[10]
 
-	// Get the tenant ID for the subscription
-	tenantID, err := getTenantID(ctx, projectSubscriptionID)
+	// Get the tenant ID
+	tenantResponse, err := p.AzdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+		SubscriptionId: projectSubscriptionID,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
 
+	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID:                   tenantResponse.TenantId,
+		AdditionallyAllowedTenants: []string{"*"},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create Azure credential: %w", err)
+	}
+
 	// Get AI Foundry region using SDK
-	aiFoundryRegion, err := getCognitiveServicesAccountLocation(ctx, projectSubscriptionID, projectResourceGroup, projectAIFoundryName, tenantID)
+	aiFoundryRegion, err := getCognitiveServicesAccountLocation(ctx, cred, projectSubscriptionID, projectResourceGroup, projectAIFoundryName)
 	if err != nil {
 		return fmt.Errorf("failed to get AI Foundry region: %w", err)
 	}
@@ -448,7 +380,7 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 	fmt.Printf("Agent: %s\n", agentName)
 
 	// Assign Azure AI User role
-	if err := assignAzureAIRole(ctx, containerAppPrincipalID, aiFoundryResourceID); err != nil {
+	if err := assignAzureAIRole(ctx, cred, containerAppPrincipalID, aiFoundryResourceID); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: Failed to assign 'Azure AI User' role: %v\n", err)
 		fmt.Fprintln(os.Stderr, "This requires Owner or User Access Administrator role on the AI Foundry Account.")
 		fmt.Fprintln(os.Stderr, "Manual command:")
@@ -464,20 +396,20 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 	}
 
 	// Deactivate hello-world revision
-	if err := deactivateHelloWorldRevision(ctx, resourceID); err != nil {
+	if err := deactivateHelloWorldRevision(ctx, cred, resourceID); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to deactivate hello-world revision: %v\n", err)
 		// Don't return error, just warn - this is not critical for the deployment
 	}
 
 	// Verify authentication configuration
-	if err := verifyAuthConfiguration(ctx, resourceID); err != nil {
+	if err := verifyAuthConfiguration(ctx, cred, resourceID); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to verify authentication configuration: %v\n", err)
 		// Don't return error, just warn - this is not critical for the deployment
 	}
 
 	// Get the Container App endpoint (FQDN) for testing using SDK
 	fmt.Println("Retrieving Container App endpoint...")
-	acaEndpoint, err := getContainerAppEndpoint(ctx, resourceID, projectSubscriptionID, tenantID)
+	acaEndpoint, err := getContainerAppEndpoint(ctx, cred, resourceID, projectSubscriptionID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to retrieve Container App endpoint: %v\n", err)
 	} else {
@@ -486,7 +418,7 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 
 	// Get AI Foundry Project endpoint using SDK
 	fmt.Println("Retrieving AI Foundry Project API endpoint...")
-	aiFoundryProjectEndpoint, err := getAIFoundryProjectEndpoint(ctx, aiFoundryProjectResourceID, projectSubscriptionID, tenantID)
+	aiFoundryProjectEndpoint, err := getAIFoundryProjectEndpoint(ctx, cred, aiFoundryProjectResourceID, projectSubscriptionID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to retrieve AI Foundry Project API endpoint: %v\n", err)
 	} else {
@@ -494,14 +426,14 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 	}
 
 	// Acquire AAD token using SDK
-	token, err := getAccessToken(ctx, "https://ai.azure.com")
+	token, err := getAccessToken(ctx, cred, "https://ai.azure.com")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: Failed to acquire access token: %v\n", err)
 		return fmt.Errorf("failed to acquire access token: %w", err)
 	}
 
 	// Get latest revision and build ingress suffix using SDK
-	latestRevision, err := getLatestRevisionName(ctx, resourceID, projectSubscriptionID, tenantID)
+	latestRevision, err := getLatestRevisionName(ctx, cred, resourceID, projectSubscriptionID)
 	if err != nil {
 		return fmt.Errorf("failed to get latest revision: %w", err)
 	}
@@ -554,7 +486,7 @@ func validateRequired(name, value string) error {
 }
 
 // assignAzureAIRole assigns the Azure AI User role to the container app identity using Azure SDK
-func assignAzureAIRole(ctx context.Context, principalID, scope string) error {
+func assignAzureAIRole(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, principalID, scope string) error {
 	fmt.Println()
 	fmt.Println("======================================")
 	fmt.Println("Assigning Azure AI Access Permissions")
@@ -579,19 +511,6 @@ func assignAzureAIRole(ctx context.Context, principalID, scope string) error {
 	}
 	if subscriptionID == "" {
 		return fmt.Errorf("could not extract subscription ID from scope: %s", scope)
-	}
-
-	tenantId, err := getTenantID(ctx, subscriptionID)
-	if err != nil {
-		return fmt.Errorf("failed to get tenant ID: %w", err)
-	}
-
-	// Create Azure credential
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID: tenantId,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 
 	// Create role assignments client
@@ -711,7 +630,7 @@ func assignAzureAIRole(ctx context.Context, principalID, scope string) error {
 }
 
 // deactivateHelloWorldRevision deactivates the hello-world placeholder revision using Azure SDK
-func deactivateHelloWorldRevision(ctx context.Context, resourceID string) error {
+func deactivateHelloWorldRevision(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resourceID string) error {
 	fmt.Println()
 	fmt.Println("======================================")
 	fmt.Println("Deactivating Hello-World Revision")
@@ -734,20 +653,6 @@ func deactivateHelloWorldRevision(ctx context.Context, resourceID string) error 
 
 	if subscription == "" || resourceGroup == "" || appName == "" {
 		return fmt.Errorf("could not parse subscription, resource group or app name from resource ID: %s", resourceID)
-	}
-
-	// Get tenant ID for the subscription
-	tenantID, err := getTenantID(ctx, subscription)
-	if err != nil {
-		return fmt.Errorf("failed to get tenant ID: %w", err)
-	}
-
-	// Create Azure credential
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID: tenantID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 
 	// Create container apps revisions client
@@ -847,7 +752,7 @@ func deactivateHelloWorldRevision(ctx context.Context, resourceID string) error 
 }
 
 // verifyAuthConfiguration verifies the authentication configuration using Azure SDK
-func verifyAuthConfiguration(ctx context.Context, resourceID string) error {
+func verifyAuthConfiguration(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resourceID string) error {
 	fmt.Println()
 	fmt.Println("======================================")
 	fmt.Println("Verifying Authentication Configuration")
@@ -865,20 +770,6 @@ func verifyAuthConfiguration(ctx context.Context, resourceID string) error {
 
 	if subscription == "" || resourceGroup == "" || appName == "" {
 		return fmt.Errorf("could not parse subscription, resource group or app name from resource ID: %s", resourceID)
-	}
-
-	// Get tenant ID for the subscription
-	tenantID, err := getTenantID(ctx, subscription)
-	if err != nil {
-		return fmt.Errorf("failed to get tenant ID: %w", err)
-	}
-
-	// Create Azure credential
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID: tenantID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 
 	// Create container apps auth configs client
@@ -932,7 +823,7 @@ func verifyAuthConfiguration(ctx context.Context, resourceID string) error {
 }
 
 // getContainerAppEndpoint retrieves the Container App FQDN using Azure SDK
-func getContainerAppEndpoint(ctx context.Context, resourceID, subscriptionID, tenantID string) (string, error) {
+func getContainerAppEndpoint(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resourceID, subscriptionID string) (string, error) {
 	// Parse resource ID
 	parsedResource, err := arm.ParseResourceID(resourceID)
 	if err != nil {
@@ -944,14 +835,6 @@ func getContainerAppEndpoint(ctx context.Context, resourceID, subscriptionID, te
 
 	if resourceGroup == "" || appName == "" {
 		return "", fmt.Errorf("could not parse resource group or app name from resource ID: %s", resourceID)
-	}
-
-	// Create Azure credential
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID: tenantID,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 
 	// Create container apps client
@@ -983,15 +866,7 @@ func getContainerAppEndpoint(ctx context.Context, resourceID, subscriptionID, te
 }
 
 // getAIFoundryProjectEndpoint retrieves the AI Foundry Project API endpoint using Azure SDK
-func getAIFoundryProjectEndpoint(ctx context.Context, resourceID, subscriptionID, tenantID string) (string, error) {
-	// Create Azure credential
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID: tenantID,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to create Azure credential: %w", err)
-	}
-
+func getAIFoundryProjectEndpoint(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resourceID, subscriptionID string) (string, error) {
 	// Create resources client
 	client, err := armresources.NewClient(subscriptionID, cred, nil)
 	if err != nil {
@@ -1031,13 +906,7 @@ func getAIFoundryProjectEndpoint(ctx context.Context, resourceID, subscriptionID
 }
 
 // getAccessToken retrieves an access token for the specified resource using Azure SDK
-func getAccessToken(ctx context.Context, resource string) (string, error) {
-	// Create Azure credential
-	cred, err := azidentity.NewAzureDeveloperCLICredential(nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create Azure credential: %w", err)
-	}
-
+func getAccessToken(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resource string) (string, error) {
 	// Get access token for the specified resource
 	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{resource + "/.default"},
@@ -1050,7 +919,7 @@ func getAccessToken(ctx context.Context, resource string) (string, error) {
 }
 
 // getLatestRevisionName retrieves the latest revision name for a Container App using Azure SDK
-func getLatestRevisionName(ctx context.Context, resourceID, subscriptionID, tenantID string) (string, error) {
+func getLatestRevisionName(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resourceID, subscriptionID string) (string, error) {
 	// Parse resource ID
 	parsedResource, err := arm.ParseResourceID(resourceID)
 	if err != nil {
@@ -1062,14 +931,6 @@ func getLatestRevisionName(ctx context.Context, resourceID, subscriptionID, tena
 
 	if resourceGroup == "" || appName == "" {
 		return "", fmt.Errorf("could not parse resource group or app name from resource ID: %s", resourceID)
-	}
-
-	// Create Azure credential
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID: tenantID,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 
 	// Create container apps client

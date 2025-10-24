@@ -594,7 +594,7 @@ Common issues you might encounter when developing and publishing extensions:
 
 ### Capabilities
 
-#### Current Capabilities (October 2024)
+#### Current Capabilities (October 2025)
 
 The following lists the current capabilities available to `azd` extensions:
 
@@ -653,6 +653,14 @@ Extensions can provide AI agent tools through the Model Context Protocol, enabli
 - Azure service automation for AI agents
 - Custom development workflows for AI-assisted development
 
+#### Future Considerations
+
+Future ideas include:
+
+- Registration of pluggable providers for:
+  - Infrastructure providers (e.g., Pulumi)
+  - Source control providers (e.g., GitLab)
+  - Pipeline providers (e.g., TeamCity)
 ---
 
 ### Developer Workflow

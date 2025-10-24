@@ -148,9 +148,18 @@ func (p *progressLog) Stop(keepLogs bool) {
 // Write implements oi.Writer and updates the internal buffer before flushing it into the screen.
 // Calling Write() before Start() or after Stop() is a no-op
 func (p *progressLog) Write(logBytes []byte) (int, error) {
+	// Acquire mutex first to prevent race conditions
+	p.outputMutex.Lock()
+	defer p.outputMutex.Unlock()
+
+	// Check if component is initialized after acquiring mutex
 	if p.output == nil {
 		return len(logBytes), nil
 	}
+
+	// Safety check: ensure output buffer has at least one element
+	p.ensureOutputBuffer()
+
 	maxWidth := p.terminalWidthFn()
 	if maxWidth <= 0 {
 		// maxWidth <= 0 means there's no terminal to write and the stdout pipe is mostly connected to a file or a buffer
@@ -159,8 +168,6 @@ func (p *progressLog) Write(logBytes []byte) (int, error) {
 	}
 
 	logsScanner := bufio.NewScanner(strings.NewReader(string(logBytes)))
-	p.outputMutex.Lock()
-	defer p.outputMutex.Unlock()
 
 	var afterFirstLine bool
 	for logsScanner.Scan() {
@@ -175,25 +182,34 @@ func (p *progressLog) Write(logBytes []byte) (int, error) {
 			afterFirstLine = true
 		}
 
+		// Safety check: ensure we have at least one element after slice operations
+		p.ensureOutputBuffer()
+
 		fullLog := log
-		if p.output[len(p.output)-1] == "" {
+		lastIndex := len(p.output) - 1
+		if lastIndex >= 0 && p.output[lastIndex] == "" {
 			fullLog = p.prefix + log
 		}
 		fullLogLen := len(fullLog)
 
 		for fullLogLen > 0 {
+			// Safety check before accessing last element
+			p.ensureOutputBuffer()
+			lastIndex = len(p.output) - 1
+
 			// Get whatever is the empty space on current line
-			currentLineRemaining := maxWidth - len(p.output[len(p.output)-1])
+			currentLineRemaining := maxWidth - len(p.output[lastIndex])
 			if currentLineRemaining == 0 {
 				// line is full, use next line. Add prefix first
 				p.output = append(p.output[1:], p.prefix)
 				currentLineRemaining = maxWidth - len(p.prefix)
+				lastIndex = len(p.output) - 1
 			}
 
 			// Choose between writing fullLog (if it is less than currentLineRemaining)
 			// or writing only currentLineRemaining
 			writeLen := ix.Min(fullLogLen, currentLineRemaining)
-			p.output[len(p.output)-1] += fullLog[:writeLen]
+			p.output[lastIndex] += fullLog[:writeLen]
 			fullLog = fullLog[writeLen:]
 			fullLogLen = len(fullLog)
 		}
@@ -208,8 +224,13 @@ func (p *progressLog) Write(logBytes []byte) (int, error) {
 	// .Scan() won't add a line break for a line which ends in `\n`
 	// This is because the next Scan() after \n will find EOF.
 	// Adding a line break for such case.
-	if logBytes[len(logBytes)-1] == '\n' {
-		p.output = append(p.output[1:], p.prefix)
+	if len(logBytes) > 0 && logBytes[len(logBytes)-1] == '\n' {
+		// Safety check: ensure we have elements before slice operation
+		if len(p.output) > 0 {
+			p.output = append(p.output[1:], p.prefix)
+		} else {
+			p.output = []string{p.prefix}
+		}
 	}
 
 	return len(logBytes), nil
@@ -237,6 +258,19 @@ func (p *progressLog) Header(header string) {
 }
 
 /****************** Not exported method ****************/
+
+// ensureOutputBuffer ensures the output buffer has at least one element.
+// This prevents index out of range panics when accessing p.output[len(p.output)-1].
+func (p *progressLog) ensureOutputBuffer() {
+	if len(p.output) == 0 {
+		// Ensure we have at least 1 line even if p.lines is 0
+		lineCount := p.lines
+		if lineCount == 0 {
+			lineCount = 1
+		}
+		p.output = make([]string, lineCount)
+	}
+}
 
 // clearLine override text with empty spaces.
 func clearLine() {

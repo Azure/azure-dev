@@ -330,3 +330,77 @@ func Test_progressChangeHeader(t *testing.T) {
 	snConfig.SnapshotT(t, bufHandler.snap())
 	pg.Stop(false)
 }
+
+func Test_progressLogConcurrentWriteProtection(t *testing.T) {
+	sizeFn := func() int {
+		return 40
+	}
+	pg := newProgressLogWithWidthFn(5, prefix, title, header, sizeFn)
+
+	var bufHandler testBufferHandler
+	tm.Screen = &bufHandler.Buffer
+
+	// Test concurrent access scenario that could cause the panic
+	pg.Start()
+
+	// This should not panic even if called concurrently or after Stop/Start cycles
+	done := make(chan bool)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("Panic occurred in concurrent write: %v", r)
+			}
+			done <- true
+		}()
+
+		for i := 0; i < 100; i++ {
+			_, err := pg.Write([]byte("concurrent test line\n"))
+			if err != nil {
+				t.Errorf("Error in concurrent write: %v", err)
+				return
+			}
+		}
+	}()
+
+	// Try to cause race conditions by stopping/starting
+	go func() {
+		for i := 0; i < 10; i++ {
+			pg.Stop(false)
+			pg.Start()
+		}
+	}()
+
+	<-done
+	pg.Stop(false)
+}
+
+func Test_progressLogEmptySliceProtection(t *testing.T) {
+	sizeFn := func() int {
+		return 40
+	}
+	// Create with 0 lines to test edge case
+	pg := newProgressLogWithWidthFn(0, prefix, title, header, sizeFn)
+
+	var bufHandler testBufferHandler
+	tm.Screen = &bufHandler.Buffer
+
+	// This should not panic even with 0 lines
+	pg.Start()
+	_, err := pg.Write([]byte("test line\n"))
+	require.NoError(t, err)
+	pg.Stop(false)
+
+	// Test with normal lines but force empty slice scenario
+	pg2 := newProgressLogWithWidthFn(1, prefix, title, header, sizeFn)
+	pg2.Start()
+
+	// Manually create a scenario that could lead to empty slice
+	pg2.outputMutex.Lock()
+	pg2.output = []string{} // Force empty slice
+	pg2.outputMutex.Unlock()
+
+	// This should not panic due to safety checks
+	_, err = pg2.Write([]byte("test after empty\n"))
+	require.NoError(t, err)
+	pg2.Stop(false)
+}

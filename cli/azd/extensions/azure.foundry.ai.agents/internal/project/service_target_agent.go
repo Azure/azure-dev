@@ -15,6 +15,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -242,12 +243,38 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, fmt.Errorf("failed to parse and validate YAML: %w", err)
 	}
 
+	if azdEnv["AI_FOUNDRY_PROJECT_RESOURCE_ID"] == "" {
+		return nil, fmt.Errorf("AI_FOUNDRY_PROJECT_RESOURCE_ID environment variable is required")
+	}
+
+	parsedResource, err := arm.ParseResourceID(azdEnv["AI_FOUNDRY_PROJECT_RESOURCE_ID"])
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse resource ID: %w", err)
+	}
+
+	// Get the tenant ID
+	tenantResponse, err := p.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+		SubscriptionId: parsedResource.SubscriptionID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tenant ID: %w", err)
+	}
+
+	// Create Azure credential
+	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID:                   tenantResponse.TenantId,
+		AdditionallyAllowedTenants: []string{"*"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
+	}
+
 	// Determine agent type and delegate to appropriate deployment method
 	switch agent_api.AgentKind(agentManifest.Agent.Kind) {
 	case agent_api.AgentKindPrompt:
-		return p.deployPromptAgent(ctx, agentManifest, azdEnv)
+		return p.deployPromptAgent(ctx, cred, agentManifest, azdEnv)
 	case agent_api.AgentKindHosted:
-		return p.deployHostedAgent(ctx, serviceContext, progress, agentManifest, azdEnv)
+		return p.deployHostedAgent(ctx, cred, serviceContext, progress, agentManifest, azdEnv)
 	default:
 		return nil, fmt.Errorf("unsupported agent kind: %s", agentManifest.Agent.Kind)
 	}
@@ -271,18 +298,13 @@ func (p *AgentServiceTargetProvider) isContainerAgent() bool {
 // deployPromptAgent handles deployment of prompt-based agents
 func (p *AgentServiceTargetProvider) deployPromptAgent(
 	ctx context.Context,
+	cred *azidentity.AzureDeveloperCLICredential,
 	agentManifest *agent_yaml.AgentManifest,
 	azdEnv map[string]string,
 ) (*azdext.ServiceDeployResult, error) {
 	// Check if environment variable is set
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
 		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required")
-	}
-
-	// Create Azure credential
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "Deploying Prompt Agent\n")
@@ -332,6 +354,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 // deployHostedAgent handles deployment of hosted container agents
 func (p *AgentServiceTargetProvider) deployHostedAgent(
 	ctx context.Context,
+	cred *azidentity.AzureDeveloperCLICredential,
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 	agentManifest *agent_yaml.AgentManifest,
@@ -354,12 +377,6 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	}
 	if fullImageURL == "" {
 		return nil, errors.New("published container artifact not found")
-	}
-
-	// Create Azure credential
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
@@ -415,7 +432,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 	ctx context.Context,
 	request *agent_api.CreateAgentRequest,
 	azdEnv map[string]string,
-	cred *azidentity.DefaultAzureCredential,
+	cred *azidentity.AzureDeveloperCLICredential,
 ) (*agent_api.AgentVersionObject, error) {
 	// Create agent client
 	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], cred)
@@ -446,7 +463,7 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	agentManifest *agent_yaml.AgentManifest,
 	agentVersionResponse *agent_api.AgentVersionObject,
 	azdEnv map[string]string,
-	cred *azidentity.DefaultAzureCredential,
+	cred *azidentity.AzureDeveloperCLICredential,
 ) error {
 	fmt.Fprintln(os.Stderr, "Starting Agent Container")
 	fmt.Fprintln(os.Stderr, "=======================")

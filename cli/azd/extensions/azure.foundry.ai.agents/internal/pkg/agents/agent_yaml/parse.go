@@ -6,7 +6,7 @@ package agent_yaml
 import (
 	"fmt"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // LoadAndValidateAgentManifest parses YAML content and validates it as an AgentManifest

@@ -11,14 +11,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
@@ -40,10 +39,6 @@ const (
 var (
 	featureHelm      alpha.FeatureId = alpha.MustFeatureKey("aks.helm")
 	featureKustomize alpha.FeatureId = alpha.MustFeatureKey("aks.kustomize")
-
-	// Finds URLS in the endpoints that contain additional metadata
-	// Example: http://10.0.101.18:80 (Service: todo-api, Type: ClusterIP)
-	endpointRegex = regexp.MustCompile(`^(.*?)\s*(?:\(.*?\))?$`)
 )
 
 // The AKS configuration options
@@ -145,6 +140,7 @@ func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig
 	// Ensure that the k8s context has been configured by the time a deploy operation is performed.
 	// We attach to "postprovision" so that any predeploy or postprovision hooks can take advantage of the configuration
 	err := serviceConfig.Project.AddHandler(
+		ctx,
 		"postprovision",
 		func(ctx context.Context, args ProjectLifecycleEventArgs) error {
 			// Only set the k8s context if we are not in preview mode
@@ -163,7 +159,7 @@ func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig
 
 	// Ensure that the k8s context has been configured by the time a deploy operation is performed.
 	// We attach to "predeploy" so that any predeploy hooks can take advantage of the configuration
-	err = serviceConfig.AddHandler("predeploy", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+	err = serviceConfig.AddHandler(ctx, "predeploy", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 		return t.setK8sContext(ctx, serviceConfig, "predeploy")
 	})
 
@@ -178,28 +174,39 @@ func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig
 func (t *aksTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	return packageOutput, nil
+	// Container reference already handled by the underlying framework service
+	// No particular additional package requirements for ACA
+	return &ServicePackageResult{}, nil
 }
 
 // Publish pushes the container image to ACR for AKS targets
 func (t *aksTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
 ) (*ServicePublishResult, error) {
+	// Extract package output from service context
+	var hasPackage bool
+	if artifact, found := serviceContext.Package.FindFirst(); found {
+		if artifact.Kind == ArtifactKindDirectory || artifact.Kind == ArtifactKindArchive ||
+			artifact.Kind == ArtifactKindContainer {
+			hasPackage = true
+		}
+	}
+
 	// Only publish the container image if a package output has been defined
 	// Empty package details is a valid scenario for any AKS deployment that does not build any containers
 	// Ex) Helm charts, or other manifests that reference external images
-	if serviceConfig.Docker.RemoteBuild || packageOutput.Details != nil || packageOutput.PackagePath != "" {
+	if serviceConfig.Docker.RemoteBuild || hasPackage {
 		// Login, tag & push container image to ACR
 		publishResult, err := t.containerHelper.Publish(
-			ctx, serviceConfig, packageOutput, targetResource, progress, publishOptions)
+			ctx, serviceConfig, serviceContext, targetResource, progress, publishOptions)
 		if err != nil {
 			return nil, err
 		}
@@ -207,11 +214,14 @@ func (t *aksTarget) Publish(
 		// Save the name of the image we pushed into the environment with a well known key.
 		log.Printf("writing image name to environment")
 
-		containerDetails, ok := publishResult.Details.(*ContainerPublishDetails)
-		if !ok {
-			return nil, fmt.Errorf("expected ContainerPublishDetails but got %T", publishResult.Details)
+		// Extract container details from publish artifacts
+		var remoteImage string
+		if artifact, found := publishResult.Artifacts.FindFirst(WithKind(ArtifactKindContainer)); found {
+			remoteImage = artifact.Location
 		}
-		t.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", containerDetails.RemoteImage)
+		if remoteImage != "" {
+			t.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteImage)
+		}
 
 		if err := t.envManager.Save(ctx, t.env); err != nil {
 			return nil, fmt.Errorf("saving image name to environment: %w", err)
@@ -227,8 +237,7 @@ func (t *aksTarget) Publish(
 func (t *aksTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
-	servicePublishResult *ServicePublishResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -236,9 +245,7 @@ func (t *aksTarget) Deploy(
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
-	if packageOutput == nil {
-		return nil, errors.New("missing package output")
-	}
+	artifacts := ArtifactCollection{}
 
 	// Sync environment
 	t.kubectl.SetEnv(t.env.Dotenv())
@@ -271,7 +278,7 @@ func (t *aksTarget) Deploy(
 	deployed = deployed || kustomizeDeployed
 
 	// Vanilla k8s manifests with minimal templating support
-	manifestsDeployed, deployment, err := t.deployManifests(ctx, serviceConfig, progress)
+	manifestsDeployed, _, err := t.deployManifests(ctx, serviceConfig, progress)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
@@ -283,35 +290,33 @@ func (t *aksTarget) Deploy(
 	}
 
 	progress.SetProgress(NewServiceProgress("Fetching endpoints for AKS service"))
-	endpoints, err := t.Endpoints(ctx, serviceConfig, targetResource)
+	endpointArtifacts, err := t.getEndpointArtifacts(ctx, serviceConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(endpoints) > 0 {
-		// The AKS endpoints contain some additional identifying information
-		// Regex is used to pull the URL ignoring the additional metadata
-		// The last endpoint in the array will be the most publicly exposed
-		matches := endpointRegex.FindStringSubmatch(endpoints[len(endpoints)-1])
-		if len(matches) > 1 {
-			t.env.SetServiceProperty(serviceConfig.Name, "ENDPOINT_URL", matches[1])
+	if len(endpointArtifacts) > 0 {
+		if serviceEndpoint, found := endpointArtifacts.FindLast(WithKind(ArtifactKindEndpoint)); found {
+			t.env.SetServiceProperty(serviceConfig.Name, "ENDPOINT_URL", serviceEndpoint.Location)
 			if err := t.envManager.Save(ctx, t.env); err != nil {
 				return nil, fmt.Errorf("failed updating environment with endpoint url, %w", err)
 			}
 		}
+
+		if err := artifacts.Add(endpointArtifacts...); err != nil {
+			return nil, fmt.Errorf("failed to add endpoint artifacts: %w", err)
+		}
+	}
+
+	var resourceArtifact *Artifact
+	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
+		if err := artifacts.Add(resourceArtifact); err != nil {
+			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
+		}
 	}
 
 	return &ServiceDeployResult{
-		Package: packageOutput,
-		Publish: servicePublishResult,
-		TargetResourceId: azure.KubernetesServiceRID(
-			targetResource.SubscriptionId(),
-			targetResource.ResourceGroupName(),
-			targetResource.ResourceName(),
-		),
-		Kind:      AksTarget,
-		Details:   deployment,
-		Endpoints: endpoints,
+		Artifacts: artifacts,
 	}, nil
 }
 
@@ -513,6 +518,24 @@ func (t *aksTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
+	artifactEndpoints, err := t.getEndpointArtifacts(ctx, serviceConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	endpoints := []string{}
+	for _, artifact := range artifactEndpoints {
+		endpoints = append(endpoints, artifact.Location)
+	}
+
+	return endpoints, nil
+}
+
+// Gets the service endpoints for the AKS service target
+func (t *aksTarget) getEndpointArtifacts(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) (ArtifactCollection, error) {
 	serviceName := serviceConfig.K8s.Service.Name
 	if serviceName == "" {
 		serviceName = serviceConfig.Name
@@ -537,9 +560,15 @@ func (t *aksTarget) Endpoints(
 		return nil, fmt.Errorf("failed retrieving ingress endpoints, %w", err)
 	}
 
-	endpoints := append(serviceEndpoints, ingressEndpoints...)
+	allArtifacts := ArtifactCollection{}
+	if err := allArtifacts.Add(serviceEndpoints...); err != nil {
+		return nil, err
+	}
+	if err := allArtifacts.Add(ingressEndpoints...); err != nil {
+		return nil, err
+	}
 
-	return endpoints, nil
+	return allArtifacts, nil
 }
 
 func (t *aksTarget) validateTargetResource(
@@ -779,34 +808,41 @@ func (t *aksTarget) waitForService(
 func (t *aksTarget) getServiceEndpoints(
 	ctx context.Context,
 	serviceNameFilter string,
-) ([]string, error) {
+) ([]*Artifact, error) {
 	service, err := t.waitForService(ctx, serviceNameFilter)
 	if err != nil {
 		return nil, err
 	}
 
-	var endpoints []string
-	if service.Spec.Type == kubectl.ServiceTypeLoadBalancer {
+	artifacts := ArtifactCollection{}
+	switch service.Spec.Type {
+	case kubectl.ServiceTypeLoadBalancer:
 		for _, resource := range service.Status.LoadBalancer.Ingress {
-			endpoints = append(
-				endpoints,
-				fmt.Sprintf("http://%s (Service: %s, Type: LoadBalancer)", resource.Ip, service.Metadata.Name),
-			)
+			artifacts.Add(&Artifact{
+				Kind:         ArtifactKindEndpoint,
+				Location:     fmt.Sprintf("http://%s", resource.Ip),
+				LocationKind: LocationKindRemote,
+				Metadata: map[string]string{
+					"Label":       "Load Balancer",
+					"Description": fmt.Sprintf("(Service: %s)", service.Metadata.Name),
+				},
+			})
 		}
-	} else if service.Spec.Type == kubectl.ServiceTypeClusterIp {
+	case kubectl.ServiceTypeClusterIp:
 		for index, ip := range service.Spec.ClusterIps {
-			endpoints = append(
-				endpoints,
-				fmt.Sprintf("http://%s:%d (Service: %s, Type: ClusterIP)",
-					ip,
-					service.Spec.Ports[index].Port,
-					service.Metadata.Name,
-				),
-			)
+			artifacts.Add(&Artifact{
+				Kind:         ArtifactKindEndpoint,
+				Location:     fmt.Sprintf("http://%s:%d", ip, service.Spec.Ports[index].Port),
+				LocationKind: LocationKindRemote,
+				Metadata: map[string]string{
+					"label":         "Cluster IP",
+					"discriminator": fmt.Sprintf("(Service: %s)", service.Metadata.Name),
+				},
+			})
 		}
 	}
 
-	return endpoints, nil
+	return artifacts, nil
 }
 
 // Retrieve any ingress endpoints for the specified serviceNameFilter
@@ -815,13 +851,13 @@ func (t *aksTarget) getIngressEndpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	resourceFilter string,
-) ([]string, error) {
+) ([]*Artifact, error) {
 	ingress, err := t.waitForIngress(ctx, resourceFilter)
 	if err != nil {
 		return nil, err
 	}
 
-	var endpoints []string
+	artifacts := ArtifactCollection{}
 	var protocol string
 	if len(ingress.Spec.Tls) == 0 {
 		protocol = "http"
@@ -842,10 +878,18 @@ func (t *aksTarget) getIngressEndpoints(
 			return nil, fmt.Errorf("failed constructing service endpoints, %w", err)
 		}
 
-		endpoints = append(endpoints, fmt.Sprintf("%s (Ingress, Type: LoadBalancer)", endpointUrl))
+		artifacts.Add(&Artifact{
+			Kind:         ArtifactKindEndpoint,
+			Location:     endpointUrl,
+			LocationKind: LocationKindRemote,
+			Metadata: map[string]string{
+				"label":         "Load Balancer",
+				"discriminator": "(Ingress)",
+			},
+		})
 	}
 
-	return endpoints, nil
+	return artifacts, nil
 }
 
 func (t *aksTarget) getK8sNamespace(serviceConfig *ServiceConfig) string {

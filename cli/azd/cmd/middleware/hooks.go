@@ -180,6 +180,7 @@ func (m *HooksMiddleware) registerServiceHooks(
 			}
 
 			if err := service.AddHandler(
+				ctx,
 				ext.Event(hookName),
 				m.createServiceEventHandler(hookType, eventName, serviceHooksRunner),
 			); err != nil {

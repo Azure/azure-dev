@@ -16,6 +16,7 @@ import (
 	"text/template"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
@@ -100,17 +101,17 @@ func (at *dotnetContainerAppTarget) Initialize(ctx context.Context, serviceConfi
 func (at *dotnetContainerAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	return packageOutput, nil
+	return &ServicePackageResult{}, nil
 }
 
 // TODO: move publish logic from Deploy() into Publish()
 func (at *dotnetContainerAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
@@ -122,14 +123,17 @@ func (at *dotnetContainerAppTarget) Publish(
 func (at *dotnetContainerAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
-	servicePublishResult *ServicePublishResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
 	if err := at.validateTargetResource(targetResource); err != nil {
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
+
+	// Track deployment results for different deployment paths
+	var bicepDeploymentResult *azapi.ResourceDeployment
+	var yamlDeploymentError error
 
 	progress.SetProgress(NewServiceProgress("Pushing container image"))
 
@@ -154,16 +158,17 @@ func (at *dotnetContainerAppTarget) Deploy(
 	// The name of the image that should be referenced in the manifest is stored in `remoteImageName` and presented
 	// to the deployment template as a parameter named `Image`.
 	if serviceConfig.Language == ServiceLanguageDocker {
-		res, err := at.containerHelper.Publish(ctx, serviceConfig, packageOutput, targetResource, progress, nil)
+		res, err := at.containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, nil)
 		if err != nil {
 			return nil, err
 		}
 
-		containerDetails, ok := res.Details.(*ContainerPublishDetails)
-		if !ok {
-			return nil, fmt.Errorf("expected ContainerPublishDetails but got %T", res.Details)
+		// Extract remote image from artifacts
+		var remoteImage string
+		if artifact, found := res.Artifacts.FindFirst(WithKind(ArtifactKindContainer)); found {
+			remoteImage = artifact.Location
 		}
-		remoteImageName = containerDetails.RemoteImage
+		remoteImageName = remoteImage
 	} else if serviceConfig.DotNetContainerApp.ContainerImage != "" {
 		remoteImageName = serviceConfig.DotNetContainerApp.ContainerImage
 	} else {
@@ -280,6 +285,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 		// allows to update the logic of pulling secret parameters in the future, if azd changes the way it
 		// stores the parameter value.
 		"securedParameter": fns.Parameter,
+		"uriEncode":        url.QueryEscape,
 		"secretOutput":     fns.kvSecret,
 		"targetPortOrDefault": func(targetPortFromManifest int) int {
 			// portNumber is 0 for dockerfile.v0, so we use the targetPort from the manifest
@@ -402,7 +408,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			return nil, err
 		}
 
-		deploymentResult, err := at.deploymentService.DeployToResourceGroup(
+		bicepDeploymentResult, err = at.deploymentService.DeployToResourceGroup(
 			ctx,
 			at.env.GetSubscriptionId(),
 			targetResource.ResourceGroupName(),
@@ -413,7 +419,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 		if err != nil {
 			return nil, fmt.Errorf("deploying bicep template: %w", err)
 		}
-		deploymentHostDetails, err := deploymentHost(deploymentResult)
+		deploymentHostDetails, err := deploymentHost(bicepDeploymentResult)
 		if err != nil {
 			return nil, fmt.Errorf("getting deployment host type: %w", err)
 		}
@@ -425,7 +431,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			ApiVersion: serviceConfig.ApiVersion,
 		}
 
-		err = at.containerAppService.DeployYaml(
+		yamlDeploymentError = at.containerAppService.DeployYaml(
 			ctx,
 			targetResource.SubscriptionId(),
 			targetResource.ResourceGroupName(),
@@ -433,8 +439,8 @@ func (at *dotnetContainerAppTarget) Deploy(
 			[]byte(builder.String()),
 			&containerAppOptions,
 		)
-		if err != nil {
-			return nil, fmt.Errorf("updating container app service: %w", err)
+		if yamlDeploymentError != nil {
+			return nil, fmt.Errorf("updating container app service: %w", yamlDeploymentError)
 		}
 	}
 
@@ -451,15 +457,68 @@ func (at *dotnetContainerAppTarget) Deploy(
 		return nil, err
 	}
 
+	artifacts := ArtifactCollection{}
+
+	// Add deployment result as artifact if Bicep deployment was used
+	if bicepDeploymentResult != nil {
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindDeployment,
+			Location:     bicepDeploymentResult.Name,
+			LocationKind: LocationKindRemote,
+			Metadata: map[string]string{
+				"deploymentType":   "bicep",
+				"deploymentStatus": string(bicepDeploymentResult.ProvisioningState),
+				"serviceName":      serviceConfig.Name,
+				"resourceName":     targetResource.ResourceName(),
+				"resourceType":     targetResource.ResourceType(),
+				"subscription":     targetResource.SubscriptionId(),
+				"resourceGroup":    targetResource.ResourceGroupName(),
+				"deploymentName":   bicepDeploymentResult.Name,
+				"deploymentId":     bicepDeploymentResult.DeploymentId,
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add bicep deployment artifact: %w", err)
+		}
+	} else if yamlDeploymentError == nil {
+		// Add YAML deployment artifact if YAML deployment was successful
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindDeployment,
+			Location:     "yaml-deployment-completed",
+			LocationKind: LocationKindRemote,
+			Metadata: map[string]string{
+				"deploymentType": "yaml",
+				"serviceName":    serviceConfig.Name,
+				"resourceName":   targetResource.ResourceName(),
+				"resourceType":   targetResource.ResourceType(),
+				"subscription":   targetResource.SubscriptionId(),
+				"resourceGroup":  targetResource.ResourceGroupName(),
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add yaml deployment artifact: %w", err)
+		}
+	}
+
+	// Add endpoints as artifacts
+	for _, endpoint := range endpoints {
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindEndpoint,
+			Location:     endpoint,
+			LocationKind: LocationKindRemote,
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add endpoint artifact: %w", err)
+		}
+	}
+
+	// Add resource artifact
+	var resourceArtifact *Artifact
+	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
+		if err := artifacts.Add(resourceArtifact); err != nil {
+			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
+		}
+	}
+
 	return &ServiceDeployResult{
-		Package: packageOutput,
-		TargetResourceId: azure.ContainerAppRID(
-			targetResource.SubscriptionId(),
-			targetResource.ResourceGroupName(),
-			serviceConfig.Name,
-		),
-		Kind:      ContainerAppTarget,
-		Endpoints: endpoints,
+		Artifacts: artifacts,
 	}, nil
 }
 

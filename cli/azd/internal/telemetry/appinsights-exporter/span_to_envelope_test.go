@@ -24,6 +24,9 @@ func TestSpanToEnvelope(t *testing.T) {
 	spanStub := getDefaultSpanStub()
 	success := spanStub.Snapshot()
 
+	spanStub.Status = tracesdk.Status{Code: codes.Ok, Description: "AllGood"}
+	successWithDescription := spanStub.Snapshot()
+
 	spanStub.Status = tracesdk.Status{Code: codes.Error}
 	unknownFailure := spanStub.Snapshot()
 
@@ -38,6 +41,7 @@ func TestSpanToEnvelope(t *testing.T) {
 		input tracesdk.ReadOnlySpan
 	}{
 		{"success", success},
+		{"successDescription", successWithDescription},
 		{"unknownFailure", unknownFailure},
 		{"preconditionFailure", preconditionFailure},
 		{"unsetSuccess", unsetSuccess},
@@ -125,13 +129,15 @@ func assertRequestData(t *testing.T, data *contracts.RequestData, span tracesdk.
 
 	if span.Status().Code == codes.Error {
 		assert.Equal(t, false, data.Success)
-		if len(span.Status().Description) > 0 {
-			assert.Equal(t, span.Status().Description, data.ResponseCode)
-		} else {
-			assert.Equal(t, "UnknownFailure", data.ResponseCode)
-		}
 	} else {
 		assert.Equal(t, true, data.Success)
+	}
+
+	if len(span.Status().Description) > 0 {
+		assert.Equal(t, span.Status().Description, data.ResponseCode)
+	} else if span.Status().Code == codes.Error {
+		assert.Equal(t, "UnknownFailure", data.ResponseCode)
+	} else {
 		assert.Equal(t, "Success", data.ResponseCode)
 	}
 }

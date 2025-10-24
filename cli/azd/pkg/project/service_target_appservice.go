@@ -9,9 +9,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -46,28 +46,49 @@ func (st *appServiceTarget) Initialize(ctx context.Context, serviceConfig *Servi
 func (st *appServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	progress.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
+
+	// Get package path from the service context
+	var packagePath string
+	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindDirectory)); found &&
+		artifact.Location != "" {
+		packagePath = artifact.Location
+	}
+
+	if packagePath == "" {
+		return nil, fmt.Errorf("no package artifacts found in service context")
+	}
+
 	zipFilePath, err := createDeployableZip(
 		serviceConfig,
-		packageOutput.PackagePath,
+		packagePath,
 	)
 	if err != nil {
 		return nil, err
 	}
 
+	// Create zip artifact
+	zipArtifact := &Artifact{
+		Kind:         ArtifactKindArchive,
+		Location:     zipFilePath,
+		LocationKind: LocationKindLocal,
+		Metadata: map[string]string{
+			"packagePath": packagePath,
+		},
+	}
+
 	return &ServicePackageResult{
-		Build:       packageOutput.Build,
-		PackagePath: zipFilePath,
+		Artifacts: ArtifactCollection{zipArtifact},
 	}, nil
 }
 
 func (st *appServiceTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
@@ -79,8 +100,7 @@ func (st *appServiceTarget) Publish(
 func (st *appServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
-	servicePublishResult *ServicePublishResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -88,7 +108,17 @@ func (st *appServiceTarget) Deploy(
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
-	zipFile, err := os.Open(packageOutput.PackagePath)
+	// Get zip file path from package artifacts
+	var zipFilePath string
+	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindArchive)); found && artifact.Location != "" {
+		zipFilePath = artifact.Location
+	}
+
+	if zipFilePath == "" {
+		return nil, fmt.Errorf("no zip artifacts found in service context")
+	}
+
+	zipFile, err := os.Open(zipFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed reading deployment zip file: %w", err)
 	}
@@ -96,7 +126,7 @@ func (st *appServiceTarget) Deploy(
 	defer zipFile.Close()
 
 	progress.SetProgress(NewServiceProgress("Uploading deployment package"))
-	res, err := st.cli.DeployAppServiceZip(
+	_, err = st.cli.DeployAppServiceZip(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
@@ -114,19 +144,30 @@ func (st *appServiceTarget) Deploy(
 		return nil, err
 	}
 
-	sdr := NewServiceDeployResult(
-		azure.WebsiteRID(
-			targetResource.SubscriptionId(),
-			targetResource.ResourceGroupName(),
-			targetResource.ResourceName(),
-		),
-		AppServiceTarget,
-		*res,
-		endpoints,
-	)
-	sdr.Package = packageOutput
+	artifacts := ArtifactCollection{}
 
-	return sdr, nil
+	// Add endpoints as artifacts
+	for _, endpoint := range endpoints {
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindEndpoint,
+			Location:     endpoint,
+			LocationKind: LocationKindRemote,
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add endpoint artifact: %w", err)
+		}
+	}
+
+	// Add resource artifact
+	var resourceArtifact *Artifact
+	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
+		if err := artifacts.Add(resourceArtifact); err != nil {
+			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
+		}
+	}
+
+	return &ServiceDeployResult{
+		Artifacts: artifacts,
+	}, nil
 }
 
 // Gets the exposed endpoints for the App Service

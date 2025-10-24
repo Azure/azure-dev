@@ -175,7 +175,7 @@ func TestProjectConfigAddHandler(t *testing.T) {
 		return nil
 	}
 
-	err := project.AddHandler(ServiceEventDeploy, handler)
+	err := project.AddHandler(*mockContext.Context, ServiceEventDeploy, handler)
 	require.Nil(t, err)
 
 	err = project.RaiseEvent(*mockContext.Context, ServiceEventDeploy, ProjectLifecycleEventArgs{Project: project})
@@ -200,14 +200,14 @@ func TestProjectConfigRemoveHandler(t *testing.T) {
 	}
 
 	// Only handler 1 was registered
-	err := project.AddHandler(ServiceEventDeploy, handler1)
+	err := project.AddHandler(*mockContext.Context, ServiceEventDeploy, handler1)
 	require.Nil(t, err)
 
-	err = project.RemoveHandler(ServiceEventDeploy, handler1)
+	err = project.RemoveHandler(*mockContext.Context, ServiceEventDeploy, handler1)
 	require.Nil(t, err)
 
 	// Handler 2 wasn't registered so should error on remove
-	err = project.RemoveHandler(ServiceEventDeploy, handler2)
+	err = project.RemoveHandler(*mockContext.Context, ServiceEventDeploy, handler2)
 	require.NotNil(t, err)
 
 	// No events are registered at the time event was raised
@@ -235,9 +235,9 @@ func TestProjectConfigWithMultipleEventHandlers(t *testing.T) {
 		return nil
 	}
 
-	err := project.AddHandler(ServiceEventDeploy, handler1)
+	err := project.AddHandler(*mockContext.Context, ServiceEventDeploy, handler1)
 	require.Nil(t, err)
-	err = project.AddHandler(ServiceEventDeploy, handler2)
+	err = project.AddHandler(*mockContext.Context, ServiceEventDeploy, handler2)
 	require.Nil(t, err)
 
 	err = project.RaiseEvent(*mockContext.Context, ServiceEventDeploy, ProjectLifecycleEventArgs{Project: project})
@@ -263,9 +263,9 @@ func TestProjectConfigWithMultipleEvents(t *testing.T) {
 		return nil
 	}
 
-	err := project.AddHandler(ProjectEventProvision, provisionHandler)
+	err := project.AddHandler(*mockContext.Context, ProjectEventProvision, provisionHandler)
 	require.Nil(t, err)
-	err = project.AddHandler(ProjectEventDeploy, deployHandler)
+	err = project.AddHandler(*mockContext.Context, ProjectEventDeploy, deployHandler)
 	require.Nil(t, err)
 
 	err = project.RaiseEvent(*mockContext.Context, ProjectEventProvision, ProjectLifecycleEventArgs{Project: project})
@@ -287,9 +287,9 @@ func TestProjectConfigWithEventHandlerErrors(t *testing.T) {
 		return errors.New("sample error 2")
 	}
 
-	err := project.AddHandler(ProjectEventProvision, handler1)
+	err := project.AddHandler(*mockContext.Context, ProjectEventProvision, handler1)
 	require.Nil(t, err)
-	err = project.AddHandler(ProjectEventProvision, handler2)
+	err = project.AddHandler(*mockContext.Context, ProjectEventProvision, handler2)
 	require.Nil(t, err)
 
 	err = project.RaiseEvent(*mockContext.Context, ProjectEventProvision, ProjectLifecycleEventArgs{Project: project})
@@ -328,7 +328,7 @@ func TestProjectConfigRaiseEventWithoutArgs(t *testing.T) {
 		return nil
 	}
 
-	err := project.AddHandler(ProjectEventDeploy, handler)
+	err := project.AddHandler(ctx, ProjectEventDeploy, handler)
 	require.Nil(t, err)
 
 	err = project.RaiseEvent(ctx, ProjectEventDeploy, ProjectLifecycleEventArgs{Project: project})
@@ -351,7 +351,7 @@ func TestProjectConfigRaiseEventWithArgs(t *testing.T) {
 		return nil
 	}
 
-	err := project.AddHandler(ProjectEventDeploy, handler)
+	err := project.AddHandler(*mockContext.Context, ProjectEventDeploy, handler)
 	require.Nil(t, err)
 
 	err = project.RaiseEvent(*mockContext.Context, ProjectEventDeploy, eventArgs)

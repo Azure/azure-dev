@@ -307,7 +307,7 @@ func BicepTemplate(name string, manifest *Manifest, options AppHostOptions) (*me
 	// use the filesystem coming from the manifest
 	// the in-memory filesystem from the manifest is guaranteed to be initialized and contains all the bicep files
 	// referenced by the Aspire manifest.
-	fs := manifest.BicepFiles
+	fs := manifest.Files
 
 	// bicepContext merges the bicepContext with the inputs from the manifest to execute the main.bicep template
 	// this allows the template to access the auto-gen inputs from the generator
@@ -510,13 +510,19 @@ func GenerateProjectArtifacts(
 	return files, nil
 }
 
+type annotatedString struct {
+	Filter string
+	Value  string
+}
+
 type infraGenerator struct {
 	dapr              map[string]genDapr
 	projects          map[string]genProject
 	connectionStrings map[string]string
 	// keeps the value from value.v0 resources if provided.
-	valueStrings  map[string]string
-	resourceTypes map[string]string
+	valueStrings     map[string]string
+	annotatedStrings map[string]annotatedString
+	resourceTypes    map[string]string
 
 	bicepContext                 genBicepTemplateContext
 	containerAppTemplateContexts map[string]genContainerAppManifestTemplateContext
@@ -551,6 +557,8 @@ func newInfraGenerator() *infraGenerator {
 		dapr:                         make(map[string]genDapr),
 		projects:                     make(map[string]genProject),
 		connectionStrings:            make(map[string]string),
+		valueStrings:                 make(map[string]string),
+		annotatedStrings:             make(map[string]annotatedString),
 		resourceTypes:                make(map[string]string),
 		containerAppTemplateContexts: make(map[string]genContainerAppManifestTemplateContext),
 		buildContainers:              make(map[string]genBuildContainer),
@@ -738,6 +746,11 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			}
 			if err := b.addInputParameter(name, comp); err != nil {
 				return fmt.Errorf("adding bicep parameter from resource %s (%s): %w", name, comp.Type, err)
+			}
+		case "annotated.string":
+			b.annotatedStrings[name] = annotatedString{
+				Filter: comp.Filter,
+				Value:  comp.Value,
 			}
 		case "azure.bicep.v0", "azure.bicep.v1":
 			if err := b.addBicep(name, comp); err != nil {
@@ -1534,6 +1547,23 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		}
 
 		return res, nil
+	}
+	if annotatedString, has := b.annotatedStrings[resource]; has && prop == "value" {
+		if annotatedString.Filter != "uri" {
+			return "", fmt.Errorf("unsupported annotated.string filter '%s' in binding expression for resource %s",
+				annotatedString.Filter, resource)
+		}
+		// uri is currently the only supported filter for annotated.string
+		res, err := EvalString(annotatedString.Value, func(s string) (string, error) {
+			return b.evalBindingRef(s, emitType)
+		})
+		if err != nil {
+			return "", fmt.Errorf("evaluating annotated.string's value string for %s: %w", resource, err)
+		}
+
+		return strings.ReplaceAll(
+			strings.ReplaceAll(res, "{{ ", "{{ uriEncode ("),
+			"}}", ")}}"), nil
 	}
 
 	if strings.HasPrefix(prop, "inputs.") {

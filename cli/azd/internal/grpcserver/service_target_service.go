@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -28,6 +29,7 @@ type ServiceTargetService struct {
 	extensionManager *extensions.Manager
 	lazyEnv          *lazy.Lazy[*environment.Environment]
 	providerMap      map[string]azdext.ServiceTargetService_StreamServer
+	providerMapMu    sync.Mutex
 }
 
 // NewServiceTargetService creates a new ServiceTargetService instance.
@@ -82,7 +84,9 @@ func (s *ServiceTargetService) Stream(
 	}
 
 	hostType := regRequest.GetHost()
+	s.providerMapMu.Lock()
 	if _, has := s.providerMap[hostType]; has {
+		s.providerMapMu.Unlock()
 		return status.Errorf(codes.AlreadyExists, "provider %s already registered", hostType)
 	}
 
@@ -104,6 +108,7 @@ func (s *ServiceTargetService) Stream(
 	})
 
 	if err != nil {
+		s.providerMapMu.Unlock()
 		return status.Errorf(codes.Internal, "failed to register service target: %s", err.Error())
 	}
 
@@ -115,16 +120,20 @@ func (s *ServiceTargetService) Stream(
 	}
 
 	if err := stream.Send(resp); err != nil {
+		s.providerMapMu.Unlock()
 		return status.Errorf(codes.Internal, "failed to send response: %s", err.Error())
 	}
 
 	s.providerMap[hostType] = stream
+	s.providerMapMu.Unlock()
 	log.Printf("Registered service target: %s", hostType)
 
 	// Wait for the stream context to be done (client disconnects or server shutdown)
 	<-stream.Context().Done()
 	log.Printf("Stream closed for provider: %s", hostType)
 
+	s.providerMapMu.Lock()
 	delete(s.providerMap, hostType)
+	s.providerMapMu.Unlock()
 	return nil
 }

@@ -36,6 +36,8 @@ type Server struct {
 	extensionService     azdext.ExtensionServiceServer
 	serviceTargetService azdext.ServiceTargetServiceServer
 	frameworkService     azdext.FrameworkServiceServer
+	containerService     azdext.ContainerServiceServer
+	accountService       azdext.AccountServiceServer
 }
 
 func NewServer(
@@ -50,6 +52,8 @@ func NewServer(
 	extensionService azdext.ExtensionServiceServer,
 	serviceTargetService azdext.ServiceTargetServiceServer,
 	frameworkService azdext.FrameworkServiceServer,
+	containerService azdext.ContainerServiceServer,
+	accountService azdext.AccountServiceServer,
 ) *Server {
 	return &Server{
 		projectService:       projectService,
@@ -63,6 +67,8 @@ func NewServer(
 		extensionService:     extensionService,
 		serviceTargetService: serviceTargetService,
 		frameworkService:     frameworkService,
+		containerService:     containerService,
+		accountService:       accountService,
 	}
 }
 
@@ -99,6 +105,8 @@ func (s *Server) Start() (*ServerInfo, error) {
 	azdext.RegisterExtensionServiceServer(s.grpcServer, s.extensionService)
 	azdext.RegisterServiceTargetServiceServer(s.grpcServer, s.serviceTargetService)
 	azdext.RegisterFrameworkServiceServer(s.grpcServer, s.frameworkService)
+	azdext.RegisterContainerServiceServer(s.grpcServer, s.containerService)
+	azdext.RegisterAccountServiceServer(s.grpcServer, s.accountService)
 
 	serverInfo.Address = fmt.Sprintf("localhost:%d", randomPort)
 	serverInfo.Port = randomPort

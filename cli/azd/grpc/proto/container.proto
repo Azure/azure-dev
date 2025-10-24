@@ -1,0 +1,64 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext";
+
+import "models.proto";
+import "service_target.proto";
+import "framework_service.proto";
+
+// ContainerService provides container build, package, and publish operations
+// for extensions that need to work with containers but don't want to implement
+// the full complexity of Docker CLI integration, registry authentication, etc.
+service ContainerService {
+  // Build a services' container
+  rpc Build(ContainerBuildRequest) returns (ContainerBuildResponse);
+
+  // Package a service's container
+  rpc Package(ContainerPackageRequest) returns (ContainerPackageResponse);
+
+  // Publish a service's container to a registry
+  rpc Publish(ContainerPublishRequest) returns (ContainerPublishResponse);
+}
+
+// --- Package Operation ---
+
+message ContainerBuildRequest {
+  string service_name = 1;
+  ServiceContext service_context = 2;
+}
+
+// Response from the container build operation
+message ContainerBuildResponse {
+  ServiceBuildResult result = 1;
+}
+
+// Request to package a service's container
+message ContainerPackageRequest {
+  // Name of the service to package (required)
+  string service_name = 1;
+  ServiceContext service_context = 2;
+}
+
+// Response from container package operation
+message ContainerPackageResponse {
+  ServicePackageResult result = 1;
+}
+
+// --- Publish Operation ---
+
+// Request to publish a container service
+message ContainerPublishRequest {
+  // Name of the service to publish (required)
+  string service_name = 1;
+  // Package result from previous package operation (optional - will re-package if not provided)
+  ServiceContext service_context = 2;
+}
+
+// Response from container publish operation
+message ContainerPublishResponse {
+  ServicePublishResult result = 1;
+}

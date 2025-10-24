@@ -46,29 +46,26 @@ func envResolver(env *environment.Environment) mapper.Resolver {
 func (est *ExternalServiceTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	frameworkPackageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
 ) (*ServicePublishResult, error) {
-	cleanup := est.wireConsole()
-	defer cleanup()
-
-	protoServiceConfig := &azdext.ServiceConfig{}
-	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
+	var protoServiceConfig *azdext.ServiceConfig
+	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, &protoServiceConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	protoServicePackage := &azdext.ServicePackageResult{}
-	if err := mapper.Convert(frameworkPackageOutput, &protoServicePackage); err != nil {
+	var protoServiceContext *azdext.ServiceContext
+	if err := mapper.Convert(serviceContext, &protoServiceContext); err != nil {
 		return nil, err
 	}
-	protoTargetResource := &azdext.TargetResource{}
+	var protoTargetResource *azdext.TargetResource
 	if err := mapper.Convert(targetResource, &protoTargetResource); err != nil {
 		return nil, err
 	}
-	protoPublishOptions := &azdext.PublishOptions{}
+	var protoPublishOptions *azdext.PublishOptions
 	if err := mapper.Convert(publishOptions, &protoPublishOptions); err != nil {
 		return nil, err
 	}
@@ -78,7 +75,7 @@ func (est *ExternalServiceTarget) Publish(
 		MessageType: &azdext.ServiceTargetMessage_PublishRequest{
 			PublishRequest: &azdext.ServiceTargetPublishRequest{
 				ServiceConfig:  protoServiceConfig,
-				ServicePackage: protoServicePackage,
+				ServiceContext: protoServiceContext,
 				TargetResource: protoTargetResource,
 				PublishOptions: protoPublishOptions,
 			},
@@ -93,15 +90,14 @@ func (est *ExternalServiceTarget) Publish(
 	}
 
 	publishResp := resp.GetPublishResponse()
-	if publishResp == nil || publishResp.PublishResult == nil {
-		return &ServicePublishResult{Package: frameworkPackageOutput}, nil
+	if publishResp == nil || publishResp.Result == nil {
+		return &ServicePublishResult{}, nil
 	}
 
 	var result *ServicePublishResult
-	if err := mapper.Convert(publishResp.PublishResult, &result); err != nil {
+	if err := mapper.Convert(publishResp.Result, &result); err != nil {
 		return nil, fmt.Errorf("failed to convert publish result: %w", err)
 	}
-	result.Package = frameworkPackageOutput
 
 	return result, nil
 }
@@ -134,15 +130,12 @@ func NewExternalServiceTarget(
 // Initialize initializes the service target for the specified service configuration.
 // This allows service targets to opt-in to service lifecycle events
 func (est *ExternalServiceTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	cleanup := est.wireConsole()
-	defer cleanup()
-
 	if serviceConfig == nil {
 		return errors.New("service configuration is required")
 	}
 
-	protoServiceConfig := &azdext.ServiceConfig{}
-	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
+	var protoServiceConfig *azdext.ServiceConfig
+	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, &protoServiceConfig)
 	if err != nil {
 		return err
 	}
@@ -174,20 +167,17 @@ func (est *ExternalServiceTarget) RequiredExternalTools(
 func (est *ExternalServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	frameworkPackageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	cleanup := est.wireConsole()
-	defer cleanup()
-
-	protoServiceConfig := &azdext.ServiceConfig{}
-	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
+	var protoServiceConfig *azdext.ServiceConfig
+	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, &protoServiceConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	protoFrameworkPackage := &azdext.ServicePackageResult{}
-	if err := mapper.Convert(frameworkPackageOutput, &protoFrameworkPackage); err != nil {
+	var protoServiceContext *azdext.ServiceContext
+	if err := mapper.Convert(serviceContext, &protoServiceContext); err != nil {
 		return nil, err
 	}
 
@@ -195,8 +185,8 @@ func (est *ExternalServiceTarget) Package(
 		RequestId: uuid.NewString(),
 		MessageType: &azdext.ServiceTargetMessage_PackageRequest{
 			PackageRequest: &azdext.ServiceTargetPackageRequest{
-				ServiceConfig:    protoServiceConfig,
-				FrameworkPackage: protoFrameworkPackage,
+				ServiceConfig:  protoServiceConfig,
+				ServiceContext: protoServiceContext,
 			},
 		},
 	}
@@ -209,26 +199,14 @@ func (est *ExternalServiceTarget) Package(
 	}
 
 	packageResp := resp.GetPackageResponse()
-	if packageResp == nil || packageResp.PackageResult == nil {
-		return frameworkPackageOutput, nil
+	if packageResp == nil || packageResp.Result == nil {
+		return &ServicePackageResult{}, nil
 	}
 
 	// Convert proto result using mapper
 	var convertedResult *ServicePackageResult
-	if err := mapper.Convert(packageResp.PackageResult, &convertedResult); err != nil {
+	if err := mapper.Convert(packageResp.Result, &convertedResult); err != nil {
 		return nil, err
-	}
-
-	// Merge with framework package output (apply fallback/default logic)
-	if frameworkPackageOutput != nil {
-		// If the converted result is empty but we have a framework package output, use it as base
-		if convertedResult.PackagePath == "" && frameworkPackageOutput.PackagePath != "" {
-			convertedResult.PackagePath = frameworkPackageOutput.PackagePath
-		}
-		// If the converted result has no details but framework package has details, use them
-		if convertedResult.Details == nil && frameworkPackageOutput.Details != nil {
-			convertedResult.Details = frameworkPackageOutput.Details
-		}
 	}
 
 	return convertedResult, nil
@@ -238,30 +216,22 @@ func (est *ExternalServiceTarget) Package(
 func (est *ExternalServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	servicePackage *ServicePackageResult,
-	publishResult *ServicePublishResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
-	cleanup := est.wireConsole()
-	defer cleanup()
-
 	// Convert project types to protobuf types
-	protoServiceConfig := &azdext.ServiceConfig{}
-	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
+	var protoServiceConfig *azdext.ServiceConfig
+	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, &protoServiceConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	protoServicePackage := &azdext.ServicePackageResult{}
-	if err = mapper.Convert(servicePackage, &protoServicePackage); err != nil {
+	var protoServiceContext *azdext.ServiceContext
+	if err = mapper.Convert(serviceContext, &protoServiceContext); err != nil {
 		return nil, err
 	}
-	protoServicePublish := &azdext.ServicePublishResult{}
-	if err = mapper.Convert(publishResult, &protoServicePublish); err != nil {
-		return nil, err
-	}
-	protoTargetResource := &azdext.TargetResource{}
+	var protoTargetResource *azdext.TargetResource
 	if err = mapper.Convert(targetResource, &protoTargetResource); err != nil {
 		return nil, err
 	}
@@ -273,9 +243,8 @@ func (est *ExternalServiceTarget) Deploy(
 		MessageType: &azdext.ServiceTargetMessage_DeployRequest{
 			DeployRequest: &azdext.ServiceTargetDeployRequest{
 				ServiceConfig:  protoServiceConfig,
-				ServicePackage: protoServicePackage,
+				ServiceContext: protoServiceContext,
 				TargetResource: protoTargetResource,
-				ServicePublish: protoServicePublish,
 			},
 		},
 	}
@@ -290,21 +259,17 @@ func (est *ExternalServiceTarget) Deploy(
 	}
 
 	deployResponse := resp.GetDeployResponse()
-	if deployResponse == nil || deployResponse.DeployResult == nil {
+	if deployResponse == nil || deployResponse.Result == nil {
 		return nil, errors.New("invalid deploy response: missing deploy result")
 	}
 
-	// Convert protobuf result back to project types
-	result := deployResponse.DeployResult
+	// Convert protobuf result back to project types using mapper
+	var result *ServiceDeployResult
+	if err := mapper.Convert(deployResponse.Result, &result); err != nil {
+		return nil, fmt.Errorf("failed to convert deploy result: %w", err)
+	}
 
-	return &ServiceDeployResult{
-		Package:          servicePackage,
-		Publish:          publishResult,
-		TargetResourceId: result.TargetResourceId,
-		Kind:             ServiceTargetKind(result.Kind),
-		Endpoints:        result.Endpoints,
-		Details:          stringMapToDetailsInterface(result.Details),
-	}, nil
+	return result, nil
 }
 
 // Endpoints gets the endpoints a service exposes.
@@ -313,16 +278,13 @@ func (est *ExternalServiceTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
-	cleanup := est.wireConsole()
-	defer cleanup()
-
-	protoServiceConfig := &azdext.ServiceConfig{}
-	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
+	var protoServiceConfig *azdext.ServiceConfig
+	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, &protoServiceConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	protoTargetResource := &azdext.TargetResource{}
+	var protoTargetResource *azdext.TargetResource
 	if err = mapper.Convert(targetResource, &protoTargetResource); err != nil {
 		return nil, err
 	}
@@ -359,11 +321,8 @@ func (est *ExternalServiceTarget) ResolveTargetResource(
 	serviceConfig *ServiceConfig,
 	defaultResolver func() (*environment.TargetResource, error),
 ) (*environment.TargetResource, error) {
-	cleanup := est.wireConsole()
-	defer cleanup()
-
-	protoServiceConfig := &azdext.ServiceConfig{}
-	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, protoServiceConfig)
+	var protoServiceConfig *azdext.ServiceConfig
+	err := mapper.WithResolver(envResolver(est.env)).Convert(serviceConfig, &protoServiceConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +336,6 @@ func (est *ExternalServiceTarget) ResolveTargetResource(
 			// Capture error so extension can decide how to handle it
 			defaultError = err.Error()
 		} else if defaultTarget != nil {
-			protoDefaultTarget = &azdext.TargetResource{}
 			if err = mapper.Convert(defaultTarget, &protoDefaultTarget); err != nil {
 				return nil, err
 			}
@@ -511,25 +469,4 @@ func (est *ExternalServiceTarget) startResponseDispatcher() {
 			}
 		}
 	}()
-}
-
-// stringMapToDetailsInterface converts string map to interface (helper for proto conversions)
-func stringMapToDetailsInterface(details map[string]string) interface{} {
-	if len(details) == 0 {
-		return nil
-	}
-
-	return details
-}
-
-func (est *ExternalServiceTarget) wireConsole() func() {
-	stdOut := est.extension.StdOut()
-	stdErr := est.extension.StdErr()
-	stdOut.AddWriter(est.console.Handles().Stdout)
-	stdErr.AddWriter(est.console.Handles().Stderr)
-
-	return func() {
-		stdOut.RemoveWriter(est.console.Handles().Stdout)
-		stdErr.RemoveWriter(est.console.Handles().Stderr)
-	}
 }

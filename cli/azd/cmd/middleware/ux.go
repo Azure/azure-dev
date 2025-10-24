@@ -6,6 +6,7 @@ package middleware
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -13,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
 type UxMiddleware struct {
@@ -43,15 +45,30 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 	if err != nil {
 		var suggestionErr *internal.ErrorWithSuggestion
 		var errorWithTraceId *internal.ErrorWithTraceId
-		m.console.Message(ctx, output.WithErrorFormat("\nERROR: %s", err.Error()))
+		errorMessage := &strings.Builder{}
+		// WriteString never returns an error
+		errorMessage.WriteString(output.WithErrorFormat("\nERROR: %s", err.Error()))
 
 		if errors.As(err, &errorWithTraceId) {
-			m.console.Message(ctx, output.WithErrorFormat("TraceID: %s", errorWithTraceId.TraceId))
+			errorMessage.WriteString(output.WithErrorFormat("\nTraceID: %s", errorWithTraceId.TraceId))
 		}
 
 		if errors.As(err, &suggestionErr) {
-			m.console.Message(ctx, suggestionErr.Suggestion)
+			errorMessage.WriteString("\n" + suggestionErr.Suggestion)
 		}
+
+		// UnsupportedServiceHostError is a special error which needs to float up without printing output here yet.
+		// The error is bubble up for the caller to decide to show it or not
+		var unsupportedErr *project.UnsupportedServiceHostError
+		errMessage := errorMessage.String()
+		if errors.As(err, &unsupportedErr) {
+			// set the error message so the caller can use it if needed
+			unsupportedErr.ErrorMessage = errMessage
+			return actionResult, err
+		} else {
+			m.console.Message(ctx, errMessage)
+		}
+
 	}
 
 	if actionResult != nil && actionResult.Message != nil {

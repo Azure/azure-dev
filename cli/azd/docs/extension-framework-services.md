@@ -131,6 +131,7 @@ Handle dependency restoration (equivalent to `npm install`, `pip install`, etc.)
 func (p *RustFrameworkServiceProvider) Restore(
     ctx context.Context,
     serviceConfig *azdext.ServiceConfig,
+    serviceContext *azdext.ServiceContext,
     progress azdext.ProgressReporter,
 ) (*azdext.ServiceRestoreResult, error) {
     progress("Installing Rust dependencies")
@@ -142,12 +143,21 @@ func (p *RustFrameworkServiceProvider) Restore(
     
     progress("Cargo dependencies resolved")
     
-    return &azdext.ServiceRestoreResult{
-        Details: map[string]string{
-            "timestamp":    time.Now().Format(time.RFC3339),
-            "dependencyMgr": "cargo",
-            "lockFile":     "Cargo.lock",
+    // Return artifacts instead of Details map
+    restoreArtifacts := []*azdext.Artifact{
+        {
+            Kind:         "lock-file",
+            Location:     "Cargo.lock",
+            LocationKind: "local",
+            Metadata: map[string]string{
+                "timestamp":    time.Now().Format(time.RFC3339),
+                "dependencyMgr": "cargo",
+            },
         },
+    }
+    
+    return &azdext.ServiceRestoreResult{
+        Artifacts: restoreArtifacts,
     }, nil
 }
 ```
@@ -160,7 +170,7 @@ Handle the compilation/build process:
 func (p *RustFrameworkServiceProvider) Build(
     ctx context.Context,
     serviceConfig *azdext.ServiceConfig,
-    restoreOutput *azdext.ServiceRestoreResult,
+    serviceContext *azdext.ServiceContext,
     progress azdext.ProgressReporter,
 ) (*azdext.ServiceBuildResult, error) {
     progress("Compiling Rust project")
@@ -169,19 +179,28 @@ func (p *RustFrameworkServiceProvider) Build(
     // - Run `cargo build --release`
     // - Handle build errors
     // - Generate optimized binary
+    // - Access previous restore artifacts from serviceContext.Restore if needed
     
     progress("Build completed successfully")
     
     binaryPath := fmt.Sprintf("target/release/%s", serviceConfig.GetName())
     
-    return &azdext.ServiceBuildResult{
-        Restore: restoreOutput,
-        Details: map[string]string{
-            "timestamp":   time.Now().Format(time.RFC3339),
-            "buildMode":   "release",
-            "binaryPath":  binaryPath,
-            "target":      "x86_64-unknown-linux-gnu",
+    // Return artifacts instead of Details map
+    buildArtifacts := []*azdext.Artifact{
+        {
+            Kind:         "binary",
+            Location:     binaryPath,
+            LocationKind: "local",
+            Metadata: map[string]string{
+                "timestamp":   time.Now().Format(time.RFC3339),
+                "buildMode":   "release",
+                "target":      "x86_64-unknown-linux-gnu",
+            },
         },
+    }
+    
+    return &azdext.ServiceBuildResult{
+        Artifacts: buildArtifacts,
     }, nil
 }
 ```
@@ -194,7 +213,7 @@ Handle creating deployable artifacts:
 func (p *RustFrameworkServiceProvider) Package(
     ctx context.Context,
     serviceConfig *azdext.ServiceConfig,
-    buildOutput *azdext.ServiceBuildResult,
+    serviceContext *azdext.ServiceContext,
     progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
     progress("Creating deployment package")
@@ -204,18 +223,27 @@ func (p *RustFrameworkServiceProvider) Package(
     // - Include necessary runtime files
     // - Create container image or zip archive
     // - Generate deployment manifest
+    // - Access build artifacts from serviceContext.Build if needed
     
     packagePath := fmt.Sprintf("%s-deployment.tar.gz", serviceConfig.GetName())
     progress("Package created: " + packagePath)
     
-    return &azdext.ServicePackageResult{
-        PackagePath: packagePath,
-        Details: map[string]string{
-            "timestamp":    time.Now().Format(time.RFC3339),
-            "packageType":  "tar.gz",
-            "size":         "15.2MB",
-            "binary":       buildOutput.Details["binaryPath"],
+    // Return artifacts instead of Details map
+    packageArtifacts := []*azdext.Artifact{
+        {
+            Kind:         "package",
+            Location:     packagePath,
+            LocationKind: "local",
+            Metadata: map[string]string{
+                "timestamp":    time.Now().Format(time.RFC3339),
+                "packageType":  "tar.gz",
+                "size":         "15.2MB",
+            },
         },
+    }
+    
+    return &azdext.ServicePackageResult{
+        Artifacts: packageArtifacts,
     }, nil
 }
 ```

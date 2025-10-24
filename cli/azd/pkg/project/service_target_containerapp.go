@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -82,17 +83,19 @@ func (at *containerAppTarget) Initialize(ctx context.Context, serviceConfig *Ser
 func (at *containerAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	return packageOutput, nil
+	// Container reference already handled by the underlying framework service
+	// No particular additional package requirements for ACA
+	return &ServicePackageResult{}, nil
 }
 
 // Publish pushes the container image to ACR
 func (at *containerAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
@@ -104,14 +107,30 @@ func (at *containerAppTarget) Publish(
 	var publishResult *ServicePublishResult
 	var err error
 
-	// Skip publishing to the container registry if packageOutput.PackagePath is a remote image reference,
+	// Extract package path from service context artifacts
+	var packagePath string
+	// Look for container image first, then directory
+	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindContainer)); found {
+		packagePath = artifact.Location
+	} else if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindDirectory)); found {
+		packagePath = artifact.Location
+	}
+
+	// Skip publishing to the container registry if packagePath is a remote image reference,
 	// such as when called through `azd deploy --from-package <image>`
-	if parsedImage, err := docker.ParseContainerImage(packageOutput.PackagePath); err == nil {
+	if parsedImage, err := docker.ParseContainerImage(packagePath); err == nil {
 		if parsedImage.Registry != "" {
 			publishResult = &ServicePublishResult{
-				Package: packageOutput,
-				Details: &ContainerPublishDetails{
-					RemoteImage: packageOutput.PackagePath,
+				Artifacts: ArtifactCollection{
+					{
+						Kind:         ArtifactKindContainer,
+						Location:     packagePath,
+						LocationKind: LocationKindRemote,
+						Metadata: map[string]string{
+							"registry": parsedImage.Registry,
+							"image":    packagePath,
+						},
+					},
 				},
 			}
 		}
@@ -120,7 +139,7 @@ func (at *containerAppTarget) Publish(
 	if publishResult == nil {
 		// Login, tag & push container image to ACR
 		publishResult, err = at.containerHelper.Publish(
-			ctx, serviceConfig, packageOutput, targetResource, progress, publishOptions)
+			ctx, serviceConfig, serviceContext, targetResource, progress, publishOptions)
 		if err != nil {
 			return nil, err
 		}
@@ -129,11 +148,10 @@ func (at *containerAppTarget) Publish(
 	// Save the name of the image we pushed into the environment with a well known key.
 	log.Printf("writing image name to environment")
 
-	containerDetails, ok := publishResult.Details.(*ContainerPublishDetails)
-	if !ok {
-		return nil, fmt.Errorf("expected ContainerPublishDetails but got %T", publishResult.Details)
+	// Extract remote image from artifacts
+	if remoteContainer, ok := publishResult.Artifacts.FindFirst(WithKind(ArtifactKindContainer)); ok {
+		at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteContainer.Location)
 	}
-	at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", containerDetails.RemoteImage)
 
 	if err := at.envManager.Save(ctx, at.env); err != nil {
 		return nil, fmt.Errorf("saving image name to environment: %w", err)
@@ -146,8 +164,7 @@ func (at *containerAppTarget) Publish(
 func (at *containerAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
-	servicePublishResult *ServicePublishResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -155,16 +172,14 @@ func (at *containerAppTarget) Deploy(
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
-	// Get the image name from the publish result
-	if servicePublishResult == nil {
-		return nil, fmt.Errorf("unexpected publish result for service: %s", serviceConfig.Name)
+	// Extract image name from publish artifacts in service context
+	var imageName string
+	if artifact, found := serviceContext.Publish.FindFirst(WithKind(ArtifactKindContainer)); found {
+		imageName = artifact.Location
 	}
-
-	containerDetails, ok := servicePublishResult.Details.(*ContainerPublishDetails)
-	if !ok {
-		return nil, fmt.Errorf("expected ContainerPublishDetails but got %T", servicePublishResult.Details)
+	if imageName == "" {
+		return nil, fmt.Errorf("no container image found in service context for service: %s", serviceConfig.Name)
 	}
-	imageName := containerDetails.RemoteImage
 
 	// Default resource name and type
 	resourceName := targetResource.ResourceName()
@@ -279,27 +294,41 @@ func (at *containerAppTarget) Deploy(
 
 	progress.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
 
+	// Create deployment deployArtifacts
+	deployArtifacts := ArtifactCollection{}
+
 	target := environment.NewTargetResource(
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		resourceName,
 		string(resourceTypeContainer))
 
+	var resourceArtifact *Artifact
+	if err := mapper.Convert(target, &resourceArtifact); err == nil {
+		if err := deployArtifacts.Add(resourceArtifact); err != nil {
+			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
+		}
+	}
+
 	endpoints, err := at.Endpoints(ctx, serviceConfig, target)
 	if err != nil {
 		return nil, err
 	}
 
+	// Add endpoint artifacts
+	for _, endpoint := range endpoints {
+		deployArtifacts = append(deployArtifacts, &Artifact{
+			Kind:         ArtifactKindEndpoint,
+			Location:     endpoint,
+			LocationKind: LocationKindRemote,
+			Metadata: map[string]string{
+				"service": serviceConfig.Name,
+			},
+		})
+	}
+
 	return &ServiceDeployResult{
-		Package: packageOutput,
-		Publish: servicePublishResult,
-		TargetResourceId: azure.ContainerAppRID(
-			targetResource.SubscriptionId(),
-			targetResource.ResourceGroupName(),
-			resourceName,
-		),
-		Kind:      ContainerAppTarget,
-		Endpoints: endpoints,
+		Artifacts: deployArtifacts,
 	}, nil
 }
 
@@ -347,20 +376,24 @@ func (at *containerAppTarget) validateTargetResource(
 	return nil
 }
 
-func (at *containerAppTarget) addPreProvisionChecks(_ context.Context, serviceConfig *ServiceConfig) error {
+func (at *containerAppTarget) addPreProvisionChecks(ctx context.Context, serviceConfig *ServiceConfig) error {
 	// Attempt to retrieve the target resource for the current service
 	// This allows the resource deployment to detect whether or not to pull existing container image during
 	// provision operation to avoid resetting the container app back to a default image
-	return serviceConfig.Project.AddHandler("preprovision", func(ctx context.Context, args ProjectLifecycleEventArgs) error {
-		exists := false
+	return serviceConfig.Project.AddHandler(
+		ctx,
+		"preprovision",
+		func(ctx context.Context, args ProjectLifecycleEventArgs) error {
+			exists := false
 
-		// Check if the target resource already exists
-		targetResource, err := at.resourceManager.GetTargetResource(ctx, at.env.GetSubscriptionId(), serviceConfig)
-		if err == nil && targetResource != nil && targetResource.ResourceName() != "" {
-			exists = true
-		}
+			// Check if the target resource already exists
+			targetResource, err := at.resourceManager.GetTargetResource(ctx, at.env.GetSubscriptionId(), serviceConfig)
+			if err == nil && targetResource != nil && targetResource.ResourceName() != "" {
+				exists = true
+			}
 
-		at.env.SetServiceProperty(serviceConfig.Name, "RESOURCE_EXISTS", strconv.FormatBool(exists))
-		return at.envManager.Save(ctx, at.env)
-	})
+			at.env.SetServiceProperty(serviceConfig.Name, "RESOURCE_EXISTS", strconv.FormatBool(exists))
+			return at.envManager.Save(ctx, at.env)
+		},
+	)
 }

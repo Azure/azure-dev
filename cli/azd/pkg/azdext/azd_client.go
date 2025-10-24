@@ -28,6 +28,8 @@ type AzdClient struct {
 	workflowClient      WorkflowServiceClient
 	extensionClient     ExtensionServiceClient
 	serviceTargetClient ServiceTargetServiceClient
+	containerClient     ContainerServiceClient
+	accountClient       AccountServiceClient
 }
 
 // WithAddress sets the address of the `azd` gRPC server.
@@ -162,10 +164,28 @@ func (c *AzdClient) FrameworkService() FrameworkServiceClient {
 	return NewFrameworkServiceClient(c.connection)
 }
 
+// Container returns the container service client.
+func (c *AzdClient) Container() ContainerServiceClient {
+	if c.containerClient == nil {
+		c.containerClient = NewContainerServiceClient(c.connection)
+	}
+	return c.containerClient
+}
+
+// Extension returns the extension service client.
 func (c *AzdClient) extensionService() ExtensionServiceClient {
 	if c.extensionClient == nil {
 		c.extensionClient = NewExtensionServiceClient(c.connection)
 	}
 
 	return c.extensionClient
+}
+
+// Account returns the account service client.
+func (c *AzdClient) Account() AccountServiceClient {
+	if c.accountClient == nil {
+		c.accountClient = NewAccountServiceClient(c.connection)
+	}
+
+	return c.accountClient
 }

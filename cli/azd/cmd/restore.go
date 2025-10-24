@@ -154,41 +154,60 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, err
 	}
 
-	restoreResults := map[string]*project.ServiceRestoreResult{}
 	stableServices, err := ra.importManager.ServiceStable(ctx, ra.projectConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, svc := range stableServices {
-		stepMessage := fmt.Sprintf("Restoring service %s", svc.Name)
-		ra.console.ShowSpinner(ctx, stepMessage, input.Step)
+	projectEventArgs := project.ProjectLifecycleEventArgs{
+		Project: ra.projectConfig,
+	}
 
-		// Skip this service if both cases are true:
-		// 1. The user specified a service name
-		// 2. This service is not the one the user specified
-		if targetServiceName != "" && targetServiceName != svc.Name {
-			ra.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
-			continue
+	restoreResults := map[string]*project.ServiceRestoreResult{}
+
+	err = ra.projectConfig.Invoke(ctx, project.ProjectEventRestore, projectEventArgs, func() error {
+		for _, svc := range stableServices {
+			stepMessage := fmt.Sprintf("Restoring service %s", svc.Name)
+			ra.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+			// Skip this service if both cases are true:
+			// 1. The user specified a service name
+			// 2. This service is not the one the user specified
+			if targetServiceName != "" && targetServiceName != svc.Name {
+				ra.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+				continue
+			}
+
+			// Initialize service context for restore operation
+			serviceContext := &project.ServiceContext{}
+
+			restoreResult, err := async.RunWithProgress(
+				func(buildProgress project.ServiceProgress) {
+					progressMessage := fmt.Sprintf("Building service %s (%s)", svc.Name, buildProgress.Message)
+					ra.console.ShowSpinner(ctx, progressMessage, input.Step)
+				},
+				func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceRestoreResult, error) {
+					return ra.serviceManager.Restore(ctx, svc, serviceContext, progress)
+				},
+			)
+
+			if err != nil {
+				ra.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return err
+			}
+
+			ra.console.StopSpinner(ctx, stepMessage, input.StepDone)
+			restoreResults[svc.Name] = restoreResult
+
+			// report restore output
+			ra.console.MessageUxItem(ctx, restoreResult.Artifacts)
 		}
 
-		restoreResult, err := async.RunWithProgress(
-			func(buildProgress project.ServiceProgress) {
-				progressMessage := fmt.Sprintf("Building service %s (%s)", svc.Name, buildProgress.Message)
-				ra.console.ShowSpinner(ctx, progressMessage, input.Step)
-			},
-			func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceRestoreResult, error) {
-				return ra.serviceManager.Restore(ctx, svc, progress)
-			},
-		)
+		return nil
+	})
 
-		if err != nil {
-			ra.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, err
-		}
-
-		ra.console.StopSpinner(ctx, stepMessage, input.StepDone)
-		restoreResults[svc.Name] = restoreResult
+	if err != nil {
+		return nil, err
 	}
 
 	if ra.formatter.Kind() == output.JsonFormat {

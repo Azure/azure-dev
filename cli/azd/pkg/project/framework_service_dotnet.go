@@ -73,7 +73,7 @@ func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 		handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
 			return dp.setUserSecretsFromOutputs(ctx, serviceConfig, args)
 		}
-		if err := serviceConfig.AddHandler(ServiceEventEnvUpdated, handler); err != nil {
+		if err := serviceConfig.AddHandler(ctx, ServiceEventEnvUpdated, handler); err != nil {
 			return err
 		}
 	}
@@ -85,6 +85,7 @@ func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 func (dp *dotnetProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
 	progress.SetProgress(NewServiceProgress("Restoring .NET project dependencies"))
@@ -97,14 +98,24 @@ func (dp *dotnetProject) Restore(
 		return nil, err
 	}
 
-	return &ServiceRestoreResult{}, nil
+	// Create restore artifact for the project directory that was restored
+	return &ServiceRestoreResult{Artifacts: ArtifactCollection{
+		{
+			Kind:         ArtifactKindDirectory,
+			Location:     serviceConfig.Path(),
+			LocationKind: LocationKindLocal,
+			Metadata: map[string]string{
+				"projectFile": projFile,
+				"framework":   "dotnet",
+			},
+		}}}, nil
 }
 
 // Builds the dotnet project using the dotnet CLI
 func (dp *dotnetProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	restoreOutput *ServiceRestoreResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
 	progress.SetProgress(NewServiceProgress("Building .NET project"))
@@ -134,16 +145,26 @@ func (dp *dotnetProject) Build(
 		}
 	}
 
+	// Create build artifact for dotnet build output
 	return &ServiceBuildResult{
-		Restore:         restoreOutput,
-		BuildOutputPath: buildOutputDir,
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     buildOutputDir,
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"buildOutputDir": buildOutputDir,
+					"configuration":  defaultDotNetBuildConfiguration,
+					"framework":      "dotnet",
+				},
+			}},
 	}, nil
 }
 
 func (dp *dotnetProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
 	if serviceConfig.Host == DotNetContainerAppTarget {
@@ -180,9 +201,19 @@ func (dp *dotnetProject) Package(
 		return nil, err
 	}
 
+	// Create package artifact for dotnet publish output
 	return &ServicePackageResult{
-		Build:       buildOutput,
-		PackagePath: packageDest,
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindDirectory,
+				Location:     packageDest,
+				LocationKind: LocationKindLocal,
+				Metadata: map[string]string{
+					"packagePath":   packageDest,
+					"framework":     "dotnet",
+					"configuration": defaultDotNetBuildConfiguration,
+				},
+			}},
 	}, nil
 }
 

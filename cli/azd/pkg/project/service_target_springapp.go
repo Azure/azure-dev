@@ -10,9 +10,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -61,16 +61,16 @@ func (st *springAppTarget) Initialize(ctx context.Context, serviceConfig *Servic
 func (st *springAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
-	return packageOutput, nil
+	return &ServicePackageResult{}, nil
 }
 
 func (st *springAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
@@ -82,8 +82,7 @@ func (st *springAppTarget) Publish(
 func (st *springAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
-	servicePublishResult *ServicePublishResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -109,10 +108,19 @@ func (st *springAppTarget) Deploy(
 		return nil, fmt.Errorf("get deployment '%s' of Spring App '%s' failed: %w", serviceConfig.Name, deploymentName, err)
 	}
 
+	// Extract package path from service context artifacts
+	var packagePath string
+	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindDirectory)); found {
+		packagePath = artifact.Location
+	}
+	if packagePath == "" {
+		return nil, fmt.Errorf("no package artifact found in service context")
+	}
+
 	// TODO: Consider support container image and buildpacks deployment in the future
 	// For now, Azure Spring Apps only support jar deployment
 	ext := ".jar"
-	artifactPath := filepath.Join(packageOutput.PackagePath, AppServiceJavaPackageName+ext)
+	artifactPath := filepath.Join(packagePath, AppServiceJavaPackageName+ext)
 
 	_, err = os.Stat(artifactPath)
 	if errors.Is(err, os.ErrNotExist) {
@@ -139,7 +147,7 @@ func (st *springAppTarget) Deploy(
 
 	progress.SetProgress(NewServiceProgress("Deploying spring artifact"))
 
-	res, err := st.springService.DeploySpringAppArtifact(
+	deployResult, err := st.springService.DeploySpringAppArtifact(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
@@ -165,19 +173,50 @@ func (st *springAppTarget) Deploy(
 		return nil, err
 	}
 
-	sdr := NewServiceDeployResult(
-		azure.SpringAppRID(
-			targetResource.SubscriptionId(),
-			targetResource.ResourceGroupName(),
-			targetResource.ResourceName(),
-		),
-		SpringAppTarget,
-		*res,
-		endpoints,
-	)
-	sdr.Package = packageOutput
+	artifacts := ArtifactCollection{}
 
-	return sdr, nil
+	// Add deployment result as artifact
+	if deployResult != nil {
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindDeployment,
+			Location:     *deployResult,
+			LocationKind: LocationKindRemote,
+			Metadata: map[string]string{
+				"deploymentName": deploymentName,
+				"serviceName":    serviceConfig.Name,
+				"resourceName":   targetResource.ResourceName(),
+				"resourceType":   targetResource.ResourceType(),
+				"subscription":   targetResource.SubscriptionId(),
+				"resourceGroup":  targetResource.ResourceGroupName(),
+				"relativePath":   *relativePath,
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add deployment artifact: %w", err)
+		}
+	}
+
+	// Add endpoints as artifacts
+	for _, endpoint := range endpoints {
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindEndpoint,
+			Location:     endpoint,
+			LocationKind: LocationKindRemote,
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add endpoint artifact: %w", err)
+		}
+	}
+
+	// Add resource artifact
+	var resourceArtifact *Artifact
+	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
+		if err := artifacts.Add(resourceArtifact); err != nil {
+			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
+		}
+	}
+
+	return &ServiceDeployResult{
+		Artifacts: artifacts,
+	}, nil
 }
 
 // Gets the exposed endpoints for the Spring Apps Service

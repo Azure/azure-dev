@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -49,16 +49,25 @@ func (f *functionAppTarget) Initialize(ctx context.Context, serviceConfig *Servi
 func (f *functionAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
+	// Extract build artifact from service context
+	var buildPath string
+	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindDirectory)); found {
+		buildPath = artifact.Location
+	}
+	if buildPath == "" {
+		return nil, fmt.Errorf("no build result found in service context")
+	}
+
 	var err error
-	zipFilePath := packageOutput.PackagePath
-	if filepath.Ext(packageOutput.PackagePath) != ".zip" {
+	zipFilePath := buildPath
+	if filepath.Ext(buildPath) != ".zip" {
 		progress.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
 		zipFilePath, err = createDeployableZip(
 			serviceConfig,
-			packageOutput.PackagePath,
+			buildPath,
 		)
 		if err != nil {
 			return nil, err
@@ -66,15 +75,20 @@ func (f *functionAppTarget) Package(
 	}
 
 	return &ServicePackageResult{
-		Build:       packageOutput.Build,
-		PackagePath: zipFilePath,
+		Artifacts: ArtifactCollection{
+			{
+				Kind:         ArtifactKindArchive,
+				Location:     zipFilePath,
+				LocationKind: LocationKindLocal,
+			},
+		},
 	}, nil
 }
 
 func (f *functionAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
@@ -86,8 +100,7 @@ func (f *functionAppTarget) Publish(
 func (f *functionAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	packageOutput *ServicePackageResult,
-	servicePublishResult *ServicePublishResult,
+	serviceContext *ServiceContext,
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
@@ -95,7 +108,16 @@ func (f *functionAppTarget) Deploy(
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
 
-	zipFile, err := os.Open(packageOutput.PackagePath)
+	// Extract zip package from service context
+	var zipFilePath string
+	if artifact, found := serviceContext.Package.FindFirst(WithKind(ArtifactKindArchive)); found {
+		zipFilePath = artifact.Location
+	}
+	if zipFilePath == "" {
+		return nil, fmt.Errorf("no zip package found in service context")
+	}
+
+	zipFile, err := os.Open(zipFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed reading deployment zip file: %w", err)
 	}
@@ -106,7 +128,8 @@ func (f *functionAppTarget) Deploy(
 	remoteBuild := serviceConfig.Language == ServiceLanguageJavaScript ||
 		serviceConfig.Language == ServiceLanguageTypeScript ||
 		serviceConfig.Language == ServiceLanguagePython
-	res, err := f.cli.DeployFunctionAppUsingZipFile(
+
+	_, err = f.cli.DeployFunctionAppUsingZipFile(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
@@ -124,19 +147,30 @@ func (f *functionAppTarget) Deploy(
 		return nil, err
 	}
 
-	sdr := NewServiceDeployResult(
-		azure.WebsiteRID(
-			targetResource.SubscriptionId(),
-			targetResource.ResourceGroupName(),
-			targetResource.ResourceName(),
-		),
-		AzureFunctionTarget,
-		*res,
-		endpoints,
-	)
-	sdr.Package = packageOutput
+	artifacts := ArtifactCollection{}
 
-	return sdr, nil
+	// Add endpoints as artifacts
+	for _, endpoint := range endpoints {
+		if err := artifacts.Add(&Artifact{
+			Kind:         ArtifactKindEndpoint,
+			Location:     endpoint,
+			LocationKind: LocationKindRemote,
+		}); err != nil {
+			return nil, fmt.Errorf("failed to add endpoint artifact: %w", err)
+		}
+	}
+
+	// Add resource artifact
+	var resourceArtifact *Artifact
+	if err := mapper.Convert(targetResource, &resourceArtifact); err == nil {
+		if err := artifacts.Add(resourceArtifact); err != nil {
+			return nil, fmt.Errorf("failed to add resource artifact: %w", err)
+		}
+	}
+
+	return &ServiceDeployResult{
+		Artifacts: artifacts,
+	}, nil
 }
 
 // Gets the exposed endpoints for the Function App

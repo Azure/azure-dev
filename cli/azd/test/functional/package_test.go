@@ -219,7 +219,8 @@ func Test_CLI_Package_WithOutputPath(t *testing.T) {
 			"package", "--output-path", "./dist",
 		)
 		require.NoError(t, err)
-		require.Contains(t, packageResult.Stdout, "Package Output: dist")
+		require.Contains(t, packageResult.Stdout, "Package Output:")
+		require.Contains(t, packageResult.Stdout, "dist")
 
 		distPath := filepath.Join(dir, "dist")
 		files, err := os.ReadDir(distPath)
@@ -252,7 +253,8 @@ func Test_CLI_Package_WithOutputPath(t *testing.T) {
 			"package", "web", "--output-path", "./dist/web.zip",
 		)
 		require.NoError(t, err)
-		require.Contains(t, packageResult.Stdout, "Package Output: ./dist/web.zip")
+		require.Contains(t, packageResult.Stdout, "Package Output:")
+		require.Contains(t, packageResult.Stdout, "./dist/web.zip")
 
 		artifactPath := filepath.Join(dir, "dist", "web.zip")
 		info, err := os.Stat(artifactPath)
@@ -285,7 +287,8 @@ func Test_CLI_Package(t *testing.T) {
 
 	packageResult, err := cli.RunCommand(ctx, "package", "web")
 	require.NoError(t, err)
-	require.Contains(t, packageResult.Stdout, fmt.Sprintf("Package Output: %s", os.TempDir()))
+	require.Contains(t, packageResult.Stdout, "Package Output:")
+	require.Contains(t, packageResult.Stdout, os.TempDir())
 }
 
 func checkFiles(

@@ -29,22 +29,77 @@ func LoadAndValidateAgentManifest(yamlContent []byte) (*AgentManifest, error) {
 func ValidateAgentManifest(manifest *AgentManifest) error {
 	var errors []string
 
-	// Validate Agent Definition - only the essential fields
-	if manifest.Agent.Name == "" {
-		errors = append(errors, "agent.name is required")
-	}
-	if manifest.Agent.Kind == "" {
-		errors = append(errors, "agent.kind is required")
-	} else if !IsValidAgentKind(manifest.Agent.Kind) {
-		validKinds := ValidAgentKinds()
-		validKindStrings := make([]string, len(validKinds))
-		for i, kind := range validKinds {
-			validKindStrings[i] = string(kind)
+	// First, extract the kind from the template to determine the agent type
+	templateMap, ok := manifest.Template.(map[string]interface{})
+	if !ok {
+		errors = append(errors, "template must be a valid object")
+	} else {
+		kindValue, hasKind := templateMap["kind"]
+		if !hasKind {
+			errors = append(errors, "template.kind is required")
+		} else {
+			kind, kindOk := kindValue.(string)
+			if !kindOk {
+				errors = append(errors, "template.kind must be a string")
+			} else {
+				// Validate the kind is supported
+				if !IsValidAgentKind(AgentKind(kind)) {
+					validKinds := ValidAgentKinds()
+					validKindStrings := make([]string, len(validKinds))
+					for i, validKind := range validKinds {
+						validKindStrings[i] = string(validKind)
+					}
+					errors = append(errors, fmt.Sprintf("template.kind must be one of: %v, got '%s'", validKindStrings, kind))
+				} else {
+					// Convert template to YAML bytes and unmarshal to specific type based on kind
+					templateBytes, err := yaml.Marshal(manifest.Template)
+					if err != nil {
+						errors = append(errors, "failed to process template structure")
+					} else {
+						switch AgentKind(kind) {
+						case AgentKindPrompt:
+							var agent PromptAgent
+							if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
+								if agent.Name == "" {
+									errors = append(errors, "template.name is required")
+								}
+								if agent.Model.Id == "" {
+									errors = append(errors, "template.model.id is required")
+								}
+							}
+						case AgentKindHosted:
+							var agent HostedContainerAgent
+							if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
+								if agent.Name == "" {
+									errors = append(errors, "template.name is required")
+								}
+								if len(agent.Models) == 0 {
+									errors = append(errors, "template.models is required and must not be empty")
+								}
+							}
+						case AgentKindContainerApp, AgentKindYamlContainerApp:
+							var agent ContainerAgent
+							if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
+								if agent.Name == "" {
+									errors = append(errors, "template.name is required")
+								}
+								if len(agent.Models) == 0 {
+									errors = append(errors, "template.models is required and must not be empty")
+								}
+							}
+						case AgentKindWorkflow:
+							var agent WorkflowAgent
+							if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
+								if agent.Name == "" {
+									errors = append(errors, "template.name is required")
+								}
+								// WorkflowAgent doesn't have models, so no model validation needed
+							}
+						}
+					}
+				}
+			}
 		}
-		errors = append(errors, fmt.Sprintf("agent.kind must be one of: %v, got '%s'", validKindStrings, manifest.Agent.Kind))
-	}
-	if manifest.Agent.Model.Id == "" {
-		errors = append(errors, "agent.model.id is required")
 	}
 
 	if len(errors) > 0 {

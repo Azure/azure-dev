@@ -59,12 +59,13 @@ func shouldRun(ctx context.Context, project *azdext.ProjectConfig) (bool, error)
 					return false, fmt.Errorf("failed to read agent yaml file: %w", err)
 				}
 
-				agent, err := agent_yaml.LoadAndValidateAgentManifest(content)
+				manifest, err := agent_yaml.LoadAndValidateAgentManifest(content)
 				if err != nil {
 					return false, fmt.Errorf("failed to validate agent yaml file: %w", err)
 				}
 
-				return agent.Agent.Kind == agent_yaml.AgentKindYamlContainerApp, nil
+				agent := manifest.Template.(agent_yaml.AgentDefinition)
+				return agent.Kind == agent_yaml.AgentKindYamlContainerApp, nil
 			}
 		}
 	}

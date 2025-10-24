@@ -38,19 +38,17 @@ func ProcessRegistryManifest(ctx context.Context, manifest *Manifest, azdClient 
 
 	// Create the AgentManifest with the converted AgentDefinition
 	result := &agent_yaml.AgentManifest{
-		Agent:      *agentDef,
-		Parameters: parameters,
+		Name:        manifest.Name,
+		DisplayName: manifest.DisplayName,
+		Description: &manifest.Description,
+		Template:    *agentDef,
+		Parameters:  parameters,
 	}
 
 	return result, nil
 }
 
 func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_yaml.AgentDefinition, error) {
-	// Convert the model string to Model struct
-	model := agent_yaml.Model{
-		Id: template.Model,
-	}
-
 	// Convert tools from agent_api.Tool to agent_yaml.Tool
 	var tools []agent_yaml.Tool
 	for _, apiTool := range template.Tools {
@@ -61,20 +59,12 @@ func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_ya
 		tools = append(tools, yamlTool)
 	}
 
-	// Get instructions, defaulting to empty string if nil
-	instructions := ""
-	if template.Instructions != nil {
-		instructions = *template.Instructions
-	}
-
 	// Create the AgentDefinition
 	agentDef := &agent_yaml.AgentDefinition{
-		Kind:         agent_yaml.AgentKindPrompt, // Set to prompt kind
-		Name:         "",                         // Will be set later from manifest or user input
-		Description:  "",                         // Will be set later from manifest or user input
-		Instructions: instructions,
-		Model:        model,
-		Tools:        tools,
+		Kind:        agent_yaml.AgentKindPrompt, // Set to prompt kind
+		Name:        "",                         // Will be set later from manifest or user input
+		Description: nil,                        // Will be set later from manifest or user input
+		Tools:       &tools,
 		// Metadata:     make(map[string]interface{}), // TODO, Where does this come from?
 	}
 
@@ -92,29 +82,31 @@ func ConvertParameters(parameters map[string]OpenApiParameter) ([]agent_yaml.Par
 		// Create a basic Parameter from the OpenApiParameter
 		param := agent_yaml.Parameter{
 			Name:        paramName,
-			Description: openApiParam.Description,
-			Required:    openApiParam.Required,
+			Description: &openApiParam.Description,
+			Required:    &openApiParam.Required,
 		}
 
 		// Extract type/kind from schema if available
 		if openApiParam.Schema != nil {
-			param.Kind = openApiParam.Schema.Type
-			param.Default = openApiParam.Schema.Default
+			param.Schema = agent_yaml.ParameterSchema{
+				Type:    openApiParam.Schema.Type,
+				Default: &openApiParam.Schema.Default,
+			}
 
 			// Convert enum values if present
 			if len(openApiParam.Schema.Enum) > 0 {
-				param.Enum = openApiParam.Schema.Enum
+				param.Schema.Enum = &openApiParam.Schema.Enum
 			}
 		}
 
 		// Use example as default if no schema default is provided
-		if param.Default == nil && openApiParam.Example != nil {
-			param.Default = openApiParam.Example
+		if param.Schema.Default == nil && openApiParam.Example != nil {
+			param.Schema.Default = &openApiParam.Example
 		}
 
 		// Fallback to string type if no type specified
-		if param.Kind == "" {
-			param.Kind = "string"
+		if param.Schema.Type == "" {
+			param.Schema.Type = "string"
 		}
 
 		result = append(result, param)
@@ -155,18 +147,21 @@ func promptForYamlParameterValues(ctx context.Context, parameters []agent_yaml.P
 
 	for _, param := range parameters {
 		fmt.Printf("Parameter: %s\n", param.Name)
-		if param.Description != "" {
-			fmt.Printf("  Description: %s\n", param.Description)
+		if param.Description != nil && *param.Description != "" {
+			fmt.Printf("  Description: %s\n", *param.Description)
 		}
 
 		// Get default value
-		defaultValue := param.Default
+		var defaultValue interface{}
+		if param.Schema.Default != nil {
+			defaultValue = *param.Schema.Default
+		}
 
 		// Get enum values if available
 		var enumValues []string
-		if len(param.Enum) > 0 {
-			enumValues = make([]string, len(param.Enum))
-			for i, val := range param.Enum {
+		if param.Schema.Enum != nil && len(*param.Schema.Enum) > 0 {
+			enumValues = make([]string, len(*param.Schema.Enum))
+			for i, val := range *param.Schema.Enum {
 				enumValues[i] = fmt.Sprintf("%v", val)
 			}
 		}
@@ -186,12 +181,13 @@ func promptForYamlParameterValues(ctx context.Context, parameters []agent_yaml.P
 		// Prompt for value
 		var value interface{}
 		var err error
+		isRequired := param.Required != nil && *param.Required
 		if len(enumValues) > 0 {
 			// Use selection for enum parameters
 			value, err = promptForEnumValue(ctx, param.Name, enumValues, defaultValue, azdClient)
 		} else {
 			// Use text input for other parameters
-			value, err = promptForTextValue(ctx, param.Name, defaultValue, param.Required, azdClient)
+			value, err = promptForTextValue(ctx, param.Name, defaultValue, isRequired, azdClient)
 		}
 
 		if err != nil {

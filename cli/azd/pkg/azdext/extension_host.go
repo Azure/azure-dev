@@ -25,7 +25,7 @@ type frameworkServiceRegistrar interface {
 type extensionEventManager interface {
 	AddProjectEventHandler(ctx context.Context, eventName string, handler ProjectEventHandler) error
 	AddServiceEventHandler(
-		ctx context.Context, eventName string, handler ServiceEventHandler, options *ServerEventOptions,
+		ctx context.Context, eventName string, handler ServiceEventHandler, options *ServiceEventOptions,
 	) error
 	Receive(ctx context.Context) error
 	Close() error
@@ -53,7 +53,7 @@ type ProjectEventRegistration struct {
 type ServiceEventRegistration struct {
 	EventName string
 	Handler   ServiceEventHandler
-	Options   *ServerEventOptions
+	Options   *ServiceEventOptions
 }
 
 // ProviderFactory describes a function that creates a provider instance
@@ -121,7 +121,7 @@ func (er *ExtensionHost) WithProjectEventHandler(eventName string, handler Proje
 func (er *ExtensionHost) WithServiceEventHandler(
 	eventName string,
 	handler ServiceEventHandler,
-	options *ServerEventOptions,
+	options *ServiceEventOptions,
 ) *ExtensionHost {
 	er.serviceHandlers = append(er.serviceHandlers, ServiceEventRegistration{
 		EventName: eventName,

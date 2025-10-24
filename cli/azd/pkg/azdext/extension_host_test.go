@@ -82,7 +82,7 @@ func (m *MockExtensionEventManager) AddServiceEventHandler(
 	ctx context.Context,
 	eventName string,
 	handler ServiceEventHandler,
-	options *ServerEventOptions,
+	options *ServiceEventOptions,
 ) error {
 	args := m.Called(ctx, eventName, handler, options)
 	return args.Error(0)
@@ -217,7 +217,7 @@ func TestExtensionHost_EventHandlersOnly(t *testing.T) {
 	mockEventManager := &MockExtensionEventManager{}
 	mockEventManager.On("AddProjectEventHandler", mock.Anything, "preprovision", mock.Anything).Return(nil)
 	mockEventManager.On("AddServiceEventHandler", mock.Anything, "prepackage", mock.Anything,
-		(*ServerEventOptions)(nil)).Return(nil)
+		(*ServiceEventOptions)(nil)).Return(nil)
 	mockEventManager.On("Receive", mock.Anything).Return(nil)
 	mockEventManager.On("Close").Return(nil)
 

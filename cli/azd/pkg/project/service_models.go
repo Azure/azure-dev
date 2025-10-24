@@ -32,9 +32,10 @@ func NewServiceContext() *ServiceContext {
 // ServiceLifecycleEventArgs are the event arguments available when
 // any service lifecycle event has been triggered
 type ServiceLifecycleEventArgs struct {
-	Project *ProjectConfig
-	Service *ServiceConfig
-	Args    map[string]any
+	Project        *ProjectConfig
+	Service        *ServiceConfig
+	ServiceContext *ServiceContext
+	Args           map[string]any
 }
 
 // ServiceProgress represents an incremental progress message

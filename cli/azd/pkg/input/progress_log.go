@@ -158,14 +158,7 @@ func (p *progressLog) Write(logBytes []byte) (int, error) {
 	}
 
 	// Safety check: ensure output buffer has at least one element
-	if len(p.output) == 0 {
-		// Ensure we have at least 1 line even if p.lines is 0
-		lineCount := p.lines
-		if lineCount == 0 {
-			lineCount = 1
-		}
-		p.output = make([]string, lineCount)
-	}
+	p.ensureOutputBuffer()
 
 	maxWidth := p.terminalWidthFn()
 	if maxWidth <= 0 {
@@ -190,14 +183,7 @@ func (p *progressLog) Write(logBytes []byte) (int, error) {
 		}
 
 		// Safety check: ensure we have at least one element after slice operations
-		if len(p.output) == 0 {
-			// Ensure we have at least 1 line even if p.lines is 0
-			lineCount := p.lines
-			if lineCount == 0 {
-				lineCount = 1
-			}
-			p.output = make([]string, lineCount)
-		}
+		p.ensureOutputBuffer()
 
 		fullLog := log
 		lastIndex := len(p.output) - 1
@@ -208,14 +194,7 @@ func (p *progressLog) Write(logBytes []byte) (int, error) {
 
 		for fullLogLen > 0 {
 			// Safety check before accessing last element
-			if len(p.output) == 0 {
-				// Ensure we have at least 1 line even if p.lines is 0
-				lineCount := p.lines
-				if lineCount == 0 {
-					lineCount = 1
-				}
-				p.output = make([]string, lineCount)
-			}
+			p.ensureOutputBuffer()
 			lastIndex = len(p.output) - 1
 
 			// Get whatever is the empty space on current line
@@ -279,6 +258,19 @@ func (p *progressLog) Header(header string) {
 }
 
 /****************** Not exported method ****************/
+
+// ensureOutputBuffer ensures the output buffer has at least one element.
+// This prevents index out of range panics when accessing p.output[len(p.output)-1].
+func (p *progressLog) ensureOutputBuffer() {
+	if len(p.output) == 0 {
+		// Ensure we have at least 1 line even if p.lines is 0
+		lineCount := p.lines
+		if lineCount == 0 {
+			lineCount = 1
+		}
+		p.output = make([]string, lineCount)
+	}
+}
 
 // clearLine override text with empty spaces.
 func clearLine() {

@@ -270,13 +270,14 @@ func (p *AgentServiceTargetProvider) Deploy(
 	}
 
 	// Determine agent type and delegate to appropriate deployment method
-	switch agent_api.AgentKind(agentManifest.Agent.Kind) {
-	case agent_api.AgentKindPrompt:
+	agentDef := agentManifest.Template.(agent_yaml.AgentDefinition)
+	switch agentDef.Kind {
+	case agent_yaml.AgentKindPrompt:
 		return p.deployPromptAgent(ctx, cred, agentManifest, azdEnv)
-	case agent_api.AgentKindHosted:
+	case agent_yaml.AgentKindHosted:
 		return p.deployHostedAgent(ctx, cred, serviceContext, progress, agentManifest, azdEnv)
 	default:
-		return nil, fmt.Errorf("unsupported agent kind: %s", agentManifest.Agent.Kind)
+		return nil, fmt.Errorf("unsupported agent kind: %s", agentDef.Kind)
 	}
 }
 
@@ -292,7 +293,8 @@ func (p *AgentServiceTargetProvider) isContainerAgent() bool {
 		return false
 	}
 
-	return agentManifest.Agent.Kind == agent_yaml.AgentKind(agent_api.AgentKindHosted)
+	agentDef := agentManifest.Template.(agent_yaml.AgentDefinition)
+	return agentDef.Kind == agent_yaml.AgentKindHosted
 }
 
 // deployPromptAgent handles deployment of prompt-based agents
@@ -307,11 +309,13 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required")
 	}
 
+	agentDef := agentManifest.Template.(agent_yaml.AgentDefinition)
+
 	fmt.Fprintf(os.Stderr, "Deploying Prompt Agent\n")
 	fmt.Fprintf(os.Stderr, "======================\n")
 	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
-	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentManifest.Agent.Name)
+	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
 	// Create agent request (no image URL needed for prompt agents)
 	request, err := agent_yaml.CreateAgentAPIRequestFromManifest(*agentManifest)
@@ -379,9 +383,11 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, errors.New("published container artifact not found")
 	}
 
+	agentDef := agentManifest.Template.(agent_yaml.AgentDefinition)
+
 	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
-	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentManifest.Agent.Name)
+	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
 	// Step 2: Create agent request with image URL
 	request, err := agent_yaml.CreateAgentAPIRequestFromManifest(*agentManifest, agent_yaml.WithImageURL(fullImageURL))
@@ -478,18 +484,20 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	maxReplicas := int32(1)
 
 	// Check if the agent definition has scale configuration
-	if containerAgent, ok := interface{}(agentManifest.Agent).(agent_yaml.ContainerAgent); ok {
+	if containerAgent, ok := interface{}(agentManifest.Template).(agent_yaml.ContainerAgent); ok {
 		// For ContainerAgent, check if Options contains scale information
-		if options, exists := containerAgent.Options["scale"]; exists {
-			if scaleMap, ok := options.(map[string]interface{}); ok {
-				if minReplicasFloat, exists := scaleMap["minReplicas"]; exists {
-					if minReplicasVal, ok := minReplicasFloat.(float64); ok {
-						minReplicas = int32(minReplicasVal)
+		if containerAgent.Options != nil {
+			if options, exists := (*containerAgent.Options)["scale"]; exists {
+				if scaleMap, ok := options.(map[string]interface{}); ok {
+					if minReplicasFloat, exists := scaleMap["minReplicas"]; exists {
+						if minReplicasVal, ok := minReplicasFloat.(float64); ok {
+							minReplicas = int32(minReplicasVal)
+						}
 					}
-				}
-				if maxReplicasFloat, exists := scaleMap["maxReplicas"]; exists {
-					if maxReplicasVal, ok := maxReplicasFloat.(float64); ok {
-						maxReplicas = int32(maxReplicasVal)
+					if maxReplicasFloat, exists := scaleMap["maxReplicas"]; exists {
+						if maxReplicasVal, ok := maxReplicasFloat.(float64); ok {
+							maxReplicas = int32(maxReplicasVal)
+						}
 					}
 				}
 			}

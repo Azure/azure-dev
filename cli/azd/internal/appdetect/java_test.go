@@ -5,17 +5,26 @@ package appdetect
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
+	"github.com/sethvargo/go-retry"
 )
 
 func TestToMavenProject(t *testing.T) {
+	// Skip in short mode since this test requires network access to Maven Central
+	if testing.Short() {
+		t.Skip("Skipping Maven network-dependent test in short mode")
+	}
+
 	path, err := osexec.LookPath("java")
 	if err != nil {
 		t.Skip("Skip readMavenProject because java command doesn't exist.")
@@ -358,7 +367,12 @@ func TestToMavenProject(t *testing.T) {
 			testPom := tt.testPoms[0]
 			pomFilePath := filepath.Join(workingDir, testPom.pomFilePath)
 
-			mavenProject, err := readMavenProject(context.TODO(), maven.NewCli(exec.NewCommandRunner(nil)),
+			// Use a timeout context to prevent hanging on network issues
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+
+			// Use retry logic for Maven operations due to potential network issues
+			mavenProject, err := readMavenProjectWithRetry(ctx, maven.NewCli(exec.NewCommandRunner(nil)),
 				pomFilePath)
 			if err != nil {
 				t.Fatalf("readMavenProject failed: %v", err)
@@ -375,6 +389,44 @@ func TestToMavenProject(t *testing.T) {
 			}
 		})
 	}
+}
+
+// readMavenProjectWithRetry wraps readMavenProject with retry logic to handle network issues
+func readMavenProjectWithRetry(ctx context.Context, mvnCli *maven.Cli, filePath string) (*mavenProject, error) {
+	var mavenProject *mavenProject
+	var lastErr error
+
+	err := retry.Do(
+		ctx,
+		retry.WithMaxRetries(3, retry.NewExponential(1*time.Second)),
+		func(ctx context.Context) error {
+			result, err := readMavenProject(ctx, mvnCli, filePath)
+			if err != nil {
+				// Check if error is likely network-related
+				errStr := strings.ToLower(err.Error())
+				if strings.Contains(errStr, "connection") ||
+					strings.Contains(errStr, "timeout") ||
+					strings.Contains(errStr, "network") ||
+					strings.Contains(errStr, "unknown host") ||
+					strings.Contains(errStr, "could not resolve") ||
+					strings.Contains(errStr, "transfer failed") {
+					lastErr = err
+					return retry.RetryableError(err)
+				}
+				// For non-network errors (parsing, etc.), fail immediately
+				return err
+			}
+			mavenProject = result
+			return nil
+		},
+	)
+
+	if err != nil && lastErr != nil {
+		// If we retried but still failed, include context about retries
+		return nil, fmt.Errorf("maven operation failed after retries due to network issues: %w", lastErr)
+	}
+
+	return mavenProject, err
 }
 
 type testPom struct {

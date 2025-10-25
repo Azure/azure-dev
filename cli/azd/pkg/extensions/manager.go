@@ -24,6 +24,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Masterminds/semver/v3"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
@@ -280,10 +283,15 @@ func (m *Manager) Install(
 	ctx context.Context,
 	extension *ExtensionMetadata,
 	versionPreference string,
-) (*ExtensionVersion, error) {
+) (extVersion *ExtensionVersion, err error) {
 	if extension == nil {
 		return nil, fmt.Errorf("extension metadata cannot be nil")
 	}
+
+	ctx, span := tracing.Start(ctx, events.ExtensionInstallEvent)
+	defer func() {
+		span.EndWithStatus(err)
+	}()
 
 	installed, err := m.GetInstalled(FilterOptions{Id: extension.Id})
 	if err == nil && installed != nil {
@@ -488,6 +496,10 @@ func (m *Manager) Install(
 	if err := m.configManager.Save(m.userConfig); err != nil {
 		return nil, fmt.Errorf("failed to save user config: %w", err)
 	}
+
+	span.SetAttributes(
+		fields.ExtensionId.String(extension.Id),
+		fields.ExtensionVersion.String(selectedVersion.Version))
 
 	log.Printf(
 		"Extension '%s' (version %s) installed successfully to %s\n",

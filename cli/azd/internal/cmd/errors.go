@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -31,6 +32,7 @@ func MapError(err error, span tracing.Span) {
 	var armDeployErr *azapi.AzureDeploymentError
 	var toolExecErr *exec.ExitError
 	var authFailedErr *auth.AuthFailedError
+	var extensionRunErr *extensions.ExtensionRunError
 	if errors.As(err, &respErr) {
 		serviceName := "other"
 		statusCode := -1
@@ -80,6 +82,8 @@ func MapError(err error, span tracing.Span) {
 		}
 
 		errCode = "service.arm.deployment.failed"
+	} else if errors.As(err, &extensionRunErr) {
+		errCode = "ext.run.failed"
 	} else if errors.As(err, &toolExecErr) {
 		toolName := "other"
 		cmdName := cmdAsName(toolExecErr.Cmd)

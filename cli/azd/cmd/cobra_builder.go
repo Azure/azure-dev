@@ -122,6 +122,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 			CommandPath: cmd.CommandPath(),
 			Aliases:     cmd.Aliases,
 			Flags:       cmd.Flags(),
+			Annotations: cmd.Annotations,
 			Args:        args,
 		}
 

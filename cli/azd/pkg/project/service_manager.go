@@ -251,6 +251,7 @@ func (sm *serviceManager) Restore(
 		ctx,
 		ServiceEventRestore,
 		serviceConfig,
+		serviceContext,
 		func() (*ServiceRestoreResult, error) {
 			return frameworkService.Restore(ctx, serviceConfig, serviceContext, progress)
 		},
@@ -295,6 +296,7 @@ func (sm *serviceManager) Build(
 		ctx,
 		ServiceEventBuild,
 		serviceConfig,
+		serviceContext,
 		func() (*ServiceBuildResult, error) {
 			return frameworkService.Build(ctx, serviceConfig, serviceContext, progress)
 		},
@@ -346,11 +348,6 @@ func (sm *serviceManager) Package(
 		serviceContext = NewServiceContext()
 	}
 
-	eventArgs := ServiceLifecycleEventArgs{
-		Project: serviceConfig.Project,
-		Service: serviceConfig,
-	}
-
 	// Get the language / framework requirements
 	frameworkRequirements := frameworkService.Requirements()
 
@@ -368,35 +365,38 @@ func (sm *serviceManager) Package(
 		}
 	}
 
-	var packageResult *ServicePackageResult
+	packageResult, err := runCommand(
+		ctx,
+		ServiceEventPackage,
+		serviceConfig,
+		serviceContext,
+		func() (*ServicePackageResult, error) {
+			frameworkPackageResult, err := frameworkService.Package(ctx, serviceConfig, serviceContext, progress)
+			if err != nil {
+				return nil, err
+			}
 
-	err = serviceConfig.Invoke(ctx, ServiceEventPackage, eventArgs, func() error {
-		frameworkPackageResult, err := frameworkService.Package(ctx, serviceConfig, serviceContext, progress)
-		if err != nil {
-			return err
-		}
+			if err := serviceContext.Package.Add(frameworkPackageResult.Artifacts...); err != nil {
+				return nil, fmt.Errorf("failed to add framework package artifacts to service context: %w", err)
+			}
 
-		if err := serviceContext.Package.Add(frameworkPackageResult.Artifacts...); err != nil {
-			return fmt.Errorf("failed to add framework package artifacts to service context: %w", err)
-		}
+			serviceTargetPackageResult, err := serviceTarget.Package(ctx, serviceConfig, serviceContext, progress)
+			if err != nil {
+				return nil, err
+			}
 
-		serviceTargetPackageResult, err := serviceTarget.Package(ctx, serviceConfig, serviceContext, progress)
-		if err != nil {
-			return err
-		}
+			if err := serviceContext.Package.Add(serviceTargetPackageResult.Artifacts...); err != nil {
+				return nil, fmt.Errorf("failed to add service target package artifacts to service context: %w", err)
+			}
 
-		if err := serviceContext.Package.Add(serviceTargetPackageResult.Artifacts...); err != nil {
-			return fmt.Errorf("failed to add service target package artifacts to service context: %w", err)
-		}
+			packageResult := &ServicePackageResult{
+				Artifacts: serviceContext.Package,
+			}
 
-		packageResult = &ServicePackageResult{
-			Artifacts: serviceContext.Package,
-		}
-
-		sm.setOperationResult(serviceConfig, string(ServiceEventPackage), packageResult)
-
-		return nil
-	})
+			sm.setOperationResult(serviceConfig, string(ServiceEventPackage), packageResult)
+			return packageResult, nil
+		},
+	)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed packaging service '%s': %w", serviceConfig.Name, err)
@@ -483,6 +483,7 @@ func (sm *serviceManager) Publish(
 		ctx,
 		ServiceEventPublish,
 		serviceConfig,
+		serviceContext,
 		func() (*ServicePublishResult, error) {
 			return serviceTarget.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, publishOptions)
 		},
@@ -547,6 +548,7 @@ func (sm *serviceManager) Deploy(
 		ctx,
 		ServiceEventDeploy,
 		serviceConfig,
+		serviceContext,
 		func() (*ServiceDeployResult, error) {
 			return serviceTarget.Deploy(ctx, serviceConfig, serviceContext, targetResource, progress)
 		},
@@ -749,11 +751,17 @@ func runCommand[T any](
 	ctx context.Context,
 	eventName ext.Event,
 	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
 	fn func() (T, error),
 ) (T, error) {
+	if serviceContext == nil {
+		serviceContext = NewServiceContext()
+	}
+
 	eventArgs := ServiceLifecycleEventArgs{
-		Project: serviceConfig.Project,
-		Service: serviceConfig,
+		Project:        serviceConfig.Project,
+		Service:        serviceConfig,
+		ServiceContext: serviceContext,
 	}
 
 	var result T

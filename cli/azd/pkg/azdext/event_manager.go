@@ -26,8 +26,9 @@ type ProjectEventArgs struct {
 }
 
 type ServiceEventArgs struct {
-	Project *ProjectConfig
-	Service *ServiceConfig
+	Project        *ProjectConfig
+	Service        *ServiceConfig
+	ServiceContext *ServiceContext
 }
 
 type ProjectEventHandler func(ctx context.Context, args *ProjectEventArgs) error
@@ -131,7 +132,7 @@ func (em *EventManager) AddProjectEventHandler(ctx context.Context, eventName st
 	return err
 }
 
-type ServerEventOptions struct {
+type ServiceEventOptions struct {
 	Host     string
 	Language string
 }
@@ -140,14 +141,14 @@ func (em *EventManager) AddServiceEventHandler(
 	ctx context.Context,
 	eventName string,
 	handler ServiceEventHandler,
-	options *ServerEventOptions,
+	options *ServiceEventOptions,
 ) error {
 	if err := em.init(ctx); err != nil {
 		return err
 	}
 
 	if options == nil {
-		options = &ServerEventOptions{}
+		options = &ServiceEventOptions{}
 	}
 
 	err := em.stream.Send(&EventMessage{
@@ -241,9 +242,16 @@ func (em *EventManager) invokeServiceHandler(ctx context.Context, invokeMsg *Inv
 		return nil
 	}
 
+	// Extract ServiceContext from the message, default to empty instance if nil
+	serviceContext := invokeMsg.ServiceContext
+	if serviceContext == nil {
+		serviceContext = &ServiceContext{}
+	}
+
 	args := &ServiceEventArgs{
-		Project: invokeMsg.Project,
-		Service: invokeMsg.Service,
+		Project:        invokeMsg.Project,
+		Service:        invokeMsg.Service,
+		ServiceContext: serviceContext,
 	}
 
 	status := "completed"

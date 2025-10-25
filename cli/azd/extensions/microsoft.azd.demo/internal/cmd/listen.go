@@ -61,26 +61,20 @@ func newListenCommand() *cobra.Command {
 				}).
 				WithServiceEventHandler("prepackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 					for i := 1; i <= 20; i++ {
-						fmt.Printf("%d. Doing important prepackage service work in extension...\n", i)
+						fmt.Printf("Service: %s, Artifacts: %d\n", args.Service.Name, len(args.ServiceContext.Package))
 						time.Sleep(250 * time.Millisecond)
 					}
 
 					return nil
-				}, &azdext.ServerEventOptions{
-					// Optionally filter your subscription by service host and/or language
-					Host: "containerapp",
-				}).
+				}, nil).
 				WithServiceEventHandler("postpackage", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 					for i := 1; i <= 20; i++ {
-						fmt.Printf("%d. Doing important postpackage service work in extension...\n", i)
+						fmt.Printf("Service: %s, Artifacts: %d\n", args.Service.Name, len(args.ServiceContext.Package))
 						time.Sleep(250 * time.Millisecond)
 					}
 
 					return nil
-				}, &azdext.ServerEventOptions{
-					// Optionally filter your subscription by service host and/or language
-					Host: "containerapp",
-				})
+				}, nil)
 
 			// Start listening for events
 			// This is a blocking call and will not return until the server connection is closed.

@@ -1127,8 +1127,9 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	for _, svc := range servicesStable {
 		eventArgs := project.ServiceLifecycleEventArgs{
-			Project: ef.projectConfig,
-			Service: svc,
+			Project:        ef.projectConfig,
+			Service:        svc,
+			ServiceContext: project.NewServiceContext(),
 			Args: map[string]any{
 				"bicepOutput": state.Outputs,
 			},

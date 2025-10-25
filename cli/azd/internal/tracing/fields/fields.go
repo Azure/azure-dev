@@ -287,3 +287,11 @@ const (
 	// Number of auto-fix.attempts
 	AgentFixAttempts = attribute.Key("agent.fix.attempts")
 )
+
+// Extension related fields
+const (
+	// The identifier of the extension.
+	ExtensionId = attribute.Key("extension.id")
+	// The version of the extension.
+	ExtensionVersion = attribute.Key("extension.version")
+)

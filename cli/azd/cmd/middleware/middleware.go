@@ -36,6 +36,7 @@ type Options struct {
 	Aliases     []string
 	Flags       *pflag.FlagSet
 	Args        []string
+	Annotations map[string]string
 }
 
 func (o *Options) IsChildAction(ctx context.Context) bool {

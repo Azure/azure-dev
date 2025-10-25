@@ -18,7 +18,6 @@ Table of Contents
     - [Container Service](#container-service)
     - [Framework Service](#framework-service)
     - [Service Target Service](#service-target-service)
-    - [Extension Service](#extension-service)
     - [Compose Service](#compose-service)
     - [Workflow Service](#workflow-service)
 
@@ -1108,7 +1107,6 @@ The following are a list of available gRPC services for extension developer to i
 - [Container Service](#container-service)
 - [Framework Service](#framework-service)
 - [Service Target Service](#service-target-service)
-- [Extension Service](#extension-service)
 - [Compose Service](#compose-service)
 - [Workflow Service](#workflow-service)
 
@@ -2014,46 +2012,6 @@ func main() {
     }
 }
 ```
-
----
-
-### Extension Service
-
-This service handles the extension lifecycle and readiness signaling between extensions and the azd core.
-
-> See [extension.proto](../grpc/proto/extension.proto) for more details.
-
-#### Ready
-
-Signals that the extension is ready and has completed all initialization tasks.
-
-- **Request:** _ReadyRequest_ (empty)
-- **Response:** _ReadyResponse_ (empty)
-
-**Example Usage (Go):**
-
-```go
-// Signal extension readiness
-ctx := azdext.WithAccessToken(context.Background())
-azdClient, err := azdext.NewAzdClient()
-if err != nil {
-    return fmt.Errorf("failed to create azd client: %w", err)
-}
-defer azdClient.Close()
-
-// Perform extension initialization tasks
-// ...
-
-// Signal that the extension is ready
-_, err = azdClient.extensionService().Ready(ctx, &azdext.ReadyRequest{})
-if err != nil {
-    return fmt.Errorf("failed to signal readiness: %w", err)
-}
-
-fmt.Println("Extension is ready and registered with azd")
-```
-
-**Note:** When using `ExtensionHost`, the readiness signaling is handled automatically, so you typically don't need to call this directly.
 
 ---
 

@@ -167,6 +167,8 @@ overrides:
       - getenv
       - errorf
       - println
+      - myext
+      - Fatalf
   - filename: extensions/microsoft.azd.ai.builder/internal/cmd/start.go
     words:
       - dall

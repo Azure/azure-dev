@@ -49,7 +49,7 @@ func (s *Spec) ToTypeScript() (string, error) {
 	data := map[string]string{
 		"Name":        s.Name,
 		"Description": s.Description,
-		"Generators":  figGeneratorDefinitions(),
+		"Generators":  figGeneratorDefinitionsTS,
 		"Subcommands": renderSubcommands(s.Subcommands, 2),
 		"Options":     renderOptions(s.Options, 2, false),
 	}

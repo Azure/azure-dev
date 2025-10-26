@@ -71,9 +71,12 @@ The Fig spec generation is implemented in `cli/azd/internal/figspec/`:
 figspec/
 ├── types.go                  # Core data structures and interfaces
 ├── spec_builder.go           # Main spec generation logic
-├── fig_generators.go         # Dynamic generator definitions
+├── fig_generators.go         # Generator constants and embeddings
 ├── typescript_renderer.go    # TypeScript code generation
-└── customizations.go         # azd-specific customizations
+├── customizations.go         # azd-specific customizations
+└── resources/
+    ├── generators.ts         # TypeScript generator implementations (embedded)
+    └── index.d.ts            # Type definitions
 ```
 
 ### Generation flow
@@ -120,9 +123,16 @@ Implements customization interfaces to add azd-specific intelligence:
 - **`CustomArgsProvider`**: Custom argument patterns (e.g. `azd env set [key] [value]`)
 - **`CustomFlagArgsProvider`**: Custom flag argument names (e.g. `from-package` → `file-path|image-tag`)
 
-#### 3. Generators (`fig_generators.go`)
+#### 3. Generators (`fig_generators.go` + `resources/generators.ts`)
 
-Defines [**generators**](https://fig.io/docs/reference/generator/basic) that execute azd commands to dynamically provide context-aware suggestions. The generators are implemented as TypeScript code embedded inline within `fig_generators.go`:
+Defines [**generators**](https://fig.io/docs/reference/generator/basic) that execute azd commands to dynamically provide context-aware suggestions. 
+
+The generator implementations are written in TypeScript and stored in `resources/generators.ts`, which is embedded into the Go binary using Go's `embed` directive. The `fig_generators.go` file contains:
+- Constants that reference each generator (e.g., `FigGenListEnvironments`)
+- The embed directive to include `generators.ts`
+- Mapping between Go constants and TypeScript generator keys
+
+The `resources/index.d.ts` file contains a copy of [VS Code's Fig type definitions](https://github.com/microsoft/vscode/blob/main/extensions/terminal-suggest/src/completions/index.d.ts), enabling IntelliSense and type checking when editing `generators.ts` in an IDE.
 
 | Generator | Command | Purpose |
 |-----------|---------|---------|

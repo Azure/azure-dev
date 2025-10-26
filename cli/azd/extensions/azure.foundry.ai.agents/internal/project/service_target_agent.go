@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -269,8 +270,30 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 
-	// Determine agent type and delegate to appropriate deployment method
-	agentDef := agentManifest.Template.(agent_yaml.AgentDefinition)
+	// Convert the template to bytes
+	templateBytes, err := json.Marshal(agentManifest.Template)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal agent template to JSON: %w", err)
+	}
+
+	// Convert the bytes to a dictionary
+	var templateDict map[string]interface{}
+	if err := json.Unmarshal(templateBytes, &templateDict); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal agent template from JSON: %w", err)
+	}
+
+	// Convert the dictionary to bytes
+	dictJsonBytes, err := json.Marshal(templateDict)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal templateDict to JSON: %w", err)
+	}
+
+	// Convert the bytes to an Agent Definition
+	var agentDef agent_yaml.AgentDefinition
+	if err := json.Unmarshal(dictJsonBytes, &agentDef); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON to AgentDefinition: %w", err)
+	}
+
 	switch agentDef.Kind {
 	case agent_yaml.AgentKindPrompt:
 		return p.deployPromptAgent(ctx, cred, agentManifest, azdEnv)
@@ -293,7 +316,30 @@ func (p *AgentServiceTargetProvider) isContainerAgent() bool {
 		return false
 	}
 
-	agentDef := agentManifest.Template.(agent_yaml.AgentDefinition)
+	// Convert the template to bytes
+	templateBytes, err := json.Marshal(agentManifest.Template)
+	if err != nil {
+		return false
+	}
+
+	// Convert the bytes to a dictionary
+	var templateDict map[string]interface{}
+	if err := json.Unmarshal(templateBytes, &templateDict); err != nil {
+		return false
+	}
+
+	// Convert the dictionary to bytes
+	dictJsonBytes, err := json.Marshal(templateDict)
+	if err != nil {
+		return false
+	}
+
+	// Convert the bytes to an Agent Definition
+	var agentDef agent_yaml.AgentDefinition
+	if err := json.Unmarshal(dictJsonBytes, &agentDef); err != nil {
+		return false
+	}
+
 	return agentDef.Kind == agent_yaml.AgentKindHosted
 }
 
@@ -309,7 +355,29 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required")
 	}
 
-	agentDef := agentManifest.Template.(agent_yaml.AgentDefinition)
+	// Convert the template to bytes
+	templateBytes, err := json.Marshal(agentManifest.Template)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal agent template to JSON: %w", err)
+	}
+
+	// Convert the bytes to a dictionary
+	var templateDict map[string]interface{}
+	if err := json.Unmarshal(templateBytes, &templateDict); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal agent template from JSON: %w", err)
+	}
+
+	// Convert the dictionary to bytes
+	dictJsonBytes, err := json.Marshal(templateDict)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal templateDict to JSON: %w", err)
+	}
+
+	// Convert the bytes to an Agent Definition
+	var agentDef agent_yaml.AgentDefinition
+	if err := json.Unmarshal(dictJsonBytes, &agentDef); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON to AgentDefinition: %w", err)
+	}
 
 	fmt.Fprintf(os.Stderr, "Deploying Prompt Agent\n")
 	fmt.Fprintf(os.Stderr, "======================\n")
@@ -383,7 +451,29 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, errors.New("published container artifact not found")
 	}
 
-	agentDef := agentManifest.Template.(agent_yaml.AgentDefinition)
+	// Convert the template to bytes
+	templateBytes, err := json.Marshal(agentManifest.Template)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal agent template to JSON: %w", err)
+	}
+
+	// Convert the bytes to a dictionary
+	var templateDict map[string]interface{}
+	if err := json.Unmarshal(templateBytes, &templateDict); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal agent template from JSON: %w", err)
+	}
+
+	// Convert the dictionary to bytes
+	dictJsonBytes, err := json.Marshal(templateDict)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal templateDict to JSON: %w", err)
+	}
+
+	// Convert the bytes to an Agent Definition
+	var agentDef agent_yaml.AgentDefinition
+	if err := json.Unmarshal(dictJsonBytes, &agentDef); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON to AgentDefinition: %w", err)
+	}
 
 	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])

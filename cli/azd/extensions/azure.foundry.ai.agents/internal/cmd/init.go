@@ -701,8 +701,7 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", fmt.Errorf("marshaling agent manifest to YAML after parameter processing: %w", err)
 	}
 
-	agentDef := agentManifest.Template.(agent_yaml.AgentDefinition)
-	agentId := agentDef.Name
+	agentId := agentManifest.Name
 
 	// Use targetDir if provided or set to local file pointer, otherwise default to "src/{agentId}"
 	if targetDir == "" {
@@ -720,12 +719,15 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", fmt.Errorf("saving file to %s: %w", filePath, err)
 	}
 
-	if isGitHubUrl && agentDef.Kind == agent_yaml.AgentKindHosted {
-		// For hosted agents, download the entire parent directory
-		fmt.Println("Downloading full directory for hosted agent")
-		err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console)
-		if err != nil {
-			return nil, "", fmt.Errorf("downloading parent directory: %w", err)
+	if isGitHubUrl {
+		// Check if the template is a HostedContainerAgent
+		if _, isHostedContainer := agentManifest.Template.(agent_yaml.HostedContainerAgent); isHostedContainer {
+			// For hosted agents, download the entire parent directory
+			fmt.Println("Downloading full directory for hosted agent")
+			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console)
+			if err != nil {
+				return nil, "", fmt.Errorf("downloading parent directory: %w", err)
+			}
 		}
 	}
 
@@ -736,7 +738,31 @@ func (a *InitAction) downloadAgentYaml(
 
 func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest) error {
 	var host string
-	agentDef := agentManifest.Template.(agent_yaml.AgentDefinition)
+
+	// Convert the template to bytes
+	templateBytes, err := json.Marshal(agentManifest.Template)
+	if err != nil {
+		return fmt.Errorf("failed to marshal agent template to JSON: %w", err)
+	}
+
+	// Convert the bytes to a dictionary
+	var templateDict map[string]interface{}
+	if err := json.Unmarshal(templateBytes, &templateDict); err != nil {
+		return fmt.Errorf("failed to unmarshal agent template from JSON: %w", err)
+	}
+
+	// Convert the dictionary to bytes
+	dictJsonBytes, err := json.Marshal(templateDict)
+	if err != nil {
+		return fmt.Errorf("failed to marshal templateDict to JSON: %w", err)
+	}
+
+	// Convert the bytes to an Agent Definition
+	var agentDef agent_yaml.AgentDefinition
+	if err := json.Unmarshal(dictJsonBytes, &agentDef); err != nil {
+		return fmt.Errorf("failed to unmarshal JSON to AgentDefinition: %w", err)
+	}
+
 	switch agentDef.Kind {
 	case "container":
 		host = "containerapp"
@@ -1224,7 +1250,30 @@ func downloadDirectoryContents(
 // }
 
 func (a *InitAction) updateEnvironment(ctx context.Context, agentManifest *agent_yaml.AgentManifest) error {
-	agentDef := agentManifest.Template.(agent_yaml.AgentDefinition)
+	// Convert the template to bytes
+	templateBytes, err := json.Marshal(agentManifest.Template)
+	if err != nil {
+		return fmt.Errorf("failed to marshal agent template to JSON: %w", err)
+	}
+
+	// Convert the bytes to a dictionary
+	var templateDict map[string]interface{}
+	if err := json.Unmarshal(templateBytes, &templateDict); err != nil {
+		return fmt.Errorf("failed to unmarshal agent template from JSON: %w", err)
+	}
+
+	// Convert the dictionary to bytes
+	dictJsonBytes, err := json.Marshal(templateDict)
+	if err != nil {
+		return fmt.Errorf("failed to marshal templateDict to JSON: %w", err)
+	}
+
+	// Convert the bytes to an Agent Definition
+	var agentDef agent_yaml.AgentDefinition
+	if err := json.Unmarshal(dictJsonBytes, &agentDef); err != nil {
+		return fmt.Errorf("failed to unmarshal JSON to AgentDefinition: %w", err)
+	}
+
 	fmt.Printf("Updating environment variables for agent kind: %s\n", agentDef.Kind)
 
 	// Get current environment

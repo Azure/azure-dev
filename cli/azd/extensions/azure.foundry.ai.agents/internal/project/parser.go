@@ -26,6 +26,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
+	"github.com/braydonk/yaml"
 	"github.com/google/uuid"
 )
 
@@ -63,8 +64,16 @@ func shouldRun(ctx context.Context, project *azdext.ProjectConfig) (bool, error)
 					return false, fmt.Errorf("failed to validate agent yaml file: %w", err)
 				}
 
-				agent := manifest.Template.(agent_yaml.AgentDefinition)
-				return agent.Kind == agent_yaml.AgentKindYamlContainerApp, nil
+				agentDefBytes, err := yaml.Marshal(manifest.Template)
+				if err != nil {
+					return false, fmt.Errorf("failed to marshal agent definition when updating project: %w", err)
+				}
+				var agentDef agent_yaml.AgentDefinition
+				if err := yaml.Unmarshal(agentDefBytes, &agentDef); err != nil {
+					return false, fmt.Errorf("failed to unmarshal agent definition when updating project: %w", err)
+				}
+
+				return agentDef.Kind == agent_yaml.AgentKindYamlContainerApp, nil
 			}
 		}
 	}

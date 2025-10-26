@@ -71,12 +71,12 @@ func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_ya
 	return agentDef, nil
 }
 
-func ConvertParameters(parameters map[string]OpenApiParameter) ([]agent_yaml.Parameter, error) {
+func ConvertParameters(parameters map[string]OpenApiParameter) (*map[string]agent_yaml.Parameter, error) {
 	if len(parameters) == 0 {
-		return []agent_yaml.Parameter{}, nil
+		return nil, nil
 	}
 
-	result := make([]agent_yaml.Parameter, 0, len(parameters))
+	result := make(map[string]agent_yaml.Parameter, len(parameters))
 
 	for paramName, openApiParam := range parameters {
 		// Create a basic Parameter from the OpenApiParameter
@@ -109,16 +109,16 @@ func ConvertParameters(parameters map[string]OpenApiParameter) ([]agent_yaml.Par
 			param.Schema.Type = "string"
 		}
 
-		result = append(result, param)
+		result[paramName] = param
 	}
 
-	return result, nil
+	return &result, nil
 }
 
 // ProcessManifestParameters prompts the user for parameter values and injects them into the template
 func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentManifest, azdClient *azdext.AzdClient) (*agent_yaml.AgentManifest, error) {
 	// If no parameters are defined, return the manifest as-is
-	if len(manifest.Parameters) == 0 {
+	if manifest.Parameters == nil || len(*manifest.Parameters) == 0 {
 		fmt.Println("The manifest does not contain parameters that need to be configured.")
 		return manifest, nil
 	}
@@ -127,7 +127,7 @@ func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentMa
 	fmt.Println()
 
 	// Collect parameter values from user
-	paramValues, err := promptForYamlParameterValues(ctx, manifest.Parameters, azdClient)
+	paramValues, err := promptForYamlParameterValues(ctx, *manifest.Parameters, azdClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect parameter values: %w", err)
 	}
@@ -142,11 +142,11 @@ func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentMa
 }
 
 // promptForYamlParameterValues prompts the user for values for each YAML parameter
-func promptForYamlParameterValues(ctx context.Context, parameters []agent_yaml.Parameter, azdClient *azdext.AzdClient) (ParameterValues, error) {
+func promptForYamlParameterValues(ctx context.Context, parameters map[string]agent_yaml.Parameter, azdClient *azdext.AzdClient) (ParameterValues, error) {
 	paramValues := make(ParameterValues)
 
-	for _, param := range parameters {
-		fmt.Printf("Parameter: %s\n", param.Name)
+	for paramName, param := range parameters {
+		fmt.Printf("Parameter: %s\n", paramName)
 		if param.Description != nil && *param.Description != "" {
 			fmt.Printf("  Description: %s\n", *param.Description)
 		}
@@ -184,17 +184,17 @@ func promptForYamlParameterValues(ctx context.Context, parameters []agent_yaml.P
 		isRequired := param.Required != nil && *param.Required
 		if len(enumValues) > 0 {
 			// Use selection for enum parameters
-			value, err = promptForEnumValue(ctx, param.Name, enumValues, defaultValue, azdClient)
+			value, err = promptForEnumValue(ctx, paramName, enumValues, defaultValue, azdClient)
 		} else {
 			// Use text input for other parameters
-			value, err = promptForTextValue(ctx, param.Name, defaultValue, isRequired, azdClient)
+			value, err = promptForTextValue(ctx, paramName, defaultValue, isRequired, azdClient)
 		}
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to get value for parameter %s: %w", param.Name, err)
+			return nil, fmt.Errorf("failed to get value for parameter %s: %w", paramName, err)
 		}
 
-		paramValues[param.Name] = value
+		paramValues[paramName] = value
 	}
 
 	return paramValues, nil
@@ -215,12 +215,12 @@ func injectParameterValuesIntoManifest(manifest *agent_yaml.AgentManifest, param
 	}
 
 	// Convert back to AgentManifest
-	var processedManifest agent_yaml.AgentManifest
-	if err := json.Unmarshal(processedBytes, &processedManifest); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal processed manifest: %w", err)
+	processedManifest, err := agent_yaml.LoadAndValidateAgentManifest(processedBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reload processed manifest: %w", err)
 	}
 
-	return &processedManifest, nil
+	return processedManifest, nil
 }
 
 // promptForEnumValue prompts the user to select from enumerated values
@@ -307,6 +307,9 @@ func injectParameterValues(template json.RawMessage, paramValues ParameterValues
 	for paramName, paramValue := range paramValues {
 		placeholder := fmt.Sprintf("{{%s}}", paramName)
 		valueStr := fmt.Sprintf("%v", paramValue)
+		templateStr = strings.ReplaceAll(templateStr, placeholder, valueStr)
+
+		placeholder = fmt.Sprintf("{{ %s }}", paramName)
 		templateStr = strings.ReplaceAll(templateStr, placeholder, valueStr)
 	}
 

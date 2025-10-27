@@ -720,10 +720,13 @@ func (a *InitAction) downloadAgentYaml(
 	}
 
 	if isGitHubUrl {
-		// Check if the template is a HostedContainerAgent
-		if _, isHostedContainer := agentManifest.Template.(agent_yaml.HostedContainerAgent); isHostedContainer {
-			// For hosted agents, download the entire parent directory
-			fmt.Println("Downloading full directory for hosted agent")
+		// Check if the template is a HostedContainerAgent or ContainerAgent
+		_, isHostedContainer := agentManifest.Template.(agent_yaml.HostedContainerAgent)
+		_, isContainerAgent := agentManifest.Template.(agent_yaml.ContainerAgent)
+
+		if isHostedContainer || isContainerAgent {
+			// For container agents, download the entire parent directory
+			fmt.Println("Downloading full directory for container agent")
 			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console)
 			if err != nil {
 				return nil, "", fmt.Errorf("downloading parent directory: %w", err)
@@ -771,7 +774,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	}
 
 	serviceConfig := &azdext.ServiceConfig{
-		Name:         agentDef.Name,
+		Name:         strings.ReplaceAll(agentDef.Name, " ", ""),
 		RelativePath: targetDir,
 		Host:         host,
 		Language:     "python",

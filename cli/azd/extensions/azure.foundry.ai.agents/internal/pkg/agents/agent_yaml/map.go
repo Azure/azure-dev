@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+
+	"go.yaml.in/yaml/v3"
 )
 
 /*
@@ -104,8 +106,14 @@ func constructBuildConfig(options ...AgentBuildOption) *AgentBuildConfig {
 func CreateAgentAPIRequestFromManifest(agentManifest AgentManifest, options ...AgentBuildOption) (*agent_api.CreateAgentRequest, error) {
 	buildConfig := constructBuildConfig(options...)
 
+	templateBytes, _ := yaml.Marshal(agentManifest.Template)
+
+	var agentDef AgentDefinition
+	if err := yaml.Unmarshal(templateBytes, &agentDef); err != nil {
+		return nil, fmt.Errorf("failed to parse template to determine agent kind while creating api request")
+	}
+
 	// Route to appropriate handler based on agent kind
-	agentDef := agentManifest.Template.(AgentDefinition)
 	switch agentDef.Kind {
 	case AgentKindPrompt:
 		promptDef := agentManifest.Template.(PromptAgent)

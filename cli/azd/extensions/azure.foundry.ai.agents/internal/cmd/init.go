@@ -767,7 +767,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	case "container":
 		host = "containerapp"
 	default:
-		host = "foundry.agent"
+		host = "foundry.containeragent"
 	}
 
 	serviceConfig := &azdext.ServiceConfig{

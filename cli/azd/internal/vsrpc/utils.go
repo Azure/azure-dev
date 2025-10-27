@@ -99,7 +99,7 @@ func azdContext(hostProjectPath string) (*azdcontext.AzdContext, error) {
 	}
 
 	if !found {
-		log.Printf("ignoring %s due to non-matching project found, using app host directory", azdCtx.ProjectPath())
+		log.Printf("ignoring %s due to mismatch, using host project directory", azdCtx.ProjectPath())
 		return azdcontext.NewAzdContextWithDirectory(hostProjectDir), nil
 	}
 

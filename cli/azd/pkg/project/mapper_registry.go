@@ -135,6 +135,7 @@ func registerProjectMappings() {
 			OutputPath:        src.OutputPath,
 			Image:             image,
 			Docker:            docker,
+			Config:            src.Config,
 		}, nil
 	})
 

@@ -80,8 +80,9 @@ func bindExtension(
 	}
 
 	current.Add(lastPart, &actions.ActionDescriptorOptions{
-		Command:        cmd,
-		ActionResolver: newExtensionAction,
+		Command:                cmd,
+		ActionResolver:         newExtensionAction,
+		DisableTroubleshooting: true,
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupExtensions,
 		},

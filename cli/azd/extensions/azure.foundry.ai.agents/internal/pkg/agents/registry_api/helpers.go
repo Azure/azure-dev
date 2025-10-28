@@ -38,19 +38,17 @@ func ProcessRegistryManifest(ctx context.Context, manifest *Manifest, azdClient 
 
 	// Create the AgentManifest with the converted AgentDefinition
 	result := &agent_yaml.AgentManifest{
-		Agent:      *agentDef,
-		Parameters: parameters,
+		Name:        manifest.Name,
+		DisplayName: manifest.DisplayName,
+		Description: &manifest.Description,
+		Template:    *agentDef,
+		Parameters:  parameters,
 	}
 
 	return result, nil
 }
 
 func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_yaml.AgentDefinition, error) {
-	// Convert the model string to Model struct
-	model := agent_yaml.Model{
-		Id: template.Model,
-	}
-
 	// Convert tools from agent_api.Tool to agent_yaml.Tool
 	var tools []agent_yaml.Tool
 	for _, apiTool := range template.Tools {
@@ -61,72 +59,66 @@ func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_ya
 		tools = append(tools, yamlTool)
 	}
 
-	// Get instructions, defaulting to empty string if nil
-	instructions := ""
-	if template.Instructions != nil {
-		instructions = *template.Instructions
-	}
-
 	// Create the AgentDefinition
 	agentDef := &agent_yaml.AgentDefinition{
-		Kind:         agent_yaml.AgentKindPrompt, // Set to prompt kind
-		Name:         "",                         // Will be set later from manifest or user input
-		Description:  "",                         // Will be set later from manifest or user input
-		Instructions: instructions,
-		Model:        model,
-		Tools:        tools,
+		Kind:        agent_yaml.AgentKindPrompt, // Set to prompt kind
+		Name:        "",                         // Will be set later from manifest or user input
+		Description: nil,                        // Will be set later from manifest or user input
+		Tools:       &tools,
 		// Metadata:     make(map[string]interface{}), // TODO, Where does this come from?
 	}
 
 	return agentDef, nil
 }
 
-func ConvertParameters(parameters map[string]OpenApiParameter) ([]agent_yaml.Parameter, error) {
+func ConvertParameters(parameters map[string]OpenApiParameter) (*map[string]agent_yaml.Parameter, error) {
 	if len(parameters) == 0 {
-		return []agent_yaml.Parameter{}, nil
+		return nil, nil
 	}
 
-	result := make([]agent_yaml.Parameter, 0, len(parameters))
+	result := make(map[string]agent_yaml.Parameter, len(parameters))
 
 	for paramName, openApiParam := range parameters {
 		// Create a basic Parameter from the OpenApiParameter
 		param := agent_yaml.Parameter{
 			Name:        paramName,
-			Description: openApiParam.Description,
-			Required:    openApiParam.Required,
+			Description: &openApiParam.Description,
+			Required:    &openApiParam.Required,
 		}
 
 		// Extract type/kind from schema if available
 		if openApiParam.Schema != nil {
-			param.Kind = openApiParam.Schema.Type
-			param.Default = openApiParam.Schema.Default
+			param.Schema = agent_yaml.ParameterSchema{
+				Type:    openApiParam.Schema.Type,
+				Default: &openApiParam.Schema.Default,
+			}
 
 			// Convert enum values if present
 			if len(openApiParam.Schema.Enum) > 0 {
-				param.Enum = openApiParam.Schema.Enum
+				param.Schema.Enum = &openApiParam.Schema.Enum
 			}
 		}
 
 		// Use example as default if no schema default is provided
-		if param.Default == nil && openApiParam.Example != nil {
-			param.Default = openApiParam.Example
+		if param.Schema.Default == nil && openApiParam.Example != nil {
+			param.Schema.Default = &openApiParam.Example
 		}
 
 		// Fallback to string type if no type specified
-		if param.Kind == "" {
-			param.Kind = "string"
+		if param.Schema.Type == "" {
+			param.Schema.Type = "string"
 		}
 
-		result = append(result, param)
+		result[paramName] = param
 	}
 
-	return result, nil
+	return &result, nil
 }
 
 // ProcessManifestParameters prompts the user for parameter values and injects them into the template
 func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentManifest, azdClient *azdext.AzdClient) (*agent_yaml.AgentManifest, error) {
 	// If no parameters are defined, return the manifest as-is
-	if len(manifest.Parameters) == 0 {
+	if manifest.Parameters == nil || len(*manifest.Parameters) == 0 {
 		fmt.Println("The manifest does not contain parameters that need to be configured.")
 		return manifest, nil
 	}
@@ -135,7 +127,7 @@ func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentMa
 	fmt.Println()
 
 	// Collect parameter values from user
-	paramValues, err := promptForYamlParameterValues(ctx, manifest.Parameters, azdClient)
+	paramValues, err := promptForYamlParameterValues(ctx, *manifest.Parameters, azdClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect parameter values: %w", err)
 	}
@@ -150,23 +142,26 @@ func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentMa
 }
 
 // promptForYamlParameterValues prompts the user for values for each YAML parameter
-func promptForYamlParameterValues(ctx context.Context, parameters []agent_yaml.Parameter, azdClient *azdext.AzdClient) (ParameterValues, error) {
+func promptForYamlParameterValues(ctx context.Context, parameters map[string]agent_yaml.Parameter, azdClient *azdext.AzdClient) (ParameterValues, error) {
 	paramValues := make(ParameterValues)
 
-	for _, param := range parameters {
-		fmt.Printf("Parameter: %s\n", param.Name)
-		if param.Description != "" {
-			fmt.Printf("  Description: %s\n", param.Description)
+	for paramName, param := range parameters {
+		fmt.Printf("Parameter: %s\n", paramName)
+		if param.Description != nil && *param.Description != "" {
+			fmt.Printf("  Description: %s\n", *param.Description)
 		}
 
 		// Get default value
-		defaultValue := param.Default
+		var defaultValue interface{}
+		if param.Schema.Default != nil {
+			defaultValue = *param.Schema.Default
+		}
 
 		// Get enum values if available
 		var enumValues []string
-		if len(param.Enum) > 0 {
-			enumValues = make([]string, len(param.Enum))
-			for i, val := range param.Enum {
+		if param.Schema.Enum != nil && len(*param.Schema.Enum) > 0 {
+			enumValues = make([]string, len(*param.Schema.Enum))
+			for i, val := range *param.Schema.Enum {
 				enumValues[i] = fmt.Sprintf("%v", val)
 			}
 		}
@@ -186,19 +181,20 @@ func promptForYamlParameterValues(ctx context.Context, parameters []agent_yaml.P
 		// Prompt for value
 		var value interface{}
 		var err error
+		isRequired := param.Required != nil && *param.Required
 		if len(enumValues) > 0 {
 			// Use selection for enum parameters
-			value, err = promptForEnumValue(ctx, param.Name, enumValues, defaultValue, azdClient)
+			value, err = promptForEnumValue(ctx, paramName, enumValues, defaultValue, azdClient)
 		} else {
 			// Use text input for other parameters
-			value, err = promptForTextValue(ctx, param.Name, defaultValue, param.Required, azdClient)
+			value, err = promptForTextValue(ctx, paramName, defaultValue, isRequired, azdClient)
 		}
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to get value for parameter %s: %w", param.Name, err)
+			return nil, fmt.Errorf("failed to get value for parameter %s: %w", paramName, err)
 		}
 
-		paramValues[param.Name] = value
+		paramValues[paramName] = value
 	}
 
 	return paramValues, nil
@@ -219,12 +215,12 @@ func injectParameterValuesIntoManifest(manifest *agent_yaml.AgentManifest, param
 	}
 
 	// Convert back to AgentManifest
-	var processedManifest agent_yaml.AgentManifest
-	if err := json.Unmarshal(processedBytes, &processedManifest); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal processed manifest: %w", err)
+	processedManifest, err := agent_yaml.LoadAndValidateAgentManifest(processedBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reload processed manifest: %w", err)
 	}
 
-	return &processedManifest, nil
+	return processedManifest, nil
 }
 
 // promptForEnumValue prompts the user to select from enumerated values
@@ -311,6 +307,9 @@ func injectParameterValues(template json.RawMessage, paramValues ParameterValues
 	for paramName, paramValue := range paramValues {
 		placeholder := fmt.Sprintf("{{%s}}", paramName)
 		valueStr := fmt.Sprintf("%v", paramValue)
+		templateStr = strings.ReplaceAll(templateStr, placeholder, valueStr)
+
+		placeholder = fmt.Sprintf("{{ %s }}", paramName)
 		templateStr = strings.ReplaceAll(templateStr, placeholder, valueStr)
 	}
 

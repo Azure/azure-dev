@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
+
+	"go.yaml.in/yaml/v3"
 )
 
 /*
@@ -92,74 +94,86 @@ func WithEnvironmentVariables(envVars map[string]string) AgentBuildOption {
 	}
 }
 
-// BuildAgentDefinitionFromManifest constructs an AgentDefinition from the given AgentManifest
-// with optional build-time configuration. It returns both the agent definition and build config.
-func BuildAgentDefinitionFromManifest(agentManifest AgentManifest, options ...AgentBuildOption) (AgentDefinition, *AgentBuildConfig, error) {
-	// Apply options
+func constructBuildConfig(options ...AgentBuildOption) *AgentBuildConfig {
 	config := &AgentBuildConfig{}
 	for _, option := range options {
 		option(config)
 	}
-	
-	// Return the agent definition and build config separately
-	// The build config will be used later when creating the API request
-	return agentManifest.Agent, config, nil
+	return config
 }
 
 // CreateAgentAPIRequestFromManifest creates a CreateAgentRequest from AgentManifest with strong typing
 func CreateAgentAPIRequestFromManifest(agentManifest AgentManifest, options ...AgentBuildOption) (*agent_api.CreateAgentRequest, error) {
-	agentDef, buildConfig, err := BuildAgentDefinitionFromManifest(agentManifest, options...)
-	if err != nil {
-		return nil, err
+	buildConfig := constructBuildConfig(options...)
+
+	templateBytes, _ := yaml.Marshal(agentManifest.Template)
+
+	var agentDef AgentDefinition
+	if err := yaml.Unmarshal(templateBytes, &agentDef); err != nil {
+		return nil, fmt.Errorf("failed to parse template to determine agent kind while creating api request")
 	}
 
 	// Route to appropriate handler based on agent kind
 	switch agentDef.Kind {
 	case AgentKindPrompt:
-		return CreatePromptAgentAPIRequest(agentDef, buildConfig)
+		promptDef := agentManifest.Template.(PromptAgent)
+		return CreatePromptAgentAPIRequest(promptDef, buildConfig)
 	case AgentKindHosted:
-		return CreateHostedAgentAPIRequest(agentDef, buildConfig)
+		hostedDef := agentManifest.Template.(HostedContainerAgent)
+		return CreateHostedAgentAPIRequest(hostedDef, buildConfig)
 	default:
 		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: prompt, hosted", agentDef.Kind)
 	}
 }
 
 // CreatePromptAgentAPIRequest creates a CreateAgentRequest for prompt-based agents
-func CreatePromptAgentAPIRequest(agentDefinition AgentDefinition, buildConfig *AgentBuildConfig) (*agent_api.CreateAgentRequest, error) {
-	// TODO QUESTION: Should I expect a PromptAgent type instead of AgentDefinition?
-	// The AgentDefinition has all the fields but PromptAgent might have additional prompt-specific fields
-	
-	promptDef := agent_api.PromptAgentDefinition{
-		AgentDefinition: agent_api.AgentDefinition{
-        	Kind: agent_api.AgentKindPrompt, // This sets Kind to "prompt"
-    	},
-		Model: agentDefinition.Model.Id, // TODO QUESTION: Is Model.Id the right field to use?
-		Instructions: &agentDefinition.Instructions,
-		
-		// TODO QUESTION: How should I map Model.Options to these fields?
-		// The agent_yaml.Model has ModelOptions with a Kind field, but how do I get:
-		// - Temperature (float32) - from Model.Options or somewhere else?
-		// - TopP (float32) - from Model.Options or somewhere else?
-		// 
-		// Example: if agentDefinition.Model.Options has structured data:
-		// Temperature: extractFloat32FromOptions(agentDefinition.Model.Options, "temperature"),
-		// TopP: extractFloat32FromOptions(agentDefinition.Model.Options, "top_p"),
-		
-		// TODO QUESTION: How should I map Tools from agent_yaml to agent_api?
-		// agent_yaml.Tool vs agent_api.Tool - are they compatible or do I need conversion?
-		// Tools: convertYamlToolsToApiTools(agentDefinition.Tools),
-		
-		// TODO QUESTION: What about these advanced fields?
-		// - Reasoning (*agent_api.Reasoning) - where does this come from in YAML?
-		// - Text (*agent_api.ResponseTextFormatConfiguration) - related to output format?
-		// - StructuredInputs (map[string]agent_api.StructuredInputDefinition) - from InputSchema?
-		// 
-		// Possible mappings:
-		// Text: mapOutputSchemaToTextFormat(agentDefinition.OutputSchema),
-		// StructuredInputs: mapInputSchemaToStructuredInputs(agentDefinition.InputSchema),
+func CreatePromptAgentAPIRequest(promptAgent PromptAgent, buildConfig *AgentBuildConfig) (*agent_api.CreateAgentRequest, error) {
+	// Extract model information from the prompt agent
+	var modelId string
+	var instructions *string
+	var temperature *float32
+	var topP *float32
+
+	// Get model ID
+	if promptAgent.Model.Id != "" {
+		modelId = promptAgent.Model.Id
+	} else {
+		return nil, fmt.Errorf("model.id is required for prompt agents")
 	}
 
-	return createAgentAPIRequest(agentDefinition, promptDef)
+	// Get instructions
+	if promptAgent.Instructions != nil {
+		instructions = promptAgent.Instructions
+	}
+
+	// Extract temperature and topP from model options if available
+	if promptAgent.Model.Options != nil {
+		if promptAgent.Model.Options.Temperature != nil {
+			tempFloat32 := float32(*promptAgent.Model.Options.Temperature)
+			temperature = &tempFloat32
+		}
+		if promptAgent.Model.Options.TopP != nil {
+			tpFloat32 := float32(*promptAgent.Model.Options.TopP)
+			topP = &tpFloat32
+		}
+	}
+
+	promptDef := agent_api.PromptAgentDefinition{
+		AgentDefinition: agent_api.AgentDefinition{
+			Kind: agent_api.AgentKindPrompt,
+		},
+		Model:        modelId,
+		Instructions: instructions,
+		Temperature:  temperature,
+		TopP:         topP,
+
+		// TODO: Handle additional fields like Tools, Reasoning, etc.
+		// Tools: convertYamlToolsToApiTools(promptAgent.Tools),
+		// Text: mapOutputSchemaToTextFormat(promptAgent.OutputSchema),
+		// StructuredInputs: mapInputSchemaToStructuredInputs(promptAgent.InputSchema),
+	}
+
+	return createAgentAPIRequest(promptAgent.AgentDefinition, promptDef)
 }
 
 // Helper functions for type conversion (TODO: Implement based on answers to questions above)
@@ -179,25 +193,22 @@ func convertYamlToolsToApiTools(yamlTools []Tool) []agent_api.Tool {
 	return nil // Placeholder
 }
 
-// mapInputSchemaToStructuredInputs converts InputSchema to StructuredInputs
-func mapInputSchemaToStructuredInputs(inputSchema InputSchema) map[string]agent_api.StructuredInputDefinition {
-	// TODO QUESTION: How does InputSchema map to StructuredInputDefinition?
-	// InputSchema might have parameters that become structured inputs
+// mapInputSchemaToStructuredInputs converts PropertySchema to StructuredInputs
+func mapInputSchemaToStructuredInputs(inputSchema *PropertySchema) map[string]agent_api.StructuredInputDefinition {
+	// TODO QUESTION: How does PropertySchema map to StructuredInputDefinition?
+	// PropertySchema might have parameters that become structured inputs
 	return nil // Placeholder
 }
 
-// mapOutputSchemaToTextFormat converts OutputSchema to text response format
-func mapOutputSchemaToTextFormat(outputSchema OutputSchema) *agent_api.ResponseTextFormatConfiguration {
-	// TODO QUESTION: How does OutputSchema influence text formatting?
-	// OutputSchema might specify response structure that affects text config
+// mapOutputSchemaToTextFormat converts PropertySchema to text response format
+func mapOutputSchemaToTextFormat(outputSchema *PropertySchema) *agent_api.ResponseTextFormatConfiguration {
+	// TODO QUESTION: How does PropertySchema influence text formatting?
+	// PropertySchema might specify response structure that affects text config
 	return nil // Placeholder
 }
 
 // CreateHostedAgentAPIRequest creates a CreateAgentRequest for hosted agents
-func CreateHostedAgentAPIRequest(agentDefinition AgentDefinition, buildConfig *AgentBuildConfig) (*agent_api.CreateAgentRequest, error) {
-	// TODO QUESTION: Should I expect a ContainerAgent type instead of AgentDefinition?
-	// ContainerAgent has additional fields like Protocol and Options that might be relevant
-	
+func CreateHostedAgentAPIRequest(hostedAgent HostedContainerAgent, buildConfig *AgentBuildConfig) (*agent_api.CreateAgentRequest, error) {
 	// Check if we have an image URL set via the build config
 	imageURL := ""
 	cpu := "1"      // Default CPU
@@ -218,36 +229,49 @@ func CreateHostedAgentAPIRequest(agentDefinition AgentDefinition, buildConfig *A
 			envVars = buildConfig.EnvironmentVariables
 		}
 	}
-	
-	if imageURL == "" {
-		return nil, fmt.Errorf("image URL is required for hosted agents - use WithImageURL build option")
+
+	// Try to get image URL from the hosted agent container definition if not provided in build config
+	if imageURL == "" && hostedAgent.Container.Image != nil && *hostedAgent.Container.Image != "" {
+		imageURL = *hostedAgent.Container.Image
 	}
 
-	// TODO QUESTION: Should protocol versions come from YAML definition or be configurable via build options?
-	// ContainerAgent.Protocol might specify this, or should it be in build config?
-	
-	// Set default protocol versions
-	protocolVersions := []agent_api.ProtocolVersionRecord{
-		{Protocol: agent_api.AgentProtocolResponses, Version: "v1"},
+	if imageURL == "" {
+		return nil, fmt.Errorf("image URL is required for hosted agents - use WithImageURL build option or specify in container.image")
+	}
+
+	// Map protocol versions from the hosted agent definition
+	protocolVersions := make([]agent_api.ProtocolVersionRecord, 0)
+	if len(hostedAgent.Protocols) > 0 {
+		for _, protocol := range hostedAgent.Protocols {
+			protocolVersions = append(protocolVersions, agent_api.ProtocolVersionRecord{
+				Protocol: agent_api.AgentProtocol(protocol.Protocol),
+				Version:  protocol.Version,
+			})
+		}
+	} else {
+		// Set default protocol versions if none specified
+		protocolVersions = []agent_api.ProtocolVersionRecord{
+			{Protocol: agent_api.AgentProtocolResponses, Version: "v1"},
+		}
 	}
 
 	hostedDef := agent_api.HostedAgentDefinition{
 		AgentDefinition: agent_api.AgentDefinition{
-        	Kind: agent_api.AgentKindHosted, // This sets Kind to "hosted"
-    	},
+			Kind: agent_api.AgentKindHosted,
+		},
 		ContainerProtocolVersions: protocolVersions,
 		CPU:                       cpu,
 		Memory:                    memory,
 		EnvironmentVariables:      envVars,
 	}
-	
-	// Set the image from build configuration
+
+	// Set the image from build configuration or container definition
 	imageHostedDef := agent_api.ImageBasedHostedAgentDefinition{
 		HostedAgentDefinition: hostedDef,
 		Image:                 imageURL,
 	}
 
-	return createAgentAPIRequest(agentDefinition, imageHostedDef)
+	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageHostedDef)
 }
 
 // createAgentAPIRequest is a helper function to create the final request with common fields
@@ -256,7 +280,7 @@ func createAgentAPIRequest(agentDefinition AgentDefinition, agentDef interface{}
 	metadata := make(map[string]string)
 	if agentDefinition.Metadata != nil {
 		// Handle authors specially - convert slice to comma-separated string
-		if authors, exists := agentDefinition.Metadata["authors"]; exists {
+		if authors, exists := (*agentDefinition.Metadata)["authors"]; exists {
 			if authorsSlice, ok := authors.([]interface{}); ok {
 				var authorsStr []string
 				for _, author := range authorsSlice {
@@ -268,7 +292,7 @@ func createAgentAPIRequest(agentDefinition AgentDefinition, agentDef interface{}
 			}
 		}
 		// Copy other metadata as strings
-		for key, value := range agentDefinition.Metadata {
+		for key, value := range *agentDefinition.Metadata {
 			if key != "authors" {
 				if strValue, ok := value.(string); ok {
 					metadata[key] = strValue
@@ -291,8 +315,8 @@ func createAgentAPIRequest(agentDefinition AgentDefinition, agentDef interface{}
 		},
 	}
 
-	if agentDefinition.Description != "" {
-		request.Description = &agentDefinition.Description
+	if agentDefinition.Description != nil && *agentDefinition.Description != "" {
+		request.Description = agentDefinition.Description
 	}
 
 	if len(metadata) > 0 {
@@ -300,17 +324,4 @@ func createAgentAPIRequest(agentDefinition AgentDefinition, agentDef interface{}
 	}
 
 	return request, nil
-}
-
-// Legacy function for backward compatibility - delegates to the new structured approach
-func CreateAgentAPIRequestFromAgentDefinition(agentDefinition AgentDefinition, buildConfig *AgentBuildConfig) (*agent_api.CreateAgentRequest, error) {
-	// Route to appropriate handler based on agent kind
-	switch agentDefinition.Kind {
-	case AgentKindPrompt:
-		return CreatePromptAgentAPIRequest(agentDefinition, buildConfig)
-	case AgentKindHosted:
-		return CreateHostedAgentAPIRequest(agentDefinition, buildConfig)
-	default:
-		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: prompt, hosted", agentDefinition.Kind)
-	}
 }

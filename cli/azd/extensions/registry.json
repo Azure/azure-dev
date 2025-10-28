@@ -653,7 +653,7 @@
           ],
           "providers": [
             {
-              "name": "foundry.containeragent",
+              "name": "azure.ai.agents",
               "type": "service-target",
               "description": "Deploys agents to AI Foundry container agent service."
             }
@@ -732,7 +732,7 @@
           ],
           "providers": [
             {
-              "name": "foundry.containeragent",
+              "name": "azure.ai.agents",
               "type": "service-target",
               "description": "Deploys agents to AI Foundry container agent service."
             }

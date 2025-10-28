@@ -571,7 +571,7 @@ var testRegistry = Registry{
 					Capabilities: []CapabilityType{ServiceTargetProviderCapability},
 					Providers: []Provider{
 						{
-							Name:        "foundry.hostedagent",
+							Name:        "azure.ai.agents",
 							Type:        ServiceTargetProviderType,
 							Description: "Deploys to Azure AI Foundry hosted agents",
 						},
@@ -832,12 +832,12 @@ func Test_FilterExtensions_ByCapabilityAndProvider(t *testing.T) {
 			[]string{"azure.containerapp", "test.mcp.extension", "foundry.multi.target"})
 	})
 
-	t.Run("find extension with foundry.hostedagent provider", func(t *testing.T) {
+	t.Run("find extension with azure.ai.agents provider", func(t *testing.T) {
 		extensions, err := manager.FindExtensions(context.Background(), &FilterOptions{
-			Provider: "foundry.hostedagent",
+			Provider: "azure.ai.agents",
 		})
 		require.NoError(t, err)
-		require.Len(t, extensions, 1, "Should find exactly 1 extension with foundry.hostedagent provider")
+		require.Len(t, extensions, 1, "Should find exactly 1 extension with azure.ai.agents provider")
 
 		assertExtensionIds(t, extensions,
 			[]string{"foundry.multi.target"},

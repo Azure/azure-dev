@@ -769,8 +769,13 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	switch agentDef.Kind {
 	case "container":
 		host = "containerapp"
+	case "hosted":
+		host = "azure.ai.agents"
+	case "prompt":
+		host = "azure.ai.agents"
 	default:
-		host = "foundry.containeragent"
+		// except here
+		return fmt.Errorf("unsupported agent kind: %s", agentDef.Kind)
 	}
 
 	serviceConfig := &azdext.ServiceConfig{

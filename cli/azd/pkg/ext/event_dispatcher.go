@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 
@@ -51,6 +52,16 @@ func (ed *EventDispatcher[T]) AddHandler(ctx context.Context, name Event, handle
 	defer ed.mu.Unlock()
 
 	events := ed.handlers[name]
+
+	// Check if this handler is already registered for this event
+	handlerStr := fmt.Sprintf("%v", handler)
+	for _, existingHandler := range events {
+		if fmt.Sprintf("%v", existingHandler) == handlerStr {
+			log.Printf("Warning: Handler for event '%s' is already registered, skipping duplicate registration", name)
+			return nil
+		}
+	}
+
 	events = append(events, handler)
 	ed.handlers[name] = events
 

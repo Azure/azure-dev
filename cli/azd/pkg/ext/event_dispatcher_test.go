@@ -240,6 +240,140 @@ func Test_Already_Cancelled_Context_Handler_Cleanup(t *testing.T) {
 	require.Equal(t, 0, remainingHandlers, "Handler should be automatically removed for already cancelled context")
 }
 
+func Test_Duplicate_Handler_Detection(t *testing.T) {
+	callCount := 0
+	handler := func(ctx context.Context, args testEventArgs) error {
+		callCount++
+		return nil
+	}
+
+	ed := NewEventDispatcher[testEventArgs](testEvent)
+
+	// First registration should succeed
+	err := ed.AddHandler(context.Background(), testEvent, handler)
+	require.NoError(t, err)
+
+	// Second registration of same handler should log warning and skip
+	err = ed.AddHandler(context.Background(), testEvent, handler)
+	require.NoError(t, err)
+
+	// Verify handler was not added again by checking the handler count
+	ed.mu.RLock()
+	handlerCount := len(ed.handlers[testEvent])
+	ed.mu.RUnlock()
+	require.Equal(t, 1, handlerCount, "Should have only 1 handler, not 2")
+
+	// Verify handler is only called once when event is raised
+	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	require.NoError(t, err)
+	require.Equal(t, 1, callCount, "Handler should be called only once, not twice")
+}
+
+func Test_Duplicate_Handler_Detection_Different_Events(t *testing.T) {
+	callCount := 0
+	handler := func(ctx context.Context, args testEventArgs) error {
+		callCount++
+		return nil
+	}
+
+	// Create dispatcher with multiple valid events
+	event1 := Event("event1")
+	event2 := Event("event2")
+	ed := NewEventDispatcher[testEventArgs](event1, event2)
+
+	// Register same handler for different events - should succeed both times
+	err := ed.AddHandler(context.Background(), event1, handler)
+	require.NoError(t, err)
+
+	err = ed.AddHandler(context.Background(), event2, handler)
+	require.NoError(t, err)
+
+	// Verify both events have the handler registered
+	ed.mu.RLock()
+	handler1Count := len(ed.handlers[event1])
+	handler2Count := len(ed.handlers[event2])
+	ed.mu.RUnlock()
+
+	require.Equal(t, 1, handler1Count, "Event1 should have 1 handler")
+	require.Equal(t, 1, handler2Count, "Event2 should have 1 handler")
+
+	// Both events should trigger the handler
+	err = ed.RaiseEvent(context.Background(), event1, testEventArgs{})
+	require.NoError(t, err)
+	require.Equal(t, 1, callCount, "Handler should be called once for event1")
+
+	err = ed.RaiseEvent(context.Background(), event2, testEventArgs{})
+	require.NoError(t, err)
+	require.Equal(t, 2, callCount, "Handler should be called again for event2")
+}
+
+func Test_Duplicate_Handler_Detection_Different_Handlers(t *testing.T) {
+	// Different handlers for the same event should not trigger duplicate detection
+	callCount1 := 0
+	handler1 := func(ctx context.Context, args testEventArgs) error {
+		callCount1++
+		return nil
+	}
+
+	callCount2 := 0
+	handler2 := func(ctx context.Context, args testEventArgs) error {
+		callCount2++
+		return nil
+	}
+
+	ed := NewEventDispatcher[testEventArgs](testEvent)
+
+	// Register two different handlers for the same event
+	err := ed.AddHandler(context.Background(), testEvent, handler1)
+	require.NoError(t, err)
+
+	err = ed.AddHandler(context.Background(), testEvent, handler2)
+	require.NoError(t, err)
+
+	// Verify both handlers are registered
+	ed.mu.RLock()
+	handlerCount := len(ed.handlers[testEvent])
+	ed.mu.RUnlock()
+	require.Equal(t, 2, handlerCount, "Should have 2 different handlers")
+
+	// Both handlers should be called when event is raised
+	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	require.NoError(t, err)
+	require.Equal(t, 1, callCount1, "Handler1 should be called")
+	require.Equal(t, 1, callCount2, "Handler2 should be called")
+}
+
+func Test_Duplicate_Handler_Detection_Multiple_Duplicates(t *testing.T) {
+	callCount := 0
+	handler := func(ctx context.Context, args testEventArgs) error {
+		callCount++
+		return nil
+	}
+
+	ed := NewEventDispatcher[testEventArgs](testEvent)
+
+	// First registration
+	err := ed.AddHandler(context.Background(), testEvent, handler)
+	require.NoError(t, err)
+
+	// Multiple duplicate registrations
+	for i := 0; i < 3; i++ {
+		err = ed.AddHandler(context.Background(), testEvent, handler)
+		require.NoError(t, err)
+	}
+
+	// Verify only one handler is registered
+	ed.mu.RLock()
+	handlerCount := len(ed.handlers[testEvent])
+	ed.mu.RUnlock()
+	require.Equal(t, 1, handlerCount, "Should still have only 1 handler after multiple duplicate attempts")
+
+	// Handler should only be called once
+	err = ed.RaiseEvent(context.Background(), testEvent, testEventArgs{})
+	require.NoError(t, err)
+	require.Equal(t, 1, callCount, "Handler should be called only once despite multiple registration attempts")
+}
+
 type testEventArgs struct{}
 
 const testEvent Event = "test"

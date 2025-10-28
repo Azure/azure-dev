@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
 	"github.com/fatih/color"
 	"github.com/mattn/go-isatty"
@@ -34,8 +35,8 @@ func Hyperlink(url string, text ...string) string {
 		text = []string{url}
 	}
 
-	// Check if stdout is a terminal
-	if !isatty.IsTerminal(os.Stdout.Fd()) {
+	// Check if stdout is a terminal (mimics input.IsTerminal logic)
+	if !isOutputTerminal() {
 		// Not a terminal - return plain URL without escape codes
 		if text[0] != "" && text[0] != url {
 			return fmt.Sprintf("%s (%s)", text[0], url)
@@ -45,6 +46,22 @@ func Hyperlink(url string, text ...string) string {
 
 	// Terminal - use hyperlink escape codes
 	return fmt.Sprintf("\033]8;;%s\007%s\033]8;;\007", url, text[0])
+}
+
+// isOutputTerminal checks if stdout is a terminal, taking into account environment
+// variables that force TTY behavior. This mirrors the logic in input.IsTerminal.
+func isOutputTerminal() bool {
+	// User override to force TTY behavior
+	if forceTty, err := strconv.ParseBool(os.Getenv("AZD_FORCE_TTY")); err == nil {
+		return forceTty
+	}
+
+	// By default, detect if we are running on CI and force no TTY mode if we are.
+	if resource.IsRunningOnCI() {
+		return false
+	}
+
+	return isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd())
 }
 
 var BoldString = color.New(color.Bold).SprintfFunc()

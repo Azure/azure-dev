@@ -19,7 +19,7 @@ func TestSampleAgentFiles(t *testing.T) {
 			filePath: "../../../../tests/samples/declarativeNoTools/agent.yaml",
 		},
 		{
-			name:     "GitHub MCP Agent",
+			name:     "GitHub MCP Agent", 
 			filePath: "../../../../tests/samples/githubMcpAgent/agent.yaml",
 		},
 	}
@@ -52,10 +52,10 @@ func TestSampleAgentFiles(t *testing.T) {
 				t.Error("Agent model ID should not be empty")
 			}
 
-			t.Logf("Successfully validated %s - Agent: %s, Kind: %s, Model: %s",
-				tt.filePath,
-				agentManifest.Agent.Name,
-				agentManifest.Agent.Kind,
+			t.Logf("Successfully validated %s - Agent: %s, Kind: %s, Model: %s", 
+				tt.filePath, 
+				agentManifest.Agent.Name, 
+				agentManifest.Agent.Kind, 
 				agentManifest.Agent.Model.Id)
 		})
 	}

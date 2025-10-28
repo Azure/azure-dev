@@ -58,8 +58,8 @@ func TestValidateAgentManifest(t *testing.T) {
 			name: "Missing model ID",
 			manifest: &AgentManifest{
 				Agent: AgentDefinition{
-					Name:  "Test Agent",
-					Kind:  "prompt",
+					Name: "Test Agent",
+					Kind: "prompt",
 					Model: Model{},
 				},
 			},

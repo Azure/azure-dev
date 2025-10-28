@@ -39,24 +39,24 @@ const (
 type AgentContainerStatus string
 
 const (
-	AgentContainerStatusStarting AgentContainerStatus = "Starting"
-	AgentContainerStatusRunning  AgentContainerStatus = "Running"
-	AgentContainerStatusStopping AgentContainerStatus = "Stopping"
-	AgentContainerStatusStopped  AgentContainerStatus = "Stopped"
-	AgentContainerStatusFailed   AgentContainerStatus = "Failed"
-	AgentContainerStatusDeleting AgentContainerStatus = "Deleting"
-	AgentContainerStatusDeleted  AgentContainerStatus = "Deleted"
-	AgentContainerStatusUpdating AgentContainerStatus = "Updating"
+	AgentContainerStatusStarting  AgentContainerStatus = "Starting"
+	AgentContainerStatusRunning   AgentContainerStatus = "Running"
+	AgentContainerStatusStopping  AgentContainerStatus = "Stopping"
+	AgentContainerStatusStopped   AgentContainerStatus = "Stopped"
+	AgentContainerStatusFailed    AgentContainerStatus = "Failed"
+	AgentContainerStatusDeleting  AgentContainerStatus = "Deleting"
+	AgentContainerStatusDeleted   AgentContainerStatus = "Deleted"
+	AgentContainerStatusUpdating  AgentContainerStatus = "Updating"
 )
 
 // AgentContainerOperationStatus represents the status of container operations
 type AgentContainerOperationStatus string
 
 const (
-	AgentContainerOperationStatusNotStarted AgentContainerOperationStatus = "NotStarted"
-	AgentContainerOperationStatusInProgress AgentContainerOperationStatus = "InProgress"
-	AgentContainerOperationStatusSucceeded  AgentContainerOperationStatus = "Succeeded"
-	AgentContainerOperationStatusFailed     AgentContainerOperationStatus = "Failed"
+	AgentContainerOperationStatusNotStarted  AgentContainerOperationStatus = "NotStarted"
+	AgentContainerOperationStatusInProgress  AgentContainerOperationStatus = "InProgress"
+	AgentContainerOperationStatusSucceeded   AgentContainerOperationStatus = "Succeeded"
+	AgentContainerOperationStatusFailed      AgentContainerOperationStatus = "Failed"
 )
 
 // RaiConfig represents configuration for Responsible AI content filtering
@@ -135,31 +135,31 @@ type ToolArgumentBinding struct {
 
 // StructuredInputDefinition represents a structured input definition
 type StructuredInputDefinition struct {
-	Description          *string               `json:"description,omitempty"`
-	DefaultValue         interface{}           `json:"default_value,omitempty"`
-	ToolArgumentBindings []ToolArgumentBinding `json:"tool_argument_bindings,omitempty"`
-	Schema               interface{}           `json:"schema,omitempty"`
-	Required             *bool                 `json:"required,omitempty"`
+	Description           *string               `json:"description,omitempty"`
+	DefaultValue          interface{}           `json:"default_value,omitempty"`
+	ToolArgumentBindings  []ToolArgumentBinding `json:"tool_argument_bindings,omitempty"`
+	Schema                interface{}           `json:"schema,omitempty"`
+	Required              *bool                 `json:"required,omitempty"`
 }
 
 // PromptAgentDefinition represents a prompt-based agent
 type PromptAgentDefinition struct {
 	AgentDefinition
-	Model            string                               `json:"model"`
-	Instructions     *string                              `json:"instructions,omitempty"`
-	Temperature      *float32                             `json:"temperature,omitempty"`
-	TopP             *float32                             `json:"top_p,omitempty"`
-	Reasoning        *Reasoning                           `json:"reasoning,omitempty"`
-	Tools            []Tool                               `json:"tools,omitempty"`
-	Text             *ResponseTextFormatConfiguration     `json:"text,omitempty"`
+	Model            string                              `json:"model"`
+	Instructions     *string                             `json:"instructions,omitempty"`
+	Temperature      *float32                            `json:"temperature,omitempty"`
+	TopP             *float32                            `json:"top_p,omitempty"`
+	Reasoning        *Reasoning                          `json:"reasoning,omitempty"`
+	Tools            []Tool                              `json:"tools,omitempty"`
+	Text             *ResponseTextFormatConfiguration    `json:"text,omitempty"`
 	StructuredInputs map[string]StructuredInputDefinition `json:"structured_inputs,omitempty"`
 }
 
 // CreateAgentVersionRequest represents a request to create an agent version
 type CreateAgentVersionRequest struct {
-	Description *string           `json:"description,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	Definition  interface{}       `json:"definition"` // Can be any of the agent definition types
+	Description *string                `json:"description,omitempty"`
+	Metadata    map[string]string      `json:"metadata,omitempty"`
+	Definition  interface{}            `json:"definition"` // Can be any of the agent definition types
 }
 
 // CreateAgentRequest represents a request to create an agent
@@ -175,14 +175,14 @@ type UpdateAgentRequest struct {
 
 // AgentVersionObject represents an agent version
 type AgentVersionObject struct {
-	Object      string            `json:"object"`
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Version     string            `json:"version"`
-	Description *string           `json:"description,omitempty"`
-	Metadata    map[string]string `json:"metadata,omitempty"`
-	CreatedAt   int64             `json:"created_at"`
-	Definition  interface{}       `json:"definition"` // Can be any of the agent definition types
+	Object      string                 `json:"object"`
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Version     string                 `json:"version"`
+	Description *string                `json:"description,omitempty"`
+	Metadata    map[string]string      `json:"metadata,omitempty"`
+	CreatedAt   int64                  `json:"created_at"`
+	Definition  interface{}            `json:"definition"` // Can be any of the agent definition types
 }
 
 // AgentObject represents an agent
@@ -243,29 +243,29 @@ type AgentEventHandlerDestination struct {
 // EvalsDestination represents an evals destination for event handlers
 type EvalsDestination struct {
 	AgentEventHandlerDestination
-	EvalID        string `json:"eval_id"`
-	MaxHourlyRuns *int32 `json:"max_hourly_runs,omitempty"`
+	EvalID         string `json:"eval_id"`
+	MaxHourlyRuns  *int32 `json:"max_hourly_runs,omitempty"`
 }
 
 // AgentEventHandlerRequest represents a request to create an event handler
 type AgentEventHandlerRequest struct {
-	Name        string                       `json:"name"`
-	Metadata    map[string]string            `json:"metadata,omitempty"`
-	EventTypes  []AgentEventType             `json:"event_types"`
-	Filter      *AgentEventHandlerFilter     `json:"filter,omitempty"`
-	Destination AgentEventHandlerDestination `json:"destination"`
+	Name        string                        `json:"name"`
+	Metadata    map[string]string             `json:"metadata,omitempty"`
+	EventTypes  []AgentEventType              `json:"event_types"`
+	Filter      *AgentEventHandlerFilter      `json:"filter,omitempty"`
+	Destination AgentEventHandlerDestination  `json:"destination"`
 }
 
 // AgentEventHandlerObject represents an event handler
 type AgentEventHandlerObject struct {
-	Object      string                       `json:"object"`
-	ID          string                       `json:"id"`
-	Name        string                       `json:"name"`
-	Metadata    map[string]string            `json:"metadata,omitempty"`
-	CreatedAt   int64                        `json:"created_at"`
-	EventTypes  []AgentEventType             `json:"event_types"`
-	Filter      *AgentEventHandlerFilter     `json:"filter,omitempty"`
-	Destination AgentEventHandlerDestination `json:"destination"`
+	Object      string                        `json:"object"`
+	ID          string                        `json:"id"`
+	Name        string                        `json:"name"`
+	Metadata    map[string]string             `json:"metadata,omitempty"`
+	CreatedAt   int64                         `json:"created_at"`
+	EventTypes  []AgentEventType              `json:"event_types"`
+	Filter      *AgentEventHandlerFilter      `json:"filter,omitempty"`
+	Destination AgentEventHandlerDestination  `json:"destination"`
 }
 
 // DeleteAgentEventHandlerResponse represents the response when deleting an event handler
@@ -284,20 +284,20 @@ type AgentContainerOperationError struct {
 
 // AgentContainerObject represents the details of an agent container
 type AgentContainerObject struct {
-	Object       string               `json:"object"`
-	Status       AgentContainerStatus `json:"status"`
-	MaxReplicas  *int32               `json:"max_replicas,omitempty"`
-	MinReplicas  *int32               `json:"min_replicas,omitempty"`
-	ErrorMessage *string              `json:"error_message,omitempty"`
-	CreatedAt    string               `json:"created_at"`
-	UpdatedAt    string               `json:"updated_at"`
+	Object       string                `json:"object"`
+	Status       AgentContainerStatus  `json:"status"`
+	MaxReplicas  *int32                `json:"max_replicas,omitempty"`
+	MinReplicas  *int32                `json:"min_replicas,omitempty"`
+	ErrorMessage *string               `json:"error_message,omitempty"`
+	CreatedAt    string                `json:"created_at"`
+	UpdatedAt    string                `json:"updated_at"`
 }
 
 // AgentContainerOperationObject represents a container operation
 type AgentContainerOperationObject struct {
-	ID             string                        `json:"id"`
-	AgentID        string                        `json:"agent_id"`
-	AgentVersionID string                        `json:"agent_version_id"`
+	ID             string                         `json:"id"`
+	AgentID        string                         `json:"agent_id"`
+	AgentVersionID string                         `json:"agent_version_id"`
 	Status         AgentContainerOperationStatus `json:"status"`
 	Error          *AgentContainerOperationError `json:"error,omitempty"`
 	Container      *AgentContainerObject         `json:"container,omitempty"`
@@ -305,7 +305,7 @@ type AgentContainerOperationObject struct {
 
 // AcceptedAgentContainerOperation represents an accepted container operation response
 type AcceptedAgentContainerOperation struct {
-	Location string                        `json:"location"` // From Operation-Location header
+	Location string                         `json:"location"` // From Operation-Location header
 	Body     AgentContainerOperationObject `json:"body"`
 }
 

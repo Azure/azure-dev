@@ -6,7 +6,7 @@ trigger:
   paths:
     include:
       - go.mod
-      - cli/azd/extensions/azure.foundry.ai.agents
+      - cli/azd/extensions/azure.ai.agents
       - eng/pipelines/release-azd-extension.yml
       - /eng/pipelines/templates/jobs/build-azd-extension.yml
       - /eng/pipelines/templates/jobs/cross-build-azd-extension.yml
@@ -15,7 +15,7 @@ trigger:
 pr:
   paths:
     include:
-      - cli/azd/extensions/azure.foundry.ai.agents
+      - cli/azd/extensions/azure.ai.agents
       - eng/pipelines/release-azd-extension.yml
       - eng/pipelines/templates/steps/publish-cli.yml
     exclude:
@@ -27,6 +27,6 @@ extends:
     stages:
       - template: /eng/pipelines/templates/stages/release-azd-extension.yml
         parameters: 
-          AzdExtensionId: azure.foundry.ai.agents
+          AzdExtensionId: azure.ai.agents
           SanitizedExtensionId: azure-foundry-ai-agents
-          AzdExtensionDirectory: cli/azd/extensions/azure.foundry.ai.agents
+          AzdExtensionDirectory: cli/azd/extensions/azure.ai.agents

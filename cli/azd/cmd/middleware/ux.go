@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -57,11 +58,14 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 			errorMessage.WriteString("\n" + suggestionErr.Suggestion)
 		}
 
-		// UnsupportedServiceHostError is a special error which needs to float up without printing output here yet.
-		// The error is bubble up for the caller to decide to show it or not
-		var unsupportedErr *project.UnsupportedServiceHostError
 		errMessage := errorMessage.String()
-		if errors.As(err, &unsupportedErr) {
+
+		// For specific errors, we silent the output display here and let the caller handle it
+		var unsupportedErr *project.UnsupportedServiceHostError
+		var extensionRunErr *extensions.ExtensionRunError
+		if errors.As(err, &extensionRunErr) {
+			return actionResult, err
+		} else if errors.As(err, &unsupportedErr) {
 			// set the error message so the caller can use it if needed
 			unsupportedErr.ErrorMessage = errMessage
 			return actionResult, err

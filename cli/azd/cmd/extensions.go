@@ -11,6 +11,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -78,8 +80,9 @@ func bindExtension(
 	}
 
 	current.Add(lastPart, &actions.ActionDescriptorOptions{
-		Command:        cmd,
-		ActionResolver: newExtensionAction,
+		Command:                cmd,
+		ActionResolver:         newExtensionAction,
+		DisableTroubleshooting: true,
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupExtensions,
 		},
@@ -132,6 +135,10 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("failed to get extension %s: %w", extensionId, err)
 	}
 
+	tracing.SetUsageAttributes(
+		fields.ExtensionId.String(extension.Id),
+		fields.ExtensionVersion.String(extension.Version))
+
 	allEnv := []string{}
 	allEnv = append(allEnv, os.Environ()...)
 
@@ -179,7 +186,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	_, err = a.extensionRunner.Invoke(ctx, extension, options)
 	if err != nil {
-		os.Exit(1)
+		return nil, err
 	}
 
 	return nil, nil

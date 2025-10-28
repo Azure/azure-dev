@@ -167,12 +167,14 @@ overrides:
       - getenv
       - errorf
       - println
+      - myext
+      - Fatalf
   - filename: extensions/microsoft.azd.ai.builder/internal/cmd/start.go
     words:
       - dall
       - datasource
       - vectorizing
-  - filename: extensions/azure.foundry.ai.agents/internal/cmd/listen.go
+  - filename: extensions/azure.ai.agents/internal/cmd/listen.go
     words:
       - hostedagent
   - filename: docs/new-azd-command.md

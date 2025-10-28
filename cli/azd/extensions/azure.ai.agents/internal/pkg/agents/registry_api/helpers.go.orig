@@ -21,9 +21,6 @@ import (
 type ParameterValues map[string]interface{}
 
 func ProcessRegistryManifest(ctx context.Context, manifest *Manifest, azdClient *azdext.AzdClient) (*agent_yaml.AgentManifest, error) {
-	// Debug: Print manifest.Template
-	fmt.Printf("DEBUG: manifest.Template: %+v\n", manifest.Template)
-
 	// Convert the agent API definition into a MAML definition
 	promptAgent, err := ConvertAgentDefinition(manifest.Template)
 	if err != nil {
@@ -45,14 +42,22 @@ func ProcessRegistryManifest(ctx context.Context, manifest *Manifest, azdClient 
 		Name:        manifest.Name,
 		DisplayName: manifest.DisplayName,
 		Description: &manifest.Description,
+<<<<<<< HEAD:cli/azd/extensions/azure.foundry.ai.agents/internal/pkg/agents/registry_api/helpers.go
 		Template:    *promptAgent,
+=======
+		Template:    *agentDef,
+>>>>>>> main:cli/azd/extensions/azure.ai.agents/internal/pkg/agents/registry_api/helpers.go
 		Parameters:  parameters,
 	}
 
 	return result, nil
 }
 
+<<<<<<< HEAD:cli/azd/extensions/azure.foundry.ai.agents/internal/pkg/agents/registry_api/helpers.go
 func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_yaml.PromptAgent, error) {
+=======
+func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_yaml.AgentDefinition, error) {
+>>>>>>> main:cli/azd/extensions/azure.ai.agents/internal/pkg/agents/registry_api/helpers.go
 	// Convert tools from agent_api.Tool to agent_yaml.Tool
 	var tools []agent_yaml.Tool
 	for _, apiTool := range template.Tools {
@@ -63,6 +68,7 @@ func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_ya
 		tools = append(tools, yamlTool)
 	}
 
+<<<<<<< HEAD:cli/azd/extensions/azure.foundry.ai.agents/internal/pkg/agents/registry_api/helpers.go
 	// Create the PromptAgent
 	promptAgent := &agent_yaml.PromptAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
@@ -79,6 +85,18 @@ func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_ya
 	}
 
 	return promptAgent, nil
+=======
+	// Create the AgentDefinition
+	agentDef := &agent_yaml.AgentDefinition{
+		Kind:        agent_yaml.AgentKindPrompt, // Set to prompt kind
+		Name:        "",                         // Will be set later from manifest or user input
+		Description: nil,                        // Will be set later from manifest or user input
+		Tools:       &tools,
+		// Metadata:     make(map[string]interface{}), // TODO, Where does this come from?
+	}
+
+	return agentDef, nil
+>>>>>>> main:cli/azd/extensions/azure.ai.agents/internal/pkg/agents/registry_api/helpers.go
 }
 
 func ConvertParameters(parameters map[string]OpenApiParameter) (*map[string]agent_yaml.Parameter, error) {

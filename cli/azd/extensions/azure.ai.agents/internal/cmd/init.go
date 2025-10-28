@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -46,7 +47,7 @@ type InitAction struct {
 	//azureClient       *azure.AzureClient
 	azureContext *azdext.AzureContext
 	//composedResources []*azdext.ComposedResource
-	//console           input.Console
+	console             input.Console
 	credential          azcore.TokenCredential
 	modelCatalog        map[string]*ai.AiModel
 	modelCatalogService *ai.ModelCatalogService
@@ -101,25 +102,25 @@ func newInitCommand() *cobra.Command {
 				return fmt.Errorf("failed to create azure credential: %w", err)
 			}
 
-			// console := input.NewConsole(
-			// 	false, // noPrompt
-			// 	true,  // isTerminal
-			// 	input.Writers{Output: os.Stdout},
-			// 	input.ConsoleHandles{
-			// 		Stderr: os.Stderr,
-			// 		Stdin:  os.Stdin,
-			// 		Stdout: os.Stdout,
-			// 	},
-			// 	nil, // formatter
-			// 	nil, // externalPromptCfg
-			// )
+			console := input.NewConsole(
+				false, // noPrompt
+				true,  // isTerminal
+				input.Writers{Output: os.Stdout},
+				input.ConsoleHandles{
+					Stderr: os.Stderr,
+					Stdin:  os.Stdin,
+					Stdout: os.Stdout,
+				},
+				nil, // formatter
+				nil, // externalPromptCfg
+			)
 
 			action := &InitAction{
 				azdClient: azdClient,
 				// azureClient:         azure.NewAzureClient(credential),
 				azureContext: azureContext,
 				// composedResources:   getComposedResourcesResponse.Resources,
-				// console: console,
+				console:             console,
 				credential:          credential,
 				modelCatalogService: ai.NewModelCatalogService(credential),
 				projectConfig:       projectConfig,
@@ -771,8 +772,13 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	switch agentDef.Kind {
 	case "container":
 		host = "containerapp"
+	case "hosted":
+		host = "azure.ai.agents"
+	case "prompt":
+		host = "azure.ai.agents"
 	default:
-		host = "foundry.containeragent"
+		// except here
+		return fmt.Errorf("unsupported agent kind: %s", agentDef.Kind)
 	}
 
 	serviceConfig := &azdext.ServiceConfig{
@@ -1192,7 +1198,7 @@ func (a *InitAction) loadAiCatalog(ctx context.Context) error {
 		return fmt.Errorf("failed to start spinner: %w", err)
 	}
 
-	aiModelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId)
+	aiModelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, a.azureContext.Scope.Location)
 	if err != nil {
 		return fmt.Errorf("failed to load AI model catalog: %w", err)
 	}
@@ -1226,33 +1232,48 @@ func (a *InitAction) loadAiCatalog(ctx context.Context) error {
 // 	}
 // }
 
-// func selectFromList(
-// 	ctx context.Context, console input.Console, q string, options []string, defaultOpt *string) (string, error) {
+func (a *InitAction) selectFromList(
+	ctx context.Context, property string, options []string, defaultOpt string) (string, error) {
 
-// 	if len(options) == 1 {
-// 		return options[0], nil
-// 	}
+	if len(options) == 1 {
+		fmt.Printf("Only one %s available: %s\n", property, options[0])
+		return options[0], nil
+	}
 
-// 	defOpt := options[0]
+	slices.Sort(options)
 
-// 	if defaultOpt != nil {
-// 		defOpt = *defaultOpt
-// 	}
+	// Convert default value to string for comparison
+	defaultStr := options[0]
+	if defaultOpt != "" {
+		defaultStr = defaultOpt
+	}
 
-// 	slices.Sort(options)
-// 	selectedIndex, err := console.Select(ctx, input.ConsoleOptions{
-// 		Message:      q,
-// 		Options:      options,
-// 		DefaultValue: defOpt,
-// 	})
+	// Create choices for the select prompt
+	choices := make([]*azdext.SelectChoice, len(options))
+	defaultIndex := int32(0)
+	for i, val := range options {
+		choices[i] = &azdext.SelectChoice{
+			Value: val,
+			Label: val,
+		}
+		if val == defaultStr {
+			defaultIndex = int32(i)
+		}
+	}
 
-// 	if err != nil {
-// 		return "", err
-// 	}
+	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message:       fmt.Sprintf("Select %s", property),
+			Choices:       choices,
+			SelectedIndex: &defaultIndex,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to prompt for enum value: %w", err)
+	}
 
-// 	chosen := options[selectedIndex]
-// 	return chosen, nil
-// }
+	return options[*resp.Value], nil
+}
 
 func (a *InitAction) updateEnvironment(ctx context.Context, agentManifest *agent_yaml.AgentManifest) error {
 	// Convert the template to bytes
@@ -1398,21 +1419,45 @@ type DeploymentSku struct {
 }
 
 func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_yaml.Model) (*Deployment, error) {
-	modelDetails, err := a.getModelDetails(ctx, model.Id, *model.Version)
+	version := ""
+	if model.Version != nil {
+		version = *model.Version
+	}
+	modelDetails, err := a.getModelDetails(ctx, model.Id, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get model details: %w", err)
 	}
 
+	var modelDeployment string
+	if model.Deployment != nil {
+		modelDeployment = *model.Deployment
+	} else {
+		message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name):", model.Id)
+
+		modelDeploymentInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:        message,
+				IgnoreHintKeys: true,
+				DefaultValue:   model.Id,
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to prompt for text value: %w", err)
+		}
+
+		modelDeployment = modelDeploymentInput.Value
+	}
+
 	return &Deployment{
-		Name: *model.Deployment,
+		Name: modelDeployment,
 		Model: DeploymentModel{
 			Name:    model.Id,
 			Format:  modelDetails.Format,
-			Version: *model.Version,
+			Version: modelDetails.Version,
 		},
 		Sku: DeploymentSku{
-			Name:     "GlobalStandard",
-			Capacity: 100,
+			Name:     modelDetails.Sku.Name,
+			Capacity: int(modelDetails.Sku.Capacity),
 		},
 	}, nil
 }
@@ -1430,9 +1475,33 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string, mode
 		return nil, fmt.Errorf("model '%s' not found in AI model catalog", modelName)
 	}
 
+	if modelVersion == "" {
+		availableVersions, defaultVersion, err := a.modelCatalogService.ListModelVersions(ctx, model)
+		if err != nil {
+			return nil, fmt.Errorf("listing versions for model '%s': %w", modelName, err)
+		}
+
+		modelVersionSelection, err := a.selectFromList(ctx, "model version", availableVersions, defaultVersion)
+		if err != nil {
+			return nil, err
+		}
+
+		modelVersion = modelVersionSelection
+	}
+
+	availableSkus, err := a.modelCatalogService.ListModelSkus(ctx, model, modelVersion)
+	if err != nil {
+		return nil, fmt.Errorf("listing SKUs for model '%s': %w", modelName, err)
+	}
+
+	skuSelection, err := a.selectFromList(ctx, "model SKU", availableSkus, "")
+	if err != nil {
+		return nil, err
+	}
+
 	deploymentOptions := ai.AiModelDeploymentOptions{
 		Versions: []string{modelVersion},
-		Skus:     []string{"GlobalStandard"},
+		Skus:     []string{skuSelection},
 	}
 
 	modelDeployment, err := a.modelCatalogService.GetModelDeployment(ctx, model, &deploymentOptions)

@@ -272,8 +272,9 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 
 	nextFn := func(ctx context.Context) (*actions.ActionResult, error) {
 		err := serviceConfig.Invoke(ctx, project.ServiceEventDeploy, project.ServiceLifecycleEventArgs{
-			Project: &projectConfig,
-			Service: serviceConfig,
+			Project:        &projectConfig,
+			Service:        serviceConfig,
+			ServiceContext: project.NewServiceContext(),
 		}, func() error {
 			return nil
 		})

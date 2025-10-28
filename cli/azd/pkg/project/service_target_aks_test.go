@@ -1018,8 +1018,9 @@ func simulateInitliaze(ctx context.Context, serviceTarget ServiceTarget, service
 	}
 
 	err := serviceConfig.RaiseEvent(ctx, "predeploy", ServiceLifecycleEventArgs{
-		Project: serviceConfig.Project,
-		Service: serviceConfig,
+		Project:        serviceConfig.Project,
+		Service:        serviceConfig,
+		ServiceContext: NewServiceContext(),
 	})
 
 	if err != nil {

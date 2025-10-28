@@ -51,17 +51,32 @@ func Test_CLI_VsServerExternalAuth(t *testing.T) {
 	err := cmd.Start()
 	require.NoError(t, err)
 
-	// Wait for the server to start
-	for i := 0; i < 5; i++ {
-		time.Sleep(300 * time.Millisecond)
+	// Wait for the server to start and output complete JSON
+	var svr contracts.VsServerResult
+	var outputData []byte
+	maxAttempts := 20 // Increased from 5 to give more time
+	for i := 0; i < maxAttempts; i++ {
+		time.Sleep(150 * time.Millisecond) // Reduced sleep time but more attempts
 		if stdout.Len() > 0 {
-			break
+			outputData = stdout.Bytes()
+			// Try to parse JSON - if it succeeds, we have complete output
+			if err := json.Unmarshal(outputData, &svr); err == nil {
+				break
+			}
+			// If we're on the last attempt and still can't parse, fail with helpful error
+			if i == maxAttempts-1 {
+				require.NoError(
+					t,
+					err,
+					"failed to parse JSON after %d attempts, output: %s",
+					maxAttempts,
+					string(outputData),
+				)
+			}
+		} else if i == maxAttempts-1 {
+			require.FailNow(t, "server did not produce any output after %d attempts", maxAttempts)
 		}
 	}
-
-	var svr contracts.VsServerResult
-	err = json.Unmarshal(stdout.Bytes(), &svr)
-	require.NoError(t, err, "value: %s", stdout.String())
 
 	ssConn, _, err := websocket.DefaultDialer.Dial(fmt.Sprintf("ws://127.0.0.1:%d/ServerService/v1.0", svr.Port), nil)
 	require.NoError(t, err)
@@ -235,17 +250,32 @@ func Test_CLI_VsServer(t *testing.T) {
 			err = cmd.Start()
 			require.NoError(t, err)
 
-			// Wait for the server to start
-			for i := 0; i < 5; i++ {
-				time.Sleep(300 * time.Millisecond)
+			// Wait for the server to start and output complete JSON
+			var svr contracts.VsServerResult
+			var outputData []byte
+			maxAttempts := 20 // Increased from 5 to give more time
+			for i := 0; i < maxAttempts; i++ {
+				time.Sleep(150 * time.Millisecond) // Reduced sleep time but more attempts
 				if stdout.Len() > 0 {
-					break
+					outputData = stdout.Bytes()
+					// Try to parse JSON - if it succeeds, we have complete output
+					if err := json.Unmarshal(outputData, &svr); err == nil {
+						break
+					}
+					// If we're on the last attempt and still can't parse, fail with helpful error
+					if i == maxAttempts-1 {
+						require.NoError(
+							t,
+							err,
+							"failed to parse JSON after %d attempts, output: %s",
+							maxAttempts,
+							string(outputData),
+						)
+					}
+				} else if i == maxAttempts-1 {
+					require.FailNow(t, "server did not produce any output after %d attempts", maxAttempts)
 				}
 			}
-
-			var svr contracts.VsServerResult
-			err = json.Unmarshal(stdout.Bytes(), &svr)
-			require.NoError(t, err, "value: %s", stdout.String())
 
 			/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive */
 			cmd = exec.CommandContext(context.Background(),

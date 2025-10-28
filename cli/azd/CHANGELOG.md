@@ -1,14 +1,17 @@
 # Release History
 
-## 1.21.0-beta.1 (Unreleased)
+## 1.20.3 (2025-10-28)
 
 ### Features Added
 
-### Breaking Changes
+- [[#5995]](https://github.com/Azure/azure-dev/pull/5995) Add AccountService gRPC API and server implementation.
+- [[#6002]](https://github.com/Azure/azure-dev/pull/6002) Exposes ServiceContext in Service lifecycle events.
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#5985]](https://github.com/Azure/azure-dev/pull/5985) Fix potential concurrent map write panics in FrameworkService.
+- [[#6001]](https://github.com/Azure/azure-dev/pull/6001) fix: prevent index out of range panic in progressLog.Write().
+- [[#6012]](https://github.com/Azure/azure-dev/pull/6012) Fixes issue with duplicate event registration in workflow commands.
 
 ## 1.20.2 (2025-10-22)
 

@@ -398,8 +398,9 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 		for _, svc := range servicesStable {
 			eventArgs := project.ServiceLifecycleEventArgs{
-				Project: p.projectConfig,
-				Service: svc,
+				Project:        p.projectConfig,
+				Service:        svc,
+				ServiceContext: project.NewServiceContext(),
 				Args: map[string]any{
 					"bicepOutput": deployResult.Deployment.Outputs,
 				},

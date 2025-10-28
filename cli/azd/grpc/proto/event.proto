@@ -65,6 +65,8 @@ message InvokeServiceHandler {
   ProjectConfig project = 2;
   // Specific service configuration.
   ServiceConfig service = 3;
+  // Service context with artifacts from all lifecycle phases.
+  ServiceContext service_context = 4;
 }
 
 // Client sends status updates for project events

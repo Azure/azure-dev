@@ -195,9 +195,13 @@ func Start(t *testing.T, opts ...Options) *Session {
 	}
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	vcr.SetRealTransport(&gzip2HttpRoundTripper{
+
+	// Wrap the transport chain with resilient retry logic and gzip handling
+	resilientTransport := NewResilientHttpTransport(&gzip2HttpRoundTripper{
 		transport: transport,
 	})
+
+	vcr.SetRealTransport(resilientTransport)
 
 	vcr.SetMatcher(func(r *http.Request, i cassette.Request) bool {
 		// Ignore query parameter 's=...' in containerappOperationResults

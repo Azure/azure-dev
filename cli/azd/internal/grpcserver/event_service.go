@@ -160,7 +160,7 @@ func (s *eventService) createProjectEventHandler(
 		defer s.syncExtensionOutput(ctx, extension, previewTitle)()
 
 		// Send the invoke message.
-		if err := s.sendProjectInvokeMessage(stream, eventName, args.Project); err != nil {
+		if err := s.sendProjectInvokeMessage(stream, eventName, args); err != nil {
 			return err
 		}
 
@@ -172,7 +172,7 @@ func (s *eventService) createProjectEventHandler(
 func (s *eventService) sendProjectInvokeMessage(
 	stream grpc.BidiStreamingServer[azdext.EventMessage, azdext.EventMessage],
 	eventName string,
-	proj *project.ProjectConfig,
+	args project.ProjectLifecycleEventArgs,
 ) error {
 	resolver := noEnvResolver
 	env, err := s.lazyEnv.GetValue()
@@ -181,7 +181,7 @@ func (s *eventService) sendProjectInvokeMessage(
 	}
 
 	var protoProjectConfig *azdext.ProjectConfig
-	if err := mapper.WithResolver(resolver).Convert(proj, &protoProjectConfig); err != nil {
+	if err := mapper.WithResolver(resolver).Convert(args.Project, &protoProjectConfig); err != nil {
 		return err
 	}
 
@@ -270,7 +270,7 @@ func (s *eventService) createServiceEventHandler(
 		defer s.syncExtensionOutput(ctx, extension, previewTitle)()
 
 		// Send the invoke message.
-		if err := s.sendServiceInvokeMessage(stream, eventName, args.Project, args.Service); err != nil {
+		if err := s.sendServiceInvokeMessage(stream, eventName, args); err != nil {
 			return err
 		}
 
@@ -282,8 +282,7 @@ func (s *eventService) createServiceEventHandler(
 func (s *eventService) sendServiceInvokeMessage(
 	stream grpc.BidiStreamingServer[azdext.EventMessage, azdext.EventMessage],
 	eventName string,
-	proj *project.ProjectConfig,
-	svc *project.ServiceConfig,
+	args project.ServiceLifecycleEventArgs,
 ) error {
 	resolver := noEnvResolver
 	env, err := s.lazyEnv.GetValue()
@@ -291,22 +290,30 @@ func (s *eventService) sendServiceInvokeMessage(
 		resolver = env.Getenv
 	}
 
+	objectMapper := mapper.WithResolver(resolver)
+
 	var protoProjectConfig *azdext.ProjectConfig
-	if err := mapper.WithResolver(resolver).Convert(proj, &protoProjectConfig); err != nil {
+	if err := objectMapper.Convert(args.Project, &protoProjectConfig); err != nil {
 		return err
 	}
 
 	var protoServiceConfig *azdext.ServiceConfig
-	if err := mapper.WithResolver(resolver).Convert(svc, &protoServiceConfig); err != nil {
+	if err := objectMapper.Convert(args.Service, &protoServiceConfig); err != nil {
+		return err
+	}
+
+	var protoServiceContext *azdext.ServiceContext
+	if err := objectMapper.Convert(args.ServiceContext, &protoServiceContext); err != nil {
 		return err
 	}
 
 	return stream.Send(&azdext.EventMessage{
 		MessageType: &azdext.EventMessage_InvokeServiceHandler{
 			InvokeServiceHandler: &azdext.InvokeServiceHandler{
-				EventName: eventName,
-				Project:   protoProjectConfig,
-				Service:   protoServiceConfig,
+				EventName:      eventName,
+				Project:        protoProjectConfig,
+				Service:        protoServiceConfig,
+				ServiceContext: protoServiceContext,
 			},
 		},
 	})

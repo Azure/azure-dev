@@ -68,31 +68,38 @@ func (c *ModelCatalogService) ListAllKinds(ctx context.Context, allModels map[st
 	})
 }
 
-func (c *ModelCatalogService) ListModelVersions(ctx context.Context, model *AiModel) ([]string, error) {
+func (c *ModelCatalogService) ListModelVersions(ctx context.Context, model *AiModel) ([]string, string, error) {
 	versions := make(map[string]struct{})
+	defaultVersion := ""
 	for _, location := range model.Locations {
 		versions[*location.Model.Model.Version] = struct{}{}
+		if location.Model.Model.IsDefaultVersion != nil && *location.Model.Model.IsDefaultVersion {
+			defaultVersion = *location.Model.Model.Version
+		}
 	}
 
-	versionList := make([]string, len(versions))
+	versionList := make([]string, 0, len(versions))
 	for version := range versions {
 		versionList = append(versionList, version)
 	}
 
 	slices.Sort(versionList)
 
-	return versionList, nil
+	return versionList, defaultVersion, nil
 }
 
-func (c *ModelCatalogService) ListModelSkus(ctx context.Context, model *AiModel) ([]string, error) {
+func (c *ModelCatalogService) ListModelSkus(ctx context.Context, model *AiModel, modelVersion string) ([]string, error) {
 	skus := make(map[string]struct{})
+
 	for _, location := range model.Locations {
-		for _, sku := range location.Model.Model.SKUs {
-			skus[*sku.Name] = struct{}{}
+		if *location.Model.Model.Version == modelVersion {
+			for _, sku := range location.Model.Model.SKUs {
+				skus[*sku.Name] = struct{}{}
+			}
 		}
 	}
 
-	skuList := make([]string, len(skus))
+	skuList := make([]string, 0, len(skus)) // Create with capacity, not length
 	for sku := range skus {
 		skuList = append(skuList, sku)
 	}
@@ -173,10 +180,23 @@ func (c *ModelCatalogService) ListFilteredModels(
 	return filteredModels
 }
 
-func (c *ModelCatalogService) ListAllModels(ctx context.Context, subscriptionId string) (map[string]*AiModel, error) {
-	locations, err := c.azureClient.ListLocations(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
+func (c *ModelCatalogService) ListAllModels(ctx context.Context, subscriptionId string, location string) (map[string]*AiModel, error) {
+	var locations []*armsubscriptions.Location
+	var err error
+
+	if location == "" {
+		// If no specific location provided, get all locations
+		locations, err = c.azureClient.ListLocations(ctx, subscriptionId)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// If specific location provided, create a single-item slice with that location
+		locations = []*armsubscriptions.Location{
+			{
+				Name: &location,
+			},
+		}
 	}
 
 	modelsClient, err := createModelsClient(subscriptionId, c.credential)
@@ -315,6 +335,7 @@ func (c *ModelCatalogService) GetModelDeployment(
 
 		// Check for SKU match if specified
 		for _, sku := range location.Model.Model.SKUs {
+
 			if !slices.Contains(options.Skus, *sku.Name) {
 				continue
 			}

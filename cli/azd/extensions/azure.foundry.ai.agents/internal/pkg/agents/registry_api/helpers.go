@@ -21,14 +21,18 @@ import (
 type ParameterValues map[string]interface{}
 
 func ProcessRegistryManifest(ctx context.Context, manifest *Manifest, azdClient *azdext.AzdClient) (*agent_yaml.AgentManifest, error) {
+	// Debug: Print manifest.Template
+	fmt.Printf("DEBUG: manifest.Template: %+v\n", manifest.Template)
+
 	// Convert the agent API definition into a MAML definition
-	agentDef, err := ConvertAgentDefinition(manifest.Template)
+	promptAgent, err := ConvertAgentDefinition(manifest.Template)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert agentDefinition: %w", err)
 	}
 
 	// Inject Agent API Manifest properties into MAML Agent properties as needed
-	agentDef = MergeManifestIntoAgentDefinition(manifest, agentDef)
+	updatedAgentDef := MergeManifestIntoAgentDefinition(manifest, &promptAgent.AgentDefinition)
+	promptAgent.AgentDefinition = *updatedAgentDef
 
 	// Convert the agent API parameters into MAML parameters
 	parameters, err := ConvertParameters(manifest.Parameters)
@@ -36,19 +40,19 @@ func ProcessRegistryManifest(ctx context.Context, manifest *Manifest, azdClient 
 		return nil, fmt.Errorf("failed to convert parameters: %w", err)
 	}
 
-	// Create the AgentManifest with the converted AgentDefinition
+	// Create the AgentManifest with the converted PromptAgent
 	result := &agent_yaml.AgentManifest{
 		Name:        manifest.Name,
 		DisplayName: manifest.DisplayName,
 		Description: &manifest.Description,
-		Template:    *agentDef,
+		Template:    *promptAgent,
 		Parameters:  parameters,
 	}
 
 	return result, nil
 }
 
-func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_yaml.AgentDefinition, error) {
+func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_yaml.PromptAgent, error) {
 	// Convert tools from agent_api.Tool to agent_yaml.Tool
 	var tools []agent_yaml.Tool
 	for _, apiTool := range template.Tools {
@@ -59,16 +63,22 @@ func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_ya
 		tools = append(tools, yamlTool)
 	}
 
-	// Create the AgentDefinition
-	agentDef := &agent_yaml.AgentDefinition{
-		Kind:        agent_yaml.AgentKindPrompt, // Set to prompt kind
-		Name:        "",                         // Will be set later from manifest or user input
-		Description: nil,                        // Will be set later from manifest or user input
-		Tools:       &tools,
-		// Metadata:     make(map[string]interface{}), // TODO, Where does this come from?
+	// Create the PromptAgent
+	promptAgent := &agent_yaml.PromptAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{
+			Kind:        agent_yaml.AgentKindPrompt, // Set to prompt kind
+			Name:        "",                         // Will be set later from manifest or user input
+			Description: nil,                        // Will be set later from manifest or user input
+			Tools:       &tools,
+			// Metadata:     make(map[string]interface{}), // TODO, Where does this come from?
+		},
+		Model: agent_yaml.Model{
+			Id: template.Model,
+		},
+		Instructions: template.Instructions,
 	}
 
-	return agentDef, nil
+	return promptAgent, nil
 }
 
 func ConvertParameters(parameters map[string]OpenApiParameter) (*map[string]agent_yaml.Parameter, error) {

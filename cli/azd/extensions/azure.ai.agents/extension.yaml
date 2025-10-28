@@ -5,7 +5,7 @@ displayName: AI Foundry Agents
 description: This extension provides custom commands for working with agents using Azure Developer CLI.
 usage: azd ai agent <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
-version: 0.0.2
+version: 0.0.1
 language: go
 capabilities:
   - custom-commands

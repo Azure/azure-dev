@@ -21,16 +21,15 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/AlecAivazis/survey/v2/terminal"
+	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/azure/azure-dev/cli/azd/internal/terminal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	tm "github.com/buger/goterm"
-	"github.com/mattn/go-isatty"
 	"github.com/nathan-fiscaletti/consolesize-go"
 	"github.com/theckman/yacspin"
 	"go.uber.org/atomic"
@@ -600,7 +599,7 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 
 		result, err := c.promptClient.Prompt(ctx, opts)
 		if errors.Is(err, promptCancelledErr) {
-			return "", terminal.InterruptErr
+			return "", surveyterm.InterruptErr
 		} else if err != nil {
 			return "", err
 		}
@@ -655,7 +654,7 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 
 		result, err := c.promptClient.Prompt(ctx, opts)
 		if errors.Is(err, promptCancelledErr) {
-			return -1, terminal.InterruptErr
+			return -1, surveyterm.InterruptErr
 		} else if err != nil {
 			return -1, err
 		}
@@ -735,7 +734,7 @@ func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) 
 
 		result, err := c.promptClient.Prompt(ctx, opts)
 		if errors.Is(err, promptCancelledErr) {
-			return nil, terminal.InterruptErr
+			return nil, surveyterm.InterruptErr
 		} else if err != nil {
 			return nil, err
 		}
@@ -802,7 +801,7 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 
 		result, err := c.promptClient.Prompt(ctx, opts)
 		if errors.Is(err, promptCancelledErr) {
-			return false, terminal.InterruptErr
+			return false, surveyterm.InterruptErr
 		} else if err != nil {
 			return false, err
 		}
@@ -1026,19 +1025,7 @@ func NewConsole(
 // IsTerminal returns true if the given file descriptors are attached to a terminal,
 // taking into account of environment variables that force TTY behavior.
 func IsTerminal(stdoutFd uintptr, stdinFd uintptr) bool {
-	// User override to force TTY behavior
-	if forceTty, err := strconv.ParseBool(os.Getenv("AZD_FORCE_TTY")); err == nil {
-		return forceTty
-	}
-
-	// By default, detect if we are running on CI and force no TTY mode if we are.
-	// If this is affecting you locally while debugging on a CI machine,
-	// use the override AZD_FORCE_TTY=true.
-	if resource.IsRunningOnCI() {
-		return false
-	}
-
-	return isatty.IsTerminal(stdoutFd) && isatty.IsTerminal(stdinFd)
+	return terminal.IsTerminal(stdoutFd, stdinFd)
 }
 
 func GetStepResultFormat(result error) SpinnerUxType {

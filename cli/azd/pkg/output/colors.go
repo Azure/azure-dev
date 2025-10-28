@@ -9,10 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
+	"github.com/azure/azure-dev/cli/azd/internal/terminal"
 	"github.com/charmbracelet/glamour"
 	"github.com/fatih/color"
-	"github.com/mattn/go-isatty"
 	"github.com/nathan-fiscaletti/consolesize-go"
 )
 
@@ -100,8 +99,8 @@ func WithMarkdown(markdownText string) string {
 // When stdout is not a terminal (e.g., in CI/CD pipelines like GitHub Actions),
 // it returns the plain URL without escape codes to avoid displaying raw ANSI sequences.
 func WithHyperlink(url string, text string) string {
-	// Check if stdout is a terminal (mimics input.IsTerminal logic)
-	if !isOutputTerminal() {
+	// Check if stdout is a terminal
+	if !terminal.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd()) {
 		// Not a terminal - return plain URL without escape codes
 		if text != "" && text != url {
 			return fmt.Sprintf("%s (%s)", text, url)
@@ -110,22 +109,6 @@ func WithHyperlink(url string, text string) string {
 	}
 	// Terminal - use hyperlink escape codes
 	return WithLinkFormat(fmt.Sprintf("\033]8;;%s\007%s\033]8;;\007", url, text))
-}
-
-// isOutputTerminal checks if stdout is a terminal, taking into account environment
-// variables that force TTY behavior. This mirrors the logic in input.IsTerminal.
-func isOutputTerminal() bool {
-	// User override to force TTY behavior
-	if forceTty, err := strconv.ParseBool(os.Getenv("AZD_FORCE_TTY")); err == nil {
-		return forceTty
-	}
-
-	// By default, detect if we are running on CI and force no TTY mode if we are.
-	if resource.IsRunningOnCI() {
-		return false
-	}
-
-	return isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd())
 }
 
 // getConsoleWidth gets the console width with fallback logic.

@@ -5,6 +5,7 @@ package project
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -13,7 +14,35 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
+
+// compareValues recursively compares expected and actual values, accounting for protobuf type conversions
+func compareValues(t *testing.T, expected, actual any, context string) {
+	switch exp := expected.(type) {
+	case int:
+		// Protobuf converts all numbers to float64
+		require.Equal(t, float64(exp), actual, "Value at %s should match", context)
+	case []any:
+		actualSlice, ok := actual.([]any)
+		require.True(t, ok, "Expected slice at %s but got %T", context, actual)
+		require.Len(t, actualSlice, len(exp), "Slice length at %s should match", context)
+		for i, expectedItem := range exp {
+			compareValues(t, expectedItem, actualSlice[i], fmt.Sprintf("%s[%d]", context, i))
+		}
+	case map[string]any:
+		actualMap, ok := actual.(map[string]any)
+		require.True(t, ok, "Expected map at %s but got %T", context, actual)
+		require.Len(t, actualMap, len(exp), "Map length at %s should match", context)
+		for key, expectedValue := range exp {
+			actualValue, exists := actualMap[key]
+			require.True(t, exists, "Key %s.%s should exist", context, key)
+			compareValues(t, expectedValue, actualValue, fmt.Sprintf("%s.%s", context, key))
+		}
+	default:
+		require.Equal(t, expected, actual, "Value at %s should match", context)
+	}
+}
 
 func TestServiceConfigMapping(t *testing.T) {
 	// ServiceConfig should be automatically registered via init()
@@ -60,6 +89,268 @@ func TestServiceConfigMappingWithResolver(t *testing.T) {
 	require.NotNil(t, protoConfig)
 	require.Equal(t, "test-service", protoConfig.Name)
 	require.Equal(t, string(ContainerAppTarget), protoConfig.Host)
+}
+
+func TestServiceConfigMappingWithConfig(t *testing.T) {
+	// Test ServiceConfig with various Config field scenarios
+	tests := []struct {
+		name        string
+		config      map[string]any
+		expectError bool
+	}{
+		{
+			name:   "nil config",
+			config: nil,
+		},
+		{
+			name:   "empty config",
+			config: make(map[string]any),
+		},
+		{
+			name: "simple config",
+			config: map[string]any{
+				"key1": "value1",
+				"key2": 42,
+				"key3": true,
+			},
+		},
+		{
+			name: "nested config",
+			config: map[string]any{
+				"database": map[string]any{
+					"host": "localhost",
+					"port": 5432,
+				},
+				"features": []any{"auth", "logging"}, // Use []any instead of []string for protobuf compatibility
+				"settings": map[string]any{
+					"debug":   true,
+					"timeout": 30,
+				},
+			},
+		},
+		{
+			name: "complex config with various types",
+			config: map[string]any{
+				"string_val":  "test",
+				"int_val":     123,
+				"float_val":   3.14,
+				"bool_val":    true,
+				"array_val":   []any{"a", "b", "c"},
+				"null_val":    nil,
+				"nested_map":  map[string]any{"inner": "value"},
+				"mixed_array": []any{1, "two", true, map[string]any{"key": "value"}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			serviceConfig := &ServiceConfig{
+				Name:         "test-service",
+				Host:         ContainerAppTarget,
+				Language:     ServiceLanguageDotNet,
+				RelativePath: "./src/api",
+				Config:       tt.config,
+			}
+
+			var protoConfig *azdext.ServiceConfig
+			err := mapper.Convert(serviceConfig, &protoConfig)
+
+			if tt.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, protoConfig)
+			require.Equal(t, "test-service", protoConfig.Name)
+			require.Equal(t, string(ContainerAppTarget), protoConfig.Host)
+			require.Equal(t, string(ServiceLanguageDotNet), protoConfig.Language)
+			require.Equal(t, "./src/api", protoConfig.RelativePath)
+
+			if tt.config == nil {
+				require.Nil(t, protoConfig.Config)
+			} else if len(tt.config) == 0 {
+				require.NotNil(t, protoConfig.Config)
+				// Empty map should convert to empty struct
+				actualMap := protoConfig.Config.AsMap()
+				require.Empty(t, actualMap)
+			} else {
+				require.NotNil(t, protoConfig.Config)
+				// Verify the config was properly converted to structpb.Struct
+				actualMap := protoConfig.Config.AsMap()
+				// Note: protobuf converts all numbers to float64, so we need to do a more nuanced comparison
+				require.Len(t, actualMap, len(tt.config))
+				for key, expectedValue := range tt.config {
+					actualValue, exists := actualMap[key]
+					require.True(t, exists, "Key %s should exist", key)
+
+					// Handle type conversions that happen with protobuf recursively
+					compareValues(t, expectedValue, actualValue, key)
+				}
+			}
+		})
+	}
+}
+
+func TestServiceConfigReverseMapping(t *testing.T) {
+	// Test proto ServiceConfig -> ServiceConfig conversion
+	tests := []struct {
+		name        string
+		setupConfig func() *azdext.ServiceConfig
+		validateFn  func(t *testing.T, result *ServiceConfig)
+	}{
+		{
+			name: "nil config in proto",
+			setupConfig: func() *azdext.ServiceConfig {
+				return &azdext.ServiceConfig{
+					Name:         "test-service",
+					Host:         string(ContainerAppTarget),
+					Language:     string(ServiceLanguageDotNet),
+					RelativePath: "./src/api",
+					Config:       nil,
+				}
+			},
+			validateFn: func(t *testing.T, result *ServiceConfig) {
+				require.Equal(t, "test-service", result.Name)
+				require.Equal(t, ContainerAppTarget, result.Host)
+				require.Equal(t, ServiceLanguageDotNet, result.Language)
+				require.Equal(t, "./src/api", result.RelativePath)
+				require.Nil(t, result.Config)
+			},
+		},
+		{
+			name: "empty config in proto",
+			setupConfig: func() *azdext.ServiceConfig {
+				config, err := structpb.NewStruct(map[string]any{})
+				require.NoError(t, err)
+				return &azdext.ServiceConfig{
+					Name:         "test-service",
+					Host:         string(ContainerAppTarget),
+					Language:     string(ServiceLanguageDotNet),
+					RelativePath: "./src/api",
+					Config:       config,
+				}
+			},
+			validateFn: func(t *testing.T, result *ServiceConfig) {
+				require.Equal(t, "test-service", result.Name)
+				require.NotNil(t, result.Config)
+				require.Empty(t, result.Config)
+			},
+		},
+		{
+			name: "complex config in proto",
+			setupConfig: func() *azdext.ServiceConfig {
+				configData := map[string]any{
+					"database": map[string]any{
+						"host": "localhost",
+						"port": 5432,
+					},
+					"features": []any{"auth", "logging"},
+					"debug":    true,
+				}
+				config, err := structpb.NewStruct(configData)
+				require.NoError(t, err)
+				return &azdext.ServiceConfig{
+					Name:         "test-service",
+					Host:         string(ContainerAppTarget),
+					Language:     string(ServiceLanguageDotNet),
+					RelativePath: "./src/api",
+					Config:       config,
+				}
+			},
+			validateFn: func(t *testing.T, result *ServiceConfig) {
+				require.Equal(t, "test-service", result.Name)
+				require.NotNil(t, result.Config)
+				require.Equal(t, true, result.Config["debug"])
+
+				// Check nested objects
+				database, ok := result.Config["database"].(map[string]any)
+				require.True(t, ok)
+				require.Equal(t, "localhost", database["host"])
+				require.Equal(t, float64(5432), database["port"]) // JSON numbers become float64
+
+				// Check arrays
+				features, ok := result.Config["features"].([]any)
+				require.True(t, ok)
+				require.Len(t, features, 2)
+				require.Equal(t, "auth", features[0])
+				require.Equal(t, "logging", features[1])
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			protoConfig := tt.setupConfig()
+
+			var serviceConfig *ServiceConfig
+			err := mapper.Convert(protoConfig, &serviceConfig)
+			require.NoError(t, err)
+			require.NotNil(t, serviceConfig)
+
+			tt.validateFn(t, serviceConfig)
+		})
+	}
+}
+
+func TestServiceConfigRoundTripMapping(t *testing.T) {
+	// Test that ServiceConfig -> proto -> ServiceConfig preserves Config data
+	originalConfig := map[string]any{
+		"string_val": "test",
+		"int_val":    123,
+		"float_val":  3.14,
+		"bool_val":   true,
+		"array_val":  []any{"a", "b", "c"},
+		"nested": map[string]any{
+			"inner_key": "inner_value",
+			"inner_num": 456,
+		},
+	}
+
+	originalServiceConfig := &ServiceConfig{
+		Name:         "test-service",
+		Host:         ContainerAppTarget,
+		Language:     ServiceLanguageDotNet,
+		RelativePath: "./src/api",
+		Config:       originalConfig,
+	}
+
+	// Convert to proto
+	var protoConfig *azdext.ServiceConfig
+	err := mapper.Convert(originalServiceConfig, &protoConfig)
+	require.NoError(t, err)
+	require.NotNil(t, protoConfig)
+
+	// Convert back to ServiceConfig
+	var roundTripServiceConfig *ServiceConfig
+	err = mapper.Convert(protoConfig, &roundTripServiceConfig)
+	require.NoError(t, err)
+	require.NotNil(t, roundTripServiceConfig)
+
+	// Verify basic fields
+	require.Equal(t, originalServiceConfig.Name, roundTripServiceConfig.Name)
+	require.Equal(t, originalServiceConfig.Host, roundTripServiceConfig.Host)
+	require.Equal(t, originalServiceConfig.Language, roundTripServiceConfig.Language)
+	require.Equal(t, originalServiceConfig.RelativePath, roundTripServiceConfig.RelativePath)
+
+	// Verify config data (note: some type conversions are expected due to JSON/protobuf handling)
+	require.NotNil(t, roundTripServiceConfig.Config)
+	require.Equal(t, "test", roundTripServiceConfig.Config["string_val"])
+	require.Equal(t, float64(123), roundTripServiceConfig.Config["int_val"]) // Numbers become float64
+	require.Equal(t, 3.14, roundTripServiceConfig.Config["float_val"])
+	require.Equal(t, true, roundTripServiceConfig.Config["bool_val"])
+
+	// Check array
+	arrayVal, ok := roundTripServiceConfig.Config["array_val"].([]any)
+	require.True(t, ok)
+	require.Equal(t, []any{"a", "b", "c"}, arrayVal)
+
+	// Check nested object
+	nested, ok := roundTripServiceConfig.Config["nested"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "inner_value", nested["inner_key"])
+	require.Equal(t, float64(456), nested["inner_num"]) // Numbers become float64
 }
 
 func TestDockerProjectOptionsMapping(t *testing.T) {

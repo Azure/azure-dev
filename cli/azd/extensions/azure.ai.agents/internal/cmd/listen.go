@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	"azureaiagent/internal/project"
@@ -33,7 +34,37 @@ func newListenCommand() *cobra.Command {
 				WithServiceTarget("azure.ai.agents", func() azdext.ServiceTargetProvider {
 					return project.NewAgentServiceTargetProvider(azdClient)
 				}).
-				WithProjectEventHandler("preprovision", projectParser.SetIdentity).
+				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+					if err := projectParser.SetIdentity(ctx, args); err != nil {
+						return fmt.Errorf("failed to set identity: %w", err)
+					}
+
+					// TODO: Move this function into its own file
+					for _, svc := range args.Project.Services {
+						if svc.Host != "foundry.containeragent" {
+							continue
+						}
+
+						var foundryAgentConfig *project.FoundryAgentConfig
+						if err := project.UnmarshalStruct(svc.Config, &foundryAgentConfig); err != nil {
+							return fmt.Errorf("failed to parse foundry agent config: %w", err)
+						}
+
+						currentEnvResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+						if err != nil {
+							return err
+						}
+
+						// TODO: Generate and update any missing environment variables needed by the agent
+						azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+							EnvName: currentEnvResponse.Environment.Name,
+							Key:     "MISSING_KEY",
+							Value:   "MISSING_VALUE",
+						})
+					}
+
+					return nil
+				}).
 				WithProjectEventHandler("postdeploy", projectParser.CoboPostDeploy)
 
 			// Start listening for events

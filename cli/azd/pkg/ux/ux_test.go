@@ -4,8 +4,72 @@
 package ux
 
 import (
+	"os"
 	"testing"
 )
+
+func TestHyperlink(t *testing.T) {
+	tests := []struct {
+		name          string
+		url           string
+		text          []string
+		expectEscape  bool
+		expectedPlain string
+	}{
+		{
+			name:          "URL only",
+			url:           "https://example.com",
+			text:          nil,
+			expectEscape:  true,
+			expectedPlain: "https://example.com",
+		},
+		{
+			name:          "URL and text are the same",
+			url:           "https://example.com",
+			text:          []string{"https://example.com"},
+			expectEscape:  true,
+			expectedPlain: "https://example.com",
+		},
+		{
+			name:          "URL and text are different",
+			url:           "https://example.com",
+			text:          []string{"Example Site"},
+			expectEscape:  true,
+			expectedPlain: "Example Site (https://example.com)",
+		},
+		{
+			name:          "Text is empty string",
+			url:           "https://example.com",
+			text:          []string{""},
+			expectEscape:  true,
+			expectedPlain: "https://example.com",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test non-terminal mode by checking the actual output
+			result := Hyperlink(tt.url, tt.text...)
+			if len(result) == 0 {
+				t.Errorf("expected non-empty result")
+			}
+
+			// When running in a non-TTY environment (like most CI systems),
+			// the result should be the plain text version
+			if !isTTY() {
+				if result != tt.expectedPlain {
+					t.Errorf("expected %q, got %q", tt.expectedPlain, result)
+				}
+			}
+		})
+	}
+}
+
+// isTTY checks if stdout is a TTY (for testing purposes)
+func isTTY() bool {
+	fileInfo, _ := os.Stdout.Stat()
+	return (fileInfo.Mode() & os.ModeCharDevice) != 0
+}
 
 func Test_CountLineBreaks(t *testing.T) {
 	testCases := []struct {

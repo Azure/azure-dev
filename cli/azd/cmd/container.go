@@ -27,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
+	"github.com/azure/azure-dev/cli/azd/internal/terminal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/ai"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -132,7 +133,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 
 		isTerminal := cmd.OutOrStdout() == os.Stdout &&
-			cmd.InOrStdin() == os.Stdin && input.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
+			cmd.InOrStdin() == os.Stdin && terminal.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
 
 		return input.NewConsole(rootOptions.NoPrompt, isTerminal, input.Writers{Output: writer}, input.ConsoleHandles{
 			Stdin:  cmd.InOrStdin(),

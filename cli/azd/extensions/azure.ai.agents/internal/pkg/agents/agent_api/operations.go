@@ -199,7 +199,7 @@ func (c *AgentClient) DeleteAgent(ctx context.Context, agentName, apiVersion str
 // ListAgents returns a list of all agents
 func (c *AgentClient) ListAgents(ctx context.Context, params *ListAgentQueryParameters, apiVersion string) (*AgentList, error) {
 	baseURL := fmt.Sprintf("%s/agents", c.endpoint)
-	
+
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse base URL: %w", err)
@@ -388,7 +388,7 @@ type CommonPageQueryParameters struct {
 // ListAgentVersions returns a list of versions for a specific agent
 func (c *AgentClient) ListAgentVersions(ctx context.Context, agentName string, params *CommonPageQueryParameters, apiVersion string) (*AgentVersionList, error) {
 	baseURL := fmt.Sprintf("%s/agents/%s/versions", c.endpoint, agentName)
-	
+
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse base URL: %w", err)
@@ -565,16 +565,10 @@ func (c *AgentClient) DeleteAgentEventHandler(ctx context.Context, agentName, ev
 // Container Operations
 
 // StartAgentContainer starts a container for a specific version of an agent
-func (c *AgentClient) StartAgentContainer(ctx context.Context, agentName, agentVersion string, minReplicas, maxReplicas *int32, apiVersion string) (*AcceptedAgentContainerOperation, error) {
+func (c *AgentClient) StartAgentContainer(ctx context.Context, agentName, agentVersion string, apiVersion string) (*AcceptedAgentContainerOperation, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s/containers/default:start?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
 	requestBody := map[string]interface{}{}
-	if minReplicas != nil {
-		requestBody["min_replicas"] = *minReplicas
-	}
-	if maxReplicas != nil {
-		requestBody["max_replicas"] = *maxReplicas
-	}
 
 	payload, err := json.Marshal(requestBody)
 	if err != nil {
@@ -851,12 +845,12 @@ func (c *AgentClient) getAiFoundryAzureToken(ctx context.Context, cred azcore.To
 	tokenRequestOptions := policy.TokenRequestOptions{
 		Scopes: []string{"https://ai.azure.com/.default"},
 	}
-	
+
 	token, err := cred.GetToken(ctx, tokenRequestOptions)
 	if err != nil {
 		return "", err
 	}
-	
+
 	return token.Token, nil
 }
 

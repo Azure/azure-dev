@@ -35,6 +35,7 @@ type initFlags struct {
 	projectResourceId string
 	manifestPointer   string
 	src               string
+	host              string
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -144,6 +145,9 @@ func newInitCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"[Optional] Directory to download the agent yaml to (defaults to 'src/<agent-id>')")
 
+	cmd.Flags().StringVarP(&flags.host, "host", "", "",
+		"[Optional] For container based agents, can override the default host to target a container app instead. Accepted values: 'containerapp'")
+
 	return cmd
 }
 
@@ -170,6 +174,10 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 		isValidURL := false
 		isValidFile := false
 
+		if flags.host != "" && flags.host != "containerapp" {
+			return fmt.Errorf("unsupported host value: '%s'. Accepted values are: 'containerapp'", flags.host)
+		}
+
 		if _, err := url.ParseRequestURI(flags.manifestPointer); err == nil {
 			isValidURL = true
 		} else if _, fileErr := os.Stat(flags.manifestPointer); fileErr == nil {
@@ -187,12 +195,12 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 		}
 
 		// Add the agent to the azd project (azure.yaml) services
-		if err := a.addToProject(ctx, targetDir, agentManifest); err != nil {
+		if err := a.addToProject(ctx, targetDir, agentManifest, flags.host); err != nil {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
 
 		// Update environment with necessary env vars
-		if err := a.updateEnvironment(ctx, agentManifest); err != nil {
+		if err := a.updateEnvironment(ctx, agentManifest, flags.host); err != nil {
 			return fmt.Errorf("failed to update environment: %w", err)
 		}
 
@@ -723,11 +731,10 @@ func (a *InitAction) downloadAgentYaml(
 	}
 
 	if isGitHubUrl {
-		// Check if the template is a HostedContainerAgent or ContainerAgent
+		// Check if the template is a HostedContainerAgent
 		_, isHostedContainer := agentManifest.Template.(agent_yaml.HostedContainerAgent)
-		_, isContainerAgent := agentManifest.Template.(agent_yaml.ContainerAgent)
 
-		if isHostedContainer || isContainerAgent {
+		if isHostedContainer {
 			// For container agents, download the entire parent directory
 			fmt.Println("Downloading full directory for container agent")
 			err := downloadParentDirectory(ctx, urlInfo, targetDir, ghCli, console)
@@ -742,9 +749,7 @@ func (a *InitAction) downloadAgentYaml(
 	return agentManifest, targetDir, nil
 }
 
-func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest) error {
-	var host string
-
+func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest, host string) error {
 	// Convert the template to bytes
 	templateBytes, err := json.Marshal(agentManifest.Template)
 	if err != nil {
@@ -769,22 +774,19 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		return fmt.Errorf("failed to unmarshal JSON to AgentDefinition: %w", err)
 	}
 
-	switch agentDef.Kind {
-	case "container":
-		host = "containerapp"
-	case "hosted":
-		host = "azure.ai.agents"
-	case "prompt":
-		host = "azure.ai.agents"
+	var serviceHost string
+
+	switch host {
+	case "containerapp":
+		serviceHost = "containerapp"
 	default:
-		// except here
-		return fmt.Errorf("unsupported agent kind: %s", agentDef.Kind)
+		serviceHost = "azure.ai.agents"
 	}
 
 	serviceConfig := &azdext.ServiceConfig{
 		Name:         strings.ReplaceAll(agentDef.Name, " ", ""),
 		RelativePath: targetDir,
-		Host:         host,
+		Host:         serviceHost,
 		Language:     "python",
 	}
 
@@ -1275,7 +1277,7 @@ func (a *InitAction) selectFromList(
 	return options[*resp.Value], nil
 }
 
-func (a *InitAction) updateEnvironment(ctx context.Context, agentManifest *agent_yaml.AgentManifest) error {
+func (a *InitAction) updateEnvironment(ctx context.Context, agentManifest *agent_yaml.AgentManifest, host string) error {
 	// Convert the template to bytes
 	templateBytes, err := json.Marshal(agentManifest.Template)
 	if err != nil {
@@ -1339,20 +1341,11 @@ func (a *InitAction) updateEnvironment(ctx context.Context, agentManifest *agent
 			}
 			deploymentDetails = append(deploymentDetails, *modelDeployment)
 		}
+	}
 
-	case agent_yaml.AgentKindYamlContainerApp:
-		agentDef := agentManifest.Template.(agent_yaml.ContainerAgent)
+	if host == "containerapp" {
 		if err := a.setEnvVar(ctx, envName, "ENABLE_CONTAINER_AGENTS", "true"); err != nil {
 			return err
-		}
-
-		// Iterate over all models in the container agent
-		for _, model := range agentDef.Models {
-			modelDeployment, err := a.getModelDeploymentDetails(ctx, model)
-			if err != nil {
-				return fmt.Errorf("failed to get model deployment details: %w", err)
-			}
-			deploymentDetails = append(deploymentDetails, *modelDeployment)
 		}
 	}
 

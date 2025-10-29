@@ -7,18 +7,15 @@ package agent_yaml
 type AgentKind string
 
 const (
-	AgentKindPrompt       AgentKind = "prompt"
-	AgentKindHosted       AgentKind = "hosted"
-	AgentKindContainerApp AgentKind = "container_app"
-	// Same as AgentKindContainerApp but this is the expected way to refer to container based agents in yaml files
-	AgentKindYamlContainerApp AgentKind = "container"
-	AgentKindWorkflow         AgentKind = "workflow"
+	AgentKindPrompt   AgentKind = "prompt"
+	AgentKindHosted   AgentKind = "hosted"
+	AgentKindWorkflow AgentKind = "workflow"
 )
 
 // IsValidAgentKind checks if the provided AgentKind is valid
 func IsValidAgentKind(kind AgentKind) bool {
 	switch kind {
-	case AgentKindPrompt, AgentKindHosted, AgentKindContainerApp, AgentKindWorkflow, AgentKindYamlContainerApp:
+	case AgentKindPrompt, AgentKindHosted, AgentKindWorkflow:
 		return true
 	default:
 		return false
@@ -30,7 +27,6 @@ func ValidAgentKinds() []AgentKind {
 	return []AgentKind{
 		AgentKindPrompt,
 		AgentKindHosted,
-		AgentKindContainerApp,
 		AgentKindWorkflow,
 	}
 }
@@ -71,22 +67,6 @@ type HostedContainerAgent struct {
 	Container       HostedContainerDefinition `json:"container" yaml:"container"`
 }
 
-// ContainerAgent represents a containerized agent that can be deployed and hosted.
-// It includes details about the container image, registry information, and environment variables.
-// This model allows for the definition of agents that can run in isolated environments,
-// making them suitable for deployment in various cloud or on-premises scenarios.
-// The containerized agent can communicate using specified protocols and can be scaled
-// based on the provided configuration. This kind of agent represents the users intent
-// to bring their own container specific app hosting platform that they manage.
-type ContainerAgent struct {
-	AgentDefinition `json:",inline" yaml:",inline"`
-	Protocols       []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
-	Models          []Model                 `json:"models" yaml:"models"`
-	Resource        string                  `json:"resource" yaml:"resource"`
-	IngressSuffix   string                  `json:"ingressSuffix" yaml:"ingressSuffix"`
-	Options         *map[string]interface{} `json:"options,omitempty" yaml:"options,omitempty"`
-}
-
 // WorkflowAgent is a workflow agent that can orchestrate multiple steps and actions.
 // This agent type is designed to handle complex workflows that may involve
 // multiple tools, models, and decision points. The workflow agent can be configured
@@ -112,7 +92,7 @@ type AgentManifest struct {
 	DisplayName string                  `json:"displayName" yaml:"displayName"`
 	Description *string                 `json:"description,omitempty" yaml:"description,omitempty"`
 	Metadata    *map[string]interface{} `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-	Template    any                     `json:"template" yaml:"template"` // can be PromptAgent, HostedContainerAgent, ContainerAgent, or WorkflowAgent
+	Template    any                     `json:"template" yaml:"template"` // can be PromptAgent, HostedContainerAgent, or WorkflowAgent
 	Parameters  *map[string]Parameter   `json:"parameters,omitempty" yaml:"parameters,omitempty"`
 }
 

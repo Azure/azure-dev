@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
@@ -28,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/benbjohnson/clock"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -228,7 +231,17 @@ func createContainerAppServiceTarget(
 		})
 
 	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Get", mock.Anything, env.Name()).Return(env, nil)
 	envManager.On("Save", *mockContext.Context, env).Return(nil)
+
+	azdCtx := azdcontext.NewAzdContextWithDirectory(os.TempDir())
+	err := azdCtx.SetProjectState(azdcontext.ProjectState{
+		DefaultEnvironment: env.Name(),
+	})
+	if err != nil {
+		// Log the error but don't fail the test as this is test setup
+		fmt.Printf("Warning: Failed to set up azdContext: %v\n", err)
+	}
 
 	containerAppService := containerapps.NewContainerAppService(
 		credentialProvider,
@@ -247,8 +260,8 @@ func createContainerAppServiceTarget(
 		mockContext.ArmClientOptions,
 	)
 	containerHelper := NewContainerHelper(
-		env,
 		envManager,
+		azdCtx,
 		clock.NewMock(),
 		containerRegistryService,
 		remoteBuildManager,

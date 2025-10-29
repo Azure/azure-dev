@@ -2,6 +2,6 @@ go 1.25.0
 
 use (
 	../../
-	./extensions/azure.coding-agent
 	./extensions/azure.ai.agents
+	./extensions/azure.coding-agent
 )

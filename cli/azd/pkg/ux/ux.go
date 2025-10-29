@@ -37,9 +37,6 @@ func Hyperlink(url string, text ...string) string {
 	// Check if stdout is a terminal
 	if !terminal.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd()) {
 		// Not a terminal - return plain URL without escape codes
-		if text[0] != "" && text[0] != url {
-			return fmt.Sprintf("%s (%s)", text[0], url)
-		}
 		return url
 	}
 

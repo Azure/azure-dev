@@ -24,7 +24,6 @@ import (
 	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/azure/azure-dev/cli/azd/internal/terminal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -1020,12 +1019,6 @@ func NewConsole(
 	}
 
 	return c
-}
-
-// IsTerminal returns true if the given file descriptors are attached to a terminal,
-// taking into account of environment variables that force TTY behavior.
-func IsTerminal(stdoutFd uintptr, stdinFd uintptr) bool {
-	return terminal.IsTerminal(stdoutFd, stdinFd)
 }
 
 func GetStepResultFormat(result error) SpinnerUxType {

@@ -35,7 +35,7 @@ func TestHyperlink(t *testing.T) {
 			url:           "https://example.com",
 			text:          []string{"Example Site"},
 			expectEscape:  true,
-			expectedPlain: "Example Site (https://example.com)",
+			expectedPlain: "https://example.com",
 		},
 		{
 			name:          "Text is empty string",

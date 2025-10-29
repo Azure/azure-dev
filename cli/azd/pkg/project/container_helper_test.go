@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -29,6 +30,20 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+// Helper function to create a container helper for tests
+func createTestContainerHelper() *ContainerHelper {
+	env := environment.NewWithValues("dev", map[string]string{})
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Get", mock.Anything, "dev").Return(env, nil)
+	
+	azdCtx := azdcontext.NewAzdContextWithDirectory(".")
+	azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: "dev"})
+	
+	return NewContainerHelper(
+		envManager, azdCtx, clock.NewMock(), nil, nil, nil,
+		nil, nil, nil, cloud.AzurePublic())
+}
 
 func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
@@ -66,8 +81,14 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			env := environment.NewWithValues("dev", map[string]string{})
+			envManager := &mockenv.MockEnvManager{}
+			envManager.On("Get", mock.Anything, "dev").Return(env, nil)
+			
+			azdCtx := azdcontext.NewAzdContextWithDirectory(".")
+			azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: "dev"})
+			
 			containerHelper := NewContainerHelper(
-				env, nil, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+				envManager, azdCtx, clock.NewMock(), nil, nil, mockContext.CommandRunner,
 				nil, nil, nil, cloud.AzurePublic())
 			serviceConfig.Docker = tt.dockerConfig
 

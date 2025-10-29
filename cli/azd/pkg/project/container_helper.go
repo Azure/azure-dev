@@ -28,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -48,8 +49,8 @@ type PublishOptions struct {
 }
 
 type ContainerHelper struct {
-	env                      *environment.Environment
 	envManager               environment.Manager
+	azdContext               *azdcontext.AzdContext
 	remoteBuildManager       *containerregistry.RemoteBuildManager
 	containerRegistryService azapi.ContainerRegistryService
 	commandRunner            exec.CommandRunner
@@ -61,8 +62,8 @@ type ContainerHelper struct {
 }
 
 func NewContainerHelper(
-	env *environment.Environment,
 	envManager environment.Manager,
+	azdContext *azdcontext.AzdContext,
 	clock clock.Clock,
 	containerRegistryService azapi.ContainerRegistryService,
 	remoteBuildManager *containerregistry.RemoteBuildManager,
@@ -73,8 +74,8 @@ func NewContainerHelper(
 	cloud *cloud.Cloud,
 ) *ContainerHelper {
 	return &ContainerHelper{
-		env:                      env,
 		envManager:               envManager,
+		azdContext:               azdContext,
 		remoteBuildManager:       remoteBuildManager,
 		containerRegistryService: containerRegistryService,
 		commandRunner:            commandRunner,
@@ -86,12 +87,36 @@ func NewContainerHelper(
 	}
 }
 
+// getCurrentEnvironment gets the current environment using the standard pattern
+func (ch *ContainerHelper) getCurrentEnvironment(ctx context.Context) (*environment.Environment, error) {
+	defaultEnvironment, err := ch.azdContext.GetDefaultEnvironmentName()
+	if err != nil {
+		return nil, err
+	}
+
+	if defaultEnvironment == "" {
+		return nil, environment.ErrDefaultEnvironmentNotFound
+	}
+
+	env, err := ch.envManager.Get(ctx, defaultEnvironment)
+	if err != nil {
+		return nil, err
+	}
+
+	return env, nil
+}
+
 // DefaultImageName returns a default image name generated from the service name and environment name.
-func (ch *ContainerHelper) DefaultImageName(serviceConfig *ServiceConfig) string {
+func (ch *ContainerHelper) DefaultImageName(ctx context.Context, serviceConfig *ServiceConfig) (string, error) {
+	env, err := ch.getCurrentEnvironment(ctx)
+	if err != nil {
+		return "", err
+	}
+
 	return fmt.Sprintf("%s/%s-%s",
 		strings.ToLower(serviceConfig.Project.Name),
 		strings.ToLower(serviceConfig.Name),
-		strings.ToLower(ch.env.Name()))
+		strings.ToLower(env.Name())), nil
 }
 
 // DefaultImageTag returns a default image tag generated from the current time.
@@ -103,7 +128,12 @@ func (ch *ContainerHelper) DefaultImageTag() string {
 // 1. AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable
 // 2. docker.registry from the service configuration
 func (ch *ContainerHelper) RegistryName(ctx context.Context, serviceConfig *ServiceConfig) (string, error) {
-	registryName, found := ch.env.LookupEnv(environment.ContainerRegistryEndpointEnvVarName)
+	env, err := ch.getCurrentEnvironment(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	registryName, found := env.LookupEnv(environment.ContainerRegistryEndpointEnvVarName)
 	if !found {
 		log.Printf(
 			"Container registry not found in '%s' environment variable\n",
@@ -112,7 +142,7 @@ func (ch *ContainerHelper) RegistryName(ctx context.Context, serviceConfig *Serv
 	}
 
 	if registryName == "" {
-		yamlRegistryName, err := serviceConfig.Docker.Registry.Envsubst(ch.env.Getenv)
+		yamlRegistryName, err := serviceConfig.Docker.Registry.Envsubst(env.Getenv)
 		if err != nil {
 			log.Println("Failed expanding 'docker.registry'")
 		}
@@ -142,14 +172,22 @@ func (ch *ContainerHelper) GeneratedImage(
 	serviceConfig *ServiceConfig,
 ) (*docker.ContainerImage, error) {
 	// Parse the image from azure.yaml configuration when available
-	configuredImage, err := serviceConfig.Docker.Image.Envsubst(ch.env.Getenv)
+	env, err := ch.getCurrentEnvironment(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	configuredImage, err := serviceConfig.Docker.Image.Envsubst(env.Getenv)
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing 'image' from docker configuration, %w", err)
 	}
 
 	// Set default image name if not configured
 	if configuredImage == "" {
-		configuredImage = ch.DefaultImageName(serviceConfig)
+		configuredImage, err = ch.DefaultImageName(ctx, serviceConfig)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	parsedImage, err := docker.ParseContainerImage(configuredImage)
@@ -158,7 +196,7 @@ func (ch *ContainerHelper) GeneratedImage(
 	}
 
 	if parsedImage.Tag == "" {
-		configuredTag, err := serviceConfig.Docker.Tag.Envsubst(ch.env.Getenv)
+		configuredTag, err := serviceConfig.Docker.Tag.Envsubst(env.Getenv)
 		if err != nil {
 			return nil, fmt.Errorf("failed parsing 'tag' from docker configuration, %w", err)
 		}
@@ -260,7 +298,11 @@ func (ch *ContainerHelper) Login(
 	// Other registries require manual login via external 'docker login' command
 	hostParts := strings.Split(registryName, ".")
 	if len(hostParts) == 1 || strings.HasSuffix(registryName, ch.cloud.ContainerRegistryEndpointSuffix) {
-		return registryName, ch.containerRegistryService.Login(ctx, ch.env.GetSubscriptionId(), registryName)
+		env, err := ch.getCurrentEnvironment(ctx)
+		if err != nil {
+			return "", err
+		}
+		return registryName, ch.containerRegistryService.Login(ctx, env.GetSubscriptionId(), registryName)
 	}
 
 	return registryName, nil
@@ -313,6 +355,11 @@ func (ch *ContainerHelper) Build(
 		return &ServiceBuildResult{}, nil
 	}
 
+	env, err := ch.getCurrentEnvironment(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
 	resolveParameters := func(source []string) ([]string, error) {
@@ -320,7 +367,7 @@ func (ch *ContainerHelper) Build(
 		for i, arg := range source {
 			evaluatedString, err := apphost.EvalString(arg, func(match string) (string, error) {
 				path := match
-				value, has := ch.env.Config.GetString(path)
+				value, has := env.Config.GetString(path)
 				if !has {
 					return "", fmt.Errorf("parameter %s not found", path)
 				}
@@ -336,7 +383,7 @@ func (ch *ContainerHelper) Build(
 
 	dockerBuildArgs := []string{}
 	for _, arg := range dockerOptions.BuildArgs {
-		buildArgValue, err := arg.Envsubst(ch.env.Getenv)
+		buildArgValue, err := arg.Envsubst(env.Getenv)
 		if err != nil {
 			return nil, fmt.Errorf("substituting environment variables in build args: %w", err)
 		}
@@ -410,7 +457,7 @@ func (ch *ContainerHelper) Build(
 	// 3. Environment variables from the docker configuration
 	dockerEnv := []string{}
 	dockerEnv = append(dockerEnv, os.Environ()...)
-	dockerEnv = append(dockerEnv, ch.env.Environ()...)
+	dockerEnv = append(dockerEnv, env.Environ()...)
 	dockerEnv = append(dockerEnv, dockerOptions.BuildEnv...)
 
 	// Build the container
@@ -492,6 +539,11 @@ func (ch *ContainerHelper) Package(
 		return &ServicePackageResult{}, nil
 	}
 
+	env, err := ch.getCurrentEnvironment(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	var imageId string
 	var sourceImage string
 	var imageHash string
@@ -504,7 +556,7 @@ func (ch *ContainerHelper) Package(
 
 	// If we don't have an image ID from a docker build then an external source image is being used
 	if imageId == "" {
-		sourceImageValue, err := serviceConfig.Image.Envsubst(ch.env.Getenv)
+		sourceImageValue, err := serviceConfig.Image.Envsubst(env.Getenv)
 		if err != nil {
 			return nil, fmt.Errorf("substituting environment variables in image: %w", err)
 		}
@@ -834,8 +886,13 @@ func (ch *ContainerHelper) runDotnetPublish(
 
 	progress.SetProgress(NewServiceProgress("Publishing container image"))
 
+	defaultImageName, err := ch.DefaultImageName(ctx, serviceConfig)
+	if err != nil {
+		return "", fmt.Errorf("getting default image name: %w", err)
+	}
+
 	imageName := fmt.Sprintf("%s:%s",
-		ch.DefaultImageName(serviceConfig),
+		defaultImageName,
 		ch.DefaultImageTag())
 
 	_, err = ch.dotNetCli.PublishContainer(

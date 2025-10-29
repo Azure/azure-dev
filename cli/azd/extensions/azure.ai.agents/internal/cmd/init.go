@@ -1347,6 +1347,15 @@ func (a *InitAction) updateEnvironment(ctx context.Context, agentManifest *agent
 		if err := a.setEnvVar(ctx, envName, "ENABLE_CONTAINER_AGENTS", "true"); err != nil {
 			return err
 		}
+
+		// Iterate over all models in the container agent
+		for _, model := range agentDef.Models {
+			modelDeployment, err := a.getModelDeploymentDetails(ctx, model)
+			if err != nil {
+				return fmt.Errorf("failed to get model deployment details: %w", err)
+			}
+			deploymentDetails = append(deploymentDetails, *modelDeployment)
+		}
 	}
 
 	deploymentsJson, err := json.Marshal(deploymentDetails)

@@ -30,6 +30,7 @@ words:
   - protoimpl
   - Retryable
   - runcontext
+  - surveyterm
   - unmarshals
   - unmarshaling
   - unsetting

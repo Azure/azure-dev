@@ -1319,9 +1319,6 @@ func (a *InitAction) updateEnvironment(ctx context.Context, agentManifest *agent
 	switch agentDef.Kind {
 	case agent_yaml.AgentKindPrompt:
 		agentDef := agentManifest.Template.(agent_yaml.PromptAgent)
-		if err := a.setEnvVar(ctx, envName, "AZURE_AI_FOUNDRY_MODEL_NAME", agentDef.Model.Id); err != nil {
-			return err
-		}
 
 		modelDeployment, err := a.getModelDeploymentDetails(ctx, agentDef.Model)
 		if err != nil {

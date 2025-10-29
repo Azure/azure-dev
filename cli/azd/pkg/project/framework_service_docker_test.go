@@ -119,7 +119,7 @@ services:
 		env,
 		docker,
 		NewContainerHelper(
-			envManager, azdCtx, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+			azdCtx, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
 			docker, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
@@ -234,7 +234,7 @@ services:
 		env,
 		docker,
 		NewContainerHelper(
-			envManager, azdCtx, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+			azdCtx, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
 			docker, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
@@ -535,7 +535,7 @@ func Test_DockerProject_Build(t *testing.T) {
 				env,
 				dockerCli,
 				NewContainerHelper(
-					envManager, azdCtx, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+					azdCtx, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
 					dockerCli, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
@@ -686,7 +686,7 @@ func Test_DockerProject_Package(t *testing.T) {
 				env,
 				dockerCli,
 				NewContainerHelper(
-					envManager, azdCtx, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+					azdCtx, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
 					dockerCli, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,

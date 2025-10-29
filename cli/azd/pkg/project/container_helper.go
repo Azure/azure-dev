@@ -49,8 +49,8 @@ type PublishOptions struct {
 }
 
 type ContainerHelper struct {
-	envManager               environment.Manager
 	azdContext               *azdcontext.AzdContext
+	envManager               environment.Manager
 	remoteBuildManager       *containerregistry.RemoteBuildManager
 	containerRegistryService azapi.ContainerRegistryService
 	commandRunner            exec.CommandRunner
@@ -62,8 +62,8 @@ type ContainerHelper struct {
 }
 
 func NewContainerHelper(
-	envManager environment.Manager,
 	azdContext *azdcontext.AzdContext,
+	envManager environment.Manager,
 	clock clock.Clock,
 	containerRegistryService azapi.ContainerRegistryService,
 	remoteBuildManager *containerregistry.RemoteBuildManager,
@@ -74,8 +74,8 @@ func NewContainerHelper(
 	cloud *cloud.Cloud,
 ) *ContainerHelper {
 	return &ContainerHelper{
-		envManager:               envManager,
 		azdContext:               azdContext,
+		envManager:               envManager,
 		remoteBuildManager:       remoteBuildManager,
 		containerRegistryService: containerRegistryService,
 		commandRunner:            commandRunner,

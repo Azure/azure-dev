@@ -1004,8 +1004,8 @@ func createAksServiceTarget(
 		mockContext.ArmClientOptions,
 	)
 	containerHelper := NewContainerHelper(
-		envManager,
 		azdCtx,
+		envManager,
 		clock.NewMock(),
 		containerRegistryService,
 		remoteBuildManager,

@@ -233,6 +233,10 @@ func (sm *serviceManager) Restore(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceRestoreResult, error) {
+	if serviceContext == nil {
+		serviceContext = NewServiceContext()
+	}
+
 	cachedResult, ok := sm.getOperationResult(serviceConfig, ServiceEventRestore)
 	if ok && cachedResult != nil {
 		restoreResult, ok := cachedResult.(*ServiceRestoreResult)
@@ -248,10 +252,6 @@ func (sm *serviceManager) Restore(
 	frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
 	if err != nil {
 		return nil, fmt.Errorf("getting framework services: %w", err)
-	}
-
-	if serviceContext == nil {
-		serviceContext = NewServiceContext()
 	}
 
 	restoreResult, err := runCommand(
@@ -285,6 +285,10 @@ func (sm *serviceManager) Build(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
+	if serviceContext == nil {
+		serviceContext = NewServiceContext()
+	}
+
 	cachedResult, ok := sm.getOperationResult(serviceConfig, ServiceEventBuild)
 	if ok && cachedResult != nil {
 		buildResult, ok := cachedResult.(*ServiceBuildResult)
@@ -300,10 +304,6 @@ func (sm *serviceManager) Build(
 	frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
 	if err != nil {
 		return nil, fmt.Errorf("getting framework services: %w", err)
-	}
-
-	if serviceContext == nil {
-		serviceContext = NewServiceContext()
 	}
 
 	buildResult, err := runCommand(
@@ -339,6 +339,10 @@ func (sm *serviceManager) Package(
 	progress *async.Progress[ServiceProgress],
 	options *PackageOptions,
 ) (*ServicePackageResult, error) {
+	if serviceContext == nil {
+		serviceContext = NewServiceContext()
+	}
+
 	cachedResult, ok := sm.getOperationResult(serviceConfig, ServiceEventPackage)
 	if ok && cachedResult != nil {
 		packageResult, ok := cachedResult.(*ServicePackageResult)
@@ -363,10 +367,6 @@ func (sm *serviceManager) Package(
 	serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
 	if err != nil {
 		return nil, fmt.Errorf("getting service target: %w", err)
-	}
-
-	if serviceContext == nil {
-		serviceContext = NewServiceContext()
 	}
 
 	// Get the language / framework requirements
@@ -474,6 +474,10 @@ func (sm *serviceManager) Publish(
 	progress *async.Progress[ServiceProgress],
 	publishOptions *PublishOptions,
 ) (*ServicePublishResult, error) {
+	if serviceContext == nil {
+		serviceContext = NewServiceContext()
+	}
+
 	cachedResult, ok := sm.getOperationResult(serviceConfig, ServiceEventPublish)
 	if ok && cachedResult != nil {
 		publishResult, ok := cachedResult.(*ServicePublishResult)
@@ -484,10 +488,6 @@ func (sm *serviceManager) Publish(
 
 			return publishResult, nil
 		}
-	}
-
-	if serviceContext == nil {
-		serviceContext = NewServiceContext()
 	}
 
 	// Ensure package has been performed if no package artifacts exist
@@ -539,6 +539,10 @@ func (sm *serviceManager) Deploy(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
+	if serviceContext == nil {
+		serviceContext = NewServiceContext()
+	}
+
 	cachedResult, ok := sm.getOperationResult(serviceConfig, ServiceEventDeploy)
 	if ok && cachedResult != nil {
 		deployResult, ok := cachedResult.(*ServiceDeployResult)
@@ -549,10 +553,6 @@ func (sm *serviceManager) Deploy(
 
 			return deployResult, nil
 		}
-	}
-
-	if serviceContext == nil {
-		serviceContext = NewServiceContext()
 	}
 
 	// Ensure package has been performed if no package artifacts exist

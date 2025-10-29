@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -56,6 +57,9 @@ func main() {
 	log.Printf("azd version: %s", internal.Version)
 
 	ts := telemetry.GetTelemetrySystem()
+	if ts != nil {
+		ctx = tracing.ContextFromEnv(ctx)
+	}
 
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)

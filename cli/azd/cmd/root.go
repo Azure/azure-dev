@@ -379,11 +379,11 @@ func NewRootCmd(
 	root.
 		UseMiddleware("debug", middleware.NewDebugMiddleware).
 		UseMiddleware("ux", middleware.NewUxMiddleware).
-		UseMiddlewareWhen("error", middleware.NewErrorMiddleware, func(descriptor *actions.ActionDescriptor) bool {
-			return !descriptor.Options.DisableTroubleshooting
-		}).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
+		}).
+		UseMiddlewareWhen("error", middleware.NewErrorMiddleware, func(descriptor *actions.ActionDescriptor) bool {
+			return !descriptor.Options.DisableTroubleshooting
 		}).
 		UseMiddlewareWhen("loginGuard", middleware.NewLoginGuardMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			// Check if the command or any of its parents require login

@@ -240,15 +240,19 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 
 	// set environment modifier
 	cli.Env = append(cli.Env, "AZURE_DEV_USER_AGENT=azure_app_space_portal:v1.0.0")
+
+	// set a fixed traceparent to verify trace ID propagation for commands and nested commands
+	traceId := "246cfb7e1b1c5978f4b0fc2e41e98db6"
+	cli.Env = append(cli.Env, "TRACEPARENT="+fmt.Sprintf("00-%s-a16efae62fc848c9-01", traceId))
 	cli.WorkingDirectory = dir
 
 	envName := randomEnvName()
 
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		// Choose the default minimal template
-		"Select a template\n\n"+stdinForInit(envName),
-		"init")
+		// Choose default name
+		"\n",
+		"init", "--minimal")
 	require.NoError(t, err)
 
 	// Remove infra folder to avoid lengthy Azure operations while asserting the intended telemetry behavior.
@@ -263,7 +267,9 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	require.NoError(t, err)
 	defer file.Close()
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "up", "--trace-log-file", traceFilePath)
+	_, err = cli.RunCommandWithStdIn(ctx,
+		stdinForInit(envName)+stdinForProvision(),
+		"up", "--trace-log-file", traceFilePath)
 	require.Error(t, err)
 
 	traceContent, err := os.ReadFile(traceFilePath)
@@ -274,7 +280,6 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	packageCmdFound := false
 	provisionCmdFound := false
 	upCmdFound := false
-	traceId := ""
 	for scanner.Scan() {
 		if scanner.Text() == "" {
 			continue
@@ -292,9 +297,7 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 		if !packageCmdFound {
 			require.Equal(t, "cmd.package", span.Name)
 			packageCmdFound = true
-			require.NoError(t, span.SpanContext.Validate(), "invalid span context")
-			// set the traceID
-			traceId = span.SpanContext.TraceID
+			require.Equal(t, traceId, span.SpanContext.TraceID, "commands do not share a traceID")
 
 			m := attributesMap(span.Attributes)
 			require.Contains(t, m, fields.SubscriptionIdKey)

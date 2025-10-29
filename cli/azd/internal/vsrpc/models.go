@@ -119,7 +119,7 @@ type RequestContext struct {
 	// The active session.
 	Session Session
 
-	// The app host project path.
+	// The host project path being operated on.
 	HostProjectPath string
 }
 

@@ -31,20 +31,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Helper function to create a container helper for tests
-func createTestContainerHelper() *ContainerHelper {
-	env := environment.NewWithValues("dev", map[string]string{})
-	envManager := &mockenv.MockEnvManager{}
-	envManager.On("Get", mock.Anything, "dev").Return(env, nil)
-
-	azdCtx := azdcontext.NewAzdContextWithDirectory(".")
-	azdCtx.SetProjectState(azdcontext.ProjectState{DefaultEnvironment: "dev"})
-
-	return NewContainerHelper(
-		azdCtx, envManager, clock.NewMock(), nil, nil, nil,
-		nil, nil, nil, cloud.AzurePublic())
-}
-
 func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mockClock := clock.NewMock()

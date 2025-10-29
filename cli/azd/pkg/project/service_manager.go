@@ -397,7 +397,8 @@ func (sm *serviceManager) Package(
 				return nil, err
 			}
 
-			if err := appendOperationArtifacts(serviceContext, ServiceEventPackage, frameworkPackageResult.Artifacts); err != nil {
+			if err := appendOperationArtifacts(
+				serviceContext, ServiceEventPackage, frameworkPackageResult.Artifacts); err != nil {
 				return nil, fmt.Errorf("failed to add framework package artifacts to service context: %w", err)
 			}
 
@@ -406,7 +407,8 @@ func (sm *serviceManager) Package(
 				return nil, err
 			}
 
-			if err := appendOperationArtifacts(serviceContext, ServiceEventPackage, serviceTargetPackageResult.Artifacts); err != nil {
+			if err := appendOperationArtifacts(
+				serviceContext, ServiceEventPackage, serviceTargetPackageResult.Artifacts); err != nil {
 				return nil, fmt.Errorf("failed to add service target package artifacts to service context: %w", err)
 			}
 

@@ -45,7 +45,7 @@ func newListenCommand() *cobra.Command {
 							continue
 						}
 
-						var foundryAgentConfig *project.FoundryAgentConfig
+						var foundryAgentConfig *project.ServiceTargetAgentConfig
 						if err := project.UnmarshalStruct(svc.Config, &foundryAgentConfig); err != nil {
 							return fmt.Errorf("failed to parse foundry agent config: %w", err)
 						}

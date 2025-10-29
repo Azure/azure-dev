@@ -10,14 +10,13 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-// FoundryAgentConfig provides custom configuration for the Foundry AI Service target
-type FoundryAgentConfig struct {
-	FoundryProjectEndpoint string            `json:"projectEndpoint,omitempty"`
-	Environment            map[string]string `json:"env,omitempty"`
-	Scale                  *ScaleSettings    `json:"scale,omitempty"`
+// ServiceTargetAgentConfig provides custom configuration for the Azure AI Service target
+type ServiceTargetAgentConfig struct {
+	Environment map[string]string `json:"env,omitempty"`
+	Scale       *ScaleSettings    `json:"scale,omitempty"`
 }
 
-// ScaleSettings provides scaling configuration for the Foundry AI Service target
+// ScaleSettings provides scaling configuration for the Azure AI Service target
 type ScaleSettings struct {
 	MinReplicas int    `json:"minReplicas,omitempty"`
 	MaxReplicas int    `json:"maxReplicas,omitempty"`

@@ -254,7 +254,7 @@ func Test_CLI_Package_WithOutputPath(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.Contains(t, packageResult.Stdout, "Package Output:")
-		require.Contains(t, packageResult.Stdout, filepath.Join("dist", "web.zip"))
+		require.Contains(t, packageResult.Stdout, filepath.Join(dir, "dist", "web.zip"))
 
 		artifactPath := filepath.Join(dir, "dist", "web.zip")
 		info, err := os.Stat(artifactPath)

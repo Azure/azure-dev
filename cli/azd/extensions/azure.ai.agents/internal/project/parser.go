@@ -73,7 +73,7 @@ func shouldRun(ctx context.Context, project *azdext.ProjectConfig) (bool, error)
 					return false, fmt.Errorf("failed to unmarshal agent definition when updating project: %w", err)
 				}
 
-				return agentDef.Kind == agent_yaml.AgentKindYamlContainerApp, nil
+				return agentDef.Kind == agent_yaml.AgentKindHosted, nil
 			}
 		}
 	}

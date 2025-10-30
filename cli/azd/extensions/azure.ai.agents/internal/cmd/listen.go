@@ -31,7 +31,7 @@ func newListenCommand() *cobra.Command {
 			projectParser := &project.FoundryParser{AzdClient: azdClient}
 			// IMPORTANT: service target name here must match the name used in the extension manifest.
 			host := azdext.NewExtensionHost(azdClient).
-				WithServiceTarget("azure.ai.agents", func() azdext.ServiceTargetProvider {
+				WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
 					return project.NewAgentServiceTargetProvider(azdClient)
 				}).
 				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {

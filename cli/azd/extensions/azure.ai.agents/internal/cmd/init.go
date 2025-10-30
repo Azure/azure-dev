@@ -17,6 +17,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/registry_api"
 	"azureaiagent/internal/pkg/azure/ai"
+	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -28,6 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/types/known/structpb"
 	"gopkg.in/yaml.v3"
 )
 
@@ -785,11 +787,44 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		serviceHost = AiAgentHost
 	}
 
+	var agentConfig = project.ServiceTargetAgentConfig{}
+
+	deploymentDetails := []project.Deployment{}
+	switch agentDef.Kind {
+	case agent_yaml.AgentKindPrompt:
+		agentDef := agentManifest.Template.(agent_yaml.PromptAgent)
+
+		modelDeployment, err := a.getModelDeploymentDetails(ctx, agentDef.Model)
+		if err != nil {
+			return fmt.Errorf("failed to get model deployment details: %w", err)
+		}
+		deploymentDetails = append(deploymentDetails, *modelDeployment)
+	case agent_yaml.AgentKindHosted:
+		agentDef := agentManifest.Template.(agent_yaml.HostedContainerAgent)
+
+		// Iterate over all models in the hosted container agent
+		for _, model := range agentDef.Models {
+			modelDeployment, err := a.getModelDeploymentDetails(ctx, model)
+			if err != nil {
+				return fmt.Errorf("failed to get model deployment details: %w", err)
+			}
+			deploymentDetails = append(deploymentDetails, *modelDeployment)
+		}
+	}
+
+	agentConfig.Deployments = deploymentDetails
+
+	var agentConfigStruct *structpb.Struct
+	if agentConfigStruct, err = project.MarshalStruct(&agentConfig); err != nil {
+		return fmt.Errorf("failed to marshal agent config: %w", err)
+	}
+
 	serviceConfig := &azdext.ServiceConfig{
 		Name:         strings.ReplaceAll(agentDef.Name, " ", ""),
 		RelativePath: targetDir,
 		Host:         serviceHost,
 		Language:     "python",
+		Config:       agentConfigStruct,
 	}
 
 	req := &azdext.AddServiceRequest{Service: serviceConfig}
@@ -1317,31 +1352,12 @@ func (a *InitAction) updateEnvironment(ctx context.Context, agentManifest *agent
 	}
 
 	envName := envResponse.Environment.Name
-	deploymentDetails := []Deployment{}
 
 	// Set environment variables based on agent kind
 	switch agentDef.Kind {
-	case agent_yaml.AgentKindPrompt:
-		agentDef := agentManifest.Template.(agent_yaml.PromptAgent)
-
-		modelDeployment, err := a.getModelDeploymentDetails(ctx, agentDef.Model)
-		if err != nil {
-			return fmt.Errorf("failed to get model deployment details: %w", err)
-		}
-		deploymentDetails = append(deploymentDetails, *modelDeployment)
 	case agent_yaml.AgentKindHosted:
-		agentDef := agentManifest.Template.(agent_yaml.HostedContainerAgent)
 		if err := a.setEnvVar(ctx, envName, "ENABLE_HOSTED_AGENTS", "true"); err != nil {
 			return err
-		}
-
-		// Iterate over all models in the hosted container agent
-		for _, model := range agentDef.Models {
-			modelDeployment, err := a.getModelDeploymentDetails(ctx, model)
-			if err != nil {
-				return fmt.Errorf("failed to get model deployment details: %w", err)
-			}
-			deploymentDetails = append(deploymentDetails, *modelDeployment)
 		}
 	}
 
@@ -1349,14 +1365,6 @@ func (a *InitAction) updateEnvironment(ctx context.Context, agentManifest *agent
 		if err := a.setEnvVar(ctx, envName, "ENABLE_CONTAINER_AGENTS", "true"); err != nil {
 			return err
 		}
-	}
-
-	deploymentsJson, err := json.Marshal(deploymentDetails)
-	if err != nil {
-		return fmt.Errorf("failed to marshal deployment details to JSON: %w", err)
-	}
-	if err := a.setEnvVar(ctx, envName, "AI_PROJECT_DEPLOYMENTS", string(deploymentsJson)); err != nil {
-		return err
 	}
 
 	fmt.Printf("Successfully updated environment variables for agent kind: %s\n", agentDef.Kind)
@@ -1377,40 +1385,7 @@ func (a *InitAction) setEnvVar(ctx context.Context, envName, key, value string) 
 	return nil
 }
 
-// Deployment represents a single cognitive service account deployment
-type Deployment struct {
-	// Specify the name of cognitive service account deployment.
-	Name string `json:"name"`
-
-	// Required. Properties of Cognitive Services account deployment model.
-	Model DeploymentModel `json:"model"`
-
-	// The resource model definition representing SKU.
-	Sku DeploymentSku `json:"sku"`
-}
-
-// DeploymentModel represents the model configuration for a cognitive services deployment
-type DeploymentModel struct {
-	// Required. The name of Cognitive Services account deployment model.
-	Name string `json:"name"`
-
-	// Required. The format of Cognitive Services account deployment model.
-	Format string `json:"format"`
-
-	// Required. The version of Cognitive Services account deployment model.
-	Version string `json:"version"`
-}
-
-// DeploymentSku represents the resource model definition representing SKU
-type DeploymentSku struct {
-	// Required. The name of the resource model definition representing SKU.
-	Name string `json:"name"`
-
-	// The capacity of the resource model definition representing SKU.
-	Capacity int `json:"capacity"`
-}
-
-func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_yaml.Model) (*Deployment, error) {
+func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_yaml.Model) (*project.Deployment, error) {
 	version := ""
 	if model.Version != nil {
 		version = *model.Version
@@ -1440,14 +1415,14 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 		modelDeployment = modelDeploymentInput.Value
 	}
 
-	return &Deployment{
+	return &project.Deployment{
 		Name: modelDeployment,
-		Model: DeploymentModel{
+		Model: project.DeploymentModel{
 			Name:    model.Id,
 			Format:  modelDetails.Format,
 			Version: modelDetails.Version,
 		},
-		Sku: DeploymentSku{
+		Sku: project.DeploymentSku{
 			Name:     modelDetails.Sku.Name,
 			Capacity: int(modelDetails.Sku.Capacity),
 		},

@@ -64,6 +64,8 @@ type GitHubUrlInfo struct {
 	Hostname string
 }
 
+const AiAgentHost = "azure.ai.agent"
+
 func newInitCommand() *cobra.Command {
 	flags := &initFlags{}
 
@@ -780,7 +782,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	case "containerapp":
 		serviceHost = "containerapp"
 	default:
-		serviceHost = "azure.ai.agents"
+		serviceHost = AiAgentHost
 	}
 
 	serviceConfig := &azdext.ServiceConfig{

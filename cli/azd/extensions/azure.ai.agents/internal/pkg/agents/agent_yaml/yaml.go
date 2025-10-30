@@ -3,6 +3,8 @@
 
 package agent_yaml
 
+import "slices"
+
 // AgentKind represents the type of agent
 type AgentKind string
 
@@ -14,12 +16,7 @@ const (
 
 // IsValidAgentKind checks if the provided AgentKind is valid
 func IsValidAgentKind(kind AgentKind) bool {
-	switch kind {
-	case AgentKindPrompt, AgentKindHosted, AgentKindWorkflow:
-		return true
-	default:
-		return false
-	}
+	return slices.Contains(ValidAgentKinds(), kind)
 }
 
 // ValidAgentKinds returns a slice of all valid AgentKind values

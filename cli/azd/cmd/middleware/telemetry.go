@@ -42,12 +42,13 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	// It does not contain user input, and is safe for telemetry emission.
 	cmdPath := events.GetCommandEventName(m.options.CommandPath)
 
+	eventName := cmdPath
 	extensionId := m.options.Annotations["extension.id"]
 	if extensionId != "" {
-		cmdPath = events.ExtensionRunEvent
+		eventName = events.ExtensionRunEvent
 	}
 
-	spanCtx, span := tracing.Start(ctx, cmdPath)
+	spanCtx, span := tracing.Start(ctx, eventName)
 
 	log.Printf("TraceID: %s", span.SpanContext().TraceID())
 

@@ -65,15 +65,15 @@ func (c *containerService) Build(
 		return nil, err
 	}
 
-	buildResult, err := async.RunWithProgress(
-		func(buildProgress project.ServiceProgress) {
-			progressMessage := fmt.Sprintf("Building service %s (%s)", serviceConfig.Name, buildProgress.Message)
-			c.console.ShowSpinner(ctx, progressMessage, input.Step)
-		},
-		func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceBuildResult, error) {
-			return containerHelper.Build(ctx, serviceConfig, serviceContext, progress)
-		},
-	)
+	// Call containerHelper.Build without progress reporting to avoid conflicts with outer progress layer
+	progress := async.NewProgress[project.ServiceProgress]()
+	go func() {
+		// Drain progress channel without displaying to avoid conflicting with outer layer
+		for range progress.Progress() {
+		}
+	}()
+	buildResult, err := containerHelper.Build(ctx, serviceConfig, serviceContext, progress)
+	progress.Done()
 	if err != nil {
 		return nil, err
 	}
@@ -114,15 +114,15 @@ func (c *containerService) Package(
 		return nil, err
 	}
 
-	packageResult, err := async.RunWithProgress(
-		func(buildProgress project.ServiceProgress) {
-			progressMessage := fmt.Sprintf("Packaging service %s (%s)", serviceConfig.Name, buildProgress.Message)
-			c.console.ShowSpinner(ctx, progressMessage, input.Step)
-		},
-		func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePackageResult, error) {
-			return containerHelper.Package(ctx, serviceConfig, serviceContext, progress)
-		},
-	)
+	// Call containerHelper.Package without progress reporting to avoid conflicts with outer progress layer
+	progress := async.NewProgress[project.ServiceProgress]()
+	go func() {
+		// Drain progress channel without displaying to avoid conflicting with outer layer
+		for range progress.Progress() {
+		}
+	}()
+	packageResult, err := containerHelper.Package(ctx, serviceConfig, serviceContext, progress)
+	progress.Done()
 	if err != nil {
 		return nil, err
 	}
@@ -178,15 +178,15 @@ func (c *containerService) Publish(
 		return nil, err
 	}
 
-	publishResult, err := async.RunWithProgress(
-		func(buildProgress project.ServiceProgress) {
-			progressMessage := fmt.Sprintf("Publishing service %s (%s)", serviceConfig.Name, buildProgress.Message)
-			c.console.ShowSpinner(ctx, progressMessage, input.Step)
-		},
-		func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePublishResult, error) {
-			return containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, nil)
-		},
-	)
+	// Call containerHelper.Publish without progress reporting to avoid conflicts with outer progress layer
+	progress := async.NewProgress[project.ServiceProgress]()
+	go func() {
+		// Drain progress channel without displaying to avoid conflicting with outer layer
+		for range progress.Progress() {
+		}
+	}()
+	publishResult, err := containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, nil)
+	progress.Done()
 	if err != nil {
 		return nil, err
 	}

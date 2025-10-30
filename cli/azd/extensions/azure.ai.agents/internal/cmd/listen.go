@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"azureaiagent/internal/project"
@@ -45,22 +46,7 @@ func newListenCommand() *cobra.Command {
 							continue
 						}
 
-						var foundryAgentConfig *project.ServiceTargetAgentConfig
-						if err := project.UnmarshalStruct(svc.Config, &foundryAgentConfig); err != nil {
-							return fmt.Errorf("failed to parse foundry agent config: %w", err)
-						}
-
-						currentEnvResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-						if err != nil {
-							return err
-						}
-
-						// TODO: Generate and update any missing environment variables needed by the agent
-						azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-							EnvName: currentEnvResponse.Environment.Name,
-							Key:     "MISSING_KEY",
-							Value:   "MISSING_VALUE",
-						})
+						return preprovisionHandler(ctx, azdClient, svc)
 					}
 
 					return nil
@@ -76,4 +62,30 @@ func newListenCommand() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, svc *azdext.ServiceConfig) error {
+
+	var foundryAgentConfig *project.ServiceTargetAgentConfig
+	if err := project.UnmarshalStruct(svc.Config, &foundryAgentConfig); err != nil {
+		return fmt.Errorf("failed to parse foundry agent config: %w", err)
+	}
+
+	currentEnvResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return err
+	}
+
+	deploymentsJson, err := json.Marshal(foundryAgentConfig.Deployments)
+	if err != nil {
+		return fmt.Errorf("failed to marshal deployment details to JSON: %w", err)
+	}
+
+	azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: currentEnvResponse.Environment.Name,
+		Key:     "AI_PROJECT_DEPLOYMENTS",
+		Value:   string(deploymentsJson),
+	})
+
+	return nil
 }

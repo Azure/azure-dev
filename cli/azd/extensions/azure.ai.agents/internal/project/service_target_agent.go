@@ -233,6 +233,15 @@ func (p *AgentServiceTargetProvider) Deploy(
 		azdEnv[kval.Key] = kval.Value
 	}
 
+	var serviceTargetConfig *ServiceTargetAgentConfig
+	if err := UnmarshalStruct(serviceConfig.Config, &serviceTargetConfig); err != nil {
+		return nil, fmt.Errorf("failed to parse service target config: %w", err)
+	}
+
+	if serviceTargetConfig != nil {
+		fmt.Println("Loaded custom service target configuration")
+	}
+
 	// Load and validate the agent manifest
 	data, err := os.ReadFile(p.agentDefinitionPath)
 	if err != nil {

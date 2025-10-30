@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func init() {
@@ -124,6 +125,16 @@ func registerProjectMappings() {
 			return nil, fmt.Errorf("convert docker options: %w", err)
 		}
 
+		// Convert custom configuration if present
+		var protoConfig *structpb.Struct
+		if src.Config != nil {
+			var err error
+			protoConfig, err = structpb.NewStruct(src.Config)
+			if err != nil {
+				return nil, fmt.Errorf("converting service config to structpb: %w", err)
+			}
+		}
+
 		return &azdext.ServiceConfig{
 			Name:              src.Name,
 			ResourceGroupName: resourceGroupName,
@@ -135,6 +146,7 @@ func registerProjectMappings() {
 			OutputPath:        src.OutputPath,
 			Image:             image,
 			Docker:            docker,
+			Config:            protoConfig,
 		}, nil
 	})
 
@@ -347,6 +359,10 @@ func registerProjectMappings() {
 				return nil, fmt.Errorf("convert docker options: %w", err)
 			}
 			result.Docker = dockerOptions
+		}
+
+		if src.Config != nil {
+			result.Config = src.Config.AsMap()
 		}
 
 		return result, nil

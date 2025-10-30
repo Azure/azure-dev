@@ -39,7 +39,7 @@ require (
 	github.com/charmbracelet/x/exp/slice v0.0.0-20251008171431-5d3777519489 // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
-	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/drone/envsubst v1.0.3 // indirect
 	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203 // indirect
@@ -65,7 +65,7 @@ require (
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/nathan-fiscaletti/consolesize-go v0.0.0-20220204101620-317176b6684d // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
-	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	github.com/theckman/yacspin v0.13.12 // indirect

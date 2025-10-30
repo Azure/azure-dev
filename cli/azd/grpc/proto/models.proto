@@ -6,6 +6,8 @@ package azdext;
 
 option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext";
 
+import "include/google/protobuf/struct.proto";
+
 // Messages for requests and responses
 message EmptyRequest {}
 
@@ -92,6 +94,7 @@ message ServiceConfig {
   string output_path = 8;
   string image = 9;
   DockerProjectOptions docker = 10;
+  google.protobuf.Struct config = 11;
 }
 
 // InfraOptions message definition

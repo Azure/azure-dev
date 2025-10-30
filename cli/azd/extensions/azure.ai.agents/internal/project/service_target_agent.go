@@ -238,7 +238,9 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, fmt.Errorf("failed to parse service target config: %w", err)
 	}
 
-	fmt.Printf("endpoint: %s", serviceTargetConfig.FoundryProjectEndpoint)
+	if serviceTargetConfig != nil {
+		fmt.Println("Loaded custom service target configuration")
+	}
 
 	// Load and validate the agent manifest
 	data, err := os.ReadFile(p.agentDefinitionPath)

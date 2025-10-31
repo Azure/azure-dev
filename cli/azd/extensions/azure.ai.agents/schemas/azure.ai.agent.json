@@ -14,6 +14,12 @@
     "scale": {
       "$ref": "#/definitions/ScaleSettings"
     }
+    ,
+    "deployments": {
+      "type": "array",
+      "description": "List of model deployments.",
+      "items": { "$ref": "#/definitions/Deployment" }
+    }
   },
   "additionalProperties": false,
   "definitions": {
@@ -42,6 +48,39 @@
           "pattern": "^[0-9]+(\\.[0-9]+)?m?$"
         }
       },
+      "additionalProperties": false
+    }
+    ,
+    "Deployment": {
+      "type": "object",
+      "description": "A single model deployment.",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the model deployment." },
+        "model": { "$ref": "#/definitions/DeploymentModel" },
+        "sku": { "$ref": "#/definitions/DeploymentSku" }
+      },
+      "required": ["name", "model", "sku"],
+      "additionalProperties": false
+    },
+    "DeploymentModel": {
+      "type": "object",
+      "description": "Model configuration for a model deployment.",
+      "properties": {
+        "name": { "type": "string", "description": "Model name." },
+        "format": { "type": "string", "description": "Model format." },
+        "version": { "type": "string", "description": "Model version." }
+      },
+      "required": ["name", "format", "version"],
+      "additionalProperties": false
+    },
+    "DeploymentSku": {
+      "type": "object",
+      "description": "SKU configuration for a deployment.",
+      "properties": {
+        "name": { "type": "string", "description": "SKU name." },
+        "capacity": { "type": "integer", "description": "SKU capacity." }
+      },
+      "required": ["name", "capacity"],
       "additionalProperties": false
     }
   }

@@ -1353,14 +1353,6 @@ func (a *InitAction) updateEnvironment(ctx context.Context, agentManifest *agent
 
 	envName := envResponse.Environment.Name
 
-	// Set environment variables based on agent kind
-	switch agentDef.Kind {
-	case agent_yaml.AgentKindHosted:
-		if err := a.setEnvVar(ctx, envName, "ENABLE_HOSTED_AGENTS", "true"); err != nil {
-			return err
-		}
-	}
-
 	if host == "containerapp" {
 		if err := a.setEnvVar(ctx, envName, "ENABLE_CONTAINER_AGENTS", "true"); err != nil {
 			return err

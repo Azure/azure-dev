@@ -26,27 +26,27 @@ type ScaleSettings struct {
 	Cpu         string `json:"cpu,omitempty"`
 }
 
-// Deployment represents a single cognitive service account deployment
+// Deployment represents a single model deployment
 type Deployment struct {
-	// Specify the name of cognitive service account deployment.
+	// Specify the name of model deployment.
 	Name string `json:"name"`
 
-	// Required. Properties of Cognitive Services account deployment model.
+	// Required. Properties of model deployment.
 	Model DeploymentModel `json:"model"`
 
 	// The resource model definition representing SKU.
 	Sku DeploymentSku `json:"sku"`
 }
 
-// DeploymentModel represents the model configuration for a cognitive services deployment
+// DeploymentModel represents the model configuration for a model deployment
 type DeploymentModel struct {
-	// Required. The name of Cognitive Services account deployment model.
+	// Required. The name of model deployment.
 	Name string `json:"name"`
 
-	// Required. The format of Cognitive Services account deployment model.
+	// Required. The format of model deployment.
 	Format string `json:"format"`
 
-	// Required. The version of Cognitive Services account deployment model.
+	// Required. The version of model deployment.
 	Version string `json:"version"`
 }
 

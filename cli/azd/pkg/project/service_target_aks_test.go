@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/helm"
 	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
@@ -51,8 +52,9 @@ func Test_NewAksTarget(t *testing.T) {
 
 	serviceConfig := createTestServiceConfig("./src/api", AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
+	azdCtx := createTestAzdContext(t, env)
 
-	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil, azdCtx)
 
 	require.NotNil(t, serviceTarget)
 	require.NotNil(t, serviceConfig)
@@ -68,9 +70,10 @@ func Test_Required_Tools(t *testing.T) {
 
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
+	azdCtx := createTestAzdContext(t, env)
 
 	userConfig := config.NewConfig(nil)
-	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, userConfig)
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, userConfig, azdCtx)
 
 	requiredTools := serviceTarget.RequiredExternalTools(*mockContext.Context, serviceConfig)
 	require.Len(t, requiredTools, 2)
@@ -88,11 +91,12 @@ func Test_Required_Tools_WithAlpha(t *testing.T) {
 
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
+	azdCtx := createTestAzdContext(t, env)
 
 	userConfig := config.NewConfig(nil)
 	_ = userConfig.Set("alpha.aks.helm", "on")
 	_ = userConfig.Set("alpha.aks.kustomize", "on")
-	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, userConfig)
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, userConfig, azdCtx)
 
 	requiredTools := serviceTarget.RequiredExternalTools(*mockContext.Context, serviceConfig)
 	require.Len(t, requiredTools, 4)
@@ -112,8 +116,9 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
+	azdCtx := createTestAzdContext(t, env)
 
-	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil, azdCtx)
 	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 	require.NoError(t, err)
 
@@ -185,8 +190,9 @@ func Test_AKS_Publish(t *testing.T) {
 
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
+	azdCtx := createTestAzdContext(t, env)
 
-	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil, azdCtx)
 	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 	require.NoError(t, err)
 
@@ -249,8 +255,9 @@ func Test_AKS_Publish_NoContainer(t *testing.T) {
 
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
+	azdCtx := createTestAzdContext(t, env)
 
-	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil, azdCtx)
 	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 	require.NoError(t, err)
 
@@ -286,8 +293,9 @@ func Test_Resolve_Cluster_Name(t *testing.T) {
 
 		serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 		env := createEnv()
+		azdCtx := createTestAzdContext(t, env)
 
-		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
+		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil, azdCtx)
 		err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 		require.NoError(t, err)
 	})
@@ -300,11 +308,12 @@ func Test_Resolve_Cluster_Name(t *testing.T) {
 		serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 		serviceConfig.ResourceName = osutil.NewExpandableString("AKS_CLUSTER")
 		env := createEnv()
+		azdCtx := createTestAzdContext(t, env)
 
 		// Remove default AKS cluster name from env file
 		env.DotenvDelete(environment.AksClusterEnvVarName)
 
-		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
+		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil, azdCtx)
 		err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 		require.NoError(t, err)
 	})
@@ -317,12 +326,13 @@ func Test_Resolve_Cluster_Name(t *testing.T) {
 		serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 		serviceConfig.ResourceName = osutil.NewExpandableString("${MY_CUSTOM_ENV_VAR}")
 		env := createEnv()
+		azdCtx := createTestAzdContext(t, env)
 		env.DotenvSet("MY_CUSTOM_ENV_VAR", "AKS_CLUSTER")
 
 		// Remove default AKS cluster name from env file
 		env.DotenvDelete(environment.AksClusterEnvVarName)
 
-		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
+		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil, azdCtx)
 		err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 		require.NoError(t, err)
 	})
@@ -337,11 +347,12 @@ func Test_Resolve_Cluster_Name(t *testing.T) {
 
 		serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 		env := createEnv()
+		azdCtx := createTestAzdContext(t, env)
 
 		// Simulate AKS cluster name not found in env file
 		env.DotenvDelete(environment.AksClusterEnvVarName)
 
-		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
+		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil, azdCtx)
 		err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "could not determine AKS cluster")
@@ -363,8 +374,9 @@ func Test_Deploy_No_Credentials(t *testing.T) {
 
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
+	azdCtx := createTestAzdContext(t, env)
 
-	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil, azdCtx)
 	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed retrieving cluster user credentials")
@@ -400,10 +412,11 @@ func Test_Deploy_Helm(t *testing.T) {
 	}
 
 	env := createEnv()
+	azdCtx := createTestAzdContext(t, env)
 	userConfig := config.NewConfig(nil)
 	_ = userConfig.Set("alpha.aks.helm", "on")
 
-	serviceTarget := createAksServiceTarget(mockContext, &serviceConfig, env, userConfig)
+	serviceTarget := createAksServiceTarget(mockContext, &serviceConfig, env, userConfig, azdCtx)
 	err = simulateInitliaze(*mockContext.Context, serviceTarget, &serviceConfig)
 	require.NoError(t, err)
 
@@ -462,12 +475,13 @@ func Test_Deploy_Kustomize(t *testing.T) {
 	require.NoError(t, err)
 
 	env := createEnv()
+	azdCtx := createTestAzdContext(t, env)
 	env.DotenvSet("SERVICE_API_IMAGE_NAME", "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0")
 
 	userConfig := config.NewConfig(nil)
 	_ = userConfig.Set("alpha.aks.kustomize", "on")
 
-	serviceTarget := createAksServiceTarget(mockContext, &serviceConfig, env, userConfig)
+	serviceTarget := createAksServiceTarget(mockContext, &serviceConfig, env, userConfig, azdCtx)
 	err = simulateInitliaze(*mockContext.Context, serviceTarget, &serviceConfig)
 	require.NoError(t, err)
 
@@ -935,11 +949,22 @@ func createEnv() *environment.Environment {
 	})
 }
 
+// Helper function to create a properly configured azdContext for tests
+func createTestAzdContext(t *testing.T, env *environment.Environment) *azdcontext.AzdContext {
+	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	err := azdCtx.SetProjectState(azdcontext.ProjectState{
+		DefaultEnvironment: env.Name(),
+	})
+	require.NoError(t, err)
+	return azdCtx
+}
+
 func createAksServiceTarget(
 	mockContext *mocks.MockContext,
 	serviceConfig *ServiceConfig,
 	env *environment.Environment,
 	userConfig config.Config,
+	azdCtx *azdcontext.AzdContext,
 ) ServiceTarget {
 	kubeCtl := kubectl.NewCli(mockContext.CommandRunner)
 	helmCli := helm.NewCli(mockContext.CommandRunner)
@@ -953,6 +978,7 @@ func createAksServiceTarget(
 		})
 
 	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Get", mock.Anything, env.Name()).Return(env, nil)
 	envManager.On("Save", *mockContext.Context, env).Return(nil)
 
 	resourceManager := &MockResourceManager{}
@@ -978,7 +1004,7 @@ func createAksServiceTarget(
 		mockContext.ArmClientOptions,
 	)
 	containerHelper := NewContainerHelper(
-		env,
+		azdCtx,
 		envManager,
 		clock.NewMock(),
 		containerRegistryService,

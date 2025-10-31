@@ -498,18 +498,21 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	p.displayAgentInfo(request)
 
 	// Step 3: Create agent
+	progress("Creating Agent")
 	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv, cred)
 	if err != nil {
 		return nil, err
 	}
 
 	// Register agent info in environment
+	progress("Registering Agent Environment Variables")
 	err = p.registerAgentEnvironmentVariables(ctx, agentVersionResponse)
 	if err != nil {
 		return nil, err
 	}
 
 	// Step 4: Start agent container
+	progress("Starting Agent Container")
 	err = p.startAgentContainer(ctx, agentManifest, agentVersionResponse, azdEnv, cred)
 	if err != nil {
 		return nil, err

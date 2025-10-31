@@ -520,11 +520,17 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 	fmt.Fprintf(os.Stderr, "Hosted agent '%s' deployed successfully!\n", agentVersionResponse.Name)
 
+	endpoint := fmt.Sprintf("%s/agents/%s/versions/%s",
+		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		agentVersionResponse.Name,
+		agentVersionResponse.Version,
+	)
+
 	return &azdext.ServiceDeployResult{
 		Artifacts: []*azdext.Artifact{
 			{
-				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_DEPLOYMENT,
-				Location:     agentVersionResponse.ID,
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+				Location:     endpoint,
 				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
 				Metadata: map[string]string{
 					"agentName":    agentVersionResponse.Name,

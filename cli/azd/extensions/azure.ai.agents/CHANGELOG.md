@@ -7,6 +7,7 @@
 - Store model information in service config
 - Display agent endpoint on successful deploy
 - Improve error handling
+- Fix panic when no default model capacity is returned
 
 ## 0.0.1 (2025-10-28)
 

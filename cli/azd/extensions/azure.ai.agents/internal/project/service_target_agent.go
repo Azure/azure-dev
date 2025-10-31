@@ -630,11 +630,25 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 				}
 
 				// Check if operation is complete
-				if completedOperation.Status == "Succeeded" || completedOperation.Status == "Failed" {
-					if completedOperation.Status == "Failed" {
-						return fmt.Errorf("operation failed: %s", completedOperation.Error)
+				if completedOperation.Status == "Failed" {
+					// Try to get reason for failure by querying container API
+					containerInfo, containerErr := agentClient.GetAgentContainer(
+						ctx, agentVersionResponse.Name, agentVersionResponse.Version, apiVersion)
+					if containerErr != nil {
+						return fmt.Errorf("operation failed (id: %s): failed to retrieve container details: %w", operation.Body.ID, containerErr)
 					}
 
+					var errorMsg string
+					if containerInfo.ErrorMessage != nil && *containerInfo.ErrorMessage != "" {
+						errorMsg = fmt.Sprintf("operation failed (id: %s): container status is %q with error: %s", operation.Body.ID, containerInfo.Status, *containerInfo.ErrorMessage)
+					} else {
+						errorMsg = fmt.Sprintf("operation failed (id: %s): container status is %q with no error details", operation.Body.ID, containerInfo.Status)
+					}
+
+					return errors.New(errorMsg)
+				}
+
+				if completedOperation.Status == "Succeeded" {
 					if completedOperation.Container != nil {
 						fmt.Fprintf(os.Stderr, "Agent container '%s' (version: %s) operation completed! Container status: %s\n",
 							agentVersionResponse.Name, agentVersionResponse.Version, completedOperation.Container.Status)
@@ -647,6 +661,7 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 					return nil
 				}
 
+				// Still in progress, continue polling
 				fmt.Fprintf(os.Stderr, "Operation status: %s\n", completedOperation.Status)
 			}
 		}

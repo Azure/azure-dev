@@ -129,6 +129,7 @@ func (p *AgentServiceTargetProvider) Package(
 	var packageArtifact *azdext.Artifact
 	var newArtifacts []*azdext.Artifact
 
+	progress("Packaging container")
 	for _, artifact := range serviceContext.Package {
 		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER {
 			packageArtifact = artifact
@@ -190,6 +191,7 @@ func (p *AgentServiceTargetProvider) Publish(
 		return &azdext.ServicePublishResult{}, nil
 	}
 
+	progress("Publishing container")
 	publishResponse, err := p.azdClient.
 		Container().
 		Publish(ctx, &azdext.ContainerPublishRequest{
@@ -446,7 +448,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required")
 	}
 
-	progress("Deploying Hosted Agent")
+	progress("Deploying hosted agent")
 
 	// Step 1: Build container image
 	var fullImageURL string
@@ -498,21 +500,21 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	p.displayAgentInfo(request)
 
 	// Step 3: Create agent
-	progress("Creating Agent")
+	progress("Creating agent")
 	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv, cred)
 	if err != nil {
 		return nil, err
 	}
 
 	// Register agent info in environment
-	progress("Registering Agent Environment Variables")
+	progress("Registering agent environment variables")
 	err = p.registerAgentEnvironmentVariables(ctx, agentVersionResponse)
 	if err != nil {
 		return nil, err
 	}
 
 	// Step 4: Start agent container
-	progress("Starting Agent Container")
+	progress("Starting agent container")
 	err = p.startAgentContainer(ctx, agentManifest, agentVersionResponse, azdEnv, cred)
 	if err != nil {
 		return nil, err

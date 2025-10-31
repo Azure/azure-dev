@@ -13,7 +13,7 @@ capabilities:
   - mcp-server
   - service-target-provider
 providers:
-  - name: azure.ai.agents
+  - name: azure.ai.agent
     type: service-target
     description: Deploys agents to AI Foundry container agent service.
 examples:

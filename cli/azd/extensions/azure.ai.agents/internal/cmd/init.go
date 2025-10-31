@@ -1421,6 +1421,7 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string, mode
 			Options: &azdext.PromptOptions{
 				Message:        "Selected model SKU has no default capacity. Please enter desired capacity",
 				IgnoreHintKeys: true,
+				Required:       true,
 			},
 		})
 		if err != nil {

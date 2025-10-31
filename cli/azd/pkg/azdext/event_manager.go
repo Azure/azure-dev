@@ -15,7 +15,7 @@ import (
 )
 
 type EventManager struct {
-	azdClient     *AzdClient
+	client        *AzdClient
 	stream        grpc.BidiStreamingClient[EventMessage, EventMessage]
 	projectEvents map[string]ProjectEventHandler
 	serviceEvents map[string]ServiceEventHandler
@@ -37,7 +37,7 @@ type ServiceEventHandler func(ctx context.Context, args *ServiceEventArgs) error
 
 func NewEventManager(azdClient *AzdClient) *EventManager {
 	return &EventManager{
-		azdClient:     azdClient,
+		client:        azdClient,
 		projectEvents: make(map[string]ProjectEventHandler),
 		serviceEvents: make(map[string]ServiceEventHandler),
 	}
@@ -51,9 +51,9 @@ func (em *EventManager) Close() error {
 	return nil
 }
 
-func (em *EventManager) init(ctx context.Context) error {
+func (em *EventManager) ensureStream(ctx context.Context) error {
 	if em.stream == nil {
-		eventStream, err := em.azdClient.Events().EventStream(ctx)
+		eventStream, err := em.client.Events().EventStream(ctx)
 		if err != nil {
 			return err
 		}
@@ -65,57 +65,53 @@ func (em *EventManager) init(ctx context.Context) error {
 }
 
 func (em *EventManager) Receive(ctx context.Context) error {
-	if err := em.init(ctx); err != nil {
-		return err
-	}
-
-	if err := em.sendReadyEvent(); err != nil {
+	if err := em.ensureStream(ctx); err != nil {
 		return err
 	}
 
 	for {
-		select {
-		case <-ctx.Done():
-			log.Println("Context cancelled by caller, exiting receiveEvents")
-			return nil
-		default:
-			msg, err := em.stream.Recv()
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					log.Println("Stream closed by server (EOF), treating as expected")
+		msg, err := em.stream.Recv()
+		if err != nil {
+			// Check if it's context cancellation
+			if ctx.Err() != nil {
+				log.Println("Context cancelled, exiting receiveEvents")
+				return nil
+			}
+
+			if errors.Is(err, io.EOF) {
+				log.Println("Stream closed by server (EOF), treating as expected")
+				return nil
+			}
+
+			if st, ok := status.FromError(err); ok {
+				if st.Code() == codes.Unavailable {
+					log.Println("Stream closed by server (unavailable), treating as expected")
 					return nil
 				}
-
-				if st, ok := status.FromError(err); ok {
-					if st.Code() == codes.Unavailable {
-						log.Println("Stream closed by server (unavailable), treating as expected")
-						return nil
-					}
-				}
-
-				return err
 			}
 
-			switch msg.MessageType.(type) {
-			case *EventMessage_InvokeProjectHandler:
-				invokeMsg := msg.GetInvokeProjectHandler()
-				if err := em.invokeProjectHandler(ctx, invokeMsg); err != nil {
-					log.Printf("invokeProjectHandler error for event %s: %v", invokeMsg.EventName, err)
-				}
-			case *EventMessage_InvokeServiceHandler:
-				invokeMsg := msg.GetInvokeServiceHandler()
-				if err := em.invokeServiceHandler(ctx, invokeMsg); err != nil {
-					log.Printf("invokeServiceHandler error for event %s: %v", invokeMsg.EventName, err)
-				}
-			default:
-				log.Printf("receiveEvents: unhandled message type %T", msg.MessageType)
+			return err
+		}
+
+		switch msg.MessageType.(type) {
+		case *EventMessage_InvokeProjectHandler:
+			invokeMsg := msg.GetInvokeProjectHandler()
+			if err := em.invokeProjectHandler(ctx, invokeMsg); err != nil {
+				log.Printf("invokeProjectHandler error for event %s: %v", invokeMsg.EventName, err)
 			}
+		case *EventMessage_InvokeServiceHandler:
+			invokeMsg := msg.GetInvokeServiceHandler()
+			if err := em.invokeServiceHandler(ctx, invokeMsg); err != nil {
+				log.Printf("invokeServiceHandler error for event %s: %v", invokeMsg.EventName, err)
+			}
+		default:
+			log.Printf("receiveEvents: unhandled message type %T", msg.MessageType)
 		}
 	}
 }
 
 func (em *EventManager) AddProjectEventHandler(ctx context.Context, eventName string, handler ProjectEventHandler) error {
-	if err := em.init(ctx); err != nil {
+	if err := em.ensureStream(ctx); err != nil {
 		return err
 	}
 
@@ -143,7 +139,7 @@ func (em *EventManager) AddServiceEventHandler(
 	handler ServiceEventHandler,
 	options *ServiceEventOptions,
 ) error {
-	if err := em.init(ctx); err != nil {
+	if err := em.ensureStream(ctx); err != nil {
 		return err
 	}
 
@@ -172,16 +168,6 @@ func (em *EventManager) RemoveProjectEventHandler(eventName string) {
 
 func (em *EventManager) RemoveServiceEventHandler(eventName string) {
 	delete(em.serviceEvents, eventName)
-}
-
-func (em EventManager) sendReadyEvent() error {
-	return em.stream.Send(&EventMessage{
-		MessageType: &EventMessage_ExtensionReadyEvent{
-			ExtensionReadyEvent: &ExtensionReadyEvent{
-				Status: "ready",
-			},
-		},
-	})
 }
 
 // New helper to send project handler status.

@@ -113,15 +113,9 @@ func (s *eventService) EventStream(stream grpc.BidiStreamingServer[azdext.EventM
 			case *azdext.EventMessage_ServiceHandlerStatus:
 				statusMsg := msg.GetServiceHandlerStatus()
 				s.handleServiceHandlerStatus(extension, statusMsg)
-			case *azdext.EventMessage_ExtensionReadyEvent:
-				s.handleReadyEvent(extension)
 			}
 		}
 	}
-}
-
-func (s *eventService) handleReadyEvent(extension *extensions.Extension) {
-	extension.Initialize()
 }
 
 // ----- Project Event Handlers -----

@@ -5,9 +5,14 @@ package azdext
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -56,23 +61,32 @@ func NewFrameworkServiceManager(client *AzdClient) *FrameworkServiceManager {
 	}
 }
 
+// ensureStream initializes the stream if it hasn't been created yet.
+func (m *FrameworkServiceManager) ensureStream(ctx context.Context) error {
+	if m.stream == nil {
+		stream, err := m.client.FrameworkService().Stream(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create framework service stream: %w", err)
+		}
+		m.stream = stream
+	}
+	return nil
+}
+
 // Register registers a framework service provider with the specified language name.
 func (m *FrameworkServiceManager) Register(
 	ctx context.Context,
 	factory FrameworkServiceFactory,
 	language string,
 ) error {
-	client := m.client.FrameworkService()
-	stream, err := client.Stream(ctx)
-	if err != nil {
+	if err := m.ensureStream(ctx); err != nil {
 		return err
 	}
 
-	m.stream = stream
 	m.componentManager.RegisterFactory(language, factory)
 
 	// Send registration request
-	err = stream.Send(&FrameworkServiceMessage{
+	err := m.stream.Send(&FrameworkServiceMessage{
 		RequestId: "register",
 		MessageType: &FrameworkServiceMessage_RegisterFrameworkServiceRequest{
 			RegisterFrameworkServiceRequest: &RegisterFrameworkServiceRequest{
@@ -85,7 +99,7 @@ func (m *FrameworkServiceManager) Register(
 	}
 
 	// Wait for registration response
-	resp, err := stream.Recv()
+	resp, err := m.stream.Recv()
 	if err != nil {
 		return err
 	}
@@ -98,38 +112,47 @@ func (m *FrameworkServiceManager) Register(
 		return fmt.Errorf("expected RegisterFrameworkServiceResponse, got %T", resp.GetMessageType())
 	}
 
-	// Start handling the framework service stream
-
-	// Add a small delay to ensure the stream handler is ready before the server can use the stream
-	ready := make(chan struct{})
-	go func() {
-		close(ready) // Signal that we're about to start
-		m.handleFrameworkServiceStream(ctx)
-	}()
-	<-ready // Wait for the goroutine to start
-
 	return nil
 }
 
-// handleFrameworkServiceStream handles the bidirectional stream for framework service operations
-func (m *FrameworkServiceManager) handleFrameworkServiceStream(ctx context.Context) {
+// Receive handles the bidirectional stream for framework service operations
+func (m *FrameworkServiceManager) Receive(ctx context.Context) error {
+	if err := m.ensureStream(ctx); err != nil {
+		return fmt.Errorf("failed to initialize stream: %w", err)
+	}
+
 	for {
-		select {
-		case <-ctx.Done():
-			log.Println("Context cancelled by caller, exiting framework service stream")
-			return
-		default:
-			msg, err := m.stream.Recv()
-			if err != nil {
-				log.Printf("framework service stream closed: %v", err)
-				return
+		msg, err := m.stream.Recv()
+		if err != nil {
+			// Check if it's context cancellation
+			if ctx.Err() != nil {
+				log.Println("Context cancelled, exiting framework service stream")
+				return nil
 			}
-			// Process message synchronously to avoid race condition with stream.Recv()
-			resp := m.buildFrameworkServiceResponseMsg(ctx, msg)
-			if resp != nil {
-				if err := m.stream.Send(resp); err != nil {
-					log.Printf("failed to send framework service response: %v", err)
+
+			// Handle normal stream closure
+			if errors.Is(err, io.EOF) {
+				log.Println("Framework service stream closed by server (EOF), treating as expected")
+				return nil
+			}
+
+			if st, ok := status.FromError(err); ok {
+				if st.Code() == codes.Unavailable {
+					log.Println("Framework service stream closed by server (unavailable), treating as expected")
+					return nil
 				}
+			}
+
+			log.Printf("framework service stream closed: %v", err)
+			return err
+		}
+
+		// Process message synchronously to avoid race condition with stream.Recv()
+		resp := m.buildFrameworkServiceResponseMsg(ctx, msg)
+		if resp != nil {
+			if err := m.stream.Send(resp); err != nil {
+				log.Printf("failed to send framework service response: %v", err)
+				return err
 			}
 		}
 	}

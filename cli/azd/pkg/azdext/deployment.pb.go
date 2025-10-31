@@ -241,7 +241,7 @@ const file_deployment_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xad\x01\n" +
 	"\x11DeploymentService\x12D\n" +
 	"\rGetDeployment\x12\x14.azdext.EmptyRequest\x1a\x1d.azdext.GetDeploymentResponse\x12R\n" +
-	"\x14GetDeploymentContext\x12\x14.azdext.EmptyRequest\x1a$.azdext.GetDeploymentContextResponseB6Z4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdextb\x06proto3"
+	"\x14GetDeploymentContext\x12\x14.azdext.EmptyRequest\x1a$.azdext.GetDeploymentContextResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
 var (
 	file_deployment_proto_rawDescOnce sync.Once

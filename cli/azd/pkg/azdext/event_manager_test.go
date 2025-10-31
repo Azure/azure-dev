@@ -123,7 +123,7 @@ func TestNewEventManager(t *testing.T) {
 	eventManager := NewEventManager(client)
 
 	assert.NotNil(t, eventManager)
-	assert.Equal(t, client, eventManager.azdClient)
+	assert.Equal(t, client, eventManager.client)
 	assert.NotNil(t, eventManager.projectEvents)
 	assert.NotNil(t, eventManager.serviceEvents)
 	assert.Empty(t, eventManager.projectEvents)

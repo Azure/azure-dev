@@ -15,6 +15,7 @@ import (
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 )
 
@@ -32,6 +33,13 @@ func newListenCommand() *cobra.Command {
 				return fmt.Errorf("failed to create azd client: %w", err)
 			}
 			defer azdClient.Close()
+
+			azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+				Options: &azdext.ConfirmOptions{
+					Message:      "Debug Extension",
+					DefaultValue: ux.Ptr(true),
+				},
+			})
 
 			projectParser := &project.FoundryParser{AzdClient: azdClient}
 			// IMPORTANT: service target name here must match the name used in the extension manifest.

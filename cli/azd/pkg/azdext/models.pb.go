@@ -1450,7 +1450,7 @@ const file_models_proto_rawDesc = "" +
 	"\fLocationKind\x12\x1d\n" +
 	"\x19LOCATION_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13LOCATION_KIND_LOCAL\x10\x01\x12\x18\n" +
-	"\x14LOCATION_KIND_REMOTE\x10\x02B6Z4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdextb\x06proto3"
+	"\x14LOCATION_KIND_REMOTE\x10\x02B/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
 var (
 	file_models_proto_rawDescOnce sync.Once

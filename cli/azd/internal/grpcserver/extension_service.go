@@ -28,8 +28,8 @@ func NewExtensionService(extensionManager *extensions.Manager) azdext.ExtensionS
 	}
 }
 
-// Ready signals that the extension is done registering all capabilities and blocks until shutdown.
-// This is a blocking call that keeps the extension alive until the server signals shutdown.
+// Ready signals that the extension is done registering all capabilities.
+// The extension will remain alive as long as its streams are active and context is not cancelled.
 func (s *ExtensionService) Ready(ctx context.Context, req *azdext.ReadyRequest) (*azdext.ReadyResponse, error) {
 	extensionClaims, err := GetExtensionClaims(ctx)
 	if err != nil {
@@ -47,10 +47,6 @@ func (s *ExtensionService) Ready(ctx context.Context, req *azdext.ReadyRequest) 
 
 	extension.Initialize()
 	log.Printf("Extension %s is ready", extensionClaims.Subject)
-
-	// Block until context is cancelled (server shutdown signal)
-	<-ctx.Done()
-	log.Printf("Extension %s shutting down", extensionClaims.Subject)
 
 	return &azdext.ReadyResponse{}, nil
 }

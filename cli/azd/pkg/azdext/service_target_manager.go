@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	codes "google.golang.org/grpc/codes"
-	status "google.golang.org/grpc/status"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // ProgressReporter defines a function type for reporting progress updates from extensions
@@ -88,15 +88,25 @@ func (m *ServiceTargetManager) Close() error {
 	return m.componentManager.Close()
 }
 
+// ensureStream initializes the stream if it hasn't been created yet.
+func (m *ServiceTargetManager) ensureStream(ctx context.Context) error {
+	if m.stream == nil {
+		stream, err := m.client.ServiceTarget().Stream(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create service target stream: %w", err)
+		}
+		m.stream = stream
+	}
+	return nil
+}
+
 // Register registers the provider with the server, waits for the response,
 // then starts background handling of provisioning requests.
 func (m *ServiceTargetManager) Register(ctx context.Context, factory ServiceTargetFactory, hostType string) error {
-	stream, err := m.client.ServiceTarget().Stream(ctx)
-	if err != nil {
+	if err := m.ensureStream(ctx); err != nil {
 		return err
 	}
 
-	m.stream = stream
 	m.componentManager.RegisterFactory(hostType, factory)
 
 	registerReq := &ServiceTargetMessage{
@@ -111,44 +121,60 @@ func (m *ServiceTargetManager) Register(ctx context.Context, factory ServiceTarg
 		return err
 	}
 
-	msg, err := m.stream.Recv()
+	resp, err := m.stream.Recv()
 	if errors.Is(err, io.EOF) {
-		log.Println("Stream closed by client")
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	regResponse := msg.GetRegisterServiceTargetResponse()
-	if regResponse != nil {
-		go m.handleServiceTargetStream(ctx)
 		return nil
 	}
 
-	return status.Errorf(codes.FailedPrecondition, "expected RegisterProviderResponse, got %T", msg.GetMessageType())
+	if resp.Error != nil {
+		return fmt.Errorf("service target registration error: %s", resp.Error.Message)
+	}
+
+	if resp.GetRegisterServiceTargetResponse() == nil {
+		return fmt.Errorf("expected RegisterServiceTargetResponse, got %T", resp.GetMessageType())
+	}
+
+	return nil
 }
 
-func (m *ServiceTargetManager) handleServiceTargetStream(ctx context.Context) {
+func (m *ServiceTargetManager) Receive(ctx context.Context) error {
+	if err := m.ensureStream(ctx); err != nil {
+		return fmt.Errorf("failed to initialize stream: %w", err)
+	}
+
 	for {
-		select {
-		case <-ctx.Done():
-			log.Println("Context cancelled by caller, exiting service target stream")
-			return
-		default:
-			msg, err := m.stream.Recv()
-			if err != nil {
-				log.Printf("service target stream closed: %v", err)
-				return
+		msg, err := m.stream.Recv()
+		if err != nil {
+			// Check if it's context cancellation
+			if ctx.Err() != nil {
+				log.Println("Context cancelled, exiting service target stream")
+				return nil
 			}
-			go func(msg *ServiceTargetMessage) {
-				resp := m.buildServiceTargetResponseMsg(ctx, msg)
-				if resp != nil {
-					if err := m.stream.Send(resp); err != nil {
-						log.Printf("failed to send service target response: %v", err)
-					}
+
+			// Handle normal stream closure
+			if errors.Is(err, io.EOF) {
+				log.Println("Service target stream closed by server (EOF), treating as expected")
+				return nil
+			}
+
+			if st, ok := status.FromError(err); ok {
+				if st.Code() == codes.Unavailable {
+					log.Println("Service target stream closed by server (unavailable), treating as expected")
+					return nil
 				}
-			}(msg)
+			}
+
+			log.Printf("service target stream closed: %v", err)
+			return err
+		}
+
+		// Process message synchronously to avoid race condition with stream.Send()
+		resp := m.buildServiceTargetResponseMsg(ctx, msg)
+		if resp != nil {
+			if err := m.stream.Send(resp); err != nil {
+				log.Printf("failed to send service target response: %v", err)
+				return err
+			}
 		}
 	}
 }

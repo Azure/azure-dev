@@ -1041,7 +1041,7 @@ const file_environment_proto_rawDesc = "" +
 	"\x0fGetConfigString\x12\x1e.azdext.GetConfigStringRequest\x1a\x1f.azdext.GetConfigStringResponse\x12U\n" +
 	"\x10GetConfigSection\x12\x1f.azdext.GetConfigSectionRequest\x1a .azdext.GetConfigSectionResponse\x12<\n" +
 	"\tSetConfig\x12\x18.azdext.SetConfigRequest\x1a\x15.azdext.EmptyResponse\x12@\n" +
-	"\vUnsetConfig\x12\x1a.azdext.UnsetConfigRequest\x1a\x15.azdext.EmptyResponseB6Z4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdextb\x06proto3"
+	"\vUnsetConfig\x12\x1a.azdext.UnsetConfigRequest\x1a\x15.azdext.EmptyResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
 var (
 	file_environment_proto_rawDescOnce sync.Once

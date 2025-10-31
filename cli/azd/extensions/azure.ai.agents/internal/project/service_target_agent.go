@@ -233,6 +233,15 @@ func (p *AgentServiceTargetProvider) Deploy(
 		azdEnv[kval.Key] = kval.Value
 	}
 
+	var serviceTargetConfig *ServiceTargetAgentConfig
+	if err := UnmarshalStruct(serviceConfig.Config, &serviceTargetConfig); err != nil {
+		return nil, fmt.Errorf("failed to parse service target config: %w", err)
+	}
+
+	if serviceTargetConfig != nil {
+		fmt.Println("Loaded custom service target configuration")
+	}
+
 	// Load and validate the agent manifest
 	data, err := os.ReadFile(p.agentDefinitionPath)
 	if err != nil {
@@ -489,18 +498,21 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	p.displayAgentInfo(request)
 
 	// Step 3: Create agent
+	progress("Creating Agent")
 	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv, cred)
 	if err != nil {
 		return nil, err
 	}
 
 	// Register agent info in environment
+	progress("Registering Agent Environment Variables")
 	err = p.registerAgentEnvironmentVariables(ctx, agentVersionResponse)
 	if err != nil {
 		return nil, err
 	}
 
 	// Step 4: Start agent container
+	progress("Starting Agent Container")
 	err = p.startAgentContainer(ctx, agentManifest, agentVersionResponse, azdEnv, cred)
 	if err != nil {
 		return nil, err
@@ -569,47 +581,9 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	const maxWaitTime = 10 * time.Minute
 	const apiVersion = "2025-05-15-preview"
 
-	// Extract replica configuration from agent manifest
-	minReplicas := int32(1) // Default values
-	maxReplicas := int32(1)
-
-	// Check if the agent definition has scale configuration
-	if containerAgent, ok := interface{}(agentManifest.Template).(agent_yaml.ContainerAgent); ok {
-		// For ContainerAgent, check if Options contains scale information
-		if containerAgent.Options != nil {
-			if options, exists := (*containerAgent.Options)["scale"]; exists {
-				if scaleMap, ok := options.(map[string]interface{}); ok {
-					if minReplicasFloat, exists := scaleMap["minReplicas"]; exists {
-						if minReplicasVal, ok := minReplicasFloat.(float64); ok {
-							minReplicas = int32(minReplicasVal)
-						}
-					}
-					if maxReplicasFloat, exists := scaleMap["maxReplicas"]; exists {
-						if maxReplicasVal, ok := maxReplicasFloat.(float64); ok {
-							maxReplicas = int32(maxReplicasVal)
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// Validate replica counts
-	if minReplicas < 0 {
-		return fmt.Errorf("minReplicas must be non-negative, got: %d", minReplicas)
-	}
-	if maxReplicas < 0 {
-		return fmt.Errorf("maxReplicas must be non-negative, got: %d", maxReplicas)
-	}
-	if minReplicas > maxReplicas {
-		return fmt.Errorf("minReplicas (%d) cannot be greater than maxReplicas (%d)", minReplicas, maxReplicas)
-	}
-
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentVersionResponse.Name)
 	fmt.Fprintf(os.Stderr, "Agent Version: %s\n", agentVersionResponse.Version)
-	fmt.Fprintf(os.Stderr, "Min Replicas: %d\n", minReplicas)
-	fmt.Fprintf(os.Stderr, "Max Replicas: %d\n", maxReplicas)
 	fmt.Fprintf(os.Stderr, "Wait for Ready: %t\n", waitForReady)
 	if waitForReady {
 		fmt.Fprintf(os.Stderr, "Max Wait Time: %v\n", maxWaitTime)
@@ -621,7 +595,7 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 
 	// Start agent container (minReplicas and maxReplicas are already int32)
 	operation, err := agentClient.StartAgentContainer(
-		ctx, agentVersionResponse.Name, agentVersionResponse.Version, &minReplicas, &maxReplicas, apiVersion)
+		ctx, agentVersionResponse.Name, agentVersionResponse.Version, apiVersion)
 	if err != nil {
 		return fmt.Errorf("failed to start agent container: %w", err)
 	}

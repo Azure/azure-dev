@@ -257,7 +257,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			}
 
 			// Initialize service context for tracking artifacts across operations
-			serviceContext := &project.ServiceContext{}
+			serviceContext := project.NewServiceContext()
 
 			if da.flags.fromPackage != "" {
 				// --from-package set, skip packaging and create package artifact
@@ -273,7 +273,7 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				}
 			} else {
 				//  --from-package not set, automatically package the application
-				packageResult, err := async.RunWithProgress(
+				_, err := async.RunWithProgress(
 					func(packageProgress project.ServiceProgress) {
 						progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
 						da.console.ShowSpinner(ctx, progressMessage, input.Step)
@@ -288,14 +288,9 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 					da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 					return err
 				}
-
-				// Append package artifacts
-				if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
-					return err
-				}
 			}
 
-			publishResult, err := async.RunWithProgress(
+			_, err := async.RunWithProgress(
 				func(publishProgress project.ServiceProgress) {
 					progressMessage := fmt.Sprintf("Publishing service %s (%s)", svc.Name, publishProgress.Message)
 					da.console.ShowSpinner(ctx, progressMessage, input.Step)
@@ -311,9 +306,6 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				return err
 			}
 
-			// Append publish artifacts
-			serviceContext.Publish.Add(publishResult.Artifacts...)
-
 			deployResult, err := async.RunWithProgress(
 				func(deployProgress project.ServiceProgress) {
 					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
@@ -328,9 +320,6 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return err
 			}
-
-			// Append deploy artifacts
-			serviceContext.Deploy.Add(deployResult.Artifacts...)
 
 			// clean up for packages automatically created in temp dir
 			if da.flags.fromPackage == "" {

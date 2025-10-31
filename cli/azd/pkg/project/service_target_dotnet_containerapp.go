@@ -180,8 +180,13 @@ func (at *dotnetContainerAppTarget) Deploy(
 			return nil, fmt.Errorf("logging in to registry: %w", err)
 		}
 
+		defaultImageName, err := at.containerHelper.DefaultImageName(ctx, serviceConfig)
+		if err != nil {
+			return nil, fmt.Errorf("getting default image name: %w", err)
+		}
+
 		imageName := fmt.Sprintf("%s:%s",
-			at.containerHelper.DefaultImageName(serviceConfig),
+			defaultImageName,
 			at.containerHelper.DefaultImageTag())
 
 		portNumber, err = at.dotNetCli.PublishContainer(

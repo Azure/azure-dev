@@ -17,6 +17,7 @@ require (
 	github.com/mark3labs/mcp-go v0.41.1
 	github.com/spf13/cobra v1.10.1
 	go.yaml.in/yaml/v3 v3.0.4
+	google.golang.org/protobuf v1.36.10
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -93,5 +94,4 @@ require (
 	golang.org/x/text v0.30.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251007200510-49b9836ed3ff // indirect
 	google.golang.org/grpc v1.76.0 // indirect
-	google.golang.org/protobuf v1.36.10 // indirect
 )

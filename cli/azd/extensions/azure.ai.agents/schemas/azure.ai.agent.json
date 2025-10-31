@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Azure AI Agent Service Target Configuration",
+  "description": "Custom configuration for the Azure AI Agent Service target",
+  "type": "object",
+  "properties": {
+    "env": {
+      "type": "object",
+      "description": "Environment variables as key-value pairs",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "scale": {
+      "$ref": "#/definitions/ScaleSettings"
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "ScaleSettings": {
+      "type": "object",
+      "description": "Scaling configuration for the Azure AI Agent Service target",
+      "properties": {
+        "minReplicas": {
+          "type": "integer",
+          "description": "Minimum number of replicas",
+          "minimum": 0
+        },
+        "maxReplicas": {
+          "type": "integer",
+          "description": "Maximum number of replicas",
+          "minimum": 1
+        },
+        "memory": {
+          "type": "string",
+          "description": "Memory allocation (e.g., '1Gi', '512Mi')",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$"
+        },
+        "cpu": {
+          "type": "string",
+          "description": "CPU allocation (e.g., '1', '500m')",
+          "pattern": "^[0-9]+(\\.[0-9]+)?m?$"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

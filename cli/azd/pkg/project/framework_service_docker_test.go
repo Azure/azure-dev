@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -26,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/benbjohnson/clock"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -49,6 +51,13 @@ services:
 
 	mockContext := mocks.NewMockContext(context.Background())
 	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Get", mock.Anything, "test-env").Return(env, nil)
+
+	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	err := azdCtx.SetProjectState(azdcontext.ProjectState{
+		DefaultEnvironment: "test-env",
+	})
+	require.NoError(t, err)
 
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
@@ -110,7 +119,7 @@ services:
 		env,
 		docker,
 		NewContainerHelper(
-			env, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+			azdCtx, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
 			docker, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
@@ -155,6 +164,13 @@ services:
 	env.SetSubscriptionId("sub")
 	mockContext := mocks.NewMockContext(context.Background())
 	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Get", mock.Anything, "test-env").Return(env, nil)
+
+	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	err := azdCtx.SetProjectState(azdcontext.ProjectState{
+		DefaultEnvironment: "test-env",
+	})
+	require.NoError(t, err)
 
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
@@ -218,7 +234,7 @@ services:
 		env,
 		docker,
 		NewContainerHelper(
-			env, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+			azdCtx, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
 			docker, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
@@ -433,6 +449,21 @@ func Test_DockerProject_Build(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
 			envManager := &mockenv.MockEnvManager{}
 
+			// Set up env based on test case or default
+			var env *environment.Environment
+			if tt.env != nil {
+				env = tt.env
+			} else {
+				env = environment.NewWithValues("test-env", nil)
+			}
+			envManager.On("Get", mock.Anything, env.Name()).Return(env, nil)
+
+			azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			err := azdCtx.SetProjectState(azdcontext.ProjectState{
+				DefaultEnvironment: env.Name(),
+			})
+			require.NoError(t, err)
+
 			mockContext.CommandRunner.
 				When(func(args exec.RunArgs, command string) bool {
 					return strings.Contains(command, "docker build")
@@ -475,7 +506,7 @@ func Test_DockerProject_Build(t *testing.T) {
 
 			temp := t.TempDir()
 
-			env := tt.env
+			// env is already set up above, no need to reassign
 			if env == nil {
 				env = environment.New("test")
 			}
@@ -504,7 +535,7 @@ func Test_DockerProject_Build(t *testing.T) {
 				env,
 				dockerCli,
 				NewContainerHelper(
-					env, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+					azdCtx, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
 					dockerCli, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,
@@ -640,6 +671,13 @@ func Test_DockerProject_Package(t *testing.T) {
 			envManager := &mockenv.MockEnvManager{}
 
 			env := environment.NewWithValues("test", map[string]string{})
+			envManager.On("Get", mock.Anything, "test").Return(env, nil)
+
+			azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			err := azdCtx.SetProjectState(azdcontext.ProjectState{
+				DefaultEnvironment: "test",
+			})
+			require.NoError(t, err)
 			dockerCli := docker.NewCli(mockContext.CommandRunner)
 			dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
 			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
@@ -648,7 +686,7 @@ func Test_DockerProject_Package(t *testing.T) {
 				env,
 				dockerCli,
 				NewContainerHelper(
-					env, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
+					azdCtx, envManager, clock.NewMock(), nil, nil, mockContext.CommandRunner,
 					dockerCli, dotnetCli, mockContext.Console, cloud.AzurePublic()),
 				mockinput.NewMockConsole(),
 				mockContext.AlphaFeaturesManager,

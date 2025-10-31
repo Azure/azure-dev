@@ -67,6 +67,7 @@ type GitHubUrlInfo struct {
 }
 
 const AiAgentHost = "azure.ai.agent"
+const ContainerAppHost = "containerapp"
 
 func newInitCommand() *cobra.Command {
 	flags := &initFlags{}
@@ -201,11 +202,6 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 		// Add the agent to the azd project (azure.yaml) services
 		if err := a.addToProject(ctx, targetDir, agentManifest, flags.host); err != nil {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
-		}
-
-		// Update environment with necessary env vars
-		if err := a.updateEnvironment(ctx, agentManifest, flags.host); err != nil {
-			return fmt.Errorf("failed to update environment: %w", err)
 		}
 
 		color.Green("\nAI agent added to your project successfully!")
@@ -782,7 +778,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 
 	switch host {
 	case "containerapp":
-		serviceHost = "containerapp"
+		serviceHost = ContainerAppHost
 	default:
 		serviceHost = AiAgentHost
 	}
@@ -1312,55 +1308,6 @@ func (a *InitAction) selectFromList(
 	}
 
 	return options[*resp.Value], nil
-}
-
-func (a *InitAction) updateEnvironment(ctx context.Context, agentManifest *agent_yaml.AgentManifest, host string) error {
-	// Convert the template to bytes
-	templateBytes, err := json.Marshal(agentManifest.Template)
-	if err != nil {
-		return fmt.Errorf("failed to marshal agent template to JSON: %w", err)
-	}
-
-	// Convert the bytes to a dictionary
-	var templateDict map[string]interface{}
-	if err := json.Unmarshal(templateBytes, &templateDict); err != nil {
-		return fmt.Errorf("failed to unmarshal agent template from JSON: %w", err)
-	}
-
-	// Convert the dictionary to bytes
-	dictJsonBytes, err := json.Marshal(templateDict)
-	if err != nil {
-		return fmt.Errorf("failed to marshal templateDict to JSON: %w", err)
-	}
-
-	// Convert the bytes to an Agent Definition
-	var agentDef agent_yaml.AgentDefinition
-	if err := json.Unmarshal(dictJsonBytes, &agentDef); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON to AgentDefinition: %w", err)
-	}
-
-	fmt.Printf("Updating environment variables for agent kind: %s\n", agentDef.Kind)
-
-	// Get current environment
-	envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
-	}
-
-	if envResponse.Environment == nil {
-		return fmt.Errorf("no current environment found")
-	}
-
-	envName := envResponse.Environment.Name
-
-	if host == "containerapp" {
-		if err := a.setEnvVar(ctx, envName, "ENABLE_CONTAINER_AGENTS", "true"); err != nil {
-			return err
-		}
-	}
-
-	fmt.Printf("Successfully updated environment variables for agent kind: %s\n", agentDef.Kind)
-	return nil
 }
 
 func (a *InitAction) setEnvVar(ctx context.Context, envName, key, value string) error {

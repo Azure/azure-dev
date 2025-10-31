@@ -60,11 +60,15 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, proje
 	}
 
 	for _, svc := range args.Project.Services {
-		if svc.Host != AiAgentHost {
-			continue
+		if svc.Host == AiAgentHost {
+			if err := preprovisionEnvUpdate(ctx, azdClient, args.Project, svc); err != nil {
+				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
+			}
+		} else if svc.Host == ContainerAppHost {
+			if err := containerAgentHandling(ctx, azdClient, args.Project, svc); err != nil {
+				return fmt.Errorf("failed to handle container agent for service %q: %w", svc.Name, err)
+			}
 		}
-
-		return preprovisionEnvUpdate(ctx, azdClient, args.Project, svc)
 	}
 
 	return nil
@@ -151,6 +155,34 @@ func deploymentEnvUpdate(ctx context.Context, deployments []project.Deployment, 
 	}
 
 	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPLOYMENTS", string(deploymentsJson))
+}
+
+func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
+	servicePath := svc.RelativePath
+	fullPath := filepath.Join(project.Path, servicePath)
+	agentYamlPath := filepath.Join(fullPath, "agent.yaml")
+
+	data, err := os.ReadFile(agentYamlPath)
+	if err != nil {
+		return nil
+	}
+
+	_, err = agent_yaml.LoadAndValidateAgentManifest(data)
+	if err != nil {
+		return nil
+	}
+
+	// If there is an agent.yaml in the project, and it can be properly parsed into a manifest, add the env var to enable container agents
+	currentEnvResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return err
+	}
+
+	if err := setEnvVar(ctx, azdClient, currentEnvResponse.Environment.Name, "ENABLE_CONTAINER_AGENTS", "true"); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func setEnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string, key string, value string) error {

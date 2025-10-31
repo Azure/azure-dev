@@ -255,7 +255,9 @@ teamcity
 testdata
 tmpl
 toplevel
+traceparent
 tracesdk
+tracestate
 tracetest
 trafficmanager
 Truef

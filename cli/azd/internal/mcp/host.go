@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -75,7 +76,10 @@ func (h *McpHost) Start(ctx context.Context) error {
 
 		switch serverConfig.Type {
 		case "stdio":
-			serverTransport = transport.NewStdio(serverConfig.Command, serverConfig.Env, serverConfig.Args...)
+			env := serverConfig.Env
+			env = append(env, tracing.Environ(ctx)...)
+
+			serverTransport = transport.NewStdio(serverConfig.Command, env, serverConfig.Args...)
 		case "http", "":
 			httpTransport, err := transport.NewStreamableHTTP(serverConfig.Url)
 			if err != nil {

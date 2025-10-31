@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -1413,6 +1414,24 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string, mode
 	modelDeployment, err := a.modelCatalogService.GetModelDeployment(ctx, model, &deploymentOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get model deployment: %w", err)
+	}
+
+	if modelDeployment.Sku.Capacity == -1 {
+		skuCapacity, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:        "Selected model SKU has no default capacity. Please enter desired capacity",
+				IgnoreHintKeys: true,
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to prompt for text value: %w", err)
+		}
+
+		capacity, err := strconv.Atoi(skuCapacity.Value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid capacity value: %w", err)
+		}
+		modelDeployment.Sku.Capacity = int32(capacity)
 	}
 
 	return modelDeployment, nil

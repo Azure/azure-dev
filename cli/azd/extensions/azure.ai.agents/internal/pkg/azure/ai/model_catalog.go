@@ -347,8 +347,13 @@ func (c *ModelCatalogService) GetModelDeployment(
 				Sku: AiModelDeploymentSku{
 					Name:      *sku.Name,
 					UsageName: *sku.UsageName,
-					Capacity:  *sku.Capacity.Default,
 				},
+			}
+
+			if sku.Capacity.Default != nil {
+				modelDeployment.Sku.Capacity = *sku.Capacity.Default
+			} else {
+				modelDeployment.Sku.Capacity = -1
 			}
 
 			break

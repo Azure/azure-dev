@@ -65,15 +65,11 @@ func (c *containerService) Build(
 		return nil, err
 	}
 
-	// Call containerHelper.Build without progress reporting to avoid conflicts with outer progress layer
-	progress := async.NewProgress[project.ServiceProgress]()
-	go func() {
-		// Drain progress channel without displaying to avoid conflicting with outer layer
-		for range progress.Progress() {
-		}
-	}()
+	// Call containerHelper.Build with noop progress reporting to avoid conflicts with outer progress layer
+	progress := async.NewNoopProgress[project.ServiceProgress]()
+	defer progress.Done()
+
 	buildResult, err := containerHelper.Build(ctx, serviceConfig, serviceContext, progress)
-	progress.Done()
 	if err != nil {
 		return nil, err
 	}
@@ -114,15 +110,11 @@ func (c *containerService) Package(
 		return nil, err
 	}
 
-	// Call containerHelper.Package without progress reporting to avoid conflicts with outer progress layer
-	progress := async.NewProgress[project.ServiceProgress]()
-	go func() {
-		// Drain progress channel without displaying to avoid conflicting with outer layer
-		for range progress.Progress() {
-		}
-	}()
+	// Call containerHelper.Package with noop progress reporting to avoid conflicts with outer progress layer
+	progress := async.NewNoopProgress[project.ServiceProgress]()
+	defer progress.Done()
+
 	packageResult, err := containerHelper.Package(ctx, serviceConfig, serviceContext, progress)
-	progress.Done()
 	if err != nil {
 		return nil, err
 	}
@@ -178,15 +170,11 @@ func (c *containerService) Publish(
 		return nil, err
 	}
 
-	// Call containerHelper.Publish without progress reporting to avoid conflicts with outer progress layer
-	progress := async.NewProgress[project.ServiceProgress]()
-	go func() {
-		// Drain progress channel without displaying to avoid conflicting with outer layer
-		for range progress.Progress() {
-		}
-	}()
+	// Call containerHelper.Publish with noop progress reporting to avoid conflicts with outer progress layer
+	progress := async.NewNoopProgress[project.ServiceProgress]()
+	defer progress.Done()
+
 	publishResult, err := containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, nil)
-	progress.Done()
 	if err != nil {
 		return nil, err
 	}

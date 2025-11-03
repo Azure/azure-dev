@@ -122,6 +122,24 @@ jobs:
           AZD_DEBUG_LOGIN_FORCE_SUBSCRIPTION_REFRESH: true
         displayName: AZD Login
       
+      - script: |
+          echo "TMPDIR: $TMPDIR"
+          echo "Agent.TempDirectory: $(Agent.TempDirectory)"
+
+          echo "============ lsblk -o NAME,SIZE ============"
+          lsblk -o NAME,SIZE
+
+          echo "============ df -h ============"
+          df -h
+
+          echo "============ mount ============"
+          mount
+
+          echo "============ ls -ld /tmp ============"
+          ls -ld /tmp
+        displayName: Display disk space information
+        condition: and(succeeded(), eq('Linux', variables['Agent.OS']))
+
       - task: AzureCLI@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
         inputs:
@@ -161,6 +179,24 @@ jobs:
           #
           # Without this disabled, we often see tests failing due to MSBuild worker processes being shared across concurrent tests.
           MSBUILDDISABLENODEREUSE: 1
+
+      - script: |
+          echo "TMPDIR: $TMPDIR"
+          echo "Agent.TempDirectory: $(Agent.TempDirectory)"
+
+          echo "============ lsblk -o NAME,SIZE ============"
+          lsblk -o NAME,SIZE
+
+          echo "============ df -h ============"
+          df -h
+
+          echo "============ mount ============"
+          mount
+
+          echo "============ ls -ld /tmp ============"
+          ls -ld /tmp
+        displayName: Display disk space information
+        condition: and(succeeded(), eq('Linux', variables['Agent.OS']))
 
       - task: PublishTestResults@2
         inputs:

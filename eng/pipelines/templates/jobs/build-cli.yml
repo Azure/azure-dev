@@ -127,16 +127,19 @@ jobs:
           echo "Agent.TempDirectory: $(Agent.TempDirectory)"
 
           echo "============ lsblk -o NAME,SIZE ============"
-          lsblk -o NAME,SIZE
+          sudo lsblk -o NAME,SIZE
 
           echo "============ df -h ============"
-          df -h
+          sudo df -h
 
           echo "============ mount ============"
-          mount
+          sudo mount
 
           echo "============ ls -ld /tmp ============"
-          ls -ld /tmp
+          sudo ls -ld /tmp
+
+          echo "============ du -h --max-depth=3 / ============"
+          sudo du -h --max-depth=3 /
         displayName: Display disk space information
         condition: and(succeeded(), eq('Linux', variables['Agent.OS']))
 
@@ -185,16 +188,19 @@ jobs:
           echo "Agent.TempDirectory: $(Agent.TempDirectory)"
 
           echo "============ lsblk -o NAME,SIZE ============"
-          lsblk -o NAME,SIZE
+          sudo lsblk -o NAME,SIZE
 
           echo "============ df -h ============"
-          df -h
+          sudo df -h
 
           echo "============ mount ============"
-          mount
+          sudo mount
 
           echo "============ ls -ld /tmp ============"
-          ls -ld /tmp
+          sudo ls -ld /tmp
+
+          echo "============ du -h --max-depth=3 / ============"
+          sudo du -h --max-depth=3 /
         displayName: Display disk space information
         condition: and(succeeded(), eq('Linux', variables['Agent.OS']))
 

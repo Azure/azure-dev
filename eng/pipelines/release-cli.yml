@@ -70,6 +70,10 @@ extends:
               # link the resulting binary which increases backwards 
               # compatibility with older verisons of Linux.
               CGO_ENABLED: 0
+              # Set special temp directory overrides to avoid out of space 
+              # issues on hosted agents
+              DOCKER_TMPDIR: $(Agent.TempDirectory)
+              TMPDIR: $(Agent.TempDirectory)
           Mac:
             Pool: Azure Pipelines
             OSVmImage: $(MACVMIMAGE)

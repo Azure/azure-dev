@@ -1542,6 +1542,12 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResul
 	resolvedParams := map[string]azure.ArmParameter{}
 	envMapping := map[string][]string{}
 
+	// Refresh env before resolving parameters to get latest env var values
+	// In case something changed in the .env between starting azd and this point, like a preprovision hook.
+	if err := p.envManager.Reload(ctx, p.env); err != nil {
+		return loadParametersResult{}, fmt.Errorf("refreshing environment variables: %w", err)
+	}
+
 	// resolving each parameter to keep track of the name during the resolution.
 	// We used to resolve all the file before, supporting env var substitution at any part of the file.
 	// We want to support substitution only for the parameter value.

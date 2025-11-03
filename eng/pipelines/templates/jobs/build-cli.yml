@@ -210,6 +210,9 @@ jobs:
 
           echo "============ du -h --max-depth=3 /var ============"
           sudo du -h --max-depth=3 /var
+
+          echo "============ du -h --max-depth=3 /var ============"
+          sudo du -h --max-depth=3 ~
         displayName: Display disk space information
         condition: eq('Linux', variables['Agent.OS'])
 

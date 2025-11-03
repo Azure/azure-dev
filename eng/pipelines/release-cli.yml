@@ -32,22 +32,22 @@ extends:
     - template: /eng/pipelines/templates/stages/build-and-test.yml
       parameters:
         BuildMatrix:
-          Windows:
-            Pool: $(WINDOWSPOOL)
-            OSVmImage: $(WINDOWSVMIMAGE)
-            OS: windows
-            ImageKey: image
-            UploadArtifact: true
-            GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
-            GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
-            Variables:
-              BuildTarget: azd-windows-amd64.exe
-              BuildOutputName: azd.exe
-              BuildTestMsi: true
-              AZURE_DEV_CI_OS: win
-              Codeql.Enabled: true
-              Codeql.SkipTaskAutoInjection: false
-              Codeql.BuildIdentifier: cli_windows
+          # Windows:
+          #   Pool: $(WINDOWSPOOL)
+          #   OSVmImage: $(WINDOWSVMIMAGE)
+          #   OS: windows
+          #   ImageKey: image
+          #   UploadArtifact: true
+          #   GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
+          #   GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
+          #   Variables:
+          #     BuildTarget: azd-windows-amd64.exe
+          #     BuildOutputName: azd.exe
+          #     BuildTestMsi: true
+          #     AZURE_DEV_CI_OS: win
+          #     Codeql.Enabled: true
+          #     Codeql.SkipTaskAutoInjection: false
+          #     Codeql.BuildIdentifier: cli_windows
           Linux:
             Pool: $(LINUXPOOL)
             OSVmImage: $(LINUXVMIMAGE)
@@ -74,22 +74,22 @@ extends:
               # issues on hosted agents
               DOCKER_TMPDIR: $(Agent.TempDirectory)
               TMPDIR: $(Agent.TempDirectory)
-          Mac:
-            Pool: Azure Pipelines
-            OSVmImage: $(MACVMIMAGE)
-            OS: macOS
-            ImageKey: vmImage
-            UploadArtifact: true
-            GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
-            GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
-            Variables:
-              BuildTarget: azd-darwin-amd64
-              BuildOutputName: azd
-              MacLocalSign: false
-              SetExecutableBit: true
-              AZURE_DEV_CI_OS: mac
-              # CodeQL on macOS not supported by the Azure DevOps task as-of current.
-              # Codeql.BuildIdentifier: cli_darwin
+          # Mac:
+          #   Pool: Azure Pipelines
+          #   OSVmImage: $(MACVMIMAGE)
+          #   OS: macOS
+          #   ImageKey: vmImage
+          #   UploadArtifact: true
+          #   GhCopilotClientId: $(GH_COPILOT_CLIENT_ID)
+          #   GhCopilotIntegrationId: $(GH_COPILOT_INTEGRATION_ID)
+          #   Variables:
+          #     BuildTarget: azd-darwin-amd64
+          #     BuildOutputName: azd
+          #     MacLocalSign: false
+          #     SetExecutableBit: true
+          #     AZURE_DEV_CI_OS: mac
+          #     # CodeQL on macOS not supported by the Azure DevOps task as-of current.
+          #     # Codeql.BuildIdentifier: cli_darwin
 
           ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
             # Only run this build during scheduled pipeline executions
@@ -108,19 +108,19 @@ extends:
                 SetExecutableBit: true
                 AZURE_DEV_CI_OS: mac-arm64
 
-    - template: /eng/pipelines/templates/stages/code-coverage-upload.yml
-      parameters:
-        DownloadArtifacts:
-          - cover-win
-          - cover-lin
-          - cover-mac
-          - ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
-            - cover-mac-arm64
+    # - template: /eng/pipelines/templates/stages/code-coverage-upload.yml
+    #   parameters:
+    #     DownloadArtifacts:
+    #       - cover-win
+    #       - cover-lin
+    #       - cover-mac
+    #       - ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
+    #         - cover-mac-arm64
 
-    - template: /eng/pipelines/templates/stages/verify-installers.yml
+    # - template: /eng/pipelines/templates/stages/verify-installers.yml
 
-    - ${{ if ne(variables['Build.Reason'], 'Schedule') }}:
+    # - ${{ if ne(variables['Build.Reason'], 'Schedule') }}:
 
-      - template: /eng/pipelines/templates/stages/sign.yml
+    #   - template: /eng/pipelines/templates/stages/sign.yml
 
-      - template: /eng/pipelines/templates/stages/publish.yml
+    #   - template: /eng/pipelines/templates/stages/publish.yml

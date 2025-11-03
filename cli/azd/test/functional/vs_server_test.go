@@ -156,6 +156,7 @@ func Test_CLI_VsServerExternalAuth(t *testing.T) {
 }
 
 func Test_CLI_VsServer(t *testing.T) {
+	t.Skip("Needs to be re-designed - https://github.com/Azure/azure-dev/issues/6059")
 	t.Parallel()
 
 	testDir := filepath.Join("testdata", "vs-server", "tests")

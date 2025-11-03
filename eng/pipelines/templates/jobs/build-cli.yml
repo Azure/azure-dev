@@ -211,7 +211,7 @@ jobs:
           echo "============ du -h --max-depth=3 /var ============"
           sudo du -h --max-depth=3 /var
         displayName: Display disk space information
-        condition: and(succeeded(), eq('Linux', variables['Agent.OS']))
+        condition: eq('Linux', variables['Agent.OS'])
 
       - task: PublishTestResults@2
         inputs:
@@ -243,7 +243,7 @@ jobs:
         displayName: Rename binaries
 
       - bash: chmod +x $(BuildTarget)
-        condition: and(succeeded(), eq(variables['SetExecutableBit'], 'true'))
+        condition: eq(variables['SetExecutableBit'], 'true')
         workingDirectory: cli/azd
         displayName: Set executable bit for non-Windows binaries
 

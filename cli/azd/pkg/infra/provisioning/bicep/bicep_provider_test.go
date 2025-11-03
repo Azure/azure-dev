@@ -384,6 +384,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
 
 	bicepCli, err := bicep.NewCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)

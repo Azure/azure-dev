@@ -143,8 +143,14 @@ jobs:
           
           echo "============ du -h --max-depth=3 /mnt ============"
           sudo du -h --max-depth=3 /mnt
+
+          echo "============ du -h --max-depth=3 /var ============"
+          sudo du -h --max-depth=3 /var
+
+          echo "============ du -h --max-depth=3 /var ============"
+          sudo du -h --max-depth=3 ~
         displayName: Display disk space information
-        condition: and(succeeded(), eq('Linux', variables['Agent.OS']))
+        condition: eq('Linux', variables['Agent.OS'])
 
       - task: AzureCLI@2
         condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))

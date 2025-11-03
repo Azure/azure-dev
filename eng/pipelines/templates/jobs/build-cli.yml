@@ -139,7 +139,7 @@ jobs:
           sudo ls -ld /tmp
 
           echo "============ du -h --max-depth=3 / ============"
-          sudo du -h --max-depth=3 /
+          sudo du -h --max-depth=3 --exclude=/opt --exclude=/etc --exclude=/proc /
         displayName: Display disk space information
         condition: and(succeeded(), eq('Linux', variables['Agent.OS']))
 
@@ -200,7 +200,7 @@ jobs:
           sudo ls -ld /tmp
 
           echo "============ du -h --max-depth=3 / ============"
-          sudo du -h --max-depth=3 /
+          sudo du -h --max-depth=3 --exclude=/opt --exclude=/etc --exclude=/proc /
         displayName: Display disk space information
         condition: and(succeeded(), eq('Linux', variables['Agent.OS']))
 

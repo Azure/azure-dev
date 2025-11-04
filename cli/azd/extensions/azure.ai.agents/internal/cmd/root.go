@@ -12,6 +12,7 @@ type rootFlagsDefinition struct {
 	NoPrompt bool
 }
 
+// Enable access to the global command flags
 var rootFlags rootFlagsDefinition
 
 func NewRootCommand() *cobra.Command {
@@ -32,6 +33,9 @@ func NewRootCommand() *cobra.Command {
 		false,
 		"Enable debug mode",
 	)
+
+	// Adds support for `--no-prompt` global flag in azd
+	// Without this the extension command will error when the flag is provided
 	rootCmd.PersistentFlags().BoolVar(
 		&rootFlags.NoPrompt,
 		"no-prompt",

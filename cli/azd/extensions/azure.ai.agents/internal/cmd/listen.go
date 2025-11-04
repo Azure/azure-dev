@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
@@ -154,7 +155,12 @@ func deploymentEnvUpdate(ctx context.Context, deployments []project.Deployment, 
 		return fmt.Errorf("failed to marshal deployment details to JSON: %w", err)
 	}
 
-	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPLOYMENTS", string(deploymentsJson))
+	// Escape backslashes and double quotes for environment variable
+	jsonString := string(deploymentsJson)
+	escapedJsonString := strings.ReplaceAll(jsonString, "\\", "\\\\")
+	escapedJsonString = strings.ReplaceAll(escapedJsonString, "\"", "\\\"")
+
+	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPLOYMENTS", escapedJsonString)
 }
 
 func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {

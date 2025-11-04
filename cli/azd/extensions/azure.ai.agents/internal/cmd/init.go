@@ -732,8 +732,8 @@ func (a *InitAction) downloadAgentYaml(
 	}
 
 	if isGitHubUrl {
-		// Check if the template is a HostedContainerAgent
-		_, isHostedContainer := agentManifest.Template.(agent_yaml.HostedContainerAgent)
+		// Check if the template is a ContainerAgent
+		_, isHostedContainer := agentManifest.Template.(agent_yaml.ContainerAgent)
 
 		if isHostedContainer {
 			// For container agents, download the entire parent directory
@@ -797,15 +797,31 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		}
 		deploymentDetails = append(deploymentDetails, *modelDeployment)
 	case agent_yaml.AgentKindHosted:
-		agentDef := agentManifest.Template.(agent_yaml.HostedContainerAgent)
-
-		// Iterate over all models in the hosted container agent
-		for _, model := range agentDef.Models {
-			modelDeployment, err := a.getModelDeploymentDetails(ctx, model)
+		// Iterate over all models in the manifest for the container agent
+		for _, resource := range agentManifest.Resources {
+			// Convert the resource to bytes
+			resourceBytes, err := json.Marshal(resource)
 			if err != nil {
-				return fmt.Errorf("failed to get model deployment details: %w", err)
+				return fmt.Errorf("failed to marshal resource to JSON: %w", err)
 			}
-			deploymentDetails = append(deploymentDetails, *modelDeployment)
+
+			// Convert the bytes to an Agent Definition
+			var resourceDef agent_yaml.Resource
+			if err := json.Unmarshal(resourceBytes, &resourceDef); err != nil {
+				return fmt.Errorf("failed to unmarshal JSON to Resource: %w", err)
+			}
+
+			if resourceDef.Kind == agent_yaml.ResourceKindModel {
+				resource := resource.(agent_yaml.ModelResource)
+				model := agent_yaml.Model{
+					Id: resource.Id,
+				}
+				modelDeployment, err := a.getModelDeploymentDetails(ctx, model)
+				if err != nil {
+					return fmt.Errorf("failed to get model deployment details: %w", err)
+				}
+				deploymentDetails = append(deploymentDetails, *modelDeployment)
+			}
 		}
 	}
 
@@ -1327,33 +1343,25 @@ func (a *InitAction) setEnvVar(ctx context.Context, envName, key, value string) 
 
 func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_yaml.Model) (*project.Deployment, error) {
 	version := ""
-	if model.Version != nil {
-		version = *model.Version
-	}
 	modelDetails, err := a.getModelDetails(ctx, model.Id, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get model details: %w", err)
 	}
 
-	var modelDeployment string
-	if model.Deployment != nil {
-		modelDeployment = *model.Deployment
-	} else {
-		message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name):", model.Id)
+	message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name):", model.Id)
 
-		modelDeploymentInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message:        message,
-				IgnoreHintKeys: true,
-				DefaultValue:   model.Id,
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to prompt for text value: %w", err)
-		}
-
-		modelDeployment = modelDeploymentInput.Value
+	modelDeploymentInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:        message,
+			IgnoreHintKeys: true,
+			DefaultValue:   model.Id,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to prompt for text value: %w", err)
 	}
+
+	modelDeployment := modelDeploymentInput.Value
 
 	return &project.Deployment{
 		Name: modelDeployment,

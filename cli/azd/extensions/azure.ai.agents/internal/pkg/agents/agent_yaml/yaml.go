@@ -28,7 +28,14 @@ func ValidAgentKinds() []AgentKind {
 	}
 }
 
-// AgentDefinition is a specification for defining AI agents with structured metadata, inputs, outputs, tools, and templates.
+type ResourceKind string
+
+const (
+	ResourceKindModel ResourceKind = "model"
+	ResourceKindTool  ResourceKind = "tool"
+)
+
+// AgentDefinition The following is a specification for defining AI agents with structured metadata, inputs, outputs, tools, and templates.
 // It provides a way to create reusable and composable AI agents that can be executed with specific configurations.
 // The specification includes metadata about the agent, model configuration, input parameters, expected outputs,
 // available tools, and template configurations for prompt rendering.
@@ -40,147 +47,159 @@ type AgentDefinition struct {
 	Metadata     *map[string]interface{} `json:"metadata,omitempty" yaml:"metadata,omitempty"`
 	InputSchema  *PropertySchema         `json:"inputSchema,omitempty" yaml:"inputSchema,omitempty"`
 	OutputSchema *PropertySchema         `json:"outputSchema,omitempty" yaml:"outputSchema,omitempty"`
-	Tools        *[]Tool                 `json:"tools,omitempty" yaml:"tools,omitempty"`
 }
 
-// PromptAgent is a prompt based agent definition used to create agents that can be executed directly.
+// PromptAgent Prompt based agent definition. Used to create agents that can be executed directly.
 // These agents can leverage tools, input parameters, and templates to generate responses.
 // They are designed to be straightforward and easy to use for various applications.
 type PromptAgent struct {
 	AgentDefinition        `json:",inline" yaml:",inline"`
 	Model                  Model     `json:"model" yaml:"model"`
+	Tools                  *[]Tool   `json:"tools,omitempty" yaml:"tools,omitempty"`
 	Template               *Template `json:"template,omitempty" yaml:"template,omitempty"`
 	Instructions           *string   `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 	AdditionalInstructions *string   `json:"additionalInstructions,omitempty" yaml:"additionalInstructions,omitempty"`
 }
 
-// HostedContainerAgent represents a container based agent hosted by the provider/publisher.
-// The intent is to represent a container application that the user wants to run
-// in a hosted environment that the provider manages.
-type HostedContainerAgent struct {
-	AgentDefinition `json:",inline" yaml:",inline"`
-	Protocols       []ProtocolVersionRecord   `json:"protocols" yaml:"protocols"`
-	Models          []Model                   `json:"models" yaml:"models"`
-	Container       HostedContainerDefinition `json:"container" yaml:"container"`
-}
-
-// WorkflowAgent is a workflow agent that can orchestrate multiple steps and actions.
+// Workflow A workflow agent that can orchestrate multiple steps and actions.
 // This agent type is designed to handle complex workflows that may involve
-// multiple tools, models, and decision points. The workflow agent can be configured
-// with a series of steps that define the flow of execution, including conditional
-// logic and parallel processing. This allows for the creation of sophisticated
-// AI-driven processes that can adapt to various scenarios and requirements.
+// multiple tools, models, and decision points.
+// The workflow agent can be configured with a series of steps that define
+// the flow of execution, including conditional logic and parallel processing.
+// This allows for the creation of sophisticated AI-driven processes that can
+// adapt to various scenarios and requirements.
 // Note: The detailed structure of the workflow steps and actions is not defined here
 // and would need to be implemented based on specific use cases and requirements.
-type WorkflowAgent struct {
+type Workflow struct {
 	AgentDefinition `json:",inline" yaml:",inline"`
 	Trigger         *map[string]interface{} `json:"trigger,omitempty" yaml:"trigger,omitempty"`
 }
 
-// AgentManifest represents a manifest that can be used to create agents dynamically.
+// ContainerAgent This represents a container based agent hosted by the provider/publisher.
+// The intent is to represent a container application that the user wants to run
+// in a hosted environment that the provider manages.
+type ContainerAgent struct {
+	AgentDefinition      `json:",inline" yaml:",inline"`
+	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
+	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environmentVariables,omitempty"`
+}
+
+// AgentManifest The following represents a manifest that can be used to create agents dynamically.
 // It includes parameters that can be used to configure the agent's behavior.
 // These parameters include values that can be used as publisher parameters that can
 // be used to describe additional variables that have been tested and are known to work.
 // Variables described here are then used to project into a prompt agent that can be executed.
 // Once parameters are provided, these can be referenced in the manifest using the following notation:
-// `{{myParameter}}` This allows for dynamic configuration of the agent based on the provided parameters.
+// `{{myParameter}}`
+// This allows for dynamic configuration of the agent based on the provided parameters.
+// (This notation is used elsewhere, but only the `param` scope is supported here)
 type AgentManifest struct {
 	Name        string                  `json:"name" yaml:"name"`
 	DisplayName string                  `json:"displayName" yaml:"displayName"`
 	Description *string                 `json:"description,omitempty" yaml:"description,omitempty"`
 	Metadata    *map[string]interface{} `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-	Template    any                     `json:"template" yaml:"template"` // can be PromptAgent, HostedContainerAgent, or WorkflowAgent
-	Parameters  *map[string]Parameter   `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	Template    any                     `json:"template" yaml:"template"`
+	Parameters  PropertySchema          `json:"parameters" yaml:"parameters"`
+	Resources   []any                   `json:"resources" yaml:"resources"` // Will be a type of Resource
 }
 
-// Binding represents a binding between an input property and a tool parameter.
+// Binding Represents a binding between an input property and a tool parameter.
 type Binding struct {
 	Name  string `json:"name" yaml:"name"`
 	Input string `json:"input" yaml:"input"`
 }
 
-// BingSearchOption provides configuration options for the Bing search tool.
-type BingSearchOption struct {
-	Name      string  `json:"name" yaml:"name"`
-	Market    *string `json:"market,omitempty" yaml:"market,omitempty"`
-	SetLang   *string `json:"setLang,omitempty" yaml:"setLang,omitempty"`
-	Count     *int    `json:"count,omitempty" yaml:"count,omitempty"`
-	Freshness *string `json:"freshness,omitempty" yaml:"freshness,omitempty"`
-}
-
-// Connection configuration for AI agents.
+// Connection Connection configuration for AI agents.
 // `provider`, `kind`, and `endpoint` are required properties here,
 // but this section can accept additional via options.
 type Connection struct {
-	Kind             string  `json:"kind" yaml:"kind"`
-	Authority        string  `json:"authority" yaml:"authority"`
-	UsageDescription *string `json:"usageDescription,omitempty" yaml:"usageDescription,omitempty"`
+	Kind               string  `json:"kind" yaml:"kind"`
+	AuthenticationMode string  `json:"authenticationMode" yaml:"authenticationMode"`
+	UsageDescription   *string `json:"usageDescription,omitempty" yaml:"usageDescription,omitempty"`
 }
 
-// ReferenceConnection provides connection configuration for AI services using named connections.
+// ReferenceConnection Connection configuration for AI services using named connections.
 type ReferenceConnection struct {
-	Connection `yaml:",inline"` // Embedded parent struct
-	Kind       string           `json:"kind" yaml:"kind"`
-	Name       string           `json:"name" yaml:"name"`
+	Connection `json:",inline" yaml:",inline"`
+	Kind       string  `json:"kind" yaml:"kind"`
+	Name       string  `json:"name" yaml:"name"`
+	Target     *string `json:"target,omitempty" yaml:"target,omitempty"`
 }
 
-// TokenCredentialConnection provides connection configuration for AI services using token credentials.
-type TokenCredentialConnection struct {
-	Connection `yaml:",inline"` // Embedded parent struct
-	Kind       string           `json:"kind" yaml:"kind"`
-	Endpoint   string           `json:"endpoint" yaml:"endpoint"`
+// RemoteConnection Connection configuration for AI services using named connections.
+type RemoteConnection struct {
+	Connection `json:",inline" yaml:",inline"`
+	Kind       string `json:"kind" yaml:"kind"`
+	Name       string `json:"name" yaml:"name"`
+	Endpoint   string `json:"endpoint" yaml:"endpoint"`
 }
 
-// ApiKeyConnection provides connection configuration for AI services using API keys.
+// ApiKeyConnection Connection configuration for AI services using API keys.
 type ApiKeyConnection struct {
-	Connection `yaml:",inline"` // Embedded parent struct
-	Kind       string           `json:"kind" yaml:"kind"`
-	Endpoint   string           `json:"endpoint" yaml:"endpoint"`
-	ApiKey     string           `json:"apiKey" yaml:"apiKey"`
+	Connection `json:",inline" yaml:",inline"`
+	Kind       string `json:"kind" yaml:"kind"`
+	Endpoint   string `json:"endpoint" yaml:"endpoint"`
+	ApiKey     string `json:"apiKey" yaml:"apiKey"`
 }
 
-// EnvironmentVariable represents an environment variable configuration.
+// AnonymousConnection represents a anonymousconnection.
+type AnonymousConnection struct {
+	Connection `json:",inline" yaml:",inline"`
+	Kind       string `json:"kind" yaml:"kind"`
+	Endpoint   string `json:"endpoint" yaml:"endpoint"`
+}
+
+// EnvironmentVariable Definition for an environment variable used in containerized agents.
 type EnvironmentVariable struct {
 	Name  string `json:"name" yaml:"name"`
 	Value string `json:"value" yaml:"value"`
 }
 
-// Format represents the Format from _Format.py
+// Format Template format definition
 type Format struct {
 	Kind    string                  `json:"kind" yaml:"kind"`
 	Strict  *bool                   `json:"strict,omitempty" yaml:"strict,omitempty"`
 	Options *map[string]interface{} `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
-// HostedContainerDefinition represents the HostedContainerDefinition from _HostedContainerDefinition.py
-type HostedContainerDefinition struct {
-	Scale                Scale                  `json:"scale" yaml:"scale"`
-	Image                *string                `json:"image,omitempty" yaml:"image,omitempty"`
-	Context              map[string]interface{} `json:"context" yaml:"context"`
-	EnvironmentVariables *[]EnvironmentVariable `json:"environmentVariables,omitempty" yaml:"environmentVariables,omitempty"`
+// McpServerApprovalMode The approval mode for MCP server tools.
+type McpServerApprovalMode struct {
+	Kind string `json:"kind" yaml:"kind"`
 }
 
-// McpServerApprovalMode represents the McpServerApprovalMode from _McpServerApprovalMode.py
-type McpServerApprovalMode struct {
-	Mode                       string   `json:"mode" yaml:"mode"`
+// McpServerToolAlwaysRequireApprovalMode represents a mcpservertoolalwaysrequireapprovalmode.
+type McpServerToolAlwaysRequireApprovalMode struct {
+	McpServerApprovalMode `json:",inline" yaml:",inline"`
+	Kind                  string `json:"kind" yaml:"kind"`
+}
+
+// McpServerToolNeverRequireApprovalMode represents a mcpservertoolneverrequireapprovalmode.
+type McpServerToolNeverRequireApprovalMode struct {
+	McpServerApprovalMode `json:",inline" yaml:",inline"`
+	Kind                  string `json:"kind" yaml:"kind"`
+}
+
+// McpServerToolSpecifyApprovalMode represents a mcpservertoolspecifyapprovalmode.
+type McpServerToolSpecifyApprovalMode struct {
+	McpServerApprovalMode      `json:",inline" yaml:",inline"`
+	Kind                       string   `json:"kind" yaml:"kind"`
 	AlwaysRequireApprovalTools []string `json:"alwaysRequireApprovalTools" yaml:"alwaysRequireApprovalTools"`
 	NeverRequireApprovalTools  []string `json:"neverRequireApprovalTools" yaml:"neverRequireApprovalTools"`
 }
 
-// Model defines the structure and behavior of AI agents.
+// Model Model for defining the structure and behavior of AI agents.
 // This model includes properties for specifying the model's provider, connection details, and various options.
 // It allows for flexible configuration of AI models to suit different use cases and requirements.
 type Model struct {
 	Id         string        `json:"id" yaml:"id"`
 	Provider   *string       `json:"provider,omitempty" yaml:"provider,omitempty"`
-	ApiType    string        `json:"apiType" yaml:"apiType"`
-	Deployment *string       `json:"deployment,omitempty" yaml:"deployment,omitempty"`
-	Version    *string       `json:"version,omitempty" yaml:"version,omitempty"`
+	ApiType    *string       `json:"apiType,omitempty" yaml:"apiType,omitempty"`
 	Connection *Connection   `json:"connection,omitempty" yaml:"connection,omitempty"`
 	Options    *ModelOptions `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
-// ModelOptions represents the ModelOptions from _ModelOptions.py
+// ModelOptions Options for configuring the behavior of the AI model.
+// `kind` is a required property here, but this section can accept additional via options.
 type ModelOptions struct {
 	FrequencyPenalty       *float64                `json:"frequencyPenalty,omitempty" yaml:"frequencyPenalty,omitempty"`
 	MaxOutputTokens        *int                    `json:"maxOutputTokens,omitempty" yaml:"maxOutputTokens,omitempty"`
@@ -194,77 +213,44 @@ type ModelOptions struct {
 	AdditionalProperties   *map[string]interface{} `json:"additionalProperties,omitempty" yaml:"additionalProperties,omitempty"`
 }
 
-// Parameter represents the Parameter from _Parameter.py
-type Parameter struct {
-	Name        string          `json:"name" yaml:"name"`
-	Description *string         `json:"description,omitempty" yaml:"description,omitempty"`
-	Required    *bool           `json:"required,omitempty" yaml:"required,omitempty"`
-	Schema      ParameterSchema `json:"schema" yaml:"schema"`
-}
-
-// ParameterSchema represents the ParameterSchema from _ParameterSchema.py
-type ParameterSchema struct {
-	Type       string                  `json:"type" yaml:"type"`
-	Default    *interface{}            `json:"default,omitempty" yaml:"default,omitempty"`
-	Enum       *[]interface{}          `json:"enum,omitempty" yaml:"enum,omitempty"`
-	Extensions *map[string]interface{} `json:"extensions,omitempty" yaml:"extensions,omitempty"`
-}
-
-// StringParameterSchema represents a string parameter schema.
-type StringParameterSchema struct {
-	ParameterSchema `yaml:",inline"` // Embedded parent struct
-	Type            string           `json:"type" yaml:"type"`
-	MinLength       *int             `json:"minLength,omitempty" yaml:"minLength,omitempty"`
-	MaxLength       *int             `json:"maxLength,omitempty" yaml:"maxLength,omitempty"`
-	Pattern         *string          `json:"pattern,omitempty" yaml:"pattern,omitempty"`
-}
-
-// DigitParameterSchema represents a digit parameter schema.
-type DigitParameterSchema struct {
-	ParameterSchema  `yaml:",inline"` // Embedded parent struct
-	Type             string           `json:"type" yaml:"type"`
-	Minimum          *int             `json:"minimum,omitempty" yaml:"minimum,omitempty"`
-	Maximum          *int             `json:"maximum,omitempty" yaml:"maximum,omitempty"`
-	ExclusiveMinimum *bool            `json:"exclusiveMinimum,omitempty" yaml:"exclusiveMinimum,omitempty"`
-	ExclusiveMaximum *bool            `json:"exclusiveMaximum,omitempty" yaml:"exclusiveMaximum,omitempty"`
-	MultipleOf       *float64         `json:"multipleOf,omitempty" yaml:"multipleOf,omitempty"`
-}
-
-// Parser represents the Parser from _Parser.py
+// Parser Template parser definition
 type Parser struct {
 	Kind    string                  `json:"kind" yaml:"kind"`
 	Options *map[string]interface{} `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
-// Property represents the Property from _Property.py
+// Property Represents a single property.
+// This model defines the structure of properties that can be used in prompts,
+// including their type, description, whether they are required, and other attributes.
+// It allows for the definition of dynamic inputs that can be filled with data
+// and processed to generate prompts for AI models.
 type Property struct {
 	Name        string         `json:"name" yaml:"name"`
 	Kind        string         `json:"kind" yaml:"kind"`
 	Description *string        `json:"description,omitempty" yaml:"description,omitempty"`
 	Required    *bool          `json:"required,omitempty" yaml:"required,omitempty"`
-	Strict      *bool          `json:"strict,omitempty" yaml:"strict,omitempty"`
 	Default     *interface{}   `json:"default,omitempty" yaml:"default,omitempty"`
 	Example     *interface{}   `json:"example,omitempty" yaml:"example,omitempty"`
 	EnumValues  *[]interface{} `json:"enumValues,omitempty" yaml:"enumValues,omitempty"`
 }
 
-// ArrayProperty represents an array property.
+// ArrayProperty Represents an array property.
 // This extends the base Property model to represent an array of items.
 type ArrayProperty struct {
-	Property `yaml:",inline"` // Embedded parent struct
-	Kind     string           `json:"kind" yaml:"kind"`
-	Items    Property         `json:"items" yaml:"items"`
+	Property `json:",inline" yaml:",inline"`
+	Kind     string   `json:"kind" yaml:"kind"`
+	Items    Property `json:"items" yaml:"items"`
 }
 
-// ObjectProperty represents an object property.
+// ObjectProperty Represents an object property.
 // This extends the base Property model to represent a structured object.
 type ObjectProperty struct {
-	Property   `yaml:",inline"` // Embedded parent struct
-	Kind       string           `json:"kind" yaml:"kind"`
-	Properties []Property       `json:"properties" yaml:"properties"`
+	Property   `json:",inline" yaml:",inline"`
+	Kind       string     `json:"kind" yaml:"kind"`
+	Properties []Property `json:"properties" yaml:"properties"`
 }
 
-// PropertySchema defines the property schema of a model.
+// PropertySchema Definition for the property schema of a model.
 // This includes the properties and example records.
 type PropertySchema struct {
 	Examples   *[]map[string]interface{} `json:"examples,omitempty" yaml:"examples,omitempty"`
@@ -272,27 +258,45 @@ type PropertySchema struct {
 	Properties []Property                `json:"properties" yaml:"properties"`
 }
 
-// ProtocolVersionRecord represents the ProtocolVersionRecord from _ProtocolVersionRecord.py
+// ProtocolVersionRecord represents a protocolversionrecord.
 type ProtocolVersionRecord struct {
 	Protocol string `json:"protocol" yaml:"protocol"`
 	Version  string `json:"version" yaml:"version"`
 }
 
-// Scale represents the Scale from _Scale.py
-type Scale struct {
-	MinReplicas *int    `json:"minReplicas,omitempty" yaml:"minReplicas,omitempty"`
-	MaxReplicas *int    `json:"maxReplicas,omitempty" yaml:"maxReplicas,omitempty"`
-	Cpu         float64 `json:"cpu" yaml:"cpu"`
-	Memory      float64 `json:"memory" yaml:"memory"`
+// Resource Represents a resource required by the agent.
+// Resources can include databases, APIs, or other external systems
+// that the agent needs to interact with to perform its tasks
+type Resource struct {
+	Name string       `json:"name" yaml:"name"`
+	Kind ResourceKind `json:"kind" yaml:"kind"`
 }
 
-// Template represents the Template from _Template.py
+// ModelResource Represents a model resource required by the agent
+type ModelResource struct {
+	Resource `json:",inline" yaml:",inline"`
+	Id       string `json:"id" yaml:"id"`
+}
+
+// ToolResource Represents a tool resource required by the agent
+type ToolResource struct {
+	Resource `json:",inline" yaml:",inline"`
+	Id       string                 `json:"id" yaml:"id"`
+	Options  map[string]interface{} `json:"options" yaml:"options"`
+}
+
+// Template Template model for defining prompt templates.
+// This model specifies the rendering engine used for slot filling prompts,
+// the parser used to process the rendered template into API-compatible format,
+// and additional options for the template engine.
+// It allows for the creation of reusable templates that can be filled with dynamic data
+// and processed to generate prompts for AI models.
 type Template struct {
 	Format Format `json:"format" yaml:"format"`
 	Parser Parser `json:"parser" yaml:"parser"`
 }
 
-// Tool represents a tool that can be used in prompts.
+// Tool Represents a tool that can be used in prompts.
 type Tool struct {
 	Name        string     `json:"name" yaml:"name"`
 	Kind        string     `json:"kind" yaml:"kind"`
@@ -300,70 +304,72 @@ type Tool struct {
 	Bindings    *[]Binding `json:"bindings,omitempty" yaml:"bindings,omitempty"`
 }
 
-// FunctionTool represents a local function tool.
+// FunctionTool Represents a local function tool.
+// FunctionTool A tool that calls a custom function.
+// This tool allows an AI agent to call external functions and APIs.
 type FunctionTool struct {
-	Tool       `yaml:",inline"` // Embedded parent struct
-	Kind       string           `json:"kind" yaml:"kind"`
-	Parameters PropertySchema   `json:"parameters" yaml:"parameters"`
-	Strict     *bool            `json:"strict,omitempty" yaml:"strict,omitempty"`
+	Tool       `json:",inline" yaml:",inline"`
+	Kind       string         `json:"kind" yaml:"kind"`
+	Parameters PropertySchema `json:"parameters" yaml:"parameters"`
+	Strict     *bool          `json:"strict,omitempty" yaml:"strict,omitempty"`
 }
 
-// ServerTool represents a generic server tool that runs on a server.
+// CustomTool Represents a generic server tool that runs on a server.
 // This tool kind is designed for operations that require server-side execution.
 // It may include features such as authentication, data storage, and long-running processes.
 // This tool kind is ideal for tasks that involve complex computations or access to secure resources.
 // Server tools can be used to offload heavy processing from client applications.
-type ServerTool struct {
-	Tool       `yaml:",inline"`       // Embedded parent struct
+type CustomTool struct {
+	Tool       `json:",inline" yaml:",inline"`
 	Kind       string                 `json:"kind" yaml:"kind"`
 	Connection Connection             `json:"connection" yaml:"connection"`
 	Options    map[string]interface{} `json:"options" yaml:"options"`
 }
 
-// BingSearchTool represents the Bing search tool.
-type BingSearchTool struct {
-	Tool       `yaml:",inline"`   // Embedded parent struct
-	Kind       string             `json:"kind" yaml:"kind"`
-	Connection Connection         `json:"connection" yaml:"connection"`
-	Options    []BingSearchOption `json:"options" yaml:"options"`
+// WebSearchTool The Bing search tool.
+type WebSearchTool struct {
+	Tool       `json:",inline" yaml:",inline"`
+	Kind       string                  `json:"kind" yaml:"kind"`
+	Connection Connection              `json:"connection" yaml:"connection"`
+	Options    *map[string]interface{} `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
-// FileSearchTool is a tool for searching files.
+// FileSearchTool A tool for searching files.
 // This tool allows an AI agent to search for files based on a query.
 type FileSearchTool struct {
-	Tool           `yaml:",inline"`        // Embedded parent struct
-	Kind           string                  `json:"kind" yaml:"kind"`
-	Connection     Connection              `json:"connection" yaml:"connection"`
-	VectorStoreIds []string                `json:"vectorStoreIds" yaml:"vectorStoreIds"`
-	MaxNumResults  *int                    `json:"maxNumResults,omitempty" yaml:"maxNumResults,omitempty"`
-	Ranker         string                  `json:"ranker" yaml:"ranker"`
-	ScoreThreshold float64                 `json:"scoreThreshold" yaml:"scoreThreshold"`
-	Filters        *map[string]interface{} `json:"filters,omitempty" yaml:"filters,omitempty"`
+	Tool               `json:",inline" yaml:",inline"`
+	Kind               string                  `json:"kind" yaml:"kind"`
+	Connection         Connection              `json:"connection" yaml:"connection"`
+	VectorStoreIds     []string                `json:"vectorStoreIds" yaml:"vectorStoreIds"`
+	MaximumResultCount *int                    `json:"maximumResultCount,omitempty" yaml:"maximumResultCount,omitempty"`
+	Ranker             *string                 `json:"ranker,omitempty" yaml:"ranker,omitempty"`
+	ScoreThreshold     *float64                `json:"scoreThreshold,omitempty" yaml:"scoreThreshold,omitempty"`
+	Filters            *map[string]interface{} `json:"filters,omitempty" yaml:"filters,omitempty"`
 }
 
-// McpTool represents the MCP Server tool.
+// McpTool The MCP Server tool.
 type McpTool struct {
-	Tool         `yaml:",inline"`      // Embedded parent struct
-	Kind         string                `json:"kind" yaml:"kind"`
-	Connection   Connection            `json:"connection" yaml:"connection"`
-	Name         string                `json:"name" yaml:"name"`
-	Url          string                `json:"url" yaml:"url"`
-	ApprovalMode McpServerApprovalMode `json:"approvalMode" yaml:"approvalMode"`
-	AllowedTools []string              `json:"allowedTools" yaml:"allowedTools"`
+	Tool              `json:",inline" yaml:",inline"`
+	Kind              string                `json:"kind" yaml:"kind"`
+	Connection        Connection            `json:"connection" yaml:"connection"`
+	ServerName        string                `json:"serverName" yaml:"serverName"`
+	ServerDescription *string               `json:"serverDescription,omitempty" yaml:"serverDescription,omitempty"`
+	ApprovalMode      McpServerApprovalMode `json:"approvalMode" yaml:"approvalMode"`
+	AllowedTools      *[]string             `json:"allowedTools,omitempty" yaml:"allowedTools,omitempty"`
 }
 
-// OpenApiTool represents an OpenAPI tool.
+// OpenApiTool represents a openapitool.
 type OpenApiTool struct {
-	Tool          `yaml:",inline"` // Embedded parent struct
-	Kind          string           `json:"kind" yaml:"kind"`
-	Connection    Connection       `json:"connection" yaml:"connection"`
-	Specification string           `json:"specification" yaml:"specification"`
+	Tool          `json:",inline" yaml:",inline"`
+	Kind          string     `json:"kind" yaml:"kind"`
+	Connection    Connection `json:"connection" yaml:"connection"`
+	Specification string     `json:"specification" yaml:"specification"`
 }
 
-// CodeInterpreterTool is a tool for interpreting and executing code.
-// This tool allows an AI agent to run code snippets and analyze data files.
+// CodeInterpreterTool A tool for running code.
+// This tool allows an AI agent to run and execute code snippets.
 type CodeInterpreterTool struct {
-	Tool    `yaml:",inline"` // Embedded parent struct
-	Kind    string           `json:"kind" yaml:"kind"`
-	FileIds []string         `json:"fileIds" yaml:"fileIds"`
+	Tool    `json:",inline" yaml:",inline"`
+	Kind    string   `json:"kind" yaml:"kind"`
+	FileIds []string `json:"fileIds" yaml:"fileIds"`
 }

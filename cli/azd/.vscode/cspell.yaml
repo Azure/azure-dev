@@ -180,6 +180,14 @@ overrides:
   - filename: extensions/azure.ai.agents/internal/cmd/listen.go
     words:
       - hostedagent
+  - filename: extensions/azure.ai.agents/internal/pkg/agents/agent_yaml/yaml.go
+    words:
+      - anonymousconnection
+      - mcpservertoolalwaysrequireapprovalmode
+      - mcpservertoolneverrequireapprovalmode
+      - mcpservertoolspecifyapprovalmode
+      - protocolversionrecord
+      - openapitool
   - filename: docs/new-azd-command.md
     words:
       - pflag

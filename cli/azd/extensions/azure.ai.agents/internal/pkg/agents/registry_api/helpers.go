@@ -43,7 +43,7 @@ func ProcessRegistryManifest(ctx context.Context, manifest *Manifest, azdClient 
 		DisplayName: manifest.DisplayName,
 		Description: &manifest.Description,
 		Template:    *promptAgent,
-		Parameters:  parameters,
+		Parameters:  *parameters,
 	}
 
 	return result, nil
@@ -66,66 +66,67 @@ func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_ya
 			Kind:        agent_yaml.AgentKindPrompt, // Set to prompt kind
 			Name:        "",                         // Will be set later from manifest or user input
 			Description: nil,                        // Will be set later from manifest or user input
-			Tools:       &tools,
 			// Metadata:     make(map[string]interface{}), // TODO, Where does this come from?
 		},
 		Model: agent_yaml.Model{
 			Id: template.Model,
 		},
 		Instructions: template.Instructions,
+		Tools:        &tools,
 	}
 
 	return promptAgent, nil
 }
 
-func ConvertParameters(parameters map[string]OpenApiParameter) (*map[string]agent_yaml.Parameter, error) {
+func ConvertParameters(parameters map[string]OpenApiParameter) (*agent_yaml.PropertySchema, error) {
 	if len(parameters) == 0 {
 		return nil, nil
 	}
 
-	result := make(map[string]agent_yaml.Parameter, len(parameters))
+	var properties []agent_yaml.Property
 
 	for paramName, openApiParam := range parameters {
-		// Create a basic Parameter from the OpenApiParameter
-		param := agent_yaml.Parameter{
+		// Create a basic Property from the OpenApiParameter
+		property := agent_yaml.Property{
 			Name:        paramName,
 			Description: &openApiParam.Description,
 			Required:    &openApiParam.Required,
 		}
 
-		// Extract type/kind from schema if available
+		// Determine the kind based on schema type
 		if openApiParam.Schema != nil {
-			param.Schema = agent_yaml.ParameterSchema{
-				Type:    openApiParam.Schema.Type,
-				Default: &openApiParam.Schema.Default,
-			}
-
-			// Convert enum values if present
-			if len(openApiParam.Schema.Enum) > 0 {
-				param.Schema.Enum = &openApiParam.Schema.Enum
-			}
+			property.Kind = openApiParam.Schema.Type
 		}
 
-		// Use example as default if no schema default is provided
-		if param.Schema.Default == nil && openApiParam.Example != nil {
-			param.Schema.Default = &openApiParam.Example
+		// Fallback to string kind if no kind specified
+		if property.Kind == "" {
+			property.Kind = "string"
 		}
 
-		// Fallback to string type if no type specified
-		if param.Schema.Type == "" {
-			param.Schema.Type = "string"
+		// Use example as default if available
+		if openApiParam.Example != nil {
+			property.Default = &openApiParam.Example
 		}
 
-		result[paramName] = param
+		// Convert enum values if present
+		if openApiParam.Schema != nil && len(openApiParam.Schema.Enum) > 0 {
+			enumValues := make([]interface{}, len(openApiParam.Schema.Enum))
+			copy(enumValues, openApiParam.Schema.Enum)
+			property.EnumValues = &enumValues
+		}
+
+		properties = append(properties, property)
 	}
 
-	return &result, nil
+	return &agent_yaml.PropertySchema{
+		Properties: properties,
+	}, nil
 }
 
 // ProcessManifestParameters prompts the user for parameter values and injects them into the template
 func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentManifest, azdClient *azdext.AzdClient) (*agent_yaml.AgentManifest, error) {
 	// If no parameters are defined, return the manifest as-is
-	if manifest.Parameters == nil || len(*manifest.Parameters) == 0 {
+	if len(manifest.Parameters.Properties) == 0 {
 		fmt.Println("The manifest does not contain parameters that need to be configured.")
 		return manifest, nil
 	}
@@ -134,7 +135,7 @@ func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentMa
 	fmt.Println()
 
 	// Collect parameter values from user
-	paramValues, err := promptForYamlParameterValues(ctx, *manifest.Parameters, azdClient)
+	paramValues, err := promptForYamlParameterValues(ctx, manifest.Parameters, azdClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect parameter values: %w", err)
 	}
@@ -149,26 +150,26 @@ func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentMa
 }
 
 // promptForYamlParameterValues prompts the user for values for each YAML parameter
-func promptForYamlParameterValues(ctx context.Context, parameters map[string]agent_yaml.Parameter, azdClient *azdext.AzdClient) (ParameterValues, error) {
+func promptForYamlParameterValues(ctx context.Context, parameters agent_yaml.PropertySchema, azdClient *azdext.AzdClient) (ParameterValues, error) {
 	paramValues := make(ParameterValues)
 
-	for paramName, param := range parameters {
-		fmt.Printf("Parameter: %s\n", paramName)
-		if param.Description != nil && *param.Description != "" {
-			fmt.Printf("  Description: %s\n", *param.Description)
+	for _, property := range parameters.Properties {
+		fmt.Printf("Parameter: %s\n", property.Name)
+		if property.Description != nil && *property.Description != "" {
+			fmt.Printf("  Description: %s\n", *property.Description)
 		}
 
 		// Get default value
 		var defaultValue interface{}
-		if param.Schema.Default != nil {
-			defaultValue = *param.Schema.Default
+		if property.Default != nil {
+			defaultValue = *property.Default
 		}
 
 		// Get enum values if available
 		var enumValues []string
-		if param.Schema.Enum != nil && len(*param.Schema.Enum) > 0 {
-			enumValues = make([]string, len(*param.Schema.Enum))
-			for i, val := range *param.Schema.Enum {
+		if property.EnumValues != nil && len(*property.EnumValues) > 0 {
+			enumValues = make([]string, len(*property.EnumValues))
+			for i, val := range *property.EnumValues {
 				enumValues[i] = fmt.Sprintf("%v", val)
 			}
 		}
@@ -188,20 +189,20 @@ func promptForYamlParameterValues(ctx context.Context, parameters map[string]age
 		// Prompt for value
 		var value interface{}
 		var err error
-		isRequired := param.Required != nil && *param.Required
+		isRequired := property.Required != nil && *property.Required
 		if len(enumValues) > 0 {
 			// Use selection for enum parameters
-			value, err = promptForEnumValue(ctx, paramName, enumValues, defaultValue, azdClient)
+			value, err = promptForEnumValue(ctx, property.Name, enumValues, defaultValue, azdClient)
 		} else {
 			// Use text input for other parameters
-			value, err = promptForTextValue(ctx, paramName, defaultValue, isRequired, azdClient)
+			value, err = promptForTextValue(ctx, property.Name, defaultValue, isRequired, azdClient)
 		}
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to get value for parameter %s: %w", paramName, err)
+			return nil, fmt.Errorf("failed to get value for parameter %s: %w", property.Name, err)
 		}
 
-		paramValues[paramName] = value
+		paramValues[property.Name] = value
 	}
 
 	return paramValues, nil

@@ -119,7 +119,7 @@ func CreateAgentAPIRequestFromManifest(agentManifest AgentManifest, options ...A
 		promptDef := agentManifest.Template.(PromptAgent)
 		return CreatePromptAgentAPIRequest(promptDef, buildConfig)
 	case AgentKindHosted:
-		hostedDef := agentManifest.Template.(HostedContainerAgent)
+		hostedDef := agentManifest.Template.(ContainerAgent)
 		return CreateHostedAgentAPIRequest(hostedDef, buildConfig)
 	default:
 		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: prompt, hosted", agentDef.Kind)
@@ -208,7 +208,7 @@ func mapOutputSchemaToTextFormat(outputSchema *PropertySchema) *agent_api.Respon
 }
 
 // CreateHostedAgentAPIRequest creates a CreateAgentRequest for hosted agents
-func CreateHostedAgentAPIRequest(hostedAgent HostedContainerAgent, buildConfig *AgentBuildConfig) (*agent_api.CreateAgentRequest, error) {
+func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentBuildConfig) (*agent_api.CreateAgentRequest, error) {
 	// Check if we have an image URL set via the build config
 	imageURL := ""
 	cpu := "1"      // Default CPU
@@ -228,11 +228,6 @@ func CreateHostedAgentAPIRequest(hostedAgent HostedContainerAgent, buildConfig *
 		if buildConfig.EnvironmentVariables != nil {
 			envVars = buildConfig.EnvironmentVariables
 		}
-	}
-
-	// Try to get image URL from the hosted agent container definition if not provided in build config
-	if imageURL == "" && hostedAgent.Container.Image != nil && *hostedAgent.Container.Image != "" {
-		imageURL = *hostedAgent.Container.Image
 	}
 
 	if imageURL == "" {

@@ -271,11 +271,10 @@ func tryAutoInstallExtension(
 func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContainer) error {
 	// Parse global flags BEFORE creating the command tree.
 	// This allows us to access flag values (like --no-prompt, --debug) early for auto-install logic.
-	// Uses ContinueOnError mode to gracefully handle unknown flags from extensions.
+	// This also enables the global options to be set in the container for support during extension framework callbacks.
 	globalOpts := &internal.GlobalCommandOptions{}
 	if err := ParseGlobalFlags(os.Args[1:], globalOpts); err != nil {
-		// If parsing fails, log but continue with defaults to avoid breaking execution
-		log.Printf("Warning: failed to parse global flags: %v", err)
+		return fmt.Errorf("Warning: failed to parse global flags: %v", err)
 	}
 
 	// Register GlobalCommandOptions as a singleton in the container BEFORE building the command tree.

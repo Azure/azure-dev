@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -493,12 +494,15 @@ func CreateGlobalFlagSet() *pflag.FlagSet {
 }
 
 // ParseGlobalFlags parses global flags from the provided arguments and populates the GlobalCommandOptions.
-// Uses ParseErrorsWhitelist to gracefully ignore unknown flags (like extension-specific flags).
+// Uses ParseErrorsAllowlist to gracefully ignore unknown flags (like extension-specific flags).
 // This function is designed to be called BEFORE Cobra command tree construction to enable
 // early access to global flag values for auto-install and other pre-execution logic.
 func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error {
 	globalFlagSet := CreateGlobalFlagSet()
-	globalFlagSet.SetOutput(nil)
+
+	// Set output to io.Discard to suppress any error messages from pflag
+	// Cobra will handle all user-facing output
+	globalFlagSet.SetOutput(io.Discard)
 
 	// Configure the flag set to ignore unknown flags. This is critical for extension commands
 	// where extension-specific flags are not yet known and will be handled by the extension's
@@ -506,7 +510,10 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 	globalFlagSet.ParseErrorsAllowlist = pflag.ParseErrorsAllowlist{UnknownFlags: true}
 
 	// Parse the arguments - unknown flags will be silently ignored
-	if err := globalFlagSet.Parse(args); err != nil {
+	err := globalFlagSet.Parse(args)
+
+	// Ignore help errors - let Cobra handle help requests
+	if err != nil && !errors.Is(err, pflag.ErrHelp) {
 		return fmt.Errorf("failed to parse global flags: %w", err)
 	}
 

@@ -39,6 +39,7 @@ type initFlags struct {
 	manifestPointer   string
 	src               string
 	host              string
+	env               string
 }
 
 // AiProjectResourceConfig represents the configuration for an AI project resource
@@ -86,12 +87,12 @@ func newInitCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			azureContext, projectConfig, err := ensureAzureContext(ctx, azdClient)
+			azureContext, projectConfig, err := ensureAzureContext(ctx, flags, azdClient)
 			if err != nil {
 				return fmt.Errorf("failed to ground into a project context: %w", err)
 			}
 
-			environment, err := ensureEnvironment(ctx, azdClient)
+			environment, err := ensureEnvironment(ctx, flags, azdClient)
 			if err != nil {
 				return fmt.Errorf("failed to ground into an environment: %w", err)
 			}
@@ -153,6 +154,8 @@ func newInitCommand() *cobra.Command {
 
 	cmd.Flags().StringVarP(&flags.host, "host", "", "",
 		"[Optional] For container based agents, can override the default host to target a container app instead. Accepted values: 'containerapp'")
+
+	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the environment to use.")
 
 	return cmd
 }
@@ -221,17 +224,22 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 	return nil
 }
 
-func ensureProject(ctx context.Context, azdClient *azdext.AzdClient) (*azdext.ProjectConfig, error) {
+func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.ProjectConfig, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		fmt.Println("Lets get your project initialized.")
+
+		initArgs := []string{"init"}
+		if flags.env != "" {
+			initArgs = append(initArgs, "-e", flags.env)
+		}
 
 		// We don't have a project yet
 		// Dispatch a workflow to init the project
 		workflow := &azdext.Workflow{
 			Name: "init",
 			Steps: []*azdext.WorkflowStep{
-				{Command: &azdext.WorkflowCommand{Args: []string{"init"}}},
+				{Command: &azdext.WorkflowCommand{Args: initArgs}},
 			},
 		}
 
@@ -258,17 +266,22 @@ func ensureProject(ctx context.Context, azdClient *azdext.AzdClient) (*azdext.Pr
 	return projectResponse.Project, nil
 }
 
-func ensureEnvironment(ctx context.Context, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
+func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
 	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		fmt.Println("Lets create a new default environment for your project.")
+
+		envArgs := []string{"env", "new"}
+		if flags.env != "" {
+			envArgs = append(envArgs, flags.env)
+		}
 
 		// We don't have a project yet
 		// Dispatch a workflow to init the project and create a new environment
 		workflow := &azdext.Workflow{
 			Name: "env new",
 			Steps: []*azdext.WorkflowStep{
-				{Command: &azdext.WorkflowCommand{Args: []string{"env", "new"}}},
+				{Command: &azdext.WorkflowCommand{Args: envArgs}},
 			},
 		}
 
@@ -296,14 +309,15 @@ func ensureEnvironment(ctx context.Context, azdClient *azdext.AzdClient) (*azdex
 
 func ensureAzureContext(
 	ctx context.Context,
+	flags *initFlags,
 	azdClient *azdext.AzdClient,
 ) (*azdext.AzureContext, *azdext.ProjectConfig, error) {
-	project, err := ensureProject(ctx, azdClient)
+	project, err := ensureProject(ctx, flags, azdClient)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to ensure environment: %w", err)
 	}
 
-	env, err := ensureEnvironment(ctx, azdClient)
+	env, err := ensureEnvironment(ctx, flags, azdClient)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to ensure environment: %w", err)
 	}

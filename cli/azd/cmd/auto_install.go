@@ -275,7 +275,7 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 	// This also enables the global options to be set in the container for support during extension framework callbacks.
 	globalOpts := &internal.GlobalCommandOptions{}
 	if err := ParseGlobalFlags(os.Args[1:], globalOpts); err != nil {
-		return fmt.Errorf("Warning: failed to parse global flags: %v", err)
+		return fmt.Errorf("Warning: failed to parse global flags: %w", err)
 	}
 
 	// Register GlobalCommandOptions as a singleton in the container BEFORE building the command tree.

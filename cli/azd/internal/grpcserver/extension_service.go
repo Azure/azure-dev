@@ -31,7 +31,7 @@ func NewExtensionService(extensionManager *extensions.Manager) azdext.ExtensionS
 // Ready signals that the extension is done registering all capabilities.
 // The extension will remain alive as long as its streams are active and context is not cancelled.
 func (s *ExtensionService) Ready(ctx context.Context, req *azdext.ReadyRequest) (*azdext.ReadyResponse, error) {
-	extensionClaims, err := GetExtensionClaims(ctx)
+	extensionClaims, err := extensions.GetClaimsFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extension claims: %w", err)
 	}

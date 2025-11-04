@@ -18,6 +18,7 @@ words:
   # CDN host name
   - gfgac2cmf7b8cuay
   - goversioninfo
+  - grpcbroker
   - nosec
   - oneof
   - idxs

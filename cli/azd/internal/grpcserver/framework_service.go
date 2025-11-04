@@ -4,12 +4,12 @@
 package grpcserver
 
 import (
-	"errors"
+	"context"
 	"fmt"
-	"io"
 	"log"
 	"sync"
 
+	"github.com/azure/azure-dev/cli/azd/internal/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -24,7 +24,7 @@ type FrameworkService struct {
 	azdext.UnimplementedFrameworkServiceServer
 	container        *ioc.NestedContainer
 	extensionManager *extensions.Manager
-	providerMap      map[string]azdext.FrameworkService_StreamServer
+	providerMap      map[string]*grpcbroker.MessageBroker[azdext.FrameworkServiceMessage]
 	providerMapMu    sync.Mutex
 }
 
@@ -36,7 +36,7 @@ func NewFrameworkService(
 	return &FrameworkService{
 		container:        container,
 		extensionManager: extensionManager,
-		providerMap:      make(map[string]azdext.FrameworkService_StreamServer),
+		providerMap:      make(map[string]*grpcbroker.MessageBroker[azdext.FrameworkServiceMessage]),
 	}
 }
 
@@ -45,7 +45,7 @@ func (s *FrameworkService) Stream(
 	stream azdext.FrameworkService_StreamServer,
 ) error {
 	ctx := stream.Context()
-	extensionClaims, err := GetExtensionClaims(ctx)
+	extensionClaims, err := extensions.GetClaimsFromContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get extension claims: %w", err)
 	}
@@ -65,77 +65,80 @@ func (s *FrameworkService) Stream(
 		return status.Errorf(codes.PermissionDenied, "extension does not support framework-service-provider capability")
 	}
 
-	msg, err := stream.Recv()
-	if errors.Is(err, io.EOF) {
-		return nil
-	}
+	// Create message broker for this stream
+	ops := azdext.NewFrameworkServiceEnvelope()
+	broker := grpcbroker.NewMessageBroker(stream, ops)
+
+	// Track the language for cleanup when stream closes
+	var registeredLanguage string
+
+	// Register handler for RegisterFrameworkServiceRequest
+	err = broker.On(func(
+		ctx context.Context,
+		req *azdext.RegisterFrameworkServiceRequest,
+	) (*azdext.FrameworkServiceMessage, error) {
+		return s.onRegisterRequest(ctx, req, extension, broker, &registeredLanguage)
+	})
+
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to register handler: %w", err)
 	}
 
-	regRequest := msg.GetRegisterFrameworkServiceRequest()
-	if regRequest == nil {
-		return status.Errorf(
-			codes.FailedPrecondition,
-			"expected RegisterFrameworkServiceRequest, got %T",
-			msg.GetMessageType(),
-		)
-	}
+	// Start the broker dispatcher
+	broker.Start(ctx)
 
-	language := regRequest.GetLanguage()
+	// Wait for the stream context to be done (client disconnects or server shutdown)
+	<-stream.Context().Done()
+	log.Printf("Stream closed for framework service: %s", registeredLanguage)
+
 	s.providerMapMu.Lock()
+	delete(s.providerMap, registeredLanguage)
+	s.providerMapMu.Unlock()
+
+	return nil
+}
+
+// onRegisterRequest handles the registration of a framework service provider
+func (s *FrameworkService) onRegisterRequest(
+	ctx context.Context,
+	req *azdext.RegisterFrameworkServiceRequest,
+	extension *extensions.Extension,
+	broker *grpcbroker.MessageBroker[azdext.FrameworkServiceMessage],
+	registeredLanguage *string,
+) (*azdext.FrameworkServiceMessage, error) {
+	language := req.GetLanguage()
+	s.providerMapMu.Lock()
+	defer s.providerMapMu.Unlock()
+
 	if _, has := s.providerMap[language]; has {
-		s.providerMapMu.Unlock()
-		return status.Errorf(codes.AlreadyExists, "provider %s already registered", language)
+		return nil, status.Errorf(codes.AlreadyExists, "provider %s already registered", language)
 	}
 
-	// Register external framework service with DI container
-	err = s.container.RegisterNamedSingleton(language, func(
+	// Register external framework service with DI container, passing the broker
+	err := s.container.RegisterNamedSingleton(language, func(
 		console input.Console,
 	) project.FrameworkService {
 		return project.NewExternalFrameworkService(
 			language,
 			project.ServiceLanguageKind(language),
 			extension,
-			stream,
+			broker,
 			console,
 		)
 	})
 
 	if err != nil {
-		s.providerMapMu.Unlock()
-		return status.Errorf(codes.Internal, "failed to register framework service: %s", err.Error())
+		return nil, status.Errorf(codes.Internal, "failed to register framework service: %s", err.Error())
 	}
 
-	s.providerMap[language] = stream
+	s.providerMap[language] = broker
+	*registeredLanguage = language
+	log.Printf("Registered framework service: %s", language)
 
-	// Send registration response
-	response := &azdext.FrameworkServiceMessage{
-		RequestId: msg.RequestId,
+	// Return response envelope
+	return &azdext.FrameworkServiceMessage{
 		MessageType: &azdext.FrameworkServiceMessage_RegisterFrameworkServiceResponse{
 			RegisterFrameworkServiceResponse: &azdext.RegisterFrameworkServiceResponse{},
 		},
-	}
-
-	if err := stream.Send(response); err != nil {
-		s.providerMapMu.Unlock()
-		return err
-	}
-	s.providerMapMu.Unlock()
-
-	// The stream is now handled by the ExternalFrameworkService, so we don't consume messages here.
-	// We need to wait for the stream to close without consuming messages.
-	select {
-	case <-ctx.Done():
-		log.Printf("Framework service stream for language '%s' cancelled", language)
-	case <-stream.Context().Done():
-		log.Printf("Framework service stream for language '%s' closed by client", language)
-	}
-
-	// Clean up when stream closes
-	s.providerMapMu.Lock()
-	delete(s.providerMap, language)
-	s.providerMapMu.Unlock()
-
-	return nil
+	}, nil
 }

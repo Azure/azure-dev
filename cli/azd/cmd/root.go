@@ -151,16 +151,18 @@ func NewRootCmd(
 		DefaultFormat:  output.NoneFormat,
 	})
 
-	root.Add("show", &actions.ActionDescriptorOptions{
-		Command:        show.NewShowCmd(),
-		FlagsResolver:  show.NewShowFlags,
-		ActionResolver: show.NewShowAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupManage,
-		},
-	})
+	root.
+		Add("show", &actions.ActionDescriptorOptions{
+			Command:        show.NewShowCmd(),
+			FlagsResolver:  show.NewShowFlags,
+			ActionResolver: show.NewShowAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupManage,
+			},
+		}).
+		UseMiddleware("extensions", middleware.NewExtensionsMiddleware)
 
 	//deprecate:cmd hide login
 	login := newLoginCmd("")

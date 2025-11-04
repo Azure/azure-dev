@@ -32,6 +32,15 @@ type ExternalServiceTarget struct {
 	responseChans sync.Map
 }
 
+type TargetResourceResolver interface {
+	ResolveTargetResource(
+		ctx context.Context,
+		subscriptionId string,
+		serviceConfig *ServiceConfig,
+		defaultResolver func() (*environment.TargetResource, error),
+	) (*environment.TargetResource, error)
+}
+
 func envResolver(env *environment.Environment) mapper.Resolver {
 	return func(key string) string {
 		if env == nil {

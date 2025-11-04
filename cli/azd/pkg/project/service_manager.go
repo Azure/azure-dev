@@ -843,18 +843,6 @@ func runCommand[T any](
 	return result, err
 }
 
-// getTargetResourceForService resolves the target resource for a service configuration.
-// For DotNetContainerAppTarget, it handles container app environment resolution.
-// For other service types, it delegates to the resource manager.
-type targetResourceResolver interface {
-	ResolveTargetResource(
-		ctx context.Context,
-		subscriptionId string,
-		serviceConfig *ServiceConfig,
-		defaultResolver func() (*environment.TargetResource, error),
-	) (*environment.TargetResource, error)
-}
-
 // / GetTargetResource finds and resolves the target Azure resource for the specified service configuration and host
 func (sm *serviceManager) GetTargetResource(
 	ctx context.Context,
@@ -862,7 +850,7 @@ func (sm *serviceManager) GetTargetResource(
 	serviceTarget ServiceTarget,
 ) (*environment.TargetResource, error) {
 	if serviceTarget != nil {
-		if resolver, ok := serviceTarget.(targetResourceResolver); ok {
+		if resolver, ok := serviceTarget.(TargetResourceResolver); ok {
 			// Callback for computing the default target resource
 			defaultResolver := func() (*environment.TargetResource, error) {
 				return sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)

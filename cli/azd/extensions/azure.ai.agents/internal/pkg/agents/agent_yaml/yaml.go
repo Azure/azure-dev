@@ -35,7 +35,10 @@ const (
 	ResourceKindTool  ResourceKind = "tool"
 )
 
-// AgentDefinition The following is a specification for defining AI agents with structured metadata, inputs, outputs, tools, and templates.It provides a way to create reusable and composable AI agents that can be executed with specific configurations.The specification includes metadata about the agent, model configuration, input parameters, expected outputs,available tools, and template configurations for prompt rendering.
+// AgentDefinition The following is a specification for defining AI agents with structured metadata, inputs, outputs, tools, and templates.
+// It provides a way to create reusable and composable AI agents that can be executed with specific configurations.
+// The specification includes metadata about the agent, model configuration, input parameters, expected outputs,
+// available tools, and template configurations for prompt rendering.
 type AgentDefinition struct {
 	Kind         AgentKind               `json:"kind" yaml:"kind"`
 	Name         string                  `json:"name" yaml:"name"`
@@ -46,7 +49,9 @@ type AgentDefinition struct {
 	OutputSchema *PropertySchema         `json:"outputSchema,omitempty" yaml:"outputSchema,omitempty"`
 }
 
-// PromptAgent Prompt based agent definition. Used to create agents that can be executed directly.These agents can leverage tools, input parameters, and templates to generate responses.They are designed to be straightforward and easy to use for various applications.
+// PromptAgent Prompt based agent definition. Used to create agents that can be executed directly.
+// These agents can leverage tools, input parameters, and templates to generate responses.
+// They are designed to be straightforward and easy to use for various applications.
 type PromptAgent struct {
 	AgentDefinition        `json:",inline" yaml:",inline"`
 	Model                  Model     `json:"model" yaml:"model"`
@@ -56,20 +61,38 @@ type PromptAgent struct {
 	AdditionalInstructions *string   `json:"additionalInstructions,omitempty" yaml:"additionalInstructions,omitempty"`
 }
 
-// Workflow A workflow agent that can orchestrate multiple steps and actions.This agent type is designed to handle complex workflows that may involvemultiple tools, models, and decision points.The workflow agent can be configured with a series of steps that definethe flow of execution, including conditional logic and parallel processing.This allows for the creation of sophisticated AI-driven processes that canadapt to various scenarios and requirements.Note: The detailed structure of the workflow steps and actions is not defined hereand would need to be implemented based on specific use cases and requirements.
+// Workflow A workflow agent that can orchestrate multiple steps and actions.
+// This agent type is designed to handle complex workflows that may involve
+// multiple tools, models, and decision points.
+// The workflow agent can be configured with a series of steps that define
+// the flow of execution, including conditional logic and parallel processing.
+// This allows for the creation of sophisticated AI-driven processes that can
+// adapt to various scenarios and requirements.
+// Note: The detailed structure of the workflow steps and actions is not defined here
+// and would need to be implemented based on specific use cases and requirements.
 type Workflow struct {
 	AgentDefinition `json:",inline" yaml:",inline"`
 	Trigger         *map[string]interface{} `json:"trigger,omitempty" yaml:"trigger,omitempty"`
 }
 
-// ContainerAgent This represents a container based agent hosted by the provider/publisher.The intent is to represent a container application that the user wants to runin a hosted environment that the provider manages.
+// ContainerAgent This represents a container based agent hosted by the provider/publisher.
+// The intent is to represent a container application that the user wants to run
+// in a hosted environment that the provider manages.
 type ContainerAgent struct {
 	AgentDefinition      `json:",inline" yaml:",inline"`
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
 	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environmentVariables,omitempty"`
 }
 
-// AgentManifest The following represents a manifest that can be used to create agents dynamically.It includes parameters that can be used to configure the agent&#39;s behavior.These parameters include values that can be used as publisher parameters that canbe used to describe additional variables that have been tested and are known to work.Variables described here are then used to project into a prompt agent that can be executed.Once parameters are provided, these can be referenced in the manifest using the following notation:`{{myParameter}}`This allows for dynamic configuration of the agent based on the provided parameters.(This notation is used elsewhere, but only the `param` scope is supported here)
+// AgentManifest The following represents a manifest that can be used to create agents dynamically.
+// It includes parameters that can be used to configure the agent's behavior.
+// These parameters include values that can be used as publisher parameters that can
+// be used to describe additional variables that have been tested and are known to work.
+// Variables described here are then used to project into a prompt agent that can be executed.
+// Once parameters are provided, these can be referenced in the manifest using the following notation:
+// `{{myParameter}}`
+// This allows for dynamic configuration of the agent based on the provided parameters.
+// (This notation is used elsewhere, but only the `param` scope is supported here)
 type AgentManifest struct {
 	Name        string                  `json:"name" yaml:"name"`
 	DisplayName string                  `json:"displayName" yaml:"displayName"`
@@ -86,7 +109,9 @@ type Binding struct {
 	Input string `json:"input" yaml:"input"`
 }
 
-// Connection Connection configuration for AI agents.`provider`, `kind`, and `endpoint` are required properties here,but this section can accept additional via options.
+// Connection Connection configuration for AI agents.
+// `provider`, `kind`, and `endpoint` are required properties here,
+// but this section can accept additional via options.
 type Connection struct {
 	Kind               string  `json:"kind" yaml:"kind"`
 	AuthenticationMode string  `json:"authenticationMode" yaml:"authenticationMode"`
@@ -162,7 +187,9 @@ type McpServerToolSpecifyApprovalMode struct {
 	NeverRequireApprovalTools  []string `json:"neverRequireApprovalTools" yaml:"neverRequireApprovalTools"`
 }
 
-// Model Model for defining the structure and behavior of AI agents.This model includes properties for specifying the model&#39;s provider, connection details, and various options.It allows for flexible configuration of AI models to suit different use cases and requirements.
+// Model Model for defining the structure and behavior of AI agents.
+// This model includes properties for specifying the model's provider, connection details, and various options.
+// It allows for flexible configuration of AI models to suit different use cases and requirements.
 type Model struct {
 	Id         string        `json:"id" yaml:"id"`
 	Provider   *string       `json:"provider,omitempty" yaml:"provider,omitempty"`
@@ -171,7 +198,8 @@ type Model struct {
 	Options    *ModelOptions `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
-// ModelOptions Options for configuring the behavior of the AI model.`kind` is a required property here, but this section can accept additional via options.
+// ModelOptions Options for configuring the behavior of the AI model.
+// `kind` is a required property here, but this section can accept additional via options.
 type ModelOptions struct {
 	FrequencyPenalty       *float64                `json:"frequencyPenalty,omitempty" yaml:"frequencyPenalty,omitempty"`
 	MaxOutputTokens        *int                    `json:"maxOutputTokens,omitempty" yaml:"maxOutputTokens,omitempty"`
@@ -191,7 +219,11 @@ type Parser struct {
 	Options *map[string]interface{} `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
-// Property Represents a single property* This model defines the structure of properties that can be used in prompts,including their type, description, whether they are required, and other attributes.* It allows for the definition of dynamic inputs that can be filled with dataand processed to generate prompts for AI models.
+// Property Represents a single property.
+// This model defines the structure of properties that can be used in prompts,
+// including their type, description, whether they are required, and other attributes.
+// It allows for the definition of dynamic inputs that can be filled with data
+// and processed to generate prompts for AI models.
 type Property struct {
 	Name        string         `json:"name" yaml:"name"`
 	Kind        string         `json:"kind" yaml:"kind"`
@@ -202,21 +234,24 @@ type Property struct {
 	EnumValues  *[]interface{} `json:"enumValues,omitempty" yaml:"enumValues,omitempty"`
 }
 
-// ArrayProperty Represents an array property.This extends the base Property model to represent an array of items.
+// ArrayProperty Represents an array property.
+// This extends the base Property model to represent an array of items.
 type ArrayProperty struct {
 	Property `json:",inline" yaml:",inline"`
 	Kind     string   `json:"kind" yaml:"kind"`
 	Items    Property `json:"items" yaml:"items"`
 }
 
-// ObjectProperty Represents an object property.This extends the base Property model to represent a structured object.
+// ObjectProperty Represents an object property.
+// This extends the base Property model to represent a structured object.
 type ObjectProperty struct {
 	Property   `json:",inline" yaml:",inline"`
 	Kind       string     `json:"kind" yaml:"kind"`
 	Properties []Property `json:"properties" yaml:"properties"`
 }
 
-// PropertySchema Definition for the property schema of a model.This includes the properties and example records.
+// PropertySchema Definition for the property schema of a model.
+// This includes the properties and example records.
 type PropertySchema struct {
 	Examples   *[]map[string]interface{} `json:"examples,omitempty" yaml:"examples,omitempty"`
 	Strict     *bool                     `json:"strict,omitempty" yaml:"strict,omitempty"`
@@ -229,7 +264,9 @@ type ProtocolVersionRecord struct {
 	Version  string `json:"version" yaml:"version"`
 }
 
-// Resource Represents a resource required by the agentResources can include databases, APIs, or other external systemsthat the agent needs to interact with to perform its tasks
+// Resource Represents a resource required by the agent.
+// Resources can include databases, APIs, or other external systems
+// that the agent needs to interact with to perform its tasks
 type Resource struct {
 	Name string       `json:"name" yaml:"name"`
 	Kind ResourceKind `json:"kind" yaml:"kind"`
@@ -248,7 +285,12 @@ type ToolResource struct {
 	Options  map[string]interface{} `json:"options" yaml:"options"`
 }
 
-// Template Template model for defining prompt templates.This model specifies the rendering engine used for slot filling prompts,the parser used to process the rendered template into API-compatible format,and additional options for the template engine.It allows for the creation of reusable templates that can be filled with dynamic dataand processed to generate prompts for AI models.
+// Template Template model for defining prompt templates.
+// This model specifies the rendering engine used for slot filling prompts,
+// the parser used to process the rendered template into API-compatible format,
+// and additional options for the template engine.
+// It allows for the creation of reusable templates that can be filled with dynamic data
+// and processed to generate prompts for AI models.
 type Template struct {
 	Format Format `json:"format" yaml:"format"`
 	Parser Parser `json:"parser" yaml:"parser"`
@@ -263,6 +305,8 @@ type Tool struct {
 }
 
 // FunctionTool Represents a local function tool.
+// FunctionTool A tool that calls a custom function.
+// This tool allows an AI agent to call external functions and APIs.
 type FunctionTool struct {
 	Tool       `json:",inline" yaml:",inline"`
 	Kind       string         `json:"kind" yaml:"kind"`
@@ -270,7 +314,11 @@ type FunctionTool struct {
 	Strict     *bool          `json:"strict,omitempty" yaml:"strict,omitempty"`
 }
 
-// CustomTool Represents a generic server tool that runs on a serverThis tool kind is designed for operations that require server-side executionIt may include features such as authentication, data storage, and long-running processesThis tool kind is ideal for tasks that involve complex computations or access to secure resourcesServer tools can be used to offload heavy processing from client applications
+// CustomTool Represents a generic server tool that runs on a server.
+// This tool kind is designed for operations that require server-side execution.
+// It may include features such as authentication, data storage, and long-running processes.
+// This tool kind is ideal for tasks that involve complex computations or access to secure resources.
+// Server tools can be used to offload heavy processing from client applications.
 type CustomTool struct {
 	Tool       `json:",inline" yaml:",inline"`
 	Kind       string                 `json:"kind" yaml:"kind"`
@@ -286,7 +334,8 @@ type WebSearchTool struct {
 	Options    *map[string]interface{} `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
-// FileSearchTool A tool for searching files.This tool allows an AI agent to search for files based on a query.
+// FileSearchTool A tool for searching files.
+// This tool allows an AI agent to search for files based on a query.
 type FileSearchTool struct {
 	Tool               `json:",inline" yaml:",inline"`
 	Kind               string                  `json:"kind" yaml:"kind"`
@@ -317,7 +366,8 @@ type OpenApiTool struct {
 	Specification string     `json:"specification" yaml:"specification"`
 }
 
-// CodeInterpreterTool A tool for interpreting and executing code.This tool allows an AI agent to run code snippets and analyze data files.
+// CodeInterpreterTool A tool for running code.
+// This tool allows an AI agent to run and execute code snippets.
 type CodeInterpreterTool struct {
 	Tool    `json:",inline" yaml:",inline"`
 	Kind    string   `json:"kind" yaml:"kind"`

@@ -102,7 +102,36 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	serviceConfig *azdext.ServiceConfig,
 	targetResource *azdext.TargetResource,
 ) ([]string, error) {
-	return []string{}, fmt.Errorf("not implemented")
+	azdEnvClient := p.azdClient.Environment()
+	currEnv, err := azdEnvClient.GetCurrent(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current environment: %w", err)
+	}
+
+	// Get all environment values
+	resp, err := azdEnvClient.GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: currEnv.Environment.Name,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get environment values: %w", err)
+	}
+
+	azdEnv := make(map[string]string, len(resp.KeyValues))
+	for _, kval := range resp.KeyValues {
+		azdEnv[kval.Key] = kval.Value
+	}
+
+	// Check if required environment variables are set
+	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
+		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required")
+	}
+	if azdEnv["AGENT_NAME"] == "" || azdEnv["AGENT_VERSION"] == "" {
+		return nil, fmt.Errorf("AGENT_NAME and AGENT_VERSION environment variables are required")
+	}
+
+	endpoint := p.agentEndpoint(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], azdEnv["AGENT_NAME"], azdEnv["AGENT_VERSION"])
+
+	return []string{endpoint}, nil
 }
 
 // GetTargetResource returns a custom target resource for the agent service
@@ -419,11 +448,13 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 
 	fmt.Fprintf(os.Stderr, "Prompt agent '%s' deployed successfully!\n", agentVersionResponse.Name)
 
+	endpoint := p.agentEndpoint(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], agentVersionResponse.Name, agentVersionResponse.Version)
+
 	return &azdext.ServiceDeployResult{
 		Artifacts: []*azdext.Artifact{
 			{
-				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_DEPLOYMENT,
-				Location:     agentVersionResponse.ID,
+				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+				Location:     endpoint,
 				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
 				Metadata: map[string]string{
 					"agentName":    agentVersionResponse.Name,
@@ -522,11 +553,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 	fmt.Fprintf(os.Stderr, "Hosted agent '%s' deployed successfully!\n", agentVersionResponse.Name)
 
-	endpoint := fmt.Sprintf("%s/agents/%s/versions/%s",
-		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
-		agentVersionResponse.Name,
-		agentVersionResponse.Version,
-	)
+	endpoint := p.agentEndpoint(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], agentVersionResponse.Name, agentVersionResponse.Version)
 
 	return &azdext.ServiceDeployResult{
 		Artifacts: []*azdext.Artifact{
@@ -541,6 +568,11 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 			},
 		},
 	}, nil
+}
+
+// agentEndpoint constructs the agent endpoint URL from the provided parameters
+func (p *AgentServiceTargetProvider) agentEndpoint(projectEndpoint, agentName, agentVersion string) string {
+	return fmt.Sprintf("%s/agents/%s/versions/%s", projectEndpoint, agentName, agentVersion)
 }
 
 // createAgent creates a new version of the agent using the API

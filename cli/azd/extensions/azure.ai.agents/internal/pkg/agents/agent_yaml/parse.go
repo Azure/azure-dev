@@ -80,7 +80,16 @@ func ExtractResourceDefinitions(manifestYamlContent []byte) ([]any, error) {
 		return nil, fmt.Errorf("YAML content is not valid: %w", err)
 	}
 
-	resources := genericManifest["resources"].([]interface{})
+	resourcesValue, exists := genericManifest["resources"]
+	if !exists || resourcesValue == nil {
+		return []any{}, nil // Return empty slice if no resources key
+	}
+
+	resources, ok := resourcesValue.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("resources field is not a valid array")
+	}
+
 	var resourceDefs []any
 	for _, resource := range resources {
 		resourceBytes, _ := yaml.Marshal(resource)

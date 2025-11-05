@@ -526,7 +526,10 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	hostedDef := agentManifest.Template.(agent_yaml.ContainerAgent)
 	if hostedDef.EnvironmentVariables != nil {
 		for _, envVar := range *hostedDef.EnvironmentVariables {
-			resolvedValue := p.resolveTemplateValue(envVar.Value, azdEnv)
+			resolvedValue, err := p.resolveTemplateValue(envVar.Value, azdEnv)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve environment variable '%s': %w", envVar.Name, err)
+			}
 			resolvedEnvVars[envVar.Name] = resolvedValue
 		}
 	}
@@ -792,7 +795,7 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 }
 
 // resolveTemplateValue resolves ${{ VAR }} template syntax using azd environment values
-func (p *AgentServiceTargetProvider) resolveTemplateValue(value string, azdEnv map[string]string) string {
+func (p *AgentServiceTargetProvider) resolveTemplateValue(value string, azdEnv map[string]string) (string, error) {
 	const (
 		prefix = "${{"
 		suffix = "}}"
@@ -801,21 +804,22 @@ func (p *AgentServiceTargetProvider) resolveTemplateValue(value string, azdEnv m
 	// Find the template syntax
 	start := strings.Index(value, prefix)
 	if start == -1 {
-		return value
+		return value, nil
 	}
 
 	end := strings.Index(value[start:], suffix)
 	if end == -1 {
-		return value
+		return value, nil
 	}
 	end += start // Adjust to absolute position
 
 	// Extract and resolve the variable name
 	varName := strings.TrimSpace(value[start+len(prefix) : end])
-	if resolvedValue, exists := azdEnv[varName]; exists {
-		// Replace the template syntax with the resolved value
-		return value[:start] + resolvedValue + value[end+len(suffix):]
+	resolvedValue, exists := azdEnv[varName]
+	if !exists {
+		return "", fmt.Errorf("environment variable '%s' referenced in template but not found in azd environment", varName)
 	}
 
-	return value
+	// Replace the template syntax with the resolved value
+	return value[:start] + resolvedValue + value[end+len(suffix):], nil
 }

@@ -787,6 +787,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 	var agentConfig = project.ServiceTargetAgentConfig{}
 
 	deploymentDetails := []project.Deployment{}
+	resourceDetails := []project.Resource{}
 	switch agentDef.Kind {
 	case agent_yaml.AgentKindPrompt:
 		agentDef := agentManifest.Template.(agent_yaml.PromptAgent)
@@ -823,40 +824,38 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 				deploymentDetails = append(deploymentDetails, *modelDeployment)
 			}
 		}
-	}
 
-	agentConfig.Deployments = deploymentDetails
+		// Handle tool resources that require connection names
+		if agentManifest.Resources != nil {
+			for _, resource := range agentManifest.Resources {
+				// Try to cast to ToolResource
+				if toolResource, ok := resource.(agent_yaml.ToolResource); ok {
+					// Check if this is a resource that requires a connection name
+					if toolResource.Id == "bing_grounding" || toolResource.Id == "azure_ai_search" {
+						// Prompt the user for a connection name
+						resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+							Options: &azdext.PromptOptions{
+								Message:        fmt.Sprintf("Enter connection name for %s resource:", toolResource.Id),
+								IgnoreHintKeys: true,
+							},
+						})
+						if err != nil {
+							return fmt.Errorf("prompting for connection name for %s: %w", toolResource.Id, err)
+						}
 
-	// Handle tool resources that require connection names
-	var resourceDetails []project.Resource
-	if agentManifest.Resources != nil {
-		for _, resource := range agentManifest.Resources {
-			// Try to cast to ToolResource
-			if toolResource, ok := resource.(agent_yaml.ToolResource); ok {
-				// Check if this is a resource that requires a connection name
-				if toolResource.Id == "bing_grounding" || toolResource.Id == "azure_ai_search" {
-					// Prompt the user for a connection name
-					resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-						Options: &azdext.PromptOptions{
-							Message:        fmt.Sprintf("Enter connection name for %s resource:", toolResource.Id),
-							IgnoreHintKeys: true,
-						},
-					})
-					if err != nil {
-						return fmt.Errorf("prompting for connection name for %s: %w", toolResource.Id, err)
+						// Add to resource details
+						resourceDetails = append(resourceDetails, project.Resource{
+							Resource:       toolResource.Id,
+							ConnectionName: resp.Value,
+						})
 					}
-
-					// Add to resource details
-					resourceDetails = append(resourceDetails, project.Resource{
-						Resource:       toolResource.Id,
-						ConnectionName: resp.Value,
-					})
 				}
+				// Skip the resource if the cast fails
 			}
-			// Skip the resource if the cast fails
 		}
 	}
 
+	agentConfig.Deployments = deploymentDetails
 	agentConfig.Resources = resourceDetails
 
 	var agentConfigStruct *structpb.Struct

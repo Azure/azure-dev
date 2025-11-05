@@ -174,35 +174,6 @@ func (s *eventService) createProjectEventHandler(
 	}
 }
 
-func (s *eventService) runWithEnvReload(ctx context.Context, action func() error) error {
-	envManager, err := s.lazyEnvManager.GetValue()
-	if err != nil {
-		return err
-	}
-
-	env, err := s.lazyEnv.GetValue()
-	if err != nil {
-		return err
-	}
-
-	// Reload before invoking event handler to ensure environment is updated
-	if err := envManager.Reload(ctx, env); err != nil {
-		return err
-	}
-
-	actionErr := action()
-	if actionErr != nil {
-		return actionErr
-	}
-
-	// Reload before invoking event handler to ensure environment is updated
-	if err := envManager.Reload(ctx, env); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (s *eventService) sendProjectInvokeMessage(
 	stream grpc.BidiStreamingServer[azdext.EventMessage, azdext.EventMessage],
 	eventName string,
@@ -428,4 +399,29 @@ func (s *eventService) syncExtensionOutput(
 		s.console.StopPreviewer(ctx, false)
 		extOut.RemoveWriter(previewWriter)
 	}
+}
+
+func (s *eventService) runWithEnvReload(ctx context.Context, action func() error) error {
+	envManager, err := s.lazyEnvManager.GetValue()
+	if err != nil {
+		return err
+	}
+
+	env, err := s.lazyEnv.GetValue()
+	if err != nil {
+		return err
+	}
+
+	// Reload before invoking event handler to ensure environment is updated
+	if err := envManager.Reload(ctx, env); err != nil {
+		return err
+	}
+
+	actionErr := action()
+	if actionErr != nil {
+		return actionErr
+	}
+
+	// Reload after invoking event handler to ensure environment is updated
+	return envManager.Reload(ctx, env)
 }

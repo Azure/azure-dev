@@ -521,8 +521,22 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
-	// Step 2: Create agent request with image URL
-	request, err := agent_yaml.CreateAgentAPIRequestFromManifest(*agentManifest, agent_yaml.WithImageURL(fullImageURL))
+	// Step 2: Resolve environment variables from YAML using azd environment values
+	resolvedEnvVars := make(map[string]string)
+	hostedDef := agentManifest.Template.(agent_yaml.ContainerAgent)
+	if hostedDef.EnvironmentVariables != nil {
+		for _, envVar := range *hostedDef.EnvironmentVariables {
+			resolvedValue := p.resolveTemplateValue(envVar.Value, azdEnv)
+			resolvedEnvVars[envVar.Name] = resolvedValue
+		}
+	}
+
+	// Step 3: Create agent request with image URL and resolved environment variables
+	request, err := agent_yaml.CreateAgentAPIRequestFromManifest(
+		*agentManifest,
+		agent_yaml.WithImageURL(fullImageURL),
+		agent_yaml.WithEnvironmentVariables(resolvedEnvVars),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent request: %w", err)
 	}
@@ -530,7 +544,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	// Display agent information
 	p.displayAgentInfo(request)
 
-	// Step 3: Create agent
+	// Step 4: Create agent
 	progress("Creating agent")
 	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv, cred)
 	if err != nil {
@@ -544,7 +558,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, err
 	}
 
-	// Step 4: Start agent container
+	// Step 5: Start agent container
 	progress("Starting agent container")
 	err = p.startAgentContainer(ctx, agentManifest, agentVersionResponse, azdEnv, cred)
 	if err != nil {
@@ -775,4 +789,33 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	}
 
 	return nil
+}
+
+// resolveTemplateValue resolves ${{ VAR }} template syntax using azd environment values
+func (p *AgentServiceTargetProvider) resolveTemplateValue(value string, azdEnv map[string]string) string {
+	const (
+		prefix = "${{"
+		suffix = "}}"
+	)
+
+	// Find the template syntax
+	start := strings.Index(value, prefix)
+	if start == -1 {
+		return value
+	}
+
+	end := strings.Index(value[start:], suffix)
+	if end == -1 {
+		return value
+	}
+	end += start // Adjust to absolute position
+
+	// Extract and resolve the variable name
+	varName := strings.TrimSpace(value[start+len(prefix) : end])
+	if resolvedValue, exists := azdEnv[varName]; exists {
+		// Replace the template syntax with the resolved value
+		return value[:start] + resolvedValue + value[end+len(suffix):]
+	}
+
+	return value
 }

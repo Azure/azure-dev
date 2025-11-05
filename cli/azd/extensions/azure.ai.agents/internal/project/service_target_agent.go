@@ -672,7 +672,7 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 		for {
 			select {
 			case <-timeout:
-				return fmt.Errorf("timeout waiting for operation to complete after %v", maxWaitTime)
+				return fmt.Errorf("timeout waiting for operation (id: %s) to complete after %v", operation.Body.ID, maxWaitTime)
 			case <-ticker.C:
 				completedOperation, err := agentClient.GetAgentContainerOperation(
 					ctx, agentVersionResponse.Name, operation.Body.ID, apiVersion)

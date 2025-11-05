@@ -36,8 +36,9 @@ type eventService struct {
 	extensionManager *extensions.Manager
 	console          input.Console
 
-	lazyProject *lazy.Lazy[*project.ProjectConfig]
-	lazyEnv     *lazy.Lazy[*environment.Environment]
+	lazyEnvManager *lazy.Lazy[environment.Manager]
+	lazyProject    *lazy.Lazy[*project.ProjectConfig]
+	lazyEnv        *lazy.Lazy[*environment.Environment]
 
 	projectEvents sync.Map // key: string, value: chan *azdext.ProjectHandlerStatus
 	serviceEvents sync.Map // key: string, value: chan *azdext.ServiceHandlerStatus
@@ -45,12 +46,14 @@ type eventService struct {
 
 func NewEventService(
 	extensionManager *extensions.Manager,
+	lazyEnvManager *lazy.Lazy[environment.Manager],
 	lazyProject *lazy.Lazy[*project.ProjectConfig],
 	lazyEnv *lazy.Lazy[*environment.Environment],
 	console input.Console,
 ) azdext.EventServiceServer {
 	return &eventService{
 		extensionManager: extensionManager,
+		lazyEnvManager:   lazyEnvManager,
 		lazyProject:      lazyProject,
 		lazyEnv:          lazyEnv,
 		console:          console,
@@ -159,13 +162,15 @@ func (s *eventService) createProjectEventHandler(
 		previewTitle := fmt.Sprintf("%s (%s)", extension.DisplayName, eventName)
 		defer s.syncExtensionOutput(ctx, extension, previewTitle)()
 
-		// Send the invoke message.
-		if err := s.sendProjectInvokeMessage(stream, eventName, args); err != nil {
-			return err
-		}
+		return s.runWithEnvReload(ctx, func() error {
+			// Send the invoke message.
+			if err := s.sendProjectInvokeMessage(stream, eventName, args); err != nil {
+				return err
+			}
 
-		// Wait for status response.
-		return s.waitForProjectStatus(ctx, eventName, extension)
+			// Wait for status response.
+			return s.waitForProjectStatus(ctx, eventName, extension)
+		})
 	}
 }
 
@@ -269,13 +274,15 @@ func (s *eventService) createServiceEventHandler(
 		previewTitle := fmt.Sprintf("%s (%s.%s)", extension.DisplayName, args.Service.Name, eventName)
 		defer s.syncExtensionOutput(ctx, extension, previewTitle)()
 
-		// Send the invoke message.
-		if err := s.sendServiceInvokeMessage(stream, eventName, args); err != nil {
-			return err
-		}
+		return s.runWithEnvReload(ctx, func() error {
+			// Send the invoke message.
+			if err := s.sendServiceInvokeMessage(stream, eventName, args); err != nil {
+				return err
+			}
 
-		// Wait for status response.
-		return s.waitForServiceStatus(ctx, fullEventName, extension)
+			// Wait for status response.
+			return s.waitForServiceStatus(ctx, fullEventName, extension)
+		})
 	}
 }
 
@@ -392,4 +399,30 @@ func (s *eventService) syncExtensionOutput(
 		s.console.StopPreviewer(ctx, false)
 		extOut.RemoveWriter(previewWriter)
 	}
+}
+
+// runWithEnvReload reloads the environment before and after executing the provided action.
+func (s *eventService) runWithEnvReload(ctx context.Context, action func() error) error {
+	envManager, err := s.lazyEnvManager.GetValue()
+	if err != nil {
+		return err
+	}
+
+	env, err := s.lazyEnv.GetValue()
+	if err != nil {
+		return err
+	}
+
+	// Reload before invoking event handler to ensure environment is updated
+	if err := envManager.Reload(ctx, env); err != nil {
+		return err
+	}
+
+	actionErr := action()
+	if actionErr != nil {
+		return actionErr
+	}
+
+	// Reload after invoking event handler to ensure environment is updated
+	return envManager.Reload(ctx, env)
 }

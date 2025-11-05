@@ -90,6 +90,11 @@ func createTestEventService() (*eventService, *MockEventStreamingServer) {
 	mockStream := &MockEventStreamingServer{}
 	extensionManager := &extensions.Manager{}
 
+	// Create lazy environment manager (mock)
+	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
+		return nil, nil // Tests don't need actual environment manager
+	})
+
 	// Create lazy project with simple test config
 	lazyProject := lazy.NewLazy(func() (*project.ProjectConfig, error) {
 		projectConfig := &project.ProjectConfig{
@@ -131,7 +136,7 @@ func createTestEventService() (*eventService, *MockEventStreamingServer) {
 
 	console := mockinput.NewMockConsole()
 
-	service := NewEventService(extensionManager, lazyProject, lazyEnv, console)
+	service := NewEventService(extensionManager, lazyEnvManager, lazyProject, lazyEnv, console)
 	return service.(*eventService), mockStream
 }
 
@@ -440,6 +445,10 @@ func TestEventService_sendServiceInvokeMessage(t *testing.T) {
 func TestEventService_New(t *testing.T) {
 	extensionManager := &extensions.Manager{}
 
+	lazyEnvManager := lazy.NewLazy(func() (environment.Manager, error) {
+		return nil, nil // Tests don't need actual environment manager
+	})
+
 	lazyProject := lazy.NewLazy(func() (*project.ProjectConfig, error) {
 		return &project.ProjectConfig{Name: "test"}, nil
 	})
@@ -450,7 +459,7 @@ func TestEventService_New(t *testing.T) {
 
 	console := mockinput.NewMockConsole()
 
-	service := NewEventService(extensionManager, lazyProject, lazyEnv, console)
+	service := NewEventService(extensionManager, lazyEnvManager, lazyProject, lazyEnv, console)
 
 	assert.NotNil(t, service)
 

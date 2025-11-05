@@ -41,6 +41,11 @@ func NewRootCmd(
 ) *cobra.Command {
 	prevDir := ""
 
+	// Register common dependencies for the IoC rootContainer
+	if rootContainer == nil {
+		rootContainer = ioc.NewNestedContainer(nil)
+	}
+
 	// Try to get GlobalCommandOptions from container (if already registered by ExecuteWithAutoInstall).
 	// If not found, create a new instance with defaults.
 	opts := &internal.GlobalCommandOptions{}
@@ -394,10 +399,6 @@ func NewRootCmd(
 			return false
 		})
 
-	// Register common dependencies for the IoC rootContainer
-	if rootContainer == nil {
-		rootContainer = ioc.NewNestedContainer(nil)
-	}
 	ioc.RegisterNamedInstance(rootContainer, "root-cmd", rootCmd)
 	registerCommonDependencies(rootContainer)
 

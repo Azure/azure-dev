@@ -58,6 +58,7 @@ type InitAction struct {
 	modelCatalogService *ai.ModelCatalogService
 	projectConfig       *azdext.ProjectConfig
 	environment         *azdext.Environment
+	flags               *initFlags
 }
 
 // GitHubUrlInfo holds parsed information from a GitHub URL
@@ -87,14 +88,9 @@ func newInitCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			azureContext, projectConfig, err := ensureAzureContext(ctx, flags, azdClient)
+			azureContext, projectConfig, environment, err := ensureAzureContext(ctx, flags, azdClient)
 			if err != nil {
 				return fmt.Errorf("failed to ground into a project context: %w", err)
-			}
-
-			environment, err := ensureEnvironment(ctx, flags, azdClient)
-			if err != nil {
-				return fmt.Errorf("failed to ground into an environment: %w", err)
 			}
 
 			// getComposedResourcesResponse, err := azdClient.Compose().ListResources(ctx, &azdext.EmptyRequest{})
@@ -133,9 +129,10 @@ func newInitCommand() *cobra.Command {
 				modelCatalogService: ai.NewModelCatalogService(credential),
 				projectConfig:       projectConfig,
 				environment:         environment,
+				flags:               flags,
 			}
 
-			if err := action.Run(ctx, flags); err != nil {
+			if err := action.Run(ctx); err != nil {
 				return fmt.Errorf("failed to run start action: %w", err)
 			}
 
@@ -160,17 +157,17 @@ func newInitCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
+func (a *InitAction) Run(ctx context.Context) error {
 	color.Green("Initializing AI agent project...")
 	fmt.Println()
 
 	// If --project-id is given
-	if flags.projectResourceId != "" {
+	if a.flags.projectResourceId != "" {
 		// projectResourceId is a string of the format
 		// /subscriptions/[AZURE_SUBSCRIPTION]/resourceGroups/[AZURE_RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT_NAME]/projects/[AI_PROJECT_NAME]
 		// extract each of those fields from the string, issue an error if it doesn't match the format
 		fmt.Println("Setting up your azd environment to use the provided AI Foundry project resource ID...")
-		if err := a.parseAndSetProjectResourceId(ctx, flags.projectResourceId); err != nil {
+		if err := a.parseAndSetProjectResourceId(ctx); err != nil {
 			return fmt.Errorf("failed to parse project resource ID: %w", err)
 		}
 
@@ -178,33 +175,33 @@ func (a *InitAction) Run(ctx context.Context, flags *initFlags) error {
 	}
 
 	// If --manifest is given
-	if flags.manifestPointer != "" {
+	if a.flags.manifestPointer != "" {
 		// Validate that the manifest pointer is either a valid URL or existing file path
 		isValidURL := false
 		isValidFile := false
 
-		if flags.host != "" && flags.host != "containerapp" {
-			return fmt.Errorf("unsupported host value: '%s'. Accepted values are: 'containerapp'", flags.host)
+		if a.flags.host != "" && a.flags.host != "containerapp" {
+			return fmt.Errorf("unsupported host value: '%s'. Accepted values are: 'containerapp'", a.flags.host)
 		}
 
-		if _, err := url.ParseRequestURI(flags.manifestPointer); err == nil {
+		if _, err := url.ParseRequestURI(a.flags.manifestPointer); err == nil {
 			isValidURL = true
-		} else if _, fileErr := os.Stat(flags.manifestPointer); fileErr == nil {
+		} else if _, fileErr := os.Stat(a.flags.manifestPointer); fileErr == nil {
 			isValidFile = true
 		}
 
 		if !isValidURL && !isValidFile {
-			return fmt.Errorf("manifest pointer '%s' is neither a valid URI nor an existing file path", flags.manifestPointer)
+			return fmt.Errorf("manifest pointer '%s' is neither a valid URI nor an existing file path", a.flags.manifestPointer)
 		}
 
 		// Download/read agent.yaml file from the provided URI or file path and save it to project's "agents" directory
-		agentManifest, targetDir, err := a.downloadAgentYaml(ctx, flags.manifestPointer, flags.src)
+		agentManifest, targetDir, err := a.downloadAgentYaml(ctx, a.flags.manifestPointer, a.flags.src)
 		if err != nil {
 			return fmt.Errorf("downloading agent.yaml: %w", err)
 		}
 
 		// Add the agent to the azd project (azure.yaml) services
-		if err := a.addToProject(ctx, targetDir, agentManifest, flags.host); err != nil {
+		if err := a.addToProject(ctx, targetDir, agentManifest, a.flags.host); err != nil {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
 
@@ -266,9 +263,28 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 	return projectResponse.Project, nil
 }
 
+func getExistingEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) *azdext.Environment {
+	var env *azdext.Environment
+	if flags.env == "" {
+		if envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{}); err == nil {
+			env = envResponse.Environment
+		}
+	} else {
+		if envResponse, err := azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{
+			Name: flags.env,
+		}); err == nil {
+			env = envResponse.Environment
+		}
+	}
+
+	return env
+}
+
 func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
-	envResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
+	// Get specified or current environment if it exists
+	existingEnv := getExistingEnvironment(ctx, flags, azdClient)
+	if existingEnv == nil {
+		// Dispatch `azd env new` to create a new environment with interactive flow
 		fmt.Println("Lets create a new default environment for your project.")
 
 		envArgs := []string{"env", "new"}
@@ -276,8 +292,8 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			envArgs = append(envArgs, flags.env)
 		}
 
-		// We don't have a project yet
-		// Dispatch a workflow to init the project and create a new environment
+		// Dispatch a workflow to create a new environment
+		// Handles both interactive and no-prompt flows
 		workflow := &azdext.Workflow{
 			Name: "env new",
 			Steps: []*azdext.WorkflowStep{
@@ -285,48 +301,43 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			},
 		}
 
-		_, err = azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+		_, err := azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
 			Workflow: workflow,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create new environment: %w", err)
 		}
 
-		envResponse, err = azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to get current environment: %w", err)
+		// Re-fetch the environment after creation
+		existingEnv = getExistingEnvironment(ctx, flags, azdClient)
+		if existingEnv == nil {
+			return nil, fmt.Errorf("environment not found")
 		}
-
-		fmt.Println()
 	}
 
-	if envResponse.Environment == nil {
-		return nil, fmt.Errorf("environment not found")
-	}
-
-	return envResponse.Environment, nil
+	return existingEnv, nil
 }
 
 func ensureAzureContext(
 	ctx context.Context,
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
-) (*azdext.AzureContext, *azdext.ProjectConfig, error) {
+) (*azdext.AzureContext, *azdext.ProjectConfig, *azdext.Environment, error) {
 	project, err := ensureProject(ctx, flags, azdClient)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to ensure environment: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to ensure project: %w", err)
 	}
 
 	env, err := ensureEnvironment(ctx, flags, azdClient)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to ensure environment: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to ensure environment: %w", err)
 	}
 
 	envValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
 		Name: env.Name,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get environment values: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get environment values: %w", err)
 	}
 
 	envValueMap := make(map[string]string)
@@ -349,7 +360,7 @@ func ensureAzureContext(
 
 		subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to prompt for subscription: %w", err)
+			return nil, nil, nil, fmt.Errorf("failed to prompt for subscription: %w", err)
 		}
 
 		azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
@@ -362,7 +373,7 @@ func ensureAzureContext(
 			Value:   azureContext.Scope.TenantId,
 		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to set tenant ID in environment: %w", err)
+			return nil, nil, nil, fmt.Errorf("failed to set tenant ID in environment: %w", err)
 		}
 
 		// Set the tenant ID in the environment
@@ -372,7 +383,7 @@ func ensureAzureContext(
 			Value:   azureContext.Scope.SubscriptionId,
 		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to set subscription ID in environment: %w", err)
+			return nil, nil, nil, fmt.Errorf("failed to set subscription ID in environment: %w", err)
 		}
 	}
 
@@ -386,7 +397,7 @@ func ensureAzureContext(
 			AzureContext: azureContext,
 		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to prompt for location: %w", err)
+			return nil, nil, nil, fmt.Errorf("failed to prompt for location: %w", err)
 		}
 
 		azureContext.Scope.Location = locationResponse.Location.Name
@@ -398,11 +409,11 @@ func ensureAzureContext(
 			Value:   azureContext.Scope.Location,
 		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to set location in environment: %w", err)
+			return nil, nil, nil, fmt.Errorf("failed to set location in environment: %w", err)
 		}
 	}
 
-	return azureContext, project, nil
+	return azureContext, project, env, nil
 }
 
 func (a *InitAction) validateFlags(flags *initFlags) error {
@@ -437,7 +448,7 @@ func (a *InitAction) promptForMissingValues(ctx context.Context, azdClient *azde
 	return nil
 }
 
-func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context, projectResourceId string) error {
+func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 	// Define the regex pattern for the project resource ID
 	pattern := `^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`
 
@@ -446,7 +457,7 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context, projectRe
 		return fmt.Errorf("failed to compile regex pattern: %w", err)
 	}
 
-	matches := regex.FindStringSubmatch(projectResourceId)
+	matches := regex.FindStringSubmatch(a.flags.projectResourceId)
 	if matches == nil || len(matches) != 5 {
 		return fmt.Errorf("project resource ID does not match expected format: /subscriptions/[SUBSCRIPTION]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT]/projects/[AI_PROJECT]")
 	}
@@ -457,38 +468,26 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context, projectRe
 	aiAccountName := matches[3]
 	aiProjectName := matches[4]
 
-	// Get current environment
-	envResponse, err := a.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
-	}
-
-	if envResponse.Environment == nil {
-		return fmt.Errorf("no current environment found")
-	}
-
-	envName := envResponse.Environment.Name
-
 	// Set the extracted values as environment variables
-	if err := a.setEnvVar(ctx, envName, "AZURE_SUBSCRIPTION_ID", subscriptionId); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_SUBSCRIPTION_ID", subscriptionId); err != nil {
 		return err
 	}
 
-	if err := a.setEnvVar(ctx, envName, "AZURE_RESOURCE_GROUP", resourceGroupName); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_RESOURCE_GROUP", resourceGroupName); err != nil {
 		return err
 	}
 
-	if err := a.setEnvVar(ctx, envName, "AZURE_AI_ACCOUNT_NAME", aiAccountName); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_AI_ACCOUNT_NAME", aiAccountName); err != nil {
 		return err
 	}
 
-	if err := a.setEnvVar(ctx, envName, "AZURE_AI_PROJECT_NAME", aiProjectName); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_AI_PROJECT_NAME", aiProjectName); err != nil {
 		return err
 	}
 
 	// Set the AI Foundry endpoint URL
 	aiFoundryEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", aiAccountName, aiProjectName)
-	if err := a.setEnvVar(ctx, envName, "AZURE_AI_FOUNDRY_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_AI_FOUNDRY_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
 		return err
 	}
 
@@ -1341,9 +1340,9 @@ func (a *InitAction) selectFromList(
 	return options[*resp.Value], nil
 }
 
-func (a *InitAction) setEnvVar(ctx context.Context, envName, key, value string) error {
+func (a *InitAction) setEnvVar(ctx context.Context, key, value string) error {
 	_, err := a.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: envName,
+		EnvName: a.environment.Name,
 		Key:     key,
 		Value:   value,
 	})

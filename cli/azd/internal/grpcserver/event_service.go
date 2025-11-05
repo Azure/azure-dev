@@ -401,6 +401,7 @@ func (s *eventService) syncExtensionOutput(
 	}
 }
 
+// runWithEnvReload reloads the environment before and after executing the provided action.
 func (s *eventService) runWithEnvReload(ctx context.Context, action func() error) error {
 	envManager, err := s.lazyEnvManager.GetValue()
 	if err != nil {

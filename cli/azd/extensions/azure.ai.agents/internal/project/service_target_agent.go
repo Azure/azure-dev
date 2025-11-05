@@ -794,7 +794,9 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	return nil
 }
 
-// resolveTemplateValue resolves ${{ VAR }} template syntax using azd environment values
+// resolveTemplateValue resolves ${{ VAR }} template syntax using azd environment values,
+// or returns the value unchanged if no template syntax is present (literal strings).
+// Returns an error if a template variable is not found in azdEnv.
 func (p *AgentServiceTargetProvider) resolveTemplateValue(value string, azdEnv map[string]string) (string, error) {
 	const (
 		prefix = "${{"

@@ -528,7 +528,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		for _, envVar := range *hostedDef.EnvironmentVariables {
 			resolvedValue, err := p.resolveTemplateValue(envVar.Value, azdEnv)
 			if err != nil {
-				return nil, fmt.Errorf("failed to resolve environment variable '%s': %w", envVar.Name, err)
+				return nil, fmt.Errorf("failed to resolve value for agent config variable '%s': %w", envVar.Name, err)
 			}
 			resolvedEnvVars[envVar.Name] = resolvedValue
 		}
@@ -817,7 +817,7 @@ func (p *AgentServiceTargetProvider) resolveTemplateValue(value string, azdEnv m
 	varName := strings.TrimSpace(value[start+len(prefix) : end])
 	resolvedValue, exists := azdEnv[varName]
 	if !exists {
-		return "", fmt.Errorf("environment variable '%s' referenced in template but not found in azd environment", varName)
+		return "", fmt.Errorf("azd environment variable '%s' not found", varName)
 	}
 
 	// Replace the template syntax with the resolved value

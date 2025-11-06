@@ -108,7 +108,7 @@ func ConvertToolToYaml(apiTool any) (any, error) {
 				Name: "web_search_preview",
 				Kind: agent_yaml.ToolKindWebSearch,
 			},
-			Options: &options,
+			Options: options,
 		}, nil
 	case agent_api.BingGroundingAgentTool:
 		options := make(map[string]interface{})
@@ -118,7 +118,7 @@ func ConvertToolToYaml(apiTool any) (any, error) {
 				Name: "bing_grounding",
 				Kind: agent_yaml.ToolKindBingGrounding,
 			},
-			Options: &options,
+			Options: options,
 		}, nil
 	case agent_api.FileSearchTool:
 		options := make(map[string]interface{})

@@ -385,23 +385,38 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 				tool := tool.(CustomTool)
 
 				if tool.Connection == nil {
-					connectionName, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-						Options: &azdext.PromptOptions{
-							Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
-							IgnoreHintKeys: true,
-							Required:       true,
-						},
-					})
-					if err != nil {
-						return nil, fmt.Errorf("failed to prompt for text value: %w", err)
+					var connectionName string
+
+					// Check if ProjectConnectionID is provided in options
+					if tool.Options != nil {
+						if projectConnID, exists := tool.Options["ProjectConnectionID"]; exists {
+							if connIDStr, ok := projectConnID.(string); ok {
+								connectionName = connIDStr
+							}
+						}
 					}
 
-					// Create a ReferenceConnection using the connectionName from user input
+					// If no ProjectConnectionID found in options, prompt the user
+					if connectionName == "" {
+						promptResult, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+							Options: &azdext.PromptOptions{
+								Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
+								IgnoreHintKeys: true,
+								Required:       true,
+							},
+						})
+						if err != nil {
+							return nil, fmt.Errorf("failed to prompt for text value: %w", err)
+						}
+						connectionName = promptResult.Value
+					}
+
+					// Create a ReferenceConnection using the connectionName
 					refConnection := ReferenceConnection{
 						Connection: Connection{
 							Kind: ConnectionKindReference,
 						},
-						Name: connectionName.Value,
+						Name: connectionName,
 					}
 					tool.Connection = refConnection
 				}
@@ -411,23 +426,38 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 				tool := tool.(BingGroundingTool)
 
 				if tool.Connection == nil {
-					connectionName, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-						Options: &azdext.PromptOptions{
-							Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
-							IgnoreHintKeys: true,
-							Required:       true,
-						},
-					})
-					if err != nil {
-						return nil, fmt.Errorf("failed to prompt for text value: %w", err)
+					var connectionName string
+
+					// Check if ProjectConnectionID is provided in options
+					if tool.Options != nil {
+						if projectConnID, exists := tool.Options["ProjectConnectionID"]; exists {
+							if connIDStr, ok := projectConnID.(string); ok {
+								connectionName = connIDStr
+							}
+						}
 					}
 
-					// Create a ReferenceConnection using the connectionName from user input
+					// If no ProjectConnectionID found in options, prompt the user
+					if connectionName == "" {
+						promptResult, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+							Options: &azdext.PromptOptions{
+								Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
+								IgnoreHintKeys: true,
+								Required:       true,
+							},
+						})
+						if err != nil {
+							return nil, fmt.Errorf("failed to prompt for text value: %w", err)
+						}
+						connectionName = promptResult.Value
+					}
+
+					// Create a ReferenceConnection using the connectionName
 					refConnection := ReferenceConnection{
 						Connection: Connection{
 							Kind: ConnectionKindReference,
 						},
-						Name: connectionName.Value,
+						Name: connectionName,
 					}
 					tool.Connection = refConnection
 				}
@@ -437,23 +467,38 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 				tool := tool.(FileSearchTool)
 
 				if tool.Connection == nil {
-					connectionName, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-						Options: &azdext.PromptOptions{
-							Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
-							IgnoreHintKeys: true,
-							Required:       true,
-						},
-					})
-					if err != nil {
-						return nil, fmt.Errorf("failed to prompt for text value: %w", err)
+					var connectionName string
+
+					// Check if ProjectConnectionID is provided in options
+					if tool.Options != nil {
+						if projectConnID, exists := tool.Options["ProjectConnectionID"]; exists {
+							if connIDStr, ok := projectConnID.(string); ok {
+								connectionName = connIDStr
+							}
+						}
 					}
 
-					// Create a ReferenceConnection using the connectionName from user input
+					// If no ProjectConnectionID found in options, prompt the user
+					if connectionName == "" {
+						promptResult, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+							Options: &azdext.PromptOptions{
+								Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
+								IgnoreHintKeys: true,
+								Required:       true,
+							},
+						})
+						if err != nil {
+							return nil, fmt.Errorf("failed to prompt for text value: %w", err)
+						}
+						connectionName = promptResult.Value
+					}
+
+					// Create a ReferenceConnection using the connectionName
 					refConnection := ReferenceConnection{
 						Connection: Connection{
 							Kind: ConnectionKindReference,
 						},
-						Name: connectionName.Value,
+						Name: connectionName,
 					}
 					tool.Connection = refConnection
 				}
@@ -463,23 +508,38 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 				tool := tool.(McpTool)
 
 				if tool.Connection == nil {
-					connectionName, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-						Options: &azdext.PromptOptions{
-							Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
-							IgnoreHintKeys: true,
-							Required:       true,
-						},
-					})
-					if err != nil {
-						return nil, fmt.Errorf("failed to prompt for text value: %w", err)
+					var connectionName string
+
+					// Check if ProjectConnectionID is provided in options
+					if tool.Options != nil {
+						if projectConnID, exists := tool.Options["ProjectConnectionID"]; exists {
+							if connIDStr, ok := projectConnID.(string); ok {
+								connectionName = connIDStr
+							}
+						}
 					}
 
-					// Create a ReferenceConnection using the connectionName from user input
+					// If no ProjectConnectionID found in options, prompt the user
+					if connectionName == "" {
+						promptResult, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+							Options: &azdext.PromptOptions{
+								Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
+								IgnoreHintKeys: true,
+								Required:       true,
+							},
+						})
+						if err != nil {
+							return nil, fmt.Errorf("failed to prompt for text value: %w", err)
+						}
+						connectionName = promptResult.Value
+					}
+
+					// Create a ReferenceConnection using the connectionName
 					refConnection := ReferenceConnection{
 						Connection: Connection{
 							Kind: ConnectionKindReference,
 						},
-						Name: connectionName.Value,
+						Name: connectionName,
 					}
 					tool.Connection = refConnection
 				}
@@ -489,23 +549,38 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 				tool := tool.(OpenApiTool)
 
 				if tool.Connection == nil {
-					connectionName, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-						Options: &azdext.PromptOptions{
-							Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
-							IgnoreHintKeys: true,
-							Required:       true,
-						},
-					})
-					if err != nil {
-						return nil, fmt.Errorf("failed to prompt for text value: %w", err)
+					var connectionName string
+
+					// Check if ProjectConnectionID is provided in options
+					if tool.Options != nil {
+						if projectConnID, exists := tool.Options["ProjectConnectionID"]; exists {
+							if connIDStr, ok := projectConnID.(string); ok {
+								connectionName = connIDStr
+							}
+						}
 					}
 
-					// Create a ReferenceConnection using the connectionName from user input
+					// If no ProjectConnectionID found in options, prompt the user
+					if connectionName == "" {
+						promptResult, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+							Options: &azdext.PromptOptions{
+								Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
+								IgnoreHintKeys: true,
+								Required:       true,
+							},
+						})
+						if err != nil {
+							return nil, fmt.Errorf("failed to prompt for text value: %w", err)
+						}
+						connectionName = promptResult.Value
+					}
+
+					// Create a ReferenceConnection using the connectionName
 					refConnection := ReferenceConnection{
 						Connection: Connection{
 							Kind: ConnectionKindReference,
 						},
-						Name: connectionName.Value,
+						Name: connectionName,
 					}
 					tool.Connection = refConnection
 				}

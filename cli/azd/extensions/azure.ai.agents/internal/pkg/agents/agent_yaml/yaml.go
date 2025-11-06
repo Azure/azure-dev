@@ -345,14 +345,14 @@ type CustomTool struct {
 // WebSearchTool The Bing search tool.
 type WebSearchTool struct {
 	Tool    `json:",inline" yaml:",inline"`
-	Options *map[string]interface{} `json:"options,omitempty" yaml:"options,omitempty"`
+	Options map[string]interface{} `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
 // BingGroundingTool The Bing search tool.
 type BingGroundingTool struct {
 	Tool       `json:",inline" yaml:",inline"`
-	Connection any                     `json:"connection" yaml:"connection"` // Must be a type of Connection
-	Options    *map[string]interface{} `json:"options,omitempty" yaml:"options,omitempty"`
+	Connection any                    `json:"connection" yaml:"connection"` // Must be a type of Connection
+	Options    map[string]interface{} `json:"options,omitempty" yaml:"options,omitempty"`
 }
 
 // FileSearchTool A tool for searching files.

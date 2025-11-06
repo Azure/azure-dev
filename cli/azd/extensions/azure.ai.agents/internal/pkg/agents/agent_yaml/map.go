@@ -228,12 +228,12 @@ func convertYamlToolToApiTool(yamlTool any) (any, error) {
 		}
 		// Extract options back to specific fields
 		if tool.Options != nil {
-			if userLocation, exists := (*tool.Options)["userLocation"]; exists {
+			if userLocation, exists := (tool.Options)["userLocation"]; exists {
 				if loc, ok := userLocation.(*agent_api.Location); ok {
 					apiTool.UserLocation = loc
 				}
 			}
-			if searchContextSize, exists := (*tool.Options)["searchContextSize"]; exists {
+			if searchContextSize, exists := (tool.Options)["searchContextSize"]; exists {
 				if size, ok := searchContextSize.(string); ok {
 					apiTool.SearchContextSize = &size
 				}
@@ -249,7 +249,7 @@ func convertYamlToolToApiTool(yamlTool any) (any, error) {
 		}
 		// Extract bingGrounding from options
 		if tool.Options != nil {
-			if bingGrounding, exists := (*tool.Options)["bingGrounding"]; exists {
+			if bingGrounding, exists := (tool.Options)["bingGrounding"]; exists {
 				if bg, ok := bingGrounding.(agent_api.BingGroundingSearchToolParameters); ok {
 					apiTool.BingGrounding = bg
 				}

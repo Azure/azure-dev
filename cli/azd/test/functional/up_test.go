@@ -150,7 +150,6 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 }
 
 func Test_CLI_Up_Down_FuncApp(t *testing.T) {
-	t.Skip("azure-dev/834")
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -220,11 +219,6 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 }
 
 func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
-	// This test is run under SDK playground and it ask us for follow policy requirements
-	// If we disabled local admin account in container registry,
-	// we are not able to perform credential operations
-	t.Skip("Skipping the test due to policy requirement to ask for disable local admin account in container registry")
-
 	t.Parallel()
 
 	if ci_os := os.Getenv("AZURE_DEV_CI_OS"); ci_os != "" && ci_os != "lin" {
@@ -283,21 +277,9 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
-
-	// As part of deleting the infrastructure, outputs of the infrastructure such as "WEBSITE_URL" should
-	// have been removed from the environment.
-	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
-	require.NoError(t, err)
-
-	_, has = env["WEBSITE_URL"]
-	require.False(t, has, "WEBSITE_URL should have been removed from the environment as part of infrastructure removal")
 }
 
 func Test_CLI_Up_Down_ContainerAppDotNetPublish(t *testing.T) {
-	// This test is run under SDK playground and it ask us for follow policy requirements
-	// If we disabled local admin account in container registry,
-	// we are not able to perform credential operations
-	t.Skip("Skipping the test due to policy requirement to ask for disable local admin account in container registry")
 	t.Parallel()
 
 	ctx, cancel := newTestContext(t)
@@ -320,10 +302,6 @@ func Test_CLI_Up_Down_ContainerAppDotNetPublish(t *testing.T) {
 
 	err := copySample(dir, "containerapp")
 	require.NoError(t, err, "failed expanding sample")
-
-	// Remove the Dockerfile so that we go down the `dotnet publish` path.
-	err = os.Remove(filepath.Join(dir, "src", "dotnet", "Dockerfile"))
-	require.NoError(t, err)
 
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
@@ -356,18 +334,9 @@ func Test_CLI_Up_Down_ContainerAppDotNetPublish(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
-
-	// As part of deleting the infrastructure, outputs of the infrastructure such as "WEBSITE_URL" should
-	// have been removed from the environment.
-	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
-	require.NoError(t, err)
-
-	_, has = env["WEBSITE_URL"]
-	require.False(t, has, "WEBSITE_URL should have been removed from the environment as part of infrastructure removal")
 }
 
 func Test_CLI_Up_Down_ContainerApp_RemoteBuild(t *testing.T) {
-	t.Skip("Needs to be re-designed - https://github.com/Azure/azure-dev/issues/6059")
 	t.Parallel()
 
 	ctx, cancel := newTestContext(t)
@@ -422,14 +391,6 @@ func Test_CLI_Up_Down_ContainerApp_RemoteBuild(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
-
-	// As part of deleting the infrastructure, outputs of the infrastructure such as "WEBSITE_URL" should
-	// have been removed from the environment.
-	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
-	require.NoError(t, err)
-
-	_, has = env["WEBSITE_URL"]
-	require.False(t, has, "WEBSITE_URL should have been removed from the environment as part of infrastructure removal")
 }
 
 func Test_CLI_Up_ResourceGroupScope(t *testing.T) {

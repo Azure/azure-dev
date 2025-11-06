@@ -188,6 +188,10 @@ overrides:
       - mcpservertoolspecifyapprovalmode
       - protocolversionrecord
       - openapitool
+  - filename: extensions/azure.ai.agents/internal/pkg/agents/agent_api/models.go
+    words:
+      - dataagent
+      - webp
   - filename: docs/new-azd-command.md
     words:
       - pflag

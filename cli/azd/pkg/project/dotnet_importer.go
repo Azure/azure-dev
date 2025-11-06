@@ -396,11 +396,23 @@ func (ai *DotNetImporter) Services(
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
 
+		// handle container files
+		containerFiles := manifest.Resources[name].ContainerFiles
+		extractedContainerFiles := make(map[string]ContainerFile)
+		for resourceName, containerFilesDetail := range containerFiles {
+			containerFile := ContainerFile{
+				Sources:     containerFilesDetail.Sources,
+				Destination: containerFilesDetail.Destination,
+			}
+			extractedContainerFiles[resourceName] = containerFile
+		}
+
 		svc.DotNetContainerApp = &DotNetContainerAppOptions{
 			ContainerImage: bContainer.Image,
 			Manifest:       manifest,
 			ProjectName:    name,
 			AppHostPath:    svcConfig.Path(),
+			ContainerFiles: extractedContainerFiles,
 		}
 		services[svc.Name] = svc
 

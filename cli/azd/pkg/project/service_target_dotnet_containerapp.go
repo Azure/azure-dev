@@ -28,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cosmosdb"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/sqldb"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -170,17 +171,70 @@ func (at *dotnetContainerAppTarget) Deploy(
 	// The name of the image that should be referenced in the manifest is stored in `remoteImageName` and presented
 	// to the deployment template as a parameter named `Image`.
 	if serviceConfig.Language == ServiceLanguageDocker {
-		res, err := at.containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, nil)
-		if err != nil {
-			return nil, err
-		}
+		if len(serviceConfig.DotNetContainerApp.ContainerFiles) == 0 {
+			res, err := at.containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, nil)
+			if err != nil {
+				return nil, err
+			}
 
-		// Extract remote image from artifacts
-		var remoteImage string
-		if artifact, found := res.Artifacts.FindFirst(WithKind(ArtifactKindContainer)); found {
-			remoteImage = artifact.Location
+			// Extract remote image from artifacts
+			var remoteImage string
+			if artifact, found := res.Artifacts.FindFirst(WithKind(ArtifactKindContainer)); found {
+				remoteImage = artifact.Location
+			}
+			remoteImageName = remoteImage
+		} else {
+			// Handle PublishWithContainerFiles -
+			// We need to build dependent containers and use their image name as arguments to build the final container
+			for sName, containerFile := range serviceConfig.DotNetContainerApp.ContainerFiles {
+				// use a temp service context to build container and get the image name
+				sContext := &ServiceContext{}
+				// build container and get the image name
+				result, err := at.containerHelper.Build(ctx, containerFile.ServiceConfig, sContext, progress)
+				if err != nil {
+					return nil, fmt.Errorf("building container for %s: %w", sName, err)
+				}
+
+				// Use the built image name as the remote image name
+				artifact, _ := result.Artifacts.FindFirst()
+				imageName := artifact.Metadata["imageName"]
+
+				// update the build-args for the main image
+				serviceConfig.Docker.BuildArgs = append(
+					serviceConfig.Docker.BuildArgs, osutil.NewExpandableString(
+						fmt.Sprintf("%s_IMAGENAME=%s", strings.ToUpper(sName), imageName)))
+			}
+			// Now build, package and publish the final container
+			// Build the multi-stage container
+			buildResult, err := at.containerHelper.Build(ctx, serviceConfig, serviceContext, progress)
+			if err != nil {
+				return nil, fmt.Errorf("building publish container: %w", err)
+			}
+			// Update service context with build artifacts
+			if err := serviceContext.Build.Add(buildResult.Artifacts...); err != nil {
+				return nil, fmt.Errorf("failed to add build artifacts: %w", err)
+			}
+
+			// Package the container
+			packageResult, err := at.containerHelper.Package(ctx, serviceConfig, serviceContext, progress)
+			if err != nil {
+				return nil, fmt.Errorf("packaging publish container: %w", err)
+			}
+			// Update service context with package artifacts
+			if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
+				return nil, fmt.Errorf("failed to add package artifacts: %w", err)
+			}
+
+			// Publish the container to ACR
+			publishResult, err := at.containerHelper.Publish(
+				ctx, serviceConfig, serviceContext, targetResource, progress, nil)
+			if err != nil {
+				return nil, fmt.Errorf("publishing container: %w", err)
+			}
+			artifact, _ := publishResult.Artifacts.FindFirst()
+			remoteImageName = artifact.Location
+
 		}
-		remoteImageName = remoteImage
 	} else if serviceConfig.DotNetContainerApp.ContainerImage != "" {
 		remoteImageName = serviceConfig.DotNetContainerApp.ContainerImage
 	} else {

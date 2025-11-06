@@ -7,6 +7,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type rootFlagsDefinition struct {
+	Debug    bool
+	NoPrompt bool
+}
+
+// Enable access to the global command flags
+var rootFlags rootFlagsDefinition
+
 func NewRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:           "agent <command> [options]",
@@ -19,7 +27,21 @@ func NewRootCommand() *cobra.Command {
 	}
 
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
-	rootCmd.PersistentFlags().Bool("debug", false, "Enable debug mode")
+	rootCmd.PersistentFlags().BoolVar(
+		&rootFlags.Debug,
+		"debug",
+		false,
+		"Enable debug mode",
+	)
+
+	// Adds support for `--no-prompt` global flag in azd
+	// Without this the extension command will error when the flag is provided
+	rootCmd.PersistentFlags().BoolVar(
+		&rootFlags.NoPrompt,
+		"no-prompt",
+		false,
+		"Accepts the default value instead of prompting, or it fails if there is no default.",
+	)
 
 	rootCmd.AddCommand(newListenCommand())
 	rootCmd.AddCommand(newVersionCommand())

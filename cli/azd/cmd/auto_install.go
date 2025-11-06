@@ -7,10 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -268,7 +270,20 @@ func tryAutoInstallExtension(
 
 // ExecuteWithAutoInstall executes the command and handles auto-installation of extensions for unknown commands.
 func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContainer) error {
-	// Creating the RootCmd takes care of registering common dependencies in rootContainer
+	// Parse global flags BEFORE creating the command tree.
+	// This allows us to access flag values (like --no-prompt, --debug) early for auto-install logic.
+	// This also enables the global options to be set in the container for support during extension framework callbacks.
+	globalOpts := &internal.GlobalCommandOptions{}
+	if err := ParseGlobalFlags(os.Args[1:], globalOpts); err != nil {
+		return fmt.Errorf("Warning: failed to parse global flags: %w", err)
+	}
+
+	// Register GlobalCommandOptions as a singleton in the container BEFORE building the command tree.
+	// This ensures all components (FlagsResolver, actions, etc.) get the same pre-parsed instance.
+	ioc.RegisterInstance(rootContainer, globalOpts)
+
+	// Creating the RootCmd takes care of registering common dependencies in rootContainer.
+	// The command tree will retrieve globalOpts from the container via its FlagsResolver.
 	rootCmd := NewRootCmd(false, nil, rootContainer)
 
 	var extensionManager *extensions.Manager
@@ -452,4 +467,68 @@ func ExecuteWithAutoInstall(ctx context.Context, rootContainer *ioc.NestedContai
 
 	// Normal execution path - either no args, no matching extension, or user declined install
 	return rootCmd.ExecuteContext(ctx)
+}
+
+// CreateGlobalFlagSet creates a new flag set with all global flags defined.
+// This is the single source of truth for global flag definitions.
+func CreateGlobalFlagSet() *pflag.FlagSet {
+	globalFlags := pflag.NewFlagSet("global", pflag.ContinueOnError)
+
+	globalFlags.StringP("cwd", "C", "", "Sets the current working directory.")
+	globalFlags.Bool("debug", false, "Enables debugging and diagnostics logging.")
+	globalFlags.Bool(
+		"no-prompt",
+		false,
+		"Accepts the default value instead of prompting, or it fails if there is no default.")
+
+	// The telemetry system is responsible for reading these flags value and using it to configure the telemetry
+	// system, but we still need to add it to our flag set so that when we parse the command line with Cobra we
+	// don't error due to an "unknown flag".
+	globalFlags.String("trace-log-file", "", "Write a diagnostics trace to a file.")
+	_ = globalFlags.MarkHidden("trace-log-file")
+
+	globalFlags.String("trace-log-url", "", "Send traces to an Open Telemetry compatible endpoint.")
+	_ = globalFlags.MarkHidden("trace-log-url")
+
+	return globalFlags
+}
+
+// ParseGlobalFlags parses global flags from the provided arguments and populates the GlobalCommandOptions.
+// Uses ParseErrorsAllowlist to gracefully ignore unknown flags (like extension-specific flags).
+// This function is designed to be called BEFORE Cobra command tree construction to enable
+// early access to global flag values for auto-install and other pre-execution logic.
+func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error {
+	globalFlagSet := CreateGlobalFlagSet()
+
+	// Set output to io.Discard to suppress any error messages from pflag
+	// Cobra will handle all user-facing output
+	globalFlagSet.SetOutput(io.Discard)
+
+	// Configure the flag set to ignore unknown flags. This is critical for extension commands
+	// where extension-specific flags are not yet known and will be handled by the extension's
+	// command parser after the extension is loaded.
+	globalFlagSet.ParseErrorsAllowlist = pflag.ParseErrorsAllowlist{UnknownFlags: true}
+
+	// Parse the arguments - unknown flags will be silently ignored
+	err := globalFlagSet.Parse(args)
+
+	// Ignore help errors - let Cobra handle help requests
+	if err != nil && !errors.Is(err, pflag.ErrHelp) {
+		return fmt.Errorf("failed to parse global flags: %w", err)
+	}
+
+	// Bind parsed values to the options struct
+	if strVal, err := globalFlagSet.GetString("cwd"); err == nil {
+		opts.Cwd = strVal
+	}
+
+	if boolVal, err := globalFlagSet.GetBool("debug"); err == nil {
+		opts.EnableDebugLogging = boolVal
+	}
+
+	if boolVal, err := globalFlagSet.GetBool("no-prompt"); err == nil {
+		opts.NoPrompt = boolVal
+	}
+
+	return nil
 }

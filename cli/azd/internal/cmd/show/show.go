@@ -491,12 +491,7 @@ func (s *showAction) serviceEndpoint(
 	ctx context.Context, subId string, serviceConfig *project.ServiceConfig, env *environment.Environment) string {
 	resourceManager, err := s.lazyResourceManager.GetValue()
 	if err != nil {
-		log.Printf("error: getting lazy target-resource. Endpoints will be empty: %v", err)
-		return ""
-	}
-	targetResource, err := resourceManager.GetTargetResource(ctx, subId, serviceConfig)
-	if err != nil {
-		log.Printf("error: getting target-resource. Endpoints will be empty: %v", err)
+		log.Printf("error: getting lazy resource manager. Endpoints will be empty: %v", err)
 		return ""
 	}
 
@@ -505,11 +500,25 @@ func (s *showAction) serviceEndpoint(
 		log.Printf("error: getting lazy service manager. Endpoints will be empty: %v", err)
 		return ""
 	}
+
+	// Initialize the service to ensure external service targets can create provider instances
+	if err := serviceManager.Initialize(ctx, serviceConfig); err != nil {
+		log.Printf("error: initializing service. Endpoints will be empty: %v", err)
+		return ""
+	}
+
 	st, err := serviceManager.GetServiceTarget(ctx, serviceConfig)
 	if err != nil {
 		log.Printf("error: getting service target. Endpoints will be empty: %v", err)
 		return ""
 	}
+
+	targetResource, err := s.resolveTargetResource(ctx, st, resourceManager, subId, serviceConfig)
+	if err != nil {
+		log.Printf("error: getting target-resource. Endpoints will be empty: %v", err)
+		return ""
+	}
+
 	endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
 	if err != nil {
 		log.Printf("error: getting service endpoints. Endpoints might be empty: %v", err)
@@ -525,6 +534,30 @@ func (s *showAction) serviceEndpoint(
 	}
 
 	return endpoints[0]
+}
+
+func (s *showAction) resolveTargetResource(
+	ctx context.Context,
+	st project.ServiceTarget,
+	resourceManager project.ResourceManager,
+	subId string,
+	serviceConfig *project.ServiceConfig,
+) (*environment.TargetResource, error) {
+	// Handle custom service targets with their own custom GetTargetResource resolution
+	if resolver, ok := st.(project.TargetResourceResolver); ok {
+		defaultResolver := func() (*environment.TargetResource, error) {
+			return resourceManager.GetTargetResource(ctx, subId, serviceConfig)
+		}
+
+		resource, err := resolver.ResolveTargetResource(ctx, subId, serviceConfig, defaultResolver)
+		if err != nil {
+			return nil, fmt.Errorf("resolving target resource via external service target: %w", err)
+		}
+		return resource, nil
+	}
+
+	// Default target resource resolution
+	return resourceManager.GetTargetResource(ctx, subId, serviceConfig)
 }
 
 func showTypeFromLanguage(language project.ServiceLanguageKind) contracts.ShowType {

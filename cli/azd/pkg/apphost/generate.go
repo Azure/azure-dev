@@ -1128,6 +1128,7 @@ func buildContainerFromResource(r *Resource) (*genBuildContainer, error) {
 			Dockerfile: r.Build.Dockerfile,
 			Args:       r.Build.Args,
 			Secrets:    r.Build.Secrets,
+			BuildOnly:  r.Build.BuildOnly,
 		}
 	}
 

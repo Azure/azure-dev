@@ -127,6 +127,17 @@ func (at *dotnetContainerAppTarget) Deploy(
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
+	if serviceConfig.BuildOnly {
+		return &ServiceDeployResult{
+			Artifacts: ArtifactCollection{
+				&Artifact{
+					Kind:         ArtifactKindEndpoint,
+					Location:     "[build-only service; no deployment performed]",
+					LocationKind: LocationKindLocal,
+				},
+			},
+		}, nil
+	}
 	if err := at.validateTargetResource(targetResource); err != nil {
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}

@@ -156,6 +156,14 @@ type Resource struct {
 
 	// Present on bicep modules to control the scope of the module.
 	Scope *BicepModuleScope `json:"scope,omitempty"`
+
+	// Present on container.v1 to define a buildOnly container where to copy files into the final image.
+	ContainerFiles map[string]ContainerFile `json:"containerFiles,omitempty"`
+}
+
+type ContainerFile struct {
+	Destination string   `json:"destination"`
+	Sources     []string `json:"sources"`
 }
 
 // BicepModuleScope is the scope of a bicep module.
@@ -187,6 +195,9 @@ type ContainerV1Build struct {
 
 	// A list of build arguments which are used during container build."
 	Secrets map[string]ContainerV1BuildSecrets `json:"secrets,omitempty"`
+
+	// If true, only build the image and tag it, but this should not be deployed as a running container.
+	BuildOnly bool `json:"buildOnly,omitempty"`
 }
 
 type ContainerV1BuildSecrets struct {

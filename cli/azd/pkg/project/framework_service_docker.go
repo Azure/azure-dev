@@ -130,6 +130,11 @@ func (p *dockerProject) Build(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
+	if serviceConfig.BuildOnly {
+		// For build-only containers, we skip the build step here as the container image
+		// will be built during the package step.
+		return &ServiceBuildResult{}, nil
+	}
 	return p.containerHelper.Build(ctx, serviceConfig, serviceContext, progress)
 }
 
@@ -139,6 +144,11 @@ func (p *dockerProject) Package(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
+	if serviceConfig.BuildOnly {
+		// For build-only containers, we skip the build step here as the container image
+		// will be built during the package step.
+		return &ServicePackageResult{}, nil
+	}
 	return p.containerHelper.Package(ctx, serviceConfig, serviceContext, progress)
 }
 

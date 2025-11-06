@@ -57,6 +57,10 @@ type ServiceConfig struct {
 	useDotNetPublishForDockerBuild *bool
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
+
+	// Turns service into a service that is only to be built but not deployed.
+	// This is currently used by Aspire.
+	BuildOnly bool `yaml:"-"`
 }
 
 type DotNetContainerAppOptions struct {

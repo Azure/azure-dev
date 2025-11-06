@@ -372,6 +372,7 @@ func (ai *DotNetImporter) Services(
 			Language:     defaultLanguage,
 			Host:         DotNetContainerAppTarget,
 			Docker:       dOptions,
+			BuildOnly:    bContainer.Build.BuildOnly,
 		}
 
 		svc.Name = name
@@ -651,7 +652,11 @@ func (ai *DotNetImporter) GenerateAllInfrastructure(ctx context.Context, p *Proj
 	if err != nil {
 		return nil, err
 	}
-	for name := range bcs {
+	for name, bc := range bcs {
+		if bc.Build.BuildOnly {
+			// No deployment manifest needed for build-only containers.
+			continue
+		}
 		if err := writeManifestForResource(name); err != nil {
 			return nil, err
 		}

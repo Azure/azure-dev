@@ -82,6 +82,7 @@ type genBuildContainerDetails struct {
 	Dockerfile string
 	Args       map[string]string
 	Secrets    map[string]ContainerV1BuildSecrets
+	BuildOnly  bool
 }
 
 type genProject struct {

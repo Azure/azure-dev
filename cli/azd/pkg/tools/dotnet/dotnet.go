@@ -141,7 +141,7 @@ func (cli *Cli) PublishAppHostManifest(
 		return os.WriteFile(manifestPath, m, osutil.PermissionFile)
 	}
 
-	// For single-file apphosts, we need to use the .cs file directly
+	// For single-file apphost, we need to use the .cs file directly
 	var runArgs exec.RunArgs
 	if filepath.Ext(hostProject) == ".cs" {
 		// Single-file apphost: use the .cs file directly as the argument

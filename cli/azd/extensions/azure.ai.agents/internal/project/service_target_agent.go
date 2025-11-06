@@ -19,6 +19,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/drone/envsubst"
 	"github.com/fatih/color"
 )
 
@@ -521,8 +522,21 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
-	// Step 2: Create agent request with image URL
-	request, err := agent_yaml.CreateAgentAPIRequestFromManifest(*agentManifest, agent_yaml.WithImageURL(fullImageURL))
+	// Step 2: Resolve environment variables from YAML using azd environment values
+	resolvedEnvVars := make(map[string]string)
+	hostedDef := agentManifest.Template.(agent_yaml.ContainerAgent)
+	if hostedDef.EnvironmentVariables != nil {
+		for _, envVar := range *hostedDef.EnvironmentVariables {
+			resolvedEnvVars[envVar.Name] = p.resolveEnvironmentVariables(envVar.Value, azdEnv)
+		}
+	}
+
+	// Step 3: Create agent request with image URL and resolved environment variables
+	request, err := agent_yaml.CreateAgentAPIRequestFromManifest(
+		*agentManifest,
+		agent_yaml.WithImageURL(fullImageURL),
+		agent_yaml.WithEnvironmentVariables(resolvedEnvVars),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent request: %w", err)
 	}
@@ -530,7 +544,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	// Display agent information
 	p.displayAgentInfo(request)
 
-	// Step 3: Create agent
+	// Step 4: Create agent
 	progress("Creating agent")
 	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv, cred)
 	if err != nil {
@@ -544,7 +558,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, err
 	}
 
-	// Step 4: Start agent container
+	// Step 5: Start agent container
 	progress("Starting agent container")
 	err = p.startAgentContainer(ctx, agentManifest, agentVersionResponse, azdEnv, cred)
 	if err != nil {
@@ -655,7 +669,7 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 		for {
 			select {
 			case <-timeout:
-				return fmt.Errorf("timeout waiting for operation to complete after %v", maxWaitTime)
+				return fmt.Errorf("timeout waiting for operation (id: %s) to complete after %v", operation.Body.ID, maxWaitTime)
 			case <-ticker.C:
 				completedOperation, err := agentClient.GetAgentContainerOperation(
 					ctx, agentVersionResponse.Name, operation.Body.ID, apiVersion)
@@ -775,4 +789,17 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	}
 
 	return nil
+}
+
+// resolveEnvironmentVariables resolves ${ENV_VAR} style references in value using azd environment variables.
+// Supports default values (e.g., "${VAR:-default}") and multiple expressions (e.g., "${VAR1}-${VAR2}").
+func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, azdEnv map[string]string) string {
+	resolved, err := envsubst.Eval(value, func(varName string) string {
+		return azdEnv[varName]
+	})
+	if err != nil {
+		// If resolution fails, return original value
+		return value
+	}
+	return resolved
 }

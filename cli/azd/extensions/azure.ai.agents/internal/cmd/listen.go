@@ -92,12 +92,16 @@ func preprovisionEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, azd
 		return err
 	}
 
-	if err := deploymentEnvUpdate(ctx, foundryAgentConfig.Deployments, azdClient, currentEnvResponse.Environment.Name); err != nil {
-		return err
+	if len(foundryAgentConfig.Deployments) > 0 {
+		if err := deploymentEnvUpdate(ctx, foundryAgentConfig.Deployments, azdClient, currentEnvResponse.Environment.Name); err != nil {
+			return err
+		}
 	}
 
-	if err := resourcesEnvUpdate(ctx, foundryAgentConfig.Resources, azdClient, currentEnvResponse.Environment.Name); err != nil {
-		return err
+	if len(foundryAgentConfig.Resources) > 0 {
+		if err := resourcesEnvUpdate(ctx, foundryAgentConfig.Resources, azdClient, currentEnvResponse.Environment.Name); err != nil {
+			return err
+		}
 	}
 
 	return nil

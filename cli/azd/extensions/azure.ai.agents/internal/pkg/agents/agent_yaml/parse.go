@@ -403,6 +403,7 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 								Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
 								IgnoreHintKeys: true,
 								Required:       true,
+								DefaultValue:   string(tool.Tool.Kind),
 							},
 						})
 						if err != nil {
@@ -444,6 +445,7 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 								Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
 								IgnoreHintKeys: true,
 								Required:       true,
+								DefaultValue:   string(tool.Tool.Kind),
 							},
 						})
 						if err != nil {
@@ -485,6 +487,7 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 								Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
 								IgnoreHintKeys: true,
 								Required:       true,
+								DefaultValue:   string(tool.Tool.Kind),
 							},
 						})
 						if err != nil {
@@ -526,6 +529,7 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 								Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
 								IgnoreHintKeys: true,
 								Required:       true,
+								DefaultValue:   string(tool.Tool.Kind),
 							},
 						})
 						if err != nil {
@@ -567,6 +571,7 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 								Message:        fmt.Sprintf("Connection for tool %s not provided. Please enter connection name", tool.Name),
 								IgnoreHintKeys: true,
 								Required:       true,
+								DefaultValue:   string(tool.Tool.Kind),
 							},
 						})
 						if err != nil {

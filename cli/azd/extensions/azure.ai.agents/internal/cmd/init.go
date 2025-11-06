@@ -35,6 +35,7 @@ import (
 )
 
 type initFlags struct {
+	rootFlagsDefinition
 	projectResourceId string
 	manifestPointer   string
 	src               string
@@ -72,8 +73,10 @@ type GitHubUrlInfo struct {
 const AiAgentHost = "azure.ai.agent"
 const ContainerAppHost = "containerapp"
 
-func newInitCommand() *cobra.Command {
-	flags := &initFlags{}
+func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
+	flags := &initFlags{
+		rootFlagsDefinition: rootFlags,
+	}
 
 	cmd := &cobra.Command{
 		Use:   "init [-m <manifest pointer>] [--src <source directory>]",
@@ -716,7 +719,7 @@ func (a *InitAction) downloadAgentYaml(
 
 	fmt.Println("✓ YAML content successfully validated against AgentManifest format")
 
-	agentManifest, err = registry_api.ProcessManifestParameters(ctx, agentManifest, a.azdClient)
+	agentManifest, err = registry_api.ProcessManifestParameters(ctx, agentManifest, a.azdClient, a.flags.NoPrompt)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to process manifest parameters: %w", err)
 	}
@@ -858,6 +861,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 							Options: &azdext.PromptOptions{
 								Message:        fmt.Sprintf("Enter connection name for %s resource:", toolResource.Id),
 								IgnoreHintKeys: true,
+								DefaultValue:   toolResource.Id,
 							},
 						})
 						if err != nil {
@@ -1352,6 +1356,11 @@ func (a *InitAction) selectFromList(
 		defaultStr = defaultOpt
 	}
 
+	if a.flags.NoPrompt {
+		fmt.Printf("No prompt mode enabled, selecting default %s: %s\n", property, defaultStr)
+		return defaultStr, nil
+	}
+
 	// Create choices for the select prompt
 	choices := make([]*azdext.SelectChoice, len(options))
 	defaultIndex := int32(0)
@@ -1364,7 +1373,6 @@ func (a *InitAction) selectFromList(
 			defaultIndex = int32(i)
 		}
 	}
-
 	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:       fmt.Sprintf("Select %s", property),
@@ -1429,6 +1437,8 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 	}, nil
 }
 
+var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standard"}
+
 func (a *InitAction) getModelDetails(ctx context.Context, modelName string, modelVersion string) (*ai.AiModelDeployment, error) {
 	// Load the AI model catalog if not already loaded
 	if err := a.loadAiCatalog(ctx); err != nil {
@@ -1461,7 +1471,16 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string, mode
 		return nil, fmt.Errorf("listing SKUs for model '%s': %w", modelName, err)
 	}
 
-	skuSelection, err := a.selectFromList(ctx, "model SKU", availableSkus, "")
+	// Determine default SKU based on priority list
+	defaultSku := ""
+	for _, sku := range defaultSkuPriority {
+		if slices.Contains(availableSkus, sku) {
+			defaultSku = sku
+			break
+		}
+	}
+
+	skuSelection, err := a.selectFromList(ctx, "model SKU", availableSkus, defaultSku)
 	if err != nil {
 		return nil, err
 	}
@@ -1482,6 +1501,7 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string, mode
 				Message:        "Selected model SKU has no default capacity. Please enter desired capacity",
 				IgnoreHintKeys: true,
 				Required:       true,
+				DefaultValue:   "1",
 			},
 		})
 		if err != nil {

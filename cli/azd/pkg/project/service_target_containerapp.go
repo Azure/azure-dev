@@ -203,6 +203,11 @@ func (at *containerAppTarget) Deploy(
 		return nil, fmt.Errorf("getting infra options: %w", err)
 	}
 
+	infraRoot := infraOptions.Path
+	if !filepath.IsAbs(infraRoot) {
+		infraRoot = filepath.Join(serviceConfig.Project.Path, infraRoot)
+	}
+
 	modulePath := filepath.Join(infraOptions.Path, moduleName)
 	bicepPath := modulePath + ".bicep"
 	bicepParametersPath := modulePath + ".parameters.json"

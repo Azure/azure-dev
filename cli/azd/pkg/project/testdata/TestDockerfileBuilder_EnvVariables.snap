@@ -6,3 +6,4 @@ ENV QUOTED="value\"with\"quotes"
 WORKDIR $APP_DIR
 COPY . .
 CMD ["node", "server.js"]
+

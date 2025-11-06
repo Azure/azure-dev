@@ -12,3 +12,4 @@ COPY . .
 # And provides detailed information
 EXPOSE 3000
 CMD ["node", "server.js"]
+

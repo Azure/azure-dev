@@ -12,3 +12,4 @@ WORKDIR /home/appuser
 COPY --from=build --chown=appuser:appuser /app/myapp ./myapp
 USER appuser
 ENTRYPOINT ["./myapp"]
+

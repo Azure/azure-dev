@@ -799,14 +799,10 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 // Supports default values (e.g., "${VAR:-default}") and multiple expressions (e.g., "${VAR1}-${VAR2}").
 func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, azdEnv map[string]string) (string, error) {
 	resolved, err := envsubst.Eval(value, func(varName string) string {
-		if val, exists := azdEnv[varName]; exists {
-			return val
-		}
-		return ""
+		return azdEnv[varName]
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve environment variables in '%s': %w", value, err)
 	}
-
 	return resolved, nil
 }

@@ -69,6 +69,14 @@ type DotNetContainerAppOptions struct {
 	ProjectName string
 	// ContainerImage is non-empty when a prebuilt container image is being used.
 	ContainerImage string
+	// ContainerFiles is a list of files to include in the container image.
+	ContainerFiles map[string]ContainerFile
+}
+
+type ContainerFile struct {
+	ServiceConfig *ServiceConfig
+	Sources       []string
+	Destination   string
 }
 
 // Path returns the fully qualified path to the project

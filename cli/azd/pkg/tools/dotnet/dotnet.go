@@ -185,6 +185,52 @@ func (cli *Cli) PublishAppHostManifest(
 // PublishContainer runs a `dotnet publish" with `/t:PublishContainer`to build and publish the container.
 // It also gets port number by using `--getProperty:GeneratedContainerConfiguration`.
 // For single-file apps (.cs files), it runs from the file's directory to properly resolve relative references.
+// BuildContainerLocal runs `dotnet publish` with `/t:PublishContainer` to build a container image locally
+// without pushing to a registry. Returns the port number and image name.
+func (cli *Cli) BuildContainerLocal(
+	ctx context.Context, project, configuration, imageName string,
+) (int, string, error) {
+	if !strings.Contains(imageName, ":") {
+		imageName = fmt.Sprintf("%s:latest", imageName)
+	}
+
+	imageParts := strings.Split(imageName, ":")
+
+	// For single-file apps, use the basename and set the working directory
+	// For project-based apps, use the full path
+	var runArgs exec.RunArgs
+	if filepath.Ext(project) == ".cs" {
+		// Single-file app: use just the filename and set working directory
+		runArgs = newDotNetRunArgs("publish", filepath.Base(project))
+		runArgs = runArgs.WithCwd(filepath.Dir(project))
+	} else {
+		// Project-based app: use the full path
+		runArgs = newDotNetRunArgs("publish", project)
+	}
+
+	runArgs = runArgs.AppendParams(
+		"-r", "linux-x64",
+		"-c", configuration,
+		"/t:PublishContainer",
+		fmt.Sprintf("-p:ContainerRepository=%s", imageParts[0]),
+		fmt.Sprintf("-p:ContainerImageTag=%s", imageParts[1]),
+		"-p:PublishProfile=DefaultContainer", // Use default container profile for local build
+		"--getProperty:GeneratedContainerConfiguration",
+	)
+
+	result, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return 0, "", fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
+	}
+
+	port, err := cli.getTargetPort(result.Stdout, project)
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to get dotnet target port: %w with dotnet publish output '%s'", err, result.Stdout)
+	}
+
+	return port, imageName, nil
+}
+
 func (cli *Cli) PublishContainer(
 	ctx context.Context, project, configuration, imageName, server, username, password string,
 ) (int, error) {

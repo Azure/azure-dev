@@ -4,6 +4,7 @@
 package project
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -183,36 +184,150 @@ func (at *dotnetContainerAppTarget) Deploy(
 	} else if serviceConfig.DotNetContainerApp.ContainerImage != "" {
 		remoteImageName = serviceConfig.DotNetContainerApp.ContainerImage
 	} else {
-		progress.SetProgress(NewServiceProgress("Logging in to registry"))
-
-		// Login, tag & push container image to ACR
-		dockerCreds, err := at.containerHelper.Credentials(ctx, serviceConfig, targetResource)
-		if err != nil {
-			return nil, fmt.Errorf("logging in to registry: %w", err)
-		}
-
 		defaultImageName, err := at.containerHelper.DefaultImageName(ctx, serviceConfig)
 		if err != nil {
 			return nil, fmt.Errorf("getting default image name: %w", err)
 		}
 
-		imageName := fmt.Sprintf("%s:%s",
-			defaultImageName,
-			at.containerHelper.DefaultImageTag())
+		if len(serviceConfig.DotNetContainerApp.ContainerFiles) == 0 {
+			progress.SetProgress(NewServiceProgress("Logging in to registry"))
 
-		portNumber, err = at.dotNetCli.PublishContainer(
-			ctx,
-			serviceConfig.Path(),
-			"Release",
-			imageName,
-			dockerCreds.LoginServer,
-			dockerCreds.Username,
-			dockerCreds.Password)
-		if err != nil {
-			return nil, fmt.Errorf("publishing container: %w", err)
+			// Login, tag & push container image to ACR
+			dockerCreds, err := at.containerHelper.Credentials(ctx, serviceConfig, targetResource)
+			if err != nil {
+				return nil, fmt.Errorf("logging in to registry: %w", err)
+			}
+
+			imageName := fmt.Sprintf("%s:%s",
+				defaultImageName,
+				at.containerHelper.DefaultImageTag())
+
+			portNumber, err = at.dotNetCli.PublishContainer(
+				ctx,
+				serviceConfig.Path(),
+				"Release",
+				imageName,
+				dockerCreds.LoginServer,
+				dockerCreds.Username,
+				dockerCreds.Password)
+			if err != nil {
+				return nil, fmt.Errorf("publishing container: %w", err)
+			}
+
+			remoteImageName = fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName)
+		} else {
+			// Handle PublishWithContainerFiles
+			// If there is with container files configuration in the service config,
+			// we have to create a new Dockerfile and use the previously built image as base image.
+			// Then for each container file, we copy it into the image.
+
+			// Build a local container image (without pushing to ACR) to use as the base image
+			progress.SetProgress(NewServiceProgress("Composing containers"))
+
+			localImageTag := at.containerHelper.DefaultImageTag()
+
+			var localImage string
+			portNumber, localImage, err = at.dotNetCli.BuildContainerLocal(
+				ctx,
+				serviceConfig.Path(),
+				"Release",
+				localImageTag,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("building local container: %w", err)
+			}
+
+			// Ensure cleanup of local image after we're done
+			defer func() {
+				// Best effort cleanup - don't fail deployment if cleanup fails
+				cleanupCtx := context.Background()
+				if err := at.containerHelper.RemoveLocalImage(cleanupCtx, localImage); err != nil {
+					log.Printf("warning: failed to remove local image %s: %v", localImage, err)
+				}
+			}()
+
+			multiStageDockerfile := at.containerHelper.DockerfileBuilder()
+
+			// load all stages
+			for _, containerFile := range serviceConfig.DotNetContainerApp.ContainerFiles {
+				// Ensure the containerFile.ServiceConfig has necessary Project reference
+				if containerFile.ServiceConfig.Project == nil {
+					containerFile.ServiceConfig.Project = serviceConfig.Project
+				}
+
+				// build container to use the container as stage name
+				result, err := at.containerHelper.Build(ctx, containerFile.ServiceConfig, serviceContext, progress)
+				if err != nil {
+					return nil, fmt.Errorf("building container for %s: %w", containerFile.ServiceConfig.Name, err)
+				}
+				artifact, _ := result.Artifacts.FindFirst()
+				stageName := artifact.Metadata["imageName"]
+				multiStageDockerfile.From(stageName, containerFile.ServiceConfig.Name)
+			}
+
+			// Use the locally built image as the base for the runtime stage
+			runStage := multiStageDockerfile.From(localImage, "base")
+
+			// copy container files into the image
+			for _, containerFile := range serviceConfig.DotNetContainerApp.ContainerFiles {
+				for _, src := range containerFile.Sources {
+					runStage.CopyFrom(containerFile.ServiceConfig.Name, src, containerFile.Destination)
+				}
+			}
+
+			var buf bytes.Buffer
+			err = multiStageDockerfile.Build(&buf)
+			if err != nil {
+				return nil, fmt.Errorf("building multistage dockerfile: %w", err)
+			}
+			os.WriteFile("Dockerfilewww", buf.Bytes(), 0644)
+
+			// build and publish the final image
+			sContext := &ServiceContext{
+				Build:   make(ArtifactCollection, 0),
+				Package: make(ArtifactCollection, 0),
+			}
+
+			publishServiceConfig := &ServiceConfig{
+				Name:         serviceConfig.Name,
+				RelativePath: ".",
+				Language:     ServiceLanguageDocker,
+				Project:      serviceConfig.Project,
+				Docker: DockerProjectOptions{
+					InMemDockerfile: buf.Bytes(),
+					Context:         ".",      // Explicitly set context to current directory
+					Path:            "in-mem", // avoid auto-dockerfile creation
+				},
+			}
+
+			// Build the multi-stage container
+			buildResult, err := at.containerHelper.Build(ctx, publishServiceConfig, sContext, progress)
+			if err != nil {
+				return nil, fmt.Errorf("building publish container: %w", err)
+			}
+			// Update service context with build artifacts
+			if err := sContext.Build.Add(buildResult.Artifacts...); err != nil {
+				return nil, fmt.Errorf("failed to add build artifacts: %w", err)
+			}
+
+			// Package the container
+			packageResult, err := at.containerHelper.Package(ctx, publishServiceConfig, sContext, progress)
+			if err != nil {
+				return nil, fmt.Errorf("packaging publish container: %w", err)
+			}
+			// Update service context with package artifacts
+			if err := sContext.Package.Add(packageResult.Artifacts...); err != nil {
+				return nil, fmt.Errorf("failed to add package artifacts: %w", err)
+			}
+
+			// Publish the container to ACR
+			publishResult, err := at.containerHelper.Publish(ctx, publishServiceConfig, sContext, targetResource, progress, nil)
+			if err != nil {
+				return nil, fmt.Errorf("publishing container: %w", err)
+			}
+			artifact, _ := publishResult.Artifacts.FindFirst()
+			remoteImageName = artifact.Location
 		}
-
-		remoteImageName = fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName)
 	}
 
 	progress.SetProgress(NewServiceProgress("Updating application"))

@@ -164,6 +164,16 @@ func (d *Cli) Inspect(ctx context.Context, imageName string, format string) (str
 	return out.Stdout, nil
 }
 
+// Remove deletes a local Docker image by name or ID
+func (d *Cli) Remove(ctx context.Context, imageName string) error {
+	_, err := d.executeCommand(ctx, "", "rmi", imageName)
+	if err != nil {
+		return fmt.Errorf("removing image: %w", err)
+	}
+
+	return nil
+}
+
 func (d *Cli) versionInfo() tools.VersionInfo {
 	return tools.VersionInfo{
 		MinimumVersion: semver.Version{

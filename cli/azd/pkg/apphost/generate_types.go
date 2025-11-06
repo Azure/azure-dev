@@ -92,6 +92,7 @@ type genProject struct {
 	Bindings         custommaps.WithOrder[Binding]
 	DeploymentParams map[string]any
 	DeploymentSource string
+	ContainerFiles   map[string]ContainerFile
 }
 
 type genDapr struct {

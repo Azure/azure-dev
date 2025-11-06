@@ -488,6 +488,9 @@ func (ch *ContainerHelper) Build(
 			return nil, fmt.Errorf("writing dockerfile for service %s: %w", serviceConfig.Name, err)
 		}
 		dockerFilePath = dockerfilePath
+		if dockerOptions.Context == "" || dockerOptions.Context == "." {
+			dockerOptions.Context = tempDir
+		}
 
 		log.Println("using in-memory dockerfile for build", dockerfilePath)
 
@@ -1114,6 +1117,11 @@ func getEnvironForPython(ctx context.Context, svc *ServiceConfig) ([]string, err
 	}
 
 	return nil, nil
+}
+
+// RemoveLocalImage removes a local Docker image
+func (ch *ContainerHelper) RemoveLocalImage(ctx context.Context, imageName string) error {
+	return ch.docker.Remove(ctx, imageName)
 }
 
 func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOptions {

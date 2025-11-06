@@ -237,10 +237,22 @@ func (ai *DotNetImporter) Services(
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
 
+		// handle container files
+		containerFiles := manifest.Resources[name].ContainerFiles
+		extractedContainerFiles := make(map[string]ContainerFile)
+		for resourceName, containerFilesDetail := range containerFiles {
+			containerFile := ContainerFile{
+				Sources:     containerFilesDetail.Sources,
+				Destination: containerFilesDetail.Destination,
+			}
+			extractedContainerFiles[resourceName] = containerFile
+		}
+
 		svc.DotNetContainerApp = &DotNetContainerAppOptions{
-			Manifest:    manifest,
-			ProjectName: name,
-			AppHostPath: svcConfig.Path(),
+			Manifest:       manifest,
+			ProjectName:    name,
+			AppHostPath:    svcConfig.Path(),
+			ContainerFiles: extractedContainerFiles,
 		}
 
 		services[svc.Name] = svc
@@ -393,6 +405,18 @@ func (ai *DotNetImporter) Services(
 		services[svc.Name] = svc
 
 	}
+
+	// Now that services are resolved - handle container files for each service in a second pass
+	for _, svc := range services {
+		for srcServiceName, containerFile := range svc.DotNetContainerApp.ContainerFiles {
+			// Get the already resolved docker options from the source service
+			srcServiceConfig := services[srcServiceName]
+			containerFile.ServiceConfig = srcServiceConfig
+			// replace the original container file with the updated one
+			svc.DotNetContainerApp.ContainerFiles[srcServiceName] = containerFile
+		}
+	}
+
 	return services, nil
 }
 

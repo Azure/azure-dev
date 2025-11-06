@@ -5,10 +5,9 @@ package project
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +25,7 @@ func TestDockerfileBuilder_Simple(t *testing.T) {
 	err := builder.Build(&buf)
 	require.NoError(t, err)
 
-	assertSnapshot(t, "simple", buf.String())
+	snapshot.SnapshotT(t, buf.String())
 }
 
 func TestDockerfileBuilder_MultiStage(t *testing.T) {
@@ -52,7 +51,7 @@ func TestDockerfileBuilder_MultiStage(t *testing.T) {
 	err := builder.Build(&buf)
 	require.NoError(t, err)
 
-	assertSnapshot(t, "multistage", buf.String())
+	snapshot.SnapshotT(t, buf.String())
 }
 
 func TestDockerfileBuilder_GlobalArgs(t *testing.T) {
@@ -71,7 +70,7 @@ func TestDockerfileBuilder_GlobalArgs(t *testing.T) {
 	err := builder.Build(&buf)
 	require.NoError(t, err)
 
-	assertSnapshot(t, "global_args", buf.String())
+	snapshot.SnapshotT(t, buf.String())
 }
 
 func TestDockerfileBuilder_StageArgs(t *testing.T) {
@@ -90,7 +89,7 @@ func TestDockerfileBuilder_StageArgs(t *testing.T) {
 	err := builder.Build(&buf)
 	require.NoError(t, err)
 
-	assertSnapshot(t, "stage_args", buf.String())
+	snapshot.SnapshotT(t, buf.String())
 }
 
 func TestDockerfileBuilder_CopyWithChown(t *testing.T) {
@@ -108,7 +107,7 @@ func TestDockerfileBuilder_CopyWithChown(t *testing.T) {
 	err := builder.Build(&buf)
 	require.NoError(t, err)
 
-	assertSnapshot(t, "copy_chown", buf.String())
+	snapshot.SnapshotT(t, buf.String())
 }
 
 func TestDockerfileBuilder_CopyFromWithChown(t *testing.T) {
@@ -133,7 +132,7 @@ func TestDockerfileBuilder_CopyFromWithChown(t *testing.T) {
 	err := builder.Build(&buf)
 	require.NoError(t, err)
 
-	assertSnapshot(t, "copyfrom_chown", buf.String())
+	snapshot.SnapshotT(t, buf.String())
 }
 
 func TestDockerfileBuilder_EnvVariables(t *testing.T) {
@@ -152,7 +151,7 @@ func TestDockerfileBuilder_EnvVariables(t *testing.T) {
 	err := builder.Build(&buf)
 	require.NoError(t, err)
 
-	assertSnapshot(t, "env_variables", buf.String())
+	snapshot.SnapshotT(t, buf.String())
 }
 
 func TestDockerfileBuilder_RunWithMounts(t *testing.T) {
@@ -178,7 +177,7 @@ func TestDockerfileBuilder_RunWithMounts(t *testing.T) {
 	err := builder.Build(&buf)
 	require.NoError(t, err)
 
-	assertSnapshot(t, "run_with_mounts", buf.String())
+	snapshot.SnapshotT(t, buf.String())
 }
 
 func TestDockerfileBuilder_Comments(t *testing.T) {
@@ -201,7 +200,7 @@ func TestDockerfileBuilder_Comments(t *testing.T) {
 	err := builder.Build(&buf)
 	require.NoError(t, err)
 
-	assertSnapshot(t, "comments", buf.String())
+	snapshot.SnapshotT(t, buf.String())
 }
 
 func TestDockerfileBuilder_ComplexMultiStage(t *testing.T) {
@@ -256,7 +255,7 @@ func TestDockerfileBuilder_ComplexMultiStage(t *testing.T) {
 	err := builder.Build(&buf)
 	require.NoError(t, err)
 
-	assertSnapshot(t, "complex_multistage", buf.String())
+	snapshot.SnapshotT(t, buf.String())
 }
 
 func TestDockerfileBuilder_DotnetApp(t *testing.T) {
@@ -282,7 +281,7 @@ func TestDockerfileBuilder_DotnetApp(t *testing.T) {
 	err := builder.Build(&buf)
 	require.NoError(t, err)
 
-	assertSnapshot(t, "dotnet_app", buf.String())
+	snapshot.SnapshotT(t, buf.String())
 }
 
 func TestDockerfileBuilder_PythonApp(t *testing.T) {
@@ -313,37 +312,5 @@ func TestDockerfileBuilder_PythonApp(t *testing.T) {
 	err := builder.Build(&buf)
 	require.NoError(t, err)
 
-	assertSnapshot(t, "python_app", buf.String())
-}
-
-// assertSnapshot compares the generated output against a snapshot file
-func assertSnapshot(t *testing.T, name string, actual string) {
-	t.Helper()
-
-	snapshotDir := filepath.Join("testdata", "dockerfile_snapshots")
-	snapshotPath := filepath.Join(snapshotDir, name+".dockerfile")
-
-	// Check if UPDATE_SNAPSHOTS environment variable is set
-	if os.Getenv("UPDATE_SNAPSHOTS") == "true" {
-		// Create directory if it doesn't exist
-		err := os.MkdirAll(snapshotDir, 0755)
-		require.NoError(t, err)
-
-		// Write the snapshot
-		err = os.WriteFile(snapshotPath, []byte(actual), 0644)
-		require.NoError(t, err)
-		t.Logf("Updated snapshot: %s", snapshotPath)
-		return
-	}
-
-	// Read the snapshot
-	expected, err := os.ReadFile(snapshotPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			t.Fatalf("Snapshot file does not exist: %s\nRun tests with UPDATE_SNAPSHOTS=true to create it", snapshotPath)
-		}
-		require.NoError(t, err)
-	}
-
-	require.Equal(t, string(expected), actual, "Snapshot mismatch for %s", name)
+	snapshot.SnapshotT(t, buf.String())
 }

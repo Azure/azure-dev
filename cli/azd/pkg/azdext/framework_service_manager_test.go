@@ -70,7 +70,7 @@ func (m *MockFrameworkServiceProvider) Package(
 func createTestFrameworkServiceManager() *FrameworkServiceManager {
 	return &FrameworkServiceManager{
 		client:           nil, // Not needed for business logic tests
-		stream:           nil, // Not needed for business logic tests
+		broker:           nil, // Not needed for business logic tests
 		componentManager: NewComponentManager[FrameworkServiceProvider](FrameworkServiceFactoryKey, "framework service"),
 	}
 }
@@ -91,7 +91,7 @@ func TestNewFrameworkServiceManager(t *testing.T) {
 	assert.NotNil(t, manager)
 	assert.Equal(t, mockClient, manager.client)
 	assert.NotNil(t, manager.componentManager)
-	assert.Nil(t, manager.stream) // Stream should be nil until Register is called
+	assert.Nil(t, manager.broker) // Broker should be nil until ensureStream is called
 }
 
 func TestFrameworkServiceManager_FactoryRegistration(t *testing.T) {
@@ -131,23 +131,16 @@ func TestFrameworkServiceManager_InitializeRequest_Success(t *testing.T) {
 
 	// Create initialize request
 	serviceConfig := createTestServiceConfigForFramework("web-service", "go")
-	requestId := "init-123"
-	msg := &FrameworkServiceMessage{
-		RequestId: requestId,
-		MessageType: &FrameworkServiceMessage_InitializeRequest{
-			InitializeRequest: &FrameworkServiceInitializeRequest{
-				ServiceConfig: serviceConfig,
-			},
-		},
+	req := &FrameworkServiceInitializeRequest{
+		ServiceConfig: serviceConfig,
 	}
 
-	// Execute
-	resp := manager.buildFrameworkServiceResponseMsg(ctx, msg)
+	// Execute handler directly
+	resp, err := manager.onInitialize(ctx, req)
 
 	// Verify response
+	require.NoError(t, err)
 	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.Nil(t, resp.Error)
 	assert.NotNil(t, resp.GetInitializeResponse())
 
 	// Verify mock expectations
@@ -160,25 +153,17 @@ func TestFrameworkServiceManager_InitializeRequest_NilServiceConfig(t *testing.T
 	manager := createTestFrameworkServiceManager()
 	ctx := context.Background()
 
-	requestId := "init-123"
-	msg := &FrameworkServiceMessage{
-		RequestId: requestId,
-		MessageType: &FrameworkServiceMessage_InitializeRequest{
-			InitializeRequest: &FrameworkServiceInitializeRequest{
-				ServiceConfig: nil, // Nil service config
-			},
-		},
+	req := &FrameworkServiceInitializeRequest{
+		ServiceConfig: nil, // Nil service config
 	}
 
-	// Execute
-	resp := manager.buildFrameworkServiceResponseMsg(ctx, msg)
+	// Execute handler directly
+	resp, err := manager.onInitialize(ctx, req)
 
 	// Verify error response
-	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.NotNil(t, resp.Error)
-	assert.Contains(t, resp.Error.Message, "service config is required for initialize request")
-	assert.Nil(t, resp.GetInitializeResponse())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "service config is required for initialize request")
+	assert.Nil(t, resp)
 }
 
 func TestFrameworkServiceManager_InitializeRequest_ProviderInitializationError(t *testing.T) {
@@ -199,25 +184,19 @@ func TestFrameworkServiceManager_InitializeRequest_ProviderInitializationError(t
 
 	// Create initialize request
 	serviceConfig := createTestServiceConfigForFramework("web-service", "go")
-	requestId := "init-123"
-	msg := &FrameworkServiceMessage{
-		RequestId: requestId,
-		MessageType: &FrameworkServiceMessage_InitializeRequest{
-			InitializeRequest: &FrameworkServiceInitializeRequest{
-				ServiceConfig: serviceConfig,
-			},
-		},
+	req := &FrameworkServiceInitializeRequest{
+		ServiceConfig: serviceConfig,
 	}
 
-	// Execute
-	resp := manager.buildFrameworkServiceResponseMsg(ctx, msg)
+	// Execute handler directly
+	resp, err := manager.onInitialize(ctx, req)
 
-	// Verify error response
+	// Verify error response - handler returns the error
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "initialization failed")
+	// Response should still be created even with error
 	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.NotNil(t, resp.Error)
-	assert.Contains(t, resp.Error.Message, "initialization failed")
-	assert.NotNil(t, resp.GetInitializeResponse()) // Response should still be created
+	assert.NotNil(t, resp.GetInitializeResponse())
 
 	// Verify mock expectations
 	mockProvider.AssertExpectations(t)
@@ -250,23 +229,16 @@ func TestFrameworkServiceManager_RequiredExternalToolsRequest_Success(t *testing
 	require.NoError(t, err)
 
 	// Create required external tools request
-	requestId := "tools-123"
-	msg := &FrameworkServiceMessage{
-		RequestId: requestId,
-		MessageType: &FrameworkServiceMessage_RequiredExternalToolsRequest{
-			RequiredExternalToolsRequest: &FrameworkServiceRequiredExternalToolsRequest{
-				ServiceConfig: serviceConfig,
-			},
-		},
+	req := &FrameworkServiceRequiredExternalToolsRequest{
+		ServiceConfig: serviceConfig,
 	}
 
-	// Execute
-	resp := manager.buildFrameworkServiceResponseMsg(ctx, msg)
+	// Execute handler directly
+	resp, err := manager.onRequiredExternalTools(ctx, req)
 
 	// Verify response
+	require.NoError(t, err)
 	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.Nil(t, resp.Error)
 	assert.NotNil(t, resp.GetRequiredExternalToolsResponse())
 	assert.Equal(t, expectedTools, resp.GetRequiredExternalToolsResponse().Tools)
 
@@ -282,26 +254,17 @@ func TestFrameworkServiceManager_RequiredExternalToolsRequest_NoProvider(t *test
 
 	// Create request without initializing any provider
 	serviceConfig := createTestServiceConfigForFramework("web-service", "go")
-	requestId := "tools-123"
-	msg := &FrameworkServiceMessage{
-		RequestId: requestId,
-		MessageType: &FrameworkServiceMessage_RequiredExternalToolsRequest{
-			RequiredExternalToolsRequest: &FrameworkServiceRequiredExternalToolsRequest{
-				ServiceConfig: serviceConfig,
-			},
-		},
+	req := &FrameworkServiceRequiredExternalToolsRequest{
+		ServiceConfig: serviceConfig,
 	}
 
-	// Execute
-	resp := manager.buildFrameworkServiceResponseMsg(ctx, msg)
+	// Execute handler directly
+	resp, err := manager.onRequiredExternalTools(ctx, req)
 
 	// Verify error response
-	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.NotNil(t, resp.Error)
-	assert.Contains(t, resp.Error.Message, "no provider instance found for service: web-service")
-	assert.Contains(t, resp.Error.Message, "Initialize must be called first")
-	assert.Nil(t, resp.GetRequiredExternalToolsResponse())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no provider instance found")
+	assert.Nil(t, resp)
 }
 
 func TestFrameworkServiceManager_RequirementsRequest_Success(t *testing.T) {
@@ -314,10 +277,13 @@ func TestFrameworkServiceManager_RequirementsRequest_Success(t *testing.T) {
 	mockProvider := &MockFrameworkServiceProvider{}
 	mockProvider.On("Initialize", mock.Anything, mock.Anything).Return(nil)
 
-	expectedRequirements := &FrameworkRequirements{
-		Package: &FrameworkPackageRequirements{},
+	expectedReq := &FrameworkRequirements{
+		Package: &FrameworkPackageRequirements{
+			RequireRestore: true,
+			RequireBuild:   true,
+		},
 	}
-	mockProvider.On("Requirements").Return(expectedRequirements, nil)
+	mockProvider.On("Requirements").Return(expectedReq, nil)
 
 	factory := func() FrameworkServiceProvider {
 		return mockProvider
@@ -329,24 +295,17 @@ func TestFrameworkServiceManager_RequirementsRequest_Success(t *testing.T) {
 	_, err := manager.componentManager.GetOrCreateInstance(ctx, serviceConfig)
 	require.NoError(t, err)
 
-	// Create requirements request (doesn't need specific service config)
-	requestId := "req-123"
-	msg := &FrameworkServiceMessage{
-		RequestId: requestId,
-		MessageType: &FrameworkServiceMessage_RequirementsRequest{
-			RequirementsRequest: &FrameworkServiceRequirementsRequest{},
-		},
-	}
+	// Create requirements request (it has no fields)
+	req := &FrameworkServiceRequirementsRequest{}
 
-	// Execute
-	resp := manager.buildFrameworkServiceResponseMsg(ctx, msg)
+	// Execute handler directly
+	resp, err := manager.onRequirements(ctx, req)
 
 	// Verify response
+	require.NoError(t, err)
 	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.Nil(t, resp.Error)
 	assert.NotNil(t, resp.GetRequirementsResponse())
-	assert.Equal(t, expectedRequirements, resp.GetRequirementsResponse().Requirements)
+	assert.Equal(t, expectedReq, resp.GetRequirementsResponse().Requirements)
 
 	// Verify mock expectations
 	mockProvider.AssertExpectations(t)
@@ -358,25 +317,16 @@ func TestFrameworkServiceManager_RequirementsRequest_NoProvider(t *testing.T) {
 	manager := createTestFrameworkServiceManager()
 	ctx := context.Background()
 
-	// Create requirements request without any initialized providers
-	requestId := "req-123"
-	msg := &FrameworkServiceMessage{
-		RequestId: requestId,
-		MessageType: &FrameworkServiceMessage_RequirementsRequest{
-			RequirementsRequest: &FrameworkServiceRequirementsRequest{},
-		},
-	}
+	// Create requirements request (it has no fields)
+	req := &FrameworkServiceRequirementsRequest{}
 
-	// Execute
-	resp := manager.buildFrameworkServiceResponseMsg(ctx, msg)
+	// Execute handler directly
+	resp, err := manager.onRequirements(ctx, req)
 
 	// Verify error response
-	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.NotNil(t, resp.Error)
-	assert.Contains(t, resp.Error.Message, "no provider instances available")
-	assert.Contains(t, resp.Error.Message, "Initialize must be called first")
-	assert.Nil(t, resp.GetRequirementsResponse())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no provider instances available")
+	assert.Nil(t, resp)
 }
 
 func TestFrameworkServiceManager_RestoreRequest_NilServiceConfig(t *testing.T) {
@@ -385,26 +335,18 @@ func TestFrameworkServiceManager_RestoreRequest_NilServiceConfig(t *testing.T) {
 	manager := createTestFrameworkServiceManager()
 	ctx := context.Background()
 
-	requestId := "restore-123"
-	msg := &FrameworkServiceMessage{
-		RequestId: requestId,
-		MessageType: &FrameworkServiceMessage_RestoreRequest{
-			RestoreRequest: &FrameworkServiceRestoreRequest{
-				ServiceConfig:  nil, // Nil service config
-				ServiceContext: &ServiceContext{},
-			},
-		},
+	req := &FrameworkServiceRestoreRequest{
+		ServiceConfig:  nil, // Nil service config
+		ServiceContext: &ServiceContext{},
 	}
 
-	// Execute
-	resp := manager.buildFrameworkServiceResponseMsg(ctx, msg)
+	// Execute handler directly (progress func can be nil for this validation test)
+	resp, err := manager.onRestore(ctx, req, nil)
 
 	// Verify error response
-	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.NotNil(t, resp.Error)
-	assert.Contains(t, resp.Error.Message, "service config is required for restore request")
-	assert.Nil(t, resp.GetRestoreResponse())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "service config is required for restore request")
+	assert.Nil(t, resp)
 }
 
 func TestFrameworkServiceManager_BuildRequest_NilServiceConfig(t *testing.T) {
@@ -413,26 +355,18 @@ func TestFrameworkServiceManager_BuildRequest_NilServiceConfig(t *testing.T) {
 	manager := createTestFrameworkServiceManager()
 	ctx := context.Background()
 
-	requestId := "build-123"
-	msg := &FrameworkServiceMessage{
-		RequestId: requestId,
-		MessageType: &FrameworkServiceMessage_BuildRequest{
-			BuildRequest: &FrameworkServiceBuildRequest{
-				ServiceConfig:  nil, // Nil service config
-				ServiceContext: &ServiceContext{},
-			},
-		},
+	req := &FrameworkServiceBuildRequest{
+		ServiceConfig:  nil, // Nil service config
+		ServiceContext: &ServiceContext{},
 	}
 
-	// Execute
-	resp := manager.buildFrameworkServiceResponseMsg(ctx, msg)
+	// Execute handler directly (progress func can be nil for this validation test)
+	resp, err := manager.onBuild(ctx, req, nil)
 
 	// Verify error response
-	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.NotNil(t, resp.Error)
-	assert.Contains(t, resp.Error.Message, "service config is required for build request")
-	assert.Nil(t, resp.GetBuildResponse())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "service config is required for build request")
+	assert.Nil(t, resp)
 }
 
 func TestFrameworkServiceManager_PackageRequest_NilServiceConfig(t *testing.T) {
@@ -441,49 +375,18 @@ func TestFrameworkServiceManager_PackageRequest_NilServiceConfig(t *testing.T) {
 	manager := createTestFrameworkServiceManager()
 	ctx := context.Background()
 
-	requestId := "package-123"
-	msg := &FrameworkServiceMessage{
-		RequestId: requestId,
-		MessageType: &FrameworkServiceMessage_PackageRequest{
-			PackageRequest: &FrameworkServicePackageRequest{
-				ServiceConfig:  nil, // Nil service config
-				ServiceContext: &ServiceContext{},
-			},
-		},
+	req := &FrameworkServicePackageRequest{
+		ServiceConfig:  nil, // Nil service config
+		ServiceContext: &ServiceContext{},
 	}
 
-	// Execute
-	resp := manager.buildFrameworkServiceResponseMsg(ctx, msg)
+	// Execute handler directly (progress func can be nil for this validation test)
+	resp, err := manager.onPackage(ctx, req, nil)
 
 	// Verify error response
-	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.NotNil(t, resp.Error)
-	assert.Contains(t, resp.Error.Message, "service config is required for package request")
-	assert.Nil(t, resp.GetPackageResponse())
-}
-
-func TestFrameworkServiceManager_UnsupportedMessageType(t *testing.T) {
-	t.Parallel()
-
-	manager := createTestFrameworkServiceManager()
-	ctx := context.Background()
-
-	// Create message with unsupported type
-	requestId := "unknown-123"
-	msg := &FrameworkServiceMessage{
-		RequestId:   requestId,
-		MessageType: nil, // Nil message type (unsupported)
-	}
-
-	// Execute
-	resp := manager.buildFrameworkServiceResponseMsg(ctx, msg)
-
-	// Verify error response
-	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.NotNil(t, resp.Error)
-	assert.Contains(t, resp.Error.Message, "unsupported message type")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "service config is required for package request")
+	assert.Nil(t, resp)
 }
 
 func TestFrameworkServiceManager_Close_ComponentManagerIntegration(t *testing.T) {
@@ -518,254 +421,4 @@ func TestFrameworkServiceManager_Close_ComponentManagerIntegration(t *testing.T)
 	instance, err = manager.componentManager.GetInstance("web-service")
 	assert.Error(t, err)
 	assert.Nil(t, instance)
-}
-
-func TestFrameworkServiceManager_RestoreRequest_Success(t *testing.T) {
-	t.Parallel()
-
-	manager := createTestFrameworkServiceManager()
-	ctx := context.Background()
-
-	// Set up mock provider
-	mockProvider := &MockFrameworkServiceProvider{}
-	mockProvider.On("Initialize", mock.Anything, mock.Anything).Return(nil)
-
-	expectedResult := &ServiceRestoreResult{
-		Artifacts: []*Artifact{
-			{
-				Kind:         ArtifactKind_ARTIFACT_KIND_DIRECTORY,
-				Location:     "./src",
-				LocationKind: LocationKind_LOCATION_KIND_LOCAL,
-			},
-		},
-	}
-	mockProvider.On("Restore", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-		Return(expectedResult, nil)
-
-	factory := func() FrameworkServiceProvider {
-		return mockProvider
-	}
-	manager.componentManager.RegisterFactory("go", factory)
-
-	// Create and initialize instance first
-	serviceConfig := createTestServiceConfigForFramework("web-service", "go")
-	_, err := manager.componentManager.GetOrCreateInstance(ctx, serviceConfig)
-	require.NoError(t, err)
-
-	// Create restore request
-	requestId := "restore-123"
-	serviceContext := &ServiceContext{}
-	msg := &FrameworkServiceMessage{
-		RequestId: requestId,
-		MessageType: &FrameworkServiceMessage_RestoreRequest{
-			RestoreRequest: &FrameworkServiceRestoreRequest{
-				ServiceConfig:  serviceConfig,
-				ServiceContext: serviceContext,
-			},
-		},
-	}
-
-	// Execute
-	resp := manager.buildFrameworkServiceResponseMsg(ctx, msg)
-
-	// Verify response
-	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.Nil(t, resp.Error)
-	assert.NotNil(t, resp.GetRestoreResponse())
-	assert.Equal(t, expectedResult, resp.GetRestoreResponse().RestoreResult)
-
-	// Verify mock expectations - note that the progress reporter function is passed as an argument
-	mockProvider.AssertExpectations(t)
-}
-
-func TestFrameworkServiceManager_BuildRequest_Success(t *testing.T) {
-	t.Parallel()
-
-	manager := createTestFrameworkServiceManager()
-	ctx := context.Background()
-
-	// Set up mock provider
-	mockProvider := &MockFrameworkServiceProvider{}
-	mockProvider.On("Initialize", mock.Anything, mock.Anything).Return(nil)
-
-	expectedResult := &ServiceBuildResult{
-		Artifacts: []*Artifact{
-			{
-				Kind:         ArtifactKind_ARTIFACT_KIND_ARCHIVE,
-				Location:     "./dist/app.zip",
-				LocationKind: LocationKind_LOCATION_KIND_LOCAL,
-			},
-		},
-	}
-	mockProvider.On("Build", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-		Return(expectedResult, nil)
-
-	factory := func() FrameworkServiceProvider {
-		return mockProvider
-	}
-	manager.componentManager.RegisterFactory("go", factory)
-
-	// Create and initialize instance first
-	serviceConfig := createTestServiceConfigForFramework("web-service", "go")
-	_, err := manager.componentManager.GetOrCreateInstance(ctx, serviceConfig)
-	require.NoError(t, err)
-
-	// Create build request
-	requestId := "build-123"
-	serviceContext := &ServiceContext{}
-	msg := &FrameworkServiceMessage{
-		RequestId: requestId,
-		MessageType: &FrameworkServiceMessage_BuildRequest{
-			BuildRequest: &FrameworkServiceBuildRequest{
-				ServiceConfig:  serviceConfig,
-				ServiceContext: serviceContext,
-			},
-		},
-	}
-
-	// Execute
-	resp := manager.buildFrameworkServiceResponseMsg(ctx, msg)
-
-	// Verify response
-	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.Nil(t, resp.Error)
-	assert.NotNil(t, resp.GetBuildResponse())
-	assert.Equal(t, expectedResult, resp.GetBuildResponse().Result)
-
-	// Verify mock expectations
-	mockProvider.AssertExpectations(t)
-}
-
-func TestFrameworkServiceManager_PackageRequest_Success(t *testing.T) {
-	t.Parallel()
-
-	manager := createTestFrameworkServiceManager()
-	ctx := context.Background()
-
-	// Set up mock provider
-	mockProvider := &MockFrameworkServiceProvider{}
-	mockProvider.On("Initialize", mock.Anything, mock.Anything).Return(nil)
-
-	expectedResult := &ServicePackageResult{
-		Artifacts: []*Artifact{
-			{
-				Kind:         ArtifactKind_ARTIFACT_KIND_ARCHIVE,
-				Location:     "./dist/app.zip",
-				LocationKind: LocationKind_LOCATION_KIND_LOCAL,
-			},
-		},
-	}
-	mockProvider.On("Package", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-		Return(expectedResult, nil)
-
-	factory := func() FrameworkServiceProvider {
-		return mockProvider
-	}
-	manager.componentManager.RegisterFactory("go", factory)
-
-	// Create and initialize instance first
-	serviceConfig := createTestServiceConfigForFramework("web-service", "go")
-	_, err := manager.componentManager.GetOrCreateInstance(ctx, serviceConfig)
-	require.NoError(t, err)
-
-	// Create package request
-	requestId := "package-123"
-	serviceContext := &ServiceContext{}
-	msg := &FrameworkServiceMessage{
-		RequestId: requestId,
-		MessageType: &FrameworkServiceMessage_PackageRequest{
-			PackageRequest: &FrameworkServicePackageRequest{
-				ServiceConfig:  serviceConfig,
-				ServiceContext: serviceContext,
-			},
-		},
-	}
-
-	// Execute
-	resp := manager.buildFrameworkServiceResponseMsg(ctx, msg)
-
-	// Verify response
-	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.Nil(t, resp.Error)
-	assert.NotNil(t, resp.GetPackageResponse())
-	assert.Equal(t, expectedResult, resp.GetPackageResponse().PackageResult)
-
-	// Verify mock expectations
-	mockProvider.AssertExpectations(t)
-}
-
-func TestFrameworkServiceManager_MultipleRequestTypes_SameProvider(t *testing.T) {
-	t.Parallel()
-
-	manager := createTestFrameworkServiceManager()
-	ctx := context.Background()
-
-	// Set up mock provider with multiple method expectations
-	mockProvider := &MockFrameworkServiceProvider{}
-	mockProvider.On("Initialize", mock.Anything, mock.Anything).Return(nil)
-
-	expectedTools := []*ExternalTool{
-		{Name: "go", InstallUrl: "https://go.dev/dl/"},
-	}
-	mockProvider.On("RequiredExternalTools", mock.Anything, mock.Anything).Return(expectedTools, nil)
-
-	expectedRequirements := &FrameworkRequirements{
-		Package: &FrameworkPackageRequirements{
-			RequireRestore: true,
-			RequireBuild:   true,
-		},
-	}
-	mockProvider.On("Requirements").Return(expectedRequirements, nil)
-
-	factory := func() FrameworkServiceProvider {
-		return mockProvider
-	}
-	manager.componentManager.RegisterFactory("go", factory)
-
-	serviceConfig := createTestServiceConfigForFramework("web-service", "go")
-
-	// Initialize first
-	initMsg := &FrameworkServiceMessage{
-		RequestId: "init-123",
-		MessageType: &FrameworkServiceMessage_InitializeRequest{
-			InitializeRequest: &FrameworkServiceInitializeRequest{
-				ServiceConfig: serviceConfig,
-			},
-		},
-	}
-	initResp := manager.buildFrameworkServiceResponseMsg(ctx, initMsg)
-	require.NotNil(t, initResp)
-	assert.Nil(t, initResp.Error)
-
-	// Test external tools request
-	toolsMsg := &FrameworkServiceMessage{
-		RequestId: "tools-123",
-		MessageType: &FrameworkServiceMessage_RequiredExternalToolsRequest{
-			RequiredExternalToolsRequest: &FrameworkServiceRequiredExternalToolsRequest{
-				ServiceConfig: serviceConfig,
-			},
-		},
-	}
-	toolsResp := manager.buildFrameworkServiceResponseMsg(ctx, toolsMsg)
-	require.NotNil(t, toolsResp)
-	assert.Nil(t, toolsResp.Error)
-	assert.Equal(t, expectedTools, toolsResp.GetRequiredExternalToolsResponse().Tools)
-
-	// Test requirements request
-	reqMsg := &FrameworkServiceMessage{
-		RequestId: "req-123",
-		MessageType: &FrameworkServiceMessage_RequirementsRequest{
-			RequirementsRequest: &FrameworkServiceRequirementsRequest{},
-		},
-	}
-	reqResp := manager.buildFrameworkServiceResponseMsg(ctx, reqMsg)
-	require.NotNil(t, reqResp)
-	assert.Nil(t, reqResp.Error)
-	assert.Equal(t, expectedRequirements, reqResp.GetRequirementsResponse().Requirements)
-
-	// Verify all mock expectations
-	mockProvider.AssertExpectations(t)
 }

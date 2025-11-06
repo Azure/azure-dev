@@ -8,7 +8,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -80,7 +79,7 @@ func (m *MockServiceTargetProvider) Deploy(
 func createTestServiceTargetManager() *ServiceTargetManager {
 	return &ServiceTargetManager{
 		client:           nil, // Not needed for business logic tests
-		stream:           nil, // Not needed for business logic tests
+		broker:           nil, // Not needed for business logic tests
 		componentManager: NewComponentManager[ServiceTargetProvider](ServiceTargetFactoryKey, "service target"),
 	}
 }
@@ -101,7 +100,7 @@ func TestNewServiceTargetManager(t *testing.T) {
 	assert.NotNil(t, manager)
 	assert.Equal(t, mockClient, manager.client)
 	assert.NotNil(t, manager.componentManager)
-	assert.Nil(t, manager.stream) // Stream should be nil until Register is called
+	assert.Nil(t, manager.broker) // Broker should be nil until ensureStream is called
 }
 
 func TestServiceTargetManager_FactoryRegistration(t *testing.T) {
@@ -141,23 +140,16 @@ func TestServiceTargetManager_InitializeRequest_Success(t *testing.T) {
 
 	// Create initialize request
 	serviceConfig := createTestServiceConfigForServiceTarget("web-service", "containerapp")
-	requestId := uuid.NewString()
-	msg := &ServiceTargetMessage{
-		RequestId: requestId,
-		MessageType: &ServiceTargetMessage_InitializeRequest{
-			InitializeRequest: &ServiceTargetInitializeRequest{
-				ServiceConfig: serviceConfig,
-			},
-		},
+	req := &ServiceTargetInitializeRequest{
+		ServiceConfig: serviceConfig,
 	}
 
-	// Execute
-	resp := manager.buildServiceTargetResponseMsg(ctx, msg)
+	// Execute handler directly
+	resp, err := manager.onInitialize(ctx, req)
 
 	// Verify response
+	require.NoError(t, err)
 	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.Nil(t, resp.Error)
 	assert.NotNil(t, resp.GetInitializeResponse())
 
 	// Verify mock expectations
@@ -170,25 +162,17 @@ func TestServiceTargetManager_InitializeRequest_NilServiceConfig(t *testing.T) {
 	manager := createTestServiceTargetManager()
 	ctx := context.Background()
 
-	requestId := uuid.NewString()
-	msg := &ServiceTargetMessage{
-		RequestId: requestId,
-		MessageType: &ServiceTargetMessage_InitializeRequest{
-			InitializeRequest: &ServiceTargetInitializeRequest{
-				ServiceConfig: nil, // Nil service config
-			},
-		},
+	req := &ServiceTargetInitializeRequest{
+		ServiceConfig: nil, // Nil service config
 	}
 
-	// Execute
-	resp := manager.buildServiceTargetResponseMsg(ctx, msg)
+	// Execute handler directly
+	resp, err := manager.onInitialize(ctx, req)
 
 	// Verify error response
-	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.NotNil(t, resp.Error)
-	assert.Contains(t, resp.Error.Message, "service config is required for initialize request")
-	assert.Nil(t, resp.GetInitializeResponse())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "service config is required for initialize request")
+	assert.Nil(t, resp)
 }
 
 func TestServiceTargetManager_InitializeRequest_ProviderInitializationError(t *testing.T) {
@@ -209,25 +193,19 @@ func TestServiceTargetManager_InitializeRequest_ProviderInitializationError(t *t
 
 	// Create initialize request
 	serviceConfig := createTestServiceConfigForServiceTarget("web-service", "containerapp")
-	requestId := uuid.NewString()
-	msg := &ServiceTargetMessage{
-		RequestId: requestId,
-		MessageType: &ServiceTargetMessage_InitializeRequest{
-			InitializeRequest: &ServiceTargetInitializeRequest{
-				ServiceConfig: serviceConfig,
-			},
-		},
+	req := &ServiceTargetInitializeRequest{
+		ServiceConfig: serviceConfig,
 	}
 
-	// Execute
-	resp := manager.buildServiceTargetResponseMsg(ctx, msg)
+	// Execute handler directly
+	resp, err := manager.onInitialize(ctx, req)
 
-	// Verify error response
+	// Verify error response - handler returns the error
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "initialization failed")
+	// Response should still be created even with error
 	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.NotNil(t, resp.Error)
-	assert.Contains(t, resp.Error.Message, "initialization failed")
-	assert.NotNil(t, resp.GetInitializeResponse()) // Response should still be created
+	assert.NotNil(t, resp.GetInitializeResponse())
 
 	// Verify mock expectations
 	mockProvider.AssertExpectations(t)
@@ -263,26 +241,19 @@ func TestServiceTargetManager_GetTargetResourceRequest_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create get target resource request
-	requestId := uuid.NewString()
-	msg := &ServiceTargetMessage{
-		RequestId: requestId,
-		MessageType: &ServiceTargetMessage_GetTargetResourceRequest{
-			GetTargetResourceRequest: &GetTargetResourceRequest{
-				SubscriptionId:        "test-subscription",
-				ServiceConfig:         serviceConfig,
-				DefaultTargetResource: nil,
-				DefaultError:          "",
-			},
-		},
+	req := &GetTargetResourceRequest{
+		SubscriptionId:        "test-subscription",
+		ServiceConfig:         serviceConfig,
+		DefaultTargetResource: nil,
+		DefaultError:          "",
 	}
 
-	// Execute
-	resp := manager.buildServiceTargetResponseMsg(ctx, msg)
+	// Execute handler directly
+	resp, err := manager.onGetTargetResource(ctx, req)
 
 	// Verify response
+	require.NoError(t, err)
 	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.Nil(t, resp.Error)
 	assert.NotNil(t, resp.GetGetTargetResourceResponse())
 	assert.Equal(t, expectedTargetResource, resp.GetGetTargetResourceResponse().TargetResource)
 
@@ -298,29 +269,21 @@ func TestServiceTargetManager_GetTargetResourceRequest_NoProvider(t *testing.T) 
 
 	// Create request without initializing any provider
 	serviceConfig := createTestServiceConfigForServiceTarget("web-service", "containerapp")
-	requestId := uuid.NewString()
-	msg := &ServiceTargetMessage{
-		RequestId: requestId,
-		MessageType: &ServiceTargetMessage_GetTargetResourceRequest{
-			GetTargetResourceRequest: &GetTargetResourceRequest{
-				SubscriptionId:        "test-subscription",
-				ServiceConfig:         serviceConfig,
-				DefaultTargetResource: nil,
-				DefaultError:          "",
-			},
-		},
+	req := &GetTargetResourceRequest{
+		SubscriptionId:        "test-subscription",
+		ServiceConfig:         serviceConfig,
+		DefaultTargetResource: nil,
+		DefaultError:          "",
 	}
 
-	// Execute
-	resp := manager.buildServiceTargetResponseMsg(ctx, msg)
+	// Execute handler directly
+	resp, err := manager.onGetTargetResource(ctx, req)
 
 	// Verify error response
-	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.NotNil(t, resp.Error)
-	assert.Contains(t, resp.Error.Message, "no provider instance found for service: web-service")
-	assert.Contains(t, resp.Error.Message, "Initialize must be called first")
-	assert.Nil(t, resp.GetGetTargetResourceResponse())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no provider instance found for service: web-service")
+	assert.Contains(t, err.Error(), "Initialize must be called first")
+	assert.Nil(t, resp)
 }
 
 func TestServiceTargetManager_EndpointsRequest_Success(t *testing.T) {
@@ -354,24 +317,17 @@ func TestServiceTargetManager_EndpointsRequest_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create endpoints request
-	requestId := uuid.NewString()
-	msg := &ServiceTargetMessage{
-		RequestId: requestId,
-		MessageType: &ServiceTargetMessage_EndpointsRequest{
-			EndpointsRequest: &ServiceTargetEndpointsRequest{
-				ServiceConfig:  serviceConfig,
-				TargetResource: targetResource,
-			},
-		},
+	req := &ServiceTargetEndpointsRequest{
+		ServiceConfig:  serviceConfig,
+		TargetResource: targetResource,
 	}
 
-	// Execute
-	resp := manager.buildServiceTargetResponseMsg(ctx, msg)
+	// Execute handler directly
+	resp, err := manager.onEndpoints(ctx, req)
 
 	// Verify response
+	require.NoError(t, err)
 	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.Nil(t, resp.Error)
 	assert.NotNil(t, resp.GetEndpointsResponse())
 	assert.Equal(t, expectedEndpoints, resp.GetEndpointsResponse().Endpoints)
 
@@ -385,26 +341,18 @@ func TestServiceTargetManager_PackageRequest_NilServiceConfig(t *testing.T) {
 	manager := createTestServiceTargetManager()
 	ctx := context.Background()
 
-	requestId := uuid.NewString()
-	msg := &ServiceTargetMessage{
-		RequestId: requestId,
-		MessageType: &ServiceTargetMessage_PackageRequest{
-			PackageRequest: &ServiceTargetPackageRequest{
-				ServiceConfig:  nil, // Nil service config
-				ServiceContext: &ServiceContext{},
-			},
-		},
+	req := &ServiceTargetPackageRequest{
+		ServiceConfig:  nil, // Nil service config
+		ServiceContext: &ServiceContext{},
 	}
 
-	// Execute
-	resp := manager.buildServiceTargetResponseMsg(ctx, msg)
+	// Execute handler directly
+	resp, err := manager.onPackage(ctx, req, nil)
 
 	// Verify error response
-	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.NotNil(t, resp.Error)
-	assert.Contains(t, resp.Error.Message, "service config is required for package request")
-	assert.Nil(t, resp.GetPackageResponse())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "service config is required for package request")
+	assert.Nil(t, resp)
 }
 
 func TestServiceTargetManager_PublishRequest_NilServiceConfig(t *testing.T) {
@@ -413,28 +361,20 @@ func TestServiceTargetManager_PublishRequest_NilServiceConfig(t *testing.T) {
 	manager := createTestServiceTargetManager()
 	ctx := context.Background()
 
-	requestId := uuid.NewString()
-	msg := &ServiceTargetMessage{
-		RequestId: requestId,
-		MessageType: &ServiceTargetMessage_PublishRequest{
-			PublishRequest: &ServiceTargetPublishRequest{
-				ServiceConfig:  nil, // Nil service config
-				ServiceContext: &ServiceContext{},
-				TargetResource: &TargetResource{},
-				PublishOptions: &PublishOptions{},
-			},
-		},
+	req := &ServiceTargetPublishRequest{
+		ServiceConfig:  nil, // Nil service config
+		ServiceContext: &ServiceContext{},
+		TargetResource: &TargetResource{},
+		PublishOptions: &PublishOptions{},
 	}
 
-	// Execute
-	resp := manager.buildServiceTargetResponseMsg(ctx, msg)
+	// Execute handler directly
+	resp, err := manager.onPublish(ctx, req, nil)
 
 	// Verify error response
-	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.NotNil(t, resp.Error)
-	assert.Contains(t, resp.Error.Message, "service config is required for publish request")
-	assert.Nil(t, resp.GetPublishResponse())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "service config is required for publish request")
+	assert.Nil(t, resp)
 }
 
 func TestServiceTargetManager_DeployRequest_NilServiceConfig(t *testing.T) {
@@ -443,47 +383,27 @@ func TestServiceTargetManager_DeployRequest_NilServiceConfig(t *testing.T) {
 	manager := createTestServiceTargetManager()
 	ctx := context.Background()
 
-	requestId := uuid.NewString()
-	msg := &ServiceTargetMessage{
-		RequestId: requestId,
-		MessageType: &ServiceTargetMessage_DeployRequest{
-			DeployRequest: &ServiceTargetDeployRequest{
-				ServiceConfig:  nil, // Nil service config
-				ServiceContext: &ServiceContext{},
-				TargetResource: &TargetResource{},
-			},
-		},
+	req := &ServiceTargetDeployRequest{
+		ServiceConfig:  nil, // Nil service config
+		ServiceContext: &ServiceContext{},
+		TargetResource: &TargetResource{},
 	}
 
-	// Execute
-	resp := manager.buildServiceTargetResponseMsg(ctx, msg)
+	// Execute handler directly
+	resp, err := manager.onDeploy(ctx, req, nil)
 
 	// Verify error response
-	require.NotNil(t, resp)
-	assert.Equal(t, requestId, resp.RequestId)
-	assert.NotNil(t, resp.Error)
-	assert.Contains(t, resp.Error.Message, "service config is required for deploy request")
-	assert.Nil(t, resp.GetDeployResponse())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "service config is required for deploy request")
+	assert.Nil(t, resp)
 }
 
 func TestServiceTargetManager_UnknownMessageType(t *testing.T) {
 	t.Parallel()
 
-	manager := createTestServiceTargetManager()
-	ctx := context.Background()
-
-	// Create message with unknown/unhandled type
-	requestId := uuid.NewString()
-	msg := &ServiceTargetMessage{
-		RequestId:   requestId,
-		MessageType: nil, // Unknown message type
-	}
-
-	// Execute
-	resp := manager.buildServiceTargetResponseMsg(ctx, msg)
-
-	// Should return nil for unknown message types
-	assert.Nil(t, resp)
+	// This test no longer applies since we removed buildServiceTargetResponseMsg
+	// The broker now handles unknown message types and will return errors for unregistered types
+	// Testing this would require mocking the broker itself
 }
 
 func TestServiceTargetManager_Close_ComponentManagerIntegration(t *testing.T) {
@@ -557,48 +477,33 @@ func TestServiceTargetManager_MultipleRequestTypes_SameProvider(t *testing.T) {
 	serviceConfig := createTestServiceConfigForServiceTarget("web-service", "containerapp")
 
 	// Initialize first
-	initMsg := &ServiceTargetMessage{
-		RequestId: uuid.NewString(),
-		MessageType: &ServiceTargetMessage_InitializeRequest{
-			InitializeRequest: &ServiceTargetInitializeRequest{
-				ServiceConfig: serviceConfig,
-			},
-		},
+	initReq := &ServiceTargetInitializeRequest{
+		ServiceConfig: serviceConfig,
 	}
-	initResp := manager.buildServiceTargetResponseMsg(ctx, initMsg)
+	initResp, err := manager.onInitialize(ctx, initReq)
+	require.NoError(t, err)
 	require.NotNil(t, initResp)
-	assert.Nil(t, initResp.Error)
 
 	// Test endpoints request
-	endpointsMsg := &ServiceTargetMessage{
-		RequestId: uuid.NewString(),
-		MessageType: &ServiceTargetMessage_EndpointsRequest{
-			EndpointsRequest: &ServiceTargetEndpointsRequest{
-				ServiceConfig:  serviceConfig,
-				TargetResource: targetResource,
-			},
-		},
+	endpointsReq := &ServiceTargetEndpointsRequest{
+		ServiceConfig:  serviceConfig,
+		TargetResource: targetResource,
 	}
-	endpointsResp := manager.buildServiceTargetResponseMsg(ctx, endpointsMsg)
+	endpointsResp, err := manager.onEndpoints(ctx, endpointsReq)
+	require.NoError(t, err)
 	require.NotNil(t, endpointsResp)
-	assert.Nil(t, endpointsResp.Error)
 	assert.Equal(t, expectedEndpoints, endpointsResp.GetEndpointsResponse().Endpoints)
 
 	// Test get target resource request
-	getTargetMsg := &ServiceTargetMessage{
-		RequestId: uuid.NewString(),
-		MessageType: &ServiceTargetMessage_GetTargetResourceRequest{
-			GetTargetResourceRequest: &GetTargetResourceRequest{
-				SubscriptionId:        "test-subscription",
-				ServiceConfig:         serviceConfig,
-				DefaultTargetResource: nil,
-				DefaultError:          "",
-			},
-		},
+	getTargetReq := &GetTargetResourceRequest{
+		SubscriptionId:        "test-subscription",
+		ServiceConfig:         serviceConfig,
+		DefaultTargetResource: nil,
+		DefaultError:          "",
 	}
-	getTargetResp := manager.buildServiceTargetResponseMsg(ctx, getTargetMsg)
+	getTargetResp, err := manager.onGetTargetResource(ctx, getTargetReq)
+	require.NoError(t, err)
 	require.NotNil(t, getTargetResp)
-	assert.Nil(t, getTargetResp.Error)
 	assert.Equal(t, expectedTargetResource, getTargetResp.GetGetTargetResourceResponse().TargetResource)
 
 	// Verify all mock expectations

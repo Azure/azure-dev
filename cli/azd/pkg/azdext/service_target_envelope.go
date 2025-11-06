@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/azure/azure-dev/cli/azd/internal/grpcbroker"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 )
 
 // ServiceTargetEnvelope provides message operations for ServiceTargetMessage
@@ -53,7 +53,42 @@ func (ops *ServiceTargetEnvelope) SetError(msg *ServiceTargetMessage, err error)
 
 // GetInnerMessage returns the inner message from the oneof field
 func (ops *ServiceTargetEnvelope) GetInnerMessage(msg *ServiceTargetMessage) any {
-	return msg.MessageType
+	// The MessageType field is a oneof wrapper. We need to extract the actual inner message.
+	switch m := msg.MessageType.(type) {
+	case *ServiceTargetMessage_RegisterServiceTargetRequest:
+		return m.RegisterServiceTargetRequest
+	case *ServiceTargetMessage_RegisterServiceTargetResponse:
+		return m.RegisterServiceTargetResponse
+	case *ServiceTargetMessage_InitializeRequest:
+		return m.InitializeRequest
+	case *ServiceTargetMessage_InitializeResponse:
+		return m.InitializeResponse
+	case *ServiceTargetMessage_GetTargetResourceRequest:
+		return m.GetTargetResourceRequest
+	case *ServiceTargetMessage_GetTargetResourceResponse:
+		return m.GetTargetResourceResponse
+	case *ServiceTargetMessage_DeployRequest:
+		return m.DeployRequest
+	case *ServiceTargetMessage_DeployResponse:
+		return m.DeployResponse
+	case *ServiceTargetMessage_ProgressMessage:
+		return m.ProgressMessage
+	case *ServiceTargetMessage_PackageRequest:
+		return m.PackageRequest
+	case *ServiceTargetMessage_PackageResponse:
+		return m.PackageResponse
+	case *ServiceTargetMessage_PublishRequest:
+		return m.PublishRequest
+	case *ServiceTargetMessage_PublishResponse:
+		return m.PublishResponse
+	case *ServiceTargetMessage_EndpointsRequest:
+		return m.EndpointsRequest
+	case *ServiceTargetMessage_EndpointsResponse:
+		return m.EndpointsResponse
+	default:
+		// Return nil for unhandled message types
+		return nil
+	}
 }
 
 // IsProgressMessage returns true if the message contains a progress message

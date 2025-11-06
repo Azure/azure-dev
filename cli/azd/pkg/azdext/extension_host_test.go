@@ -191,7 +191,11 @@ func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
 	// Setup mocks
 	mockServiceTargetManager := &MockServiceTargetRegistrar{}
 	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, "demo").Return(nil)
-	mockServiceTargetManager.On("Receive", mock.Anything).Return(nil)
+	// Mock Receive to block until context is cancelled (simulating broker.Run() behavior)
+	mockServiceTargetManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
 	mockServiceTargetManager.On("Close").Return(nil)
 
 	// Setup extension host
@@ -227,7 +231,11 @@ func TestExtensionHost_EventHandlersOnly(t *testing.T) {
 	mockEventManager.On("AddProjectEventHandler", mock.Anything, "preprovision", mock.Anything).Return(nil)
 	mockEventManager.On("AddServiceEventHandler", mock.Anything, "prepackage", mock.Anything,
 		(*ServiceEventOptions)(nil)).Return(nil)
-	mockEventManager.On("Receive", mock.Anything).Return(nil)
+	// Mock Receive to block until context is cancelled (simulating broker.Run() behavior)
+	mockEventManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
 	mockEventManager.On("Close").Return(nil)
 
 	// Setup extension host
@@ -263,12 +271,20 @@ func TestExtensionHost_ServiceTargetsAndEvents(t *testing.T) {
 	// Setup mocks
 	mockServiceTargetManager := &MockServiceTargetRegistrar{}
 	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, "foundryagent").Return(nil)
-	mockServiceTargetManager.On("Receive", mock.Anything).Return(nil)
+	// Mock Receive to block until context is cancelled (simulating broker.Run() behavior)
+	mockServiceTargetManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
 	mockServiceTargetManager.On("Close").Return(nil)
 
 	mockEventManager := &MockExtensionEventManager{}
 	mockEventManager.On("AddProjectEventHandler", mock.Anything, "preprovision", mock.Anything).Return(nil)
-	mockEventManager.On("Receive", mock.Anything).Return(nil)
+	// Mock Receive to block until context is cancelled (simulating broker.Run() behavior)
+	mockEventManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
 	mockEventManager.On("Close").Return(nil)
 
 	// Setup extension host
@@ -306,7 +322,20 @@ func TestExtensionHost_ServiceTargetRegistrationError(t *testing.T) {
 	// Setup mock with error
 	expectedError := status.Error(codes.Internal, "boom")
 	mockServiceTargetManager := &MockServiceTargetRegistrar{}
-	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, "bad").Return(expectedError)
+
+	// Use a channel to ensure Receive() goroutine has started before we proceed
+	receiveStarted := make(chan struct{})
+	mockServiceTargetManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		close(receiveStarted) // Signal that Receive has been called
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
+
+	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, "bad").Run(func(args mock.Arguments) {
+		// Wait for Receive to start before Register proceeds
+		<-receiveStarted
+	}).Return(expectedError)
+
 	mockServiceTargetManager.On("Close").Return(nil)
 
 	// Setup extension host
@@ -337,7 +366,11 @@ func TestExtensionHost_WithFrameworkService(t *testing.T) {
 	// Setup mocks
 	mockFrameworkServiceManager := &MockFrameworkServiceRegistrar{}
 	mockFrameworkServiceManager.On("Register", mock.Anything, mock.Anything, "python").Return(nil)
-	mockFrameworkServiceManager.On("Receive", mock.Anything).Return(nil)
+	// Mock Receive to block until context is cancelled (simulating broker.Run() behavior)
+	mockFrameworkServiceManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
 	mockFrameworkServiceManager.On("Close").Return(nil)
 
 	// Setup extension host
@@ -371,17 +404,29 @@ func TestExtensionHost_MultipleServiceTypes(t *testing.T) {
 	// Setup mocks for all service types
 	mockServiceTargetManager := &MockServiceTargetRegistrar{}
 	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, "web").Return(nil)
-	mockServiceTargetManager.On("Receive", mock.Anything).Return(nil)
+	// Mock Receive to block until context is cancelled (simulating broker.Run() behavior)
+	mockServiceTargetManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
 	mockServiceTargetManager.On("Close").Return(nil)
 
 	mockFrameworkServiceManager := &MockFrameworkServiceRegistrar{}
 	mockFrameworkServiceManager.On("Register", mock.Anything, mock.Anything, "node").Return(nil)
-	mockFrameworkServiceManager.On("Receive", mock.Anything).Return(nil)
+	// Mock Receive to block until context is cancelled (simulating broker.Run() behavior)
+	mockFrameworkServiceManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
 	mockFrameworkServiceManager.On("Close").Return(nil)
 
 	mockEventManager := &MockExtensionEventManager{}
 	mockEventManager.On("AddProjectEventHandler", mock.Anything, "predeploy", mock.Anything).Return(nil)
-	mockEventManager.On("Receive", mock.Anything).Return(nil)
+	// Mock Receive to block until context is cancelled (simulating broker.Run() behavior)
+	mockEventManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
 	mockEventManager.On("Close").Return(nil)
 
 	// Setup extension host

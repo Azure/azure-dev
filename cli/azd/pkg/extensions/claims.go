@@ -19,7 +19,13 @@ type ExtensionClaims struct {
 
 // GetClaimsFromContext retrieves the extension claims from the incoming gRPC context.
 func GetClaimsFromContext(ctx context.Context) (*ExtensionClaims, error) {
+	// First check the incoming context
 	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		// Otherwise check the outgoing context
+		md, ok = metadata.FromOutgoingContext(ctx)
+	}
+
 	if !ok {
 		return nil, fmt.Errorf("failed to get metadata from context")
 	}

@@ -5,13 +5,14 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
 
-	"github.com/azure/azure-dev/cli/azd/internal/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -41,9 +42,7 @@ func NewFrameworkService(
 }
 
 // Stream handles the bi-directional streaming for framework service operations.
-func (s *FrameworkService) Stream(
-	stream azdext.FrameworkService_StreamServer,
-) error {
+func (s *FrameworkService) Stream(stream azdext.FrameworkService_StreamServer) error {
 	ctx := stream.Context()
 	extensionClaims, err := extensions.GetClaimsFromContext(ctx)
 	if err != nil {
@@ -84,11 +83,13 @@ func (s *FrameworkService) Stream(
 		return fmt.Errorf("failed to register handler: %w", err)
 	}
 
-	// Start the broker dispatcher
-	broker.Start(ctx)
+	// Run the broker dispatcher (blocking)
+	// This will return when the stream closes or encounters an error
+	if err := broker.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		log.Printf("Broker error for framework service %s: %v", registeredLanguage, err)
+		return fmt.Errorf("broker error: %w", err)
+	}
 
-	// Wait for the stream context to be done (client disconnects or server shutdown)
-	<-stream.Context().Done()
 	log.Printf("Stream closed for framework service: %s", registeredLanguage)
 
 	s.providerMapMu.Lock()

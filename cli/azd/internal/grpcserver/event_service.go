@@ -5,15 +5,16 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
-	"github.com/azure/azure-dev/cli/azd/internal/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -34,8 +35,9 @@ type eventService struct {
 	extensionManager *extensions.Manager
 	console          input.Console
 
-	lazyProject *lazy.Lazy[*project.ProjectConfig]
-	lazyEnv     *lazy.Lazy[*environment.Environment]
+	lazyEnvManager *lazy.Lazy[environment.Manager]
+	lazyProject    *lazy.Lazy[*project.ProjectConfig]
+	lazyEnv        *lazy.Lazy[*environment.Environment]
 
 	// Message broker for handling bidirectional event streaming
 	eventBroker *grpcbroker.MessageBroker[azdext.EventMessage]
@@ -43,12 +45,14 @@ type eventService struct {
 
 func NewEventService(
 	extensionManager *extensions.Manager,
+	lazyEnvManager *lazy.Lazy[environment.Manager],
 	lazyProject *lazy.Lazy[*project.ProjectConfig],
 	lazyEnv *lazy.Lazy[*environment.Environment],
 	console input.Console,
 ) azdext.EventServiceServer {
 	return &eventService{
 		extensionManager: extensionManager,
+		lazyEnvManager:   lazyEnvManager,
 		lazyProject:      lazyProject,
 		lazyEnv:          lazyEnv,
 		console:          console,
@@ -92,12 +96,13 @@ func (s *eventService) EventStream(stream grpc.BidiStreamingServer[azdext.EventM
 		return nil, s.onSubscribeServiceEvent(ctx, extension, msg)
 	})
 
-	// Start the broker's dispatcher
-	broker.Start(ctx)
+	// Run the broker's dispatcher (blocking)
+	if err := broker.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		log.Printf("Broker error in EventStream: %v", err)
+		return fmt.Errorf("broker error: %w", err)
+	}
 
-	// Wait for context cancellation
-	<-ctx.Done()
-	log.Println("Context cancelled by caller, exiting EventStream")
+	log.Println("EventStream completed")
 	return nil
 }
 
@@ -122,6 +127,7 @@ func (s *eventService) onSubscribeProjectEvent(
 			return fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 		}
 	}
+
 	return nil
 }
 
@@ -154,27 +160,29 @@ func (s *eventService) createProjectEventHandler(
 			},
 		}
 
-		response, err := s.eventBroker.Send(ctx, invokeMsg)
-		if err != nil {
-			return fmt.Errorf("failed to send invoke message for event %s: %w", eventName, err)
-		}
+		return s.runWithEnvReload(ctx, func() error {
+			response, err := s.eventBroker.SendAndWait(ctx, invokeMsg)
+			if err != nil {
+				return fmt.Errorf("failed to send invoke message for event %s: %w", eventName, err)
+			}
 
-		// Extract status from response
-		statusMsg, ok := response.MessageType.(*azdext.EventMessage_ProjectHandlerStatus)
-		if !ok {
-			return fmt.Errorf("unexpected response type for project event %s", eventName)
-		}
+			// Extract status from response
+			statusMsg, ok := response.MessageType.(*azdext.EventMessage_ProjectHandlerStatus)
+			if !ok {
+				return fmt.Errorf("unexpected response type for project event %s", eventName)
+			}
 
-		if statusMsg.ProjectHandlerStatus.Status == "failed" {
-			return fmt.Errorf(
-				"extension %s project hook %s failed: %s",
-				extension.Id,
-				eventName,
-				statusMsg.ProjectHandlerStatus.Message,
-			)
-		}
+			if statusMsg.ProjectHandlerStatus.Status == "failed" {
+				return fmt.Errorf(
+					"extension %s project hook %s failed: %s",
+					extension.Id,
+					eventName,
+					statusMsg.ProjectHandlerStatus.Message,
+				)
+			}
 
-		return nil
+			return nil
+		})
 	}
 }
 
@@ -207,6 +215,7 @@ func (s *eventService) onSubscribeServiceEvent(
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -254,28 +263,30 @@ func (s *eventService) createServiceEventHandler(
 			},
 		}
 
-		response, err := s.eventBroker.Send(ctx, invokeMsg)
-		if err != nil {
-			return fmt.Errorf("failed to send invoke message for service event %s: %w", eventName, err)
-		}
+		return s.runWithEnvReload(ctx, func() error {
+			response, err := s.eventBroker.SendAndWait(ctx, invokeMsg)
+			if err != nil {
+				return fmt.Errorf("failed to send invoke message for service event %s: %w", eventName, err)
+			}
 
-		// Extract status from response
-		statusMsg, ok := response.MessageType.(*azdext.EventMessage_ServiceHandlerStatus)
-		if !ok {
-			return fmt.Errorf("unexpected response type for service event %s", eventName)
-		}
+			// Extract status from response
+			statusMsg, ok := response.MessageType.(*azdext.EventMessage_ServiceHandlerStatus)
+			if !ok {
+				return fmt.Errorf("unexpected response type for service event %s", eventName)
+			}
 
-		if statusMsg.ServiceHandlerStatus.Status == "failed" {
-			return fmt.Errorf(
-				"extension %s service hook %s.%s failed: %s",
-				extension.Id,
-				args.Service.Name,
-				eventName,
-				statusMsg.ServiceHandlerStatus.Message,
-			)
-		}
+			if statusMsg.ServiceHandlerStatus.Status == "failed" {
+				return fmt.Errorf(
+					"extension %s service hook %s.%s failed: %s",
+					extension.Id,
+					args.Service.Name,
+					eventName,
+					statusMsg.ServiceHandlerStatus.Message,
+				)
+			}
 
-		return nil
+			return nil
+		})
 	}
 }
 
@@ -303,4 +314,30 @@ func (s *eventService) syncExtensionOutput(
 		s.console.StopPreviewer(ctx, false)
 		extOut.RemoveWriter(previewWriter)
 	}
+}
+
+// runWithEnvReload reloads the environment before and after executing the provided action.
+func (s *eventService) runWithEnvReload(ctx context.Context, action func() error) error {
+	envManager, err := s.lazyEnvManager.GetValue()
+	if err != nil {
+		return err
+	}
+
+	env, err := s.lazyEnv.GetValue()
+	if err != nil {
+		return err
+	}
+
+	// Reload before invoking event handler to ensure environment is updated
+	if err := envManager.Reload(ctx, env); err != nil {
+		return err
+	}
+
+	actionErr := action()
+	if actionErr != nil {
+		return actionErr
+	}
+
+	// Reload after invoking event handler to ensure environment is updated
+	return envManager.Reload(ctx, env)
 }

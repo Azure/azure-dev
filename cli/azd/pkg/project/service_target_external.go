@@ -8,12 +8,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/internal/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -103,7 +103,7 @@ func (est *ExternalServiceTarget) Publish(
 		},
 	}
 
-	resp, err := est.broker.SendWithProgress(ctx, req, createProgressFunc(progress))
+	resp, err := est.broker.SendAndWaitWithProgress(ctx, req, createProgressFunc(progress))
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ func (est *ExternalServiceTarget) Initialize(ctx context.Context, serviceConfig 
 		},
 	}
 
-	_, err = est.broker.Send(ctx, req)
+	_, err = est.broker.SendAndWait(ctx, req)
 	return err
 }
 
@@ -183,7 +183,7 @@ func (est *ExternalServiceTarget) Package(
 		},
 	}
 
-	resp, err := est.broker.SendWithProgress(ctx, req, createProgressFunc(progress))
+	resp, err := est.broker.SendAndWaitWithProgress(ctx, req, createProgressFunc(progress))
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +240,7 @@ func (est *ExternalServiceTarget) Deploy(
 	}
 
 	// Send request and wait for response, handling progress messages
-	resp, err := est.broker.SendWithProgress(ctx, req, createProgressFunc(progress))
+	resp, err := est.broker.SendAndWaitWithProgress(ctx, req, createProgressFunc(progress))
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +285,7 @@ func (est *ExternalServiceTarget) Endpoints(
 		},
 	}
 
-	resp, err := est.broker.Send(ctx, req)
+	resp, err := est.broker.SendAndWait(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +339,7 @@ func (est *ExternalServiceTarget) ResolveTargetResource(
 		},
 	}
 
-	resp, err := est.broker.Send(ctx, req)
+	resp, err := est.broker.SendAndWait(ctx, req)
 	if err != nil {
 		return nil, err
 	}

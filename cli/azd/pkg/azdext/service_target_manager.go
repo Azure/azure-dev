@@ -7,17 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"log"
-	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/google/uuid"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
-// ProgressReporter defines a function type for reporting progress updates from extensions
-type ProgressReporter func(message string)
+// ProgressReporter is an alias for the broker's ProgressFunc
+type ProgressReporter = grpcbroker.ProgressFunc
 
 var (
 	ServiceTargetFactoryKey = func(config *ServiceConfig) string {
@@ -65,7 +61,7 @@ type ServiceTargetProvider interface {
 // ServiceTargetManager handles registration and provisioning request forwarding for a provider.
 type ServiceTargetManager struct {
 	client           *AzdClient
-	stream           ServiceTargetService_StreamClient
+	broker           *grpcbroker.MessageBroker[ServiceTargetMessage]
 	componentManager *ComponentManager[ServiceTargetProvider]
 }
 
@@ -79,24 +75,46 @@ func NewServiceTargetManager(client *AzdClient) *ServiceTargetManager {
 
 // Close terminates the underlying gRPC stream if it's been initialized.
 func (m *ServiceTargetManager) Close() error {
-	if m.stream != nil {
-		if err := m.stream.CloseSend(); err != nil {
-			return err
-		}
+	if m.broker != nil {
+		m.broker.Close()
 	}
 
 	return m.componentManager.Close()
 }
 
-// ensureStream initializes the stream if it hasn't been created yet.
+// ensureStream initializes the broker and stream if they haven't been created yet.
 func (m *ServiceTargetManager) ensureStream(ctx context.Context) error {
-	if m.stream == nil {
+	if m.broker == nil {
 		stream, err := m.client.ServiceTarget().Stream(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to create service target stream: %w", err)
 		}
-		m.stream = stream
+
+		// Create broker with client stream
+		envelope := &ServiceTargetEnvelope{}
+		m.broker = grpcbroker.NewMessageBroker(stream, envelope)
+
+		// Register handlers for incoming requests
+		if err := m.broker.On(m.onInitialize); err != nil {
+			return fmt.Errorf("failed to register initialize handler: %w", err)
+		}
+		if err := m.broker.On(m.onGetTargetResource); err != nil {
+			return fmt.Errorf("failed to register get target resource handler: %w", err)
+		}
+		if err := m.broker.On(m.onPackage); err != nil {
+			return fmt.Errorf("failed to register package handler: %w", err)
+		}
+		if err := m.broker.On(m.onPublish); err != nil {
+			return fmt.Errorf("failed to register publish handler: %w", err)
+		}
+		if err := m.broker.On(m.onDeploy); err != nil {
+			return fmt.Errorf("failed to register deploy handler: %w", err)
+		}
+		if err := m.broker.On(m.onEndpoints); err != nil {
+			return fmt.Errorf("failed to register endpoints handler: %w", err)
+		}
 	}
+
 	return nil
 }
 
@@ -117,17 +135,10 @@ func (m *ServiceTargetManager) Register(ctx context.Context, factory ServiceTarg
 			},
 		},
 	}
-	if err := m.stream.Send(registerReq); err != nil {
-		return err
-	}
 
-	resp, err := m.stream.Recv()
-	if errors.Is(err, io.EOF) {
-		return nil
-	}
-
-	if resp.Error != nil {
-		return fmt.Errorf("service target registration error: %s", resp.Error.Message)
+	resp, err := m.broker.SendAndWait(ctx, registerReq)
+	if err != nil {
+		return fmt.Errorf("service target registration failed: %w", err)
 	}
 
 	if resp.GetRegisterServiceTargetResponse() == nil {
@@ -137,353 +148,193 @@ func (m *ServiceTargetManager) Register(ctx context.Context, factory ServiceTarg
 	return nil
 }
 
+// Receive starts the broker's message dispatcher and blocks until the stream completes.
+// Returns nil on graceful shutdown, or an error if the stream fails.
 func (m *ServiceTargetManager) Receive(ctx context.Context) error {
 	if err := m.ensureStream(ctx); err != nil {
-		return fmt.Errorf("failed to initialize stream: %w", err)
+		return err
 	}
 
-	for {
-		msg, err := m.stream.Recv()
-		if err != nil {
-			// Check if it's context cancellation
-			if ctx.Err() != nil {
-				log.Println("Context cancelled, exiting service target stream")
-				return nil
-			}
-
-			// Handle normal stream closure
-			if errors.Is(err, io.EOF) {
-				log.Println("Service target stream closed by server (EOF), treating as expected")
-				return nil
-			}
-
-			if st, ok := status.FromError(err); ok {
-				if st.Code() == codes.Unavailable {
-					log.Println("Service target stream closed by server (unavailable), treating as expected")
-					return nil
-				}
-			}
-
-			log.Printf("service target stream closed: %v", err)
-			return err
-		}
-
-		// Process message synchronously to avoid race condition with stream.Send()
-		resp := m.buildServiceTargetResponseMsg(ctx, msg)
-		if resp != nil {
-			if err := m.stream.Send(resp); err != nil {
-				log.Printf("failed to send service target response: %v", err)
-				return err
-			}
-		}
-	}
+	return m.broker.Run(ctx)
 }
 
-func (m *ServiceTargetManager) buildServiceTargetResponseMsg(
+// Handler methods - these are registered with the broker to handle incoming requests
+
+// onInitialize handles initialization requests from the server
+func (m *ServiceTargetManager) onInitialize(
 	ctx context.Context,
-	msg *ServiceTargetMessage,
-) *ServiceTargetMessage {
-	var resp *ServiceTargetMessage
-	switch r := msg.MessageType.(type) {
-	case *ServiceTargetMessage_InitializeRequest:
-		initReq := r.InitializeRequest
-		var serviceConfig *ServiceConfig
-		if initReq != nil {
-			serviceConfig = initReq.ServiceConfig
-		}
-
-		if serviceConfig == nil {
-			resp = &ServiceTargetMessage{
-				RequestId: msg.RequestId,
-				Error: &ServiceTargetErrorMessage{
-					Message: "service config is required for initialize request",
-				},
-			}
-			return resp
-		}
-
-		// Create new instance using componentManager
-		_, err := m.componentManager.GetOrCreateInstance(ctx, serviceConfig)
-		resp = &ServiceTargetMessage{
-			RequestId: msg.RequestId,
-			MessageType: &ServiceTargetMessage_InitializeResponse{
-				InitializeResponse: &ServiceTargetInitializeResponse{},
-			},
-		}
-		if err != nil {
-			resp.Error = &ServiceTargetErrorMessage{
-				Message: err.Error(),
-			}
-		}
-	case *ServiceTargetMessage_GetTargetResourceRequest:
-		serviceConfig := r.GetTargetResourceRequest.ServiceConfig
-		if serviceConfig == nil {
-			resp = &ServiceTargetMessage{
-				RequestId: msg.RequestId,
-				Error: &ServiceTargetErrorMessage{
-					Message: "service config is required for get target resource request",
-				},
-			}
-			return resp
-		}
-
-		provider, err := m.componentManager.GetInstance(serviceConfig.Name)
-		if err != nil {
-			resp = &ServiceTargetMessage{
-				RequestId: msg.RequestId,
-				Error: &ServiceTargetErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
-						serviceConfig.Name),
-				},
-			}
-			return resp
-		}
-
-		// Create a callback that returns the default target resource or error
-		defaultResolver := func() (*TargetResource, error) {
-			// Check if default resolution had an error
-			if r.GetTargetResourceRequest.DefaultError != "" {
-				return nil, errors.New(r.GetTargetResourceRequest.DefaultError)
-			}
-			// Return the default target resource (may be nil if not computed)
-			defaultTarget := r.GetTargetResourceRequest.DefaultTargetResource
-			return defaultTarget, nil
-		}
-
-		result, err := provider.GetTargetResource(
-			ctx,
-			r.GetTargetResourceRequest.SubscriptionId,
-			r.GetTargetResourceRequest.ServiceConfig,
-			defaultResolver,
-		)
-		resp = &ServiceTargetMessage{
-			RequestId: msg.RequestId,
-			MessageType: &ServiceTargetMessage_GetTargetResourceResponse{
-				GetTargetResourceResponse: &GetTargetResourceResponse{TargetResource: result},
-			},
-		}
-		if err != nil {
-			resp.Error = &ServiceTargetErrorMessage{
-				Message: err.Error(),
-			}
-		}
-	case *ServiceTargetMessage_PackageRequest:
-		serviceConfig := r.PackageRequest.ServiceConfig
-		if serviceConfig == nil {
-			resp = &ServiceTargetMessage{
-				RequestId: msg.RequestId,
-				Error: &ServiceTargetErrorMessage{
-					Message: "service config is required for package request",
-				},
-			}
-			return resp
-		}
-
-		provider, err := m.componentManager.GetInstance(serviceConfig.Name)
-		if err != nil {
-			resp = &ServiceTargetMessage{
-				RequestId: msg.RequestId,
-				Error: &ServiceTargetErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
-						serviceConfig.Name),
-				},
-			}
-			return resp
-		}
-
-		progressReporter := func(message string) {
-			progressMsg := &ServiceTargetMessage{
-				RequestId: msg.RequestId,
-				MessageType: &ServiceTargetMessage_ProgressMessage{
-					ProgressMessage: &ServiceTargetProgressMessage{
-						RequestId: msg.RequestId,
-						Message:   message,
-						Timestamp: time.Now().UnixMilli(),
-					},
-				},
-			}
-			if err := m.stream.Send(progressMsg); err != nil {
-				log.Printf("failed to send progress message: %v", err)
-			}
-		}
-
-		result, err := provider.Package(
-			ctx,
-			r.PackageRequest.ServiceConfig,
-			r.PackageRequest.ServiceContext,
-			progressReporter,
-		)
-		resp = &ServiceTargetMessage{
-			RequestId: msg.RequestId,
-			MessageType: &ServiceTargetMessage_PackageResponse{
-				PackageResponse: &ServiceTargetPackageResponse{Result: result},
-			},
-		}
-		if err != nil {
-			resp.Error = &ServiceTargetErrorMessage{
-				Message: err.Error(),
-			}
-		}
-	case *ServiceTargetMessage_PublishRequest:
-		serviceConfig := r.PublishRequest.ServiceConfig
-		if serviceConfig == nil {
-			resp = &ServiceTargetMessage{
-				RequestId: msg.RequestId,
-				Error: &ServiceTargetErrorMessage{
-					Message: "service config is required for publish request",
-				},
-			}
-			return resp
-		}
-
-		provider, err := m.componentManager.GetInstance(serviceConfig.Name)
-		if err != nil {
-			resp = &ServiceTargetMessage{
-				RequestId: msg.RequestId,
-				Error: &ServiceTargetErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
-						serviceConfig.Name),
-				},
-			}
-			return resp
-		}
-
-		progressReporter := func(message string) {
-			progressMsg := &ServiceTargetMessage{
-				RequestId: msg.RequestId,
-				MessageType: &ServiceTargetMessage_ProgressMessage{
-					ProgressMessage: &ServiceTargetProgressMessage{
-						RequestId: msg.RequestId,
-						Message:   message,
-						Timestamp: time.Now().UnixMilli(),
-					},
-				},
-			}
-			if err := m.stream.Send(progressMsg); err != nil {
-				log.Printf("failed to send progress message: %v", err)
-			}
-		}
-
-		result, err := provider.Publish(
-			ctx,
-			r.PublishRequest.ServiceConfig,
-			r.PublishRequest.ServiceContext,
-			r.PublishRequest.TargetResource,
-			r.PublishRequest.PublishOptions,
-			progressReporter,
-		)
-		resp = &ServiceTargetMessage{
-			RequestId: msg.RequestId,
-			MessageType: &ServiceTargetMessage_PublishResponse{
-				PublishResponse: &ServiceTargetPublishResponse{Result: result},
-			},
-		}
-		if err != nil {
-			resp.Error = &ServiceTargetErrorMessage{
-				Message: err.Error(),
-			}
-		}
-	case *ServiceTargetMessage_DeployRequest:
-		serviceConfig := r.DeployRequest.ServiceConfig
-		if serviceConfig == nil {
-			resp = &ServiceTargetMessage{
-				RequestId: msg.RequestId,
-				Error: &ServiceTargetErrorMessage{
-					Message: "service config is required for deploy request",
-				},
-			}
-			return resp
-		}
-
-		provider, err := m.componentManager.GetInstance(serviceConfig.Name)
-		if err != nil {
-			resp = &ServiceTargetMessage{
-				RequestId: msg.RequestId,
-				Error: &ServiceTargetErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
-						serviceConfig.Name),
-				},
-			}
-			return resp
-		}
-
-		// Create a progress reporter that sends progress messages back to core
-		progressReporter := func(message string) {
-			progressMsg := &ServiceTargetMessage{
-				RequestId: msg.RequestId,
-				MessageType: &ServiceTargetMessage_ProgressMessage{
-					ProgressMessage: &ServiceTargetProgressMessage{
-						RequestId: msg.RequestId,
-						Message:   message,
-						Timestamp: time.Now().UnixMilli(),
-					},
-				},
-			}
-			if err := m.stream.Send(progressMsg); err != nil {
-				log.Printf("failed to send progress message: %v", err)
-			}
-		}
-
-		result, err := provider.Deploy(
-			ctx,
-			r.DeployRequest.ServiceConfig,
-			r.DeployRequest.ServiceContext,
-			r.DeployRequest.TargetResource,
-			progressReporter,
-		)
-		resp = &ServiceTargetMessage{
-			RequestId: msg.RequestId,
-			MessageType: &ServiceTargetMessage_DeployResponse{
-				DeployResponse: &ServiceTargetDeployResponse{Result: result},
-			},
-		}
-		if err != nil {
-			resp.Error = &ServiceTargetErrorMessage{
-				Message: err.Error(),
-			}
-		}
-	case *ServiceTargetMessage_EndpointsRequest:
-		serviceConfig := r.EndpointsRequest.ServiceConfig
-		if serviceConfig == nil {
-			resp = &ServiceTargetMessage{
-				RequestId: msg.RequestId,
-				Error: &ServiceTargetErrorMessage{
-					Message: "service config is required for endpoints request",
-				},
-			}
-			return resp
-		}
-
-		provider, err := m.componentManager.GetInstance(serviceConfig.Name)
-		if err != nil {
-			resp = &ServiceTargetMessage{
-				RequestId: msg.RequestId,
-				Error: &ServiceTargetErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
-						serviceConfig.Name),
-				},
-			}
-			return resp
-		}
-
-		endpoints, err := provider.Endpoints(
-			ctx,
-			r.EndpointsRequest.ServiceConfig,
-			r.EndpointsRequest.TargetResource,
-		)
-		resp = &ServiceTargetMessage{
-			RequestId: msg.RequestId,
-			MessageType: &ServiceTargetMessage_EndpointsResponse{
-				EndpointsResponse: &ServiceTargetEndpointsResponse{Endpoints: endpoints},
-			},
-		}
-		if err != nil {
-			resp.Error = &ServiceTargetErrorMessage{
-				Message: err.Error(),
-			}
-		}
-	default:
-		log.Printf("Unknown or unhandled service target message type: %T", r)
+	req *ServiceTargetInitializeRequest,
+) (*ServiceTargetMessage, error) {
+	if req.ServiceConfig == nil {
+		return nil, errors.New("service config is required for initialize request")
 	}
-	return resp
+
+	// Create new instance using componentManager
+	_, err := m.componentManager.GetOrCreateInstance(ctx, req.ServiceConfig)
+
+	return &ServiceTargetMessage{
+		MessageType: &ServiceTargetMessage_InitializeResponse{
+			InitializeResponse: &ServiceTargetInitializeResponse{},
+		},
+	}, err
+}
+
+// onGetTargetResource handles get target resource requests
+func (m *ServiceTargetManager) onGetTargetResource(
+	ctx context.Context,
+	req *GetTargetResourceRequest,
+) (*ServiceTargetMessage, error) {
+	if req.ServiceConfig == nil {
+		return nil, errors.New("service config is required for get target resource request")
+	}
+
+	provider, err := m.componentManager.GetInstance(req.ServiceConfig.Name)
+	if err != nil {
+		return nil, fmt.Errorf("no provider instance found for service: %s. Initialize must be called first",
+			req.ServiceConfig.Name)
+	}
+
+	// Create a callback that returns the default target resource or error
+	defaultResolver := func() (*TargetResource, error) {
+		// Check if default resolution had an error
+		if req.DefaultError != "" {
+			return nil, errors.New(req.DefaultError)
+		}
+		// Return the default target resource (may be nil if not computed)
+		return req.DefaultTargetResource, nil
+	}
+
+	result, err := provider.GetTargetResource(
+		ctx,
+		req.SubscriptionId,
+		req.ServiceConfig,
+		defaultResolver,
+	)
+
+	return &ServiceTargetMessage{
+		MessageType: &ServiceTargetMessage_GetTargetResourceResponse{
+			GetTargetResourceResponse: &GetTargetResourceResponse{TargetResource: result},
+		},
+	}, err
+}
+
+// onPackage handles package requests with progress reporting
+func (m *ServiceTargetManager) onPackage(
+	ctx context.Context,
+	req *ServiceTargetPackageRequest,
+	progress grpcbroker.ProgressFunc,
+) (*ServiceTargetMessage, error) {
+	if req.ServiceConfig == nil {
+		return nil, errors.New("service config is required for package request")
+	}
+
+	provider, err := m.componentManager.GetInstance(req.ServiceConfig.Name)
+	if err != nil {
+		return nil, fmt.Errorf("no provider instance found for service: %s. Initialize must be called first",
+			req.ServiceConfig.Name)
+	}
+
+	result, err := provider.Package(
+		ctx,
+		req.ServiceConfig,
+		req.ServiceContext,
+		progress,
+	)
+
+	return &ServiceTargetMessage{
+		MessageType: &ServiceTargetMessage_PackageResponse{
+			PackageResponse: &ServiceTargetPackageResponse{Result: result},
+		},
+	}, err
+}
+
+// onPublish handles publish requests with progress reporting
+func (m *ServiceTargetManager) onPublish(
+	ctx context.Context,
+	req *ServiceTargetPublishRequest,
+	progress grpcbroker.ProgressFunc,
+) (*ServiceTargetMessage, error) {
+	if req.ServiceConfig == nil {
+		return nil, errors.New("service config is required for publish request")
+	}
+
+	provider, err := m.componentManager.GetInstance(req.ServiceConfig.Name)
+	if err != nil {
+		return nil, fmt.Errorf("no provider instance found for service: %s. Initialize must be called first",
+			req.ServiceConfig.Name)
+	}
+
+	result, err := provider.Publish(
+		ctx,
+		req.ServiceConfig,
+		req.ServiceContext,
+		req.TargetResource,
+		req.PublishOptions,
+		progress,
+	)
+
+	return &ServiceTargetMessage{
+		MessageType: &ServiceTargetMessage_PublishResponse{
+			PublishResponse: &ServiceTargetPublishResponse{Result: result},
+		},
+	}, err
+}
+
+// onDeploy handles deploy requests with progress reporting
+func (m *ServiceTargetManager) onDeploy(
+	ctx context.Context,
+	req *ServiceTargetDeployRequest,
+	progress grpcbroker.ProgressFunc,
+) (*ServiceTargetMessage, error) {
+	if req.ServiceConfig == nil {
+		return nil, errors.New("service config is required for deploy request")
+	}
+
+	provider, err := m.componentManager.GetInstance(req.ServiceConfig.Name)
+	if err != nil {
+		return nil, fmt.Errorf("no provider instance found for service: %s. Initialize must be called first",
+			req.ServiceConfig.Name)
+	}
+
+	result, err := provider.Deploy(
+		ctx,
+		req.ServiceConfig,
+		req.ServiceContext,
+		req.TargetResource,
+		progress,
+	)
+
+	return &ServiceTargetMessage{
+		MessageType: &ServiceTargetMessage_DeployResponse{
+			DeployResponse: &ServiceTargetDeployResponse{Result: result},
+		},
+	}, err
+}
+
+// onEndpoints handles endpoints requests
+func (m *ServiceTargetManager) onEndpoints(
+	ctx context.Context,
+	req *ServiceTargetEndpointsRequest,
+) (*ServiceTargetMessage, error) {
+	if req.ServiceConfig == nil {
+		return nil, errors.New("service config is required for endpoints request")
+	}
+
+	provider, err := m.componentManager.GetInstance(req.ServiceConfig.Name)
+	if err != nil {
+		return nil, fmt.Errorf("no provider instance found for service: %s. Initialize must be called first",
+			req.ServiceConfig.Name)
+	}
+
+	endpoints, err := provider.Endpoints(
+		ctx,
+		req.ServiceConfig,
+		req.TargetResource,
+	)
+
+	return &ServiceTargetMessage{
+		MessageType: &ServiceTargetMessage_EndpointsResponse{
+			EndpointsResponse: &ServiceTargetEndpointsResponse{Endpoints: endpoints},
+		},
+	}, err
 }

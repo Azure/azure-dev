@@ -151,6 +151,37 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		}
 	}()
 
+	// Collect active receivers and start them BEFORE registration
+	// This ensures broker.Run() is active to receive registration responses
+	receivers := []serviceReceiver{}
+	if hasServiceTargets {
+		receivers = append(receivers, er.serviceTargetManager)
+	}
+	if hasFrameworkServices {
+		receivers = append(receivers, er.frameworkServiceManager)
+	}
+	if hasEventHandlers {
+		receivers = append(receivers, er.eventManager)
+	}
+
+	// Start receiving messages from active managers in separate goroutines
+	// CRITICAL: This must happen BEFORE any Register() calls that use broker.Send()
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(receivers))
+
+	for _, receiver := range receivers {
+		wg.Add(1)
+		go func(r serviceReceiver) {
+			defer wg.Done()
+			if err := r.Receive(ctx); err != nil {
+				errChan <- fmt.Errorf("receiver error: %w", err)
+			}
+		}(receiver)
+	}
+
+	// Now that receivers are running, perform registrations
+	// The broker.Run() in each Receive() will process the registration responses
+
 	// Register all service targets with the single manager
 	for _, reg := range er.serviceTargets {
 		if reg.Factory == nil {
@@ -192,32 +223,6 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		if err := er.eventManager.AddServiceEventHandler(ctx, reg.EventName, reg.Handler, reg.Options); err != nil {
 			return fmt.Errorf("failed to add service event handler '%s': %w", reg.EventName, err)
 		}
-	}
-
-	// Collect active receivers
-	receivers := []serviceReceiver{}
-	if hasServiceTargets {
-		receivers = append(receivers, er.serviceTargetManager)
-	}
-	if hasFrameworkServices {
-		receivers = append(receivers, er.frameworkServiceManager)
-	}
-	if hasEventHandlers {
-		receivers = append(receivers, er.eventManager)
-	}
-
-	// Start receiving messages from active managers in separate goroutines
-	var wg sync.WaitGroup
-	errChan := make(chan error, len(receivers))
-
-	for _, receiver := range receivers {
-		wg.Add(1)
-		go func(r serviceReceiver) {
-			defer wg.Done()
-			if err := r.Receive(ctx); err != nil {
-				errChan <- fmt.Errorf("receiver error: %w", err)
-			}
-		}(receiver)
 	}
 
 	// Signal readiness after all registrations are complete

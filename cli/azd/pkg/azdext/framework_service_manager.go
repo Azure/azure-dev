@@ -7,12 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"log"
-	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
+	"github.com/google/uuid"
 )
 
 var (
@@ -30,26 +27,26 @@ type FrameworkServiceProvider interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		serviceContext *ServiceContext,
-		progress ProgressReporter,
+		progress grpcbroker.ProgressFunc,
 	) (*ServiceRestoreResult, error)
 	Build(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		serviceContext *ServiceContext,
-		progress ProgressReporter,
+		progress grpcbroker.ProgressFunc,
 	) (*ServiceBuildResult, error)
 	Package(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		serviceContext *ServiceContext,
-		progress ProgressReporter,
+		progress grpcbroker.ProgressFunc,
 	) (*ServicePackageResult, error)
 }
 
 // FrameworkServiceManager handles registration and request forwarding for a framework service provider.
 type FrameworkServiceManager struct {
 	client           *AzdClient
-	stream           FrameworkService_StreamClient
+	broker           *grpcbroker.MessageBroker[FrameworkServiceMessage]
 	componentManager *ComponentManager[FrameworkServiceProvider]
 }
 
@@ -61,15 +58,47 @@ func NewFrameworkServiceManager(client *AzdClient) *FrameworkServiceManager {
 	}
 }
 
-// ensureStream initializes the stream if it hasn't been created yet.
+// Close closes the framework service manager and cleans up resources.
+func (m *FrameworkServiceManager) Close() error {
+	if m.broker != nil {
+		m.broker.Close()
+	}
+	return m.componentManager.Close()
+}
+
+// ensureStream initializes the broker and stream if they haven't been created yet.
 func (m *FrameworkServiceManager) ensureStream(ctx context.Context) error {
-	if m.stream == nil {
+	if m.broker == nil {
 		stream, err := m.client.FrameworkService().Stream(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to create framework service stream: %w", err)
 		}
-		m.stream = stream
+
+		// Create broker with client stream
+		envelope := &FrameworkServiceEnvelope{}
+		m.broker = grpcbroker.NewMessageBroker(stream, envelope)
+
+		// Register handlers for incoming requests
+		if err := m.broker.On(m.onInitialize); err != nil {
+			return fmt.Errorf("failed to register initialize handler: %w", err)
+		}
+		if err := m.broker.On(m.onRequiredExternalTools); err != nil {
+			return fmt.Errorf("failed to register required external tools handler: %w", err)
+		}
+		if err := m.broker.On(m.onRequirements); err != nil {
+			return fmt.Errorf("failed to register requirements handler: %w", err)
+		}
+		if err := m.broker.On(m.onRestore); err != nil {
+			return fmt.Errorf("failed to register restore handler: %w", err)
+		}
+		if err := m.broker.On(m.onBuild); err != nil {
+			return fmt.Errorf("failed to register build handler: %w", err)
+		}
+		if err := m.broker.On(m.onPackage); err != nil {
+			return fmt.Errorf("failed to register package handler: %w", err)
+		}
 	}
+
 	return nil
 }
 
@@ -86,26 +115,18 @@ func (m *FrameworkServiceManager) Register(
 	m.componentManager.RegisterFactory(language, factory)
 
 	// Send registration request
-	err := m.stream.Send(&FrameworkServiceMessage{
-		RequestId: "register",
+	registerReq := &FrameworkServiceMessage{
+		RequestId: uuid.NewString(),
 		MessageType: &FrameworkServiceMessage_RegisterFrameworkServiceRequest{
 			RegisterFrameworkServiceRequest: &RegisterFrameworkServiceRequest{
 				Language: language,
 			},
 		},
-	})
-	if err != nil {
-		return err
 	}
 
-	// Wait for registration response
-	resp, err := m.stream.Recv()
+	resp, err := m.broker.SendAndWait(ctx, registerReq)
 	if err != nil {
-		return err
-	}
-
-	if resp.Error != nil {
-		return fmt.Errorf("framework service registration error: %s", resp.Error.Message)
+		return fmt.Errorf("framework service registration failed: %w", err)
 	}
 
 	if resp.GetRegisterFrameworkServiceResponse() == nil {
@@ -115,364 +136,161 @@ func (m *FrameworkServiceManager) Register(
 	return nil
 }
 
-// Receive handles the bidirectional stream for framework service operations
+// Receive starts the broker's message dispatcher and blocks until the stream completes.
+// Returns nil on graceful shutdown, or an error if the stream fails.
 func (m *FrameworkServiceManager) Receive(ctx context.Context) error {
 	if err := m.ensureStream(ctx); err != nil {
-		return fmt.Errorf("failed to initialize stream: %w", err)
+		return err
 	}
-
-	for {
-		msg, err := m.stream.Recv()
-		if err != nil {
-			// Check if it's context cancellation
-			if ctx.Err() != nil {
-				log.Println("Context cancelled, exiting framework service stream")
-				return nil
-			}
-
-			// Handle normal stream closure
-			if errors.Is(err, io.EOF) {
-				log.Println("Framework service stream closed by server (EOF), treating as expected")
-				return nil
-			}
-
-			if st, ok := status.FromError(err); ok {
-				if st.Code() == codes.Unavailable {
-					log.Println("Framework service stream closed by server (unavailable), treating as expected")
-					return nil
-				}
-			}
-
-			log.Printf("framework service stream closed: %v", err)
-			return err
-		}
-
-		// Process message synchronously to avoid race condition with stream.Recv()
-		resp := m.buildFrameworkServiceResponseMsg(ctx, msg)
-		if resp != nil {
-			if err := m.stream.Send(resp); err != nil {
-				log.Printf("failed to send framework service response: %v", err)
-				return err
-			}
-		}
-	}
+	return m.broker.Run(ctx)
 }
 
-// Close closes the framework service manager stream.
-func (m *FrameworkServiceManager) Close() error {
-	if m.stream != nil {
-		if err := m.stream.CloseSend(); err != nil {
-			return err
-		}
-	}
-	return m.componentManager.Close()
-}
+// Handler methods - these are registered with the broker to handle incoming requests
 
-// buildFrameworkServiceResponseMsg handles individual framework service requests and builds responses
-func (m *FrameworkServiceManager) buildFrameworkServiceResponseMsg(
+// onInitialize handles initialization requests from the server
+func (m *FrameworkServiceManager) onInitialize(
 	ctx context.Context,
-	msg *FrameworkServiceMessage,
-) *FrameworkServiceMessage {
-	var resp *FrameworkServiceMessage
-	switch r := msg.MessageType.(type) {
-	case *FrameworkServiceMessage_InitializeRequest:
-		initReq := r.InitializeRequest
-		var serviceConfig *ServiceConfig
-		if initReq != nil {
-			serviceConfig = initReq.ServiceConfig
-		}
-
-		if serviceConfig == nil {
-			resp = &FrameworkServiceMessage{
-				RequestId: msg.RequestId,
-				Error: &FrameworkServiceErrorMessage{
-					Message: "service config is required for initialize request",
-				},
-			}
-			return resp
-		}
-
-		// Create new instance using baseManager
-		_, err := m.componentManager.GetOrCreateInstance(ctx, serviceConfig)
-
-		resp = &FrameworkServiceMessage{
-			RequestId: msg.RequestId,
-			MessageType: &FrameworkServiceMessage_InitializeResponse{
-				InitializeResponse: &FrameworkServiceInitializeResponse{},
-			},
-		}
-		if err != nil {
-			resp.Error = &FrameworkServiceErrorMessage{
-				Message: err.Error(),
-			}
-		}
-
-	case *FrameworkServiceMessage_RequiredExternalToolsRequest:
-		reqReq := r.RequiredExternalToolsRequest
-		var serviceConfig *ServiceConfig
-		if reqReq != nil {
-			serviceConfig = reqReq.ServiceConfig
-		}
-
-		if serviceConfig == nil {
-			resp = &FrameworkServiceMessage{
-				RequestId: msg.RequestId,
-				Error: &FrameworkServiceErrorMessage{
-					Message: "service config is required for required external tools request",
-				},
-			}
-			return resp
-		}
-
-		provider, err := m.componentManager.GetInstance(serviceConfig.Name)
-		if err != nil {
-			resp = &FrameworkServiceMessage{
-				RequestId: msg.RequestId,
-				Error: &FrameworkServiceErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
-						serviceConfig.Name),
-				},
-			}
-			return resp
-		}
-
-		tools, err := provider.RequiredExternalTools(ctx, serviceConfig)
-		resp = &FrameworkServiceMessage{
-			RequestId: msg.RequestId,
-			MessageType: &FrameworkServiceMessage_RequiredExternalToolsResponse{
-				RequiredExternalToolsResponse: &FrameworkServiceRequiredExternalToolsResponse{
-					Tools: tools,
-				},
-			},
-		}
-		if err != nil {
-			resp.Error = &FrameworkServiceErrorMessage{
-				Message: err.Error(),
-			}
-		}
-
-	case *FrameworkServiceMessage_RequirementsRequest:
-		// Requirements don't depend on a specific service, so we can use any available instance
-		provider, err := m.componentManager.GetAnyInstance()
-		if err != nil {
-			resp = &FrameworkServiceMessage{
-				RequestId: msg.RequestId,
-				Error: &FrameworkServiceErrorMessage{
-					Message: "no provider instances available. Initialize must be called first",
-				},
-			}
-			return resp
-		}
-
-		requirements, err := provider.Requirements()
-		resp = &FrameworkServiceMessage{
-			RequestId: msg.RequestId,
-			MessageType: &FrameworkServiceMessage_RequirementsResponse{
-				RequirementsResponse: &FrameworkServiceRequirementsResponse{
-					Requirements: requirements,
-				},
-			},
-		}
-		if err != nil {
-			resp.Error = &FrameworkServiceErrorMessage{
-				Message: err.Error(),
-			}
-		}
-
-	case *FrameworkServiceMessage_RestoreRequest:
-		restoreReq := r.RestoreRequest
-		var serviceConfig *ServiceConfig
-		var serviceContext *ServiceContext
-		if restoreReq != nil {
-			serviceConfig = restoreReq.ServiceConfig
-			serviceContext = restoreReq.ServiceContext
-		}
-
-		if serviceConfig == nil {
-			resp = &FrameworkServiceMessage{
-				RequestId: msg.RequestId,
-				Error: &FrameworkServiceErrorMessage{
-					Message: "service config is required for restore request",
-				},
-			}
-			return resp
-		}
-
-		provider, err := m.componentManager.GetInstance(serviceConfig.Name)
-		if err != nil {
-			resp = &FrameworkServiceMessage{
-				RequestId: msg.RequestId,
-				Error: &FrameworkServiceErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
-						serviceConfig.Name),
-				},
-			}
-			return resp
-		}
-
-		progressReporter := func(message string) {
-			progressMsg := &FrameworkServiceMessage{
-				RequestId: msg.RequestId,
-				MessageType: &FrameworkServiceMessage_ProgressMessage{
-					ProgressMessage: &FrameworkServiceProgressMessage{
-						RequestId: msg.RequestId,
-						Message:   message,
-						Timestamp: time.Now().UnixMilli(),
-					},
-				},
-			}
-			if err := m.stream.Send(progressMsg); err != nil {
-				log.Printf("failed to send progress message: %v", err)
-			}
-		}
-
-		result, err := provider.Restore(ctx, serviceConfig, serviceContext, progressReporter)
-		resp = &FrameworkServiceMessage{
-			RequestId: msg.RequestId,
-			MessageType: &FrameworkServiceMessage_RestoreResponse{
-				RestoreResponse: &FrameworkServiceRestoreResponse{
-					RestoreResult: result,
-				},
-			},
-		}
-		if err != nil {
-			resp.Error = &FrameworkServiceErrorMessage{
-				Message: err.Error(),
-			}
-		}
-
-	case *FrameworkServiceMessage_BuildRequest:
-		buildReq := r.BuildRequest
-		var serviceConfig *ServiceConfig
-		var serviceContext *ServiceContext
-		if buildReq != nil {
-			serviceConfig = buildReq.ServiceConfig
-			serviceContext = buildReq.ServiceContext
-		}
-
-		if serviceConfig == nil {
-			resp = &FrameworkServiceMessage{
-				RequestId: msg.RequestId,
-				Error: &FrameworkServiceErrorMessage{
-					Message: "service config is required for build request",
-				},
-			}
-			return resp
-		}
-
-		provider, err := m.componentManager.GetInstance(serviceConfig.Name)
-		if err != nil {
-			resp = &FrameworkServiceMessage{
-				RequestId: msg.RequestId,
-				Error: &FrameworkServiceErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
-						serviceConfig.Name),
-				},
-			}
-			return resp
-		}
-
-		progressReporter := func(message string) {
-			progressMsg := &FrameworkServiceMessage{
-				RequestId: msg.RequestId,
-				MessageType: &FrameworkServiceMessage_ProgressMessage{
-					ProgressMessage: &FrameworkServiceProgressMessage{
-						RequestId: msg.RequestId,
-						Message:   message,
-						Timestamp: time.Now().UnixMilli(),
-					},
-				},
-			}
-			if err := m.stream.Send(progressMsg); err != nil {
-				log.Printf("failed to send progress message: %v", err)
-			}
-		}
-
-		result, err := provider.Build(ctx, serviceConfig, serviceContext, progressReporter)
-		resp = &FrameworkServiceMessage{
-			RequestId: msg.RequestId,
-			MessageType: &FrameworkServiceMessage_BuildResponse{
-				BuildResponse: &FrameworkServiceBuildResponse{
-					Result: result,
-				},
-			},
-		}
-		if err != nil {
-			resp.Error = &FrameworkServiceErrorMessage{
-				Message: err.Error(),
-			}
-		}
-
-	case *FrameworkServiceMessage_PackageRequest:
-		packageReq := r.PackageRequest
-		var serviceConfig *ServiceConfig
-		var serviceContext *ServiceContext
-		if packageReq != nil {
-			serviceConfig = packageReq.ServiceConfig
-			serviceContext = packageReq.ServiceContext
-		}
-
-		if serviceConfig == nil {
-			resp = &FrameworkServiceMessage{
-				RequestId: msg.RequestId,
-				Error: &FrameworkServiceErrorMessage{
-					Message: "service config is required for package request",
-				},
-			}
-			return resp
-		}
-
-		provider, err := m.componentManager.GetInstance(serviceConfig.Name)
-		if err != nil {
-			resp = &FrameworkServiceMessage{
-				RequestId: msg.RequestId,
-				Error: &FrameworkServiceErrorMessage{
-					Message: fmt.Sprintf("no provider instance found for service: %s. Initialize must be called first",
-						serviceConfig.Name),
-				},
-			}
-			return resp
-		}
-
-		progressReporter := func(message string) {
-			progressMsg := &FrameworkServiceMessage{
-				RequestId: msg.RequestId,
-				MessageType: &FrameworkServiceMessage_ProgressMessage{
-					ProgressMessage: &FrameworkServiceProgressMessage{
-						RequestId: msg.RequestId,
-						Message:   message,
-						Timestamp: time.Now().UnixMilli(),
-					},
-				},
-			}
-			if err := m.stream.Send(progressMsg); err != nil {
-				log.Printf("failed to send progress message: %v", err)
-			}
-		}
-
-		result, err := provider.Package(ctx, serviceConfig, serviceContext, progressReporter)
-		resp = &FrameworkServiceMessage{
-			RequestId: msg.RequestId,
-			MessageType: &FrameworkServiceMessage_PackageResponse{
-				PackageResponse: &FrameworkServicePackageResponse{
-					PackageResult: result,
-				},
-			},
-		}
-		if err != nil {
-			resp.Error = &FrameworkServiceErrorMessage{
-				Message: err.Error(),
-			}
-		}
-
-	default:
-		resp = &FrameworkServiceMessage{
-			RequestId: msg.RequestId,
-			Error: &FrameworkServiceErrorMessage{
-				Message: fmt.Sprintf("unsupported message type: %T", r),
-			},
-		}
+	req *FrameworkServiceInitializeRequest,
+) (*FrameworkServiceMessage, error) {
+	if req.ServiceConfig == nil {
+		return nil, errors.New("service config is required for initialize request")
 	}
 
-	return resp
+	// Create new instance using componentManager
+	_, err := m.componentManager.GetOrCreateInstance(ctx, req.ServiceConfig)
+
+	return &FrameworkServiceMessage{
+		MessageType: &FrameworkServiceMessage_InitializeResponse{
+			InitializeResponse: &FrameworkServiceInitializeResponse{},
+		},
+	}, err
+}
+
+// onRequiredExternalTools handles required external tools requests
+func (m *FrameworkServiceManager) onRequiredExternalTools(
+	ctx context.Context,
+	req *FrameworkServiceRequiredExternalToolsRequest,
+) (*FrameworkServiceMessage, error) {
+	if req.ServiceConfig == nil {
+		return nil, errors.New("service config is required for required external tools request")
+	}
+
+	provider, err := m.componentManager.GetInstance(req.ServiceConfig.Name)
+	if err != nil {
+		return nil, fmt.Errorf("no provider instance found for service: %s. Initialize must be called first",
+			req.ServiceConfig.Name)
+	}
+
+	tools, err := provider.RequiredExternalTools(ctx, req.ServiceConfig)
+
+	return &FrameworkServiceMessage{
+		MessageType: &FrameworkServiceMessage_RequiredExternalToolsResponse{
+			RequiredExternalToolsResponse: &FrameworkServiceRequiredExternalToolsResponse{
+				Tools: tools,
+			},
+		},
+	}, err
+}
+
+// onRequirements handles requirements requests
+func (m *FrameworkServiceManager) onRequirements(
+	ctx context.Context,
+	req *FrameworkServiceRequirementsRequest,
+) (*FrameworkServiceMessage, error) {
+	// Requirements don't depend on a specific service, so we can use any available instance
+	provider, err := m.componentManager.GetAnyInstance()
+	if err != nil {
+		return nil, errors.New("no provider instances available. Initialize must be called first")
+	}
+
+	requirements, err := provider.Requirements()
+
+	return &FrameworkServiceMessage{
+		MessageType: &FrameworkServiceMessage_RequirementsResponse{
+			RequirementsResponse: &FrameworkServiceRequirementsResponse{
+				Requirements: requirements,
+			},
+		},
+	}, err
+}
+
+// onRestore handles restore requests with progress reporting
+func (m *FrameworkServiceManager) onRestore(
+	ctx context.Context,
+	req *FrameworkServiceRestoreRequest,
+	progress grpcbroker.ProgressFunc,
+) (*FrameworkServiceMessage, error) {
+	if req.ServiceConfig == nil {
+		return nil, errors.New("service config is required for restore request")
+	}
+
+	provider, err := m.componentManager.GetInstance(req.ServiceConfig.Name)
+	if err != nil {
+		return nil, fmt.Errorf("no provider instance found for service: %s. Initialize must be called first",
+			req.ServiceConfig.Name)
+	}
+
+	result, err := provider.Restore(ctx, req.ServiceConfig, req.ServiceContext, progress)
+
+	return &FrameworkServiceMessage{
+		MessageType: &FrameworkServiceMessage_RestoreResponse{
+			RestoreResponse: &FrameworkServiceRestoreResponse{
+				RestoreResult: result,
+			},
+		},
+	}, err
+}
+
+// onBuild handles build requests with progress reporting
+func (m *FrameworkServiceManager) onBuild(
+	ctx context.Context,
+	req *FrameworkServiceBuildRequest,
+	progress grpcbroker.ProgressFunc,
+) (*FrameworkServiceMessage, error) {
+	if req.ServiceConfig == nil {
+		return nil, errors.New("service config is required for build request")
+	}
+
+	provider, err := m.componentManager.GetInstance(req.ServiceConfig.Name)
+	if err != nil {
+		return nil, fmt.Errorf("no provider instance found for service: %s. Initialize must be called first",
+			req.ServiceConfig.Name)
+	}
+
+	result, err := provider.Build(ctx, req.ServiceConfig, req.ServiceContext, progress)
+
+	return &FrameworkServiceMessage{
+		MessageType: &FrameworkServiceMessage_BuildResponse{
+			BuildResponse: &FrameworkServiceBuildResponse{
+				Result: result,
+			},
+		},
+	}, err
+}
+
+// onPackage handles package requests with progress reporting
+func (m *FrameworkServiceManager) onPackage(
+	ctx context.Context,
+	req *FrameworkServicePackageRequest,
+	progress grpcbroker.ProgressFunc,
+) (*FrameworkServiceMessage, error) {
+	if req.ServiceConfig == nil {
+		return nil, errors.New("service config is required for package request")
+	}
+
+	provider, err := m.componentManager.GetInstance(req.ServiceConfig.Name)
+	if err != nil {
+		return nil, fmt.Errorf("no provider instance found for service: %s. Initialize must be called first",
+			req.ServiceConfig.Name)
+	}
+
+	result, err := provider.Package(ctx, req.ServiceConfig, req.ServiceContext, progress)
+
+	return &FrameworkServiceMessage{
+		MessageType: &FrameworkServiceMessage_PackageResponse{
+			PackageResponse: &FrameworkServicePackageResponse{
+				PackageResult: result,
+			},
+		},
+	}, err
 }

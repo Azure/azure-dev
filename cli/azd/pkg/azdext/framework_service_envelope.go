@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/azure/azure-dev/cli/azd/internal/grpcbroker"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 )
 
 // FrameworkServiceEnvelope provides message operations for FrameworkServiceMessage
@@ -53,7 +53,42 @@ func (ops *FrameworkServiceEnvelope) SetError(msg *FrameworkServiceMessage, err 
 
 // GetInnerMessage returns the inner message from the oneof field
 func (ops *FrameworkServiceEnvelope) GetInnerMessage(msg *FrameworkServiceMessage) any {
-	return msg.MessageType
+	// The MessageType field is a oneof wrapper. We need to extract the actual inner message.
+	switch m := msg.MessageType.(type) {
+	case *FrameworkServiceMessage_RegisterFrameworkServiceRequest:
+		return m.RegisterFrameworkServiceRequest
+	case *FrameworkServiceMessage_RegisterFrameworkServiceResponse:
+		return m.RegisterFrameworkServiceResponse
+	case *FrameworkServiceMessage_InitializeRequest:
+		return m.InitializeRequest
+	case *FrameworkServiceMessage_InitializeResponse:
+		return m.InitializeResponse
+	case *FrameworkServiceMessage_RequiredExternalToolsRequest:
+		return m.RequiredExternalToolsRequest
+	case *FrameworkServiceMessage_RequiredExternalToolsResponse:
+		return m.RequiredExternalToolsResponse
+	case *FrameworkServiceMessage_RequirementsRequest:
+		return m.RequirementsRequest
+	case *FrameworkServiceMessage_RequirementsResponse:
+		return m.RequirementsResponse
+	case *FrameworkServiceMessage_RestoreRequest:
+		return m.RestoreRequest
+	case *FrameworkServiceMessage_RestoreResponse:
+		return m.RestoreResponse
+	case *FrameworkServiceMessage_BuildRequest:
+		return m.BuildRequest
+	case *FrameworkServiceMessage_BuildResponse:
+		return m.BuildResponse
+	case *FrameworkServiceMessage_PackageRequest:
+		return m.PackageRequest
+	case *FrameworkServiceMessage_PackageResponse:
+		return m.PackageResponse
+	case *FrameworkServiceMessage_ProgressMessage:
+		return m.ProgressMessage
+	default:
+		// Return nil for unhandled message types
+		return nil
+	}
 }
 
 // IsProgressMessage returns true if the message contains a progress message

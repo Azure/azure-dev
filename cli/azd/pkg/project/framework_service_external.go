@@ -8,11 +8,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/internal/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/google/uuid"
@@ -85,7 +85,7 @@ func (efs *ExternalFrameworkService) RequiredExternalTools(
 		},
 	}
 
-	resp, err := efs.broker.Send(ctx, req)
+	resp, err := efs.broker.SendAndWait(ctx, req)
 	if err != nil {
 		return nil
 	}
@@ -128,7 +128,7 @@ func (efs *ExternalFrameworkService) Initialize(ctx context.Context, serviceConf
 		},
 	}
 
-	_, err = efs.broker.Send(ctx, req)
+	_, err = efs.broker.SendAndWait(ctx, req)
 	return err
 }
 
@@ -144,7 +144,7 @@ func (efs *ExternalFrameworkService) Requirements() FrameworkRequirements {
 		},
 	}
 
-	resp, err := efs.broker.Send(ctx, req)
+	resp, err := efs.broker.SendAndWait(ctx, req)
 	if err != nil {
 		// Return default requirements on error
 		return FrameworkRequirements{
@@ -199,7 +199,7 @@ func (efs *ExternalFrameworkService) Restore(
 		},
 	}
 
-	resp, err := efs.broker.SendWithProgress(ctx, req, createProgressFunc(progress))
+	resp, err := efs.broker.SendAndWaitWithProgress(ctx, req, createProgressFunc(progress))
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +245,7 @@ func (efs *ExternalFrameworkService) Build(
 		},
 	}
 
-	resp, err := efs.broker.SendWithProgress(ctx, req, createProgressFunc(progress))
+	resp, err := efs.broker.SendAndWaitWithProgress(ctx, req, createProgressFunc(progress))
 	if err != nil {
 		return nil, err
 	}
@@ -291,7 +291,7 @@ func (efs *ExternalFrameworkService) Package(
 		},
 	}
 
-	resp, err := efs.broker.SendWithProgress(ctx, req, createProgressFunc(progress))
+	resp, err := efs.broker.SendAndWaitWithProgress(ctx, req, createProgressFunc(progress))
 	if err != nil {
 		return nil, err
 	}

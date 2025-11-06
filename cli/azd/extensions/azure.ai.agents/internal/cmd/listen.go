@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +17,6 @@ import (
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +25,9 @@ func newListenCommand() *cobra.Command {
 		Use:   "listen",
 		Short: "Starts the extension and listens for events.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Suppress all log output during listen mode
+			log.SetOutput(io.Discard)
+
 			// Create a new context that includes the AZD access token.
 			ctx := azdext.WithAccessToken(cmd.Context())
 
@@ -34,12 +38,12 @@ func newListenCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-				Options: &azdext.ConfirmOptions{
-					Message:      "Debug Extension",
-					DefaultValue: ux.Ptr(true),
-				},
-			})
+			// azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+			// 	Options: &azdext.ConfirmOptions{
+			// 		Message:      "Debug Extension",
+			// 		DefaultValue: ux.Ptr(true),
+			// 	},
+			// })
 
 			projectParser := &project.FoundryParser{AzdClient: azdClient}
 			// IMPORTANT: service target name here must match the name used in the extension manifest.

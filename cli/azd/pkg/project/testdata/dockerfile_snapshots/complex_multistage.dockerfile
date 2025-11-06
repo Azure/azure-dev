@@ -1,0 +1,40 @@
+ARG NODE_VERSION=18
+ARG ALPINE_VERSION=3.18
+
+FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION} AS deps
+# Install dependencies
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+
+FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION} AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+RUN npm run test
+
+FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION}
+# Production stage
+ARG BUILD_DATE
+ARG VERSION=1.0.0
+WORKDIR /app
+
+# Copy dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy built application from build stage
+COPY --from=build /app/dist ./dist
+
+# Set metadata
+ENV NODE_ENV=production
+ENV BUILD_DATE=${BUILD_DATE}
+ENV VERSION=${VERSION}
+
+# Create non-root user
+RUN addgroup -g 1000 appuser && adduser -D -u 1000 -G appuser appuser
+USER appuser
+
+EXPOSE 3000
+CMD ["node", "dist/server.js"]

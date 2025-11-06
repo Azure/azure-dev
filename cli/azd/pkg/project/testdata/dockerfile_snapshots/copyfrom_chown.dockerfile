@@ -1,0 +1,14 @@
+FROM golang:1.21-alpine AS build
+WORKDIR /app
+COPY go.mod ./
+COPY go.sum ./
+RUN go mod download
+COPY . .
+RUN go build -o myapp
+
+FROM alpine:latest
+RUN addgroup -g 1000 appuser && adduser -D -u 1000 -G appuser appuser
+WORKDIR /home/appuser
+COPY --from=build --chown=appuser:appuser /app/myapp ./myapp
+USER appuser
+ENTRYPOINT ["./myapp"]

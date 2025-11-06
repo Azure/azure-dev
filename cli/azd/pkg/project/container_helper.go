@@ -87,6 +87,11 @@ func NewContainerHelper(
 	}
 }
 
+// DockerfileBuilder returns a new DockerfileBuilder instance for building Dockerfiles programmatically.
+func (ch *ContainerHelper) DockerfileBuilder() *DockerfileBuilder {
+	return NewDockerfileBuilder()
+}
+
 // getCurrentEnvironment gets the current environment using the standard pattern
 func (ch *ContainerHelper) getCurrentEnvironment(ctx context.Context) (*environment.Environment, error) {
 	defaultEnvironment, err := ch.azdContext.GetDefaultEnvironmentName()

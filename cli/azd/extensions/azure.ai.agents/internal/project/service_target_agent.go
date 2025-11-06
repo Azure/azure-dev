@@ -527,11 +527,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	hostedDef := agentManifest.Template.(agent_yaml.ContainerAgent)
 	if hostedDef.EnvironmentVariables != nil {
 		for _, envVar := range *hostedDef.EnvironmentVariables {
-			resolvedValue, err := p.resolveEnvironmentVariables(envVar.Value, azdEnv)
-			if err != nil {
-				return nil, fmt.Errorf("failed to resolve value for agent config variable '%s': %w", envVar.Name, err)
-			}
-			resolvedEnvVars[envVar.Name] = resolvedValue
+			resolvedEnvVars[envVar.Name] = p.resolveEnvironmentVariables(envVar.Value, azdEnv)
 		}
 	}
 
@@ -797,12 +793,13 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 
 // resolveEnvironmentVariables resolves ${ENV_VAR} style references in value using azd environment variables.
 // Supports default values (e.g., "${VAR:-default}") and multiple expressions (e.g., "${VAR1}-${VAR2}").
-func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, azdEnv map[string]string) (string, error) {
+func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, azdEnv map[string]string) string {
 	resolved, err := envsubst.Eval(value, func(varName string) string {
 		return azdEnv[varName]
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve environment variables in '%s': %w", value, err)
+		// If resolution fails, return original value
+		return value
 	}
-	return resolved, nil
+	return resolved
 }

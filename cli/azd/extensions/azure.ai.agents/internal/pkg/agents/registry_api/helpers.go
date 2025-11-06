@@ -51,11 +51,11 @@ func ProcessRegistryManifest(ctx context.Context, manifest *Manifest, azdClient 
 
 func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_yaml.PromptAgent, error) {
 	// Convert tools from agent_api.Tool to agent_yaml.Tool
-	var tools []agent_yaml.Tool
+	var tools []any
 	for _, apiTool := range template.Tools {
-		yamlTool := agent_yaml.Tool{
-			Name: apiTool.Type, // Use Type as Name
-			Kind: "",           // TODO: Where does this come from?
+		yamlTool, err := ConvertToolToYaml(apiTool)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert tool: %w", err)
 		}
 		tools = append(tools, yamlTool)
 	}
@@ -76,6 +76,153 @@ func ConvertAgentDefinition(template agent_api.PromptAgentDefinition) (*agent_ya
 	}
 
 	return promptAgent, nil
+}
+
+// ConvertToolToYaml converts an agent_api tool to its corresponding agent_yaml tool type
+func ConvertToolToYaml(apiTool any) (any, error) {
+	if apiTool == nil {
+		return nil, fmt.Errorf("tool cannot be nil")
+	}
+
+	switch tool := apiTool.(type) {
+	case agent_api.FunctionTool:
+		return agent_yaml.FunctionTool{
+			Tool: agent_yaml.Tool{
+				Name:        tool.Name,
+				Kind:        agent_yaml.ToolKindFunction,
+				Description: tool.Description,
+			},
+			Parameters: convertToPropertySchema(tool.Parameters),
+			Strict:     tool.Strict,
+		}, nil
+	case agent_api.WebSearchPreviewTool:
+		options := make(map[string]interface{})
+		if tool.UserLocation != nil {
+			options["userLocation"] = tool.UserLocation
+		}
+		if tool.SearchContextSize != nil {
+			options["searchContextSize"] = *tool.SearchContextSize
+		}
+		return agent_yaml.WebSearchTool{
+			Tool: agent_yaml.Tool{
+				Name: "web_search_preview",
+				Kind: agent_yaml.ToolKindWebSearch,
+			},
+			Options: &options,
+		}, nil
+	case agent_api.BingGroundingAgentTool:
+		options := make(map[string]interface{})
+		options["bingGrounding"] = tool.BingGrounding
+		return agent_yaml.BingGroundingTool{
+			Tool: agent_yaml.Tool{
+				Name: "bing_grounding",
+				Kind: agent_yaml.ToolKindBingGrounding,
+			},
+			Options: &options,
+		}, nil
+	case agent_api.FileSearchTool:
+		options := make(map[string]interface{})
+		if tool.Filters != nil {
+			options["filters"] = tool.Filters
+		}
+		var ranker *string
+		var scoreThreshold *float64
+		if tool.RankingOptions != nil {
+			ranker = tool.RankingOptions.Ranker
+			scoreThreshold = convertFloat32ToFloat64(tool.RankingOptions.ScoreThreshold)
+		}
+		return agent_yaml.FileSearchTool{
+			Tool: agent_yaml.Tool{
+				Name: "file_search",
+				Kind: agent_yaml.ToolKindFileSearch,
+			},
+			VectorStoreIds:     tool.VectorStoreIds,
+			MaximumResultCount: convertInt32ToInt(tool.MaxNumResults),
+			Ranker:             ranker,
+			ScoreThreshold:     scoreThreshold,
+			Options:            options,
+		}, nil
+	case agent_api.MCPTool:
+		options := make(map[string]interface{})
+		if tool.ServerURL != "" {
+			options["serverUrl"] = tool.ServerURL
+		}
+		if tool.Headers != nil {
+			options["headers"] = tool.Headers
+		}
+		if tool.AllowedTools != nil {
+			options["allowedTools"] = tool.AllowedTools
+		}
+		if tool.RequireApproval != nil {
+			options["requireApproval"] = tool.RequireApproval
+		}
+		if tool.ProjectConnectionID != nil {
+			options["projectConnectionId"] = *tool.ProjectConnectionID
+		}
+		return agent_yaml.McpTool{
+			Tool: agent_yaml.Tool{
+				Name: "mcp",
+				Kind: agent_yaml.ToolKindMcp,
+			},
+			ServerName:        tool.ServerLabel,
+			ServerDescription: nil, // Not available in agent_api
+			ApprovalMode:      agent_yaml.McpServerApprovalMode{},
+			AllowedTools:      nil, // Will be set through options as the types are too generic
+			Options:           options,
+		}, nil
+	case agent_api.OpenApiAgentTool:
+		options := make(map[string]interface{})
+		options["openapi"] = tool.OpenAPI
+		return agent_yaml.OpenApiTool{
+			Tool: agent_yaml.Tool{
+				Name: "openapi",
+				Kind: agent_yaml.ToolKindOpenApi,
+			},
+			Specification: "", // Placeholder - should be extracted from tool.OpenAPI
+			Options:       options,
+		}, nil
+	case agent_api.CodeInterpreterTool:
+		options := make(map[string]interface{})
+		if tool.Container != nil {
+			options["container"] = tool.Container
+		}
+		return agent_yaml.CodeInterpreterTool{
+			Tool: agent_yaml.Tool{
+				Name: "code_interpreter",
+				Kind: agent_yaml.ToolKindCodeInterpreter,
+			},
+			Options: options,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported tool type: %T", apiTool)
+	}
+}
+
+// Helper function to convert PropertySchema from interface{} (assuming it's already a PropertySchema or can be converted)
+func convertToPropertySchema(params interface{}) agent_yaml.PropertySchema {
+	// This is a placeholder implementation - you may need to adjust based on the actual structure
+	// of the parameters from the agent_api package
+	return agent_yaml.PropertySchema{
+		Properties: []agent_yaml.Property{},
+	}
+}
+
+// Helper function to convert *float32 to *float64
+func convertFloat32ToFloat64(f32 *float32) *float64 {
+	if f32 == nil {
+		return nil
+	}
+	f64 := float64(*f32)
+	return &f64
+}
+
+// Helper function to convert *int32 to *int
+func convertInt32ToInt(i32 *int32) *int {
+	if i32 == nil {
+		return nil
+	}
+	i := int(*i32)
+	return &i
 }
 
 func ConvertParameters(parameters map[string]OpenApiParameter) (*agent_yaml.PropertySchema, error) {

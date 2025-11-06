@@ -708,6 +708,14 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", fmt.Errorf("failed to process manifest parameters: %w", err)
 	}
 
+	_, isPromptAgent := agentManifest.Template.(agent_yaml.PromptAgent)
+	if isPromptAgent {
+		agentManifest, err = agent_yaml.ProcessPromptAgentToolsConnections(ctx, agentManifest, a.azdClient)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to process prompt agent tools connections: %w", err)
+		}
+	}
+
 	content, err = yaml.Marshal(agentManifest)
 	if err != nil {
 		return nil, "", fmt.Errorf("marshaling agent manifest to YAML after parameter processing: %w", err)

@@ -141,8 +141,24 @@ func (cli *Cli) PublishAppHostManifest(
 		return os.WriteFile(manifestPath, m, osutil.PermissionFile)
 	}
 
-	runArgs := exec.NewRunArgs(
-		"dotnet", "run", "--project", filepath.Base(hostProject), "--publisher", "manifest", "--output-path", manifestPath)
+	// For single-file apphosts, we need to use the .cs file directly
+	var runArgs exec.RunArgs
+	if filepath.Ext(hostProject) == ".cs" {
+		// Single-file apphost: use the .cs file directly as the argument
+		runArgs = exec.NewRunArgs(
+			"dotnet", "run", filepath.Base(hostProject), "--publisher", "manifest", "--output-path", manifestPath)
+	} else {
+		// Project-based apphost: use --project flag
+		runArgs = exec.NewRunArgs(
+			"dotnet",
+			"run",
+			"--project",
+			filepath.Base(hostProject),
+			"--publisher",
+			"manifest",
+			"--output-path",
+			manifestPath)
+	}
 
 	runArgs = runArgs.WithCwd(filepath.Dir(hostProject))
 
@@ -307,7 +323,13 @@ func (cli *Cli) GetMsBuildProperty(ctx context.Context, project string, property
 
 // IsAspireHostProject returns true if the project at the given path has an MS Build Property named "IsAspireHost" which is
 // set to true or has a ProjectCapability named "Aspire".
+// For single-file apphosts (apphost.cs), it validates them without running msbuild.
 func (cli *Cli) IsAspireHostProject(ctx context.Context, projectPath string) (bool, error) {
+	// Check if this is a single-file apphost first (to avoid running msbuild on .cs files)
+	if filepath.Ext(projectPath) == ".cs" {
+		return cli.IsSingleFileAspireHost(projectPath)
+	}
+
 	runArgs := newDotNetRunArgs("msbuild",
 		projectPath, "--ignore:.sln", "--getProperty:IsAspireHost", "--getItem:ProjectCapability")
 	res, err := cli.commandRunner.Run(ctx, runArgs)
@@ -340,6 +362,40 @@ func (cli *Cli) IsAspireHostProject(ctx context.Context, projectPath string) (bo
 	}
 
 	return result.Properties.IsAspireHost == "true" || hasAspireCapability, nil
+}
+
+// IsSingleFileAspireHost checks if the given file is a single-file Aspire AppHost.
+// A file-based Aspire AppHost must meet all of these conditions:
+// 1. File name: Must be named apphost.cs (case-insensitive)
+// 2. No sibling .csproj: The directory must NOT contain any .csproj files
+// 3. SDK Directive: Must contain the #:sdk Aspire.AppHost.Sdk directive in the file content
+func (cli *Cli) IsSingleFileAspireHost(filePath string) (bool, error) {
+	// Check if the file name is apphost.cs (case-insensitive)
+	fileName := filepath.Base(filePath)
+	if !strings.EqualFold(fileName, "apphost.cs") {
+		return false, nil
+	}
+
+	// Check if there are no sibling .csproj files
+	dir := filepath.Dir(filePath)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false, fmt.Errorf("reading directory '%s': %w", dir, err)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".csproj" {
+			return false, nil
+		}
+	}
+
+	// Check if the file contains the SDK directive
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return false, fmt.Errorf("reading file '%s': %w", filePath, err)
+	}
+
+	return strings.Contains(string(content), "#:sdk Aspire.AppHost.Sdk"), nil
 }
 
 func NewCli(commandRunner exec.CommandRunner) *Cli {

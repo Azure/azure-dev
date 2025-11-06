@@ -21,6 +21,29 @@ func (ad *dotNetAppHostDetector) Language() Language {
 }
 
 func (ad *dotNetAppHostDetector) DetectProject(ctx context.Context, path string, entries []fs.DirEntry) (*Project, error) {
+	// First, check for single-file apphost (apphost.cs)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		// Check if this is a single-file apphost
+		if filepath.Ext(name) == ".cs" {
+			filePath := filepath.Join(path, name)
+			if isSingleFileAppHost, err := ad.dotnetCli.IsSingleFileAspireHost(filePath); err != nil {
+				log.Printf("error checking if %s is a single-file app host: %v", filePath, err)
+			} else if isSingleFileAppHost {
+				return &Project{
+					Language:      DotNetAppHost,
+					Path:          filePath,
+					DetectionRule: "Inferred by single-file Aspire AppHost: " + filePath,
+				}, nil
+			}
+		}
+	}
+
+	// Then, check for project-based apphost (.csproj, .fsproj, .vbproj)
 	for _, entry := range entries {
 		name := entry.Name()
 		ext := filepath.Ext(name)

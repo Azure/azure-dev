@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -183,7 +184,10 @@ func TestEventService_handleSubscribeProjectEvent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := service.onSubscribeProjectEvent(ctx, extension, tt.subscribeMsg)
+			// Create a mock broker (nil is acceptable for these tests since handlers aren't executed)
+			var mockBroker *grpcbroker.MessageBroker[azdext.EventMessage]
+
+			err := service.onSubscribeProjectEvent(ctx, extension, tt.subscribeMsg, mockBroker)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -257,7 +261,10 @@ func TestEventService_handleSubscribeServiceEvent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := service.onSubscribeServiceEvent(ctx, extension, tt.subscribeMsg)
+			// Create a mock broker (nil is acceptable for these tests since handlers aren't executed)
+			var mockBroker *grpcbroker.MessageBroker[azdext.EventMessage]
+
+			err := service.onSubscribeServiceEvent(ctx, extension, tt.subscribeMsg, mockBroker)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -266,7 +273,7 @@ func TestEventService_handleSubscribeServiceEvent(t *testing.T) {
 
 			assert.NoError(t, err)
 
-			// Note: Handler registration is internal to project.ServiceConfig.
+			// Note: Handler registration is internal to project.ProjectConfig.
 			// Full integration testing would require firing events and verifying behavior.
 		})
 	}
@@ -277,8 +284,17 @@ func TestEventService_createProjectEventHandler(t *testing.T) {
 	extension := createTestExtension()
 	eventName := "prepackage"
 
+	// Create a context with metadata containing extension claims (simulating the stream context)
+	md := metadata.New(map[string]string{
+		"authorization": "fake-token", // Extension claims would normally be in this token
+	})
+	streamCtx := metadata.NewIncomingContext(context.Background(), md)
+
+	// Create a mock broker (nil is acceptable since we're not executing the handler)
+	var mockBroker *grpcbroker.MessageBroker[azdext.EventMessage]
+
 	// Create the handler
-	handler := service.createProjectEventHandler(extension, eventName)
+	handler := service.createProjectEventHandler(streamCtx, extension, eventName, mockBroker)
 	require.NotNil(t, handler)
 
 	// Test that the handler function is created correctly
@@ -298,8 +314,17 @@ func TestEventService_createServiceEventHandler(t *testing.T) {
 		RelativePath: "./test-service",
 	}
 
+	// Create a context with metadata containing extension claims (simulating the stream context)
+	md := metadata.New(map[string]string{
+		"authorization": "fake-token", // Extension claims would normally be in this token
+	})
+	streamCtx := metadata.NewIncomingContext(context.Background(), md)
+
+	// Create a mock broker (nil is acceptable since we're not executing the handler)
+	var mockBroker *grpcbroker.MessageBroker[azdext.EventMessage]
+
 	// Create the handler
-	handler := service.createServiceEventHandler(serviceConfig, extension, eventName)
+	handler := service.createServiceEventHandler(streamCtx, serviceConfig, extension, eventName, mockBroker)
 	require.NotNil(t, handler)
 
 	// Test that the handler function is created correctly

@@ -483,7 +483,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 // containerImageResult holds the result of preparing a container image for deployment
 type containerImageResult struct {
-	ImageName  string // Fully qualified image name (e.g., myacr.azurecr.io/myimage:tag)
+	ImageName  string // Fully qualified image name (e.g., acr.azurecr.io/image:tag)
 	PortNumber int    // Target port from .NET build (0 if not applicable)
 }
 

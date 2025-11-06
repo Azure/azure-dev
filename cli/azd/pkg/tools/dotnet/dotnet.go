@@ -182,8 +182,9 @@ func (cli *Cli) PublishAppHostManifest(
 	return nil
 }
 
-// PublishContainer runs a `dotnet publish“ with `/t:PublishContainer`to build and publish the container.
+// PublishContainer runs a `dotnet publish" with `/t:PublishContainer`to build and publish the container.
 // It also gets port number by using `--getProperty:GeneratedContainerConfiguration`.
+// For single-file apps (.cs files), it runs from the file's directory to properly resolve relative references.
 func (cli *Cli) PublishContainer(
 	ctx context.Context, project, configuration, imageName, server, username, password string,
 ) (int, error) {
@@ -193,7 +194,17 @@ func (cli *Cli) PublishContainer(
 
 	imageParts := strings.Split(imageName, ":")
 
-	runArgs := newDotNetRunArgs("publish", project)
+	// For single-file apps, use the basename and set the working directory
+	// For project-based apps, use the full path
+	var runArgs exec.RunArgs
+	if filepath.Ext(project) == ".cs" {
+		// Single-file app: use just the filename and set working directory
+		runArgs = newDotNetRunArgs("publish", filepath.Base(project))
+		runArgs = runArgs.WithCwd(filepath.Dir(project))
+	} else {
+		// Project-based app: use the full path
+		runArgs = newDotNetRunArgs("publish", project)
+	}
 
 	runArgs = runArgs.AppendParams(
 		"-r", "linux-x64",

@@ -81,7 +81,7 @@ type Workflow struct {
 type ContainerAgent struct {
 	AgentDefinition      `json:",inline" yaml:",inline"`
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
-	EnvironmentVariables *[]EnvironmentVariable  `json:"environment_variables,omitempty" yaml:"environment_variables,omitempty"`
+	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environment_variables,omitempty"`
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.

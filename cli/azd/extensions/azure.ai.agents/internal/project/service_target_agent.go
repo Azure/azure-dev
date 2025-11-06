@@ -19,6 +19,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/drone/envsubst"
 	"github.com/fatih/color"
 )
 
@@ -526,7 +527,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	hostedDef := agentManifest.Template.(agent_yaml.ContainerAgent)
 	if hostedDef.EnvironmentVariables != nil {
 		for _, envVar := range *hostedDef.EnvironmentVariables {
-			resolvedValue, err := p.resolveTemplateValue(envVar.Value, azdEnv)
+			resolvedValue, err := p.resolveEnvironmentVariables(envVar.Value, azdEnv)
 			if err != nil {
 				return nil, fmt.Errorf("failed to resolve value for agent config variable '%s': %w", envVar.Name, err)
 			}
@@ -794,34 +795,18 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	return nil
 }
 
-// resolveTemplateValue resolves ${{ VAR }} template syntax using azd environment values,
-// or returns the value unchanged if no template syntax is present (literal strings).
-// Returns an error if a template variable is not found in azdEnv.
-func (p *AgentServiceTargetProvider) resolveTemplateValue(value string, azdEnv map[string]string) (string, error) {
-	const (
-		prefix = "${{"
-		suffix = "}}"
-	)
-
-	// Find the template syntax
-	start := strings.Index(value, prefix)
-	if start == -1 {
-		return value, nil
+// resolveEnvironmentVariables resolves ${ENV_VAR} style references in value using azd environment variables.
+// Supports default values (e.g., "${VAR:-default}") and multiple expressions (e.g., "${VAR1}-${VAR2}").
+func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, azdEnv map[string]string) (string, error) {
+	resolved, err := envsubst.Eval(value, func(varName string) string {
+		if val, exists := azdEnv[varName]; exists {
+			return val
+		}
+		return ""
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve environment variables in '%s': %w", value, err)
 	}
 
-	end := strings.Index(value[start:], suffix)
-	if end == -1 {
-		return value, nil
-	}
-	end += start // Adjust to absolute position
-
-	// Extract and resolve the variable name
-	varName := strings.TrimSpace(value[start+len(prefix) : end])
-	resolvedValue, exists := azdEnv[varName]
-	if !exists {
-		return "", fmt.Errorf("azd environment variable '%s' not found", varName)
-	}
-
-	// Replace the template syntax with the resolved value
-	return value[:start] + resolvedValue + value[end+len(suffix):], nil
+	return resolved, nil
 }

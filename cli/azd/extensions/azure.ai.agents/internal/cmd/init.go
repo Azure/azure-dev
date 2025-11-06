@@ -1437,6 +1437,8 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 	}, nil
 }
 
+var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standard"}
+
 func (a *InitAction) getModelDetails(ctx context.Context, modelName string, modelVersion string) (*ai.AiModelDeployment, error) {
 	// Load the AI model catalog if not already loaded
 	if err := a.loadAiCatalog(ctx); err != nil {
@@ -1469,7 +1471,16 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string, mode
 		return nil, fmt.Errorf("listing SKUs for model '%s': %w", modelName, err)
 	}
 
-	skuSelection, err := a.selectFromList(ctx, "model SKU", availableSkus, "")
+	// Determine default SKU based on priority list
+	defaultSku := ""
+	for _, sku := range defaultSkuPriority {
+		if slices.Contains(availableSkus, sku) {
+			defaultSku = sku
+			break
+		}
+	}
+
+	skuSelection, err := a.selectFromList(ctx, "model SKU", availableSkus, defaultSku)
 	if err != nil {
 		return nil, err
 	}

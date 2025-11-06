@@ -162,7 +162,7 @@ func (cli *Cli) PublishAppHostManifest(
 
 	runArgs = runArgs.WithCwd(filepath.Dir(hostProject))
 
-	// AppHosts may conditionalize their infrastructure based on the environment, so we need to pass the environment when we
+	// AppHost may conditionalize their infrastructure based on the environment, so we need to pass the environment when we
 	// are `dotnet run`ing the app host project to produce its manifest.
 	var envArgs []string
 
@@ -380,7 +380,7 @@ func (cli *Cli) GetMsBuildProperty(ctx context.Context, project string, property
 
 // IsAspireHostProject returns true if the project at the given path has an MS Build Property named "IsAspireHost" which is
 // set to true or has a ProjectCapability named "Aspire".
-// For single-file apphosts (apphost.cs), it validates them without running msbuild.
+// For single-file apphost (apphost.cs), it validates them without running msbuild.
 func (cli *Cli) IsAspireHostProject(ctx context.Context, projectPath string) (bool, error) {
 	// Check if this is a single-file apphost first (to avoid running msbuild on .cs files)
 	if filepath.Ext(projectPath) == ".cs" {

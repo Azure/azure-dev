@@ -208,7 +208,12 @@ func (mb *MessageBroker[TMessage]) SendAndWait(ctx context.Context, msg *TMessag
 			return nil, ctx.Err()
 		case err := <-errCh:
 			if err != nil {
-				log.Printf("[MessageBroker] [RequestId=%s] ERROR: Send failed, MessageType=%v, Error=%v", requestId, msgType, err)
+				log.Printf(
+					"[MessageBroker] [RequestId=%s] ERROR: Send failed, MessageType=%v, Error=%v",
+					requestId,
+					msgType,
+					err,
+				)
 				return nil, err
 			}
 			log.Printf("[MessageBroker] [RequestId=%s] Request sent successfully, MessageType=%v", requestId, msgType)
@@ -217,7 +222,12 @@ func (mb *MessageBroker[TMessage]) SendAndWait(ctx context.Context, msg *TMessag
 			respType := reflect.TypeOf(respInner)
 			log.Printf("[MessageBroker] [RequestId=%s] Received response, MessageType=%v", requestId, respType)
 			if err := mb.envelope.GetError(resp); err != nil {
-				log.Printf("[MessageBroker] [RequestId=%s] Response contains error, MessageType=%v, Error=%v", requestId, respType, err)
+				log.Printf(
+					"[MessageBroker] [RequestId=%s] Response contains error, MessageType=%v, Error=%v",
+					requestId,
+					respType,
+					err,
+				)
 				return nil, err
 			}
 			return resp, nil
@@ -241,11 +251,20 @@ func (mb *MessageBroker[TMessage]) Send(ctx context.Context, msg *TMessage) erro
 	defer mb.sendMu.Unlock()
 
 	if err := mb.stream.Send(msg); err != nil {
-		log.Printf("[MessageBroker] [RequestId=%s] ERROR: Failed to send fire-and-forget message, MessageType=%v, Error=%v", requestId, msgType, err)
+		log.Printf(
+			"[MessageBroker] [RequestId=%s] ERROR: Failed to send fire-and-forget message, MessageType=%v, Error=%v",
+			requestId,
+			msgType,
+			err,
+		)
 		return err
 	}
 
-	log.Printf("[MessageBroker] [RequestId=%s] Fire-and-forget message sent successfully, MessageType=%v", requestId, msgType)
+	log.Printf(
+		"[MessageBroker] [RequestId=%s] Fire-and-forget message sent successfully, MessageType=%v",
+		requestId,
+		msgType,
+	)
 	return nil
 }
 
@@ -283,14 +302,28 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("[MessageBroker] [RequestId=%s] Context cancelled, MessageType=%v, Error=%v", requestId, msgType, ctx.Err())
+			log.Printf(
+				"[MessageBroker] [RequestId=%s] Context cancelled, MessageType=%v, Error=%v",
+				requestId,
+				msgType,
+				ctx.Err(),
+			)
 			return nil, ctx.Err()
 		case err := <-errCh:
 			if err != nil {
-				log.Printf("[MessageBroker] [RequestId=%s] ERROR: Failed to send request, MessageType=%v, Error=%v", requestId, msgType, err)
+				log.Printf(
+					"[MessageBroker] [RequestId=%s] ERROR: Failed to send request, MessageType=%v, Error=%v",
+					requestId,
+					msgType,
+					err,
+				)
 				return nil, err
 			}
-			log.Printf("[MessageBroker] [RequestId=%s] Request sent successfully, MessageType=%v, waiting for response", requestId, msgType)
+			log.Printf(
+				"[MessageBroker] [RequestId=%s] Request sent successfully, MessageType=%v, waiting for response",
+				requestId,
+				msgType,
+			)
 		case resp, ok := <-ch:
 			if !ok {
 				log.Printf("[MessageBroker] [RequestId=%s] Channel closed (dispatcher likely stopped)", requestId)
@@ -317,7 +350,12 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 			// Any non-progress message with matching RequestId is our final response
 			log.Printf("[MessageBroker] [RequestId=%s] Received final response, MessageType=%v", requestId, respType)
 			if err := mb.envelope.GetError(resp); err != nil {
-				log.Printf("[MessageBroker] [RequestId=%s] Response contains error, MessageType=%v, Error=%v", requestId, respType, err)
+				log.Printf(
+					"[MessageBroker] [RequestId=%s] Response contains error, MessageType=%v, Error=%v",
+					requestId,
+					respType,
+					err,
+				)
 				return nil, err
 			}
 			return resp, nil
@@ -389,10 +427,18 @@ func (mb *MessageBroker[TMessage]) processMessage(ctx context.Context, resp *TMe
 		log.Printf("[MessageBroker] Received progress message: RequestId=%s, MessageType=%v", requestId, msgType)
 		if ch, ok := mb.responseChans.Load(requestId); ok {
 			channelTyped := ch.(chan *TMessage)
-			log.Printf("[MessageBroker] Dispatching progress message to channel for RequestId=%s, MessageType=%v", requestId, msgType)
+			log.Printf(
+				"[MessageBroker] Dispatching progress message to channel for RequestId=%s, MessageType=%v",
+				requestId,
+				msgType,
+			)
 			channelTyped <- resp
 		} else {
-			log.Printf("[MessageBroker] WARNING: No channel found for progress message RequestId=%s, MessageType=%v", requestId, msgType)
+			log.Printf(
+				"[MessageBroker] WARNING: No channel found for progress message RequestId=%s, MessageType=%v",
+				requestId,
+				msgType,
+			)
 		}
 		return
 	}
@@ -464,9 +510,18 @@ func (mb *MessageBroker[TMessage]) processHandlerRequest(
 		defer mb.sendMu.Unlock()
 
 		if err := mb.stream.Send(responseEnvelope); err != nil {
-			log.Printf("[MessageBroker] ERROR: Failed to send handler response: RequestId=%s, MessageType=%v, Error=%v", requestId, msgType, err)
+			log.Printf(
+				"[MessageBroker] ERROR: Failed to send handler response: RequestId=%s, MessageType=%v, Error=%v",
+				requestId,
+				msgType,
+				err,
+			)
 		} else {
-			log.Printf("[MessageBroker] Handler response sent successfully for RequestId=%s, MessageType=%v", requestId, msgType)
+			log.Printf(
+				"[MessageBroker] Handler response sent successfully for RequestId=%s, MessageType=%v",
+				requestId,
+				msgType,
+			)
 		}
 	}
 }

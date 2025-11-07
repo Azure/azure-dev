@@ -133,6 +133,9 @@ func (er *ExtensionHost) WithServiceEventHandler(
 
 // Run wires the configured service targets and event handlers, signals readiness, and blocks until shutdown.
 func (er *ExtensionHost) Run(ctx context.Context) error {
+	// Wait for debugger if AZD_EXT_DEBUG is set
+	waitForDebugger(ctx, er.client)
+
 	var serviceManagers []serviceTargetRegistrar
 	var frameworkManagers []frameworkServiceRegistrar
 

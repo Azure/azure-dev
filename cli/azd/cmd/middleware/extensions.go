@@ -7,7 +7,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -136,8 +138,10 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 			}()
 
 			// Wait for the extension to signal readiness or failure.
-			readyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			// If AZD_EXT_DEBUG is set to a truthy value, wait indefinitely for debugger attachment
+			readyCtx, cancel := getReadyContext(ctx)
 			defer cancel()
+
 			if err := extension.WaitUntilReady(readyCtx); err != nil {
 				log.Printf("extension '%s' failed to become ready: %v\n", extension.Id, err)
 			}
@@ -148,4 +152,23 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	wg.Wait()
 
 	return next(ctx)
+}
+
+// isDebug checks if AZD_EXT_DEBUG environment variable is set to a truthy value
+func isDebug() bool {
+	debugValue := os.Getenv("AZD_EXT_DEBUG")
+	if debugValue == "" {
+		return false
+	}
+
+	isDebug, err := strconv.ParseBool(debugValue)
+	return err == nil && isDebug
+}
+
+// getReadyContext returns a context with timeout for normal operation or without timeout for debugging
+func getReadyContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if isDebug() {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, 5*time.Second)
 }

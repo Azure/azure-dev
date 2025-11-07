@@ -4,6 +4,7 @@
 package project
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -27,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cosmosdb"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/sqldb"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -127,6 +129,17 @@ func (at *dotnetContainerAppTarget) Deploy(
 	targetResource *environment.TargetResource,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceDeployResult, error) {
+	if serviceConfig.BuildOnly {
+		return &ServiceDeployResult{
+			Artifacts: ArtifactCollection{
+				&Artifact{
+					Kind:         ArtifactKindEndpoint,
+					Location:     "[build-only service; no deployment performed]",
+					LocationKind: LocationKindLocal,
+				},
+			},
+		}, nil
+	}
 	if err := at.validateTargetResource(targetResource); err != nil {
 		return nil, fmt.Errorf("validating target resource: %w", err)
 	}
@@ -135,74 +148,15 @@ func (at *dotnetContainerAppTarget) Deploy(
 	var bicepDeploymentResult *azapi.ResourceDeployment
 	var yamlDeploymentError error
 
-	progress.SetProgress(NewServiceProgress("Pushing container image"))
-
-	var remoteImageName string
-	var portNumber int
-
-	// This service target is shared across four different aspire resource types: "dockerfile.v0" (a reference to
-	// an project backed by a dockerfile), "container.v0" (a reference to a project backed by an existing container
-	// image), "project.v0" (a reference to a project backed by a .NET project), and "container.v1" (a reference
-	// to a project which might have an existing container image, or can provide a dockerfile).
-	// Depending on the type, we have different steps for pushing the container image.
-	//
-	// For the dockerfile.v0 and container.v1+dockerfile type, [DotNetImporter] arranges things such that we can
-	// leverage the existing support in `azd` for services backed by a Dockerfile.
-	// This causes the image to be built and pushed to ACR.
-	//
-	// For the container.v0 or container.v1+image type, we assume the container image specified by the manifest is
-	// public and just use it directly.
-	//
-	// For the project.v0 type, we use the .NET CLI to publish the container image to ACR.
-	//
-	// The name of the image that should be referenced in the manifest is stored in `remoteImageName` and presented
-	// to the deployment template as a parameter named `Image`.
-	if serviceConfig.Language == ServiceLanguageDocker {
-		res, err := at.containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		// Extract remote image from artifacts
-		var remoteImage string
-		if artifact, found := res.Artifacts.FindFirst(WithKind(ArtifactKindContainer)); found {
-			remoteImage = artifact.Location
-		}
-		remoteImageName = remoteImage
-	} else if serviceConfig.DotNetContainerApp.ContainerImage != "" {
-		remoteImageName = serviceConfig.DotNetContainerApp.ContainerImage
-	} else {
-		progress.SetProgress(NewServiceProgress("Logging in to registry"))
-
-		// Login, tag & push container image to ACR
-		dockerCreds, err := at.containerHelper.Credentials(ctx, serviceConfig, targetResource)
-		if err != nil {
-			return nil, fmt.Errorf("logging in to registry: %w", err)
-		}
-
-		defaultImageName, err := at.containerHelper.DefaultImageName(ctx, serviceConfig)
-		if err != nil {
-			return nil, fmt.Errorf("getting default image name: %w", err)
-		}
-
-		imageName := fmt.Sprintf("%s:%s",
-			defaultImageName,
-			at.containerHelper.DefaultImageTag())
-
-		portNumber, err = at.dotNetCli.PublishContainer(
-			ctx,
-			serviceConfig.Path(),
-			"Release",
-			imageName,
-			dockerCreds.LoginServer,
-			dockerCreds.Username,
-			dockerCreds.Password)
-		if err != nil {
-			return nil, fmt.Errorf("publishing container: %w", err)
-		}
-
-		remoteImageName = fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName)
+	// Prepare the container image based on service type and configuration
+	// This handles all four Aspire resource types (dockerfile.v0, container.v0, project.v0, container.v1)
+	imageResult, err := at.prepareContainerImage(ctx, serviceConfig, serviceContext, targetResource, progress)
+	if err != nil {
+		return nil, err
 	}
+
+	remoteImageName := imageResult.ImageName
+	portNumber := imageResult.PortNumber
 
 	progress.SetProgress(NewServiceProgress("Updating application"))
 
@@ -525,6 +479,281 @@ func (at *dotnetContainerAppTarget) Deploy(
 	return &ServiceDeployResult{
 		Artifacts: artifacts,
 	}, nil
+}
+
+// containerImageResult holds the result of preparing a container image for deployment
+type containerImageResult struct {
+	ImageName  string // Fully qualified image name (e.g., acr.azurecr.io/image:tag)
+	PortNumber int    // Target port from .NET build (0 if not applicable)
+}
+
+// buildPackagePublishContainer executes the full Build→Package→Publish pipeline for a container.
+// This is used when we need all three steps (flows A2 and C2).
+// Note: Uses the provided serviceContext for artifact tracking.
+func (at *dotnetContainerAppTarget) buildPackagePublishContainer(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+) (string, error) {
+	// Build the container
+	buildResult, err := at.containerHelper.Build(ctx, serviceConfig, serviceContext, progress)
+	if err != nil {
+		return "", fmt.Errorf("building container: %w", err)
+	}
+	if err := serviceContext.Build.Add(buildResult.Artifacts...); err != nil {
+		return "", fmt.Errorf("adding build artifacts: %w", err)
+	}
+
+	// Package the container
+	packageResult, err := at.containerHelper.Package(ctx, serviceConfig, serviceContext, progress)
+	if err != nil {
+		return "", fmt.Errorf("packaging container: %w", err)
+	}
+	if err := serviceContext.Package.Add(packageResult.Artifacts...); err != nil {
+		return "", fmt.Errorf("adding package artifacts: %w", err)
+	}
+
+	// Publish the container to ACR
+	publishResult, err := at.containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, nil)
+	if err != nil {
+		return "", fmt.Errorf("publishing container: %w", err)
+	}
+
+	// Extract and return the remote image name
+	artifact, _ := publishResult.Artifacts.FindFirst()
+	return artifact.Location, nil
+}
+
+// prepareDockerfileBasedImage handles image preparation for Dockerfile-based services (flows A1 and A2).
+// - A1 (no ContainerFiles): Calls Publish() ONLY (assumes Build+Package handled elsewhere)
+// - A2 (with ContainerFiles): Builds dependencies as build args, then Build+Package+Publish
+func (at *dotnetContainerAppTarget) prepareDockerfileBasedImage(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+) (*containerImageResult, error) {
+	if len(serviceConfig.DotNetContainerApp.ContainerFiles) == 0 {
+		// Flow A1: Simple Dockerfile - ONLY call Publish (not Build+Package+Publish)
+		res, err := at.containerHelper.Publish(ctx, serviceConfig, serviceContext, targetResource, progress, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		// Extract remote image from artifacts
+		var remoteImage string
+		if artifact, found := res.Artifacts.FindFirst(WithKind(ArtifactKindContainer)); found {
+			remoteImage = artifact.Location
+		}
+		return &containerImageResult{ImageName: remoteImage, PortNumber: 0}, nil
+	}
+
+	// Flow A2: Multi-container Dockerfile with dependencies
+	// Build dependency containers and add as build args
+	for sName, containerFile := range serviceConfig.DotNetContainerApp.ContainerFiles {
+		sContext := &ServiceContext{}
+		result, err := at.containerHelper.Build(ctx, containerFile.ServiceConfig, sContext, progress)
+		if err != nil {
+			return nil, fmt.Errorf("building container for %s: %w", sName, err)
+		}
+
+		artifact, _ := result.Artifacts.FindFirst()
+		imageName := artifact.Metadata["imageName"]
+
+		// Add the built image name as a build arg for the main image
+		serviceConfig.Docker.BuildArgs = append(
+			serviceConfig.Docker.BuildArgs,
+			osutil.NewExpandableString(fmt.Sprintf("%s_IMAGENAME=%s", strings.ToUpper(sName), imageName)))
+	}
+
+	// Build, package and publish the final container using the provided serviceContext
+	remoteImageName, err := at.buildPackagePublishContainer(
+		ctx, serviceConfig, serviceContext, targetResource, progress)
+	if err != nil {
+		return nil, err
+	}
+
+	return &containerImageResult{ImageName: remoteImageName, PortNumber: 0}, nil
+}
+
+// prepareDotNetProjectImage handles image preparation for .NET project services (flows C1 and C2).
+// - C1 (no ContainerFiles): Direct PublishContainer to ACR, returns port
+// - C2 (with ContainerFiles): BuildLocal + multi-stage Dockerfile + Build+Package+Publish with NEW context
+func (at *dotnetContainerAppTarget) prepareDotNetProjectImage(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+) (*containerImageResult, error) {
+	defaultImageName, err := at.containerHelper.DefaultImageName(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("getting default image name: %w", err)
+	}
+
+	if len(serviceConfig.DotNetContainerApp.ContainerFiles) == 0 {
+		// Flow C1: Simple .NET project - publish directly to ACR
+		progress.SetProgress(NewServiceProgress("Logging in to registry"))
+
+		dockerCreds, err := at.containerHelper.Credentials(ctx, serviceConfig, targetResource)
+		if err != nil {
+			return nil, fmt.Errorf("logging in to registry: %w", err)
+		}
+
+		imageName := fmt.Sprintf("%s:%s", defaultImageName, at.containerHelper.DefaultImageTag())
+
+		portNumber, err := at.dotNetCli.PublishContainer(
+			ctx,
+			serviceConfig.Path(),
+			"Release",
+			imageName,
+			dockerCreds.LoginServer,
+			dockerCreds.Username,
+			dockerCreds.Password)
+		if err != nil {
+			return nil, fmt.Errorf("publishing container: %w", err)
+		}
+
+		remoteImageName := fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName)
+		return &containerImageResult{
+			ImageName:  remoteImageName,
+			PortNumber: portNumber,
+		}, nil
+	}
+
+	// Flow C2: .NET project with container files - multi-stage composition
+	return at.prepareDotNetMultiStageImage(ctx, serviceConfig, serviceContext, targetResource, progress, defaultImageName)
+}
+
+// prepareDotNetMultiStageImage handles Flow C2: multi-stage .NET container composition.
+// Builds local .NET image, creates multi-stage Dockerfile, and publishes with a NEW ServiceContext.
+func (at *dotnetContainerAppTarget) prepareDotNetMultiStageImage(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+	defaultImageName string,
+) (*containerImageResult, error) {
+	progress.SetProgress(NewServiceProgress("Composing containers"))
+
+	localImageTag := at.containerHelper.DefaultImageTag()
+
+	// Build local .NET container image (not pushed to ACR)
+	portNumber, localImage, err := at.dotNetCli.BuildContainerLocal(
+		ctx,
+		serviceConfig.Path(),
+		"Release",
+		localImageTag,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("building local container: %w", err)
+	}
+
+	// Ensure cleanup of local image
+	defer func() {
+		cleanupCtx := context.Background()
+		if err := at.containerHelper.RemoveLocalImage(cleanupCtx, localImage); err != nil {
+			log.Printf("warning: failed to remove local image %s: %v", localImage, err)
+		}
+	}()
+
+	// Build multi-stage Dockerfile
+	multiStageDockerfile := at.containerHelper.DockerfileBuilder()
+
+	// Add all dependency stages
+	for _, containerFile := range serviceConfig.DotNetContainerApp.ContainerFiles {
+		if containerFile.ServiceConfig.Project == nil {
+			containerFile.ServiceConfig.Project = serviceConfig.Project
+		}
+
+		result, err := at.containerHelper.Build(ctx, containerFile.ServiceConfig, serviceContext, progress)
+		if err != nil {
+			return nil, fmt.Errorf("building container for %s: %w", containerFile.ServiceConfig.Name, err)
+		}
+
+		artifact, _ := result.Artifacts.FindFirst()
+		stageName := artifact.Metadata["imageName"]
+		multiStageDockerfile.From(stageName, containerFile.ServiceConfig.Name)
+	}
+
+	// Use locally built .NET image as base stage
+	runStage := multiStageDockerfile.From(localImage, "base")
+
+	// Copy files from dependency stages
+	for _, containerFile := range serviceConfig.DotNetContainerApp.ContainerFiles {
+		for _, src := range containerFile.Sources {
+			runStage.CopyFrom(containerFile.ServiceConfig.Name, src, containerFile.Destination)
+		}
+	}
+
+	// Generate Dockerfile content
+	var buf bytes.Buffer
+	if err := multiStageDockerfile.Build(&buf); err != nil {
+		return nil, fmt.Errorf("building multistage dockerfile: %w", err)
+	}
+
+	// CRITICAL: Create NEW ServiceContext (not reusing the provided one)
+	sContext := &ServiceContext{
+		Build:   make(ArtifactCollection, 0),
+		Package: make(ArtifactCollection, 0),
+	}
+
+	// Create service config for the final multi-stage build
+	publishServiceConfig := &ServiceConfig{
+		Name:         serviceConfig.Name,
+		RelativePath: ".",
+		Language:     ServiceLanguageDocker,
+		Project:      serviceConfig.Project,
+		Docker: DockerProjectOptions{
+			InMemDockerfile: buf.Bytes(),
+			Context:         ".",
+			Path:            "in-mem",
+		},
+	}
+
+	// Build, package and publish the final multi-stage image using NEW sContext
+	remoteImageName, err := at.buildPackagePublishContainer(
+		ctx, publishServiceConfig, sContext, targetResource, progress)
+	if err != nil {
+		return nil, err
+	}
+
+	return &containerImageResult{
+		ImageName:  remoteImageName,
+		PortNumber: portNumber,
+	}, nil
+}
+
+// prepareContainerImage determines and prepares the container image based on service configuration.
+// This is the main orchestrator that routes to the appropriate flow (A, B, or C).
+func (at *dotnetContainerAppTarget) prepareContainerImage(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	serviceContext *ServiceContext,
+	targetResource *environment.TargetResource,
+	progress *async.Progress[ServiceProgress],
+) (*containerImageResult, error) {
+	progress.SetProgress(NewServiceProgress("Pushing container image"))
+
+	// BRANCH A: Dockerfile-based service (dockerfile.v0 or container.v1+dockerfile)
+	if serviceConfig.Language == ServiceLanguageDocker {
+		return at.prepareDockerfileBasedImage(ctx, serviceConfig, serviceContext, targetResource, progress)
+	}
+
+	// BRANCH B: Pre-built container image reference (container.v0)
+	if serviceConfig.DotNetContainerApp.ContainerImage != "" {
+		return &containerImageResult{
+			ImageName:  serviceConfig.DotNetContainerApp.ContainerImage,
+			PortNumber: 0,
+		}, nil
+	}
+
+	// BRANCH C: .NET project (project.v0)
+	return at.prepareDotNetProjectImage(ctx, serviceConfig, serviceContext, targetResource, progress)
 }
 
 type appDeploymentHost struct {

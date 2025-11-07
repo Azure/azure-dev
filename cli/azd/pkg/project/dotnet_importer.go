@@ -237,10 +237,22 @@ func (ai *DotNetImporter) Services(
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
 
+		// handle container files
+		containerFiles := manifest.Resources[name].ContainerFiles
+		extractedContainerFiles := make(map[string]ContainerFile)
+		for resourceName, containerFilesDetail := range containerFiles {
+			containerFile := ContainerFile{
+				Sources:     containerFilesDetail.Sources,
+				Destination: containerFilesDetail.Destination,
+			}
+			extractedContainerFiles[resourceName] = containerFile
+		}
+
 		svc.DotNetContainerApp = &DotNetContainerAppOptions{
-			Manifest:    manifest,
-			ProjectName: name,
-			AppHostPath: svcConfig.Path(),
+			Manifest:       manifest,
+			ProjectName:    name,
+			AppHostPath:    svcConfig.Path(),
+			ContainerFiles: extractedContainerFiles,
 		}
 
 		services[svc.Name] = svc
@@ -367,11 +379,17 @@ func (ai *DotNetImporter) Services(
 			}
 		}
 
+		buildOnly := false
+		if bContainer.Build != nil {
+			buildOnly = bContainer.Build.BuildOnly
+		}
+
 		svc := &ServiceConfig{
 			RelativePath: relativePath,
 			Language:     defaultLanguage,
 			Host:         DotNetContainerAppTarget,
 			Docker:       dOptions,
+			BuildOnly:    buildOnly,
 		}
 
 		svc.Name = name
@@ -383,15 +401,39 @@ func (ai *DotNetImporter) Services(
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
 
+		// handle container files
+		containerFiles := manifest.Resources[name].ContainerFiles
+		extractedContainerFiles := make(map[string]ContainerFile)
+		for resourceName, containerFilesDetail := range containerFiles {
+			containerFile := ContainerFile{
+				Sources:     containerFilesDetail.Sources,
+				Destination: containerFilesDetail.Destination,
+			}
+			extractedContainerFiles[resourceName] = containerFile
+		}
+
 		svc.DotNetContainerApp = &DotNetContainerAppOptions{
 			ContainerImage: bContainer.Image,
 			Manifest:       manifest,
 			ProjectName:    name,
 			AppHostPath:    svcConfig.Path(),
+			ContainerFiles: extractedContainerFiles,
 		}
 		services[svc.Name] = svc
 
 	}
+
+	// Now that services are resolved - handle container files for each service in a second pass
+	for _, svc := range services {
+		for srcServiceName, containerFile := range svc.DotNetContainerApp.ContainerFiles {
+			// Get the already resolved docker options from the source service
+			srcServiceConfig := services[srcServiceName]
+			containerFile.ServiceConfig = srcServiceConfig
+			// replace the original container file with the updated one
+			svc.DotNetContainerApp.ContainerFiles[srcServiceName] = containerFile
+		}
+	}
+
 	return services, nil
 }
 
@@ -651,7 +693,11 @@ func (ai *DotNetImporter) GenerateAllInfrastructure(ctx context.Context, p *Proj
 	if err != nil {
 		return nil, err
 	}
-	for name := range bcs {
+	for name, bc := range bcs {
+		if bc.Build != nil && bc.Build.BuildOnly {
+			// No deployment manifest needed for build-only containers.
+			continue
+		}
 		if err := writeManifestForResource(name); err != nil {
 			return nil, err
 		}

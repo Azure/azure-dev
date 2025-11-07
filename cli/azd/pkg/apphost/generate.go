@@ -700,7 +700,8 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 
 		switch comp.Type {
 		case "project.v0":
-			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args, nil, "")
+			b.addProject(
+				name, *comp.Path, comp.Env, comp.Bindings, comp.Args, nil, "", comp.ContainerFiles)
 		case "project.v1":
 			var deploymentParams map[string]any
 			var deploymentSource string
@@ -708,7 +709,9 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				deploymentParams = comp.Deployment.Params
 				deploymentSource = filepath.Base(*comp.Deployment.Path)
 			}
-			b.addProject(name, *comp.Path, comp.Env, comp.Bindings, comp.Args, deploymentParams, deploymentSource)
+			b.addProject(
+				name, *comp.Path, comp.Env, comp.Bindings, comp.Args,
+				deploymentParams, deploymentSource, comp.ContainerFiles)
 		case "container.v0":
 			err := b.addBuildContainer(name, comp)
 			if err != nil {
@@ -1010,6 +1013,7 @@ func (b *infraGenerator) addProject(
 	args []string,
 	deploymentParams map[string]any,
 	deploymentSource string,
+	containerFiles map[string]ContainerFile,
 ) {
 	b.requireCluster()
 	b.requireContainerRegistry()
@@ -1021,6 +1025,7 @@ func (b *infraGenerator) addProject(
 		Args:             args,
 		DeploymentParams: deploymentParams,
 		DeploymentSource: deploymentSource,
+		ContainerFiles:   containerFiles,
 	}
 }
 
@@ -1128,6 +1133,7 @@ func buildContainerFromResource(r *Resource) (*genBuildContainer, error) {
 			Dockerfile: r.Build.Dockerfile,
 			Args:       r.Build.Args,
 			Secrets:    r.Build.Secrets,
+			BuildOnly:  r.Build.BuildOnly,
 		}
 	}
 

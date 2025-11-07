@@ -57,6 +57,10 @@ type ServiceConfig struct {
 	useDotNetPublishForDockerBuild *bool
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
+
+	// Turns service into a service that is only to be built but not deployed.
+	// This is currently used by Aspire.
+	BuildOnly bool `yaml:"-"`
 }
 
 type DotNetContainerAppOptions struct {
@@ -65,6 +69,14 @@ type DotNetContainerAppOptions struct {
 	ProjectName string
 	// ContainerImage is non-empty when a prebuilt container image is being used.
 	ContainerImage string
+	// ContainerFiles is a list of files to include in the container image.
+	ContainerFiles map[string]ContainerFile
+}
+
+type ContainerFile struct {
+	ServiceConfig *ServiceConfig
+	Sources       []string
+	Destination   string
 }
 
 // Path returns the fully qualified path to the project

@@ -225,6 +225,9 @@ overrides:
   - filename: cmd/completion.go
     words:
       - compinit
+  - filename: pkg/project/service_target_dotnet_containerapp.go
+    words:
+      - IMAGENAME
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

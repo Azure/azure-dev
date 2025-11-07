@@ -379,12 +379,17 @@ func (ai *DotNetImporter) Services(
 			}
 		}
 
+		buildOnly := false
+		if bContainer.Build != nil {
+			buildOnly = bContainer.Build.BuildOnly
+		}
+
 		svc := &ServiceConfig{
 			RelativePath: relativePath,
 			Language:     defaultLanguage,
 			Host:         DotNetContainerAppTarget,
 			Docker:       dOptions,
-			BuildOnly:    bContainer.Build.BuildOnly,
+			BuildOnly:    buildOnly,
 		}
 
 		svc.Name = name
@@ -689,7 +694,7 @@ func (ai *DotNetImporter) GenerateAllInfrastructure(ctx context.Context, p *Proj
 		return nil, err
 	}
 	for name, bc := range bcs {
-		if bc.Build.BuildOnly {
+		if bc.Build != nil && bc.Build.BuildOnly {
 			// No deployment manifest needed for build-only containers.
 			continue
 		}

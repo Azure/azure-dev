@@ -37,6 +37,7 @@ type AgentServiceTargetProvider struct {
 	credential          *azidentity.AzureDeveloperCLICredential
 	tenantId            string
 	env                 *azdext.Environment
+	foundryProject      *arm.ResourceID
 }
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
@@ -181,50 +182,35 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
-	// Get AI Foundry project resource ID from environment
-	resp, err := p.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: p.env.Name,
-		Key:     "AZURE_AI_FOUNDRY_PROJECT_ID",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get AZURE_AI_FOUNDRY_PROJECT_ID: %w", err)
-	}
-
-	projectResourceID := resp.Value
-	if projectResourceID == "" {
-		return nil, fmt.Errorf("AZURE_AI_FOUNDRY_PROJECT_ID environment variable is required")
-	}
-
-	// Parse the resource ID
-	parsedResource, err := arm.ParseResourceID(projectResourceID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse AI Foundry project resource ID: %w", err)
+	// Ensure Foundry project is loaded
+	if err := p.ensureFoundryProject(ctx); err != nil {
+		return nil, err
 	}
 
 	// Extract account name from parent resource ID
-	if parsedResource.Parent == nil {
+	if p.foundryProject.Parent == nil {
 		return nil, fmt.Errorf("invalid resource ID: missing parent account")
 	}
 
-	accountName := parsedResource.Parent.Name
-	projectName := parsedResource.Name
+	accountName := p.foundryProject.Parent.Name
+	projectName := p.foundryProject.Name
 
 	// Create Cognitive Services Projects client
-	projectsClient, err := armcognitiveservices.NewProjectsClient(parsedResource.SubscriptionID, p.credential, nil)
+	projectsClient, err := armcognitiveservices.NewProjectsClient(p.foundryProject.SubscriptionID, p.credential, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Cognitive Services Projects client: %w", err)
 	}
 
 	// Get the AI Foundry project
-	projectResp, err := projectsClient.Get(ctx, parsedResource.ResourceGroupName, accountName, projectName, nil)
+	projectResp, err := projectsClient.Get(ctx, p.foundryProject.ResourceGroupName, accountName, projectName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AI Foundry project: %w", err)
 	}
 
 	// Construct the target resource
 	targetResource := &azdext.TargetResource{
-		SubscriptionId:    parsedResource.SubscriptionID,
-		ResourceGroupName: parsedResource.ResourceGroupName,
+		SubscriptionId:    p.foundryProject.SubscriptionID,
+		ResourceGroupName: p.foundryProject.ResourceGroupName,
 		ResourceName:      projectName,
 		ResourceType:      "Microsoft.CognitiveServices/accounts/projects",
 		Metadata: map[string]string{
@@ -342,6 +328,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
+	// Ensure Foundry project is loaded
+	if err := p.ensureFoundryProject(ctx); err != nil {
+		return nil, err
+	}
+
 	// Get environment variables from azd
 	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
 		Name: p.env.Name,
@@ -373,10 +364,6 @@ func (p *AgentServiceTargetProvider) Deploy(
 	agentManifest, err := agent_yaml.LoadAndValidateAgentManifest(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse and validate YAML: %w", err)
-	}
-
-	if azdEnv["AI_FOUNDRY_PROJECT_RESOURCE_ID"] == "" {
-		return nil, fmt.Errorf("AI_FOUNDRY_PROJECT_RESOURCE_ID environment variable is required")
 	}
 
 	// Convert the template to bytes
@@ -879,4 +866,39 @@ func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, a
 		return value
 	}
 	return resolved
+}
+
+// ensureFoundryProject ensures the Foundry project resource ID is parsed and stored.
+// Checks for either AZURE_AI_FOUNDRY_PROJECT_ID or AI_FOUNDRY_PROJECT_RESOURCE_ID environment variable.
+func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) error {
+	if p.foundryProject != nil {
+		return nil
+	}
+
+	// Get all environment values
+	resp, err := p.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: p.env.Name,
+		Key:     "AZURE_AI_FOUNDRY_PROJECT_ID",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get environment values: %w", err)
+	}
+
+	// Check for AI Foundry project resource ID (try both env var names)
+	foundryResourceID := resp.Value
+	if foundryResourceID == "" {
+		return fmt.Errorf(
+			"Azure AI Foundry project resource ID is required. " +
+				"Please set either AZURE_AI_FOUNDRY_PROJECT_ID or AI_FOUNDRY_PROJECT_RESOURCE_ID environment variable",
+		)
+	}
+
+	// Parse the resource ID
+	parsedResource, err := arm.ParseResourceID(foundryResourceID)
+	if err != nil {
+		return fmt.Errorf("failed to parse AI Foundry project resource ID: %w", err)
+	}
+
+	p.foundryProject = parsedResource
+	return nil
 }

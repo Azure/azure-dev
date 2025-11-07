@@ -217,7 +217,11 @@ func (mb *MessageBroker[TMessage]) SendAndWait(ctx context.Context, msg *TMessag
 				return nil, err
 			}
 			log.Printf("[MessageBroker] [RequestId=%s] Request sent successfully, MessageType=%v", requestId, msgType)
-		case resp := <-ch:
+		case resp, ok := <-ch:
+			if !ok {
+				log.Printf("[MessageBroker] [RequestId=%s] Channel closed (broker stopped)", requestId)
+				return nil, errors.New("channel closed by broker")
+			}
 			respInner := mb.envelope.GetInnerMessage(resp)
 			respType := reflect.TypeOf(respInner)
 			log.Printf("[MessageBroker] [RequestId=%s] Received response, MessageType=%v", requestId, respType)
@@ -547,19 +551,34 @@ func (mb *MessageBroker[TMessage]) invokeHandler(
 		args = append(args, reflect.ValueOf(progressFunc))
 	}
 
-	// Invoke handler via reflection
-	results := wrapper.handlerFunc.Call(args)
-
 	// results[0] = envelope (may be nil), results[1] = error (may be nil)
 	var responseEnvelope *TMessage
 	var handlerErr error
 
-	if len(results) > 0 && !results[0].IsNil() {
-		responseEnvelope = results[0].Interface().(*TMessage)
-	}
-	if len(results) > 1 && !results[1].IsNil() {
-		handlerErr = results[1].Interface().(error)
-	}
+	// Invoke handler via reflection with panic recovery
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf(
+					"[MessageBroker] PANIC: Handler panicked for RequestId=%s, MessageType=%v, panic=%v",
+					requestId,
+					wrapper.requestType,
+					r,
+				)
+				// Convert panic to error so client gets a proper error response
+				handlerErr = fmt.Errorf("handler panicked: %v", r)
+			}
+		}()
+
+		results := wrapper.handlerFunc.Call(args)
+
+		if len(results) > 0 && !results[0].IsNil() {
+			responseEnvelope = results[0].Interface().(*TMessage)
+		}
+		if len(results) > 1 && !results[1].IsNil() {
+			handlerErr = results[1].Interface().(error)
+		}
+	}()
 
 	// If handler returned nil envelope, create a new one
 	if responseEnvelope == nil {

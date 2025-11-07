@@ -38,13 +38,6 @@ func newListenCommand() *cobra.Command {
 			}
 			defer azdClient.Close()
 
-			// azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-			// 	Options: &azdext.ConfirmOptions{
-			// 		Message:      "Debug Extension",
-			// 		DefaultValue: ux.Ptr(true),
-			// 	},
-			// })
-
 			projectParser := &project.FoundryParser{AzdClient: azdClient}
 			// IMPORTANT: service target name here must match the name used in the extension manifest.
 			host := azdext.NewExtensionHost(azdClient).

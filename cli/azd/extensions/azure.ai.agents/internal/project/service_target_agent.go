@@ -18,6 +18,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/drone/envsubst"
 	"github.com/fatih/color"
@@ -33,6 +34,9 @@ type AgentServiceTargetProvider struct {
 	azdClient           *azdext.AzdClient
 	serviceConfig       *azdext.ServiceConfig
 	agentDefinitionPath string
+	credential          *azidentity.AzureDeveloperCLICredential
+	tenantId            string
+	env                 *azdext.Environment
 }
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
@@ -57,6 +61,47 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	}
 	servicePath := serviceConfig.RelativePath
 	fullPath := filepath.Join(proj.Project.Path, servicePath)
+
+	// Get and store environment
+	azdEnvClient := p.azdClient.Environment()
+	currEnv, err := azdEnvClient.GetCurrent(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get current environment: %w", err)
+	}
+	p.env = currEnv.Environment
+
+	// Get subscription ID from environment
+	resp, err := azdEnvClient.GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: p.env.Name,
+		Key:     "AZURE_SUBSCRIPTION_ID",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get AZURE_SUBSCRIPTION_ID: %w", err)
+	}
+
+	subscriptionId := resp.Value
+	if subscriptionId == "" {
+		return fmt.Errorf("AZURE_SUBSCRIPTION_ID environment variable is required")
+	}
+
+	// Get the tenant ID
+	tenantResponse, err := p.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+		SubscriptionId: subscriptionId,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get tenant ID: %w", err)
+	}
+	p.tenantId = tenantResponse.TenantId
+
+	// Create Azure credential
+	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID:                   p.tenantId,
+		AdditionallyAllowedTenants: []string{"*"},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create Azure credential: %w", err)
+	}
+	p.credential = cred
 
 	fmt.Fprintf(os.Stderr, "Project path: %s, Service path: %s\n", proj.Project.Path, fullPath)
 
@@ -103,15 +148,9 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	serviceConfig *azdext.ServiceConfig,
 	targetResource *azdext.TargetResource,
 ) ([]string, error) {
-	azdEnvClient := p.azdClient.Environment()
-	currEnv, err := azdEnvClient.GetCurrent(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current environment: %w", err)
-	}
-
 	// Get all environment values
-	resp, err := azdEnvClient.GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: currEnv.Environment.Name,
+	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: p.env.Name,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get environment values: %w", err)
@@ -142,7 +181,64 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
-	return &azdext.TargetResource{}, nil
+	// Get AI Foundry project resource ID from environment
+	resp, err := p.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: p.env.Name,
+		Key:     "AZURE_AI_FOUNDRY_PROJECT_ID",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get AZURE_AI_FOUNDRY_PROJECT_ID: %w", err)
+	}
+
+	projectResourceID := resp.Value
+	if projectResourceID == "" {
+		return nil, fmt.Errorf("AZURE_AI_FOUNDRY_PROJECT_ID environment variable is required")
+	}
+
+	// Parse the resource ID
+	parsedResource, err := arm.ParseResourceID(projectResourceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse AI Foundry project resource ID: %w", err)
+	}
+
+	// Extract account name from parent resource ID
+	if parsedResource.Parent == nil {
+		return nil, fmt.Errorf("invalid resource ID: missing parent account")
+	}
+
+	accountName := parsedResource.Parent.Name
+	projectName := parsedResource.Name
+
+	// Create Cognitive Services Projects client
+	projectsClient, err := armcognitiveservices.NewProjectsClient(parsedResource.SubscriptionID, p.credential, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Cognitive Services Projects client: %w", err)
+	}
+
+	// Get the AI Foundry project
+	projectResp, err := projectsClient.Get(ctx, parsedResource.ResourceGroupName, accountName, projectName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get AI Foundry project: %w", err)
+	}
+
+	// Construct the target resource
+	targetResource := &azdext.TargetResource{
+		SubscriptionId:    parsedResource.SubscriptionID,
+		ResourceGroupName: parsedResource.ResourceGroupName,
+		ResourceName:      projectName,
+		ResourceType:      "Microsoft.CognitiveServices/accounts/projects",
+		Metadata: map[string]string{
+			"accountName": accountName,
+			"projectName": projectName,
+		},
+	}
+
+	// Add location if available
+	if projectResp.Location != nil {
+		targetResource.Metadata["location"] = *projectResp.Location
+	}
+
+	return targetResource, nil
 }
 
 // Package performs packaging for the agent service
@@ -247,14 +343,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
 	// Get environment variables from azd
-	azdEnvClient := p.azdClient.Environment()
-	currEnv, err := azdEnvClient.GetCurrent(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current environment: %w", err)
-	}
-
-	resp, err := azdEnvClient.GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: currEnv.Environment.Name,
+	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: p.env.Name,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get environment values: %w", err)
@@ -289,28 +379,6 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, fmt.Errorf("AI_FOUNDRY_PROJECT_RESOURCE_ID environment variable is required")
 	}
 
-	parsedResource, err := arm.ParseResourceID(azdEnv["AI_FOUNDRY_PROJECT_RESOURCE_ID"])
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse resource ID: %w", err)
-	}
-
-	// Get the tenant ID
-	tenantResponse, err := p.azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
-		SubscriptionId: parsedResource.SubscriptionID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get tenant ID: %w", err)
-	}
-
-	// Create Azure credential
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID:                   tenantResponse.TenantId,
-		AdditionallyAllowedTenants: []string{"*"},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
-	}
-
 	// Convert the template to bytes
 	templateBytes, err := json.Marshal(agentManifest.Template)
 	if err != nil {
@@ -337,9 +405,9 @@ func (p *AgentServiceTargetProvider) Deploy(
 
 	switch agentDef.Kind {
 	case agent_yaml.AgentKindPrompt:
-		return p.deployPromptAgent(ctx, cred, agentManifest, azdEnv)
+		return p.deployPromptAgent(ctx, agentManifest, azdEnv)
 	case agent_yaml.AgentKindHosted:
-		return p.deployHostedAgent(ctx, cred, serviceContext, progress, agentManifest, azdEnv)
+		return p.deployHostedAgent(ctx, serviceContext, progress, agentManifest, azdEnv)
 	default:
 		return nil, fmt.Errorf("unsupported agent kind: %s", agentDef.Kind)
 	}
@@ -387,7 +455,6 @@ func (p *AgentServiceTargetProvider) isContainerAgent() bool {
 // deployPromptAgent handles deployment of prompt-based agents
 func (p *AgentServiceTargetProvider) deployPromptAgent(
 	ctx context.Context,
-	cred *azidentity.AzureDeveloperCLICredential,
 	agentManifest *agent_yaml.AgentManifest,
 	azdEnv map[string]string,
 ) (*azdext.ServiceDeployResult, error) {
@@ -436,7 +503,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	p.displayAgentInfo(request)
 
 	// Create and deploy agent
-	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv, cred)
+	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -469,7 +536,6 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 // deployHostedAgent handles deployment of hosted container agents
 func (p *AgentServiceTargetProvider) deployHostedAgent(
 	ctx context.Context,
-	cred *azidentity.AzureDeveloperCLICredential,
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 	agentManifest *agent_yaml.AgentManifest,
@@ -485,7 +551,8 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	// Step 1: Build container image
 	var fullImageURL string
 	for _, artifact := range serviceContext.Publish {
-		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER && artifact.LocationKind == azdext.LocationKind_LOCATION_KIND_REMOTE {
+		if artifact.Kind == azdext.ArtifactKind_ARTIFACT_KIND_CONTAINER &&
+			artifact.LocationKind == azdext.LocationKind_LOCATION_KIND_REMOTE {
 			fullImageURL = artifact.Location
 			break
 		}
@@ -546,7 +613,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 	// Step 4: Create agent
 	progress("Creating agent")
-	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv, cred)
+	agentVersionResponse, err := p.createAgent(ctx, request, azdEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -560,7 +627,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 	// Step 5: Start agent container
 	progress("Starting agent container")
-	err = p.startAgentContainer(ctx, agentManifest, agentVersionResponse, azdEnv, cred)
+	err = p.startAgentContainer(ctx, agentManifest, agentVersionResponse, azdEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -594,10 +661,9 @@ func (p *AgentServiceTargetProvider) createAgent(
 	ctx context.Context,
 	request *agent_api.CreateAgentRequest,
 	azdEnv map[string]string,
-	cred *azidentity.AzureDeveloperCLICredential,
 ) (*agent_api.AgentVersionObject, error) {
 	// Create agent client
-	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], cred)
+	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], p.credential)
 
 	// Use constant API version
 	const apiVersion = "2025-05-15-preview"
@@ -625,7 +691,6 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	agentManifest *agent_yaml.AgentManifest,
 	agentVersionResponse *agent_api.AgentVersionObject,
 	azdEnv map[string]string,
-	cred *azidentity.AzureDeveloperCLICredential,
 ) error {
 	fmt.Fprintln(os.Stderr, "Starting Agent Container")
 	fmt.Fprintln(os.Stderr, "=======================")
@@ -645,7 +710,7 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	fmt.Fprintln(os.Stderr)
 
 	// Create agent client
-	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], cred)
+	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], p.credential)
 
 	// Start agent container (minReplicas and maxReplicas are already int32)
 	operation, err := agentClient.StartAgentContainer(
@@ -669,7 +734,11 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 		for {
 			select {
 			case <-timeout:
-				return fmt.Errorf("timeout waiting for operation (id: %s) to complete after %v", operation.Body.ID, maxWaitTime)
+				return fmt.Errorf(
+					"timeout waiting for operation (id: %s) to complete after %v",
+					operation.Body.ID,
+					maxWaitTime,
+				)
 			case <-ticker.C:
 				completedOperation, err := agentClient.GetAgentContainerOperation(
 					ctx, agentVersionResponse.Name, operation.Body.ID, apiVersion)
@@ -683,12 +752,21 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 					containerInfo, containerErr := agentClient.GetAgentContainer(
 						ctx, agentVersionResponse.Name, agentVersionResponse.Version, apiVersion)
 					if containerErr != nil {
-						return fmt.Errorf("operation failed (id: %s): failed to retrieve container details: %w", operation.Body.ID, containerErr)
+						return fmt.Errorf(
+							"operation failed (id: %s): failed to retrieve container details: %w",
+							operation.Body.ID,
+							containerErr,
+						)
 					}
 
 					var errorMsg string
 					if containerInfo.ErrorMessage != nil && *containerInfo.ErrorMessage != "" {
-						errorMsg = fmt.Sprintf("operation failed (id: %s): container status is %q with error: %s", operation.Body.ID, containerInfo.Status, *containerInfo.ErrorMessage)
+						errorMsg = fmt.Sprintf(
+							"operation failed (id: %s): container status is %q with error: %s",
+							operation.Body.ID,
+							containerInfo.Status,
+							*containerInfo.ErrorMessage,
+						)
 					} else {
 						errorMsg = fmt.Sprintf("operation failed (id: %s): container status is %q with no error details", operation.Body.ID, containerInfo.Status)
 					}
@@ -698,8 +776,13 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 
 				if completedOperation.Status == "Succeeded" {
 					if completedOperation.Container != nil {
-						fmt.Fprintf(os.Stderr, "Agent container '%s' (version: %s) operation completed! Container status: %s\n",
-							agentVersionResponse.Name, agentVersionResponse.Version, completedOperation.Container.Status)
+						fmt.Fprintf(
+							os.Stderr,
+							"Agent container '%s' (version: %s) operation completed! Container status: %s\n",
+							agentVersionResponse.Name,
+							agentVersionResponse.Version,
+							completedOperation.Container.Status,
+						)
 					} else {
 						fmt.Fprintf(
 							os.Stderr,
@@ -763,15 +846,9 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	ctx context.Context,
 	agentVersionResponse *agent_api.AgentVersionObject,
 ) error {
-	azdEnvClient := p.azdClient.Environment()
-	currEnv, err := azdEnvClient.GetCurrent(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
-	}
-
 	// Register the agent name and version as azd environment variables
-	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: currEnv.Environment.Name,
+	_, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: p.env.Name,
 		Key:     "AGENT_NAME",
 		Value:   agentVersionResponse.Name,
 	})
@@ -779,8 +856,8 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		return fmt.Errorf("failed to set AGENT_NAME environment variable: %w", err)
 	}
 
-	_, err = azdEnvClient.SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: currEnv.Environment.Name,
+	_, err = p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: p.env.Name,
 		Key:     "AGENT_VERSION",
 		Value:   agentVersionResponse.Version,
 	})

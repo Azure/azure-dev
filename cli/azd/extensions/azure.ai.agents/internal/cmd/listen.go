@@ -55,7 +55,12 @@ func newListenCommand() *cobra.Command {
 	}
 }
 
-func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, projectParser *project.FoundryParser, args *azdext.ProjectEventArgs) error {
+func preprovisionHandler(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	projectParser *project.FoundryParser,
+	args *azdext.ProjectEventArgs,
+) error {
 	if err := projectParser.SetIdentity(ctx, args); err != nil {
 		return fmt.Errorf("failed to set identity: %w", err)
 	}
@@ -75,7 +80,12 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, proje
 	return nil
 }
 
-func preprovisionEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
+func preprovisionEnvUpdate(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azdProject *azdext.ProjectConfig,
+	svc *azdext.ServiceConfig,
+) error {
 
 	var foundryAgentConfig *project.ServiceTargetAgentConfig
 
@@ -107,7 +117,13 @@ func preprovisionEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, azd
 	return nil
 }
 
-func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig, envName string) error {
+func kindEnvUpdate(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	project *azdext.ProjectConfig,
+	svc *azdext.ServiceConfig,
+	envName string,
+) error {
 	servicePath := svc.RelativePath
 	fullPath := filepath.Join(project.Path, servicePath)
 	agentYamlPath := filepath.Join(fullPath, "agent.yaml")
@@ -157,7 +173,12 @@ func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *az
 	return nil
 }
 
-func deploymentEnvUpdate(ctx context.Context, deployments []project.Deployment, azdClient *azdext.AzdClient, envName string) error {
+func deploymentEnvUpdate(
+	ctx context.Context,
+	deployments []project.Deployment,
+	azdClient *azdext.AzdClient,
+	envName string,
+) error {
 	deploymentsJson, err := json.Marshal(deployments)
 	if err != nil {
 		return fmt.Errorf("failed to marshal deployment details to JSON: %w", err)
@@ -171,7 +192,12 @@ func deploymentEnvUpdate(ctx context.Context, deployments []project.Deployment, 
 	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPLOYMENTS", escapedJsonString)
 }
 
-func resourcesEnvUpdate(ctx context.Context, resources []project.Resource, azdClient *azdext.AzdClient, envName string) error {
+func resourcesEnvUpdate(
+	ctx context.Context,
+	resources []project.Resource,
+	azdClient *azdext.AzdClient,
+	envName string,
+) error {
 	resourcesJson, err := json.Marshal(resources)
 	if err != nil {
 		return fmt.Errorf("failed to marshal resource details to JSON: %w", err)
@@ -185,7 +211,12 @@ func resourcesEnvUpdate(ctx context.Context, resources []project.Resource, azdCl
 	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPENDENT_RESOURCES", escapedJsonString)
 }
 
-func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
+func containerAgentHandling(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	project *azdext.ProjectConfig,
+	svc *azdext.ServiceConfig,
+) error {
 	servicePath := svc.RelativePath
 	fullPath := filepath.Join(project.Path, servicePath)
 	agentYamlPath := filepath.Join(fullPath, "agent.yaml")

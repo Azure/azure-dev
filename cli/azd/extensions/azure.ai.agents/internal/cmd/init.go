@@ -194,10 +194,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		}
 
 		if !isValidURL && !isValidFile {
-			return fmt.Errorf(
-				"manifest pointer '%s' is neither a valid URI nor an existing file path",
-				a.flags.manifestPointer,
-			)
+			return fmt.Errorf("manifest pointer '%s' is neither a valid URI nor an existing file path", a.flags.manifestPointer)
 		}
 
 		// Download/read agent.yaml file from the provided URI or file path and save it to project's "agents" directory
@@ -428,10 +425,7 @@ func (a *InitAction) validateFlags(flags *initFlags) error {
 		if _, err := url.ParseRequestURI(flags.manifestPointer); err != nil {
 			// If not a valid URL, check if it's an existing local file path
 			if _, fileErr := os.Stat(flags.manifestPointer); fileErr != nil {
-				return fmt.Errorf(
-					"manifest pointer '%s' is neither a valid URI nor an existing file path",
-					flags.manifestPointer,
-				)
+				return fmt.Errorf("manifest pointer '%s' is neither a valid URI nor an existing file path", flags.manifestPointer)
 			}
 		}
 	}
@@ -468,9 +462,7 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 
 	matches := regex.FindStringSubmatch(a.flags.projectResourceId)
 	if matches == nil || len(matches) != 5 {
-		return fmt.Errorf(
-			"project resource ID does not match expected format: /subscriptions/[SUBSCRIPTION]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT]/projects/[AI_PROJECT]",
-		)
+		return fmt.Errorf("project resource ID does not match expected format: /subscriptions/[SUBSCRIPTION]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT]/projects/[AI_PROJECT]")
 	}
 
 	// Extract the components
@@ -782,12 +774,7 @@ func (a *InitAction) downloadAgentYaml(
 	return agentManifest, targetDir, nil
 }
 
-func (a *InitAction) addToProject(
-	ctx context.Context,
-	targetDir string,
-	agentManifest *agent_yaml.AgentManifest,
-	host string,
-) error {
+func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentManifest *agent_yaml.AgentManifest, host string) error {
 	// Convert the template to bytes
 	templateBytes, err := json.Marshal(agentManifest.Template)
 	if err != nil {
@@ -1038,12 +1025,7 @@ func downloadParentDirectory(
 	}
 
 	parentDirPath := strings.Join(pathParts[:len(pathParts)-1], "/")
-	fmt.Printf(
-		"Downloading parent directory '%s' from repository '%s', branch '%s'\n",
-		parentDirPath,
-		urlInfo.RepoSlug,
-		urlInfo.Branch,
-	)
+	fmt.Printf("Downloading parent directory '%s' from repository '%s', branch '%s'\n", parentDirPath, urlInfo.RepoSlug, urlInfo.Branch)
 
 	// Download directory contents
 	if err := downloadDirectoryContents(ctx, urlInfo.Hostname, urlInfo.RepoSlug, parentDirPath, urlInfo.Branch, targetDir, ghCli, console); err != nil {
@@ -1055,15 +1037,7 @@ func downloadParentDirectory(
 }
 
 func downloadDirectoryContents(
-	ctx context.Context,
-	hostname string,
-	repoSlug string,
-	dirPath string,
-	branch string,
-	localPath string,
-	ghCli *github.Cli,
-	console input.Console,
-) error {
+	ctx context.Context, hostname string, repoSlug string, dirPath string, branch string, localPath string, ghCli *github.Cli, console input.Console) error {
 
 	// Get directory contents using GitHub API
 	apiPath := fmt.Sprintf("/repos/%s/contents/%s", repoSlug, dirPath)
@@ -1332,11 +1306,7 @@ func (a *InitAction) loadAiCatalog(ctx context.Context) error {
 		return fmt.Errorf("failed to start spinner: %w", err)
 	}
 
-	aiModelCatalog, err := a.modelCatalogService.ListAllModels(
-		ctx,
-		a.azureContext.Scope.SubscriptionId,
-		a.azureContext.Scope.Location,
-	)
+	aiModelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, a.azureContext.Scope.Location)
 	if err != nil {
 		return fmt.Errorf("failed to load AI model catalog: %w", err)
 	}
@@ -1469,11 +1439,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 
 var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standard"}
 
-func (a *InitAction) getModelDetails(
-	ctx context.Context,
-	modelName string,
-	modelVersion string,
-) (*ai.AiModelDeployment, error) {
+func (a *InitAction) getModelDetails(ctx context.Context, modelName string, modelVersion string) (*ai.AiModelDeployment, error) {
 	// Load the AI model catalog if not already loaded
 	if err := a.loadAiCatalog(ctx); err != nil {
 		return nil, err

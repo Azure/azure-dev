@@ -16,6 +16,7 @@ type ServiceTargetAgentConfig struct {
 	Environment map[string]string `json:"env,omitempty"`
 	Scale       *ScaleSettings    `json:"scale,omitempty"`
 	Deployments []Deployment      `json:"deployments,omitempty"`
+	Resources   []Resource        `json:"resources,omitempty"`
 }
 
 // ScaleSettings provides scaling configuration for the Azure AI Service target
@@ -57,6 +58,12 @@ type DeploymentSku struct {
 
 	// The capacity of the resource model definition representing SKU.
 	Capacity int `json:"capacity"`
+}
+
+// Resource represents an external resource for agent execution
+type Resource struct {
+	Resource       string `json:"resource"`
+	ConnectionName string `json:"connectionName"`
 }
 
 // UnmarshalStruct converts a structpb.Struct to a Go struct of type T

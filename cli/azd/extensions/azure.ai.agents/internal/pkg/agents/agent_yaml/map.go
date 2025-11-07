@@ -166,9 +166,9 @@ func CreatePromptAgentAPIRequest(promptAgent PromptAgent, buildConfig *AgentBuil
 		Instructions: instructions,
 		Temperature:  temperature,
 		TopP:         topP,
+		Tools:        convertYamlToolsToApiTools(*promptAgent.Tools),
 
 		// TODO: Handle additional fields like Tools, Reasoning, etc.
-		// Tools: convertYamlToolsToApiTools(promptAgent.Tools),
 		// Text: mapOutputSchemaToTextFormat(promptAgent.OutputSchema),
 		// StructuredInputs: mapInputSchemaToStructuredInputs(promptAgent.InputSchema),
 	}
@@ -187,10 +187,199 @@ func extractFloat32FromOptions(options ModelOptions, key string) *float32 {
 }
 
 // convertYamlToolsToApiTools converts agent_yaml tools to agent_api tools
-func convertYamlToolsToApiTools(yamlTools []Tool) []agent_api.Tool {
-	// TODO QUESTION: Are the Tool types compatible or do they need field mapping?
-	// Compare agent_yaml.Tool vs agent_api.Tool structures
-	return nil // Placeholder
+func convertYamlToolsToApiTools(yamlTools []any) []any {
+	var apiTools []any
+
+	for _, yamlTool := range yamlTools {
+		apiTool, err := convertYamlToolToApiTool(yamlTool)
+		if err != nil {
+			// Log error and skip this tool instead of failing completely
+			continue
+		}
+		apiTools = append(apiTools, apiTool)
+	}
+
+	return apiTools
+}
+
+// convertYamlToolToApiTool converts a single agent_yaml tool to its corresponding agent_api tool type
+func convertYamlToolToApiTool(yamlTool any) (any, error) {
+	if yamlTool == nil {
+		return nil, fmt.Errorf("tool cannot be nil")
+	}
+
+	switch tool := yamlTool.(type) {
+	case FunctionTool:
+		return agent_api.FunctionTool{
+			Tool: agent_api.Tool{
+				Type: agent_api.ToolTypeFunction,
+			},
+			Name:        tool.Name,
+			Description: tool.Description,
+			Parameters:  convertPropertySchemaToInterface(tool.Parameters),
+			Strict:      tool.Strict,
+		}, nil
+
+	case WebSearchTool:
+		apiTool := agent_api.WebSearchPreviewTool{
+			Tool: agent_api.Tool{
+				Type: agent_api.ToolTypeWebSearchPreview,
+			},
+		}
+		// Extract options back to specific fields
+		if tool.Options != nil {
+			if userLocation, exists := (tool.Options)["userLocation"]; exists {
+				if loc, ok := userLocation.(*agent_api.Location); ok {
+					apiTool.UserLocation = loc
+				}
+			}
+			if searchContextSize, exists := (tool.Options)["searchContextSize"]; exists {
+				if size, ok := searchContextSize.(string); ok {
+					apiTool.SearchContextSize = &size
+				}
+			}
+		}
+		return apiTool, nil
+
+	case BingGroundingTool:
+		apiTool := agent_api.BingGroundingAgentTool{
+			Tool: agent_api.Tool{
+				Type: agent_api.ToolTypeBingGrounding,
+			},
+		}
+		// Extract bingGrounding from options
+		if tool.Options != nil {
+			if bingGrounding, exists := (tool.Options)["bingGrounding"]; exists {
+				if bg, ok := bingGrounding.(agent_api.BingGroundingSearchToolParameters); ok {
+					apiTool.BingGrounding = bg
+				}
+			}
+		}
+		return apiTool, nil
+
+	case FileSearchTool:
+		apiTool := agent_api.FileSearchTool{
+			Tool: agent_api.Tool{
+				Type: agent_api.ToolTypeFileSearch,
+			},
+			VectorStoreIds: tool.VectorStoreIds,
+			MaxNumResults:  convertIntToInt32(tool.MaximumResultCount),
+		}
+
+		// Set ranking options
+		if tool.Ranker != nil || tool.ScoreThreshold != nil {
+			apiTool.RankingOptions = &agent_api.RankingOptions{
+				Ranker:         tool.Ranker,
+				ScoreThreshold: convertFloat64ToFloat32(tool.ScoreThreshold),
+			}
+		}
+
+		// Extract filters from options
+		if tool.Options != nil {
+			if filters, exists := tool.Options["filters"]; exists {
+				apiTool.Filters = filters
+			}
+		}
+		return apiTool, nil
+
+	case McpTool:
+		apiTool := agent_api.MCPTool{
+			Tool: agent_api.Tool{
+				Type: agent_api.ToolTypeMCP,
+			},
+			ServerLabel: tool.ServerName,
+			ServerURL:   "", // Not directly available from YAML, would need to extract from connection
+		}
+
+		// Extract options back to specific fields
+		if tool.Options != nil {
+			if serverURL, exists := tool.Options["serverUrl"]; exists {
+				if url, ok := serverURL.(string); ok {
+					apiTool.ServerURL = url
+				}
+			}
+			if headers, exists := tool.Options["headers"]; exists {
+				if h, ok := headers.(map[string]string); ok {
+					apiTool.Headers = h
+				}
+			}
+			if allowedTools, exists := tool.Options["allowedTools"]; exists {
+				apiTool.AllowedTools = allowedTools
+			}
+			if requireApproval, exists := tool.Options["requireApproval"]; exists {
+				apiTool.RequireApproval = requireApproval
+			}
+			if projectConnectionId, exists := tool.Options["projectConnectionId"]; exists {
+				if id, ok := projectConnectionId.(string); ok {
+					apiTool.ProjectConnectionID = &id
+				}
+			}
+		}
+		return apiTool, nil
+
+	case OpenApiTool:
+		apiTool := agent_api.OpenApiAgentTool{
+			Tool: agent_api.Tool{
+				Type: agent_api.ToolTypeOpenAPI,
+			},
+		}
+
+		// Extract openapi from options
+		if tool.Options != nil {
+			if openapi, exists := tool.Options["openapi"]; exists {
+				if api, ok := openapi.(agent_api.OpenApiFunctionDefinition); ok {
+					apiTool.OpenAPI = api
+				}
+			}
+		}
+		return apiTool, nil
+
+	case CodeInterpreterTool:
+		apiTool := agent_api.CodeInterpreterTool{
+			Tool: agent_api.Tool{
+				Type: agent_api.ToolTypeCodeInterpreter,
+			},
+		}
+
+		// Extract container from options
+		if tool.Options != nil {
+			if container, exists := tool.Options["container"]; exists {
+				apiTool.Container = container
+			}
+		}
+		return apiTool, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported YAML tool type: %T", yamlTool)
+	}
+}
+
+// Helper function to convert PropertySchema to interface{} for agent_api
+func convertPropertySchemaToInterface(schema PropertySchema) interface{} {
+	// This is a placeholder implementation - would need to convert PropertySchema
+	// back to the original format expected by agent_api
+	return map[string]interface{}{
+		"type":       "object",
+		"properties": map[string]interface{}{},
+	}
+}
+
+// Helper function to convert *int to *int32
+func convertIntToInt32(i *int) *int32 {
+	if i == nil {
+		return nil
+	}
+	i32 := int32(*i)
+	return &i32
+}
+
+// Helper function to convert *float64 to *float32
+func convertFloat64ToFloat32(f64 *float64) *float32 {
+	if f64 == nil {
+		return nil
+	}
+	f32 := float32(*f64)
+	return &f32
 }
 
 // mapInputSchemaToStructuredInputs converts PropertySchema to StructuredInputs

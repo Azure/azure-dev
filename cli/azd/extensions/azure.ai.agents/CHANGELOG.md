@@ -1,5 +1,11 @@
 # Release History
 
+## 0.0.4 (2025-11-05)
+
+- Add support for --no-prompt and --environment flags in `azd ai agent init`
+- Include operation ID in timeout error
+- Fix env vars not being included in agent create request
+
 ## 0.0.3 (2025-11-04)
 
 - Add support for latest MAML format

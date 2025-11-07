@@ -92,8 +92,16 @@ func preprovisionEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, azd
 		return err
 	}
 
-	if err := deploymentEnvUpdate(ctx, foundryAgentConfig.Deployments, azdClient, currentEnvResponse.Environment.Name); err != nil {
-		return err
+	if len(foundryAgentConfig.Deployments) > 0 {
+		if err := deploymentEnvUpdate(ctx, foundryAgentConfig.Deployments, azdClient, currentEnvResponse.Environment.Name); err != nil {
+			return err
+		}
+	}
+
+	if len(foundryAgentConfig.Resources) > 0 {
+		if err := resourcesEnvUpdate(ctx, foundryAgentConfig.Resources, azdClient, currentEnvResponse.Environment.Name); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -161,6 +169,20 @@ func deploymentEnvUpdate(ctx context.Context, deployments []project.Deployment, 
 	escapedJsonString = strings.ReplaceAll(escapedJsonString, "\"", "\\\"")
 
 	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPLOYMENTS", escapedJsonString)
+}
+
+func resourcesEnvUpdate(ctx context.Context, resources []project.Resource, azdClient *azdext.AzdClient, envName string) error {
+	resourcesJson, err := json.Marshal(resources)
+	if err != nil {
+		return fmt.Errorf("failed to marshal resource details to JSON: %w", err)
+	}
+
+	// Escape backslashes and double quotes for environment variable
+	jsonString := string(resourcesJson)
+	escapedJsonString := strings.ReplaceAll(jsonString, "\\", "\\\\")
+	escapedJsonString = strings.ReplaceAll(escapedJsonString, "\"", "\\\"")
+
+	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPENDENT_RESOURCES", escapedJsonString)
 }
 
 func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {

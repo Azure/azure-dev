@@ -4,6 +4,7 @@
 
 - Add support for tools
 - Improve defaulting logic and --no-prompt support
+- Fix remote build support
 
 ## 0.0.4 (2025-11-05)
 

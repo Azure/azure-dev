@@ -1,5 +1,11 @@
 # Release History
 
+## 0.0.5 (2025-11-06)
+
+- Add support for tools
+- Improve defaulting logic and --no-prompt support
+- Fix remote build support
+
 ## 0.0.4 (2025-11-05)
 
 - Add support for --no-prompt and --environment flags in `azd ai agent init`

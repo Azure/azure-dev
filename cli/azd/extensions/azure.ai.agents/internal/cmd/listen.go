@@ -7,8 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,9 +23,6 @@ func newListenCommand() *cobra.Command {
 		Use:   "listen",
 		Short: "Starts the extension and listens for events.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Suppress all log output during listen mode
-			log.SetOutput(io.Discard)
-
 			// Create a new context that includes the AZD access token.
 			ctx := azdext.WithAccessToken(cmd.Context())
 

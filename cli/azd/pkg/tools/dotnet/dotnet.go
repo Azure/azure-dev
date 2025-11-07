@@ -23,6 +23,17 @@ import (
 
 var _ tools.ExternalTool = (*Cli)(nil)
 
+// Constants for Aspire AppHost detection
+const (
+	// SingleFileAspireHostName is the required filename for single-file Aspire AppHosts
+	SingleFileAspireHostName = "apphost.cs"
+	// AspireSdkDirective is the SDK directive that must be present in single-file Aspire AppHosts
+	AspireSdkDirective = "#:sdk Aspire.AppHost.Sdk"
+)
+
+// DotNetProjectExtensions lists all valid .NET project file extensions
+var DotNetProjectExtensions = []string{".csproj", ".fsproj", ".vbproj"}
+
 type Cli struct {
 	commandRunner exec.CommandRunner
 }
@@ -422,18 +433,19 @@ func (cli *Cli) IsAspireHostProject(ctx context.Context, projectPath string) (bo
 }
 
 // IsSingleFileAspireHost checks if the given file is a single-file Aspire AppHost.
+// The caller should verify the filename matches SingleFileAspireHostName before calling this function.
 // A file-based Aspire AppHost must meet all of these conditions:
-// 1. File name: Must be named apphost.cs (case-insensitive)
-// 2. No sibling .csproj: The directory must NOT contain any .csproj files
-// 3. SDK Directive: Must contain the #:sdk Aspire.AppHost.Sdk directive in the file content
+// 1. File name: Must be named apphost.cs (case-insensitive) - verified by caller
+// 2. No sibling .NET project files: The directory must NOT contain .csproj, .fsproj, or .vbproj files
+// 3. SDK Directive: Must contain the AspireSdkDirective in the file content
 func (cli *Cli) IsSingleFileAspireHost(filePath string) (bool, error) {
-	// Check if the file name is apphost.cs (case-insensitive)
+	// Verify filename as a safety check (case-insensitive)
 	fileName := filepath.Base(filePath)
-	if !strings.EqualFold(fileName, "apphost.cs") {
+	if !strings.EqualFold(fileName, SingleFileAspireHostName) {
 		return false, nil
 	}
 
-	// Check if there are no sibling .csproj files
+	// Check if there are no sibling .NET project files
 	dir := filepath.Dir(filePath)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -441,7 +453,7 @@ func (cli *Cli) IsSingleFileAspireHost(filePath string) (bool, error) {
 	}
 
 	for _, entry := range entries {
-		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".csproj" {
+		if !entry.IsDir() && slices.Contains(DotNetProjectExtensions, filepath.Ext(entry.Name())) {
 			return false, nil
 		}
 	}
@@ -452,7 +464,7 @@ func (cli *Cli) IsSingleFileAspireHost(filePath string) (bool, error) {
 		return false, fmt.Errorf("reading file '%s': %w", filePath, err)
 	}
 
-	return strings.Contains(string(content), "#:sdk Aspire.AppHost.Sdk"), nil
+	return strings.Contains(string(content), AspireSdkDirective), nil
 }
 
 func NewCli(commandRunner exec.CommandRunner) *Cli {

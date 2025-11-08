@@ -101,6 +101,10 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	forceColor := !color.NoColor
 	var wg sync.WaitGroup
 
+	// Track total time for all extensions to become ready
+	allExtensionsStartTime := time.Now()
+	log.Printf("Starting %d extensions...\n", len(extensionList))
+
 	// Single loop: start goroutines for each extension
 	for _, extension := range extensionList {
 		wg.Add(1)
@@ -147,16 +151,20 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 			startTime := time.Now()
 			if err := ext.WaitUntilReady(readyCtx); err != nil {
 				elapsed := time.Since(startTime)
-				log.Printf("extension '%s' failed to become ready after %v: %v", ext.Id, elapsed, err)
+				log.Printf("'%s' extension failed to become ready after %v: %v\n", ext.Id, elapsed, err)
 			} else {
 				elapsed := time.Since(startTime)
-				log.Printf("extension '%s' became ready in %v", ext.Id, elapsed)
+				log.Printf("'%s' extension became ready in %v\n", ext.Id, elapsed)
 			}
 		}(extension)
 	}
 
 	// Wait for all extensions to reach a terminal state (ready or failed)
 	wg.Wait()
+
+	// Log total time for all extensions to complete startup
+	totalElapsed := time.Since(allExtensionsStartTime)
+	log.Printf("All %d extensions completed startup in %v\n", len(extensionList), totalElapsed)
 
 	return next(ctx)
 }

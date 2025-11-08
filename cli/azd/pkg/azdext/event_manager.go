@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 )
@@ -16,6 +17,7 @@ type EventManager struct {
 	broker        *grpcbroker.MessageBroker[EventMessage]
 	projectEvents map[string]ProjectEventHandler
 	serviceEvents map[string]ServiceEventHandler
+	eventsMutex   sync.RWMutex // Protects both projectEvents and serviceEvents maps
 }
 
 type ProjectEventArgs struct {
@@ -100,6 +102,8 @@ func (em *EventManager) AddProjectEventHandler(ctx context.Context, eventName st
 		return err
 	}
 
+	em.eventsMutex.Lock()
+	defer em.eventsMutex.Unlock()
 	em.projectEvents[eventName] = handler
 
 	return nil
@@ -139,16 +143,22 @@ func (em *EventManager) AddServiceEventHandler(
 		return err
 	}
 
+	em.eventsMutex.Lock()
+	defer em.eventsMutex.Unlock()
 	em.serviceEvents[eventName] = handler
 
 	return nil
 }
 
 func (em *EventManager) RemoveProjectEventHandler(eventName string) {
+	em.eventsMutex.Lock()
+	defer em.eventsMutex.Unlock()
 	delete(em.projectEvents, eventName)
 }
 
 func (em *EventManager) RemoveServiceEventHandler(eventName string) {
+	em.eventsMutex.Lock()
+	defer em.eventsMutex.Unlock()
 	delete(em.serviceEvents, eventName)
 }
 
@@ -159,7 +169,10 @@ func (em *EventManager) onInvokeProjectHandler(
 	ctx context.Context,
 	req *InvokeProjectHandler,
 ) (*EventMessage, error) {
+	em.eventsMutex.RLock()
+	defer em.eventsMutex.RUnlock()
 	handler, exists := em.projectEvents[req.EventName]
+
 	if !exists {
 		// No handler registered, return empty response (not an error)
 		return &EventMessage{}, nil
@@ -197,7 +210,10 @@ func (em *EventManager) onInvokeServiceHandler(
 	ctx context.Context,
 	req *InvokeServiceHandler,
 ) (*EventMessage, error) {
+	em.eventsMutex.RLock()
+	defer em.eventsMutex.RUnlock()
 	handler, exists := em.serviceEvents[req.EventName]
+
 	if !exists {
 		// No handler registered, return empty response (not an error)
 		return &EventMessage{}, nil

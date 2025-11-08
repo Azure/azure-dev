@@ -182,47 +182,78 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	// Now that receivers are running, perform registrations
 	// The broker.Run() in each Receive() will process the registration responses
 
-	// Register all service targets with the single manager
+	// Register all registrations in parallel - service targets, framework services, and event handlers
+	var allRegistrationsWg sync.WaitGroup
+	registrationCount := len(er.serviceTargets) + len(er.frameworkServices) + len(er.projectHandlers) + len(er.serviceHandlers)
+	registrationErrChan := make(chan error, registrationCount)
+
+	// Register service targets in parallel
 	for _, reg := range er.serviceTargets {
 		if reg.Factory == nil {
 			return fmt.Errorf("service target provider for host '%s' is nil", reg.Host)
 		}
 
-		if err := er.serviceTargetManager.Register(ctx, reg.Factory, reg.Host); err != nil {
-			return fmt.Errorf("failed to register service target '%s': %w", reg.Host, err)
-		}
+		allRegistrationsWg.Add(1)
+		go func(r ServiceTargetRegistration) {
+			defer allRegistrationsWg.Done()
+			if err := er.serviceTargetManager.Register(ctx, r.Factory, r.Host); err != nil {
+				registrationErrChan <- fmt.Errorf("failed to register service target '%s': %w", r.Host, err)
+			}
+		}(reg)
 	}
 
-	// Register all framework services with the single manager
+	// Register framework services in parallel
 	for _, reg := range er.frameworkServices {
 		if reg.Factory == nil {
 			return fmt.Errorf("framework service provider for language '%s' is nil", reg.Language)
 		}
 
-		if err := er.frameworkServiceManager.Register(ctx, reg.Factory, reg.Language); err != nil {
-			return fmt.Errorf("failed to register framework service '%s': %w", reg.Language, err)
-		}
+		allRegistrationsWg.Add(1)
+		go func(r FrameworkServiceRegistration) {
+			defer allRegistrationsWg.Done()
+			if err := er.frameworkServiceManager.Register(ctx, r.Factory, r.Language); err != nil {
+				registrationErrChan <- fmt.Errorf("failed to register framework service '%s': %w", r.Language, err)
+			}
+		}(reg)
 	}
 
-	// Register all event handlers with the single manager
+	// Register project event handlers in parallel
 	for _, reg := range er.projectHandlers {
 		if reg.Handler == nil {
 			return fmt.Errorf("project event handler for '%s' is nil", reg.EventName)
 		}
 
-		if err := er.eventManager.AddProjectEventHandler(ctx, reg.EventName, reg.Handler); err != nil {
-			return fmt.Errorf("failed to add project event handler '%s': %w", reg.EventName, err)
-		}
+		allRegistrationsWg.Add(1)
+		go func(r ProjectEventRegistration) {
+			defer allRegistrationsWg.Done()
+			if err := er.eventManager.AddProjectEventHandler(ctx, r.EventName, r.Handler); err != nil {
+				registrationErrChan <- fmt.Errorf("failed to add project event handler '%s': %w", r.EventName, err)
+			}
+		}(reg)
 	}
 
+	// Register service event handlers in parallel
 	for _, reg := range er.serviceHandlers {
 		if reg.Handler == nil {
 			return fmt.Errorf("service event handler for '%s' is nil", reg.EventName)
 		}
 
-		if err := er.eventManager.AddServiceEventHandler(ctx, reg.EventName, reg.Handler, reg.Options); err != nil {
-			return fmt.Errorf("failed to add service event handler '%s': %w", reg.EventName, err)
-		}
+		allRegistrationsWg.Add(1)
+		go func(r ServiceEventRegistration) {
+			defer allRegistrationsWg.Done()
+			if err := er.eventManager.AddServiceEventHandler(ctx, r.EventName, r.Handler, r.Options); err != nil {
+				registrationErrChan <- fmt.Errorf("failed to add service event handler '%s': %w", r.EventName, err)
+			}
+		}(reg)
+	}
+
+	// Wait for ALL registrations to complete in parallel
+	allRegistrationsWg.Wait()
+	close(registrationErrChan)
+
+	// Check for any registration errors
+	if err := <-registrationErrChan; err != nil {
+		return err
 	}
 
 	// Signal readiness after all registrations are complete

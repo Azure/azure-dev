@@ -376,7 +376,7 @@
                             "required": ["project"],
                             "properties": {
                                 "config": {
-                                    "$ref": "https://raw.githubusercontent.com/wbreza/azure-dev/refs/heads/ext-agent-schema-int/cli/azd/extensions/azure.ai.agents/schemas/azure.ai.agent.json",
+                                    "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/azure.ai.agents/schemas/azure.ai.agent.json",
                                     "title": "The Azure AI Agent configuration.",
                                     "description": "Optional. Provides additional configuration for Azure AI Agent deployment."
                                 },

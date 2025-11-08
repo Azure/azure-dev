@@ -106,7 +106,8 @@
                             "springapp",
                             "staticwebapp",
                             "aks",
-                            "ai.endpoint"
+                            "ai.endpoint",
+                            "azure.ai.agent"
                         ]
                     },
                     "language": {
@@ -300,6 +301,27 @@
                                     "$ref": "#/definitions/aiEndpointConfig",
                                     "title": "The Azure AI endpoint configuration.",
                                     "description": "Required. Provides additional configuration for Azure AI online endpoint deployment."
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "host": {
+                                    "const": "azure.ai.agent"
+                                }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "config": {
+                                    "$ref": "https://raw.githubusercontent.com/wbreza/azure-dev/refs/heads/ext-agent-schema-int/cli/azd/extensions/azure.ai.agents/schemas/azure.ai.agent.json",
+                                    "title": "The Azure AI Agent configuration.",
+                                    "description": "Optional. Provides additional configuration for Azure AI Agent deployment."
+                                },
+                                "docker": {
+                                    "$ref": "#/definitions/docker"
                                 }
                             }
                         }

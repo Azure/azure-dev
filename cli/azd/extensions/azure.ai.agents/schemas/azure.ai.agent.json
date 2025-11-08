@@ -13,8 +13,7 @@
     },
     "scale": {
       "$ref": "#/definitions/ScaleSettings"
-    }
-    ,
+    },
     "deployments": {
       "type": "array",
       "description": "List of model deployments.",
@@ -54,8 +53,7 @@
         }
       },
       "additionalProperties": false
-    }
-    ,
+    },
     "Deployment": {
       "type": "object",
       "description": "A single model deployment.",

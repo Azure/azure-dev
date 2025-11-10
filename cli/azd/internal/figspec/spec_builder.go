@@ -4,8 +4,10 @@
 package figspec
 
 import (
+	"slices"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -32,13 +34,25 @@ func NewSpecBuilder(includeHidden bool) *SpecBuilder {
 	}
 }
 
+// generateNonPersistentGlobalOptions generates options for non-persistent global flags (--help, --docs)
+func (sb *SpecBuilder) generateNonPersistentGlobalOptions(root *cobra.Command) []Option {
+	// Create a flagset with only the non-persistent global flags
+	flagSet := pflag.NewFlagSet("", pflag.ContinueOnError)
+	root.LocalNonPersistentFlags().VisitAll(func(f *pflag.Flag) {
+		if slices.Contains(cmd.NonPersistentGlobalFlags, f.Name) {
+			flagSet.AddFlag(f)
+		}
+	})
+	return sb.generateOptions(flagSet, "", true)
+}
+
 // BuildSpec generates a Fig spec from a Cobra root command
 func (sb *SpecBuilder) BuildSpec(root *cobra.Command) *Spec {
 	persistentOpts := sb.generateOptions(root.PersistentFlags(), "", true)
 
-	// Include root-level local flags (--help, --docs) as persistent since they appear on all commands
-	localOpts := sb.generateOptions(root.LocalNonPersistentFlags(), "", true)
-	persistentOpts = append(persistentOpts, localOpts...)
+	// Include non-persistent global flags (--help, --docs) as persistent since they appear on all commands
+	nonPersistentGlobalOpts := sb.generateNonPersistentGlobalOptions(root)
+	persistentOpts = append(persistentOpts, nonPersistentGlobalOpts...)
 
 	subcommands := sb.generateSubcommands(root, &CommandContext{
 		Command:     root,
@@ -97,14 +111,14 @@ func (sb *SpecBuilder) generateSubcommands(cmd *cobra.Command, ctx *CommandConte
 
 func (sb *SpecBuilder) generateOptions(flagSet *pflag.FlagSet, commandPath string, persistent bool) []Option {
 	var options []Option
-
 	flagSet.VisitAll(func(flag *pflag.Flag) {
 		if !sb.includeHidden && flag.Hidden {
 			return
 		}
 
-		if !persistent && ShouldSkipPersistentFlag(flag) {
-			return // Global flags already defined at root
+		// Skip non-persistent global flags for subcommands since they're already defined as persistent at root
+		if !persistent && slices.Contains(cmd.NonPersistentGlobalFlags, flag.Name) {
+			return
 		}
 
 		names := []string{"--" + flag.Name}
@@ -115,8 +129,9 @@ func (sb *SpecBuilder) generateOptions(flagSet *pflag.FlagSet, commandPath strin
 		isRepeatable := strings.Contains(flag.Value.Type(), "Slice") ||
 			strings.Contains(flag.Value.Type(), "Array")
 
+		// Handle flags that are marked as `cmd.MarkFlagRequired`
 		isRequired := false
-		if annotations := flag.Annotations["cobra_annotation_bash_completion_one_required_flag"]; len(annotations) > 0 {
+		if annotations := flag.Annotations[cobra.BashCompOneRequiredFlag]; len(annotations) > 0 {
 			isRequired = annotations[0] == "true"
 		}
 
@@ -236,7 +251,11 @@ func (sb *SpecBuilder) generateHelpSubcommands(cmd *cobra.Command) []Subcommand 
 	var subcommands []Subcommand
 
 	for _, sub := range cmd.Commands() {
-		if sub.Hidden || sub.Name() == "help" {
+		if !sb.includeHidden && sub.Hidden {
+			continue
+		}
+
+		if sub.Name() == "help" {
 			continue
 		}
 

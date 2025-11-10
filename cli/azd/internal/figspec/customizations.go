@@ -6,8 +6,6 @@ package figspec
 import (
 	"slices"
 	"strings"
-
-	"github.com/spf13/pflag"
 )
 
 // azd-specific customizations for Fig spec generation
@@ -35,15 +33,6 @@ var serviceCommandPaths = []string{
 	"azd package",
 	"azd publish",
 	"azd restore",
-}
-
-// Flags that should only appear at root level, not duplicated on subcommands
-var persistentOnlyFlags = []string{
-	"help",
-	"debug",
-	"cwd",
-	"no-prompt",
-	"docs",
 }
 
 // GetSuggestions returns static suggestion values for flags that accept a fixed set of options
@@ -143,21 +132,9 @@ func (c *Customizations) GetCommandArgs(ctx *CommandContext) []Arg {
 			{Name: "key", IsOptional: true},
 			{Name: "value", IsOptional: true},
 		}
-	case "azd show":
-		return []Arg{
-			{Name: "resource-name|resource-id", IsOptional: true},
-		}
 	case "azd hooks run":
 		return []Arg{
 			{Name: "name", Suggestions: hookNameValues},
-		}
-	case "azd extension install":
-		return []Arg{
-			{Name: "extension-id"},
-		}
-	case "azd extension uninstall", "azd extension upgrade":
-		return []Arg{
-			{Name: "extension-id", IsOptional: true},
 		}
 	}
 
@@ -191,9 +168,4 @@ func (c *Customizations) GetFlagArgs(ctx *FlagContext) *Arg {
 	}
 
 	return nil
-}
-
-// ShouldSkipPersistentFlag returns whether a flag should only be defined at root, not repeated on subcommands
-func ShouldSkipPersistentFlag(flag *pflag.Flag) bool {
-	return slices.Contains(persistentOnlyFlags, flag.Name)
 }

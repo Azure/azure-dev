@@ -642,7 +642,7 @@ const completionSpec: Fig.Spec = {
 						},
 					],
 					args: {
-						name: 'extension-name',
+						name: 'extension-id',
 					},
 				},
 				{

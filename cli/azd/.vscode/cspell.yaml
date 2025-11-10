@@ -44,6 +44,7 @@ words:
   - tekuri
   - jsonschema
   - rustc
+  - figspec
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -210,6 +211,9 @@ overrides:
       - azdcontext
       - azapi
       - eastus
+  - filename: cmd/cmd_help.go
+    words:
+      - cmdinternal
   - filename: .github/copilot-instructions.md
     words:
       - golines

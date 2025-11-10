@@ -227,7 +227,7 @@ const file_workflow_proto_rawDesc = "" +
 	"\x0fWorkflowCommand\x12\x12\n" +
 	"\x04args\x18\x01 \x03(\tR\x04args2K\n" +
 	"\x0fWorkflowService\x128\n" +
-	"\x03Run\x12\x1a.azdext.RunWorkflowRequest\x1a\x15.azdext.EmptyResponseB6Z4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdextb\x06proto3"
+	"\x03Run\x12\x1a.azdext.RunWorkflowRequest\x1a\x15.azdext.EmptyResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
 var (
 	file_workflow_proto_rawDescOnce sync.Once

@@ -5,13 +5,13 @@ package grpcserver
 
 import (
 	"context"
-	"sync"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -150,48 +150,44 @@ func createTestExtension() *extensions.Extension {
 }
 
 func TestEventService_handleSubscribeProjectEvent(t *testing.T) {
-	service, mockStream := createTestEventService()
+	service, _ := createTestEventService()
 	extension := createTestExtension()
 	ctx := context.Background()
 
 	tests := []struct {
-		name           string
-		subscribeMsg   *azdext.SubscribeProjectEvent
-		expectError    bool
-		expectedEvents int
+		name         string
+		subscribeMsg *azdext.SubscribeProjectEvent
+		expectError  bool
 	}{
 		{
 			name: "subscribe to single event",
 			subscribeMsg: &azdext.SubscribeProjectEvent{
 				EventNames: []string{"prepackage"},
 			},
-			expectError:    false,
-			expectedEvents: 1,
+			expectError: false,
 		},
 		{
 			name: "subscribe to multiple events",
 			subscribeMsg: &azdext.SubscribeProjectEvent{
 				EventNames: []string{"prepackage", "postpackage", "predeploy"},
 			},
-			expectError:    false,
-			expectedEvents: 3,
+			expectError: false,
 		},
 		{
 			name: "subscribe to empty events",
 			subscribeMsg: &azdext.SubscribeProjectEvent{
 				EventNames: []string{},
 			},
-			expectError:    false,
-			expectedEvents: 0,
+			expectError: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear previous events
-			service.projectEvents = sync.Map{}
+			// Create a mock broker (nil is acceptable for these tests since handlers aren't executed)
+			var mockBroker *grpcbroker.MessageBroker[azdext.EventMessage]
 
-			err := service.handleSubscribeProjectEvent(ctx, extension, tt.subscribeMsg, mockStream)
+			err := service.onSubscribeProjectEvent(ctx, extension, tt.subscribeMsg, mockBroker)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -200,57 +196,39 @@ func TestEventService_handleSubscribeProjectEvent(t *testing.T) {
 
 			assert.NoError(t, err)
 
-			// Verify correct number of events were stored
-			eventCount := 0
-			service.projectEvents.Range(func(key, value interface{}) bool {
-				eventCount++
-
-				// Verify the key format: extension.eventName
-				keyStr := key.(string)
-				assert.Contains(t, keyStr, extension.Id)
-
-				// Verify channel was created
-				ch := value.(chan *azdext.ProjectHandlerStatus)
-				assert.NotNil(t, ch)
-				assert.Equal(t, 1, cap(ch))
-
-				return true
-			})
-			assert.Equal(t, tt.expectedEvents, eventCount)
+			// Note: Handler registration is internal to project.ProjectConfig.
+			// Full integration testing would require firing events and verifying behavior.
 		})
 	}
 }
 
 func TestEventService_handleSubscribeServiceEvent(t *testing.T) {
-	service, mockStream := createTestEventService()
+	service, _ := createTestEventService()
 	extension := createTestExtension()
 	ctx := context.Background()
 
 	tests := []struct {
-		name           string
-		subscribeMsg   *azdext.SubscribeServiceEvent
-		expectError    bool
-		expectedEvents int
+		name         string
+		subscribeMsg *azdext.SubscribeServiceEvent
+		expectError  bool
 	}{
 		{
 			name: "subscribe to service event for all services",
 			subscribeMsg: &azdext.SubscribeServiceEvent{
 				EventNames: []string{"prepackage"},
-				Language:   "", // empty means all languages
-				Host:       "", // empty means all hosts
+				Language:   "",
+				Host:       "",
 			},
-			expectError:    false,
-			expectedEvents: 2, // Two services in test config
+			expectError: false,
 		},
 		{
 			name: "subscribe to service event filtered by language",
 			subscribeMsg: &azdext.SubscribeServiceEvent{
 				EventNames: []string{"prepackage"},
-				Language:   "ts", // TypeScript constant is "ts", not "typescript"
+				Language:   "ts",
 				Host:       "",
 			},
-			expectError:    false,
-			expectedEvents: 2, // Both services are TypeScript
+			expectError: false,
 		},
 		{
 			name: "subscribe to service event filtered by host",
@@ -259,18 +237,16 @@ func TestEventService_handleSubscribeServiceEvent(t *testing.T) {
 				Language:   "",
 				Host:       "containerapp",
 			},
-			expectError:    false,
-			expectedEvents: 1, // Only api service is containerapp
+			expectError: false,
 		},
 		{
 			name: "subscribe to service event with multiple filters",
 			subscribeMsg: &azdext.SubscribeServiceEvent{
 				EventNames: []string{"prepackage"},
-				Language:   "ts", // TypeScript constant is "ts", not "typescript"
+				Language:   "ts",
 				Host:       "staticwebapp",
 			},
-			expectError:    false,
-			expectedEvents: 1, // Only web service matches both filters
+			expectError: false,
 		},
 		{
 			name: "subscribe to multiple service events",
@@ -279,17 +255,16 @@ func TestEventService_handleSubscribeServiceEvent(t *testing.T) {
 				Language:   "",
 				Host:       "",
 			},
-			expectError:    false,
-			expectedEvents: 4, // 2 events * 2 services
+			expectError: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear previous events
-			service.serviceEvents = sync.Map{}
+			// Create a mock broker (nil is acceptable for these tests since handlers aren't executed)
+			var mockBroker *grpcbroker.MessageBroker[azdext.EventMessage]
 
-			err := service.handleSubscribeServiceEvent(ctx, extension, tt.subscribeMsg, mockStream)
+			err := service.onSubscribeServiceEvent(ctx, extension, tt.subscribeMsg, mockBroker)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -298,43 +273,37 @@ func TestEventService_handleSubscribeServiceEvent(t *testing.T) {
 
 			assert.NoError(t, err)
 
-			// Verify correct number of events were stored
-			eventCount := 0
-			service.serviceEvents.Range(func(key, value interface{}) bool {
-				eventCount++
-
-				// Verify the key format: extension.serviceName.eventName
-				keyStr := key.(string)
-				assert.Contains(t, keyStr, extension.Id)
-
-				// Verify channel was created
-				ch := value.(chan *azdext.ServiceHandlerStatus)
-				assert.NotNil(t, ch)
-				assert.Equal(t, 1, cap(ch))
-
-				return true
-			})
-			assert.Equal(t, tt.expectedEvents, eventCount)
+			// Note: Handler registration is internal to project.ProjectConfig.
+			// Full integration testing would require firing events and verifying behavior.
 		})
 	}
 }
 
 func TestEventService_createProjectEventHandler(t *testing.T) {
-	service, mockStream := createTestEventService()
+	service, _ := createTestEventService()
 	extension := createTestExtension()
 	eventName := "prepackage"
 
+	// Create a context with metadata containing extension claims (simulating the stream context)
+	md := metadata.New(map[string]string{
+		"authorization": "fake-token", // Extension claims would normally be in this token
+	})
+	streamCtx := metadata.NewIncomingContext(context.Background(), md)
+
+	// Create a mock broker (nil is acceptable since we're not executing the handler)
+	var mockBroker *grpcbroker.MessageBroker[azdext.EventMessage]
+
 	// Create the handler
-	handler := service.createProjectEventHandler(mockStream, extension, eventName)
+	handler := service.createProjectEventHandler(streamCtx, extension, eventName, mockBroker)
 	require.NotNil(t, handler)
 
 	// Test that the handler function is created correctly
-	// We won't execute it since that would require complex async setup
+	// We won't execute it since that would require complex async setup with broker
 	assert.NotNil(t, handler)
 }
 
 func TestEventService_createServiceEventHandler(t *testing.T) {
-	service, mockStream := createTestEventService()
+	service, _ := createTestEventService()
 	extension := createTestExtension()
 	eventName := "prepackage"
 
@@ -345,101 +314,21 @@ func TestEventService_createServiceEventHandler(t *testing.T) {
 		RelativePath: "./test-service",
 	}
 
+	// Create a context with metadata containing extension claims (simulating the stream context)
+	md := metadata.New(map[string]string{
+		"authorization": "fake-token", // Extension claims would normally be in this token
+	})
+	streamCtx := metadata.NewIncomingContext(context.Background(), md)
+
+	// Create a mock broker (nil is acceptable since we're not executing the handler)
+	var mockBroker *grpcbroker.MessageBroker[azdext.EventMessage]
+
 	// Create the handler
-	handler := service.createServiceEventHandler(mockStream, serviceConfig, extension, eventName)
+	handler := service.createServiceEventHandler(streamCtx, serviceConfig, extension, eventName, mockBroker)
 	require.NotNil(t, handler)
 
 	// Test that the handler function is created correctly
-	// We won't execute it since that would require complex async setup
 	assert.NotNil(t, handler)
-}
-
-func TestEventService_sendProjectInvokeMessage(t *testing.T) {
-	service, mockStream := createTestEventService()
-	eventName := "prepackage"
-
-	// Setup mock expectations - capture the sent message
-	var sentMessage *azdext.EventMessage
-	mockStream.On("Send", mock.AnythingOfType("*azdext.EventMessage")).Run(func(args mock.Arguments) {
-		sentMessage = args.Get(0).(*azdext.EventMessage)
-	}).Return(nil)
-
-	// Create test project lifecycle event args
-	args := project.ProjectLifecycleEventArgs{
-		Project: &project.ProjectConfig{
-			Name: "test-project",
-		},
-		Args: map[string]any{},
-	}
-
-	// Execute the method
-	err := service.sendProjectInvokeMessage(mockStream, eventName, args)
-
-	// Verify no error occurred
-	assert.NoError(t, err)
-
-	// Verify the message was sent
-	mockStream.AssertCalled(t, "Send", mock.AnythingOfType("*azdext.EventMessage"))
-
-	// Verify the message structure
-	require.NotNil(t, sentMessage)
-	require.NotNil(t, sentMessage.GetInvokeProjectHandler())
-
-	invokeMsg := sentMessage.GetInvokeProjectHandler()
-	assert.Equal(t, eventName, invokeMsg.EventName)
-	assert.NotNil(t, invokeMsg.Project)
-	assert.Equal(t, "test-project", invokeMsg.Project.Name)
-}
-
-func TestEventService_sendServiceInvokeMessage(t *testing.T) {
-	service, mockStream := createTestEventService()
-	eventName := "prepackage"
-
-	// Setup mock expectations - capture the sent message
-	var sentMessage *azdext.EventMessage
-	mockStream.On("Send", mock.AnythingOfType("*azdext.EventMessage")).Run(func(args mock.Arguments) {
-		sentMessage = args.Get(0).(*azdext.EventMessage)
-	}).Return(nil)
-
-	serviceConfig := &project.ServiceConfig{
-		Name:         "test-service",
-		Language:     project.ServiceLanguageTypeScript,
-		Host:         project.ContainerAppTarget,
-		RelativePath: "./test-service",
-	}
-
-	// Create test service lifecycle event args with ServiceContext
-	args := project.ServiceLifecycleEventArgs{
-		Project: &project.ProjectConfig{
-			Name: "test-project",
-		},
-		Service:        serviceConfig,
-		ServiceContext: project.NewServiceContext(),
-		Args:           map[string]any{},
-	}
-
-	// Execute the method
-	err := service.sendServiceInvokeMessage(mockStream, eventName, args)
-
-	// Verify no error occurred
-	assert.NoError(t, err)
-
-	// Verify the message was sent
-	mockStream.AssertCalled(t, "Send", mock.AnythingOfType("*azdext.EventMessage"))
-
-	// Verify the message structure
-	require.NotNil(t, sentMessage)
-	require.NotNil(t, sentMessage.GetInvokeServiceHandler())
-
-	invokeMsg := sentMessage.GetInvokeServiceHandler()
-	assert.Equal(t, eventName, invokeMsg.EventName)
-	assert.NotNil(t, invokeMsg.Project)
-	assert.Equal(t, "test-project", invokeMsg.Project.Name)
-	assert.NotNil(t, invokeMsg.Service)
-	assert.Equal(t, "test-service", invokeMsg.Service.Name)
-
-	// Verify ServiceContext was included
-	assert.NotNil(t, invokeMsg.ServiceContext)
 }
 
 func TestEventService_New(t *testing.T) {

@@ -99,20 +99,26 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 	}()
 
 	forceColor := !color.NoColor
-
 	var wg sync.WaitGroup
 
-	for _, extension := range extensionList {
-		jwtToken, err := grpcserver.GenerateExtensionToken(extension, serverInfo)
-		if err != nil {
-			return nil, err
-		}
+	// Track total time for all extensions to become ready
+	allExtensionsStartTime := time.Now()
+	log.Printf("Starting %d extensions...\n", len(extensionList))
 
+	// Single loop: start goroutines for each extension
+	for _, extension := range extensionList {
 		wg.Add(1)
-		go func(extension *extensions.Extension, jwtToken string) {
+		go func(ext *extensions.Extension) {
 			defer wg.Done()
 
-			// Invoke the extension in a separate goroutine so that we can proceed to waiting for readiness.
+			jwtToken, err := grpcserver.GenerateExtensionToken(ext, serverInfo)
+			if err != nil {
+				log.Printf("failed to generate JWT token for '%s' extension: %v", ext.Id, err)
+				ext.Fail(err)
+				return
+			}
+
+			// Start the extension process in a separate goroutine
 			go func() {
 				allEnv := []string{
 					fmt.Sprintf("AZD_SERVER=%s", serverInfo.Address),
@@ -126,14 +132,14 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 				options := &extensions.InvokeOptions{
 					Args:   []string{"listen"},
 					Env:    allEnv,
-					StdIn:  extension.StdIn(),
-					StdOut: extension.StdOut(),
-					StdErr: extension.StdErr(),
+					StdIn:  ext.StdIn(),
+					StdOut: ext.StdOut(),
+					StdErr: ext.StdErr(),
 				}
 
-				if _, err := m.extensionRunner.Invoke(ctx, extension, options); err != nil {
+				if _, err := m.extensionRunner.Invoke(ctx, ext, options); err != nil {
 					m.console.Message(ctx, err.Error())
-					extension.Fail(err)
+					ext.Fail(err)
 				}
 			}()
 
@@ -142,14 +148,23 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 			readyCtx, cancel := getReadyContext(ctx)
 			defer cancel()
 
-			if err := extension.WaitUntilReady(readyCtx); err != nil {
-				log.Printf("extension '%s' failed to become ready: %v\n", extension.Id, err)
+			startTime := time.Now()
+			if err := ext.WaitUntilReady(readyCtx); err != nil {
+				elapsed := time.Since(startTime)
+				log.Printf("'%s' extension failed to become ready after %v: %v\n", ext.Id, elapsed, err)
+			} else {
+				elapsed := time.Since(startTime)
+				log.Printf("'%s' extension became ready in %v\n", ext.Id, elapsed)
 			}
-		}(extension, jwtToken)
+		}(extension)
 	}
 
 	// Wait for all extensions to reach a terminal state (ready or failed)
 	wg.Wait()
+
+	// Log total time for all extensions to complete startup
+	totalElapsed := time.Since(allExtensionsStartTime)
+	log.Printf("All %d extensions completed startup in %v\n", len(extensionList), totalElapsed)
 
 	return next(ctx)
 }

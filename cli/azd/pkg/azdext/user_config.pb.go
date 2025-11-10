@@ -447,7 +447,7 @@ const file_user_config_proto_rawDesc = "" +
 	"\n" +
 	"GetSection\x12#.azdext.GetUserConfigSectionRequest\x1a$.azdext.GetUserConfigSectionResponse\x12:\n" +
 	"\x03Set\x12\x1c.azdext.SetUserConfigRequest\x1a\x15.azdext.EmptyResponse\x12>\n" +
-	"\x05Unset\x12\x1e.azdext.UnsetUserConfigRequest\x1a\x15.azdext.EmptyResponseB6Z4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdextb\x06proto3"
+	"\x05Unset\x12\x1e.azdext.UnsetUserConfigRequest\x1a\x15.azdext.EmptyResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
 var (
 	file_user_config_proto_rawDescOnce sync.Once

@@ -6,28 +6,35 @@ package azdext
 import (
 	"context"
 	"fmt"
+	"log"
+	"sync"
 
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
+type serviceReceiver interface {
+	Receive(ctx context.Context) error
+}
+
 type serviceTargetRegistrar interface {
+	serviceReceiver
 	Register(ctx context.Context, factory ServiceTargetFactory, hostType string) error
 	Close() error
 }
 
 type frameworkServiceRegistrar interface {
+	serviceReceiver
 	Register(ctx context.Context, factory FrameworkServiceFactory, language string) error
 	Close() error
 }
 
 type extensionEventManager interface {
+	serviceReceiver
 	AddProjectEventHandler(ctx context.Context, eventName string, handler ProjectEventHandler) error
 	AddServiceEventHandler(
 		ctx context.Context, eventName string, handler ServiceEventHandler, options *ServiceEventOptions,
 	) error
-	Receive(ctx context.Context) error
 	Close() error
 }
 
@@ -74,28 +81,18 @@ type ExtensionHost struct {
 	projectHandlers   []ProjectEventRegistration
 	serviceHandlers   []ServiceEventRegistration
 
-	newServiceTargetManager    func(*AzdClient) serviceTargetRegistrar
-	newFrameworkServiceManager func(*AzdClient) frameworkServiceRegistrar
-	newEventManager            func(*AzdClient) extensionEventManager
-	readyFn                    func(context.Context) error
+	serviceTargetManager    serviceTargetRegistrar
+	frameworkServiceManager frameworkServiceRegistrar
+	eventManager            extensionEventManager
 }
 
 // NewExtensionHost creates a new ExtensionHost for the supplied azd client.
 func NewExtensionHost(client *AzdClient) *ExtensionHost {
 	return &ExtensionHost{
-		client: client,
-		newServiceTargetManager: func(c *AzdClient) serviceTargetRegistrar {
-			return NewServiceTargetManager(c)
-		},
-		newFrameworkServiceManager: func(c *AzdClient) frameworkServiceRegistrar {
-			return NewFrameworkServiceManager(c)
-		},
-		newEventManager: func(c *AzdClient) extensionEventManager {
-			return NewEventManager(c)
-		},
-		readyFn: func(ctx context.Context) error {
-			return callReady(ctx, client)
-		},
+		client:                  client,
+		serviceTargetManager:    NewServiceTargetManager(client),
+		frameworkServiceManager: NewFrameworkServiceManager(client),
+		eventManager:            NewEventManager(client),
 	}
 }
 
@@ -136,104 +133,157 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	// Wait for debugger if AZD_EXT_DEBUG is set
 	waitForDebugger(ctx, er.client)
 
-	var serviceManagers []serviceTargetRegistrar
-	var frameworkManagers []frameworkServiceRegistrar
+	// Determine which managers will be active
+	hasServiceTargets := len(er.serviceTargets) > 0
+	hasFrameworkServices := len(er.frameworkServices) > 0
+	hasEventHandlers := len(er.projectHandlers) > 0 || len(er.serviceHandlers) > 0
 
+	// Set up defer for cleanup
+	defer func() {
+		if hasServiceTargets {
+			_ = er.serviceTargetManager.Close()
+		}
+		if hasFrameworkServices {
+			_ = er.frameworkServiceManager.Close()
+		}
+		if hasEventHandlers {
+			_ = er.eventManager.Close()
+		}
+	}()
+
+	// Collect active receivers and start them BEFORE registration
+	// This ensures broker.Run() is active to receive registration responses
+	receivers := []serviceReceiver{}
+	if hasServiceTargets {
+		receivers = append(receivers, er.serviceTargetManager)
+	}
+	if hasFrameworkServices {
+		receivers = append(receivers, er.frameworkServiceManager)
+	}
+	if hasEventHandlers {
+		receivers = append(receivers, er.eventManager)
+	}
+
+	// Start receiving messages from active managers in separate goroutines
+	// CRITICAL: This must happen BEFORE any Register() calls that use broker.Send()
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(receivers))
+
+	for _, receiver := range receivers {
+		wg.Add(1)
+		go func(r serviceReceiver) {
+			defer wg.Done()
+			if err := r.Receive(ctx); err != nil {
+				errChan <- fmt.Errorf("receiver error: %w", err)
+			}
+		}(receiver)
+	}
+
+	// Now that receivers are running, perform registrations
+	// The broker.Run() in each Receive() will process the registration responses
+
+	// Register all registrations in parallel - service targets, framework services, and event handlers
+	var allRegistrationsWg sync.WaitGroup
+	totalCount := len(er.serviceTargets) + len(er.frameworkServices) + len(er.projectHandlers) + len(er.serviceHandlers)
+	registrationErrChan := make(chan error, totalCount)
+
+	// Register service targets in parallel
 	for _, reg := range er.serviceTargets {
 		if reg.Factory == nil {
 			return fmt.Errorf("service target provider for host '%s' is nil", reg.Host)
 		}
 
-		manager := er.newServiceTargetManager(er.client)
-		if err := manager.Register(ctx, reg.Factory, reg.Host); err != nil {
-			_ = manager.Close()
-
-			for _, registered := range serviceManagers {
-				_ = registered.Close()
+		allRegistrationsWg.Add(1)
+		go func(r ServiceTargetRegistration) {
+			defer allRegistrationsWg.Done()
+			if err := er.serviceTargetManager.Register(ctx, r.Factory, r.Host); err != nil {
+				registrationErrChan <- fmt.Errorf("failed to register service target '%s': %w", r.Host, err)
 			}
-
-			return fmt.Errorf("failed to register service target '%s': %w", reg.Host, err)
-		}
-
-		serviceManagers = append(serviceManagers, manager)
+		}(reg)
 	}
 
+	// Register framework services in parallel
 	for _, reg := range er.frameworkServices {
 		if reg.Factory == nil {
 			return fmt.Errorf("framework service provider for language '%s' is nil", reg.Language)
 		}
 
-		manager := er.newFrameworkServiceManager(er.client)
-		if err := manager.Register(ctx, reg.Factory, reg.Language); err != nil {
-			_ = manager.Close()
-
-			for _, registered := range frameworkManagers {
-				_ = registered.Close()
+		allRegistrationsWg.Add(1)
+		go func(r FrameworkServiceRegistration) {
+			defer allRegistrationsWg.Done()
+			if err := er.frameworkServiceManager.Register(ctx, r.Factory, r.Language); err != nil {
+				registrationErrChan <- fmt.Errorf("failed to register framework service '%s': %w", r.Language, err)
 			}
-			for _, registered := range serviceManagers {
-				_ = registered.Close()
-			}
-
-			return fmt.Errorf("failed to register framework service '%s': %w", reg.Language, err)
-		}
-
-		frameworkManagers = append(frameworkManagers, manager)
+		}(reg)
 	}
 
-	if len(serviceManagers) > 0 {
-		defer func() {
-			for i := len(serviceManagers) - 1; i >= 0; i-- {
-				_ = serviceManagers[i].Close()
-			}
-		}()
-	}
-
-	if len(frameworkManagers) > 0 {
-		defer func() {
-			for i := len(frameworkManagers) - 1; i >= 0; i-- {
-				_ = frameworkManagers[i].Close()
-			}
-		}()
-	}
-
-	if len(er.projectHandlers) == 0 && len(er.serviceHandlers) == 0 {
-		return er.readyFn(ctx)
-	}
-
-	eventManager := er.newEventManager(er.client)
-	defer eventManager.Close()
-
+	// Register project event handlers in parallel
 	for _, reg := range er.projectHandlers {
 		if reg.Handler == nil {
 			return fmt.Errorf("project event handler for '%s' is nil", reg.EventName)
 		}
 
-		if err := eventManager.AddProjectEventHandler(ctx, reg.EventName, reg.Handler); err != nil {
-			return fmt.Errorf("failed to add project event handler '%s': %w", reg.EventName, err)
-		}
+		allRegistrationsWg.Add(1)
+		go func(r ProjectEventRegistration) {
+			defer allRegistrationsWg.Done()
+			if err := er.eventManager.AddProjectEventHandler(ctx, r.EventName, r.Handler); err != nil {
+				registrationErrChan <- fmt.Errorf("failed to add project event handler '%s': %w", r.EventName, err)
+			}
+		}(reg)
 	}
 
+	// Register service event handlers in parallel
 	for _, reg := range er.serviceHandlers {
 		if reg.Handler == nil {
 			return fmt.Errorf("service event handler for '%s' is nil", reg.EventName)
 		}
 
-		if err := eventManager.AddServiceEventHandler(ctx, reg.EventName, reg.Handler, reg.Options); err != nil {
-			return fmt.Errorf("failed to add service event handler '%s': %w", reg.EventName, err)
+		allRegistrationsWg.Add(1)
+		go func(r ServiceEventRegistration) {
+			defer allRegistrationsWg.Done()
+			if err := er.eventManager.AddServiceEventHandler(ctx, r.EventName, r.Handler, r.Options); err != nil {
+				registrationErrChan <- fmt.Errorf("failed to add service event handler '%s': %w", r.EventName, err)
+			}
+		}(reg)
+	}
+
+	// Wait for ALL registrations to complete in parallel
+	allRegistrationsWg.Wait()
+	close(registrationErrChan)
+
+	// Check for any registration errors
+	if err := <-registrationErrChan; err != nil {
+		return err
+	}
+
+	// Signal readiness after all registrations are complete
+	if err := callReady(ctx, er.client); err != nil {
+		return err
+	}
+
+	// If no receivers, just return after signaling ready
+	if len(receivers) == 0 {
+		return nil
+	}
+
+	// Wait for all receivers to complete or first error
+	go func() {
+		wg.Wait()
+		close(errChan)
+	}()
+
+	// Block until context cancellation or first error
+	select {
+	case <-ctx.Done():
+		log.Println("Extension host context cancelled, shutting down")
+		return nil // Context cancellation is expected, not an error
+	case err := <-errChan:
+		if err != nil {
+			return err
 		}
 	}
 
-	group, groupCtx := errgroup.WithContext(ctx)
-
-	group.Go(func() error {
-		return eventManager.Receive(groupCtx)
-	})
-
-	group.Go(func() error {
-		return er.readyFn(groupCtx)
-	})
-
-	return group.Wait()
+	return nil
 }
 
 func callReady(ctx context.Context, client *AzdClient) error {

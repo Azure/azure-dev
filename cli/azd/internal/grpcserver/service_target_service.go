@@ -4,15 +4,16 @@
 package grpcserver
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -28,7 +29,7 @@ type ServiceTargetService struct {
 	container        *ioc.NestedContainer
 	extensionManager *extensions.Manager
 	lazyEnv          *lazy.Lazy[*environment.Environment]
-	providerMap      map[string]azdext.ServiceTargetService_StreamServer
+	providerMap      map[string]*grpcbroker.MessageBroker[azdext.ServiceTargetMessage]
 	providerMapMu    sync.Mutex
 }
 
@@ -42,16 +43,14 @@ func NewServiceTargetService(
 		container:        container,
 		extensionManager: extensionManager,
 		lazyEnv:          lazyEnv,
-		providerMap:      make(map[string]azdext.ServiceTargetService_StreamServer),
+		providerMap:      make(map[string]*grpcbroker.MessageBroker[azdext.ServiceTargetMessage]),
 	}
 }
 
 // Stream handles the bi-directional streaming for service target operations.
-func (s *ServiceTargetService) Stream(
-	stream azdext.ServiceTargetService_StreamServer,
-) error {
+func (s *ServiceTargetService) Stream(stream azdext.ServiceTargetService_StreamServer) error {
 	ctx := stream.Context()
-	extensionClaims, err := GetExtensionClaims(ctx)
+	extensionClaims, err := extensions.GetClaimsFromContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get extension claims: %w", err)
 	}
@@ -69,29 +68,59 @@ func (s *ServiceTargetService) Stream(
 		return status.Errorf(codes.PermissionDenied, "extension does not support service-target-provider capability")
 	}
 
-	msg, err := stream.Recv()
-	if errors.Is(err, io.EOF) {
-		log.Println("Stream closed by client")
-		return nil
-	}
+	// Create message broker for this stream
+	ops := azdext.NewServiceTargetEnvelope()
+	broker := grpcbroker.NewMessageBroker(stream, ops)
+
+	// Track the hostType for cleanup when stream closes
+	var registeredHostType string
+
+	// Register handler for RegisterServiceTargetRequest
+	err = broker.On(func(
+		ctx context.Context,
+		req *azdext.RegisterServiceTargetRequest,
+	) (*azdext.ServiceTargetMessage, error) {
+		return s.onRegisterRequest(ctx, req, extension, broker, &registeredHostType)
+	})
+
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to register handler: %w", err)
 	}
 
-	regRequest := msg.GetRegisterServiceTargetRequest()
-	if regRequest == nil {
-		return status.Errorf(codes.FailedPrecondition, "expected RegisterProviderRequest, got %T", msg.GetMessageType())
+	// Run the broker dispatcher (blocking)
+	// This will return when the stream closes or encounters an error
+	if err := broker.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		log.Printf("Broker error for provider %s: %v", registeredHostType, err)
+		return fmt.Errorf("broker error: %w", err)
 	}
 
-	hostType := regRequest.GetHost()
+	log.Printf("Stream closed for provider: %s", registeredHostType)
+
 	s.providerMapMu.Lock()
+	delete(s.providerMap, registeredHostType)
+	s.providerMapMu.Unlock()
+
+	return nil
+}
+
+// onRegisterRequest handles the registration of a service target provider
+func (s *ServiceTargetService) onRegisterRequest(
+	ctx context.Context,
+	req *azdext.RegisterServiceTargetRequest,
+	extension *extensions.Extension,
+	broker *grpcbroker.MessageBroker[azdext.ServiceTargetMessage],
+	registeredHostType *string,
+) (*azdext.ServiceTargetMessage, error) {
+	hostType := req.GetHost()
+	s.providerMapMu.Lock()
+	defer s.providerMapMu.Unlock()
+
 	if _, has := s.providerMap[hostType]; has {
-		s.providerMapMu.Unlock()
-		return status.Errorf(codes.AlreadyExists, "provider %s already registered", hostType)
+		return nil, status.Errorf(codes.AlreadyExists, "provider %s already registered", hostType)
 	}
 
-	// Register external service target with DI container
-	err = s.container.RegisterNamedSingleton(hostType, func(
+	// Register external service target with DI container, passing the broker
+	err := s.container.RegisterNamedSingleton(hostType, func(
 		console input.Console,
 		prompter prompt.Prompter,
 	) project.ServiceTarget {
@@ -100,7 +129,7 @@ func (s *ServiceTargetService) Stream(
 			hostType,
 			project.ServiceTargetKind(hostType),
 			extension,
-			stream,
+			broker,
 			console,
 			prompter,
 			env,
@@ -108,32 +137,17 @@ func (s *ServiceTargetService) Stream(
 	})
 
 	if err != nil {
-		s.providerMapMu.Unlock()
-		return status.Errorf(codes.Internal, "failed to register service target: %s", err.Error())
+		return nil, status.Errorf(codes.Internal, "failed to register service target: %s", err.Error())
 	}
 
-	resp := &azdext.ServiceTargetMessage{
-		RequestId: msg.RequestId,
+	s.providerMap[hostType] = broker
+	*registeredHostType = hostType
+	log.Printf("Registered service target: %s", hostType)
+
+	// Return response envelope
+	return &azdext.ServiceTargetMessage{
 		MessageType: &azdext.ServiceTargetMessage_RegisterServiceTargetResponse{
 			RegisterServiceTargetResponse: &azdext.RegisterServiceTargetResponse{},
 		},
-	}
-
-	if err := stream.Send(resp); err != nil {
-		s.providerMapMu.Unlock()
-		return status.Errorf(codes.Internal, "failed to send response: %s", err.Error())
-	}
-
-	s.providerMap[hostType] = stream
-	s.providerMapMu.Unlock()
-	log.Printf("Registered service target: %s", hostType)
-
-	// Wait for the stream context to be done (client disconnects or server shutdown)
-	<-stream.Context().Done()
-	log.Printf("Stream closed for provider: %s", hostType)
-
-	s.providerMapMu.Lock()
-	delete(s.providerMap, hostType)
-	s.providerMapMu.Unlock()
-	return nil
+	}, nil
 }

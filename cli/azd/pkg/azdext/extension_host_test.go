@@ -40,6 +40,11 @@ func (m *MockServiceTargetRegistrar) Register(ctx context.Context, factory Servi
 	return args.Error(0)
 }
 
+func (m *MockServiceTargetRegistrar) Receive(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
 func (m *MockServiceTargetRegistrar) Close() error {
 	args := m.Called()
 	return args.Error(0)
@@ -56,6 +61,11 @@ func (m *MockFrameworkServiceRegistrar) Register(
 	language string,
 ) error {
 	args := m.Called(ctx, factory, language)
+	return args.Error(0)
+}
+
+func (m *MockFrameworkServiceRegistrar) Receive(ctx context.Context) error {
+	args := m.Called(ctx)
 	return args.Error(0)
 }
 
@@ -167,27 +177,31 @@ func TestCallReady(t *testing.T) {
 	}
 }
 
+// newTestAzdClient creates an AzdClient with mock extension service that returns success for Ready()
+func newTestAzdClient() *AzdClient {
+	mockExtensionClient := &MockExtensionServiceClient{}
+	mockExtensionClient.On("Ready", mock.Anything, mock.Anything, mock.Anything).
+		Return(&ReadyResponse{}, nil)
+	return &AzdClient{extensionClient: mockExtensionClient}
+}
+
 func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
 	t.Parallel()
 
 	// Setup mocks
 	mockServiceTargetManager := &MockServiceTargetRegistrar{}
 	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, "demo").Return(nil)
+	// Mock Receive to block until context is cancelled (simulating broker.Run() behavior)
+	mockServiceTargetManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
 	mockServiceTargetManager.On("Close").Return(nil)
 
 	// Setup extension host
-	client := &AzdClient{}
+	client := newTestAzdClient()
 	runner := NewExtensionHost(client)
-	runner.newServiceTargetManager = func(*AzdClient) serviceTargetRegistrar {
-		return mockServiceTargetManager
-	}
-
-	readyCalled := false
-	runner.readyFn = func(ctx context.Context) error {
-		readyCalled = true
-		<-ctx.Done()
-		return nil
-	}
+	runner.serviceTargetManager = mockServiceTargetManager
 
 	// Register service target
 	runner.WithServiceTarget("demo", func() ServiceTargetProvider {
@@ -206,7 +220,6 @@ func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
 
 	// Assertions
 	require.NoError(t, err)
-	assert.True(t, readyCalled)
 	mockServiceTargetManager.AssertExpectations(t)
 }
 
@@ -218,19 +231,17 @@ func TestExtensionHost_EventHandlersOnly(t *testing.T) {
 	mockEventManager.On("AddProjectEventHandler", mock.Anything, "preprovision", mock.Anything).Return(nil)
 	mockEventManager.On("AddServiceEventHandler", mock.Anything, "prepackage", mock.Anything,
 		(*ServiceEventOptions)(nil)).Return(nil)
-	mockEventManager.On("Receive", mock.Anything).Return(nil)
+	// Mock Receive to block until context is cancelled (simulating broker.Run() behavior)
+	mockEventManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
 	mockEventManager.On("Close").Return(nil)
 
 	// Setup extension host
-	client := &AzdClient{}
+	client := newTestAzdClient()
 	runner := NewExtensionHost(client)
-	runner.newEventManager = func(*AzdClient) extensionEventManager {
-		return mockEventManager
-	}
-	runner.readyFn = func(ctx context.Context) error {
-		<-ctx.Done()
-		return nil
-	}
+	runner.eventManager = mockEventManager
 
 	// Register event handlers
 	runner.WithProjectEventHandler("preprovision", func(ctx context.Context, args *ProjectEventArgs) error {
@@ -260,26 +271,27 @@ func TestExtensionHost_ServiceTargetsAndEvents(t *testing.T) {
 	// Setup mocks
 	mockServiceTargetManager := &MockServiceTargetRegistrar{}
 	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, "foundryagent").Return(nil)
+	// Mock Receive to block until context is cancelled (simulating broker.Run() behavior)
+	mockServiceTargetManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
 	mockServiceTargetManager.On("Close").Return(nil)
 
 	mockEventManager := &MockExtensionEventManager{}
 	mockEventManager.On("AddProjectEventHandler", mock.Anything, "preprovision", mock.Anything).Return(nil)
-	mockEventManager.On("Receive", mock.Anything).Return(nil)
+	// Mock Receive to block until context is cancelled (simulating broker.Run() behavior)
+	mockEventManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
 	mockEventManager.On("Close").Return(nil)
 
 	// Setup extension host
-	client := &AzdClient{}
+	client := newTestAzdClient()
 	runner := NewExtensionHost(client)
-	runner.newServiceTargetManager = func(*AzdClient) serviceTargetRegistrar {
-		return mockServiceTargetManager
-	}
-	runner.newEventManager = func(*AzdClient) extensionEventManager {
-		return mockEventManager
-	}
-	runner.readyFn = func(ctx context.Context) error {
-		<-ctx.Done()
-		return nil
-	}
+	runner.serviceTargetManager = mockServiceTargetManager
+	runner.eventManager = mockEventManager
 
 	// Register both service target and event handler
 	runner.WithServiceTarget("foundryagent", func() ServiceTargetProvider {
@@ -310,18 +322,26 @@ func TestExtensionHost_ServiceTargetRegistrationError(t *testing.T) {
 	// Setup mock with error
 	expectedError := status.Error(codes.Internal, "boom")
 	mockServiceTargetManager := &MockServiceTargetRegistrar{}
-	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, "bad").Return(expectedError)
+
+	// Use a channel to ensure Receive() goroutine has started before we proceed
+	receiveStarted := make(chan struct{})
+	mockServiceTargetManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		close(receiveStarted) // Signal that Receive has been called
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
+
+	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, "bad").Run(func(args mock.Arguments) {
+		// Wait for Receive to start before Register proceeds
+		<-receiveStarted
+	}).Return(expectedError)
+
 	mockServiceTargetManager.On("Close").Return(nil)
 
 	// Setup extension host
-	client := &AzdClient{}
+	client := newTestAzdClient()
 	runner := NewExtensionHost(client)
-	runner.newServiceTargetManager = func(*AzdClient) serviceTargetRegistrar {
-		return mockServiceTargetManager
-	}
-	runner.readyFn = func(ctx context.Context) error {
-		return nil
-	}
+	runner.serviceTargetManager = mockServiceTargetManager
 
 	// Register service target that will fail
 	runner.WithServiceTarget("bad", func() ServiceTargetProvider {
@@ -346,21 +366,17 @@ func TestExtensionHost_WithFrameworkService(t *testing.T) {
 	// Setup mocks
 	mockFrameworkServiceManager := &MockFrameworkServiceRegistrar{}
 	mockFrameworkServiceManager.On("Register", mock.Anything, mock.Anything, "python").Return(nil)
+	// Mock Receive to block until context is cancelled (simulating broker.Run() behavior)
+	mockFrameworkServiceManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
 	mockFrameworkServiceManager.On("Close").Return(nil)
 
 	// Setup extension host
-	client := &AzdClient{}
+	client := newTestAzdClient()
 	runner := NewExtensionHost(client)
-	runner.newFrameworkServiceManager = func(*AzdClient) frameworkServiceRegistrar {
-		return mockFrameworkServiceManager
-	}
-
-	readyCalled := false
-	runner.readyFn = func(ctx context.Context) error {
-		readyCalled = true
-		<-ctx.Done()
-		return nil
-	}
+	runner.frameworkServiceManager = mockFrameworkServiceManager
 
 	// Register framework service
 	runner.WithFrameworkService("python", func() FrameworkServiceProvider {
@@ -379,7 +395,6 @@ func TestExtensionHost_WithFrameworkService(t *testing.T) {
 
 	// Assertions
 	require.NoError(t, err)
-	assert.True(t, readyCalled)
 	mockFrameworkServiceManager.AssertExpectations(t)
 }
 
@@ -389,33 +404,37 @@ func TestExtensionHost_MultipleServiceTypes(t *testing.T) {
 	// Setup mocks for all service types
 	mockServiceTargetManager := &MockServiceTargetRegistrar{}
 	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, "web").Return(nil)
+	// Mock Receive to block until context is cancelled (simulating broker.Run() behavior)
+	mockServiceTargetManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
 	mockServiceTargetManager.On("Close").Return(nil)
 
 	mockFrameworkServiceManager := &MockFrameworkServiceRegistrar{}
 	mockFrameworkServiceManager.On("Register", mock.Anything, mock.Anything, "node").Return(nil)
+	// Mock Receive to block until context is cancelled (simulating broker.Run() behavior)
+	mockFrameworkServiceManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
 	mockFrameworkServiceManager.On("Close").Return(nil)
 
 	mockEventManager := &MockExtensionEventManager{}
 	mockEventManager.On("AddProjectEventHandler", mock.Anything, "predeploy", mock.Anything).Return(nil)
-	mockEventManager.On("Receive", mock.Anything).Return(nil)
+	// Mock Receive to block until context is cancelled (simulating broker.Run() behavior)
+	mockEventManager.On("Receive", mock.Anything).Run(func(args mock.Arguments) {
+		ctx := args.Get(0).(context.Context)
+		<-ctx.Done()
+	}).Return(nil)
 	mockEventManager.On("Close").Return(nil)
 
 	// Setup extension host
-	client := &AzdClient{}
+	client := newTestAzdClient()
 	runner := NewExtensionHost(client)
-	runner.newServiceTargetManager = func(*AzdClient) serviceTargetRegistrar {
-		return mockServiceTargetManager
-	}
-	runner.newFrameworkServiceManager = func(*AzdClient) frameworkServiceRegistrar {
-		return mockFrameworkServiceManager
-	}
-	runner.newEventManager = func(*AzdClient) extensionEventManager {
-		return mockEventManager
-	}
-	runner.readyFn = func(ctx context.Context) error {
-		<-ctx.Done()
-		return nil
-	}
+	runner.serviceTargetManager = mockServiceTargetManager
+	runner.frameworkServiceManager = mockFrameworkServiceManager
+	runner.eventManager = mockEventManager
 
 	// Register all service types
 	runner.WithServiceTarget("web", func() ServiceTargetProvider {

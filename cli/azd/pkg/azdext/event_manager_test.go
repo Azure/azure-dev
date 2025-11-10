@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -123,32 +124,19 @@ func TestNewEventManager(t *testing.T) {
 	eventManager := NewEventManager(client)
 
 	assert.NotNil(t, eventManager)
-	assert.Equal(t, client, eventManager.azdClient)
+	assert.Equal(t, client, eventManager.client)
 	assert.NotNil(t, eventManager.projectEvents)
 	assert.NotNil(t, eventManager.serviceEvents)
 	assert.Empty(t, eventManager.projectEvents)
 	assert.Empty(t, eventManager.serviceEvents)
 }
 
-// Test invokeProjectHandler with successful handler
-func TestEventManager_invokeProjectHandler_Success(t *testing.T) {
+// Test onInvokeProjectHandler with successful handler
+func TestEventManager_onInvokeProjectHandler_Success(t *testing.T) {
 	ctx := context.Background()
 	client := &AzdClient{}
-	mockStream := &MockBidiStreamingClient[*EventMessage, *EventMessage]{}
-
-	// Setup mock expectation for status message
-	mockStream.On("Send", mock.MatchedBy(func(msg *EventMessage) bool {
-		// Verify the project handler status message
-		if status := msg.GetProjectHandlerStatus(); status != nil {
-			return status.EventName == "prerestore" &&
-				status.Status == "completed" &&
-				status.Message == ""
-		}
-		return false
-	})).Return(nil)
 
 	eventManager := NewEventManager(client)
-	eventManager.stream = mockStream
 
 	// Add a test handler
 	handlerCalled := false
@@ -167,35 +155,28 @@ func TestEventManager_invokeProjectHandler_Success(t *testing.T) {
 	}
 
 	// Invoke the handler
-	err := eventManager.invokeProjectHandler(ctx, invokeMsg)
+	resp, err := eventManager.onInvokeProjectHandler(ctx, invokeMsg)
 
 	assert.NoError(t, err)
 	assert.True(t, handlerCalled)
 	assert.NotNil(t, receivedArgs)
 	assert.Equal(t, "test-project", receivedArgs.Project.Name)
 
-	mockStream.AssertExpectations(t)
+	// Verify the response message
+	require.NotNil(t, resp)
+	status := resp.GetProjectHandlerStatus()
+	require.NotNil(t, status)
+	assert.Equal(t, "prerestore", status.EventName)
+	assert.Equal(t, "completed", status.Status)
+	assert.Equal(t, "", status.Message)
 }
 
-// Test invokeProjectHandler with handler error
-func TestEventManager_invokeProjectHandler_HandlerError(t *testing.T) {
+// Test onInvokeProjectHandler with handler error
+func TestEventManager_onInvokeProjectHandler_HandlerError(t *testing.T) {
 	ctx := context.Background()
 	client := &AzdClient{}
-	mockStream := &MockBidiStreamingClient[*EventMessage, *EventMessage]{}
-
-	// Setup mock expectation for error status message
-	mockStream.On("Send", mock.MatchedBy(func(msg *EventMessage) bool {
-		// Verify the project handler status message shows failure
-		if status := msg.GetProjectHandlerStatus(); status != nil {
-			return status.EventName == "postbuild" &&
-				status.Status == "failed" &&
-				status.Message == "handler failed"
-		}
-		return false
-	})).Return(nil)
 
 	eventManager := NewEventManager(client)
-	eventManager.stream = mockStream
 
 	// Add a test handler that fails
 	handler := func(ctx context.Context, args *ProjectEventArgs) error {
@@ -210,15 +191,21 @@ func TestEventManager_invokeProjectHandler_HandlerError(t *testing.T) {
 	}
 
 	// Invoke the handler
-	err := eventManager.invokeProjectHandler(ctx, invokeMsg)
+	resp, err := eventManager.onInvokeProjectHandler(ctx, invokeMsg)
 
-	assert.NoError(t, err) // invokeProjectHandler doesn't return handler errors
+	assert.NoError(t, err) // onInvokeProjectHandler doesn't return handler errors, it wraps them in the response
 
-	mockStream.AssertExpectations(t)
+	// Verify the response message shows failure
+	require.NotNil(t, resp)
+	status := resp.GetProjectHandlerStatus()
+	require.NotNil(t, status)
+	assert.Equal(t, "postbuild", status.EventName)
+	assert.Equal(t, "failed", status.Status)
+	assert.Equal(t, "handler failed", status.Message)
 }
 
-// Test invokeProjectHandler with no registered handler
-func TestEventManager_invokeProjectHandler_NoHandler(t *testing.T) {
+// Test onInvokeProjectHandler with no registered handler
+func TestEventManager_onInvokeProjectHandler_NoHandler(t *testing.T) {
 	ctx := context.Background()
 	client := &AzdClient{}
 	eventManager := NewEventManager(client)
@@ -229,32 +216,20 @@ func TestEventManager_invokeProjectHandler_NoHandler(t *testing.T) {
 		Project:   createTestProjectConfigForEvents(),
 	}
 
-	// Invoke should be a no-op
-	err := eventManager.invokeProjectHandler(ctx, invokeMsg)
+	// Invoke should return an empty response (not an error, just no status message)
+	resp, err := eventManager.onInvokeProjectHandler(ctx, invokeMsg)
 
 	assert.NoError(t, err)
+	assert.NotNil(t, resp)          // Returns empty EventMessage, not nil
+	assert.Nil(t, resp.MessageType) // But the MessageType is nil (empty message)
 }
 
-// Test invokeServiceHandler with successful handler
-func TestEventManager_invokeServiceHandler_Success(t *testing.T) {
+// Test onInvokeServiceHandler with successful handler
+func TestEventManager_onInvokeServiceHandler_Success(t *testing.T) {
 	ctx := context.Background()
 	client := &AzdClient{}
-	mockStream := &MockBidiStreamingClient[*EventMessage, *EventMessage]{}
-
-	// Setup mock expectation for status message
-	mockStream.On("Send", mock.MatchedBy(func(msg *EventMessage) bool {
-		// Verify the service handler status message
-		if status := msg.GetServiceHandlerStatus(); status != nil {
-			return status.EventName == "prepackage" &&
-				status.ServiceName == "test-service" &&
-				status.Status == "completed" &&
-				status.Message == ""
-		}
-		return false
-	})).Return(nil)
 
 	eventManager := NewEventManager(client)
-	eventManager.stream = mockStream
 
 	// Add a test handler
 	handlerCalled := false
@@ -275,7 +250,7 @@ func TestEventManager_invokeServiceHandler_Success(t *testing.T) {
 	}
 
 	// Invoke the handler
-	err := eventManager.invokeServiceHandler(ctx, invokeMsg)
+	resp, err := eventManager.onInvokeServiceHandler(ctx, invokeMsg)
 
 	assert.NoError(t, err)
 	assert.True(t, handlerCalled)
@@ -287,27 +262,22 @@ func TestEventManager_invokeServiceHandler_Success(t *testing.T) {
 	assert.Len(t, receivedArgs.ServiceContext.Package, 1)
 	assert.Equal(t, "test-package", receivedArgs.ServiceContext.Package[0].Metadata["name"])
 
-	mockStream.AssertExpectations(t)
+	// Verify the response message
+	require.NotNil(t, resp)
+	status := resp.GetServiceHandlerStatus()
+	require.NotNil(t, status)
+	assert.Equal(t, "prepackage", status.EventName)
+	assert.Equal(t, "test-service", status.ServiceName)
+	assert.Equal(t, "completed", status.Status)
+	assert.Equal(t, "", status.Message)
 }
 
-// Test invokeServiceHandler with nil ServiceContext (should default to empty)
-func TestEventManager_invokeServiceHandler_NilServiceContext(t *testing.T) {
+// Test onInvokeServiceHandler with nil ServiceContext (should default to empty)
+func TestEventManager_onInvokeServiceHandler_NilServiceContext(t *testing.T) {
 	ctx := context.Background()
 	client := &AzdClient{}
-	mockStream := &MockBidiStreamingClient[*EventMessage, *EventMessage]{}
-
-	// Setup mock expectation for status message
-	mockStream.On("Send", mock.MatchedBy(func(msg *EventMessage) bool {
-		if status := msg.GetServiceHandlerStatus(); status != nil {
-			return status.EventName == "postdeploy" &&
-				status.ServiceName == "test-service" &&
-				status.Status == "completed"
-		}
-		return false
-	})).Return(nil)
 
 	eventManager := NewEventManager(client)
-	eventManager.stream = mockStream
 
 	// Add a test handler
 	var receivedArgs *ServiceEventArgs
@@ -326,35 +296,27 @@ func TestEventManager_invokeServiceHandler_NilServiceContext(t *testing.T) {
 	}
 
 	// Invoke the handler
-	err := eventManager.invokeServiceHandler(ctx, invokeMsg)
+	resp, err := eventManager.onInvokeServiceHandler(ctx, invokeMsg)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, receivedArgs)
 	assert.NotNil(t, receivedArgs.ServiceContext) // Should be defaulted to empty instance
 
-	mockStream.AssertExpectations(t)
+	// Verify the response message
+	require.NotNil(t, resp)
+	status := resp.GetServiceHandlerStatus()
+	require.NotNil(t, status)
+	assert.Equal(t, "postdeploy", status.EventName)
+	assert.Equal(t, "test-service", status.ServiceName)
+	assert.Equal(t, "completed", status.Status)
 }
 
-// Test invokeServiceHandler with handler error
-func TestEventManager_invokeServiceHandler_HandlerError(t *testing.T) {
+// Test onInvokeServiceHandler with handler error
+func TestEventManager_onInvokeServiceHandler_HandlerError(t *testing.T) {
 	ctx := context.Background()
 	client := &AzdClient{}
-	mockStream := &MockBidiStreamingClient[*EventMessage, *EventMessage]{}
-
-	// Setup mock expectation for error status message
-	mockStream.On("Send", mock.MatchedBy(func(msg *EventMessage) bool {
-		// Verify the service handler status message shows failure
-		if status := msg.GetServiceHandlerStatus(); status != nil {
-			return status.EventName == "prepublish" &&
-				status.ServiceName == "test-service" &&
-				status.Status == "failed" &&
-				status.Message == "service handler failed"
-		}
-		return false
-	})).Return(nil)
 
 	eventManager := NewEventManager(client)
-	eventManager.stream = mockStream
 
 	// Add a test handler that fails
 	handler := func(ctx context.Context, args *ServiceEventArgs) error {
@@ -371,15 +333,22 @@ func TestEventManager_invokeServiceHandler_HandlerError(t *testing.T) {
 	}
 
 	// Invoke the handler
-	err := eventManager.invokeServiceHandler(ctx, invokeMsg)
+	resp, err := eventManager.onInvokeServiceHandler(ctx, invokeMsg)
 
-	assert.NoError(t, err) // invokeServiceHandler doesn't return handler errors
+	assert.NoError(t, err) // onInvokeServiceHandler doesn't return handler errors, it wraps them in the response
 
-	mockStream.AssertExpectations(t)
+	// Verify the response message shows failure
+	require.NotNil(t, resp)
+	status := resp.GetServiceHandlerStatus()
+	require.NotNil(t, status)
+	assert.Equal(t, "prepublish", status.EventName)
+	assert.Equal(t, "test-service", status.ServiceName)
+	assert.Equal(t, "failed", status.Status)
+	assert.Equal(t, "service handler failed", status.Message)
 }
 
-// Test invokeServiceHandler with no registered handler
-func TestEventManager_invokeServiceHandler_NoHandler(t *testing.T) {
+// Test onInvokeServiceHandler with no registered handler
+func TestEventManager_onInvokeServiceHandler_NoHandler(t *testing.T) {
 	ctx := context.Background()
 	client := &AzdClient{}
 	eventManager := NewEventManager(client)
@@ -392,10 +361,12 @@ func TestEventManager_invokeServiceHandler_NoHandler(t *testing.T) {
 		ServiceContext: createTestServiceContextForEvents(),
 	}
 
-	// Invoke should be a no-op
-	err := eventManager.invokeServiceHandler(ctx, invokeMsg)
+	// Invoke should return an empty response (not an error, just no status message)
+	resp, err := eventManager.onInvokeServiceHandler(ctx, invokeMsg)
 
 	assert.NoError(t, err)
+	assert.NotNil(t, resp)          // Returns empty EventMessage, not nil
+	assert.Nil(t, resp.MessageType) // But the MessageType is nil (empty message)
 }
 
 // Test RemoveProjectEventHandler
@@ -442,24 +413,10 @@ func TestEventManager_RemoveServiceEventHandler(t *testing.T) {
 
 // Test Close
 func TestEventManager_Close(t *testing.T) {
-	mockStream := &MockBidiStreamingClient[*EventMessage, *EventMessage]{}
-	mockStream.On("CloseSend").Return(nil)
-
-	client := &AzdClient{}
-	eventManager := NewEventManager(client)
-	eventManager.stream = mockStream
-
-	err := eventManager.Close()
-
-	assert.NoError(t, err)
-	mockStream.AssertExpectations(t)
-}
-
-// Test Close with nil stream
-func TestEventManager_Close_NilStream(t *testing.T) {
 	client := &AzdClient{}
 	eventManager := NewEventManager(client)
 
+	// Close should always succeed (it's a no-op with the broker pattern)
 	err := eventManager.Close()
 
 	assert.NoError(t, err)

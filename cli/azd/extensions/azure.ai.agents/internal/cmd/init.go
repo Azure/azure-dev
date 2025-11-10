@@ -22,6 +22,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -1402,8 +1403,97 @@ func (a *InitAction) setEnvVar(ctx context.Context, key, value string) error {
 }
 
 func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_yaml.Model) (*project.Deployment, error) {
-	version := ""
-	modelDetails, err := a.getModelDetails(ctx, model.Id, version)
+	resp, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: a.environment.Name,
+		Key:     "AZURE_AI_FOUNDRY_PROJECT_ID",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get foundry project ID: %w", err)
+	}
+
+	foundryProjectId := resp.Value
+	if foundryProjectId != "" {
+		// Extract subscription and account name from foundry project ID
+		// Format: /subscriptions/{subscription}/resourceGroups/{rg}/providers/Microsoft.CognitiveServices/accounts/{account}/projects/{project}
+		parts := strings.Split(foundryProjectId, "/")
+		var subscription, resourceGroup, accountName string
+
+		if len(parts) >= 9 {
+			subscription = parts[2]  // subscriptions/{subscription}
+			resourceGroup = parts[4] // resourceGroups/{rg}
+			accountName = parts[8]   // accounts/{account}
+		}
+
+		deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(subscription, a.credential, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create deployments client: %w", err)
+		}
+
+		pager := deploymentsClient.NewListPager(resourceGroup, accountName, nil)
+		var deployments []*armcognitiveservices.Deployment
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to list deployments: %w", err)
+			}
+			deployments = append(deployments, page.Value...)
+		}
+
+		// Check for existing deployments that match the requested model
+		matchingDeployments := make(map[string]*armcognitiveservices.Deployment)
+		for _, deployment := range deployments {
+			if deployment.Properties != nil && deployment.Properties.Model != nil {
+				deployedModel := deployment.Properties.Model
+				if deployedModel.Name != nil {
+					if *deployedModel.Name == model.Id {
+						matchingDeployments[*deployment.Name] = deployment
+					}
+				}
+			}
+		}
+
+		// If we found matching deployments, prompt the user
+		if len(matchingDeployments) > 0 {
+			fmt.Printf("Found %d existing deployment(s) for model %s.\n", len(matchingDeployments), model.Id)
+
+			// Build options list with existing deployments plus "Create new deployment" option
+			var options []string
+			for deploymentName := range matchingDeployments {
+				options = append(options, deploymentName)
+			}
+			options = append(options, "Create new deployment")
+
+			// Use selectFromList to choose between existing deployments or creating new one
+			selection, err := a.selectFromList(ctx, "deployment", options, options[0])
+			if err != nil {
+				return nil, fmt.Errorf("failed to select deployment: %w", err)
+			}
+
+			// Check if user chose to create new deployment
+			if selection != "Create new deployment" {
+				// User chose an existing deployment by name
+				fmt.Printf("Using existing deployment: %s\n", selection)
+
+				// Get the selected deployment from the map and return its details
+				if deployment, exists := matchingDeployments[selection]; exists {
+					return &project.Deployment{
+						Name: selection,
+						Model: project.DeploymentModel{
+							Name:    model.Id,
+							Format:  *deployment.Properties.Model.Format,
+							Version: *deployment.Properties.Model.Version,
+						},
+						Sku: project.DeploymentSku{
+							Name:     *deployment.SKU.Name,
+							Capacity: int(*deployment.SKU.Capacity),
+						},
+					}, nil
+				}
+			}
+		}
+	}
+
+	modelDetails, err := a.getModelDetails(ctx, model.Id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get model details: %w", err)
 	}
@@ -1439,7 +1529,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 
 var defaultSkuPriority = []string{"GlobalStandard", "DataZoneStandard", "Standard"}
 
-func (a *InitAction) getModelDetails(ctx context.Context, modelName string, modelVersion string) (*ai.AiModelDeployment, error) {
+func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*ai.AiModelDeployment, error) {
 	// Load the AI model catalog if not already loaded
 	if err := a.loadAiCatalog(ctx); err != nil {
 		return nil, err
@@ -1452,18 +1542,14 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string, mode
 		return nil, fmt.Errorf("model '%s' not found in AI model catalog", modelName)
 	}
 
-	if modelVersion == "" {
-		availableVersions, defaultVersion, err := a.modelCatalogService.ListModelVersions(ctx, model)
-		if err != nil {
-			return nil, fmt.Errorf("listing versions for model '%s': %w", modelName, err)
-		}
+	availableVersions, defaultVersion, err := a.modelCatalogService.ListModelVersions(ctx, model)
+	if err != nil {
+		return nil, fmt.Errorf("listing versions for model '%s': %w", modelName, err)
+	}
 
-		modelVersionSelection, err := a.selectFromList(ctx, "model version", availableVersions, defaultVersion)
-		if err != nil {
-			return nil, err
-		}
-
-		modelVersion = modelVersionSelection
+	modelVersion, err := a.selectFromList(ctx, "model version", availableVersions, defaultVersion)
+	if err != nil {
+		return nil, err
 	}
 
 	availableSkus, err := a.modelCatalogService.ListModelSkus(ctx, model, modelVersion)

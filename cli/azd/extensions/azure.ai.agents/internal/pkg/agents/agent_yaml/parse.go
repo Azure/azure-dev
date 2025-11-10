@@ -389,7 +389,7 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 
 					// Check if ProjectConnectionID is provided in options
 					if tool.Options != nil {
-						if projectConnID, exists := tool.Options["ProjectConnectionID"]; exists {
+						if projectConnID, exists := tool.Options["projectConnectionId"]; exists {
 							if connIDStr, ok := projectConnID.(string); ok {
 								connectionName = connIDStr
 							}
@@ -431,7 +431,7 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 
 					// Check if ProjectConnectionID is provided in options
 					if tool.Options != nil {
-						if projectConnID, exists := tool.Options["ProjectConnectionID"]; exists {
+						if projectConnID, exists := tool.Options["projectConnectionId"]; exists {
 							if connIDStr, ok := projectConnID.(string); ok {
 								connectionName = connIDStr
 							}
@@ -473,7 +473,7 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 
 					// Check if ProjectConnectionID is provided in options
 					if tool.Options != nil {
-						if projectConnID, exists := tool.Options["ProjectConnectionID"]; exists {
+						if projectConnID, exists := tool.Options["projectConnectionId"]; exists {
 							if connIDStr, ok := projectConnID.(string); ok {
 								connectionName = connIDStr
 							}
@@ -515,7 +515,7 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 
 					// Check if ProjectConnectionID is provided in options
 					if tool.Options != nil {
-						if projectConnID, exists := tool.Options["ProjectConnectionID"]; exists {
+						if projectConnID, exists := tool.Options["projectConnectionId"]; exists {
 							if connIDStr, ok := projectConnID.(string); ok {
 								connectionName = connIDStr
 							}
@@ -557,7 +557,7 @@ func ProcessPromptAgentToolsConnections(ctx context.Context, manifest *AgentMani
 
 					// Check if ProjectConnectionID is provided in options
 					if tool.Options != nil {
-						if projectConnID, exists := tool.Options["ProjectConnectionID"]; exists {
+						if projectConnID, exists := tool.Options["projectConnectionId"]; exists {
 							if connIDStr, ok := projectConnID.(string); ok {
 								connectionName = connIDStr
 							}

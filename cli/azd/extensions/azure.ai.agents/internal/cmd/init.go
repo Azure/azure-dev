@@ -21,6 +21,7 @@ import (
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -472,6 +473,10 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 	aiAccountName := matches[3]
 	aiProjectName := matches[4]
 
+	if err := a.setEnvVar(ctx, "AZURE_AI_FOUNDRY_PROJECT_ID", a.flags.projectResourceId); err != nil {
+		return err
+	}
+
 	// Set the extracted values as environment variables
 	if err := a.setEnvVar(ctx, "AZURE_SUBSCRIPTION_ID", subscriptionId); err != nil {
 		return err
@@ -491,7 +496,7 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 
 	// Set the AI Foundry endpoint URL
 	aiFoundryEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", aiAccountName, aiProjectName)
-	if err := a.setEnvVar(ctx, "AZURE_AI_FOUNDRY_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_AI_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
 		return err
 	}
 
@@ -1602,4 +1607,35 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*ai
 	}
 
 	return modelDeployment, nil
+}
+
+func promptForFoundry(ctx context.Context, azdClient *azdext.AzdClient) (*azdext.ResourceExtended, error) {
+	selectedSubscription, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for subscription: %w", err)
+	}
+
+	azureContext := &azdext.AzureContext{
+		Scope: &azdext.AzureScope{
+			SubscriptionId: selectedSubscription.Subscription.Id,
+			TenantId:       selectedSubscription.Subscription.TenantId,
+		},
+	}
+
+	selectedResourceResponse, err := azdClient.Prompt().PromptSubscriptionResource(
+		ctx, &azdext.PromptSubscriptionResourceRequest{
+			AzureContext: azureContext,
+			Options: &azdext.PromptResourceOptions{
+				ResourceType: "Microsoft.CognitiveServices/accounts",
+				Kinds:        []string{"AIServices"},
+				SelectOptions: &azdext.PromptResourceSelectOptions{
+					AllowNewResource: to.Ptr(false),
+				},
+			},
+		})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for AI Services resource: %w", err)
+	}
+
+	return selectedResourceResponse.Resource, nil
 }

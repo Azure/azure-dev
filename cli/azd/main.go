@@ -46,10 +46,11 @@ func main() {
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	logFileCleanup := setupLogging()
+	debugEnabled := isDebugEnabled()
+	logFileCleanup := setupLogging(debugEnabled)
 	defer logFileCleanup()
 
-	if isDebugEnabled() {
+	if debugEnabled {
 		azcorelog.SetListener(func(event azcorelog.Event, msg string) {
 			log.Printf("%s: %s\n", event, msg)
 		})
@@ -369,28 +370,40 @@ func readToEndAndClose(r io.ReadCloser) (string, error) {
 
 // setupLogging configures log output based on AZD_DEBUG_LOG environment variable
 // Returns a cleanup function that should be called when the program exits
-func setupLogging() func() {
+func setupLogging(debugEnabled bool) func() {
 	debugLogValue := os.Getenv("AZD_DEBUG_LOG")
+
+	var logOutput io.Writer = io.Discard
+	var cleanupFunc func() = func() {}
 
 	// Check if debug logging is enabled and valid
 	if debugLogValue != "" {
 		if isDebugLogEnabled, err := strconv.ParseBool(debugLogValue); err == nil && isDebugLogEnabled {
 			// Create daily log files adjacent to azd binary
 			if logFile, err := createDailyLogFile(); err == nil {
-				log.SetOutput(logFile)
+				if debugEnabled {
+					// When --debug is used, write to both stderr and log file
+					logOutput = io.MultiWriter(os.Stderr, logFile)
+				} else {
+					// When only AZD_DEBUG_LOG is set, write only to log file
+					logOutput = logFile
+				}
 
-				// Return cleanup function that closes the log file
-				return func() {
+				// Set cleanup function to close the log file
+				cleanupFunc = func() {
 					logFile.Close()
 				}
 			}
 		}
 	}
 
-	// Default to discard if not enabled or any errors occurred
-	log.SetOutput(io.Discard)
-	// Return no-op cleanup function
-	return func() {}
+	// If debug is enabled but no log file was created, use stderr
+	if debugEnabled && logOutput == io.Discard {
+		logOutput = os.Stderr
+	}
+
+	log.SetOutput(logOutput)
+	return cleanupFunc
 }
 
 // createDailyLogFile creates a daily log file adjacent to the azd binary

@@ -35,6 +35,7 @@ const (
 	AzureResourceTypeSqlServer                 AzureResourceType = "Microsoft.Sql/servers"
 	AzureResourceTypeVirtualNetwork            AzureResourceType = "Microsoft.Network/virtualNetworks"
 	AzureResourceTypeWebSite                   AzureResourceType = "Microsoft.Web/sites"
+	AzureResourceTypeWebSiteSlot               AzureResourceType = "Microsoft.Web/sites/slots"
 	AzureResourceTypeContainerRegistry         AzureResourceType = "Microsoft.ContainerRegistry/registries"
 	AzureResourceTypeManagedCluster            AzureResourceType = "Microsoft.ContainerService/managedClusters"
 	AzureResourceTypeAgentPool                 AzureResourceType = "Microsoft.ContainerService/managedClusters/agentPools"

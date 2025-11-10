@@ -778,7 +778,8 @@ func deploymentHost(deploymentResult *azapi.ResourceDeployment) (appDeploymentHo
 		if err != nil {
 			return appDeploymentHost{}, err
 		}
-		if rType.String() == string(azapi.AzureResourceTypeWebSite) {
+		if rType.String() == string(azapi.AzureResourceTypeWebSite) ||
+			rType.String() == string(azapi.AzureResourceTypeWebSiteSlot) {
 			return appDeploymentHost{
 				name:     r.Name,
 				hostType: azapi.AzureResourceTypeWebSite,

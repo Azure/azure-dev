@@ -45,14 +45,16 @@ type FrameworkServiceProvider interface {
 
 // FrameworkServiceManager handles registration and request forwarding for a framework service provider.
 type FrameworkServiceManager struct {
+	extensionId      string
 	client           *AzdClient
 	broker           *grpcbroker.MessageBroker[FrameworkServiceMessage]
 	componentManager *ComponentManager[FrameworkServiceProvider]
 }
 
 // NewFrameworkServiceManager creates a new FrameworkServiceManager for an AzdClient.
-func NewFrameworkServiceManager(client *AzdClient) *FrameworkServiceManager {
+func NewFrameworkServiceManager(extensionId string, client *AzdClient) *FrameworkServiceManager {
 	return &FrameworkServiceManager{
+		extensionId:      extensionId,
 		client:           client,
 		componentManager: NewComponentManager[FrameworkServiceProvider](FrameworkServiceFactoryKey, "framework service"),
 	}
@@ -76,7 +78,8 @@ func (m *FrameworkServiceManager) ensureStream(ctx context.Context) error {
 
 		// Create broker with client stream
 		envelope := &FrameworkServiceEnvelope{}
-		m.broker = grpcbroker.NewMessageBroker(stream, envelope)
+		// Use client as name since we're on the client side (extension process)
+		m.broker = grpcbroker.NewMessageBroker(stream, envelope, m.extensionId)
 
 		// Register handlers for incoming requests
 		if err := m.broker.On(m.onInitialize); err != nil {

@@ -89,10 +89,20 @@ type ExtensionHost struct {
 // NewExtensionHost creates a new ExtensionHost for the supplied azd client.
 func NewExtensionHost(client *AzdClient) *ExtensionHost {
 	return &ExtensionHost{
-		client:                  client,
-		serviceTargetManager:    NewServiceTargetManager(client),
-		frameworkServiceManager: NewFrameworkServiceManager(client),
-		eventManager:            NewEventManager(client),
+		client: client,
+	}
+}
+
+func (er *ExtensionHost) init(extensionId string) {
+	// Only create managers if they haven't been set (allows tests to inject mocks)
+	if er.serviceTargetManager == nil {
+		er.serviceTargetManager = NewServiceTargetManager(extensionId, er.client)
+	}
+	if er.frameworkServiceManager == nil {
+		er.frameworkServiceManager = NewFrameworkServiceManager(extensionId, er.client)
+	}
+	if er.eventManager == nil {
+		er.eventManager = NewEventManager(extensionId, er.client)
 	}
 }
 
@@ -130,8 +140,11 @@ func (er *ExtensionHost) WithServiceEventHandler(
 
 // Run wires the configured service targets and event handlers, signals readiness, and blocks until shutdown.
 func (er *ExtensionHost) Run(ctx context.Context) error {
+	extensionId := getExtensionId(ctx)
+	er.init(extensionId)
+
 	// Wait for debugger if AZD_EXT_DEBUG is set
-	waitForDebugger(ctx, er.client)
+	waitForDebugger(ctx, extensionId, er.client)
 
 	// Determine which managers will be active
 	hasServiceTargets := len(er.serviceTargets) > 0

@@ -13,6 +13,7 @@ import (
 )
 
 type EventManager struct {
+	extensionId   string
 	client        *AzdClient
 	broker        *grpcbroker.MessageBroker[EventMessage]
 	projectEvents map[string]ProjectEventHandler
@@ -34,8 +35,9 @@ type ProjectEventHandler func(ctx context.Context, args *ProjectEventArgs) error
 
 type ServiceEventHandler func(ctx context.Context, args *ServiceEventArgs) error
 
-func NewEventManager(azdClient *AzdClient) *EventManager {
+func NewEventManager(extensionId string, azdClient *AzdClient) *EventManager {
 	return &EventManager{
+		extensionId:   extensionId,
 		client:        azdClient,
 		projectEvents: make(map[string]ProjectEventHandler),
 		serviceEvents: make(map[string]ServiceEventHandler),
@@ -60,7 +62,8 @@ func (em *EventManager) ensureStream(ctx context.Context) error {
 
 		// Create broker with client stream
 		envelope := &EventMessageEnvelope{}
-		em.broker = grpcbroker.NewMessageBroker(stream, envelope)
+		// Use client as name since we're on the client side (extension process)
+		em.broker = grpcbroker.NewMessageBroker(stream, envelope, em.extensionId)
 
 		// Register handlers for incoming requests
 		if err := em.broker.On(em.onInvokeProjectHandler); err != nil {

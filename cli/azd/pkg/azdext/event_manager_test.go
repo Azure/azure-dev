@@ -121,7 +121,7 @@ func TestNewEventManager(t *testing.T) {
 	// Create a real AzdClient (without connection)
 	client := &AzdClient{}
 
-	eventManager := NewEventManager(client)
+	eventManager := NewEventManager("microsoft.azd.demo", client)
 
 	assert.NotNil(t, eventManager)
 	assert.Equal(t, client, eventManager.client)
@@ -136,7 +136,7 @@ func TestEventManager_onInvokeProjectHandler_Success(t *testing.T) {
 	ctx := context.Background()
 	client := &AzdClient{}
 
-	eventManager := NewEventManager(client)
+	eventManager := NewEventManager("microsoft.azd.demo", client)
 
 	// Add a test handler
 	handlerCalled := false
@@ -176,7 +176,7 @@ func TestEventManager_onInvokeProjectHandler_HandlerError(t *testing.T) {
 	ctx := context.Background()
 	client := &AzdClient{}
 
-	eventManager := NewEventManager(client)
+	eventManager := NewEventManager("microsoft.azd.demo", client)
 
 	// Add a test handler that fails
 	handler := func(ctx context.Context, args *ProjectEventArgs) error {
@@ -208,7 +208,7 @@ func TestEventManager_onInvokeProjectHandler_HandlerError(t *testing.T) {
 func TestEventManager_onInvokeProjectHandler_NoHandler(t *testing.T) {
 	ctx := context.Background()
 	client := &AzdClient{}
-	eventManager := NewEventManager(client)
+	eventManager := NewEventManager("microsoft.azd.demo", client)
 
 	// Create invoke message for unregistered event
 	invokeMsg := &InvokeProjectHandler{
@@ -229,7 +229,7 @@ func TestEventManager_onInvokeServiceHandler_Success(t *testing.T) {
 	ctx := context.Background()
 	client := &AzdClient{}
 
-	eventManager := NewEventManager(client)
+	eventManager := NewEventManager("microsoft.azd.demo", client)
 
 	// Add a test handler
 	handlerCalled := false
@@ -277,7 +277,7 @@ func TestEventManager_onInvokeServiceHandler_NilServiceContext(t *testing.T) {
 	ctx := context.Background()
 	client := &AzdClient{}
 
-	eventManager := NewEventManager(client)
+	eventManager := NewEventManager("microsoft.azd.demo", client)
 
 	// Add a test handler
 	var receivedArgs *ServiceEventArgs
@@ -316,7 +316,7 @@ func TestEventManager_onInvokeServiceHandler_HandlerError(t *testing.T) {
 	ctx := context.Background()
 	client := &AzdClient{}
 
-	eventManager := NewEventManager(client)
+	eventManager := NewEventManager("microsoft.azd.demo", client)
 
 	// Add a test handler that fails
 	handler := func(ctx context.Context, args *ServiceEventArgs) error {
@@ -351,7 +351,7 @@ func TestEventManager_onInvokeServiceHandler_HandlerError(t *testing.T) {
 func TestEventManager_onInvokeServiceHandler_NoHandler(t *testing.T) {
 	ctx := context.Background()
 	client := &AzdClient{}
-	eventManager := NewEventManager(client)
+	eventManager := NewEventManager("microsoft.azd.demo", client)
 
 	// Create invoke message for unregistered event
 	invokeMsg := &InvokeServiceHandler{
@@ -372,7 +372,7 @@ func TestEventManager_onInvokeServiceHandler_NoHandler(t *testing.T) {
 // Test RemoveProjectEventHandler
 func TestEventManager_RemoveProjectEventHandler(t *testing.T) {
 	client := &AzdClient{}
-	eventManager := NewEventManager(client)
+	eventManager := NewEventManager("microsoft.azd.demo", client)
 
 	// Add a handler
 	handler := func(ctx context.Context, args *ProjectEventArgs) error {
@@ -393,7 +393,7 @@ func TestEventManager_RemoveProjectEventHandler(t *testing.T) {
 // Test RemoveServiceEventHandler
 func TestEventManager_RemoveServiceEventHandler(t *testing.T) {
 	client := &AzdClient{}
-	eventManager := NewEventManager(client)
+	eventManager := NewEventManager("microsoft.azd.demo", client)
 
 	// Add a handler
 	handler := func(ctx context.Context, args *ServiceEventArgs) error {
@@ -414,7 +414,7 @@ func TestEventManager_RemoveServiceEventHandler(t *testing.T) {
 // Test Close
 func TestEventManager_Close(t *testing.T) {
 	client := &AzdClient{}
-	eventManager := NewEventManager(client)
+	eventManager := NewEventManager("microsoft.azd.demo", client)
 
 	// Close should always succeed (it's a no-op with the broker pattern)
 	err := eventManager.Close()

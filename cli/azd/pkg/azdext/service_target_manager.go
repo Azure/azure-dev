@@ -60,14 +60,16 @@ type ServiceTargetProvider interface {
 
 // ServiceTargetManager handles registration and provisioning request forwarding for a provider.
 type ServiceTargetManager struct {
+	extensionId      string
 	client           *AzdClient
 	broker           *grpcbroker.MessageBroker[ServiceTargetMessage]
 	componentManager *ComponentManager[ServiceTargetProvider]
 }
 
 // NewServiceTargetManager creates a new ServiceTargetManager for an AzdClient.
-func NewServiceTargetManager(client *AzdClient) *ServiceTargetManager {
+func NewServiceTargetManager(extensionId string, client *AzdClient) *ServiceTargetManager {
 	return &ServiceTargetManager{
+		extensionId:      extensionId,
 		client:           client,
 		componentManager: NewComponentManager[ServiceTargetProvider](ServiceTargetFactoryKey, "service target"),
 	}
@@ -92,7 +94,8 @@ func (m *ServiceTargetManager) ensureStream(ctx context.Context) error {
 
 		// Create broker with client stream
 		envelope := &ServiceTargetEnvelope{}
-		m.broker = grpcbroker.NewMessageBroker(stream, envelope)
+		// Use client as name since we're on the client side (extension process)
+		m.broker = grpcbroker.NewMessageBroker(stream, envelope, m.extensionId)
 
 		// Register handlers for incoming requests
 		if err := m.broker.On(m.onInitialize); err != nil {

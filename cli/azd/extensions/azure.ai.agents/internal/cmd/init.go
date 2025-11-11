@@ -733,11 +733,6 @@ func (a *InitAction) downloadAgentYaml(
 		}
 	}
 
-	content, err = yaml.Marshal(agentManifest)
-	if err != nil {
-		return nil, "", fmt.Errorf("marshaling agent manifest to YAML after parameter processing: %w", err)
-	}
-
 	agentId := agentManifest.Name
 
 	// Use targetDir if provided or set to local file pointer, otherwise default to "src/{agentId}"
@@ -748,12 +743,6 @@ func (a *InitAction) downloadAgentYaml(
 	// Create target directory if it doesn't exist
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return nil, "", fmt.Errorf("creating target directory %s: %w", targetDir, err)
-	}
-
-	// Save the file to the target directory
-	filePath := filepath.Join(targetDir, "agent.yaml")
-	if err := os.WriteFile(filePath, content, osutil.PermissionFile); err != nil {
-		return nil, "", fmt.Errorf("saving file to %s: %w", filePath, err)
 	}
 
 	if isGitHubUrl {
@@ -768,6 +757,17 @@ func (a *InitAction) downloadAgentYaml(
 				return nil, "", fmt.Errorf("downloading parent directory: %w", err)
 			}
 		}
+	}
+
+	content, err = yaml.Marshal(agentManifest.Template)
+	if err != nil {
+		return nil, "", fmt.Errorf("marshaling agent manifest to YAML after parameter processing: %w", err)
+	}
+
+	// Save the file to the target directory
+	filePath := filepath.Join(targetDir, "agent.yaml")
+	if err := os.WriteFile(filePath, content, osutil.PermissionFile); err != nil {
+		return nil, "", fmt.Errorf("saving file to %s: %w", filePath, err)
 	}
 
 	fmt.Printf("Processed agent.yaml at %s\n", filePath)

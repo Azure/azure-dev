@@ -53,6 +53,23 @@ func ExtractAgentDefinition(manifestYamlContent []byte) (any, error) {
 		return nil, fmt.Errorf("failed to unmarshal to AgentDefinition: %w", err)
 	}
 
+	// Check template properties and assign from manifest if nil
+	if agentDef.Name == "" {
+		if name, ok := genericManifest["name"].(string); ok {
+			agentDef.Name = name
+		}
+	}
+	if agentDef.Description == nil || *agentDef.Description == "" {
+		if description, ok := genericManifest["description"].(string); ok {
+			agentDef.Description = &description
+		}
+	}
+	if agentDef.Metadata == nil {
+		if metadata, ok := genericManifest["metadata"].(map[string]interface{}); ok {
+			agentDef.Metadata = &metadata
+		}
+	}
+
 	switch agentDef.Kind {
 	case AgentKindPrompt:
 		var agent PromptAgent

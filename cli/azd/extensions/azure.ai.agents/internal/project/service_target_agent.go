@@ -5,7 +5,6 @@ package project
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -20,6 +19,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/braydonk/yaml"
 	"github.com/drone/envsubst"
 	"github.com/fatih/color"
 )
@@ -361,42 +361,31 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, fmt.Errorf("failed to read YAML file: %w", err)
 	}
 
-	agentManifest, err := agent_yaml.LoadAndValidateAgentManifest(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse and validate YAML: %w", err)
+	var genericTemplate map[string]interface{}
+	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
+		return nil, fmt.Errorf("YAML content is not valid for deploy: %w", err)
 	}
 
-	// Convert the template to bytes
-	templateBytes, err := json.Marshal(agentManifest.Template)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal agent template to JSON: %w", err)
+	kind, ok := genericTemplate["kind"].(string)
+	if !ok {
+		return nil, fmt.Errorf("kind field is not a valid string to check for deploy: %w", err)
 	}
 
-	// Convert the bytes to a dictionary
-	var templateDict map[string]interface{}
-	if err := json.Unmarshal(templateBytes, &templateDict); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal agent template from JSON: %w", err)
-	}
-
-	// Convert the dictionary to bytes
-	dictJsonBytes, err := json.Marshal(templateDict)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal templateDict to JSON: %w", err)
-	}
-
-	// Convert the bytes to an Agent Definition
-	var agentDef agent_yaml.AgentDefinition
-	if err := json.Unmarshal(dictJsonBytes, &agentDef); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal JSON to AgentDefinition: %w", err)
-	}
-
-	switch agentDef.Kind {
-	case agent_yaml.AgentKindPrompt:
-		return p.deployPromptAgent(ctx, agentManifest, azdEnv)
-	case agent_yaml.AgentKindHosted:
-		return p.deployHostedAgent(ctx, serviceContext, progress, agentManifest, azdEnv)
+	switch kind {
+	case string(agent_yaml.AgentKindPrompt):
+		var agentDef agent_yaml.PromptAgent
+		if err := yaml.Unmarshal(data, &agentDef); err != nil {
+			return nil, fmt.Errorf("YAML content is not valid for prompt agent deploy: %w", err)
+		}
+		return p.deployPromptAgent(ctx, agentDef, azdEnv)
+	case string(agent_yaml.AgentKindHosted):
+		var agentDef agent_yaml.ContainerAgent
+		if err := yaml.Unmarshal(data, &agentDef); err != nil {
+			return nil, fmt.Errorf("YAML content is not valid for hosted agent deploy: %w", err)
+		}
+		return p.deployHostedAgent(ctx, serviceContext, progress, agentDef, azdEnv)
 	default:
-		return nil, fmt.Errorf("unsupported agent kind: %s", agentDef.Kind)
+		return nil, fmt.Errorf("unsupported agent kind: %s", kind)
 	}
 }
 
@@ -407,71 +396,28 @@ func (p *AgentServiceTargetProvider) isContainerAgent() bool {
 		return false
 	}
 
-	agentManifest, err := agent_yaml.LoadAndValidateAgentManifest(data)
-	if err != nil {
+	var genericTemplate map[string]interface{}
+	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
 		return false
 	}
 
-	// Convert the template to bytes
-	templateBytes, err := json.Marshal(agentManifest.Template)
-	if err != nil {
+	kind, ok := genericTemplate["kind"].(string)
+	if !ok {
 		return false
 	}
 
-	// Convert the bytes to a dictionary
-	var templateDict map[string]interface{}
-	if err := json.Unmarshal(templateBytes, &templateDict); err != nil {
-		return false
-	}
-
-	// Convert the dictionary to bytes
-	dictJsonBytes, err := json.Marshal(templateDict)
-	if err != nil {
-		return false
-	}
-
-	// Convert the bytes to an Agent Definition
-	var agentDef agent_yaml.AgentDefinition
-	if err := json.Unmarshal(dictJsonBytes, &agentDef); err != nil {
-		return false
-	}
-
-	return agentDef.Kind == agent_yaml.AgentKindHosted
+	return kind == string(agent_yaml.AgentKindHosted)
 }
 
 // deployPromptAgent handles deployment of prompt-based agents
 func (p *AgentServiceTargetProvider) deployPromptAgent(
 	ctx context.Context,
-	agentManifest *agent_yaml.AgentManifest,
+	agentDef agent_yaml.PromptAgent,
 	azdEnv map[string]string,
 ) (*azdext.ServiceDeployResult, error) {
 	// Check if environment variable is set
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
 		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required")
-	}
-
-	// Convert the template to bytes
-	templateBytes, err := json.Marshal(agentManifest.Template)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal agent template to JSON: %w", err)
-	}
-
-	// Convert the bytes to a dictionary
-	var templateDict map[string]interface{}
-	if err := json.Unmarshal(templateBytes, &templateDict); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal agent template from JSON: %w", err)
-	}
-
-	// Convert the dictionary to bytes
-	dictJsonBytes, err := json.Marshal(templateDict)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal templateDict to JSON: %w", err)
-	}
-
-	// Convert the bytes to an Agent Definition
-	var agentDef agent_yaml.AgentDefinition
-	if err := json.Unmarshal(dictJsonBytes, &agentDef); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal JSON to AgentDefinition: %w", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "Deploying Prompt Agent\n")
@@ -481,7 +427,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
 	// Create agent request (no image URL needed for prompt agents)
-	request, err := agent_yaml.CreateAgentAPIRequestFromManifest(*agentManifest)
+	request, err := agent_yaml.CreateAgentAPIRequestFromManifest(agentDef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent request: %w", err)
 	}
@@ -525,7 +471,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	ctx context.Context,
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
-	agentManifest *agent_yaml.AgentManifest,
+	agentDef agent_yaml.ContainerAgent,
 	azdEnv map[string]string,
 ) (*azdext.ServiceDeployResult, error) {
 	// Check if environment variable is set
@@ -548,46 +494,21 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, errors.New("published container artifact not found")
 	}
 
-	// Convert the template to bytes
-	templateBytes, err := json.Marshal(agentManifest.Template)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal agent template to JSON: %w", err)
-	}
-
-	// Convert the bytes to a dictionary
-	var templateDict map[string]interface{}
-	if err := json.Unmarshal(templateBytes, &templateDict); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal agent template from JSON: %w", err)
-	}
-
-	// Convert the dictionary to bytes
-	dictJsonBytes, err := json.Marshal(templateDict)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal templateDict to JSON: %w", err)
-	}
-
-	// Convert the bytes to an Agent Definition
-	var agentDef agent_yaml.AgentDefinition
-	if err := json.Unmarshal(dictJsonBytes, &agentDef); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal JSON to AgentDefinition: %w", err)
-	}
-
 	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
 	// Step 2: Resolve environment variables from YAML using azd environment values
 	resolvedEnvVars := make(map[string]string)
-	hostedDef := agentManifest.Template.(agent_yaml.ContainerAgent)
-	if hostedDef.EnvironmentVariables != nil {
-		for _, envVar := range *hostedDef.EnvironmentVariables {
+	if agentDef.EnvironmentVariables != nil {
+		for _, envVar := range *agentDef.EnvironmentVariables {
 			resolvedEnvVars[envVar.Name] = p.resolveEnvironmentVariables(envVar.Value, azdEnv)
 		}
 	}
 
 	// Step 3: Create agent request with image URL and resolved environment variables
 	request, err := agent_yaml.CreateAgentAPIRequestFromManifest(
-		*agentManifest,
+		agentDef,
 		agent_yaml.WithImageURL(fullImageURL),
 		agent_yaml.WithEnvironmentVariables(resolvedEnvVars),
 	)
@@ -614,7 +535,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 	// Step 5: Start agent container
 	progress("Starting agent container")
-	err = p.startAgentContainer(ctx, agentManifest, agentVersionResponse, azdEnv)
+	err = p.startAgentContainer(ctx, agentVersionResponse, azdEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -675,7 +596,6 @@ func (p *AgentServiceTargetProvider) createAgent(
 // startAgentContainer starts the hosted agent container
 func (p *AgentServiceTargetProvider) startAgentContainer(
 	ctx context.Context,
-	agentManifest *agent_yaml.AgentManifest,
 	agentVersionResponse *agent_api.AgentVersionObject,
 	azdEnv map[string]string,
 ) error {

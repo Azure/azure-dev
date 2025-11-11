@@ -59,21 +59,17 @@ func shouldRun(ctx context.Context, project *azdext.ProjectConfig) (bool, error)
 					return false, fmt.Errorf("failed to read agent yaml file: %w", err)
 				}
 
-				manifest, err := agent_yaml.LoadAndValidateAgentManifest(content)
-				if err != nil {
-					return false, fmt.Errorf("failed to validate agent yaml file: %w", err)
+				var genericTemplate map[string]interface{}
+				if err := yaml.Unmarshal(content, &genericTemplate); err != nil {
+					return false, fmt.Errorf("YAML content is not valid to run: %w", err)
 				}
 
-				agentDefBytes, err := yaml.Marshal(manifest.Template)
-				if err != nil {
-					return false, fmt.Errorf("failed to marshal agent definition when updating project: %w", err)
-				}
-				var agentDef agent_yaml.AgentDefinition
-				if err := yaml.Unmarshal(agentDefBytes, &agentDef); err != nil {
-					return false, fmt.Errorf("failed to unmarshal agent definition when updating project: %w", err)
+				kind, ok := genericTemplate["kind"].(string)
+				if !ok {
+					return false, fmt.Errorf("kind field is not a valid string to check should run: %w", err)
 				}
 
-				return agentDef.Kind == agent_yaml.AgentKindHosted, nil
+				return kind == string(agent_yaml.AgentKindHosted), nil
 			}
 		}
 	}

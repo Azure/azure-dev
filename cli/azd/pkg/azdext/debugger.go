@@ -17,7 +17,7 @@ import (
 
 // waitForDebugger checks if AZD_EXT_DEBUG environment variable is set to a truthy value.
 // If set, prompts the user to attach a debugger to the current process.
-func waitForDebugger(ctx context.Context, azdClient *AzdClient) {
+func waitForDebugger(ctx context.Context, extensionId string, azdClient *AzdClient) {
 	debugValue := os.Getenv("AZD_EXT_DEBUG")
 	if debugValue == "" {
 		return
@@ -28,7 +28,6 @@ func waitForDebugger(ctx context.Context, azdClient *AzdClient) {
 		return
 	}
 
-	extensionId := getExtensionId(ctx)
 	message := fmt.Sprintf("Extension '%s' ready to debug (pid: %d).", extensionId, os.Getpid())
 
 	_, err = azdClient.Prompt().Confirm(ctx, &ConfirmRequest{

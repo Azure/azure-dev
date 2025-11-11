@@ -70,7 +70,7 @@ func (s *ServiceTargetService) Stream(stream azdext.ServiceTargetService_StreamS
 
 	// Create message broker for this stream
 	ops := azdext.NewServiceTargetEnvelope()
-	broker := grpcbroker.NewMessageBroker(stream, ops)
+	broker := grpcbroker.NewMessageBroker(stream, ops, extension.Id)
 
 	// Track the hostType for cleanup when stream closes
 	var registeredHostType string
@@ -93,8 +93,6 @@ func (s *ServiceTargetService) Stream(stream azdext.ServiceTargetService_StreamS
 		log.Printf("Broker error for provider %s: %v", registeredHostType, err)
 		return fmt.Errorf("broker error: %w", err)
 	}
-
-	log.Printf("Stream closed for provider: %s", registeredHostType)
 
 	s.providerMapMu.Lock()
 	delete(s.providerMap, registeredHostType)

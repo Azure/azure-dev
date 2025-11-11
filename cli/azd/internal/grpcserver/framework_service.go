@@ -66,7 +66,7 @@ func (s *FrameworkService) Stream(stream azdext.FrameworkService_StreamServer) e
 
 	// Create message broker for this stream
 	ops := azdext.NewFrameworkServiceEnvelope()
-	broker := grpcbroker.NewMessageBroker(stream, ops)
+	broker := grpcbroker.NewMessageBroker(stream, ops, extension.Id)
 
 	// Track the language for cleanup when stream closes
 	var registeredLanguage string
@@ -86,11 +86,8 @@ func (s *FrameworkService) Stream(stream azdext.FrameworkService_StreamServer) e
 	// Run the broker dispatcher (blocking)
 	// This will return when the stream closes or encounters an error
 	if err := broker.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		log.Printf("Broker error for framework service %s: %v", registeredLanguage, err)
 		return fmt.Errorf("broker error: %w", err)
 	}
-
-	log.Printf("Stream closed for framework service: %s", registeredLanguage)
 
 	s.providerMapMu.Lock()
 	delete(s.providerMap, registeredLanguage)

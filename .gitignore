@@ -24,6 +24,10 @@
 covcounters.*
 covmeta.*
 
+# Go workspace files (for local development)
+go.work
+go.work.sum
+
 # Dependency directories (remove the comment below to include it)
 # vendor/
 

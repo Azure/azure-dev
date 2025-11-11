@@ -5,6 +5,7 @@ package azdext
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -15,6 +16,7 @@ import (
 
 type serviceReceiver interface {
 	Receive(ctx context.Context) error
+	Ready(ctx context.Context) error
 }
 
 type serviceTargetRegistrar interface {
@@ -179,24 +181,37 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 
 	// Start receiving messages from active managers in separate goroutines
 	// CRITICAL: This must happen BEFORE any Register() calls that use broker.Send()
-	var wg sync.WaitGroup
-	errChan := make(chan error, len(receivers))
+	var receiveWaitGroup sync.WaitGroup
+	receiverErrors := make(chan error, len(receivers))
 
 	for _, receiver := range receivers {
-		wg.Add(1)
+		receiveWaitGroup.Add(1)
 		go func(r serviceReceiver) {
-			defer wg.Done()
+			defer receiveWaitGroup.Done()
 			if err := r.Receive(ctx); err != nil {
-				errChan <- fmt.Errorf("receiver error: %w", err)
+				receiverErrors <- fmt.Errorf("receiver error: %w", err)
 			}
 		}(receiver)
+	}
+
+	// Wait for all active receivers' brokers to signal readiness before starting registrations
+	var readyErrors []error
+	for _, receiver := range receivers {
+		if err := receiver.Ready(ctx); err != nil {
+			readyErrors = append(readyErrors, fmt.Errorf("receiver not ready: %w", err))
+		}
+	}
+
+	// Check if any managers failed to become ready
+	if len(readyErrors) > 0 {
+		return errors.Join(readyErrors...)
 	}
 
 	// Now that receivers are running, perform registrations
 	// The broker.Run() in each Receive() will process the registration responses
 
 	// Register all registrations in parallel - service targets, framework services, and event handlers
-	var allRegistrationsWg sync.WaitGroup
+	var registrationsWaitGroup sync.WaitGroup
 	totalCount := len(er.serviceTargets) + len(er.frameworkServices) + len(er.projectHandlers) + len(er.serviceHandlers)
 	registrationErrChan := make(chan error, totalCount)
 
@@ -206,9 +221,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 			return fmt.Errorf("service target provider for host '%s' is nil", reg.Host)
 		}
 
-		allRegistrationsWg.Add(1)
+		registrationsWaitGroup.Add(1)
 		go func(r ServiceTargetRegistration) {
-			defer allRegistrationsWg.Done()
+			defer registrationsWaitGroup.Done()
 			if err := er.serviceTargetManager.Register(ctx, r.Factory, r.Host); err != nil {
 				registrationErrChan <- fmt.Errorf("failed to register service target '%s': %w", r.Host, err)
 			}
@@ -221,9 +236,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 			return fmt.Errorf("framework service provider for language '%s' is nil", reg.Language)
 		}
 
-		allRegistrationsWg.Add(1)
+		registrationsWaitGroup.Add(1)
 		go func(r FrameworkServiceRegistration) {
-			defer allRegistrationsWg.Done()
+			defer registrationsWaitGroup.Done()
 			if err := er.frameworkServiceManager.Register(ctx, r.Factory, r.Language); err != nil {
 				registrationErrChan <- fmt.Errorf("failed to register framework service '%s': %w", r.Language, err)
 			}
@@ -236,9 +251,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 			return fmt.Errorf("project event handler for '%s' is nil", reg.EventName)
 		}
 
-		allRegistrationsWg.Add(1)
+		registrationsWaitGroup.Add(1)
 		go func(r ProjectEventRegistration) {
-			defer allRegistrationsWg.Done()
+			defer registrationsWaitGroup.Done()
 			if err := er.eventManager.AddProjectEventHandler(ctx, r.EventName, r.Handler); err != nil {
 				registrationErrChan <- fmt.Errorf("failed to add project event handler '%s': %w", r.EventName, err)
 			}
@@ -251,9 +266,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 			return fmt.Errorf("service event handler for '%s' is nil", reg.EventName)
 		}
 
-		allRegistrationsWg.Add(1)
+		registrationsWaitGroup.Add(1)
 		go func(r ServiceEventRegistration) {
-			defer allRegistrationsWg.Done()
+			defer registrationsWaitGroup.Done()
 			if err := er.eventManager.AddServiceEventHandler(ctx, r.EventName, r.Handler, r.Options); err != nil {
 				registrationErrChan <- fmt.Errorf("failed to add service event handler '%s': %w", r.EventName, err)
 			}
@@ -261,12 +276,21 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	}
 
 	// Wait for ALL registrations to complete in parallel
-	allRegistrationsWg.Wait()
+	registrationsWaitGroup.Wait()
 	close(registrationErrChan)
 
-	// Check for any registration errors
-	if err := <-registrationErrChan; err != nil {
-		return err
+	// Check for any registration errors - collect all errors
+	var registrationErrors []error
+	for err := range registrationErrChan {
+		registrationErrors = append(registrationErrors, err)
+	}
+
+	if len(registrationErrors) > 0 {
+		if len(registrationErrors) == 1 {
+			return registrationErrors[0]
+		}
+		// Multiple errors - combine them using Go's standard error joining
+		return errors.Join(registrationErrors...)
 	}
 
 	// Signal readiness after all registrations are complete
@@ -279,24 +303,29 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		return nil
 	}
 
-	// Wait for all receivers to complete or first error
+	// Wait for all receivers to complete and monitor for errors
+	receiversDone := make(chan struct{})
 	go func() {
-		wg.Wait()
-		close(errChan)
+		receiveWaitGroup.Wait()
+		close(receiverErrors)
+		close(receiversDone)
 	}()
 
-	// Block until context cancellation or first error
+	// Block until context cancellation, receiver error, or receivers complete
 	select {
 	case <-ctx.Done():
 		log.Println("Extension host context cancelled, shutting down")
 		return nil // Context cancellation is expected, not an error
-	case err := <-errChan:
+	case err := <-receiverErrors:
 		if err != nil {
 			return err
 		}
+		// Continue waiting for more errors or completion
+		return nil
+	case <-receiversDone:
+		// All receivers completed normally
+		return nil
 	}
-
-	return nil
 }
 
 func callReady(ctx context.Context, client *AzdClient) error {

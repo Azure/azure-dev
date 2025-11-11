@@ -681,8 +681,8 @@ func TestEndToEnd_HandlerPanic(t *testing.T) {
 
 	// Create simulated stream and both client/server brokers
 	stream := NewSimulatedBidiStream()
-	clientBroker := NewMessageBroker[TestMessage](stream.ClientStream(), &SimpleMessageEnvelope{}, "client")
-	serverBroker := NewMessageBroker[TestMessage](stream.ServerStream(), &SimpleMessageEnvelope{}, "server")
+	clientBroker := NewMessageBroker(stream.ClientStream(), &SimpleMessageEnvelope{}, "client")
+	serverBroker := NewMessageBroker(stream.ServerStream(), &SimpleMessageEnvelope{}, "server")
 
 	// Register a handler that panics
 	panicHandler := func(ctx context.Context, req *TestRequest) (*TestMessage, error) {
@@ -740,4 +740,181 @@ func TestEndToEnd_HandlerPanic(t *testing.T) {
 
 	innerResp := resp2.InnerMsg.(*TestResponse)
 	assert.Equal(t, "recovered", innerResp.Result, "Should receive correct response from new handler")
+}
+
+// TestReady_BlocksUntilRunStarts verifies that Ready() blocks until Run() is called
+func TestReady_BlocksUntilRunStarts(t *testing.T) {
+	t.Parallel()
+
+	stream := NewSimulatedBidiStream()
+	defer stream.Close()
+	envelope := &SimpleMessageEnvelope{}
+	broker := NewMessageBroker(stream.ClientStream(), envelope, "client")
+
+	readyDone := make(chan error, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	// Start Ready() - should block
+	go func() {
+		readyDone <- broker.Ready(ctx)
+	}()
+
+	// Should timeout because Ready() blocks until Run() starts
+	select {
+	case err := <-readyDone:
+		t.Fatalf("Ready() should have blocked but returned with: %v", err)
+	case <-time.After(50 * time.Millisecond):
+		// Expected - Ready() is blocking
+	}
+
+	// Start Run()
+	runCtx, runCancel := context.WithCancel(context.Background())
+	defer runCancel()
+
+	go func() {
+		_ = broker.Run(runCtx)
+	}()
+
+	// Ready() should complete quickly
+	select {
+	case err := <-readyDone:
+		assert.NoError(t, err, "Ready() should complete after Run() starts")
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("Ready() should have completed after Run() started")
+	}
+}
+
+// TestReady_CompletesImmediatelyAfterRunStarts verifies Ready() is immediate after Run() starts
+func TestReady_CompletesImmediatelyAfterRunStarts(t *testing.T) {
+	t.Parallel()
+
+	stream := NewSimulatedBidiStream()
+	defer stream.Close()
+	envelope := &SimpleMessageEnvelope{}
+	broker := NewMessageBroker(stream.ClientStream(), envelope, "client")
+
+	// Start Run() first
+	runCtx, runCancel := context.WithCancel(context.Background())
+	defer runCancel()
+
+	go func() {
+		_ = broker.Run(runCtx)
+	}()
+
+	time.Sleep(10 * time.Millisecond) // Let Run() start
+
+	// Ready() should complete immediately
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err := broker.Ready(ctx)
+	duration := time.Since(start)
+
+	assert.NoError(t, err, "Ready() should complete successfully")
+	assert.Less(t, duration, 50*time.Millisecond, "Ready() should be immediate when Run() is running")
+}
+
+// TestReady_MultipleCallersAllComplete verifies all waiters are unblocked when Run() starts
+func TestReady_MultipleCallersAllComplete(t *testing.T) {
+	t.Parallel()
+
+	stream := NewSimulatedBidiStream()
+	defer stream.Close()
+	envelope := &SimpleMessageEnvelope{}
+	broker := NewMessageBroker(stream.ClientStream(), envelope, "client")
+
+	const numCallers = 5
+	readyResults := make(chan error, numCallers)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	// Start multiple Ready() calls
+	for i := 0; i < numCallers; i++ {
+		go func() {
+			readyResults <- broker.Ready(ctx)
+		}()
+	}
+
+	time.Sleep(20 * time.Millisecond) // Let them block
+
+	// Start Run()
+	runCtx, runCancel := context.WithCancel(context.Background())
+	defer runCancel()
+
+	go func() {
+		_ = broker.Run(runCtx)
+	}()
+
+	// All Ready() calls should complete
+	for i := 0; i < numCallers; i++ {
+		select {
+		case err := <-readyResults:
+			assert.NoError(t, err, "Ready() call %d should complete successfully", i)
+		case <-time.After(100 * time.Millisecond):
+			t.Fatalf("Ready() call %d did not complete in time", i)
+		}
+	}
+}
+
+// TestReady_ContextCancellation verifies Ready() respects context cancellation
+func TestReady_ContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	stream := NewSimulatedBidiStream()
+	defer stream.Close()
+	envelope := &SimpleMessageEnvelope{}
+	broker := NewMessageBroker(stream.ClientStream(), envelope, "client")
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	readyDone := make(chan error, 1)
+	go func() {
+		readyDone <- broker.Ready(ctx)
+	}()
+
+	time.Sleep(20 * time.Millisecond) // Let Ready() block
+
+	cancel() // Cancel context
+
+	// Ready() should return with context cancellation error
+	select {
+	case err := <-readyDone:
+		assert.Error(t, err, "Ready() should return error when context is cancelled")
+		assert.Contains(t, err.Error(), "context canceled", "Should be context cancellation error")
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("Ready() should have returned after context cancellation")
+	}
+}
+
+// TestReady_RunAlreadyStartedMultipleTimes verifies Ready() is always immediate after Run()
+func TestReady_RunAlreadyStartedMultipleTimes(t *testing.T) {
+	t.Parallel()
+
+	stream := NewSimulatedBidiStream()
+	defer stream.Close()
+	envelope := &SimpleMessageEnvelope{}
+	broker := NewMessageBroker(stream.ClientStream(), envelope, "client")
+
+	// Start Run()
+	runCtx, runCancel := context.WithCancel(context.Background())
+	defer runCancel()
+
+	go func() {
+		_ = broker.Run(runCtx)
+	}()
+
+	time.Sleep(10 * time.Millisecond) // Let Run() start
+
+	// Multiple Ready() calls should all be immediate
+	ctx := context.Background()
+	for i := 0; i < 3; i++ {
+		start := time.Now()
+		err := broker.Ready(ctx)
+		duration := time.Since(start)
+
+		assert.NoError(t, err, "Ready() call %d should succeed", i)
+		assert.Less(t, duration, 10*time.Millisecond, "Ready() call %d should be immediate", i)
+	}
 }

@@ -80,6 +80,10 @@ type MessageBroker[TMessage any] struct {
 	responseChans sync.Map   // Used for storing response channels by request id
 	handlers      sync.Map   // Used for storing message handlers by request type
 	sendMu        sync.Mutex // Protects concurrent stream.Send() calls
+
+	// Ready signaling for when the broker starts receiving messages
+	readyCh   chan struct{} // Closed when Run() starts, signals readiness to all waiters
+	readyOnce sync.Once     // Ensures readyCh is only closed once
 }
 
 // NewMessageBroker creates a new message broker for the given stream.
@@ -96,6 +100,7 @@ func NewMessageBroker[TMessage any](
 		stream:   stream,
 		envelope: ops,
 		name:     name,
+		readyCh:  make(chan struct{}),
 	}
 }
 
@@ -379,11 +384,31 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 	}
 }
 
+// Ready blocks until the message broker starts receiving messages or the context is cancelled.
+// Multiple goroutines can call Ready() simultaneously - they will all be unblocked when Run() starts.
+// Once the broker has started, subsequent calls to Ready() return immediately.
+// Returns nil when ready, or context error if the context is cancelled before the broker becomes ready.
+func (mb *MessageBroker[TMessage]) Ready(ctx context.Context) error {
+	select {
+	case <-mb.readyCh:
+		// Broker is ready (channel closed by Run method)
+		return nil
+	case <-ctx.Done():
+		// Context cancelled before broker became ready
+		return ctx.Err()
+	}
+}
+
 // Run begins receiving and dispatching messages.
 // This method blocks until the context is cancelled, the stream encounters an error,
 // or the stream is closed by the remote peer.
 // Returns nil on graceful shutdown (context cancelled or EOF), or the error that terminated the stream.
 func (mb *MessageBroker[TMessage]) Run(ctx context.Context) error {
+	// Signal that the broker is ready to receive messages
+	mb.readyOnce.Do(func() {
+		close(mb.readyCh)
+	})
+
 	defer func() {
 		mb.Close()
 	}()

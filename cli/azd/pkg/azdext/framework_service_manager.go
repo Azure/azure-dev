@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/google/uuid"
@@ -49,6 +50,9 @@ type FrameworkServiceManager struct {
 	client           *AzdClient
 	broker           *grpcbroker.MessageBroker[FrameworkServiceMessage]
 	componentManager *ComponentManager[FrameworkServiceProvider]
+
+	// Synchronization for concurrent access
+	mu sync.RWMutex
 }
 
 // NewFrameworkServiceManager creates a new FrameworkServiceManager for an AzdClient.
@@ -61,45 +65,66 @@ func NewFrameworkServiceManager(extensionId string, client *AzdClient) *Framewor
 }
 
 // Close closes the framework service manager and cleans up resources.
+// This method is thread-safe for concurrent access.
 func (m *FrameworkServiceManager) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.broker != nil {
 		m.broker.Close()
+		m.broker = nil
 	}
+
 	return m.componentManager.Close()
 }
 
 // ensureStream initializes the broker and stream if they haven't been created yet.
+// This method is thread-safe for concurrent access.
 func (m *FrameworkServiceManager) ensureStream(ctx context.Context) error {
-	if m.broker == nil {
-		stream, err := m.client.FrameworkService().Stream(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to create framework service stream: %w", err)
-		}
+	// Fast path with read lock
+	m.mu.RLock()
+	if m.broker != nil {
+		m.mu.RUnlock()
+		return nil
+	}
+	m.mu.RUnlock()
 
-		// Create broker with client stream
-		envelope := &FrameworkServiceEnvelope{}
-		// Use client as name since we're on the client side (extension process)
-		m.broker = grpcbroker.NewMessageBroker(stream, envelope, m.extensionId)
+	// Slow path with write lock
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-		// Register handlers for incoming requests
-		if err := m.broker.On(m.onInitialize); err != nil {
-			return fmt.Errorf("failed to register initialize handler: %w", err)
-		}
-		if err := m.broker.On(m.onRequiredExternalTools); err != nil {
-			return fmt.Errorf("failed to register required external tools handler: %w", err)
-		}
-		if err := m.broker.On(m.onRequirements); err != nil {
-			return fmt.Errorf("failed to register requirements handler: %w", err)
-		}
-		if err := m.broker.On(m.onRestore); err != nil {
-			return fmt.Errorf("failed to register restore handler: %w", err)
-		}
-		if err := m.broker.On(m.onBuild); err != nil {
-			return fmt.Errorf("failed to register build handler: %w", err)
-		}
-		if err := m.broker.On(m.onPackage); err != nil {
-			return fmt.Errorf("failed to register package handler: %w", err)
-		}
+	// Double-check after acquiring write lock
+	if m.broker != nil {
+		return nil
+	}
+	stream, err := m.client.FrameworkService().Stream(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create framework service stream: %w", err)
+	}
+
+	// Create broker with client stream
+	envelope := &FrameworkServiceEnvelope{}
+	// Use client as name since we're on the client side (extension process)
+	m.broker = grpcbroker.NewMessageBroker(stream, envelope, m.extensionId)
+
+	// Register handlers for incoming requests
+	if err := m.broker.On(m.onInitialize); err != nil {
+		return fmt.Errorf("failed to register initialize handler: %w", err)
+	}
+	if err := m.broker.On(m.onRequiredExternalTools); err != nil {
+		return fmt.Errorf("failed to register required external tools handler: %w", err)
+	}
+	if err := m.broker.On(m.onRequirements); err != nil {
+		return fmt.Errorf("failed to register requirements handler: %w", err)
+	}
+	if err := m.broker.On(m.onRestore); err != nil {
+		return fmt.Errorf("failed to register restore handler: %w", err)
+	}
+	if err := m.broker.On(m.onBuild); err != nil {
+		return fmt.Errorf("failed to register build handler: %w", err)
+	}
+	if err := m.broker.On(m.onPackage); err != nil {
+		return fmt.Errorf("failed to register package handler: %w", err)
 	}
 
 	return nil
@@ -140,12 +165,28 @@ func (m *FrameworkServiceManager) Register(
 }
 
 // Receive starts the broker's message dispatcher and blocks until the stream completes.
-// Returns nil on graceful shutdown, or an error if the stream fails.
+// This method ensures the stream is initialized then runs the broker.
 func (m *FrameworkServiceManager) Receive(ctx context.Context) error {
+	// Ensure stream is initialized (this handles all locking internally)
 	if err := m.ensureStream(ctx); err != nil {
 		return err
 	}
+
+	// Run the broker (this blocks until context is canceled or error)
 	return m.broker.Run(ctx)
+}
+
+// Ready blocks until the message broker starts receiving messages or the context is cancelled.
+// This ensures the stream is initialized and then waits for the broker to be ready.
+// Returns nil when ready, or context error if the context is cancelled before ready.
+func (m *FrameworkServiceManager) Ready(ctx context.Context) error {
+	// Ensure stream is initialized (this handles all locking internally)
+	if err := m.ensureStream(ctx); err != nil {
+		return err
+	}
+
+	// Now that broker is guaranteed to exist, wait for it to be ready
+	return m.broker.Ready(ctx)
 }
 
 // Handler methods - these are registered with the broker to handle incoming requests

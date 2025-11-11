@@ -19,6 +19,9 @@ type EventManager struct {
 	projectEvents map[string]ProjectEventHandler
 	serviceEvents map[string]ServiceEventHandler
 	eventsMutex   sync.RWMutex // Protects both projectEvents and serviceEvents maps
+
+	// Synchronization for concurrent access
+	mu sync.RWMutex
 }
 
 type ProjectEventArgs struct {
@@ -45,33 +48,52 @@ func NewEventManager(extensionId string, azdClient *AzdClient) *EventManager {
 }
 
 func (em *EventManager) Close() error {
+	em.mu.Lock()
+	defer em.mu.Unlock()
+
 	if em.broker != nil {
 		em.broker.Close()
+		em.broker = nil
 	}
 
 	return nil
 }
 
 // ensureStream initializes the broker and stream if they haven't been created yet.
+// This method is thread-safe for concurrent access.
 func (em *EventManager) ensureStream(ctx context.Context) error {
-	if em.broker == nil {
-		stream, err := em.client.Events().EventStream(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to create event stream: %w", err)
-		}
+	// Fast path with read lock
+	em.mu.RLock()
+	if em.broker != nil {
+		em.mu.RUnlock()
+		return nil
+	}
+	em.mu.RUnlock()
 
-		// Create broker with client stream
-		envelope := &EventMessageEnvelope{}
-		// Use client as name since we're on the client side (extension process)
-		em.broker = grpcbroker.NewMessageBroker(stream, envelope, em.extensionId)
+	// Slow path with write lock
+	em.mu.Lock()
+	defer em.mu.Unlock()
 
-		// Register handlers for incoming requests
-		if err := em.broker.On(em.onInvokeProjectHandler); err != nil {
-			return fmt.Errorf("failed to register invoke project handler: %w", err)
-		}
-		if err := em.broker.On(em.onInvokeServiceHandler); err != nil {
-			return fmt.Errorf("failed to register invoke service handler: %w", err)
-		}
+	// Double-check after acquiring write lock
+	if em.broker != nil {
+		return nil
+	}
+	stream, err := em.client.Events().EventStream(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create event stream: %w", err)
+	}
+
+	// Create broker with client stream
+	envelope := &EventMessageEnvelope{}
+	// Use client as name since we're on the client side (extension process)
+	em.broker = grpcbroker.NewMessageBroker(stream, envelope, em.extensionId)
+
+	// Register handlers for incoming requests
+	if err := em.broker.On(em.onInvokeProjectHandler); err != nil {
+		return fmt.Errorf("failed to register invoke project handler: %w", err)
+	}
+	if err := em.broker.On(em.onInvokeServiceHandler); err != nil {
+		return fmt.Errorf("failed to register invoke service handler: %w", err)
 	}
 
 	return nil
@@ -79,12 +101,30 @@ func (em *EventManager) ensureStream(ctx context.Context) error {
 
 // Receive starts the broker's message dispatcher and blocks until the stream completes.
 // Returns nil on graceful shutdown, or an error if the stream fails.
+// This method is safe for concurrent access but only allows one active Run() at a time.
+// Receive starts the broker's message dispatcher and blocks until the stream completes.
+// This method ensures the stream is initialized then runs the broker.
 func (em *EventManager) Receive(ctx context.Context) error {
+	// Ensure stream is initialized (this handles all locking internally)
 	if err := em.ensureStream(ctx); err != nil {
 		return err
 	}
 
+	// Run the broker (this blocks until context is canceled or error)
 	return em.broker.Run(ctx)
+}
+
+// Ready blocks until the message broker starts receiving messages or the context is cancelled.
+// This ensures the stream is initialized and then waits for the broker to be ready.
+// Returns nil when ready, or context error if the context is cancelled before ready.
+func (em *EventManager) Ready(ctx context.Context) error {
+	// Ensure stream is initialized (this handles all locking internally)
+	if err := em.ensureStream(ctx); err != nil {
+		return err
+	}
+
+	// Now that broker is guaranteed to exist, wait for it to be ready
+	return em.broker.Ready(ctx)
 }
 
 func (em *EventManager) AddProjectEventHandler(ctx context.Context, eventName string, handler ProjectEventHandler) error {

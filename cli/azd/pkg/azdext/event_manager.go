@@ -6,10 +6,10 @@ package azdext
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
+	"github.com/google/uuid"
 )
 
 type EventManager struct {
@@ -133,8 +133,9 @@ func (em *EventManager) AddProjectEventHandler(ctx context.Context, eventName st
 	}
 
 	msg := &EventMessage{
-		MessageType: &EventMessage_SubscribeProjectEvent{
-			SubscribeProjectEvent: &SubscribeProjectEvent{
+		RequestId: uuid.NewString(),
+		MessageType: &EventMessage_SubscribeProjectEventRequest{
+			SubscribeProjectEventRequest: &SubscribeProjectEventRequest{
 				EventNames: []string{eventName},
 			},
 		},
@@ -172,8 +173,9 @@ func (em *EventManager) AddServiceEventHandler(
 	}
 
 	msg := &EventMessage{
-		MessageType: &EventMessage_SubscribeServiceEvent{
-			SubscribeServiceEvent: &SubscribeServiceEvent{
+		RequestId: uuid.NewString(),
+		MessageType: &EventMessage_SubscribeServiceEventRequest{
+			SubscribeServiceEventRequest: &SubscribeServiceEventRequest{
 				EventNames: []string{eventName},
 				Host:       options.Host,
 				Language:   options.Language,
@@ -210,7 +212,7 @@ func (em *EventManager) RemoveServiceEventHandler(eventName string) {
 // onInvokeProjectHandler handles project event invocations from the server
 func (em *EventManager) onInvokeProjectHandler(
 	ctx context.Context,
-	req *InvokeProjectHandler,
+	req *InvokeProjectHandlerRequest,
 ) (*EventMessage, error) {
 	em.eventsMutex.RLock()
 	defer em.eventsMutex.RUnlock()
@@ -225,33 +227,24 @@ func (em *EventManager) onInvokeProjectHandler(
 		Project: req.Project,
 	}
 
-	handlerStatus := "completed"
-	handlerMessage := ""
-
 	// Call the project event handler
 	err := handler(ctx, args)
 	if err != nil {
-		handlerStatus = "failed"
-		handlerMessage = err.Error()
-		log.Printf("invokeProjectHandler error for event %s: %v", req.EventName, err)
+		return nil, err
 	}
 
 	// Return status message
 	return &EventMessage{
-		MessageType: &EventMessage_ProjectHandlerStatus{
-			ProjectHandlerStatus: &ProjectHandlerStatus{
-				EventName: req.EventName,
-				Status:    handlerStatus,
-				Message:   handlerMessage,
-			},
+		MessageType: &EventMessage_InvokeProjectHandlerResponse{
+			InvokeProjectHandlerResponse: &InvokeProjectHandlerResponse{},
 		},
-	}, nil
+	}, err
 }
 
 // onInvokeServiceHandler handles service event invocations from the server
 func (em *EventManager) onInvokeServiceHandler(
 	ctx context.Context,
-	req *InvokeServiceHandler,
+	req *InvokeServiceHandlerRequest,
 ) (*EventMessage, error) {
 	em.eventsMutex.RLock()
 	defer em.eventsMutex.RUnlock()
@@ -274,26 +267,16 @@ func (em *EventManager) onInvokeServiceHandler(
 		ServiceContext: serviceContext,
 	}
 
-	handlerStatus := "completed"
-	handlerMessage := ""
-
 	// Call the service event handler
 	err := handler(ctx, args)
 	if err != nil {
-		handlerStatus = "failed"
-		handlerMessage = err.Error()
-		log.Printf("invokeServiceHandler error for event %s: %v", req.EventName, err)
+		return nil, err
 	}
 
 	// Return status message
 	return &EventMessage{
-		MessageType: &EventMessage_ServiceHandlerStatus{
-			ServiceHandlerStatus: &ServiceHandlerStatus{
-				EventName:   req.EventName,
-				ServiceName: req.Service.Name,
-				Status:      handlerStatus,
-				Message:     handlerMessage,
-			},
+		MessageType: &EventMessage_InvokeServiceHandlerResponse{
+			InvokeServiceHandlerResponse: &InvokeServiceHandlerResponse{},
 		},
-	}, nil
+	}, err
 }

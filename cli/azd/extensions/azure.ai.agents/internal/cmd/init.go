@@ -897,6 +897,13 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		Config:       agentConfigStruct,
 	}
 
+	// For hosted (container-based) agents, set remoteBuild to true by default
+	if agentDef.Kind == agent_yaml.AgentKindHosted {
+		serviceConfig.Docker = &azdext.DockerProjectOptions{
+			RemoteBuild: true,
+		}
+	}
+
 	req := &azdext.AddServiceRequest{Service: serviceConfig}
 
 	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {

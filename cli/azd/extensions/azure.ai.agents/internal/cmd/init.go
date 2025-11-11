@@ -990,6 +990,20 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 				// Skip the resource if the cast fails
 			}
 		}
+
+		// Hard code for now
+		// TODO: Add env var handling in the future
+		containerSettings := &project.ContainerSettings{
+			Resources: &project.ResourceSettings{
+				Memory: "2Gi",
+				Cpu:    "1",
+			},
+			Scale: &project.ScaleSettings{
+				MinReplicas: 1,
+				MaxReplicas: 3,
+			},
+		}
+		agentConfig.Container = containerSettings
 	}
 
 	agentConfig.Deployments = deploymentDetails
@@ -1004,8 +1018,15 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		Name:         strings.ReplaceAll(agentDef.Name, " ", ""),
 		RelativePath: targetDir,
 		Host:         serviceHost,
-		Language:     "python",
+		Language:     "docker",
 		Config:       agentConfigStruct,
+	}
+
+	// For hosted (container-based) agents, set remoteBuild to true by default
+	if agentDef.Kind == agent_yaml.AgentKindHosted {
+		serviceConfig.Docker = &azdext.DockerProjectOptions{
+			RemoteBuild: true,
+		}
 	}
 
 	req := &azdext.AddServiceRequest{Service: serviceConfig}

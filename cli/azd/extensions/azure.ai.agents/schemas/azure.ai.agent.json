@@ -11,8 +11,8 @@
         "type": "string"
       }
     },
-    "scale": {
-      "$ref": "#/definitions/ScaleSettings"
+    "container": {
+      "$ref": "#/definitions/ContainerSettings"
     },
     "deployments": {
       "type": "array",
@@ -27,6 +27,36 @@
   },
   "additionalProperties": false,
   "definitions": {
+    "ContainerSettings": {
+      "type": "object",
+      "description": "Container configuration for the Azure AI Agent Service target",
+      "properties": {
+        "resources": {
+          "$ref": "#/definitions/ResourceSettings"
+        },
+        "scale": {
+          "$ref": "#/definitions/ScaleSettings"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResourceSettings": {
+      "type": "object",
+      "description": "Resource configuration for the Azure AI Agent Service target",
+      "properties": {
+        "memory": {
+          "type": "string",
+          "description": "Memory allocation (e.g., '1Gi', '512Mi')",
+          "pattern": "^[0-9]+(\\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$"
+        },
+        "cpu": {
+          "type": "string",
+          "description": "CPU allocation (e.g., '1', '500m')",
+          "pattern": "^[0-9]+(\\.[0-9]+)?m?$"
+        }
+      },
+      "additionalProperties": false
+    },
     "ScaleSettings": {
       "type": "object",
       "description": "Scaling configuration for the Azure AI Agent Service target",
@@ -40,16 +70,6 @@
           "type": "integer",
           "description": "Maximum number of replicas",
           "minimum": 1
-        },
-        "memory": {
-          "type": "string",
-          "description": "Memory allocation (e.g., '1Gi', '512Mi')",
-          "pattern": "^[0-9]+(\\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$"
-        },
-        "cpu": {
-          "type": "string",
-          "description": "CPU allocation (e.g., '1', '500m')",
-          "pattern": "^[0-9]+(\\.[0-9]+)?m?$"
         }
       },
       "additionalProperties": false

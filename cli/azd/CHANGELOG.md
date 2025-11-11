@@ -1,5 +1,11 @@
 # Release History
 
+## 1.21.1 (2025-11-11)
+
+### Features Added
+
+- [[#6133]](https://github.com/Azure/azure-dev/pull/6133) Add .Net10 to azd auto-gen templates for pipeline config.
+
 ## 1.21.0 (2025-11-10)
 
 ### Features Added

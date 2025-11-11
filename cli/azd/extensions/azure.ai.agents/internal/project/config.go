@@ -13,18 +13,28 @@ import (
 
 // ServiceTargetAgentConfig provides custom configuration for the Azure AI Service target
 type ServiceTargetAgentConfig struct {
-	Environment map[string]string `json:"env,omitempty"`
-	Scale       *ScaleSettings    `json:"scale,omitempty"`
-	Deployments []Deployment      `json:"deployments,omitempty"`
-	Resources   []Resource        `json:"resources,omitempty"`
+	Environment map[string]string  `json:"env,omitempty"`
+	Container   *ContainerSettings `json:"container,omitempty"`
+	Deployments []Deployment       `json:"deployments,omitempty"`
+	Resources   []Resource         `json:"resources,omitempty"`
+}
+
+// ContainerSettings provides container configuration for the Azure AI Service target
+type ContainerSettings struct {
+	Resources *ResourceSettings `json:"resources,omitempty"`
+	Scale     *ScaleSettings    `json:"scale,omitempty"`
+}
+
+// ResourceSettings provides resource configuration for the Azure AI Service target
+type ResourceSettings struct {
+	Memory string `json:"memory,omitempty"`
+	Cpu    string `json:"cpu,omitempty"`
 }
 
 // ScaleSettings provides scaling configuration for the Azure AI Service target
 type ScaleSettings struct {
-	MinReplicas int    `json:"minReplicas,omitempty"`
-	MaxReplicas int    `json:"maxReplicas,omitempty"`
-	Memory      string `json:"memory,omitempty"`
-	Cpu         string `json:"cpu,omitempty"`
+	MinReplicas int `json:"minReplicas,omitempty"`
+	MaxReplicas int `json:"maxReplicas,omitempty"`
 }
 
 // Deployment represents a single model deployment

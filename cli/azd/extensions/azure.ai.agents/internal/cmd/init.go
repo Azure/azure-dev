@@ -236,46 +236,6 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 			initArgs = append(initArgs, "-e", flags.env)
 		}
 
-		if flags.projectResourceId != "" {
-			foundryProject, err := extractProjectDetails(flags.projectResourceId)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse project resource ID: %w", err)
-			}
-
-			initArgs = append(initArgs, "--subscription", foundryProject.SubscriptionId)
-			initArgs = append(initArgs, "--environment", foundryProject.AiProjectName)
-
-			// Get the tenant ID
-			tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
-				SubscriptionId: foundryProject.SubscriptionId,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to get tenant ID: %w", err)
-			}
-
-			credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-				TenantID:                   tenantResponse.TenantId,
-				AdditionallyAllowedTenants: []string{"*"},
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to create Azure credential: %w", err)
-			}
-
-			// Create Cognitive Services Projects client
-			projectsClient, err := armcognitiveservices.NewProjectsClient(foundryProject.SubscriptionId, credential, nil)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create Cognitive Services Projects client: %w", err)
-			}
-
-			// Get the AI Foundry project
-			projectResp, err := projectsClient.Get(ctx, foundryProject.ResourceGroupName, foundryProject.AiAccountName, foundryProject.AiProjectName, nil)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get AI Foundry project: %w", err)
-			}
-
-			initArgs = append(initArgs, "--location", *projectResp.Location)
-		}
-
 		// We don't have a project yet
 		// Dispatch a workflow to init the project
 		workflow := &azdext.Workflow{
@@ -326,6 +286,47 @@ func getExistingEnvironment(ctx context.Context, flags *initFlags, azdClient *az
 }
 
 func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
+	var foundryProject *FoundryProject
+	var foundryProjectLocation string
+
+	if flags.projectResourceId != "" {
+		var err error
+		foundryProject, err = extractProjectDetails(flags.projectResourceId)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse project resource ID: %w", err)
+		}
+
+		// Get the tenant ID
+		tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+			SubscriptionId: foundryProject.SubscriptionId,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get tenant ID: %w", err)
+		}
+
+		credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+			TenantID:                   tenantResponse.TenantId,
+			AdditionallyAllowedTenants: []string{"*"},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Azure credential: %w", err)
+		}
+
+		// Create Cognitive Services Projects client
+		projectsClient, err := armcognitiveservices.NewProjectsClient(foundryProject.SubscriptionId, credential, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Cognitive Services Projects client: %w", err)
+		}
+
+		// Get the AI Foundry project
+		projectResp, err := projectsClient.Get(ctx, foundryProject.ResourceGroupName, foundryProject.AiAccountName, foundryProject.AiProjectName, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get AI Foundry project: %w", err)
+		}
+
+		foundryProjectLocation = *projectResp.Location
+	}
+
 	// Get specified or current environment if it exists
 	existingEnv := getExistingEnvironment(ctx, flags, azdClient)
 	if existingEnv == nil {
@@ -335,6 +336,11 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		envArgs := []string{"env", "new"}
 		if flags.env != "" {
 			envArgs = append(envArgs, flags.env)
+		}
+
+		if flags.projectResourceId != "" {
+			envArgs = append(envArgs, "--subscription", foundryProject.SubscriptionId)
+			envArgs = append(envArgs, "--location", foundryProjectLocation)
 		}
 
 		// Dispatch a workflow to create a new environment
@@ -357,6 +363,33 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		existingEnv = getExistingEnvironment(ctx, flags, azdClient)
 		if existingEnv == nil {
 			return nil, fmt.Errorf("environment not found")
+		}
+	} else if flags.projectResourceId != "" {
+		currentSubscription, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: existingEnv.Name,
+			Key:     "AZURE_SUBSCRIPTION_ID",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current subscription ID from environment: %w", err)
+		}
+
+		// Validate subscription ID matches foundry project
+		if currentSubscription.Value != foundryProject.SubscriptionId {
+			return nil, fmt.Errorf("environment subscription ID (%s) does not match provided foundry project subscription ID (%s)", currentSubscription.Value, foundryProject.SubscriptionId)
+		}
+
+		// Get current location from environment
+		currentLocation, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: existingEnv.Name,
+			Key:     "AZURE_LOCATION",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current location from environment: %w", err)
+		}
+
+		// Validate location matches foundry project location
+		if currentLocation.Value != foundryProjectLocation {
+			return nil, fmt.Errorf("environment location (%s) does not match provided foundry project location (%s)", currentLocation.Value, foundryProjectLocation)
 		}
 	}
 
@@ -534,10 +567,6 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 	}
 
 	// Set the extracted values as environment variables
-	if err := a.setEnvVar(ctx, "AZURE_SUBSCRIPTION_ID", foundryProject.SubscriptionId); err != nil {
-		return err
-	}
-
 	if err := a.setEnvVar(ctx, "AZURE_RESOURCE_GROUP", foundryProject.ResourceGroupName); err != nil {
 		return err
 	}

@@ -16,21 +16,34 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 )
 
 // AgentClient provides methods for interacting with the Azure AI Agents API
 type AgentClient struct {
 	endpoint string
-	cred     azcore.TokenCredential
-	client   *http.Client
+	pipeline runtime.Pipeline
 }
 
 // NewAgentClient creates a new AgentClient
 func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
+	clientOptions := &policy.ClientOptions{
+		PerCallPolicies: []policy.Policy{
+			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
+		},
+	}
+
+	pipeline := runtime.NewPipeline(
+		"azure-ai-agents",
+		"v1.0.0",
+		runtime.PipelineOptions{},
+		clientOptions,
+	)
+
 	return &AgentClient{
 		endpoint: endpoint,
-		cred:     cred,
-		client:   &http.Client{},
+		pipeline: pipeline,
 	}
 }
 
@@ -38,16 +51,12 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 func (c *AgentClient) GetAgent(ctx context.Context, agentName, apiVersion string) (*AgentObject, error) {
 	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
-	}
-
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -79,19 +88,18 @@ func (c *AgentClient) CreateAgent(ctx context.Context, request *CreateAgentReque
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(payload))
+	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
+	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
+		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
 	c.logRequest("POST", url, payload)
 
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -124,19 +132,18 @@ func (c *AgentClient) UpdateAgent(ctx context.Context, agentName string, request
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(payload))
+	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
+	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
+		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
 	c.logRequest("POST", url, payload)
 
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -164,16 +171,12 @@ func (c *AgentClient) UpdateAgent(ctx context.Context, agentName string, request
 func (c *AgentClient) DeleteAgent(ctx context.Context, agentName, apiVersion string) (*DeleteAgentResponse, error) {
 	url := fmt.Sprintf("%s/agents/%s?api-version=%s", c.endpoint, agentName, apiVersion)
 
-	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	req, err := runtime.NewRequest(ctx, http.MethodDelete, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
-	}
-
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -228,16 +231,12 @@ func (c *AgentClient) ListAgents(ctx context.Context, params *ListAgentQueryPara
 
 	u.RawQuery = query.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, u.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
-	}
-
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -269,19 +268,18 @@ func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, 
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(payload))
+	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
+	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
+		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
 	c.logRequest("POST", url, payload)
 
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -309,16 +307,12 @@ func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, 
 func (c *AgentClient) GetAgentVersion(ctx context.Context, agentName, agentVersion, apiVersion string) (*AgentVersionObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
-	}
-
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -345,16 +339,12 @@ func (c *AgentClient) GetAgentVersion(ctx context.Context, agentName, agentVersi
 func (c *AgentClient) DeleteAgentVersion(ctx context.Context, agentName, agentVersion, apiVersion string) (*DeleteAgentVersionResponse, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
-	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	req, err := runtime.NewRequest(ctx, http.MethodDelete, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
-	}
-
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -414,16 +404,12 @@ func (c *AgentClient) ListAgentVersions(ctx context.Context, agentName string, p
 
 	u.RawQuery = query.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, u.String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
-	}
-
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -457,17 +443,16 @@ func (c *AgentClient) CreateOrUpdateAgentEventHandler(ctx context.Context, agent
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(payload))
+	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
+	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
+		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -494,16 +479,12 @@ func (c *AgentClient) CreateOrUpdateAgentEventHandler(ctx context.Context, agent
 func (c *AgentClient) GetAgentEventHandler(ctx context.Context, agentName, eventHandlerName, apiVersion string) (*AgentEventHandlerObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/event_handlers/%s?api-version=%s", c.endpoint, agentName, eventHandlerName, apiVersion)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
-	}
-
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -530,16 +511,12 @@ func (c *AgentClient) GetAgentEventHandler(ctx context.Context, agentName, event
 func (c *AgentClient) DeleteAgentEventHandler(ctx context.Context, agentName, eventHandlerName, apiVersion string) (*DeleteAgentEventHandlerResponse, error) {
 	url := fmt.Sprintf("%s/agents/%s/event_handlers/%s?api-version=%s", c.endpoint, agentName, eventHandlerName, apiVersion)
 
-	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	req, err := runtime.NewRequest(ctx, http.MethodDelete, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
-	}
-
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -575,19 +552,18 @@ func (c *AgentClient) StartAgentContainer(ctx context.Context, agentName, agentV
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(payload))
+	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
+	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
+		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
 	c.logRequest("POST", url, payload)
 
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -633,17 +609,16 @@ func (c *AgentClient) UpdateAgentContainer(ctx context.Context, agentName, agent
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(payload))
+	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
+	if err := req.SetBody(streaming.NopCloser(bytes.NewReader(payload)), "application/json"); err != nil {
+		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -675,17 +650,16 @@ func (c *AgentClient) UpdateAgentContainer(ctx context.Context, agentName, agent
 func (c *AgentClient) StopAgentContainer(ctx context.Context, agentName, agentVersion, apiVersion string) (*AcceptedAgentContainerOperation, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s/containers/default:stop?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer([]byte("{}")))
+	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
+	if err := req.SetBody(streaming.NopCloser(bytes.NewReader([]byte("{}"))), "application/json"); err != nil {
+		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -717,17 +691,16 @@ func (c *AgentClient) StopAgentContainer(ctx context.Context, agentName, agentVe
 func (c *AgentClient) DeleteAgentContainer(ctx context.Context, agentName, agentVersion, apiVersion string) (*AcceptedAgentContainerOperation, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s/containers/default:delete?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer([]byte("{}")))
+	req, err := runtime.NewRequest(ctx, http.MethodPost, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
+	if err := req.SetBody(streaming.NopCloser(bytes.NewReader([]byte("{}"))), "application/json"); err != nil {
+		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -759,16 +732,12 @@ func (c *AgentClient) DeleteAgentContainer(ctx context.Context, agentName, agent
 func (c *AgentClient) GetAgentContainer(ctx context.Context, agentName, agentVersion, apiVersion string) (*AgentContainerObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s/containers/default?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
-	}
-
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -795,16 +764,12 @@ func (c *AgentClient) GetAgentContainer(ctx context.Context, agentName, agentVer
 func (c *AgentClient) GetAgentContainerOperation(ctx context.Context, agentName, operationID, apiVersion string) (*AgentContainerOperationObject, error) {
 	url := fmt.Sprintf("%s/agents/%s/operations/%s?api-version=%s", c.endpoint, agentName, operationID, apiVersion)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, err
-	}
-
-	resp, err := c.client.Do(req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -828,31 +793,6 @@ func (c *AgentClient) GetAgentContainerOperation(ctx context.Context, agentName,
 }
 
 // Helper methods
-
-// setAuthHeader sets the authorization header using the credential
-func (c *AgentClient) setAuthHeader(ctx context.Context, req *http.Request) error {
-	token, err := c.getAiFoundryAzureToken(ctx, c.cred)
-	if err != nil {
-		return fmt.Errorf("failed to get Azure token: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-	return nil
-}
-
-// getAiFoundryAzureToken gets an Azure access token using the provided credential
-func (c *AgentClient) getAiFoundryAzureToken(ctx context.Context, cred azcore.TokenCredential) (string, error) {
-	tokenRequestOptions := policy.TokenRequestOptions{
-		Scopes: []string{"https://ai.azure.com/.default"},
-	}
-
-	token, err := cred.GetToken(ctx, tokenRequestOptions)
-	if err != nil {
-		return "", err
-	}
-
-	return token.Token, nil
-}
 
 // logRequest logs the request details to stderr for debugging
 func (c *AgentClient) logRequest(method, url string, payload []byte) {

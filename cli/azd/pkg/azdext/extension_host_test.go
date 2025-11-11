@@ -234,14 +234,22 @@ func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
 
 	// Run test
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Run in goroutine and collect result
+	done := make(chan error, 1)
 	go func() {
-		<-registrationComplete // Wait for registration to complete
-		// Give a small delay to ensure Receive() has started
-		time.Sleep(5 * time.Millisecond)
-		cancel()
+		done <- runner.Run(ctx)
 	}()
 
-	err := runner.Run(ctx)
+	// Wait for registration to complete, then cancel
+	<-registrationComplete
+	// Give a brief moment for Receive() to start
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	// Wait for completion
+	err := <-done
 
 	// Assertions
 	require.NoError(t, err)
@@ -292,12 +300,22 @@ func TestExtensionHost_EventHandlersOnly(t *testing.T) {
 
 	// Run test
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Run in goroutine and collect result
+	done := make(chan error, 1)
 	go func() {
-		<-registrationComplete // Wait for all registrations to complete
-		cancel()
+		done <- runner.Run(ctx)
 	}()
 
-	err := runner.Run(ctx)
+	// Wait for all registrations to complete, then cancel
+	<-registrationComplete
+	// Give a brief moment for Receive() to start
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	// Wait for completion
+	err := <-done
 
 	// Assertions
 	require.NoError(t, err)
@@ -359,12 +377,22 @@ func TestExtensionHost_ServiceTargetsAndEvents(t *testing.T) {
 
 	// Run test
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Run in goroutine and collect result
+	done := make(chan error, 1)
 	go func() {
-		<-registrationComplete // Wait for all registrations to complete
-		cancel()
+		done <- runner.Run(ctx)
 	}()
 
-	err := runner.Run(ctx)
+	// Wait for all registrations to complete, then cancel
+	<-registrationComplete
+	// Give a brief moment for Receive() to start
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	// Wait for completion
+	err := <-done
 
 	// Assertions
 	require.NoError(t, err)
@@ -451,14 +479,22 @@ func TestExtensionHost_WithFrameworkService(t *testing.T) {
 
 	// Run test
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Run in goroutine and collect result
+	done := make(chan error, 1)
 	go func() {
-		<-registrationComplete // Wait for registration to complete
-		// Give a small delay to ensure Receive() has started
-		time.Sleep(5 * time.Millisecond)
-		cancel()
+		done <- runner.Run(ctx)
 	}()
 
-	err := runner.Run(ctx)
+	// Wait for registration to complete, then cancel
+	<-registrationComplete
+	// Give a brief moment for Receive() to start
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	// Wait for completion
+	err := <-done
 
 	// Assertions
 	require.NoError(t, err)
@@ -536,14 +572,22 @@ func TestExtensionHost_MultipleServiceTypes(t *testing.T) {
 
 	// Run test
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Run in goroutine and collect result
+	done := make(chan error, 1)
 	go func() {
-		<-registrationComplete // Wait for all registrations to complete
-		// Give a small delay to ensure all Receive() methods have started
-		time.Sleep(5 * time.Millisecond)
-		cancel()
+		done <- runner.Run(ctx)
 	}()
 
-	err := runner.Run(ctx)
+	// Wait for all registrations to complete, then cancel
+	<-registrationComplete
+	// Give a brief moment for all Receive() methods to start
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	// Wait for completion
+	err := <-done
 
 	// Assertions
 	require.NoError(t, err)
@@ -595,13 +639,18 @@ func TestExtensionHost_MultipleRegistrationErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// For error tests, give a brief moment for Receive() to start before timeout
+	// Run in goroutine and collect result
+	done := make(chan error, 1)
 	go func() {
-		time.Sleep(10 * time.Millisecond) // Slightly longer for error case
-		cancel()
+		done <- runner.Run(ctx)
 	}()
 
-	err := runner.Run(ctx)
+	// For error tests, give a brief moment for Receive() to start, then cancel
+	time.Sleep(100 * time.Millisecond) // Slightly longer for error case
+	cancel()
+
+	// Wait for completion
+	err := <-done
 
 	// Assertions - should return a joined error containing both original errors
 	require.Error(t, err)

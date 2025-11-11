@@ -106,7 +106,8 @@
                             "springapp",
                             "staticwebapp",
                             "aks",
-                            "ai.endpoint"
+                            "ai.endpoint",
+                            "azure.ai.agent"
                         ]
                     },
                     "language": {
@@ -212,154 +213,99 @@
                 },
                 "allOf": [
                     {
+                        "comment": "ContainerApp host - supports image OR project, docker config, and apiVersion",
                         "if": {
                             "properties": {
-                                "host": {
-                                    "const": "containerapp"
-                                }
+                                "host": { "const": "containerapp" }
                             }
                         },
                         "then": {
                             "anyOf": [
                                 {
-                                    "required": [
-                                        "image"
-                                    ],
-                                    "not": {
-                                        "required": [
-                                            "project"
-                                        ]
-                                    }
+                                    "required": ["image"],
+                                    "not": { "required": ["project"] }
                                 },
                                 {
-                                    "required": [
-                                        "project"
-                                    ],
-                                    "not": {
-                                        "required": [
-                                            "image"
-                                        ]
-                                    }
+                                    "required": ["project"],
+                                    "not": { "required": ["image"] }
                                 }
-                            ]
-                        }
-                    },
-                    {
-                        "if": {
-                            "not": {
-                                "properties": {
-                                    "host": {
-                                        "const": "containerapp"
-                                    }
-                                }
-                            }
-                        },
-                        "then": {
-                            "properties": {
-                                "image": false
-                            }
-                        }
-                    },
-                    {
-                        "if": {
-                            "not": {
-                                "properties": {
-                                    "host": {
-                                        "enum": [
-                                            "containerapp",
-                                            "aks",
-                                            "ai.endpoint"
-                                        ]
-                                    }
-                                }
-                            }
-                        },
-                        "then": {
-                            "required": [
-                                "project"
                             ],
-                            "properties": {
-                                "docker": false
-                            }
-                        }
-                    },
-                    {
-                        "if": {
-                            "properties": {
-                                "host": {
-                                    "const": "ai.endpoint"
-                                }
-                            }
-                        },
-                        "then": {
-                            "required": [
-                                "config"
-                            ],
-                            "properties": {
-                                "config": {
-                                    "$ref": "#/definitions/aiEndpointConfig",
-                                    "title": "The Azure AI endpoint configuration.",
-                                    "description": "Required. Provides additional configuration for Azure AI online endpoint deployment."
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "if": {
-                            "not": {
-                                "properties": {
-                                    "host": {
-                                        "enum": [
-                                            "aks"
-                                        ]
-                                    }
-                                }
-                            }
-                        },
-                        "then": {
                             "properties": {
                                 "k8s": false
                             }
                         }
                     },
                     {
+                        "comment": "AKS host - requires project, supports docker and k8s config",
                         "if": {
                             "properties": {
-                                "language": {
-                                    "const": "java"
-                                }
+                                "host": { "const": "aks" }
                             }
                         },
                         "then": {
+                            "required": ["project"],
                             "properties": {
-                                "dist": {
-                                    "type": "string",
-                                    "description": "Optional. The path to the directory containing a single Java archive file (.jar/.ear/.war), or the path to the specific Java archive file to be included in the deployment artifact. If omitted, the CLI will detect the output directory based on the build system in-use. For maven, the default output directory 'target' is assumed."
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "if": {
-                            "not": {
-                                "properties": {
-                                    "host": {
-                                        "const": "containerapp"
-                                    }
-                                }
-                            }
-                        },
-                        "then": {
-                            "properties": {
+                                "image": false,
                                 "apiVersion": false
                             }
                         }
                     },
                     {
-                        "properties": {
-                            "dist": {
-                                "type": "string",
-                                "description": "Optional. The CLI will use files under this path to create the deployment artifact (ZIP file). If omitted, all files under service project directory will be included."
+                        "comment": "AI Endpoint host - requires project and config, supports docker",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "ai.endpoint" }
+                            }
+                        },
+                        "then": {
+                            "required": ["project", "config"],
+                            "properties": {
+                                "config": {
+                                    "$ref": "#/definitions/aiEndpointConfig",
+                                    "title": "The Azure AI endpoint configuration.",
+                                    "description": "Required. Provides additional configuration for Azure AI online endpoint deployment."
+                                },
+                                "image": false,
+                                "k8s": false,
+                                "apiVersion": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Azure AI Agent host - requires project, supports docker and config",
+                        "if": {
+                            "properties": {
+                                "host": { "const": "azure.ai.agent" }
+                            }
+                        },
+                        "then": {
+                            "required": ["project"],
+                            "properties": {
+                                "config": {
+                                    "$ref": "https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/azure.ai.agents/schemas/azure.ai.agent.json",
+                                    "title": "The Azure AI Agent configuration.",
+                                    "description": "Optional. Provides additional configuration for Azure AI Agent deployment."
+                                },
+                                "image": false,
+                                "k8s": false,
+                                "apiVersion": false
+                            }
+                        }
+                    },
+                    {
+                        "comment": "Traditional hosts - require project only, disable container-specific properties",
+                        "if": {
+                            "properties": {
+                                "host": { "enum": ["appservice", "function", "springapp", "staticwebapp"] }
+                            }
+                        },
+                        "then": {
+                            "required": ["project"],
+                            "properties": {
+                                "image": false,
+                                "docker": false,
+                                "k8s": false,
+                                "apiVersion": false
                             }
                         }
                     }
@@ -843,7 +789,7 @@
         },
         "docker": {
             "type": "object",
-            "description": "This is only applicable when `host` is `containerapp` or `aks`",
+            "description": "This is only applicable for hosts that support containers",
             "additionalProperties": false,
             "properties": {
                 "path": {

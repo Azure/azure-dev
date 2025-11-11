@@ -1,14 +1,22 @@
 # Release History
 
-## 1.21.0-beta.1 (Unreleased)
+## 1.21.0 (2025-11-10)
 
 ### Features Added
 
-### Breaking Changes
+- [[#6013]](https://github.com/Azure/azure-dev/pull/6013) Adds support for custom ServiceConfig settings for extensions.
+- [[#6074]](https://github.com/Azure/azure-dev/pull/6074) Update azd show to show endpoints from custom service targets.
+- [[#6073]](https://github.com/Azure/azure-dev/pull/6073) Enhance no-prompt support in extensions & prompt service.
+- [[#6083]](https://github.com/Azure/azure-dev/pull/6083) Moving hooks warning from console to logs.
+- [[#6093]](https://github.com/Azure/azure-dev/pull/6093) Support for Aspire 13.
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#6015]](https://github.com/Azure/azure-dev/pull/6015) Fix hyperlink ANSI escape codes appearing in non-terminal output.
+- [[#6032]](https://github.com/Azure/azure-dev/pull/6032) Fix flickering progress bar during agent deployment.
+- [[#6028]](https://github.com/Azure/azure-dev/pull/6028) Fixes lifetime issues with container helper from extension container service.
+- [[#6063]](https://github.com/Azure/azure-dev/pull/6063) Reload env before loading parameters in bicep provider.
+- [[#6098]](https://github.com/Azure/azure-dev/pull/6098) Fixes issues with remote build on agent extension.
 
 ## 1.20.3 (2025-10-28)
 

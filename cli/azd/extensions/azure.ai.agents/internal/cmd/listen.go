@@ -15,6 +15,7 @@ import (
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/braydonk/yaml"
 	"github.com/spf13/cobra"
 )
 
@@ -117,38 +118,23 @@ func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *az
 		return fmt.Errorf("failed to read YAML file: %w", err)
 	}
 
-	agentManifest, err := agent_yaml.LoadAndValidateAgentManifest(data)
+	err = agent_yaml.ValidateAgentDefinition(data)
 	if err != nil {
-		return fmt.Errorf("failed to parse and validate YAML: %w", err)
+		return fmt.Errorf("agent.yaml is not valid: %w", err)
 	}
 
-	// Convert the template to bytes
-	templateBytes, err := json.Marshal(agentManifest.Template)
-	if err != nil {
-		return fmt.Errorf("failed to marshal agent template to JSON: %w", err)
+	var genericTemplate map[string]interface{}
+	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
+		return fmt.Errorf("YAML content is not valid: %w", err)
 	}
 
-	// Convert the bytes to a dictionary
-	var templateDict map[string]interface{}
-	if err := json.Unmarshal(templateBytes, &templateDict); err != nil {
-		return fmt.Errorf("failed to unmarshal agent template from JSON: %w", err)
+	kind, ok := genericTemplate["kind"].(string)
+	if !ok {
+		return fmt.Errorf("kind field is not a valid string")
 	}
 
-	// Convert the dictionary to bytes
-	dictJsonBytes, err := json.Marshal(templateDict)
-	if err != nil {
-		return fmt.Errorf("failed to marshal templateDict to JSON: %w", err)
-	}
-
-	// Convert the bytes to an Agent Definition
-	var agentDef agent_yaml.AgentDefinition
-	if err := json.Unmarshal(dictJsonBytes, &agentDef); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON to AgentDefinition: %w", err)
-	}
-
-	// Set environment variables based on agent kind
-	switch agentDef.Kind {
-	case agent_yaml.AgentKindHosted:
+	switch kind {
+	case string(agent_yaml.AgentKindHosted):
 		if err := setEnvVar(ctx, azdClient, envName, "ENABLE_HOSTED_AGENTS", "true"); err != nil {
 			return err
 		}
@@ -195,12 +181,12 @@ func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, pr
 		return nil
 	}
 
-	_, err = agent_yaml.LoadAndValidateAgentManifest(data)
-	if err != nil {
-		return nil
+	var agentDef agent_yaml.AgentDefinition
+	if err := yaml.Unmarshal(data, &agentDef); err != nil {
+		return fmt.Errorf("YAML content is not valid: %w", err)
 	}
 
-	// If there is an agent.yaml in the project, and it can be properly parsed into a manifest, add the env var to enable container agents
+	// If there is an agent.yaml in the project, and it can be properly parsed into an agent definition, add the env var to enable container agents
 	currentEnvResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return err

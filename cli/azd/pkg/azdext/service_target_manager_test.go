@@ -78,6 +78,7 @@ func (m *MockServiceTargetProvider) Deploy(
 // Test helper functions
 func createTestServiceTargetManager() *ServiceTargetManager {
 	return &ServiceTargetManager{
+		extensionId:      "microsoft.azd.demo",
 		client:           nil, // Not needed for business logic tests
 		broker:           nil, // Not needed for business logic tests
 		componentManager: NewComponentManager[ServiceTargetProvider](ServiceTargetFactoryKey, "service target"),
@@ -95,7 +96,7 @@ func TestNewServiceTargetManager(t *testing.T) {
 	t.Parallel()
 
 	mockClient := &AzdClient{} // Can be nil for this test
-	manager := NewServiceTargetManager(mockClient)
+	manager := NewServiceTargetManager("microsoft.azd.demo", mockClient)
 
 	assert.NotNil(t, manager)
 	assert.Equal(t, mockClient, manager.client)

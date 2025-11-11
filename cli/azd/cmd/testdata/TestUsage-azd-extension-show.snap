@@ -2,7 +2,7 @@
 Show details for a specific extension.
 
 Usage
-  azd extension show <extension-name> [flags]
+  azd extension show <extension-id> [flags]
 
 Flags
     -s, --source string 	: The extension source to use.

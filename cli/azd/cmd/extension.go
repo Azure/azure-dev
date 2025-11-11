@@ -50,7 +50,7 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 	// azd extension show
 	group.Add("show", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "show <extension-name>",
+			Use:   "show <extension-id>",
 			Short: "Show details for a specific extension.",
 		},
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
@@ -59,30 +59,30 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		FlagsResolver:  newExtensionShowFlags,
 	})
 
-	// azd extension install <extension-name>
+	// azd extension install <extension-id>
 	group.Add("install", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "install <extension-name>",
+			Use:   "install <extension-id>",
 			Short: "Installs specified extensions.",
 		},
 		ActionResolver: newExtensionInstallAction,
 		FlagsResolver:  newExtensionInstallFlags,
 	})
 
-	// azd extension uninstall <extension-name>
+	// azd extension uninstall <extension-id>
 	group.Add("uninstall", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "uninstall <extension-name>",
+			Use:   "uninstall [extension-id]",
 			Short: "Uninstall specified extensions.",
 		},
 		ActionResolver: newExtensionUninstallAction,
 		FlagsResolver:  newExtensionUninstallFlags,
 	})
 
-	// azd extension upgrade <extension-name>
+	// azd extension upgrade <extension-id>
 	group.Add("upgrade", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "upgrade <extension-name>",
+			Use:   "upgrade [extension-id]",
 			Short: "Upgrade specified extensions.",
 		},
 		ActionResolver: newExtensionUpgradeAction,
@@ -234,7 +234,7 @@ func (a *extensionListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			a.console.Message(ctx, output.WithWarningFormat("WARNING: No extensions installed.\n"))
 			a.console.Message(ctx, fmt.Sprintf(
 				"Run %s to install extensions.",
-				output.WithHighLightFormat("azd extension install <extension-name>"),
+				output.WithHighLightFormat("azd extension install <extension-id>"),
 			))
 		} else {
 			a.console.Message(ctx, output.WithWarningFormat("WARNING: No extensions found in configured sources.\n"))
@@ -452,7 +452,7 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 
 func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(a.args) == 0 {
-		return nil, fmt.Errorf("must specify an extension name")
+		return nil, fmt.Errorf("must specify an extension id")
 	}
 	if len(a.args) > 1 {
 		return nil, fmt.Errorf("cannot specify multiple extensions")
@@ -565,7 +565,7 @@ func (a *extensionInstallAction) Run(ctx context.Context) (*actions.ActionResult
 
 	extensionIds := a.args
 	if len(extensionIds) == 0 {
-		return nil, fmt.Errorf("must specify an extension name")
+		return nil, fmt.Errorf("must specify an extension id")
 	}
 
 	if len(extensionIds) > 1 && a.flags.version != "" {
@@ -725,7 +725,7 @@ func (a *extensionUninstallAction) Run(ctx context.Context) (*actions.ActionResu
 	}
 
 	if len(a.args) == 0 && !a.flags.all {
-		return nil, fmt.Errorf("must specify an extension name or use --all flag")
+		return nil, fmt.Errorf("must specify an extension id or use --all flag")
 	}
 
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
@@ -831,7 +831,7 @@ func (a *extensionUpgradeAction) Run(ctx context.Context) (*actions.ActionResult
 	}
 
 	if len(a.args) == 0 && !a.flags.all {
-		return nil, fmt.Errorf("must specify an extension name or use --all flag")
+		return nil, fmt.Errorf("must specify an extension id or use --all flag")
 	}
 
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{

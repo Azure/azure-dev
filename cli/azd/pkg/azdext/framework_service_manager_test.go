@@ -69,6 +69,7 @@ func (m *MockFrameworkServiceProvider) Package(
 // Test helper functions
 func createTestFrameworkServiceManager() *FrameworkServiceManager {
 	return &FrameworkServiceManager{
+		extensionId:      "microsoft.azd.demo",
 		client:           nil, // Not needed for business logic tests
 		broker:           nil, // Not needed for business logic tests
 		componentManager: NewComponentManager[FrameworkServiceProvider](FrameworkServiceFactoryKey, "framework service"),
@@ -86,7 +87,7 @@ func TestNewFrameworkServiceManager(t *testing.T) {
 	t.Parallel()
 
 	mockClient := &AzdClient{} // Can be nil for this test
-	manager := NewFrameworkServiceManager(mockClient)
+	manager := NewFrameworkServiceManager("microsoft.azd.demo", mockClient)
 
 	assert.NotNil(t, manager)
 	assert.Equal(t, mockClient, manager.client)

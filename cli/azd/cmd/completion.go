@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal/figspec"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
@@ -17,6 +18,7 @@ const (
 	shellZsh        = "zsh"
 	shellFish       = "fish"
 	shellPowerShell = "powershell"
+	shellFig        = "fig"
 )
 
 func completionActions(root *actions.ActionDescriptor) {
@@ -90,6 +92,18 @@ See each sub-command's help for details on how to use the generated script.`,
 			Footer:      getCmdCompletionPowerShellHelpFooter,
 		},
 	})
+
+	figCmd := &cobra.Command{
+		Short:                 "Generate Fig autocomplete spec.",
+		DisableFlagsInUseLine: true,
+	}
+	completionGroup.Add(shellFig, &actions.ActionDescriptorOptions{
+		Command:        figCmd,
+		ActionResolver: newCompletionFigAction,
+		FlagsResolver:  newCompletionFigFlags,
+		OutputFormats:  []output.Format{output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
 }
 
 type completionAction struct {
@@ -113,6 +127,30 @@ func newCompletionPowerShellAction(cmd *cobra.Command) actions.Action {
 	return &completionAction{shell: shellPowerShell, cmd: cmd}
 }
 
+// Fig completion action and flags
+type completionFigFlags struct {
+	includeHidden bool
+}
+
+func newCompletionFigFlags(cmd *cobra.Command) *completionFigFlags {
+	flags := &completionFigFlags{}
+	cmd.Flags().BoolVar(&flags.includeHidden, "include-hidden", false, "Include hidden commands in the Fig spec")
+	_ = cmd.Flags().MarkHidden("include-hidden")
+	return flags
+}
+
+type completionFigAction struct {
+	flags *completionFigFlags
+	cmd   *cobra.Command
+}
+
+func newCompletionFigAction(cmd *cobra.Command, flags *completionFigFlags) actions.Action {
+	return &completionFigAction{
+		flags: flags,
+		cmd:   cmd,
+	}
+}
+
 func (a *completionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	rootCmd := a.cmd.Root()
 
@@ -133,6 +171,25 @@ func (a *completionAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate %s completion: %w", a.shell, err)
 	}
+
+	return &actions.ActionResult{}, nil
+}
+
+func (a *completionFigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	rootCmd := a.cmd.Root()
+
+	// Generate the Fig spec
+	builder := figspec.NewSpecBuilder(a.flags.includeHidden)
+	spec := builder.BuildSpec(rootCmd)
+
+	// Convert to TypeScript
+	tsCode, err := spec.ToTypeScript()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate Fig spec: %w", err)
+	}
+
+	// Write to stdout
+	fmt.Fprint(a.cmd.OutOrStdout(), tsCode)
 
 	return &actions.ActionResult{}, nil
 }

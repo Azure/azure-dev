@@ -102,11 +102,11 @@ func constructBuildConfig(options ...AgentBuildOption) *AgentBuildConfig {
 	return config
 }
 
-// CreateAgentAPIRequestFromManifest creates a CreateAgentRequest from AgentManifest with strong typing
-func CreateAgentAPIRequestFromManifest(agentManifest AgentManifest, options ...AgentBuildOption) (*agent_api.CreateAgentRequest, error) {
+// CreateAgentAPIRequestFromDefinition creates a CreateAgentRequest from AgentDefinition with strong typing
+func CreateAgentAPIRequestFromDefinition(agentTemplate any, options ...AgentBuildOption) (*agent_api.CreateAgentRequest, error) {
 	buildConfig := constructBuildConfig(options...)
 
-	templateBytes, _ := yaml.Marshal(agentManifest.Template)
+	templateBytes, _ := yaml.Marshal(agentTemplate)
 
 	var agentDef AgentDefinition
 	if err := yaml.Unmarshal(templateBytes, &agentDef); err != nil {
@@ -116,10 +116,10 @@ func CreateAgentAPIRequestFromManifest(agentManifest AgentManifest, options ...A
 	// Route to appropriate handler based on agent kind
 	switch agentDef.Kind {
 	case AgentKindPrompt:
-		promptDef := agentManifest.Template.(PromptAgent)
+		promptDef := agentTemplate.(PromptAgent)
 		return CreatePromptAgentAPIRequest(promptDef, buildConfig)
 	case AgentKindHosted:
-		hostedDef := agentManifest.Template.(ContainerAgent)
+		hostedDef := agentTemplate.(ContainerAgent)
 		return CreateHostedAgentAPIRequest(hostedDef, buildConfig)
 	default:
 		return nil, fmt.Errorf("unsupported agent kind: %s. Supported kinds are: prompt, hosted", agentDef.Kind)

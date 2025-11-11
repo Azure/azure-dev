@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/google/uuid"
@@ -60,59 +61,86 @@ type ServiceTargetProvider interface {
 
 // ServiceTargetManager handles registration and provisioning request forwarding for a provider.
 type ServiceTargetManager struct {
+	extensionId      string
 	client           *AzdClient
 	broker           *grpcbroker.MessageBroker[ServiceTargetMessage]
 	componentManager *ComponentManager[ServiceTargetProvider]
+
+	// Synchronization for concurrent access
+	mu sync.RWMutex
 }
 
 // NewServiceTargetManager creates a new ServiceTargetManager for an AzdClient.
-func NewServiceTargetManager(client *AzdClient) *ServiceTargetManager {
+func NewServiceTargetManager(extensionId string, client *AzdClient) *ServiceTargetManager {
 	return &ServiceTargetManager{
+		extensionId:      extensionId,
 		client:           client,
 		componentManager: NewComponentManager[ServiceTargetProvider](ServiceTargetFactoryKey, "service target"),
 	}
 }
 
 // Close terminates the underlying gRPC stream if it's been initialized.
+// This method is thread-safe for concurrent access.
 func (m *ServiceTargetManager) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.broker != nil {
 		m.broker.Close()
+		m.broker = nil
 	}
 
 	return m.componentManager.Close()
 }
 
 // ensureStream initializes the broker and stream if they haven't been created yet.
+// This method is thread-safe for concurrent access.
 func (m *ServiceTargetManager) ensureStream(ctx context.Context) error {
-	if m.broker == nil {
-		stream, err := m.client.ServiceTarget().Stream(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to create service target stream: %w", err)
-		}
+	// Fast path with read lock
+	m.mu.RLock()
+	if m.broker != nil {
+		m.mu.RUnlock()
+		return nil
+	}
+	m.mu.RUnlock()
 
-		// Create broker with client stream
-		envelope := &ServiceTargetEnvelope{}
-		m.broker = grpcbroker.NewMessageBroker(stream, envelope)
+	// Slow path with write lock
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-		// Register handlers for incoming requests
-		if err := m.broker.On(m.onInitialize); err != nil {
-			return fmt.Errorf("failed to register initialize handler: %w", err)
-		}
-		if err := m.broker.On(m.onGetTargetResource); err != nil {
-			return fmt.Errorf("failed to register get target resource handler: %w", err)
-		}
-		if err := m.broker.On(m.onPackage); err != nil {
-			return fmt.Errorf("failed to register package handler: %w", err)
-		}
-		if err := m.broker.On(m.onPublish); err != nil {
-			return fmt.Errorf("failed to register publish handler: %w", err)
-		}
-		if err := m.broker.On(m.onDeploy); err != nil {
-			return fmt.Errorf("failed to register deploy handler: %w", err)
-		}
-		if err := m.broker.On(m.onEndpoints); err != nil {
-			return fmt.Errorf("failed to register endpoints handler: %w", err)
-		}
+	// Double-check after acquiring write lock
+	if m.broker != nil {
+		return nil
+	}
+
+	stream, err := m.client.ServiceTarget().Stream(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create service target stream: %w", err)
+	}
+
+	// Create broker with client stream
+	envelope := &ServiceTargetEnvelope{}
+	// Use client as name since we're on the client side (extension process)
+	m.broker = grpcbroker.NewMessageBroker(stream, envelope, m.extensionId)
+
+	// Register handlers for incoming requests
+	if err := m.broker.On(m.onInitialize); err != nil {
+		return fmt.Errorf("failed to register initialize handler: %w", err)
+	}
+	if err := m.broker.On(m.onGetTargetResource); err != nil {
+		return fmt.Errorf("failed to register get target resource handler: %w", err)
+	}
+	if err := m.broker.On(m.onPackage); err != nil {
+		return fmt.Errorf("failed to register package handler: %w", err)
+	}
+	if err := m.broker.On(m.onPublish); err != nil {
+		return fmt.Errorf("failed to register publish handler: %w", err)
+	}
+	if err := m.broker.On(m.onDeploy); err != nil {
+		return fmt.Errorf("failed to register deploy handler: %w", err)
+	}
+	if err := m.broker.On(m.onEndpoints); err != nil {
+		return fmt.Errorf("failed to register endpoints handler: %w", err)
 	}
 
 	return nil
@@ -149,13 +177,28 @@ func (m *ServiceTargetManager) Register(ctx context.Context, factory ServiceTarg
 }
 
 // Receive starts the broker's message dispatcher and blocks until the stream completes.
-// Returns nil on graceful shutdown, or an error if the stream fails.
+// This method ensures the stream is initialized then runs the broker.
 func (m *ServiceTargetManager) Receive(ctx context.Context) error {
+	// Ensure stream is initialized (this handles all locking internally)
 	if err := m.ensureStream(ctx); err != nil {
 		return err
 	}
 
+	// Run the broker (this blocks until context is canceled or error)
 	return m.broker.Run(ctx)
+}
+
+// Ready blocks until the message broker starts receiving messages or the context is cancelled.
+// This ensures the stream is initialized and then waits for the broker to be ready.
+// Returns nil when ready, or context error if the context is cancelled before ready.
+func (m *ServiceTargetManager) Ready(ctx context.Context) error {
+	// Ensure stream is initialized (this handles all locking internally)
+	if err := m.ensureStream(ctx); err != nil {
+		return err
+	}
+
+	// Now that broker is guaranteed to exist, wait for it to be ready
+	return m.broker.Ready(ctx)
 }
 
 // Handler methods - these are registered with the broker to handle incoming requests

@@ -236,6 +236,8 @@ func TestExtensionHost_ServiceTargetOnly(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		<-registrationComplete // Wait for registration to complete
+		// Give a small delay to ensure Receive() has started
+		time.Sleep(5 * time.Millisecond)
 		cancel()
 	}()
 
@@ -451,6 +453,8 @@ func TestExtensionHost_WithFrameworkService(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		<-registrationComplete // Wait for registration to complete
+		// Give a small delay to ensure Receive() has started
+		time.Sleep(5 * time.Millisecond)
 		cancel()
 	}()
 
@@ -534,6 +538,8 @@ func TestExtensionHost_MultipleServiceTypes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		<-registrationComplete // Wait for all registrations to complete
+		// Give a small delay to ensure all Receive() methods have started
+		time.Sleep(5 * time.Millisecond)
 		cancel()
 	}()
 
@@ -589,9 +595,11 @@ func TestExtensionHost_MultipleRegistrationErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// For error tests, we can use a timeout since registrations should fail quickly
-	ctx, timeoutCancel := context.WithTimeout(ctx, 100*time.Millisecond)
-	defer timeoutCancel()
+	// For error tests, give a brief moment for Receive() to start before timeout
+	go func() {
+		time.Sleep(10 * time.Millisecond) // Slightly longer for error case
+		cancel()
+	}()
 
 	err := runner.Run(ctx)
 

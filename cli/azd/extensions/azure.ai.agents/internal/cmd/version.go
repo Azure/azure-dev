@@ -6,14 +6,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/spf13/cobra"
-)
+	"azureaiagent/internal/version"
 
-var (
-	// Populated at build time
-	Version   = "dev" // Default value for development builds
-	Commit    = "none"
-	BuildDate = "unknown"
+	"github.com/spf13/cobra"
 )
 
 func newVersionCommand() *cobra.Command {
@@ -21,7 +16,7 @@ func newVersionCommand() *cobra.Command {
 		Use:   "version",
 		Short: "Prints the version of the application",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("Version: %s\nCommit: %s\nBuild Date: %s\n", Version, Commit, BuildDate)
+			fmt.Printf("Version: %s\nCommit: %s\nBuild Date: %s\n", version.Version, version.Commit, version.BuildDate)
 		},
 	}
 }

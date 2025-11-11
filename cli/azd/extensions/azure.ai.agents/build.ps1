@@ -41,7 +41,7 @@ else {
     )
 }
 
-$APP_PATH = "$env:EXTENSION_ID/internal/cmd"
+$VERSION_PATH = "azureaiagent/internal/version"
 
 # Loop through platforms and build
 foreach ($PLATFORM in $PLATFORMS) {
@@ -65,7 +65,7 @@ foreach ($PLATFORM in $PLATFORMS) {
     $env:GOARCH = $ARCH
 
     go build `
-        -ldflags="-X '$APP_PATH.Version=$env:EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" `
+        -ldflags="-X '$VERSION_PATH.Version=$env:EXTENSION_VERSION' -X '$VERSION_PATH.Commit=$COMMIT' -X '$VERSION_PATH.BuildDate=$BUILD_DATE'" `
         -o $OUTPUT_NAME
 
     if ($LASTEXITCODE -ne 0) {

@@ -14,10 +14,13 @@ import (
 	"os"
 	"strconv"
 
+	"azureaiagent/internal/version"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 )
 
 // AgentClient provides methods for interacting with the Azure AI Agents API
@@ -28,9 +31,13 @@ type AgentClient struct {
 
 // NewAgentClient creates a new AgentClient
 func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
+	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
+
 	clientOptions := &policy.ClientOptions{
 		PerCallPolicies: []policy.Policy{
 			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
+			azsdk.NewMsCorrelationPolicy(),
+			azsdk.NewUserAgentPolicy(userAgent),
 		},
 	}
 

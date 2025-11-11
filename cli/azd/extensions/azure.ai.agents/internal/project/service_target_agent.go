@@ -427,7 +427,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
 	// Create agent request (no image URL needed for prompt agents)
-	request, err := agent_yaml.CreateAgentAPIRequestFromManifest(agentDef)
+	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent request: %w", err)
 	}
@@ -507,7 +507,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	}
 
 	// Step 3: Create agent request with image URL and resolved environment variables
-	request, err := agent_yaml.CreateAgentAPIRequestFromManifest(
+	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(
 		agentDef,
 		agent_yaml.WithImageURL(fullImageURL),
 		agent_yaml.WithEnvironmentVariables(resolvedEnvVars),

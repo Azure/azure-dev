@@ -102,8 +102,8 @@ func constructBuildConfig(options ...AgentBuildOption) *AgentBuildConfig {
 	return config
 }
 
-// CreateAgentAPIRequestFromManifest creates a CreateAgentRequest from AgentManifest with strong typing
-func CreateAgentAPIRequestFromManifest(agentTemplate any, options ...AgentBuildOption) (*agent_api.CreateAgentRequest, error) {
+// CreateAgentAPIRequestFromDefinition creates a CreateAgentRequest from AgentDefinition with strong typing
+func CreateAgentAPIRequestFromDefinition(agentTemplate any, options ...AgentBuildOption) (*agent_api.CreateAgentRequest, error) {
 	buildConfig := constructBuildConfig(options...)
 
 	templateBytes, _ := yaml.Marshal(agentTemplate)

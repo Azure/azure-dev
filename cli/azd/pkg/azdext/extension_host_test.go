@@ -352,10 +352,12 @@ func TestExtensionHost_ServiceTargetRegistrationError(t *testing.T) {
 		<-ctx.Done()
 	}).Return(nil)
 
-	mockServiceTargetManager.On("Register", mock.Anything, mock.Anything, mock.AnythingOfType("string")).Run(func(args mock.Arguments) {
-		// Wait for Receive to start before Register proceeds
-		<-receiveStarted
-	}).Return(expectedError)
+	mockServiceTargetManager.
+		On("Register", mock.Anything, mock.Anything, mock.AnythingOfType("string")).
+		Run(func(args mock.Arguments) {
+			// Wait for Receive to start before Register proceeds
+			<-receiveStarted
+		}).Return(expectedError)
 
 	mockServiceTargetManager.On("Close").Return(nil)
 

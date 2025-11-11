@@ -893,7 +893,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		Name:         strings.ReplaceAll(agentDef.Name, " ", ""),
 		RelativePath: targetDir,
 		Host:         serviceHost,
-		Language:     "python",
+		Language:     "docker",
 		Config:       agentConfigStruct,
 	}
 

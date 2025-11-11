@@ -1,5 +1,11 @@
 # Release History
 
+## 0.0.6 (2025-11-11)
+
+- Add support for using existing AI model deployments
+- Add `--project-id` flag for initializing using existing AI Foundry projects
+- Fix agent definition handling for saved templates
+
 ## 0.0.5 (2025-11-06)
 
 - Add support for tools

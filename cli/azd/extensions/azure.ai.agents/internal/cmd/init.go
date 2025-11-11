@@ -879,6 +879,20 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 				// Skip the resource if the cast fails
 			}
 		}
+
+		// Hard code for now
+		// TODO: Add env var handling in the future
+		containerSettings := &project.ContainerSettings{
+			Resources: &project.ResourceSettings{
+				Memory: "2Gi",
+				Cpu:    "1",
+			},
+			Scale: &project.ScaleSettings{
+				MinReplicas: 1,
+				MaxReplicas: 3,
+			},
+		}
+		agentConfig.Container = containerSettings
 	}
 
 	agentConfig.Deployments = deploymentDetails

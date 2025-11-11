@@ -361,6 +361,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 		return nil, fmt.Errorf("failed to read YAML file: %w", err)
 	}
 
+	err = agent_yaml.ValidateAgentDefinition(data)
+	if err != nil {
+		return nil, fmt.Errorf("agent.yaml is not valid: %w", err)
+	}
+
 	var genericTemplate map[string]interface{}
 	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
 		return nil, fmt.Errorf("YAML content is not valid for deploy: %w", err)
@@ -392,6 +397,11 @@ func (p *AgentServiceTargetProvider) Deploy(
 func (p *AgentServiceTargetProvider) isContainerAgent() bool {
 	// Load and validate the agent manifest
 	data, err := os.ReadFile(p.agentDefinitionPath)
+	if err != nil {
+		return false
+	}
+
+	err = agent_yaml.ValidateAgentDefinition(data)
 	if err != nil {
 		return false
 	}

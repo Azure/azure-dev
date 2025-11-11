@@ -31,7 +31,8 @@ func LoadAndValidateAgentManifest(manifestYamlContent []byte) (*AgentManifest, e
 	}
 	manifest.Resources = resourceDefs
 
-	if err := ValidateAgentManifest(&manifest); err != nil {
+	templateBytes, _ := yaml.Marshal(manifest.Template)
+	if err := ValidateAgentDefinition(templateBytes); err != nil {
 		return nil, err
 	}
 
@@ -311,11 +312,8 @@ func ExtractConnectionDefinition(connectionBytes []byte) (any, error) {
 
 // ValidateAgentManifest performs basic validation of an AgentManifest
 // Returns an error if the manifest is invalid, nil if valid
-func ValidateAgentManifest(manifest *AgentManifest) error {
+func ValidateAgentDefinition(templateBytes []byte) error {
 	var errors []string
-
-	// First, extract the kind from the template to determine the agent type
-	templateBytes, _ := yaml.Marshal(manifest.Template)
 
 	var agentDef AgentDefinition
 	if err := yaml.Unmarshal(templateBytes, &agentDef); err != nil {

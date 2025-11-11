@@ -59,6 +59,11 @@ func shouldRun(ctx context.Context, project *azdext.ProjectConfig) (bool, error)
 					return false, fmt.Errorf("failed to read agent yaml file: %w", err)
 				}
 
+				err = agent_yaml.ValidateAgentDefinition(content)
+				if err != nil {
+					return false, fmt.Errorf("agent.yaml is not valid to run: %w", err)
+				}
+
 				var genericTemplate map[string]interface{}
 				if err := yaml.Unmarshal(content, &genericTemplate); err != nil {
 					return false, fmt.Errorf("YAML content is not valid to run: %w", err)

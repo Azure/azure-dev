@@ -500,6 +500,28 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 		return err
 	}
 
+	aoaiEndpoint := fmt.Sprintf("https://%s.openai.azure.com/", aiAccountName)
+	if err := a.setEnvVar(ctx, "AZURE_OPENAI_ENDPOINT", aoaiEndpoint); err != nil {
+		return err
+	}
+
+	resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:        "Enter the azurecr.io endpoint for the ACR connected to your project, if one exists:",
+			IgnoreHintKeys: true,
+			DefaultValue:   "",
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("prompting for acr endpoint: %w", err)
+	}
+
+	if resp.Value != "" {
+		if err := a.setEnvVar(ctx, "AZURE_CONTAINER_REGISTRY_ENDPOINT", resp.Value); err != nil {
+			return err
+		}
+	}
+
 	fmt.Printf("Successfully parsed and set environment variables from project resource ID\n")
 	return nil
 }

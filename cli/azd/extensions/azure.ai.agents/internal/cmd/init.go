@@ -236,6 +236,46 @@ func ensureProject(ctx context.Context, flags *initFlags, azdClient *azdext.AzdC
 			initArgs = append(initArgs, "-e", flags.env)
 		}
 
+		if flags.projectResourceId != "" {
+			foundryProject, err := extractProjectDetails(flags.projectResourceId)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse project resource ID: %w", err)
+			}
+
+			initArgs = append(initArgs, "--subscription", foundryProject.SubscriptionId)
+			initArgs = append(initArgs, "--environment", foundryProject.AiProjectName)
+
+			// Get the tenant ID
+			tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+				SubscriptionId: foundryProject.SubscriptionId,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to get tenant ID: %w", err)
+			}
+
+			credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+				TenantID:                   tenantResponse.TenantId,
+				AdditionallyAllowedTenants: []string{"*"},
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to create Azure credential: %w", err)
+			}
+
+			// Create Cognitive Services Projects client
+			projectsClient, err := armcognitiveservices.NewProjectsClient(foundryProject.SubscriptionId, credential, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create Cognitive Services Projects client: %w", err)
+			}
+
+			// Get the AI Foundry project
+			projectResp, err := projectsClient.Get(ctx, foundryProject.ResourceGroupName, foundryProject.AiAccountName, foundryProject.AiProjectName, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get AI Foundry project: %w", err)
+			}
+
+			initArgs = append(initArgs, "--location", *projectResp.Location)
+		}
+
 		// We don't have a project yet
 		// Dispatch a workflow to init the project
 		workflow := &azdext.Workflow{
@@ -453,54 +493,70 @@ func (a *InitAction) promptForMissingValues(ctx context.Context, azdClient *azde
 	return nil
 }
 
-func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
-	// Define the regex pattern for the project resource ID
+type FoundryProject struct {
+	SubscriptionId    string `json:"subscriptionId"`
+	ResourceGroupName string `json:"resourceGroupName"`
+	AiAccountName     string `json:"aiAccountName"`
+	AiProjectName     string `json:"aiProjectName"`
+}
+
+func extractProjectDetails(projectResourceId string) (*FoundryProject, error) {
+	/// Define the regex pattern for the project resource ID
 	pattern := `^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`
 
 	regex, err := regexp.Compile(pattern)
 	if err != nil {
-		return fmt.Errorf("failed to compile regex pattern: %w", err)
+		return nil, fmt.Errorf("failed to compile regex pattern: %w", err)
 	}
 
-	matches := regex.FindStringSubmatch(a.flags.projectResourceId)
+	matches := regex.FindStringSubmatch(projectResourceId)
 	if matches == nil || len(matches) != 5 {
-		return fmt.Errorf("project resource ID does not match expected format: /subscriptions/[SUBSCRIPTION]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT]/projects/[AI_PROJECT]")
+		return nil, fmt.Errorf("project resource ID does not match expected format: /subscriptions/[SUBSCRIPTION]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT]/projects/[AI_PROJECT]")
 	}
 
 	// Extract the components
-	subscriptionId := matches[1]
-	resourceGroupName := matches[2]
-	aiAccountName := matches[3]
-	aiProjectName := matches[4]
+	return &FoundryProject{
+		SubscriptionId:    matches[1],
+		ResourceGroupName: matches[2],
+		AiAccountName:     matches[3],
+		AiProjectName:     matches[4],
+	}, nil
+}
+
+func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
+	foundryProject, err := extractProjectDetails(a.flags.projectResourceId)
+	if err != nil {
+		return fmt.Errorf("extracting project details: %w", err)
+	}
 
 	if err := a.setEnvVar(ctx, "AZURE_AI_FOUNDRY_PROJECT_ID", a.flags.projectResourceId); err != nil {
 		return err
 	}
 
 	// Set the extracted values as environment variables
-	if err := a.setEnvVar(ctx, "AZURE_SUBSCRIPTION_ID", subscriptionId); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_SUBSCRIPTION_ID", foundryProject.SubscriptionId); err != nil {
 		return err
 	}
 
-	if err := a.setEnvVar(ctx, "AZURE_RESOURCE_GROUP", resourceGroupName); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_RESOURCE_GROUP", foundryProject.ResourceGroupName); err != nil {
 		return err
 	}
 
-	if err := a.setEnvVar(ctx, "AZURE_AI_ACCOUNT_NAME", aiAccountName); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_AI_ACCOUNT_NAME", foundryProject.AiAccountName); err != nil {
 		return err
 	}
 
-	if err := a.setEnvVar(ctx, "AZURE_AI_PROJECT_NAME", aiProjectName); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_AI_PROJECT_NAME", foundryProject.AiProjectName); err != nil {
 		return err
 	}
 
 	// Set the AI Foundry endpoint URL
-	aiFoundryEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", aiAccountName, aiProjectName)
+	aiFoundryEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", foundryProject.AiAccountName, foundryProject.AiProjectName)
 	if err := a.setEnvVar(ctx, "AZURE_AI_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
 		return err
 	}
 
-	aoaiEndpoint := fmt.Sprintf("https://%s.openai.azure.com/", aiAccountName)
+	aoaiEndpoint := fmt.Sprintf("https://%s.openai.azure.com/", foundryProject.AiAccountName)
 	if err := a.setEnvVar(ctx, "AZURE_OPENAI_ENDPOINT", aoaiEndpoint); err != nil {
 		return err
 	}

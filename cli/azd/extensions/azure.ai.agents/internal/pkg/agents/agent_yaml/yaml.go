@@ -104,6 +104,7 @@ type ContainerAgent struct {
 	AgentDefinition      `json:",inline" yaml:",inline"`
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
 	EnvironmentVariables *[]EnvironmentVariable  `json:"environmentVariables,omitempty" yaml:"environment_variables,omitempty"`
+	Tools                []any                   `json:"tools,omitempty"` // Must be a type of Tool
 }
 
 // AgentManifest The following represents a manifest that can be used to create agents dynamically.

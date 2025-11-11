@@ -89,12 +89,8 @@ type HostedAgentDefinition struct {
 	CPU                       string                  `json:"cpu"`
 	Memory                    string                  `json:"memory"`
 	EnvironmentVariables      map[string]string       `json:"environment_variables,omitempty"`
-}
-
-// ImageBasedHostedAgentDefinition represents an image-based hosted agent
-type ImageBasedHostedAgentDefinition struct {
-	HostedAgentDefinition
-	Image string `json:"image"`
+	Image                     string                  `json:"image"`
+	Tools                     []any                   `json:"tools,omitempty"` // Must be a type of Tool
 }
 
 // ContainerAppAgentDefinition represents a container app agent

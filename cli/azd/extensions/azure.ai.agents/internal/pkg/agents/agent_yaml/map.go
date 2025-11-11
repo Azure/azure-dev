@@ -447,15 +447,11 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 		CPU:                       cpu,
 		Memory:                    memory,
 		EnvironmentVariables:      envVars,
+		Image:                     imageURL,
+		Tools: 				   	   convertYamlToolsToApiTools(hostedAgent.Tools),
 	}
 
-	// Set the image from build configuration or container definition
-	imageHostedDef := agent_api.ImageBasedHostedAgentDefinition{
-		HostedAgentDefinition: hostedDef,
-		Image:                 imageURL,
-	}
-
-	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageHostedDef)
+	return createAgentAPIRequest(hostedAgent.AgentDefinition, hostedDef)
 }
 
 // createAgentAPIRequest is a helper function to create the final request with common fields

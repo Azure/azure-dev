@@ -507,6 +507,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
 	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["AZURE_AI_PROJECT_ENDPOINT"])
 	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
+	fmt.Fprintf(os.Stderr, "Has tools: %t\n", len(agentDef.Tools) > 0)
 
 	// Step 2: Resolve environment variables from YAML using azd environment values
 	resolvedEnvVars := make(map[string]string)
@@ -749,7 +750,7 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 			}
 		}
 		fmt.Fprintf(os.Stderr, "Instructions: %s\n", instructions)
-	} else if imageHostedDef, ok := request.Definition.(agent_api.ImageBasedHostedAgentDefinition); ok {
+	} else if imageHostedDef, ok := request.Definition.(agent_api.HostedAgentDefinition); ok {
 		fmt.Fprintf(os.Stderr, "Image: %s\n", imageHostedDef.Image)
 		fmt.Fprintf(os.Stderr, "CPU: %s\n", imageHostedDef.CPU)
 		fmt.Fprintf(os.Stderr, "Memory: %s\n", imageHostedDef.Memory)

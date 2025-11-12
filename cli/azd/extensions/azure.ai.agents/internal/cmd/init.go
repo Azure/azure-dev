@@ -369,7 +369,15 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			Key:     "AZURE_SUBSCRIPTION_ID",
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current subscription ID from environment: %w", err)
+			// Set the subscription ID in the environment
+			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+				EnvName: existingEnv.Name,
+				Key:     "AZURE_SUBSCRIPTION_ID",
+				Value:   foundryProject.SubscriptionId,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to set tenant ID in environment: %w", err)
+			}
 		}
 
 		// Validate subscription ID matches foundry project
@@ -383,7 +391,15 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			Key:     "AZURE_LOCATION",
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current location from environment: %w", err)
+			// Set the subscription ID in the environment
+			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+				EnvName: existingEnv.Name,
+				Key:     "AZURE_LOCATION",
+				Value:   foundryProjectLocation,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to set tenant ID in environment: %w", err)
+			}
 		}
 
 		// Validate location matches foundry project location

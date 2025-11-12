@@ -1017,17 +1017,10 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 			}
 		}
 
-		// Hard code for now
-		// TODO: Add env var handling in the future
-		containerSettings := &project.ContainerSettings{
-			Resources: &project.ResourceSettings{
-				Memory: "2Gi",
-				Cpu:    "1",
-			},
-			Scale: &project.ScaleSettings{
-				MinReplicas: 1,
-				MaxReplicas: 3,
-			},
+		// Prompt user for container settings
+		containerSettings, err := a.populateContainerSettings(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to populate container settings: %w", err)
 		}
 		agentConfig.Container = containerSettings
 	}
@@ -1063,6 +1056,85 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 
 	fmt.Printf("Added service '%s' to azure.yaml\n", agentDef.Name)
 	return nil
+}
+
+func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.ContainerSettings, error) {
+	// Default values
+	defaultMemory := "2Gi"
+	defaultCpu := "1"
+	defaultMinReplicas := "1"
+	defaultMaxReplicas := "3"
+
+	// Prompt for memory allocation
+	memoryResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "Memory allocation (e.g., '1Gi', '512Mi'):",
+			DefaultValue: defaultMemory,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for memory allocation: %w", err)
+	}
+
+	// Prompt for CPU allocation
+	cpuResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "CPU allocation (e.g., '1', '500m'):",
+			DefaultValue: defaultCpu,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for CPU allocation: %w", err)
+	}
+
+	// Prompt for minimum replicas
+	minReplicasResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "Minimum number of replicas:",
+			DefaultValue: defaultMinReplicas,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for minimum replicas: %w", err)
+	}
+
+	// Prompt for maximum replicas
+	maxReplicasResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "Maximum number of replicas:",
+			DefaultValue: defaultMaxReplicas,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for maximum replicas: %w", err)
+	}
+
+	// Convert string values to appropriate types
+	minReplicas, err := strconv.Atoi(minReplicasResp.Value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid minimum replicas value: %w", err)
+	}
+
+	maxReplicas, err := strconv.Atoi(maxReplicasResp.Value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid maximum replicas value: %w", err)
+	}
+
+	// Validate that max replicas >= min replicas
+	if maxReplicas < minReplicas {
+		return nil, fmt.Errorf("maximum replicas (%d) must be greater than or equal to minimum replicas (%d)", maxReplicas, minReplicas)
+	}
+
+	return &project.ContainerSettings{
+		Resources: &project.ResourceSettings{
+			Memory: memoryResp.Value,
+			Cpu:    cpuResp.Value,
+		},
+		Scale: &project.ScaleSettings{
+			MinReplicas: minReplicas,
+			MaxReplicas: maxReplicas,
+		},
+	}, nil
 }
 
 func downloadGithubManifest(

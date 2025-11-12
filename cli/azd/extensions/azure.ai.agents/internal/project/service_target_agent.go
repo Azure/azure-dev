@@ -836,16 +836,18 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		agentVersionResponse.Version,
 	)
 
+	serviceKey := strings.ToUpper(strings.ReplaceAll(serviceConfig.Name, " ", "_"))
+
 	envVars := map[string]string{
-		fmt.Sprintf("AGENT_%s_NAME", strings.ReplaceAll(serviceConfig.Name, " ", "_")):     agentVersionResponse.Name,
-		fmt.Sprintf("AGENT_%s_VERSION", strings.ReplaceAll(serviceConfig.Name, " ", "_")):  agentVersionResponse.Version,
-		fmt.Sprintf("AGENT_%s_ENDPOINT", strings.ReplaceAll(serviceConfig.Name, " ", "_")): endpoint,
+		fmt.Sprintf("AGENT_%s_NAME", serviceKey):     agentVersionResponse.Name,
+		fmt.Sprintf("AGENT_%s_VERSION", serviceKey):  agentVersionResponse.Version,
+		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey): endpoint,
 	}
 
 	for key, value := range envVars {
 		_, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 			EnvName: p.env.Name,
-			Key:     strings.ToUpper(key),
+			Key:     key,
 			Value:   value,
 		})
 		if err != nil {

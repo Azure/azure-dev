@@ -33,7 +33,7 @@ else
     )
 fi
 
-APP_PATH="$EXTENSION_ID/internal/cmd"
+VERSION_PATH="azureaiagent/internal/version"
 
 # Loop through platforms and build
 for PLATFORM in "${PLATFORMS[@]}"; do
@@ -53,7 +53,7 @@ for PLATFORM in "${PLATFORMS[@]}"; do
 
     # Set environment variables for Go build
     GOOS=$OS GOARCH=$ARCH go build \
-        -ldflags="-X '$APP_PATH.Version=$EXTENSION_VERSION' -X '$APP_PATH.Commit=$COMMIT' -X '$APP_PATH.BuildDate=$BUILD_DATE'" \
+        -ldflags="-X '$VERSION_PATH.Version=$EXTENSION_VERSION' -X '$VERSION_PATH.Commit=$COMMIT' -X '$VERSION_PATH.BuildDate=$BUILD_DATE'" \
         -o "$OUTPUT_NAME"
 
     if [ $? -ne 0 ]; then

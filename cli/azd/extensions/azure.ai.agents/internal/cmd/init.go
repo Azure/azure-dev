@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -764,9 +765,16 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", fmt.Errorf("marshaling agent manifest to YAML after parameter processing: %w", err)
 	}
 
+	annotation := "# yaml-language-server: $schema=https://raw.githubusercontent.com/microsoft/AgentSchema/main/runtime/json-schema/ContainerAgent.yaml"
+	agentFileContents := bytes.NewBufferString(annotation + "\n\n")
+	_, err = agentFileContents.Write(content)
+	if err != nil {
+		return nil, "", fmt.Errorf("preparing new project file contents: %w", err)
+	}
+
 	// Save the file to the target directory
 	filePath := filepath.Join(targetDir, "agent.yaml")
-	if err := os.WriteFile(filePath, content, osutil.PermissionFile); err != nil {
+	if err := os.WriteFile(filePath, agentFileContents.Bytes(), osutil.PermissionFile); err != nil {
 		return nil, "", fmt.Errorf("saving file to %s: %w", filePath, err)
 	}
 

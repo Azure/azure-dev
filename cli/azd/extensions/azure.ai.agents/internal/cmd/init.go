@@ -286,6 +286,47 @@ func getExistingEnvironment(ctx context.Context, flags *initFlags, azdClient *az
 }
 
 func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.AzdClient) (*azdext.Environment, error) {
+	var foundryProject *FoundryProject
+	var foundryProjectLocation string
+
+	if flags.projectResourceId != "" {
+		var err error
+		foundryProject, err = extractProjectDetails(flags.projectResourceId)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse project resource ID: %w", err)
+		}
+
+		// Get the tenant ID
+		tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+			SubscriptionId: foundryProject.SubscriptionId,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get tenant ID: %w", err)
+		}
+
+		credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+			TenantID:                   tenantResponse.TenantId,
+			AdditionallyAllowedTenants: []string{"*"},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Azure credential: %w", err)
+		}
+
+		// Create Cognitive Services Projects client
+		projectsClient, err := armcognitiveservices.NewProjectsClient(foundryProject.SubscriptionId, credential, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Cognitive Services Projects client: %w", err)
+		}
+
+		// Get the AI Foundry project
+		projectResp, err := projectsClient.Get(ctx, foundryProject.ResourceGroupName, foundryProject.AiAccountName, foundryProject.AiProjectName, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get AI Foundry project: %w", err)
+		}
+
+		foundryProjectLocation = *projectResp.Location
+	}
+
 	// Get specified or current environment if it exists
 	existingEnv := getExistingEnvironment(ctx, flags, azdClient)
 	if existingEnv == nil {
@@ -295,6 +336,11 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		envArgs := []string{"env", "new"}
 		if flags.env != "" {
 			envArgs = append(envArgs, flags.env)
+		}
+
+		if flags.projectResourceId != "" {
+			envArgs = append(envArgs, "--subscription", foundryProject.SubscriptionId)
+			envArgs = append(envArgs, "--location", foundryProjectLocation)
 		}
 
 		// Dispatch a workflow to create a new environment
@@ -317,6 +363,51 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		existingEnv = getExistingEnvironment(ctx, flags, azdClient)
 		if existingEnv == nil {
 			return nil, fmt.Errorf("environment not found")
+		}
+	} else if flags.projectResourceId != "" {
+		currentSubscription, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: existingEnv.Name,
+			Key:     "AZURE_SUBSCRIPTION_ID",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current subscription ID from environment: %w", err)
+		}
+
+		if currentSubscription.Value == "" {
+			// Set the subscription ID in the environment
+			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+				EnvName: existingEnv.Name,
+				Key:     "AZURE_SUBSCRIPTION_ID",
+				Value:   foundryProject.SubscriptionId,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to set subscription ID in environment: %w", err)
+			}
+		} else if currentSubscription.Value != foundryProject.SubscriptionId {
+			return nil, fmt.Errorf("environment subscription ID (%s) does not match provided foundry project subscription ID (%s)", currentSubscription.Value, foundryProject.SubscriptionId)
+		}
+
+		// Get current location from environment
+		currentLocation, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+			EnvName: existingEnv.Name,
+			Key:     "AZURE_LOCATION",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current location from environment: %w", err)
+		}
+
+		if currentLocation.Value == "" {
+			// Set the subscription ID in the environment
+			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+				EnvName: existingEnv.Name,
+				Key:     "AZURE_LOCATION",
+				Value:   foundryProjectLocation,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to set location in environment: %w", err)
+			}
+		} else if currentLocation.Value != foundryProjectLocation {
+			return nil, fmt.Errorf("environment location (%s) does not match provided foundry project location (%s)", currentLocation.Value, foundryProjectLocation)
 		}
 	}
 
@@ -453,47 +544,85 @@ func (a *InitAction) promptForMissingValues(ctx context.Context, azdClient *azde
 	return nil
 }
 
-func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
-	// Define the regex pattern for the project resource ID
+type FoundryProject struct {
+	SubscriptionId    string `json:"subscriptionId"`
+	ResourceGroupName string `json:"resourceGroupName"`
+	AiAccountName     string `json:"aiAccountName"`
+	AiProjectName     string `json:"aiProjectName"`
+}
+
+func extractProjectDetails(projectResourceId string) (*FoundryProject, error) {
+	/// Define the regex pattern for the project resource ID
 	pattern := `^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/([^/]+)/projects/([^/]+)$`
 
 	regex, err := regexp.Compile(pattern)
 	if err != nil {
-		return fmt.Errorf("failed to compile regex pattern: %w", err)
+		return nil, fmt.Errorf("failed to compile regex pattern: %w", err)
 	}
 
-	matches := regex.FindStringSubmatch(a.flags.projectResourceId)
+	matches := regex.FindStringSubmatch(projectResourceId)
 	if matches == nil || len(matches) != 5 {
-		return fmt.Errorf("project resource ID does not match expected format: /subscriptions/[SUBSCRIPTION]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT]/projects/[AI_PROJECT]")
+		return nil, fmt.Errorf("project resource ID does not match expected format: /subscriptions/[SUBSCRIPTION]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT]/projects/[AI_PROJECT]")
 	}
 
 	// Extract the components
-	subscriptionId := matches[1]
-	resourceGroupName := matches[2]
-	aiAccountName := matches[3]
-	aiProjectName := matches[4]
+	return &FoundryProject{
+		SubscriptionId:    matches[1],
+		ResourceGroupName: matches[2],
+		AiAccountName:     matches[3],
+		AiProjectName:     matches[4],
+	}, nil
+}
+
+func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
+	foundryProject, err := extractProjectDetails(a.flags.projectResourceId)
+	if err != nil {
+		return fmt.Errorf("extracting project details: %w", err)
+	}
+
+	if err := a.setEnvVar(ctx, "AZURE_AI_FOUNDRY_PROJECT_ID", a.flags.projectResourceId); err != nil {
+		return err
+	}
 
 	// Set the extracted values as environment variables
-	if err := a.setEnvVar(ctx, "AZURE_SUBSCRIPTION_ID", subscriptionId); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_RESOURCE_GROUP", foundryProject.ResourceGroupName); err != nil {
 		return err
 	}
 
-	if err := a.setEnvVar(ctx, "AZURE_RESOURCE_GROUP", resourceGroupName); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_AI_ACCOUNT_NAME", foundryProject.AiAccountName); err != nil {
 		return err
 	}
 
-	if err := a.setEnvVar(ctx, "AZURE_AI_ACCOUNT_NAME", aiAccountName); err != nil {
-		return err
-	}
-
-	if err := a.setEnvVar(ctx, "AZURE_AI_PROJECT_NAME", aiProjectName); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_AI_PROJECT_NAME", foundryProject.AiProjectName); err != nil {
 		return err
 	}
 
 	// Set the AI Foundry endpoint URL
-	aiFoundryEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", aiAccountName, aiProjectName)
-	if err := a.setEnvVar(ctx, "AZURE_AI_FOUNDRY_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
+	aiFoundryEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", foundryProject.AiAccountName, foundryProject.AiProjectName)
+	if err := a.setEnvVar(ctx, "AZURE_AI_PROJECT_ENDPOINT", aiFoundryEndpoint); err != nil {
 		return err
+	}
+
+	aoaiEndpoint := fmt.Sprintf("https://%s.openai.azure.com/", foundryProject.AiAccountName)
+	if err := a.setEnvVar(ctx, "AZURE_OPENAI_ENDPOINT", aoaiEndpoint); err != nil {
+		return err
+	}
+
+	resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:        "Enter the azurecr.io endpoint for the ACR connected to your project, if one exists:",
+			IgnoreHintKeys: true,
+			DefaultValue:   "",
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("prompting for acr endpoint: %w", err)
+	}
+
+	if resp.Value != "" {
+		if err := a.setEnvVar(ctx, "AZURE_CONTAINER_REGISTRY_ENDPOINT", resp.Value); err != nil {
+			return err
+		}
 	}
 
 	fmt.Printf("Successfully parsed and set environment variables from project resource ID\n")

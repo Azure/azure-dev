@@ -12,6 +12,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
 	github.com/azure/azure-dev v0.0.0-20251024053325-326f63f72d65
 	github.com/braydonk/yaml v0.9.0
+	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.18.0
 	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v0.41.1
@@ -44,7 +45,6 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
-	github.com/drone/envsubst v1.0.3 // indirect
 	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

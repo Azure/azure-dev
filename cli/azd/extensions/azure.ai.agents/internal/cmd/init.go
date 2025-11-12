@@ -369,6 +369,10 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			Key:     "AZURE_SUBSCRIPTION_ID",
 		})
 		if err != nil {
+			return nil, fmt.Errorf("failed to get current subscription ID from environment: %w", err)
+		}
+
+		if currentSubscription.Value == "" {
 			// Set the subscription ID in the environment
 			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 				EnvName: existingEnv.Name,
@@ -376,12 +380,9 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 				Value:   foundryProject.SubscriptionId,
 			})
 			if err != nil {
-				return nil, fmt.Errorf("failed to set tenant ID in environment: %w", err)
+				return nil, fmt.Errorf("failed to set subscription ID in environment: %w", err)
 			}
-		}
-
-		// Validate subscription ID matches foundry project
-		if currentSubscription.Value != foundryProject.SubscriptionId {
+		} else if currentSubscription.Value != foundryProject.SubscriptionId {
 			return nil, fmt.Errorf("environment subscription ID (%s) does not match provided foundry project subscription ID (%s)", currentSubscription.Value, foundryProject.SubscriptionId)
 		}
 
@@ -391,6 +392,10 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			Key:     "AZURE_LOCATION",
 		})
 		if err != nil {
+			return nil, fmt.Errorf("failed to get current location from environment: %w", err)
+		}
+
+		if currentLocation.Value == "" {
 			// Set the subscription ID in the environment
 			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 				EnvName: existingEnv.Name,
@@ -398,12 +403,9 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 				Value:   foundryProjectLocation,
 			})
 			if err != nil {
-				return nil, fmt.Errorf("failed to set tenant ID in environment: %w", err)
+				return nil, fmt.Errorf("failed to set location in environment: %w", err)
 			}
-		}
-
-		// Validate location matches foundry project location
-		if currentLocation.Value != foundryProjectLocation {
+		} else if currentLocation.Value != foundryProjectLocation {
 			return nil, fmt.Errorf("environment location (%s) does not match provided foundry project location (%s)", currentLocation.Value, foundryProjectLocation)
 		}
 	}

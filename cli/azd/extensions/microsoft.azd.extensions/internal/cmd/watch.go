@@ -5,13 +5,16 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/denormal/go-gitignore"
 	"github.com/fatih/color"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
@@ -71,7 +74,20 @@ func runWatchAction(ctx context.Context, flags *watchFlags) error {
 		"package-lock.json", // Matches package-lock.json files
 	)
 
-	if err := watchRecursive(".", watcher, ignoredFolders); err != nil {
+	// Load .azdxignore file if it exists
+	var ignorer gitignore.GitIgnore
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current working directory: %w", err)
+	}
+	azdxIgnorePath := filepath.Join(cwd, ".azdxignore")
+	if ig, err := gitignore.NewFromFile(azdxIgnorePath); err == nil {
+		ignorer = ig
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("failed to load .azdxignore file: %w", err)
+	}
+
+	if err := watchRecursive(".", watcher, ignoredFolders, ignorer, cwd); err != nil {
 		return fmt.Errorf("Error watching for changes: %w", err)
 	}
 
@@ -104,6 +120,21 @@ func runWatchAction(ctx context.Context, flags *watchFlags) error {
 				continue
 			}
 
+			// Check if the file is ignored by .azdxignore
+			if ignorer != nil {
+				// Check if this is a file or directory for gitignore matching
+				info, statErr := os.Stat(event.Name)
+				isDir := statErr == nil && info.IsDir()
+				// Get the relative path from the root directory
+				relPath, relErr := filepath.Rel(cwd, event.Name)
+				if relErr != nil {
+					relPath = event.Name
+				}
+				if ignorer.Relative(relPath, isDir) != nil {
+					continue
+				}
+			}
+
 			// Collect unique changes
 			uniqueChanges[event.Name] = struct{}{}
 
@@ -132,7 +163,13 @@ func runWatchAction(ctx context.Context, flags *watchFlags) error {
 	}
 }
 
-func watchRecursive(root string, watcher *fsnotify.Watcher, ignoredFolders map[string]struct{}) error {
+func watchRecursive(
+	root string,
+	watcher *fsnotify.Watcher,
+	ignoredFolders map[string]struct{},
+	ignorer gitignore.GitIgnore,
+	rootDir string,
+) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -141,6 +178,19 @@ func watchRecursive(root string, watcher *fsnotify.Watcher, ignoredFolders map[s
 			if _, has := ignoredFolders[info.Name()]; has {
 				return filepath.SkipDir
 			}
+
+			// Check if the directory is ignored by .azdxignore
+			if ignorer != nil {
+				// Get the relative path from the root directory
+				relPath, relErr := filepath.Rel(rootDir, path)
+				if relErr != nil {
+					relPath = path
+				}
+				if ignorer.Relative(relPath, true) != nil {
+					return filepath.SkipDir
+				}
+			}
+
 			err = watcher.Add(path)
 			if err != nil {
 				return fmt.Errorf("failed to watch directory %s: %w", path, err)

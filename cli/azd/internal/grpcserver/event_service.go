@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -81,12 +82,12 @@ func (s *eventService) EventStream(stream grpc.BidiStreamingServer[azdext.EventM
 	broker := grpcbroker.NewMessageBroker(stream, envelope, extension.Id)
 
 	// Register handlers for incoming subscription requests (no response needed)
-	broker.On(func(ctx context.Context, msg *azdext.SubscribeProjectEvent) (*azdext.EventMessage, error) {
-		return nil, s.onSubscribeProjectEvent(ctx, extension, msg, broker)
+	broker.On(func(ctx context.Context, msg *azdext.SubscribeProjectEventRequest) (*azdext.EventMessage, error) {
+		return s.onSubscribeProjectEvent(ctx, extension, msg, broker)
 	})
 
-	broker.On(func(ctx context.Context, msg *azdext.SubscribeServiceEvent) (*azdext.EventMessage, error) {
-		return nil, s.onSubscribeServiceEvent(ctx, extension, msg, broker)
+	broker.On(func(ctx context.Context, msg *azdext.SubscribeServiceEventRequest) (*azdext.EventMessage, error) {
+		return s.onSubscribeServiceEvent(ctx, extension, msg, broker)
 	})
 
 	// Run the broker's dispatcher (blocking)
@@ -102,12 +103,12 @@ func (s *eventService) EventStream(stream grpc.BidiStreamingServer[azdext.EventM
 func (s *eventService) onSubscribeProjectEvent(
 	ctx context.Context,
 	extension *extensions.Extension,
-	subscribeMsg *azdext.SubscribeProjectEvent,
+	subscribeMsg *azdext.SubscribeProjectEventRequest,
 	broker *grpcbroker.MessageBroker[azdext.EventMessage],
-) error {
+) (*azdext.EventMessage, error) {
 	projectConfig, err := s.lazyProject.GetValue()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	for i := 0; i < len(subscribeMsg.EventNames); i++ {
@@ -117,11 +118,13 @@ func (s *eventService) onSubscribeProjectEvent(
 		// Pass the stream context (ctx) which has extension claims
 		handler := s.createProjectEventHandler(ctx, extension, eventName, broker)
 		if err := projectConfig.AddHandler(ctx, evt, handler); err != nil {
-			return fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
+			return nil, fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 		}
 	}
 
-	return nil
+	return &azdext.EventMessage{
+		MessageType: &azdext.EventMessage_SubscribeProjectEventResponse{},
+	}, nil
 }
 
 func (s *eventService) createProjectEventHandler(
@@ -147,8 +150,9 @@ func (s *eventService) createProjectEventHandler(
 
 		// Send invoke message and wait for status using broker's Send method
 		invokeMsg := &azdext.EventMessage{
-			MessageType: &azdext.EventMessage_InvokeProjectHandler{
-				InvokeProjectHandler: &azdext.InvokeProjectHandler{
+			RequestId: uuid.NewString(),
+			MessageType: &azdext.EventMessage_InvokeProjectHandlerRequest{
+				InvokeProjectHandlerRequest: &azdext.InvokeProjectHandlerRequest{
 					EventName: eventName,
 					Project:   protoProjectConfig,
 				},
@@ -157,24 +161,9 @@ func (s *eventService) createProjectEventHandler(
 
 		return s.runWithEnvReload(ctx, func() error {
 			// Use streamCtx which has extension claims for correlation
-			response, err := broker.SendAndWait(streamCtx, invokeMsg)
+			_, err := broker.SendAndWait(streamCtx, invokeMsg)
 			if err != nil {
 				return fmt.Errorf("failed to send invoke message for event %s: %w", eventName, err)
-			}
-
-			// Extract status from response
-			statusMsg, ok := response.MessageType.(*azdext.EventMessage_ProjectHandlerStatus)
-			if !ok {
-				return fmt.Errorf("unexpected response type for project event %s", eventName)
-			}
-
-			if statusMsg.ProjectHandlerStatus.Status == "failed" {
-				return fmt.Errorf(
-					"extension %s project hook %s failed: %s",
-					extension.Id,
-					eventName,
-					statusMsg.ProjectHandlerStatus.Message,
-				)
 			}
 
 			return nil
@@ -187,12 +176,12 @@ func (s *eventService) createProjectEventHandler(
 func (s *eventService) onSubscribeServiceEvent(
 	ctx context.Context,
 	extension *extensions.Extension,
-	subscribeMsg *azdext.SubscribeServiceEvent,
+	subscribeMsg *azdext.SubscribeServiceEventRequest,
 	broker *grpcbroker.MessageBroker[azdext.EventMessage],
-) error {
+) (*azdext.EventMessage, error) {
 	projectConfig, err := s.lazyProject.GetValue()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	for i := 0; i < len(subscribeMsg.EventNames); i++ {
@@ -209,12 +198,14 @@ func (s *eventService) onSubscribeServiceEvent(
 			// Pass the stream context (ctx) which has extension claims
 			handler := s.createServiceEventHandler(ctx, serviceConfig, extension, eventName, broker)
 			if err := serviceConfig.AddHandler(ctx, evt, handler); err != nil {
-				return fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
+				return nil, fmt.Errorf("failed to add handler for event %s: %w", eventName, err)
 			}
 		}
 	}
 
-	return nil
+	return &azdext.EventMessage{
+		MessageType: &azdext.EventMessage_SubscribeServiceEventResponse{},
+	}, nil
 }
 
 func (s *eventService) createServiceEventHandler(
@@ -253,8 +244,9 @@ func (s *eventService) createServiceEventHandler(
 
 		// Send invoke message and wait for status using broker's Send method
 		invokeMsg := &azdext.EventMessage{
-			MessageType: &azdext.EventMessage_InvokeServiceHandler{
-				InvokeServiceHandler: &azdext.InvokeServiceHandler{
+			RequestId: uuid.NewString(),
+			MessageType: &azdext.EventMessage_InvokeServiceHandlerRequest{
+				InvokeServiceHandlerRequest: &azdext.InvokeServiceHandlerRequest{
 					EventName:      eventName,
 					Project:        protoProjectConfig,
 					Service:        protoServiceConfig,
@@ -265,25 +257,9 @@ func (s *eventService) createServiceEventHandler(
 
 		return s.runWithEnvReload(ctx, func() error {
 			// Use streamCtx which has extension claims for correlation
-			response, err := broker.SendAndWait(streamCtx, invokeMsg)
+			_, err := broker.SendAndWait(streamCtx, invokeMsg)
 			if err != nil {
 				return fmt.Errorf("failed to send invoke message for service event %s: %w", eventName, err)
-			}
-
-			// Extract status from response
-			statusMsg, ok := response.MessageType.(*azdext.EventMessage_ServiceHandlerStatus)
-			if !ok {
-				return fmt.Errorf("unexpected response type for service event %s", eventName)
-			}
-
-			if statusMsg.ServiceHandlerStatus.Status == "failed" {
-				return fmt.Errorf(
-					"extension %s service hook %s.%s failed: %s",
-					extension.Id,
-					args.Service.Name,
-					eventName,
-					statusMsg.ServiceHandlerStatus.Message,
-				)
 			}
 
 			return nil

@@ -17,40 +17,56 @@ service EventService {
 
 // Represents different types of messages sent over the stream
 message EventMessage {
+  string request_id = 1;
+  EventErrorMessage error = 99;
+
   oneof message_type {
-    SubscribeProjectEvent subscribe_project_event = 1;
-    InvokeProjectHandler invoke_project_handler = 2;
-    ProjectHandlerStatus project_handler_status = 3;
-    SubscribeServiceEvent subscribe_service_event = 4;
-    InvokeServiceHandler invoke_service_handler = 5;
-    ServiceHandlerStatus service_handler_status = 6;
+    SubscribeProjectEventRequest subscribe_project_event_request = 2;
+    SubscribeProjectEventResponse subscribe_project_event_response = 3;
+    InvokeProjectHandlerRequest invoke_project_handler_request = 4;
+    InvokeProjectHandlerResponse invoke_project_handler_response = 5;
+    SubscribeServiceEventRequest subscribe_service_event_request = 6;
+    SubscribeServiceEventResponse subscribe_service_event_response = 7;
+    InvokeServiceHandlerRequest invoke_service_handler_request = 8;
+    InvokeServiceHandlerResponse invoke_service_handler_response = 9;
   }
 }
 
+message EventErrorMessage {
+  string message = 1;
+  string details = 2;
+}
+
 // Client subscribes to project-related events
-message SubscribeProjectEvent {
+message SubscribeProjectEventRequest {
   // List of event names to subscribe to.
   repeated string event_names = 1;
 }
 
+message SubscribeProjectEventResponse{}
+
 // Client subscribes to service-related events
-message SubscribeServiceEvent {
+message SubscribeServiceEventRequest {
   // List of event names to subscribe to.
   repeated string event_names = 1;
   string language = 2;
   string host = 3;
 }
 
+message SubscribeServiceEventResponse{}
+
 // Server invokes the project event handler
-message InvokeProjectHandler {
+message InvokeProjectHandlerRequest {
   // Name of the event being invoked.
   string event_name = 1;
   // Current project configuration.
   ProjectConfig project = 2;
 }
 
+message InvokeProjectHandlerResponse{}
+
 // Server invokes the service event handler
-message InvokeServiceHandler {
+message InvokeServiceHandlerRequest {
   // Name of the event being invoked.
   string event_name = 1;
   // Current project configuration.
@@ -61,24 +77,4 @@ message InvokeServiceHandler {
   ServiceContext service_context = 4;
 }
 
-// Client sends status updates for project events
-message ProjectHandlerStatus {
-  // Name of the event this status update is for.
-  string event_name = 1;
-  // Status such as "running", "completed", "failed", etc.
-  string status = 2;
-  // Optional message providing further details.
-  string message = 3;
-}
-
-// Client sends status updates for service events
-message ServiceHandlerStatus {
-  // Name of the event this status update is for.
-  string event_name = 1;
-  // Name of the service related to the update.
-  string service_name = 2;
-  // Status such as "running", "completed", "failed", etc.
-  string status = 3;
-  // Optional message providing further details.
-  string message = 4;
-}
+message InvokeServiceHandlerResponse{}

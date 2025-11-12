@@ -26,15 +26,19 @@ const (
 
 // Represents different types of messages sent over the stream
 type EventMessage struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Error     *EventErrorMessage     `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
 	// Types that are valid to be assigned to MessageType:
 	//
-	//	*EventMessage_SubscribeProjectEvent
-	//	*EventMessage_InvokeProjectHandler
-	//	*EventMessage_ProjectHandlerStatus
-	//	*EventMessage_SubscribeServiceEvent
-	//	*EventMessage_InvokeServiceHandler
-	//	*EventMessage_ServiceHandlerStatus
+	//	*EventMessage_SubscribeProjectEventRequest
+	//	*EventMessage_SubscribeProjectEventResponse
+	//	*EventMessage_InvokeProjectHandlerRequest
+	//	*EventMessage_InvokeProjectHandlerResponse
+	//	*EventMessage_SubscribeServiceEventRequest
+	//	*EventMessage_SubscribeServiceEventResponse
+	//	*EventMessage_InvokeServiceHandlerRequest
+	//	*EventMessage_InvokeServiceHandlerResponse
 	MessageType   isEventMessage_MessageType `protobuf_oneof:"message_type"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -70,6 +74,20 @@ func (*EventMessage) Descriptor() ([]byte, []int) {
 	return file_event_proto_rawDescGZIP(), []int{0}
 }
 
+func (x *EventMessage) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *EventMessage) GetError() *EventErrorMessage {
+	if x != nil {
+		return x.Error
+	}
+	return nil
+}
+
 func (x *EventMessage) GetMessageType() isEventMessage_MessageType {
 	if x != nil {
 		return x.MessageType
@@ -77,55 +95,73 @@ func (x *EventMessage) GetMessageType() isEventMessage_MessageType {
 	return nil
 }
 
-func (x *EventMessage) GetSubscribeProjectEvent() *SubscribeProjectEvent {
+func (x *EventMessage) GetSubscribeProjectEventRequest() *SubscribeProjectEventRequest {
 	if x != nil {
-		if x, ok := x.MessageType.(*EventMessage_SubscribeProjectEvent); ok {
-			return x.SubscribeProjectEvent
+		if x, ok := x.MessageType.(*EventMessage_SubscribeProjectEventRequest); ok {
+			return x.SubscribeProjectEventRequest
 		}
 	}
 	return nil
 }
 
-func (x *EventMessage) GetInvokeProjectHandler() *InvokeProjectHandler {
+func (x *EventMessage) GetSubscribeProjectEventResponse() *SubscribeProjectEventResponse {
 	if x != nil {
-		if x, ok := x.MessageType.(*EventMessage_InvokeProjectHandler); ok {
-			return x.InvokeProjectHandler
+		if x, ok := x.MessageType.(*EventMessage_SubscribeProjectEventResponse); ok {
+			return x.SubscribeProjectEventResponse
 		}
 	}
 	return nil
 }
 
-func (x *EventMessage) GetProjectHandlerStatus() *ProjectHandlerStatus {
+func (x *EventMessage) GetInvokeProjectHandlerRequest() *InvokeProjectHandlerRequest {
 	if x != nil {
-		if x, ok := x.MessageType.(*EventMessage_ProjectHandlerStatus); ok {
-			return x.ProjectHandlerStatus
+		if x, ok := x.MessageType.(*EventMessage_InvokeProjectHandlerRequest); ok {
+			return x.InvokeProjectHandlerRequest
 		}
 	}
 	return nil
 }
 
-func (x *EventMessage) GetSubscribeServiceEvent() *SubscribeServiceEvent {
+func (x *EventMessage) GetInvokeProjectHandlerResponse() *InvokeProjectHandlerResponse {
 	if x != nil {
-		if x, ok := x.MessageType.(*EventMessage_SubscribeServiceEvent); ok {
-			return x.SubscribeServiceEvent
+		if x, ok := x.MessageType.(*EventMessage_InvokeProjectHandlerResponse); ok {
+			return x.InvokeProjectHandlerResponse
 		}
 	}
 	return nil
 }
 
-func (x *EventMessage) GetInvokeServiceHandler() *InvokeServiceHandler {
+func (x *EventMessage) GetSubscribeServiceEventRequest() *SubscribeServiceEventRequest {
 	if x != nil {
-		if x, ok := x.MessageType.(*EventMessage_InvokeServiceHandler); ok {
-			return x.InvokeServiceHandler
+		if x, ok := x.MessageType.(*EventMessage_SubscribeServiceEventRequest); ok {
+			return x.SubscribeServiceEventRequest
 		}
 	}
 	return nil
 }
 
-func (x *EventMessage) GetServiceHandlerStatus() *ServiceHandlerStatus {
+func (x *EventMessage) GetSubscribeServiceEventResponse() *SubscribeServiceEventResponse {
 	if x != nil {
-		if x, ok := x.MessageType.(*EventMessage_ServiceHandlerStatus); ok {
-			return x.ServiceHandlerStatus
+		if x, ok := x.MessageType.(*EventMessage_SubscribeServiceEventResponse); ok {
+			return x.SubscribeServiceEventResponse
+		}
+	}
+	return nil
+}
+
+func (x *EventMessage) GetInvokeServiceHandlerRequest() *InvokeServiceHandlerRequest {
+	if x != nil {
+		if x, ok := x.MessageType.(*EventMessage_InvokeServiceHandlerRequest); ok {
+			return x.InvokeServiceHandlerRequest
+		}
+	}
+	return nil
+}
+
+func (x *EventMessage) GetInvokeServiceHandlerResponse() *InvokeServiceHandlerResponse {
+	if x != nil {
+		if x, ok := x.MessageType.(*EventMessage_InvokeServiceHandlerResponse); ok {
+			return x.InvokeServiceHandlerResponse
 		}
 	}
 	return nil
@@ -135,65 +171,76 @@ type isEventMessage_MessageType interface {
 	isEventMessage_MessageType()
 }
 
-type EventMessage_SubscribeProjectEvent struct {
-	SubscribeProjectEvent *SubscribeProjectEvent `protobuf:"bytes,1,opt,name=subscribe_project_event,json=subscribeProjectEvent,proto3,oneof"`
+type EventMessage_SubscribeProjectEventRequest struct {
+	SubscribeProjectEventRequest *SubscribeProjectEventRequest `protobuf:"bytes,2,opt,name=subscribe_project_event_request,json=subscribeProjectEventRequest,proto3,oneof"`
 }
 
-type EventMessage_InvokeProjectHandler struct {
-	InvokeProjectHandler *InvokeProjectHandler `protobuf:"bytes,2,opt,name=invoke_project_handler,json=invokeProjectHandler,proto3,oneof"`
+type EventMessage_SubscribeProjectEventResponse struct {
+	SubscribeProjectEventResponse *SubscribeProjectEventResponse `protobuf:"bytes,3,opt,name=subscribe_project_event_response,json=subscribeProjectEventResponse,proto3,oneof"`
 }
 
-type EventMessage_ProjectHandlerStatus struct {
-	ProjectHandlerStatus *ProjectHandlerStatus `protobuf:"bytes,3,opt,name=project_handler_status,json=projectHandlerStatus,proto3,oneof"`
+type EventMessage_InvokeProjectHandlerRequest struct {
+	InvokeProjectHandlerRequest *InvokeProjectHandlerRequest `protobuf:"bytes,4,opt,name=invoke_project_handler_request,json=invokeProjectHandlerRequest,proto3,oneof"`
 }
 
-type EventMessage_SubscribeServiceEvent struct {
-	SubscribeServiceEvent *SubscribeServiceEvent `protobuf:"bytes,4,opt,name=subscribe_service_event,json=subscribeServiceEvent,proto3,oneof"`
+type EventMessage_InvokeProjectHandlerResponse struct {
+	InvokeProjectHandlerResponse *InvokeProjectHandlerResponse `protobuf:"bytes,5,opt,name=invoke_project_handler_response,json=invokeProjectHandlerResponse,proto3,oneof"`
 }
 
-type EventMessage_InvokeServiceHandler struct {
-	InvokeServiceHandler *InvokeServiceHandler `protobuf:"bytes,5,opt,name=invoke_service_handler,json=invokeServiceHandler,proto3,oneof"`
+type EventMessage_SubscribeServiceEventRequest struct {
+	SubscribeServiceEventRequest *SubscribeServiceEventRequest `protobuf:"bytes,6,opt,name=subscribe_service_event_request,json=subscribeServiceEventRequest,proto3,oneof"`
 }
 
-type EventMessage_ServiceHandlerStatus struct {
-	ServiceHandlerStatus *ServiceHandlerStatus `protobuf:"bytes,6,opt,name=service_handler_status,json=serviceHandlerStatus,proto3,oneof"`
+type EventMessage_SubscribeServiceEventResponse struct {
+	SubscribeServiceEventResponse *SubscribeServiceEventResponse `protobuf:"bytes,7,opt,name=subscribe_service_event_response,json=subscribeServiceEventResponse,proto3,oneof"`
 }
 
-func (*EventMessage_SubscribeProjectEvent) isEventMessage_MessageType() {}
+type EventMessage_InvokeServiceHandlerRequest struct {
+	InvokeServiceHandlerRequest *InvokeServiceHandlerRequest `protobuf:"bytes,8,opt,name=invoke_service_handler_request,json=invokeServiceHandlerRequest,proto3,oneof"`
+}
 
-func (*EventMessage_InvokeProjectHandler) isEventMessage_MessageType() {}
+type EventMessage_InvokeServiceHandlerResponse struct {
+	InvokeServiceHandlerResponse *InvokeServiceHandlerResponse `protobuf:"bytes,9,opt,name=invoke_service_handler_response,json=invokeServiceHandlerResponse,proto3,oneof"`
+}
 
-func (*EventMessage_ProjectHandlerStatus) isEventMessage_MessageType() {}
+func (*EventMessage_SubscribeProjectEventRequest) isEventMessage_MessageType() {}
 
-func (*EventMessage_SubscribeServiceEvent) isEventMessage_MessageType() {}
+func (*EventMessage_SubscribeProjectEventResponse) isEventMessage_MessageType() {}
 
-func (*EventMessage_InvokeServiceHandler) isEventMessage_MessageType() {}
+func (*EventMessage_InvokeProjectHandlerRequest) isEventMessage_MessageType() {}
 
-func (*EventMessage_ServiceHandlerStatus) isEventMessage_MessageType() {}
+func (*EventMessage_InvokeProjectHandlerResponse) isEventMessage_MessageType() {}
 
-// Client subscribes to project-related events
-type SubscribeProjectEvent struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// List of event names to subscribe to.
-	EventNames    []string `protobuf:"bytes,1,rep,name=event_names,json=eventNames,proto3" json:"event_names,omitempty"`
+func (*EventMessage_SubscribeServiceEventRequest) isEventMessage_MessageType() {}
+
+func (*EventMessage_SubscribeServiceEventResponse) isEventMessage_MessageType() {}
+
+func (*EventMessage_InvokeServiceHandlerRequest) isEventMessage_MessageType() {}
+
+func (*EventMessage_InvokeServiceHandlerResponse) isEventMessage_MessageType() {}
+
+type EventErrorMessage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	Details       string                 `protobuf:"bytes,2,opt,name=details,proto3" json:"details,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SubscribeProjectEvent) Reset() {
-	*x = SubscribeProjectEvent{}
+func (x *EventErrorMessage) Reset() {
+	*x = EventErrorMessage{}
 	mi := &file_event_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SubscribeProjectEvent) String() string {
+func (x *EventErrorMessage) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SubscribeProjectEvent) ProtoMessage() {}
+func (*EventErrorMessage) ProtoMessage() {}
 
-func (x *SubscribeProjectEvent) ProtoReflect() protoreflect.Message {
+func (x *EventErrorMessage) ProtoReflect() protoreflect.Message {
 	mi := &file_event_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -205,20 +252,109 @@ func (x *SubscribeProjectEvent) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SubscribeProjectEvent.ProtoReflect.Descriptor instead.
-func (*SubscribeProjectEvent) Descriptor() ([]byte, []int) {
+// Deprecated: Use EventErrorMessage.ProtoReflect.Descriptor instead.
+func (*EventErrorMessage) Descriptor() ([]byte, []int) {
 	return file_event_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *SubscribeProjectEvent) GetEventNames() []string {
+func (x *EventErrorMessage) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *EventErrorMessage) GetDetails() string {
+	if x != nil {
+		return x.Details
+	}
+	return ""
+}
+
+// Client subscribes to project-related events
+type SubscribeProjectEventRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// List of event names to subscribe to.
+	EventNames    []string `protobuf:"bytes,1,rep,name=event_names,json=eventNames,proto3" json:"event_names,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscribeProjectEventRequest) Reset() {
+	*x = SubscribeProjectEventRequest{}
+	mi := &file_event_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscribeProjectEventRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscribeProjectEventRequest) ProtoMessage() {}
+
+func (x *SubscribeProjectEventRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_event_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscribeProjectEventRequest.ProtoReflect.Descriptor instead.
+func (*SubscribeProjectEventRequest) Descriptor() ([]byte, []int) {
+	return file_event_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SubscribeProjectEventRequest) GetEventNames() []string {
 	if x != nil {
 		return x.EventNames
 	}
 	return nil
 }
 
+type SubscribeProjectEventResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscribeProjectEventResponse) Reset() {
+	*x = SubscribeProjectEventResponse{}
+	mi := &file_event_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscribeProjectEventResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscribeProjectEventResponse) ProtoMessage() {}
+
+func (x *SubscribeProjectEventResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_event_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscribeProjectEventResponse.ProtoReflect.Descriptor instead.
+func (*SubscribeProjectEventResponse) Descriptor() ([]byte, []int) {
+	return file_event_proto_rawDescGZIP(), []int{3}
+}
+
 // Client subscribes to service-related events
-type SubscribeServiceEvent struct {
+type SubscribeServiceEventRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// List of event names to subscribe to.
 	EventNames    []string `protobuf:"bytes,1,rep,name=event_names,json=eventNames,proto3" json:"event_names,omitempty"`
@@ -228,21 +364,21 @@ type SubscribeServiceEvent struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SubscribeServiceEvent) Reset() {
-	*x = SubscribeServiceEvent{}
-	mi := &file_event_proto_msgTypes[2]
+func (x *SubscribeServiceEventRequest) Reset() {
+	*x = SubscribeServiceEventRequest{}
+	mi := &file_event_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SubscribeServiceEvent) String() string {
+func (x *SubscribeServiceEventRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SubscribeServiceEvent) ProtoMessage() {}
+func (*SubscribeServiceEventRequest) ProtoMessage() {}
 
-func (x *SubscribeServiceEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_event_proto_msgTypes[2]
+func (x *SubscribeServiceEventRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_event_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -253,34 +389,70 @@ func (x *SubscribeServiceEvent) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SubscribeServiceEvent.ProtoReflect.Descriptor instead.
-func (*SubscribeServiceEvent) Descriptor() ([]byte, []int) {
-	return file_event_proto_rawDescGZIP(), []int{2}
+// Deprecated: Use SubscribeServiceEventRequest.ProtoReflect.Descriptor instead.
+func (*SubscribeServiceEventRequest) Descriptor() ([]byte, []int) {
+	return file_event_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *SubscribeServiceEvent) GetEventNames() []string {
+func (x *SubscribeServiceEventRequest) GetEventNames() []string {
 	if x != nil {
 		return x.EventNames
 	}
 	return nil
 }
 
-func (x *SubscribeServiceEvent) GetLanguage() string {
+func (x *SubscribeServiceEventRequest) GetLanguage() string {
 	if x != nil {
 		return x.Language
 	}
 	return ""
 }
 
-func (x *SubscribeServiceEvent) GetHost() string {
+func (x *SubscribeServiceEventRequest) GetHost() string {
 	if x != nil {
 		return x.Host
 	}
 	return ""
 }
 
+type SubscribeServiceEventResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscribeServiceEventResponse) Reset() {
+	*x = SubscribeServiceEventResponse{}
+	mi := &file_event_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscribeServiceEventResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscribeServiceEventResponse) ProtoMessage() {}
+
+func (x *SubscribeServiceEventResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_event_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscribeServiceEventResponse.ProtoReflect.Descriptor instead.
+func (*SubscribeServiceEventResponse) Descriptor() ([]byte, []int) {
+	return file_event_proto_rawDescGZIP(), []int{5}
+}
+
 // Server invokes the project event handler
-type InvokeProjectHandler struct {
+type InvokeProjectHandlerRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Name of the event being invoked.
 	EventName string `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
@@ -290,21 +462,21 @@ type InvokeProjectHandler struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *InvokeProjectHandler) Reset() {
-	*x = InvokeProjectHandler{}
-	mi := &file_event_proto_msgTypes[3]
+func (x *InvokeProjectHandlerRequest) Reset() {
+	*x = InvokeProjectHandlerRequest{}
+	mi := &file_event_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *InvokeProjectHandler) String() string {
+func (x *InvokeProjectHandlerRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*InvokeProjectHandler) ProtoMessage() {}
+func (*InvokeProjectHandlerRequest) ProtoMessage() {}
 
-func (x *InvokeProjectHandler) ProtoReflect() protoreflect.Message {
-	mi := &file_event_proto_msgTypes[3]
+func (x *InvokeProjectHandlerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_event_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -315,27 +487,63 @@ func (x *InvokeProjectHandler) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use InvokeProjectHandler.ProtoReflect.Descriptor instead.
-func (*InvokeProjectHandler) Descriptor() ([]byte, []int) {
-	return file_event_proto_rawDescGZIP(), []int{3}
+// Deprecated: Use InvokeProjectHandlerRequest.ProtoReflect.Descriptor instead.
+func (*InvokeProjectHandlerRequest) Descriptor() ([]byte, []int) {
+	return file_event_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *InvokeProjectHandler) GetEventName() string {
+func (x *InvokeProjectHandlerRequest) GetEventName() string {
 	if x != nil {
 		return x.EventName
 	}
 	return ""
 }
 
-func (x *InvokeProjectHandler) GetProject() *ProjectConfig {
+func (x *InvokeProjectHandlerRequest) GetProject() *ProjectConfig {
 	if x != nil {
 		return x.Project
 	}
 	return nil
 }
 
+type InvokeProjectHandlerResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InvokeProjectHandlerResponse) Reset() {
+	*x = InvokeProjectHandlerResponse{}
+	mi := &file_event_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InvokeProjectHandlerResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InvokeProjectHandlerResponse) ProtoMessage() {}
+
+func (x *InvokeProjectHandlerResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_event_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InvokeProjectHandlerResponse.ProtoReflect.Descriptor instead.
+func (*InvokeProjectHandlerResponse) Descriptor() ([]byte, []int) {
+	return file_event_proto_rawDescGZIP(), []int{7}
+}
+
 // Server invokes the service event handler
-type InvokeServiceHandler struct {
+type InvokeServiceHandlerRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Name of the event being invoked.
 	EventName string `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
@@ -349,21 +557,21 @@ type InvokeServiceHandler struct {
 	sizeCache      protoimpl.SizeCache
 }
 
-func (x *InvokeServiceHandler) Reset() {
-	*x = InvokeServiceHandler{}
-	mi := &file_event_proto_msgTypes[4]
+func (x *InvokeServiceHandlerRequest) Reset() {
+	*x = InvokeServiceHandlerRequest{}
+	mi := &file_event_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *InvokeServiceHandler) String() string {
+func (x *InvokeServiceHandlerRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*InvokeServiceHandler) ProtoMessage() {}
+func (*InvokeServiceHandlerRequest) ProtoMessage() {}
 
-func (x *InvokeServiceHandler) ProtoReflect() protoreflect.Message {
-	mi := &file_event_proto_msgTypes[4]
+func (x *InvokeServiceHandlerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_event_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -374,67 +582,60 @@ func (x *InvokeServiceHandler) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use InvokeServiceHandler.ProtoReflect.Descriptor instead.
-func (*InvokeServiceHandler) Descriptor() ([]byte, []int) {
-	return file_event_proto_rawDescGZIP(), []int{4}
+// Deprecated: Use InvokeServiceHandlerRequest.ProtoReflect.Descriptor instead.
+func (*InvokeServiceHandlerRequest) Descriptor() ([]byte, []int) {
+	return file_event_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *InvokeServiceHandler) GetEventName() string {
+func (x *InvokeServiceHandlerRequest) GetEventName() string {
 	if x != nil {
 		return x.EventName
 	}
 	return ""
 }
 
-func (x *InvokeServiceHandler) GetProject() *ProjectConfig {
+func (x *InvokeServiceHandlerRequest) GetProject() *ProjectConfig {
 	if x != nil {
 		return x.Project
 	}
 	return nil
 }
 
-func (x *InvokeServiceHandler) GetService() *ServiceConfig {
+func (x *InvokeServiceHandlerRequest) GetService() *ServiceConfig {
 	if x != nil {
 		return x.Service
 	}
 	return nil
 }
 
-func (x *InvokeServiceHandler) GetServiceContext() *ServiceContext {
+func (x *InvokeServiceHandlerRequest) GetServiceContext() *ServiceContext {
 	if x != nil {
 		return x.ServiceContext
 	}
 	return nil
 }
 
-// Client sends status updates for project events
-type ProjectHandlerStatus struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Name of the event this status update is for.
-	EventName string `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
-	// Status such as "running", "completed", "failed", etc.
-	Status string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
-	// Optional message providing further details.
-	Message       string `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+type InvokeServiceHandlerResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ProjectHandlerStatus) Reset() {
-	*x = ProjectHandlerStatus{}
-	mi := &file_event_proto_msgTypes[5]
+func (x *InvokeServiceHandlerResponse) Reset() {
+	*x = InvokeServiceHandlerResponse{}
+	mi := &file_event_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ProjectHandlerStatus) String() string {
+func (x *InvokeServiceHandlerResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ProjectHandlerStatus) ProtoMessage() {}
+func (*InvokeServiceHandlerResponse) ProtoMessage() {}
 
-func (x *ProjectHandlerStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_event_proto_msgTypes[5]
+func (x *InvokeServiceHandlerResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_event_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -445,147 +646,54 @@ func (x *ProjectHandlerStatus) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ProjectHandlerStatus.ProtoReflect.Descriptor instead.
-func (*ProjectHandlerStatus) Descriptor() ([]byte, []int) {
-	return file_event_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *ProjectHandlerStatus) GetEventName() string {
-	if x != nil {
-		return x.EventName
-	}
-	return ""
-}
-
-func (x *ProjectHandlerStatus) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
-func (x *ProjectHandlerStatus) GetMessage() string {
-	if x != nil {
-		return x.Message
-	}
-	return ""
-}
-
-// Client sends status updates for service events
-type ServiceHandlerStatus struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Name of the event this status update is for.
-	EventName string `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
-	// Name of the service related to the update.
-	ServiceName string `protobuf:"bytes,2,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"`
-	// Status such as "running", "completed", "failed", etc.
-	Status string `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
-	// Optional message providing further details.
-	Message       string `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ServiceHandlerStatus) Reset() {
-	*x = ServiceHandlerStatus{}
-	mi := &file_event_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ServiceHandlerStatus) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ServiceHandlerStatus) ProtoMessage() {}
-
-func (x *ServiceHandlerStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_event_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ServiceHandlerStatus.ProtoReflect.Descriptor instead.
-func (*ServiceHandlerStatus) Descriptor() ([]byte, []int) {
-	return file_event_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *ServiceHandlerStatus) GetEventName() string {
-	if x != nil {
-		return x.EventName
-	}
-	return ""
-}
-
-func (x *ServiceHandlerStatus) GetServiceName() string {
-	if x != nil {
-		return x.ServiceName
-	}
-	return ""
-}
-
-func (x *ServiceHandlerStatus) GetStatus() string {
-	if x != nil {
-		return x.Status
-	}
-	return ""
-}
-
-func (x *ServiceHandlerStatus) GetMessage() string {
-	if x != nil {
-		return x.Message
-	}
-	return ""
+// Deprecated: Use InvokeServiceHandlerResponse.ProtoReflect.Descriptor instead.
+func (*InvokeServiceHandlerResponse) Descriptor() ([]byte, []int) {
+	return file_event_proto_rawDescGZIP(), []int{9}
 }
 
 var File_event_proto protoreflect.FileDescriptor
 
 const file_event_proto_rawDesc = "" +
 	"\n" +
-	"\vevent.proto\x12\x06azdext\x1a\fmodels.proto\"\xa8\x04\n" +
-	"\fEventMessage\x12W\n" +
-	"\x17subscribe_project_event\x18\x01 \x01(\v2\x1d.azdext.SubscribeProjectEventH\x00R\x15subscribeProjectEvent\x12T\n" +
-	"\x16invoke_project_handler\x18\x02 \x01(\v2\x1c.azdext.InvokeProjectHandlerH\x00R\x14invokeProjectHandler\x12T\n" +
-	"\x16project_handler_status\x18\x03 \x01(\v2\x1c.azdext.ProjectHandlerStatusH\x00R\x14projectHandlerStatus\x12W\n" +
-	"\x17subscribe_service_event\x18\x04 \x01(\v2\x1d.azdext.SubscribeServiceEventH\x00R\x15subscribeServiceEvent\x12T\n" +
-	"\x16invoke_service_handler\x18\x05 \x01(\v2\x1c.azdext.InvokeServiceHandlerH\x00R\x14invokeServiceHandler\x12T\n" +
-	"\x16service_handler_status\x18\x06 \x01(\v2\x1c.azdext.ServiceHandlerStatusH\x00R\x14serviceHandlerStatusB\x0e\n" +
-	"\fmessage_type\"8\n" +
-	"\x15SubscribeProjectEvent\x12\x1f\n" +
+	"\vevent.proto\x12\x06azdext\x1a\fmodels.proto\"\xe6\a\n" +
+	"\fEventMessage\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12/\n" +
+	"\x05error\x18c \x01(\v2\x19.azdext.EventErrorMessageR\x05error\x12m\n" +
+	"\x1fsubscribe_project_event_request\x18\x02 \x01(\v2$.azdext.SubscribeProjectEventRequestH\x00R\x1csubscribeProjectEventRequest\x12p\n" +
+	" subscribe_project_event_response\x18\x03 \x01(\v2%.azdext.SubscribeProjectEventResponseH\x00R\x1dsubscribeProjectEventResponse\x12j\n" +
+	"\x1einvoke_project_handler_request\x18\x04 \x01(\v2#.azdext.InvokeProjectHandlerRequestH\x00R\x1binvokeProjectHandlerRequest\x12m\n" +
+	"\x1finvoke_project_handler_response\x18\x05 \x01(\v2$.azdext.InvokeProjectHandlerResponseH\x00R\x1cinvokeProjectHandlerResponse\x12m\n" +
+	"\x1fsubscribe_service_event_request\x18\x06 \x01(\v2$.azdext.SubscribeServiceEventRequestH\x00R\x1csubscribeServiceEventRequest\x12p\n" +
+	" subscribe_service_event_response\x18\a \x01(\v2%.azdext.SubscribeServiceEventResponseH\x00R\x1dsubscribeServiceEventResponse\x12j\n" +
+	"\x1einvoke_service_handler_request\x18\b \x01(\v2#.azdext.InvokeServiceHandlerRequestH\x00R\x1binvokeServiceHandlerRequest\x12m\n" +
+	"\x1finvoke_service_handler_response\x18\t \x01(\v2$.azdext.InvokeServiceHandlerResponseH\x00R\x1cinvokeServiceHandlerResponseB\x0e\n" +
+	"\fmessage_type\"G\n" +
+	"\x11EventErrorMessage\x12\x18\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage\x12\x18\n" +
+	"\adetails\x18\x02 \x01(\tR\adetails\"?\n" +
+	"\x1cSubscribeProjectEventRequest\x12\x1f\n" +
 	"\vevent_names\x18\x01 \x03(\tR\n" +
-	"eventNames\"h\n" +
-	"\x15SubscribeServiceEvent\x12\x1f\n" +
+	"eventNames\"\x1f\n" +
+	"\x1dSubscribeProjectEventResponse\"o\n" +
+	"\x1cSubscribeServiceEventRequest\x12\x1f\n" +
 	"\vevent_names\x18\x01 \x03(\tR\n" +
 	"eventNames\x12\x1a\n" +
 	"\blanguage\x18\x02 \x01(\tR\blanguage\x12\x12\n" +
-	"\x04host\x18\x03 \x01(\tR\x04host\"f\n" +
-	"\x14InvokeProjectHandler\x12\x1d\n" +
+	"\x04host\x18\x03 \x01(\tR\x04host\"\x1f\n" +
+	"\x1dSubscribeServiceEventResponse\"m\n" +
+	"\x1bInvokeProjectHandlerRequest\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12/\n" +
-	"\aproject\x18\x02 \x01(\v2\x15.azdext.ProjectConfigR\aproject\"\xd8\x01\n" +
-	"\x14InvokeServiceHandler\x12\x1d\n" +
+	"\aproject\x18\x02 \x01(\v2\x15.azdext.ProjectConfigR\aproject\"\x1e\n" +
+	"\x1cInvokeProjectHandlerResponse\"\xdf\x01\n" +
+	"\x1bInvokeServiceHandlerRequest\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12/\n" +
 	"\aproject\x18\x02 \x01(\v2\x15.azdext.ProjectConfigR\aproject\x12/\n" +
 	"\aservice\x18\x03 \x01(\v2\x15.azdext.ServiceConfigR\aservice\x12?\n" +
-	"\x0fservice_context\x18\x04 \x01(\v2\x16.azdext.ServiceContextR\x0eserviceContext\"g\n" +
-	"\x14ProjectHandlerStatus\x12\x1d\n" +
-	"\n" +
-	"event_name\x18\x01 \x01(\tR\teventName\x12\x16\n" +
-	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"\x8a\x01\n" +
-	"\x14ServiceHandlerStatus\x12\x1d\n" +
-	"\n" +
-	"event_name\x18\x01 \x01(\tR\teventName\x12!\n" +
-	"\fservice_name\x18\x02 \x01(\tR\vserviceName\x12\x16\n" +
-	"\x06status\x18\x03 \x01(\tR\x06status\x12\x18\n" +
-	"\amessage\x18\x04 \x01(\tR\amessage2M\n" +
+	"\x0fservice_context\x18\x04 \x01(\v2\x16.azdext.ServiceContextR\x0eserviceContext\"\x1e\n" +
+	"\x1cInvokeServiceHandlerResponse2M\n" +
 	"\fEventService\x12=\n" +
 	"\vEventStream\x12\x14.azdext.EventMessage\x1a\x14.azdext.EventMessage(\x010\x01B/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
@@ -601,37 +709,43 @@ func file_event_proto_rawDescGZIP() []byte {
 	return file_event_proto_rawDescData
 }
 
-var file_event_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_event_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_event_proto_goTypes = []any{
-	(*EventMessage)(nil),          // 0: azdext.EventMessage
-	(*SubscribeProjectEvent)(nil), // 1: azdext.SubscribeProjectEvent
-	(*SubscribeServiceEvent)(nil), // 2: azdext.SubscribeServiceEvent
-	(*InvokeProjectHandler)(nil),  // 3: azdext.InvokeProjectHandler
-	(*InvokeServiceHandler)(nil),  // 4: azdext.InvokeServiceHandler
-	(*ProjectHandlerStatus)(nil),  // 5: azdext.ProjectHandlerStatus
-	(*ServiceHandlerStatus)(nil),  // 6: azdext.ServiceHandlerStatus
-	(*ProjectConfig)(nil),         // 7: azdext.ProjectConfig
-	(*ServiceConfig)(nil),         // 8: azdext.ServiceConfig
-	(*ServiceContext)(nil),        // 9: azdext.ServiceContext
+	(*EventMessage)(nil),                  // 0: azdext.EventMessage
+	(*EventErrorMessage)(nil),             // 1: azdext.EventErrorMessage
+	(*SubscribeProjectEventRequest)(nil),  // 2: azdext.SubscribeProjectEventRequest
+	(*SubscribeProjectEventResponse)(nil), // 3: azdext.SubscribeProjectEventResponse
+	(*SubscribeServiceEventRequest)(nil),  // 4: azdext.SubscribeServiceEventRequest
+	(*SubscribeServiceEventResponse)(nil), // 5: azdext.SubscribeServiceEventResponse
+	(*InvokeProjectHandlerRequest)(nil),   // 6: azdext.InvokeProjectHandlerRequest
+	(*InvokeProjectHandlerResponse)(nil),  // 7: azdext.InvokeProjectHandlerResponse
+	(*InvokeServiceHandlerRequest)(nil),   // 8: azdext.InvokeServiceHandlerRequest
+	(*InvokeServiceHandlerResponse)(nil),  // 9: azdext.InvokeServiceHandlerResponse
+	(*ProjectConfig)(nil),                 // 10: azdext.ProjectConfig
+	(*ServiceConfig)(nil),                 // 11: azdext.ServiceConfig
+	(*ServiceContext)(nil),                // 12: azdext.ServiceContext
 }
 var file_event_proto_depIdxs = []int32{
-	1,  // 0: azdext.EventMessage.subscribe_project_event:type_name -> azdext.SubscribeProjectEvent
-	3,  // 1: azdext.EventMessage.invoke_project_handler:type_name -> azdext.InvokeProjectHandler
-	5,  // 2: azdext.EventMessage.project_handler_status:type_name -> azdext.ProjectHandlerStatus
-	2,  // 3: azdext.EventMessage.subscribe_service_event:type_name -> azdext.SubscribeServiceEvent
-	4,  // 4: azdext.EventMessage.invoke_service_handler:type_name -> azdext.InvokeServiceHandler
-	6,  // 5: azdext.EventMessage.service_handler_status:type_name -> azdext.ServiceHandlerStatus
-	7,  // 6: azdext.InvokeProjectHandler.project:type_name -> azdext.ProjectConfig
-	7,  // 7: azdext.InvokeServiceHandler.project:type_name -> azdext.ProjectConfig
-	8,  // 8: azdext.InvokeServiceHandler.service:type_name -> azdext.ServiceConfig
-	9,  // 9: azdext.InvokeServiceHandler.service_context:type_name -> azdext.ServiceContext
-	0,  // 10: azdext.EventService.EventStream:input_type -> azdext.EventMessage
-	0,  // 11: azdext.EventService.EventStream:output_type -> azdext.EventMessage
-	11, // [11:12] is the sub-list for method output_type
-	10, // [10:11] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	1,  // 0: azdext.EventMessage.error:type_name -> azdext.EventErrorMessage
+	2,  // 1: azdext.EventMessage.subscribe_project_event_request:type_name -> azdext.SubscribeProjectEventRequest
+	3,  // 2: azdext.EventMessage.subscribe_project_event_response:type_name -> azdext.SubscribeProjectEventResponse
+	6,  // 3: azdext.EventMessage.invoke_project_handler_request:type_name -> azdext.InvokeProjectHandlerRequest
+	7,  // 4: azdext.EventMessage.invoke_project_handler_response:type_name -> azdext.InvokeProjectHandlerResponse
+	4,  // 5: azdext.EventMessage.subscribe_service_event_request:type_name -> azdext.SubscribeServiceEventRequest
+	5,  // 6: azdext.EventMessage.subscribe_service_event_response:type_name -> azdext.SubscribeServiceEventResponse
+	8,  // 7: azdext.EventMessage.invoke_service_handler_request:type_name -> azdext.InvokeServiceHandlerRequest
+	9,  // 8: azdext.EventMessage.invoke_service_handler_response:type_name -> azdext.InvokeServiceHandlerResponse
+	10, // 9: azdext.InvokeProjectHandlerRequest.project:type_name -> azdext.ProjectConfig
+	10, // 10: azdext.InvokeServiceHandlerRequest.project:type_name -> azdext.ProjectConfig
+	11, // 11: azdext.InvokeServiceHandlerRequest.service:type_name -> azdext.ServiceConfig
+	12, // 12: azdext.InvokeServiceHandlerRequest.service_context:type_name -> azdext.ServiceContext
+	0,  // 13: azdext.EventService.EventStream:input_type -> azdext.EventMessage
+	0,  // 14: azdext.EventService.EventStream:output_type -> azdext.EventMessage
+	14, // [14:15] is the sub-list for method output_type
+	13, // [13:14] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_event_proto_init() }
@@ -641,12 +755,14 @@ func file_event_proto_init() {
 	}
 	file_models_proto_init()
 	file_event_proto_msgTypes[0].OneofWrappers = []any{
-		(*EventMessage_SubscribeProjectEvent)(nil),
-		(*EventMessage_InvokeProjectHandler)(nil),
-		(*EventMessage_ProjectHandlerStatus)(nil),
-		(*EventMessage_SubscribeServiceEvent)(nil),
-		(*EventMessage_InvokeServiceHandler)(nil),
-		(*EventMessage_ServiceHandlerStatus)(nil),
+		(*EventMessage_SubscribeProjectEventRequest)(nil),
+		(*EventMessage_SubscribeProjectEventResponse)(nil),
+		(*EventMessage_InvokeProjectHandlerRequest)(nil),
+		(*EventMessage_InvokeProjectHandlerResponse)(nil),
+		(*EventMessage_SubscribeServiceEventRequest)(nil),
+		(*EventMessage_SubscribeServiceEventResponse)(nil),
+		(*EventMessage_InvokeServiceHandlerRequest)(nil),
+		(*EventMessage_InvokeServiceHandlerResponse)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -654,7 +770,7 @@ func file_event_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_event_proto_rawDesc), len(file_event_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

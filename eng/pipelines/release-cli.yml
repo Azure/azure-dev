@@ -24,6 +24,8 @@ pr:
     exclude:
       - cli/azd/docs/**
       - cli/azd/extensions/**
+      - cli/azd/.vscode/cspell.yaml
+      - cli/azd/.vscode/cspell-azd-dictionary.txt
 
 extends: 
   template: /eng/pipelines/templates/stages/1es-redirect.yml

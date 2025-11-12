@@ -401,13 +401,13 @@ func (t *aksTarget) deployKustomize(
 	// and then generate a .env file that can be used to generate config maps
 	// azd can help here to create an .env file from the map specified within azure.yaml kustomize config section
 	if len(serviceConfig.K8s.Kustomize.Env) > 0 {
-		builder := strings.Builder{}
-		for key, exp := range serviceConfig.K8s.Kustomize.Env {
-			value, err := exp.Envsubst(t.env.Getenv)
-			if err != nil {
-				return false, fmt.Errorf("failed to envsubst kustomize env: %w", err)
-			}
+		expandedEnvVars, err := serviceConfig.K8s.Kustomize.Env.Expand(t.env.Getenv)
+		if err != nil {
+			return false, fmt.Errorf("failed to expand kustomize environment variables: %w", err)
+		}
 
+		builder := strings.Builder{}
+		for key, value := range expandedEnvVars {
 			builder.WriteString(fmt.Sprintf("%s=%s\n", key, value))
 		}
 

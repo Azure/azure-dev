@@ -246,6 +246,14 @@
                             "type": "string"
                         }
                     },
+                    "env": {
+                        "type": "object",
+                        "title": "Environment variables for the service",
+                        "description": "Optional. A map of environment variable names to values. Supports environment variable substitution.",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    },
                     "hooks": {
                         "type": "object",
                         "title": "Service level hooks",
@@ -340,7 +348,8 @@
                             "required": ["project"],
                             "properties": {
                                 "image": false,
-                                "apiVersion": false
+                                "apiVersion": false,
+                                "env": false
                             }
                         }
                     },
@@ -361,7 +370,8 @@
                                 },
                                 "image": false,
                                 "k8s": false,
-                                "apiVersion": false
+                                "apiVersion": false,
+                                "env": false
                             }
                         }
                     },
@@ -382,7 +392,8 @@
                                 },
                                 "image": false,
                                 "k8s": false,
-                                "apiVersion": false
+                                "apiVersion": false,
+                                "env": false
                             }
                         }
                     },
@@ -399,7 +410,8 @@
                                 "image": false,
                                 "docker": false,
                                 "k8s": false,
-                                "apiVersion": false
+                                "apiVersion": false,
+                                "env": false
                             }
                         }
                     }

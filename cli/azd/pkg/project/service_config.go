@@ -55,6 +55,8 @@ type ServiceConfig struct {
 	// Computed lazily by useDotnetPublishForDockerBuild and cached. This is true when the project
 	// is a dotnet project and there is not an explicit Dockerfile in the project directory.
 	useDotNetPublishForDockerBuild *bool
+	// Environment variables to set for the service
+	Environment osutil.ExpandableMap `yaml:"env,omitempty"`
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 

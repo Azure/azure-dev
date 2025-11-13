@@ -402,6 +402,10 @@ const completionSpec: Fig.Spec = {
 					isDangerous: true,
 				},
 			],
+			args: {
+				name: 'layer',
+				isOptional: true,
+			},
 		},
 		{
 			name: ['env'],
@@ -491,6 +495,15 @@ const completionSpec: Fig.Spec = {
 							args: [
 							{
 								name: 'hint',
+							},
+							],
+						},
+						{
+							name: ['--layer'],
+							description: 'Provisioning layer to refresh the environment from.',
+							args: [
+							{
+								name: 'layer',
 							},
 							],
 						},
@@ -1268,6 +1281,10 @@ const completionSpec: Fig.Spec = {
 					description: 'Preview changes to Azure resources.',
 				},
 			],
+			args: {
+				name: 'layer',
+				isOptional: true,
+			},
 		},
 		{
 			name: ['publish'],

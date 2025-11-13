@@ -6,8 +6,10 @@ This command prompts you to input the following:
   • Azure location: The Azure location where your resources will be deployed.
   • Azure subscription: The Azure subscription where your resources will be deployed.
 
+When <layer> is specified, only provisions resources for the given layer. When omitted, provisions resources for all layers defined in the project.
+
 Usage
-  azd provision [flags]
+  azd provision [<layer>] [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.

@@ -18,6 +18,7 @@ func newMcpCommand() *cobra.Command {
 	mcpCmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "MCP server commands for AI Foundry agents extension",
+		Hidden: true,
 	}
 
 	mcpCmd.AddCommand(newMcpStartCommand())

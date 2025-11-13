@@ -84,7 +84,7 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init [-m <manifest pointer>] [--src <source directory>]",
-		Short: "Initialize a new AI agent project.",
+		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())

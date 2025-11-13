@@ -53,7 +53,7 @@ steps:
         "--repo", "$(Build.Repository.Name)"
       )
 
-      if ($version -match "-(alpha|beta|preview)") {
+      if ($version -match "^0\." -or $version -match "-(alpha|beta|preview)") {
         $createArgs += "--prerelease"
       }
 

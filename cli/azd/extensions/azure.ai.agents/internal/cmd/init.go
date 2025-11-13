@@ -18,6 +18,7 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/registry_api"
+	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/pkg/azure/ai"
 	"azureaiagent/internal/project"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
@@ -608,20 +610,80 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 		return err
 	}
 
-	resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:        "Enter the azurecr.io endpoint for the ACR connected to your project, if one exists:",
-			IgnoreHintKeys: true,
-			DefaultValue:   "",
-		},
-	})
+	// Create FoundryProjectsClient and get connections
+	foundryClient := azure.NewFoundryProjectsClient(foundryProject.AiAccountName, foundryProject.AiProjectName, a.credential)
+	connections, err := foundryClient.GetAllConnections(ctx)
 	if err != nil {
-		return fmt.Errorf("prompting for acr endpoint: %w", err)
-	}
+		fmt.Printf("Failed to get foundry project connections: %v\n", err)
+	} else {
+		// Filter connections by ContainerRegistry type
+		var acrConnections []azure.Connection
+		for _, conn := range connections {
+			if conn.Type == azure.ConnectionTypeContainerRegistry {
+				acrConnections = append(acrConnections, conn)
+			}
+		}
 
-	if resp.Value != "" {
-		if err := a.setEnvVar(ctx, "AZURE_CONTAINER_REGISTRY_ENDPOINT", resp.Value); err != nil {
-			return err
+		if len(acrConnections) == 0 {
+			fmt.Println(output.WithWarningFormat(
+				"Agent deployment prerequisites not satisfied. To deploy this agent, you will need to " +
+					"provision an Azure Container Registry (ACR) and grant the required permissions. " +
+					"You can either do this manually before deployment, or use an infrastructure template. " +
+					"See aka.ms/azdaiagent/docs for details."))
+
+			resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+				Options: &azdext.PromptOptions{
+					Message: "If you have an ACR that you want to use with this agent, enter the azurecr.io endpoint for the ACR. " +
+						"If you plan to provision one through the `azd provision` or `azd up` flow, leave blank.",
+					IgnoreHintKeys: true,
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("prompting for ACR endpoint: %w", err)
+			}
+
+			if resp.Value != "" {
+				if err := a.setEnvVar(ctx, "AZURE_CONTAINER_REGISTRY_ENDPOINT", resp.Value); err != nil {
+					return err
+				}
+			}
+		} else {
+			var selectedConnection *azure.Connection
+
+			if len(acrConnections) == 1 {
+				selectedConnection = &acrConnections[0]
+
+				fmt.Printf("Using container registry connection: %s (%s)\n", selectedConnection.Name, selectedConnection.Target)
+			} else {
+				// Multiple connections found, prompt user to select
+				fmt.Printf("Found %d container registry connections:\n", len(acrConnections))
+
+				choices := make([]*azdext.SelectChoice, len(acrConnections))
+				for i, conn := range acrConnections {
+					choices[i] = &azdext.SelectChoice{
+						Label: conn.Name,
+						Value: fmt.Sprintf("%d", i),
+					}
+				}
+
+				defaultIndex := int32(0)
+				selectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+					Options: &azdext.SelectOptions{
+						Message:       "Select a container registry connection to use for this agent:",
+						Choices:       choices,
+						SelectedIndex: &defaultIndex,
+					},
+				})
+				if err != nil {
+					fmt.Printf("Failed to prompt for connection selection: %v\n", err)
+				} else {
+					selectedConnection = &acrConnections[int(*selectResp.Value)]
+				}
+			}
+
+			if err := a.setEnvVar(ctx, "AZURE_CONTAINER_REGISTRY_ENDPOINT", selectedConnection.Target); err != nil {
+				return err
+			}
 		}
 	}
 

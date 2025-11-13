@@ -578,6 +578,9 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
 				Location:     playgroundUrl,
 				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+				Metadata: map[string]string{
+					"label": "Agent playground (portal)",
+				},
 			})
 		}
 	}
@@ -592,6 +595,7 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 			Metadata: map[string]string{
 				"agentName":    agentName,
 				"agentVersion": agentVersion,
+				"label":        "Agent endpoint",
 			},
 		})
 	}

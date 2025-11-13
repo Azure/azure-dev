@@ -182,6 +182,7 @@ overrides:
   - filename: extensions/azure.ai.agents/internal/cmd/init.go
     words:
       - aoai
+      - azdaiagent
   - filename: extensions/azure.ai.agents/internal/cmd/listen.go
     words:
       - hostedagent

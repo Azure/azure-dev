@@ -251,10 +251,10 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 	containerResources := foundryAgentConfig.Container
 
 	// Default values
-	defaultMemory := "2Gi"
-	defaultCpu := "1"
-	defaultMinReplicas := "1"
-	defaultMaxReplicas := "3"
+	defaultMemory := project.DefaultMemory
+	defaultCpu := project.DefaultCpu
+	defaultMinReplicas := fmt.Sprintf("%d", project.DefaultMinReplicas)
+	defaultMaxReplicas := fmt.Sprintf("%d", project.DefaultMaxReplicas)
 
 	// Initialize result with existing values
 	result := &project.ContainerSettings{}

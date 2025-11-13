@@ -580,7 +580,7 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 		return fmt.Errorf("extracting project details: %w", err)
 	}
 
-	if err := a.setEnvVar(ctx, "AZURE_AI_FOUNDRY_PROJECT_ID", a.flags.projectResourceId); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_AI_PROJECT_ID", a.flags.projectResourceId); err != nil {
 		return err
 	}
 
@@ -1060,10 +1060,10 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 
 func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.ContainerSettings, error) {
 	// Default values
-	defaultMemory := "2Gi"
-	defaultCpu := "1"
-	defaultMinReplicas := "1"
-	defaultMaxReplicas := "3"
+	defaultMemory := project.DefaultMemory
+	defaultCpu := project.DefaultCpu
+	defaultMinReplicas := fmt.Sprintf("%d", project.DefaultMinReplicas)
+	defaultMaxReplicas := fmt.Sprintf("%d", project.DefaultMaxReplicas)
 
 	// Prompt for memory allocation
 	memoryResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
@@ -1635,7 +1635,7 @@ func (a *InitAction) setEnvVar(ctx context.Context, key, value string) error {
 func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_yaml.Model) (*project.Deployment, error) {
 	resp, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: a.environment.Name,
-		Key:     "AZURE_AI_FOUNDRY_PROJECT_ID",
+		Key:     "AZURE_AI_PROJECT_ID",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get foundry project ID: %w", err)

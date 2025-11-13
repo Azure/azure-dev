@@ -1068,7 +1068,7 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 	// Prompt for memory allocation
 	memoryResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
-			Message:      "Memory allocation (e.g., '1Gi', '512Mi'):",
+			Message:      "Enter desired container memory allocation (e.g., '1Gi', '512Mi'):",
 			DefaultValue: defaultMemory,
 		},
 	})
@@ -1079,7 +1079,7 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 	// Prompt for CPU allocation
 	cpuResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
-			Message:      "CPU allocation (e.g., '1', '500m'):",
+			Message:      "Enter desired container CPU allocation (e.g., '1', '500m'):",
 			DefaultValue: defaultCpu,
 		},
 	})
@@ -1090,7 +1090,7 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 	// Prompt for minimum replicas
 	minReplicasResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
-			Message:      "Minimum number of replicas:",
+			Message:      "Enter desired container minimum number of replicas:",
 			DefaultValue: defaultMinReplicas,
 		},
 	})
@@ -1101,7 +1101,7 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 	// Prompt for maximum replicas
 	maxReplicasResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
-			Message:      "Maximum number of replicas:",
+			Message:      "Enter desired container maximum number of replicas:",
 			DefaultValue: defaultMaxReplicas,
 		},
 	})

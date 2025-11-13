@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -17,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func newListenCommand() *cobra.Command {
@@ -43,6 +45,9 @@ func newListenCommand() *cobra.Command {
 				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					return preprovisionHandler(ctx, azdClient, projectParser, args)
 				}).
+				WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+					return predeployHandler(ctx, azdClient, projectParser, args)
+				}).
 				WithProjectEventHandler("postdeploy", projectParser.CoboPostDeploy)
 
 			// Start listening for events
@@ -62,11 +67,15 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, proje
 	}
 
 	for _, svc := range args.Project.Services {
-		if svc.Host == AiAgentHost {
-			if err := preprovisionEnvUpdate(ctx, azdClient, args.Project, svc); err != nil {
+		switch svc.Host {
+		case AiAgentHost:
+			if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
+				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+			}
+			if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 			}
-		} else if svc.Host == ContainerAppHost {
+		case ContainerAppHost:
 			if err := containerAgentHandling(ctx, azdClient, args.Project, svc); err != nil {
 				return fmt.Errorf("failed to handle container agent for service %q: %w", svc.Name, err)
 			}
@@ -76,7 +85,27 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, proje
 	return nil
 }
 
-func preprovisionEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
+func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, projectParser *project.FoundryParser, args *azdext.ProjectEventArgs) error {
+	if err := projectParser.SetIdentity(ctx, args); err != nil {
+		return fmt.Errorf("failed to set identity: %w", err)
+	}
+
+	for _, svc := range args.Project.Services {
+		switch svc.Host {
+		case AiAgentHost:
+			if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
+				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+			}
+			if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
+				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
 
 	var foundryAgentConfig *project.ServiceTargetAgentConfig
 
@@ -210,5 +239,128 @@ func setEnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string,
 	}
 
 	fmt.Printf("Set environment variable: %s=%s\n", key, value)
+	return nil
+}
+
+func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient, svc *azdext.ServiceConfig) error {
+	var foundryAgentConfig *project.ServiceTargetAgentConfig
+	if err := project.UnmarshalStruct(svc.Config, &foundryAgentConfig); err != nil {
+		return fmt.Errorf("failed to parse foundry agent config: %w", err)
+	}
+
+	containerResources := foundryAgentConfig.Container
+
+	// Default values
+	defaultMemory := "2Gi"
+	defaultCpu := "1"
+	defaultMinReplicas := "1"
+	defaultMaxReplicas := "3"
+
+	// Initialize result with existing values
+	result := &project.ContainerSettings{}
+
+	// Check and populate Resources
+	if containerResources.Resources == nil {
+		result.Resources = &project.ResourceSettings{}
+	} else {
+		result.Resources = &project.ResourceSettings{
+			Memory: containerResources.Resources.Memory,
+			Cpu:    containerResources.Resources.Cpu,
+		}
+	}
+
+	// Check and populate Scale
+	if containerResources.Scale == nil {
+		result.Scale = &project.ScaleSettings{}
+	} else {
+		result.Scale = &project.ScaleSettings{
+			MinReplicas: containerResources.Scale.MinReplicas,
+			MaxReplicas: containerResources.Scale.MaxReplicas,
+		}
+	}
+
+	// Prompt for memory allocation only if not set or empty
+	if result.Resources.Memory == "" {
+		memoryResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:      "Enter desired container memory allocation (e.g., '1Gi', '512Mi'):",
+				DefaultValue: defaultMemory,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("prompting for memory allocation: %w", err)
+		}
+		result.Resources.Memory = memoryResp.Value
+	}
+
+	// Prompt for CPU allocation only if not set or empty
+	if result.Resources.Cpu == "" {
+		cpuResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:      "Enter desired container CPU allocation (e.g., '1', '500m'):",
+				DefaultValue: defaultCpu,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("prompting for CPU allocation: %w", err)
+		}
+		result.Resources.Cpu = cpuResp.Value
+	}
+
+	// Prompt for minimum replicas only if not set (0 means not set for int)
+	if result.Scale.MinReplicas == 0 {
+		minReplicasResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:      "Enter desired container minimum number of replicas:",
+				DefaultValue: defaultMinReplicas,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("prompting for minimum replicas: %w", err)
+		}
+
+		minReplicas, err := strconv.Atoi(minReplicasResp.Value)
+		if err != nil {
+			return fmt.Errorf("invalid minimum replicas value: %w", err)
+		}
+		result.Scale.MinReplicas = minReplicas
+	}
+
+	// Prompt for maximum replicas only if not set (0 means not set for int)
+	if result.Scale.MaxReplicas == 0 {
+		maxReplicasResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+			Options: &azdext.PromptOptions{
+				Message:      "Enter desired container maximum number of replicas:",
+				DefaultValue: defaultMaxReplicas,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("prompting for maximum replicas: %w", err)
+		}
+
+		maxReplicas, err := strconv.Atoi(maxReplicasResp.Value)
+		if err != nil {
+			return fmt.Errorf("invalid maximum replicas value: %w", err)
+		}
+		result.Scale.MaxReplicas = maxReplicas
+	}
+
+	// Validate that max replicas >= min replicas
+	if result.Scale.MaxReplicas < result.Scale.MinReplicas {
+		return fmt.Errorf("maximum replicas (%d) must be greater than or equal to minimum replicas (%d)", result.Scale.MaxReplicas, result.Scale.MinReplicas)
+	}
+
+	// Update the container settings in the existing config
+	foundryAgentConfig.Container = result
+
+	// Marshal the complete updated agent config back to the service config
+	var agentConfigStruct *structpb.Struct
+	var err error
+	if agentConfigStruct, err = project.MarshalStruct(foundryAgentConfig); err != nil {
+		return fmt.Errorf("failed to marshal agent config: %w", err)
+	}
+
+	svc.Config = agentConfigStruct
+
 	return nil
 }

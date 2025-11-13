@@ -362,5 +362,12 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 
 	svc.Config = agentConfigStruct
 
+	// Need to add the service config back to the project for use further down the pipeline
+	req := &azdext.AddServiceRequest{Service: svc}
+
+	if _, err := azdClient.Project().AddService(ctx, req); err != nil {
+		return fmt.Errorf("adding agent service to project: %w", err)
+	}
+
 	return nil
 }

@@ -21,8 +21,9 @@ import (
 
 func newListenCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "listen",
-		Short: "Starts the extension and listens for events.",
+		Use:    "listen",
+		Short:  "Starts the extension and listens for events.",
+		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Create a new context that includes the AZD access token.
 			ctx := azdext.WithAccessToken(cmd.Context())

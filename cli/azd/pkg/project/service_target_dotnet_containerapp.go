@@ -305,6 +305,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 	aspireDeploymentType := azapi.AzureResourceTypeContainerApp
 	resourceName := serviceConfig.Name
+	resourceMetadata := map[string]string{}
 	if useBicepForContainerApps {
 		// Compile the bicep template
 		deployment, err := func() (armDeployment, error) {
@@ -385,6 +386,10 @@ func (at *dotnetContainerAppTarget) Deploy(
 		resourceName = deploymentHostDetails.name
 		aspireDeploymentType = deploymentHostDetails.hostType
 
+		if deploymentHostDetails.parent != "" {
+			resourceMetadata["parentName"] = deploymentHostDetails.parent
+		}
+
 	} else {
 		containerAppOptions := containerapps.ContainerAppOptions{
 			ApiVersion: serviceConfig.ApiVersion,
@@ -410,6 +415,10 @@ func (at *dotnetContainerAppTarget) Deploy(
 		targetResource.ResourceGroupName(),
 		resourceName,
 		string(aspireDeploymentType))
+
+	if len(resourceMetadata) > 0 {
+		target.SetMetadata(resourceMetadata)
+	}
 
 	endpoints, err := at.Endpoints(ctx, serviceConfig, target)
 	if err != nil {
@@ -757,7 +766,9 @@ func (at *dotnetContainerAppTarget) prepareContainerImage(
 }
 
 type appDeploymentHost struct {
-	name     string
+	name string
+	// webapp slot needs to know its parent name
+	parent   string
 	hostType azapi.AzureResourceType
 }
 
@@ -778,11 +789,17 @@ func deploymentHost(deploymentResult *azapi.ResourceDeployment) (appDeploymentHo
 		if err != nil {
 			return appDeploymentHost{}, err
 		}
-		if rType.String() == string(azapi.AzureResourceTypeWebSite) ||
-			rType.String() == string(azapi.AzureResourceTypeWebSiteSlot) {
+		if rType.String() == string(azapi.AzureResourceTypeWebSite) {
 			return appDeploymentHost{
 				name:     r.Name,
 				hostType: azapi.AzureResourceTypeWebSite,
+			}, nil
+		}
+		if rType.String() == string(azapi.AzureResourceTypeWebSiteSlot) {
+			return appDeploymentHost{
+				name:     r.Name,
+				parent:   r.Parent.Name,
+				hostType: azapi.AzureResourceTypeWebSiteSlot,
 			}, nil
 		}
 		if rType.String() == string(azapi.AzureResourceTypeContainerApp) {
@@ -890,6 +907,7 @@ func (at *dotnetContainerAppTarget) Endpoints(
 	resourceType := azapi.AzureResourceType(targetResource.ResourceType())
 	// Currently supports ACA, ACA Jobs, and WebApp for Aspire (on reading Endpoints)
 	if resourceType != azapi.AzureResourceTypeWebSite &&
+		resourceType != azapi.AzureResourceTypeWebSiteSlot &&
 		resourceType != azapi.AzureResourceTypeContainerApp &&
 		resourceType != azapi.AzureResourceTypeContainerAppJob {
 		return nil, fmt.Errorf("unsupported resource type: %s", resourceType)
@@ -924,6 +942,23 @@ func (at *dotnetContainerAppTarget) Endpoints(
 			ctx,
 			targetResource.SubscriptionId(),
 			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("fetching service properties: %w", err)
+		}
+
+		hostNames = appServiceProperties.HostNames
+	case azapi.AzureResourceTypeWebSiteSlot:
+		slotParentName, hasParent := targetResource.Metadata()["parentName"]
+		if !hasParent {
+			return nil, fmt.Errorf("missing parent name for web app slot: %s", targetResource.ResourceName())
+		}
+		appServiceProperties, err := at.azureClient.GetAppServiceSlotProperties(
+			ctx,
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			slotParentName,
 			targetResource.ResourceName(),
 		)
 		if err != nil {

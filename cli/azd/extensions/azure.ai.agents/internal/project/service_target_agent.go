@@ -384,13 +384,13 @@ func (p *AgentServiceTargetProvider) Deploy(
 		if err := yaml.Unmarshal(data, &agentDef); err != nil {
 			return nil, fmt.Errorf("YAML content is not valid for prompt agent deploy: %w", err)
 		}
-		return p.deployPromptAgent(ctx, agentDef, azdEnv)
+		return p.deployPromptAgent(ctx, serviceConfig, agentDef, azdEnv)
 	case string(agent_yaml.AgentKindHosted):
 		var agentDef agent_yaml.ContainerAgent
 		if err := yaml.Unmarshal(data, &agentDef); err != nil {
 			return nil, fmt.Errorf("YAML content is not valid for hosted agent deploy: %w", err)
 		}
-		return p.deployHostedAgent(ctx, serviceContext, progress, agentDef, azdEnv)
+		return p.deployHostedAgent(ctx, serviceConfig, serviceContext, progress, agentDef, azdEnv)
 	default:
 		return nil, fmt.Errorf("unsupported agent kind: %s", kind)
 	}
@@ -424,6 +424,7 @@ func (p *AgentServiceTargetProvider) isContainerAgent() bool {
 // deployPromptAgent handles deployment of prompt-based agents
 func (p *AgentServiceTargetProvider) deployPromptAgent(
 	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
 	agentDef agent_yaml.PromptAgent,
 	azdEnv map[string]string,
 ) (*azdext.ServiceDeployResult, error) {
@@ -454,7 +455,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	}
 
 	// Register agent info in environment
-	err = p.registerAgentEnvironmentVariables(ctx, agentVersionResponse)
+	err = p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersionResponse)
 	if err != nil {
 		return nil, err
 	}
@@ -476,6 +477,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 // deployHostedAgent handles deployment of hosted container agents
 func (p *AgentServiceTargetProvider) deployHostedAgent(
 	ctx context.Context,
+	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 	agentDef agent_yaml.ContainerAgent,
@@ -533,13 +535,6 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, err
 	}
 
-	// Register agent info in environment
-	progress("Registering agent environment variables")
-	err = p.registerAgentEnvironmentVariables(ctx, agentVersionResponse)
-	if err != nil {
-		return nil, err
-	}
-
 	// Step 5: Start agent container
 	progress("Starting agent container")
 	err = p.startAgentContainer(ctx, agentVersionResponse, azdEnv)
@@ -547,7 +542,12 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		return nil, err
 	}
 
-	fmt.Fprintf(os.Stderr, "Hosted agent '%s' deployed successfully!\n", agentVersionResponse.Name)
+	// Register agent info in environment
+	progress("Registering agent environment variables")
+	err = p.registerAgentEnvironmentVariables(ctx, azdEnv, serviceConfig, agentVersionResponse)
+	if err != nil {
+		return nil, err
+	}
 
 	artifacts := p.deployArtifacts(
 		agentVersionResponse.Name,
@@ -825,25 +825,37 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 // registerAgentEnvironmentVariables registers agent information as azd environment variables
 func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	ctx context.Context,
+	azdEnv map[string]string,
+	serviceConfig *azdext.ServiceConfig,
 	agentVersionResponse *agent_api.AgentVersionObject,
 ) error {
-	// Register the agent name and version as azd environment variables
-	_, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: p.env.Name,
-		Key:     "AGENT_NAME",
-		Value:   agentVersionResponse.Name,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to set AGENT_NAME environment variable: %w", err)
+
+	endpoint := p.agentEndpoint(
+		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+		agentVersionResponse.Name,
+		agentVersionResponse.Version,
+	)
+
+	// Create environment variable keys
+	serviceKey := strings.ReplaceAll(serviceConfig.Name, " ", "_")
+	serviceKey = strings.ReplaceAll(serviceKey, "-", "_")
+	serviceKey = strings.ToUpper(serviceKey)
+
+	envVars := map[string]string{
+		fmt.Sprintf("AGENT_%s_NAME", serviceKey):     agentVersionResponse.Name,
+		fmt.Sprintf("AGENT_%s_VERSION", serviceKey):  agentVersionResponse.Version,
+		fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey): endpoint,
 	}
 
-	_, err = p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-		EnvName: p.env.Name,
-		Key:     "AGENT_VERSION",
-		Value:   agentVersionResponse.Version,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to set AGENT_VERSION environment variable: %w", err)
+	for key, value := range envVars {
+		_, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: p.env.Name,
+			Key:     key,
+			Value:   value,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to set environment variable %s: %w", key, err)
+		}
 	}
 
 	return nil

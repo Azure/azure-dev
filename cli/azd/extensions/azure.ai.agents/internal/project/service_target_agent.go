@@ -808,7 +808,7 @@ func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) e
 	// Get all environment values
 	resp, err := p.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: p.env.Name,
-		Key:     "AZURE_AI_FOUNDRY_PROJECT_ID",
+		Key:     "AZURE_AI_PROJECT_ID",
 	})
 	if err != nil {
 		return fmt.Errorf("failed to get environment values: %w", err)

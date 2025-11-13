@@ -464,7 +464,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	artifacts := p.deployArtifacts(
 		agentVersionResponse.Name,
 		agentVersionResponse.Version,
-		azdEnv["AZURE_AI_FOUNDRY_PROJECT_ID"],
+		azdEnv["AZURE_AI_PROJECT_ID"],
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
 	)
 
@@ -552,7 +552,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	artifacts := p.deployArtifacts(
 		agentVersionResponse.Name,
 		agentVersionResponse.Version,
-		azdEnv["AZURE_AI_FOUNDRY_PROJECT_ID"],
+		azdEnv["AZURE_AI_PROJECT_ID"],
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
 	)
 
@@ -863,7 +863,7 @@ func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, a
 }
 
 // ensureFoundryProject ensures the Foundry project resource ID is parsed and stored.
-// Checks for either AZURE_AI_FOUNDRY_PROJECT_ID or AI_FOUNDRY_PROJECT_RESOURCE_ID environment variable.
+// Checks for AZURE_AI_PROJECT_ID environment variable.
 func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) error {
 	if p.foundryProject != nil {
 		return nil
@@ -872,7 +872,7 @@ func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) e
 	// Get all environment values
 	resp, err := p.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: p.env.Name,
-		Key:     "AZURE_AI_FOUNDRY_PROJECT_ID",
+		Key:     "AZURE_AI_PROJECT_ID",
 	})
 	if err != nil {
 		return fmt.Errorf("failed to get environment values: %w", err)
@@ -883,7 +883,7 @@ func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) e
 	if foundryResourceID == "" {
 		return fmt.Errorf(
 			"Azure AI Foundry project resource ID is required. " +
-				"Please set either AZURE_AI_FOUNDRY_PROJECT_ID or AI_FOUNDRY_PROJECT_RESOURCE_ID environment variable",
+				"Please set AZURE_AI_PROJECT_ID environment variable",
 		)
 	}
 

@@ -210,7 +210,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
 
-		color.Green("\nAI agent added to your project successfully!")
+		color.Green("\nAI agent added to your azd project successfully!")
 	}
 
 	// // Validate command flags
@@ -580,7 +580,7 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 		return fmt.Errorf("extracting project details: %w", err)
 	}
 
-	if err := a.setEnvVar(ctx, "AZURE_AI_FOUNDRY_PROJECT_ID", a.flags.projectResourceId); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_AI_PROJECT_ID", a.flags.projectResourceId); err != nil {
 		return err
 	}
 
@@ -1017,17 +1017,10 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 			}
 		}
 
-		// Hard code for now
-		// TODO: Add env var handling in the future
-		containerSettings := &project.ContainerSettings{
-			Resources: &project.ResourceSettings{
-				Memory: "2Gi",
-				Cpu:    "1",
-			},
-			Scale: &project.ScaleSettings{
-				MinReplicas: 1,
-				MaxReplicas: 3,
-			},
+		// Prompt user for container settings
+		containerSettings, err := a.populateContainerSettings(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to populate container settings: %w", err)
 		}
 		agentConfig.Container = containerSettings
 	}
@@ -1063,6 +1056,85 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 
 	fmt.Printf("Added service '%s' to azure.yaml\n", agentDef.Name)
 	return nil
+}
+
+func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.ContainerSettings, error) {
+	// Default values
+	defaultMemory := project.DefaultMemory
+	defaultCpu := project.DefaultCpu
+	defaultMinReplicas := fmt.Sprintf("%d", project.DefaultMinReplicas)
+	defaultMaxReplicas := fmt.Sprintf("%d", project.DefaultMaxReplicas)
+
+	// Prompt for memory allocation
+	memoryResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "Enter desired container memory allocation (e.g., '1Gi', '512Mi'):",
+			DefaultValue: defaultMemory,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for memory allocation: %w", err)
+	}
+
+	// Prompt for CPU allocation
+	cpuResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "Enter desired container CPU allocation (e.g., '1', '500m'):",
+			DefaultValue: defaultCpu,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for CPU allocation: %w", err)
+	}
+
+	// Prompt for minimum replicas
+	minReplicasResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "Enter desired container minimum number of replicas:",
+			DefaultValue: defaultMinReplicas,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for minimum replicas: %w", err)
+	}
+
+	// Prompt for maximum replicas
+	maxReplicasResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "Enter desired container maximum number of replicas:",
+			DefaultValue: defaultMaxReplicas,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for maximum replicas: %w", err)
+	}
+
+	// Convert string values to appropriate types
+	minReplicas, err := strconv.Atoi(minReplicasResp.Value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid minimum replicas value: %w", err)
+	}
+
+	maxReplicas, err := strconv.Atoi(maxReplicasResp.Value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid maximum replicas value: %w", err)
+	}
+
+	// Validate that max replicas >= min replicas
+	if maxReplicas < minReplicas {
+		return nil, fmt.Errorf("maximum replicas (%d) must be greater than or equal to minimum replicas (%d)", maxReplicas, minReplicas)
+	}
+
+	return &project.ContainerSettings{
+		Resources: &project.ResourceSettings{
+			Memory: memoryResp.Value,
+			Cpu:    cpuResp.Value,
+		},
+		Scale: &project.ScaleSettings{
+			MinReplicas: minReplicas,
+			MaxReplicas: maxReplicas,
+		},
+	}, nil
 }
 
 func downloadGithubManifest(
@@ -1563,7 +1635,7 @@ func (a *InitAction) setEnvVar(ctx context.Context, key, value string) error {
 func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_yaml.Model) (*project.Deployment, error) {
 	resp, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: a.environment.Name,
-		Key:     "AZURE_AI_FOUNDRY_PROJECT_ID",
+		Key:     "AZURE_AI_PROJECT_ID",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get foundry project ID: %w", err)

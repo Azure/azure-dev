@@ -327,18 +327,29 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 
 	// Get required values from azd environment
 	containerAppPrincipalID := azdEnv["SERVICE_API_IDENTITY_PRINCIPAL_ID"]
-	aiFoundryResourceID := azdEnv["AI_FOUNDRY_RESOURCE_ID"]
-	aiFoundryProjectResourceID := azdEnv["AI_FOUNDRY_PROJECT_RESOURCE_ID"]
+	aiFoundryProjectResourceID := azdEnv["AZURE_AI_PROJECT_ID"]
 	deploymentName := azdEnv["DEPLOYMENT_NAME"]
 	resourceID := azdEnv["SERVICE_API_RESOURCE_ID"]
 	agentName := azdEnv["AGENT_NAME"]
 	//aiProjectEndpoint := azdEnv["AI_PROJECT_ENDPOINT"]
 
 	// Validate required variables
-	if err := validateRequired("AI_FOUNDRY_RESOURCE_ID", aiFoundryResourceID); err != nil {
+	if err := validateRequired("AZURE_AI_PROJECT_ID", aiFoundryProjectResourceID); err != nil {
 		return err
 	}
-	if err := validateRequired("AI_FOUNDRY_PROJECT_RESOURCE_ID", aiFoundryProjectResourceID); err != nil {
+
+	// Extract project information from resource IDs
+	parts := strings.Split(aiFoundryProjectResourceID, "/")
+	if len(parts) < 11 {
+		fmt.Fprintln(os.Stderr, "Error: Invalid AI Foundry Project Resource ID format")
+		os.Exit(1)
+	}
+
+	// Extract AI account resource ID by removing "/projects/project-name" from the project resource ID
+	parts = strings.Split(aiFoundryProjectResourceID, "/projects/")
+	aiAccountResourceId := parts[0]
+
+	if err := validateRequired("AZURE_AI_PROJECT_ID", aiFoundryProjectResourceID); err != nil {
 		return err
 	}
 	if err := validateRequired("SERVICE_API_IDENTITY_PRINCIPAL_ID", containerAppPrincipalID); err != nil {
@@ -349,13 +360,6 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 	}
 	if err := validateRequired("AGENT_NAME", agentName); err != nil {
 		return err
-	}
-
-	// Extract project information from resource IDs
-	parts := strings.Split(aiFoundryProjectResourceID, "/")
-	if len(parts) < 11 {
-		fmt.Fprintln(os.Stderr, "Error: Invalid AI Foundry Project Resource ID format")
-		os.Exit(1)
 	}
 
 	projectSubscriptionID := parts[2]
@@ -391,14 +395,14 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 	fmt.Printf("Agent: %s\n", agentName)
 
 	// Assign Azure AI User role
-	if err := assignAzureAIRole(ctx, cred, containerAppPrincipalID, aiFoundryResourceID); err != nil {
+	if err := assignAzureAIRole(ctx, cred, containerAppPrincipalID, aiAccountResourceId); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: Failed to assign 'Azure AI User' role: %v\n", err)
 		fmt.Fprintln(os.Stderr, "This requires Owner or User Access Administrator role on the AI Foundry Account.")
 		fmt.Fprintln(os.Stderr, "Manual command:")
 		fmt.Fprintf(os.Stderr, "az role assignment create \\\n")
 		fmt.Fprintf(os.Stderr, "  --assignee %s \\\n", containerAppPrincipalID)
 		fmt.Fprintf(os.Stderr, "  --role \"53ca6127-db72-4b80-b1b0-d745d6d5456d\" \\\n")
-		fmt.Fprintf(os.Stderr, "  --scope \"%s\"\n", aiFoundryResourceID)
+		fmt.Fprintf(os.Stderr, "  --scope \"%s\"\n", aiAccountResourceId)
 		return err
 	}
 

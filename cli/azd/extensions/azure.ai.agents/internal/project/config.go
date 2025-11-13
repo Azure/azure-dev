@@ -11,6 +11,14 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+// Default container settings constants
+const (
+	DefaultMemory      = "2Gi"
+	DefaultCpu         = "1"
+	DefaultMinReplicas = 1
+	DefaultMaxReplicas = 3
+)
+
 // ServiceTargetAgentConfig provides custom configuration for the Azure AI Service target
 type ServiceTargetAgentConfig struct {
 	Environment map[string]string  `json:"env,omitempty"`

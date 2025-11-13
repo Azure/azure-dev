@@ -6,6 +6,7 @@ package agent_yaml
 import (
 	"context"
 	"fmt"
+	"regexp"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
@@ -328,13 +329,14 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 			}
 			errors = append(errors, fmt.Sprintf("template.kind must be one of: %v, got '%s'", validKindStrings, agentDef.Kind))
 		} else {
+			if err := ValidateAgentName(agentDef.Name); err != nil {
+				errors = append(errors, fmt.Sprintf("template.name not in valid format: %v", err))
+			}
+
 			switch AgentKind(agentDef.Kind) {
 			case AgentKindPrompt:
 				var agent PromptAgent
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
-					if agent.Name == "" {
-						errors = append(errors, "template.name is required")
-					}
 					if agent.Model.Id == "" {
 						errors = append(errors, "template.model.id is required")
 					}
@@ -344,9 +346,6 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 			case AgentKindHosted:
 				var agent ContainerAgent
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
-					if agent.Name == "" {
-						errors = append(errors, "template.name is required")
-					}
 					// TODO: Do we need this?
 					// if len(agent.Models) == 0 {
 					// 	errors = append(errors, "template.models is required and must not be empty")
@@ -374,6 +373,26 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 			errorMsg += fmt.Sprintf("\n  - %s", err)
 		}
 		return fmt.Errorf("%s", errorMsg)
+	}
+
+	return nil
+}
+
+// Validate that the agent name matches the expected deployable format
+func ValidateAgentName(name string) error {
+	if name == "" {
+		return fmt.Errorf("name cannot be empty")
+	}
+
+	// Regex pattern: ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$
+	// - Must start with alphanumeric character
+	// - Can contain alphanumeric characters and hyphens
+	// - Must end with alphanumeric character (if more than 1 character)
+	// - Maximum length of 63 characters
+	validNamePattern := regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
+
+	if !validNamePattern.MatchString(name) {
+		return fmt.Errorf("name must start and end with an alphanumeric character, can contain hyphens in the middle, and be 1-63 characters long")
 	}
 
 	return nil

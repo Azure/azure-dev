@@ -20,7 +20,7 @@ type ComponentConfig struct {
 type DeploymentConfig struct {
 	ComponentConfig `yaml:",inline"`
 	// A map of environment variables to set for the deployment
-	Environment map[string]osutil.ExpandableString `yaml:"environment,omitempty"`
+	Environment osutil.ExpandableMap `yaml:"environment,omitempty"`
 }
 
 // EndpointDeploymentConfig is a configuration structure for an ML online endpoint deployment

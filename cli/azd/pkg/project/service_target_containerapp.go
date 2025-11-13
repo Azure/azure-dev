@@ -278,13 +278,20 @@ func (at *containerAppTarget) Deploy(
 			ApiVersion: serviceConfig.ApiVersion,
 		}
 
+		// Expand environment variables from service config
+		envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("expanding environment variables: %w", err)
+		}
+
 		progress.SetProgress(NewServiceProgress("Updating container app revision"))
-		err := at.containerAppService.AddRevision(
+		err = at.containerAppService.AddRevision(
 			ctx,
 			targetResource.SubscriptionId(),
 			targetResource.ResourceGroupName(),
 			resourceName,
 			imageName,
+			envVars,
 			&containerAppOptions,
 		)
 		if err != nil {

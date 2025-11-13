@@ -1,14 +1,18 @@
 # Release History
 
-## 1.22.0-beta.1 (Unreleased)
+## 1.21.2 (2025-11-13)
 
 ### Features Added
 
-### Breaking Changes
-
-### Bugs Fixed
+- [[#6169]](https://github.com/Azure/azure-dev/pull/6169) Promote layered provisioning to beta.
+- [[#6154]](https://github.com/Azure/azure-dev/pull/6154) Add `env` property to service configuration for runtime environment variable management in Container Apps.
+- [[#6159]](https://github.com/Azure/azure-dev/pull/6159) Display agents playground URL after deployment in AI agents extension.
 
 ### Other Changes
+
+- [[#6160]](https://github.com/Azure/azure-dev/pull/6160) Mark AI agents extension as preview/beta with version bump to 0.0.7.
+- [[#6156]](https://github.com/Azure/azure-dev/pull/6156) Various bug fixes for AI agents extension.
+- [[#6168]](https://github.com/Azure/azure-dev/pull/6168) Retrieve connections from project in AI agents extension.
 
 ## 1.21.1 (2025-11-11)
 

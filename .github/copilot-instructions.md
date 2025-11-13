@@ -2,6 +2,29 @@
 
 This is the Azure Developer CLI (azd) - a sophisticated Go-based CLI tool for managing Azure application development workflows. It handles infrastructure provisioning with Bicep/Terraform, application deployment, environment management, project lifecycle automation, and provides extensible hooks system with gRPC extensions. Please follow these comprehensive guidelines when contributing.
 
+## General Coding Guidelines
+
+- Always run `go build` from `cli/azd/` directory after making a change to verify it compiles
+- Always run `go test ./... -short` from `cli/azd/` directory to verify tests pass (allow up to 10 minutes)
+- Always use the IoC container for dependency injection - never use direct instantiation for major components
+- Always propagate `context.Context` through call chains for proper cancellation support
+- Always ask for clarifications if the request is ambiguous or lacks sufficient context
+- Always review your own code for consistency, maintainability, and testability before requesting review
+
+## Pull Request Guidelines
+
+When creating or updating pull requests:
+
+- Ensure all tests pass before submitting
+- Follow the [contribution guidelines](https://github.com/Azure/azure-dev/blob/main/CONTRIBUTING.md)
+- Include appropriate documentation for user-facing changes
+- Include tests that cover your changes
+- Update `cli/azd/CHANGELOG.md` for user-facing changes (features, bug fixes, breaking changes)
+- Run all required linting and formatting tools (see Code Standards section below)
+- Use the pull request template (`.github/PULL_REQUEST_TEMPLATE.md`) to ensure all checklist items are completed
+- Create clear, descriptive commit messages that explain the "why" behind changes
+- For security-sensitive changes, ensure they are reviewed for vulnerabilities before merging
+
 ## Core Architecture Overview
 
 ### Application Entry Point & Container Bootstrap

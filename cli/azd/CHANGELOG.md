@@ -1,14 +1,11 @@
 # Release History
 
-## 1.22.0-beta.1 (Unreleased)
+## 1.21.2 (2025-11-13)
 
 ### Features Added
 
-### Breaking Changes
-
-### Bugs Fixed
-
-### Other Changes
+- [[#6169]](https://github.com/Azure/azure-dev/pull/6169) Promote layered provisioning to beta.
+- [[#6154]](https://github.com/Azure/azure-dev/pull/6154) Add `env` property to service configuration for runtime environment variable management in Container Apps.
 
 ## 1.21.1 (2025-11-11)
 

@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"github.com/braydonk/yaml"
 	"github.com/drone/envsubst"
 	"github.com/fatih/color"
+	"github.com/google/uuid"
 )
 
 // Reference implementation
@@ -615,6 +617,13 @@ func (p *AgentServiceTargetProvider) agentPlaygroundUrl(projectResourceId, agent
 		return "", err
 	}
 
+	// Encode subscription ID as base64 without padding for URL
+	subscriptionId := resourceId.SubscriptionID
+	encodedSubscriptionId, err := encodeSubscriptionID(subscriptionId)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode subscription ID: %w", err)
+	}
+
 	resourceGroup := resourceId.ResourceGroupName
 	if resourceId.Parent == nil {
 		return "", fmt.Errorf("invalid foundry project resource ID: %s", projectResourceId)
@@ -624,8 +633,8 @@ func (p *AgentServiceTargetProvider) agentPlaygroundUrl(projectResourceId, agent
 	projectName := resourceId.Name
 
 	url := fmt.Sprintf(
-		"https://ai.azure.com/nextgen/r/,%s,,%s,%s/build/agents/%s/build?version=%s",
-		resourceGroup, accountName, projectName, agentName, agentVersion)
+		"https://ai.azure.com/nextgen/r/%s,%s,,%s,%s/build/agents/%s/build?version=%s",
+		encodedSubscriptionId, resourceGroup, accountName, projectName, agentName, agentVersion)
 	return url, nil
 }
 
@@ -886,4 +895,19 @@ func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) e
 
 	p.foundryProject = parsedResource
 	return nil
+}
+
+// encodeSubscriptionID encodes a subscription ID GUID as base64 without padding
+func encodeSubscriptionID(subscriptionID string) (string, error) {
+	guid, err := uuid.Parse(subscriptionID)
+	if err != nil {
+		return "", fmt.Errorf("invalid subscription ID format: %w", err)
+	}
+
+	// Convert GUID to bytes (MarshalBinary never returns an error for uuid.UUID)
+	guidBytes, _ := guid.MarshalBinary()
+
+	// Encode as base64 and remove padding
+	encoded := base64.StdEncoding.EncodeToString(guidBytes)
+	return strings.TrimRight(encoded, "="), nil
 }

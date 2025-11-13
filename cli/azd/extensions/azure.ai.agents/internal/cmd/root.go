@@ -21,7 +21,7 @@ var rootFlags rootFlagsDefinition
 func NewRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:           "agent <command> [options]",
-		Short:         fmt.Sprintf("This extension provides custom commands for working with agents. %s", color.YellowString("(Preview)")),
+		Short:         fmt.Sprintf("Azure AI Foundry extension for the Foundry Agent Service. %s", color.YellowString("(Preview)")),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		CompletionOptions: cobra.CompletionOptions{

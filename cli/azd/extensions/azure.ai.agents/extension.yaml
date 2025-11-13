@@ -2,7 +2,7 @@
 id: azure.ai.agents
 namespace: ai.agent
 displayName: AI Foundry Agents (Preview)
-description: This extension provides custom commands for working with agents. (Preview)
+description: Azure AI Foundry extension for the Foundry Agent Service. (Preview)
 usage: azd ai agent <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
 version: 0.0.7

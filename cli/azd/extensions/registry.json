@@ -640,8 +640,8 @@
     {
       "id": "azure.ai.agents",
       "namespace": "ai.agent",
-      "displayName": "AI Foundry Agents",
-      "description": "This extension provides custom commands for working with agents using Azure Developer CLI.",
+      "displayName": "AI Foundry Agents (Preview)",
+      "description": "Azure AI Foundry extension for the Foundry Agent Service. (Preview)",
       "versions": [
         {
           "version": "0.0.1",

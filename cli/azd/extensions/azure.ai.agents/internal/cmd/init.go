@@ -630,6 +630,23 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 					"provision an Azure Container Registry (ACR) and grant the required permissions. " +
 					"You can either do this manually before deployment, or use an infrastructure template. " +
 					"See aka.ms/azdaiagent/docs for details."))
+
+			resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+				Options: &azdext.PromptOptions{
+					Message: "If you have an ACR that you want to use with this agent, enter the azurecr.io endpoint for the ACR. " +
+						"If you plan to provision one through the `azd provision` or `azd up` flow, leave blank.",
+					IgnoreHintKeys: true,
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("prompting for ACR endpoint: %w", err)
+			}
+
+			if resp.Value != "" {
+				if err := a.setEnvVar(ctx, "AZURE_CONTAINER_REGISTRY_ENDPOINT", resp.Value); err != nil {
+					return err
+				}
+			}
 		} else {
 			var selectedConnection *azure.Connection
 

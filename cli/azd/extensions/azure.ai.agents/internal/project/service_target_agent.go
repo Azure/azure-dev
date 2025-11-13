@@ -464,7 +464,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	artifacts := p.deployArtifacts(
 		agentVersionResponse.Name,
 		agentVersionResponse.Version,
-		azdEnv["AZURE_AI_FOUNDRY_PROJECT_ID"],
+		azdEnv["AZURE_AI_PROJECT_ID"],
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
 	)
 
@@ -552,7 +552,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	artifacts := p.deployArtifacts(
 		agentVersionResponse.Name,
 		agentVersionResponse.Version,
-		azdEnv["AZURE_AI_FOUNDRY_PROJECT_ID"],
+		azdEnv["AZURE_AI_PROJECT_ID"],
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
 	)
 

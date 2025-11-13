@@ -799,7 +799,7 @@ func (p *AgentServiceTargetProvider) resolveEnvironmentVariables(value string, a
 }
 
 // ensureFoundryProject ensures the Foundry project resource ID is parsed and stored.
-// Checks for AI_FOUNDRY_PROJECT_RESOURCE_ID environment variable.
+// Checks for AZURE_AI_PROJECT_ID environment variable.
 func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) error {
 	if p.foundryProject != nil {
 		return nil
@@ -819,7 +819,7 @@ func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) e
 	if foundryResourceID == "" {
 		return fmt.Errorf(
 			"Azure AI Foundry project resource ID is required. " +
-				"Please set AI_FOUNDRY_PROJECT_RESOURCE_ID environment variable",
+				"Please set AZURE_AI_PROJECT_ID environment variable",
 		)
 	}
 

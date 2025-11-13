@@ -4,6 +4,9 @@
 package cmd
 
 import (
+	"fmt"
+
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -18,7 +21,7 @@ var rootFlags rootFlagsDefinition
 func NewRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:           "agent <command> [options]",
-		Short:         "Placeholder description",
+		Short:         fmt.Sprintf("This extension provides custom commands for working with agents. %s", color.YellowString("(Preview)")),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		CompletionOptions: cobra.CompletionOptions{

@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"github.com/braydonk/yaml"
 	"github.com/drone/envsubst"
 	"github.com/fatih/color"
+	"github.com/google/uuid"
 )
 
 // Reference implementation
@@ -459,20 +461,15 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 
 	fmt.Fprintf(os.Stderr, "Prompt agent '%s' deployed successfully!\n", agentVersionResponse.Name)
 
-	endpoint := p.agentEndpoint(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], agentVersionResponse.Name, agentVersionResponse.Version)
+	artifacts := p.deployArtifacts(
+		agentVersionResponse.Name,
+		agentVersionResponse.Version,
+		azdEnv["AZURE_AI_FOUNDRY_PROJECT_ID"],
+		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+	)
 
 	return &azdext.ServiceDeployResult{
-		Artifacts: []*azdext.Artifact{
-			{
-				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
-				Location:     endpoint,
-				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
-				Metadata: map[string]string{
-					"agentName":    agentVersionResponse.Name,
-					"agentVersion": agentVersionResponse.Version,
-				},
-			},
-		},
+		Artifacts: artifacts,
 	}, nil
 }
 
@@ -552,26 +549,93 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 	fmt.Fprintf(os.Stderr, "Hosted agent '%s' deployed successfully!\n", agentVersionResponse.Name)
 
-	endpoint := p.agentEndpoint(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], agentVersionResponse.Name, agentVersionResponse.Version)
+	artifacts := p.deployArtifacts(
+		agentVersionResponse.Name,
+		agentVersionResponse.Version,
+		azdEnv["AZURE_AI_FOUNDRY_PROJECT_ID"],
+		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
+	)
 
 	return &azdext.ServiceDeployResult{
-		Artifacts: []*azdext.Artifact{
-			{
+		Artifacts: artifacts,
+	}, nil
+}
+
+// deployArtifacts constructs the artifacts list for deployment results
+func (p *AgentServiceTargetProvider) deployArtifacts(
+	agentName string,
+	agentVersion string,
+	projectResourceID string,
+	projectEndpoint string,
+) []*azdext.Artifact {
+	artifacts := []*azdext.Artifact{}
+
+	// Add playground URL
+	if projectResourceID != "" {
+		playgroundUrl, err := p.agentPlaygroundUrl(projectResourceID, agentName, agentVersion)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to generate agent playground link")
+		} else if playgroundUrl != "" {
+			artifacts = append(artifacts, &azdext.Artifact{
 				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
-				Location:     endpoint,
+				Location:     playgroundUrl,
 				LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
 				Metadata: map[string]string{
-					"agentName":    agentVersionResponse.Name,
-					"agentVersion": agentVersionResponse.Version,
+					"label": "Agent playground (portal)",
 				},
+			})
+		}
+	}
+
+	// Add agent endpoint
+	if projectEndpoint != "" {
+		agentEndpoint := p.agentEndpoint(projectEndpoint, agentName, agentVersion)
+		artifacts = append(artifacts, &azdext.Artifact{
+			Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
+			Location:     agentEndpoint,
+			LocationKind: azdext.LocationKind_LOCATION_KIND_REMOTE,
+			Metadata: map[string]string{
+				"agentName":    agentName,
+				"agentVersion": agentVersion,
+				"label":        "Agent endpoint",
 			},
-		},
-	}, nil
+		})
+	}
+
+	return artifacts
 }
 
 // agentEndpoint constructs the agent endpoint URL from the provided parameters
 func (p *AgentServiceTargetProvider) agentEndpoint(projectEndpoint, agentName, agentVersion string) string {
 	return fmt.Sprintf("%s/agents/%s/versions/%s", projectEndpoint, agentName, agentVersion)
+}
+
+// agentPlaygroundUrl constructs a URL to the agent playground in the Foundry portal
+func (p *AgentServiceTargetProvider) agentPlaygroundUrl(projectResourceId, agentName, agentVersion string) (string, error) {
+	resourceId, err := arm.ParseResourceID(projectResourceId)
+	if err != nil {
+		return "", err
+	}
+
+	// Encode subscription ID as base64 without padding for URL
+	subscriptionId := resourceId.SubscriptionID
+	encodedSubscriptionId, err := encodeSubscriptionID(subscriptionId)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode subscription ID: %w", err)
+	}
+
+	resourceGroup := resourceId.ResourceGroupName
+	if resourceId.Parent == nil {
+		return "", fmt.Errorf("invalid foundry project resource ID: %s", projectResourceId)
+	}
+
+	accountName := resourceId.Parent.Name
+	projectName := resourceId.Name
+
+	url := fmt.Sprintf(
+		"https://ai.azure.com/nextgen/r/%s,%s,,%s,%s/build/agents/%s/build?version=%s",
+		encodedSubscriptionId, resourceGroup, accountName, projectName, agentName, agentVersion)
+	return url, nil
 }
 
 // createAgent creates a new version of the agent using the API
@@ -831,4 +895,19 @@ func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) e
 
 	p.foundryProject = parsedResource
 	return nil
+}
+
+// encodeSubscriptionID encodes a subscription ID GUID as base64 without padding
+func encodeSubscriptionID(subscriptionID string) (string, error) {
+	guid, err := uuid.Parse(subscriptionID)
+	if err != nil {
+		return "", fmt.Errorf("invalid subscription ID format: %w", err)
+	}
+
+	// Convert GUID to bytes (MarshalBinary never returns an error for uuid.UUID)
+	guidBytes, _ := guid.MarshalBinary()
+
+	// Encode as base64 and remove padding
+	encoded := base64.StdEncoding.EncodeToString(guidBytes)
+	return strings.TrimRight(encoded, "="), nil
 }

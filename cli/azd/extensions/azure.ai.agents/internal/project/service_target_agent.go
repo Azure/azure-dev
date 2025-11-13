@@ -836,7 +836,10 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		agentVersionResponse.Version,
 	)
 
-	serviceKey := strings.ToUpper(strings.ReplaceAll(serviceConfig.Name, " ", "_"))
+	// Create environment variable keys
+	serviceKey := strings.ReplaceAll(serviceConfig.Name, " ", "_")
+	serviceKey = strings.ReplaceAll(serviceKey, "-", "_")
+	serviceKey = strings.ToUpper(serviceKey)
 
 	envVars := map[string]string{
 		fmt.Sprintf("AGENT_%s_NAME", serviceKey):     agentVersionResponse.Name,

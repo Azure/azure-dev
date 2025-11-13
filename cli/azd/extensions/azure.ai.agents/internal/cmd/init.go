@@ -210,7 +210,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
 
-		color.Green("\nAI agent added to your project successfully!")
+		color.Green("\nAI agent added to your azd project successfully!")
 	}
 
 	// // Validate command flags

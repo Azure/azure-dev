@@ -614,29 +614,7 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 	foundryClient := azure.NewFoundryProjectsClient(foundryProject.AiAccountName, foundryProject.AiProjectName, a.credential)
 	connections, err := foundryClient.GetAllConnections(ctx)
 	if err != nil {
-		fmt.Printf("Could not get Azure AI Foundry project connections to initialize AZURE_CONTAINER_REGISTRY_ENDPOINT: %v\n", err)
-		fmt.Println(output.WithWarningFormat(
-			"Agent deployment prerequisites not satisfied. To deploy this agent, you will need to " +
-				"provision an Azure Container Registry (ACR) and grant the required permissions. " +
-				"You can either do this manually before deployment, or use an infrastructure template. " +
-				"See aka.ms/azdaiagent/docs for details."))
-
-		resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message: "If you have an ACR that you want to use with this agent, enter the azurecr.io endpoint for the ACR. " +
-					"If you plan to provision one through the `azd provision` or `azd up` flow, leave blank.",
-				IgnoreHintKeys: true,
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("prompting for ACR endpoint: %w", err)
-		}
-
-		if resp.Value != "" {
-			if err := a.setEnvVar(ctx, "AZURE_CONTAINER_REGISTRY_ENDPOINT", resp.Value); err != nil {
-				return err
-			}
-		}
+		fmt.Printf("Could not get Azure AI Foundry project connections to initialize AZURE_CONTAINER_REGISTRY_ENDPOINT: %v. Please set this environment variable manually.\n", err)
 	} else {
 		// Filter connections by ContainerRegistry type
 		var acrConnections []azure.Connection

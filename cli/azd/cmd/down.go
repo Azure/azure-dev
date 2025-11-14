@@ -55,7 +55,7 @@ func newDownFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *do
 
 func newDownCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "down",
+		Use:   "down [<layer>]",
 		Short: "Delete your project's Azure resources.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
@@ -114,15 +114,6 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		a.console.WarnForFeature(ctx, azapi.FeatureDeploymentStacks)
 	}
 
-	if len(infra.Options.Layers) > 1 {
-		if !a.alphaFeatureManager.IsEnabled(featLayers) {
-			return nil, fmt.Errorf(
-				"Layered provisioning is not enabled. Run '%s' to enable it.", alpha.GetEnableCommand(featLayers))
-		}
-
-		a.console.WarnForFeature(ctx, featLayers)
-	}
-
 	downLayer := ""
 	if len(a.args) > 0 {
 		downLayer = a.args[0]
@@ -168,7 +159,10 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 func getCmdDownHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(fmt.Sprintf(
 		"Delete Azure resources for an application. Running %s will not delete application"+
-			" files on your local machine.", output.WithHighLightFormat("azd down")), nil)
+			" files on your local machine.", output.WithHighLightFormat("azd down")), []string{
+		"When <layer> is specified, only deletes resources for the given layer." +
+			" When omitted, deletes resources for all layers defined in the project.",
+	})
 }
 
 func getCmdDownHelpFooter(*cobra.Command) string {

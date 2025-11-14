@@ -18,6 +18,7 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/agents/registry_api"
+	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/pkg/azure/ai"
 	"azureaiagent/internal/project"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
@@ -82,7 +84,7 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init [-m <manifest pointer>] [--src <source directory>]",
-		Short: "Initialize a new AI agent project.",
+		Short: fmt.Sprintf("Initialize a new AI agent project. %s", color.YellowString("(Preview)")),
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -210,7 +212,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
 
-		color.Green("\nAI agent added to your project successfully!")
+		color.Green("\nAI agent added to your azd project successfully!")
 	}
 
 	// // Validate command flags
@@ -580,7 +582,7 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 		return fmt.Errorf("extracting project details: %w", err)
 	}
 
-	if err := a.setEnvVar(ctx, "AZURE_AI_FOUNDRY_PROJECT_ID", a.flags.projectResourceId); err != nil {
+	if err := a.setEnvVar(ctx, "AZURE_AI_PROJECT_ID", a.flags.projectResourceId); err != nil {
 		return err
 	}
 
@@ -608,20 +610,80 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 		return err
 	}
 
-	resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-		Options: &azdext.PromptOptions{
-			Message:        "Enter the azurecr.io endpoint for the ACR connected to your project, if one exists:",
-			IgnoreHintKeys: true,
-			DefaultValue:   "",
-		},
-	})
+	// Create FoundryProjectsClient and get connections
+	foundryClient := azure.NewFoundryProjectsClient(foundryProject.AiAccountName, foundryProject.AiProjectName, a.credential)
+	connections, err := foundryClient.GetAllConnections(ctx)
 	if err != nil {
-		return fmt.Errorf("prompting for acr endpoint: %w", err)
-	}
+		fmt.Printf("Failed to get foundry project connections: %v\n", err)
+	} else {
+		// Filter connections by ContainerRegistry type
+		var acrConnections []azure.Connection
+		for _, conn := range connections {
+			if conn.Type == azure.ConnectionTypeContainerRegistry {
+				acrConnections = append(acrConnections, conn)
+			}
+		}
 
-	if resp.Value != "" {
-		if err := a.setEnvVar(ctx, "AZURE_CONTAINER_REGISTRY_ENDPOINT", resp.Value); err != nil {
-			return err
+		if len(acrConnections) == 0 {
+			fmt.Println(output.WithWarningFormat(
+				"Agent deployment prerequisites not satisfied. To deploy this agent, you will need to " +
+					"provision an Azure Container Registry (ACR) and grant the required permissions. " +
+					"You can either do this manually before deployment, or use an infrastructure template. " +
+					"See aka.ms/azdaiagent/docs for details."))
+
+			resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+				Options: &azdext.PromptOptions{
+					Message: "If you have an ACR that you want to use with this agent, enter the azurecr.io endpoint for the ACR. " +
+						"If you plan to provision one through the `azd provision` or `azd up` flow, leave blank.",
+					IgnoreHintKeys: true,
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("prompting for ACR endpoint: %w", err)
+			}
+
+			if resp.Value != "" {
+				if err := a.setEnvVar(ctx, "AZURE_CONTAINER_REGISTRY_ENDPOINT", resp.Value); err != nil {
+					return err
+				}
+			}
+		} else {
+			var selectedConnection *azure.Connection
+
+			if len(acrConnections) == 1 {
+				selectedConnection = &acrConnections[0]
+
+				fmt.Printf("Using container registry connection: %s (%s)\n", selectedConnection.Name, selectedConnection.Target)
+			} else {
+				// Multiple connections found, prompt user to select
+				fmt.Printf("Found %d container registry connections:\n", len(acrConnections))
+
+				choices := make([]*azdext.SelectChoice, len(acrConnections))
+				for i, conn := range acrConnections {
+					choices[i] = &azdext.SelectChoice{
+						Label: conn.Name,
+						Value: fmt.Sprintf("%d", i),
+					}
+				}
+
+				defaultIndex := int32(0)
+				selectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
+					Options: &azdext.SelectOptions{
+						Message:       "Select a container registry connection to use for this agent:",
+						Choices:       choices,
+						SelectedIndex: &defaultIndex,
+					},
+				})
+				if err != nil {
+					fmt.Printf("Failed to prompt for connection selection: %v\n", err)
+				} else {
+					selectedConnection = &acrConnections[int(*selectResp.Value)]
+				}
+			}
+
+			if err := a.setEnvVar(ctx, "AZURE_CONTAINER_REGISTRY_ENDPOINT", selectedConnection.Target); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -1017,17 +1079,10 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 			}
 		}
 
-		// Hard code for now
-		// TODO: Add env var handling in the future
-		containerSettings := &project.ContainerSettings{
-			Resources: &project.ResourceSettings{
-				Memory: "2Gi",
-				Cpu:    "1",
-			},
-			Scale: &project.ScaleSettings{
-				MinReplicas: 1,
-				MaxReplicas: 3,
-			},
+		// Prompt user for container settings
+		containerSettings, err := a.populateContainerSettings(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to populate container settings: %w", err)
 		}
 		agentConfig.Container = containerSettings
 	}
@@ -1063,6 +1118,85 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 
 	fmt.Printf("Added your agent as a service entry named '%s' under the file azure.yaml. You will be able to deploy this agent using command azd deploy %s.\n", agentDef.Name, agentDef.Name)
 	return nil
+}
+
+func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.ContainerSettings, error) {
+	// Default values
+	defaultMemory := project.DefaultMemory
+	defaultCpu := project.DefaultCpu
+	defaultMinReplicas := fmt.Sprintf("%d", project.DefaultMinReplicas)
+	defaultMaxReplicas := fmt.Sprintf("%d", project.DefaultMaxReplicas)
+
+	// Prompt for memory allocation
+	memoryResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "Enter desired container memory allocation (e.g., '1Gi', '512Mi'):",
+			DefaultValue: defaultMemory,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for memory allocation: %w", err)
+	}
+
+	// Prompt for CPU allocation
+	cpuResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "Enter desired container CPU allocation (e.g., '1', '500m'):",
+			DefaultValue: defaultCpu,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for CPU allocation: %w", err)
+	}
+
+	// Prompt for minimum replicas
+	minReplicasResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "Enter desired container minimum number of replicas:",
+			DefaultValue: defaultMinReplicas,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for minimum replicas: %w", err)
+	}
+
+	// Prompt for maximum replicas
+	maxReplicasResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
+		Options: &azdext.PromptOptions{
+			Message:      "Enter desired container maximum number of replicas:",
+			DefaultValue: defaultMaxReplicas,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("prompting for maximum replicas: %w", err)
+	}
+
+	// Convert string values to appropriate types
+	minReplicas, err := strconv.Atoi(minReplicasResp.Value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid minimum replicas value: %w", err)
+	}
+
+	maxReplicas, err := strconv.Atoi(maxReplicasResp.Value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid maximum replicas value: %w", err)
+	}
+
+	// Validate that max replicas >= min replicas
+	if maxReplicas < minReplicas {
+		return nil, fmt.Errorf("maximum replicas (%d) must be greater than or equal to minimum replicas (%d)", maxReplicas, minReplicas)
+	}
+
+	return &project.ContainerSettings{
+		Resources: &project.ResourceSettings{
+			Memory: memoryResp.Value,
+			Cpu:    cpuResp.Value,
+		},
+		Scale: &project.ScaleSettings{
+			MinReplicas: minReplicas,
+			MaxReplicas: maxReplicas,
+		},
+	}, nil
 }
 
 func downloadGithubManifest(
@@ -1563,7 +1697,7 @@ func (a *InitAction) setEnvVar(ctx context.Context, key, value string) error {
 func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_yaml.Model) (*project.Deployment, error) {
 	resp, err := a.azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: a.environment.Name,
-		Key:     "AZURE_AI_FOUNDRY_PROJECT_ID",
+		Key:     "AZURE_AI_PROJECT_ID",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("Failed to get the foundry project ID: %w", err)

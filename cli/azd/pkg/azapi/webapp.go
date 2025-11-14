@@ -37,6 +37,28 @@ func (cli *AzureClient) GetAppServiceProperties(
 	}, nil
 }
 
+func (cli *AzureClient) GetAppServiceSlotProperties(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	appName string,
+	slotName string,
+) (*AzCliAppServiceProperties, error) {
+	client, err := cli.createWebAppsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	slot, err := client.GetSlot(ctx, resourceGroup, appName, slotName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed retrieving webapp slot properties: %w", err)
+	}
+
+	return &AzCliAppServiceProperties{
+		HostNames: []string{*slot.Properties.DefaultHostName},
+	}, nil
+}
+
 func (cli *AzureClient) appService(
 	ctx context.Context,
 	subscriptionId string,

@@ -140,6 +140,7 @@ overrides:
       - creds
       - Moby
       - upsert
+      - jfomhover
   - filename: docs/proxy-configuration.md
     words:
       - Telerik

@@ -14,8 +14,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/azure/azure-dev/pkg/osutil"
+	"github.com/azure/azure-dev/resources"
 	"github.com/psanford/memfs"
 )
 

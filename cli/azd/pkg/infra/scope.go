@@ -7,9 +7,9 @@ import (
 	"context"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/pkg/async"
+	"github.com/azure/azure-dev/pkg/azapi"
+	"github.com/azure/azure-dev/pkg/azure"
 )
 
 type Scope interface {

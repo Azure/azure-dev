@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/extensions/microsoft.azd.extensions/internal"
+	"github.com/azure/azure-dev/pkg/extensions"
+	"github.com/azure/azure-dev/pkg/output"
 	"go.yaml.in/yaml/v3"
 )
 

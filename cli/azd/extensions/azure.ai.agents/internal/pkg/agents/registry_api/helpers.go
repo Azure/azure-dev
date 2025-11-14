@@ -13,7 +13,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/pkg/azdext"
 	"github.com/braydonk/yaml"
 )
 

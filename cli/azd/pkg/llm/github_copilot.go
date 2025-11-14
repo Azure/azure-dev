@@ -19,9 +19,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/pkg/config"
+	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/pkg/osutil"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/openai"
 )

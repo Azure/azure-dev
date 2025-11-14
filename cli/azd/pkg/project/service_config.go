@@ -6,10 +6,10 @@ package project
 import (
 	"path/filepath"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
-	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/pkg/apphost"
+	"github.com/azure/azure-dev/pkg/ext"
+	"github.com/azure/azure-dev/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/pkg/osutil"
 )
 
 type ServiceConfig struct {

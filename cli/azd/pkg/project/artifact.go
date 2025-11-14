@@ -11,7 +11,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/pkg/output"
 )
 
 // ArtifactKind represents well-known artifact types in the Azure Developer CLI

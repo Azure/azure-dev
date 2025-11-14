@@ -9,10 +9,10 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	azure_armmsi "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	exec "github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	azd_github "github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	"github.com/azure/azure-dev/pkg/azdext"
+	exec "github.com/azure/azure-dev/pkg/exec"
+	"github.com/azure/azure-dev/pkg/input"
+	azd_github "github.com/azure/azure-dev/pkg/tools/github"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )

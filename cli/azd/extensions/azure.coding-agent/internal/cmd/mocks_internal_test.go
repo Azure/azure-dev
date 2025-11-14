@@ -19,7 +19,7 @@ import (
 
 	armmsi "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	github "github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	github "github.com/azure/azure-dev/pkg/tools/github"
 	gomock "go.uber.org/mock/gomock"
 )
 

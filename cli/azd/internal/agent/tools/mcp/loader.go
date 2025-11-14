@@ -9,8 +9,8 @@ import (
 
 	_ "embed"
 
-	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
-	"github.com/azure/azure-dev/cli/azd/internal/mcp"
+	"github.com/azure/azure-dev/internal/agent/tools/common"
+	"github.com/azure/azure-dev/internal/mcp"
 )
 
 //go:embed mcp.json

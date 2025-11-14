@@ -10,7 +10,7 @@ import (
 	"log"
 
 	"dario.cat/mergo"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/pkg/output"
 )
 
 // DecisionTree represents the entire decision tree structure.

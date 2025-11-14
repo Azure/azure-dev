@@ -9,13 +9,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/pkg/entraid"
+	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/pkg/exec"
+	"github.com/azure/azure-dev/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/pkg/tools/git"
+	"github.com/azure/azure-dev/pkg/tools/github"
+	"github.com/azure/azure-dev/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 

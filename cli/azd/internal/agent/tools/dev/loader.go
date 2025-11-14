@@ -6,7 +6,7 @@ package dev
 import (
 	"context"
 
-	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/azure/azure-dev/internal/agent/tools/common"
 )
 
 // DevToolLoader loads development-related tools

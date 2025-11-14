@@ -12,10 +12,10 @@ import (
 	"slices"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
-	"github.com/azure/azure-dev/cli/azd/pkg/entraid"
-	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/pkg/entraid"
+	"github.com/azure/azure-dev/pkg/graphsdk"
+	"github.com/azure/azure-dev/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/pkg/tools"
 )
 
 // subareaProvider defines the base behavior from any pipeline provider

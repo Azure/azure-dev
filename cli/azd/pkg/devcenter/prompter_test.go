@@ -9,12 +9,12 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
-	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockdevcentersdk"
+	"github.com/azure/azure-dev/pkg/cloud"
+	"github.com/azure/azure-dev/pkg/devcentersdk"
+	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/test/mocks"
+	"github.com/azure/azure-dev/test/mocks/mockdevcentersdk"
 	"github.com/stretchr/testify/require"
 )
 

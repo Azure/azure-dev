@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/pkg/auth"
+	"github.com/azure/azure-dev/pkg/azapi"
 )
 
 // GetCurrentPrincipalId returns the object id of the current

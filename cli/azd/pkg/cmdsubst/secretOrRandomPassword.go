@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
-	"github.com/azure/azure-dev/cli/azd/pkg/password"
+	"github.com/azure/azure-dev/pkg/keyvault"
+	"github.com/azure/azure-dev/pkg/password"
 )
 
 const SecretOrRandomPasswordCommandName string = "secretOrRandomPassword"

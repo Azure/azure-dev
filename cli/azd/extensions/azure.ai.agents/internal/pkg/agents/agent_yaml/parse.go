@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/pkg/azdext"
 	"go.yaml.in/yaml/v3"
 )
 

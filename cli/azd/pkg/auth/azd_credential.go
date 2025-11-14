@@ -12,7 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
-	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/pkg/cloud"
 )
 
 type azdCredential struct {

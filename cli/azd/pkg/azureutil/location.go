@@ -10,9 +10,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/pkg/account"
+	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/pkg/input"
 )
 
 // PromptLocation asks the user to select a location from a list of supported azure locations for a given subscription.

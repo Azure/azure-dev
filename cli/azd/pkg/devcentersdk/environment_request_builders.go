@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/pkg/httputil"
 )
 
 const (

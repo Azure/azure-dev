@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
-	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/internal/appdetect"
+	"github.com/azure/azure-dev/internal/scaffold"
+	"github.com/azure/azure-dev/pkg/input"
 	"github.com/stretchr/testify/require"
 )
 

@@ -14,12 +14,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/names"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/internal/names"
+	"github.com/azure/azure-dev/pkg/account"
+	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/pkg/output/ux"
+	"github.com/azure/azure-dev/pkg/project"
 )
 
 func validateServiceName(name string, prj *project.ProjectConfig) error {

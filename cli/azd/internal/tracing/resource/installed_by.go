@@ -4,8 +4,8 @@
 package resource
 
 import (
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
-	"github.com/azure/azure-dev/cli/azd/pkg/installer"
+	"github.com/azure/azure-dev/internal/tracing/fields"
+	"github.com/azure/azure-dev/pkg/installer"
 )
 
 // Returns a hash of the content of `.installed-by.txt` file in the same directory as

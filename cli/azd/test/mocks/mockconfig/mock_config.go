@@ -3,7 +3,7 @@
 
 package mockconfig
 
-import "github.com/azure/azure-dev/cli/azd/pkg/config"
+import "github.com/azure/azure-dev/pkg/config"
 
 type MockConfigManager struct {
 	config config.Config

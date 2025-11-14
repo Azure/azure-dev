@@ -7,10 +7,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/pkg/ioc"
+	"github.com/azure/azure-dev/pkg/lazy"
+	"github.com/azure/azure-dev/pkg/project"
 	"github.com/stretchr/testify/require"
 )
 

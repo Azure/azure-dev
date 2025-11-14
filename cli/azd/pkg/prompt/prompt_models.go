@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/pkg/azapi"
 )
 
 // Azure Scope contains the high level metadata about an Azure deployment.

@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/pkg/convert"
 )
 
 type AzCliManagedHSM struct {

@@ -14,7 +14,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
+	"github.com/azure/azure-dev/pkg/ux/internal"
 	"github.com/nathan-fiscaletti/consolesize-go"
 )
 

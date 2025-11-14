@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )

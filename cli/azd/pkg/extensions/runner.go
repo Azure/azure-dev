@@ -10,8 +10,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/pkg/config"
+	"github.com/azure/azure-dev/pkg/exec"
 )
 
 type InvokeOptions struct {

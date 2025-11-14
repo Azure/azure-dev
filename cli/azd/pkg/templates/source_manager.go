@@ -11,11 +11,11 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
-	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/azure/azure-dev/pkg/config"
+	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/pkg/ioc"
+	"github.com/azure/azure-dev/pkg/tools/github"
+	"github.com/azure/azure-dev/resources"
 )
 
 const baseConfigKey string = "template.sources"

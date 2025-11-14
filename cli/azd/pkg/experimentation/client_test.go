@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
+	"github.com/azure/azure-dev/test/mocks/mockhttp"
 	"github.com/stretchr/testify/require"
 )
 

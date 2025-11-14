@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/pkg/exec"
+	"github.com/azure/azure-dev/pkg/tools"
 )
 
 // swaCliPackage is the npm package (including the version version) we execute with npx to run the SWA CLI.

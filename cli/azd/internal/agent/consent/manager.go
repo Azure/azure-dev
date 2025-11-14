@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/internal/agent/tools/common"
+	"github.com/azure/azure-dev/pkg/config"
+	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/pkg/lazy"
 )
 
 const (

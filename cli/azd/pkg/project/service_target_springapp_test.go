@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/pkg/azapi"
+	"github.com/azure/azure-dev/pkg/environment"
 	"github.com/stretchr/testify/require"
 )
 

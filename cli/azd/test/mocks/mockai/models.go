@@ -10,7 +10,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/machinelearning/armmachinelearning/v3"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/test/mocks"
 )
 
 func RegisterGetModel(mockContext *mocks.MockContext, workspaceName string, modelName string, statusCode int) *http.Request {

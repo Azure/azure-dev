@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
+	"github.com/azure/azure-dev/pkg/custommaps"
 	"github.com/stretchr/testify/assert"
 )
 

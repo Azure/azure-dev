@@ -9,10 +9,10 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/pkg/alpha"
+	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/pkg/output/ux"
 )
 
 // A predicate function definition for registering expressions

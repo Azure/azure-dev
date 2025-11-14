@@ -14,8 +14,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/pkg/exec"
+	"github.com/azure/azure-dev/pkg/output"
 )
 
 type HookFilterPredicateFn func(scriptName string, hookConfig *HookConfig) bool

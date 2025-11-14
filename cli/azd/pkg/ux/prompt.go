@@ -9,8 +9,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
+	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/pkg/ux/internal"
 
 	"dario.cat/mergo"
 	"github.com/eiannone/keyboard"

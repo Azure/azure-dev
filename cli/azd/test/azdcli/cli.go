@@ -30,12 +30,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/pkg/exec"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/test/ostest"
-	"github.com/azure/azure-dev/cli/azd/test/recording"
+	"github.com/azure/azure-dev/test/ostest"
+	"github.com/azure/azure-dev/test/recording"
 )
 
 const (

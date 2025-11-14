@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cmd/actions"
+	"github.com/azure/azure-dev/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 

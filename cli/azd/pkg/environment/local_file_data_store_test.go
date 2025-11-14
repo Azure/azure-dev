@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/pkg/config"
+	"github.com/azure/azure-dev/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 

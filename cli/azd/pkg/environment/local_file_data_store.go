@@ -12,11 +12,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/internal/tracing"
+	"github.com/azure/azure-dev/internal/tracing/fields"
+	"github.com/azure/azure-dev/pkg/config"
+	"github.com/azure/azure-dev/pkg/contracts"
+	"github.com/azure/azure-dev/pkg/environment/azdcontext"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 )

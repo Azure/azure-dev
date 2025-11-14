@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/pkg/exec"
 )
 
 // Cli is a wrapper around the kustomize cli

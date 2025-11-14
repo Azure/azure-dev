@@ -920,6 +920,6 @@ func encodeSubscriptionID(subscriptionID string) (string, error) {
 	guidBytes, _ := guid.MarshalBinary()
 
 	// Encode as base64 and remove padding
-	encoded := base64.StdEncoding.EncodeToString(guidBytes)
+	encoded := base64.URLEncoding.EncodeToString(guidBytes)
 	return strings.TrimRight(encoded, "="), nil
 }

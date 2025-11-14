@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"dario.cat/mergo"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
@@ -42,23 +43,20 @@ type Manager struct {
 	cloud               *cloud.Cloud
 }
 
-// defaultOptions for this package.
-const (
-	defaultModule = "main"
-	defaultPath   = "infra"
+var (
+	defaultOptions = Options{
+		Module: "main",
+		Path:   "infra",
+	}
 )
 
 func (m *Manager) Initialize(ctx context.Context, projectPath string, options Options) error {
-	// applied defaults if missing
-	if options.Module == "" {
-		options.Module = defaultModule
-	}
-	if options.Path == "" {
-		options.Path = defaultPath
-	}
+	mergedOptions := Options{}
+	mergo.Merge(&mergedOptions, options)
+	mergo.Merge(&mergedOptions, defaultOptions)
 
 	m.projectPath = projectPath
-	m.options = &options
+	m.options = &mergedOptions
 
 	provider, err := m.newProvider(ctx)
 	if err != nil {
@@ -66,7 +64,7 @@ func (m *Manager) Initialize(ctx context.Context, projectPath string, options Op
 	}
 
 	m.provider = provider
-	return m.provider.Initialize(ctx, projectPath, options)
+	return m.provider.Initialize(ctx, projectPath, mergedOptions)
 }
 
 // Parameters gets the list of parameters and its value which will be used to provision the infrastructure.

@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"dario.cat/mergo"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
 
@@ -224,10 +225,11 @@ func (im *ImportManager) HasAppHost(ctx context.Context, projectConfig *ProjectC
 	return false
 }
 
-// defaultOptions for infra settings. These values are applied across provisioning providers.
-const (
-	DefaultModule = "main"
-	DefaultPath   = "infra"
+var (
+	DefaultProvisioningOptions = provisioning.Options{
+		Module: "main",
+		Path:   "infra",
+	}
 )
 
 // ProjectInfrastructure parses the project configuration and returns the infrastructure configuration.
@@ -235,31 +237,27 @@ const (
 // The configuration can be explicitly defined on azure.yaml using path and module, or in case these values
 // are not explicitly defined, the project importer uses default values to find the infrastructure.
 func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (*Infra, error) {
-	// Use default project values for Infra when not specified in azure.yaml
-	if projectConfig.Infra.Module == "" {
-		projectConfig.Infra.Module = DefaultModule
-	}
-	if projectConfig.Infra.Path == "" {
-		projectConfig.Infra.Path = DefaultPath
-	}
+	mergedOptions := provisioning.Options{}
+	mergo.Merge(&mergedOptions, projectConfig.Infra)
+	mergo.Merge(&mergedOptions, DefaultProvisioningOptions)
 
-	infraRoot := projectConfig.Infra.Path
+	infraRoot := mergedOptions.Path
 	if !filepath.IsAbs(infraRoot) {
 		infraRoot = filepath.Join(projectConfig.Path, infraRoot)
 	}
 
 	// short-circuit: If layers are defined, we know it's an explicit infrastructure
-	if len(projectConfig.Infra.Layers) > 0 {
+	if len(mergedOptions.Layers) > 0 {
 		return &Infra{
-			Options: projectConfig.Infra,
+			Options: mergedOptions,
 		}, nil
 	}
 
 	// short-circuit: If infra files exist, we know it's an explicit infrastructure
-	if moduleExists, err := pathHasModule(infraRoot, projectConfig.Infra.Module); err == nil && moduleExists {
+	if moduleExists, err := pathHasModule(infraRoot, mergedOptions.Module); err == nil && moduleExists {
 		log.Printf("using infrastructure from %s directory", infraRoot)
 		return &Infra{
-			Options: projectConfig.Infra,
+			Options: mergedOptions,
 		}, nil
 	}
 
@@ -289,7 +287,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 
 	// Return default project infra
 	return &Infra{
-		Options: projectConfig.Infra,
+		Options: mergedOptions,
 	}, nil
 }
 

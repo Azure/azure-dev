@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
@@ -472,5 +473,248 @@ postbuild:
 			}},
 		}
 		require.Equal(t, expectedHooks, project.Hooks)
+	})
+}
+
+func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
+	t.Run("DefaultValuesNotWritten", func(t *testing.T) {
+		// Create a minimal project config with no infra settings
+		projectConfig := &ProjectConfig{
+			Name: "test-project",
+			// Infra field left empty - should use defaults at runtime but not save them
+		}
+
+		// Create a temporary file for testing
+		tempDir := t.TempDir()
+		projectFile := filepath.Join(tempDir, "azure.yaml")
+
+		// Save the project - should not include default infra values
+		err := Save(context.Background(), projectConfig, projectFile)
+		require.NoError(t, err)
+
+		// Read the file content directly to verify defaults aren't written
+		fileContent, err := os.ReadFile(projectFile)
+		require.NoError(t, err)
+
+		yamlContent := string(fileContent)
+
+		// Verify that default values are NOT present in the saved YAML
+		assert.NotContains(t, yamlContent, "infra:")
+		assert.NotContains(t, yamlContent, "path: infra")
+		assert.NotContains(t, yamlContent, "module: main")
+		assert.NotContains(t, yamlContent, "provider: bicep")
+
+		// Load the project back - should work with defaults applied at runtime
+		loadedProject, err := Load(context.Background(), projectFile)
+		require.NoError(t, err)
+
+		// Verify the project loaded correctly with the right name
+		assert.Equal(t, "test-project", loadedProject.Name)
+
+		// The loaded project's Infra field should still be empty/default
+		// (defaults are only applied when needed, not stored in the config)
+		assert.Equal(t, "", loadedProject.Infra.Path)
+		assert.Equal(t, "", loadedProject.Infra.Module)
+		assert.Equal(t, provisioning.ProviderKind(""), loadedProject.Infra.Provider)
+	})
+
+	t.Run("CustomValuesAreWritten", func(t *testing.T) {
+		// Create a project config with custom infra settings
+		projectConfig := &ProjectConfig{
+			Name: "test-project",
+			Infra: provisioning.Options{
+				Path:     "custom-infra",
+				Module:   "custom-main",
+				Provider: provisioning.Terraform,
+			},
+		}
+
+		// Create a temporary file for testing
+		tempDir := t.TempDir()
+		projectFile := filepath.Join(tempDir, "azure.yaml")
+
+		// Save the project - should include custom infra values
+		err := Save(context.Background(), projectConfig, projectFile)
+		require.NoError(t, err)
+
+		// Read the file content directly to verify custom values are written
+		fileContent, err := os.ReadFile(projectFile)
+		require.NoError(t, err)
+
+		yamlContent := string(fileContent)
+
+		// Verify that custom values ARE present in the saved YAML
+		assert.Contains(t, yamlContent, "infra:")
+		assert.Contains(t, yamlContent, "path: custom-infra")
+		assert.Contains(t, yamlContent, "module: custom-main")
+		assert.Contains(t, yamlContent, "provider: terraform")
+
+		// Load the project back
+		loadedProject, err := Load(context.Background(), projectFile)
+		require.NoError(t, err)
+
+		// Verify the custom values are preserved
+		assert.Equal(t, "test-project", loadedProject.Name)
+		assert.Equal(t, "custom-infra", loadedProject.Infra.Path)
+		assert.Equal(t, "custom-main", loadedProject.Infra.Module)
+		assert.Equal(t, provisioning.Terraform, loadedProject.Infra.Provider)
+	})
+
+	t.Run("PartialCustomValuesWritten", func(t *testing.T) {
+		// Create a project config with only some custom infra settings
+		projectConfig := &ProjectConfig{
+			Name: "test-project",
+			Infra: provisioning.Options{
+				Path:     "my-infra", // Only path and provider are custom, module should use default
+				Provider: provisioning.Terraform,
+				// Module left empty - should use default at runtime
+			},
+		}
+
+		// Create a temporary file for testing
+		tempDir := t.TempDir()
+		projectFile := filepath.Join(tempDir, "azure.yaml")
+
+		// Save the project
+		err := Save(context.Background(), projectConfig, projectFile)
+		require.NoError(t, err)
+
+		// Read the file content
+		fileContent, err := os.ReadFile(projectFile)
+		require.NoError(t, err)
+
+		yamlContent := string(fileContent)
+
+		// Verify only the custom values are written, not the default module
+		assert.Contains(t, yamlContent, "infra:")
+		assert.Contains(t, yamlContent, "path: my-infra")
+		assert.Contains(t, yamlContent, "provider: terraform")
+		assert.NotContains(t, yamlContent, "module: main") // Default not written
+
+		// Load the project back
+		loadedProject, err := Load(context.Background(), projectFile)
+		require.NoError(t, err)
+
+		// Verify the custom values are preserved and module is empty (will use default at runtime)
+		assert.Equal(t, "my-infra", loadedProject.Infra.Path)
+		assert.Equal(t, provisioning.Terraform, loadedProject.Infra.Provider)
+		assert.Equal(t, "", loadedProject.Infra.Module) // Empty in config, but defaults applied when needed
+	})
+
+	t.Run("OnlyProviderCustomValue", func(t *testing.T) {
+		// Create a project config with only provider set to non-default
+		projectConfig := &ProjectConfig{
+			Name: "test-project",
+			Infra: provisioning.Options{
+				Provider: provisioning.Terraform,
+				// Path and Module left empty - should use defaults at runtime
+			},
+		}
+
+		// Create a temporary file for testing
+		tempDir := t.TempDir()
+		projectFile := filepath.Join(tempDir, "azure.yaml")
+
+		// Save the project
+		err := Save(context.Background(), projectConfig, projectFile)
+		require.NoError(t, err)
+
+		// Read the file content
+		fileContent, err := os.ReadFile(projectFile)
+		require.NoError(t, err)
+
+		yamlContent := string(fileContent)
+
+		// Verify only the custom provider is written, not the default path/module
+		assert.Contains(t, yamlContent, "infra:")
+		assert.Contains(t, yamlContent, "provider: terraform")
+		assert.NotContains(t, yamlContent, "path: infra")  // Default not written
+		assert.NotContains(t, yamlContent, "module: main") // Default not written
+
+		// Load the project back
+		loadedProject, err := Load(context.Background(), projectFile)
+		require.NoError(t, err)
+
+		// Verify the custom provider is preserved and path/module are empty (will use defaults at runtime)
+		assert.Equal(t, provisioning.Terraform, loadedProject.Infra.Provider)
+		assert.Equal(t, "", loadedProject.Infra.Path)   // Empty in config, but defaults applied when needed
+		assert.Equal(t, "", loadedProject.Infra.Module) // Empty in config, but defaults applied when needed
+	})
+
+	t.Run("LayersWithDefaultValues", func(t *testing.T) {
+		// Create a project config with layers but default infra values
+		projectConfig := &ProjectConfig{
+			Name: "test-project",
+			Infra: provisioning.Options{
+				Layers: []provisioning.Options{
+					{
+						Name:   "networking",
+						Path:   "infra/networking", // Custom path
+						Module: "network",
+						// Provider left to default
+					},
+					{
+						Name:     "application",
+						Path:     "infra/app", // Custom path
+						Module:   "app",
+						Provider: provisioning.Terraform, // Custom provider for this layer
+					},
+				},
+				// Root infra settings left to defaults
+			},
+		}
+
+		// Create a temporary file for testing
+		tempDir := t.TempDir()
+		projectFile := filepath.Join(tempDir, "azure.yaml")
+
+		// Save the project
+		err := Save(context.Background(), projectConfig, projectFile)
+		require.NoError(t, err)
+
+		// Read the file content
+		fileContent, err := os.ReadFile(projectFile)
+		require.NoError(t, err)
+
+		yamlContent := string(fileContent)
+
+		// Verify that layers are written but default root infra values are not
+		assert.Contains(t, yamlContent, "infra:")
+		assert.Contains(t, yamlContent, "layers:")
+		assert.Contains(t, yamlContent, "name: networking")
+		assert.Contains(t, yamlContent, "path: infra/networking")
+		assert.Contains(t, yamlContent, "module: network")
+		assert.Contains(t, yamlContent, "name: application")
+		assert.Contains(t, yamlContent, "path: infra/app")
+		assert.Contains(t, yamlContent, "module: app")
+		assert.Contains(t, yamlContent, "provider: terraform") // Custom provider for layer
+
+		// Verify default root infra values are NOT written (check for root-level defaults)
+		// Since layers contain their own path/module/provider, we need to check that root defaults aren't present
+		// We can't use simple string contains because layers have their own paths, so check structure
+		assert.NotRegexp(t, `(?m)^path: infra$`, yamlContent)     // Root default path not written
+		assert.NotRegexp(t, `(?m)^module: main$`, yamlContent)    // Root default module not written
+		assert.NotRegexp(t, `(?m)^provider: bicep$`, yamlContent) // Root default provider not written
+
+		// Load the project back
+		loadedProject, err := Load(context.Background(), projectFile)
+		require.NoError(t, err)
+
+		// Verify the layers are preserved
+		require.Len(t, loadedProject.Infra.Layers, 2)
+		assert.Equal(t, "networking", loadedProject.Infra.Layers[0].Name)
+		assert.Equal(t, "infra/networking", loadedProject.Infra.Layers[0].Path)
+		assert.Equal(t, "network", loadedProject.Infra.Layers[0].Module)
+		assert.Equal(t, provisioning.ProviderKind(""), loadedProject.Infra.Layers[0].Provider) // Default not stored (empty)
+
+		assert.Equal(t, "application", loadedProject.Infra.Layers[1].Name)
+		assert.Equal(t, "infra/app", loadedProject.Infra.Layers[1].Path)
+		assert.Equal(t, "app", loadedProject.Infra.Layers[1].Module)
+		assert.Equal(t, provisioning.Terraform, loadedProject.Infra.Layers[1].Provider) // Custom value preserved
+
+		// Verify root infra values are empty (will use defaults at runtime)
+		assert.Equal(t, "", loadedProject.Infra.Path)                                // Empty in config, but defaults applied when needed
+		assert.Equal(t, "", loadedProject.Infra.Module)                              // Empty in config, but defaults applied when needed
+		assert.Equal(t, provisioning.ProviderKind(""), loadedProject.Infra.Provider) // Empty in config, but defaults applied when needed
 	})
 }

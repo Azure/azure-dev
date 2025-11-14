@@ -23,6 +23,7 @@ import (
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -799,7 +800,39 @@ func (a *InitAction) downloadAgentYaml(
 		if err != nil {
 			return nil, "", fmt.Errorf("reading local file %s: %w", manifestPointer, err)
 		}
-		targetDir = filepath.Dir(manifestPointer)
+
+		// Parse the YAML content into genericManifest
+		var genericManifest map[string]interface{}
+		if err := yaml.Unmarshal(content, &genericManifest); err != nil {
+			return nil, "", fmt.Errorf("parsing YAML from manifest file: %w", err)
+		}
+
+		var name string
+		var ok bool
+		if name, ok = genericManifest["name"].(string); !ok {
+			name = ""
+		}
+
+		// Check if the manifest file is under current directory + "src"
+		currentDir, _ := os.Getwd()
+		srcDir := filepath.Join(currentDir, "src", name)
+		absManifestPath, _ := filepath.Abs(manifestPointer)
+
+		// Check if manifest is under src directory
+		if strings.HasPrefix(absManifestPath, srcDir) {
+			confirmResponse, err := a.azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+				Options: &azdext.ConfirmOptions{
+					Message:      "This operation will overwrite the provided manifest file. Do you want to continue?",
+					DefaultValue: to.Ptr(false),
+				},
+			})
+			if err != nil {
+				return nil, "", fmt.Errorf("prompting for confirmation: %w", err)
+			}
+			if !*confirmResponse.Value {
+				return nil, "", fmt.Errorf("operation cancelled by user")
+			}
+		}
 	} else if a.isGitHubUrl(manifestPointer) {
 		// Handle GitHub URLs using downloadGithubManifest
 		fmt.Printf("Downloading agent.yaml from GitHub: %s\n", manifestPointer)
@@ -945,7 +978,20 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", fmt.Errorf("creating target directory %s: %w", targetDir, err)
 	}
 
-	if isGitHubUrl {
+	if a.isLocalFilePath(manifestPointer) {
+		// Check if the template is a ContainerAgent
+		_, isHostedContainer := agentManifest.Template.(agent_yaml.ContainerAgent)
+
+		if isHostedContainer {
+			// For container agents, copy the entire parent directory
+			fmt.Println("Copying full directory for container agent")
+			manifestDir := filepath.Dir(manifestPointer)
+			err := copyDirectory(manifestDir, targetDir)
+			if err != nil {
+				return nil, "", fmt.Errorf("copying parent directory: %w", err)
+			}
+		}
+	} else if isGitHubUrl {
 		// Check if the template is a ContainerAgent
 		_, isHostedContainer := agentManifest.Template.(agent_yaml.ContainerAgent)
 
@@ -964,7 +1010,7 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", fmt.Errorf("marshaling agent manifest to YAML after parameter processing: %w", err)
 	}
 
-	annotation := "# yaml-language-server: $schema=https://raw.githubusercontent.com/microsoft/AgentSchema/main/runtime/json-schema/ContainerAgent.yaml"
+	annotation := "# yaml-language-server: $schema=https://raw.githubusercontent.com/microsoft/AgentSchema/main/schemas/v1.0/ContainerAgent.yaml"
 	agentFileContents := bytes.NewBufferString(annotation + "\n\n")
 	_, err = agentFileContents.Write(content)
 	if err != nil {
@@ -1943,4 +1989,54 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 	fmt.Println("Model deployment details processed and injected into agent definition. Deployment details can also be found in the JSON formatted AI_PROJECT_DEPLOYMENTS environment variable.")
 
 	return updatedManifest, deploymentDetails, nil
+}
+
+// copyDirectory recursively copies all files and directories from src to dst
+func copyDirectory(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Calculate the destination path
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		dstPath := filepath.Join(dst, relPath)
+
+		if d.IsDir() {
+			// Create directory and continue processing its contents
+			return os.MkdirAll(dstPath, 0755)
+		} else {
+			// Copy file
+			return copyFile(path, dstPath)
+		}
+	})
+}
+
+// copyFile copies a single file from src to dst
+func copyFile(src, dst string) error {
+	// Create the destination directory if it doesn't exist
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+
+	// Open source file
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	// Create destination file
+	dstFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	// Copy file contents
+	_, err = srcFile.WriteTo(dstFile)
+	return err
 }

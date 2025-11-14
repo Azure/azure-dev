@@ -109,10 +109,10 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	fmt.Fprintf(os.Stderr, "Project path: %s, Service path: %s\n", proj.Project.Path, fullPath)
 
 	// Check if user has specified agent definition path via environment variable
-	if envPath := os.Getenv("FOUNDRY_AGENT_DEFINITION_PATH"); envPath != "" {
+	if envPath := os.Getenv("AGENT_DEFINITION_PATH"); envPath != "" {
 		// Verify the file exists and has correct extension
 		if _, err := os.Stat(envPath); os.IsNotExist(err) {
-			return fmt.Errorf("agent definition file specified in FOUNDRY_AGENT_DEFINITION_PATH does not exist: %s", envPath)
+			return fmt.Errorf("agent definition file specified in AGENT_DEFINITION_PATH does not exist: %s", envPath)
 		}
 
 		ext := strings.ToLower(filepath.Ext(envPath))
@@ -142,7 +142,7 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 	}
 
 	return fmt.Errorf("agent definition file (agent.yaml or agent.yml) not found in %s. "+
-		"Please ensure the file exists or set FOUNDRY_AGENT_DEFINITION_PATH environment variable", fullPath)
+		"Please ensure the file exists or set AGENT_DEFINITION_PATH environment variable", fullPath)
 }
 
 // Endpoints returns endpoints exposed by the agent service
@@ -208,7 +208,7 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	// Get the AI Foundry project
 	projectResp, err := projectsClient.Get(ctx, p.foundryProject.ResourceGroupName, accountName, projectName, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get AI Foundry project: %w", err)
+		return nil, fmt.Errorf("failed to get Azure AI Foundry project: %w", err)
 	}
 
 	// Construct the target resource
@@ -446,7 +446,7 @@ or you haven't connected to an existing project (azd ai agent init --project-id 
 	// Create agent request (no image URL needed for prompt agents)
 	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create agent request: %w", err)
+		return nil, fmt.Errorf("failed to create agent request: %w", err)
 	}
 
 	// Display agent information
@@ -632,7 +632,7 @@ func (p *AgentServiceTargetProvider) agentPlaygroundUrl(projectResourceId, agent
 
 	resourceGroup := resourceId.ResourceGroupName
 	if resourceId.Parent == nil {
-		return "", fmt.Errorf("invalid foundry project resource ID: %s", projectResourceId)
+		return "", fmt.Errorf("invalid Azure AI Foundry project ID: %s", projectResourceId)
 	}
 
 	accountName := resourceId.Parent.Name

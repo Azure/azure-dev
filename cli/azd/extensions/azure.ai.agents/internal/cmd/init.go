@@ -1010,7 +1010,7 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", fmt.Errorf("marshaling agent manifest to YAML after parameter processing: %w", err)
 	}
 
-	annotation := "# yaml-language-server: $schema=https://raw.githubusercontent.com/microsoft/AgentSchema/main/schemas/v1.0/ContainerAgent.yaml"
+	annotation := "# yaml-language-server: $schema=https://raw.githubusercontent.com/microsoft/AgentSchema/refs/heads/main/schemas/v1.0/ContainerAgent.yaml"
 	agentFileContents := bytes.NewBufferString(annotation + "\n\n")
 	_, err = agentFileContents.Write(content)
 	if err != nil {

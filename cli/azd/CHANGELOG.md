@@ -2,23 +2,9 @@
 
 ## 1.21.3 (2025-11-14)
 
-### Features Added
-
-- [[#6185]](https://github.com/Azure/azure-dev/pull/6185) Add support for processing model resources as parameters in AI Agents extension.
-- [[#6158]](https://github.com/Azure/azure-dev/pull/6158) Add support for deploying Aspire apps to App Service deployment slots.
-- [[#6143]](https://github.com/Azure/azure-dev/pull/6143) Add support for multi-agent projects with environment variables for agent metadata.
-
 ### Bugs Fixed
 
 - [[#6190]](https://github.com/Azure/azure-dev/pull/6190) Fix default infrastructure settings being incorrectly written to `azure.yaml` files.
-- [[#6191]](https://github.com/Azure/azure-dev/pull/6191) Fix local pointer handling in AI Agents extension.
-- [[#6186]](https://github.com/Azure/azure-dev/pull/6186) Fix prompting during provision/deploy in AI Agents extension.
-- [[#6187]](https://github.com/Azure/azure-dev/pull/6187) Fix agent playground URL encoding in AI Agents extension.
-- [[#6176]](https://github.com/Azure/azure-dev/pull/6176) Fix panic when container settings are undefined during predeploy.
-
-### Other Changes
-
-- [[#6183]](https://github.com/Azure/azure-dev/pull/6183) Improve exception messages with actionable guidance in AI Agents extension. Thanks @jfomhover for the contribution!
 
 ## 1.21.2 (2025-11-13)
 

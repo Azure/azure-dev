@@ -288,7 +288,7 @@ func ProcessManifestParameters(ctx context.Context, manifest *agent_yaml.AgentMa
 	}
 
 	// Inject parameter values into the manifest
-	processedManifest, err := injectParameterValuesIntoManifest(manifest, paramValues)
+	processedManifest, err := InjectParameterValuesIntoManifest(manifest, paramValues)
 	if err != nil {
 		return nil, fmt.Errorf("failed to inject parameter values into manifest: %w", err)
 	}
@@ -355,8 +355,8 @@ func promptForYamlParameterValues(ctx context.Context, parameters agent_yaml.Pro
 	return paramValues, nil
 }
 
-// injectParameterValuesIntoManifest replaces parameter placeholders in the manifest with actual values
-func injectParameterValuesIntoManifest(manifest *agent_yaml.AgentManifest, paramValues ParameterValues) (*agent_yaml.AgentManifest, error) {
+// InjectParameterValuesIntoManifest replaces parameter placeholders in the manifest with actual values
+func InjectParameterValuesIntoManifest(manifest *agent_yaml.AgentManifest, paramValues ParameterValues) (*agent_yaml.AgentManifest, error) {
 	// Convert manifest to JSON for processing
 	manifestBytes, err := json.Marshal(manifest)
 	if err != nil {
@@ -476,7 +476,9 @@ func injectParameterValues(template json.RawMessage, paramValues ParameterValues
 
 	// Check for any remaining unreplaced placeholders
 	if strings.Contains(templateStr, "{{") && strings.Contains(templateStr, "}}") {
-		fmt.Printf("Warning: Template contains unresolved placeholders:\n%s\n", templateStr)
+		fmt.Println("Warning: Template contains unresolved placeholders.")
+	} else {
+		fmt.Println("No remaining placeholders found.")
 	}
 
 	return []byte(templateStr), nil

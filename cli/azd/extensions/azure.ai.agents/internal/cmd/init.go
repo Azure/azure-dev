@@ -64,6 +64,7 @@ type InitAction struct {
 	projectConfig       *azdext.ProjectConfig
 	environment         *azdext.Environment
 	flags               *initFlags
+	deploymentDetails   []project.Deployment
 }
 
 // GitHubUrlInfo holds parsed information from a GitHub URL
@@ -917,6 +918,13 @@ func (a *InitAction) downloadAgentYaml(
 		return nil, "", fmt.Errorf("failed to process manifest parameters: %w", err)
 	}
 
+	agentManifest, deploymentDetails, err := a.ProcessModels(ctx, agentManifest)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to process model resources: %w", err)
+	}
+
+	a.deploymentDetails = deploymentDetails
+
 	_, isPromptAgent := agentManifest.Template.(agent_yaml.PromptAgent)
 	if isPromptAgent {
 		agentManifest, err = agent_yaml.ProcessPromptAgentToolsConnections(ctx, agentManifest, a.azdClient)
@@ -1010,45 +1018,9 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 
 	var agentConfig = project.ServiceTargetAgentConfig{}
 
-	deploymentDetails := []project.Deployment{}
 	resourceDetails := []project.Resource{}
 	switch agentDef.Kind {
-	case agent_yaml.AgentKindPrompt:
-		agentDef := agentManifest.Template.(agent_yaml.PromptAgent)
-
-		modelDeployment, err := a.getModelDeploymentDetails(ctx, agentDef.Model)
-		if err != nil {
-			return fmt.Errorf("failed to get model deployment details: %w", err)
-		}
-		deploymentDetails = append(deploymentDetails, *modelDeployment)
 	case agent_yaml.AgentKindHosted:
-		// Iterate over all models in the manifest for the container agent
-		for _, resource := range agentManifest.Resources {
-			// Convert the resource to bytes
-			resourceBytes, err := json.Marshal(resource)
-			if err != nil {
-				return fmt.Errorf("failed to marshal resource to JSON: %w", err)
-			}
-
-			// Convert the bytes to an Agent Definition
-			var resourceDef agent_yaml.Resource
-			if err := json.Unmarshal(resourceBytes, &resourceDef); err != nil {
-				return fmt.Errorf("failed to unmarshal JSON to Resource: %w", err)
-			}
-
-			if resourceDef.Kind == agent_yaml.ResourceKindModel {
-				resource := resource.(agent_yaml.ModelResource)
-				model := agent_yaml.Model{
-					Id: resource.Id,
-				}
-				modelDeployment, err := a.getModelDeploymentDetails(ctx, model)
-				if err != nil {
-					return fmt.Errorf("failed to get model deployment details: %w", err)
-				}
-				deploymentDetails = append(deploymentDetails, *modelDeployment)
-			}
-		}
-
 		// Handle tool resources that require connection names
 		if agentManifest.Resources != nil {
 			for _, resource := range agentManifest.Resources {
@@ -1087,7 +1059,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		agentConfig.Container = containerSettings
 	}
 
-	agentConfig.Deployments = deploymentDetails
+	agentConfig.Deployments = a.deploymentDetails
 	agentConfig.Resources = resourceDetails
 
 	var agentConfigStruct *structpb.Struct
@@ -1894,4 +1866,81 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*ai
 	}
 
 	return modelDeployment, nil
+}
+
+func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.AgentManifest) (*agent_yaml.AgentManifest, []project.Deployment, error) {
+	// Convert the template to bytes
+	templateBytes, err := yaml.Marshal(manifest.Template)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal agent template to YAML: %w", err)
+	}
+
+	// Convert the bytes to a dictionary
+	var templateDict map[string]interface{}
+	if err := yaml.Unmarshal(templateBytes, &templateDict); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal agent template from YAML: %w", err)
+	}
+
+	// Convert the dictionary to bytes
+	dictJsonBytes, err := yaml.Marshal(templateDict)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal templateDict to YAML: %w", err)
+	}
+
+	// Convert the bytes to an Agent Definition
+	var agentDef agent_yaml.AgentDefinition
+	if err := yaml.Unmarshal(dictJsonBytes, &agentDef); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal YAML to AgentDefinition: %w", err)
+	}
+
+	deploymentDetails := []project.Deployment{}
+	paramValues := registry_api.ParameterValues{}
+	switch agentDef.Kind {
+	case agent_yaml.AgentKindPrompt:
+		agentDef := manifest.Template.(agent_yaml.PromptAgent)
+
+		modelDeployment, err := a.getModelDeploymentDetails(ctx, agentDef.Model)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get model deployment details: %w", err)
+		}
+		deploymentDetails = append(deploymentDetails, *modelDeployment)
+		paramValues["deploymentName"] = modelDeployment.Name
+	case agent_yaml.AgentKindHosted:
+		// Iterate over all models in the manifest for the container agent
+		for _, resource := range manifest.Resources {
+			// Convert the resource to bytes
+			resourceBytes, err := yaml.Marshal(resource)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to marshal resource to YAML: %w", err)
+			}
+
+			// Convert the bytes to an Agent Definition
+			var resourceDef agent_yaml.Resource
+			if err := yaml.Unmarshal(resourceBytes, &resourceDef); err != nil {
+				return nil, nil, fmt.Errorf("failed to unmarshal YAML to Resource: %w", err)
+			}
+
+			if resourceDef.Kind == agent_yaml.ResourceKindModel {
+				resource := resource.(agent_yaml.ModelResource)
+				model := agent_yaml.Model{
+					Id: resource.Id,
+				}
+				modelDeployment, err := a.getModelDeploymentDetails(ctx, model)
+				if err != nil {
+					return nil, nil, fmt.Errorf("failed to get model deployment details: %w", err)
+				}
+				deploymentDetails = append(deploymentDetails, *modelDeployment)
+				paramValues[resource.Name] = modelDeployment.Name
+			}
+		}
+	}
+
+	updatedManifest, err := registry_api.InjectParameterValuesIntoManifest(manifest, paramValues)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to inject deployment names into manifest: %w", err)
+	}
+
+	fmt.Println("Model deployment details processed and injected into agent definition. Deployment details can also be found in the AI_PROJECT_DEPLOYMENTS environment variable.")
+
+	return updatedManifest, deploymentDetails, nil
 }

@@ -718,7 +718,7 @@ func (a *InitAction) isRegistryUrl(manifestPointer string) (bool, *RegistryManif
 func (a *InitAction) downloadAgentYaml(
 	ctx context.Context, manifestPointer string, targetDir string) (*agent_yaml.AgentManifest, string, error) {
 	if manifestPointer == "" {
-		return nil, "", fmt.Errorf("manifestPointer cannot be empty")
+		return nil, "", fmt.Errorf("The path to an agent manifest need to be provided (manifestPointer cannot be empty).")
 	}
 
 	var content []byte
@@ -997,7 +997,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 						// Prompt the user for a connection name
 						resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 							Options: &azdext.PromptOptions{
-								Message:        fmt.Sprintf("Enter connection name for %s resource:", toolResource.Id),
+								Message:        fmt.Sprintf("Enter a connection name for adding the resource %s to your foundry project:", toolResource.Id),
 								IgnoreHintKeys: true,
 								DefaultValue:   toolResource.Id,
 							},
@@ -1061,7 +1061,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
 
-	fmt.Printf("Added service '%s' to azure.yaml\n", agentDef.Name)
+	fmt.Printf("Added your agent as a service entry named '%s' under the file azure.yaml. You will be able to deploy this agent using command azd deploy %s.\n", agentDef.Name, agentDef.Name)
 	return nil
 }
 
@@ -1179,7 +1179,7 @@ func downloadParentDirectory(
 	// Get parent directory by removing the filename from the file path
 	pathParts := strings.Split(urlInfo.FilePath, "/")
 	if len(pathParts) <= 1 {
-		fmt.Println("Agent.yaml is at repository root, no parent directory to download")
+		fmt.Println("The file agent.yaml is at repository root, no parent directory to download")
 		return nil
 	}
 
@@ -1457,7 +1457,7 @@ func (a *InitAction) loadAiCatalog(ctx context.Context) error {
 	}
 
 	spinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text:        "Loading AI Model Catalog",
+		Text:        "Loading the model catalog",
 		ClearOnStop: true,
 	})
 
@@ -1467,7 +1467,7 @@ func (a *InitAction) loadAiCatalog(ctx context.Context) error {
 
 	aiModelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, a.azureContext.Scope.Location)
 	if err != nil {
-		return fmt.Errorf("failed to load AI model catalog: %w", err)
+		return fmt.Errorf("failed to load the model catalog: %w", err)
 	}
 
 	if err := spinner.Stop(ctx); err != nil {
@@ -1566,7 +1566,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 		Key:     "AZURE_AI_FOUNDRY_PROJECT_ID",
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get foundry project ID: %w", err)
+		return nil, fmt.Errorf("Failed to get the foundry project ID: %w", err)
 	}
 
 	foundryProjectId := resp.Value

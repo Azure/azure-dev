@@ -6,6 +6,7 @@
 - Process model resources as parameters
 - Update env var generation to support multi-agent projects
 - Polish error messages
+- Improve local manifest handling
 - Fix agent playground URL generation
 - Fix panic when container settings is nil
 

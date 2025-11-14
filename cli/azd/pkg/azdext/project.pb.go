@@ -12,6 +12,7 @@ package azdext
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -205,6 +206,104 @@ func (x *ParseGitHubUrlRequest) GetUrl() string {
 	return ""
 }
 
+// Request message for GetConfigSection
+type GetProjectConfigSectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetProjectConfigSectionRequest) Reset() {
+	*x = GetProjectConfigSectionRequest{}
+	mi := &file_project_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProjectConfigSectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProjectConfigSectionRequest) ProtoMessage() {}
+
+func (x *GetProjectConfigSectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProjectConfigSectionRequest.ProtoReflect.Descriptor instead.
+func (*GetProjectConfigSectionRequest) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *GetProjectConfigSectionRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+// Response message for GetConfigSection
+type GetProjectConfigSectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Section       *structpb.Struct       `protobuf:"bytes,1,opt,name=section,proto3" json:"section,omitempty"`
+	Found         bool                   `protobuf:"varint,2,opt,name=found,proto3" json:"found,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetProjectConfigSectionResponse) Reset() {
+	*x = GetProjectConfigSectionResponse{}
+	mi := &file_project_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProjectConfigSectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProjectConfigSectionResponse) ProtoMessage() {}
+
+func (x *GetProjectConfigSectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProjectConfigSectionResponse.ProtoReflect.Descriptor instead.
+func (*GetProjectConfigSectionResponse) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GetProjectConfigSectionResponse) GetSection() *structpb.Struct {
+	if x != nil {
+		return x.Section
+	}
+	return nil
+}
+
+func (x *GetProjectConfigSectionResponse) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
 // ParseGitHubUrlResponse message definition
 type ParseGitHubUrlResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -218,7 +317,7 @@ type ParseGitHubUrlResponse struct {
 
 func (x *ParseGitHubUrlResponse) Reset() {
 	*x = ParseGitHubUrlResponse{}
-	mi := &file_project_proto_msgTypes[4]
+	mi := &file_project_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -230,7 +329,7 @@ func (x *ParseGitHubUrlResponse) String() string {
 func (*ParseGitHubUrlResponse) ProtoMessage() {}
 
 func (x *ParseGitHubUrlResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_project_proto_msgTypes[4]
+	mi := &file_project_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -243,7 +342,7 @@ func (x *ParseGitHubUrlResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ParseGitHubUrlResponse.ProtoReflect.Descriptor instead.
 func (*ParseGitHubUrlResponse) Descriptor() ([]byte, []int) {
-	return file_project_proto_rawDescGZIP(), []int{4}
+	return file_project_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ParseGitHubUrlResponse) GetHostname() string {
@@ -274,11 +373,647 @@ func (x *ParseGitHubUrlResponse) GetFilePath() string {
 	return ""
 }
 
+// Request message for GetConfigValue
+type GetProjectConfigValueRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetProjectConfigValueRequest) Reset() {
+	*x = GetProjectConfigValueRequest{}
+	mi := &file_project_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProjectConfigValueRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProjectConfigValueRequest) ProtoMessage() {}
+
+func (x *GetProjectConfigValueRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProjectConfigValueRequest.ProtoReflect.Descriptor instead.
+func (*GetProjectConfigValueRequest) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *GetProjectConfigValueRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+// Response message for GetConfigValue
+type GetProjectConfigValueResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Value         *structpb.Value        `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
+	Found         bool                   `protobuf:"varint,2,opt,name=found,proto3" json:"found,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetProjectConfigValueResponse) Reset() {
+	*x = GetProjectConfigValueResponse{}
+	mi := &file_project_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProjectConfigValueResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProjectConfigValueResponse) ProtoMessage() {}
+
+func (x *GetProjectConfigValueResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProjectConfigValueResponse.ProtoReflect.Descriptor instead.
+func (*GetProjectConfigValueResponse) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *GetProjectConfigValueResponse) GetValue() *structpb.Value {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *GetProjectConfigValueResponse) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+// Request message for SetConfigSection
+type SetProjectConfigSectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Section       *structpb.Struct       `protobuf:"bytes,2,opt,name=section,proto3" json:"section,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetProjectConfigSectionRequest) Reset() {
+	*x = SetProjectConfigSectionRequest{}
+	mi := &file_project_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetProjectConfigSectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetProjectConfigSectionRequest) ProtoMessage() {}
+
+func (x *SetProjectConfigSectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetProjectConfigSectionRequest.ProtoReflect.Descriptor instead.
+func (*SetProjectConfigSectionRequest) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SetProjectConfigSectionRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *SetProjectConfigSectionRequest) GetSection() *structpb.Struct {
+	if x != nil {
+		return x.Section
+	}
+	return nil
+}
+
+// Request message for SetConfigValue
+type SetProjectConfigValueRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Value         *structpb.Value        `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetProjectConfigValueRequest) Reset() {
+	*x = SetProjectConfigValueRequest{}
+	mi := &file_project_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetProjectConfigValueRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetProjectConfigValueRequest) ProtoMessage() {}
+
+func (x *SetProjectConfigValueRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetProjectConfigValueRequest.ProtoReflect.Descriptor instead.
+func (*SetProjectConfigValueRequest) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SetProjectConfigValueRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *SetProjectConfigValueRequest) GetValue() *structpb.Value {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+// Request message for UnsetConfig
+type UnsetProjectConfigRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnsetProjectConfigRequest) Reset() {
+	*x = UnsetProjectConfigRequest{}
+	mi := &file_project_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnsetProjectConfigRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnsetProjectConfigRequest) ProtoMessage() {}
+
+func (x *UnsetProjectConfigRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnsetProjectConfigRequest.ProtoReflect.Descriptor instead.
+func (*UnsetProjectConfigRequest) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *UnsetProjectConfigRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+// Request message for GetServiceConfigSection
+type GetServiceConfigSectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ServiceName   string                 `protobuf:"bytes,1,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetServiceConfigSectionRequest) Reset() {
+	*x = GetServiceConfigSectionRequest{}
+	mi := &file_project_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetServiceConfigSectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetServiceConfigSectionRequest) ProtoMessage() {}
+
+func (x *GetServiceConfigSectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetServiceConfigSectionRequest.ProtoReflect.Descriptor instead.
+func (*GetServiceConfigSectionRequest) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *GetServiceConfigSectionRequest) GetServiceName() string {
+	if x != nil {
+		return x.ServiceName
+	}
+	return ""
+}
+
+func (x *GetServiceConfigSectionRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+// Response message for GetServiceConfigSection
+type GetServiceConfigSectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Section       *structpb.Struct       `protobuf:"bytes,1,opt,name=section,proto3" json:"section,omitempty"`
+	Found         bool                   `protobuf:"varint,2,opt,name=found,proto3" json:"found,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetServiceConfigSectionResponse) Reset() {
+	*x = GetServiceConfigSectionResponse{}
+	mi := &file_project_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetServiceConfigSectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetServiceConfigSectionResponse) ProtoMessage() {}
+
+func (x *GetServiceConfigSectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetServiceConfigSectionResponse.ProtoReflect.Descriptor instead.
+func (*GetServiceConfigSectionResponse) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *GetServiceConfigSectionResponse) GetSection() *structpb.Struct {
+	if x != nil {
+		return x.Section
+	}
+	return nil
+}
+
+func (x *GetServiceConfigSectionResponse) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+// Request message for GetServiceConfigValue
+type GetServiceConfigValueRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ServiceName   string                 `protobuf:"bytes,1,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetServiceConfigValueRequest) Reset() {
+	*x = GetServiceConfigValueRequest{}
+	mi := &file_project_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetServiceConfigValueRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetServiceConfigValueRequest) ProtoMessage() {}
+
+func (x *GetServiceConfigValueRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetServiceConfigValueRequest.ProtoReflect.Descriptor instead.
+func (*GetServiceConfigValueRequest) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GetServiceConfigValueRequest) GetServiceName() string {
+	if x != nil {
+		return x.ServiceName
+	}
+	return ""
+}
+
+func (x *GetServiceConfigValueRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+// Response message for GetServiceConfigValue
+type GetServiceConfigValueResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Value         *structpb.Value        `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
+	Found         bool                   `protobuf:"varint,2,opt,name=found,proto3" json:"found,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetServiceConfigValueResponse) Reset() {
+	*x = GetServiceConfigValueResponse{}
+	mi := &file_project_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetServiceConfigValueResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetServiceConfigValueResponse) ProtoMessage() {}
+
+func (x *GetServiceConfigValueResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetServiceConfigValueResponse.ProtoReflect.Descriptor instead.
+func (*GetServiceConfigValueResponse) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GetServiceConfigValueResponse) GetValue() *structpb.Value {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+func (x *GetServiceConfigValueResponse) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+// Request message for SetServiceConfigSection
+type SetServiceConfigSectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ServiceName   string                 `protobuf:"bytes,1,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Section       *structpb.Struct       `protobuf:"bytes,3,opt,name=section,proto3" json:"section,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetServiceConfigSectionRequest) Reset() {
+	*x = SetServiceConfigSectionRequest{}
+	mi := &file_project_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetServiceConfigSectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetServiceConfigSectionRequest) ProtoMessage() {}
+
+func (x *SetServiceConfigSectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetServiceConfigSectionRequest.ProtoReflect.Descriptor instead.
+func (*SetServiceConfigSectionRequest) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *SetServiceConfigSectionRequest) GetServiceName() string {
+	if x != nil {
+		return x.ServiceName
+	}
+	return ""
+}
+
+func (x *SetServiceConfigSectionRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *SetServiceConfigSectionRequest) GetSection() *structpb.Struct {
+	if x != nil {
+		return x.Section
+	}
+	return nil
+}
+
+// Request message for SetServiceConfigValue
+type SetServiceConfigValueRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ServiceName   string                 `protobuf:"bytes,1,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Value         *structpb.Value        `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetServiceConfigValueRequest) Reset() {
+	*x = SetServiceConfigValueRequest{}
+	mi := &file_project_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetServiceConfigValueRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetServiceConfigValueRequest) ProtoMessage() {}
+
+func (x *SetServiceConfigValueRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetServiceConfigValueRequest.ProtoReflect.Descriptor instead.
+func (*SetServiceConfigValueRequest) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *SetServiceConfigValueRequest) GetServiceName() string {
+	if x != nil {
+		return x.ServiceName
+	}
+	return ""
+}
+
+func (x *SetServiceConfigValueRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *SetServiceConfigValueRequest) GetValue() *structpb.Value {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+// Request message for UnsetServiceConfig
+type UnsetServiceConfigRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ServiceName   string                 `protobuf:"bytes,1,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnsetServiceConfigRequest) Reset() {
+	*x = UnsetServiceConfigRequest{}
+	mi := &file_project_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnsetServiceConfigRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnsetServiceConfigRequest) ProtoMessage() {}
+
+func (x *UnsetServiceConfigRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnsetServiceConfigRequest.ProtoReflect.Descriptor instead.
+func (*UnsetServiceConfigRequest) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *UnsetServiceConfigRequest) GetServiceName() string {
+	if x != nil {
+		return x.ServiceName
+	}
+	return ""
+}
+
+func (x *UnsetServiceConfigRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
 var File_project_proto protoreflect.FileDescriptor
 
 const file_project_proto_rawDesc = "" +
 	"\n" +
-	"\rproject.proto\x12\x06azdext\x1a\fmodels.proto\"E\n" +
+	"\rproject.proto\x12\x06azdext\x1a\fmodels.proto\x1a$include/google/protobuf/struct.proto\"E\n" +
 	"\x12GetProjectResponse\x12/\n" +
 	"\aproject\x18\x01 \x01(\v2\x15.azdext.ProjectConfigR\aproject\"D\n" +
 	"\x11AddServiceRequest\x12/\n" +
@@ -289,18 +1024,69 @@ const file_project_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12+\n" +
 	"\x05value\x18\x02 \x01(\v2\x15.azdext.ServiceConfigR\x05value:\x028\x01\")\n" +
 	"\x15ParseGitHubUrlRequest\x12\x10\n" +
-	"\x03url\x18\x01 \x01(\tR\x03url\"\x86\x01\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url\"4\n" +
+	"\x1eGetProjectConfigSectionRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\"j\n" +
+	"\x1fGetProjectConfigSectionResponse\x121\n" +
+	"\asection\x18\x01 \x01(\v2\x17.google.protobuf.StructR\asection\x12\x14\n" +
+	"\x05found\x18\x02 \x01(\bR\x05found\"\x86\x01\n" +
 	"\x16ParseGitHubUrlResponse\x12\x1a\n" +
 	"\bhostname\x18\x01 \x01(\tR\bhostname\x12\x1b\n" +
 	"\trepo_slug\x18\x02 \x01(\tR\brepoSlug\x12\x16\n" +
 	"\x06branch\x18\x03 \x01(\tR\x06branch\x12\x1b\n" +
-	"\tfile_path\x18\x04 \x01(\tR\bfilePath2\xac\x02\n" +
+	"\tfile_path\x18\x04 \x01(\tR\bfilePath\"2\n" +
+	"\x1cGetProjectConfigValueRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\"c\n" +
+	"\x1dGetProjectConfigValueResponse\x12,\n" +
+	"\x05value\x18\x01 \x01(\v2\x16.google.protobuf.ValueR\x05value\x12\x14\n" +
+	"\x05found\x18\x02 \x01(\bR\x05found\"g\n" +
+	"\x1eSetProjectConfigSectionRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x121\n" +
+	"\asection\x18\x02 \x01(\v2\x17.google.protobuf.StructR\asection\"`\n" +
+	"\x1cSetProjectConfigValueRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12,\n" +
+	"\x05value\x18\x02 \x01(\v2\x16.google.protobuf.ValueR\x05value\"/\n" +
+	"\x19UnsetProjectConfigRequest\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\"W\n" +
+	"\x1eGetServiceConfigSectionRequest\x12!\n" +
+	"\fservice_name\x18\x01 \x01(\tR\vserviceName\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"j\n" +
+	"\x1fGetServiceConfigSectionResponse\x121\n" +
+	"\asection\x18\x01 \x01(\v2\x17.google.protobuf.StructR\asection\x12\x14\n" +
+	"\x05found\x18\x02 \x01(\bR\x05found\"U\n" +
+	"\x1cGetServiceConfigValueRequest\x12!\n" +
+	"\fservice_name\x18\x01 \x01(\tR\vserviceName\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"c\n" +
+	"\x1dGetServiceConfigValueResponse\x12,\n" +
+	"\x05value\x18\x01 \x01(\v2\x16.google.protobuf.ValueR\x05value\x12\x14\n" +
+	"\x05found\x18\x02 \x01(\bR\x05found\"\x8a\x01\n" +
+	"\x1eSetServiceConfigSectionRequest\x12!\n" +
+	"\fservice_name\x18\x01 \x01(\tR\vserviceName\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x121\n" +
+	"\asection\x18\x03 \x01(\v2\x17.google.protobuf.StructR\asection\"\x83\x01\n" +
+	"\x1cSetServiceConfigValueRequest\x12!\n" +
+	"\fservice_name\x18\x01 \x01(\tR\vserviceName\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12,\n" +
+	"\x05value\x18\x03 \x01(\v2\x16.google.protobuf.ValueR\x05value\"R\n" +
+	"\x19UnsetServiceConfigRequest\x12!\n" +
+	"\fservice_name\x18\x01 \x01(\tR\vserviceName\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path2\xad\t\n" +
 	"\x0eProjectService\x127\n" +
 	"\x03Get\x12\x14.azdext.EmptyRequest\x1a\x1a.azdext.GetProjectResponse\x12>\n" +
 	"\n" +
 	"AddService\x12\x19.azdext.AddServiceRequest\x1a\x15.azdext.EmptyResponse\x12P\n" +
 	"\x13GetResolvedServices\x12\x14.azdext.EmptyRequest\x1a#.azdext.GetResolvedServicesResponse\x12O\n" +
-	"\x0eParseGitHubUrl\x12\x1d.azdext.ParseGitHubUrlRequest\x1a\x1e.azdext.ParseGitHubUrlResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
+	"\x0eParseGitHubUrl\x12\x1d.azdext.ParseGitHubUrlRequest\x1a\x1e.azdext.ParseGitHubUrlResponse\x12c\n" +
+	"\x10GetConfigSection\x12&.azdext.GetProjectConfigSectionRequest\x1a'.azdext.GetProjectConfigSectionResponse\x12]\n" +
+	"\x0eGetConfigValue\x12$.azdext.GetProjectConfigValueRequest\x1a%.azdext.GetProjectConfigValueResponse\x12Q\n" +
+	"\x10SetConfigSection\x12&.azdext.SetProjectConfigSectionRequest\x1a\x15.azdext.EmptyResponse\x12M\n" +
+	"\x0eSetConfigValue\x12$.azdext.SetProjectConfigValueRequest\x1a\x15.azdext.EmptyResponse\x12G\n" +
+	"\vUnsetConfig\x12!.azdext.UnsetProjectConfigRequest\x1a\x15.azdext.EmptyResponse\x12j\n" +
+	"\x17GetServiceConfigSection\x12&.azdext.GetServiceConfigSectionRequest\x1a'.azdext.GetServiceConfigSectionResponse\x12d\n" +
+	"\x15GetServiceConfigValue\x12$.azdext.GetServiceConfigValueRequest\x1a%.azdext.GetServiceConfigValueResponse\x12X\n" +
+	"\x17SetServiceConfigSection\x12&.azdext.SetServiceConfigSectionRequest\x1a\x15.azdext.EmptyResponse\x12T\n" +
+	"\x15SetServiceConfigValue\x12$.azdext.SetServiceConfigValueRequest\x1a\x15.azdext.EmptyResponse\x12N\n" +
+	"\x12UnsetServiceConfig\x12!.azdext.UnsetServiceConfigRequest\x1a\x15.azdext.EmptyResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
 var (
 	file_project_proto_rawDescOnce sync.Once
@@ -314,37 +1100,81 @@ func file_project_proto_rawDescGZIP() []byte {
 	return file_project_proto_rawDescData
 }
 
-var file_project_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_project_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_project_proto_goTypes = []any{
-	(*GetProjectResponse)(nil),          // 0: azdext.GetProjectResponse
-	(*AddServiceRequest)(nil),           // 1: azdext.AddServiceRequest
-	(*GetResolvedServicesResponse)(nil), // 2: azdext.GetResolvedServicesResponse
-	(*ParseGitHubUrlRequest)(nil),       // 3: azdext.ParseGitHubUrlRequest
-	(*ParseGitHubUrlResponse)(nil),      // 4: azdext.ParseGitHubUrlResponse
-	nil,                                 // 5: azdext.GetResolvedServicesResponse.ServicesEntry
-	(*ProjectConfig)(nil),               // 6: azdext.ProjectConfig
-	(*ServiceConfig)(nil),               // 7: azdext.ServiceConfig
-	(*EmptyRequest)(nil),                // 8: azdext.EmptyRequest
-	(*EmptyResponse)(nil),               // 9: azdext.EmptyResponse
+	(*GetProjectResponse)(nil),              // 0: azdext.GetProjectResponse
+	(*AddServiceRequest)(nil),               // 1: azdext.AddServiceRequest
+	(*GetResolvedServicesResponse)(nil),     // 2: azdext.GetResolvedServicesResponse
+	(*ParseGitHubUrlRequest)(nil),           // 3: azdext.ParseGitHubUrlRequest
+	(*GetProjectConfigSectionRequest)(nil),  // 4: azdext.GetProjectConfigSectionRequest
+	(*GetProjectConfigSectionResponse)(nil), // 5: azdext.GetProjectConfigSectionResponse
+	(*ParseGitHubUrlResponse)(nil),          // 6: azdext.ParseGitHubUrlResponse
+	(*GetProjectConfigValueRequest)(nil),    // 7: azdext.GetProjectConfigValueRequest
+	(*GetProjectConfigValueResponse)(nil),   // 8: azdext.GetProjectConfigValueResponse
+	(*SetProjectConfigSectionRequest)(nil),  // 9: azdext.SetProjectConfigSectionRequest
+	(*SetProjectConfigValueRequest)(nil),    // 10: azdext.SetProjectConfigValueRequest
+	(*UnsetProjectConfigRequest)(nil),       // 11: azdext.UnsetProjectConfigRequest
+	(*GetServiceConfigSectionRequest)(nil),  // 12: azdext.GetServiceConfigSectionRequest
+	(*GetServiceConfigSectionResponse)(nil), // 13: azdext.GetServiceConfigSectionResponse
+	(*GetServiceConfigValueRequest)(nil),    // 14: azdext.GetServiceConfigValueRequest
+	(*GetServiceConfigValueResponse)(nil),   // 15: azdext.GetServiceConfigValueResponse
+	(*SetServiceConfigSectionRequest)(nil),  // 16: azdext.SetServiceConfigSectionRequest
+	(*SetServiceConfigValueRequest)(nil),    // 17: azdext.SetServiceConfigValueRequest
+	(*UnsetServiceConfigRequest)(nil),       // 18: azdext.UnsetServiceConfigRequest
+	nil,                                     // 19: azdext.GetResolvedServicesResponse.ServicesEntry
+	(*ProjectConfig)(nil),                   // 20: azdext.ProjectConfig
+	(*ServiceConfig)(nil),                   // 21: azdext.ServiceConfig
+	(*structpb.Struct)(nil),                 // 22: google.protobuf.Struct
+	(*structpb.Value)(nil),                  // 23: google.protobuf.Value
+	(*EmptyRequest)(nil),                    // 24: azdext.EmptyRequest
+	(*EmptyResponse)(nil),                   // 25: azdext.EmptyResponse
 }
 var file_project_proto_depIdxs = []int32{
-	6, // 0: azdext.GetProjectResponse.project:type_name -> azdext.ProjectConfig
-	7, // 1: azdext.AddServiceRequest.service:type_name -> azdext.ServiceConfig
-	5, // 2: azdext.GetResolvedServicesResponse.services:type_name -> azdext.GetResolvedServicesResponse.ServicesEntry
-	7, // 3: azdext.GetResolvedServicesResponse.ServicesEntry.value:type_name -> azdext.ServiceConfig
-	8, // 4: azdext.ProjectService.Get:input_type -> azdext.EmptyRequest
-	1, // 5: azdext.ProjectService.AddService:input_type -> azdext.AddServiceRequest
-	8, // 6: azdext.ProjectService.GetResolvedServices:input_type -> azdext.EmptyRequest
-	3, // 7: azdext.ProjectService.ParseGitHubUrl:input_type -> azdext.ParseGitHubUrlRequest
-	0, // 8: azdext.ProjectService.Get:output_type -> azdext.GetProjectResponse
-	9, // 9: azdext.ProjectService.AddService:output_type -> azdext.EmptyResponse
-	2, // 10: azdext.ProjectService.GetResolvedServices:output_type -> azdext.GetResolvedServicesResponse
-	4, // 11: azdext.ProjectService.ParseGitHubUrl:output_type -> azdext.ParseGitHubUrlResponse
-	8, // [8:12] is the sub-list for method output_type
-	4, // [4:8] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	20, // 0: azdext.GetProjectResponse.project:type_name -> azdext.ProjectConfig
+	21, // 1: azdext.AddServiceRequest.service:type_name -> azdext.ServiceConfig
+	19, // 2: azdext.GetResolvedServicesResponse.services:type_name -> azdext.GetResolvedServicesResponse.ServicesEntry
+	22, // 3: azdext.GetProjectConfigSectionResponse.section:type_name -> google.protobuf.Struct
+	23, // 4: azdext.GetProjectConfigValueResponse.value:type_name -> google.protobuf.Value
+	22, // 5: azdext.SetProjectConfigSectionRequest.section:type_name -> google.protobuf.Struct
+	23, // 6: azdext.SetProjectConfigValueRequest.value:type_name -> google.protobuf.Value
+	22, // 7: azdext.GetServiceConfigSectionResponse.section:type_name -> google.protobuf.Struct
+	23, // 8: azdext.GetServiceConfigValueResponse.value:type_name -> google.protobuf.Value
+	22, // 9: azdext.SetServiceConfigSectionRequest.section:type_name -> google.protobuf.Struct
+	23, // 10: azdext.SetServiceConfigValueRequest.value:type_name -> google.protobuf.Value
+	21, // 11: azdext.GetResolvedServicesResponse.ServicesEntry.value:type_name -> azdext.ServiceConfig
+	24, // 12: azdext.ProjectService.Get:input_type -> azdext.EmptyRequest
+	1,  // 13: azdext.ProjectService.AddService:input_type -> azdext.AddServiceRequest
+	24, // 14: azdext.ProjectService.GetResolvedServices:input_type -> azdext.EmptyRequest
+	3,  // 15: azdext.ProjectService.ParseGitHubUrl:input_type -> azdext.ParseGitHubUrlRequest
+	4,  // 16: azdext.ProjectService.GetConfigSection:input_type -> azdext.GetProjectConfigSectionRequest
+	7,  // 17: azdext.ProjectService.GetConfigValue:input_type -> azdext.GetProjectConfigValueRequest
+	9,  // 18: azdext.ProjectService.SetConfigSection:input_type -> azdext.SetProjectConfigSectionRequest
+	10, // 19: azdext.ProjectService.SetConfigValue:input_type -> azdext.SetProjectConfigValueRequest
+	11, // 20: azdext.ProjectService.UnsetConfig:input_type -> azdext.UnsetProjectConfigRequest
+	12, // 21: azdext.ProjectService.GetServiceConfigSection:input_type -> azdext.GetServiceConfigSectionRequest
+	14, // 22: azdext.ProjectService.GetServiceConfigValue:input_type -> azdext.GetServiceConfigValueRequest
+	16, // 23: azdext.ProjectService.SetServiceConfigSection:input_type -> azdext.SetServiceConfigSectionRequest
+	17, // 24: azdext.ProjectService.SetServiceConfigValue:input_type -> azdext.SetServiceConfigValueRequest
+	18, // 25: azdext.ProjectService.UnsetServiceConfig:input_type -> azdext.UnsetServiceConfigRequest
+	0,  // 26: azdext.ProjectService.Get:output_type -> azdext.GetProjectResponse
+	25, // 27: azdext.ProjectService.AddService:output_type -> azdext.EmptyResponse
+	2,  // 28: azdext.ProjectService.GetResolvedServices:output_type -> azdext.GetResolvedServicesResponse
+	6,  // 29: azdext.ProjectService.ParseGitHubUrl:output_type -> azdext.ParseGitHubUrlResponse
+	5,  // 30: azdext.ProjectService.GetConfigSection:output_type -> azdext.GetProjectConfigSectionResponse
+	8,  // 31: azdext.ProjectService.GetConfigValue:output_type -> azdext.GetProjectConfigValueResponse
+	25, // 32: azdext.ProjectService.SetConfigSection:output_type -> azdext.EmptyResponse
+	25, // 33: azdext.ProjectService.SetConfigValue:output_type -> azdext.EmptyResponse
+	25, // 34: azdext.ProjectService.UnsetConfig:output_type -> azdext.EmptyResponse
+	13, // 35: azdext.ProjectService.GetServiceConfigSection:output_type -> azdext.GetServiceConfigSectionResponse
+	15, // 36: azdext.ProjectService.GetServiceConfigValue:output_type -> azdext.GetServiceConfigValueResponse
+	25, // 37: azdext.ProjectService.SetServiceConfigSection:output_type -> azdext.EmptyResponse
+	25, // 38: azdext.ProjectService.SetServiceConfigValue:output_type -> azdext.EmptyResponse
+	25, // 39: azdext.ProjectService.UnsetServiceConfig:output_type -> azdext.EmptyResponse
+	26, // [26:40] is the sub-list for method output_type
+	12, // [12:26] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_project_proto_init() }
@@ -359,7 +1189,7 @@ func file_project_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_project_proto_rawDesc), len(file_project_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -154,7 +154,7 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 		"Path or URI to an agent manifest to add to your azd project")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
-		"[Optional] Directory to download the agent manifest to (defaults to 'src/<agent-id>')")
+		"[Optional] Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
 	cmd.Flags().StringVarP(&flags.host, "host", "", "",
 		"[Optional] For container based agents, can override the default host to target a container app instead. Accepted values: 'containerapp'")
@@ -198,7 +198,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		}
 
 		if !isValidURL && !isValidFile {
-			return fmt.Errorf("manifest pointer '%s' is neither a valid URI nor an existing file path", a.flags.manifestPointer)
+			return fmt.Errorf("agent manifest pointer '%s' is neither a valid URI nor an existing file path", a.flags.manifestPointer)
 		}
 
 		// Download/read agent.yaml file from the provided URI or file path and save it to project's "agents" directory
@@ -212,7 +212,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
 
-		color.Green("\nAI agent added to your azd project successfully!")
+		color.Green("\nAI agent definition added to your azd project successfully!")
 	}
 
 	// // Validate command flags
@@ -1700,7 +1700,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 		Key:     "AZURE_AI_PROJECT_ID",
 	})
 	if err != nil {
-		return nil, fmt.Errorf("Failed to get the environment variable AZURE_AI_PROJECT_ID from your azd environment: %w", err)
+		return nil, fmt.Errorf("failed to get the environment variable AZURE_AI_PROJECT_ID from your azd environment: %w", err)
 	}
 
 	foundryProjectId := resp.Value

@@ -166,9 +166,7 @@ func (p *AgentServiceTargetProvider) Endpoints(
 
 	// Check if required environment variables are set
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
-		return nil, fmt.Errorf(`AZURE_AI_PROJECT_ENDPOINT environment variable is required and could not be found in your current azd environment.
-Either you haven't provisioned an Azure AI Foundry project yet (azd provision),
-or you haven't connected to an existing project (azd ai agent init --project-id [id]).`)
+		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required and could not be found in your current azd environment. Either you haven't provisioned an Azure AI Foundry project yet (azd provision), or you haven't connected to an existing project (azd ai agent init --project-id [id])")
 	}
 	if azdEnv["AGENT_NAME"] == "" || azdEnv["AGENT_VERSION"] == "" {
 		return nil, fmt.Errorf("AGENT_NAME and AGENT_VERSION environment variables are required")
@@ -432,9 +430,7 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 ) (*azdext.ServiceDeployResult, error) {
 	// Check if environment variable is set
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
-		return nil, fmt.Errorf(`AZURE_AI_PROJECT_ENDPOINT environment variable is required and could not be found in your current azd environment.
-Either you haven't provisioned an Azure AI Foundry project yet (azd provision),
-or you haven't connected to an existing project (azd ai agent init --project-id [id]).`)
+		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required and could not be found in your current azd environment. Either you haven't provisioned an Azure AI Foundry project yet (azd provision), or you haven't connected to an existing project (azd ai agent init --project-id [id])")
 	}
 
 	fmt.Fprintf(os.Stderr, "Deploying Prompt Agent\n")
@@ -489,9 +485,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 ) (*azdext.ServiceDeployResult, error) {
 	// Check if environment variable is set
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
-		return nil, fmt.Errorf(`AZURE_AI_PROJECT_ENDPOINT environment variable is required and could not be found in your current azd environment.
-Either you haven't provisioned an Azure AI Foundry project yet (azd provision),
-or you haven't connected to an existing project (azd ai agent init --project-id [id]).`)
+		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required and could not be found in your current azd environment. Either you haven't provisioned an Azure AI Foundry project yet (azd provision), or you haven't connected to an existing project (azd ai agent init --project-id [id])")
 	}
 
 	progress("Deploying hosted agent")

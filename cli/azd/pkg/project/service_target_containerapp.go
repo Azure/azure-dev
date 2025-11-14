@@ -194,7 +194,11 @@ func (at *containerAppTarget) Deploy(
 		moduleName = serviceConfig.Name
 	}
 
-	modulePath := filepath.Join(serviceConfig.Project.Infra.Path, moduleName)
+	infraRoot := serviceConfig.Project.Infra.Path
+	if !filepath.IsAbs(infraRoot) {
+		infraRoot = filepath.Join(serviceConfig.Project.Path, infraRoot)
+	}
+	modulePath := filepath.Join(infraRoot, moduleName)
 	bicepPath := modulePath + ".bicep"
 	bicepParametersPath := modulePath + ".parameters.json"
 	bicepParamPath := modulePath + ".bicepparam"

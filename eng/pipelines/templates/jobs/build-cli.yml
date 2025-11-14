@@ -123,7 +123,6 @@ jobs:
         displayName: AZD Login
       
       - task: AzureCLI@2
-        condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
         inputs:
           azureSubscription: azd-service-connection
           # keepAzSessionActive is required when the service connection uses Workload Identity Federation authentication scheme
@@ -142,14 +141,14 @@ jobs:
             -IntegrationTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/int'
         displayName: Test Go Binary
         env:
-          # AZD live test setup variables
+          # AZD integration test setup variables
           CI: true
           AZD_TEST_CLI_VERSION: $(CLI_VERSION)
           AZD_TEST_CLIENT_ID: $(AzureSubscriptionClientId)
           AZD_TEST_TENANT_ID: $(AzureSubscriptionTenantId)
           AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
           AZD_TEST_AZURE_LOCATION: eastus2
-          AZURE_RECORD_MODE: $(AZURE_RECORD_MODE)
+          AZURE_RECORD_MODE: playback # Always run in 'playback' mode during CI builds
           # AZD Live Test: Terraform authentication via `az`
           ARM_USE_CLI: true
           # Code Coverage: Generate junit report to publish results

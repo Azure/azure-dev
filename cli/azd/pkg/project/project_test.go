@@ -713,8 +713,8 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		assert.Equal(t, provisioning.Terraform, loadedProject.Infra.Layers[1].Provider) // Custom value preserved
 
 		// Verify root infra values are empty (will use defaults at runtime)
-		assert.Equal(t, "", loadedProject.Infra.Path)                                // Empty in config, but defaults applied when needed
-		assert.Equal(t, "", loadedProject.Infra.Module)                              // Empty in config, but defaults applied when needed
-		assert.Equal(t, provisioning.ProviderKind(""), loadedProject.Infra.Provider) // Empty in config, but defaults applied when needed
+		assert.Equal(t, "", loadedProject.Infra.Path)
+		assert.Equal(t, "", loadedProject.Infra.Module)
+		assert.Equal(t, provisioning.ProviderKind(""), loadedProject.Infra.Provider)
 	})
 }

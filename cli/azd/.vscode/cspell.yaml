@@ -237,6 +237,9 @@ overrides:
   - filename: pkg/project/service_target_dotnet_containerapp.go
     words:
       - IMAGENAME
+  - filename: internal/cmd/deploy.go
+    words:
+      - gctx
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

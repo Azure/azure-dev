@@ -249,7 +249,10 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 		return fmt.Errorf("failed to parse foundry agent config: %w", err)
 	}
 
-	containerResources := foundryAgentConfig.Container
+	containerSettings := foundryAgentConfig.Container
+	if containerSettings == nil {
+		containerSettings = &project.ContainerSettings{}
+	}
 
 	// Default values
 	defaultMemory := project.DefaultMemory
@@ -261,22 +264,22 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 	result := &project.ContainerSettings{}
 
 	// Check and populate Resources
-	if containerResources.Resources == nil {
+	if containerSettings.Resources == nil {
 		result.Resources = &project.ResourceSettings{}
 	} else {
 		result.Resources = &project.ResourceSettings{
-			Memory: containerResources.Resources.Memory,
-			Cpu:    containerResources.Resources.Cpu,
+			Memory: containerSettings.Resources.Memory,
+			Cpu:    containerSettings.Resources.Cpu,
 		}
 	}
 
 	// Check and populate Scale
-	if containerResources.Scale == nil {
+	if containerSettings.Scale == nil {
 		result.Scale = &project.ScaleSettings{}
 	} else {
 		result.Scale = &project.ScaleSettings{
-			MinReplicas: containerResources.Scale.MinReplicas,
-			MaxReplicas: containerResources.Scale.MaxReplicas,
+			MinReplicas: containerSettings.Scale.MinReplicas,
+			MaxReplicas: containerSettings.Scale.MaxReplicas,
 		}
 	}
 

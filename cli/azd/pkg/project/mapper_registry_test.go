@@ -51,6 +51,9 @@ func TestServiceConfigMapping(t *testing.T) {
 		Host:         ContainerAppTarget,
 		Language:     ServiceLanguageDotNet,
 		RelativePath: "./src/api",
+		AdditionalProperties: map[string]interface{}{
+			"customField": "customValue",
+		},
 	}
 
 	var protoConfig *azdext.ServiceConfig
@@ -61,6 +64,9 @@ func TestServiceConfigMapping(t *testing.T) {
 	require.Equal(t, string(ContainerAppTarget), protoConfig.Host)
 	require.Equal(t, string(ServiceLanguageDotNet), protoConfig.Language)
 	require.Equal(t, "./src/api", protoConfig.RelativePath)
+	require.NotNil(t, protoConfig.AdditionalProperties)
+	additionalPropsMap := protoConfig.AdditionalProperties.AsMap()
+	require.Equal(t, "customValue", additionalPropsMap["customField"])
 }
 
 func TestServiceConfigMappingWithResolver(t *testing.T) {
@@ -217,6 +223,7 @@ func TestServiceConfigReverseMapping(t *testing.T) {
 				require.Equal(t, ServiceLanguageDotNet, result.Language)
 				require.Equal(t, "./src/api", result.RelativePath)
 				require.Nil(t, result.Config)
+				require.Nil(t, result.AdditionalProperties)
 			},
 		},
 		{
@@ -278,6 +285,32 @@ func TestServiceConfigReverseMapping(t *testing.T) {
 				require.Equal(t, "logging", features[1])
 			},
 		},
+		{
+			name: "with additional properties in proto",
+			setupConfig: func() *azdext.ServiceConfig {
+				additionalPropsData := map[string]any{
+					"extensionField": "extensionValue",
+					"metadata":       map[string]any{"version": "1.0.0"},
+				}
+				additionalProps, err := structpb.NewStruct(additionalPropsData)
+				require.NoError(t, err)
+				return &azdext.ServiceConfig{
+					Name:                 "test-service",
+					Host:                 string(ContainerAppTarget),
+					Language:             string(ServiceLanguageDotNet),
+					RelativePath:         "./src/api",
+					AdditionalProperties: additionalProps,
+				}
+			},
+			validateFn: func(t *testing.T, result *ServiceConfig) {
+				require.Equal(t, "test-service", result.Name)
+				require.NotNil(t, result.AdditionalProperties)
+				require.Equal(t, "extensionValue", result.AdditionalProperties["extensionField"])
+				metadata, ok := result.AdditionalProperties["metadata"].(map[string]any)
+				require.True(t, ok)
+				require.Equal(t, "1.0.0", metadata["version"])
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -314,9 +347,11 @@ func TestServiceConfigRoundTripMapping(t *testing.T) {
 		Language:     ServiceLanguageDotNet,
 		RelativePath: "./src/api",
 		Config:       originalConfig,
-	}
-
-	// Convert to proto
+		AdditionalProperties: map[string]any{
+			"roundTripField": "roundTripValue",
+			"nestedData":     map[string]any{"key": "value"},
+		},
+	} // Convert to proto
 	var protoConfig *azdext.ServiceConfig
 	err := mapper.Convert(originalServiceConfig, &protoConfig)
 	require.NoError(t, err)
@@ -351,6 +386,13 @@ func TestServiceConfigRoundTripMapping(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "inner_value", nested["inner_key"])
 	require.Equal(t, float64(456), nested["inner_num"]) // Numbers become float64
+
+	// Verify AdditionalProperties round-trip
+	require.NotNil(t, roundTripServiceConfig.AdditionalProperties)
+	require.Equal(t, "roundTripValue", roundTripServiceConfig.AdditionalProperties["roundTripField"])
+	nestedData, ok := roundTripServiceConfig.AdditionalProperties["nestedData"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "value", nestedData["key"])
 }
 
 func TestDockerProjectOptionsMapping(t *testing.T) {
@@ -943,6 +985,10 @@ func TestProjectConfigMapping(t *testing.T) {
 					RelativePath: "./api",
 				},
 			},
+			AdditionalProperties: map[string]interface{}{
+				"projectExtension": "projectValue",
+				"globalConfig":     map[string]interface{}{"enabled": true},
+			},
 		}
 
 		testResolver := func(key string) string {
@@ -969,6 +1015,13 @@ func TestProjectConfigMapping(t *testing.T) {
 	})
 
 	t.Run("proto ProjectConfig -> ProjectConfig", func(t *testing.T) {
+		additionalPropsData := map[string]interface{}{
+			"reverseExtension": "reverseValue",
+			"config":           map[string]interface{}{"timeout": 60},
+		}
+		additionalProps, err := structpb.NewStruct(additionalPropsData)
+		require.NoError(t, err)
+
 		protoConfig := &azdext.ProjectConfig{
 			Name:              "reverse-test-project",
 			ResourceGroupName: "reverse-test-rg",
@@ -984,10 +1037,11 @@ func TestProjectConfigMapping(t *testing.T) {
 					RelativePath: "./backend",
 				},
 			},
+			AdditionalProperties: additionalProps,
 		}
 
 		var projectConfig *ProjectConfig
-		err := mapper.Convert(protoConfig, &projectConfig)
+		err = mapper.Convert(protoConfig, &projectConfig)
 		require.NoError(t, err)
 		require.NotNil(t, projectConfig)
 		require.Equal(t, "reverse-test-project", projectConfig.Name)

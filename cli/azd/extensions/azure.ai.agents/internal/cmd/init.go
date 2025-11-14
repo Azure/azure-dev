@@ -1940,7 +1940,7 @@ func (a *InitAction) ProcessModels(ctx context.Context, manifest *agent_yaml.Age
 		return nil, nil, fmt.Errorf("failed to inject deployment names into manifest: %w", err)
 	}
 
-	fmt.Println("Model deployment details processed and injected into agent definition. Deployment details can also be found in the AI_PROJECT_DEPLOYMENTS environment variable.")
+	fmt.Println("Model deployment details processed and injected into agent definition. Deployment details can also be found in the JSON formatted AI_PROJECT_DEPLOYMENTS environment variable.")
 
 	return updatedManifest, deploymentDetails, nil
 }

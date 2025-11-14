@@ -5,7 +5,6 @@ package registry_api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -15,6 +14,7 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/braydonk/yaml"
 )
 
 // ParameterValues represents the user-provided values for manifest parameters
@@ -357,14 +357,14 @@ func promptForYamlParameterValues(ctx context.Context, parameters agent_yaml.Pro
 
 // InjectParameterValuesIntoManifest replaces parameter placeholders in the manifest with actual values
 func InjectParameterValuesIntoManifest(manifest *agent_yaml.AgentManifest, paramValues ParameterValues) (*agent_yaml.AgentManifest, error) {
-	// Convert manifest to JSON for processing
-	manifestBytes, err := json.Marshal(manifest)
+	// Convert manifest to YAML for processing
+	manifestBytes, err := yaml.Marshal(manifest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal manifest: %w", err)
 	}
 
 	// Inject parameter values
-	processedBytes, err := injectParameterValues(json.RawMessage(manifestBytes), paramValues)
+	processedBytes, err := injectParameterValues(string(manifestBytes), paramValues)
 	if err != nil {
 		return nil, fmt.Errorf("failed to inject parameter values: %w", err)
 	}
@@ -460,28 +460,25 @@ func promptForTextValue(ctx context.Context, paramName string, defaultValue inte
 }
 
 // injectParameterValues replaces parameter placeholders in the template with actual values
-func injectParameterValues(template json.RawMessage, paramValues ParameterValues) ([]byte, error) {
-	// Convert template to string for processing
-	templateStr := string(template)
-
+func injectParameterValues(template string, paramValues ParameterValues) ([]byte, error) {
 	// Replace each parameter placeholder with its value
 	for paramName, paramValue := range paramValues {
 		placeholder := fmt.Sprintf("{{%s}}", paramName)
 		valueStr := fmt.Sprintf("%v", paramValue)
-		templateStr = strings.ReplaceAll(templateStr, placeholder, valueStr)
+		template = strings.ReplaceAll(template, placeholder, valueStr)
 
 		placeholder = fmt.Sprintf("{{ %s }}", paramName)
-		templateStr = strings.ReplaceAll(templateStr, placeholder, valueStr)
+		template = strings.ReplaceAll(template, placeholder, valueStr)
 	}
 
 	// Check for any remaining unreplaced placeholders
-	if strings.Contains(templateStr, "{{") && strings.Contains(templateStr, "}}") {
+	if strings.Contains(template, "{{") && strings.Contains(template, "}}") {
 		fmt.Println("Warning: Template contains unresolved placeholders.")
 	} else {
 		fmt.Println("No remaining placeholders found.")
 	}
 
-	return []byte(templateStr), nil
+	return []byte(template), nil
 }
 
 // ValidateParameterValue validates a parameter value against its schema

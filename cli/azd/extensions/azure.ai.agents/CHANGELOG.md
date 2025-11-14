@@ -1,5 +1,14 @@
 # Release History
 
+## 0.1.0-preview (2025-11-14)
+
+- Apply defaults instead of prompting in event handlers
+- Process model resources as parameters
+- Update env var generation to support multi-agent projects
+- Polish error messages
+- Fix agent playground URL generation
+- Fix panic when container settings is nil
+
 ## 0.0.7 (2025-11-13)
 
 - Add prompting for container resources

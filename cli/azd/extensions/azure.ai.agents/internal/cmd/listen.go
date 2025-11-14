@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -249,19 +248,14 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 		return fmt.Errorf("failed to parse foundry agent config: %w", err)
 	}
 
+	// Initialize result with existing values
+	result := &project.ContainerSettings{}
+
+	// Check and populate base object
 	containerSettings := foundryAgentConfig.Container
 	if containerSettings == nil {
 		containerSettings = &project.ContainerSettings{}
 	}
-
-	// Default values
-	defaultMemory := project.DefaultMemory
-	defaultCpu := project.DefaultCpu
-	defaultMinReplicas := fmt.Sprintf("%d", project.DefaultMinReplicas)
-	defaultMaxReplicas := fmt.Sprintf("%d", project.DefaultMaxReplicas)
-
-	// Initialize result with existing values
-	result := &project.ContainerSettings{}
 
 	// Check and populate Resources
 	if containerSettings.Resources == nil {
@@ -283,75 +277,21 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 		}
 	}
 
-	// Prompt for memory allocation only if not set or empty
+	// Set default values if zero or empty
 	if result.Resources.Memory == "" {
-		memoryResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message:      "Enter desired container memory allocation (e.g., '1Gi', '512Mi'):",
-				DefaultValue: defaultMemory,
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("prompting for memory allocation: %w", err)
-		}
-		result.Resources.Memory = memoryResp.Value
+		result.Resources.Memory = project.DefaultMemory
 	}
 
-	// Prompt for CPU allocation only if not set or empty
 	if result.Resources.Cpu == "" {
-		cpuResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message:      "Enter desired container CPU allocation (e.g., '1', '500m'):",
-				DefaultValue: defaultCpu,
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("prompting for CPU allocation: %w", err)
-		}
-		result.Resources.Cpu = cpuResp.Value
+		result.Resources.Cpu = project.DefaultCpu
 	}
 
-	// Prompt for minimum replicas only if not set (0 means not set for int)
 	if result.Scale.MinReplicas == 0 {
-		minReplicasResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message:      "Enter desired container minimum number of replicas:",
-				DefaultValue: defaultMinReplicas,
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("prompting for minimum replicas: %w", err)
-		}
-
-		minReplicas, err := strconv.Atoi(minReplicasResp.Value)
-		if err != nil {
-			return fmt.Errorf("invalid minimum replicas value: %w", err)
-		}
-		result.Scale.MinReplicas = minReplicas
+		result.Scale.MinReplicas = project.DefaultMinReplicas
 	}
 
-	// Prompt for maximum replicas only if not set (0 means not set for int)
 	if result.Scale.MaxReplicas == 0 {
-		maxReplicasResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
-			Options: &azdext.PromptOptions{
-				Message:      "Enter desired container maximum number of replicas:",
-				DefaultValue: defaultMaxReplicas,
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("prompting for maximum replicas: %w", err)
-		}
-
-		maxReplicas, err := strconv.Atoi(maxReplicasResp.Value)
-		if err != nil {
-			return fmt.Errorf("invalid maximum replicas value: %w", err)
-		}
-		result.Scale.MaxReplicas = maxReplicas
-	}
-
-	// Validate that max replicas >= min replicas
-	if result.Scale.MaxReplicas < result.Scale.MinReplicas {
-		return fmt.Errorf("maximum replicas (%d) must be greater than or equal to minimum replicas (%d)", result.Scale.MaxReplicas, result.Scale.MinReplicas)
+		result.Scale.MaxReplicas = project.DefaultMaxReplicas
 	}
 
 	// Update the container settings in the existing config

@@ -149,18 +149,18 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
-		"Azure AI Foundry Project Id to set your environment to")
+		"Existing Azure AI Foundry Project Id to initialize your azd environment with")
 
 	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "",
-		"Path or URI to an agent manifest to add to your project")
+		"Path or URI to an agent manifest to add to your azd project")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
-		"[Optional] Directory to download the agent yaml to (defaults to 'src/<agent-id>')")
+		"[Optional] Directory to download the agent definition to (defaults to 'src/<agent-id>')")
 
 	cmd.Flags().StringVarP(&flags.host, "host", "", "",
 		"[Optional] For container based agents, can override the default host to target a container app instead. Accepted values: 'containerapp'")
 
-	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the environment to use.")
+	cmd.Flags().StringVarP(&flags.env, "environment", "e", "", "The name of the azd environment to use.")
 
 	return cmd
 }
@@ -174,12 +174,12 @@ func (a *InitAction) Run(ctx context.Context) error {
 		// projectResourceId is a string of the format
 		// /subscriptions/[AZURE_SUBSCRIPTION]/resourceGroups/[AZURE_RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT_NAME]/projects/[AI_PROJECT_NAME]
 		// extract each of those fields from the string, issue an error if it doesn't match the format
-		fmt.Println("Setting up your azd environment to use the provided AI Foundry project resource ID...")
+		fmt.Println("Setting up your azd environment to use the provided Azure AI Foundry project resource ID...")
 		if err := a.parseAndSetProjectResourceId(ctx); err != nil {
 			return fmt.Errorf("failed to parse project resource ID: %w", err)
 		}
 
-		color.Green("\nAI agent project initialized successfully!")
+		color.Green("\nYour azd environment has been initialized to use your existing Azure AI Foundry project.")
 	}
 
 	// If --manifest is given
@@ -199,7 +199,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 		}
 
 		if !isValidURL && !isValidFile {
-			return fmt.Errorf("manifest pointer '%s' is neither a valid URI nor an existing file path", a.flags.manifestPointer)
+			return fmt.Errorf("agent manifest pointer '%s' is neither a valid URI nor an existing file path", a.flags.manifestPointer)
 		}
 
 		// Download/read agent.yaml file from the provided URI or file path and save it to project's "agents" directory
@@ -213,7 +213,7 @@ func (a *InitAction) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
 
-		color.Green("\nAI agent added to your azd project successfully!")
+		color.Green("\nAI agent definition added to your azd project successfully!")
 	}
 
 	// // Validate command flags
@@ -296,7 +296,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 		var err error
 		foundryProject, err = extractProjectDetails(flags.projectResourceId)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse project resource ID: %w", err)
+			return nil, fmt.Errorf("failed to parse Azure AI Foundry project ID: %w", err)
 		}
 
 		// Get the tenant ID
@@ -334,7 +334,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 	existingEnv := getExistingEnvironment(ctx, flags, azdClient)
 	if existingEnv == nil {
 		// Dispatch `azd env new` to create a new environment with interactive flow
-		fmt.Println("Lets create a new default environment for your project.")
+		fmt.Println("Lets create a new default azd environment for your project.")
 
 		envArgs := []string{"env", "new"}
 		if flags.env != "" {
@@ -359,13 +359,13 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			Workflow: workflow,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to create new environment: %w", err)
+			return nil, fmt.Errorf("failed to create new azd environment: %w", err)
 		}
 
 		// Re-fetch the environment after creation
 		existingEnv = getExistingEnvironment(ctx, flags, azdClient)
 		if existingEnv == nil {
-			return nil, fmt.Errorf("environment not found")
+			return nil, fmt.Errorf("azd environment not found, please create an environment (azd env new) and try again")
 		}
 	} else if flags.projectResourceId != "" {
 		currentSubscription, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
@@ -373,7 +373,7 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			Key:     "AZURE_SUBSCRIPTION_ID",
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current subscription ID from environment: %w", err)
+			return nil, fmt.Errorf("failed to get current AZURE_SUBSCRIPTION_ID from azd environment: %w", err)
 		}
 
 		if currentSubscription.Value == "" {
@@ -384,10 +384,10 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 				Value:   foundryProject.SubscriptionId,
 			})
 			if err != nil {
-				return nil, fmt.Errorf("failed to set subscription ID in environment: %w", err)
+				return nil, fmt.Errorf("failed to set AZURE_SUBSCRIPTION_ID in azd environment: %w", err)
 			}
 		} else if currentSubscription.Value != foundryProject.SubscriptionId {
-			return nil, fmt.Errorf("environment subscription ID (%s) does not match provided foundry project subscription ID (%s)", currentSubscription.Value, foundryProject.SubscriptionId)
+			return nil, fmt.Errorf("the value for subscription ID (%s) stored in your azd environment does not match the provided Azure AI Foundry project subscription ID (%s), please update or recreate your environment (azd env new)", currentSubscription.Value, foundryProject.SubscriptionId)
 		}
 
 		// Get current location from environment
@@ -396,21 +396,21 @@ func ensureEnvironment(ctx context.Context, flags *initFlags, azdClient *azdext.
 			Key:     "AZURE_LOCATION",
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current location from environment: %w", err)
+			return nil, fmt.Errorf("failed to get AZURE_LOCATION from azd environment: %w", err)
 		}
 
 		if currentLocation.Value == "" {
-			// Set the subscription ID in the environment
+			// Set the location in the environment
 			_, err = azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 				EnvName: existingEnv.Name,
 				Key:     "AZURE_LOCATION",
 				Value:   foundryProjectLocation,
 			})
 			if err != nil {
-				return nil, fmt.Errorf("failed to set location in environment: %w", err)
+				return nil, fmt.Errorf("failed to set AZURE_LOCATION in environment: %w", err)
 			}
 		} else if currentLocation.Value != foundryProjectLocation {
-			return nil, fmt.Errorf("environment location (%s) does not match provided foundry project location (%s)", currentLocation.Value, foundryProjectLocation)
+			return nil, fmt.Errorf("the value for location (%s) stored in your azd environment does not match the provided Azure AI Foundry project location (%s), please update or recreate your environment (azd env new)", currentLocation.Value, foundryProjectLocation)
 		}
 	}
 
@@ -472,7 +472,7 @@ func ensureAzureContext(
 			Value:   azureContext.Scope.TenantId,
 		})
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to set tenant ID in environment: %w", err)
+			return nil, nil, nil, fmt.Errorf("failed to set AZURE_TENANT_ID in environment: %w", err)
 		}
 
 		// Set the tenant ID in the environment
@@ -482,7 +482,7 @@ func ensureAzureContext(
 			Value:   azureContext.Scope.SubscriptionId,
 		})
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to set subscription ID in environment: %w", err)
+			return nil, nil, nil, fmt.Errorf("failed to set AZURE_SUBSCRIPTION_ID in environment: %w", err)
 		}
 	}
 
@@ -508,7 +508,7 @@ func ensureAzureContext(
 			Value:   azureContext.Scope.Location,
 		})
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to set location in environment: %w", err)
+			return nil, nil, nil, fmt.Errorf("failed to set AZURE_LOCATION in environment: %w", err)
 		}
 	}
 
@@ -565,7 +565,7 @@ func extractProjectDetails(projectResourceId string) (*FoundryProject, error) {
 
 	matches := regex.FindStringSubmatch(projectResourceId)
 	if matches == nil || len(matches) != 5 {
-		return nil, fmt.Errorf("project resource ID does not match expected format: /subscriptions/[SUBSCRIPTION]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[AI_ACCOUNT]/projects/[AI_PROJECT]")
+		return nil, fmt.Errorf("the given Azure AI Foundry project ID does not match expected format: /subscriptions/[SUBSCRIPTION_ID]/resourceGroups/[RESOURCE_GROUP]/providers/Microsoft.CognitiveServices/accounts/[ACCOUNT_NAME]/projects/[PROJECT_NAME]")
 	}
 
 	// Extract the components
@@ -615,7 +615,7 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 	foundryClient := azure.NewFoundryProjectsClient(foundryProject.AiAccountName, foundryProject.AiProjectName, a.credential)
 	connections, err := foundryClient.GetAllConnections(ctx)
 	if err != nil {
-		fmt.Printf("Failed to get foundry project connections: %v\n", err)
+		fmt.Printf("Could not get Azure AI Foundry project connections to initialize AZURE_CONTAINER_REGISTRY_ENDPOINT: %v. Please set this environment variable manually.\n", err)
 	} else {
 		// Filter connections by ContainerRegistry type
 		var acrConnections []azure.Connection
@@ -676,7 +676,7 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 					},
 				})
 				if err != nil {
-					fmt.Printf("Failed to prompt for connection selection: %v\n", err)
+					fmt.Printf("failed to prompt for connection selection: %v\n", err)
 				} else {
 					selectedConnection = &acrConnections[int(*selectResp.Value)]
 				}
@@ -688,7 +688,7 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 		}
 	}
 
-	fmt.Printf("Successfully parsed and set environment variables from project resource ID\n")
+	fmt.Printf("Successfully parsed and set environment variables from Azure AI Foundry project ID\n")
 	return nil
 }
 
@@ -781,7 +781,7 @@ func (a *InitAction) isRegistryUrl(manifestPointer string) (bool, *RegistryManif
 func (a *InitAction) downloadAgentYaml(
 	ctx context.Context, manifestPointer string, targetDir string) (*agent_yaml.AgentManifest, string, error) {
 	if manifestPointer == "" {
-		return nil, "", fmt.Errorf("manifestPointer cannot be empty")
+		return nil, "", fmt.Errorf("The path to an agent manifest need to be provided (manifestPointer cannot be empty).")
 	}
 
 	var content []byte
@@ -1031,7 +1031,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 						// Prompt the user for a connection name
 						resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 							Options: &azdext.PromptOptions{
-								Message:        fmt.Sprintf("Enter connection name for %s resource:", toolResource.Id),
+								Message:        fmt.Sprintf("Enter a connection name for adding the resource %s to your Azure AI Foundry project:", toolResource.Id),
 								IgnoreHintKeys: true,
 								DefaultValue:   toolResource.Id,
 							},
@@ -1088,7 +1088,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
 
-	fmt.Printf("Added service '%s' to azure.yaml\n", agentDef.Name)
+	fmt.Printf("Added your agent as a service entry named '%s' under the file azure.yaml. You will be able to deploy this agent using command azd deploy %s.\n", agentDef.Name, agentDef.Name)
 	return nil
 }
 
@@ -1285,7 +1285,7 @@ func downloadParentDirectory(
 	// Get parent directory by removing the filename from the file path
 	pathParts := strings.Split(urlInfo.FilePath, "/")
 	if len(pathParts) <= 1 {
-		fmt.Println("Agent.yaml is at repository root, no parent directory to download")
+		fmt.Println("The file agent.yaml is at repository root, no parent directory to download")
 		return nil
 	}
 
@@ -1563,7 +1563,7 @@ func (a *InitAction) loadAiCatalog(ctx context.Context) error {
 	}
 
 	spinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text:        "Loading AI Model Catalog",
+		Text:        "Loading the model catalog",
 		ClearOnStop: true,
 	})
 
@@ -1573,7 +1573,7 @@ func (a *InitAction) loadAiCatalog(ctx context.Context) error {
 
 	aiModelCatalog, err := a.modelCatalogService.ListAllModels(ctx, a.azureContext.Scope.SubscriptionId, a.azureContext.Scope.Location)
 	if err != nil {
-		return fmt.Errorf("failed to load AI model catalog: %w", err)
+		return fmt.Errorf("failed to load the model catalog: %w", err)
 	}
 
 	if err := spinner.Stop(ctx); err != nil {
@@ -1672,7 +1672,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 		Key:     "AZURE_AI_PROJECT_ID",
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get foundry project ID: %w", err)
+		return nil, fmt.Errorf("failed to get the environment variable AZURE_AI_PROJECT_ID from your azd environment: %w", err)
 	}
 
 	foundryProjectId := resp.Value
@@ -1718,14 +1718,14 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 
 		// If we found matching deployments, prompt the user
 		if len(matchingDeployments) > 0 {
-			fmt.Printf("Found %d existing deployment(s) for model %s.\n", len(matchingDeployments), model.Id)
+			fmt.Printf("In your Azure AI Foundry project, found %d existing model deployment(s) matching your model %s.\n", len(matchingDeployments), model.Id)
 
 			// Build options list with existing deployments plus "Create new deployment" option
 			var options []string
 			for deploymentName := range matchingDeployments {
 				options = append(options, deploymentName)
 			}
-			options = append(options, "Create new deployment")
+			options = append(options, "Create new model deployment")
 
 			// Use selectFromList to choose between existing deployments or creating new one
 			selection, err := a.selectFromList(ctx, "deployment", options, options[0])
@@ -1734,9 +1734,9 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 			}
 
 			// Check if user chose to create new deployment
-			if selection != "Create new deployment" {
+			if selection != "Create new model deployment" {
 				// User chose an existing deployment by name
-				fmt.Printf("Using existing deployment: %s\n", selection)
+				fmt.Printf("Using existing model deployment: %s\n", selection)
 
 				// Get the selected deployment from the map and return its details
 				if deployment, exists := matchingDeployments[selection]; exists {
@@ -1803,7 +1803,7 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*ai
 	var model *ai.AiModel
 	model, exists := a.modelCatalog[modelName]
 	if !exists {
-		return nil, fmt.Errorf("model '%s' not found in AI model catalog", modelName)
+		return nil, fmt.Errorf("The model '%s' could not be found in the model catalog", modelName)
 	}
 
 	availableVersions, defaultVersion, err := a.modelCatalogService.ListModelVersions(ctx, model)
@@ -1851,7 +1851,7 @@ func (a *InitAction) getModelDetails(ctx context.Context, modelName string) (*ai
 				Message:        "Selected model SKU has no default capacity. Please enter desired capacity",
 				IgnoreHintKeys: true,
 				Required:       true,
-				DefaultValue:   "1",
+				DefaultValue:   "10",
 			},
 		})
 		if err != nil {

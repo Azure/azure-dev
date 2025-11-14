@@ -900,7 +900,7 @@ func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) e
 	foundryResourceID := resp.Value
 	if foundryResourceID == "" {
 		return fmt.Errorf(
-			"Azure AI Foundry project resource ID is required. " +
+			"Azure AI Foundry project ID is required. " +
 				"Please set AZURE_AI_PROJECT_ID environment variable",
 		)
 	}
@@ -908,7 +908,7 @@ func (p *AgentServiceTargetProvider) ensureFoundryProject(ctx context.Context) e
 	// Parse the resource ID
 	parsedResource, err := arm.ParseResourceID(foundryResourceID)
 	if err != nil {
-		return fmt.Errorf("failed to parse AI Foundry project resource ID: %w", err)
+		return fmt.Errorf("failed to parse Azure AI Foundry project ID: %w", err)
 	}
 
 	p.foundryProject = parsedResource

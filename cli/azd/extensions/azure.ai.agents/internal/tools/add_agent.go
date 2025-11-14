@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )

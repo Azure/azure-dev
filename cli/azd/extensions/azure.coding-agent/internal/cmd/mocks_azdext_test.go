@@ -17,7 +17,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	azdext "github.com/azure/azure-dev/pkg/azdext"
+	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	gomock "go.uber.org/mock/gomock"
 	grpc "google.golang.org/grpc"
 )

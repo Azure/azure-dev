@@ -10,8 +10,8 @@ import (
 	"os"
 	"strings"
 
-	azdExec "github.com/azure/azure-dev/pkg/exec"
-	"github.com/azure/azure-dev/pkg/input"
+	azdExec "github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/cli/browser"
 )
 

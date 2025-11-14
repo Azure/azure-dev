@@ -17,7 +17,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	exec "github.com/azure/azure-dev/pkg/exec"
+	exec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 	gomock "go.uber.org/mock/gomock"
 )
 

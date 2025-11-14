@@ -18,10 +18,10 @@ import (
 	io "io"
 	reflect "reflect"
 
-	alpha "github.com/azure/azure-dev/pkg/alpha"
-	input "github.com/azure/azure-dev/pkg/input"
-	output "github.com/azure/azure-dev/pkg/output"
-	ux "github.com/azure/azure-dev/pkg/output/ux"
+	alpha "github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	input "github.com/azure/azure-dev/cli/azd/pkg/input"
+	output "github.com/azure/azure-dev/cli/azd/pkg/output"
+	ux "github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	gomock "go.uber.org/mock/gomock"
 )
 

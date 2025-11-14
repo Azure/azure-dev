@@ -53,3 +53,6 @@ test-results/
 
 # Finder state files
 .DS_Store
+cli/azd/azure-dev
+cli/azd/extensions/azure.coding-agent/azurecodingagent
+cli/azd/extensions/azure.ai.agents/azureaiagent

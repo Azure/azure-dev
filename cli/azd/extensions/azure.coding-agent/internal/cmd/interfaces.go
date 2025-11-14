@@ -8,8 +8,8 @@ import (
 
 	azure_armmsi "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	azd_armmsi "github.com/azure/azure-dev/pkg/armmsi"
-	azd_github "github.com/azure/azure-dev/pkg/tools/github"
+	azd_armmsi "github.com/azure/azure-dev/cli/azd/pkg/armmsi"
+	azd_github "github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 )
 
 var _ azdMSIService = &azd_armmsi.ArmMsiService{}

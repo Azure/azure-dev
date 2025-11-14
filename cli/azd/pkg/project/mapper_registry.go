@@ -11,7 +11,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -708,8 +707,8 @@ func registerProjectMappings() {
 
 		// Convert infra options if present
 		if src.Infra != nil {
-			result.Infra = provisioning.Options{
-				Provider: provisioning.ProviderKind(src.Infra.Provider),
+			result.Infra = InfraConfig{
+				Provider: src.Infra.Provider,
 				Path:     src.Infra.Path,
 				Module:   src.Infra.Module,
 			}

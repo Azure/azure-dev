@@ -232,10 +232,11 @@ func (ai *DotNetImporter) Services(
 		svc.Project = p
 		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
 
-		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
+		parsedProvider, err := provisioning.ParseProvider(provisioning.ProviderKind(svc.Infra.Provider))
 		if err != nil {
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
+		svc.Infra.Provider = string(parsedProvider)
 
 		// handle container files
 		containerFiles := manifest.Resources[name].ContainerFiles
@@ -281,10 +282,11 @@ func (ai *DotNetImporter) Services(
 		svc.Project = p
 		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
 
-		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
+		parsedProvider, err := provisioning.ParseProvider(provisioning.ProviderKind(svc.Infra.Provider))
 		if err != nil {
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
+		svc.Infra.Provider = string(parsedProvider)
 
 		svc.DotNetContainerApp = &DotNetContainerAppOptions{
 			Manifest:    manifest,
@@ -308,10 +310,11 @@ func (ai *DotNetImporter) Services(
 		svc.Project = p
 		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
 
-		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
+		parsedProvider, err := provisioning.ParseProvider(provisioning.ProviderKind(svc.Infra.Provider))
 		if err != nil {
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
+		svc.Infra.Provider = string(parsedProvider)
 
 		svc.DotNetContainerApp = &DotNetContainerAppOptions{
 			ContainerImage: container.Image,
@@ -396,10 +399,11 @@ func (ai *DotNetImporter) Services(
 		svc.Project = p
 		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
 
-		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
+		parsedProvider, err := provisioning.ParseProvider(provisioning.ProviderKind(svc.Infra.Provider))
 		if err != nil {
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
+		svc.Infra.Provider = string(parsedProvider)
 
 		// handle container files
 		containerFiles := manifest.Resources[name].ContainerFiles

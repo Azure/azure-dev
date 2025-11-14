@@ -71,18 +71,22 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		}
 	}
 
-	if err := projectConfig.Infra.Validate(); err != nil {
+	provOpts := projectConfig.Infra.ToProvisioningOptions()
+	if err := provOpts.Validate(); err != nil {
 		return nil, err
 	}
 
 	var err error
-	projectConfig.Infra.Provider, err = provisioning.ParseProvider(projectConfig.Infra.Provider)
+	parsedProvider, err := provisioning.ParseProvider(provisioning.ProviderKind(projectConfig.Infra.Provider))
 	if err != nil {
 		return nil, fmt.Errorf("parsing project %s: %w", projectConfig.Name, err)
 	}
+	projectConfig.Infra.Provider = string(parsedProvider)
 
-	for _, layer := range projectConfig.Infra.Layers {
-		layer.Provider = projectConfig.Infra.Provider
+	for i := range projectConfig.Infra.Layers {
+		if projectConfig.Infra.Layers[i].Provider == "" {
+			projectConfig.Infra.Layers[i].Provider = projectConfig.Infra.Provider
+		}
 	}
 
 	if strings.Contains(projectConfig.Infra.Path, "\\") && !strings.Contains(projectConfig.Infra.Path, "/") {
@@ -107,10 +111,11 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
 
-		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
+		parsedProvider, err := provisioning.ParseProvider(provisioning.ProviderKind(svc.Infra.Provider))
 		if err != nil {
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
+		svc.Infra.Provider = string(parsedProvider)
 
 		if strings.Contains(svc.Infra.Path, "\\") && !strings.Contains(svc.Infra.Path, "/") {
 			svc.Infra.Path = strings.ReplaceAll(svc.Infra.Path, "\\", "/")

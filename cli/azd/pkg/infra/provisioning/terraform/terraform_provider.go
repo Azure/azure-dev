@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 
+	"dario.cat/mergo"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -26,9 +27,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const (
-	defaultModule = "main"
-	defaultPath   = "infra"
+var (
+	defaultOptions = provisioning.Options{
+		Module: "main",
+		Path:   "infra",
+	}
 )
 
 // TerraformProvider exposes infrastructure provisioning using Azure Terraform templates
@@ -80,14 +83,12 @@ func NewTerraformProvider(
 }
 
 func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, options provisioning.Options) error {
+	mergedOptions := provisioning.Options{}
+	mergo.Merge(&mergedOptions, options)
+	mergo.Merge(&mergedOptions, defaultOptions)
+
 	t.projectPath = projectPath
-	t.options = options
-	if t.options.Module == "" {
-		t.options.Module = defaultModule
-	}
-	if t.options.Path == "" {
-		t.options.Path = defaultPath
-	}
+	t.options = mergedOptions
 
 	requiredTools := t.RequiredExternalTools()
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {

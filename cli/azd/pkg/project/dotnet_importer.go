@@ -164,7 +164,7 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		Options: provisioning.Options{
 			Provider: provisioning.Bicep,
 			Path:     tmpDir,
-			Module:   DefaultModule,
+			Module:   DefaultProvisioningOptions.Module,
 		},
 		cleanupDir: tmpDir,
 	}, nil
@@ -577,7 +577,7 @@ func (ai *DotNetImporter) GenerateAllInfrastructure(ctx context.Context, p *Proj
 
 	generatedFS := memfs.New()
 
-	rootModuleName := DefaultModule
+	rootModuleName := DefaultProvisioningOptions.Module
 	if p.Infra.Module != "" {
 		rootModuleName = p.Infra.Module
 	}
@@ -595,7 +595,7 @@ func (ai *DotNetImporter) GenerateAllInfrastructure(ctx context.Context, p *Proj
 		}
 	}
 
-	infraPathPrefix := DefaultPath
+	infraPathPrefix := DefaultProvisioningOptions.Path
 	if p.Infra.Path != "" {
 		infraPathPrefix = p.Infra.Path
 	}

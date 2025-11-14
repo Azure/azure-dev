@@ -1,14 +1,10 @@
 # Release History
 
-## 1.22.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.21.3 (2025-11-14)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#6190]](https://github.com/Azure/azure-dev/pull/6190) Fix default infrastructure settings being incorrectly written to `azure.yaml` files.
 
 ## 1.21.2 (2025-11-13)
 

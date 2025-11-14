@@ -247,7 +247,12 @@ func setupServiceMonitoringConfig(ctx context.Context, azdClient *azdext.AzdClie
 	return true, nil // true means it was created
 }
 
-func displayConfigurationSummary(ctx context.Context, azdClient *azdext.AzdClient, serviceName string, projectConfigCreated, serviceConfigCreated bool) error {
+func displayConfigurationSummary(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	serviceName string,
+	projectConfigCreated, serviceConfigCreated bool,
+) error {
 	fmt.Println()
 	color.HiCyan("📊 Configuration Summary")
 	color.HiCyan("========================")

@@ -238,7 +238,7 @@ var (
 // are not explicitly defined, the project importer uses default values to find the infrastructure.
 func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (*Infra, error) {
 	mergedOptions := provisioning.Options{}
-	mergo.Merge(&mergedOptions, projectConfig.Infra)
+	mergo.Merge(&mergedOptions, projectConfig.Infra.ToProvisioningOptions())
 	mergo.Merge(&mergedOptions, DefaultProvisioningOptions)
 
 	infraRoot := mergedOptions.Path

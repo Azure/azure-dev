@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/pkg/output"
 )
 
 const (

@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/pkg/osutil"
+	"github.com/azure/azure-dev/test/azdcli"
 	"github.com/stretchr/testify/require"
 )
 

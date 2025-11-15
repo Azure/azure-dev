@@ -14,8 +14,8 @@ import (
 	"slices"
 
 	msal "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/internal"
+	"github.com/azure/azure-dev/pkg/cloud"
 )
 
 // ErrNoCurrentUser indicates that the current user is not logged in.

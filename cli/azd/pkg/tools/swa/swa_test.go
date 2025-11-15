@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/pkg/exec"
+	"github.com/azure/azure-dev/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 

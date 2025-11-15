@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/internal"
+	"github.com/azure/azure-dev/internal/runcontext"
+	"github.com/azure/azure-dev/internal/tracing/fields"
 )
 
 func getExecutionEnvironment() string {

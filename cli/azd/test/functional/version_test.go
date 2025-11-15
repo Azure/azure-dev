@@ -9,9 +9,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
-	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/internal"
+	"github.com/azure/azure-dev/pkg/contracts"
+	"github.com/azure/azure-dev/test/azdcli"
 	"github.com/blang/semver/v4"
 	"github.com/stretchr/testify/require"
 )

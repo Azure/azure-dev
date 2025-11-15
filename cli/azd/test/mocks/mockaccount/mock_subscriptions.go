@@ -6,7 +6,7 @@ package mockaccount
 import (
 	"context"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/pkg/account"
 	"github.com/stretchr/testify/mock"
 )
 

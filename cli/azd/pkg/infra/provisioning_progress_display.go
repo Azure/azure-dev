@@ -14,11 +14,11 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/pkg/azapi"
+	"github.com/azure/azure-dev/pkg/convert"
+	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/pkg/output/ux"
 )
 
 // ProvisioningProgressDisplay displays interactive progress for an ongoing Azure provisioning operation.

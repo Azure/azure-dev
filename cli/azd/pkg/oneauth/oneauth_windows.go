@@ -45,7 +45,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/internal"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"

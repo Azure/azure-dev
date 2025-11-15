@@ -10,10 +10,10 @@ import (
 	"log"
 	"path/filepath"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+	"github.com/azure/azure-dev/pkg/apphost"
+	"github.com/azure/azure-dev/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/pkg/project"
+	"github.com/azure/azure-dev/pkg/tools/dotnet"
 )
 
 // appHostServiceForProject returns the ServiceConfig of the service for the AppHost project for the given azd project.

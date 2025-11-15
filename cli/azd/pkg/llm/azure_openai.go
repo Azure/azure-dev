@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/pkg/config"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/openai"
 )

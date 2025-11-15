@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/azure/azure-dev/cmd/actions"
+	"github.com/azure/azure-dev/cmd/middleware"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )

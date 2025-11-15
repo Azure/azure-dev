@@ -13,7 +13,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
+	"github.com/azure/azure-dev/pkg/tools/maven"
 )
 
 type javaDetector struct {

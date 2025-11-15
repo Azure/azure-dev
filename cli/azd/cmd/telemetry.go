@@ -6,9 +6,9 @@ package cmd
 import (
 	"context"
 
-	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cmd/actions"
+	"github.com/azure/azure-dev/internal"
+	"github.com/azure/azure-dev/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 

@@ -13,8 +13,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/pkg/auth"
+	"github.com/azure/azure-dev/pkg/cloud"
 )
 
 // AccountConfig contains the configuration for connecting to a storage account

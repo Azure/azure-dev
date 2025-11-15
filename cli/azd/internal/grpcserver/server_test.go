@@ -11,8 +11,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/pkg/azdext"
+	"github.com/azure/azure-dev/pkg/extensions"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

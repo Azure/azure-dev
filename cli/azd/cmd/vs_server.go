@@ -21,11 +21,11 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/vsrpc"
-	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cmd/actions"
+	"github.com/azure/azure-dev/internal"
+	"github.com/azure/azure-dev/internal/vsrpc"
+	"github.com/azure/azure-dev/pkg/contracts"
+	"github.com/azure/azure-dev/pkg/ioc"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )

@@ -12,11 +12,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+	"github.com/azure/azure-dev/pkg/apphost"
+	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/pkg/osutil"
+	"github.com/azure/azure-dev/pkg/tools/dotnet"
 )
 
 // CreateEnvironmentAsync is the server implementation of:

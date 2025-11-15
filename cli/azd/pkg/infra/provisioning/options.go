@@ -3,7 +3,7 @@
 
 package provisioning
 
-import "github.com/azure/azure-dev/cli/azd/pkg/output"
+import "github.com/azure/azure-dev/pkg/output"
 
 type ActionOptions struct {
 	// The desired console output format

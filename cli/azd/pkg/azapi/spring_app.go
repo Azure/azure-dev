@@ -14,7 +14,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appplatform/armappplatform/v2"
 	"github.com/Azure/azure-storage-file-go/azfile"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/pkg/account"
 )
 
 // SpringService provides artifacts upload/deploy and query to Azure Spring Apps (ASA)

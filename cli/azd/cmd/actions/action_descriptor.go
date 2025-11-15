@@ -4,7 +4,7 @@
 package actions
 
 import (
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/pkg/output"
 	"github.com/spf13/cobra"
 )
 

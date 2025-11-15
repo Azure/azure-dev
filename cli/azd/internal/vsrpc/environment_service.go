@@ -9,12 +9,12 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/internal"
+	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/pkg/infra"
+	"github.com/azure/azure-dev/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/pkg/project"
 )
 
 // environmentService is the RPC server for the '/EnvironmentService/v1.0' endpoint.

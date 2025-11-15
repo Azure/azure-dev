@@ -17,8 +17,8 @@ import (
 
 	osexec "os/exec"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/pkg/exec"
+	"github.com/azure/azure-dev/pkg/tools"
 )
 
 var _ tools.ExternalTool = (*Cli)(nil)

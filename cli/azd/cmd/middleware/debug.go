@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cmd/actions"
+	"github.com/azure/azure-dev/pkg/input"
 )
 
 // Adds support to easily debug and attach a debugger to AZD for development purposes

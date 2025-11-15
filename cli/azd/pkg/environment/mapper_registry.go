@@ -6,8 +6,8 @@ package environment
 import (
 	"context"
 
-	"github.com/azure/azure-dev/cli/azd/internal/mapper"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/internal/mapper"
+	"github.com/azure/azure-dev/pkg/azdext"
 )
 
 func init() {

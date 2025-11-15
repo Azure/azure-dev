@@ -12,12 +12,12 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
+	"github.com/azure/azure-dev/pkg/azapi"
+	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/pkg/infra"
+	"github.com/azure/azure-dev/pkg/osutil"
+	"github.com/azure/azure-dev/test/mocks"
+	"github.com/azure/azure-dev/test/mocks/mockazapi"
 	"github.com/stretchr/testify/require"
 )
 

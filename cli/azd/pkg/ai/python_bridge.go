@@ -10,13 +10,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
-	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/azure/azure-dev/pkg/config"
+	"github.com/azure/azure-dev/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/pkg/exec"
+	"github.com/azure/azure-dev/pkg/osutil"
+	"github.com/azure/azure-dev/pkg/tools"
+	"github.com/azure/azure-dev/pkg/tools/python"
+	"github.com/azure/azure-dev/resources"
 )
 
 // ScriptPath is a type to represent the path of a Python script

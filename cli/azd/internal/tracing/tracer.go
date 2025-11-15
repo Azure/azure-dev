@@ -6,7 +6,7 @@ package tracing
 import (
 	"context"
 
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/baggage"
+	"github.com/azure/azure-dev/internal/tracing/baggage"
 	"go.opentelemetry.io/otel/codes"
 
 	"go.opentelemetry.io/otel/attribute"

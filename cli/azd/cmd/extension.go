@@ -12,13 +12,13 @@ import (
 	"text/tabwriter"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
-	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
+	"github.com/azure/azure-dev/cmd/actions"
+	"github.com/azure/azure-dev/internal"
+	"github.com/azure/azure-dev/pkg/extensions"
+	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/pkg/output/ux"
+	uxlib "github.com/azure/azure-dev/pkg/ux"
 	"github.com/spf13/cobra"
 )
 

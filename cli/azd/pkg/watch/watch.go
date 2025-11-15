@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/pkg/output"
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/fatih/color"
 	"github.com/fsnotify/fsnotify"

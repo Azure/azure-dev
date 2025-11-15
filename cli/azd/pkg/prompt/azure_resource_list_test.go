@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
+	"github.com/azure/azure-dev/pkg/azapi"
+	"github.com/azure/azure-dev/test/mocks/mockazapi"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )

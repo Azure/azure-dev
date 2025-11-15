@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/internal"
 )
 
 type Event string

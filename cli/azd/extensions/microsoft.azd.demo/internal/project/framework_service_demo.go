@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/pkg/azdext"
 )
 
 // Ensure DemoFrameworkServiceProvider implements FrameworkServiceProvider interface

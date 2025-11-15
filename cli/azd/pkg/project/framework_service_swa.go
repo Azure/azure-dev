@@ -6,12 +6,12 @@ package project
 import (
 	"context"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
+	"github.com/azure/azure-dev/pkg/async"
+	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/pkg/exec"
+	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/pkg/tools"
+	"github.com/azure/azure-dev/pkg/tools/swa"
 )
 
 type swaProject struct {

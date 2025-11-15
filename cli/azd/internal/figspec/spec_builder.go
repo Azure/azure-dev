@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/cmd"
+	"github.com/azure/azure-dev/internal/cmd"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )

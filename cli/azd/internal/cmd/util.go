@@ -11,10 +11,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/internal/tracing"
+	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/pkg/project"
 )
 
 func getResourceGroupFollowUp(

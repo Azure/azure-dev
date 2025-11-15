@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
+	"github.com/azure/azure-dev/pkg/grpcbroker"
 )
 
 // FrameworkServiceEnvelope provides message operations for FrameworkServiceMessage

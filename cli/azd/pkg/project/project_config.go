@@ -7,13 +7,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/platform"
-	"github.com/azure/azure-dev/cli/azd/pkg/state"
-	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
+	"github.com/azure/azure-dev/pkg/cloud"
+	"github.com/azure/azure-dev/pkg/ext"
+	"github.com/azure/azure-dev/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/pkg/osutil"
+	"github.com/azure/azure-dev/pkg/platform"
+	"github.com/azure/azure-dev/pkg/state"
+	"github.com/azure/azure-dev/pkg/workflow"
 )
 
 // ProjectConfig is the top level object serialized into an azure.yaml file.

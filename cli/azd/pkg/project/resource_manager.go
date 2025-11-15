@@ -9,12 +9,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/pkg/azapi"
+	"github.com/azure/azure-dev/pkg/azure"
+	"github.com/azure/azure-dev/pkg/azureutil"
+	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/pkg/infra"
+	"github.com/azure/azure-dev/pkg/osutil"
 )
 
 // ResourceManager provides a layer to query for Azure resource for azd project and services

@@ -20,11 +20,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/internal"
+	"github.com/azure/azure-dev/pkg/account"
+	"github.com/azure/azure-dev/pkg/azure"
+	"github.com/azure/azure-dev/pkg/httputil"
+	"github.com/azure/azure-dev/pkg/tools/docker"
 )
 
 // Credentials for authenticating with a docker registry,

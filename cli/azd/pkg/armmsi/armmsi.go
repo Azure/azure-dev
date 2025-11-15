@@ -12,7 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/pkg/account"
 )
 
 // ArmMsiService provides functionality to interact with Azure Managed Service Identity (MSI) resources.

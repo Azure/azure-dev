@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
+	"github.com/azure/azure-dev/test/mocks/mockhttp"
 )
 
 func IsListSubscriptions(request *http.Request) bool {

@@ -11,14 +11,14 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/braydonk/yaml"
 
-	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
-	"github.com/azure/azure-dev/cli/azd/pkg/yamlnode"
+	"github.com/azure/azure-dev/internal/scaffold"
+	"github.com/azure/azure-dev/pkg/azapi"
+	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/pkg/infra"
+	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/pkg/keyvault"
+	"github.com/azure/azure-dev/pkg/output/ux"
+	"github.com/azure/azure-dev/pkg/yamlnode"
 )
 
 type showResource struct {

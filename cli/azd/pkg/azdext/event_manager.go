@@ -9,7 +9,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
+	"github.com/azure/azure-dev/pkg/grpcbroker"
 )
 
 type EventManager struct {

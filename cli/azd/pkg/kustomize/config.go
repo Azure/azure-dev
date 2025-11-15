@@ -3,7 +3,7 @@
 
 package kustomize
 
-import "github.com/azure/azure-dev/cli/azd/pkg/osutil"
+import "github.com/azure/azure-dev/pkg/osutil"
 
 type Config struct {
 	Directory osutil.ExpandableString   `yaml:"dir"`

@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/pkg/exec"
 )
 
 // Cli is a wrapper around the kubelogin CLI

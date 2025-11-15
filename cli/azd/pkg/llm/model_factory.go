@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/internal"
+	"github.com/azure/azure-dev/pkg/ioc"
 )
 
 // ModelFactory creates model containers using registered model providers

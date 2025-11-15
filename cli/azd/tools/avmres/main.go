@@ -13,7 +13,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/pkg/output"
 	flag "github.com/spf13/pflag"
 )
 

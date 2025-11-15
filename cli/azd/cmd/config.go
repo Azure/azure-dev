@@ -14,13 +14,13 @@ import (
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
-	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cmd/actions"
+	"github.com/azure/azure-dev/internal"
+	"github.com/azure/azure-dev/pkg/alpha"
+	"github.com/azure/azure-dev/pkg/config"
+	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/pkg/output/ux"
 	"github.com/spf13/cobra"
 )
 

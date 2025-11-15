@@ -7,13 +7,13 @@ import (
 	"context"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
+	"github.com/azure/azure-dev/cmd/actions"
+	"github.com/azure/azure-dev/internal/tracing/resource"
+	"github.com/azure/azure-dev/pkg/auth"
+	"github.com/azure/azure-dev/pkg/cloud"
+	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/pkg/workflow"
 )
 
 type CurrentUserAuthManager interface {

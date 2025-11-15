@@ -14,16 +14,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
+	"github.com/azure/azure-dev/internal"
+	"github.com/azure/azure-dev/pkg/alpha"
+	"github.com/azure/azure-dev/pkg/async"
+	"github.com/azure/azure-dev/pkg/azapi"
+	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/pkg/ext"
+	"github.com/azure/azure-dev/pkg/ioc"
+	"github.com/azure/azure-dev/pkg/osutil"
+	"github.com/azure/azure-dev/pkg/tools"
+	"github.com/azure/azure-dev/pkg/tools/swa"
 )
 
 const (

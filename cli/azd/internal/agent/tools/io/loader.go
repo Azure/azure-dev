@@ -6,8 +6,8 @@ package io
 import (
 	"context"
 
-	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
-	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/azure/azure-dev/internal/agent/security"
+	"github.com/azure/azure-dev/internal/agent/tools/common"
 )
 
 // IoToolsLoader loads IO-related tools

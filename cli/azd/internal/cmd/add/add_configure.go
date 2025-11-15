@@ -10,10 +10,10 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/internal/appdetect"
+	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/pkg/project"
 )
 
 // DbMap is a map of supported database dependencies.

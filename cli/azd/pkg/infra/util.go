@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/pkg/environment"
 )
 
 // ResourceId returns the resource ID for the corresponding name.

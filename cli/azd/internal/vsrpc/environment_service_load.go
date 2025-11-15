@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/pkg/project"
+	"github.com/azure/azure-dev/pkg/tools/dotnet"
 )
 
 // OpenEnvironmentAsync is the server implementation of:

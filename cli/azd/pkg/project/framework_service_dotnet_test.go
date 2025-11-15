@@ -12,14 +12,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/ostest"
+	"github.com/azure/azure-dev/pkg/async"
+	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/pkg/exec"
+	"github.com/azure/azure-dev/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/pkg/osutil"
+	"github.com/azure/azure-dev/pkg/tools/dotnet"
+	"github.com/azure/azure-dev/test/mocks"
+	"github.com/azure/azure-dev/test/ostest"
 	"github.com/stretchr/testify/require"
 )
 

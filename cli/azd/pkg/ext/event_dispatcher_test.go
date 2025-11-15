@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/internal"
 	"github.com/stretchr/testify/require"
 )
 

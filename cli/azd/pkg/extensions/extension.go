@@ -9,7 +9,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/pkg/output"
 )
 
 // Extension represents an installed extension.

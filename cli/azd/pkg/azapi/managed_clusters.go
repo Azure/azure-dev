@@ -9,7 +9,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/pkg/account"
 )
 
 // ManagedClustersService provides actions on top of Azure Kubernetes Service (AKS) Managed Clusters

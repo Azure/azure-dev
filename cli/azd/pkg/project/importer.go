@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"dario.cat/mergo"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/pkg/infra/provisioning"
 )
 
 type ImportManager struct {

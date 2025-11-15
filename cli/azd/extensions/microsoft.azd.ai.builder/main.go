@@ -7,7 +7,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.ai.builder/internal/cmd"
+	"github.com/azure/azure-dev/extensions/microsoft.azd.ai.builder/internal/cmd"
 	"github.com/fatih/color"
 )
 

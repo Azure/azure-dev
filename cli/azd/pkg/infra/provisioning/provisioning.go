@@ -6,7 +6,7 @@ package provisioning
 import (
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/pkg/contracts"
 )
 
 // NewEnvRefreshResultFromState creates a EnvRefreshResult from a provisioning state object,

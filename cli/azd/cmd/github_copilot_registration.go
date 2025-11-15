@@ -6,8 +6,8 @@
 package cmd
 
 import (
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/azure/azure-dev/cli/azd/pkg/llm"
+	"github.com/azure/azure-dev/pkg/ioc"
+	"github.com/azure/azure-dev/pkg/llm"
 )
 
 // registerGitHubCopilotProvider registers the GitHub Copilot LLM provider

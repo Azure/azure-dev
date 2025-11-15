@@ -6,8 +6,8 @@ package grpcserver
 import (
 	"context"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
+	"github.com/azure/azure-dev/pkg/azdext"
+	"github.com/azure/azure-dev/pkg/workflow"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

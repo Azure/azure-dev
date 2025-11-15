@@ -223,6 +223,15 @@ overrides:
       - golines
       - technicalterm
       - Errorf
+      - gofmt
+      - CODEOWNERS
+  - filename: .github/PULL_REQUEST_TEMPLATE.md
+    words:
+      - gofmt
+  - filename: .github/COPILOT_COMPARISON.md
+    words:
+      - livetest
+      - Livetest
   - filename: internal/mcp/tools/azd_yaml_schema.go
     words:
       - santhosh

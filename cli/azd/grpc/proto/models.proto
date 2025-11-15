@@ -70,6 +70,7 @@ message ProjectConfig {
   ProjectMetadata metadata = 4;
   map<string, ServiceConfig> services = 5;
   InfraOptions infra = 6;
+  google.protobuf.Struct additional_properties = 7;
 }
 
 // RequiredVersions message definition
@@ -95,6 +96,7 @@ message ServiceConfig {
   string image = 9;
   DockerProjectOptions docker = 10;
   google.protobuf.Struct config = 11;
+  google.protobuf.Struct additional_properties = 12;
 }
 
 // InfraOptions message definition

@@ -640,7 +640,7 @@
     {
       "id": "azure.ai.agents",
       "namespace": "ai.agent",
-      "displayName": "AI Foundry Agents (Preview)",
+      "displayName": "Azure AI Agents (preview)",
       "description": "Azure AI Foundry extension for the Foundry Agent Service. (Preview)",
       "versions": [
         {

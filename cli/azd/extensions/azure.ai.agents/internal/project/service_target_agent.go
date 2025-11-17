@@ -516,11 +516,32 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	}
 
 	// Step 3: Create agent request with image URL and resolved environment variables
-	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(
-		agentDef,
+	var foundryAgentConfig *ServiceTargetAgentConfig
+	if err := UnmarshalStruct(serviceConfig.Config, &foundryAgentConfig); err != nil {
+		return nil, fmt.Errorf("failed to parse foundry agent config: %w", err)
+	}
+
+	var cpu, memory string
+	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
+		cpu = foundryAgentConfig.Container.Resources.Cpu
+		memory = foundryAgentConfig.Container.Resources.Memory
+	}
+
+	// Build options list starting with required options
+	options := []agent_yaml.AgentBuildOption{
 		agent_yaml.WithImageURL(fullImageURL),
 		agent_yaml.WithEnvironmentVariables(resolvedEnvVars),
-	)
+	}
+
+	// Conditionally add CPU and memory options if they're not empty
+	if cpu != "" {
+		options = append(options, agent_yaml.WithCPU(cpu))
+	}
+	if memory != "" {
+		options = append(options, agent_yaml.WithMemory(memory))
+	}
+
+	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef, options...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent request: %w", err)
 	}
@@ -537,7 +558,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 	// Step 5: Start agent container
 	progress("Starting agent container")
-	err = p.startAgentContainer(ctx, agentVersionResponse, azdEnv)
+	err = p.startAgentContainer(ctx, foundryAgentConfig, agentVersionResponse, azdEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -670,6 +691,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 // startAgentContainer starts the hosted agent container
 func (p *AgentServiceTargetProvider) startAgentContainer(
 	ctx context.Context,
+	foundryAgentConfig *ServiceTargetAgentConfig,
 	agentVersionResponse *agent_api.AgentVersionObject,
 	azdEnv map[string]string,
 ) error {
@@ -693,9 +715,27 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	// Create agent client
 	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], p.credential)
 
-	// Start agent container (minReplicas and maxReplicas are already int32)
+	var minReplicas, maxReplicas *int32
+	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Scale != nil {
+		if foundryAgentConfig.Container.Scale.MinReplicas > 0 {
+			minReplicasInt32 := int32(foundryAgentConfig.Container.Scale.MinReplicas)
+			minReplicas = &minReplicasInt32
+		}
+		if foundryAgentConfig.Container.Scale.MaxReplicas > 0 {
+			maxReplicasInt32 := int32(foundryAgentConfig.Container.Scale.MaxReplicas)
+			maxReplicas = &maxReplicasInt32
+		}
+	}
+
+	// Build StartAgentContainerOptions
+	options := &agent_api.StartAgentContainerOptions{
+		MinReplicas: minReplicas,
+		MaxReplicas: maxReplicas,
+	}
+
+	// Start agent container
 	operation, err := agentClient.StartAgentContainer(
-		ctx, agentVersionResponse.Name, agentVersionResponse.Version, apiVersion)
+		ctx, agentVersionResponse.Name, agentVersionResponse.Version, options, apiVersion)
 	if err != nil {
 		return fmt.Errorf("failed to start agent container: %w", err)
 	}

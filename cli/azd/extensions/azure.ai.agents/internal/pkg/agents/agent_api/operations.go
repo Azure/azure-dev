@@ -548,11 +548,22 @@ func (c *AgentClient) DeleteAgentEventHandler(ctx context.Context, agentName, ev
 
 // Container Operations
 
+type StartAgentContainerOptions struct {
+	MinReplicas *int32
+	MaxReplicas *int32
+}
+
 // StartAgentContainer starts a container for a specific version of an agent
-func (c *AgentClient) StartAgentContainer(ctx context.Context, agentName, agentVersion string, apiVersion string) (*AcceptedAgentContainerOperation, error) {
+func (c *AgentClient) StartAgentContainer(ctx context.Context, agentName, agentVersion string, options *StartAgentContainerOptions, apiVersion string) (*AcceptedAgentContainerOperation, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s/containers/default:start?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
 	requestBody := map[string]interface{}{}
+	if options != nil && options.MinReplicas != nil {
+		requestBody["min_replicas"] = *options.MinReplicas
+	}
+	if options != nil && options.MaxReplicas != nil {
+		requestBody["max_replicas"] = *options.MaxReplicas
+	}
 
 	payload, err := json.Marshal(requestBody)
 	if err != nil {
@@ -600,7 +611,7 @@ func (c *AgentClient) StartAgentContainer(ctx context.Context, agentName, agentV
 }
 
 // UpdateAgentContainer updates a container for a specific version of an agent
-func (c *AgentClient) UpdateAgentContainer(ctx context.Context, agentName, agentVersion string, minReplicas, maxReplicas *int32, apiVersion string) (*AcceptedAgentContainerOperation, error) {
+func (c *AgentClient) UpdateAgentContainer(ctx context.Context, agentName, agentVersion string, minReplicas *int32, maxReplicas *int32, apiVersion string) (*AcceptedAgentContainerOperation, error) {
 	url := fmt.Sprintf("%s/agents/%s/versions/%s/containers/default:update?api-version=%s", c.endpoint, agentName, agentVersion, apiVersion)
 
 	requestBody := map[string]interface{}{}

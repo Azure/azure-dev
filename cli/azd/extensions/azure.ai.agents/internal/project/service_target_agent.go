@@ -516,10 +516,23 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 	}
 
 	// Step 3: Create agent request with image URL and resolved environment variables
+	var foundryAgentConfig *ServiceTargetAgentConfig
+	if err := UnmarshalStruct(serviceConfig.Config, &foundryAgentConfig); err != nil {
+		return nil, fmt.Errorf("failed to parse foundry agent config: %w", err)
+	}
+
+	var cpu, memory string
+	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
+		cpu = foundryAgentConfig.Container.Resources.Cpu
+		memory = foundryAgentConfig.Container.Resources.Memory
+	}
+
 	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(
 		agentDef,
 		agent_yaml.WithImageURL(fullImageURL),
 		agent_yaml.WithEnvironmentVariables(resolvedEnvVars),
+		agent_yaml.WithCPU(cpu),
+		agent_yaml.WithMemory(memory),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent request: %w", err)
@@ -537,7 +550,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 	// Step 5: Start agent container
 	progress("Starting agent container")
-	err = p.startAgentContainer(ctx, agentVersionResponse, azdEnv)
+	err = p.startAgentContainer(ctx, foundryAgentConfig, agentVersionResponse, azdEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -670,6 +683,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 // startAgentContainer starts the hosted agent container
 func (p *AgentServiceTargetProvider) startAgentContainer(
 	ctx context.Context,
+	foundryAgentConfig *ServiceTargetAgentConfig,
 	agentVersionResponse *agent_api.AgentVersionObject,
 	azdEnv map[string]string,
 ) error {
@@ -693,9 +707,17 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	// Create agent client
 	agentClient := agent_api.NewAgentClient(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], p.credential)
 
-	// Start agent container (minReplicas and maxReplicas are already int32)
+	var minReplicas, maxReplicas *int32
+	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Scale != nil {
+		minReplicasInt32 := int32(foundryAgentConfig.Container.Scale.MinReplicas)
+		maxReplicasInt32 := int32(foundryAgentConfig.Container.Scale.MaxReplicas)
+		minReplicas = &minReplicasInt32
+		maxReplicas = &maxReplicasInt32
+	}
+
+	// Start agent container
 	operation, err := agentClient.StartAgentContainer(
-		ctx, agentVersionResponse.Name, agentVersionResponse.Version, apiVersion)
+		ctx, agentVersionResponse.Name, agentVersionResponse.Version, minReplicas, maxReplicas, apiVersion)
 	if err != nil {
 		return fmt.Errorf("failed to start agent container: %w", err)
 	}

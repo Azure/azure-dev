@@ -145,6 +145,13 @@ func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConf
 		"Please ensure the file exists or set AGENT_DEFINITION_PATH environment variable", fullPath)
 }
 
+// getServiceKey converts a service name into a standardized environment variable key format
+func (p *AgentServiceTargetProvider) getServiceKey(serviceName string) string {
+	serviceKey := strings.ReplaceAll(serviceName, " ", "_")
+	serviceKey = strings.ReplaceAll(serviceKey, "-", "_")
+	return strings.ToUpper(serviceKey)
+}
+
 // Endpoints returns endpoints exposed by the agent service
 func (p *AgentServiceTargetProvider) Endpoints(
 	ctx context.Context,
@@ -168,11 +175,16 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	if azdEnv["AZURE_AI_PROJECT_ENDPOINT"] == "" {
 		return nil, fmt.Errorf("AZURE_AI_PROJECT_ENDPOINT environment variable is required and could not be found in your current azd environment. Either you haven't provisioned an Azure AI Foundry project yet (azd provision), or you haven't connected to an existing project (azd ai agent init --project-id [id])")
 	}
-	if azdEnv["AGENT_NAME"] == "" || azdEnv["AGENT_VERSION"] == "" {
-		return nil, fmt.Errorf("AGENT_NAME and AGENT_VERSION environment variables are required")
+
+	serviceKey := p.getServiceKey(serviceConfig.Name)
+	agentNameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
+	agentVersionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+
+	if azdEnv[agentNameKey] == "" || azdEnv[agentVersionKey] == "" {
+		return nil, fmt.Errorf("%s and %s environment variables are required", agentNameKey, agentVersionKey)
 	}
 
-	endpoint := p.agentEndpoint(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], azdEnv["AGENT_NAME"], azdEnv["AGENT_VERSION"])
+	endpoint := p.agentEndpoint(azdEnv["AZURE_AI_PROJECT_ENDPOINT"], azdEnv[agentNameKey], azdEnv[agentVersionKey])
 
 	return []string{endpoint}, nil
 }
@@ -836,11 +848,7 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		agentVersionResponse.Version,
 	)
 
-	// Create environment variable keys
-	serviceKey := strings.ReplaceAll(serviceConfig.Name, " ", "_")
-	serviceKey = strings.ReplaceAll(serviceKey, "-", "_")
-	serviceKey = strings.ToUpper(serviceKey)
-
+	serviceKey := p.getServiceKey(serviceConfig.Name)
 	envVars := map[string]string{
 		fmt.Sprintf("AGENT_%s_NAME", serviceKey):     agentVersionResponse.Name,
 		fmt.Sprintf("AGENT_%s_VERSION", serviceKey):  agentVersionResponse.Version,

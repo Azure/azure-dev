@@ -727,9 +727,15 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 		}
 	}
 
+	// Build StartAgentContainerOptions
+	options := &agent_api.StartAgentContainerOptions{
+		MinReplicas: minReplicas,
+		MaxReplicas: maxReplicas,
+	}
+
 	// Start agent container
 	operation, err := agentClient.StartAgentContainer(
-		ctx, agentVersionResponse.Name, agentVersionResponse.Version, minReplicas, maxReplicas, apiVersion)
+		ctx, agentVersionResponse.Name, agentVersionResponse.Version, options, apiVersion)
 	if err != nil {
 		return fmt.Errorf("failed to start agent container: %w", err)
 	}

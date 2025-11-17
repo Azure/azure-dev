@@ -1,5 +1,11 @@
 # Release History
 
+## 0.1.1-preview (2025-11-17)
+
+- Fix min and max replicas not being set during agent deployment
+- Fix `azd show` not displaying agent endpoint
+- Polish user prompts and messages
+
 ## 0.1.0-preview (2025-11-14)
 
 - Apply defaults instead of prompting in event handlers

@@ -534,7 +534,7 @@ func (a *InitAction) promptForMissingValues(ctx context.Context, azdClient *azde
 	if flags.manifestPointer == "" {
 		resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
-				Message:        "Enter the location of the agent manifest:",
+				Message:        "Enter the location of the agent manifest",
 				IgnoreHintKeys: true,
 			},
 		})
@@ -671,7 +671,7 @@ func (a *InitAction) parseAndSetProjectResourceId(ctx context.Context) error {
 				defaultIndex := int32(0)
 				selectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 					Options: &azdext.SelectOptions{
-						Message:       "Select a container registry connection to use for this agent:",
+						Message:       "Select a container registry connection to use for this agent",
 						Choices:       choices,
 						SelectedIndex: &defaultIndex,
 					},
@@ -1077,7 +1077,7 @@ func (a *InitAction) addToProject(ctx context.Context, targetDir string, agentMa
 						// Prompt the user for a connection name
 						resp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 							Options: &azdext.PromptOptions{
-								Message:        fmt.Sprintf("Enter a connection name for adding the resource %s to your Azure AI Foundry project:", toolResource.Id),
+								Message:        fmt.Sprintf("Enter a connection name for adding the resource %s to your Azure AI Foundry project", toolResource.Id),
 								IgnoreHintKeys: true,
 								DefaultValue:   toolResource.Id,
 							},
@@ -1148,7 +1148,7 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 	// Prompt for memory allocation
 	memoryResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
-			Message:      "Enter desired container memory allocation (e.g., '1Gi', '512Mi'):",
+			Message:      "Enter desired container memory allocation (e.g., '1Gi', '512Mi')",
 			DefaultValue: defaultMemory,
 		},
 	})
@@ -1159,7 +1159,7 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 	// Prompt for CPU allocation
 	cpuResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
-			Message:      "Enter desired container CPU allocation (e.g., '1', '500m'):",
+			Message:      "Enter desired container CPU allocation (e.g., '1', '500m')",
 			DefaultValue: defaultCpu,
 		},
 	})
@@ -1170,7 +1170,7 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 	// Prompt for minimum replicas
 	minReplicasResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
-			Message:      "Enter desired container minimum number of replicas:",
+			Message:      "Enter desired container minimum number of replicas",
 			DefaultValue: defaultMinReplicas,
 		},
 	})
@@ -1181,7 +1181,7 @@ func (a *InitAction) populateContainerSettings(ctx context.Context) (*project.Co
 	// Prompt for maximum replicas
 	maxReplicasResp, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
-			Message:      "Enter desired container maximum number of replicas:",
+			Message:      "Enter desired container maximum number of replicas",
 			DefaultValue: defaultMaxReplicas,
 		},
 	})
@@ -1808,7 +1808,7 @@ func (a *InitAction) getModelDeploymentDetails(ctx context.Context, model agent_
 		return nil, fmt.Errorf("failed to get model details: %w", err)
 	}
 
-	message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name):", model.Id)
+	message := fmt.Sprintf("Enter model deployment name for model '%s' (defaults to model name)", model.Id)
 
 	modelDeploymentInput, err := a.azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{

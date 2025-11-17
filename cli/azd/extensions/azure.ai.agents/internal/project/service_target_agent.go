@@ -527,13 +527,21 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 		memory = foundryAgentConfig.Container.Resources.Memory
 	}
 
-	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(
-		agentDef,
+	// Build options list starting with required options
+	options := []agent_yaml.AgentBuildOption{
 		agent_yaml.WithImageURL(fullImageURL),
 		agent_yaml.WithEnvironmentVariables(resolvedEnvVars),
-		agent_yaml.WithCPU(cpu),
-		agent_yaml.WithMemory(memory),
-	)
+	}
+
+	// Conditionally add CPU and memory options if they're not empty
+	if cpu != "" {
+		options = append(options, agent_yaml.WithCPU(cpu))
+	}
+	if memory != "" {
+		options = append(options, agent_yaml.WithMemory(memory))
+	}
+
+	request, err := agent_yaml.CreateAgentAPIRequestFromDefinition(agentDef, options...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create agent request: %w", err)
 	}
@@ -709,10 +717,14 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 
 	var minReplicas, maxReplicas *int32
 	if foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Scale != nil {
-		minReplicasInt32 := int32(foundryAgentConfig.Container.Scale.MinReplicas)
-		maxReplicasInt32 := int32(foundryAgentConfig.Container.Scale.MaxReplicas)
-		minReplicas = &minReplicasInt32
-		maxReplicas = &maxReplicasInt32
+		if foundryAgentConfig.Container.Scale.MinReplicas > 0 {
+			minReplicasInt32 := int32(foundryAgentConfig.Container.Scale.MinReplicas)
+			minReplicas = &minReplicasInt32
+		}
+		if foundryAgentConfig.Container.Scale.MaxReplicas > 0 {
+			maxReplicasInt32 := int32(foundryAgentConfig.Container.Scale.MaxReplicas)
+			maxReplicas = &maxReplicasInt32
+		}
 	}
 
 	// Start agent container

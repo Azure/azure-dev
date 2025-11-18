@@ -146,13 +146,13 @@ $tagsFlag = "-tags=$($tags -join ',')"
 $ldFlags = @(
     "-s",
     "-w",
-    "-X 'github.com/azure/azure-dev/internal.Version=$Version (commit $SourceVersion)'"
+    "-X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)'"
 )
 
 # Add GitHub Copilot linker flags if enabled
 if ($GitHubCopilotEnabled) {
-    $ldFlags += "-X 'github.com/azure/azure-dev/pkg/llm.clientID=$GitHubCopilotClientId'"
-    $ldFlags += "-X 'github.com/azure/azure-dev/pkg/llm.copilotIntegrationID=$GitHubCopilotIntegrationId'"
+    $ldFlags += "-X 'github.com/azure/azure-dev/cli/azd/pkg/llm.clientID=$GitHubCopilotClientId'"
+    $ldFlags += "-X 'github.com/azure/azure-dev/cli/azd/pkg/llm.copilotIntegrationID=$GitHubCopilotIntegrationId'"
 }
 
 $ldFlag = "-ldflags=$($ldFlags -join ' ')"

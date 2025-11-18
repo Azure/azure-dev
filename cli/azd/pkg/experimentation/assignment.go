@@ -14,10 +14,10 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/internal"
-	"github.com/azure/azure-dev/internal/tracing/resource"
-	"github.com/azure/azure-dev/pkg/config"
-	"github.com/azure/azure-dev/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 // cacheFileName is the name of the file used to cache assignment information.

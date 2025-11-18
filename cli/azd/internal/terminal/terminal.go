@@ -7,7 +7,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/azure/azure-dev/internal/tracing/resource"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/mattn/go-isatty"
 )
 

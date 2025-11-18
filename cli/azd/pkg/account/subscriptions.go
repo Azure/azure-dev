@@ -10,9 +10,9 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
-	"github.com/azure/azure-dev/pkg/auth"
-	"github.com/azure/azure-dev/pkg/compare"
-	"github.com/azure/azure-dev/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/compare"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
 // SubscriptionsService allows querying of subscriptions and tenants.

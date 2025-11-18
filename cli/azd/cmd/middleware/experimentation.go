@@ -10,11 +10,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/azure/azure-dev/cmd/actions"
-	"github.com/azure/azure-dev/internal/tracing"
-	"github.com/azure/azure-dev/internal/tracing/fields"
-	"github.com/azure/azure-dev/pkg/alpha"
-	"github.com/azure/azure-dev/pkg/experimentation"
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/experimentation"
 )
 
 type ExperimentationMiddleware struct {

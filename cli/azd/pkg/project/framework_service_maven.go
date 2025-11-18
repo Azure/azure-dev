@@ -11,11 +11,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/pkg/async"
-	"github.com/azure/azure-dev/pkg/environment"
-	"github.com/azure/azure-dev/pkg/tools"
-	"github.com/azure/azure-dev/pkg/tools/javac"
-	"github.com/azure/azure-dev/pkg/tools/maven"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/otiai10/copy"
 )
 

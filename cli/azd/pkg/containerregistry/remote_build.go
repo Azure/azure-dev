@@ -21,9 +21,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
-	"github.com/azure/azure-dev/internal/tracing"
-	"github.com/azure/azure-dev/internal/tracing/fields"
-	"github.com/azure/azure-dev/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/sethvargo/go-retry"
 )
 

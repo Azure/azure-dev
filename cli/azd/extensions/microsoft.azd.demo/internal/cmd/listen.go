@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/azure/azure-dev/extensions/microsoft.azd.demo/internal/project"
-	"github.com/azure/azure-dev/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.demo/internal/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
 

@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // NonPersistentGlobalFlags are flags that appear on all commands but are generated per-command

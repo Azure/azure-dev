@@ -14,9 +14,9 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
-	"github.com/azure/azure-dev/pkg/auth"
-	"github.com/azure/azure-dev/pkg/convert"
-	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"go.uber.org/multierr"
 )
 

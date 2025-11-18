@@ -13,11 +13,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/azure/azure-dev/internal/scaffold"
-	"github.com/azure/azure-dev/pkg/environment"
-	"github.com/azure/azure-dev/pkg/infra"
-	"github.com/azure/azure-dev/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/psanford/memfs"
 )
 

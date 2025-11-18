@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/azure/azure-dev/pkg/rzip"
+	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 	"github.com/denormal/go-gitignore"
 )
 

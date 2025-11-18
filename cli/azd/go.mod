@@ -1,4 +1,4 @@
-module github.com/azure/azure-dev
+module github.com/azure/azure-dev/cli/azd
 
 go 1.25
 

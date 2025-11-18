@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/azure/azure-dev/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
 
 // newFileTemplateSource creates a new template source from a file.

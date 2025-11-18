@@ -12,9 +12,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/azure/azure-dev/pkg/exec"
-	"github.com/azure/azure-dev/pkg/tools/dotnet"
-	"github.com/azure/azure-dev/pkg/tools/maven"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/bmatcuk/doublestar/v4"
 )
 

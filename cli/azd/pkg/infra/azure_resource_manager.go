@@ -15,12 +15,12 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/internal"
-	"github.com/azure/azure-dev/pkg/azapi"
-	"github.com/azure/azure-dev/pkg/azure"
-	"github.com/azure/azure-dev/pkg/azureutil"
-	"github.com/azure/azure-dev/pkg/compare"
-	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/compare"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 type AzureResourceManager struct {

@@ -9,7 +9,7 @@ import (
 	"regexp"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 )
 

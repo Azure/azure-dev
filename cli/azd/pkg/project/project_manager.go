@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/azure/azure-dev/internal/tracing"
-	"github.com/azure/azure-dev/internal/tracing/fields"
-	"github.com/azure/azure-dev/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/pkg/ext"
-	"github.com/azure/azure-dev/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 const (

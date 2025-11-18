@@ -3,7 +3,7 @@
 
 package azdcli
 
-import "github.com/azure/azure-dev/test/recording"
+import "github.com/azure/azure-dev/cli/azd/test/recording"
 
 type option struct {
 	Session *recording.Session

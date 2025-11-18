@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/internal/agent/tools/common"
-	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/tmc/langchaingo/tools"
 )

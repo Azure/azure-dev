@@ -12,11 +12,11 @@ import (
 	"sync"
 
 	"github.com/MakeNowJust/heredoc/v2"
-	"github.com/azure/azure-dev/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/pkg/input"
-	"github.com/azure/azure-dev/pkg/ioc"
-	"github.com/azure/azure-dev/pkg/output/ux"
-	"github.com/azure/azure-dev/pkg/state"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/state"
 )
 
 // Description is a metadata description of an environment returned for the `azd env list` command

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/azure/azure-dev/pkg/custommaps"
+	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
 )
 
 // buildAcaIngress builds the Azure Container Apps ingress configuration from the provided bindings.

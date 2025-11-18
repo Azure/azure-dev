@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
 // AzdCommandRunner abstracts the execution of an azd command given an set of arguments and context.

@@ -13,12 +13,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/azure/azure-dev/cmd/actions"
-	"github.com/azure/azure-dev/internal/grpcserver"
-	"github.com/azure/azure-dev/pkg/extensions"
-	"github.com/azure/azure-dev/pkg/input"
-	"github.com/azure/azure-dev/pkg/ioc"
-	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal/grpcserver"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
 )
 

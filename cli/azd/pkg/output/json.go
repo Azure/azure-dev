@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/azure/azure-dev/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/mattn/go-colorable"
 )
 

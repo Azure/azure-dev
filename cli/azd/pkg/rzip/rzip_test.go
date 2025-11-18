@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/pkg/rzip"
+	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 	"github.com/stretchr/testify/require"
 )
 

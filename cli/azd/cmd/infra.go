@@ -4,9 +4,9 @@
 package cmd
 
 import (
-	"github.com/azure/azure-dev/cmd/actions"
-	"github.com/azure/azure-dev/cmd/middleware"
-	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
 

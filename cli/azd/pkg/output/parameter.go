@@ -13,7 +13,7 @@ import (
 
 const (
 	outputFlagName               = "output"
-	supportedFormatterAnnotation = "github.com/azure/azure-dev/pkg/output/supportedOutputFormatters"
+	supportedFormatterAnnotation = "github.com/azure/azure-dev/cli/azd/pkg/output/supportedOutputFormatters"
 )
 
 func AddOutputFlag(f *pflag.FlagSet, s *string, supportedFormats []Format, defaultFormat Format) {

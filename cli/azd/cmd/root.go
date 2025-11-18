@@ -10,22 +10,22 @@ import (
 	"os"
 	"strings"
 
-	"github.com/azure/azure-dev/cmd/actions"
-	"github.com/azure/azure-dev/cmd/middleware"
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 
 	// Importing for infrastructure provider plugin registrations
 
-	"github.com/azure/azure-dev/pkg/azd"
-	"github.com/azure/azure-dev/pkg/extensions"
-	"github.com/azure/azure-dev/pkg/ioc"
-	"github.com/azure/azure-dev/pkg/platform"
+	"github.com/azure/azure-dev/cli/azd/pkg/azd"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
-	"github.com/azure/azure-dev/internal"
-	"github.com/azure/azure-dev/internal/cmd"
-	"github.com/azure/azure-dev/internal/cmd/add"
-	"github.com/azure/azure-dev/internal/cmd/show"
-	"github.com/azure/azure-dev/internal/telemetry"
-	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd/add"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd/show"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
 

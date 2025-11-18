@@ -11,8 +11,8 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/azure/azure-dev/internal/telemetry"
-	"github.com/azure/azure-dev/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 // serverService is the RPC server for the '/ServerService/v1.0' endpoint.

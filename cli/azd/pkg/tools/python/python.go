@@ -11,8 +11,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/azure/azure-dev/pkg/exec"
-	"github.com/azure/azure-dev/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
 

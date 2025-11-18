@@ -6,7 +6,7 @@ package environment
 import (
 	"context"
 
-	"github.com/azure/azure-dev/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 )
 
 // DataStore is the interface for the interacting with the persistent storage of environments.

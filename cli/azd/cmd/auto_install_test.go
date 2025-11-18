@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 )

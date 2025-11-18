@@ -9,11 +9,11 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/azure/azure-dev/internal"
-	"github.com/azure/azure-dev/pkg/azapi"
-	"github.com/azure/azure-dev/pkg/azdext"
-	"github.com/azure/azure-dev/pkg/prompt"
-	"github.com/azure/azure-dev/pkg/ux"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 )
 
 type promptService struct {

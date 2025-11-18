@@ -9,15 +9,15 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/azure/azure-dev/internal/agent/consent"
-	"github.com/azure/azure-dev/internal/agent/logging"
-	"github.com/azure/azure-dev/internal/agent/security"
-	localtools "github.com/azure/azure-dev/internal/agent/tools"
-	"github.com/azure/azure-dev/internal/agent/tools/common"
-	mcptools "github.com/azure/azure-dev/internal/agent/tools/mcp"
-	"github.com/azure/azure-dev/internal/mcp"
-	"github.com/azure/azure-dev/pkg/input"
-	"github.com/azure/azure-dev/pkg/llm"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/logging"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
+	localtools "github.com/azure/azure-dev/cli/azd/internal/agent/tools"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
+	mcptools "github.com/azure/azure-dev/cli/azd/internal/agent/tools/mcp"
+	"github.com/azure/azure-dev/cli/azd/internal/mcp"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/llm"
 )
 
 // AgentFactory is responsible for creating agent instances

@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/azure/azure-dev/pkg/azapi"
-	"github.com/azure/azure-dev/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 )
 
 type Deployment struct {

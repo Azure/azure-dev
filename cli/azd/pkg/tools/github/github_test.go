@@ -17,11 +17,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/pkg/exec"
-	"github.com/azure/azure-dev/pkg/input"
-	"github.com/azure/azure-dev/pkg/osutil"
-	"github.com/azure/azure-dev/test/mocks"
-	"github.com/azure/azure-dev/test/mocks/mockinput"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/blang/semver/v4"
 	"github.com/stretchr/testify/require"
 )

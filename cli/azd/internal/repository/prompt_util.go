@@ -12,7 +12,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
 // tabWrite transforms tabbed output into formatted strings with a given minimal padding.

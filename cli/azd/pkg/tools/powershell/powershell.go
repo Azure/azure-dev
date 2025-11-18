@@ -9,10 +9,10 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/azure/azure-dev/internal"
-	"github.com/azure/azure-dev/pkg/exec"
-	"github.com/azure/azure-dev/pkg/output"
-	"github.com/azure/azure-dev/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
 // Creates a new PowershellScript command runner

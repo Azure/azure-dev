@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/azure/azure-dev/pkg/contracts"
-	"github.com/azure/azure-dev/pkg/devcentersdk"
-	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 )
 
 const (

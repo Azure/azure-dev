@@ -6,9 +6,9 @@ package devcenter
 import (
 	"testing"
 
-	"github.com/azure/azure-dev/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/pkg/ioc"
-	"github.com/azure/azure-dev/pkg/platform"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/stretchr/testify/require"
 )
 

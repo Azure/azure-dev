@@ -7,10 +7,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/internal/agent"
-	"github.com/azure/azure-dev/pkg/input"
-	"github.com/azure/azure-dev/pkg/output"
-	uxlib "github.com/azure/azure-dev/pkg/ux"
+	"github.com/azure/azure-dev/cli/azd/internal/agent"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	uxlib "github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/fatih/color"
 )
 

@@ -7,11 +7,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/pkg/account"
-	"github.com/azure/azure-dev/pkg/auth"
-	"github.com/azure/azure-dev/pkg/azapi"
-	"github.com/azure/azure-dev/pkg/azureutil"
-	"github.com/azure/azure-dev/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 )
 
 type CurrentPrincipalIdProvider interface {

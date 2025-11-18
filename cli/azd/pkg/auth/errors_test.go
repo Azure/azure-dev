@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	msal "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
-	"github.com/azure/azure-dev/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/stretchr/testify/require"
 )
 

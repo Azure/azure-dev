@@ -6,7 +6,7 @@ package project
 import (
 	"testing"
 
-	"github.com/azure/azure-dev/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 )
 
 func Test_genBicepParamsFromEnvSubst(t *testing.T) {

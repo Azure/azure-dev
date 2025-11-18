@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/azure/azure-dev/pkg/config"
-	"github.com/azure/azure-dev/resources"
-	"github.com/azure/azure-dev/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -12,7 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
-	"github.com/azure/azure-dev/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 )
 
 type AzCliFunctionAppProperties struct {

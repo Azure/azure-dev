@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/pkg/extensions"
-	"github.com/azure/azure-dev/pkg/grpcbroker"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 )
 
 // EventMessageEnvelope provides message operations for EventMessage

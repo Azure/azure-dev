@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/azure/azure-dev/pkg/tools/git"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 )
 
 var ErrRemoteHostIsNotGitHub = errors.New("not a github host")

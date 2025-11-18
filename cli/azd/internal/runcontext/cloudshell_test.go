@@ -6,7 +6,7 @@ package runcontext
 import (
 	"testing"
 
-	"github.com/azure/azure-dev/test/ostest"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
 )
 

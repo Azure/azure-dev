@@ -6,8 +6,8 @@ package models
 import (
 	"testing"
 
-	"github.com/azure/azure-dev/pkg/extensions"
-	"github.com/azure/azure-dev/test/snapshot"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
 
 	"go.yaml.in/yaml/v3"

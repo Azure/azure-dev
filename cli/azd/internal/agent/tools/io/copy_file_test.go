@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/internal/agent/tools/common"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

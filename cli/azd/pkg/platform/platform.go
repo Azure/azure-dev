@@ -6,7 +6,7 @@ package platform
 import (
 	"fmt"
 
-	"github.com/azure/azure-dev/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 )
 
 var (

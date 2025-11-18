@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/azure/azure-dev/pkg/grpcbroker"
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/google/uuid"
 )
 

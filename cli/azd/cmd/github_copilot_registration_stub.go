@@ -6,7 +6,7 @@
 package cmd
 
 import (
-	"github.com/azure/azure-dev/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 )
 
 // registerGitHubCopilotProvider is a no-op when GitHub Copilot is not enabled

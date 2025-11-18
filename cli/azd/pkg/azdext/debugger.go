@@ -10,7 +10,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/azure/azure-dev/pkg/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/golang-jwt/jwt/v5"
 	"google.golang.org/grpc/metadata"
 )

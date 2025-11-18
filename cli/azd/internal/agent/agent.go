@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/azure/azure-dev/internal/agent/logging"
-	"github.com/azure/azure-dev/internal/agent/tools/common"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/logging"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/callbacks"
 	"github.com/tmc/langchaingo/llms"

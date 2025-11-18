@@ -6,8 +6,8 @@ package grpcserver
 import (
 	"context"
 
-	"github.com/azure/azure-dev/pkg/account"
-	"github.com/azure/azure-dev/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
 type accountService struct {

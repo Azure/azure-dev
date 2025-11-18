@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/azure/azure-dev/cmd/actions"
-	"github.com/azure/azure-dev/internal"
-	"github.com/azure/azure-dev/pkg/contracts"
-	"github.com/azure/azure-dev/pkg/input"
-	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )

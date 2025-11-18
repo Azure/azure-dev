@@ -11,7 +11,7 @@ import (
 	"os"
 	"slices"
 
-	"github.com/azure/azure-dev/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
 
 // JSON document path locations for default subscription & location

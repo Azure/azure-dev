@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/azure/azure-dev/test/mocks"
-	"github.com/azure/azure-dev/test/mocks/mockgraphsdk"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockgraphsdk"
 	"github.com/stretchr/testify/require"
 )
 

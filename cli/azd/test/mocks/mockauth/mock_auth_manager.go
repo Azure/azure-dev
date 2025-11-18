@@ -6,7 +6,7 @@ package mockauth
 import (
 	"context"
 
-	"github.com/azure/azure-dev/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/stretchr/testify/mock"
 )
 

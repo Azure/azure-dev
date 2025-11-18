@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/internal"
-	"github.com/azure/azure-dev/internal/tracing/resource"
-	"github.com/azure/azure-dev/pkg/osutil"
-	"github.com/azure/azure-dev/test/mocks/mockhttp"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 	"github.com/stretchr/testify/require"
 )
 

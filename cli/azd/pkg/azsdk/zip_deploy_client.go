@@ -19,7 +19,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2"
-	"github.com/azure/azure-dev/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"go.opentelemetry.io/otel/trace"
 )
 

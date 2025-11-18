@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/azure/azure-dev/internal/agent/tools/common"
+	"github.com/azure/azure-dev/cli/azd/internal/agent/tools/common"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 

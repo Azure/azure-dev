@@ -8,9 +8,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/azure/azure-dev/internal"
-	appinsightsexporter "github.com/azure/azure-dev/internal/telemetry/appinsights-exporter"
-	"github.com/azure/azure-dev/test/ostest"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

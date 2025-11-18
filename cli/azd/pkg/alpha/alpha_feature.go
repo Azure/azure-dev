@@ -8,7 +8,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/azure/azure-dev/resources"
+	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/braydonk/yaml"
 )
 

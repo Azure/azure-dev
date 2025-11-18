@@ -5,7 +5,6 @@ on:
     paths:
       - "cli/**"
       - ".github/workflows/cli-ci.yml"
-      - "go.mod"
     branches: [main]
 
 # If two events are triggered within a short time in the same PR, cancel the run of the oldest event

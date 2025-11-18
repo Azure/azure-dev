@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/common"
+	"github.com/azure/azure-dev/extensions/microsoft.azd.extensions/internal"
+	"github.com/azure/azure-dev/pkg/common"
 )
 
 var (

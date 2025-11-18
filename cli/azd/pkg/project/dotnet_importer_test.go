@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
-	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
+	"github.com/azure/azure-dev/internal/scaffold"
+	"github.com/azure/azure-dev/pkg/apphost"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

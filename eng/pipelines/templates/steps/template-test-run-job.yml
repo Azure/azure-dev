@@ -63,7 +63,7 @@ steps:
       displayName: Copy test-templates.sh
 
     - bash: |
-        go build -o ./temp/tfoidc ./cli/azd/test/internal/tfoidc 
+        cd cli/azd && go build -o ../../temp/tfoidc ./test/internal/tfoidc 
       displayName: Build tfoidc
       env:
         CGO_ENABLED: 0

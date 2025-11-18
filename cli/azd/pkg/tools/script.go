@@ -7,7 +7,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/pkg/exec"
 )
 
 // ExecOptions provide configuration for how scripts are executed

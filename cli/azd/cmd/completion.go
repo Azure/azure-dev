@@ -7,9 +7,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/internal/figspec"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cmd/actions"
+	"github.com/azure/azure-dev/internal/figspec"
+	"github.com/azure/azure-dev/pkg/output"
 	"github.com/spf13/cobra"
 )
 

@@ -7,12 +7,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
-	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/internal/appdetect"
+	"github.com/azure/azure-dev/internal/tracing"
+	"github.com/azure/azure-dev/internal/tracing/fields"
+	"github.com/azure/azure-dev/pkg/apphost"
+	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/pkg/output"
 	"go.opentelemetry.io/otel/attribute"
 )
 

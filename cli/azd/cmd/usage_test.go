@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/test/snapshot"
+	"github.com/azure/azure-dev/test/snapshot"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )

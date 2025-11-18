@@ -53,3 +53,17 @@ test-results/
 
 # Finder state files
 .DS_Store
+cli/azd/azure-dev
+cli/azd/azure-dev.exe
+cli/azd/azd
+cli/azd/azd.exe
+cli/azd/extensions/azure.coding-agent/azurecodingagent
+cli/azd/extensions/azure.coding-agent/azurecodingagent.exe
+cli/azd/extensions/azure.ai.agents/azureaiagent
+cli/azd/extensions/azure.ai.agents/azureaiagent.exe
+cli/azd/extensions/microsoft.azd.extensions/microsoft.azd.extensions
+cli/azd/extensions/microsoft.azd.extensions/microsoft.azd.extensions.exe
+cli/azd/extensions/microsoft.azd.ai.builder/microsoft.azd.ai.builder
+cli/azd/extensions/microsoft.azd.ai.builder/microsoft.azd.ai.builder.exe
+cli/azd/extensions/microsoft.azd.demo/microsoft.azd.demo
+cli/azd/extensions/microsoft.azd.demo/microsoft.azd.demo.exe

@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/pkg/exec"
 )
 
 // NewCli creates a new AzCli instance with the provided command runner.

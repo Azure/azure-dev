@@ -7,10 +7,10 @@ import (
 	"context"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/pkg/azapi"
+	"github.com/azure/azure-dev/pkg/cloud"
+	"github.com/azure/azure-dev/test/mocks"
+	"github.com/azure/azure-dev/test/mocks/mockaccount"
 	"github.com/benbjohnson/clock"
 )
 

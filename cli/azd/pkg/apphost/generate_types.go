@@ -3,7 +3,7 @@
 
 package apphost
 
-import "github.com/azure/azure-dev/cli/azd/pkg/custommaps"
+import "github.com/azure/azure-dev/pkg/custommaps"
 
 type genContainerAppEnvironmentServices struct {
 	Type string

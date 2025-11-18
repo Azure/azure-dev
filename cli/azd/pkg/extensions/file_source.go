@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/pkg/config"
 )
 
 // newFileSource creates a new file base registry source.

@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/azure/azure-dev/pkg/exec"
+	"github.com/azure/azure-dev/pkg/tools/bicep"
+	"github.com/azure/azure-dev/test/mocks/mockinput"
 	"github.com/otiai10/copy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

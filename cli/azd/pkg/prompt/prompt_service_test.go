@@ -6,13 +6,13 @@ package prompt
 import (
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockauth"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazapi"
+	"github.com/azure/azure-dev/internal"
+	"github.com/azure/azure-dev/pkg/account"
+	"github.com/azure/azure-dev/pkg/auth"
+	"github.com/azure/azure-dev/pkg/config"
+	"github.com/azure/azure-dev/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/test/mocks/mockauth"
+	"github.com/azure/azure-dev/test/mocks/mockazapi"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )

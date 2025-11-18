@@ -7,7 +7,7 @@ import (
 	"context"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/pkg/auth"
 )
 
 // SubscriptionCredentialProvider provides an [azcore.TokenCredential] configured

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/azure/azure-dev/cli/azd/internal/terminal"
-	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
+	"github.com/azure/azure-dev/internal/terminal"
+	"github.com/azure/azure-dev/pkg/ux/internal"
 	"github.com/fatih/color"
 	"github.com/nathan-fiscaletti/consolesize-go"
 )

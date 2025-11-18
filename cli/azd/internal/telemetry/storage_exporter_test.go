@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
+	appinsightsexporter "github.com/azure/azure-dev/internal/telemetry/appinsights-exporter"
 	"github.com/microsoft/ApplicationInsights-Go/appinsights/contracts"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel/attribute"

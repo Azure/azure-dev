@@ -3,7 +3,7 @@
 
 package platform
 
-import "github.com/azure/azure-dev/cli/azd/pkg/ioc"
+import "github.com/azure/azure-dev/pkg/ioc"
 
 // Provider is an interface for a platform provider
 type Provider interface {

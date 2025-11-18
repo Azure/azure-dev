@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/templates"
+	"github.com/azure/azure-dev/pkg/devcentersdk"
+	"github.com/azure/azure-dev/pkg/templates"
 	"go.uber.org/multierr"
 )
 

@@ -16,12 +16,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/internal/cmd"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/internal/cmd"
+	"github.com/azure/azure-dev/internal/telemetry"
+	"github.com/azure/azure-dev/internal/tracing"
+	"github.com/azure/azure-dev/internal/tracing/events"
+	"github.com/azure/azure-dev/internal/tracing/fields"
+	"github.com/azure/azure-dev/pkg/ioc"
 	"github.com/gorilla/websocket"
 	"go.lsp.dev/jsonrpc2"
 )

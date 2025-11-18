@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/pkg/config"
+	"github.com/azure/azure-dev/pkg/osutil"
 )
 
 // The file name of the cache used for storing subscriptions accessible by local accounts.

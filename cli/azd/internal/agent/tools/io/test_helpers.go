@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal/agent/security"
+	"github.com/azure/azure-dev/internal/agent/security"
 )
 
 // mustMarshalJSON is a test helper function to marshal request structs to JSON strings

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/test/ostest"
+	"github.com/azure/azure-dev/internal/appdetect"
+	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/test/ostest"
 	"github.com/stretchr/testify/require"
 )
 

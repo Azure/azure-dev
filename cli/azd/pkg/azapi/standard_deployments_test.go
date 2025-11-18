@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
-	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/pkg/cloud"
+	"github.com/azure/azure-dev/test/mocks"
 	"github.com/stretchr/testify/assert"
 )
 

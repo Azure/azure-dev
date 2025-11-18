@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/pkg/osutil"
-	"github.com/azure/azure-dev/test/mocks/mockexec"
-	"github.com/azure/azure-dev/test/ostest"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
 )
 

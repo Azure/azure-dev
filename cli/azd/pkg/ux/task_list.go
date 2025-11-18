@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"dario.cat/mergo"
-	"github.com/azure/azure-dev/pkg/common"
-	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/common"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // TaskListOptions represents the options for the TaskList component.

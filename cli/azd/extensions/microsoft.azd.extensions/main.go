@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/azure/azure-dev/extensions/microsoft.azd.extensions/internal"
-	"github.com/azure/azure-dev/extensions/microsoft.azd.extensions/internal/cmd"
+	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
+	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/cmd"
 	"github.com/fatih/color"
 )
 

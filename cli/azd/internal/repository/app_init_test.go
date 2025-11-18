@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/internal"
-	"github.com/azure/azure-dev/internal/appdetect"
-	"github.com/azure/azure-dev/pkg/input"
-	"github.com/azure/azure-dev/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/stretchr/testify/require"
 )
 

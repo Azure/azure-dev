@@ -13,12 +13,12 @@ import (
 
 	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/azure/azure-dev/internal/tracing"
-	"github.com/azure/azure-dev/internal/tracing/fields"
-	"github.com/azure/azure-dev/pkg/auth"
-	"github.com/azure/azure-dev/pkg/azapi"
-	"github.com/azure/azure-dev/pkg/exec"
-	"github.com/azure/azure-dev/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )

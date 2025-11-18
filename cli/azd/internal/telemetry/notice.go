@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 
 	"github.com/MakeNowJust/heredoc/v2"
-	"github.com/azure/azure-dev/internal/runcontext"
-	"github.com/azure/azure-dev/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
 
 func FirstNotice() string {

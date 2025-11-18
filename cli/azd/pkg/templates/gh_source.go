@@ -9,8 +9,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/azure/azure-dev/pkg/input"
-	"github.com/azure/azure-dev/pkg/tools/github"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 )
 
 // newGhTemplateSource creates a new template source from a Github repository.

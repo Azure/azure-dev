@@ -11,13 +11,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/azure/azure-dev/extensions/microsoft.azd.extensions/internal"
-	"github.com/azure/azure-dev/extensions/microsoft.azd.extensions/internal/github"
-	"github.com/azure/azure-dev/extensions/microsoft.azd.extensions/internal/models"
-	"github.com/azure/azure-dev/pkg/azdext"
-	"github.com/azure/azure-dev/pkg/common"
-	"github.com/azure/azure-dev/pkg/output"
-	"github.com/azure/azure-dev/pkg/ux"
+	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal"
+	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/github"
+	"github.com/azure/azure-dev/cli/azd/extensions/microsoft.azd.extensions/internal/models"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/common"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/spf13/cobra"
 )
 

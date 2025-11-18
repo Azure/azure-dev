@@ -10,11 +10,11 @@ import (
 	"io"
 	"strings"
 
-	"github.com/azure/azure-dev/cmd/actions"
-	"github.com/azure/azure-dev/pkg/input"
-	"github.com/azure/azure-dev/pkg/output"
-	"github.com/azure/azure-dev/pkg/output/ux"
-	"github.com/azure/azure-dev/pkg/templates"
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/spf13/cobra"
 )
 

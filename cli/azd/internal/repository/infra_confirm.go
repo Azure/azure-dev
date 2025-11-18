@@ -10,12 +10,12 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/azure/azure-dev/internal/appdetect"
-	"github.com/azure/azure-dev/internal/cmd/add"
-	"github.com/azure/azure-dev/internal/names"
-	"github.com/azure/azure-dev/internal/scaffold"
-	"github.com/azure/azure-dev/pkg/input"
-	"github.com/azure/azure-dev/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd/add"
+	"github.com/azure/azure-dev/cli/azd/internal/names"
+	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
 // A regex that matches against "likely" well-formed database names

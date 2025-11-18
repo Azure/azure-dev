@@ -6,7 +6,7 @@ package devcenter
 import (
 	"fmt"
 
-	"github.com/azure/azure-dev/pkg/platform"
+	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 )
 
 const (

@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/azure/azure-dev/pkg/output"
-	"github.com/azure/azure-dev/pkg/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 

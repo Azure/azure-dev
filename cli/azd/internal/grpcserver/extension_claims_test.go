@@ -6,7 +6,7 @@ package grpcserver
 import (
 	"testing"
 
-	"github.com/azure/azure-dev/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/stretchr/testify/require"
 )
 

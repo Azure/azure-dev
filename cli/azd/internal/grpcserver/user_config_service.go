@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/azure/azure-dev/pkg/azdext"
-	"github.com/azure/azure-dev/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
 
 // configService is the implementation of ConfigServiceServer.

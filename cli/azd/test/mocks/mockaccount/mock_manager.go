@@ -8,7 +8,7 @@ import (
 	"slices"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/azure/azure-dev/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 )
 
 type MockAccountManager struct {

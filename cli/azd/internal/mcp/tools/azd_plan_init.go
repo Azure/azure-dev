@@ -6,7 +6,7 @@ package tools
 import (
 	"context"
 
-	"github.com/azure/azure-dev/internal/mcp/tools/prompts"
+	"github.com/azure/azure-dev/cli/azd/internal/mcp/tools/prompts"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )

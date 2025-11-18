@@ -11,7 +11,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/azure/azure-dev/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 // The type of hooks. Supported values are 'pre' and 'post'

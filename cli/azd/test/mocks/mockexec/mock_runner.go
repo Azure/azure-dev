@@ -9,7 +9,7 @@ import (
 	osexec "os/exec"
 	"strings"
 
-	"github.com/azure/azure-dev/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 )
 
 type CommandWhenPredicate func(args exec.RunArgs, command string) bool

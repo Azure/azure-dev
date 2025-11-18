@@ -10,8 +10,8 @@ import (
 	"log"
 	"slices"
 
-	"github.com/azure/azure-dev/cmd/actions"
-	"github.com/azure/azure-dev/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/spf13/pflag"
 )
 

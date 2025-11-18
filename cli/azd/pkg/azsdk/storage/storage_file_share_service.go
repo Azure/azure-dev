@@ -16,7 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azfile/service"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azfile/share"
-	"github.com/azure/azure-dev/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 )
 
 type FileShareService interface {

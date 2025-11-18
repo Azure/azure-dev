@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/azure/azure-dev/pkg/extensions"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/golang-jwt/jwt/v5"
 )
 

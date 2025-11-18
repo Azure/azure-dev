@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
-	"github.com/azure/azure-dev/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
 
 func MockContainerRegistryTokenExchange(

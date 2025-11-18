@@ -6,7 +6,7 @@ package ux
 import (
 	"testing"
 
-	"github.com/azure/azure-dev/test/snapshot"
+	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 )
 
 func TestShow(t *testing.T) {

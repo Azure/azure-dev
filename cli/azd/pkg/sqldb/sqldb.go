@@ -9,7 +9,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/sql/armsql/v2"
-	"github.com/azure/azure-dev/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 )
 
 // SqlDbService is the interface for the SqlDbService

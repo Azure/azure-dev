@@ -12,7 +12,7 @@ import (
 
 	"maps"
 
-	"github.com/azure/azure-dev/pkg/yamlnode"
+	"github.com/azure/azure-dev/cli/azd/pkg/yamlnode"
 	"github.com/braydonk/yaml"
 	"github.com/tidwall/gjson"
 )

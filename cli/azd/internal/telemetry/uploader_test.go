@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	appinsightsexporter "github.com/azure/azure-dev/internal/telemetry/appinsights-exporter"
+	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
 )

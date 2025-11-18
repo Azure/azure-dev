@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/test/snapshot"
+	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/bradleyjkemp/cupaloy/v2"
 	tm "github.com/buger/goterm"
 	"github.com/stretchr/testify/require"

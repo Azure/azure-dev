@@ -7,9 +7,9 @@ import (
 	"context"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/azure/azure-dev/internal/names"
-	"github.com/azure/azure-dev/pkg/input"
-	"github.com/azure/azure-dev/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/internal/names"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
 // ConfigureExisting prompts the user to configure details for an existing resource.

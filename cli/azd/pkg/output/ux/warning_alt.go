@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // Warning message with the prefix "(!) Warning: "

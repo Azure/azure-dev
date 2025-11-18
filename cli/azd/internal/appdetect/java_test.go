@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/pkg/exec"
-	"github.com/azure/azure-dev/pkg/tools/maven"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/sethvargo/go-retry"
 )
 

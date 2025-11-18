@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/azure/azure-dev/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 // Config Manager provides the ability to load, parse and save azd configuration files

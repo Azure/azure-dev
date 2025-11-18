@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/azure/azure-dev/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/braydonk/yaml"
 	"github.com/fatih/color"
 	dmp "github.com/sergi/go-diff/diffmatchpatch"

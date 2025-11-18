@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/pkg/tools/dotnet"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
 
 type dotNetDetector struct {

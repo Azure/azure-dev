@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/azure/azure-dev/internal/runcontext"
-	"github.com/azure/azure-dev/test/ostest"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/assert"
 )
 

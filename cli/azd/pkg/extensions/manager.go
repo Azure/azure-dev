@@ -24,12 +24,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Masterminds/semver/v3"
-	"github.com/azure/azure-dev/internal/tracing"
-	"github.com/azure/azure-dev/internal/tracing/events"
-	"github.com/azure/azure-dev/internal/tracing/fields"
-	"github.com/azure/azure-dev/pkg/config"
-	"github.com/azure/azure-dev/pkg/osutil"
-	"github.com/azure/azure-dev/pkg/rzip"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 )
 
 const (

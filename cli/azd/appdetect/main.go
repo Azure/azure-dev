@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/azure/azure-dev/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 )
 
 var directory string

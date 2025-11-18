@@ -13,7 +13,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/azure/azure-dev/pkg/github"
+	"github.com/azure/azure-dev/cli/azd/pkg/github"
 )
 
 type awesomeAzdTemplate struct {

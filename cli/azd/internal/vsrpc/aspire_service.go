@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"path/filepath"
 
-	"github.com/azure/azure-dev/pkg/apphost"
-	"github.com/azure/azure-dev/pkg/tools/dotnet"
+	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
 
 // aspireService is the RPC server for the '/AspireService/v1.0' endpoint.

@@ -14,14 +14,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/azure/azure-dev/internal"
-	"github.com/azure/azure-dev/internal/appdetect"
-	"github.com/azure/azure-dev/internal/names"
-	"github.com/azure/azure-dev/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/pkg/input"
-	"github.com/azure/azure-dev/pkg/output"
-	"github.com/azure/azure-dev/pkg/output/ux"
-	"github.com/azure/azure-dev/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/names"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
 // LanguageMap is a map of supported languages.

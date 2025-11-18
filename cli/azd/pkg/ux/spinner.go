@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"dario.cat/mergo"
-	"github.com/azure/azure-dev/pkg/output"
-	"github.com/azure/azure-dev/pkg/ux/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/ux/internal"
 )
 
 // Spinner is a component for displaying a spinner.

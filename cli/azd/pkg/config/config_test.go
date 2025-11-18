@@ -6,7 +6,7 @@ package config
 import (
 	"testing"
 
-	"github.com/azure/azure-dev/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/stretchr/testify/require"
 )
 

@@ -7,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/stretchr/testify/require"
 )
 

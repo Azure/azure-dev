@@ -8,9 +8,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/azure/azure-dev/pkg/azdext"
-	"github.com/azure/azure-dev/pkg/workflow"
-	"github.com/azure/azure-dev/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )

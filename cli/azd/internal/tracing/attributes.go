@@ -8,7 +8,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/azure/azure-dev/internal/tracing/baggage"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/baggage"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"

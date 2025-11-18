@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/azure/azure-dev/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
 var (

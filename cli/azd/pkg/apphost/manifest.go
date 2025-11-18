@@ -12,10 +12,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/azure/azure-dev/pkg/custommaps"
-	"github.com/azure/azure-dev/pkg/osutil"
-	"github.com/azure/azure-dev/pkg/output"
-	"github.com/azure/azure-dev/pkg/tools/dotnet"
+	"github.com/azure/azure-dev/cli/azd/pkg/custommaps"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/psanford/memfs"
 )
 

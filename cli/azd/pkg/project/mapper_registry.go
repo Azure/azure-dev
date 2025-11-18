@@ -8,11 +8,11 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/azure/azure-dev/internal/mapper"
-	"github.com/azure/azure-dev/pkg/azdext"
-	"github.com/azure/azure-dev/pkg/environment"
-	"github.com/azure/azure-dev/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/internal/mapper"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 

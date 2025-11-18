@@ -10,15 +10,15 @@ import (
 	"os"
 	"strings"
 
-	"github.com/azure/azure-dev/pkg/environment"
-	"github.com/azure/azure-dev/pkg/exec"
-	"github.com/azure/azure-dev/pkg/input"
-	"github.com/azure/azure-dev/pkg/ioc"
-	"github.com/azure/azure-dev/pkg/keyvault"
-	"github.com/azure/azure-dev/pkg/output"
-	"github.com/azure/azure-dev/pkg/tools"
-	"github.com/azure/azure-dev/pkg/tools/bash"
-	"github.com/azure/azure-dev/pkg/tools/powershell"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/powershell"
 )
 
 // Hooks enable support to invoke integration scripts before & after commands

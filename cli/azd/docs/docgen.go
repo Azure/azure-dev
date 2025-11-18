@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	azd "github.com/azure/azure-dev/cmd"
+	azd "github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )

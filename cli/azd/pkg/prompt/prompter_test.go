@@ -7,12 +7,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/azure/azure-dev/pkg/account"
-	"github.com/azure/azure-dev/pkg/azapi"
-	"github.com/azure/azure-dev/pkg/cloud"
-	"github.com/azure/azure-dev/pkg/environment"
-	"github.com/azure/azure-dev/test/mocks"
-	"github.com/azure/azure-dev/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/stretchr/testify/require"
 )
 

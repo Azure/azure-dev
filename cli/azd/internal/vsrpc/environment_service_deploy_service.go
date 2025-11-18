@@ -6,10 +6,10 @@ package vsrpc
 import (
 	"context"
 
-	"github.com/azure/azure-dev/cmd/actions"
-	"github.com/azure/azure-dev/internal"
-	"github.com/azure/azure-dev/internal/cmd"
-	"github.com/azure/azure-dev/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 )
 
 // DeployServiceAsync is the server implementation of:

@@ -6,7 +6,7 @@ package telemetry
 import (
 	"context"
 
-	appinsightsexporter "github.com/azure/azure-dev/internal/telemetry/appinsights-exporter"
+	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/atomic"
 )

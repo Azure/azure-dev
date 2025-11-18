@@ -8,7 +8,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/azure/azure-dev/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // Absolute returns an absolute template path, given a possibly relative template path. An absolute path also corresponds to

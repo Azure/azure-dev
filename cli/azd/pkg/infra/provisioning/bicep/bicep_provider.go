@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -737,6 +738,12 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 	for _, change := range deployPreviewResult.Properties.Changes {
 		resourceAfter := change.After.(map[string]interface{})
 
+		// Convert Delta (property-level changes) from Azure SDK format to our format
+		var delta []provisioning.DeploymentPreviewPropertyChange
+		if change.Delta != nil {
+			delta = convertPropertyChanges(change.Delta)
+		}
+
 		changes = append(changes, &provisioning.DeploymentPreviewChange{
 			ChangeType: provisioning.ChangeType(*change.ChangeType),
 			ResourceId: provisioning.Resource{
@@ -744,6 +751,9 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 			},
 			ResourceType: resourceAfter["type"].(string),
 			Name:         resourceAfter["name"].(string),
+			Before:       change.Before,
+			After:        change.After,
+			Delta:        delta,
 		})
 	}
 
@@ -755,6 +765,40 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 			},
 		},
 	}, nil
+}
+
+// convertPropertyChanges converts Azure SDK's WhatIfPropertyChange to our DeploymentPreviewPropertyChange
+func convertPropertyChanges(changes []*armresources.WhatIfPropertyChange) []provisioning.DeploymentPreviewPropertyChange {
+	if changes == nil {
+		return nil
+	}
+
+	result := make([]provisioning.DeploymentPreviewPropertyChange, 0, len(changes))
+	for _, change := range changes {
+		if change == nil {
+			continue
+		}
+
+		propertyChange := provisioning.DeploymentPreviewPropertyChange{
+			Path:   convert.ToValueWithDefault(change.Path, ""),
+			Before: change.Before,
+			After:  change.After,
+		}
+
+		// Convert PropertyChangeType
+		if change.PropertyChangeType != nil {
+			propertyChange.ChangeType = provisioning.PropertyChangeType(*change.PropertyChangeType)
+		}
+
+		// Recursively convert children if present
+		if change.Children != nil {
+			propertyChange.Children = convertPropertyChanges(change.Children)
+		}
+
+		result = append(result, propertyChange)
+	}
+
+	return result
 }
 
 type itemToPurge struct {

@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -60,6 +61,10 @@ type ContainerHelper struct {
 	clock                    clock.Clock
 	console                  input.Console
 	cloud                    *cloud.Cloud
+	// loginMutexes serializes docker login operations per registry to prevent
+	// concurrent keychain access errors on macOS during parallel deployments
+	loginMutexes map[string]*sync.Mutex
+	loginMu      sync.Mutex // protects loginMutexes map access
 }
 
 func NewContainerHelper(
@@ -85,6 +90,7 @@ func NewContainerHelper(
 		clock:                    clock,
 		console:                  console,
 		cloud:                    cloud,
+		loginMutexes:             make(map[string]*sync.Mutex),
 	}
 }
 
@@ -308,6 +314,19 @@ func (ch *ContainerHelper) Login(
 		if err != nil {
 			return "", err
 		}
+
+		// Serialize docker login operations per registry to prevent concurrent
+		// keychain access errors on macOS during parallel deployments
+		ch.loginMu.Lock()
+		if ch.loginMutexes[registryName] == nil {
+			ch.loginMutexes[registryName] = &sync.Mutex{}
+		}
+		registryMutex := ch.loginMutexes[registryName]
+		ch.loginMu.Unlock()
+
+		registryMutex.Lock()
+		defer registryMutex.Unlock()
+
 		return registryName, ch.containerRegistryService.Login(ctx, env.GetSubscriptionId(), registryName)
 	}
 

@@ -29,15 +29,15 @@ type serviceTargetRegistrar interface {
 
 type frameworkServiceRegistrar interface {
 	serviceReceiver
-	Register(ctx context.Context, factory FrameworkServiceFactory, language string) error
+	Register(ctx context.Context, factory azdext.FrameworkServiceFactory, language string) error
 	Close() error
 }
 
 type extensionEventManager interface {
 	serviceReceiver
-	AddProjectEventHandler(ctx context.Context, eventName string, handler ProjectEventHandler) error
+	AddProjectEventHandler(ctx context.Context, eventName string, handler azdext.ProjectEventHandler) error
 	AddServiceEventHandler(
-		ctx context.Context, eventName string, handler ServiceEventHandler, options *ServiceEventOptions,
+		ctx context.Context, eventName string, handler azdext.ServiceEventHandler, options *azdext.ServiceEventOptions,
 	) error
 	Close() error
 }
@@ -57,14 +57,14 @@ type FrameworkServiceRegistration struct {
 // ProjectEventRegistration describes a project-level event handler to register.
 type ProjectEventRegistration struct {
 	EventName string
-	Handler   ProjectEventHandler
+	Handler   azdext.ProjectEventHandler
 }
 
 // ServiceEventRegistration describes a service-level event handler to register.
 type ServiceEventRegistration struct {
 	EventName string
-	Handler   ServiceEventHandler
-	Options   *ServiceEventOptions
+	Handler   azdext.ServiceEventHandler
+	Options   *azdext.ServiceEventOptions
 }
 
 // ProviderFactory describes a function that creates a provider instance
@@ -103,7 +103,7 @@ func (er *ExtensionHost) init(extensionId string) {
 		er.serviceTargetManager = NewServiceTargetManager(extensionId, er.client)
 	}
 	if er.frameworkServiceManager == nil {
-		er.frameworkServiceManager = NewFrameworkServiceManager(extensionId, er.client)
+		er.frameworkServiceManager = azdext.NewFrameworkServiceManager(extensionId, er.client)
 	}
 	if er.eventManager == nil {
 		er.eventManager = NewEventManager(extensionId, er.client)
@@ -123,7 +123,7 @@ func (er *ExtensionHost) WithFrameworkService(language string, factory Framework
 }
 
 // WithProjectEventHandler registers a project-level event handler to be wired when Run is invoked.
-func (er *ExtensionHost) WithProjectEventHandler(eventName string, handler ProjectEventHandler) *ExtensionHost {
+func (er *ExtensionHost) WithProjectEventHandler(eventName string, handler azdext.ProjectEventHandler) *ExtensionHost {
 	er.projectHandlers = append(er.projectHandlers, ProjectEventRegistration{EventName: eventName, Handler: handler})
 	return er
 }
@@ -131,8 +131,8 @@ func (er *ExtensionHost) WithProjectEventHandler(eventName string, handler Proje
 // WithServiceEventHandler registers a service-level event handler to be wired when Run is invoked.
 func (er *ExtensionHost) WithServiceEventHandler(
 	eventName string,
-	handler ServiceEventHandler,
-	options *ServiceEventOptions,
+	handler azdext.ServiceEventHandler,
+	options *azdext.ServiceEventOptions,
 ) *ExtensionHost {
 	er.serviceHandlers = append(er.serviceHandlers, ServiceEventRegistration{
 		EventName: eventName,

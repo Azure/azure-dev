@@ -10,8 +10,7 @@ import (
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext/grpcbroker"
 	"github.com/google/uuid"
 )
 
@@ -26,7 +25,7 @@ type ServiceTargetManager struct {
 	extensionId      string
 	client           *azdext.AzdClient
 	broker           *grpcbroker.MessageBroker[azdext.ServiceTargetMessage]
-	componentManager *ComponentManager[azdext.ServiceTargetProvider]
+	componentManager *azdext.ComponentManager[azdext.ServiceTargetProvider]
 
 	// Synchronization for concurrent access
 	mu sync.RWMutex
@@ -43,9 +42,12 @@ func toAzdextProgress(p grpcbroker.ProgressFunc) azdext.ProgressFunc {
 // NewServiceTargetManager creates a new ServiceTargetManager for an azdext.AzdClient.
 func NewServiceTargetManager(extensionId string, client *azdext.AzdClient) *ServiceTargetManager {
 	return &ServiceTargetManager{
-		extensionId:      extensionId,
-		client:           client,
-		componentManager: NewComponentManager[azdext.ServiceTargetProvider](ServiceTargetFactoryKey, "service target"),
+		extensionId: extensionId,
+		client:      client,
+		componentManager: azdext.NewComponentManager[azdext.ServiceTargetProvider](
+			ServiceTargetFactoryKey,
+			"service target",
+		),
 	}
 }
 
@@ -89,7 +91,7 @@ func (m *ServiceTargetManager) ensureStream(ctx context.Context) error {
 	}
 
 	// Create broker with client stream
-	envelope := &ServiceTargetEnvelope{}
+	envelope := &azdext.ServiceTargetEnvelope{}
 	// Use client as name since we're on the client side (extension process)
 	m.broker = grpcbroker.NewMessageBroker(stream, envelope, m.extensionId)
 

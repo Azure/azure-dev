@@ -10,8 +10,7 @@ import (
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext/grpcbroker"
 )
 
 type EventManager struct {
@@ -72,7 +71,7 @@ func (em *EventManager) ensureStream(ctx context.Context) error {
 	}
 
 	// Create broker with client stream
-	envelope := &EventMessageEnvelope{}
+	envelope := &azdext.EventMessageEnvelope{}
 	// Use client as name since we're on the client side (extension process)
 	em.broker = grpcbroker.NewMessageBroker(stream, envelope, em.extensionId)
 
@@ -115,7 +114,11 @@ func (em *EventManager) Ready(ctx context.Context) error {
 	return em.broker.Ready(ctx)
 }
 
-func (em *EventManager) AddProjectEventHandler(ctx context.Context, eventName string, handler azdext.ProjectEventHandler) error {
+func (em *EventManager) AddProjectEventHandler(
+	ctx context.Context,
+	eventName string,
+	handler azdext.ProjectEventHandler,
+) error {
 	if err := em.ensureStream(ctx); err != nil {
 		return err
 	}

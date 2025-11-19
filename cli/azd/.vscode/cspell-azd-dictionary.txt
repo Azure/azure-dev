@@ -139,6 +139,7 @@ goterm
 gotest
 gotestsum
 govet
+grpchelpers
 grpcserver
 hotspot
 ignorefile

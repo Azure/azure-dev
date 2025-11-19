@@ -1,0 +1,7 @@
+   Resources:
+
+   Modify : Microsoft.Storage/storageAccounts : mystorageaccount
+       ~ properties.sku.name: "Standard_LRS" => "Premium_LRS"
+       + properties.minimumTlsVersion: "TLS1_2"
+   Create : Microsoft.KeyVault/vaults         : mykeyvault
+       + properties.sku.name: "standard"

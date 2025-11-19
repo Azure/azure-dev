@@ -48,3 +48,43 @@ func TestPreviewProvisionNoChanges(t *testing.T) {
 	output := pp.ToString("   ")
 	require.Equal(t, "", output)
 }
+
+func TestPreviewProvisionWithPropertyChanges(t *testing.T) {
+	pp := &PreviewProvision{
+		Operations: []*Resource{
+			{
+				Type:      "Microsoft.Storage/storageAccounts",
+				Name:      "mystorageaccount",
+				Operation: OperationTypeModify,
+				PropertyDeltas: []PropertyDelta{
+					{
+						Path:       "properties.sku.name",
+						ChangeType: "Modify",
+						Before:     "Standard_LRS",
+						After:      "Premium_LRS",
+					},
+					{
+						Path:       "properties.minimumTlsVersion",
+						ChangeType: "Create",
+						After:      "TLS1_2",
+					},
+				},
+			},
+			{
+				Type:      "Microsoft.KeyVault/vaults",
+				Name:      "mykeyvault",
+				Operation: OperationTypeCreate,
+				PropertyDeltas: []PropertyDelta{
+					{
+						Path:       "properties.sku.name",
+						ChangeType: "Create",
+						After:      "standard",
+					},
+				},
+			},
+		},
+	}
+
+	output := pp.ToString("   ")
+	snapshot.SnapshotT(t, output)
+}

@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"dario.cat/mergo"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
@@ -51,12 +50,10 @@ var (
 )
 
 func (m *Manager) Initialize(ctx context.Context, projectPath string, options Options) error {
-	mergedOptions := Options{}
-	mergo.Merge(&mergedOptions, options)
-	mergo.Merge(&mergedOptions, defaultOptions)
+	infraOptions, err := options.GetWithDefaults()
 
 	m.projectPath = projectPath
-	m.options = &mergedOptions
+	m.options = &infraOptions
 
 	provider, err := m.newProvider(ctx)
 	if err != nil {
@@ -64,7 +61,7 @@ func (m *Manager) Initialize(ctx context.Context, projectPath string, options Op
 	}
 
 	m.provider = provider
-	return m.provider.Initialize(ctx, projectPath, mergedOptions)
+	return m.provider.Initialize(ctx, projectPath, infraOptions)
 }
 
 // Parameters gets the list of parameters and its value which will be used to provision the infrastructure.

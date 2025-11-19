@@ -51,6 +51,9 @@ var (
 
 func (m *Manager) Initialize(ctx context.Context, projectPath string, options Options) error {
 	infraOptions, err := options.GetWithDefaults()
+	if err != nil {
+		return err
+	}
 
 	m.projectPath = projectPath
 	m.options = &infraOptions

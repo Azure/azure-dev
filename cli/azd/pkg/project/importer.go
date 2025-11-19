@@ -238,7 +238,7 @@ var (
 func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (*Infra, error) {
 	infraOptions, err := projectConfig.Infra.GetWithDefaults()
 	if err != nil {
-		return nil, fmt.Errorf("getting infra options: %w", err)
+		return nil, err
 	}
 
 	infraRoot := infraOptions.Path

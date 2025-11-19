@@ -336,7 +336,7 @@ func (ai *DotNetImporter) Services(
 		if bContainer.Build != nil {
 			infraOptions, err := svcConfig.Project.Infra.GetWithDefaults()
 			if err != nil {
-				return nil, fmt.Errorf("getting infra options for service %s: %w", name, err)
+				return nil, err
 			}
 
 			defaultLanguage = ServiceLanguageDocker

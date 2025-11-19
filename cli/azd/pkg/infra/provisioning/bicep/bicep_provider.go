@@ -46,13 +46,6 @@ import (
 
 type bicepFileMode int
 
-var (
-	defaultOptions = provisioning.Options{
-		Module: "main",
-		Path:   "infra",
-	}
-)
-
 const (
 	bicepMode bicepFileMode = iota
 	bicepparamMode

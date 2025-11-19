@@ -286,7 +286,7 @@ func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	infraOptions, err := prjConfig.Infra.GetWithDefaults()
 	if err != nil {
-		return nil, fmt.Errorf("getting infra options: %w", err)
+		return nil, err
 	}
 
 	infraRoot := infraOptions.Path

@@ -270,41 +270,63 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 		// Deploy container app services in parallel
 		if len(containerAppServices) > 0 {
-			// Show initial message about parallel deployment
-			serviceNames := make([]string, len(containerAppServices))
-			for i, svc := range containerAppServices {
-				serviceNames[i] = svc.Name
-			}
-			da.console.Message(ctx, fmt.Sprintf(
-				"Deploying %d container app services in parallel: %s",
-				len(containerAppServices), strings.Join(serviceNames, ", ")))
+			// Check if experimental parallel deployment is disabled (default: enabled)
+			useExperimentalParallel := os.Getenv("AZD_DISABLE_PARALLEL_DEPLOY") != "1"
 
-			g, gctx := errgroup.WithContext(ctx)
+			if useExperimentalParallel {
+				// Use new MPB-based parallel deployment manager
+				da.console.Message(ctx, fmt.Sprintf(
+					"Deploying %d container app services with parallel progress tracking",
+					len(containerAppServices)))
 
-			for _, svc := range containerAppServices {
-				svc := svc // capture loop variable
-				g.Go(func() error {
-					deployResult, err := da.deployServiceWithProgress(gctx, svc, targetServiceName)
-					if err != nil {
-						return err
+				parallelManager := NewParallelDeploymentManager(&da.serviceManager, 0)
+				serviceResults, err := parallelManager.DeployServices(ctx, containerAppServices)
+				if err != nil {
+					return fmt.Errorf("parallel deployment failed: %w", err)
+				}
+
+				// Store results and report artifacts
+				for serviceName, serviceResult := range serviceResults {
+					deployResults[serviceName] = serviceResult
+					da.console.MessageUxItem(ctx, serviceResult.Artifacts)
+				}
+			} else {
+				// Use existing errgroup-based parallel deployment (without progress bars)
+				serviceNames := make([]string, len(containerAppServices))
+				for i, svc := range containerAppServices {
+					serviceNames[i] = svc.Name
+				}
+				da.console.Message(ctx, fmt.Sprintf(
+					"Deploying %d container app services in parallel: %s",
+					len(containerAppServices), strings.Join(serviceNames, ", ")))
+
+				g, gctx := errgroup.WithContext(ctx)
+
+				for _, svc := range containerAppServices {
+					svc := svc // capture loop variable
+					g.Go(func() error {
+						deployResult, err := da.deployServiceWithProgress(gctx, svc, targetServiceName)
+						if err != nil {
+							return err
+						}
+
+						deployResultsMutex.Lock()
+						deployResults[svc.Name] = deployResult
+						deployResultsMutex.Unlock()
+
+						return nil
+					})
+				}
+
+				if err := g.Wait(); err != nil {
+					return err
+				}
+
+				// Report deploy outputs for all parallel deployments after completion
+				for _, svc := range containerAppServices {
+					if result, ok := deployResults[svc.Name]; ok {
+						da.console.MessageUxItem(ctx, result.Artifacts)
 					}
-
-					deployResultsMutex.Lock()
-					deployResults[svc.Name] = deployResult
-					deployResultsMutex.Unlock()
-
-					return nil
-				})
-			}
-
-			if err := g.Wait(); err != nil {
-				return err
-			}
-
-			// Report deploy outputs for all parallel deployments after completion
-			for _, svc := range containerAppServices {
-				if result, ok := deployResults[svc.Name]; ok {
-					da.console.MessageUxItem(ctx, result.Artifacts)
 				}
 			}
 		}

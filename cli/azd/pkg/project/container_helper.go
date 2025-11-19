@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path"
@@ -467,12 +468,18 @@ func (ch *ContainerHelper) Build(
 
 	// Build the container
 	progress.SetProgress(NewServiceProgress("Building Docker image"))
-	previewerWriter := ch.console.ShowPreviewer(ctx,
-		&input.ShowPreviewerOptions{
-			Prefix:       "  ",
-			MaxLineCount: 8,
-			Title:        "Docker Output",
-		})
+	// Suppress previewer during parallel builds (when AZD_DISABLE_PARALLEL_DEPLOY != 1)
+	var previewerWriter io.Writer
+	if os.Getenv("AZD_DISABLE_PARALLEL_DEPLOY") == "1" {
+		previewerWriter = ch.console.ShowPreviewer(ctx,
+			&input.ShowPreviewerOptions{
+				Prefix:       "  ",
+				MaxLineCount: 8,
+				Title:        "Docker Output",
+			})
+	} else {
+		previewerWriter = io.Discard
+	}
 
 	dockerFilePath := dockerOptions.Path
 	if dockerOptions.InMemDockerfile != nil {
@@ -515,7 +522,9 @@ func (ch *ContainerHelper) Build(
 		dockerEnv,
 		previewerWriter,
 	)
-	ch.console.StopPreviewer(ctx, false)
+	if os.Getenv("AZD_DISABLE_PARALLEL_DEPLOY") == "1" {
+		ch.console.StopPreviewer(ctx, false)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err)
 	}
@@ -996,12 +1005,18 @@ func (ch *ContainerHelper) packBuild(
 		}
 	}
 
-	previewer := ch.console.ShowPreviewer(ctx,
-		&input.ShowPreviewerOptions{
-			Prefix:       "  ",
-			MaxLineCount: 8,
-			Title:        "Docker (pack) Output",
-		})
+	// Suppress previewer during parallel builds
+	var previewer io.Writer
+	if os.Getenv("AZD_DISABLE_PARALLEL_DEPLOY") == "1" {
+		previewer = ch.console.ShowPreviewer(ctx,
+			&input.ShowPreviewerOptions{
+				Prefix:       "  ",
+				MaxLineCount: 8,
+				Title:        "Docker (pack) Output",
+			})
+	} else {
+		previewer = io.Discard
+	}
 
 	ctx, span := tracing.Start(
 		ctx,
@@ -1028,7 +1043,9 @@ func (ch *ContainerHelper) packBuild(
 		imageName,
 		environ,
 		previewer)
-	ch.console.StopPreviewer(ctx, false)
+	if os.Getenv("AZD_DISABLE_PARALLEL_DEPLOY") == "1" {
+		ch.console.StopPreviewer(ctx, false)
+	}
 	if err != nil {
 		span.EndWithStatus(err)
 

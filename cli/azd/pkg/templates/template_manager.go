@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 var (
@@ -196,47 +197,41 @@ func PromptTemplate(
 		return Template{}, fmt.Errorf("prompting for template: %w", err)
 	}
 
-	templateChoices := []*Template{}
-	duplicateNames := []string{}
+	slices.SortFunc(templates, func(a, b *Template) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 
-	// Check for duplicate template names
-	for _, template := range templates {
-		hasDuplicateName := slices.ContainsFunc(templateChoices, func(t *Template) bool {
-			return t.Name == template.Name
-		})
-
-		if hasDuplicateName {
-			duplicateNames = append(duplicateNames, template.Name)
+	choices := make([]string, 0, len(templates)+1)
+	for i, template := range templates {
+		choice := template.Name
+		if len(choice) > 70 {
+			choice = choice[0:67] + "..."
 		}
 
-		templateChoices = append(templateChoices, template)
+		for j, otherTemplate := range templates {
+			if i != j && strings.EqualFold(template.Name, otherTemplate.Name) {
+				// Disambiguate duplicate template names with source identifier
+				choice += fmt.Sprintf(" (%s)", template.Source)
+			}
+		}
+
+		languages := template.DisplayLanguages()
+		path := template.CanonicalPath()
+
+		choices = append(choices, fmt.Sprintf("%s\t%s\t[%s]",
+			choice,
+			path,
+			strings.Join(languages, ",")))
 	}
 
-	templateNames := make([]string, 0, len(templates)+1)
-	templateDetails := make([]string, 0, len(templates)+1)
-
-	for _, template := range templates {
-		templateChoice := template.Name
-
-		// Disambiguate duplicate template names with source identifier
-		if slices.Contains(duplicateNames, template.Name) {
-			templateChoice += fmt.Sprintf(" (%s)", template.Source)
-		}
-
-		templateDetails = append(templateDetails, template.RepositoryPath)
-
-		if slices.Contains(templateNames, templateChoice) {
-			duplicateNames = append(duplicateNames, templateChoice)
-		}
-
-		templateNames = append(templateNames, templateChoice)
+	choices, err = output.TabAlign(choices, 3)
+	if err != nil {
+		return Template{}, fmt.Errorf("aligning choices: %w", err)
 	}
 
 	selected, err := console.Select(ctx, input.ConsoleOptions{
-		Message:       message,
-		Options:       templateNames,
-		OptionDetails: templateDetails,
-		DefaultValue:  templateNames[0],
+		Message: message,
+		Options: choices,
 	})
 
 	// separate this prompt from the next log

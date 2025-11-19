@@ -5,6 +5,7 @@ package templates
 
 import (
 	"io"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -34,6 +35,11 @@ type Template struct {
 
 	// A list of tags associated with the template
 	Tags []string `json:"tags"`
+
+	// A list of languages supported by the template
+	//
+	// As of November 2025, known values include: bicep, php, javascript, dotnetCsharp, typescript, python, nodejs, java
+	Languages []string `json:"languages,omitempty"`
 
 	// Additional metadata about the template
 	Metadata Metadata `json:"metadata,omitempty"`
@@ -72,4 +78,43 @@ func (t *Template) Display(writer io.Writer) error {
 	}
 
 	return tabs.Flush()
+}
+
+// DisplayLanguages returns a list of languages suitable for display from the associated template Tags.
+func (t *Template) DisplayLanguages() []string {
+	languages := make([]string, 0, len(t.Tags))
+	for _, lang := range t.Tags {
+		switch lang {
+		case "dotnetCsharp":
+			languages = append(languages, "csharp")
+		case "nodejs":
+			languages = append(languages, "nodejs")
+		case "javascript":
+			if !slices.Contains(t.Tags, "nodejs") && !slices.Contains(t.Tags, "ts") {
+				languages = append(languages, "js")
+			}
+		case "typescript":
+			if !slices.Contains(t.Tags, "nodejs") {
+				languages = append(languages, "ts")
+			}
+		case "python", "java":
+			languages = append(languages, lang)
+		}
+	}
+
+	return languages
+}
+
+// CanonicalPath returns a canonicalized path for the template repository
+func (t *Template) CanonicalPath() string {
+	path := t.RepositoryPath
+	if after, ok := strings.CutPrefix(path, "https://github.com/"); ok {
+		path = after
+	}
+
+	if after, ok := strings.CutPrefix(strings.ToLower(path), "azure-samples/"); ok {
+		path = after
+	}
+
+	return path
 }

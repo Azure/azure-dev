@@ -47,9 +47,9 @@ func (m *MockServiceTargetProvider) Package(
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
 	progress ProgressReporter,
-) (*ServicePackageResult, error) {
+) (*azdext.ServicePackageResult, error) {
 	args := m.Called(ctx, serviceConfig, serviceContext, progress)
-	return args.Get(0).(*ServicePackageResult), args.Error(1)
+	return args.Get(0).(*azdext.ServicePackageResult), args.Error(1)
 }
 
 func (m *MockServiceTargetProvider) Publish(
@@ -57,11 +57,11 @@ func (m *MockServiceTargetProvider) Publish(
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
 	targetResource *TargetResource,
-	publishOptions *PublishOptions,
+	publishOptions *azdext.PublishOptions,
 	progress ProgressReporter,
-) (*ServicePublishResult, error) {
+) (*azdext.ServicePublishResult, error) {
 	args := m.Called(ctx, serviceConfig, serviceContext, targetResource, publishOptions, progress)
-	return args.Get(0).(*ServicePublishResult), args.Error(1)
+	return args.Get(0).(*azdext.ServicePublishResult), args.Error(1)
 }
 
 func (m *MockServiceTargetProvider) Deploy(
@@ -70,9 +70,9 @@ func (m *MockServiceTargetProvider) Deploy(
 	serviceContext *ServiceContext,
 	targetResource *TargetResource,
 	progress ProgressReporter,
-) (*ServiceDeployResult, error) {
+) (*azdext.ServiceDeployResult, error) {
 	args := m.Called(ctx, serviceConfig, serviceContext, targetResource, progress)
-	return args.Get(0).(*ServiceDeployResult), args.Error(1)
+	return args.Get(0).(*azdext.ServiceDeployResult), args.Error(1)
 }
 
 // Test helper functions
@@ -244,7 +244,7 @@ func TestServiceTargetManager_GetTargetResourceRequest_Success(t *testing.T) {
 	// Create get target resource request
 	req := &GetTargetResourceRequest{
 		SubscriptionId:        "test-subscription",
-		ServiceConfig:         serviceConfig,
+		ServiceConfig:  serviceConfig,
 		DefaultTargetResource: nil,
 		DefaultError:          "",
 	}
@@ -272,7 +272,7 @@ func TestServiceTargetManager_GetTargetResourceRequest_NoProvider(t *testing.T) 
 	serviceConfig := createTestServiceConfigForServiceTarget("web-service", "containerapp")
 	req := &GetTargetResourceRequest{
 		SubscriptionId:        "test-subscription",
-		ServiceConfig:         serviceConfig,
+		ServiceConfig:  serviceConfig,
 		DefaultTargetResource: nil,
 		DefaultError:          "",
 	}
@@ -366,7 +366,7 @@ func TestServiceTargetManager_PublishRequest_NilServiceConfig(t *testing.T) {
 		ServiceConfig:  nil, // Nil service config
 		ServiceContext: &ServiceContext{},
 		TargetResource: &TargetResource{},
-		PublishOptions: &PublishOptions{},
+		azdext.PublishOptions: &azdext.PublishOptions{},
 	}
 
 	// Execute handler directly
@@ -498,7 +498,7 @@ func TestServiceTargetManager_MultipleRequestTypes_SameProvider(t *testing.T) {
 	// Test get target resource request
 	getTargetReq := &GetTargetResourceRequest{
 		SubscriptionId:        "test-subscription",
-		ServiceConfig:         serviceConfig,
+		ServiceConfig:  serviceConfig,
 		DefaultTargetResource: nil,
 		DefaultError:          "",
 	}

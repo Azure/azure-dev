@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package azdext
+package grpchelpers
 
 import (
 	"context"
@@ -10,18 +10,16 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/ux"
 	"github.com/golang-jwt/jwt/v5"
 	"google.golang.org/grpc/metadata"
 )
 
-// Ptr returns a pointer to the given value
-func Ptr[T any](v T) *T {
-	return &v
-}
-
 // waitForDebugger checks if AZD_EXT_DEBUG environment variable is set to a truthy value.
 // If set, prompts the user to attach a debugger to the current process.
-func waitForDebugger(ctx context.Context, extensionId string, azdClient *AzdClient) {
+func waitForDebugger(ctx context.Context, extensionId string, azdClient *azdext.AzdClient) {
 	debugValue := os.Getenv("AZD_EXT_DEBUG")
 	if debugValue == "" {
 		return
@@ -34,10 +32,10 @@ func waitForDebugger(ctx context.Context, extensionId string, azdClient *AzdClie
 
 	message := fmt.Sprintf("Extension '%s' ready to debug (pid: %d).", extensionId, os.Getpid())
 
-	_, err = azdClient.Prompt().Confirm(ctx, &ConfirmRequest{
-		Options: &ConfirmOptions{
+	_, err = azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
 			Message:      message,
-			DefaultValue: Ptr(true),
+			DefaultValue: ux.Ptr(true),
 		},
 	})
 

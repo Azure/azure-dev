@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package azdext
+package grpchelpers
 
 import (
 	"context"
@@ -10,33 +10,31 @@ import (
 	"log"
 	"sync"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-// ServiceReceiver is an interface for components that receive messages
-type ServiceReceiver interface {
+type serviceReceiver interface {
 	Receive(ctx context.Context) error
 	Ready(ctx context.Context) error
 }
 
-// ServiceTargetRegistrar manages service target provider registration
-type ServiceTargetRegistrar interface {
-	ServiceReceiver
+type serviceTargetRegistrar interface {
+	serviceReceiver
 	Register(ctx context.Context, factory ServiceTargetFactory, hostType string) error
 	Close() error
 }
 
-// FrameworkServiceRegistrar manages framework service provider registration
-type FrameworkServiceRegistrar interface {
-	ServiceReceiver
+type frameworkServiceRegistrar interface {
+	serviceReceiver
 	Register(ctx context.Context, factory FrameworkServiceFactory, language string) error
 	Close() error
 }
 
-// ExtensionEventManager manages project and service event handlers
-type ExtensionEventManager interface {
-	ServiceReceiver
+type extensionEventManager interface {
+	serviceReceiver
 	AddProjectEventHandler(ctx context.Context, eventName string, handler ProjectEventHandler) error
 	AddServiceEventHandler(
 		ctx context.Context, eventName string, handler ServiceEventHandler, options *ServiceEventOptions,
@@ -47,13 +45,13 @@ type ExtensionEventManager interface {
 // ServiceTargetRegistration describes a service target provider to register with azd core.
 type ServiceTargetRegistration struct {
 	Host    string
-	Factory func() ServiceTargetProvider
+	Factory func() azdext.ServiceTargetProvider
 }
 
 // FrameworkServiceRegistration describes a framework service provider to register with azd core.
 type FrameworkServiceRegistration struct {
 	Language string
-	Factory  func() FrameworkServiceProvider
+	Factory  func() azdext.FrameworkServiceProvider
 }
 
 // ProjectEventRegistration describes a project-level event handler to register.
@@ -73,60 +71,42 @@ type ServiceEventRegistration struct {
 type ProviderFactory[T any] func() T
 
 // ProviderFactory describes a function that creates an instance of a service target provider
-type ServiceTargetFactory = ProviderFactory[ServiceTargetProvider]
+type ServiceTargetFactory ProviderFactory[azdext.ServiceTargetProvider]
 
 // FrameworkServiceFactory describes a function that creates an instance of a framework service provider
-type FrameworkServiceFactory = ProviderFactory[FrameworkServiceProvider]
-
-// ManagerFactory is a function that creates manager instances
-type ManagerFactory struct {
-	NewServiceTargetManager    func(extensionId string, client *AzdClient) ServiceTargetRegistrar
-	NewFrameworkServiceManager func(extensionId string, client *AzdClient) FrameworkServiceRegistrar
-	NewEventManager            func(extensionId string, client *AzdClient) ExtensionEventManager
-}
+type FrameworkServiceFactory ProviderFactory[azdext.FrameworkServiceProvider]
 
 // ExtensionHost coordinates registering service targets, wiring event handlers, and signaling readiness.
 type ExtensionHost struct {
-	client *AzdClient
+	client *azdext.AzdClient
 
 	serviceTargets    []ServiceTargetRegistration
 	frameworkServices []FrameworkServiceRegistration
 	projectHandlers   []ProjectEventRegistration
 	serviceHandlers   []ServiceEventRegistration
 
-	serviceTargetManager    ServiceTargetRegistrar
-	frameworkServiceManager FrameworkServiceRegistrar
-	eventManager            ExtensionEventManager
-	// Factory functions for creating managers (optional, for dependency injection)
-	managerFactory *ManagerFactory
+	serviceTargetManager    serviceTargetRegistrar
+	frameworkServiceManager frameworkServiceRegistrar
+	eventManager            extensionEventManager
 }
 
 // NewExtensionHost creates a new ExtensionHost for the supplied azd client.
-func NewExtensionHost(client *AzdClient) *ExtensionHost {
+func NewExtensionHost(client *azdext.AzdClient) *ExtensionHost {
 	return &ExtensionHost{
 		client: client,
 	}
 }
 
-// WithManagerFactory sets custom factory functions for creating managers.
-// This is used by grpchelpers to inject the proper manager implementations.
-func (er *ExtensionHost) WithManagerFactory(factory *ManagerFactory) *ExtensionHost {
-	er.managerFactory = factory
-	return er
-}
-
 func (er *ExtensionHost) init(extensionId string) {
 	// Only create managers if they haven't been set (allows tests to inject mocks)
-	if er.managerFactory != nil {
-		if er.serviceTargetManager == nil && er.managerFactory.NewServiceTargetManager != nil {
-			er.serviceTargetManager = er.managerFactory.NewServiceTargetManager(extensionId, er.client)
-		}
-		if er.frameworkServiceManager == nil && er.managerFactory.NewFrameworkServiceManager != nil {
-			er.frameworkServiceManager = er.managerFactory.NewFrameworkServiceManager(extensionId, er.client)
-		}
-		if er.eventManager == nil && er.managerFactory.NewEventManager != nil {
-			er.eventManager = er.managerFactory.NewEventManager(extensionId, er.client)
-		}
+	if er.serviceTargetManager == nil {
+		er.serviceTargetManager = NewServiceTargetManager(extensionId, er.client)
+	}
+	if er.frameworkServiceManager == nil {
+		er.frameworkServiceManager = NewFrameworkServiceManager(extensionId, er.client)
+	}
+	if er.eventManager == nil {
+		er.eventManager = NewEventManager(extensionId, er.client)
 	}
 }
 
@@ -164,8 +144,11 @@ func (er *ExtensionHost) WithServiceEventHandler(
 
 // Run wires the configured service targets and event handlers, signals readiness, and blocks until shutdown.
 func (er *ExtensionHost) Run(ctx context.Context) error {
-	extensionId := GetExtensionId(ctx)
+	extensionId := getExtensionId(ctx)
 	er.init(extensionId)
+
+	// Wait for debugger if AZD_EXT_DEBUG is set
+	waitForDebugger(ctx, extensionId, er.client)
 
 	// Determine which managers will be active
 	hasServiceTargets := len(er.serviceTargets) > 0
@@ -187,7 +170,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 
 	// Collect active receivers and start them BEFORE registration
 	// This ensures broker.Run() is active to receive registration responses
-	receivers := []ServiceReceiver{}
+	receivers := []serviceReceiver{}
 	if hasServiceTargets {
 		receivers = append(receivers, er.serviceTargetManager)
 	}
@@ -205,7 +188,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 
 	for _, receiver := range receivers {
 		receiveWaitGroup.Add(1)
-		go func(r ServiceReceiver) {
+		go func(r serviceReceiver) {
 			defer receiveWaitGroup.Done()
 			if err := r.Receive(ctx); err != nil {
 				receiverErrors <- fmt.Errorf("receiver error: %w", err)
@@ -347,8 +330,8 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	}
 }
 
-func callReady(ctx context.Context, client *AzdClient) error {
-	_, err := client.Extension().Ready(ctx, &ReadyRequest{})
+func callReady(ctx context.Context, client *azdext.AzdClient) error {
+	_, err := client.Extension().Ready(ctx, &azdext.ReadyRequest{})
 	if err == nil {
 		return nil
 	}

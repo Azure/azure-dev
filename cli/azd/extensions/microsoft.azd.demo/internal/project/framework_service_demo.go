@@ -72,7 +72,7 @@ func (p *DemoFrameworkServiceProvider) Restore(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
-	progress azdext.ProgressReporter,
+	progress azdext.ProgressFunc,
 ) (*azdext.ServiceRestoreResult, error) {
 	progress("Installing Rust dependencies")
 	time.Sleep(500 * time.Millisecond)
@@ -108,7 +108,7 @@ func (p *DemoFrameworkServiceProvider) Build(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
-	progress azdext.ProgressReporter,
+	progress azdext.ProgressFunc,
 ) (*azdext.ServiceBuildResult, error) {
 	progress("Compiling Rust project")
 	time.Sleep(2 * time.Second)
@@ -145,7 +145,7 @@ func (p *DemoFrameworkServiceProvider) Package(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
-	progress azdext.ProgressReporter,
+	progress azdext.ProgressFunc,
 ) (*azdext.ServicePackageResult, error) {
 	progress("Creating Rust deployment package")
 	time.Sleep(600 * time.Millisecond)

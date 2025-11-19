@@ -7,7 +7,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi v1.3.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
-	github.com/azure/azure-dev/cli/azd v0.0.0
+	github.com/azure/azure-dev/cli/azd v0.0.0-20251118230827-5128101223c9
 	github.com/cli/browser v1.3.0
 	github.com/fatih/color v1.18.0
 	github.com/spf13/cobra v1.10.1
@@ -95,5 +95,3 @@ require (
 )
 
 tool go.uber.org/mock/mockgen
-
-replace github.com/azure/azure-dev/cli/azd => ../..

@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext/grpcbroker"
 	"github.com/google/uuid"
 )
 
@@ -19,30 +19,6 @@ var (
 	}
 )
 
-// FrameworkServiceProvider defines the interface for framework service logic.
-type FrameworkServiceProvider interface {
-	Initialize(ctx context.Context, serviceConfig *ServiceConfig) error
-	RequiredExternalTools(ctx context.Context, serviceConfig *ServiceConfig) ([]*ExternalTool, error)
-	Requirements() (*FrameworkRequirements, error)
-	Restore(
-		ctx context.Context,
-		serviceConfig *ServiceConfig,
-		serviceContext *ServiceContext,
-		progress grpcbroker.ProgressFunc,
-	) (*ServiceRestoreResult, error)
-	Build(
-		ctx context.Context,
-		serviceConfig *ServiceConfig,
-		serviceContext *ServiceContext,
-		progress grpcbroker.ProgressFunc,
-	) (*ServiceBuildResult, error)
-	Package(
-		ctx context.Context,
-		serviceConfig *ServiceConfig,
-		serviceContext *ServiceContext,
-		progress grpcbroker.ProgressFunc,
-	) (*ServicePackageResult, error)
-}
 
 // FrameworkServiceManager handles registration and request forwarding for a framework service provider.
 type FrameworkServiceManager struct {
@@ -262,7 +238,7 @@ func (m *FrameworkServiceManager) onRequirements(
 func (m *FrameworkServiceManager) onRestore(
 	ctx context.Context,
 	req *FrameworkServiceRestoreRequest,
-	progress grpcbroker.ProgressFunc,
+	progress ProgressFunc,
 ) (*FrameworkServiceMessage, error) {
 	if req.ServiceConfig == nil {
 		return nil, errors.New("service config is required for restore request")
@@ -289,7 +265,7 @@ func (m *FrameworkServiceManager) onRestore(
 func (m *FrameworkServiceManager) onBuild(
 	ctx context.Context,
 	req *FrameworkServiceBuildRequest,
-	progress grpcbroker.ProgressFunc,
+	progress ProgressFunc,
 ) (*FrameworkServiceMessage, error) {
 	if req.ServiceConfig == nil {
 		return nil, errors.New("service config is required for build request")
@@ -316,7 +292,7 @@ func (m *FrameworkServiceManager) onBuild(
 func (m *FrameworkServiceManager) onPackage(
 	ctx context.Context,
 	req *FrameworkServicePackageRequest,
-	progress grpcbroker.ProgressFunc,
+	progress ProgressFunc,
 ) (*FrameworkServiceMessage, error) {
 	if req.ServiceConfig == nil {
 		return nil, errors.New("service config is required for package request")

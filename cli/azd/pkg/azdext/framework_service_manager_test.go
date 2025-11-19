@@ -26,14 +26,14 @@ func (m *MockFrameworkServiceProvider) Initialize(ctx context.Context, serviceCo
 func (m *MockFrameworkServiceProvider) RequiredExternalTools(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) ([]*ExternalTool, error) {
+) ([]*azdext.ExternalTool, error) {
 	args := m.Called(ctx, serviceConfig)
-	return args.Get(0).([]*ExternalTool), args.Error(1)
+	return args.Get(0).([]*azdext.ExternalTool), args.Error(1)
 }
 
-func (m *MockFrameworkServiceProvider) Requirements() (*FrameworkRequirements, error) {
+func (m *MockFrameworkServiceProvider) Requirements() (*azdext.FrameworkRequirements, error) {
 	args := m.Called()
-	return args.Get(0).(*FrameworkRequirements), args.Error(1)
+	return args.Get(0).(*azdext.FrameworkRequirements), args.Error(1)
 }
 
 func (m *MockFrameworkServiceProvider) Restore(
@@ -41,9 +41,9 @@ func (m *MockFrameworkServiceProvider) Restore(
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
 	progress ProgressReporter,
-) (*ServiceRestoreResult, error) {
+) (*azdext.ServiceRestoreResult, error) {
 	args := m.Called(ctx, serviceConfig, serviceContext, progress)
-	return args.Get(0).(*ServiceRestoreResult), args.Error(1)
+	return args.Get(0).(*azdext.ServiceRestoreResult), args.Error(1)
 }
 
 func (m *MockFrameworkServiceProvider) Build(
@@ -51,9 +51,9 @@ func (m *MockFrameworkServiceProvider) Build(
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
 	progress ProgressReporter,
-) (*ServiceBuildResult, error) {
+) (*azdext.ServiceBuildResult, error) {
 	args := m.Called(ctx, serviceConfig, serviceContext, progress)
-	return args.Get(0).(*ServiceBuildResult), args.Error(1)
+	return args.Get(0).(*azdext.ServiceBuildResult), args.Error(1)
 }
 
 func (m *MockFrameworkServiceProvider) Package(
@@ -61,9 +61,9 @@ func (m *MockFrameworkServiceProvider) Package(
 	serviceConfig *ServiceConfig,
 	serviceContext *ServiceContext,
 	progress ProgressReporter,
-) (*ServicePackageResult, error) {
+) (*azdext.ServicePackageResult, error) {
 	args := m.Called(ctx, serviceConfig, serviceContext, progress)
-	return args.Get(0).(*ServicePackageResult), args.Error(1)
+	return args.Get(0).(*azdext.ServicePackageResult), args.Error(1)
 }
 
 // Test helper functions
@@ -213,7 +213,7 @@ func TestFrameworkServiceManager_RequiredExternalToolsRequest_Success(t *testing
 	mockProvider := &MockFrameworkServiceProvider{}
 	mockProvider.On("Initialize", mock.Anything, mock.Anything).Return(nil)
 
-	expectedTools := []*ExternalTool{
+	expectedTools := []*azdext.ExternalTool{
 		{Name: "go", InstallUrl: "https://go.dev/dl/"},
 		{Name: "docker", InstallUrl: "https://docker.com/get-started"},
 	}
@@ -278,7 +278,7 @@ func TestFrameworkServiceManager_RequirementsRequest_Success(t *testing.T) {
 	mockProvider := &MockFrameworkServiceProvider{}
 	mockProvider.On("Initialize", mock.Anything, mock.Anything).Return(nil)
 
-	expectedReq := &FrameworkRequirements{
+	expectedReq := &azdext.FrameworkRequirements{
 		Package: &FrameworkPackageRequirements{
 			RequireRestore: true,
 			RequireBuild:   true,

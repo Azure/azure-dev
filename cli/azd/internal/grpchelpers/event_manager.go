@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package azdext
+package grpchelpers
 
 import (
 	"context"
@@ -9,31 +9,29 @@ import (
 	"log"
 	"sync"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext/grpcbroker"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 )
 
 type EventManager struct {
 	extensionId   string
-	client        *AzdClient
-	broker        *grpcbroker.MessageBroker[EventMessage]
-	projectEvents map[string]ProjectEventHandler
-	serviceEvents map[string]ServiceEventHandler
+	client        *azdext.AzdClient
+	broker        *grpcbroker.MessageBroker[azdext.EventMessage]
+	projectEvents map[string]azdext.ProjectEventHandler
+	serviceEvents map[string]azdext.ServiceEventHandler
 	eventsMutex   sync.RWMutex // Protects both projectEvents and serviceEvents maps
 
 	// Synchronization for concurrent access
 	mu sync.RWMutex
 }
 
-
-
-
-
-func NewEventManager(extensionId string, azdClient *AzdClient) *EventManager {
+func NewEventManager(extensionId string, azdClient *azdext.AzdClient) *EventManager {
 	return &EventManager{
 		extensionId:   extensionId,
 		client:        azdClient,
-		projectEvents: make(map[string]ProjectEventHandler),
-		serviceEvents: make(map[string]ServiceEventHandler),
+		projectEvents: make(map[string]azdext.ProjectEventHandler),
+		serviceEvents: make(map[string]azdext.ServiceEventHandler),
 	}
 }
 
@@ -117,14 +115,14 @@ func (em *EventManager) Ready(ctx context.Context) error {
 	return em.broker.Ready(ctx)
 }
 
-func (em *EventManager) AddProjectEventHandler(ctx context.Context, eventName string, handler ProjectEventHandler) error {
+func (em *EventManager) AddProjectEventHandler(ctx context.Context, eventName string, handler azdext.ProjectEventHandler) error {
 	if err := em.ensureStream(ctx); err != nil {
 		return err
 	}
 
-	msg := &EventMessage{
-		MessageType: &EventMessage_SubscribeProjectEvent{
-			SubscribeProjectEvent: &SubscribeProjectEvent{
+	msg := &azdext.EventMessage{
+		MessageType: &azdext.EventMessage_SubscribeProjectEvent{
+			SubscribeProjectEvent: &azdext.SubscribeProjectEvent{
 				EventNames: []string{eventName},
 			},
 		},
@@ -142,24 +140,23 @@ func (em *EventManager) AddProjectEventHandler(ctx context.Context, eventName st
 	return nil
 }
 
-
 func (em *EventManager) AddServiceEventHandler(
 	ctx context.Context,
 	eventName string,
-	handler ServiceEventHandler,
-	options *ServiceEventOptions,
+	handler azdext.ServiceEventHandler,
+	options *azdext.ServiceEventOptions,
 ) error {
 	if err := em.ensureStream(ctx); err != nil {
 		return err
 	}
 
 	if options == nil {
-		options = &ServiceEventOptions{}
+		options = &azdext.ServiceEventOptions{}
 	}
 
-	msg := &EventMessage{
-		MessageType: &EventMessage_SubscribeServiceEvent{
-			SubscribeServiceEvent: &SubscribeServiceEvent{
+	msg := &azdext.EventMessage{
+		MessageType: &azdext.EventMessage_SubscribeServiceEvent{
+			SubscribeServiceEvent: &azdext.SubscribeServiceEvent{
 				EventNames: []string{eventName},
 				Host:       options.Host,
 				Language:   options.Language,
@@ -196,18 +193,18 @@ func (em *EventManager) RemoveServiceEventHandler(eventName string) {
 // onInvokeProjectHandler handles project event invocations from the server
 func (em *EventManager) onInvokeProjectHandler(
 	ctx context.Context,
-	req *InvokeProjectHandler,
-) (*EventMessage, error) {
+	req *azdext.InvokeProjectHandler,
+) (*azdext.EventMessage, error) {
 	em.eventsMutex.RLock()
 	defer em.eventsMutex.RUnlock()
 	handler, exists := em.projectEvents[req.EventName]
 
 	if !exists {
 		// No handler registered, return empty response (not an error)
-		return &EventMessage{}, nil
+		return &azdext.EventMessage{}, nil
 	}
 
-	args := &ProjectEventArgs{
+	args := &azdext.ProjectEventArgs{
 		Project: req.Project,
 	}
 
@@ -223,9 +220,9 @@ func (em *EventManager) onInvokeProjectHandler(
 	}
 
 	// Return status message
-	return &EventMessage{
-		MessageType: &EventMessage_ProjectHandlerStatus{
-			ProjectHandlerStatus: &ProjectHandlerStatus{
+	return &azdext.EventMessage{
+		MessageType: &azdext.EventMessage_ProjectHandlerStatus{
+			ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
 				EventName: req.EventName,
 				Status:    handlerStatus,
 				Message:   handlerMessage,
@@ -237,24 +234,24 @@ func (em *EventManager) onInvokeProjectHandler(
 // onInvokeServiceHandler handles service event invocations from the server
 func (em *EventManager) onInvokeServiceHandler(
 	ctx context.Context,
-	req *InvokeServiceHandler,
-) (*EventMessage, error) {
+	req *azdext.InvokeServiceHandler,
+) (*azdext.EventMessage, error) {
 	em.eventsMutex.RLock()
 	defer em.eventsMutex.RUnlock()
 	handler, exists := em.serviceEvents[req.EventName]
 
 	if !exists {
 		// No handler registered, return empty response (not an error)
-		return &EventMessage{}, nil
+		return &azdext.EventMessage{}, nil
 	}
 
-	// Extract ServiceContext from the message, default to empty instance if nil
+	// Extract azdext.ServiceContext from the message, default to empty instance if nil
 	serviceContext := req.ServiceContext
 	if serviceContext == nil {
-		serviceContext = &ServiceContext{}
+		serviceContext = &azdext.ServiceContext{}
 	}
 
-	args := &ServiceEventArgs{
+	args := &azdext.ServiceEventArgs{
 		Project:        req.Project,
 		Service:        req.Service,
 		ServiceContext: serviceContext,
@@ -272,9 +269,9 @@ func (em *EventManager) onInvokeServiceHandler(
 	}
 
 	// Return status message
-	return &EventMessage{
-		MessageType: &EventMessage_ServiceHandlerStatus{
-			ServiceHandlerStatus: &ServiceHandlerStatus{
+	return &azdext.EventMessage{
+		MessageType: &azdext.EventMessage_ServiceHandlerStatus{
+			ServiceHandlerStatus: &azdext.ServiceHandlerStatus{
 				EventName:   req.EventName,
 				ServiceName: req.Service.Name,
 				Status:      handlerStatus,

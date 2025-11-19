@@ -16,10 +16,10 @@ import (
 
 // MockBidiStreamingClient mocks the gRPC bidirectional streaming client using generics
 // Req represents the request message type, Resp represents the response message type
-// In most cases they're the same (e.g., both *EventMessage), but the interface allows them to differ
+// In most cases they're the same (e.g., both *azdext.EventMessage), but the interface allows them to differ
 //
 // Usage examples:
-//   - For EventService: MockBidiStreamingClient[*EventMessage, *EventMessage]
+//   - For EventService: MockBidiStreamingClient[*azdext.EventMessage, *azdext.EventMessage]
 //   - For FrameworkService: MockBidiStreamingClient[*FrameworkServiceMessage, *FrameworkServiceMessage]
 //   - For ServiceTargetService: MockBidiStreamingClient[*ServiceTargetMessage, *ServiceTargetMessage]
 //
@@ -87,8 +87,8 @@ func (m *MockBidiStreamingClient[Req, Resp]) GetReceivedMessages() []Resp {
 }
 
 // Test helper functions
-func createTestProjectConfigForEvents() *ProjectConfig {
-	return &ProjectConfig{
+func createTestProjectConfigForEvents() *azdext.ProjectConfig {
+	return &azdext.ProjectConfig{
 		Name: "test-project",
 		Path: "/test/path",
 	}
@@ -220,7 +220,7 @@ func TestEventManager_onInvokeProjectHandler_NoHandler(t *testing.T) {
 	resp, err := eventManager.onInvokeProjectHandler(ctx, invokeMsg)
 
 	assert.NoError(t, err)
-	assert.NotNil(t, resp)          // Returns empty EventMessage, not nil
+	assert.NotNil(t, resp)          // Returns empty azdext.EventMessage, not nil
 	assert.Nil(t, resp.MessageType) // But the MessageType is nil (empty message)
 }
 
@@ -243,9 +243,9 @@ func TestEventManager_onInvokeServiceHandler_Success(t *testing.T) {
 
 	// Create invoke message with ServiceContext
 	invokeMsg := &InvokeServiceHandler{
-		EventName:      "prepackage",
-		Project:        createTestProjectConfigForEvents(),
-		Service:        createTestServiceConfigForEvents(),
+		EventName:             "prepackage",
+		Project:               createTestProjectConfigForEvents(),
+		Service:               createTestServiceConfigForEvents(),
 		ServiceContext: createTestServiceContextForEvents(),
 	}
 
@@ -289,9 +289,9 @@ func TestEventManager_onInvokeServiceHandler_NilServiceContext(t *testing.T) {
 
 	// Create invoke message with nil ServiceContext
 	invokeMsg := &InvokeServiceHandler{
-		EventName:      "postdeploy",
-		Project:        createTestProjectConfigForEvents(),
-		Service:        createTestServiceConfigForEvents(),
+		EventName:             "postdeploy",
+		Project:               createTestProjectConfigForEvents(),
+		Service:               createTestServiceConfigForEvents(),
 		ServiceContext: nil, // nil context
 	}
 
@@ -326,9 +326,9 @@ func TestEventManager_onInvokeServiceHandler_HandlerError(t *testing.T) {
 
 	// Create invoke message
 	invokeMsg := &InvokeServiceHandler{
-		EventName:      "prepublish",
-		Project:        createTestProjectConfigForEvents(),
-		Service:        createTestServiceConfigForEvents(),
+		EventName:             "prepublish",
+		Project:               createTestProjectConfigForEvents(),
+		Service:               createTestServiceConfigForEvents(),
 		ServiceContext: createTestServiceContextForEvents(),
 	}
 
@@ -355,9 +355,9 @@ func TestEventManager_onInvokeServiceHandler_NoHandler(t *testing.T) {
 
 	// Create invoke message for unregistered event
 	invokeMsg := &InvokeServiceHandler{
-		EventName:      "nonexistentevent",
-		Project:        createTestProjectConfigForEvents(),
-		Service:        createTestServiceConfigForEvents(),
+		EventName:             "nonexistentevent",
+		Project:               createTestProjectConfigForEvents(),
+		Service:               createTestServiceConfigForEvents(),
 		ServiceContext: createTestServiceContextForEvents(),
 	}
 
@@ -365,7 +365,7 @@ func TestEventManager_onInvokeServiceHandler_NoHandler(t *testing.T) {
 	resp, err := eventManager.onInvokeServiceHandler(ctx, invokeMsg)
 
 	assert.NoError(t, err)
-	assert.NotNil(t, resp)          // Returns empty EventMessage, not nil
+	assert.NotNil(t, resp)          // Returns empty azdext.EventMessage, not nil
 	assert.Nil(t, resp.MessageType) // But the MessageType is nil (empty message)
 }
 

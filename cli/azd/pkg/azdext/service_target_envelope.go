@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext/grpcbroker"
 )
 
 // ServiceTargetEnvelope provides message operations for ServiceTargetMessage

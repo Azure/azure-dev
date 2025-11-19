@@ -69,7 +69,7 @@ func (p *DemoServiceTargetProvider) Package(
 	ctx context.Context,
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
-	progress azdext.ProgressReporter,
+	progress azdext.ProgressFunc,
 ) (*azdext.ServicePackageResult, error) {
 	var containerArtifact *azdext.Artifact
 
@@ -116,7 +116,7 @@ func (p *DemoServiceTargetProvider) Publish(
 	serviceContext *azdext.ServiceContext,
 	targetResource *azdext.TargetResource,
 	publishOptions *azdext.PublishOptions,
-	progress azdext.ProgressReporter,
+	progress azdext.ProgressFunc,
 ) (*azdext.ServicePublishResult, error) {
 	publishResponse, err := p.azdClient.Container().
 		Publish(ctx, &azdext.ContainerPublishRequest{
@@ -138,7 +138,7 @@ func (p *DemoServiceTargetProvider) Deploy(
 	serviceConfig *azdext.ServiceConfig,
 	serviceContext *azdext.ServiceContext,
 	targetResource *azdext.TargetResource,
-	progress azdext.ProgressReporter,
+	progress azdext.ProgressFunc,
 ) (*azdext.ServiceDeployResult, error) {
 	progress("Deploying demo service")
 	time.Sleep(5 * time.Second)

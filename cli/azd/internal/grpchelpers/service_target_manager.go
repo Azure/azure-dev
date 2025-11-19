@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package azdext
+package grpchelpers
 
 import (
 	"context"
@@ -9,43 +9,43 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext/grpcbroker"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/google/uuid"
 )
 
-
 var (
-	ServiceTargetFactoryKey = func(config *ServiceConfig) string {
+	ServiceTargetFactoryKey = func(config *azdext.ServiceConfig) string {
 		return string(config.Host)
 	}
 )
 
-
 // ServiceTargetManager handles registration and provisioning request forwarding for a provider.
 type ServiceTargetManager struct {
 	extensionId      string
-	client           *AzdClient
-	broker           *grpcbroker.MessageBroker[ServiceTargetMessage]
-	componentManager *ComponentManager[ServiceTargetProvider]
+	client           *azdext.AzdClient
+	broker           *grpcbroker.MessageBroker[azdext.ServiceTargetMessage]
+	componentManager *ComponentManager[azdext.ServiceTargetProvider]
 
 	// Synchronization for concurrent access
 	mu sync.RWMutex
 }
 
-// toAzdextProgress converts grpcbroker.ProgressFunc to ProgressFunc
-func toAzdextProgress(p grpcbroker.ProgressFunc) ProgressFunc {
+// toAzdextProgress converts grpcbroker.ProgressFunc to azdext.ProgressFunc
+func toAzdextProgress(p grpcbroker.ProgressFunc) azdext.ProgressFunc {
 	if p == nil {
 		return nil
 	}
-	return ProgressFunc(p)
+	return azdext.ProgressFunc(p)
 }
 
-// NewServiceTargetManager creates a new ServiceTargetManager for an AzdClient.
-func NewServiceTargetManager(extensionId string, client *AzdClient) *ServiceTargetManager {
+// NewServiceTargetManager creates a new ServiceTargetManager for an azdext.AzdClient.
+func NewServiceTargetManager(extensionId string, client *azdext.AzdClient) *ServiceTargetManager {
 	return &ServiceTargetManager{
 		extensionId:      extensionId,
 		client:           client,
-		componentManager: NewComponentManager[ServiceTargetProvider](ServiceTargetFactoryKey, "service target"),
+		componentManager: NewComponentManager[azdext.ServiceTargetProvider](ServiceTargetFactoryKey, "service target"),
 	}
 }
 
@@ -125,10 +125,10 @@ func (m *ServiceTargetManager) Register(ctx context.Context, factory ServiceTarg
 
 	m.componentManager.RegisterFactory(hostType, factory)
 
-	registerReq := &ServiceTargetMessage{
+	registerReq := &azdext.ServiceTargetMessage{
 		RequestId: uuid.NewString(),
-		MessageType: &ServiceTargetMessage_RegisterServiceTargetRequest{
-			RegisterServiceTargetRequest: &RegisterServiceTargetRequest{
+		MessageType: &azdext.ServiceTargetMessage_RegisterServiceTargetRequest{
+			RegisterServiceTargetRequest: &azdext.RegisterServiceTargetRequest{
 				Host: hostType,
 			},
 		},
@@ -176,8 +176,8 @@ func (m *ServiceTargetManager) Ready(ctx context.Context) error {
 // onInitialize handles initialization requests from the server
 func (m *ServiceTargetManager) onInitialize(
 	ctx context.Context,
-	req *ServiceTargetInitializeRequest,
-) (*ServiceTargetMessage, error) {
+	req *azdext.ServiceTargetInitializeRequest,
+) (*azdext.ServiceTargetMessage, error) {
 	if req.ServiceConfig == nil {
 		return nil, errors.New("service config is required for initialize request")
 	}
@@ -185,9 +185,9 @@ func (m *ServiceTargetManager) onInitialize(
 	// Create new instance using componentManager
 	_, err := m.componentManager.GetOrCreateInstance(ctx, req.ServiceConfig)
 
-	return &ServiceTargetMessage{
-		MessageType: &ServiceTargetMessage_InitializeResponse{
-			InitializeResponse: &ServiceTargetInitializeResponse{},
+	return &azdext.ServiceTargetMessage{
+		MessageType: &azdext.ServiceTargetMessage_InitializeResponse{
+			InitializeResponse: &azdext.ServiceTargetInitializeResponse{},
 		},
 	}, err
 }
@@ -195,8 +195,8 @@ func (m *ServiceTargetManager) onInitialize(
 // onGetTargetResource handles get target resource requests
 func (m *ServiceTargetManager) onGetTargetResource(
 	ctx context.Context,
-	req *GetTargetResourceRequest,
-) (*ServiceTargetMessage, error) {
+	req *azdext.GetTargetResourceRequest,
+) (*azdext.ServiceTargetMessage, error) {
 	if req.ServiceConfig == nil {
 		return nil, errors.New("service config is required for get target resource request")
 	}
@@ -208,7 +208,7 @@ func (m *ServiceTargetManager) onGetTargetResource(
 	}
 
 	// Create a callback that returns the default target resource or error
-	defaultResolver := func() (*TargetResource, error) {
+	defaultResolver := func() (*azdext.TargetResource, error) {
 		// Check if default resolution had an error
 		if req.DefaultError != "" {
 			return nil, errors.New(req.DefaultError)
@@ -224,9 +224,9 @@ func (m *ServiceTargetManager) onGetTargetResource(
 		defaultResolver,
 	)
 
-	return &ServiceTargetMessage{
-		MessageType: &ServiceTargetMessage_GetTargetResourceResponse{
-			GetTargetResourceResponse: &GetTargetResourceResponse{TargetResource: result},
+	return &azdext.ServiceTargetMessage{
+		MessageType: &azdext.ServiceTargetMessage_GetTargetResourceResponse{
+			GetTargetResourceResponse: &azdext.GetTargetResourceResponse{TargetResource: result},
 		},
 	}, err
 }
@@ -234,9 +234,9 @@ func (m *ServiceTargetManager) onGetTargetResource(
 // onPackage handles package requests with progress reporting
 func (m *ServiceTargetManager) onPackage(
 	ctx context.Context,
-	req *ServiceTargetPackageRequest,
+	req *azdext.ServiceTargetPackageRequest,
 	progress grpcbroker.ProgressFunc,
-) (*ServiceTargetMessage, error) {
+) (*azdext.ServiceTargetMessage, error) {
 	if req.ServiceConfig == nil {
 		return nil, errors.New("service config is required for package request")
 	}
@@ -254,9 +254,9 @@ func (m *ServiceTargetManager) onPackage(
 		toAzdextProgress(progress),
 	)
 
-	return &ServiceTargetMessage{
-		MessageType: &ServiceTargetMessage_PackageResponse{
-			PackageResponse: &ServiceTargetPackageResponse{Result: result},
+	return &azdext.ServiceTargetMessage{
+		MessageType: &azdext.ServiceTargetMessage_PackageResponse{
+			PackageResponse: &azdext.ServiceTargetPackageResponse{Result: result},
 		},
 	}, err
 }
@@ -264,9 +264,9 @@ func (m *ServiceTargetManager) onPackage(
 // onPublish handles publish requests with progress reporting
 func (m *ServiceTargetManager) onPublish(
 	ctx context.Context,
-	req *ServiceTargetPublishRequest,
+	req *azdext.ServiceTargetPublishRequest,
 	progress grpcbroker.ProgressFunc,
-) (*ServiceTargetMessage, error) {
+) (*azdext.ServiceTargetMessage, error) {
 	if req.ServiceConfig == nil {
 		return nil, errors.New("service config is required for publish request")
 	}
@@ -286,9 +286,9 @@ func (m *ServiceTargetManager) onPublish(
 		toAzdextProgress(progress),
 	)
 
-	return &ServiceTargetMessage{
-		MessageType: &ServiceTargetMessage_PublishResponse{
-			PublishResponse: &ServiceTargetPublishResponse{Result: result},
+	return &azdext.ServiceTargetMessage{
+		MessageType: &azdext.ServiceTargetMessage_PublishResponse{
+			PublishResponse: &azdext.ServiceTargetPublishResponse{Result: result},
 		},
 	}, err
 }
@@ -296,9 +296,9 @@ func (m *ServiceTargetManager) onPublish(
 // onDeploy handles deploy requests with progress reporting
 func (m *ServiceTargetManager) onDeploy(
 	ctx context.Context,
-	req *ServiceTargetDeployRequest,
+	req *azdext.ServiceTargetDeployRequest,
 	progress grpcbroker.ProgressFunc,
-) (*ServiceTargetMessage, error) {
+) (*azdext.ServiceTargetMessage, error) {
 	if req.ServiceConfig == nil {
 		return nil, errors.New("service config is required for deploy request")
 	}
@@ -317,9 +317,9 @@ func (m *ServiceTargetManager) onDeploy(
 		toAzdextProgress(progress),
 	)
 
-	return &ServiceTargetMessage{
-		MessageType: &ServiceTargetMessage_DeployResponse{
-			DeployResponse: &ServiceTargetDeployResponse{Result: result},
+	return &azdext.ServiceTargetMessage{
+		MessageType: &azdext.ServiceTargetMessage_DeployResponse{
+			DeployResponse: &azdext.ServiceTargetDeployResponse{Result: result},
 		},
 	}, err
 }
@@ -327,8 +327,8 @@ func (m *ServiceTargetManager) onDeploy(
 // onEndpoints handles endpoints requests
 func (m *ServiceTargetManager) onEndpoints(
 	ctx context.Context,
-	req *ServiceTargetEndpointsRequest,
-) (*ServiceTargetMessage, error) {
+	req *azdext.ServiceTargetEndpointsRequest,
+) (*azdext.ServiceTargetMessage, error) {
 	if req.ServiceConfig == nil {
 		return nil, errors.New("service config is required for endpoints request")
 	}
@@ -345,9 +345,9 @@ func (m *ServiceTargetManager) onEndpoints(
 		req.TargetResource,
 	)
 
-	return &ServiceTargetMessage{
-		MessageType: &ServiceTargetMessage_EndpointsResponse{
-			EndpointsResponse: &ServiceTargetEndpointsResponse{Endpoints: endpoints},
+	return &azdext.ServiceTargetMessage{
+		MessageType: &azdext.ServiceTargetMessage_EndpointsResponse{
+			EndpointsResponse: &azdext.ServiceTargetEndpointsResponse{Endpoints: endpoints},
 		},
 	}, err
 }

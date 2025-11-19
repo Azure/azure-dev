@@ -7,8 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
-	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext/grpcbroker"
 )
 
 // EventMessageEnvelope provides message operations for EventMessage
@@ -26,7 +25,7 @@ var _ grpcbroker.MessageEnvelope[EventMessage] = (*EventMessageEnvelope)(nil)
 
 // getExtensionIdFromContext extracts the extension ID from the gRPC metadata context.
 func (ops *EventMessageEnvelope) getExtensionIdFromContext(ctx context.Context) string {
-	claims, err := extensions.GetClaimsFromContext(ctx)
+	claims, err := GetClaimsFromContext(ctx)
 	if err != nil {
 		return ""
 	}

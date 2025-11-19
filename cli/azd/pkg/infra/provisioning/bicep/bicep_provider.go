@@ -642,7 +642,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		progressDisplay := p.deploymentManager.ProgressDisplay(deployment)
 		// Make initial delay shorter to be more responsive in displaying initial progress
 		initialDelay := 3 * time.Second
-		regularDelay := 10 * time.Second
+		regularDelay := 3 * time.Second
 		timer := time.NewTimer(initialDelay)
 		queryStartTime := time.Now()
 

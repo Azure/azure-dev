@@ -50,6 +50,7 @@ var prBodyMD string
 
 const copilotEnv = "copilot"
 const readmeURL = "https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.coding-agent/README.md"
+const defaultManagedIdentityName = "mi-copilot-coding-agent"
 
 type flagValues struct {
 	Debug               bool
@@ -89,7 +90,7 @@ func setupFlags(commandFlags *pflag.FlagSet) *flagValues {
 	commandFlags.StringVar(
 		&flagValues.ManagedIdentityName,
 		"managed-identity-name",
-		"mi-copilot-coding-agent",
+		defaultManagedIdentityName,
 		"The name to use for the managed identity, if created.",
 	)
 
@@ -523,30 +524,37 @@ func pickOrCreateMSI(ctx context.Context,
 
 	// ************************** Pick or create a new MSI **************************
 
-	// Prompt for pick or create a new MSI
-	selectedOption, err := prompter.Select(ctx, &azdext.SelectRequest{
-		Options: &azdext.SelectOptions{
-			Message: "Do you want to create a new Azure user-assigned managed identity or use an existing one?",
-			Choices: []*azdext.SelectChoice{
-				{Label: "Create new user-assigned managed identity"},
-				{Label: "Use existing user-assigned managed identity"},
+	shouldCreateIdentity := true
+
+	if identityName == defaultManagedIdentityName {
+		// Prompt for pick or create a new MSI
+		selectedOption, err := prompter.Select(ctx, &azdext.SelectRequest{
+			Options: &azdext.SelectOptions{
+				Message: "Do you want to create a new Azure user-assigned managed identity or use an existing one?",
+				Choices: []*azdext.SelectChoice{
+					{Label: "Create new user-assigned managed identity"},
+					{Label: "Use existing user-assigned managed identity"},
+				},
+				HelpMessage: "",
 			},
-			HelpMessage: "",
-		},
-	})
-	if err != nil {
-		//nolint:lll
-		return nil, fmt.Errorf(
-			"failed when prompting for managed identity option. Try logging in manually with 'azd auth login' before running this command. Error: %w",
-			err,
-		)
+		})
+
+		if err != nil {
+			//nolint:lll
+			return nil, fmt.Errorf(
+				"failed when prompting for managed identity option. Try logging in manually with 'azd auth login' before running this command. Error: %w",
+				err,
+			)
+		}
+
+		shouldCreateIdentity = *selectedOption.Value == 0
 	}
 
 	taskList := ux.NewTaskList(nil)
 
 	var managedIdentity rm_armmsi.Identity
 
-	if *selectedOption.Value == 0 {
+	if shouldCreateIdentity {
 		// pick a resource group and location for the new MSI
 		location, err := prompter.PromptLocation(ctx, &azdext.PromptLocationRequest{
 			AzureContext: &azdext.AzureContext{
@@ -656,6 +664,8 @@ func pickOrCreateMSI(ctx context.Context,
 	if err != nil {
 		return nil, fmt.Errorf("invalid format for managed identity resource id: %w", err)
 	}
+
+	taskList = ux.NewTaskList(nil)
 
 	taskList.AddTask(ux.TaskOptions{
 		Title: fmt.Sprintf("Assigning roles (%s) to User Managed Identity (MSI)", roleNameStrings),

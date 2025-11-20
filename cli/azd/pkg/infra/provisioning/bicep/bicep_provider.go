@@ -829,8 +829,10 @@ func (p *BicepProvider) Destroy(
 		return nil, fmt.Errorf("mapping resources to resource groups: %w", err)
 	}
 
-	// If no resources found, we still need to void the deployment state
-	// This can happen when resources have been manually deleted
+	// If no resources found, we still need to void the deployment state.
+	// This can happen when resources have been manually deleted before running azd down.
+	// Voiding the state ensures that subsequent azd provision commands work correctly
+	// by creating a new empty deployment that becomes the last successful deployment.
 	if len(groupedResources) == 0 {
 		p.console.StopSpinner(ctx, "", input.StepDone)
 		// Call deployment.Delete to void the state even though there are no resources to delete

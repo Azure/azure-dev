@@ -2,7 +2,7 @@
     "manifestVersion": 1,
     "id": "azd",
     "name": "Install azd",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "publisher": "ms-azuretools",
     "targets": [
         {

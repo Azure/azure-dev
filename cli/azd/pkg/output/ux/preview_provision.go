@@ -63,8 +63,9 @@ type PropertyDelta struct {
 func colorType(opType OperationType) func(string, ...interface{}) string {
 	var final func(format string, a ...interface{}) string
 	switch opType {
-	case OperationTypeCreate,
-		OperationTypeNoChange,
+	case OperationTypeCreate:
+		final = color.GreenString
+	case OperationTypeNoChange,
 		OperationTypeIgnore:
 		final = output.WithGrayFormat
 	case OperationTypeDelete:
@@ -119,10 +120,17 @@ func (pp *PreviewProvision) ToString(currentIndentation string) string {
 		)
 		output = append(output, resourceLine)
 
-		// Add property-level changes if available
-		if len(op.PropertyDeltas) > 0 {
+		// Only show property-level changes for resources that are being created, modified, or deleted
+		// Skip showing properties for NoChange/Ignore operations
+		if len(op.PropertyDeltas) > 0 &&
+			op.Operation != OperationTypeNoChange &&
+			op.Operation != OperationTypeIgnore {
+			// Calculate indentation to align with resource name (after the second colon)
+			// Find the position of the second colon in the resource line
+			propertyIndent := currentIndentation + "    "
+
 			for _, delta := range op.PropertyDeltas {
-				propertyLine := formatPropertyChange(currentIndentation+"    ", delta)
+				propertyLine := formatPropertyChange(propertyIndent, delta)
 				output = append(output, propertyLine)
 			}
 		}
@@ -134,12 +142,12 @@ func (pp *PreviewProvision) ToString(currentIndentation string) string {
 // formatPropertyChange formats a single property change for display
 func formatPropertyChange(indent string, delta PropertyDelta) string {
 	changeSymbol := ""
-	changeColor := output.WithGrayFormat
+	changeColor := func(format string, a ...interface{}) string { return fmt.Sprintf(format, a...) }
 
 	switch delta.ChangeType {
 	case "Create":
 		changeSymbol = "+"
-		changeColor = output.WithGrayFormat
+		changeColor = color.GreenString
 	case "Delete":
 		changeSymbol = "-"
 		changeColor = color.RedString
@@ -148,7 +156,7 @@ func formatPropertyChange(indent string, delta PropertyDelta) string {
 		changeColor = color.YellowString
 	case "Array":
 		changeSymbol = "*"
-		changeColor = color.YellowString
+		changeColor = color.CyanString
 	}
 
 	// Format values for display

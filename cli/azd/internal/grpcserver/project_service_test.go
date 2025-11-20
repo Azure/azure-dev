@@ -32,8 +32,9 @@ func Test_ProjectService_NoProject(t *testing.T) {
 		return nil, azdcontext.ErrNoProject
 	})
 
-	// Create the service.
-	service := NewProjectService(lazyAzdContext, lazyEnvManager)
+	// Create the service with ImportManager.
+	importManager := project.NewImportManager(&project.DotNetImporter{})
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, importManager)
 	_, err := service.Get(*mockContext.Context, &azdext.EmptyRequest{})
 	require.Error(t, err)
 }
@@ -76,8 +77,9 @@ func Test_ProjectService_Flow(t *testing.T) {
 	err = envManager.Save(*mockContext.Context, testEnv1)
 	require.NoError(t, err)
 
-	// Create the service.
-	service := NewProjectService(lazyAzdContext, lazyEnvManager)
+	// Create the service with ImportManager.
+	importManager := project.NewImportManager(&project.DotNetImporter{})
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, importManager)
 
 	// Test: Retrieve project details.
 	getResponse, err := service.Get(*mockContext.Context, &azdext.EmptyRequest{})
@@ -112,8 +114,9 @@ func Test_ProjectService_AddService(t *testing.T) {
 	lazyAzdContext := lazy.From(azdContext)
 	lazyEnvManager := lazy.From(envManager)
 
-	// Create the project service.
-	service := NewProjectService(lazyAzdContext, lazyEnvManager)
+	// Create the project service with ImportManager.
+	importManager := project.NewImportManager(&project.DotNetImporter{})
+	service := NewProjectService(lazyAzdContext, lazyEnvManager, importManager)
 
 	// Prepare a new service addition request.
 	serviceRequest := &azdext.AddServiceRequest{

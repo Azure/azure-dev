@@ -114,6 +114,52 @@ func (x *AddServiceRequest) GetService() *ServiceConfig {
 	return nil
 }
 
+// GetResolvedServicesResponse message definition
+type GetResolvedServicesResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Map of service name to service configuration
+	Services      map[string]*ServiceConfig `protobuf:"bytes,1,rep,name=services,proto3" json:"services,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetResolvedServicesResponse) Reset() {
+	*x = GetResolvedServicesResponse{}
+	mi := &file_project_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetResolvedServicesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetResolvedServicesResponse) ProtoMessage() {}
+
+func (x *GetResolvedServicesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_project_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetResolvedServicesResponse.ProtoReflect.Descriptor instead.
+func (*GetResolvedServicesResponse) Descriptor() ([]byte, []int) {
+	return file_project_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *GetResolvedServicesResponse) GetServices() map[string]*ServiceConfig {
+	if x != nil {
+		return x.Services
+	}
+	return nil
+}
+
 var File_project_proto protoreflect.FileDescriptor
 
 const file_project_proto_rawDesc = "" +
@@ -122,11 +168,17 @@ const file_project_proto_rawDesc = "" +
 	"\x12GetProjectResponse\x12/\n" +
 	"\aproject\x18\x01 \x01(\v2\x15.azdext.ProjectConfigR\aproject\"D\n" +
 	"\x11AddServiceRequest\x12/\n" +
-	"\aservice\x18\x01 \x01(\v2\x15.azdext.ServiceConfigR\aservice2\x89\x01\n" +
+	"\aservice\x18\x01 \x01(\v2\x15.azdext.ServiceConfigR\aservice\"\xc0\x01\n" +
+	"\x1bGetResolvedServicesResponse\x12M\n" +
+	"\bservices\x18\x01 \x03(\v21.azdext.GetResolvedServicesResponse.ServicesEntryR\bservices\x1aR\n" +
+	"\rServicesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12+\n" +
+	"\x05value\x18\x02 \x01(\v2\x15.azdext.ServiceConfigR\x05value:\x028\x012\xdb\x01\n" +
 	"\x0eProjectService\x127\n" +
 	"\x03Get\x12\x14.azdext.EmptyRequest\x1a\x1a.azdext.GetProjectResponse\x12>\n" +
 	"\n" +
-	"AddService\x12\x19.azdext.AddServiceRequest\x1a\x15.azdext.EmptyResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
+	"AddService\x12\x19.azdext.AddServiceRequest\x1a\x15.azdext.EmptyResponse\x12P\n" +
+	"\x13GetResolvedServices\x12\x14.azdext.EmptyRequest\x1a#.azdext.GetResolvedServicesResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
 var (
 	file_project_proto_rawDescOnce sync.Once
@@ -140,27 +192,33 @@ func file_project_proto_rawDescGZIP() []byte {
 	return file_project_proto_rawDescData
 }
 
-var file_project_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_project_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_project_proto_goTypes = []any{
-	(*GetProjectResponse)(nil), // 0: azdext.GetProjectResponse
-	(*AddServiceRequest)(nil),  // 1: azdext.AddServiceRequest
-	(*ProjectConfig)(nil),      // 2: azdext.ProjectConfig
-	(*ServiceConfig)(nil),      // 3: azdext.ServiceConfig
-	(*EmptyRequest)(nil),       // 4: azdext.EmptyRequest
-	(*EmptyResponse)(nil),      // 5: azdext.EmptyResponse
+	(*GetProjectResponse)(nil),          // 0: azdext.GetProjectResponse
+	(*AddServiceRequest)(nil),           // 1: azdext.AddServiceRequest
+	(*GetResolvedServicesResponse)(nil), // 2: azdext.GetResolvedServicesResponse
+	nil,                                 // 3: azdext.GetResolvedServicesResponse.ServicesEntry
+	(*ProjectConfig)(nil),               // 4: azdext.ProjectConfig
+	(*ServiceConfig)(nil),               // 5: azdext.ServiceConfig
+	(*EmptyRequest)(nil),                // 6: azdext.EmptyRequest
+	(*EmptyResponse)(nil),               // 7: azdext.EmptyResponse
 }
 var file_project_proto_depIdxs = []int32{
-	2, // 0: azdext.GetProjectResponse.project:type_name -> azdext.ProjectConfig
-	3, // 1: azdext.AddServiceRequest.service:type_name -> azdext.ServiceConfig
-	4, // 2: azdext.ProjectService.Get:input_type -> azdext.EmptyRequest
-	1, // 3: azdext.ProjectService.AddService:input_type -> azdext.AddServiceRequest
-	0, // 4: azdext.ProjectService.Get:output_type -> azdext.GetProjectResponse
-	5, // 5: azdext.ProjectService.AddService:output_type -> azdext.EmptyResponse
-	4, // [4:6] is the sub-list for method output_type
-	2, // [2:4] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	4, // 0: azdext.GetProjectResponse.project:type_name -> azdext.ProjectConfig
+	5, // 1: azdext.AddServiceRequest.service:type_name -> azdext.ServiceConfig
+	3, // 2: azdext.GetResolvedServicesResponse.services:type_name -> azdext.GetResolvedServicesResponse.ServicesEntry
+	5, // 3: azdext.GetResolvedServicesResponse.ServicesEntry.value:type_name -> azdext.ServiceConfig
+	6, // 4: azdext.ProjectService.Get:input_type -> azdext.EmptyRequest
+	1, // 5: azdext.ProjectService.AddService:input_type -> azdext.AddServiceRequest
+	6, // 6: azdext.ProjectService.GetResolvedServices:input_type -> azdext.EmptyRequest
+	0, // 7: azdext.ProjectService.Get:output_type -> azdext.GetProjectResponse
+	7, // 8: azdext.ProjectService.AddService:output_type -> azdext.EmptyResponse
+	2, // 9: azdext.ProjectService.GetResolvedServices:output_type -> azdext.GetResolvedServicesResponse
+	7, // [7:10] is the sub-list for method output_type
+	4, // [4:7] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_project_proto_init() }
@@ -175,7 +233,7 @@ func file_project_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_project_proto_rawDesc), len(file_project_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

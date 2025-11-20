@@ -19,7 +19,12 @@ import (
 // 2. The extension-capabilities sample project can run through the full azd up workflow
 // 3. The extension's framework service manager handles restore, build, package operations correctly
 func Test_CLI_Extension_Capabilities(t *testing.T) {
-	t.Parallel()
+	// Skip in playback mode: extensions make Azure calls through gRPC callbacks that are difficult to record
+	// The extension workflow calls back into azd commands which would need complex recording setup
+	session := recording.Start(t)
+	if session != nil && session.Playback {
+		t.Skip("Skipping test in playback mode. This test is live only.")
+	}
 
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -29,7 +34,7 @@ func Test_CLI_Extension_Capabilities(t *testing.T) {
 
 	// Generate environment name early (before session starts)
 	// so we can use it for both extension installation and the recorded part
-	envName := randomEnvName()
+	envName := randomOrStoredEnvName(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
 	// Step 1: Build and install extensions (not recorded)
@@ -79,22 +84,7 @@ func Test_CLI_Extension_Capabilities(t *testing.T) {
 		_, _ = cliNoSession.RunCommand(ctx, "ext", "uninstall", "microsoft.azd.extensions")
 	}()
 
-	// Step 2: Start recording session for Azure operations
-	session := recording.Start(t)
-
-	// Store or retrieve the environment name in the session
-	if session != nil {
-		if session.Playback {
-			if storedEnvName, ok := session.Variables[recording.EnvNameKey]; ok {
-				envName = storedEnvName
-				t.Logf("Using stored AZURE_ENV_NAME from recording: %s", envName)
-			}
-		} else {
-			session.Variables[recording.EnvNameKey] = envName
-		}
-	}
-
-	// Create CLI with session for recorded operations
+	// Step 2: Create CLI with session for recorded operations
 	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)

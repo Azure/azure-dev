@@ -275,7 +275,7 @@ func aiProjectEndpoint(endpoints string) (string, error) {
 
 	endpoint := result.Get("AI Foundry API")
 	if !endpoint.Exists() {
-		return "", fmt.Errorf("endpoint 'AI Foundry API' not found in endpoints")
+		return "", fmt.Errorf("endpoint 'AI Foundry API' not found in endpoints (Microsoft Foundry project)")
 	}
 
 	return endpoint.String(), nil

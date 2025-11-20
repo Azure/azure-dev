@@ -21,14 +21,14 @@
 - Add prompting for container resources
 - Add "preview" label to extension name and command descriptions
 - Show agent playground URL post-deploy
-- Support fetching ACR connections from existing Microsoft Foundry projects
+- Support fetching ACR connections from existing AI Foundry projects
 - Fix environment variable references
 - Improve agent name validation
 
 ## 0.0.6 (2025-11-11)
 
 - Add support for using existing AI model deployments
-- Add `--project-id` flag for initializing using existing Microsoft Foundry projects
+- Add `--project-id` flag for initializing using existing AI Foundry projects
 - Fix agent definition handling for saved templates
 
 ## 0.0.5 (2025-11-06)

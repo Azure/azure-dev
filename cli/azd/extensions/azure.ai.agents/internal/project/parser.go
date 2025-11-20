@@ -183,7 +183,7 @@ func getProjectPrincipalID(ctx context.Context, cred *azidentity.AzureDeveloperC
 	}
 
 	// Get the resource
-	// API version for AI Foundry projects (Machine Learning workspaces)
+	// API version for Microsoft Foundry projects (Machine Learning workspaces)
 	apiVersion := "2025-06-01"
 	resp, err := client.GetByID(ctx, resourceID, apiVersion, nil)
 	if err != nil {

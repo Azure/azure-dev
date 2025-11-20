@@ -214,7 +214,7 @@
 ### Features Added
 
 - [[5249]](https://github.com/Azure/azure-dev/pull/5249) Add support for deploying a single service in .NET Aspire projects via vs-server.
-- [[5157]](https://github.com/Azure/azure-dev/pull/5157) Update `azd add` integration with Microsoft Foundry to use simplified 1RP setup with all models under a single AI Services account.
+- [[5157]](https://github.com/Azure/azure-dev/pull/5157) Update `azd add` integration with AI Foundry to use simplified 1RP setup with all models under a single AI Services account.
 - [[5214]](https://github.com/Azure/azure-dev/pull/5214) Add Linux to Homebrew formulae. Thanks @heaths for the contribution!
 - [[5204]](https://github.com/Azure/azure-dev/pull/5204) Add login guard middleware to auto-prompt for user login in key commands if unauthenticated.
 - [[5248]](https://github.com/Azure/azure-dev/pull/5248) `azd pipeline config` support for configuring CI/CD using Managed Identities.
@@ -231,7 +231,7 @@
 
 - [[5242]](https://github.com/Azure/azure-dev/pull/5242), [[5260]](https://github.com/Azure/azure-dev/pull/5260) When initializing from app code or minimal project, the `infra/` folder is no longer generated. azd now manages infrastructure in-memory by default, but you can still generate IaC to disk to manually manage your infrastructure using `azd infra generate` (or `azd infra gen` for short).
 - [[5242]](https://github.com/Azure/azure-dev/pull/5242) When initializing from app code or minimal project, environment initialization is now deferred to provision time (e.g. `azd up`), unless the `--environment <env name>` flag is passed to the `azd init` command or the `AZURE_ENV_NAME` environment variable is set.
-- [[5157]](https://github.com/Azure/azure-dev/pull/5157) AI Services models added through `azd add` require an updated version of the Microsoft Foundry SDK client library that supports project endpoints (`AZURE_AI_PROJECT_ENDPOINT=https://<account-name>.services.ai.azure.com/api/projects/<project-name>`) instead of project connection strings (`AZURE_AI_PROJECT_CONNECTION_STRING=eastus.api.azureml.ms;<subscription id>;<resource group>;<project name>`).
+- [[5157]](https://github.com/Azure/azure-dev/pull/5157) AI Services models added through `azd add` require an updated version of the Azure AI Foundry SDK client library that supports project endpoints (`AZURE_AI_PROJECT_ENDPOINT=https://<account-name>.services.ai.azure.com/api/projects/<project-name>`) instead of project connection strings (`AZURE_AI_PROJECT_CONNECTION_STRING=eastus.api.azureml.ms;<subscription id>;<resource group>;<project name>`).
 
 ### Bugs Fixed
 
@@ -259,7 +259,7 @@
 
 ### Features Added
 - [[5173]](https://github.com/Azure/azure-dev/pull/5173) `azd show` support for Azure App Service.
-- [[5158]](https://github.com/Azure/azure-dev/pull/5158) Configure Microsoft Foundry hub to use identity-based storage access for compose.
+- [[5158]](https://github.com/Azure/azure-dev/pull/5158) Configure Azure AI Foundry hub to use identity-based storage access for compose.
 - [[5143]](https://github.com/Azure/azure-dev/pull/5143), [[5183]](https://github.com/Azure/azure-dev/pull/5183), [[5185]](https://github.com/Azure/azure-dev/pull/5185) Update `azd pipeline config` to auto-detect required variables and secrets from infra provider parameters.
 - [[5190]](https://github.com/Azure/azure-dev/pull/5190) Add interactive controls for managing existing GitHub Actions variables and secrets during `azd pipeline config`.
 - [[5155]](https://github.com/Azure/azure-dev/pull/5155) Adds support for nested extension namespaces
@@ -352,7 +352,7 @@
 
 ### Features Added
 
-- [[4841]](https://github.com/Azure/azure-dev/pull/4841) `azd add` support for Azure AI Services models and Microsoft Foundry resources. Also add intelligent filtering support for location Bicep parameter based on AI model quota and usage info.
+- [[4841]](https://github.com/Azure/azure-dev/pull/4841) `azd add` support for Azure AI Services models and Azure AI Foundry resources. Also add intelligent filtering support for location Bicep parameter based on AI model quota and usage info.
 - [[4780]](https://github.com/Azure/azure-dev/pull/4780) `azd add` support for Azure Cosmos DB. Thanks @saragluna for the contribution!
 - [[4783]](https://github.com/Azure/azure-dev/pull/4783) `azd add` support for Azure Database for MySQL. Thanks @saragluna for the contribution!
 - [[4842]](https://github.com/Azure/azure-dev/pull/4842) `azd add` support for Azure Key Vault.

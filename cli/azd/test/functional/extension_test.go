@@ -51,6 +51,11 @@ func Test_CLI_Extension_Capabilities(t *testing.T) {
 	cliForExtBuild.WorkingDirectory = demoExtPath
 	cliForExtBuild.Env = append(cliForExtBuild.Env, os.Environ()...)
 
+	// Add azd binary directory to PATH so 'azd x publish' can find azd
+	azdDir := filepath.Dir(cliNoSession.AzdPath)
+	pathEnv := "PATH=" + azdDir + string(os.PathListSeparator) + os.Getenv("PATH")
+	cliForExtBuild.Env = append(cliForExtBuild.Env, pathEnv)
+
 	_, err = cliForExtBuild.RunCommand(ctx, "x", "build")
 	require.NoError(t, err)
 

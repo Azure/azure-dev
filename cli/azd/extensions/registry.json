@@ -640,8 +640,8 @@
     {
       "id": "azure.ai.agents",
       "namespace": "ai.agent",
-      "displayName": "Azure AI Agents (preview)",
-      "description": "Azure AI Foundry extension for the Foundry Agent Service. (Preview)",
+      "displayName": "Foundry agents (Preview)",
+      "description": "Extension for the Foundry Agent Service. (Preview)",
       "versions": [
         {
           "version": "0.0.6",
@@ -655,7 +655,7 @@
             {
               "name": "azure.ai.agent",
               "type": "service-target",
-              "description": "Deploys agents to AI Foundry container agent service."
+              "description": "Deploys agents to the Foundry Agent Service"
             }
           ],
           "usage": "azd ai agent \u003ccommand\u003e [options]",
@@ -729,7 +729,7 @@
             {
               "name": "azure.ai.agent",
               "type": "service-target",
-              "description": "Deploys agents to AI Foundry container agent service."
+              "description": "Deploys agents to the Foundry Agent Service."
             }
           ],
           "usage": "azd ai agent \u003ccommand\u003e [options]",
@@ -803,7 +803,7 @@
             {
               "name": "azure.ai.agent",
               "type": "service-target",
-              "description": "Deploys agents to AI Foundry container agent service."
+              "description": "Deploys agents to the Foundry Agent Service."
             }
           ],
           "usage": "azd ai agent \u003ccommand\u003e [options]",
@@ -877,7 +877,7 @@
             {
               "name": "azure.ai.agent",
               "type": "service-target",
-              "description": "Deploys agents to AI Foundry container agent service."
+              "description": "Deploys agents to the Foundry Agent Service."
             }
           ],
           "usage": "azd ai agent \u003ccommand\u003e [options]",

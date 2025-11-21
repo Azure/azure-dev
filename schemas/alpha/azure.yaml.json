@@ -1586,7 +1586,7 @@
         },
         "aiProjectResource": {
             "type": "object",
-            "description": "An Azure AI Foundry project with models.",
+            "description": "A Microsoft Foundry project with models.",
             "additionalProperties": false,
             "properties": {
                 "type": {

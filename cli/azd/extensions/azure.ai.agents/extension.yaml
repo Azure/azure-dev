@@ -1,8 +1,8 @@
 # yaml-language-server: $schema=../extension.schema.json
 id: azure.ai.agents
 namespace: ai.agent
-displayName: Azure AI Agents (preview)
-description: Microsoft Foundry extension for the Foundry Agent Service. (Preview)
+displayName: Foundry agents (Preview)
+description: Extension for the Foundry Agent Service. (Preview)
 usage: azd ai agent <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
 version: 0.1.1-preview
@@ -15,7 +15,7 @@ capabilities:
 providers:
   - name: azure.ai.agent
     type: service-target
-    description: Deploys agents to Microsoft Foundry container agent service.
+    description: Deploys agents to the Foundry Agent Service
 examples:
   - name: init
     description: Initialize a new AI agent project.

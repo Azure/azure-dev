@@ -1,5 +1,10 @@
 # Release History
 
+## 0.1.2-preview (2025-11-20)
+
+- Update extension name and descriptions
+- Update user facing text to use Microsoft Foundry
+
 ## 0.1.1-preview (2025-11-17)
 
 - Fix min and max replicas not being set during agent deployment

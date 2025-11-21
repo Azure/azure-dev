@@ -936,9 +936,14 @@ func (a *InitAction) downloadAgentYaml(
 			return nil, "", fmt.Errorf("marshaling agent manifest to YAML: %w", err)
 		}
 		content = manifestBytes
+	} else {
+		return nil, "", fmt.Errorf("unrecognized manifest pointer format: %s. Expected local file path, GitHub URL, or registry URL", manifestPointer)
 	}
 
 	// Parse and validate the YAML content against AgentManifest structure
+	if len(content) == 0 {
+		return nil, "", fmt.Errorf("manifest content is empty or could not be retrieved")
+	}
 	agentManifest, err := agent_yaml.LoadAndValidateAgentManifest(content)
 	if err != nil {
 		return nil, "", fmt.Errorf("AgentManifest %w", err)

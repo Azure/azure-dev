@@ -552,6 +552,8 @@ func pickOrCreateMSI(ctx context.Context,
 
 	taskList := ux.NewTaskList(nil)
 
+	// this gets assigned when the task list runs - it's either a brand new identity, or an
+	// existing identity.
 	var managedIdentity rm_armmsi.Identity
 
 	if shouldCreateIdentity {
@@ -654,23 +656,23 @@ func pickOrCreateMSI(ctx context.Context,
 		managedIdentity = msIdentities[*selectedOption.Value]
 	}
 
-	if err := taskList.Run(); err != nil {
-		return nil, err
-	}
-
 	roleNameStrings := strings.Join(roleNames, ", ")
-	parsedID, err := arm.ParseResourceID(*managedIdentity.ID)
-
-	if err != nil {
-		return nil, fmt.Errorf("invalid format for managed identity resource id: %w", err)
-	}
-
-	taskList = ux.NewTaskList(nil)
+	var resourceGroup string // filled out when we ensure role assignments
 
 	taskList.AddTask(ux.TaskOptions{
 		Title: fmt.Sprintf("Assigning roles (%s) to User Managed Identity (MSI)", roleNameStrings),
 		Action: func(spf ux.SetProgressFunc) (ux.TaskState, error) {
-			err := entraIDService.EnsureRoleAssignments(
+			// managedIdentity is filled out by an earlier step in this task list
+			// or chosen by the user when they say "use existing"
+			parsedID, err := arm.ParseResourceID(*managedIdentity.ID)
+
+			if err != nil {
+				return ux.Error, fmt.Errorf("invalid format for managed identity resource id: %w", err)
+			}
+
+			resourceGroup = parsedID.ResourceGroupName
+
+			err = entraIDService.EnsureRoleAssignments(
 				ctx,
 				subscriptionId,
 				roleNames,
@@ -697,7 +699,7 @@ func pickOrCreateMSI(ctx context.Context,
 
 	return &authConfiguration{
 		Name:           *managedIdentity.Name,
-		ResourceGroup:  parsedID.ResourceGroupName,
+		ResourceGroup:  resourceGroup,
 		TenantId:       *managedIdentity.Properties.TenantID,
 		SubscriptionId: subscriptionId,
 		ResourceID:     *managedIdentity.ID,

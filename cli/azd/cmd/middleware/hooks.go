@@ -14,27 +14,26 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
 type HooksMiddleware struct {
-	lazyEnvManager    *lazy.Lazy[environment.Manager]
-	lazyEnv           *lazy.Lazy[*environment.Environment]
-	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]
-	importManager     *project.ImportManager
-	commandRunner     exec.CommandRunner
-	console           input.Console
-	options           *Options
-	serviceLocator    ioc.ServiceLocator
+	envManager     environment.Manager
+	env            *environment.Environment
+	projectConfig  *project.ProjectConfig
+	importManager  *project.ImportManager
+	commandRunner  exec.CommandRunner
+	console        input.Console
+	options        *Options
+	serviceLocator ioc.ServiceLocator
 }
 
 // Creates a new instance of the Hooks middleware
 func NewHooksMiddleware(
-	lazyEnvManager *lazy.Lazy[environment.Manager],
-	lazyEnv *lazy.Lazy[*environment.Environment],
-	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
+	envManager environment.Manager,
+	env *environment.Environment,
+	projectConfig *project.ProjectConfig,
 	importManager *project.ImportManager,
 	commandRunner exec.CommandRunner,
 	console input.Console,
@@ -42,74 +41,65 @@ func NewHooksMiddleware(
 	serviceLocator ioc.ServiceLocator,
 ) Middleware {
 	return &HooksMiddleware{
-		lazyEnvManager:    lazyEnvManager,
-		lazyEnv:           lazyEnv,
-		lazyProjectConfig: lazyProjectConfig,
-		importManager:     importManager,
-		commandRunner:     commandRunner,
-		console:           console,
-		options:           options,
-		serviceLocator:    serviceLocator,
+		envManager:     envManager,
+		env:            env,
+		projectConfig:  projectConfig,
+		importManager:  importManager,
+		commandRunner:  commandRunner,
+		console:        console,
+		options:        options,
+		serviceLocator: serviceLocator,
 	}
 }
 
 // Runs the Hooks middleware
 func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
-	env, err := m.lazyEnv.GetValue()
-	if err != nil {
+	if m.env == nil {
 		log.Println("azd environment is not available, skipping all hook registrations.")
 		return next(ctx)
 	}
 
-	projectConfig, err := m.lazyProjectConfig.GetValue()
-	if err != nil || projectConfig == nil {
+	if m.projectConfig == nil {
 		log.Println("azd project is not available, skipping all hook registrations.")
 		return next(ctx)
 	}
 
 	// Validate hooks and display any warnings
 	if !m.options.IsChildAction(ctx) {
-		if err := m.validateHooks(ctx, projectConfig); err != nil {
+		if err := m.validateHooks(ctx, m.projectConfig); err != nil {
 			return nil, fmt.Errorf("failed validating hooks, %w", err)
 		}
 	}
 
-	if err := m.registerServiceHooks(ctx, env, projectConfig); err != nil {
+	if err := m.registerServiceHooks(ctx); err != nil {
 		return nil, fmt.Errorf("failed registering service hooks, %w", err)
 	}
 
-	return m.registerCommandHooks(ctx, env, projectConfig, next)
+	return m.registerCommandHooks(ctx, next)
 }
 
 // Register command level hooks for the executing cobra command & action
 // Invokes the middleware next function
 func (m *HooksMiddleware) registerCommandHooks(
 	ctx context.Context,
-	env *environment.Environment,
-	projectConfig *project.ProjectConfig,
 	next NextFn,
 ) (*actions.ActionResult, error) {
-	if len(projectConfig.Hooks) == 0 {
+	if len(m.projectConfig.Hooks) == 0 {
 		log.Println(
 			"azd project is not available or does not contain any command hooks, skipping command hook registrations.",
 		)
 		return next(ctx)
 	}
 
-	envManager, err := m.lazyEnvManager.GetValue()
-	if err != nil {
-		return nil, fmt.Errorf("failed getting environment manager, %w", err)
-	}
-
-	hooksManager := ext.NewHooksManager(projectConfig.Path, m.commandRunner)
+	hooksManager := ext.NewHooksManager(m.projectConfig.Path, m.commandRunner)
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager,
 		m.commandRunner,
-		envManager,
+		m.envManager,
 		m.console,
-		projectConfig.Path,
-		projectConfig.Hooks,
-		env,
+		m.projectConfig.Path,
+		m.projectConfig.Hooks,
+		m.env,
 		m.serviceLocator,
 	)
 
@@ -118,7 +108,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 	commandNames := []string{m.options.CommandPath}
 	commandNames = append(commandNames, m.options.Aliases...)
 
-	err = hooksRunner.Invoke(ctx, commandNames, func() error {
+	err := hooksRunner.Invoke(ctx, commandNames, func() error {
 		result, err := next(ctx)
 		if err != nil {
 			return err
@@ -137,17 +127,8 @@ func (m *HooksMiddleware) registerCommandHooks(
 
 // Registers event handlers for all services within the project configuration
 // Runs hooks for each matching event handler
-func (m *HooksMiddleware) registerServiceHooks(
-	ctx context.Context,
-	env *environment.Environment,
-	projectConfig *project.ProjectConfig,
-) error {
-	envManager, err := m.lazyEnvManager.GetValue()
-	if err != nil {
-		return fmt.Errorf("failed getting environment manager, %w", err)
-	}
-
-	stableServices, err := m.importManager.ServiceStable(ctx, projectConfig)
+func (m *HooksMiddleware) registerServiceHooks(ctx context.Context) error {
+	stableServices, err := m.importManager.ServiceStable(ctx, m.projectConfig)
 	if err != nil {
 		return fmt.Errorf("failed getting services: %w", err)
 	}
@@ -164,11 +145,11 @@ func (m *HooksMiddleware) registerServiceHooks(
 		serviceHooksRunner := ext.NewHooksRunner(
 			serviceHooksManager,
 			m.commandRunner,
-			envManager,
+			m.envManager,
 			m.console,
 			service.Path(),
 			service.Hooks,
-			env,
+			m.env,
 			m.serviceLocator,
 		)
 

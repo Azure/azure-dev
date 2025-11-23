@@ -4,14 +4,67 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
+
+// buildGateWriter wraps an io.Writer and monitors written content.
+// For Aspire/dotnet services, it closes a channel when it detects "Deploying services (azd deploy)"
+// in the output, which indicates that the AppHost and dotnet project have been successfully built
+// and the manifest has been generated. At this point, it's safe for other dotnet services to start
+// building in parallel.
+type buildGateWriter struct {
+	writer       io.Writer
+	gateChannel  chan struct{}
+	gateReleased *atomic.Bool
+	serviceName  string
+	releaseMu    sync.Mutex
+}
+
+func newBuildGateWriter(w io.Writer, gateChannel chan struct{}, gateReleased *atomic.Bool, serviceName string) *buildGateWriter {
+	return &buildGateWriter{
+		writer:       w,
+		gateChannel:  gateChannel,
+		gateReleased: gateReleased,
+		serviceName:  serviceName,
+	}
+}
+
+func (bw *buildGateWriter) Write(p []byte) (n int, err error) {
+	// Always write to the underlying writer first
+	n, err = bw.writer.Write(p)
+
+	// Check if we should release the gate
+	bw.releaseMu.Lock()
+	defer bw.releaseMu.Unlock()
+
+	if !bw.gateReleased.Load() {
+		content := string(p)
+		// Look for "Deploying services (azd deploy)" in the output
+		// This indicates the Aspire manifest has been generated and the dotnet build is complete
+		if strings.Contains(content, "Deploying services (azd deploy)") {
+			bw.gateReleased.Store(true)
+			close(bw.gateChannel)
+			color.New(color.FgCyan).Printf(
+				"  [%s] Build complete, releasing gate for other services\n",
+				bw.serviceName,
+			)
+		}
+	}
+
+	return n, err
+}
 
 func newUpCommand() *cobra.Command {
 	return &cobra.Command{
@@ -47,26 +100,7 @@ func newUpCommand() *cobra.Command {
 			// Get the workflow client
 			workflowClient := azdClient.Workflow()
 
-			// Step 1: Run package
-			color.New(color.FgCyan, color.Bold).Println("\n==> Running package...")
-			_, err = workflowClient.Run(ctx, &azdext.RunWorkflowRequest{
-				Workflow: &azdext.Workflow{
-					Name: "package",
-					Steps: []*azdext.WorkflowStep{
-						{
-							Command: &azdext.WorkflowCommand{
-								Args: []string{"package"},
-							},
-						},
-					},
-				},
-			})
-			if err != nil {
-				return fmt.Errorf("failed to run package: %w", err)
-			}
-			fmt.Println("Package completed")
-
-			// Step 2: Run provision
+			// Step 1: Run provision
 			color.New(color.FgCyan, color.Bold).Println("\n==> Running provision...")
 			_, err = workflowClient.Run(ctx, &azdext.RunWorkflowRequest{
 				Workflow: &azdext.Workflow{
@@ -85,45 +119,150 @@ func newUpCommand() *cobra.Command {
 			}
 			fmt.Println("Provision completed")
 
-			// Step 3: Run deploy concurrently for each service
+			// Step 2: Run deploy concurrently for each service
+			// Strategy: For Aspire services (containerapp-dotnet host with dotnet language),
+			// we need to ensure one service builds first to generate the manifest and compile
+			// shared dependencies. We pick the first Aspire service and wait until it shows
+			// "Deploying services (azd deploy)" which indicates the AppHost has been built
+			// and manifest generated. After that, all other services can deploy in parallel safely.
 			color.New(color.FgCyan, color.Bold).Printf("\n==> Deploying %d services concurrently...\n", len(services))
+
+			// Create logs directory with unique timestamp
+			timestamp := time.Now().Format("20060102-150405")
+			logsDir := filepath.Join(".azure", "logs", "deploy", timestamp)
+			if err := os.MkdirAll(logsDir, 0755); err != nil {
+				return fmt.Errorf("failed to create logs directory: %w", err)
+			}
 
 			var wg sync.WaitGroup
 			errChan := make(chan error, len(services))
+			var activeDeployments atomic.Int32
 
-			for serviceName := range services {
+			// Build gate for Aspire services (containerapp-dotnet host + dotnet language)
+			// The first Aspire service will close this channel when "Deploying services (azd deploy)"
+			// appears, signaling that other Aspire services can start building
+			buildGateReleased := make(chan struct{})
+
+			// Track if we need to use the build gate (only for first Aspire service)
+			firstAspireService := true
+			var firstAspireMu sync.Mutex
+
+			for serviceName, service := range services {
 				wg.Add(1)
-				go func(svcName string) {
+				activeDeployments.Add(1)
+
+				go func(svcName string, svc *azdext.ServiceConfig) {
 					defer wg.Done()
+					defer activeDeployments.Add(-1)
 
-					// Create a new independent context for each deployment
-					// This prevents context cancellation from affecting other concurrent deployments
-					deployCtx := azdext.WithAccessToken(context.Background())
+					// Create unique log file for this deployment
+					logFileName := fmt.Sprintf("deploy-%s.log", svcName)
+					logFilePath := filepath.Join(logsDir, logFileName)
+					absLogPath, _ := filepath.Abs(logFilePath)
 
-					color.New(color.FgYellow).Printf("  [%s] Starting deployment...\n", svcName)
-
-					_, err := workflowClient.Run(deployCtx, &azdext.RunWorkflowRequest{
-						Workflow: &azdext.Workflow{
-							Name: fmt.Sprintf("deploy-%s", svcName),
-							Steps: []*azdext.WorkflowStep{
-								{
-									Command: &azdext.WorkflowCommand{
-										Args: []string{"deploy", svcName},
-									},
-								},
-							},
-						},
-					})
-
+					logFile, err := os.Create(logFilePath)
 					if err != nil {
-						color.New(color.FgRed).Printf("  [%s] Deployment failed: %v\n", svcName, err)
+						errChan <- fmt.Errorf("failed to create log file for service %s: %w", svcName, err)
+						return
+					}
+					defer logFile.Close()
+
+					// Determine if this is an Aspire service (containerapp-dotnet host + dotnet language)
+					isAspireService := (svc.Host == "containerapp-dotnet" || svc.Host == "containerapp") &&
+						(svc.Language == "dotnet" || svc.Language == "csharp")
+
+					// Track whether this goroutine is the first Aspire service
+					isFirstAspire := false
+					gateReleased := &atomic.Bool{}
+
+					// If Aspire service, check if this is the first one
+					if isAspireService {
+						firstAspireMu.Lock()
+						if firstAspireService {
+							isFirstAspire = true
+							firstAspireService = false
+							firstAspireMu.Unlock()
+
+							color.New(color.FgYellow).Printf(
+								"  [%s] First Aspire service, waiting for build completion... (logs: %s)\n",
+								svcName,
+								absLogPath,
+							)
+						} else {
+							firstAspireMu.Unlock()
+
+							color.New(color.FgYellow).Printf(
+								"  [%s] Waiting for first Aspire service to complete build...\n",
+								svcName,
+							)
+							// Wait for the build gate to be released
+							<-buildGateReleased
+
+							color.New(color.FgYellow).Printf(
+								"  [%s] Deploying... (logs: %s)\n",
+								svcName,
+								absLogPath,
+							)
+						}
+					} else {
+						color.New(color.FgYellow).Printf(
+							"  [%s] Deploying... (logs: %s)\n",
+							svcName,
+							absLogPath,
+						)
+					}
+
+					// Ensure gate is released when function exits (if still held)
+					defer func() {
+						if isFirstAspire && !gateReleased.Load() {
+							gateReleased.Store(true)
+							close(buildGateReleased)
+							color.New(color.FgCyan).Printf(
+								"  [%s] Build gate released (cleanup)\n",
+								svcName,
+							)
+						}
+					}()
+
+					// Create output writer with build gate monitoring for first Aspire service
+					var outputWriter io.Writer
+					if isFirstAspire {
+						// Use build gate writer that monitors output and releases gate
+						outputWriter = newBuildGateWriter(logFile, buildGateReleased, gateReleased, svcName)
+					} else {
+						outputWriter = logFile
+					}
+
+					// Run azd deploy as a subprocess to capture output
+					cmd := exec.Command("azd", "deploy", svcName)
+					cmd.Stdout = outputWriter
+					cmd.Stderr = outputWriter
+					cmd.Dir, _ = os.Getwd()
+					// Disable ANSI color escape sequences in logs
+					// NO_COLOR is respected by the fatih/color library
+					// AZD_DEBUG_FORCE_NO_TTY ensures terminal detection returns false
+					cmd.Env = append(os.Environ(), "NO_COLOR=1", "AZD_FORCE_TTY=false")
+
+					err = cmd.Run()
+					if err != nil {
+						color.New(color.FgRed).Printf(
+							"  [%s] Failed (logs: %s)\n",
+							svcName,
+							absLogPath,
+						)
 						errChan <- fmt.Errorf("failed to deploy service %s: %w", svcName, err)
 						return
 					}
 
-					color.New(color.FgGreen).Printf("  [%s] Deployment completed successfully!\n", svcName)
-				}(serviceName)
-			} // Wait for all deployments to complete
+					color.New(color.FgGreen).Printf(
+						"  [%s] Completed (logs: %s)\n",
+						svcName,
+						absLogPath,
+					)
+				}(serviceName, service)
+			}
+
+			// Wait for all deployments to complete
 			wg.Wait()
 			close(errChan)
 

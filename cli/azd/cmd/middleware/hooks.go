@@ -54,16 +54,6 @@ func NewHooksMiddleware(
 
 // Runs the Hooks middleware
 func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
-	if m.env == nil {
-		log.Println("azd environment is not available, skipping all hook registrations.")
-		return next(ctx)
-	}
-
-	if m.projectConfig == nil {
-		log.Println("azd project is not available, skipping all hook registrations.")
-		return next(ctx)
-	}
-
 	// Validate hooks and display any warnings
 	if !m.options.IsChildAction(ctx) {
 		if err := m.validateHooks(ctx, m.projectConfig); err != nil {

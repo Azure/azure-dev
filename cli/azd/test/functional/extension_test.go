@@ -6,6 +6,7 @@ package cli_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
@@ -19,6 +20,14 @@ import (
 // 2. The extension-capabilities sample project can run through the full azd up workflow
 // 3. The extension's framework service manager handles restore, build, package operations correctly
 func Test_CLI_Extension_Capabilities(t *testing.T) {
+	// Skip on Windows and macOS: Docker configuration differences
+	// Windows runs Docker in Windows container mode which requires Windows-specific base images
+	// macOS and Windows CI environments may have Docker configuration incompatibilities
+	// This test is designed for Linux environments only
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+		t.Skipf("Skipping test on %s - only supported on Linux", runtime.GOOS)
+	}
+
 	// Skip in playback mode: extensions make Azure calls through gRPC callbacks that are difficult to record
 	// The extension workflow calls back into azd commands which would need complex recording setup
 	session := recording.Start(t)

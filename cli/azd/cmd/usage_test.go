@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -24,6 +25,16 @@ import (
 func TestUsage(t *testing.T) {
 	// disable rich formatting output
 	t.Setenv("TERM", "dumb")
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+
+	cli := azdcli.NewCLI(t)
+
+	addLocalRegistrySource(t, cli)
+	t.Cleanup(func() { removeLocalExtensionSource(t, cli) })
+
+	installRegistryExtensions(t, cli)
+	t.Cleanup(func() { uninstallAllExtensions(t, cli) })
 	root := NewRootCmd(false, nil, nil)
 
 	usageSnapshot(t, root)

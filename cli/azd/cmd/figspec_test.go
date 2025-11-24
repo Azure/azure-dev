@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/figspec"
+	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
 )
@@ -22,6 +23,17 @@ import (
 // For Pwsh,
 // $env:UPDATE_SNAPSHOTS='true'; go test ./cmd -run TestFigSpec; $env:UPDATE_SNAPSHOTS=$null
 func TestFigSpec(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+
+	cli := azdcli.NewCLI(t)
+
+	addLocalRegistrySource(t, cli)
+	t.Cleanup(func() { removeLocalExtensionSource(t, cli) })
+
+	installRegistryExtensions(t, cli)
+	t.Cleanup(func() { uninstallAllExtensions(t, cli) })
+
 	root := NewRootCmd(false, nil, nil)
 
 	builder := figspec.NewSpecBuilder(false)

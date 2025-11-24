@@ -53,7 +53,6 @@ const (
 	acaIngressSchemaHttp     string = "http"
 	acaIngressSchemaHttps    string = "https"
 	acaIngressTransportHttp2 string = "http2"
-	acaIngressTransportHttp  string = "http"
 	acaDefaultHttpPort       string = "80"
 	acaDefaultHttpsPort      string = "443"
 	// a target port that is resolved at deployment time
@@ -70,15 +69,13 @@ func validateBindings(bindings custommaps.WithOrder[Binding]) error {
 			return fmt.Errorf("binding %q is empty", name)
 		}
 
-		switch binding.Scheme {
-		case acaIngressSchemaTcp:
+		// TCP scheme requires a target port to be specified
+		// Note: We check for TCP specifically since other schemes (http, https, redis, postgres, etc.)
+		// can work without explicit target ports in some scenarios
+		if binding.Scheme == acaIngressSchemaTcp {
 			if binding.TargetPort == nil {
 				return fmt.Errorf("binding %q has scheme %q but no container port", name, binding.Scheme)
 			}
-		case acaIngressSchemaHttp:
-		case acaIngressSchemaHttps:
-		default:
-			return fmt.Errorf("binding %q has invalid scheme %q", name, binding.Scheme)
 		}
 	}
 

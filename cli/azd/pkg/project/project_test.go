@@ -515,18 +515,18 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		// (defaults are only applied when needed, not stored in the config)
 		assert.Equal(t, "", loadedProject.Infra.Path)
 		assert.Equal(t, "", loadedProject.Infra.Module)
-		assert.Equal(t, provisioning.ProviderKind(""), loadedProject.Infra.Provider)
+		assert.Equal(t, "", loadedProject.Infra.Provider)
 	})
 
 	t.Run("CustomValuesAreWritten", func(t *testing.T) {
 		// Create a project config with custom infra settings
 		projectConfig := &ProjectConfig{
 			Name: "test-project",
-			Infra: provisioning.Options{
+			Infra: InfraConfigFromProvisioningOptions(provisioning.Options{
 				Path:     "custom-infra",
 				Module:   "custom-main",
 				Provider: provisioning.Terraform,
-			},
+			}),
 		}
 
 		// Create a temporary file for testing
@@ -557,18 +557,18 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		assert.Equal(t, "test-project", loadedProject.Name)
 		assert.Equal(t, "custom-infra", loadedProject.Infra.Path)
 		assert.Equal(t, "custom-main", loadedProject.Infra.Module)
-		assert.Equal(t, provisioning.Terraform, loadedProject.Infra.Provider)
+		assert.Equal(t, string(provisioning.Terraform), loadedProject.Infra.Provider)
 	})
 
 	t.Run("PartialCustomValuesWritten", func(t *testing.T) {
 		// Create a project config with only some custom infra settings
 		projectConfig := &ProjectConfig{
 			Name: "test-project",
-			Infra: provisioning.Options{
+			Infra: InfraConfigFromProvisioningOptions(provisioning.Options{
 				Path:     "my-infra", // Only path and provider are custom, module should use default
 				Provider: provisioning.Terraform,
 				// Module left empty - should use default at runtime
-			},
+			}),
 		}
 
 		// Create a temporary file for testing
@@ -597,7 +597,7 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 
 		// Verify the custom values are preserved and module is empty (will use default at runtime)
 		assert.Equal(t, "my-infra", loadedProject.Infra.Path)
-		assert.Equal(t, provisioning.Terraform, loadedProject.Infra.Provider)
+		assert.Equal(t, string(provisioning.Terraform), loadedProject.Infra.Provider)
 		assert.Equal(t, "", loadedProject.Infra.Module) // Empty in config, but defaults applied when needed
 	})
 
@@ -605,10 +605,10 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		// Create a project config with only provider set to non-default
 		projectConfig := &ProjectConfig{
 			Name: "test-project",
-			Infra: provisioning.Options{
+			Infra: InfraConfigFromProvisioningOptions(provisioning.Options{
 				Provider: provisioning.Terraform,
 				// Path and Module left empty - should use defaults at runtime
-			},
+			}),
 		}
 
 		// Create a temporary file for testing
@@ -636,7 +636,7 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify the custom provider is preserved and path/module are empty (will use defaults at runtime)
-		assert.Equal(t, provisioning.Terraform, loadedProject.Infra.Provider)
+		assert.Equal(t, string(provisioning.Terraform), loadedProject.Infra.Provider)
 		assert.Equal(t, "", loadedProject.Infra.Path)   // Empty in config, but defaults applied when needed
 		assert.Equal(t, "", loadedProject.Infra.Module) // Empty in config, but defaults applied when needed
 	})
@@ -645,7 +645,7 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		// Create a project config with layers but default infra values
 		projectConfig := &ProjectConfig{
 			Name: "test-project",
-			Infra: provisioning.Options{
+			Infra: InfraConfigFromProvisioningOptions(provisioning.Options{
 				Layers: []provisioning.Options{
 					{
 						Name:   "networking",
@@ -661,7 +661,7 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 					},
 				},
 				// Root infra settings left to defaults
-			},
+			}),
 		}
 
 		// Create a temporary file for testing
@@ -705,16 +705,16 @@ func TestInfraDefaultsNotSavedToYaml(t *testing.T) {
 		assert.Equal(t, "networking", loadedProject.Infra.Layers[0].Name)
 		assert.Equal(t, "infra/networking", loadedProject.Infra.Layers[0].Path)
 		assert.Equal(t, "network", loadedProject.Infra.Layers[0].Module)
-		assert.Equal(t, provisioning.ProviderKind(""), loadedProject.Infra.Layers[0].Provider) // Default not stored (empty)
+		assert.Equal(t, "", loadedProject.Infra.Layers[0].Provider) // Default not stored (empty)
 
 		assert.Equal(t, "application", loadedProject.Infra.Layers[1].Name)
 		assert.Equal(t, "infra/app", loadedProject.Infra.Layers[1].Path)
 		assert.Equal(t, "app", loadedProject.Infra.Layers[1].Module)
-		assert.Equal(t, provisioning.Terraform, loadedProject.Infra.Layers[1].Provider) // Custom value preserved
+		assert.Equal(t, string(provisioning.Terraform), loadedProject.Infra.Layers[1].Provider) // Custom value preserved
 
 		// Verify root infra values are empty (will use defaults at runtime)
 		assert.Equal(t, "", loadedProject.Infra.Path)
 		assert.Equal(t, "", loadedProject.Infra.Module)
-		assert.Equal(t, provisioning.ProviderKind(""), loadedProject.Infra.Provider)
+		assert.Equal(t, "", loadedProject.Infra.Provider)
 	})
 }

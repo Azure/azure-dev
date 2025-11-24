@@ -86,7 +86,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 ) (*actions.ActionResult, error) {
 	if len(m.projectConfig.Hooks) == 0 {
 		log.Println(
-			"azd project is not available or does not contain any command hooks, skipping command hook registrations.",
+			"azd project does not contain any command hooks, skipping command hook registrations.",
 		)
 		return next(ctx)
 	}

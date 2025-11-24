@@ -61,14 +61,26 @@ var (
 	//   - On Windows systems: The Windows version 10.x.x
 	//   - On Unix-based systems: The release portion of uname. https://en.wikipedia.org/wiki/Uname#Examples
 	//   - On MacOS: The MacOS version. For example: 12.5.1 for macOS Monterey
-	OSVersionKey = semconv.OSVersionKey // os.version
+	OSVersionKey = AttributeKey{
+		Key:            semconv.OSVersionKey, // os.version
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 
 	// The CPU architecture the host system is running on.
-	HostArchKey = semconv.HostArchKey // host.arch
+	HostArchKey = AttributeKey{
+		Key:            semconv.HostArchKey, // host.arch
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 
 	// The version of the runtime of this process, as returned by the runtime without
 	// modification.
-	ProcessRuntimeVersionKey = semconv.ProcessRuntimeVersionKey // process.runtime.version
+	ProcessRuntimeVersionKey = AttributeKey{
+		Key:            semconv.ProcessRuntimeVersionKey, // process.runtime.version
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 
 	// A unique ID associated to the machine the application is installed on.
 	//
@@ -77,6 +89,7 @@ var (
 	MachineIdKey = AttributeKey{
 		Key:            attribute.Key("machine.id"),
 		Classification: EndUserPseudonymizedInformation,
+		Endpoint:       "MacAddressHash",
 		Purpose:        BusinessInsight,
 	}
 
@@ -84,6 +97,7 @@ var (
 	DevDeviceIdKey = AttributeKey{
 		Key:            attribute.Key("machine.devdeviceid"),
 		Classification: EndUserPseudonymizedInformation,
+		Endpoint:       "SQMUserId",
 		Purpose:        BusinessInsight,
 	}
 
@@ -140,6 +154,7 @@ var (
 		Key:            attribute.Key("ad.subscription.id"),
 		Classification: OrganizationalIdentifiableInformation,
 		Purpose:        PerformanceAndHealth,
+		Endpoint:       "AzureSubscriptionId",
 	}
 )
 
@@ -231,6 +246,7 @@ var (
 		Key:            attribute.Key("cmd.args.count"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
 	}
 	// The command invocation entrypoint.
 	//
@@ -342,6 +358,7 @@ var (
 		Key:            attribute.Key("service.statusCode"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
 	}
 
 	// Method of a request to the service.
@@ -358,6 +375,7 @@ var (
 		Key:            attribute.Key("service.errorCode"),
 		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
 	}
 
 	// Correlation ID for a request to the service.
@@ -464,11 +482,13 @@ var (
 		Key:            attribute.Key("appinit.modify_add.count"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
 	}
 	AppInitModifyRemoveCount = AttributeKey{
 		Key:            attribute.Key("appinit.modify_remove.count"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
 	}
 
 	// The last step recorded during the app init process.
@@ -485,21 +505,35 @@ var (
 		Key:            attribute.Key("container.remoteBuild.count"),
 		Classification: SystemMetadata,
 		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
 	}
 )
 
 // JSON-RPC related fields
-const (
+var (
 	// Logical name of the method from the RPC interface
 	// perspective, which can be different from the name of any implementing
 	// method/function. See semconv.RPCMethodKey.
-	RpcMethod = semconv.RPCMethodKey
+	RpcMethod = AttributeKey{
+		Key:            semconv.RPCMethodKey,
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 
 	// `id` property of JSON-RPC request or response.
-	JsonRpcId = semconv.RPCJSONRPCRequestIDKey
+	JsonRpcId = AttributeKey{
+		Key:            semconv.RPCJSONRPCRequestIDKey,
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 
 	// `error_code` property of JSON-RPC request or response. Type: int.
-	JsonRpcErrorCode = semconv.RPCJSONRPCErrorCodeKey
+	JsonRpcErrorCode = AttributeKey{
+		Key:            semconv.RPCJSONRPCErrorCodeKey,
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
 )
 
 // Agent-troubleshooting related fields

@@ -1,5 +1,5 @@
 
-Extension for the Foundry Agent Service.
+Extension for the Foundry Agent Service. (Preview)
 
 Usage
   azd ai agent [flags]

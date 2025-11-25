@@ -2,6 +2,7 @@ import: ../../../.vscode/cspell.global.yaml
 words:
   - azcloud
   - azdext
+  - azdxignore
   - azurefd
   - azcontainerregistry
   - backoff

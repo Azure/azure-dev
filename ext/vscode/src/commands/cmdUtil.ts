@@ -10,7 +10,7 @@ import { createAzureDevCli } from '../utils/azureDevCli';
 import { execAsync } from '../utils/execAsync';
 import { fileExists } from '../utils/fileUtils';
 
-const AzureYamlGlobPattern: vscode.GlobPattern = '**/azure.{yaml,yml}';
+const AzureYamlGlobPattern: vscode.GlobPattern = '**/[aA][zZ][uU][rR][eE].{[yY][aA][mM][lL],[yY][mM][lL]}';
 
 // If the command was invoked with a specific file context, use the file context as the working directory for running Azure developer CLI commands.
 // Otherwise search the workspace for "azure.yaml" or "azure.yml" files. If only one is found, use it (i.e. its folder). If more than one is found, ask the user which one to use.

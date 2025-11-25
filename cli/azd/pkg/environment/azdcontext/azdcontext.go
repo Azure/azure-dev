@@ -36,6 +36,9 @@ func (c *AzdContext) SetProjectDirectory(dir string) {
 	c.projectDirectory = dir
 }
 
+// ProjectPath returns the path to the project file. If the context was created by searching
+// for a project file, returns the actual file that was found. Otherwise, returns the default
+// project file name joined with the project directory (useful when creating new projects).
 func (c *AzdContext) ProjectPath() string {
 	if c.projectFilePath != "" {
 		return c.projectFilePath

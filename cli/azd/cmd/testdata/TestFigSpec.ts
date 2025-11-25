@@ -1506,10 +1506,6 @@ const completionSpec: Fig.Spec = {
 			description: 'Print the version number of Azure Developer CLI.',
 		},
 		{
-			name: ['x'],
-			description: 'This extension provides a set of tools for AZD extension developers to test and debug their extensions.',
-		},
-		{
 			name: ['help'],
 			description: 'Help about any command',
 			subcommands: [

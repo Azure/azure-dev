@@ -20,8 +20,12 @@ const DotEnvFileName = ".env"
 const ConfigFileName = "config.json"
 const ConfigFileVersion = 1
 
+// ProjectFileNames lists all valid project file names, in order of preference
+var ProjectFileNames = []string{"azure.yaml", "azure.yml"}
+
 type AzdContext struct {
 	projectDirectory string
+	projectFilePath  string
 }
 
 func (c *AzdContext) ProjectDirectory() string {
@@ -33,6 +37,9 @@ func (c *AzdContext) SetProjectDirectory(dir string) {
 }
 
 func (c *AzdContext) ProjectPath() string {
+	if c.projectFilePath != "" {
+		return c.projectFilePath
+	}
 	return filepath.Join(c.ProjectDirectory(), ProjectFileName)
 }
 
@@ -129,26 +136,35 @@ func NewAzdContextFromWd(wd string) (*AzdContext, error) {
 		return nil, fmt.Errorf("resolving path: %w", err)
 	}
 
+	var foundProjectFilePath string
 	for {
-		projectFilePath := filepath.Join(searchDir, ProjectFileName)
-		stat, err := os.Stat(projectFilePath)
-		if os.IsNotExist(err) || (err == nil && stat.IsDir()) {
-			parent := filepath.Dir(searchDir)
-			if parent == searchDir {
-				return nil, ErrNoProject
+		// Try all valid project file names in order of preference
+		for _, fileName := range ProjectFileNames {
+			projectFilePath := filepath.Join(searchDir, fileName)
+			stat, err := os.Stat(projectFilePath)
+			if err == nil && !stat.IsDir() {
+				// We found a valid project file
+				foundProjectFilePath = projectFilePath
+				break
 			}
-			searchDir = parent
-		} else if err == nil {
-			// We found our azure.yaml file, and searchDir is the directory
-			// that contains it.
-			break
-		} else {
-			return nil, fmt.Errorf("searching for project file: %w", err)
 		}
+
+		if foundProjectFilePath != "" {
+			// We found our project file, and searchDir is the directory that contains it.
+			break
+		}
+
+		// No project file found in this directory, move up to parent
+		parent := filepath.Dir(searchDir)
+		if parent == searchDir {
+			return nil, ErrNoProject
+		}
+		searchDir = parent
 	}
 
 	return &AzdContext{
 		projectDirectory: searchDir,
+		projectFilePath:  foundProjectFilePath,
 	}, nil
 }
 

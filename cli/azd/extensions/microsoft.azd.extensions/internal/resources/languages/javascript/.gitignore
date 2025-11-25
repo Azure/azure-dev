@@ -1,0 +1,24 @@
+# Build output directory
+bin/
+
+# Generated protobuf files
+generated/
+
+# Node modules
+node_modules/
+
+# npm package lock file (uncomment if you want to ignore it)
+# package-lock.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# env file
+.env

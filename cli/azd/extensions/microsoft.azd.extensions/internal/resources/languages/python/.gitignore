@@ -1,0 +1,34 @@
+# Build output directory
+bin/
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+
+# Generated protobuf files
+generated_proto/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# env file
+.env

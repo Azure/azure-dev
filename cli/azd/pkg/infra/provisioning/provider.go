@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"dario.cat/mergo"
 )
 
 type ProviderKind string
@@ -32,6 +34,30 @@ type Options struct {
 
 	// Provisioning options for each individually defined layer.
 	Layers []Options `yaml:"layers,omitempty"`
+}
+
+// GetWithDefaults merges the provided infra options with the default provisioning options
+func (o Options) GetWithDefaults(other ...Options) (Options, error) {
+	mergedOptions := Options{}
+
+	// Merge in the provided infra options first
+	if err := mergo.Merge(&mergedOptions, o); err != nil {
+		return Options{}, fmt.Errorf("merging infra options: %w", err)
+	}
+
+	// Merge in any other provided options
+	for _, opt := range other {
+		if err := mergo.Merge(&mergedOptions, opt); err != nil {
+			return Options{}, fmt.Errorf("merging other options: %w", err)
+		}
+	}
+
+	// Finally, merge in the default provisioning options
+	if err := mergo.Merge(&mergedOptions, defaultOptions); err != nil {
+		return Options{}, fmt.Errorf("merging default infra options: %w", err)
+	}
+
+	return mergedOptions, nil
 }
 
 // GetLayers return the provisioning layers defined.

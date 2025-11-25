@@ -20,7 +20,6 @@ import (
 	"strings"
 	"time"
 
-	"dario.cat/mergo"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
@@ -46,13 +45,6 @@ import (
 )
 
 type bicepFileMode int
-
-var (
-	defaultOptions = provisioning.Options{
-		Module: "main",
-		Path:   "infra",
-	}
-)
 
 const (
 	bicepMode bicepFileMode = iota
@@ -96,33 +88,34 @@ func (p *BicepProvider) Name() string {
 // Initialize initializes provider state from the options.
 // It also calls EnsureEnv, which ensures the client-side state is ready for provisioning.
 func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opt provisioning.Options) error {
-	mergedOptions := provisioning.Options{}
-	mergo.Merge(&mergedOptions, opt)
-	mergo.Merge(&mergedOptions, defaultOptions)
-
-	if !filepath.IsAbs(mergedOptions.Path) {
-		mergedOptions.Path = filepath.Join(projectPath, mergedOptions.Path)
+	infraOptions, err := opt.GetWithDefaults()
+	if err != nil {
+		return err
 	}
 
-	bicepparam := mergedOptions.Module + ".bicepparam"
-	bicepFile := mergedOptions.Module + ".bicep"
+	if !filepath.IsAbs(infraOptions.Path) {
+		infraOptions.Path = filepath.Join(projectPath, infraOptions.Path)
+	}
+
+	bicepparam := infraOptions.Module + ".bicepparam"
+	bicepFile := infraOptions.Module + ".bicep"
 
 	// Check if there's a <moduleName>.bicepparam first. It will be preferred over a <moduleName>.bicep
-	if _, err := os.Stat(filepath.Join(mergedOptions.Path, bicepparam)); err == nil {
-		p.path = filepath.Join(mergedOptions.Path, bicepparam)
+	if _, err := os.Stat(filepath.Join(infraOptions.Path, bicepparam)); err == nil {
+		p.path = filepath.Join(infraOptions.Path, bicepparam)
 		p.mode = bicepparamMode
 	} else {
-		p.path = filepath.Join(mergedOptions.Path, bicepFile)
+		p.path = filepath.Join(infraOptions.Path, bicepFile)
 		p.mode = bicepMode
 	}
 
 	p.projectPath = projectPath
-	p.layer = mergedOptions.Name
-	p.options = mergedOptions
-	p.ignoreDeploymentState = mergedOptions.IgnoreDeploymentState
+	p.layer = infraOptions.Name
+	p.options = infraOptions
+	p.ignoreDeploymentState = infraOptions.IgnoreDeploymentState
 
 	p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
-	err := p.EnsureEnv(ctx)
+	err = p.EnsureEnv(ctx)
 	p.console.StopSpinner(ctx, "", input.Step)
 	return err
 }

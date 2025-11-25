@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	localSourceName = "figspec-local"
+	localSourceName = "local"
 )
 
 // extensionListEntry represents an extension entry returned from the extension list command.

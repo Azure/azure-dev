@@ -48,7 +48,8 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
 	err := copySample(dir, "webapp")
 	require.NoError(t, err, "failed expanding sample")
@@ -158,12 +159,17 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
-	envName := randomEnvName()
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-	cli := azdcli.NewCLI(t)
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 
 	err := copySample(dir, "funcapp")
 	require.NoError(t, err, "failed expanding sample")
@@ -187,6 +193,10 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	var envValues map[string]interface{}
 	err = json.Unmarshal([]byte(result.Stdout), &envValues)
 	require.NoError(t, err)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = envValues[environment.SubscriptionIdEnvVarName].(string)
+	}
 
 	url := fmt.Sprintf("%s/api/httptrigger", envValues["AZURE_FUNCTION_URI"])
 

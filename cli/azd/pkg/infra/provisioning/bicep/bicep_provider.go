@@ -735,15 +735,30 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 
 	var changes []*provisioning.DeploymentPreviewChange
 	for _, change := range deployPreviewResult.Properties.Changes {
-		resourceAfter := change.After.(map[string]interface{})
+		// Use After state if available (e.g., Create, Modify), otherwise use Before state (e.g., Delete).
+		// ARM returns nil for After when a resource is being deleted and nil for Before when created.
+		var resourceState map[string]interface{}
+		if change.After != nil {
+			resourceState, _ = change.After.(map[string]interface{})
+		}
+		if resourceState == nil && change.Before != nil {
+			resourceState, _ = change.Before.(map[string]interface{})
+		}
+		if resourceState == nil {
+			// Skip changes with no resource state information
+			continue
+		}
+
+		resourceType, _ := resourceState["type"].(string)
+		resourceName, _ := resourceState["name"].(string)
 
 		changes = append(changes, &provisioning.DeploymentPreviewChange{
 			ChangeType: provisioning.ChangeType(*change.ChangeType),
 			ResourceId: provisioning.Resource{
 				Id: *change.ResourceID,
 			},
-			ResourceType: resourceAfter["type"].(string),
-			Name:         resourceAfter["name"].(string),
+			ResourceType: resourceType,
+			Name:         resourceName,
 		})
 	}
 

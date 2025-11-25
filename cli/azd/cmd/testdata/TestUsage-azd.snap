@@ -6,36 +6,42 @@ Usage
 
 Commands
   Getting started
-    init      	: Initialize a new application.
-    up        	: Provision and deploy your project to Azure with a single command.
+    init        	: Initialize a new application.
+    up          	: Provision and deploy your project to Azure with a single command.
 
   Create and manage Azure resources
-    auth      	: Authenticate with Azure.
-    deploy    	: Deploy your project code to Azure.
-    down      	: Delete your project's Azure resources.
-    provision 	: Provision Azure resources for your project.
-    publish   	: Publish a service to a container registry.
+    auth        	: Authenticate with Azure.
+    deploy      	: Deploy your project code to Azure.
+    down        	: Delete your project's Azure resources.
+    provision   	: Provision Azure resources for your project.
+    publish     	: Publish a service to a container registry.
 
   Manage and show settings
-    completion	: Generate shell completion scripts.
-    config    	: Manage azd configurations (ex: default Azure subscription, location).
-    env       	: Manage environments (ex: default environment, environment variables).
-    show      	: Display information about your project and its resources.
-    version   	: Print the version number of Azure Developer CLI.
+    completion  	: Generate shell completion scripts.
+    config      	: Manage azd configurations (ex: default Azure subscription, location).
+    env         	: Manage environments (ex: default environment, environment variables).
+    show        	: Display information about your project and its resources.
+    version     	: Print the version number of Azure Developer CLI.
 
   Beta commands
-    add       	: Add a component to your project.
-    extension 	: Manage azd extensions.
-    hooks     	: Develop, test and run hooks for a project.
-    infra     	: Manage your Infrastructure as Code (IaC).
-    monitor   	: Monitor a deployed project.
-    package   	: Packages the project's code to be deployed to Azure.
-    pipeline  	: Manage and configure your deployment pipelines.
-    restore   	: Restores the project's dependencies.
-    template  	: Find and view template details.
+    add         	: Add a component to your project.
+    extension   	: Manage azd extensions.
+    hooks       	: Develop, test and run hooks for a project.
+    infra       	: Manage your Infrastructure as Code (IaC).
+    monitor     	: Monitor a deployed project.
+    package     	: Packages the project's code to be deployed to Azure.
+    pipeline    	: Manage and configure your deployment pipelines.
+    restore     	: Restores the project's dependencies.
+    template    	: Find and view template details.
 
   Enabled alpha commands
-    mcp       	: Manage Model Context Protocol (MCP) server. (Alpha)
+    mcp         	: Manage Model Context Protocol (MCP) server. (Alpha)
+
+  Enabled extensions commands 
+    ai          	: Extension for the Foundry Agent Service. (Preview)
+    coding-agent	: This extension configures GitHub Copilot Coding Agent access to Azure
+    demo        	: This extension provides examples of the AZD extension framework.
+    x           	: This extension provides a set of tools for AZD extension developers to test and debug their extensions.
 
 Flags
     -C, --cwd string 	: Sets the current working directory.

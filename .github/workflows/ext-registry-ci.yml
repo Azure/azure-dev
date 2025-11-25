@@ -1,0 +1,50 @@
+name: ext-registry-ci
+
+on:
+  pull_request:
+    paths:
+      - "cli/azd/extensions/registry.json"
+      - ".github/workflows/ext-registry-ci.yml"
+    branches: [main]
+
+# If two events are triggered within a short time in the same PR, cancel the run of the oldest event
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli/azd
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "^1.25"
+          cache-dependency-path: |
+            cli/azd/go.sum
+
+      - name: Build azd
+        run: go build .
+
+      - name: Run FigSpec snapshot test
+        run: go test ./cmd -v -run TestFigSpec
+
+      - name: Run Usage snapshot test
+        run: go test ./cmd -v -run TestUsage
+
+      - name: Check snapshot test results
+        if: failure()
+        run: |
+          echo "::error::Snapshots may be out of date. Run the following locally to update them:"
+          echo ""
+          echo "  cd cli/azd"
+          echo "  UPDATE_SNAPSHOTS=true go test ./cmd -run 'TestFigSpec|TestUsage'"
+          exit 1

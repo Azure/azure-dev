@@ -1,11 +1,11 @@
 
-This extension provides custom commands for building AI applications using Azure Developer CLI.
+Extension for the Foundry Agent Service. (Preview)
 
 Usage
   azd ai [command]
 
 Available Commands
-  builder	: This extension provides custom commands for building AI applications using Azure Developer CLI.
+  agent	: Extension for the Foundry Agent Service. (Preview)
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

@@ -187,6 +187,16 @@ const completionSpec: Fig.Spec = {
 			description: 'Add a component to your project.',
 		},
 		{
+			name: ['ai'],
+			description: 'Extension for the Foundry Agent Service. (Preview)',
+			subcommands: [
+				{
+					name: ['agent'],
+					description: 'Extension for the Foundry Agent Service. (Preview)',
+				},
+			],
+		},
+		{
 			name: ['auth'],
 			description: 'Authenticate with Azure.',
 			subcommands: [
@@ -270,6 +280,10 @@ const completionSpec: Fig.Spec = {
 			],
 		},
 		{
+			name: ['coding-agent'],
+			description: 'This extension configures GitHub Copilot Coding Agent access to Azure',
+		},
+		{
 			name: ['completion'],
 			description: 'Generate shell completion scripts.',
 			subcommands: [
@@ -345,6 +359,10 @@ const completionSpec: Fig.Spec = {
 					},
 				},
 			],
+		},
+		{
+			name: ['demo'],
+			description: 'This extension provides examples of the AZD extension framework.',
 		},
 		{
 			name: ['deploy'],
@@ -656,6 +674,7 @@ const completionSpec: Fig.Spec = {
 					],
 					args: {
 						name: 'extension-id',
+						generators: azdGenerators.listExtensions,
 					},
 				},
 				{
@@ -1487,12 +1506,26 @@ const completionSpec: Fig.Spec = {
 			description: 'Print the version number of Azure Developer CLI.',
 		},
 		{
+			name: ['x'],
+			description: 'This extension provides a set of tools for AZD extension developers to test and debug their extensions.',
+		},
+		{
 			name: ['help'],
 			description: 'Help about any command',
 			subcommands: [
 				{
 					name: ['add'],
 					description: 'Add a component to your project.',
+				},
+				{
+					name: ['ai'],
+					description: 'Extension for the Foundry Agent Service. (Preview)',
+					subcommands: [
+						{
+							name: ['agent'],
+							description: 'Extension for the Foundry Agent Service. (Preview)',
+						},
+					],
 				},
 				{
 					name: ['auth'],
@@ -1507,6 +1540,10 @@ const completionSpec: Fig.Spec = {
 							description: 'Log out of Azure.',
 						},
 					],
+				},
+				{
+					name: ['coding-agent'],
+					description: 'This extension configures GitHub Copilot Coding Agent access to Azure',
 				},
 				{
 					name: ['completion'],
@@ -1563,6 +1600,10 @@ const completionSpec: Fig.Spec = {
 							description: 'Unsets a configuration.',
 						},
 					],
+				},
+				{
+					name: ['demo'],
+					description: 'This extension provides examples of the AZD extension framework.',
 				},
 				{
 					name: ['deploy'],
@@ -1779,6 +1820,10 @@ const completionSpec: Fig.Spec = {
 				{
 					name: ['version'],
 					description: 'Print the version number of Azure Developer CLI.',
+				},
+				{
+					name: ['x'],
+					description: 'This extension provides a set of tools for AZD extension developers to test and debug their extensions.',
 				},
 			],
 		},

@@ -4,7 +4,9 @@
 package cmd
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/figspec"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
@@ -28,11 +30,19 @@ func TestFigSpec(t *testing.T) {
 
 	cli := azdcli.NewCLI(t)
 
-	addLocalRegistrySource(t, cli)
-	t.Cleanup(func() { removeLocalExtensionSource(t, cli) })
+	sourceName := addLocalRegistrySource(t.Context(), t, cli)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		defer cancel()
+		removeLocalExtensionSource(ctx, t, cli)
+	})
 
-	installRegistryExtensions(t, cli)
-	t.Cleanup(func() { uninstallAllExtensions(t, cli) })
+	installAllExtensions(t.Context(), t, cli, sourceName)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		defer cancel()
+		uninstallAllExtensions(ctx, t, cli)
+	})
 
 	root := NewRootCmd(false, nil, nil)
 

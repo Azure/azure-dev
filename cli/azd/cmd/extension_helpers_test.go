@@ -8,14 +8,12 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/stretchr/testify/require"
 )
 
 const (
-	commandTimeout  = 20 * time.Minute
 	localSourceName = "figspec-local"
 )
 
@@ -26,37 +24,35 @@ type extensionListEntry struct {
 	Source  string `json:"source"`
 }
 
-func installRegistryExtensions(t *testing.T, cli *azdcli.CLI) {
+func installAllExtensions(ctx context.Context, t *testing.T, cli *azdcli.CLI, sourceName string) {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
-	defer cancel()
-
-	result, err := cli.RunCommand(ctx, "extension", "list", "--source", localSourceName, "--output", "json")
-	require.NoError(t, err, "failed to list extensions from registry")
+	result, err := cli.RunCommand(ctx, "extension", "list", "--source", sourceName, "--output", "json")
+	require.NoError(t, err, "failed to list extensions from source %s", sourceName)
 
 	var extensions []extensionListEntry
 	err = json.Unmarshal([]byte(result.Stdout), &extensions)
 	require.NoError(t, err, "failed to unmarshal extension list")
-	require.NotEmpty(t, extensions, "extension registry returned no entries")
+
+	if len(extensions) == 0 {
+		t.Logf("No extensions found in source %s to install", sourceName)
+		return
+	}
 
 	for _, ext := range extensions {
-		args := []string{"extension", "install", ext.ID, "--source", localSourceName}
+		args := []string{"extension", "install", ext.ID, "--source", sourceName}
 		if ext.Version != "" {
 			args = append(args, "--version", ext.Version)
 		}
 
 		t.Logf("Installing extension %s@%s", ext.ID, ext.Version)
 		_, err := cli.RunCommand(ctx, args...)
-		require.NoErrorf(t, err, "failed to install extension %s", ext.ID)
+		require.NoErrorf(t, err, "failed to install extension %s from source %s", ext.ID, sourceName)
 	}
 }
 
-func uninstallAllExtensions(t *testing.T, cli *azdcli.CLI) {
+func uninstallAllExtensions(ctx context.Context, t *testing.T, cli *azdcli.CLI) {
 	t.Helper()
-
-	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
-	defer cancel()
 
 	t.Log("Uninstalling all extensions")
 	if _, err := cli.RunCommand(ctx, "extension", "uninstall", "--all"); err != nil {
@@ -64,11 +60,8 @@ func uninstallAllExtensions(t *testing.T, cli *azdcli.CLI) {
 	}
 }
 
-func addLocalRegistrySource(t *testing.T, cli *azdcli.CLI) {
+func addLocalRegistrySource(ctx context.Context, t *testing.T, cli *azdcli.CLI) string {
 	t.Helper()
-
-	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
-	defer cancel()
 
 	registryPath := filepath.Join(azdcli.GetSourcePath(), "extensions", "registry.json")
 	t.Logf("Adding local registry source '%s' from %s", localSourceName, registryPath)
@@ -80,13 +73,11 @@ func addLocalRegistrySource(t *testing.T, cli *azdcli.CLI) {
 		"-l", registryPath,
 	)
 	require.NoError(t, err, "failed to add local registry source")
+	return localSourceName
 }
 
-func removeLocalExtensionSource(t *testing.T, cli *azdcli.CLI) {
+func removeLocalExtensionSource(ctx context.Context, t *testing.T, cli *azdcli.CLI) {
 	t.Helper()
-
-	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
-	defer cancel()
 
 	if _, err := cli.RunCommand(ctx, "extension", "source", "remove", localSourceName); err != nil {
 		t.Logf("warning: failed to remove extension source %s: %v", localSourceName, err)

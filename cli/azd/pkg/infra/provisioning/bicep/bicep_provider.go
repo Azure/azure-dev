@@ -836,7 +836,7 @@ func (p *BicepProvider) Destroy(
 	if len(groupedResources) == 0 {
 		p.console.StopSpinner(ctx, "", input.StepDone)
 		// Call deployment.Delete to void the state even though there are no resources to delete
-		if err := p.destroyDeploymentWithoutConfirmation(ctx, deploymentToDelete); err != nil {
+		if err := p.destroyDeployment(ctx, deploymentToDelete); err != nil {
 			return nil, fmt.Errorf("voiding deployment state: %w", err)
 		}
 	} else {
@@ -866,13 +866,15 @@ func (p *BicepProvider) Destroy(
 		}
 
 		p.console.StopSpinner(ctx, "", input.StepDone)
-		if err := p.destroyDeploymentWithConfirmation(
-			ctx,
-			options,
-			deploymentToDelete,
-			groupedResources,
-			len(resourcesToDelete),
-		); err != nil {
+
+		// Prompt for confirmation before deleting resources
+		if err := p.promptDeletion(ctx, options, groupedResources, len(resourcesToDelete)); err != nil {
+			return nil, err
+		}
+
+		p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
+
+		if err := p.destroyDeployment(ctx, deploymentToDelete); err != nil {
 			return nil, fmt.Errorf("deleting resource groups: %w", err)
 		}
 
@@ -1070,68 +1072,43 @@ func (p *BicepProvider) generateResourcesToDelete(groupedResources map[string][]
 	return append(lines, "\n")
 }
 
-// Deletes the azure resources within the deployment
-func (p *BicepProvider) destroyDeploymentWithConfirmation(
+// promptDeletion prompts the user for confirmation before deleting resources.
+// Returns nil if the user confirms, or an error if they deny or an error occurs.
+func (p *BicepProvider) promptDeletion(
 	ctx context.Context,
 	options provisioning.DestroyOptions,
-	deployment infra.Deployment,
 	groupedResources map[string][]*azapi.Resource,
 	resourceCount int,
 ) error {
-	if !options.Force() {
-		p.console.MessageUxItem(ctx, &ux.MultilineMessage{
-			Lines: p.generateResourcesToDelete(groupedResources)},
-		)
-		confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf(
-				"Total resources to %s: %d, are you sure you want to continue?",
-				output.WithErrorFormat("delete"),
-				resourceCount,
-			),
-			DefaultValue: false,
-		})
-
-		if err != nil {
-			return fmt.Errorf("prompting for delete confirmation: %w", err)
-		}
-
-		if !confirmDestroy {
-			return errors.New("user denied delete confirmation")
-		}
+	if options.Force() {
+		return nil
 	}
 
-	p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
-
-	err := async.RunWithProgressE(func(progressMessage azapi.DeleteDeploymentProgress) {
-		switch progressMessage.State {
-		case azapi.DeleteResourceStateInProgress:
-			p.console.ShowSpinner(ctx, progressMessage.Message, input.Step)
-		case azapi.DeleteResourceStateSucceeded:
-			p.console.StopSpinner(ctx, progressMessage.Message, input.StepDone)
-		case azapi.DeleteResourceStateFailed:
-			p.console.StopSpinner(ctx, progressMessage.Message, input.StepFailed)
-		}
-	}, func(progress *async.Progress[azapi.DeleteDeploymentProgress]) error {
-		optionsMap, err := convert.ToMap(p.options)
-		if err != nil {
-			return err
-		}
-
-		return deployment.Delete(ctx, optionsMap, progress)
+	p.console.MessageUxItem(ctx, &ux.MultilineMessage{
+		Lines: p.generateResourcesToDelete(groupedResources)},
+	)
+	confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
+		Message: fmt.Sprintf(
+			"Total resources to %s: %d, are you sure you want to continue?",
+			output.WithErrorFormat("delete"),
+			resourceCount,
+		),
+		DefaultValue: false,
 	})
 
 	if err != nil {
-		return err
+		return fmt.Errorf("prompting for delete confirmation: %w", err)
 	}
 
-	p.console.Message(ctx, "")
+	if !confirmDestroy {
+		return errors.New("user denied delete confirmation")
+	}
 
 	return nil
 }
 
-// destroyDeploymentWithoutConfirmation deletes the deployment without prompting for confirmation.
-// This is used when there are no resources to delete but we still need to void the deployment state.
-func (p *BicepProvider) destroyDeploymentWithoutConfirmation(
+// destroyDeployment deletes the azure resources within the deployment and voids the deployment state.
+func (p *BicepProvider) destroyDeployment(
 	ctx context.Context,
 	deployment infra.Deployment,
 ) error {

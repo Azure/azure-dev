@@ -132,8 +132,13 @@ func (m *ExtensionsMiddleware) Run(ctx context.Context, next NextFn) (*actions.A
 					allEnv = append(allEnv, "FORCE_COLOR=1")
 				}
 
+				args := []string{"listen"}
+				if debugEnabled, _ := m.options.Flags.GetBool("debug"); debugEnabled {
+					args = append(args, "--debug")
+				}
+
 				options := &extensions.InvokeOptions{
-					Args:   []string{"listen"},
+					Args:   args,
 					Env:    allEnv,
 					StdIn:  ext.StdIn(),
 					StdOut: ext.StdOut(),

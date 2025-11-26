@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -17,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -40,7 +42,7 @@ func newListenCommand() *cobra.Command {
 			// IMPORTANT: service target name here must match the name used in the extension manifest.
 			host := azdext.NewExtensionHost(azdClient).
 				WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
-					return project.NewAgentServiceTargetProvider(azdClient)
+					return project.NewAgentServiceTargetProvider(azdClient, isDebug(cmd.Flags()))
 				}).
 				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					return preprovisionHandler(ctx, azdClient, projectParser, args)
@@ -314,4 +316,14 @@ func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient,
 	}
 
 	return nil
+}
+
+// isDebug checks if debug mode is enabled via --debug flag or AZD_EXT_DEBUG environment variable
+func isDebug(flags *pflag.FlagSet) bool {
+	if debugFlag, err := flags.GetBool("debug"); err == nil && debugFlag {
+		return true
+	}
+
+	debug, _ := strconv.ParseBool(os.Getenv("AZD_EXT_DEBUG"))
+	return debug
 }

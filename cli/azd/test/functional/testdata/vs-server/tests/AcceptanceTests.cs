@@ -166,7 +166,7 @@ public class AcceptanceTests : TestBase
 
         // Deploy a single service
         recorder = new Recorder<ProgressMessage>();
-        envResult = await esSvc.DeploySeviceAsync(context, e.Name, "apiservice", recorder, CancellationToken.None);
+        envResult = await esSvc.DeployServiceAsync(context, e.Name, "apiservice", recorder, CancellationToken.None);
         recorder.Values.ShouldNotBeEmpty();
         importantMessagesLogged = false;
         foreach (var msg in recorder.Values)

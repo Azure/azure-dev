@@ -194,32 +194,23 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	err = json.Unmarshal([]byte(result.Stdout), &envValues)
 	require.NoError(t, err)
 
-	if session != nil {
-		session.Variables[recording.SubscriptionIdKey] = envValues[environment.SubscriptionIdEnvVarName].(string)
-	}
-
 	url := fmt.Sprintf("%s/api/httptrigger", envValues["AZURE_FUNCTION_URI"])
 
 	t.Logf("Issuing GET request to function\n")
 
-	// We've seen some cases in CI where issuing a get right after a deploy ends up with us getting a 404, so retry the
-	// request a
-	// handful of times if it fails with a 404.
-	err = retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
-		/* #nosec G107 - Potential HTTP request made with variable url false positive */
-		res, err := http.Get(url)
-		if err != nil {
-			return retry.RetryableError(err)
-		}
-		defer res.Body.Close()
-		if res.StatusCode != http.StatusOK {
-			return retry.RetryableError(
-				fmt.Errorf("expected %d but got %d for request to %s", http.StatusOK, res.StatusCode, url),
-			)
-		}
-		return nil
-	})
-	require.NoError(t, err)
+	funcAppResponse := "This HTTP triggered function executed successfully. " +
+		"Pass a name in the query string or in the request body for a personalized response."
+	if session == nil {
+		err = probeServiceHealth(
+			t, ctx, http.DefaultClient, retry.NewConstant(5*time.Second), url, funcAppResponse)
+		require.NoError(t, err)
+	} else {
+		session.Variables[recording.SubscriptionIdKey] = envValues[environment.SubscriptionIdEnvVarName].(string)
+
+		err = probeServiceHealth(
+			t, ctx, session.ProxyClient, retry.NewConstant(1*time.Millisecond), url, funcAppResponse)
+		require.NoError(t, err)
+	}
 
 	t.Logf("Starting infra delete\n")
 	_, err = cli.RunCommand(ctx, "down", "--cwd", dir, "--force", "--purge")

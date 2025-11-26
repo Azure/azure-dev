@@ -10,14 +10,16 @@ import (
 
 	"azureaiagent/internal/tools"
 
+	"github.com/fatih/color"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 )
 
 func newMcpCommand() *cobra.Command {
 	mcpCmd := &cobra.Command{
-		Use:   "mcp",
-		Short: "MCP server commands for AI Foundry agents extension",
+		Use:    "mcp",
+		Short:  fmt.Sprintf("MCP server commands for Microsoft Foundry agents extension. %s", color.YellowString("(Preview)")),
+		Hidden: true,
 	}
 
 	mcpCmd.AddCommand(newMcpStartCommand())
@@ -28,7 +30,7 @@ func newMcpCommand() *cobra.Command {
 func newMcpStartCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "start",
-		Short: "Start MCP server with AI Foundry agent tools",
+		Short: fmt.Sprintf("Start MCP server with Microsoft Foundry agent tools. %s", color.YellowString("(Preview)")),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runMcpServer(cmd.Context())
 		},
@@ -38,14 +40,14 @@ func newMcpStartCommand() *cobra.Command {
 func runMcpServer(ctx context.Context) error {
 	// Create MCP server
 	s := server.NewMCPServer(
-		"AZD AI Foundry Agents Extension MCP Server", "1.0.0",
+		"AZD Microsoft Foundry Agents Extension MCP Server", "1.0.0",
 		server.WithToolCapabilities(true),
 		server.WithElicitation(),
 	)
 
 	s.EnableSampling()
 
-	// Add AI Foundry agent tools
+	// Add Microsoft Foundry agent tools
 	agentTools := []server.ServerTool{
 		tools.NewAddAgentTool(),
 	}

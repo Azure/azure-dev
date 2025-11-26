@@ -123,6 +123,21 @@ func (p *dockerProject) Restore(
 	return p.framework.Restore(ctx, serviceConfig, serviceContext, progress)
 }
 
+// ignoreAspireMultiStageDeployment determines if the docker build and package steps should be skipped
+// Build and Package logic is handled directly by the service target (dotnet containerapp)
+// when Aspire multi-stage docker deployment is used.
+func ignoreAspireMultiStageDeployment(serviceConfig *ServiceConfig) bool {
+	// Ignore services which are build-only - they are built and used by another service
+	if serviceConfig.BuildOnly {
+		return true
+	}
+	// The containerFiles configuration defines multi-stage docker builds for Aspire projects
+	if serviceConfig.DotNetContainerApp != nil && len(serviceConfig.DotNetContainerApp.ContainerFiles) > 0 {
+		return true
+	}
+	return false
+}
+
 // Builds the docker project based on the docker options specified within the Service configuration
 func (p *dockerProject) Build(
 	ctx context.Context,
@@ -130,6 +145,9 @@ func (p *dockerProject) Build(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServiceBuildResult, error) {
+	if ignoreAspireMultiStageDeployment(serviceConfig) {
+		return &ServiceBuildResult{}, nil
+	}
 	return p.containerHelper.Build(ctx, serviceConfig, serviceContext, progress)
 }
 
@@ -139,6 +157,9 @@ func (p *dockerProject) Package(
 	serviceContext *ServiceContext,
 	progress *async.Progress[ServiceProgress],
 ) (*ServicePackageResult, error) {
+	if ignoreAspireMultiStageDeployment(serviceConfig) {
+		return &ServicePackageResult{}, nil
+	}
 	return p.containerHelper.Package(ctx, serviceConfig, serviceContext, progress)
 }
 

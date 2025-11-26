@@ -220,7 +220,7 @@ const file_account_proto_rawDesc = "" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId2\xb5\x01\n" +
 	"\x0eAccountService\x12X\n" +
 	"\x11ListSubscriptions\x12 .azdext.ListSubscriptionsRequest\x1a!.azdext.ListSubscriptionsResponse\x12I\n" +
-	"\fLookupTenant\x12\x1b.azdext.LookupTenantRequest\x1a\x1c.azdext.LookupTenantResponseB6Z4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdextb\x06proto3"
+	"\fLookupTenant\x12\x1b.azdext.LookupTenantRequest\x1a\x1c.azdext.LookupTenantResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
 var (
 	file_account_proto_rawDescOnce sync.Once

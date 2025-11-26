@@ -192,6 +192,21 @@ func registerProjectMappings() {
 		}, nil
 	})
 
+	// ServiceRestoreResult -> proto ServiceRestoreResult conversion
+	mapper.MustRegister(func(ctx context.Context, src *ServiceRestoreResult) (*azdext.ServiceRestoreResult, error) {
+		if src == nil {
+			return nil, nil
+		}
+
+		var artifacts []*azdext.Artifact
+		if err := mapper.Convert(src.Artifacts, &artifacts); err != nil {
+			return nil, err
+		}
+		return &azdext.ServiceRestoreResult{
+			Artifacts: artifacts,
+		}, nil
+	})
+
 	// ServiceBuildResult -> proto ServiceBuildResult conversion
 	mapper.MustRegister(func(ctx context.Context, src *ServiceBuildResult) (*azdext.ServiceBuildResult, error) {
 		if src == nil {
@@ -417,6 +432,22 @@ func registerProjectMappings() {
 			for i, arg := range src.BuildArgs {
 				result.BuildArgs[i] = osutil.NewExpandableString(arg)
 			}
+		}
+
+		return result, nil
+	})
+
+	// proto ServiceRestoreResult -> ServiceRestoreResult conversion
+	mapper.MustRegister(func(ctx context.Context, src *azdext.ServiceRestoreResult) (*ServiceRestoreResult, error) {
+		if src == nil {
+			return nil, nil
+		}
+
+		result := &ServiceRestoreResult{}
+
+		// Convert artifacts
+		if err := mapper.Convert(src.Artifacts, &result.Artifacts); err != nil {
+			return nil, fmt.Errorf("failed to convert artifacts: %w", err)
 		}
 
 		return result, nil

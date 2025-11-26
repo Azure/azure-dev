@@ -67,6 +67,7 @@ type ContainerAppService interface {
 		resourceGroupName string,
 		appName string,
 		imageName string,
+		envVars map[string]string,
 		options *ContainerAppOptions,
 	) error
 }
@@ -278,6 +279,7 @@ func (cas *containerAppService) AddRevision(
 	resourceGroupName string,
 	appName string,
 	imageName string,
+	envVars map[string]string,
 	options *ContainerAppOptions,
 ) error {
 	containerApp, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName, options)
@@ -322,6 +324,39 @@ func (cas *containerAppService) AddRevision(
 	}
 
 	containers[0]["image"] = imageName
+
+	// Merge environment variables if provided
+	if len(envVars) > 0 {
+		// Get existing env vars from the container
+		existingEnv, _ := containers[0]["env"].([]any)
+		envMap := make(map[string]any)
+
+		// Build a map from existing env vars
+		for _, envItem := range existingEnv {
+			if envEntry, ok := envItem.(map[string]any); ok {
+				if name, ok := envEntry["name"].(string); ok {
+					envMap[name] = envEntry
+				}
+			}
+		}
+
+		// Merge new env vars (these will override existing ones with the same name)
+		for key, value := range envVars {
+			envMap[key] = map[string]any{
+				"name":  key,
+				"value": value,
+			}
+		}
+
+		// Convert back to array
+		mergedEnv := make([]any, 0, len(envMap))
+		for _, envEntry := range envMap {
+			mergedEnv = append(mergedEnv, envEntry)
+		}
+
+		containers[0]["env"] = mergedEnv
+	}
+
 	if err := revision.Set(pathTemplateContainers, containers); err != nil {
 		return fmt.Errorf("setting containers: %w", err)
 	}

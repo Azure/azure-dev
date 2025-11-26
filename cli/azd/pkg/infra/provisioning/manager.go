@@ -42,23 +42,21 @@ type Manager struct {
 	cloud               *cloud.Cloud
 }
 
-// defaultOptions for this package.
-const (
-	defaultModule = "main"
-	defaultPath   = "infra"
+var (
+	defaultOptions = Options{
+		Module: "main",
+		Path:   "infra",
+	}
 )
 
 func (m *Manager) Initialize(ctx context.Context, projectPath string, options Options) error {
-	// applied defaults if missing
-	if options.Module == "" {
-		options.Module = defaultModule
-	}
-	if options.Path == "" {
-		options.Path = defaultPath
+	infraOptions, err := options.GetWithDefaults()
+	if err != nil {
+		return err
 	}
 
 	m.projectPath = projectPath
-	m.options = &options
+	m.options = &infraOptions
 
 	provider, err := m.newProvider(ctx)
 	if err != nil {
@@ -66,7 +64,7 @@ func (m *Manager) Initialize(ctx context.Context, projectPath string, options Op
 	}
 
 	m.provider = provider
-	return m.provider.Initialize(ctx, projectPath, options)
+	return m.provider.Initialize(ctx, projectPath, infraOptions)
 }
 
 // Parameters gets the list of parameters and its value which will be used to provision the infrastructure.

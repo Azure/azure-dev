@@ -44,11 +44,6 @@ import (
 	"github.com/drone/envsubst"
 )
 
-const (
-	defaultModule = "main"
-	defaultPath   = "infra"
-)
-
 type bicepFileMode int
 
 const (
@@ -93,37 +88,34 @@ func (p *BicepProvider) Name() string {
 // Initialize initializes provider state from the options.
 // It also calls EnsureEnv, which ensures the client-side state is ready for provisioning.
 func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opt provisioning.Options) error {
-	if opt.Module == "" {
-		opt.Module = defaultModule
+	infraOptions, err := opt.GetWithDefaults()
+	if err != nil {
+		return err
 	}
 
-	if opt.Path == "" {
-		opt.Path = defaultPath
+	if !filepath.IsAbs(infraOptions.Path) {
+		infraOptions.Path = filepath.Join(projectPath, infraOptions.Path)
 	}
 
-	if !filepath.IsAbs(opt.Path) {
-		opt.Path = filepath.Join(projectPath, opt.Path)
-	}
-
-	bicepparam := opt.Module + ".bicepparam"
-	bicepFile := opt.Module + ".bicep"
+	bicepparam := infraOptions.Module + ".bicepparam"
+	bicepFile := infraOptions.Module + ".bicep"
 
 	// Check if there's a <moduleName>.bicepparam first. It will be preferred over a <moduleName>.bicep
-	if _, err := os.Stat(filepath.Join(opt.Path, bicepparam)); err == nil {
-		p.path = filepath.Join(opt.Path, bicepparam)
+	if _, err := os.Stat(filepath.Join(infraOptions.Path, bicepparam)); err == nil {
+		p.path = filepath.Join(infraOptions.Path, bicepparam)
 		p.mode = bicepparamMode
 	} else {
-		p.path = filepath.Join(opt.Path, bicepFile)
+		p.path = filepath.Join(infraOptions.Path, bicepFile)
 		p.mode = bicepMode
 	}
 
 	p.projectPath = projectPath
-	p.layer = opt.Name
-	p.options = opt
-	p.ignoreDeploymentState = opt.IgnoreDeploymentState
+	p.layer = infraOptions.Name
+	p.options = infraOptions
+	p.ignoreDeploymentState = infraOptions.IgnoreDeploymentState
 
 	p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
-	err := p.EnsureEnv(ctx)
+	err = p.EnsureEnv(ctx)
 	p.console.StopSpinner(ctx, "", input.Step)
 	return err
 }
@@ -643,7 +635,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 		progressDisplay := p.deploymentManager.ProgressDisplay(deployment)
 		// Make initial delay shorter to be more responsive in displaying initial progress
 		initialDelay := 3 * time.Second
-		regularDelay := 10 * time.Second
+		regularDelay := 3 * time.Second
 		timer := time.NewTimer(initialDelay)
 		queryStartTime := time.Now()
 
@@ -1541,12 +1533,6 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (loadParametersResul
 	parametersMappedToAzureLocation := []string{}
 	resolvedParams := map[string]azure.ArmParameter{}
 	envMapping := map[string][]string{}
-
-	// Refresh env before resolving parameters to get latest env var values
-	// In case something changed in the .env between starting azd and this point, like a preprovision hook.
-	if err := p.envManager.Reload(ctx, p.env); err != nil {
-		return loadParametersResult{}, fmt.Errorf("refreshing environment variables: %w", err)
-	}
 
 	// resolving each parameter to keep track of the name during the resolution.
 	// We used to resolve all the file before, supporting env var substitution at any part of the file.

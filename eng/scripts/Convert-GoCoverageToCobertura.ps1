@@ -51,8 +51,8 @@ function Normalize-GoFilePath {
         [string]$SourceRoot
     )
     
-    # Handle Go module paths like "github.com/azure/azure-dev/cli/azd/pkg/test/file.go"
-    # Convert to relative paths like "cli/azd/pkg/test/file.go"
+    # Handle Go module paths like "github.com/azure/azure-dev/pkg/test/file.go"
+    # Convert to relative paths like "pkg/test/file.go"
     
     # Common Go module path patterns to normalize
     $modulePatterns = @(

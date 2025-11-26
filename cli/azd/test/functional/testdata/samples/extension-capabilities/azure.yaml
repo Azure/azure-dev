@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+# host demo uses docker-build capabilities from azd - if there is not a Dockerfile in the project path or defined,
+# it would try to use buildpacks to build the project
+
+name: extension-capabilities
+services:
+  demo:
+    host: demo
+    language: rust
+    project: ./src
+

@@ -1,8 +1,10 @@
 
 Delete Azure resources for an application. Running azd down will not delete application files on your local machine.
 
+When <layer> is specified, only deletes resources for the given layer. When omitted, deletes resources for all layers defined in the project.
+
 Usage
-  azd down [flags]
+  azd down [<layer>] [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.

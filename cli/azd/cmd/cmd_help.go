@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	cmdinternal "github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -94,10 +95,10 @@ func getCmdHelpDefaultCommands(cmd *cobra.Command) string {
 
 // getCmdHelpDefaultFlags provides the default implementation for displaying the help flags section.
 func getCmdHelpDefaultFlags(cmd *cobra.Command) (result string) {
-	// force the following flags as global flags for display purposes when displaying help.
-	forceGlobalFlagNames := map[string]struct{}{
-		"help": {},
-		"docs": {},
+	// Force the following flags as global flags for display purposes when displaying help.
+	forceGlobalFlagNames := make(map[string]struct{}, len(cmdinternal.NonPersistentGlobalFlags))
+	for _, name := range cmdinternal.NonPersistentGlobalFlags {
+		forceGlobalFlagNames[name] = struct{}{}
 	}
 
 	forceGlobalFlags := pflag.NewFlagSet("", pflag.ContinueOnError)

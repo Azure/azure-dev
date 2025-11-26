@@ -6,6 +6,7 @@ Usage
 
 Available Commands
   bash      	: Generate bash completion script.
+  fig       	: Generate Fig autocomplete spec.
   fish      	: Generate fish completion script.
   powershell	: Generate PowerShell completion script.
   zsh       	: Generate zsh completion script.

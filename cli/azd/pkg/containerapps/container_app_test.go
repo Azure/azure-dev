@@ -141,7 +141,7 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 		mockContext.ArmClientOptions,
 		mockContext.AlphaFeaturesManager,
 	)
-	err := cas.AddRevision(*mockContext.Context, subscriptionId, resourceGroup, appName, updatedImageName, nil)
+	err := cas.AddRevision(*mockContext.Context, subscriptionId, resourceGroup, appName, updatedImageName, nil, nil)
 	require.NoError(t, err)
 
 	// Verify lastest revision is read

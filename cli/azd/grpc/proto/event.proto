@@ -24,15 +24,7 @@ message EventMessage {
     SubscribeServiceEvent subscribe_service_event = 4;
     InvokeServiceHandler invoke_service_handler = 5;
     ServiceHandlerStatus service_handler_status = 6;
-    ExtensionReadyEvent extension_ready_event = 7;
   }
-}
-
-message ExtensionReadyEvent {
-  // Status indicates the readiness state of the extension.
-  string status = 1;
-  // Message provides additional details.
-  string message = 2;
 }
 
 // Client subscribes to project-related events

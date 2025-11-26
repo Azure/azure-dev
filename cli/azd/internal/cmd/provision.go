@@ -46,8 +46,6 @@ const (
 	specialFeatureOrQuotaIdRequired = "SpecialFeatureOrQuotaIdRequired"
 )
 
-var featLayers = alpha.MustFeatureKey("layers")
-
 func (i *ProvisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	i.BindNonCommon(local, global)
 	i.bindCommon(local, global)
@@ -95,7 +93,7 @@ func NewProvisionFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *inter
 
 func NewProvisionCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "provision",
+		Use:   "provision [<layer>]",
 		Short: "Provision Azure resources for your project.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
@@ -206,16 +204,6 @@ func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, err
 	}
 	defer func() { _ = infra.Cleanup() }()
-
-	if len(infra.Options.Layers) > 0 {
-		if !p.alphaFeatureManager.IsEnabled(featLayers) {
-			return nil, fmt.Errorf(
-				"Layered provisioning is not enabled. Run '%s' to enable it.",
-				alpha.GetEnableCommand(featLayers))
-		}
-
-		p.console.WarnForFeature(ctx, featLayers)
-	}
 
 	layer := ""
 	if len(p.args) > 0 {
@@ -471,13 +459,16 @@ func deployResultToUx(previewResult *provisioning.DeployPreviewResult) ux.UxItem
 }
 
 func GetCmdProvisionHelpDescription(c *cobra.Command) string {
-	return generateCmdHelpDescription(fmt.Sprintf(
-		"Provision the Azure resources for an application."+
-			" This step may take a while depending on the resources provisioned."+
-			" You should run %s any time you update your Bicep or Terraform file."+
-			"\n\nThis command prompts you to input the following:",
-		output.WithHighLightFormat(c.CommandPath())), []string{
-		formatHelpNote("Azure location: The Azure location where your resources will be deployed."),
-		formatHelpNote("Azure subscription: The Azure subscription where your resources will be deployed."),
-	})
+	return generateCmdHelpDescription(
+		fmt.Sprintf(
+			"Provision the Azure resources for an application."+
+				" This step may take a while depending on the resources provisioned."+
+				" You should run %s any time you update your Bicep or Terraform file."+
+				"\n\nThis command prompts you to input the following:",
+			output.WithHighLightFormat(c.CommandPath())), []string{
+			formatHelpNote("Azure location: The Azure location where your resources will be deployed."),
+			formatHelpNote("Azure subscription: The Azure subscription where your resources will be deployed."),
+			fmt.Sprintf("\nWhen <layer> is specified, only provisions resources for the given layer." +
+				" When omitted, provisions resources for all layers defined in the project."),
+		})
 }

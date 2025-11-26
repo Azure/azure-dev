@@ -2,7 +2,7 @@
 Display information about your project and its resources.
 
 Usage
-  azd show [resource name or ID] [flags]
+  azd show [resource-name|resource-id] [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.

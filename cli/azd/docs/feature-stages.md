@@ -1,6 +1,6 @@
 # Alpha, Beta and Stable Feature Stages
 
-As of `1.9.3`, each Azure Developer CLI feature has been evaluated and assigned to a feature stage. You can read more about the definition of each phase and the graduation criteria by visiting [aka.ms/azd](https://aka.ms/azd). Here is a list that includes each feature/command supported by `azd` and its current stage.
+As of `1.21.1`, each Azure Developer CLI feature has been evaluated and assigned to a feature stage. You can read more about the definition of each phase and the graduation criteria by visiting [aka.ms/azd](https://aka.ms/azd). Here is a list that includes each feature/command supported by `azd` and its current stage.
 
 | **Category** | **Feature**              | **Stage** |
 | ------------ | ------------------------ | --------- |
@@ -36,9 +36,10 @@ As of `1.9.3`, each Azure Developer CLI feature has been evaluated and assigned 
 | IaC          | Terraform                | Beta      |
 | IaC          | Resource Group-Scope Deployments | Beta      |
 | IaC          | Deployment Stacks        | Alpha     |
+| IaC          | Layered Provisioning     | Beta      |
 | Host         | Azure App Service        | Stable    |
 | Host         | Azure Static Web Apps    | Stable    |
-| Host         | Azure Container Apps     | Beta      |
+| Host         | Azure Container Apps     | Stable    |
 | Host         | Azure Functions          | Stable    |
 | Host         | Azure Kubernetes Service | Beta      |
 | Host         | Azure Spring Apps        | Beta      |

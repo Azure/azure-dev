@@ -1633,7 +1633,7 @@ const file_prompt_proto_rawDesc = "" +
 	"\x06Select\x12\x15.azdext.SelectRequest\x1a\x16.azdext.SelectResponse\x12F\n" +
 	"\vMultiSelect\x12\x1a.azdext.MultiSelectRequest\x1a\x1b.azdext.MultiSelectResponse\x12s\n" +
 	"\x1aPromptSubscriptionResource\x12).azdext.PromptSubscriptionResourceRequest\x1a*.azdext.PromptSubscriptionResourceResponse\x12v\n" +
-	"\x1bPromptResourceGroupResource\x12*.azdext.PromptResourceGroupResourceRequest\x1a+.azdext.PromptResourceGroupResourceResponseB6Z4github.com/azure/azure-dev/cli/azd/pkg/azdext;azdextb\x06proto3"
+	"\x1bPromptResourceGroupResource\x12*.azdext.PromptResourceGroupResourceRequest\x1a+.azdext.PromptResourceGroupResourceResponseB/Z-github.com/azure/azure-dev/cli/azd/pkg/azdextb\x06proto3"
 
 var (
 	file_prompt_proto_rawDescOnce sync.Once

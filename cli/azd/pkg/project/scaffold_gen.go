@@ -84,7 +84,7 @@ func tempInfra(
 		Options: provisioning.Options{
 			Provider: provisioning.Bicep,
 			Path:     tmpDir,
-			Module:   DefaultModule,
+			Module:   DefaultProvisioningOptions.Module,
 		},
 		cleanupDir: tmpDir,
 		IsCompose:  true,
@@ -99,7 +99,7 @@ func infraFsForProject(ctx context.Context, prjConfig *ProjectConfig) (fs.FS, er
 		return nil, err
 	}
 
-	infraPathPrefix := DefaultPath
+	infraPathPrefix := DefaultProvisioningOptions.Path
 	if prjConfig.Infra.Path != "" {
 		infraPathPrefix = prjConfig.Infra.Path
 	}

@@ -2,7 +2,7 @@
 Installs specified extensions.
 
 Usage
-  azd extension install <extension-name> [flags]
+  azd extension install <extension-id> [flags]
 
 Flags
     -f, --force          	: Force installation even if it would downgrade the current version

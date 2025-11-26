@@ -59,21 +59,22 @@ func shouldRun(ctx context.Context, project *azdext.ProjectConfig) (bool, error)
 					return false, fmt.Errorf("failed to read agent yaml file: %w", err)
 				}
 
-				manifest, err := agent_yaml.LoadAndValidateAgentManifest(content)
+				err = agent_yaml.ValidateAgentDefinition(content)
 				if err != nil {
-					return false, fmt.Errorf("failed to validate agent yaml file: %w", err)
+					return false, fmt.Errorf("agent.yaml is not valid to run: %w", err)
 				}
 
-				agentDefBytes, err := yaml.Marshal(manifest.Template)
-				if err != nil {
-					return false, fmt.Errorf("failed to marshal agent definition when updating project: %w", err)
-				}
-				var agentDef agent_yaml.AgentDefinition
-				if err := yaml.Unmarshal(agentDefBytes, &agentDef); err != nil {
-					return false, fmt.Errorf("failed to unmarshal agent definition when updating project: %w", err)
+				var genericTemplate map[string]interface{}
+				if err := yaml.Unmarshal(content, &genericTemplate); err != nil {
+					return false, fmt.Errorf("YAML content is not valid to run: %w", err)
 				}
 
-				return agentDef.Kind == agent_yaml.AgentKindHosted, nil
+				kind, ok := genericTemplate["kind"].(string)
+				if !ok {
+					return false, fmt.Errorf("kind field is not a valid string to check should run: %w", err)
+				}
+
+				return kind == string(agent_yaml.AgentKindHosted), nil
 			}
 		}
 	}
@@ -136,8 +137,8 @@ func (p *FoundryParser) SetIdentity(ctx context.Context, args *azdext.ProjectEve
 		return fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 
-	// Get AI Foundry Project's managed identity
-	fmt.Println("Retrieving AI Foundry Project identity...")
+	// Get Microsoft Foundry Project's managed identity
+	fmt.Println("Retrieving Microsoft Foundry Project identity...")
 	projectPrincipalID, err := getProjectPrincipalID(ctx, cred, aiFoundryProjectResourceID, subscriptionID)
 	if err != nil {
 		return fmt.Errorf("failed to get Project principal ID: %w", err)
@@ -173,7 +174,7 @@ func (p *FoundryParser) SetIdentity(ctx context.Context, args *azdext.ProjectEve
 	return nil
 }
 
-// getProjectPrincipalID retrieves the principal ID from the AI Foundry Project using Azure SDK
+// getProjectPrincipalID retrieves the principal ID from the Microsoft Foundry Project using Azure SDK
 func getProjectPrincipalID(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resourceID, subscriptionID string) (string, error) {
 	// Create resources client
 	client, err := armresources.NewClient(subscriptionID, cred, nil)
@@ -182,7 +183,7 @@ func getProjectPrincipalID(ctx context.Context, cred *azidentity.AzureDeveloperC
 	}
 
 	// Get the resource
-	// API version for AI Foundry projects (Machine Learning workspaces)
+	// API version for Microsoft Foundry projects (Machine Learning workspaces)
 	apiVersion := "2025-06-01"
 	resp, err := client.GetByID(ctx, resourceID, apiVersion, nil)
 	if err != nil {
@@ -326,18 +327,29 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 
 	// Get required values from azd environment
 	containerAppPrincipalID := azdEnv["SERVICE_API_IDENTITY_PRINCIPAL_ID"]
-	aiFoundryResourceID := azdEnv["AI_FOUNDRY_RESOURCE_ID"]
-	aiFoundryProjectResourceID := azdEnv["AI_FOUNDRY_PROJECT_RESOURCE_ID"]
+	aiFoundryProjectResourceID := azdEnv["AZURE_AI_PROJECT_ID"]
 	deploymentName := azdEnv["DEPLOYMENT_NAME"]
 	resourceID := azdEnv["SERVICE_API_RESOURCE_ID"]
 	agentName := azdEnv["AGENT_NAME"]
 	//aiProjectEndpoint := azdEnv["AI_PROJECT_ENDPOINT"]
 
 	// Validate required variables
-	if err := validateRequired("AI_FOUNDRY_RESOURCE_ID", aiFoundryResourceID); err != nil {
+	if err := validateRequired("AZURE_AI_PROJECT_ID", aiFoundryProjectResourceID); err != nil {
 		return err
 	}
-	if err := validateRequired("AI_FOUNDRY_PROJECT_RESOURCE_ID", aiFoundryProjectResourceID); err != nil {
+
+	// Extract project information from resource IDs
+	parts := strings.Split(aiFoundryProjectResourceID, "/")
+	if len(parts) < 11 {
+		fmt.Fprintln(os.Stderr, "Error: Invalid Microsoft Foundry Project Resource ID format")
+		os.Exit(1)
+	}
+
+	// Extract AI account resource ID by removing "/projects/project-name" from the project resource ID
+	parts = strings.Split(aiFoundryProjectResourceID, "/projects/")
+	aiAccountResourceId := parts[0]
+
+	if err := validateRequired("AZURE_AI_PROJECT_ID", aiFoundryProjectResourceID); err != nil {
 		return err
 	}
 	if err := validateRequired("SERVICE_API_IDENTITY_PRINCIPAL_ID", containerAppPrincipalID); err != nil {
@@ -348,13 +360,6 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 	}
 	if err := validateRequired("AGENT_NAME", agentName); err != nil {
 		return err
-	}
-
-	// Extract project information from resource IDs
-	parts := strings.Split(aiFoundryProjectResourceID, "/")
-	if len(parts) < 11 {
-		fmt.Fprintln(os.Stderr, "Error: Invalid AI Foundry Project Resource ID format")
-		os.Exit(1)
 	}
 
 	projectSubscriptionID := parts[2]
@@ -378,26 +383,26 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 		return fmt.Errorf("failed to create Azure credential: %w", err)
 	}
 
-	// Get AI Foundry region using SDK
+	// Get Microsoft Foundry region using SDK
 	aiFoundryRegion, err := getCognitiveServicesAccountLocation(ctx, cred, projectSubscriptionID, projectResourceGroup, projectAIFoundryName)
 	if err != nil {
-		return fmt.Errorf("failed to get AI Foundry region: %w", err)
+		return fmt.Errorf("failed to get Microsoft Foundry region: %w", err)
 	}
 
-	fmt.Printf("AI Foundry region: %s\n", aiFoundryRegion)
+	fmt.Printf("Microsoft Foundry region: %s\n", aiFoundryRegion)
 	fmt.Printf("Project: %s\n", projectName)
 	fmt.Printf("Deployment: %s\n", deploymentName)
 	fmt.Printf("Agent: %s\n", agentName)
 
 	// Assign Azure AI User role
-	if err := assignAzureAIRole(ctx, cred, containerAppPrincipalID, aiFoundryResourceID); err != nil {
+	if err := assignAzureAIRole(ctx, cred, containerAppPrincipalID, aiAccountResourceId); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: Failed to assign 'Azure AI User' role: %v\n", err)
-		fmt.Fprintln(os.Stderr, "This requires Owner or User Access Administrator role on the AI Foundry Account.")
+		fmt.Fprintln(os.Stderr, "This requires Owner or User Access Administrator role on the Microsoft Foundry Account.")
 		fmt.Fprintln(os.Stderr, "Manual command:")
 		fmt.Fprintf(os.Stderr, "az role assignment create \\\n")
 		fmt.Fprintf(os.Stderr, "  --assignee %s \\\n", containerAppPrincipalID)
 		fmt.Fprintf(os.Stderr, "  --role \"53ca6127-db72-4b80-b1b0-d745d6d5456d\" \\\n")
-		fmt.Fprintf(os.Stderr, "  --scope \"%s\"\n", aiFoundryResourceID)
+		fmt.Fprintf(os.Stderr, "  --scope \"%s\"\n", aiAccountResourceId)
 		return err
 	}
 
@@ -426,13 +431,13 @@ func (p *FoundryParser) CoboPostDeploy(ctx context.Context, args *azdext.Project
 		fmt.Printf("Container App endpoint: %s\n", acaEndpoint)
 	}
 
-	// Get AI Foundry Project endpoint using SDK
-	fmt.Println("Retrieving AI Foundry Project API endpoint...")
+	// Get Microsoft Foundry Project endpoint using SDK
+	fmt.Println("Retrieving Microsoft Foundry Project API endpoint...")
 	aiFoundryProjectEndpoint, err := getAIFoundryProjectEndpoint(ctx, cred, aiFoundryProjectResourceID, projectSubscriptionID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Failed to retrieve AI Foundry Project API endpoint: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: Failed to retrieve Microsoft Foundry Project API endpoint: %v\n", err)
 	} else {
-		fmt.Printf("AI Foundry Project API endpoint: %s\n", aiFoundryProjectEndpoint)
+		fmt.Printf("Microsoft Foundry Project API endpoint: %s\n", aiFoundryProjectEndpoint)
 	}
 
 	// Acquire AAD token using SDK
@@ -875,7 +880,7 @@ func getContainerAppEndpoint(ctx context.Context, cred *azidentity.AzureDevelope
 	return "https://" + fqdn, nil
 }
 
-// getAIFoundryProjectEndpoint retrieves the AI Foundry Project API endpoint using Azure SDK
+// getAIFoundryProjectEndpoint retrieves the Microsoft Foundry Project API endpoint using Azure SDK
 func getAIFoundryProjectEndpoint(ctx context.Context, cred *azidentity.AzureDeveloperCLICredential, resourceID, subscriptionID string) (string, error) {
 	// Create resources client
 	client, err := armresources.NewClient(subscriptionID, cred, nil)
@@ -884,14 +889,14 @@ func getAIFoundryProjectEndpoint(ctx context.Context, cred *azidentity.AzureDeve
 	}
 
 	// Get the resource
-	// API version for AI Foundry projects (Machine Learning workspaces)
+	// API version for Microsoft Foundry projects (Machine Learning workspaces)
 	apiVersion := "2025-06-01"
 	resp, err := client.GetByID(ctx, resourceID, apiVersion, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve resource: %w", err)
 	}
 
-	// Extract AI Foundry API endpoint
+	// Extract Microsoft Foundry API endpoint
 	if resp.Properties == nil {
 		return "", fmt.Errorf("resource does not have properties")
 	}
@@ -968,7 +973,7 @@ func getLatestRevisionName(ctx context.Context, cred *azidentity.AzureDeveloperC
 	return latestRevision, nil
 }
 
-// registerAgent registers the agent with AI Foundry
+// registerAgent registers the agent with Microsoft Foundry
 func registerAgent(uri, token, resourceID, ingressSuffix string) string {
 	fmt.Println()
 	fmt.Println("======================================")

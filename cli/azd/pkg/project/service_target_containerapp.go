@@ -189,16 +189,24 @@ func (at *containerAppTarget) Deploy(
 	// If present, build and deploy it.
 	controlledRevision := false
 
-	moduleName := serviceConfig.Module
-	if moduleName == "" {
-		moduleName = serviceConfig.Name
+	nameOverrideOptions := provisioning.Options{
+		Module: serviceConfig.Name,
 	}
 
-	infraRoot := serviceConfig.Project.Infra.Path
-	if !filepath.IsAbs(infraRoot) {
-		infraRoot = filepath.Join(serviceConfig.Project.Path, infraRoot)
+	// Get the infra options with defaults applied
+	// The order of precedence is:
+	// 1. Service-specific settings
+	// 2. Service-specific override (with module name)
+	// 3. Project-level infra options
+	serviceInfraOptions, err := serviceConfig.Infra.GetWithDefaults(
+		nameOverrideOptions,
+		serviceConfig.Project.Infra,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting service infra options: %w", err)
 	}
-	modulePath := filepath.Join(infraRoot, moduleName)
+
+	modulePath := filepath.Join(serviceInfraOptions.Path, serviceInfraOptions.Module)
 	bicepPath := modulePath + ".bicep"
 	bicepParametersPath := modulePath + ".parameters.json"
 	bicepParamPath := modulePath + ".bicepparam"
@@ -282,13 +290,20 @@ func (at *containerAppTarget) Deploy(
 			ApiVersion: serviceConfig.ApiVersion,
 		}
 
+		// Expand environment variables from service config
+		envVars, err := serviceConfig.Environment.Expand(at.env.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("expanding environment variables: %w", err)
+		}
+
 		progress.SetProgress(NewServiceProgress("Updating container app revision"))
-		err := at.containerAppService.AddRevision(
+		err = at.containerAppService.AddRevision(
 			ctx,
 			targetResource.SubscriptionId(),
 			targetResource.ResourceGroupName(),
 			resourceName,
 			imageName,
+			envVars,
 			&containerAppOptions,
 		)
 		if err != nil {

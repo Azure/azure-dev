@@ -188,11 +188,6 @@ func (m *Manager) ListInstalled() (map[string]*Extension, error) {
 		extensions = map[string]*Extension{}
 	}
 
-	// Initialize the extensions since this are instantiated from JSON unmarshalling.
-	for _, extension := range extensions {
-		extension.init()
-	}
-
 	m.installed = extensions
 
 	return m.installed, nil

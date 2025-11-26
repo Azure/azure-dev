@@ -39,6 +39,8 @@ func (r *Runner) Invoke(ctx context.Context, extension *Extension, options *Invo
 		return nil, fmt.Errorf("failed to get user config directory: %w", err)
 	}
 
+	extension.ensureInit()
+
 	extensionPath := filepath.Join(userConfigDir, extension.Path)
 	if _, err := os.Stat(extensionPath); err != nil {
 		return nil, fmt.Errorf("extension path '%s' not found: %w", extensionPath, err)

@@ -235,6 +235,7 @@ Increase `-20` if needed to find the cutoff commit. `git log` shows commits in r
     - Automated dependency bumps and CVE fixes that are purely dependency updates (updates to tools like Bicep CLI, GitHub CLI should remain in the changelog)
     - Internal refactoring, code cleanup, and variable renames without user impact
     - Build/release infrastructure and CI/CD pipeline changes
+    - Changes exclusively under `cli/azd/extensions/` directory (extension-specific updates)
 
 ### Step 4: Organize and finalize
 1. **Remove empty categories** and **validate formatting**

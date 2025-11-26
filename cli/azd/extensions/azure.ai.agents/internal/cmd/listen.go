@@ -15,13 +15,16 @@ import (
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/braydonk/yaml"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func newListenCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "listen",
-		Short: "Starts the extension and listens for events.",
+		Use:    "listen",
+		Short:  "Starts the extension and listens for events.",
+		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Create a new context that includes the AZD access token.
 			ctx := azdext.WithAccessToken(cmd.Context())
@@ -42,6 +45,9 @@ func newListenCommand() *cobra.Command {
 				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					return preprovisionHandler(ctx, azdClient, projectParser, args)
 				}).
+				WithProjectEventHandler("predeploy", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
+					return predeployHandler(ctx, azdClient, projectParser, args)
+				}).
 				WithProjectEventHandler("postdeploy", projectParser.CoboPostDeploy)
 
 			// Start listening for events
@@ -61,11 +67,15 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, proje
 	}
 
 	for _, svc := range args.Project.Services {
-		if svc.Host == AiAgentHost {
-			if err := preprovisionEnvUpdate(ctx, azdClient, args.Project, svc); err != nil {
+		switch svc.Host {
+		case AiAgentHost:
+			if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
+				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+			}
+			if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
 				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 			}
-		} else if svc.Host == ContainerAppHost {
+		case ContainerAppHost:
 			if err := containerAgentHandling(ctx, azdClient, args.Project, svc); err != nil {
 				return fmt.Errorf("failed to handle container agent for service %q: %w", svc.Name, err)
 			}
@@ -75,7 +85,27 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, proje
 	return nil
 }
 
-func preprovisionEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
+func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, projectParser *project.FoundryParser, args *azdext.ProjectEventArgs) error {
+	if err := projectParser.SetIdentity(ctx, args); err != nil {
+		return fmt.Errorf("failed to set identity: %w", err)
+	}
+
+	for _, svc := range args.Project.Services {
+		switch svc.Host {
+		case AiAgentHost:
+			if err := populateContainerSettings(ctx, azdClient, svc); err != nil {
+				return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+			}
+			if err := envUpdate(ctx, azdClient, args.Project, svc); err != nil {
+				return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func envUpdate(ctx context.Context, azdClient *azdext.AzdClient, azdProject *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
 
 	var foundryAgentConfig *project.ServiceTargetAgentConfig
 
@@ -92,8 +122,16 @@ func preprovisionEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, azd
 		return err
 	}
 
-	if err := deploymentEnvUpdate(ctx, foundryAgentConfig.Deployments, azdClient, currentEnvResponse.Environment.Name); err != nil {
-		return err
+	if len(foundryAgentConfig.Deployments) > 0 {
+		if err := deploymentEnvUpdate(ctx, foundryAgentConfig.Deployments, azdClient, currentEnvResponse.Environment.Name); err != nil {
+			return err
+		}
+	}
+
+	if len(foundryAgentConfig.Resources) > 0 {
+		if err := resourcesEnvUpdate(ctx, foundryAgentConfig.Resources, azdClient, currentEnvResponse.Environment.Name); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -109,38 +147,23 @@ func kindEnvUpdate(ctx context.Context, azdClient *azdext.AzdClient, project *az
 		return fmt.Errorf("failed to read YAML file: %w", err)
 	}
 
-	agentManifest, err := agent_yaml.LoadAndValidateAgentManifest(data)
+	err = agent_yaml.ValidateAgentDefinition(data)
 	if err != nil {
-		return fmt.Errorf("failed to parse and validate YAML: %w", err)
+		return fmt.Errorf("agent.yaml is not valid: %w", err)
 	}
 
-	// Convert the template to bytes
-	templateBytes, err := json.Marshal(agentManifest.Template)
-	if err != nil {
-		return fmt.Errorf("failed to marshal agent template to JSON: %w", err)
+	var genericTemplate map[string]interface{}
+	if err := yaml.Unmarshal(data, &genericTemplate); err != nil {
+		return fmt.Errorf("YAML content is not valid: %w", err)
 	}
 
-	// Convert the bytes to a dictionary
-	var templateDict map[string]interface{}
-	if err := json.Unmarshal(templateBytes, &templateDict); err != nil {
-		return fmt.Errorf("failed to unmarshal agent template from JSON: %w", err)
+	kind, ok := genericTemplate["kind"].(string)
+	if !ok {
+		return fmt.Errorf("kind field is not a valid string")
 	}
 
-	// Convert the dictionary to bytes
-	dictJsonBytes, err := json.Marshal(templateDict)
-	if err != nil {
-		return fmt.Errorf("failed to marshal templateDict to JSON: %w", err)
-	}
-
-	// Convert the bytes to an Agent Definition
-	var agentDef agent_yaml.AgentDefinition
-	if err := json.Unmarshal(dictJsonBytes, &agentDef); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON to AgentDefinition: %w", err)
-	}
-
-	// Set environment variables based on agent kind
-	switch agentDef.Kind {
-	case agent_yaml.AgentKindHosted:
+	switch kind {
+	case string(agent_yaml.AgentKindHosted):
 		if err := setEnvVar(ctx, azdClient, envName, "ENABLE_HOSTED_AGENTS", "true"); err != nil {
 			return err
 		}
@@ -163,6 +186,20 @@ func deploymentEnvUpdate(ctx context.Context, deployments []project.Deployment, 
 	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPLOYMENTS", escapedJsonString)
 }
 
+func resourcesEnvUpdate(ctx context.Context, resources []project.Resource, azdClient *azdext.AzdClient, envName string) error {
+	resourcesJson, err := json.Marshal(resources)
+	if err != nil {
+		return fmt.Errorf("failed to marshal resource details to JSON: %w", err)
+	}
+
+	// Escape backslashes and double quotes for environment variable
+	jsonString := string(resourcesJson)
+	escapedJsonString := strings.ReplaceAll(jsonString, "\\", "\\\\")
+	escapedJsonString = strings.ReplaceAll(escapedJsonString, "\"", "\\\"")
+
+	return setEnvVar(ctx, azdClient, envName, "AI_PROJECT_DEPENDENT_RESOURCES", escapedJsonString)
+}
+
 func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, project *azdext.ProjectConfig, svc *azdext.ServiceConfig) error {
 	servicePath := svc.RelativePath
 	fullPath := filepath.Join(project.Path, servicePath)
@@ -173,12 +210,12 @@ func containerAgentHandling(ctx context.Context, azdClient *azdext.AzdClient, pr
 		return nil
 	}
 
-	_, err = agent_yaml.LoadAndValidateAgentManifest(data)
-	if err != nil {
-		return nil
+	var agentDef agent_yaml.AgentDefinition
+	if err := yaml.Unmarshal(data, &agentDef); err != nil {
+		return fmt.Errorf("YAML content is not valid: %w", err)
 	}
 
-	// If there is an agent.yaml in the project, and it can be properly parsed into a manifest, add the env var to enable container agents
+	// If there is an agent.yaml in the project, and it can be properly parsed into an agent definition, add the env var to enable container agents
 	currentEnvResponse, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return err
@@ -202,5 +239,79 @@ func setEnvVar(ctx context.Context, azdClient *azdext.AzdClient, envName string,
 	}
 
 	fmt.Printf("Set environment variable: %s=%s\n", key, value)
+	return nil
+}
+
+func populateContainerSettings(ctx context.Context, azdClient *azdext.AzdClient, svc *azdext.ServiceConfig) error {
+	var foundryAgentConfig *project.ServiceTargetAgentConfig
+	if err := project.UnmarshalStruct(svc.Config, &foundryAgentConfig); err != nil {
+		return fmt.Errorf("failed to parse foundry agent config: %w", err)
+	}
+
+	// Initialize result with existing values
+	result := &project.ContainerSettings{}
+
+	// Check and populate base object
+	containerSettings := foundryAgentConfig.Container
+	if containerSettings == nil {
+		containerSettings = &project.ContainerSettings{}
+	}
+
+	// Check and populate Resources
+	if containerSettings.Resources == nil {
+		result.Resources = &project.ResourceSettings{}
+	} else {
+		result.Resources = &project.ResourceSettings{
+			Memory: containerSettings.Resources.Memory,
+			Cpu:    containerSettings.Resources.Cpu,
+		}
+	}
+
+	// Check and populate Scale
+	if containerSettings.Scale == nil {
+		result.Scale = &project.ScaleSettings{}
+	} else {
+		result.Scale = &project.ScaleSettings{
+			MinReplicas: containerSettings.Scale.MinReplicas,
+			MaxReplicas: containerSettings.Scale.MaxReplicas,
+		}
+	}
+
+	// Set default values if zero or empty
+	if result.Resources.Memory == "" {
+		result.Resources.Memory = project.DefaultMemory
+	}
+
+	if result.Resources.Cpu == "" {
+		result.Resources.Cpu = project.DefaultCpu
+	}
+
+	if result.Scale.MinReplicas == 0 {
+		result.Scale.MinReplicas = project.DefaultMinReplicas
+	}
+
+	if result.Scale.MaxReplicas == 0 {
+		result.Scale.MaxReplicas = project.DefaultMaxReplicas
+	}
+
+	// Update the container settings in the existing config
+	foundryAgentConfig.Container = result
+
+	// Marshal the complete updated agent config back to the service config
+	var agentConfigStruct *structpb.Struct
+	var err error
+	if agentConfigStruct, err = project.MarshalStruct(foundryAgentConfig); err != nil {
+		return fmt.Errorf("failed to marshal agent config: %w", err)
+	}
+
+	svc.Config = agentConfigStruct
+
+	// Need to add the service config back to the project for use further down the pipeline
+	req := &azdext.AddServiceRequest{Service: svc}
+
+	if _, err := azdClient.Project().AddService(ctx, req); err != nil {
+		return fmt.Errorf("adding agent service to project: %w", err)
+	}
+
 	return nil
 }

@@ -26,9 +26,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const (
-	defaultModule = "main"
-	defaultPath   = "infra"
+var (
+	defaultOptions = provisioning.Options{
+		Module: "main",
+		Path:   "infra",
+	}
 )
 
 // TerraformProvider exposes infrastructure provisioning using Azure Terraform templates
@@ -80,14 +82,13 @@ func NewTerraformProvider(
 }
 
 func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, options provisioning.Options) error {
+	infraOptions, err := options.GetWithDefaults(defaultOptions)
+	if err != nil {
+		return fmt.Errorf("merging terraform provider options: %w", err)
+	}
+
 	t.projectPath = projectPath
-	t.options = options
-	if t.options.Module == "" {
-		t.options.Module = defaultModule
-	}
-	if t.options.Path == "" {
-		t.options.Path = defaultPath
-	}
+	t.options = infraOptions
 
 	requiredTools := t.RequiredExternalTools()
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {

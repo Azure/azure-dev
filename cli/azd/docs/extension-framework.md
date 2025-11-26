@@ -94,26 +94,26 @@ Lists matching extensions from one or more extension sources.
 - `--source` When set will only list extensions from the specified source.
 - `--tags` Allows filtering extensions by tags (e.g., AI, test)
 
-#### `azd extension show <extension-name> [flags]`
+#### `azd extension show <extension-id> [flags]`
 
 Shows detailed information for a specific extension, including description, tags, versions, and installation status.
 
 - `-s, --source` The extension source to use. Use this flag when the same extension ID exists in multiple sources.
 
-#### `azd extension install <extension-names> [flags]`
+#### `azd extension install <extension-ids> [flags]`
 
 Installs one or more extensions from any configured extension source.
 
 - `-v, --version` Specifies the version constraint to apply when installing extensions. Supports any semver constraint notation.
 - `-s, --source` Specifies the extension source used for installations.
 
-#### `azd extension uninstall <extension-names> [flags]`
+#### `azd extension uninstall <extension-ids> [flags]`
 
 Uninstalls one or more previously installed extensions.
 
 - `--all` Removes all installed extensions when specified.
 
-#### `azd extension upgrade <extension-names>`
+#### `azd extension upgrade <extension-ids>`
 
 Upgrades one or more extensions to the latest versions.
 

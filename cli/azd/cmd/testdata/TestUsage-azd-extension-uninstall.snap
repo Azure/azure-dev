@@ -2,7 +2,7 @@
 Uninstall specified extensions.
 
 Usage
-  azd extension uninstall <extension-name> [flags]
+  azd extension uninstall [extension-id] [flags]
 
 Flags
         --all 	: Uninstall all installed extensions

@@ -351,7 +351,7 @@ func extensionActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 	// Add your new command
 	group.Add("validate", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "validate <extension-name>",
+			Use:   "validate <extension-id>",
 			Short: "Validate an extension configuration.",
 			Args:  cobra.ExactArgs(1),
 		},

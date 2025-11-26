@@ -12,12 +12,12 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// NewAddAgentTool creates a tool for adding AI Foundry agents to a project
+// NewAddAgentTool creates a tool for adding Microsoft Foundry agents to a project
 func NewAddAgentTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.NewTool(
 			"add_agent",
-			mcp.WithDescription("Add an AI Foundry agent to the current azd project using an agent manifest"),
+			mcp.WithDescription("Add a Microsoft Foundry agent to the current azd project using an agent manifest"),
 			mcp.WithReadOnlyHintAnnotation(false),
 			mcp.WithIdempotentHintAnnotation(false),
 			mcp.WithDestructiveHintAnnotation(false),
@@ -78,9 +78,9 @@ func processAgentManifest(manifestLocation string) string {
 📋 Next steps:
 1. The agent configuration has been added to your azd project
 2. Run 'azd provision' to create the necessary Azure resources
-3. Run 'azd deploy' to deploy your AI Foundry agent
+3. Run 'azd deploy' to deploy your Microsoft Foundry agent
 
 🔗 Agent manifest location: %s
-🎯 Agent will be configured for AI Foundry deployment`,
+🎯 Agent will be configured for Microsoft Foundry deployment`,
 		manifestLocation, manifestLocation)
 }

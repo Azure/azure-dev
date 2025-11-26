@@ -47,8 +47,7 @@ $tagsFlag = "-tags=cfi,cfg,osusergo"
 # -w: Omit DWARF symbol table
 # -X: Set variable at link time. Used to set the version in source.
 
-# TODO: set version properly
-$ldFlag = "-ldflags=-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)' "
+$ldFlag = "-ldflags=-s -w -X 'azureaiagent/internal/version.Version=$Version' -X 'azureaiagent/internal/version.Commit=$SourceVersion' -X 'azureaiagent/internal/version.BuildDate=$(Get-Date -Format o)' "
 
 if ($IsWindows) {
     $msg = "Building for Windows"

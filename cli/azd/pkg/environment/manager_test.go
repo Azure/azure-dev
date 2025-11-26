@@ -70,6 +70,7 @@ func newManagerForTest(
 		console:    console,
 		local:      localDataStore,
 		remote:     remoteDataStore,
+		envCache:   make(map[string]*Environment),
 	}
 }
 
@@ -447,4 +448,256 @@ func (m *MockDataStore) Save(ctx context.Context, env *Environment, options *Sav
 func (m *MockDataStore) Delete(ctx context.Context, name string) error {
 	args := m.Called(ctx, name)
 	return args.Error(0)
+}
+
+func Test_EnvManager_InstanceCaching(t *testing.T) {
+	t.Run("Get returns same instance for same name", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+		localDataStore := &MockDataStore{}
+
+		env1 := NewWithValues("test-env", map[string]string{
+			"key1":            "value1",
+			EnvNameEnvVarName: "test-env",
+		})
+
+		// First Get should load from data store
+		localDataStore.On("Get", *mockContext.Context, "test-env").Return(env1, nil).Once()
+
+		// Subsequent Gets should trigger Reload on the cached instance
+		localDataStore.On("Reload", *mockContext.Context, env1).Return(nil)
+
+		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, nil)
+
+		// First call - loads from data store
+		result1, err := manager.Get(*mockContext.Context, "test-env")
+		require.NoError(t, err)
+		require.NotNil(t, result1)
+
+		// Second call - should return same instance from cache (after reload)
+		result2, err := manager.Get(*mockContext.Context, "test-env")
+		require.NoError(t, err)
+		require.NotNil(t, result2)
+
+		// Verify it's the exact same pointer
+		require.Same(t, result1, result2, "Get should return same instance for same environment name")
+
+		// Third call - verify cache still works
+		result3, err := manager.Get(*mockContext.Context, "test-env")
+		require.NoError(t, err)
+		require.Same(t, result1, result3, "Cache should persist across multiple calls")
+
+		// Verify Reload was called for cached retrievals
+		localDataStore.AssertCalled(t, "Reload", *mockContext.Context, env1)
+		localDataStore.AssertNumberOfCalls(t, "Get", 1) // Only called once for initial load
+	})
+
+	t.Run("Cached instance is reloaded on each Get", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+		localDataStore := &MockDataStore{}
+
+		env := NewWithValues("test-env", map[string]string{
+			"key1":            "initial-value",
+			EnvNameEnvVarName: "test-env",
+		})
+
+		localDataStore.On("Get", *mockContext.Context, "test-env").Return(env, nil).Once()
+
+		// Mock Reload to simulate updating the environment with new data
+		callCount := 0
+		localDataStore.On("Reload", *mockContext.Context, env).Run(func(args mock.Arguments) {
+			callCount++
+			// Simulate reload updating the environment
+			e := args.Get(1).(*Environment)
+			e.DotenvSet("key1", fmt.Sprintf("reloaded-value-%d", callCount))
+		}).Return(nil)
+
+		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, nil)
+
+		// First Get
+		result1, err := manager.Get(*mockContext.Context, "test-env")
+		require.NoError(t, err)
+		require.Equal(t, "initial-value", result1.Getenv("key1"))
+
+		// Second Get - should reload and get updated value
+		result2, err := manager.Get(*mockContext.Context, "test-env")
+		require.NoError(t, err)
+		require.Same(t, result1, result2, "Should be same instance")
+		require.Equal(t, "reloaded-value-1", result2.Getenv("key1"), "Reload should update values")
+
+		// Third Get - should reload again
+		result3, err := manager.Get(*mockContext.Context, "test-env")
+		require.NoError(t, err)
+		require.Same(t, result1, result3, "Should be same instance")
+		require.Equal(t, "reloaded-value-2", result3.Getenv("key1"), "Reload should update values again")
+
+		localDataStore.AssertNumberOfCalls(t, "Reload", 2)
+	})
+
+	t.Run("Reload failure returns error", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+		localDataStore := &MockDataStore{}
+
+		env := NewWithValues("test-env", map[string]string{
+			"key1":            "value1",
+			EnvNameEnvVarName: "test-env",
+		})
+
+		// First Get succeeds
+		localDataStore.On("Get", *mockContext.Context, "test-env").Return(env, nil).Once()
+
+		// Second Get: Reload fails - should return error
+		reloadErr := errors.New("reload failed")
+		localDataStore.On("Reload", *mockContext.Context, env).Return(reloadErr).Once()
+
+		// Third Get: Reload succeeds
+		localDataStore.On("Reload", *mockContext.Context, env).Return(nil)
+
+		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, nil)
+
+		// First call - loads and caches env
+		result1, err := manager.Get(*mockContext.Context, "test-env")
+		require.NoError(t, err)
+		require.Same(t, env, result1)
+
+		// Second call - reload fails, should return the error
+		result2, err := manager.Get(*mockContext.Context, "test-env")
+		require.Error(t, err)
+		require.ErrorIs(t, err, reloadErr)
+		require.Nil(t, result2, "Should return nil on reload failure")
+
+		// Third call - reload succeeds, should return cached instance
+		result3, err := manager.Get(*mockContext.Context, "test-env")
+		require.NoError(t, err)
+		require.Same(t, env, result3, "Should still return cached instance after reload succeeds")
+
+		localDataStore.AssertNumberOfCalls(t, "Get", 1) // Only called once for initial load
+		localDataStore.AssertNumberOfCalls(t, "Reload", 2)
+	})
+
+	t.Run("Delete removes from cache", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+		localDataStore := &MockDataStore{}
+
+		env1 := NewWithValues("test-env", map[string]string{
+			"key1":            "value1",
+			EnvNameEnvVarName: "test-env",
+		})
+		env2 := NewWithValues("test-env", map[string]string{
+			"key1":            "value2",
+			EnvNameEnvVarName: "test-env",
+		})
+
+		// First Get loads env1
+		localDataStore.On("Get", *mockContext.Context, "test-env").Return(env1, nil).Once()
+		localDataStore.On("Reload", *mockContext.Context, env1).Return(nil)
+
+		// Delete succeeds
+		localDataStore.On("Delete", *mockContext.Context, "test-env").Return(nil).Once()
+
+		// After delete, Get loads fresh env2
+		localDataStore.On("Get", *mockContext.Context, "test-env").Return(env2, nil).Once()
+		localDataStore.On("Reload", *mockContext.Context, env2).Return(nil)
+
+		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, nil)
+
+		// Load and cache env1
+		result1, err := manager.Get(*mockContext.Context, "test-env")
+		require.NoError(t, err)
+		require.Same(t, env1, result1)
+
+		// Verify it's cached
+		result2, err := manager.Get(*mockContext.Context, "test-env")
+		require.NoError(t, err)
+		require.Same(t, env1, result2)
+
+		// Delete the environment
+		err = manager.Delete(*mockContext.Context, "test-env")
+		require.NoError(t, err)
+
+		// Get after delete should load fresh instance
+		result3, err := manager.Get(*mockContext.Context, "test-env")
+		require.NoError(t, err)
+		require.Same(t, env2, result3, "After delete, should load fresh instance")
+		require.NotSame(t, env1, result3, "Should not return cached instance after delete")
+
+		localDataStore.AssertNumberOfCalls(t, "Get", 2) // Initial load and after delete
+	})
+
+	t.Run("Different environment names get different instances", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+		localDataStore := &MockDataStore{}
+
+		env1 := NewWithValues("env1", map[string]string{
+			"key1":            "value1",
+			EnvNameEnvVarName: "env1",
+		})
+		env2 := NewWithValues("env2", map[string]string{
+			"key1":            "value2",
+			EnvNameEnvVarName: "env2",
+		})
+
+		localDataStore.On("Get", *mockContext.Context, "env1").Return(env1, nil)
+		localDataStore.On("Get", *mockContext.Context, "env2").Return(env2, nil)
+		localDataStore.On("Reload", *mockContext.Context, env1).Return(nil)
+		localDataStore.On("Reload", *mockContext.Context, env2).Return(nil)
+
+		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, nil)
+
+		// Get env1
+		result1, err := manager.Get(*mockContext.Context, "env1")
+		require.NoError(t, err)
+		require.Same(t, env1, result1)
+
+		// Get env2
+		result2, err := manager.Get(*mockContext.Context, "env2")
+		require.NoError(t, err)
+		require.Same(t, env2, result2)
+
+		// Verify they are different instances
+		require.NotSame(t, result1, result2, "Different environment names should have different instances")
+
+		// Get env1 again - should return same instance as first call
+		result3, err := manager.Get(*mockContext.Context, "env1")
+		require.NoError(t, err)
+		require.Same(t, result1, result3, "Same environment name should return same cached instance")
+	})
+
+	t.Run("Save does not affect cache", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+		localDataStore := &MockDataStore{}
+
+		env := NewWithValues("test-env", map[string]string{
+			"key1":            "value1",
+			EnvNameEnvVarName: "test-env",
+		})
+
+		localDataStore.On("Get", *mockContext.Context, "test-env").Return(env, nil).Once()
+		localDataStore.On("Reload", *mockContext.Context, env).Return(nil)
+		localDataStore.On("Save", *mockContext.Context, env, mock.Anything).Return(nil)
+
+		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, nil)
+
+		// Get and cache the environment
+		result1, err := manager.Get(*mockContext.Context, "test-env")
+		require.NoError(t, err)
+
+		// Modify and save
+		result1.DotenvSet("key2", "value2")
+		err = manager.Save(*mockContext.Context, result1)
+		require.NoError(t, err)
+
+		// Get again - should return same instance with modifications
+		result2, err := manager.Get(*mockContext.Context, "test-env")
+		require.NoError(t, err)
+		require.Same(t, result1, result2, "Save should not affect cached instance")
+		require.Equal(t, "value2", result2.Getenv("key2"), "Modifications should be visible in cached instance")
+
+		localDataStore.AssertNumberOfCalls(t, "Get", 1) // Only initial load, not after Save
+	})
 }

@@ -2,7 +2,7 @@
 Upgrade specified extensions.
 
 Usage
-  azd extension upgrade <extension-name> [flags]
+  azd extension upgrade [extension-id] [flags]
 
 Flags
         --all            	: Upgrade all installed extensions

@@ -1,6 +1,6 @@
 # Release History
 
-## 1.21.0-beta.1 (Unreleased)
+## 1.22.0-beta.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,43 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.21.3 (2025-11-14)
+
+### Bugs Fixed
+
+- [[#6190]](https://github.com/Azure/azure-dev/pull/6190) Fix default infrastructure settings being incorrectly written to `azure.yaml` files.
+
+## 1.21.2 (2025-11-13)
+
+### Features Added
+
+- [[#6169]](https://github.com/Azure/azure-dev/pull/6169) Promote layered provisioning to beta.
+- [[#6154]](https://github.com/Azure/azure-dev/pull/6154) Add `env` property to service configuration for runtime environment variable management in Container Apps.
+
+## 1.21.1 (2025-11-11)
+
+### Features Added
+
+- [[#6133]](https://github.com/Azure/azure-dev/pull/6133) Add .Net10 to azd auto-gen templates for pipeline config.
+
+## 1.21.0 (2025-11-10)
+
+### Features Added
+
+- [[#6013]](https://github.com/Azure/azure-dev/pull/6013) Adds support for custom ServiceConfig settings for extensions.
+- [[#6074]](https://github.com/Azure/azure-dev/pull/6074) Update azd show to show endpoints from custom service targets.
+- [[#6073]](https://github.com/Azure/azure-dev/pull/6073) Enhance no-prompt support in extensions & prompt service.
+- [[#6083]](https://github.com/Azure/azure-dev/pull/6083) Moving hooks warning from console to logs.
+- [[#6093]](https://github.com/Azure/azure-dev/pull/6093) Support for Aspire 13.
+
+### Bugs Fixed
+
+- [[#6015]](https://github.com/Azure/azure-dev/pull/6015) Fix hyperlink ANSI escape codes appearing in non-terminal output.
+- [[#6032]](https://github.com/Azure/azure-dev/pull/6032) Fix flickering progress bar during agent deployment.
+- [[#6028]](https://github.com/Azure/azure-dev/pull/6028) Fixes lifetime issues with container helper from extension container service.
+- [[#6063]](https://github.com/Azure/azure-dev/pull/6063) Reload env before loading parameters in bicep provider.
+- [[#6098]](https://github.com/Azure/azure-dev/pull/6098) Fixes issues with remote build on agent extension.
 
 ## 1.20.3 (2025-10-28)
 

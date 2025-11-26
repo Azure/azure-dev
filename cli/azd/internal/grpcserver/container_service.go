@@ -10,7 +10,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -22,7 +21,6 @@ type containerService struct {
 	lazyContainerHelper *lazy.Lazy[*project.ContainerHelper]
 	lazyServiceManager  *lazy.Lazy[project.ServiceManager]
 	lazyProject         *lazy.Lazy[*project.ProjectConfig]
-	lazyEnvironment     *lazy.Lazy[*environment.Environment]
 }
 
 func NewContainerService(
@@ -30,14 +28,12 @@ func NewContainerService(
 	lazyContainerHelper *lazy.Lazy[*project.ContainerHelper],
 	lazyServiceManager *lazy.Lazy[project.ServiceManager],
 	lazyProjectConf *lazy.Lazy[*project.ProjectConfig],
-	lazyEnvironment *lazy.Lazy[*environment.Environment],
 ) azdext.ContainerServiceServer {
 	return &containerService{
 		console:             console,
 		lazyContainerHelper: lazyContainerHelper,
 		lazyServiceManager:  lazyServiceManager,
 		lazyProject:         lazyProjectConf,
-		lazyEnvironment:     lazyEnvironment,
 	}
 }
 

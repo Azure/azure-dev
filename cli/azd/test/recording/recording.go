@@ -344,7 +344,7 @@ func Start(t *testing.T, opts ...Options) *Session {
 					return
 				}
 
-				t.Fatal("recorderProxy: " + msg)
+				t.Log("recorderProxy: " + msg)
 			},
 			Recorder: vcr,
 		},

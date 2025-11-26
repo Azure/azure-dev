@@ -96,6 +96,21 @@ func (rs *ResourceService) GetResource(
 	}, nil
 }
 
+func (rs *ResourceService) CheckExistenceByID(
+	ctx context.Context, resourceId arm.ResourceID, apiVersion string) (bool, error) {
+	client, err := rs.createResourcesClient(ctx, resourceId.SubscriptionID)
+	if err != nil {
+		return false, err
+	}
+
+	response, err := client.CheckExistenceByID(ctx, resourceId.String(), apiVersion, nil)
+	if err != nil {
+		return false, fmt.Errorf("checking resource existence by id: %w", err)
+	}
+
+	return response.Success, nil
+}
+
 func (rs *ResourceService) GetRawResource(
 	ctx context.Context, resourceId arm.ResourceID, apiVersion string) (string, error) {
 	client, err := rs.createResourcesClient(ctx, resourceId.SubscriptionID)

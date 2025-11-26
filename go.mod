@@ -72,6 +72,7 @@ require (
 	github.com/theckman/yacspin v0.13.12
 	github.com/tidwall/gjson v1.18.0
 	github.com/tmc/langchaingo v0.1.13
+	github.com/vbauerster/mpb/v8 v8.11.2
 	go.lsp.dev/jsonrpc2 v0.10.0
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.38.0
@@ -153,7 +154,6 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
-	github.com/vbauerster/mpb/v8 v8.11.2 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yargevad/filepathx v1.0.0 // indirect

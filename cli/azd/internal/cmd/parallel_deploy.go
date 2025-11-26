@@ -243,6 +243,49 @@ func (m *ParallelDeploymentManager) deployServiceWithProgress(
 	return deployResult, nil
 }
 
+// detectCycle checks if there's a circular dependency in the service graph
+func detectCycle(serviceName string, serviceMap map[string]*project.ServiceConfig, visited, recStack map[string]bool) bool {
+	visited[serviceName] = true
+	recStack[serviceName] = true
+
+	svc, exists := serviceMap[serviceName]
+	if !exists {
+		return false
+	}
+
+	for _, dep := range svc.Uses {
+		// Only consider dependencies that are actual services
+		if _, isService := serviceMap[dep]; !isService {
+			continue
+		}
+		if !visited[dep] {
+			if detectCycle(dep, serviceMap, visited, recStack) {
+				return true
+			}
+		} else if recStack[dep] {
+			return true
+		}
+	}
+
+	recStack[serviceName] = false
+	return false
+}
+
+// hasCyclicDependencies checks if any service has circular dependencies
+func hasCyclicDependencies(serviceConfigs []*project.ServiceConfig, serviceMap map[string]*project.ServiceConfig) bool {
+	visited := make(map[string]bool)
+	recStack := make(map[string]bool)
+
+	for _, svc := range serviceConfigs {
+		if !visited[svc.Name] {
+			if detectCycle(svc.Name, serviceMap, visited, recStack) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // DeployServicesWithDependencies deploys services respecting their dependencies
 // Services without dependencies (or whose dependencies are complete) deploy in parallel
 // Services with dependencies wait for their dependencies to complete first
@@ -255,6 +298,11 @@ func (m *ParallelDeploymentManager) DeployServicesWithDependencies(
 		return make(map[string]*project.ServiceDeployResult), nil
 	}
 
+	// Check for circular dependencies to prevent deadlock
+	if hasCyclicDependencies(serviceConfigs, serviceMap) {
+		return nil, fmt.Errorf("circular dependency detected between services")
+	}
+
 	// Track completed services and their results
 	resultsMu := sync.Mutex{}
 	results := make(map[string]*project.ServiceDeployResult)
@@ -263,7 +311,7 @@ func (m *ParallelDeploymentManager) DeployServicesWithDependencies(
 	completedMu := sync.Mutex{}
 	completed := make(map[string]bool)
 
-	// Create channels to signal completion for each service
+	// Create channels to signal completion for each service being deployed
 	completionChans := make(map[string]chan struct{})
 	for _, svc := range serviceConfigs {
 		completionChans[svc.Name] = make(chan struct{})

@@ -76,9 +76,9 @@ func TestServiceFiltering(t *testing.T) {
 
 func TestServiceDependencyDetection(t *testing.T) {
 	tests := []struct {
-		name             string
-		services         []*project.ServiceConfig
-		hasDependencies  bool
+		name            string
+		services        []*project.ServiceConfig
+		hasDependencies bool
 	}{
 		{
 			name: "NoDependencies",
@@ -140,6 +140,71 @@ func TestServiceDependencyDetection(t *testing.T) {
 
 			require.Equal(t, tt.hasDependencies, hasDependencies,
 				"Expected hasDependencies=%v, got %v", tt.hasDependencies, hasDependencies)
+		})
+	}
+}
+
+func TestCyclicDependencyDetection(t *testing.T) {
+	tests := []struct {
+		name     string
+		services []*project.ServiceConfig
+		hasCycle bool
+	}{
+		{
+			name: "NoCycle",
+			services: []*project.ServiceConfig{
+				{Name: "api", Uses: []string{}},
+				{Name: "web", Uses: []string{"api"}},
+			},
+			hasCycle: false,
+		},
+		{
+			name: "SimpleCycle",
+			services: []*project.ServiceConfig{
+				{Name: "api", Uses: []string{"web"}},
+				{Name: "web", Uses: []string{"api"}},
+			},
+			hasCycle: true,
+		},
+		{
+			name: "IndirectCycle",
+			services: []*project.ServiceConfig{
+				{Name: "a", Uses: []string{"b"}},
+				{Name: "b", Uses: []string{"c"}},
+				{Name: "c", Uses: []string{"a"}},
+			},
+			hasCycle: true,
+		},
+		{
+			name: "SelfCycle",
+			services: []*project.ServiceConfig{
+				{Name: "api", Uses: []string{"api"}},
+			},
+			hasCycle: true,
+		},
+		{
+			name: "NoCycleWithExternalDeps",
+			services: []*project.ServiceConfig{
+				{Name: "api", Uses: []string{"postgresdb"}},
+				{Name: "web", Uses: []string{"api", "redis"}},
+			},
+			hasCycle: false, // postgresdb and redis are not services
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Build service map
+			serviceMap := make(map[string]*project.ServiceConfig)
+			for _, svc := range tt.services {
+				serviceMap[svc.Name] = svc
+			}
+
+			// Test cycle detection using the function from parallel_deploy.go
+			hasCycle := hasCyclicDependencies(tt.services, serviceMap)
+
+			require.Equal(t, tt.hasCycle, hasCycle,
+				"Expected hasCycle=%v, got %v", tt.hasCycle, hasCycle)
 		})
 	}
 }

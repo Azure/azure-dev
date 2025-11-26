@@ -24,7 +24,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/fatih/color"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 func projectDisplayName(p appdetect.Project) string {
@@ -85,8 +84,8 @@ func (d *detectConfirm) Init(projects []appdetect.Project, root string) {
 }
 
 func (d *detectConfirm) captureUsage(
-	databases attribute.Key,
-	services attribute.Key) {
+	databases fields.AttributeKey,
+	services fields.AttributeKey) {
 	names := make([]string, 0, len(d.Services))
 	for _, svc := range d.Services {
 		names = append(names, string(svc.Language))

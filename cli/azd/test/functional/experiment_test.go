@@ -84,8 +84,8 @@ func Test_CLI_Experiment_AssignmentContextInTelemetry(t *testing.T) {
 		if strings.HasPrefix(span.Name, "cmd.") {
 			usageCmdFound = true
 			m := attributesMap(span.Attributes)
-			require.Contains(t, m, fields.ExpAssignmentContextKey)
-			require.Equal(t, "context:393182;", m[fields.ExpAssignmentContextKey])
+			require.Contains(t, m, fields.ExpAssignmentContextKey.Key)
+			require.Equal(t, "context:393182;", m[fields.ExpAssignmentContextKey.Key])
 		}
 	}
 

@@ -21,6 +21,7 @@ type TaskState int
 
 const (
 	StatePending TaskState = iota
+	StateWaiting
 	StatePackaging
 	StatePublishing
 	StateDeploying
@@ -32,6 +33,8 @@ func (s TaskState) String() string {
 	switch s {
 	case StatePending:
 		return "Pending"
+	case StateWaiting:
+		return "Waiting"
 	case StatePackaging:
 		return "Packaging"
 	case StatePublishing:
@@ -238,4 +241,140 @@ func (m *ParallelDeploymentManager) deployServiceWithProgress(
 	task.ProgressBar.SetCurrent(95)
 
 	return deployResult, nil
+}
+
+// DeployServicesWithDependencies deploys services respecting their dependencies
+// Services without dependencies (or whose dependencies are complete) deploy in parallel
+// Services with dependencies wait for their dependencies to complete first
+func (m *ParallelDeploymentManager) DeployServicesWithDependencies(
+	ctx context.Context,
+	serviceConfigs []*project.ServiceConfig,
+	serviceMap map[string]*project.ServiceConfig,
+) (map[string]*project.ServiceDeployResult, error) {
+	if len(serviceConfigs) == 0 {
+		return make(map[string]*project.ServiceDeployResult), nil
+	}
+
+	// Track completed services and their results
+	resultsMu := sync.Mutex{}
+	results := make(map[string]*project.ServiceDeployResult)
+
+	// Track completed services for dependency checking
+	completedMu := sync.Mutex{}
+	completed := make(map[string]bool)
+
+	// Create channels to signal completion for each service
+	completionChans := make(map[string]chan struct{})
+	for _, svc := range serviceConfigs {
+		completionChans[svc.Name] = make(chan struct{})
+	}
+
+	// Create progress container
+	p := mpb.NewWithContext(ctx,
+		mpb.WithWidth(80),
+		mpb.WithAutoRefresh(),
+	)
+
+	// Create tasks and progress bars for each service
+	tasks := make(map[string]*ServiceTask)
+	for _, svc := range serviceConfigs {
+		task := &ServiceTask{
+			ServiceName: svc.Name,
+			State:       StatePending,
+		}
+
+		// Create progress bar with state decorator
+		bar := p.AddBar(100,
+			mpb.PrependDecorators(
+				decor.Name(svc.Name, decor.WC{W: 15}),
+				decor.Any(func(decor.Statistics) string {
+					state := task.GetState()
+					if state == StateError {
+						return fmt.Sprintf("[%s ✗]", state.String())
+					} else if state == StateComplete {
+						return fmt.Sprintf("[%s ✓]", state.String())
+					} else if state == StateWaiting {
+						return fmt.Sprintf("[%s]", state.String())
+					}
+					return fmt.Sprintf("[%s]", state.String())
+				}, decor.WC{W: 15}),
+			),
+			mpb.AppendDecorators(
+				decor.Percentage(decor.WC{W: 5}),
+			),
+		)
+
+		task.ProgressBar = bar
+		tasks[svc.Name] = task
+	}
+
+	// Deploy services with dependency awareness
+	eg, ctx := errgroup.WithContext(ctx)
+	sem := make(chan struct{}, m.maxParallel)
+
+	for _, svc := range serviceConfigs {
+		svc := svc
+		task := tasks[svc.Name]
+
+		eg.Go(func() error {
+			// Wait for all service dependencies to complete
+			for _, dep := range svc.Uses {
+				// Only wait if the dependency is another service being deployed
+				if depChan, exists := completionChans[dep]; exists {
+					task.UpdateState(StateWaiting, fmt.Sprintf("Waiting for %s", dep))
+					select {
+					case <-depChan:
+						// Dependency completed
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				}
+			}
+
+			// Acquire semaphore for actual work
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+
+			// Deploy the service with progress updates
+			result, err := m.deployServiceWithProgress(ctx, svc, task)
+
+			if err != nil {
+				task.SetError(err)
+				task.ProgressBar.Abort(false)
+				// Signal completion even on error so dependents don't hang
+				close(completionChans[svc.Name])
+				return fmt.Errorf("deploying service %s: %w", svc.Name, err)
+			}
+
+			// Mark as completed
+			completedMu.Lock()
+			completed[svc.Name] = true
+			completedMu.Unlock()
+
+			// Store result
+			resultsMu.Lock()
+			results[svc.Name] = result
+			resultsMu.Unlock()
+
+			task.UpdateState(StateComplete, "Complete")
+			task.ProgressBar.SetCurrent(100)
+
+			// Signal completion
+			close(completionChans[svc.Name])
+
+			return nil
+		})
+	}
+
+	// Wait for all deployments to complete
+	deployErr := eg.Wait()
+
+	// Wait for all progress bars to finish rendering
+	p.Wait()
+
+	return results, deployErr
 }

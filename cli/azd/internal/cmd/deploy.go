@@ -11,7 +11,6 @@ import (
 	"log"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -31,7 +30,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"golang.org/x/sync/errgroup"
 )
 
 type DeployFlags struct {
@@ -238,13 +236,10 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	deployResults := map[string]*project.ServiceDeployResult{}
-	var deployResultsMutex sync.Mutex
 
 	err = da.projectConfig.Invoke(ctx, project.ProjectEventDeploy, projectEventArgs, func() error {
-		// Separate services into container apps and non-container apps
-		var containerAppServices []*project.ServiceConfig
-		var otherServices []*project.ServiceConfig
-
+		// Filter services based on target service name
+		var servicesToDeploy []*project.ServiceConfig
 		for _, svc := range stableServices {
 			// Skip this service if both cases are true:
 			// 1. The user specified a service name
@@ -252,82 +247,80 @@ func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			if targetServiceName != "" && targetServiceName != svc.Name {
 				continue
 			}
-
-			// Check if this is a container app service
-			if svc.Host == project.ContainerAppTarget || svc.Host == project.DotNetContainerAppTarget {
-				containerAppServices = append(containerAppServices, svc)
-			} else {
-				otherServices = append(otherServices, svc)
-			}
+			servicesToDeploy = append(servicesToDeploy, svc)
 		}
 
-		// Deploy non-container app services sequentially first
-		for _, svc := range otherServices {
-			if err := da.deployService(ctx, svc, targetServiceName, deployResults); err != nil {
-				return err
-			}
+		// If no services to deploy, nothing to do
+		if len(servicesToDeploy) == 0 {
+			return nil
 		}
 
-		// Deploy container app services in parallel
-		if len(containerAppServices) > 0 {
-			// Check if experimental parallel deployment is disabled (default: enabled)
-			useExperimentalParallel := os.Getenv("AZD_DISABLE_PARALLEL_DEPLOY") != "1"
+		// Build a map of service names to services for dependency lookup
+		serviceMap := make(map[string]*project.ServiceConfig)
+		for _, svc := range servicesToDeploy {
+			serviceMap[svc.Name] = svc
+		}
 
-			if useExperimentalParallel {
-				// Use new MPB-based parallel deployment manager
-				da.console.Message(ctx, fmt.Sprintf(
-					"Deploying %d container app services with parallel progress tracking",
-					len(containerAppServices)))
-
-				parallelManager := NewParallelDeploymentManager(&da.serviceManager, 0)
-				serviceResults, err := parallelManager.DeployServices(ctx, containerAppServices)
-				if err != nil {
-					return fmt.Errorf("parallel deployment failed: %w", err)
-				}
-
-				// Store results and report artifacts
-				for serviceName, serviceResult := range serviceResults {
-					deployResults[serviceName] = serviceResult
-					da.console.MessageUxItem(ctx, serviceResult.Artifacts)
-				}
-			} else {
-				// Use existing errgroup-based parallel deployment (without progress bars)
-				serviceNames := make([]string, len(containerAppServices))
-				for i, svc := range containerAppServices {
-					serviceNames[i] = svc.Name
-				}
-				da.console.Message(ctx, fmt.Sprintf(
-					"Deploying %d container app services in parallel: %s",
-					len(containerAppServices), strings.Join(serviceNames, ", ")))
-
-				g, gctx := errgroup.WithContext(ctx)
-
-				for _, svc := range containerAppServices {
-					svc := svc // capture loop variable
-					g.Go(func() error {
-						deployResult, err := da.deployServiceWithProgress(gctx, svc, targetServiceName)
-						if err != nil {
-							return err
-						}
-
-						deployResultsMutex.Lock()
-						deployResults[svc.Name] = deployResult
-						deployResultsMutex.Unlock()
-
-						return nil
-					})
-				}
-
-				if err := g.Wait(); err != nil {
-					return err
-				}
-
-				// Report deploy outputs for all parallel deployments after completion
-				for _, svc := range containerAppServices {
-					if result, ok := deployResults[svc.Name]; ok {
-						da.console.MessageUxItem(ctx, result.Artifacts)
+		// Check if any service has dependencies (uses other services)
+		hasDependencies := false
+		for _, svc := range servicesToDeploy {
+			if len(svc.Uses) > 0 {
+				// Check if any dependency is another service (not a resource)
+				for _, dep := range svc.Uses {
+					if _, isService := serviceMap[dep]; isService {
+						hasDependencies = true
+						break
 					}
 				}
+			}
+			if hasDependencies {
+				break
+			}
+		}
+
+		// Check if parallel deployment is enabled (default: enabled)
+		useParallelDeploy := os.Getenv("AZD_DISABLE_PARALLEL_DEPLOY") != "1"
+
+		if len(servicesToDeploy) == 1 || !useParallelDeploy {
+			// Single service or parallel disabled - deploy sequentially
+			for _, svc := range servicesToDeploy {
+				if err := da.deployService(ctx, svc, targetServiceName, deployResults); err != nil {
+					return err
+				}
+			}
+		} else if hasDependencies {
+			// Services have dependencies - use dependency-aware deployment
+			da.console.Message(ctx, fmt.Sprintf(
+				"Deploying %d services with dependency awareness",
+				len(servicesToDeploy)))
+
+			parallelManager := NewParallelDeploymentManager(&da.serviceManager, 0)
+			serviceResults, err := parallelManager.DeployServicesWithDependencies(ctx, servicesToDeploy, serviceMap)
+			if err != nil {
+				return fmt.Errorf("parallel deployment failed: %w", err)
+			}
+
+			// Store results and report artifacts
+			for serviceName, serviceResult := range serviceResults {
+				deployResults[serviceName] = serviceResult
+				da.console.MessageUxItem(ctx, serviceResult.Artifacts)
+			}
+		} else {
+			// No dependencies - deploy all services in parallel
+			da.console.Message(ctx, fmt.Sprintf(
+				"Deploying %d services in parallel",
+				len(servicesToDeploy)))
+
+			parallelManager := NewParallelDeploymentManager(&da.serviceManager, 0)
+			serviceResults, err := parallelManager.DeployServices(ctx, servicesToDeploy)
+			if err != nil {
+				return fmt.Errorf("parallel deployment failed: %w", err)
+			}
+
+			// Store results and report artifacts
+			for serviceName, serviceResult := range serviceResults {
+				deployResults[serviceName] = serviceResult
+				da.console.MessageUxItem(ctx, serviceResult.Artifacts)
 			}
 		}
 
@@ -497,101 +490,4 @@ func (da *DeployAction) deployService(
 	da.console.MessageUxItem(ctx, deployResult.Artifacts)
 
 	return nil
-}
-
-// deployServiceWithProgress deploys a single service with progress reporting
-// This function shows spinners and progress messages for each deployment phase
-func (da *DeployAction) deployServiceWithProgress(
-	ctx context.Context,
-	svc *project.ServiceConfig,
-	targetServiceName string,
-) (*project.ServiceDeployResult, error) {
-	stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
-	da.console.ShowSpinner(ctx, stepMessage, input.Step)
-
-	if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(svc.Host)); isAlphaFeature {
-		// alpha feature on/off detection for host is done during initialization.
-		// This is just for displaying the warning during deployment.
-		da.console.WarnForFeature(ctx, alphaFeatureId)
-	}
-
-	// Initialize service context for tracking artifacts across operations
-	serviceContext := project.NewServiceContext()
-
-	if da.flags.fromPackage != "" {
-		// --from-package set, skip packaging and create package artifact
-		err := serviceContext.Package.Add(&project.Artifact{
-			Kind:         determineArtifactKind(da.flags.fromPackage),
-			Location:     da.flags.fromPackage,
-			LocationKind: project.LocationKindLocal,
-		})
-
-		if err != nil {
-			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, fmt.Errorf("failed to add package artifact for service %s: %w", svc.Name, err)
-		}
-	} else {
-		//  --from-package not set, automatically package the application
-		_, err := async.RunWithProgress(
-			func(packageProgress project.ServiceProgress) {
-				progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
-				da.console.ShowSpinner(ctx, progressMessage, input.Step)
-			},
-			func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePackageResult, error) {
-				return da.serviceManager.Package(ctx, svc, serviceContext, progress, nil)
-			},
-		)
-
-		if err != nil {
-			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-			return nil, fmt.Errorf("failed to package service %s: %w", svc.Name, err)
-		}
-	}
-
-	// Publish the service
-	_, err := async.RunWithProgress(
-		func(publishProgress project.ServiceProgress) {
-			progressMessage := fmt.Sprintf("Publishing service %s (%s)", svc.Name, publishProgress.Message)
-			da.console.ShowSpinner(ctx, progressMessage, input.Step)
-		},
-		func(progress *async.Progress[project.ServiceProgress]) (*project.ServicePublishResult, error) {
-			return da.serviceManager.Publish(ctx, svc, serviceContext, progress, nil)
-		},
-	)
-
-	if err != nil {
-		da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-		return nil, fmt.Errorf("failed to publish service %s: %w", svc.Name, err)
-	}
-
-	// Deploy the service
-	deployResult, err := async.RunWithProgress(
-		func(deployProgress project.ServiceProgress) {
-			progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
-			da.console.ShowSpinner(ctx, progressMessage, input.Step)
-		},
-		func(progress *async.Progress[project.ServiceProgress]) (*project.ServiceDeployResult, error) {
-			return da.serviceManager.Deploy(ctx, svc, serviceContext, progress)
-		},
-	)
-
-	if err != nil {
-		da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-		return nil, fmt.Errorf("failed to deploy service %s: %w", svc.Name, err)
-	}
-
-	// clean up for packages automatically created in temp dir
-	if da.flags.fromPackage == "" {
-		for _, artifact := range serviceContext.Package {
-			if strings.HasPrefix(artifact.Location, os.TempDir()) {
-				if err := os.RemoveAll(artifact.Location); err != nil {
-					log.Printf("failed to remove temporary package: %s : %s", artifact.Location, err)
-				}
-			}
-		}
-	}
-
-	da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
-
-	return deployResult, nil
 }

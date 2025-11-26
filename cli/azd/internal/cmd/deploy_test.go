@@ -10,44 +10,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestServiceGrouping(t *testing.T) {
+func TestServiceFiltering(t *testing.T) {
 	tests := []struct {
-		name                     string
-		services                 []*project.ServiceConfig
-		targetServiceName        string
-		expectedContainerApps    int
-		expectedNonContainerApps int
+		name              string
+		services          []*project.ServiceConfig
+		targetServiceName string
+		expectedServices  int
 	}{
 		{
-			name: "AllContainerApps",
+			name: "AllServicesNoFilter",
 			services: []*project.ServiceConfig{
 				{Name: "api", Host: project.ContainerAppTarget},
 				{Name: "web", Host: project.ContainerAppTarget},
 			},
-			targetServiceName:        "",
-			expectedContainerApps:    2,
-			expectedNonContainerApps: 0,
+			targetServiceName: "",
+			expectedServices:  2,
 		},
 		{
-			name: "MixedServices",
+			name: "MixedServicesNoFilter",
 			services: []*project.ServiceConfig{
 				{Name: "api", Host: project.ContainerAppTarget},
 				{Name: "web", Host: project.AppServiceTarget},
 				{Name: "worker", Host: project.DotNetContainerAppTarget},
 			},
-			targetServiceName:        "",
-			expectedContainerApps:    2,
-			expectedNonContainerApps: 1,
-		},
-		{
-			name: "AllNonContainerApps",
-			services: []*project.ServiceConfig{
-				{Name: "api", Host: project.AppServiceTarget},
-				{Name: "func", Host: project.AzureFunctionTarget},
-			},
-			targetServiceName:        "",
-			expectedContainerApps:    0,
-			expectedNonContainerApps: 2,
+			targetServiceName: "",
+			expectedServices:  3,
 		},
 		{
 			name: "FilterByTargetService",
@@ -56,23 +43,20 @@ func TestServiceGrouping(t *testing.T) {
 				{Name: "web", Host: project.AppServiceTarget},
 				{Name: "worker", Host: project.ContainerAppTarget},
 			},
-			targetServiceName:        "api",
-			expectedContainerApps:    1,
-			expectedNonContainerApps: 0,
+			targetServiceName: "api",
+			expectedServices:  1,
 		},
 		{
-			name:                     "EmptyServiceList",
-			services:                 []*project.ServiceConfig{},
-			targetServiceName:        "",
-			expectedContainerApps:    0,
-			expectedNonContainerApps: 0,
+			name:              "EmptyServiceList",
+			services:          []*project.ServiceConfig{},
+			targetServiceName: "",
+			expectedServices:  0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var containerAppServices []*project.ServiceConfig
-			var otherServices []*project.ServiceConfig
+			var servicesToDeploy []*project.ServiceConfig
 
 			for _, svc := range tt.services {
 				// Skip this service if both cases are true:
@@ -81,19 +65,81 @@ func TestServiceGrouping(t *testing.T) {
 				if tt.targetServiceName != "" && tt.targetServiceName != svc.Name {
 					continue
 				}
+				servicesToDeploy = append(servicesToDeploy, svc)
+			}
 
-				// Check if this is a container app service
-				if svc.Host == project.ContainerAppTarget || svc.Host == project.DotNetContainerAppTarget {
-					containerAppServices = append(containerAppServices, svc)
-				} else {
-					otherServices = append(otherServices, svc)
+			require.Equal(t, tt.expectedServices, len(servicesToDeploy),
+				"Expected %d services, got %d", tt.expectedServices, len(servicesToDeploy))
+		})
+	}
+}
+
+func TestServiceDependencyDetection(t *testing.T) {
+	tests := []struct {
+		name             string
+		services         []*project.ServiceConfig
+		hasDependencies  bool
+	}{
+		{
+			name: "NoDependencies",
+			services: []*project.ServiceConfig{
+				{Name: "api", Host: project.ContainerAppTarget, Uses: []string{}},
+				{Name: "web", Host: project.ContainerAppTarget, Uses: []string{}},
+			},
+			hasDependencies: false,
+		},
+		{
+			name: "WithServiceDependencies",
+			services: []*project.ServiceConfig{
+				{Name: "api", Host: project.ContainerAppTarget, Uses: []string{}},
+				{Name: "web", Host: project.ContainerAppTarget, Uses: []string{"api"}},
+			},
+			hasDependencies: true,
+		},
+		{
+			name: "OnlyResourceDependencies",
+			services: []*project.ServiceConfig{
+				{Name: "api", Host: project.ContainerAppTarget, Uses: []string{"postgresdb"}},
+				{Name: "web", Host: project.ContainerAppTarget, Uses: []string{"redis"}},
+			},
+			hasDependencies: false, // postgresdb and redis are not services
+		},
+		{
+			name: "MixedDependencies",
+			services: []*project.ServiceConfig{
+				{Name: "api", Host: project.ContainerAppTarget, Uses: []string{"postgresdb"}},
+				{Name: "web", Host: project.ContainerAppTarget, Uses: []string{"api"}},
+			},
+			hasDependencies: true, // web depends on api service
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Build service map
+			serviceMap := make(map[string]*project.ServiceConfig)
+			for _, svc := range tt.services {
+				serviceMap[svc.Name] = svc
+			}
+
+			// Check for dependencies
+			hasDependencies := false
+			for _, svc := range tt.services {
+				if len(svc.Uses) > 0 {
+					for _, dep := range svc.Uses {
+						if _, isService := serviceMap[dep]; isService {
+							hasDependencies = true
+							break
+						}
+					}
+				}
+				if hasDependencies {
+					break
 				}
 			}
 
-			require.Equal(t, tt.expectedContainerApps, len(containerAppServices),
-				"Expected %d container app services, got %d", tt.expectedContainerApps, len(containerAppServices))
-			require.Equal(t, tt.expectedNonContainerApps, len(otherServices),
-				"Expected %d non-container app services, got %d", tt.expectedNonContainerApps, len(otherServices))
+			require.Equal(t, tt.hasDependencies, hasDependencies,
+				"Expected hasDependencies=%v, got %v", tt.hasDependencies, hasDependencies)
 		})
 	}
 }

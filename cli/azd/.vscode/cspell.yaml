@@ -45,6 +45,7 @@ words:
   - jsonschema
   - rustc
   - figspec
+  - vbauerster
 languageSettings:
   - languageId: go
     ignoreRegExpList:

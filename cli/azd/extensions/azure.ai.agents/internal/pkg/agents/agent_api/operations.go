@@ -29,29 +29,53 @@ type AgentClient struct {
 	pipeline runtime.Pipeline
 }
 
-// NewAgentClient creates a new AgentClient
-func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
-	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
+// AgentClientOptions configures the AgentClient
+type AgentClientOptions struct {
+	// Debug enables debug logging to ai-agents-debug.log
+	Debug bool
+}
 
-	clientOptions := &policy.ClientOptions{
-		PerCallPolicies: []policy.Policy{
-			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
-			azsdk.NewMsCorrelationPolicy(),
-			azsdk.NewUserAgentPolicy(userAgent),
-		},
+// NewAgentClient creates a new AgentClient
+func NewAgentClient(endpoint string, cred azcore.TokenCredential, options *AgentClientOptions) *AgentClient {
+	var logFile *os.File
+	if options != nil && options.Debug {
+		var err error
+		logFile, err = os.OpenFile("ai-agents-debug.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			// Fallback to stderr if file creation fails
+			logFile = os.Stderr
+		}
 	}
 
-	pipeline := runtime.NewPipeline(
+	return &AgentClient{
+		endpoint: endpoint,
+		pipeline: createPipeline(cred, logFile),
+	}
+}
+
+func createPipeline(cred azcore.TokenCredential, logFile *os.File) runtime.Pipeline {
+	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
+
+	perCallPolicies := []policy.Policy{
+		runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
+		azsdk.NewMsCorrelationPolicy(),
+		azsdk.NewUserAgentPolicy(userAgent),
+	}
+
+	if logFile != nil {
+		perCallPolicies = append(perCallPolicies, NewLoggingPolicy(logFile))
+	}
+
+	clientOptions := &policy.ClientOptions{
+		PerCallPolicies: perCallPolicies,
+	}
+
+	return runtime.NewPipeline(
 		"azure-ai-agents",
 		"v1.0.0",
 		runtime.PipelineOptions{},
 		clientOptions,
 	)
-
-	return &AgentClient{
-		endpoint: endpoint,
-		pipeline: pipeline,
-	}
 }
 
 // GetAgent retrieves a specific agent by name
@@ -104,8 +128,6 @@ func (c *AgentClient) CreateAgent(ctx context.Context, request *CreateAgentReque
 		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
 
-	c.logRequest("POST", url, payload)
-
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
@@ -126,7 +148,6 @@ func (c *AgentClient) CreateAgent(ctx context.Context, request *CreateAgentReque
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	c.logResponse(body)
 	return &agent, nil
 }
 
@@ -148,8 +169,6 @@ func (c *AgentClient) UpdateAgent(ctx context.Context, agentName string, request
 		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
 
-	c.logRequest("POST", url, payload)
-
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
@@ -170,7 +189,6 @@ func (c *AgentClient) UpdateAgent(ctx context.Context, agentName string, request
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	c.logResponse(body)
 	return &agent, nil
 }
 
@@ -284,8 +302,6 @@ func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, 
 		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
 
-	c.logRequest("POST", url, payload)
-
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
@@ -306,7 +322,6 @@ func (c *AgentClient) CreateAgentVersion(ctx context.Context, agentName string, 
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	c.logResponse(body)
 	return &agentVersion, nil
 }
 
@@ -579,8 +594,6 @@ func (c *AgentClient) StartAgentContainer(ctx context.Context, agentName, agentV
 		return nil, fmt.Errorf("failed to set request body: %w", err)
 	}
 
-	c.logRequest("POST", url, payload)
-
 	resp, err := c.pipeline.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
@@ -606,7 +619,6 @@ func (c *AgentClient) StartAgentContainer(ctx context.Context, agentName, agentV
 		Body:     operation,
 	}
 
-	c.logResponse(body)
 	return result, nil
 }
 
@@ -808,32 +820,4 @@ func (c *AgentClient) GetAgentContainerOperation(ctx context.Context, agentName,
 	}
 
 	return &operation, nil
-}
-
-// Helper methods
-
-// logRequest logs the request details to stderr for debugging
-func (c *AgentClient) logRequest(method, url string, payload []byte) {
-	fmt.Fprintf(os.Stderr, "%s %s\n", method, url)
-	if len(payload) > 0 {
-		var prettyPayload interface{}
-		if err := json.Unmarshal(payload, &prettyPayload); err == nil {
-			prettyJSON, _ := json.MarshalIndent(prettyPayload, "", "  ")
-			fmt.Fprintf(os.Stderr, "Payload:\n%s\n", string(prettyJSON))
-		} else {
-			fmt.Fprintf(os.Stderr, "Payload: %s\n", string(payload))
-		}
-	}
-}
-
-// logResponse logs the response body to stderr for debugging
-func (c *AgentClient) logResponse(body []byte) {
-	fmt.Fprintln(os.Stderr, "Response:")
-	var jsonResponse interface{}
-	if err := json.Unmarshal(body, &jsonResponse); err == nil {
-		prettyJSON, _ := json.MarshalIndent(jsonResponse, "", "  ")
-		fmt.Fprintln(os.Stderr, string(prettyJSON))
-	} else {
-		fmt.Fprintln(os.Stderr, string(body))
-	}
 }

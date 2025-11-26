@@ -73,6 +73,7 @@ BUILDID
 BUILDNUMBER
 buildpacks
 byoi
+callstack
 cflags
 charmbracelet
 circleci
@@ -205,6 +206,7 @@ preinit
 protogen
 proxying
 psanford
+pseudonymized
 psycopg
 psycopgbinary
 pulumi

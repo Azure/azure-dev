@@ -3,27 +3,31 @@ param location string = resourceGroup().location
 var tags = { 'azd-env-name': environmentName }
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
-resource functions 'Microsoft.Web/sites@2022-03-01' = {
+resource functions 'Microsoft.Web/sites@2023-12-01' = {
   name: 'func-${resourceToken}'
   location: location
   kind: 'functionapp,linux'
   tags: union(tags, { 'azd-service-name': 'func' })
   properties: {
-    enabled: true
-    serverFarmId: appServicePlan.id
+    serverFarmId: flexFunctionPlan.id
     httpsOnly: false
-    reserved: true
-
-    siteConfig: {
-      functionAppScaleLimit: 200
-      use32BitWorkerProcess: false
-      ftpsState: 'FtpsOnly'
-      cors: {
-        allowedOrigins: [
-          // allow testing through the Azure portal
-          'https://ms.portal.azure.com'
-        ]
-        supportCredentials: false
+    functionAppConfig: {
+      deployment: {
+        storage: {
+          type: 'blobContainer'
+          value: '${storage.properties.primaryEndpoints.blob}${blobContainer.name}'
+          authentication: {
+            type: 'SystemAssignedIdentity'
+          }
+        }
+      }
+      scaleAndConcurrency: {
+        maximumInstanceCount: 100
+        instanceMemoryMB: 2048
+      }
+      runtime: {
+        name: 'python'
+        version: '3.11'
       }
     }
   }
@@ -36,10 +40,7 @@ resource functions 'Microsoft.Web/sites@2022-03-01' = {
     name: 'appsettings'
     // https://docs.microsoft.com/azure/azure-functions/functions-app-settings
     properties: {
-      FUNCTIONS_EXTENSION_VERSION: '~4'
-      FUNCTIONS_WORKER_RUNTIME: 'python'
       AzureWebJobsStorage__accountName: storage.name
-      SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
     }
   }
 }
@@ -57,6 +58,19 @@ resource storage 'Microsoft.Storage/storageAccounts@2022-05-01' = {
   }
 }
 
+resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2025-01-01' = {
+  name: 'default'
+  parent: storage
+}
+
+resource blobContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2025-01-01' = {
+  name: 'func-deploy'
+  parent: blobServices
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 resource storage_StorageBlobDataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(storage.id, functions.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'))
   properties: {
@@ -67,17 +81,14 @@ resource storage_StorageBlobDataContributor 'Microsoft.Authorization/roleAssignm
   scope: storage
 }
 
-resource appServicePlan 'Microsoft.Web/serverfarms@2022-03-01' = {
+resource flexFunctionPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: 'plan-${resourceToken}'
   location: location
   tags: tags
   kind: 'functionapp'
   sku: {
-    name: 'Y1'
-    tier: 'Dynamic'
-    size: 'Y1'
-    family: 'Y'
-    capacity: 0
+    tier: 'FlexConsumption'
+    name: 'FC1'
   }
   properties: {
     reserved: true

@@ -1,0 +1,10 @@
+capabilities:
+    - custom-commands
+    - lifecycle-events
+description: Extension for Foundry Fine Tuning. (Preview)
+displayName: Foundry Fine Tuning (Preview)
+id: azure.ai.finetune
+language: go
+namespace: ai.finetuning
+usage: azd ai.finetuning <command> [options]
+version: 0.0.1

@@ -1,14 +1,20 @@
 # Release History
 
-## 1.22.0-beta.1 (Unreleased)
+## 1.22.0 (2025-12-01)
 
 ### Features Added
 
-### Breaking Changes
+- [[#6256]](https://github.com/Azure/azure-dev/pull/6256) Reduce provisioning progress display polling interval from 10s to 3s for more responsive status updates.
 
 ### Bugs Fixed
 
+- [[#6277]](https://github.com/Azure/azure-dev/pull/6277) Fix hooks not running in CI/CD scenarios when `.azure` directory does not exist.
+- [[#6255]](https://github.com/Azure/azure-dev/pull/6255) Fix Container Apps deployment error when using revision-based deployments.
+
 ### Other Changes
+
+- [[#6247]](https://github.com/Azure/azure-dev/pull/6247) Update Bicep CLI to v0.39.26.
+- [[#6270]](https://github.com/Azure/azure-dev/pull/6270) Rename Azure AI Foundry to Microsoft Foundry.
 
 ## 1.21.3 (2025-11-14)
 

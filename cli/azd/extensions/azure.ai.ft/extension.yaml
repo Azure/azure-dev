@@ -1,0 +1,10 @@
+capabilities:
+    - custom-commands
+    - lifecycle-events
+description: AZD command set for Fine Tuning
+displayName: Azure AI Fine Tuning
+id: azure.ai.ft
+language: dotnet
+namespace: azure.ai.ft
+usage: azd azure.ai.ft <command> [options]
+version: 0.0.1

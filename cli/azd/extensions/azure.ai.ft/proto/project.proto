@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package azdext;
+
+option go_package = "github.com/azure/azure-dev/cli/azd/pkg/azdext;azdext";
+option csharp_namespace = "Microsoft.Azd";
+
+import "models.proto";
+
+// ProjectService defines methods for managing projects and their configurations.
+service ProjectService {
+  // Gets the current project.
+  rpc Get(EmptyRequest) returns (GetProjectResponse);
+
+  // AddService adds a new service to the project.
+  rpc AddService(AddServiceRequest) returns (EmptyResponse);
+}
+
+// GetProjectResponse message definition
+message GetProjectResponse {
+  ProjectConfig project = 1;
+}
+
+// AddServiceRequest message definition
+message AddServiceRequest {
+  ServiceConfig service = 1;
+}

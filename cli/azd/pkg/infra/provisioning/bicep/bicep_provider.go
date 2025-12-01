@@ -581,8 +581,29 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	}
 
 	if !p.ignoreDeploymentState && parametersHashErr == nil {
-		deploymentState, err := p.deploymentState(ctx, planned, deployment, currentParamsHash)
-		if err == nil {
+		deploymentState, stateErr := p.deploymentState(ctx, planned, deployment, currentParamsHash)
+		if stateErr == nil {
+			// As a heuristic, we also check the existence of all resource groups
+			// created by the deployment to validate the deployment state.
+			// This handles the scenario of resource group(s) being deleted outside of azd,
+			// which is quite common.
+			// This check adds ~100ms per resource group to the deployment time.
+			for _, res := range deploymentState.Resources {
+				if res != nil && res.ID != nil {
+					resId, err := arm.ParseResourceID(*res.ID)
+					if err == nil && resId.ResourceType.Type == arm.ResourceGroupResourceType.Type {
+						exists, err := p.resourceService.CheckExistenceByID(ctx, *resId, "2025-03-01")
+						if err == nil && !exists {
+							stateErr = fmt.Errorf(
+								"resource group %s no longer exists, invalidating deployment state", resId.ResourceGroupName)
+							break
+						}
+					}
+				}
+			}
+		}
+
+		if stateErr == nil {
 			result.Outputs = provisioning.OutputParametersFromArmOutputs(
 				planned.Template.Outputs,
 				azapi.CreateDeploymentOutput(deploymentState.Outputs),
@@ -593,7 +614,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 				SkippedReason: provisioning.DeploymentStateSkipped,
 			}, nil
 		}
-		logDS("%s", err.Error())
+		logDS("%s", stateErr.Error())
 	}
 
 	deploymentTags := map[string]*string{

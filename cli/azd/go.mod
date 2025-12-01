@@ -70,7 +70,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/theckman/yacspin v0.13.12
 	github.com/tidwall/gjson v1.18.0
-	github.com/tmc/langchaingo v0.1.13
+	github.com/tmc/langchaingo v0.1.14
 	go.lsp.dev/jsonrpc2 v0.10.0
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.38.0

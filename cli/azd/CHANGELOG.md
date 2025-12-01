@@ -9,6 +9,9 @@
 ### Bugs Fixed
 
 - [[#6277]](https://github.com/Azure/azure-dev/pull/6277) Fix hooks not running in CI/CD scenarios when `.azure` directory does not exist.
+- [[#6282]](https://github.com/Azure/azure-dev/pull/6282) Fix panic in `azd provision --preview` when ARM returns nil After field during resource deletion.
+- [[#6281]](https://github.com/Azure/azure-dev/pull/6281) Fix `azd provision` skipping deployment when resource groups were deleted outside of azd.
+- [[#6180]](https://github.com/Azure/azure-dev/pull/6180) Relax Aspire binding validation for non-HTTP protocols as simple TCP.
 - [[#6255]](https://github.com/Azure/azure-dev/pull/6255) Fix Container Apps deployment error when using revision-based deployments.
 
 ### Other Changes

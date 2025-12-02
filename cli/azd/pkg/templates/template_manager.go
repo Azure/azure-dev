@@ -6,11 +6,13 @@ package templates
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 var (
@@ -196,6 +198,9 @@ func PromptTemplate(
 		return Template{}, fmt.Errorf("prompting for template: %w", err)
 	}
 
+	// Display gallery links before template selection
+	PrintGalleryLinks(console.Handles().Stdout)
+
 	templateChoices := []*Template{}
 	duplicateNames := []string{}
 
@@ -250,4 +255,12 @@ func PromptTemplate(
 	log.Printf("Selected template: %s", fmt.Sprint(template.RepositoryPath))
 
 	return *template, nil
+}
+
+// PrintGalleryLinks prints the template gallery banner message to the given writer.
+func PrintGalleryLinks(w io.Writer) {
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "For Microsoft AI Gallery visit", output.WithLinkFormat("https://azure.github.io/ai-app-templates"))
+	fmt.Fprintln(w, "For azd community gallery (awesome-azd) visit", output.WithLinkFormat("https://azure.github.io/awesome-azd"))
+	fmt.Fprintln(w)
 }

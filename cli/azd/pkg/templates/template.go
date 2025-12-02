@@ -36,11 +36,6 @@ type Template struct {
 	// A list of tags associated with the template
 	Tags []string `json:"tags"`
 
-	// A list of languages supported by the template
-	//
-	// As of November 2025, known values include: bicep, php, javascript, dotnetCsharp, typescript, python, nodejs, java
-	Languages []string `json:"languages,omitempty"`
-
 	// Additional metadata about the template
 	Metadata Metadata `json:"metadata,omitempty"`
 }

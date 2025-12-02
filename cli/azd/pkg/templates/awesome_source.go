@@ -22,7 +22,11 @@ type awesomeAzdTemplate struct {
 	Source           string   `json:"source"`
 	Tags             []string `json:"tags"`
 	AzureServiceTags []string `json:"azureServices"`
-	LanguageTags     []string `json:"languages"`
+
+	// A list of languages supported by the template
+	//
+	// As of November 2025, known values include: bicep, php, javascript, dotnetCsharp, typescript, python, nodejs, java
+	LanguageTags []string `json:"languages"`
 }
 
 // newAwesomeAzdTemplateSource creates a new template source from the awesome-azd templates json file.

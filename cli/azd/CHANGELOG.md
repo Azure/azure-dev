@@ -1,14 +1,24 @@
 # Release History
 
-## 1.22.0-beta.1 (Unreleased)
+## 1.22.0 (2025-12-02)
 
 ### Features Added
 
-### Breaking Changes
+- [[#6256]](https://github.com/Azure/azure-dev/pull/6256) Reduce provisioning progress display polling interval from 10s to 3s for more responsive status updates.
+- [[#6232]](https://github.com/Azure/azure-dev/pull/6232) Add language-specific `.gitignore` templates to extension scaffolding for `azd x init`.
 
 ### Bugs Fixed
 
+- [[#6277]](https://github.com/Azure/azure-dev/pull/6277) Fix hooks not running in CI/CD scenarios when `.azure` directory does not exist.
+- [[#6282]](https://github.com/Azure/azure-dev/pull/6282) Fix panic in `azd provision --preview` when ARM returns nil After field during resource deletion.
+- [[#6281]](https://github.com/Azure/azure-dev/pull/6281) Fix `azd provision` skipping deployment when resource groups were deleted outside of azd.
+- [[#6180]](https://github.com/Azure/azure-dev/pull/6180) Relax Aspire binding validation for non-HTTP protocols as simple TCP.
+- [[#6255]](https://github.com/Azure/azure-dev/pull/6255) Fix Container Apps deployment error when using revision-based deployments.
+
 ### Other Changes
+
+- [[#6247]](https://github.com/Azure/azure-dev/pull/6247) Update Bicep CLI to v0.39.26.
+- [[#6270]](https://github.com/Azure/azure-dev/pull/6270) Rename Azure AI Foundry to Microsoft Foundry.
 
 ## 1.21.3 (2025-11-14)
 

@@ -5,6 +5,7 @@
 ### Features Added
 
 - [[#6256]](https://github.com/Azure/azure-dev/pull/6256) Reduce provisioning progress display polling interval from 10s to 3s for more responsive status updates.
+- [[#6232]](https://github.com/Azure/azure-dev/pull/6232) Add language-specific `.gitignore` templates to extension scaffolding for `azd x init`.
 
 ### Bugs Fixed
 

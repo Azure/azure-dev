@@ -1,5 +1,9 @@
 # Release History
 
+## 0.1.3-preview (2025-12-03)
+
+- Improve agent service debug logging via `AZD_EXT_DEBUG` env var and `--debug` flag
+
 ## 0.1.2-preview (2025-11-20)
 
 - Update extension name and descriptions

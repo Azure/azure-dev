@@ -1,5 +1,13 @@
 # Release History
 
+## 0.4.0 (2025-12-03)
+
+### Features Added
+
+- Added custom language framework implementation
+- Updated to use service context and artifacts
+- Updated custom service target to use container service
+
 ## 0.3.0 (2025-10-01)
 
 ### Features Added

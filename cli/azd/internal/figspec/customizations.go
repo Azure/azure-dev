@@ -88,7 +88,7 @@ func (c *Customizations) GetCommandArgGenerator(ctx *CommandContext, argName str
 		if argName == "template" {
 			return FigGenListTemplates
 		}
-	case "azd extension install":
+	case "azd extension install", "azd extension show":
 		if argName == "extension-id" {
 			return FigGenListExtensions
 		}

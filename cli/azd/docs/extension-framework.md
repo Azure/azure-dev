@@ -51,6 +51,8 @@ If you previously removed it and want to add it back:
 azd extension source add -n azd -t url -l "https://aka.ms/azd/extensions/registry"
 ```
 
+> **Note:** When the `registry.json` file is modified, CI automatically runs snapshot tests to ensure extension commands are properly documented in CLI help output and VS Code IntelliSense. See [Snapshot Testing for Extensions](#snapshot-testing-for-extensions) for details.
+
 #### Development Registry
 
 > [!CAUTION]
@@ -661,6 +663,20 @@ Future ideas include:
   - Source control providers (e.g., GitLab)
   - Pipeline providers (e.g., TeamCity)
 ---
+
+### Snapshot Testing for Extensions
+
+Extension commands are included in CLI snapshot tests (`TestUsage` and `TestFigSpec`) to ensure they appear in help output and VS Code IntelliSense. Tests run in an **isolated environment** (temporary `AZD_CONFIG_DIR`) that installs all extensions from `registry.json`, generates snapshots, then cleans up.
+
+Update snapshots when modifying `registry.json` or extension commands:
+
+```bash
+# From cli/azd directory
+UPDATE_SNAPSHOTS=true go test ./cmd -run TestUsage
+UPDATE_SNAPSHOTS=true go test ./cmd -run TestFigSpec
+```
+
+The [ext-registry-ci workflow](/.github/workflows/ext-registry-ci.yml) runs these tests automatically when `registry.json` is modified in a PR.
 
 ### Developer Workflow
 

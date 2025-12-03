@@ -210,7 +210,8 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 			`Steps to follow:
             1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
-            2. Include a section called "Brainstorm Solutions" to list out at least one and up to three solutions user could try out to fix the error (use "1. ", "2. ", "3. ").
+            2. Include a section called "Brainstorm Solutions" to list out at least one and up to three solutions 
+			user could try out to fix the error (use "1. ", "2. ", "3. ").
             Each solution needs to be short and clear (one sentence).
             Error details: %s`, errorInput))
 
@@ -385,7 +386,8 @@ func extractSuggestedSolutions(llmResponse string) []string {
 		// If we're in the solutions section, extract numbered items
 		if inSolutionsSection {
 			// Stop if we hit another section header
-			if strings.HasPrefix(trimmedLine, "#") && !strings.Contains(strings.ToLower(trimmedLine), "brainstorm solutions") {
+			if strings.HasPrefix(trimmedLine, "#") &&
+				!strings.Contains(strings.ToLower(trimmedLine), "brainstorm solutions") {
 				break
 			}
 

@@ -9,7 +9,7 @@ import (
 
 func NewRootCommand() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:           "azd ai.finetuning <command> [options]",
+		Use:           "finetuning <command> [options]",
 		Short:         "Extension for Foundry Fine Tuning. (Preview)",
 		SilenceUsage:  true,
 		SilenceErrors: true,

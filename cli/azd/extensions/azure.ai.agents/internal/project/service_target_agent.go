@@ -40,14 +40,12 @@ type AgentServiceTargetProvider struct {
 	tenantId            string
 	env                 *azdext.Environment
 	foundryProject      *arm.ResourceID
-	debug               bool
 }
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
-func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient, debug bool) azdext.ServiceTargetProvider {
+func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTargetProvider {
 	return &AgentServiceTargetProvider{
 		azdClient: azdClient,
-		debug:     debug,
 	}
 }
 
@@ -683,7 +681,6 @@ func (p *AgentServiceTargetProvider) createAgent(
 	agentClient := agent_api.NewAgentClient(
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
 		p.credential,
-		&agent_api.AgentClientOptions{Debug: p.debug},
 	)
 
 	// Use constant API version
@@ -734,7 +731,6 @@ func (p *AgentServiceTargetProvider) startAgentContainer(
 	agentClient := agent_api.NewAgentClient(
 		azdEnv["AZURE_AI_PROJECT_ENDPOINT"],
 		p.credential,
-		&agent_api.AgentClientOptions{Debug: p.debug},
 	)
 
 	var minReplicas, maxReplicas *int32

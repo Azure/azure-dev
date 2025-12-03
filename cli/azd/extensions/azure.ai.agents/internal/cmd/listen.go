@@ -11,10 +11,13 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/project"
 
+	azcorelog "github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/braydonk/yaml"
 	"github.com/spf13/cobra"
@@ -31,6 +34,20 @@ func newListenCommand() *cobra.Command {
 			// Create a new context that includes the AZD access token.
 			ctx := azdext.WithAccessToken(cmd.Context())
 
+			if isDebug(cmd.Flags()) {
+				currentDate := time.Now().Format("2006-01-02")
+				logFileName := fmt.Sprintf("azd-ai-agents-%s.log", currentDate)
+
+				logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+				if err != nil {
+					logFile = os.Stderr
+				}
+				azcorelog.SetListener(func(event azcorelog.Event, msg string) {
+					msg = azure.ConnectionStringJSONRegex.ReplaceAllString(msg, `${1}"REDACTED"`)
+					fmt.Fprintf(logFile, "[%s] %s: %s\n", time.Now().Format(time.RFC3339), event, msg)
+				})
+			}
+
 			// Create a new AZD client.
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
@@ -42,7 +59,7 @@ func newListenCommand() *cobra.Command {
 			// IMPORTANT: service target name here must match the name used in the extension manifest.
 			host := azdext.NewExtensionHost(azdClient).
 				WithServiceTarget(AiAgentHost, func() azdext.ServiceTargetProvider {
-					return project.NewAgentServiceTargetProvider(azdClient, isDebug(cmd.Flags()))
+					return project.NewAgentServiceTargetProvider(azdClient)
 				}).
 				WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 					return preprovisionHandler(ctx, azdClient, projectParser, args)

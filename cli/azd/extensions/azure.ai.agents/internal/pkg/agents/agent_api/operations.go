@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 
 	"azureaiagent/internal/version"
@@ -29,53 +28,32 @@ type AgentClient struct {
 	pipeline runtime.Pipeline
 }
 
-// AgentClientOptions configures the AgentClient
-type AgentClientOptions struct {
-	// Debug enables debug logging to ai-agents-debug.log
-	Debug bool
-}
-
 // NewAgentClient creates a new AgentClient
-func NewAgentClient(endpoint string, cred azcore.TokenCredential, options *AgentClientOptions) *AgentClient {
-	var logFile *os.File
-	if options != nil && options.Debug {
-		var err error
-		logFile, err = os.OpenFile("ai-agents-debug.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err != nil {
-			// Fallback to stderr if file creation fails
-			logFile = os.Stderr
-		}
-	}
-
-	return &AgentClient{
-		endpoint: endpoint,
-		pipeline: createPipeline(cred, logFile),
-	}
-}
-
-func createPipeline(cred azcore.TokenCredential, logFile *os.File) runtime.Pipeline {
+func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
 
-	perCallPolicies := []policy.Policy{
-		runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
-		azsdk.NewMsCorrelationPolicy(),
-		azsdk.NewUserAgentPolicy(userAgent),
-	}
-
-	if logFile != nil {
-		perCallPolicies = append(perCallPolicies, NewLoggingPolicy(logFile))
-	}
-
 	clientOptions := &policy.ClientOptions{
-		PerCallPolicies: perCallPolicies,
+		Logging: policy.LogOptions{
+			IncludeBody: true,
+		},
+		PerCallPolicies: []policy.Policy{
+			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
+			azsdk.NewMsCorrelationPolicy(),
+			azsdk.NewUserAgentPolicy(userAgent),
+		},
 	}
 
-	return runtime.NewPipeline(
+	pipeline := runtime.NewPipeline(
 		"azure-ai-agents",
 		"v1.0.0",
 		runtime.PipelineOptions{},
 		clientOptions,
 	)
+
+	return &AgentClient{
+		endpoint: endpoint,
+		pipeline: pipeline,
+	}
 }
 
 // GetAgent retrieves a specific agent by name

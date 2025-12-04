@@ -243,6 +243,9 @@ overrides:
       - userosscache
       - docstates
       - dylib
+  - filename: cli/azd/pkg/azdext/trace_context.go
+    words:
+      - traceparent
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

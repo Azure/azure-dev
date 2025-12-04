@@ -5,7 +5,6 @@ package azdext
 
 import (
 	"context"
-	"errors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 )
@@ -32,23 +31,16 @@ func (ops *ServiceTargetEnvelope) SetRequestId(ctx context.Context, msg *Service
 	msg.RequestId = id
 }
 
-// GetError returns the error from the message as a Go error type
+// GetError returns the error from the message as a Go error type.
+// It returns an ExtensionResponseError that preserves structured error information for telemetry.
 func (ops *ServiceTargetEnvelope) GetError(msg *ServiceTargetMessage) error {
-	if msg.Error == nil || msg.Error.Message == "" {
-		return nil
-	}
-	return errors.New(msg.Error.Message)
+	return UnwrapErrorFromServiceTarget(msg.Error)
 }
 
-// SetError sets an error on the message
+// SetError sets an error on the message.
+// It extracts structured error information from known error types like azcore.ResponseError.
 func (ops *ServiceTargetEnvelope) SetError(msg *ServiceTargetMessage, err error) {
-	if err == nil {
-		msg.Error = nil
-		return
-	}
-	msg.Error = &ServiceTargetErrorMessage{
-		Message: err.Error(),
-	}
+	msg.Error = WrapErrorForServiceTarget(err)
 }
 
 // GetInnerMessage returns the inner message from the oneof field
@@ -117,4 +109,16 @@ func (ops *ServiceTargetEnvelope) CreateProgressMessage(requestId string, messag
 			},
 		},
 	}
+}
+
+// GetTraceParent returns the W3C traceparent header value from the message.
+// This is used to propagate distributed tracing context across the gRPC boundary.
+func (ops *ServiceTargetEnvelope) GetTraceParent(msg *ServiceTargetMessage) string {
+	return msg.TraceParent
+}
+
+// SetTraceParent sets the W3C traceparent header value on the message.
+// This is used to propagate distributed tracing context across the gRPC boundary.
+func (ops *ServiceTargetEnvelope) SetTraceParent(msg *ServiceTargetMessage, traceParent string) {
+	msg.TraceParent = traceParent
 }

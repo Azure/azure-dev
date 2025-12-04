@@ -96,6 +96,16 @@ func (ops *EventMessageEnvelope) SetError(msg *EventMessage, err error) {
 	// No-op: EventMessage uses status strings, not Error field
 }
 
+// GetTraceParent returns the W3C traceparent value from the message for distributed tracing.
+func (ops *EventMessageEnvelope) GetTraceParent(msg *EventMessage) string {
+	return msg.GetTraceParent()
+}
+
+// SetTraceParent sets the W3C traceparent value on the message for distributed tracing.
+func (ops *EventMessageEnvelope) SetTraceParent(msg *EventMessage, traceParent string) {
+	msg.TraceParent = traceParent
+}
+
 // GetInnerMessage returns the inner message from the oneof field
 func (ops *EventMessageEnvelope) GetInnerMessage(msg *EventMessage) any {
 	// The MessageType field is a oneof wrapper. We need to extract the actual inner message.

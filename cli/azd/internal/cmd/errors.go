@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"go.opentelemetry.io/otel/attribute"
@@ -33,6 +34,7 @@ func MapError(err error, span tracing.Span) {
 	var toolExecErr *exec.ExitError
 	var authFailedErr *auth.AuthFailedError
 	var extensionRunErr *extensions.ExtensionRunError
+	var extRespErr *azdext.ExtensionResponseError
 	if errors.As(err, &respErr) {
 		serviceName := "other"
 		statusCode := -1
@@ -84,6 +86,24 @@ func MapError(err error, span tracing.Span) {
 		errCode = "service.arm.deployment.failed"
 	} else if errors.As(err, &extensionRunErr) {
 		errCode = "ext.run.failed"
+	} else if errors.As(err, &extRespErr) {
+		// Handle structured errors from extensions (e.g., service target providers)
+		if extRespErr.HasServiceInfo() {
+			// Extension provided service information - use it for telemetry
+			serviceName, hostDomain := mapService(extRespErr.ServiceName)
+			errDetails = append(errDetails,
+				fields.ServiceName.String(serviceName),
+				fields.ServiceHost.String(hostDomain),
+				fields.ServiceStatusCode.Int(extRespErr.StatusCode),
+			)
+			if extRespErr.ErrorCode != "" {
+				errDetails = append(errDetails, fields.ServiceErrorCode.String(extRespErr.ErrorCode))
+			}
+			errCode = fmt.Sprintf("ext.service.%s.%d", serviceName, extRespErr.StatusCode)
+		} else {
+			// Extension error without service info
+			errCode = "ext.service.failed"
+		}
 	} else if errors.As(err, &toolExecErr) {
 		toolName := "other"
 		cmdName := cmdAsName(toolExecErr.Cmd)

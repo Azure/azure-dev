@@ -17,6 +17,10 @@ service ServiceTargetService {
 // Envelope for all possible service target messages (requests and responses)
 message ServiceTargetMessage {
   string request_id = 1;
+  // W3C Trace Context traceparent header value for distributed tracing.
+  // Format: "00-{trace-id}-{span-id}-{trace-flags}"
+  // See: https://www.w3.org/TR/trace-context/
+  string trace_parent = 98;
   ServiceTargetErrorMessage error = 99;
   oneof message_type {
     RegisterServiceTargetRequest register_service_target_request = 2;
@@ -83,6 +87,10 @@ message RegisterServiceTargetResponse {
 message ServiceTargetErrorMessage {
   string message = 2;
   string details = 3;
+  // Structured error information for telemetry
+  string error_code = 4;     // Error code from the service (e.g., "Conflict", "NotFound")
+  int32 status_code = 5;     // HTTP status code (e.g., 409, 404, 500)
+  string service_name = 6;   // Service name for telemetry (e.g., "ai.azure.com", "cognitiveservices")
 }
 
 // GetTargetResource request and response

@@ -17,6 +17,10 @@ service FrameworkService {
 // Envelope for all possible framework service messages (requests and responses)
 message FrameworkServiceMessage {
   string request_id = 1;
+  // W3C Trace Context traceparent header value for distributed tracing.
+  // Format: "00-{trace-id}-{span-id}-{trace-flags}"
+  // See: https://www.w3.org/TR/trace-context/
+  string trace_parent = 98;
   FrameworkServiceErrorMessage error = 99;
   oneof message_type {
     RegisterFrameworkServiceRequest register_framework_service_request = 2;
@@ -41,6 +45,10 @@ message FrameworkServiceMessage {
 message FrameworkServiceErrorMessage {
   string message = 1;
   string details = 2;
+  // Structured error information for telemetry
+  string error_code = 3;     // Error code from the service (e.g., "Conflict", "NotFound")
+  int32 status_code = 4;     // HTTP status code (e.g., 409, 404, 500)
+  string service_name = 5;   // Service name for telemetry (e.g., "ai.azure.com", "cognitiveservices")
 }
 
 // Request to register a framework service provider

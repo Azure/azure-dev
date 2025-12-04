@@ -238,7 +238,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
             2. Resolve the error by making the minimal, targeted change required to the code or configuration.
             Avoid unnecessary modifications and focus only on what is essential to restore correct functionality.
             3. Remove any changes that were created solely for validation and are not part of the actual error fix.
-			4. Do not run azd up, azd provision, azd deploy or azd down commands. 
+			4. Do not run azd up, azd provision, azd deploy, azd publish or azd down commands. 
             Error details: %s`, errorInput))
 
 				if err != nil {
@@ -254,7 +254,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 					agentOutput, err = azdAgent.SendMessage(ctx, fmt.Sprintf(
 						`Steps to follow:
 						1. Perform the following actions to resolve the error: %s.
-						2. Do not run azd up, azd provision, azd deploy or azd down commands. 
+						2. Do not run azd up, azd provision, azd deploy, azd publish or azd down commands. 
 						Error details: %s`, selectedSolution, errorInput))
 
 					if err != nil {

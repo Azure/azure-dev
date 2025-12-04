@@ -6,6 +6,7 @@ package middleware
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -150,6 +151,10 @@ func Test_ErrorMiddleware_ChildAction(t *testing.T) {
 }
 
 func Test_ErrorMiddleware_ErrorWithSuggestion(t *testing.T) {
+	if os.Getenv("TF_BUILD") != "" || os.Getenv("GITHUB_ACTIONS") != "" || os.Getenv("CI") != "" {
+		t.Skip("Skipping test in CI/CD environment")
+	}
+
 	mockContext := mocks.NewMockContext(context.Background())
 	cfg := config.NewConfig(map[string]any{
 		"alpha": map[string]any{

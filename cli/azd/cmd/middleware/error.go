@@ -428,7 +428,7 @@ func promptUserForSolution(ctx context.Context, solutions []string, agentName st
 
 	choices[len(solutions)] = &uxlib.SelectChoice{
 		Value: "continue",
-		Label: fmt.Sprintf("Yes, allowing %s to fix the error independently", agentName),
+		Label: fmt.Sprintf("Yes, let %s choose the best approach", agentName),
 	}
 
 	choices[len(solutions)+1] = &uxlib.SelectChoice{
@@ -438,7 +438,7 @@ func promptUserForSolution(ctx context.Context, solutions []string, agentName st
 
 	selector := uxlib.NewSelect(&uxlib.SelectOptions{
 		Message:         fmt.Sprintf("Allow %s to fix the error?", agentName),
-		HelpMessage:     "Select a solution to proceed, continue with AI fix, or cancel",
+		HelpMessage:     "Select a suggested fix, or let AI decide",
 		Choices:         choices,
 		EnableFiltering: uxlib.Ptr(false),
 		DisplayCount:    len(choices),

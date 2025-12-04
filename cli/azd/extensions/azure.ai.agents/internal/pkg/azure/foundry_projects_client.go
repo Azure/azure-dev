@@ -14,7 +14,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 )
 
-// FoundryProjectsClient provides methods to interact with Azure AI Foundry projects
+// FoundryProjectsClient provides methods to interact with Microsoft Foundry projects
 type FoundryProjectsClient struct {
 	baseEndpoint string
 	apiVersion   string

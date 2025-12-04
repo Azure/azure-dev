@@ -573,7 +573,7 @@ var testRegistry = Registry{
 						{
 							Name:        "azure.ai.agents",
 							Type:        ServiceTargetProviderType,
-							Description: "Deploys to Azure AI Foundry hosted agents",
+							Description: "Deploys to Microsoft Foundry hosted agents",
 						},
 						{
 							Name:        "containerapp",

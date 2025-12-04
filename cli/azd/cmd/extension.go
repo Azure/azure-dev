@@ -326,6 +326,7 @@ func newExtensionShowAction(
 
 type extensionShowItem struct {
 	Id                string
+	Name              string
 	Source            string
 	Namespace         string
 	Description       string
@@ -380,9 +381,10 @@ func (t *extensionShowItem) Display(writer io.Writer) error {
 	// Extension Information section
 	extensionInfo := [][]string{
 		{"Id", ":", t.Id},
+		{"Name", ":", t.Name},
+		{"Description", ":", t.Description},
 		{"Source", ":", t.Source},
 		{"Namespace", ":", t.Namespace},
-		{"Description", ":", t.Description},
 	}
 	if err := writeSection("Extension Information", extensionInfo); err != nil {
 		return err
@@ -484,9 +486,10 @@ func (a *extensionShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 
 	extensionDetails := extensionShowItem{
 		Id:                registryExtension.Id,
+		Name:              registryExtension.DisplayName,
 		Source:            registryExtension.Source,
 		Namespace:         registryExtension.Namespace,
-		Description:       registryExtension.DisplayName,
+		Description:       registryExtension.Description,
 		Tags:              registryExtension.Tags,
 		LatestVersion:     latestVersion.Version,
 		AvailableVersions: otherVersions,

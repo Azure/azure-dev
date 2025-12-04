@@ -10,15 +10,50 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 )
 
-// Application-level fields. Guaranteed to be set and available for all events.
+// AttributeKey represents an attribute key with additional metadata.
+type AttributeKey struct {
+	attribute.Key
+	Classification Classification
+	Purpose        Purpose
+	Endpoint       string
+	IsMeasurement  bool
+}
+
+type Classification string
+
 const (
+	PublicPersonalData                    Classification = "PublicPersonalData"
+	SystemMetadata                        Classification = "SystemMetadata"
+	CallstackOrException                  Classification = "CallstackOrException"
+	CustomerContent                       Classification = "CustomerContent"
+	EndUserPseudonymizedInformation       Classification = "EndUserPseudonymizedInformation"
+	OrganizationalIdentifiableInformation Classification = "OrganizationalIdentifiableInformation"
+)
+
+type Purpose string
+
+const (
+	FeatureInsight       Purpose = "FeatureInsight"
+	BusinessInsight      Purpose = "BusinessInsight"
+	PerformanceAndHealth Purpose = "PerformanceAndHealth"
+)
+
+// Application-level fields. Guaranteed to be set and available for all events.
+var (
 	// Application name. Value is always "azd".
-	ServiceNameKey = semconv.ServiceNameKey // service.name
+	ServiceNameKey = AttributeKey{
+		Key: semconv.ServiceNameKey, // service.name
+	}
+
 	// Application version.
-	ServiceVersionKey = semconv.ServiceVersionKey // service.version
+	ServiceVersionKey = AttributeKey{
+		Key: semconv.ServiceVersionKey, // service.version
+	}
 
 	// The operating system type.
-	OSTypeKey = semconv.OSTypeKey // os.type
+	OSTypeKey = AttributeKey{
+		Key: semconv.OSTypeKey, // os.type
+	}
 
 	// The operating system version.
 	//
@@ -26,102 +61,202 @@ const (
 	//   - On Windows systems: The Windows version 10.x.x
 	//   - On Unix-based systems: The release portion of uname. https://en.wikipedia.org/wiki/Uname#Examples
 	//   - On MacOS: The MacOS version. For example: 12.5.1 for macOS Monterey
-	OSVersionKey = semconv.OSVersionKey // os.version
+	OSVersionKey = AttributeKey{
+		Key:            semconv.OSVersionKey, // os.version
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 
 	// The CPU architecture the host system is running on.
-	HostArchKey = semconv.HostArchKey // host.arch
+	HostArchKey = AttributeKey{
+		Key:            semconv.HostArchKey, // host.arch
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 
 	// The version of the runtime of this process, as returned by the runtime without
 	// modification.
-	ProcessRuntimeVersionKey = semconv.ProcessRuntimeVersionKey // process.runtime.version
+	ProcessRuntimeVersionKey = AttributeKey{
+		Key:            semconv.ProcessRuntimeVersionKey, // process.runtime.version
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 
 	// A unique ID associated to the machine the application is installed on.
 	//
 	// This shares implementation with VSCode's machineId and can match exactly on a given device, although there are no
 	// guarantees.
-	MachineIdKey = attribute.Key("machine.id")
+	MachineIdKey = AttributeKey{
+		Key:            attribute.Key("machine.id"),
+		Classification: EndUserPseudonymizedInformation,
+		Endpoint:       "MacAddressHash",
+		Purpose:        BusinessInsight,
+	}
 
 	// The unique DevDeviceId associated with the device.
-	DevDeviceIdKey = attribute.Key("machine.devdeviceid")
+	DevDeviceIdKey = AttributeKey{
+		Key:            attribute.Key("machine.devdeviceid"),
+		Classification: EndUserPseudonymizedInformation,
+		Endpoint:       "SQMUserId",
+		Purpose:        BusinessInsight,
+	}
 
 	// An enumeration of possible environments that the application is running on.
 	//
 	// Example: Desktop, Azure Pipelines, Visual Studio.
 	//
 	// See EnvDesktop for complete set of values.
-	ExecutionEnvironmentKey = attribute.Key("execution.environment")
+	ExecutionEnvironmentKey = AttributeKey{
+		Key:            attribute.Key("execution.environment"),
+		Classification: SystemMetadata,
+		Purpose:        BusinessInsight,
+	}
 
 	// Installer used to install the application. Set in .installed-by.txt file
 	// located in the same folder as the executable.
 	//
 	// Example: "msi", "brew", "choco", "rpm", "deb"
-	InstalledByKey = attribute.Key("service.installer")
+	InstalledByKey = AttributeKey{
+		Key:            attribute.Key("service.installer"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Fields related to the experimentation platform
-const (
+var (
 	// The assignment context as returned by the experimentation platform.
-	ExpAssignmentContextKey = attribute.Key("exp.assignmentContext")
+	ExpAssignmentContextKey = AttributeKey{
+		Key:            attribute.Key("exp.assignmentContext"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Context level fields. Availability depends on the command running.
-const (
+var (
 	// Object ID of the principal.
 	ObjectIdKey = attribute.Key(contracts.UserAuthUserId) // user_AuthenticatedId
 	// Tenant ID of the principal.
-	TenantIdKey = attribute.Key("ad.tenant.id")
+	TenantIdKey = AttributeKey{
+		Key:            attribute.Key("ad.tenant.id"),
+		Classification: SystemMetadata,
+		Purpose:        BusinessInsight,
+	}
 	// The type of account. See AccountTypeUser for all possible options.
-	AccountTypeKey = attribute.Key("ad.account.type")
+	AccountTypeKey = AttributeKey{
+		Key:            attribute.Key("ad.account.type"),
+		Classification: SystemMetadata,
+		Purpose:        BusinessInsight,
+	}
 	// Currently selected Subscription ID.
-	SubscriptionIdKey = attribute.Key("ad.subscription.id")
+	SubscriptionIdKey = AttributeKey{
+		Key:            attribute.Key("ad.subscription.id"),
+		Classification: OrganizationalIdentifiableInformation,
+		Purpose:        PerformanceAndHealth,
+		Endpoint:       "AzureSubscriptionId",
+	}
 )
 
 // Project (azure.yaml) related attributes
-const (
+var (
 	// Hashed template ID metadata
-	ProjectTemplateIdKey = attribute.Key("project.template.id")
+	ProjectTemplateIdKey = AttributeKey{
+		Key:            attribute.Key("project.template.id"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 	// Hashed template.version metadata
-	ProjectTemplateVersionKey = attribute.Key("project.template.version")
+	ProjectTemplateVersionKey = AttributeKey{
+		Key:            attribute.Key("project.template.version"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 	// Hashed project name. Could be used as an indicator for number of different azd projects.
-	ProjectNameKey = attribute.Key("project.name")
+	ProjectNameKey = AttributeKey{
+		Key:            attribute.Key("project.name"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 	// The collection of hashed service hosts in the project.
-	ProjectServiceHostsKey = attribute.Key("project.service.hosts")
+	ProjectServiceHostsKey = AttributeKey{
+		Key:            attribute.Key("project.service.hosts"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 	// The collection of service targets (resolved service hosts) in the project.
-	ProjectServiceTargetsKey = attribute.Key("project.service.targets")
+	ProjectServiceTargetsKey = AttributeKey{
+		Key:            attribute.Key("project.service.targets"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 	// The collection of hashed service languages in the project.
-	ProjectServiceLanguagesKey = attribute.Key("project.service.languages")
+	ProjectServiceLanguagesKey = AttributeKey{
+		Key:            attribute.Key("project.service.languages"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 	// The service language being executed.
-	ProjectServiceLanguageKey = attribute.Key("project.service.language")
+	ProjectServiceLanguageKey = AttributeKey{
+		Key:            attribute.Key("project.service.language"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 )
 
 // Platform related attributes for integrations like devcenter / ADE
-const (
-	PlatformTypeKey = attribute.Key("platform.type")
+var (
+	PlatformTypeKey = AttributeKey{
+		Key:            attribute.Key("platform.type"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Machine-level configuration related attribute.
-const (
+var (
 	// Tracks what alpha features are enabled on each command
-	AlphaFeaturesKey = attribute.Key("config.features")
+	AlphaFeaturesKey = AttributeKey{
+		Key:            attribute.Key("config.features"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Environment related attributes
-const (
+var (
 	// Hashed environment name
-	EnvNameKey = attribute.Key("env.name")
+	EnvNameKey = AttributeKey{
+		Key:            attribute.Key("env.name"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Command entry-point attributes
-const (
+var (
 	// Flags set by the user. Only parsed flag names are available. Values are not recorded.
-	CmdFlags = attribute.Key("cmd.flags")
+	CmdFlags = AttributeKey{
+		Key:            attribute.Key("cmd.flags"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 	// Number of positional arguments set.
-	CmdArgsCount = attribute.Key("cmd.args.count")
+	CmdArgsCount = AttributeKey{
+		Key:            attribute.Key("cmd.args.count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
 	// The command invocation entrypoint.
 	//
 	// The command invocation is formatted using [events.GetCommandEventName]. This makes it consistent with how
 	// commands are represented in telemetry.
-	CmdEntry = attribute.Key("cmd.entry")
+	CmdEntry = AttributeKey{
+		Key:            attribute.Key("cmd.entry"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // All possible enumerations of ExecutionEnvironmentKey
@@ -177,121 +312,252 @@ const (
 const ServiceNameAzd = "azd"
 
 // Error related fields
-const (
+var (
 	// Error code that describes an error.
-	ErrCode = attribute.Key("error.code")
+	ErrCode = AttributeKey{
+		Key:            attribute.Key("error.code"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 
 	// Inner error.
-	ErrInner = attribute.Key("error.inner")
+	ErrInner = AttributeKey{
+		Key:            attribute.Key("error.inner"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 
 	// The frame of the error.
-	ErrFrame = attribute.Key("error.frame")
+	ErrFrame = AttributeKey{
+		Key:            attribute.Key("error.frame"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 )
 
 // Service related fields.
-const (
+var (
 	// Hostname of the service.
 	// The list of allowed values can be found in [Domains].
-	ServiceHost = attribute.Key("service.host")
+	ServiceHost = AttributeKey{
+		Key:            attribute.Key("service.host"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 
 	// Name of the service.
-	ServiceName = attribute.Key("service.name")
+	ServiceName = AttributeKey{
+		Key:            attribute.Key("service.name"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 
 	// Status code of a response returned by the service.
 	// For HTTP, this corresponds to the HTTP status code.
-	ServiceStatusCode = attribute.Key("service.statusCode")
+	ServiceStatusCode = AttributeKey{
+		Key:            attribute.Key("service.statusCode"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
 
 	// Method of a request to the service.
 	// For HTTP, this corresponds to the HTTP method of the request made.
-	ServiceMethod = attribute.Key("service.method")
+	ServiceMethod = AttributeKey{
+		Key:            attribute.Key("service.method"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 
 	// An error code returned by the service in a response.
 	// For HTTP, the error code can be found in the response header or body.
-	ServiceErrorCode = attribute.Key("service.errorCode")
+	ServiceErrorCode = AttributeKey{
+		Key:            attribute.Key("service.errorCode"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
 
 	// Correlation ID for a request to the service.
-	ServiceCorrelationId = attribute.Key("service.correlationId")
+	ServiceCorrelationId = AttributeKey{
+		Key:            attribute.Key("service.correlationId"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 )
 
 // Tool related fields
-const (
+var (
 	// The name of the tool.
-	ToolName = attribute.Key("tool.name")
+	ToolName = AttributeKey{
+		Key:            attribute.Key("tool.name"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 
 	// The exit code of the tool after invocation.
-	ToolExitCode = attribute.Key("tool.exitCode")
+	ToolExitCode = AttributeKey{
+		Key:            attribute.Key("tool.exitCode"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 )
 
 // Performance related fields
-const (
+var (
 	// The time spent waiting on user interaction in milliseconds.
-	PerfInteractTime = attribute.Key("perf.interact_time")
+	PerfInteractTime = AttributeKey{
+		Key:            attribute.Key("perf.interact_time"),
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
 )
 
 // Pack related fields
-const (
+var (
 	// The builder image used. Hashed when a user-defined image is used.
-	PackBuilderImage = attribute.Key("pack.builder.image")
+	PackBuilderImage = AttributeKey{
+		Key:            attribute.Key("pack.builder.image"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 
 	// The tag of the builder image used. Hashed when a user-defined image is used.
-	PackBuilderTag = attribute.Key("pack.builder.tag")
+	PackBuilderTag = AttributeKey{
+		Key:            attribute.Key("pack.builder.tag"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Mcp related fields
-const (
+var (
 	// The name of the MCP client.
-	McpClientName = attribute.Key("mcp.client.name")
+	McpClientName = AttributeKey{
+		Key:            attribute.Key("mcp.client.name"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 
 	// The version of the MCP client.
-	McpClientVersion = attribute.Key("mcp.client.version")
+	McpClientVersion = AttributeKey{
+		Key:            attribute.Key("mcp.client.version"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Initialization from app related fields
-const (
-	InitMethod = attribute.Key("init.method")
+var (
+	InitMethod = AttributeKey{
+		Key:            attribute.Key("init.method"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 
-	AppInitDetectedDatabase = attribute.Key("appinit.detected.databases")
-	AppInitDetectedServices = attribute.Key("appinit.detected.services")
+	AppInitDetectedDatabase = AttributeKey{
+		Key:            attribute.Key("appinit.detected.databases"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	AppInitDetectedServices = AttributeKey{
+		Key:            attribute.Key("appinit.detected.services"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 
-	AppInitConfirmedDatabases = attribute.Key("appinit.confirmed.databases")
-	AppInitConfirmedServices  = attribute.Key("appinit.confirmed.services")
+	AppInitConfirmedDatabases = AttributeKey{
+		Key:            attribute.Key("appinit.confirmed.databases"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	AppInitConfirmedServices = AttributeKey{
+		Key:            attribute.Key("appinit.confirmed.services"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 
-	AppInitModifyAddCount    = attribute.Key("appinit.modify_add.count")
-	AppInitModifyRemoveCount = attribute.Key("appinit.modify_remove.count")
+	AppInitModifyAddCount = AttributeKey{
+		Key:            attribute.Key("appinit.modify_add.count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+	AppInitModifyRemoveCount = AttributeKey{
+		Key:            attribute.Key("appinit.modify_remove.count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
 
 	// The last step recorded during the app init process.
-	AppInitLastStep = attribute.Key("appinit.lastStep")
+	AppInitLastStep = AttributeKey{
+		Key:            attribute.Key("appinit.lastStep"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Remote docker build related fields
-const (
-	RemoteBuildCount = attribute.Key("container.remoteBuild.count")
+var (
+	RemoteBuildCount = AttributeKey{
+		Key:            attribute.Key("container.remoteBuild.count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
 )
 
 // JSON-RPC related fields
-const (
+var (
 	// Logical name of the method from the RPC interface
 	// perspective, which can be different from the name of any implementing
 	// method/function. See semconv.RPCMethodKey.
-	RpcMethod = semconv.RPCMethodKey
+	RpcMethod = AttributeKey{
+		Key:            semconv.RPCMethodKey,
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 
 	// `id` property of JSON-RPC request or response.
-	JsonRpcId = semconv.RPCJSONRPCRequestIDKey
+	JsonRpcId = AttributeKey{
+		Key:            semconv.RPCJSONRPCRequestIDKey,
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+	}
 
 	// `error_code` property of JSON-RPC request or response. Type: int.
-	JsonRpcErrorCode = semconv.RPCJSONRPCErrorCodeKey
+	JsonRpcErrorCode = AttributeKey{
+		Key:            semconv.RPCJSONRPCErrorCodeKey,
+		Classification: SystemMetadata,
+		Purpose:        PerformanceAndHealth,
+		IsMeasurement:  true,
+	}
 )
 
 // Agent-troubleshooting related fields
-const (
+var (
 	// Number of auto-fix.attempts
-	AgentFixAttempts = attribute.Key("agent.fix.attempts")
+	AgentFixAttempts = AttributeKey{
+		Key:            attribute.Key("agent.fix.attempts"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )
 
 // Extension related fields
-const (
+var (
 	// The identifier of the extension.
-	ExtensionId = attribute.Key("extension.id")
+	ExtensionId = AttributeKey{
+		Key:            attribute.Key("extension.id"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 	// The version of the extension.
-	ExtensionVersion = attribute.Key("extension.version")
+	ExtensionVersion = AttributeKey{
+		Key:            attribute.Key("extension.version"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
 )

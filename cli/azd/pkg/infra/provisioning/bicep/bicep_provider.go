@@ -20,7 +20,6 @@ import (
 	"strings"
 	"time"
 
-	"dario.cat/mergo"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
@@ -47,13 +46,6 @@ import (
 )
 
 type bicepFileMode int
-
-var (
-	defaultOptions = provisioning.Options{
-		Module: "main",
-		Path:   "infra",
-	}
-)
 
 const (
 	bicepMode bicepFileMode = iota
@@ -97,33 +89,34 @@ func (p *BicepProvider) Name() string {
 // Initialize initializes provider state from the options.
 // It also calls EnsureEnv, which ensures the client-side state is ready for provisioning.
 func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opt provisioning.Options) error {
-	mergedOptions := provisioning.Options{}
-	mergo.Merge(&mergedOptions, opt)
-	mergo.Merge(&mergedOptions, defaultOptions)
-
-	if !filepath.IsAbs(mergedOptions.Path) {
-		mergedOptions.Path = filepath.Join(projectPath, mergedOptions.Path)
+	infraOptions, err := opt.GetWithDefaults()
+	if err != nil {
+		return err
 	}
 
-	bicepparam := mergedOptions.Module + ".bicepparam"
-	bicepFile := mergedOptions.Module + ".bicep"
+	if !filepath.IsAbs(infraOptions.Path) {
+		infraOptions.Path = filepath.Join(projectPath, infraOptions.Path)
+	}
+
+	bicepparam := infraOptions.Module + ".bicepparam"
+	bicepFile := infraOptions.Module + ".bicep"
 
 	// Check if there's a <moduleName>.bicepparam first. It will be preferred over a <moduleName>.bicep
-	if _, err := os.Stat(filepath.Join(mergedOptions.Path, bicepparam)); err == nil {
-		p.path = filepath.Join(mergedOptions.Path, bicepparam)
+	if _, err := os.Stat(filepath.Join(infraOptions.Path, bicepparam)); err == nil {
+		p.path = filepath.Join(infraOptions.Path, bicepparam)
 		p.mode = bicepparamMode
 	} else {
-		p.path = filepath.Join(mergedOptions.Path, bicepFile)
+		p.path = filepath.Join(infraOptions.Path, bicepFile)
 		p.mode = bicepMode
 	}
 
 	p.projectPath = projectPath
-	p.layer = mergedOptions.Name
-	p.options = mergedOptions
-	p.ignoreDeploymentState = mergedOptions.IgnoreDeploymentState
+	p.layer = infraOptions.Name
+	p.options = infraOptions
+	p.ignoreDeploymentState = infraOptions.IgnoreDeploymentState
 
 	p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
-	err := p.EnsureEnv(ctx)
+	err = p.EnsureEnv(ctx)
 	p.console.StopSpinner(ctx, "", input.Step)
 	return err
 }
@@ -589,8 +582,29 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 	}
 
 	if !p.ignoreDeploymentState && parametersHashErr == nil {
-		deploymentState, err := p.deploymentState(ctx, planned, deployment, currentParamsHash)
-		if err == nil {
+		deploymentState, stateErr := p.deploymentState(ctx, planned, deployment, currentParamsHash)
+		if stateErr == nil {
+			// As a heuristic, we also check the existence of all resource groups
+			// created by the deployment to validate the deployment state.
+			// This handles the scenario of resource group(s) being deleted outside of azd,
+			// which is quite common.
+			// This check adds ~100ms per resource group to the deployment time.
+			for _, res := range deploymentState.Resources {
+				if res != nil && res.ID != nil {
+					resId, err := arm.ParseResourceID(*res.ID)
+					if err == nil && resId.ResourceType.Type == arm.ResourceGroupResourceType.Type {
+						exists, err := p.resourceService.CheckExistenceByID(ctx, *resId, "2025-03-01")
+						if err == nil && !exists {
+							stateErr = fmt.Errorf(
+								"resource group %s no longer exists, invalidating deployment state", resId.ResourceGroupName)
+							break
+						}
+					}
+				}
+			}
+		}
+
+		if stateErr == nil {
 			result.Outputs = provisioning.OutputParametersFromArmOutputs(
 				planned.Template.Outputs,
 				azapi.CreateDeploymentOutput(deploymentState.Outputs),
@@ -601,7 +615,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*provisioning.DeployResult,
 				SkippedReason: provisioning.DeploymentStateSkipped,
 			}, nil
 		}
-		logDS("%s", err.Error())
+		logDS("%s", stateErr.Error())
 	}
 
 	deploymentTags := map[string]*string{
@@ -736,7 +750,22 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 
 	var changes []*provisioning.DeploymentPreviewChange
 	for _, change := range deployPreviewResult.Properties.Changes {
-		resourceAfter := change.After.(map[string]interface{})
+		// Use After state if available (e.g., Create, Modify), otherwise use Before state (e.g., Delete).
+		// ARM returns nil for After when a resource is being deleted and nil for Before when created.
+		var resourceState map[string]interface{}
+		if change.After != nil {
+			resourceState, _ = change.After.(map[string]interface{})
+		}
+		if resourceState == nil && change.Before != nil {
+			resourceState, _ = change.Before.(map[string]interface{})
+		}
+		if resourceState == nil {
+			// Skip changes with no resource state information
+			continue
+		}
+
+		resourceType, _ := resourceState["type"].(string)
+		resourceName, _ := resourceState["name"].(string)
 
 		// Convert Delta (property-level changes) from Azure SDK format to our format
 		var delta []provisioning.DeploymentPreviewPropertyChange
@@ -749,8 +778,8 @@ func (p *BicepProvider) Preview(ctx context.Context) (*provisioning.DeployPrevie
 			ResourceId: provisioning.Resource{
 				Id: *change.ResourceID,
 			},
-			ResourceType: resourceAfter["type"].(string),
-			Name:         resourceAfter["name"].(string),
+			ResourceType: resourceType,
+			Name:         resourceName,
 			Before:       change.Before,
 			After:        change.After,
 			Delta:        delta,

@@ -157,29 +157,9 @@ func (c *FoundryProjectsClient) GetAllConnections(ctx context.Context) ([]Connec
 
 	// Continue fetching pages while there's a next link
 	for nextLink != nil && *nextLink != "" {
-		req, err := runtime.NewRequest(ctx, http.MethodGet, *nextLink)
+		pagedConnections, err := c.getNextPage(ctx, *nextLink)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create request for next page: %w", err)
-		}
-
-		resp, err := c.pipeline.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("HTTP request failed: %w", err)
-		}
-		defer resp.Body.Close()
-
-		if !runtime.HasStatusCode(resp, http.StatusOK) {
-			return nil, runtime.NewResponseError(resp)
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read response body: %w", err)
-		}
-
-		var pagedConnections PagedConnection
-		if err := json.Unmarshal(body, &pagedConnections); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal connections response: %w", err)
+			return nil, err
 		}
 
 		// Add connections from this page
@@ -188,4 +168,34 @@ func (c *FoundryProjectsClient) GetAllConnections(ctx context.Context) ([]Connec
 	}
 
 	return allConnections, nil
+}
+
+// getNextPage fetches a single page of connections from the given URL
+func (c *FoundryProjectsClient) getNextPage(ctx context.Context, url string) (*PagedConnection, error) {
+	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for next page: %w", err)
+	}
+
+	resp, err := c.pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var pagedConnections PagedConnection
+	if err := json.Unmarshal(body, &pagedConnections); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal connections response: %w", err)
+	}
+
+	return &pagedConnections, nil
 }

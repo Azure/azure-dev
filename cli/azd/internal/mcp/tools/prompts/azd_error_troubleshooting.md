@@ -101,9 +101,100 @@
    ```
 
 4. **Infrastructure Code Fixes**
+   
+   **Identify the Source of Configuration Values**
+   
+   Before suggesting fixes, determine WHERE the problematic value is defined:
+   
+   a. **Hardcoded in Infrastructure Files (Bicep/Terraform)**
+      - Search for hardcoded values in `main.bicep`, `*.bicep`, `main.tf`, `*.tf` files in the `infra/` directory
+      - **Example:** `name: 'kv-hardcodedname'` or `resource "azurerm_key_vault" "kv" { name = "hardcoded-name" }`
+      - **Action Required:** Update the infrastructure file directly to use parameters or variables instead
+      
+   b. **Defined in Environment Files**
+      - Values in `.env`, `.azure/<env-name>/.env`, `parameters.json`, `terraform.tfvars`
+      - **Action Required:** Update the environment/parameter file
+   
+   **For Resource Naming Conflicts (e.g., VaultAlreadyExists, StorageAccountAlreadyExists, ResourceExists):**
+   
+   1. **Locate the Name Definition:**
+      ```bash
+      # Search Bicep files for hardcoded resource names
+      grep -r "name:" infra/*.bicep infra/**/*.bicep
+      
+      # Search Terraform files for hardcoded resource names
+      grep -r "name =" infra/*.tf infra/**/*.tf
+      ```
+   
+   2. **If Name is Hardcoded in Infrastructure Files:**
+      - **Bicep Example Fix:**
+        ```bicep
+        // ❌ BEFORE (Hardcoded - causes conflicts)
+        resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
+          name: 'kv-ctriipyyhopq4'  // This hardcoded name will conflict
+          location: location
+          // ...
+        }
+        
+        // ✅ AFTER (Parameterized with unique suffix)
+        targetScope = 'subscription'
+        
+        @minLength(1)
+        @maxLength(64)
+        @description('Name of the the environment which is used to generate a short unique hash used in all resources.')
+        param environmentName string
+        
+        @minLength(1)
+        @description('Primary location for all resources')
+        param location string
+
+        var abbrs = loadJsonContent('./abbreviations.json')
+        var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+        
+        resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
+          name: !empty(keyVaultName) ? keyVaultName : '${abbrs.keyVaultVaults}${resourceToken}'  // Generates unique name per deployment
+          location: location
+          // ...
+        }
+        ```
+      
+      - **Terraform Example Fix:**
+        ```terraform
+        # ❌ BEFORE (Hardcoded - causes conflicts)
+        resource "azurerm_key_vault" "kv" {
+          name                = "kv-myapp"
+          location            = azurerm_resource_group.rg.location
+          # ...
+        }
+        
+        # ✅ AFTER (Using variables with unique suffix)
+        resource "random_string" "resource_token" {
+          length  = 13
+          special = false
+          upper   = false
+        }
+        
+        resource "azurerm_key_vault" "kv" {
+          name                = "kv-${random_string.resource_token.result}"
+          location            = azurerm_resource_group.rg.location
+          # ...
+        }
+        ```
+   
+   3. **If Name is in Environment/Parameter Files:**
+      - Update `.env` or `parameters.json` with new unique value
+      - Use `azd env set KEY_VAULT_NAME=kv-newuniquename` if applicable
+   
+   4. **Verification:**
+      - **Show the user which specific file(s) need to be updated**
+      - **Provide the exact file path** (e.g., `infra/main.bicep` line 45)
+      - **Explain why updating only `.env` won't work if the value is hardcoded in infrastructure files**
+   
+   **General Infrastructure Code Fixes:**
    - **Bicep Files:** Correct bicep files based on error root cause
    - **Terraform Files:** Correct terraform files based on error root cause
    - Update parameter files with valid values
+   - Ensure consistency between infrastructure definitions and environment variables
 
 5. **Verification Commands if user installed Azure CLI. Otherwise skip this part**
    - Consider using following commands if fits:

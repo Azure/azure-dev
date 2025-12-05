@@ -108,7 +108,7 @@
    
    a. **Hardcoded in Infrastructure Files (Bicep/Terraform)**
       - Search for hardcoded values in `main.bicep`, `*.bicep`, `main.tf`, `*.tf` files in the `infra/` directory
-      - **Example:** `name: 'kv-hardcodedname'` or `resource "azurerm_key_vault" "kv" { name = "hardcoded-name" }`
+      - **Example:** `name: 'kv-hardcoded-name'` or `resource "azurerm_key_vault" "kv" { name = "hardcoded-name" }`
       - **Action Required:** Update the infrastructure file directly to use parameters or variables instead
       
    b. **Defined in Environment Files**
@@ -131,7 +131,7 @@
         ```bicep
         // ❌ BEFORE (Hardcoded - causes conflicts)
         resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
-          name: 'kv-ctriipyyhopq4'  // This hardcoded name will conflict
+          name: 'kv-hardcoded-name'  // This hardcoded name will conflict
           location: location
           // ...
         }
@@ -148,11 +148,11 @@
         @description('Primary location for all resources')
         param location string
 
-        var abbrs = loadJsonContent('./abbreviations.json')
+        var abbreviations = loadJsonContent('./abbreviations.json')
         var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
         
         resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
-          name: !empty(keyVaultName) ? keyVaultName : '${abbrs.keyVaultVaults}${resourceToken}'  // Generates unique name per deployment
+          name: !empty(keyVaultName) ? keyVaultName : '${abbreviations.keyVaultVaults}${resourceToken}'  // Generates unique name per deployment
           location: location
           // ...
         }
@@ -183,7 +183,7 @@
    
    3. **If Name is in Environment/Parameter Files:**
       - Update `.env` or `parameters.json` with new unique value
-      - Use `azd env set KEY_VAULT_NAME=kv-newuniquename` if applicable
+      - Use `azd env set KEY_VAULT_NAME=kv-new-unique-name` if applicable
    
    4. **Verification:**
       - **Show the user which specific file(s) need to be updated**

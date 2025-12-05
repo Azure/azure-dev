@@ -4,6 +4,7 @@
 package azure
 
 import (
+	"azureaiagent/internal/version"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,24 +13,45 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 )
 
 // FoundryProjectsClient provides methods to interact with Microsoft Foundry projects
 type FoundryProjectsClient struct {
 	baseEndpoint string
 	apiVersion   string
-	cred         azcore.TokenCredential
-	client       *http.Client
+	pipeline     runtime.Pipeline
 }
 
 // NewFoundryProjectsClient creates a new instance of FoundryProjectsClient
 func NewFoundryProjectsClient(accountName string, projectName string, cred azcore.TokenCredential) *FoundryProjectsClient {
 	baseEndpoint := fmt.Sprintf("https://%s.services.ai.azure.com/api/projects/%s", accountName, projectName)
+
+	userAgent := fmt.Sprintf("azd-ext-azure-ai-agents/%s", version.Version)
+
+	clientOptions := &policy.ClientOptions{
+		Logging: policy.LogOptions{
+			AllowedHeaders: []string{azsdk.MsCorrelationIdHeader},
+		},
+		PerCallPolicies: []policy.Policy{
+			runtime.NewBearerTokenPolicy(cred, []string{"https://ai.azure.com/.default"}, nil),
+			azsdk.NewMsCorrelationPolicy(),
+			azsdk.NewUserAgentPolicy(userAgent),
+		},
+	}
+
+	pipeline := runtime.NewPipeline(
+		"azure-foundry-projects",
+		"v1.0.0",
+		runtime.PipelineOptions{},
+		clientOptions,
+	)
+
 	return &FoundryProjectsClient{
 		baseEndpoint: baseEndpoint,
 		apiVersion:   "2025-11-15-preview",
-		cred:         cred,
-		client:       &http.Client{},
+		pipeline:     pipeline,
 	}
 }
 
@@ -90,14 +112,24 @@ type PagedConnection struct {
 func (c *FoundryProjectsClient) GetPagedConnections(ctx context.Context) (*PagedConnection, error) {
 	targetEndpoint := fmt.Sprintf("%s/connections?api-version=%s", c.baseEndpoint, c.apiVersion)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", targetEndpoint, nil)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, targetEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	body, err := c.makeHTTPRequest(ctx, req)
+	resp, err := c.pipeline.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if !runtime.HasStatusCode(resp, http.StatusOK) {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	var pagedConnections PagedConnection
@@ -125,14 +157,24 @@ func (c *FoundryProjectsClient) GetAllConnections(ctx context.Context) ([]Connec
 
 	// Continue fetching pages while there's a next link
 	for nextLink != nil && *nextLink != "" {
-		req, err := http.NewRequestWithContext(ctx, "GET", *nextLink, nil)
+		req, err := runtime.NewRequest(ctx, http.MethodGet, *nextLink)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request for next page: %w", err)
 		}
 
-		body, err := c.makeHTTPRequest(ctx, req)
+		resp, err := c.pipeline.Do(req)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("HTTP request failed: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if !runtime.HasStatusCode(resp, http.StatusOK) {
+			return nil, runtime.NewResponseError(resp)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
 		var pagedConnections PagedConnection
@@ -146,69 +188,4 @@ func (c *FoundryProjectsClient) GetAllConnections(ctx context.Context) ([]Connec
 	}
 
 	return allConnections, nil
-}
-
-// Helper methods
-
-// makeHTTPRequest makes an HTTP request with proper authentication and error handling
-func (c *FoundryProjectsClient) makeHTTPRequest(ctx context.Context, req *http.Request) ([]byte, error) {
-	// Log the request details - uncomment for debugging
-	// c.logRequest(req.Method, req.URL.String(), nil)
-
-	// Add authentication header
-	if err := c.setAuthHeader(ctx, req); err != nil {
-		return nil, fmt.Errorf("failed to set authentication header: %w", err)
-	}
-
-	// Set common headers
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	// Make the HTTP request
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make HTTP request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Read response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Log the response details - uncomment for debugging
-	// c.logResponse(body)
-
-	// Check for HTTP errors
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("HTTP request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return body, nil
-}
-
-// setAuthHeader sets the authorization header using the credential
-func (c *FoundryProjectsClient) setAuthHeader(ctx context.Context, req *http.Request) error {
-	token, err := c.getAiFoundryAzureToken(ctx, c.cred)
-	if err != nil {
-		return fmt.Errorf("failed to get Azure token: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-	return nil
-}
-
-// getAiFoundryAzureToken gets an Azure access token using the provided credential
-func (c *FoundryProjectsClient) getAiFoundryAzureToken(ctx context.Context, cred azcore.TokenCredential) (string, error) {
-	tokenRequestOptions := policy.TokenRequestOptions{
-		Scopes: []string{"https://ai.azure.com/.default"},
-	}
-
-	token, err := cred.GetToken(ctx, tokenRequestOptions)
-	if err != nil {
-		return "", err
-	}
-
-	return token.Token, nil
 }

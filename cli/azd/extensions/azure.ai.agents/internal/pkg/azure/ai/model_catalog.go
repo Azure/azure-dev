@@ -407,7 +407,7 @@ func createModelsClient(
 	subscriptionId string,
 	credential azcore.TokenCredential,
 ) (*armcognitiveservices.ModelsClient, error) {
-	client, err := armcognitiveservices.NewModelsClient(subscriptionId, credential, nil)
+	client, err := armcognitiveservices.NewModelsClient(subscriptionId, credential, azure.NewArmClientOptions())
 	if err != nil {
 		return nil, err
 	}

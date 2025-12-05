@@ -210,69 +210,72 @@ func Test_ExtractSuggestedSolutions(t *testing.T) {
 		expectedFirst string
 	}{
 		{
-			name: "Three Solutions Found",
-			llmResponse: `## Brainstorm Solutions
-1. Log out and log in again with Azure Developer CLI
-2. Check and fix your network environment
-3. Retry after reboot or from a clean terminal`,
+			name: "Valid JSON with Three Solutions",
+			llmResponse: `{
+				"analysis": "Brief explanation of the error",
+				"solutions": [
+					"Log out and log in again with Azure Developer CLI",
+					"Check and fix your network environment",
+					"Retry after reboot or from a clean terminal"
+				]
+			}`,
 			expectedCount: 3,
 			expectedFirst: "Log out and log in again with Azure Developer CLI",
 		},
 		{
-			name: "Solutions with Extra Whitespace",
-			llmResponse: `### Brainstorm Solutions
-   1. First solution here
-   2. Second solution here
-   3. Third solution here`,
-			expectedCount: 3,
-			expectedFirst: "First solution here",
-		},
-		{
-			name: "Solutions with Other Sections",
-			llmResponse: `## Error Analysis
-This is the error analysis.
-
-## Brainstorm Solutions
-1. Solution one
-2. Solution two
-3. Solution three
-
-## Additional Information
-More details here.`,
-			expectedCount: 3,
-			expectedFirst: "Solution one",
-		},
-		{
-			name: "No Solutions Section",
-			llmResponse: `## Error Analysis
-This is just an analysis without solutions.`,
-			expectedCount: 0,
-		},
-		{
-			name: "Less Than Three Solutions",
-			llmResponse: `## Brainstorm Solutions
-1. Only one solution`,
+			name: "Valid JSON with One Solution",
+			llmResponse: `{
+				"analysis": "Error analysis",
+				"solutions": [
+					"Only one solution"
+				]
+			}`,
 			expectedCount: 1,
 			expectedFirst: "Only one solution",
 		},
 		{
-			name: "More Than Three Solutions (Should Stop at 3)",
-			llmResponse: `## Brainstorm Solutions
-1. Solution one
-2. Solution two
-3. Solution three
-4. Solution four
-5. Solution five`,
-			expectedCount: 3,
-			expectedFirst: "Solution one",
-		},
-		{
-			name: "Case Insensitive Section Header",
-			llmResponse: `## brainstorm solutions
-1. First solution
-2. Second solution`,
+			name: "Valid JSON with Two Solutions",
+			llmResponse: `{
+				"analysis": "Error analysis",
+				"solutions": [
+					"First solution",
+					"Second solution"
+				]
+			}`,
 			expectedCount: 2,
 			expectedFirst: "First solution",
+		},
+		{
+			name:          "Invalid JSON",
+			llmResponse:   `This is not valid JSON at all`,
+			expectedCount: 0,
+		},
+		{
+			name: "JSON with Empty Solutions Array",
+			llmResponse: `{
+				"analysis": "Error analysis",
+				"solutions": []
+			}`,
+			expectedCount: 0,
+		},
+		{
+			name: "JSON Missing Solutions Field",
+			llmResponse: `{
+				"analysis": "Error analysis only"
+			}`,
+			expectedCount: 0,
+		},
+		{
+			name: "JSON with Extra Whitespace",
+			llmResponse: `  {
+				"analysis": "Error analysis",
+				"solutions": [
+					"  First solution with spaces  ",
+					"  Second solution  "
+				]
+			}  `,
+			expectedCount: 2,
+			expectedFirst: "  First solution with spaces  ",
 		},
 	}
 

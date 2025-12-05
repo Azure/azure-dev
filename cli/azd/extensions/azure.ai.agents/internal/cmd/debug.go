@@ -6,14 +6,15 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"time"
-
-	"azureaiagent/internal/pkg/azure"
 
 	azcorelog "github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
 	"github.com/spf13/pflag"
 )
+
+var connectionStringJSONRegex = regexp.MustCompile(`("[\w]*(?:CONNECTION_STRING|ConnectionString)":\s*)"[^"]*"`)
 
 // setupDebugLogging configures the Azure SDK logger if debug mode is enabled.
 func setupDebugLogging(flags *pflag.FlagSet) {
@@ -26,7 +27,7 @@ func setupDebugLogging(flags *pflag.FlagSet) {
 			logFile = os.Stderr
 		}
 		azcorelog.SetListener(func(event azcorelog.Event, msg string) {
-			msg = azure.ConnectionStringJSONRegex.ReplaceAllString(msg, `${1}"REDACTED"`)
+			msg = connectionStringJSONRegex.ReplaceAllString(msg, `${1}"REDACTED"`)
 			fmt.Fprintf(logFile, "[%s] %s: %s\n", time.Now().Format(time.RFC3339), event, msg)
 		})
 	}

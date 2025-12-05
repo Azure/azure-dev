@@ -72,7 +72,12 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		return next(ctx)
 	}
 
-	actionResult, err := next(ctx)
+	// Preserve a non-cancellable parent context BEFORE making the first attempt
+	// This ensures that if the context gets cancelled during the first attempt,
+	// retries can use a fresh context
+	parentCtx := context.WithoutCancel(ctx)
+
+	actionResult, err := next(parentCtx)
 
 	// Stop the spinner always to un-hide cursor
 	e.console.StopSpinner(ctx, "", input.Step)
@@ -103,6 +108,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 
 	// Warn user that this is an alpha feature
 	e.console.WarnForFeature(ctx, llm.FeatureLlm)
+
 	ctx, span := tracing.Start(ctx, events.AgentTroubleshootEvent)
 	defer span.End()
 
@@ -225,14 +231,16 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
             Provide 1-3 solutions. Each solution must be concise (one sentence).
             Error details: %s`, errorInput))
 
-		if err != nil {
+		// Extract solutions from agent output even if there's a parsing error
+		// The agent may return valid content
+		solutions := extractSuggestedSolutions(agentOutput)
+
+		// Only fail if we got an error AND couldn't extract any solutions
+		if err != nil && len(solutions) == 0 {
 			e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
 			span.SetStatus(codes.Error, "agent.send_message.failed")
 			return nil, fmt.Errorf("failed to generate solutions: %w", err)
 		}
-
-		// Extract solutions from agent output
-		solutions := extractSuggestedSolutions(agentOutput)
 
 		e.console.Message(ctx, "")
 		selectedSolution, continueWithFix, err := promptUserForSolution(ctx, solutions, agentName)
@@ -282,10 +290,12 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 			}
 		}
 
+		// Use a fresh child context per retry to avoid reusing a canceled ctx
+		attemptCtx, cancel := context.WithCancel(parentCtx)
 		// Clear check cache to prevent skip of tool related error
-		ctx = tools.WithInstalledCheckCache(ctx)
-
-		actionResult, err = next(ctx)
+		attemptCtx = tools.WithInstalledCheckCache(attemptCtx)
+		actionResult, err = next(attemptCtx)
+		cancel()
 		originalError = err
 	}
 

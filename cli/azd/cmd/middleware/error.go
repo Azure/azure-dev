@@ -5,9 +5,9 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -64,18 +64,19 @@ func (e *ErrorMiddleware) displayAgentResponse(ctx context.Context, response str
 }
 
 func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionResult, error) {
-	actionResult, err := next(ctx)
-
 	// Short-circuit agentic error handling in non-interactive scenarios:
 	// - LLM feature is disabled
 	// - User specified --no-prompt (non-interactive mode)
 	// - Running in CI/CD environment where user interaction is not possible
 	if !e.featuresManager.IsEnabled(llm.FeatureLlm) || e.global.NoPrompt || resource.IsRunningOnCI() {
-		return actionResult, err
+		return next(ctx)
 	}
+
+	actionResult, err := next(ctx)
 
 	// Stop the spinner always to un-hide cursor
 	e.console.StopSpinner(ctx, "", input.Step)
+
 	if err == nil || e.options.IsChildAction(ctx) {
 		return actionResult, err
 	}
@@ -209,10 +210,17 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		previousError = originalError
 		agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
 			`Steps to follow:
-            1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
-            2. Include a section called "Brainstorm Solutions" to list out at least one and up to three solutions 
-			user could try out to fix the error (use "1. ", "2. ", "3. ").
-            Each solution needs to be short and clear (one sentence).
+            1. Use available tools to identify, explain and diagnose this error when running azd command and its root cause.
+            2. Only return a JSON object in the following format:
+            {
+              "analysis": "Brief explanation of the error and its root cause",
+              "solutions": [
+                "Solution 1 Short description (one sentence)",
+                "Solution 2 Short description (one sentence)",
+                "Solution 3 Short description (one sentence)"
+              ]
+            }
+            Provide 1-3 solutions. Each solution must be concise (one sentence).
             Error details: %s`, errorInput))
 
 		if err != nil {
@@ -224,51 +232,49 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		// Extract solutions from agent output
 		solutions := extractSuggestedSolutions(agentOutput)
 
-		if len(solutions) > 0 {
-			e.console.Message(ctx, "")
-			selectedSolution, continueWithFix, err := promptUserForSolution(ctx, solutions, agentName)
-			if err != nil {
-				return nil, fmt.Errorf("prompting for solution selection: %w", err)
-			}
+		e.console.Message(ctx, "")
+		selectedSolution, continueWithFix, err := promptUserForSolution(ctx, solutions, agentName)
+		if err != nil {
+			return nil, fmt.Errorf("prompting for solution selection: %w", err)
+		}
 
-			if continueWithFix {
-				agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
-					`Steps to follow:
-            1. Use available tool to identify, explain and diagnose this error when running azd command and its root cause.
+		if continueWithFix {
+			agentOutput, err := azdAgent.SendMessage(ctx, fmt.Sprintf(
+				`Steps to follow:
+            1. Use available tools to identify, explain and diagnose this error when running azd command and its root cause.
             2. Resolve the error by making the minimal, targeted change required to the code or configuration.
             Avoid unnecessary modifications and focus only on what is essential to restore correct functionality.
             3. Remove any changes that were created solely for validation and are not part of the actual error fix.
 			4. You are currently in the middle of executing '%s'. Never run this command.
             Error details: %s`, e.options.CommandPath, errorInput))
 
-				if err != nil {
-					e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
-					span.SetStatus(codes.Error, "agent.send_message.failed")
-					return nil, err
-				}
+			if err != nil {
+				e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
+				span.SetStatus(codes.Error, "agent.send_message.failed")
+				return nil, err
+			}
 
-				span.SetStatus(codes.Ok, "agent.fix.agent")
-			} else {
-				if selectedSolution != "" {
-					// User selected a solution
-					agentOutput, err = azdAgent.SendMessage(ctx, fmt.Sprintf(
-						`Steps to follow:
+			span.SetStatus(codes.Ok, "agent.fix.agent")
+		} else {
+			if selectedSolution != "" {
+				// User selected a solution
+				agentOutput, err = azdAgent.SendMessage(ctx, fmt.Sprintf(
+					`Steps to follow:
 						1. Perform the following actions to resolve the error: %s. During this, make minimal changes and avoid unnecessary modifications.
 						2. Remove any changes that were created solely for validation and are not part of the actual error fix.
 						3. You are currently in the middle of executing '%s'. Never run this command.
 						Error details: %s`, selectedSolution, e.options.CommandPath, errorInput))
 
-					if err != nil {
-						e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
-						span.SetStatus(codes.Error, "agent.send_message.failed")
-						return nil, err
-					}
-					span.SetStatus(codes.Ok, "agent.fix.solution")
-				} else {
-					// User selected cancel
-					span.SetStatus(codes.Error, "agent.fix.cancelled")
-					return actionResult, originalError
+				if err != nil {
+					e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
+					span.SetStatus(codes.Error, "agent.send_message.failed")
+					return nil, err
 				}
+				span.SetStatus(codes.Ok, "agent.fix.solution")
+			} else {
+				// User selected cancel
+				span.SetStatus(codes.Error, "agent.fix.cancelled")
+				return actionResult, originalError
 			}
 		}
 
@@ -367,51 +373,22 @@ func promptForErrorHandlingConsent(
 	return choices[*choiceIndex].Value, nil
 }
 
-// extractSuggestedSolutions extracts the three solutions from the "Brainstorm Solutions" section
-// in the LLM response. Returns a slice of solution strings.
+// AgentResponse represents the structured JSON response from the LLM agent
+type AgentResponse struct {
+	Analysis  string   `json:"analysis"`
+	Solutions []string `json:"solutions"`
+}
+
+// extractSuggestedSolutions extracts solutions from the LLM response.
+// It expects a JSON response with the structure: {"analysis": "...", "solutions": ["...", "...", "..."]}
+// If JSON parsing fails, it returns an empty slice.
 func extractSuggestedSolutions(llmResponse string) []string {
-	var solutions []string
-
-	// Find the "Brainstorm Solutions" section (case-insensitive, with optional markdown headers)
-	lines := strings.Split(llmResponse, "\n")
-	inSolutionsSection := false
-
-	// Regex to match numbered list items: "1. ", "2. ", "3. "
-	numberPattern := regexp.MustCompile(`^\s*(\d+)\.\s+(.+)$`)
-
-	for _, line := range lines {
-		trimmedLine := strings.TrimSpace(line)
-
-		// Check if we're entering the "Brainstorm Solutions" section
-		if strings.Contains(strings.ToLower(trimmedLine), "brainstorm solutions") {
-			inSolutionsSection = true
-			continue
-		}
-		// If we're in the solutions section, extract numbered items
-		if inSolutionsSection {
-			// Stop if we hit another section header
-			if strings.HasPrefix(trimmedLine, "#") &&
-				!strings.Contains(strings.ToLower(trimmedLine), "brainstorm solutions") {
-				break
-			}
-
-			// Match numbered list items
-			matches := numberPattern.FindStringSubmatch(trimmedLine)
-			if len(matches) == 3 {
-				solutionText := strings.TrimSpace(matches[2])
-				if solutionText != "" {
-					solutions = append(solutions, solutionText)
-				}
-			}
-
-			// Stop after collecting 3 solutions
-			if len(solutions) >= 3 {
-				break
-			}
-		}
+	var response AgentResponse
+	if err := json.Unmarshal([]byte(llmResponse), &response); err != nil {
+		return []string{}
 	}
 
-	return solutions
+	return response.Solutions
 }
 
 // promptUserForSolution displays extracted solutions to the user and prompts them to select which solution to try.
@@ -419,11 +396,13 @@ func extractSuggestedSolutions(llmResponse string) []string {
 func promptUserForSolution(ctx context.Context, solutions []string, agentName string) (string, bool, error) {
 	choices := make([]*uxlib.SelectChoice, len(solutions)+2)
 
-	// Add the three solutions
-	for i, solution := range solutions {
-		choices[i] = &uxlib.SelectChoice{
-			Value: solution,
-			Label: "Yes. " + solution,
+	if len(solutions) > 0 {
+		// Add the three solutions
+		for i, solution := range solutions {
+			choices[i] = &uxlib.SelectChoice{
+				Value: solution,
+				Label: "Yes. " + solution,
+			}
 		}
 	}
 

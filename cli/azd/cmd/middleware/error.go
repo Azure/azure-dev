@@ -171,7 +171,9 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				`Steps to follow:
 			1. Use available tool including azd_error_troubleshooting tool to identify and explain the error.
 			Diagnose its root cause when running azd command.
-			2. Provide actionable troubleshooting steps. Do not perform any file changes.
+			2. Provide actionable troubleshooting steps in natural language format with clear sections.
+			DO NOT return JSON. Use readable narrative text with markdown formatting.
+			Do not perform any file changes.
 			Error details: %s`, errorInput))
 
 			if err != nil {
@@ -226,7 +228,7 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 		if err != nil {
 			e.displayAgentResponse(ctx, agentOutput, AIDisclaimer)
 			span.SetStatus(codes.Error, "agent.send_message.failed")
-			return nil, err
+			return nil, fmt.Errorf("failed to generate solutions: %w", err)
 		}
 
 		// Extract solutions from agent output

@@ -260,8 +260,10 @@ func (e *ErrorMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 				// User selected a solution
 				agentOutput, err = azdAgent.SendMessage(ctx, fmt.Sprintf(
 					`Steps to follow:
-						1. Perform the following actions to resolve the error: %s. During this, make minimal changes and avoid unnecessary modifications.
-						2. Remove any changes that were created solely for validation and are not part of the actual error fix.
+						1. Perform the following actions to resolve the error: %s. 
+						During this, make minimal changes and avoid unnecessary modifications.
+						2. Remove any changes that were created solely for validation and
+						 are not part of the actual error fix.
 						3. You are currently in the middle of executing '%s'. Never run this command.
 						Error details: %s`, selectedSolution, e.options.CommandPath, errorInput))
 

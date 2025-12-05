@@ -75,6 +75,7 @@ func captureErrorInfo(err error) errorInfo {
 		info.message = extErr.Message
 		info.details = extErr.Details
 		info.errorCode = extErr.ErrorCode
+		//nolint:gosec // G115: HTTP status codes are well within int32 range
 		info.statusCode = int32(extErr.StatusCode)
 		info.service = extErr.ServiceName
 		return info
@@ -84,6 +85,7 @@ func captureErrorInfo(err error) errorInfo {
 	var respErr *azcore.ResponseError
 	if errors.As(err, &respErr) {
 		info.errorCode = respErr.ErrorCode
+		//nolint:gosec // G115: HTTP status codes are well within int32 range
 		info.statusCode = int32(respErr.StatusCode)
 		if respErr.RawResponse != nil && respErr.RawResponse.Request != nil {
 			info.service = respErr.RawResponse.Request.Host

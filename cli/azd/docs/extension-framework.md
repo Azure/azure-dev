@@ -334,6 +334,42 @@ The build process automatically creates binaries for multiple platforms and arch
 > [!NOTE]
 > Build times may vary depending on your hardware and extension complexity.
 
+### Distributed Tracing
+
+`azd` uses OpenTelemetry and W3C Trace Context for distributed tracing. To ensure your extension's operations are correctly correlated with the parent `azd` process, you must hydrate the context in your extension's entry point.
+
+**Update `main.go`:**
+
+```go
+import (
+    "context"
+    "os"
+    "github.com/azure/azure-dev/cli/azd/pkg/azdext"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // Hydrate context with traceparent from environment if present
+    // This ensures the extension process participates in the active trace
+    if traceparent := os.Getenv("TRACEPARENT"); traceparent != "" {
+        ctx = azdext.ContextFromTraceParent(ctx, traceparent)
+    }
+
+    rootCmd := cmd.NewRootCommand()
+
+    if err := rootCmd.ExecuteContext(ctx); err != nil {
+        // Handle error
+    }
+}
+```
+
+The `ExtensionHost` automatically handles trace propagation for all gRPC communication:
+1. **Outgoing**: Traces are injected into messages sent back to `azd` core.
+2. **Incoming**: Traces from `azd` core are extracted and injected into the `context.Context` passed to your handlers.
+
+This ensures that calls to Azure SDKs (which support `TRACEPARENT`) within your handlers will automatically be correlated.
+
 ### Developer Extension
 
 The easiest way to get started building extensions is to install the `azd` Developer extension.

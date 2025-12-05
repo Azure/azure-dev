@@ -11,10 +11,13 @@ import (
 
 const traceparentKey = "traceparent"
 
-// GetTraceParentFromContext extracts the current span context and formats it as a W3C traceparent string.
-// Returns empty string if no valid span context is found.
-func GetTraceParentFromContext(ctx context.Context) string {
-	carrier := propagation.MapCarrier{}
-	propagation.TraceContext{}.Inject(ctx, carrier)
-	return carrier.Get(traceparentKey)
+// ContextFromTraceParent creates a new context with the span context extracted from the traceparent string.
+func ContextFromTraceParent(ctx context.Context, traceparent string) context.Context {
+	if traceparent == "" {
+		return ctx
+	}
+	carrier := propagation.MapCarrier{
+		traceparentKey: traceparent,
+	}
+	return propagation.TraceContext{}.Extract(ctx, carrier)
 }

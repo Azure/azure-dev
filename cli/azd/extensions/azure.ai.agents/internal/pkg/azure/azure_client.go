@@ -47,7 +47,7 @@ func (c *AzureClient) ListLocations(ctx context.Context, subscriptionId string) 
 }
 
 func createSubscriptionsClient(subscriptionId string, credential azcore.TokenCredential) (*armsubscriptions.Client, error) {
-	client, err := armsubscriptions.NewClient(credential, nil)
+	client, err := armsubscriptions.NewClient(credential, NewArmClientOptions())
 	if err != nil {
 		return nil, err
 	}

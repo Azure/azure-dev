@@ -334,42 +334,6 @@ The build process automatically creates binaries for multiple platforms and arch
 > [!NOTE]
 > Build times may vary depending on your hardware and extension complexity.
 
-### Distributed Tracing
-
-`azd` uses OpenTelemetry and W3C Trace Context for distributed tracing. To ensure your extension's operations are correctly correlated with the parent `azd` process, you must hydrate the context in your extension's entry point.
-
-**Update `main.go`:**
-
-```go
-import (
-    "context"
-    "os"
-    "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-)
-
-func main() {
-    ctx := context.Background()
-
-    // Hydrate context with traceparent from environment if present
-    // This ensures the extension process participates in the active trace
-    if traceparent := os.Getenv("TRACEPARENT"); traceparent != "" {
-        ctx = azdext.ContextFromTraceParent(ctx, traceparent)
-    }
-
-    rootCmd := cmd.NewRootCommand()
-
-    if err := rootCmd.ExecuteContext(ctx); err != nil {
-        // Handle error
-    }
-}
-```
-
-The `ExtensionHost` automatically handles trace propagation for all gRPC communication:
-1. **Outgoing**: Traces are injected into messages sent back to `azd` core.
-2. **Incoming**: Traces from `azd` core are extracted and injected into the `context.Context` passed to your handlers.
-
-This ensures that calls to Azure SDKs (which support `TRACEPARENT`) within your handlers will automatically be correlated.
-
 ### Developer Extension
 
 The easiest way to get started building extensions is to install the `azd` Developer extension.
@@ -1126,6 +1090,38 @@ if err := host.Run(ctx); err != nil {
 }
 
 ```
+
+### Distributed Tracing
+
+`azd` uses OpenTelemetry and W3C Trace Context for distributed tracing.
+
+#### Handlers (Service Targets, Framework Services, Event Handlers)
+
+Trace context is **automatically propagated** through gRPC messages. The `context.Context` passed to your handlers already contains the trace context from `azd`—no additional setup is required.
+
+To correlate Azure SDK calls with the parent trace, add the correlation policy to your client options:
+
+```go
+import "github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+
+clientOptions := &policy.ClientOptions{
+    PerCallPolicies: []policy.Policy{
+        azsdk.NewMsCorrelationPolicy(),
+    },
+}
+```
+
+#### Custom Commands
+
+For custom extension commands (not using `ExtensionHost`), hydrate the context from the `TRACEPARENT` environment variable:
+
+```go
+if traceparent := os.Getenv("TRACEPARENT"); traceparent != "" {
+    ctx = azdext.ContextFromTraceParent(ctx, traceparent)
+}
+```
+
+`azd` sets this variable when launching extension processes.
 
 ## Developer Artifacts
 

@@ -26,9 +26,13 @@ const (
 
 // Envelope for all possible framework service messages (requests and responses)
 type FrameworkServiceMessage struct {
-	state     protoimpl.MessageState        `protogen:"open.v1"`
-	RequestId string                        `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Error     *FrameworkServiceErrorMessage `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// W3C Trace Context traceparent header value for distributed tracing.
+	// Format: "00-{trace-id}-{span-id}-{trace-flags}"
+	// See: https://www.w3.org/TR/trace-context/
+	TraceParent string                        `protobuf:"bytes,98,opt,name=trace_parent,json=traceParent,proto3" json:"trace_parent,omitempty"`
+	Error       *FrameworkServiceErrorMessage `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
 	// Types that are valid to be assigned to MessageType:
 	//
 	//	*FrameworkServiceMessage_RegisterFrameworkServiceRequest
@@ -84,6 +88,13 @@ func (*FrameworkServiceMessage) Descriptor() ([]byte, []int) {
 func (x *FrameworkServiceMessage) GetRequestId() string {
 	if x != nil {
 		return x.RequestId
+	}
+	return ""
+}
+
+func (x *FrameworkServiceMessage) GetTraceParent() string {
+	if x != nil {
+		return x.TraceParent
 	}
 	return ""
 }
@@ -337,9 +348,13 @@ func (*FrameworkServiceMessage_ProgressMessage) isFrameworkServiceMessage_Messag
 
 // Error message for framework service operations
 type FrameworkServiceErrorMessage struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
-	Details       string                 `protobuf:"bytes,2,opt,name=details,proto3" json:"details,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Message string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	Details string                 `protobuf:"bytes,2,opt,name=details,proto3" json:"details,omitempty"`
+	// Structured error information for telemetry
+	ErrorCode     string `protobuf:"bytes,3,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`       // Error code from the service (e.g., "Conflict", "NotFound")
+	StatusCode    int32  `protobuf:"varint,4,opt,name=status_code,json=statusCode,proto3" json:"status_code,omitempty"`   // HTTP status code (e.g., 409, 404, 500)
+	ServiceName   string `protobuf:"bytes,5,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"` // Service name for telemetry (e.g., "ai.azure.com", "cognitiveservices")
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -384,6 +399,27 @@ func (x *FrameworkServiceErrorMessage) GetMessage() string {
 func (x *FrameworkServiceErrorMessage) GetDetails() string {
 	if x != nil {
 		return x.Details
+	}
+	return ""
+}
+
+func (x *FrameworkServiceErrorMessage) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+func (x *FrameworkServiceErrorMessage) GetStatusCode() int32 {
+	if x != nil {
+		return x.StatusCode
+	}
+	return 0
+}
+
+func (x *FrameworkServiceErrorMessage) GetServiceName() string {
+	if x != nil {
+		return x.ServiceName
 	}
 	return ""
 }
@@ -1315,10 +1351,11 @@ var File_framework_service_proto protoreflect.FileDescriptor
 
 const file_framework_service_proto_rawDesc = "" +
 	"\n" +
-	"\x17framework_service.proto\x12\x06azdext\x1a\fmodels.proto\x1a\x14service_target.proto\"\xc0\f\n" +
+	"\x17framework_service.proto\x12\x06azdext\x1a\fmodels.proto\x1a\x14service_target.proto\"\xe3\f\n" +
 	"\x17FrameworkServiceMessage\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\x12:\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12!\n" +
+	"\ftrace_parent\x18b \x01(\tR\vtraceParent\x12:\n" +
 	"\x05error\x18c \x01(\v2$.azdext.FrameworkServiceErrorMessageR\x05error\x12v\n" +
 	"\"register_framework_service_request\x18\x02 \x01(\v2'.azdext.RegisterFrameworkServiceRequestH\x00R\x1fregisterFrameworkServiceRequest\x12y\n" +
 	"#register_framework_service_response\x18\x03 \x01(\v2(.azdext.RegisterFrameworkServiceResponseH\x00R registerFrameworkServiceResponse\x12Z\n" +
@@ -1336,10 +1373,15 @@ const file_framework_service_proto_rawDesc = "" +
 	"\x0fpackage_request\x18\x0e \x01(\v2&.azdext.FrameworkServicePackageRequestH\x00R\x0epackageRequest\x12T\n" +
 	"\x10package_response\x18\x0f \x01(\v2'.azdext.FrameworkServicePackageResponseH\x00R\x0fpackageResponse\x12T\n" +
 	"\x10progress_message\x18\x10 \x01(\v2'.azdext.FrameworkServiceProgressMessageH\x00R\x0fprogressMessageB\x0e\n" +
-	"\fmessage_type\"R\n" +
+	"\fmessage_type\"\xb5\x01\n" +
 	"\x1cFrameworkServiceErrorMessage\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12\x18\n" +
-	"\adetails\x18\x02 \x01(\tR\adetails\"=\n" +
+	"\adetails\x18\x02 \x01(\tR\adetails\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x03 \x01(\tR\terrorCode\x12\x1f\n" +
+	"\vstatus_code\x18\x04 \x01(\x05R\n" +
+	"statusCode\x12!\n" +
+	"\fservice_name\x18\x05 \x01(\tR\vserviceName\"=\n" +
 	"\x1fRegisterFrameworkServiceRequest\x12\x1a\n" +
 	"\blanguage\x18\x01 \x01(\tR\blanguage\"\"\n" +
 	" RegisterFrameworkServiceResponse\"a\n" +

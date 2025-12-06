@@ -13,9 +13,12 @@ import (
 	"strings"
 	"sync"
 
+	"go.opentelemetry.io/otel/propagation"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+const traceparentKey = "traceparent"
 
 // ProgressFunc is a callback function for sending progress updates during handler execution
 type ProgressFunc func(message string)
@@ -53,6 +56,15 @@ type MessageEnvelope[T any] interface {
 	// CreateProgressMessage creates a new progress message envelope with the given text.
 	// This is used by server-side handlers to send progress updates back to clients.
 	CreateProgressMessage(requestId string, message string) *T
+
+	// GetTraceParent returns the W3C traceparent header value from the message.
+	// This is used to propagate distributed tracing context across the gRPC boundary.
+	// Returns empty string if no trace context is present.
+	GetTraceParent(msg *T) string
+
+	// SetTraceParent sets the W3C traceparent header value on the message.
+	// This is used to propagate distributed tracing context across the gRPC boundary.
+	SetTraceParent(msg *T, traceParent string)
 }
 
 // handlerWrapper wraps a registered handler function with metadata
@@ -188,12 +200,27 @@ func (mb *MessageBroker[TMessage]) On(handler any) error {
 	return nil
 }
 
+// injectTraceContext injects the current trace context into the message envelope
+func (mb *MessageBroker[TMessage]) injectTraceContext(ctx context.Context, msg *TMessage) {
+	tc := propagation.TraceContext{}
+	// Create a carrier that writes to the message via the envelope
+	carrier := propagation.MapCarrier{}
+	tc.Inject(ctx, carrier)
+
+	if traceParent, ok := carrier[traceparentKey]; ok {
+		mb.envelope.SetTraceParent(msg, traceParent)
+	}
+}
+
 // SendAndWait sends a message and waits for the response
 func (mb *MessageBroker[TMessage]) SendAndWait(ctx context.Context, msg *TMessage) (*TMessage, error) {
 	requestId := mb.envelope.GetRequestId(ctx, msg)
 	if requestId == "" {
 		return nil, errors.New("message must have a RequestId")
 	}
+
+	// Inject trace context
+	mb.injectTraceContext(ctx, msg)
 
 	innerMsg := mb.envelope.GetInnerMessage(msg)
 	msgType := reflect.TypeOf(innerMsg)
@@ -206,6 +233,8 @@ func (mb *MessageBroker[TMessage]) SendAndWait(ctx context.Context, msg *TMessag
 	// Send request in goroutine to ensure we're waiting before response arrives
 	errCh := make(chan error, 1)
 	go func() {
+		mb.sendMu.Lock()
+		defer mb.sendMu.Unlock()
 		errCh <- mb.stream.Send(msg)
 	}()
 
@@ -255,6 +284,9 @@ func (mb *MessageBroker[TMessage]) SendAndWait(ctx context.Context, msg *TMessag
 // where no response is expected or needed.
 // Returns an error only if the send operation itself fails.
 func (mb *MessageBroker[TMessage]) Send(ctx context.Context, msg *TMessage) error {
+	// Inject trace context
+	mb.injectTraceContext(ctx, msg)
+
 	innerMsg := mb.envelope.GetInnerMessage(msg)
 	msgType := reflect.TypeOf(innerMsg)
 	requestId := mb.envelope.GetRequestId(ctx, msg)
@@ -296,6 +328,9 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 		return nil, errors.New("message must have a RequestId")
 	}
 
+	// Inject trace context
+	mb.injectTraceContext(ctx, msg)
+
 	innerMsg := mb.envelope.GetInnerMessage(msg)
 	msgType := reflect.TypeOf(innerMsg)
 
@@ -312,6 +347,8 @@ func (mb *MessageBroker[TMessage]) SendAndWaitWithProgress(
 	log.Printf("[%s] [RequestId=%s] Sending request, MessageType=%v", mb.name, requestId, msgType)
 	errCh := make(chan error, 1)
 	go func() {
+		mb.sendMu.Lock()
+		defer mb.sendMu.Unlock()
 		errCh <- mb.stream.Send(msg)
 	}()
 
@@ -577,6 +614,13 @@ func (mb *MessageBroker[TMessage]) invokeHandler(
 	innerMsg any,
 ) *TMessage {
 	requestId := mb.envelope.GetRequestId(ctx, envelope)
+
+	// Extract trace context from the envelope and inject into the context
+	// This propagates distributed tracing across the gRPC boundary
+	if traceParent := mb.envelope.GetTraceParent(envelope); traceParent != "" {
+		tc := propagation.TraceContext{}
+		ctx = tc.Extract(ctx, propagation.MapCarrier{traceparentKey: traceParent})
+	}
 
 	// Prepare arguments for handler invocation
 	args := []reflect.Value{

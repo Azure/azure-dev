@@ -27,9 +27,13 @@ const (
 
 // Envelope for all possible service target messages (requests and responses)
 type ServiceTargetMessage struct {
-	state     protoimpl.MessageState     `protogen:"open.v1"`
-	RequestId string                     `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Error     *ServiceTargetErrorMessage `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// W3C Trace Context traceparent header value for distributed tracing.
+	// Format: "00-{trace-id}-{span-id}-{trace-flags}"
+	// See: https://www.w3.org/TR/trace-context/
+	TraceParent string                     `protobuf:"bytes,98,opt,name=trace_parent,json=traceParent,proto3" json:"trace_parent,omitempty"`
+	Error       *ServiceTargetErrorMessage `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
 	// Types that are valid to be assigned to MessageType:
 	//
 	//	*ServiceTargetMessage_RegisterServiceTargetRequest
@@ -85,6 +89,13 @@ func (*ServiceTargetMessage) Descriptor() ([]byte, []int) {
 func (x *ServiceTargetMessage) GetRequestId() string {
 	if x != nil {
 		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ServiceTargetMessage) GetTraceParent() string {
+	if x != nil {
+		return x.TraceParent
 	}
 	return ""
 }
@@ -737,9 +748,13 @@ func (*RegisterServiceTargetResponse) Descriptor() ([]byte, []int) {
 }
 
 type ServiceTargetErrorMessage struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	Details       string                 `protobuf:"bytes,3,opt,name=details,proto3" json:"details,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Message string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	Details string                 `protobuf:"bytes,3,opt,name=details,proto3" json:"details,omitempty"`
+	// Structured error information for telemetry
+	ErrorCode     string `protobuf:"bytes,4,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`       // Error code from the service (e.g., "Conflict", "NotFound")
+	StatusCode    int32  `protobuf:"varint,5,opt,name=status_code,json=statusCode,proto3" json:"status_code,omitempty"`   // HTTP status code (e.g., 409, 404, 500)
+	ServiceName   string `protobuf:"bytes,6,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"` // Service name for telemetry (e.g., "ai.azure.com", "cognitiveservices")
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -784,6 +799,27 @@ func (x *ServiceTargetErrorMessage) GetMessage() string {
 func (x *ServiceTargetErrorMessage) GetDetails() string {
 	if x != nil {
 		return x.Details
+	}
+	return ""
+}
+
+func (x *ServiceTargetErrorMessage) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+func (x *ServiceTargetErrorMessage) GetStatusCode() int32 {
+	if x != nil {
+		return x.StatusCode
+	}
+	return 0
+}
+
+func (x *ServiceTargetErrorMessage) GetServiceName() string {
+	if x != nil {
+		return x.ServiceName
 	}
 	return ""
 }
@@ -1640,10 +1676,11 @@ var File_service_target_proto protoreflect.FileDescriptor
 
 const file_service_target_proto_rawDesc = "" +
 	"\n" +
-	"\x14service_target.proto\x12\x06azdext\x1a$include/google/protobuf/struct.proto\x1a\fmodels.proto\"\xc2\v\n" +
+	"\x14service_target.proto\x12\x06azdext\x1a$include/google/protobuf/struct.proto\x1a\fmodels.proto\"\xe5\v\n" +
 	"\x14ServiceTargetMessage\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\x127\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12!\n" +
+	"\ftrace_parent\x18b \x01(\tR\vtraceParent\x127\n" +
 	"\x05error\x18c \x01(\v2!.azdext.ServiceTargetErrorMessageR\x05error\x12m\n" +
 	"\x1fregister_service_target_request\x18\x02 \x01(\v2$.azdext.RegisterServiceTargetRequestH\x00R\x1cregisterServiceTargetRequest\x12p\n" +
 	" register_service_target_response\x18\x03 \x01(\v2%.azdext.RegisterServiceTargetResponseH\x00R\x1dregisterServiceTargetResponse\x12W\n" +
@@ -1686,10 +1723,15 @@ const file_service_target_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"2\n" +
 	"\x1cRegisterServiceTargetRequest\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\"\x1f\n" +
-	"\x1dRegisterServiceTargetResponse\"O\n" +
+	"\x1dRegisterServiceTargetResponse\"\xb2\x01\n" +
 	"\x19ServiceTargetErrorMessage\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x18\n" +
-	"\adetails\x18\x03 \x01(\tR\adetails\"\xf6\x01\n" +
+	"\adetails\x18\x03 \x01(\tR\adetails\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x04 \x01(\tR\terrorCode\x12\x1f\n" +
+	"\vstatus_code\x18\x05 \x01(\x05R\n" +
+	"statusCode\x12!\n" +
+	"\fservice_name\x18\x06 \x01(\tR\vserviceName\"\xf6\x01\n" +
 	"\x18GetTargetResourceRequest\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12<\n" +
 	"\x0eservice_config\x18\x02 \x01(\v2\x15.azdext.ServiceConfigR\rserviceConfig\x12N\n" +

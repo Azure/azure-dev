@@ -1091,6 +1091,38 @@ if err := host.Run(ctx); err != nil {
 
 ```
 
+### Distributed Tracing
+
+`azd` uses OpenTelemetry and W3C Trace Context for distributed tracing.
+
+#### Handlers (Service Targets, Framework Services, Event Handlers)
+
+Trace context is **automatically propagated** through gRPC messages. The `context.Context` passed to your handlers already contains the trace context from `azd`—no additional setup is required.
+
+To correlate Azure SDK calls with the parent trace, add the correlation policy to your client options:
+
+```go
+import "github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+
+clientOptions := &policy.ClientOptions{
+    PerCallPolicies: []policy.Policy{
+        azsdk.NewMsCorrelationPolicy(),
+    },
+}
+```
+
+#### Custom Commands
+
+For custom extension commands (not using `ExtensionHost`), hydrate the context from the `TRACEPARENT` environment variable:
+
+```go
+if traceparent := os.Getenv("TRACEPARENT"); traceparent != "" {
+    ctx = azdext.ContextFromTraceParent(ctx, traceparent)
+}
+```
+
+`azd` sets this variable when launching extension processes.
+
 ## Developer Artifacts
 
 `azd` leverages gRPC for the communication protocol between Core `azd` and extensions. gRPC client & server components are automatically generated from profile files.

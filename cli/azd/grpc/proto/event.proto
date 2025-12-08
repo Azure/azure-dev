@@ -25,10 +25,6 @@ message EventMessage {
     InvokeServiceHandler invoke_service_handler = 5;
     ServiceHandlerStatus service_handler_status = 6;
   }
-
-  // W3C traceparent format for distributed tracing propagation.
-  // Format: "00-{traceId}-{spanId}-{flags}"
-  string trace_parent = 98;
 }
 
 // Client subscribes to project-related events

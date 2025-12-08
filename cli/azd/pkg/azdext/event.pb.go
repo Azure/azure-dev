@@ -35,10 +35,7 @@ type EventMessage struct {
 	//	*EventMessage_SubscribeServiceEvent
 	//	*EventMessage_InvokeServiceHandler
 	//	*EventMessage_ServiceHandlerStatus
-	MessageType isEventMessage_MessageType `protobuf_oneof:"message_type"`
-	// W3C traceparent format for distributed tracing propagation.
-	// Format: "00-{traceId}-{spanId}-{flags}"
-	TraceParent   string `protobuf:"bytes,98,opt,name=trace_parent,json=traceParent,proto3" json:"trace_parent,omitempty"`
+	MessageType   isEventMessage_MessageType `protobuf_oneof:"message_type"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -132,13 +129,6 @@ func (x *EventMessage) GetServiceHandlerStatus() *ServiceHandlerStatus {
 		}
 	}
 	return nil
-}
-
-func (x *EventMessage) GetTraceParent() string {
-	if x != nil {
-		return x.TraceParent
-	}
-	return ""
 }
 
 type isEventMessage_MessageType interface {
@@ -558,15 +548,14 @@ var File_event_proto protoreflect.FileDescriptor
 
 const file_event_proto_rawDesc = "" +
 	"\n" +
-	"\vevent.proto\x12\x06azdext\x1a\fmodels.proto\"\xcb\x04\n" +
+	"\vevent.proto\x12\x06azdext\x1a\fmodels.proto\"\xa8\x04\n" +
 	"\fEventMessage\x12W\n" +
 	"\x17subscribe_project_event\x18\x01 \x01(\v2\x1d.azdext.SubscribeProjectEventH\x00R\x15subscribeProjectEvent\x12T\n" +
 	"\x16invoke_project_handler\x18\x02 \x01(\v2\x1c.azdext.InvokeProjectHandlerH\x00R\x14invokeProjectHandler\x12T\n" +
 	"\x16project_handler_status\x18\x03 \x01(\v2\x1c.azdext.ProjectHandlerStatusH\x00R\x14projectHandlerStatus\x12W\n" +
 	"\x17subscribe_service_event\x18\x04 \x01(\v2\x1d.azdext.SubscribeServiceEventH\x00R\x15subscribeServiceEvent\x12T\n" +
 	"\x16invoke_service_handler\x18\x05 \x01(\v2\x1c.azdext.InvokeServiceHandlerH\x00R\x14invokeServiceHandler\x12T\n" +
-	"\x16service_handler_status\x18\x06 \x01(\v2\x1c.azdext.ServiceHandlerStatusH\x00R\x14serviceHandlerStatus\x12!\n" +
-	"\ftrace_parent\x18b \x01(\tR\vtraceParentB\x0e\n" +
+	"\x16service_handler_status\x18\x06 \x01(\v2\x1c.azdext.ServiceHandlerStatusH\x00R\x14serviceHandlerStatusB\x0e\n" +
 	"\fmessage_type\"8\n" +
 	"\x15SubscribeProjectEvent\x12\x1f\n" +
 	"\vevent_names\x18\x01 \x03(\tR\n" +

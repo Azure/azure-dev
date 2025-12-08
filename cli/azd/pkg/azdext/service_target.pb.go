@@ -27,13 +27,9 @@ const (
 
 // Envelope for all possible service target messages (requests and responses)
 type ServiceTargetMessage struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	// W3C Trace Context traceparent header value for distributed tracing.
-	// Format: "00-{trace-id}-{span-id}-{trace-flags}"
-	// See: https://www.w3.org/TR/trace-context/
-	TraceParent string                     `protobuf:"bytes,98,opt,name=trace_parent,json=traceParent,proto3" json:"trace_parent,omitempty"`
-	Error       *ServiceTargetErrorMessage `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
+	state     protoimpl.MessageState     `protogen:"open.v1"`
+	RequestId string                     `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Error     *ServiceTargetErrorMessage `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
 	// Types that are valid to be assigned to MessageType:
 	//
 	//	*ServiceTargetMessage_RegisterServiceTargetRequest
@@ -89,13 +85,6 @@ func (*ServiceTargetMessage) Descriptor() ([]byte, []int) {
 func (x *ServiceTargetMessage) GetRequestId() string {
 	if x != nil {
 		return x.RequestId
-	}
-	return ""
-}
-
-func (x *ServiceTargetMessage) GetTraceParent() string {
-	if x != nil {
-		return x.TraceParent
 	}
 	return ""
 }
@@ -1676,11 +1665,10 @@ var File_service_target_proto protoreflect.FileDescriptor
 
 const file_service_target_proto_rawDesc = "" +
 	"\n" +
-	"\x14service_target.proto\x12\x06azdext\x1a$include/google/protobuf/struct.proto\x1a\fmodels.proto\"\xe5\v\n" +
+	"\x14service_target.proto\x12\x06azdext\x1a$include/google/protobuf/struct.proto\x1a\fmodels.proto\"\xc2\v\n" +
 	"\x14ServiceTargetMessage\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\x12!\n" +
-	"\ftrace_parent\x18b \x01(\tR\vtraceParent\x127\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x127\n" +
 	"\x05error\x18c \x01(\v2!.azdext.ServiceTargetErrorMessageR\x05error\x12m\n" +
 	"\x1fregister_service_target_request\x18\x02 \x01(\v2$.azdext.RegisterServiceTargetRequestH\x00R\x1cregisterServiceTargetRequest\x12p\n" +
 	" register_service_target_response\x18\x03 \x01(\v2%.azdext.RegisterServiceTargetResponseH\x00R\x1dregisterServiceTargetResponse\x12W\n" +

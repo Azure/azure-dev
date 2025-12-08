@@ -110,15 +110,3 @@ func (ops *ServiceTargetEnvelope) CreateProgressMessage(requestId string, messag
 		},
 	}
 }
-
-// GetTraceParent returns the W3C traceparent header value from the message.
-// This is used to propagate distributed tracing context across the gRPC boundary.
-func (ops *ServiceTargetEnvelope) GetTraceParent(msg *ServiceTargetMessage) string {
-	return msg.TraceParent
-}
-
-// SetTraceParent sets the W3C traceparent header value on the message.
-// This is used to propagate distributed tracing context across the gRPC boundary.
-func (ops *ServiceTargetEnvelope) SetTraceParent(msg *ServiceTargetMessage, traceParent string) {
-	msg.TraceParent = traceParent
-}

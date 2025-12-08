@@ -35,7 +35,13 @@ type AzdClient struct {
 // WithAddress sets the address of the `azd` gRPC server.
 func WithAddress(address string) AzdClientOption {
 	return func(c *AzdClient) error {
-		connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		opts := []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithChainUnaryInterceptor(tracingUnaryInterceptor),
+			grpc.WithChainStreamInterceptor(tracingStreamInterceptor),
+		}
+
+		connection, err := grpc.NewClient(address, opts...)
 		if err != nil {
 			return err
 		}
@@ -123,7 +129,7 @@ func (c *AzdClient) Deployment() DeploymentServiceClient {
 	return c.deploymentClient
 }
 
-// Deployment returns the deployment service client.
+// Events returns the event service client.
 func (c *AzdClient) Events() EventServiceClient {
 	if c.eventsClient == nil {
 		c.eventsClient = NewEventServiceClient(c.connection)
@@ -188,4 +194,14 @@ func (c *AzdClient) Account() AccountServiceClient {
 	}
 
 	return c.accountClient
+}
+
+func tracingUnaryInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	ctx = WithTracing(ctx)
+	return invoker(ctx, method, req, reply, cc, opts...)
+}
+
+func tracingStreamInterceptor(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+	ctx = WithTracing(ctx)
+	return streamer(ctx, desc, cc, method, opts...)
 }

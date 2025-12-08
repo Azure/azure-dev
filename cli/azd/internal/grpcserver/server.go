@@ -11,6 +11,7 @@ import (
 	"net"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"go.opentelemetry.io/otel/propagation"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -81,7 +82,13 @@ func (s *Server) Start() (*ServerInfo, error) {
 	var serverInfo ServerInfo
 
 	s.grpcServer = grpc.NewServer(
-		grpc.UnaryInterceptor(s.tokenAuthInterceptor(&serverInfo)),
+		grpc.ChainUnaryInterceptor(
+			s.tokenAuthInterceptor(&serverInfo),
+			traceContextUnaryInterceptor(),
+		),
+		grpc.ChainStreamInterceptor(
+			traceContextStreamInterceptor(),
+		),
 	)
 
 	// Use ":0" to let the system assign an available random port
@@ -173,4 +180,68 @@ func generateSigningKey() ([]byte, error) {
 		return nil, err
 	}
 	return bytes, nil
+}
+
+// traceContextUnaryInterceptor extracts W3C traceparent from incoming gRPC metadata
+// and injects it into the context for distributed tracing correlation.
+func traceContextUnaryInterceptor() grpc.UnaryServerInterceptor {
+	return func(
+		ctx context.Context,
+		req interface{},
+		info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler,
+	) (interface{}, error) {
+		ctx = extractTraceContextFromMetadata(ctx)
+		return handler(ctx, req)
+	}
+}
+
+// traceContextStreamInterceptor extracts W3C traceparent from incoming gRPC metadata
+// and injects it into the context for distributed tracing correlation.
+func traceContextStreamInterceptor() grpc.StreamServerInterceptor {
+	return func(
+		srv interface{},
+		ss grpc.ServerStream,
+		info *grpc.StreamServerInfo,
+		handler grpc.StreamHandler,
+	) error {
+		ctx := extractTraceContextFromMetadata(ss.Context())
+		if ctx != ss.Context() {
+			// Wrap the stream with the new context so downstream handlers see the trace span.
+			ss = &wrappedServerStream{ServerStream: ss, ctx: ctx}
+		}
+
+		return handler(srv, ss)
+	}
+}
+
+func extractTraceContextFromMetadata(ctx context.Context) context.Context {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ctx
+	}
+
+	traceparents := md.Get(azdext.TraceparentKey)
+	if len(traceparents) == 0 {
+		return ctx
+	}
+
+	carrier := propagation.MapCarrier{azdext.TraceparentKey: traceparents[0]}
+
+	tracestates := md.Get(azdext.TracestateKey)
+	if len(tracestates) > 0 && tracestates[0] != "" {
+		carrier[azdext.TracestateKey] = tracestates[0]
+	}
+
+	return propagation.TraceContext{}.Extract(ctx, carrier)
+}
+
+// wrappedServerStream wraps a grpc.ServerStream with a custom context.
+type wrappedServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (w *wrappedServerStream) Context() context.Context {
+	return w.ctx
 }

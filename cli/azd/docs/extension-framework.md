@@ -336,39 +336,31 @@ The build process automatically creates binaries for multiple platforms and arch
 
 ### Distributed Tracing
 
-`azd` uses OpenTelemetry and W3C Trace Context for distributed tracing. To ensure your extension's operations are correctly correlated with the parent `azd` process, you must hydrate the context in your extension's entry point.
+`azd` uses OpenTelemetry and W3C Trace Context for distributed tracing. Trace context is propagated through gRPC metadata, and `azd` sets `TRACEPARENT` in the environment when it launches an extension.
 
-**Update `main.go`:**
+Use `azdext.NewContext()` to hydrate the root context with trace context:
 
 ```go
-import (
-    "context"
-    "os"
-    "github.com/azure/azure-dev/cli/azd/pkg/azdext"
-)
-
 func main() {
-    ctx := context.Background()
-
-    // Hydrate context with traceparent from environment if present
-    // This ensures the extension process participates in the active trace
-    if traceparent := os.Getenv("TRACEPARENT"); traceparent != "" {
-        ctx = azdext.ContextFromTraceParent(ctx, traceparent)
-    }
-
-    rootCmd := cmd.NewRootCommand()
-
-    if err := rootCmd.ExecuteContext(ctx); err != nil {
-        // Handle error
-    }
+  ctx := azdext.NewContext()
+  rootCmd := cmd.NewRootCommand()
+  if err := rootCmd.ExecuteContext(ctx); err != nil {
+    // Handle error
+  }
 }
 ```
 
-The `ExtensionHost` automatically handles trace propagation for all gRPC communication:
-1. **Outgoing**: Traces are injected into messages sent back to `azd` core.
-2. **Incoming**: Traces from `azd` core are extracted and injected into the `context.Context` passed to your handlers.
+To correlate Azure SDK calls with the parent trace, add the correlation policy to your client options:
 
-This ensures that calls to Azure SDKs (which support `TRACEPARENT`) within your handlers will automatically be correlated.
+```go
+import "github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+
+clientOptions := &policy.ClientOptions{
+    PerCallPolicies: []policy.Policy{
+        azsdk.NewMsCorrelationPolicy(),
+    },
+}
+```
 
 ### Developer Extension
 
@@ -1931,7 +1923,7 @@ func (r *RustFrameworkProvider) Package(ctx context.Context, serviceConfig *azde
 
 // Register the framework provider
 func main() {
-    ctx := azdext.WithAccessToken(context.Background())
+    ctx := azdext.WithAccessToken(azdext.NewContext())
     azdClient, err := azdext.NewAzdClient()
     if err != nil {
         log.Fatal(err)
@@ -2047,7 +2039,7 @@ func (v *VMServiceTargetProvider) Endpoints(ctx context.Context, serviceConfig *
 
 // Register the service target provider
 func main() {
-    ctx := azdext.WithAccessToken(context.Background())
+    ctx := azdext.WithAccessToken(azdext.NewContext())
     azdClient, err := azdext.NewAzdClient()
     if err != nil {
         log.Fatal(err)

@@ -17,10 +17,6 @@ service ServiceTargetService {
 // Envelope for all possible service target messages (requests and responses)
 message ServiceTargetMessage {
   string request_id = 1;
-  // W3C Trace Context traceparent header value for distributed tracing.
-  // Format: "00-{trace-id}-{span-id}-{trace-flags}"
-  // See: https://www.w3.org/TR/trace-context/
-  string trace_parent = 98;
   ServiceTargetErrorMessage error = 99;
   oneof message_type {
     RegisterServiceTargetRequest register_service_target_request = 2;

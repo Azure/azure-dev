@@ -26,13 +26,9 @@ const (
 
 // Envelope for all possible framework service messages (requests and responses)
 type FrameworkServiceMessage struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	// W3C Trace Context traceparent header value for distributed tracing.
-	// Format: "00-{trace-id}-{span-id}-{trace-flags}"
-	// See: https://www.w3.org/TR/trace-context/
-	TraceParent string                        `protobuf:"bytes,98,opt,name=trace_parent,json=traceParent,proto3" json:"trace_parent,omitempty"`
-	Error       *FrameworkServiceErrorMessage `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
+	state     protoimpl.MessageState        `protogen:"open.v1"`
+	RequestId string                        `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Error     *FrameworkServiceErrorMessage `protobuf:"bytes,99,opt,name=error,proto3" json:"error,omitempty"`
 	// Types that are valid to be assigned to MessageType:
 	//
 	//	*FrameworkServiceMessage_RegisterFrameworkServiceRequest
@@ -88,13 +84,6 @@ func (*FrameworkServiceMessage) Descriptor() ([]byte, []int) {
 func (x *FrameworkServiceMessage) GetRequestId() string {
 	if x != nil {
 		return x.RequestId
-	}
-	return ""
-}
-
-func (x *FrameworkServiceMessage) GetTraceParent() string {
-	if x != nil {
-		return x.TraceParent
 	}
 	return ""
 }
@@ -1351,11 +1340,10 @@ var File_framework_service_proto protoreflect.FileDescriptor
 
 const file_framework_service_proto_rawDesc = "" +
 	"\n" +
-	"\x17framework_service.proto\x12\x06azdext\x1a\fmodels.proto\x1a\x14service_target.proto\"\xe3\f\n" +
+	"\x17framework_service.proto\x12\x06azdext\x1a\fmodels.proto\x1a\x14service_target.proto\"\xc0\f\n" +
 	"\x17FrameworkServiceMessage\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\x12!\n" +
-	"\ftrace_parent\x18b \x01(\tR\vtraceParent\x12:\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12:\n" +
 	"\x05error\x18c \x01(\v2$.azdext.FrameworkServiceErrorMessageR\x05error\x12v\n" +
 	"\"register_framework_service_request\x18\x02 \x01(\v2'.azdext.RegisterFrameworkServiceRequestH\x00R\x1fregisterFrameworkServiceRequest\x12y\n" +
 	"#register_framework_service_response\x18\x03 \x01(\v2(.azdext.RegisterFrameworkServiceResponseH\x00R registerFrameworkServiceResponse\x12Z\n" +

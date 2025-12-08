@@ -246,9 +246,11 @@ overrides:
   - filename: cli/azd/pkg/azdext/trace_context.go
     words:
       - traceparent
+      - tracestate
   - filename: internal/grpcserver/server.go
     words:
       - traceparents
+      - tracestates
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

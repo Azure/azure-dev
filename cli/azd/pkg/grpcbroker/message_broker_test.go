@@ -24,7 +24,6 @@ type TestMessage struct {
 	InnerMsg     any
 	IsProgress   bool
 	ProgressText string
-	TraceParent  string
 }
 
 // Test request/response types for handler testing
@@ -163,14 +162,6 @@ func (e *SimpleMessageEnvelope) CreateProgressMessage(requestId string, message 
 		IsProgress:   true,
 		ProgressText: message,
 	}
-}
-
-func (e *SimpleMessageEnvelope) GetTraceParent(msg *TestMessage) string {
-	return msg.TraceParent
-}
-
-func (e *SimpleMessageEnvelope) SetTraceParent(msg *TestMessage, traceParent string) {
-	msg.TraceParent = traceParent
 }
 
 // TestOn_RegistersHandler tests that handlers are registered correctly
